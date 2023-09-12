@@ -1,0 +1,111 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ezpz"
+description = '2ez'
+readme = "README.md"
+requires-python = ">=3.8"
+license = ""
+keywords = []
+authors = [
+  { name = "Sam Foreman", email = "saforem2@gmail.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "mpi4py",
+  "torch",
+  "bokeh",
+  "mpi4py",
+  "h5py",
+  "pillow",
+  "xarray",
+  "celerite",
+  "joblib",
+  "rich",
+  "hydra-core",
+  "wandb",
+  "arviz",
+  "hydra-colorlog",
+  "ipympl",
+  "aim",
+  "tqdm",
+  "torchviz",
+  "enrich @ git+https://github.com/saforem2/enrich",
+  "opinionated @ git+https://github.com/saforem2/opinionated",
+]
+
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+  "pudb",
+  "matplotx",
+  "nodejs",
+  "pynvim",
+  "neovim",
+  "ruff",
+  "ruff-lsp",
+  "pyproject-flake8",
+  "ipython",
+  "ptipython",
+]
+
+[project.urls]
+Documentation = "https://github.com/saforem2/ezpz"
+Issues = "https://github.com/saforem2/ezpz/issues"
+Source = "https://github.com/saforem2/ezpz"
+
+[tool.hatch.version]
+path = "src/ezpz/__about__.py"
+
+[tool.hatch.build]
+exclude = [
+  "src/ezpz/outputs/",
+  "**old**",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+
+[tool.hatch.build.targets.sdist]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ezpz"]
+
+[tool.hatch.envs.default]
+dependencies = [
+  "pytest",
+  "pytest-cov",
+]
+[tool.hatch.envs.default.scripts]
+cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
+no-cov = "cov --no-cov"
+
+[[tool.hatch.envs.test.matrix]]
+python = ["38", "39", "310", "311"]
+
+[tool.coverage.run]
+branch = true
+parallel = true
+omit = [
+  "ezpz/__about__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
