@@ -10,9 +10,13 @@ import os
 from typing import Optional, Callable
 from mpi4py import MPI
 
-import logging
+# import logging
+#
+# log = logging.getLogger(__name__)
+from rich.console import Console
 
-log = logging.getLogger(__name__)
+console = Console()
+
 
 
 BACKENDS = [
@@ -25,7 +29,7 @@ BACKENDS = [
 
 
 
-def setup_wandb():
+def setup_wandb(project_name: Optional[str] = None):
     import wandb
     import socket
     from megatron import get_args
@@ -34,16 +38,27 @@ def setup_wandb():
     args = get_args()
     from torch import distributed as ptdist
     # if ptdist.get_rank() == 0:
+    project_name = (
+        project_name if project_name is not None
+        else os.environ.get(
+            'WB_PROJECT',
+            os.environ.get(
+                'WANDB_PROJECT',
+                os.environ.get("WB_PROJECT_NAME", 'GenSLM-Megatron-DeepSpeed')
+            )
+        )
+    )
+    console.log(f"Using: WB PROJECT: {project_name}")
     if get_rank() == 0:
         tensorboard_dir = args.tensorboard_dir
         if tensorboard_dir is not None:
-            print(f'Patching tensorboard from {tensorboard_dir}')
+            console.log(f'Patching tensorboard from {tensorboard_dir}')
             wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         # wbrun_id = wandb.util.generate_id()
         current_time = time.time()
         # local_time = time.localtime(current_time)
         wandb.init(
-            project='Megatron-DeepSpeed-Rebase',
+            project=project_name,
             sync_tensorboard=True,
             dir=tensorboard_dir,
             resume='allow',
@@ -70,6 +85,8 @@ def setup_wandb():
             wandb.run.config.update({'machine': 'Sunspot'})
         elif hostname.startswith('nid'):
             wandb.run.config.update({'machine': 'Perlmutter'})
+        elif hostname.startswith('login'):
+            wandb.run.config.update({'machine': 'NERSC'})
         else:
             wandb.run.config.update({'machine': hostname})
         if model_size is not None:
@@ -187,7 +204,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+            console.log(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
@@ -216,7 +233,7 @@ def setup_torch_distributed(
     be = backend.lower()
     assert be in BACKENDS
     if rank == 0 and local_rank == 0:
-        log.info(f'Using {backend} for distributed training')
+        console.log(f'Using {backend} for distributed training')
     if be in ['ddp', 'DDP']:
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
@@ -267,7 +284,7 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    log.info(f'Global Rank: {rank} / {world_size-1}')
+    console.log(f'Global Rank: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
