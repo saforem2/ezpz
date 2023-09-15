@@ -151,17 +151,40 @@ def get_world_size() -> int:
     return int(MPI.COMM_WORLD.Get_size())
 
 
+# def get_local_rank() -> int:
+#     return int(os.environ.get(
+#        'PMI_LOCAL_RANK',  # PMI_* for Polaris (/ Aurora) @ ALCF
+#        os.environ.get(    # OMPI_* for ThetaGPU @ ALCF
+#            'OMPI_COMM_WORLD_LOCAL_RANK',
+#            os.environ.get(
+#                'LOCAL_RANK',
+#                '0'
+#            )
+#        )
+#    ))
+
 def get_local_rank() -> int:
-    return int(os.environ.get(
-        'PMI_LOCAL_RANK',  # PMI_* for Polaris (/ Aurora) @ ALCF
-        os.environ.get(    # OMPI_* for ThetaGPU @ ALCF
-            'OMPI_COMM_WORLD_LOCAL_RANK',
+    return int(
+        os.environ.get(
+            'PMI_LOCAL_RANK',  # PMI_* for Polaris (/ Aurora) @ ALCF
+            # OMPI_* for ThetaGPU @ ALCF
             os.environ.get(
                 'LOCAL_RANK',
-                '0'
+                # '0'
+                os.environ.get(
+                    'OMPI_COMM_WORLD_LOCAL_RANK',
+                    os.environ.get(
+                        'RANK',
+                        os.environ.get(
+                            'SLURM_PROCID',
+                            '0',
+                        )
+                    )
+                )
             )
         )
-    ))
+    )
+
 
 
 def query_environment() -> dict[str, int]:
