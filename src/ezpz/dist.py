@@ -17,8 +17,6 @@ from rich.console import Console
 
 console = Console()
 
-
-
 BACKENDS = [
     'deepspeed',
     'ds',
@@ -28,14 +26,16 @@ BACKENDS = [
 ]
 
 
-
-def setup_wandb(project_name: Optional[str] = None):
+def setup_wandb(
+        project_name: Optional[str] = None,
+        config: Optional[dict] = None,
+):
     import wandb
     import socket
-    from megatron import get_args
     import time
     from pathlib import Path
-    args = get_args()
+    # from megatron import get_args
+    # args = get_args()
     from torch import distributed as ptdist
     # if ptdist.get_rank() == 0:
     project_name = (
@@ -50,7 +50,8 @@ def setup_wandb(project_name: Optional[str] = None):
     )
     console.log(f"Using: WB PROJECT: {project_name}")
     if get_rank() == 0:
-        tensorboard_dir = args.tensorboard_dir
+        # tensorboard_dir = args.tensorboard_dir
+        tensorboard_dir = config.get('tensorboard_dir', None)
         if tensorboard_dir is not None:
             console.log(f'Patching tensorboard from {tensorboard_dir}')
             wandb.tensorboard.patch(root_logdir=tensorboard_dir)
@@ -67,8 +68,9 @@ def setup_wandb(project_name: Optional[str] = None):
         wandb.run.log_code(Path(__file__).parent.parent.as_posix())  # type:ignore
         wandb.run.config.update({'current_time': current_time})
         model_size = os.environ.get('MODEL_SIZE', None)
-        wandb.run.config.update({'args': vars(args)})
         wandb.run.config.update({'world_size': ptdist.get_world_size()})
+        if config is not None:
+            wandb.run.config.update({'config': config})
         env = {
             k: v for k, v in dict(os.environ).items()
             if not k.startswith('_ModuleTable')
