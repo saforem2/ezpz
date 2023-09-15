@@ -13,9 +13,11 @@ from mpi4py import MPI
 # import logging
 #
 # log = logging.getLogger(__name__)
-from rich.console import Console
+# from rich.console import Console
 
-console = Console()
+# console = Console()
+# from rich.print import print
+from rich import print
 
 BACKENDS = [
     'deepspeed',
@@ -44,25 +46,27 @@ def setup_wandb(
             'WB_PROJECT',
             os.environ.get(
                 'WANDB_PROJECT',
-                os.environ.get("WB_PROJECT_NAME", 'GenSLM-Megatron-DeepSpeed')
+                os.environ.get("WB_PROJECT_NAME", None)
             )
         )
     )
-    console.log(f"Using: WB PROJECT: {project_name}")
+    print(f"Using: WB PROJECT: {project_name}")
     if get_rank() == 0:
         # tensorboard_dir = args.tensorboard_dir
-        tensorboard_dir = config.get('tensorboard_dir', None)
-        if tensorboard_dir is not None:
-            console.log(f'Patching tensorboard from {tensorboard_dir}')
-            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+        tensorboard_dir = None
+        if config is not None:
+            tensorboard_dir = config.get('tensorboard_dir', None)
+            if tensorboard_dir is not None:
+                print(f'Patching tensorboard from {tensorboard_dir}')
+                wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         # wbrun_id = wandb.util.generate_id()
         current_time = time.time()
         # local_time = time.localtime(current_time)
-        wandb.init(
-            project=project_name,
-            sync_tensorboard=True,
-            dir=tensorboard_dir,
+        wbrun = wandb.init(
             resume='allow',
+            sync_tensorboard=True,
+            project=(project_name if project_name is not None else None),
+            # dir=(tensorboard_dir if tensorboard_dir is not None else None),
         )
         assert wandb.run is not None
         wandb.run.log_code(Path(__file__).parent.parent.as_posix())  # type:ignore
@@ -229,7 +233,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            console.log(f'Caught MASTER_PORT:{eport} from environment!')
+            print(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
@@ -258,7 +262,7 @@ def setup_torch_distributed(
     be = backend.lower()
     assert be in BACKENDS
     if rank == 0 and local_rank == 0:
-        console.log(f'Using {backend} for distributed training')
+        print(f'Using {backend} for distributed training')
     if be in ['ddp', 'DDP']:
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
@@ -309,7 +313,7 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    console.log(f'Global Rank: {rank} / {world_size-1}')
+    print(f'Global Rank: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
