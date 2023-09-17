@@ -8,7 +8,7 @@ from typing import Optional
 # import warnings
 
 from mpi4py import MPI
-# from enrich.logging import RichHandler
+from enrich.logging import RichHandler
 import tqdm
 # from rich import print
 from pathlib import Path
