@@ -18,6 +18,7 @@ from mpi4py import MPI
 # console = Console()
 # from rich.print import print
 from rich import print
+from enrich import get_logger
 
 BACKENDS = [
     'deepspeed',
@@ -26,6 +27,7 @@ BACKENDS = [
     'horovod',
     'hvd',
 ]
+
 
 
 def setup_wandb(
@@ -54,11 +56,18 @@ def setup_wandb(
     if get_rank() == 0:
         # tensorboard_dir = args.tensorboard_dir
         tensorboard_dir = None
-        if config is not None:
-            tensorboard_dir = config.get('tensorboard_dir', None)
-            if tensorboard_dir is not None:
-                print(f'Patching tensorboard from {tensorboard_dir}')
-                wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+        if config is None:
+            tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
+        else:
+            tensorboard_dir = (
+                config.get(
+                    'tensorboard_dir',
+                    os.getcwd()
+                )
+            )
+        if tensorboard_dir is not None:
+            print(f'Patching tensorboard from {tensorboard_dir}')
+            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         # wbrun_id = wandb.util.generate_id()
         current_time = time.time()
         # local_time = time.localtime(current_time)
@@ -233,7 +242,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            print(f'Caught MASTER_PORT:{eport} from environment!')
+            log.info(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
