@@ -1,4 +1,3 @@
-
 """
 ezpz/__init__.py
 """
@@ -9,7 +8,7 @@ from typing import Optional
 # import warnings
 
 from mpi4py import MPI
-from enrich.logging import RichHandler
+# from enrich.logging import RichHandler
 import tqdm
 # from rich import print
 from pathlib import Path
@@ -35,6 +34,8 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
+
+from enrich import get_logger
 
 # # Check that MPS is available
 # if (
@@ -80,7 +81,6 @@ def get_rich_logger(
     # log: logging.Logger = get_logger(name=name, level=level)
     log = logging.getLogger(name)
     log.handlers = []
-    from l2hmc.utils.rich import get_console
     console = get_console(
         markup=True,
         redirect=(WORLD_SIZE > 1),
@@ -106,7 +106,7 @@ def get_file_logger(
 ) -> logging.Logger:
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     import logging
-    fname = 'l2hmc' if fname is None else fname
+    fname = 'ezpz' if fname is None else fname
     log = logging.getLogger(name)
     if rank_zero_only:
         fh = logging.FileHandler(f"{fname}.log")
@@ -138,7 +138,9 @@ def get_logger(
     log = logging.getLogger(name)
     # log.handlers = []
     # from rich.logging import RichHandler
-    from l2hmc.utils.rich import get_console, is_interactive
+    # from l2hmc.utils.rich import get_console, is_interactive
+    from enrich.console import get_console
+    from enrich.rich import is_interactive
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
         if RANK != 0:
