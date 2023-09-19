@@ -5,12 +5,14 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
 from typing import Optional
+from enrich.console import is_interactive, get_console
 # import warnings
 
 from mpi4py import MPI
-from enrich.logging import RichHandler
+from enrich.handler import RichHandler
 import tqdm
 # from rich import print
+# from enrich import get_logger
 from pathlib import Path
 
 # warnings.filterwarnings('ignore')
@@ -35,7 +37,6 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
-from enrich import get_logger
 
 # # Check that MPS is available
 # if (
@@ -140,7 +141,7 @@ def get_logger(
     # from rich.logging import RichHandler
     # from l2hmc.utils.rich import get_console, is_interactive
     from enrich.console import get_console
-    from enrich.rich import is_interactive
+    # from enrich import is_interactive
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
         if RANK != 0:
