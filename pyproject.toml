@@ -26,7 +26,6 @@ dependencies = [
   "mpi4py",
   "torch",
   "bokeh",
-  "mpi4py",
   "h5py",
   "pillow",
   "xarray",
@@ -38,9 +37,7 @@ dependencies = [
   "arviz",
   "hydra-colorlog",
   "ipympl",
-  "aim",
   "tqdm",
-  "torchviz",
   "enrich @ git+https://github.com/saforem2/enrich",
   "opinionated @ git+https://github.com/saforem2/opinionated",
 ]
