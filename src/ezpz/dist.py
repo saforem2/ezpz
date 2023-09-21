@@ -18,7 +18,12 @@ from mpi4py import MPI
 # console = Console()
 # from rich.print import print
 from rich import print
-from enrich import get_logger
+# from enrich import get_logger
+# from ezpz import get_logger
+# from enrich.console import get_console
+
+# console = get_console()
+# log = get_logger(__name__)
 
 BACKENDS = [
     'deepspeed',
@@ -37,11 +42,12 @@ def setup_wandb(
     import wandb
     import socket
     import time
-    from pathlib import Path
+    # from pathlib import Path
     # from megatron import get_args
     # args = get_args()
-    from torch import distributed as ptdist
+    # from torch import distributed as ptdist
     # if ptdist.get_rank() == 0:
+    rank = get_rank()
     project_name = (
         project_name if project_name is not None
         else os.environ.get(
@@ -52,60 +58,62 @@ def setup_wandb(
             )
         )
     )
+    print(f"Setting up wandb from rank: {rank}")
     print(f"Using: WB PROJECT: {project_name}")
-    if get_rank() == 0:
-        # tensorboard_dir = args.tensorboard_dir
-        tensorboard_dir = None
-        if config is None:
-            tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
-        else:
-            tensorboard_dir = (
-                config.get(
-                    'tensorboard_dir',
-                    os.getcwd()
-                )
+    # if get_rank() == 0:
+    # tensorboard_dir = args.tensorboard_dir
+    tensorboard_dir = None
+    if config is None:
+        tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
+    else:
+        tensorboard_dir = (
+            config.get(
+                'tensorboard_dir',
+                None,  # os.getcwd()
             )
-        if tensorboard_dir is not None:
-            print(f'Patching tensorboard from {tensorboard_dir}')
-            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
-        # wbrun_id = wandb.util.generate_id()
-        current_time = time.time()
-        # local_time = time.localtime(current_time)
-        wbrun = wandb.init(
-            resume='allow',
-            sync_tensorboard=True,
-            project=(project_name if project_name is not None else None),
-            # dir=(tensorboard_dir if tensorboard_dir is not None else None),
         )
-        assert wandb.run is not None
-        wandb.run.log_code(Path(__file__).parent.parent.as_posix())  # type:ignore
-        wandb.run.config.update({'current_time': current_time})
-        model_size = os.environ.get('MODEL_SIZE', None)
-        wandb.run.config.update({'world_size': ptdist.get_world_size()})
-        if config is not None:
-            wandb.run.config.update({'config': config})
-        env = {
-            k: v for k, v in dict(os.environ).items()
-            if not k.startswith('_ModuleTable')
-        }
-        _ = env.pop('LS_COLORS', None)
-        _ = env.pop('PS1', None)
-        wandb.run.config.update({'env': env})
-        hostname = socket.gethostbyaddr(socket.gethostname())[0]
-        if hostname.startswith('theta'):
-            wandb.run.config.update({'machine': 'ThetaGPU'})
-        elif hostname.startswith('x3'):
-            wandb.run.config.update({'machine': 'Polaris'})
-        elif hostname.startswith('x1'):
-            wandb.run.config.update({'machine': 'Sunspot'})
-        elif hostname.startswith('nid'):
-            wandb.run.config.update({'machine': 'Perlmutter'})
-        elif hostname.startswith('login'):
-            wandb.run.config.update({'machine': 'NERSC'})
-        else:
-            wandb.run.config.update({'machine': hostname})
-        if model_size is not None:
-            wandb.run.config.update({'MODEL_SIZE': model_size})
+    if tensorboard_dir is not None:
+        print(f'Patching tensorboard from {tensorboard_dir}')
+        wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+    # wbrun_id = wandb.util.generate_id()
+    current_time = time.time()
+    # local_time = time.localtime(current_time)
+    # if wandb.run is None:
+    wandb.init(
+        resume='allow',
+        sync_tensorboard=(tensorboard_dir is not None),  # True,
+        project=(project_name if project_name is not None else None),
+        # dir=(tensorboard_dir if tensorboard_dir is not None else None),
+    )
+    assert wandb.run is not None
+    print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+    wandb.run.config.update({'current_time': current_time})
+    model_size = os.environ.get('MODEL_SIZE', None)
+    wandb.run.config.update({'world_size': get_world_size()})
+    if config is not None:
+        wandb.run.config.update(config)
+    env = {
+        k: v for k, v in dict(os.environ).items()
+        if not k.startswith('_ModuleTable')
+    }
+    _ = env.pop('LS_COLORS', None)
+    _ = env.pop('PS1', None)
+    wandb.run.config.update({'env': env})
+    hostname = socket.gethostbyaddr(socket.gethostname())[0]
+    if hostname.startswith('theta'):
+        wandb.run.config.update({'machine': 'ThetaGPU'})
+    elif hostname.startswith('x3'):
+        wandb.run.config.update({'machine': 'Polaris'})
+    elif hostname.startswith('x1'):
+        wandb.run.config.update({'machine': 'Sunspot'})
+    elif hostname.startswith('nid'):
+        wandb.run.config.update({'machine': 'Perlmutter'})
+    elif hostname.startswith('login'):
+        wandb.run.config.update({'machine': 'NERSC'})
+    else:
+        wandb.run.config.update({'machine': hostname})
+    if model_size is not None:
+        wandb.run.config.update({'MODEL_SIZE': model_size})
 
 
 
@@ -118,6 +126,84 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def setup_tensorflow(
+        precision: Optional[str] = None,
+        ngpus: Optional[int] = None,
+) -> int:
+    """Initialize TensorFlow + Horovod for Distributed Training"""
+    import tensorflow as tf
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    import horovod.tensorflow as hvd
+    hvd.init() if not hvd.is_initialized() else None
+    if precision in [
+            'fp16',
+            'float16',
+            'half',
+            '16',
+            'mixed_float16',
+            # 'mixed_bfloat16'
+    ]:
+        tf.keras.mixed_precision.set_global_policy(
+            'mixed_float16'
+        )
+        # tf.keras.backend.set_floatx('float16')
+        # mixed_precision.set_global_policy('mixed_float16')
+    else:
+        tf.keras.backend.set_floatx(precision)
+    TF_FLOAT = tf.keras.backend.floatx()
+    eager_mode = os.environ.get('TF_EAGER', None)
+    if eager_mode is not None:
+        print('Detected `TF_EAGER` from env. Running eagerly.')
+        tf.config.run_functions_eagerly(True)
+
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    cpus = tf.config.experimental.list_physical_devices('CPU')
+    if gpus:
+        try:
+            # Currently memory growth needs to be the same across GPUs
+            if ngpus is not None:
+                gpus = gpus[-ngpus:]
+
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            tf.config.experimental.set_visible_devices(
+                gpus[hvd.local_rank()],
+                'GPU',
+            )
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            if hvd.rank() == 0:
+                print(
+                    f'{len(gpus)}, Physical GPUs and '
+                    f'{len(logical_gpus)} Logical GPUs'
+                )
+        except RuntimeError as e:
+            print(e)
+    elif cpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            logical_cpus = tf.config.experimental.list_logical_devices('CPU')
+            print(
+                f'{len(cpus)}, Physical CPUs and '
+                f'{len(logical_cpus)} Logical CPUs'
+            )
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+    RANK = hvd.rank()
+    WORLD_SIZE = hvd.size()
+    LOCAL_RANK = hvd.local_rank()
+    # LOCAL_SIZE = hvd.local_size()
+    os.environ['RANK'] = str(RANK)
+    os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
+    os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
+    print(f'Using: {TF_FLOAT} precision')
+    print(f'RANK: {hvd.rank()}, LOCAL_RANK: {hvd.local_rank()}')
+    # log.info(f'Global Rank: {RANK} / {SIZE-1}')
+    # log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
+    return RANK
 
 
 def init_deepspeed():
@@ -242,7 +328,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+            print(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
