@@ -1,6 +1,13 @@
 # ezpz
 
-Simplifies the process of setting up distributed training.
+<img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a>
+<a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a> 
+
+Simplifies the process of setting up distributed training for:
+
+- `pytorch` + `{DDP, deepspeed, horovod}`
+
+- `tensorflow` + `horovod`
 
 Example:
 
@@ -10,7 +17,8 @@ Example:
 - Install:
 
   ```bash
-  python3 -m pip install "git+https://github.com/saforem2/ezpz"
+  git clone https://github.com/saforem2/ezpz
+  python3 -m pip install -e ezpz
   ```
 
 - Determine available resources:
