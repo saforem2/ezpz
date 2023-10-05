@@ -39,7 +39,6 @@ dependencies = [
   "ipympl",
   "tqdm",
   "enrich @ git+https://github.com/saforem2/enrich",
-  "opinionated @ git+https://github.com/saforem2/opinionated",
 ]
 
 dynamic = ["version"]
