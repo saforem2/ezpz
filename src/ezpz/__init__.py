@@ -14,6 +14,16 @@ import tqdm
 # from rich import print
 # from enrich import get_logger
 from pathlib import Path
+from ezpz.dist import (
+    setup_wandb,
+    seed_everything,
+    setup_tensorflow,
+    setup_torch,
+    cleanup,
+    get_world_size,
+    get_rank,
+    query_environment
+)
 
 # warnings.filterwarnings('ignore')
 
@@ -36,6 +46,18 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
+
+__all__ = [
+    'dist',
+    'setup_wandb',
+    'setup_tensorflow',
+    'setup_torch',
+    'cleanup',
+    'seed_everything',
+    'get_rank',
+    'get_world_size',
+    'query_environment',
+]
 
 
 # # Check that MPS is available
