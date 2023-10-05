@@ -66,6 +66,19 @@ Example:
       test(framework=framework, backend=backend, port=port)
   ```
 
+## Tests
+
+You can test a `{framework, backend}` combination by:
+
+
+```bash
+mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py framework backend
+```
+
+for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
+
+[^1]: `deepspeed`, `DDP` only support `pytorch`
+
 - ✅ PyTorch + DDP:
   ```bash
   mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py pytorch DDP
