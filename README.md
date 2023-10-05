@@ -1,5 +1,4 @@
 # ezpz
-2ez
 
 Simplifies the process of setting up distributed training.
 
@@ -29,196 +28,197 @@ Example:
 - Example `python` script:
 
   ```python
-  # test.py
-  import os
-  from ezpz.dist import setup_torch, setup_tensorflow
-
-
-  def main():
-      framework = os.environ.get('FRAMEWORK', 'pytorch')
-      backend = os.environ.get('BACKEND', 'DDP')
+  """
+  ezpz/test.py
+  """
+  from ezpz import setup_torch, setup_tensorflow
+  
+  
+  def test(
+          framework: str = 'pytorch',
+          backend: str = 'deepspeed',
+          port: int | str = '5432'
+  ):
       if framework == 'pytorch':
-          setup_torch(
+          _ = setup_torch(
               backend=backend,
+              port=port,
           )
       elif framework == 'tensorflow':
-          setup_tensorflow(backend='horovod')
+          _ = setup_tensorflow()
       else:
-          raise ValueError(f'Unrecognized framework: {framework}')
-
-
+          raise ValueError  
+  
   if __name__ == '__main__':
-      main()
+      import sys
+      try:
+          framework = sys.argv[1]
+      except IndexError:
+          framework = 'pytorch'
+      try:
+          backend = sys.argv[2]
+      except IndexError:
+          backend = 'deepspeed'
+      try:
+          port = sys.argv[3]
+      except IndexError:
+          port = '5432'
+      test(framework=framework, backend=backend, port=port)
   ```
 
-- PyTorch + DDP:
+- ✅ PyTorch + DDP:
   ```bash
-  FRAMEWORK=pytorch BACKEND=DDP mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py
+  mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py pytorch DDP
   ```
 
   <details closed><summary><b>Output:</b></summary>
     
   ```bash
-  Connected to tcp://x3005c0s31b0n0.hsn.cm.polaris.alcf.anl.gov:7919
-  Found executable /lus/grand/projects/datascience/foremans/locations/polaris/projects/saforem2/l2hmc-qcd/venvs/polaris/2023-09-21/bin/python3
-  Launching application cab4e1d7-bc92-4704-a2b8-b600fc621aa8
-  Using DDP for distributed training
-  Global Rank: 0 / 7
-  Global Rank: 7 / 7
-  Global Rank: 6 / 7
-  Global Rank: 2 / 7
-  Global Rank: 4 / 7
-  Global Rank: 5 / 7
-  Global Rank: 3 / 7
-  Global Rank: 1 / 7
+  Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+  Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+  Launching application c079ffa9-4732-45ba-995b-e5685330311b
+  [10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
   ```
   </details>
 
 
-- PyTorch + DeepSpeed:
+- ✅ PyTorch + DeepSpeed:
   ```bash
-  FRAMEWORK=pytorch BACKEND=deepspeed mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py
+  mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py pytorch deepspeed
   ```
 
   <details closed><summary><b>Output:</b></summary>
     
   ```bash
-  Connected to tcp://x3005c0s31b0n0.hsn.cm.polaris.alcf.anl.gov:7919
-  Found executable /lus/grand/projects/datascience/foremans/locations/polaris/projects/saforem2/l2hmc-qcd/venvs/polaris/2023-09-21/bin/python3
-  Launching application f677e525-0be5-41ca-8de1-2a39f082d29b
-  Using deepspeed for distributed training
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:38,144] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:10:59,340] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:10:59,340] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:10:59,339] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:637:init_distributed] cdb=None
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:11:00,036] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=0, local_rank=0, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=4, local_rank=0, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=1, local_rank=1, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=5, local_rank=1, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=2, local_rank=2, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=6, local_rank=2, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=3, local_rank=3, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=7, local_rank=3, world_size=8, master_addr=10.140.57.90, master_port=29500
-  [2023-09-22 11:11:01,577] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
-  Global Rank: 0 / 7
-  Global Rank: 5 / 7
-  Global Rank: 7 / 7
-  Global Rank: 4 / 7
-  Global Rank: 6 / 7
-  Global Rank: 3 / 7
-  Global Rank: 1 / 7
-  Global Rank: 2 / 7
+  Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+  Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+  Launching application c1c5bcd5-c300-4927-82e4-236d4643e31d
+  [10/05/23 16:56:34][INFO][dist.py:362] - Using deepspeed for distributed training
+  [2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+  [2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=4, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=5, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=0, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=6, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=1, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=7, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=2, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=3, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
+  [2023-10-05 16:56:41,621] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 0 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 2 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 1 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 7 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 4 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 5 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 6 / 7
+  [10/05/23 16:56:41][INFO][dist.py:413] - RANK: 3 / 7
   ```
 
   </details>
 
 
-- PyTorch + Horovod:
+- ✅ PyTorch + Horovod:
 
   ```bash
-  FRAMEWORK=pytorch BACKEND=horovod mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py
+  mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py pytorch horovod
   ```
 
   <details closed><summary><b>Output:</b></summary>
     
   ```bash
-  Connected to tcp://x3005c0s31b0n0.hsn.cm.polaris.alcf.anl.gov:7919
-  Found executable /lus/grand/projects/datascience/foremans/locations/polaris/projects/saforem2/l2hmc-qcd/venvs/polaris/2023-09-21/bin/python3
-  Launching application b6100af9-1c67-4aed-8571-057cecb561eb
-  Using horovod for distributed training
-  Global Rank: 5 / 7
-  Global Rank: 7 / 7
-  Global Rank: 6 / 7
-  Global Rank: 2 / 7
-  Global Rank: 1 / 7
-  Global Rank: 3 / 7
-  Global Rank: 4 / 7
-  Global Rank: 0 / 7
+  Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+  Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+  Launching application c079ffa9-4732-45ba-995b-e5685330311b
+  [10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
+  [10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
   ```
 
   </details>
 
-- TensorFlow + Horovod:
+- ✅ TensorFlow + Horovod:
 
   ```bash
-  $ FRAMEWORK=tensorflow BACKEND=horovod mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py
+  mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py tensorflow
   ```
 
   <details closed><summary><b>Output:</b></summary>
     
   ```bash
-  Connected to tcp://x3005c0s31b0n0.hsn.cm.polaris.alcf.anl.gov:7919
-  Found executable /lus/grand/projects/datascience/foremans/locations/polaris/projects/saforem2/l2hmc-qcd/venvs/polaris/2023-09-21/bin/python3
-  Launching application 46136d83-185d-4c2e-9e36-21cf0b570eae
-  2023-09-22 11:17:26.259738: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+  Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+  Launching application 2b7b89f3-5f40-42de-aa12-a15876baee09
+  2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.259735: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.259735: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.261666: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:49.870940: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.276882: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.276884: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.276916: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:50.038353: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:26.276914: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+  2023-10-05 16:56:50.038359: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
   To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-  2023-09-22 11:17:30.984040: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.013615: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0, 
-  compute capability: 8.0
-  4, Physical GPUs and 1 Logical GPUs
-  2023-09-22 11:17:31.177448: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.178344: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.178532: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.179635: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.181771: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0, 
-  compute capability: 8.0
-  2023-09-22 11:17:31.187252: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0, 
-  compute capability: 8.0
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  Using: float32 precision
-  RANK: 0, LOCAL_RANK: 0
-  RANK: 4, LOCAL_RANK: 0
-  RANK: 7, LOCAL_RANK: 3
-  RANK: 3, LOCAL_RANK: 3
-  RANK: 6, LOCAL_RANK: 2
-  RANK: 2, LOCAL_RANK: 2
-  RANK: 1, LOCAL_RANK: 1
-  RANK: 5, LOCAL_RANK: 1
+  2023-10-05 16:57:00.277129: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 4 / 7
+  2023-10-05 16:57:00.303774: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 0 / 7
+  2023-10-05 16:57:00.430211: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 5 / 7
+  2023-10-05 16:57:00.445891: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
+  2023-10-05 16:57:00.447921: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 1 / 7
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 2 / 7
+  2023-10-05 16:57:00.452035: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 6 / 7
+  2023-10-05 16:57:00.458780: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 7 / 7
+  2023-10-05 16:57:00.472986: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
+  [10/05/23 16:57:00][INFO][dist.py:203] - RANK: 3 / 7
   ```
 
   </details>
+
+2ez
