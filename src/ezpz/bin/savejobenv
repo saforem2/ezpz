@@ -2,36 +2,6 @@
 
 HOSTNAME=$(hostname)
 
-function getCobaltEnv() {
-  VARS=$(env | grep COBALT)
-}
-
-function getPBSEnv() {
-  VARS=$(env | grep PBS)
-}
-
-function getSlurmEnv() {
-  VARS=$(env | grep SLURM)
-}
-
-
-function saveSlurmEnv() {
-  outfile="~/.slurmjob"
-  echo "Saving SLURM_* to ~/.slurmjob"
-  echo "${VARS[*]}" > ~/.slurmjob
-  sed -i 's/^SLURM/export\ SLURM/g' ~/.slurmjob
-  sed -i 's/(x2)//g' ~/.slurmjob
-}
-
-function saveCobaltEnv() {
-  getCobaltEnv
-  outfile="~/.cobaltjob"
-  echo "Saving COBALT_* to ~/.cobaltjob"
-  echo "${VARS[*]}" > ~/.cobaltjob
-  sed -i 's/^COBALT/export\ COBALT/g' ~/.cobaltjob
-  # sed -i 's/()'
-}
-
 
 getCOBALT_NODEFILE() {
   RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
@@ -45,31 +15,30 @@ getCOBALT_NODEFILE() {
 }
 
 function savePBSenv() {
-
-  # {
-  #   echo "export PBS_ACCOUNT=${PBS_ACCOUNT}"
-  #   echo "export PBS_JOBCOOKIE=${PBS_JOBCOOKIE}"
-  #   echo "export PBS_JOBID=${PBS_JOBID}"
-  #   echo "export PBS_MOMPORT=${PBS_MOMPORT}"
-  #   echo "export PBS_NODENUM=${PBS_NODENUM}"
-  #   echo "export PBS_O_HOST=${PBS_O_HOST}"
-  #   echo "export PBS_O_LOGNAME=${PBS_O_LOGNAME}"
-  #   echo "export PBS_O_PATH=${PBS_O_PATH}"
-  #   echo "export PBS_O_SHELL=${PBS_O_SHELL}"
-  #   echo "export PBS_O_TZ=${PBS_O_TZ}"
-  #   echo "export PBS_QUEUE=${PBS_QUEUE}"
-  #   echo "export PBS_ENVIRONMENT=${PBS_ENVIRONMENT}"
-  #   echo "export PBS_JOBDIR=${PBS_JOBDIR}"
-  #   echo "export PBS_JOBNAME=${PBS_JOBNAME}"
-  #   echo "export PBS_NODEFILE=${PBS_NODEFILE}"
-  #   echo "export PBS_O_HOME=${PBS_O_HOME}"
-  #   echo "export PBS_O_LANG=${PBS_O_LANG}"
-  #   echo "export PBS_O_MAIL=${PBS_O_MAIL}"
-  #   echo "export PBS_O_QUEUE=${PBS_O_QUEUE}"
-  #   echo "export PBS_O_SYSTEM=${PBS_O_SYSTEM}"
-  #   echo "export PBS_O_WORKDIR=${PBS_O_WORKDIR}"
-  #   echo "export PBS_TASKNUM=${PBS_TASKNUM}"
-  # } >> "${JOBENV_FILE}}"
+  {
+    echo "export PBS_ACCOUNT=${PBS_ACCOUNT}"
+    echo "export PBS_JOBCOOKIE=${PBS_JOBCOOKIE}"
+    echo "export PBS_JOBID=${PBS_JOBID}"
+    echo "export PBS_MOMPORT=${PBS_MOMPORT}"
+    echo "export PBS_NODENUM=${PBS_NODENUM}"
+    echo "export PBS_O_HOST=${PBS_O_HOST}"
+    echo "export PBS_O_LOGNAME=${PBS_O_LOGNAME}"
+    echo "export PBS_O_PATH=${PBS_O_PATH}"
+    echo "export PBS_O_SHELL=${PBS_O_SHELL}"
+    echo "export PBS_O_TZ=${PBS_O_TZ}"
+    echo "export PBS_QUEUE=${PBS_QUEUE}"
+    echo "export PBS_ENVIRONMENT=${PBS_ENVIRONMENT}"
+    echo "export PBS_JOBDIR=${PBS_JOBDIR}"
+    echo "export PBS_JOBNAME=${PBS_JOBNAME}"
+    echo "export PBS_NODEFILE=${PBS_NODEFILE}"
+    echo "export PBS_O_HOME=${PBS_O_HOME}"
+    echo "export PBS_O_LANG=${PBS_O_LANG}"
+    echo "export PBS_O_MAIL=${PBS_O_MAIL}"
+    echo "export PBS_O_QUEUE=${PBS_O_QUEUE}"
+    echo "export PBS_O_SYSTEM=${PBS_O_SYSTEM}"
+    echo "export PBS_O_WORKDIR=${PBS_O_WORKDIR}"
+    echo "export PBS_TASKNUM=${PBS_TASKNUM}"
+  } >> "${JOBENV_FILE}"
 }
 
 function envSave() {
