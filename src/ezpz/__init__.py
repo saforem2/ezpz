@@ -25,8 +25,19 @@ from ezpz.dist import (
     query_environment
 )
 
-# warnings.filterwarnings('ignore')
+__all__ = [
+    'dist',
+    'setup_wandb',
+    'setup_tensorflow',
+    'setup_torch',
+    'cleanup',
+    'seed_everything',
+    'get_rank',
+    'get_world_size',
+    'query_environment',
+]
 
+# warnings.filterwarnings('ignore')
 # -- Configure useful Paths -----------------------
 HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
@@ -46,19 +57,6 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
-
-__all__ = [
-    'dist',
-    'setup_wandb',
-    'setup_tensorflow',
-    'setup_torch',
-    'cleanup',
-    'seed_everything',
-    'get_rank',
-    'get_world_size',
-    'query_environment',
-]
-
 
 # # Check that MPS is available
 # if (
@@ -203,3 +201,38 @@ def get_logger(
     ):
         log.handlers = [log.handlers[0]]
     return log
+
+
+def test(
+        framework: str = 'pytorch',
+        backend: str = 'deepspeed',
+        port: int | str = '5432'
+):
+    if framework == 'pytorch':
+        _ = setup_torch(
+            backend=backend,
+            port=port,
+        )
+    elif framework == 'tensorflow':
+        _ = setup_tensorflow()
+    else:
+        raise ValueError
+    # WORLD_SIZE = get_world_size()
+    # print(f'{RANK} / {WORLD_SIZE}')
+
+
+if __name__ == '__main__':
+    import sys
+    try:
+        framework = sys.argv[1]
+    except IndexError:
+        framework = 'pytorch'
+    try:
+        backend = sys.argv[2]
+    except IndexError:
+        backend = 'deepspeed'
+    try:
+        port = sys.argv[3]
+    except IndexError:
+        port = '5432'
+    test_framework_backend(framework=framework, backend=backend, port=port)
