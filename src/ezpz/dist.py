@@ -7,12 +7,23 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import os
 
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
+from pathlib import Path
 from mpi4py import MPI
-
 from enrich import get_logger
+# from rich import print
 
-log = get_logger(__name__)
+# comm = MPI.COMM_WORLD
+#
+# RANK = comm.Get_rank()
+# SIZE = comm.Get_size()
+#
+
+# if RANK == 0:
+log = get_logger(__name__, level='DEBUG')
+# else:
+#     log = get_logger(__name__, level='CRITICAL')
+
 
 BACKENDS = [
     'deepspeed',
@@ -146,7 +157,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+            print(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
@@ -168,7 +179,7 @@ def setup_torch_distributed(
     be = backend.lower()
     assert be in BACKENDS
     if rank == 0 and local_rank == 0:
-        log.info(f'Using {backend} for distributed training')
+        print(f'Using {backend} for distributed training')
     if be in ['ddp', 'DDP']:
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
@@ -201,6 +212,7 @@ def setup_torch(
         seed: Optional[int] = None,
 ) -> int:
     import torch
+    # from rich import print
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     torch.backends.cudnn.deterministic = True     # type:ignore
     torch.backends.cudnn.benchmark = True         # type:ignore
@@ -219,7 +231,7 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    log.info(f'RANK: {rank} / {world_size-1}')
+    print(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
@@ -258,7 +270,7 @@ def setup_tensorflow(
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
     if eager_mode is not None:
-        log.info('Detected `TF_EAGER` from env. Running eagerly.')
+        print('Detected `TF_EAGER` from env. Running eagerly.')
         tf.config.run_functions_eagerly(True)
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -277,23 +289,23 @@ def setup_tensorflow(
             )
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             # if hvd.rank() == 0:
-            #     log.info(
+            #     print(
             #         f'{len(gpus)}, Physical GPUs and '
             #         f'{len(logical_gpus)} Logical GPUs'
             #     )
         except RuntimeError as e:
-            log.info(e)
+            print(e)
     elif cpus:
         try:
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices('CPU')
-            log.info(
+            print(
                 f'{len(cpus)}, Physical CPUs and '
                 f'{len(logical_cpus)} Logical CPUs'
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
-            log.info(e)
+            print(e)
     RANK = hvd.rank()
     WORLD_SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
@@ -301,9 +313,9 @@ def setup_tensorflow(
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
-    log.info(f'RANK: {RANK} / {WORLD_SIZE-1}')
+    print(f'RANK: {RANK} / {WORLD_SIZE-1}')
     if RANK == 0:
-        log.info(f"Using {TF_FLOAT} precision")
+        print(f"Using {TF_FLOAT} precision")
     return RANK
 
 
@@ -326,8 +338,8 @@ def setup_wandb(
             )
         )
     )
-    log.info(f"Setting up wandb from rank: {rank}")
-    log.info(f"Using: WB PROJECT: {project_name}")
+    print(f"Setting up wandb from rank: {rank}")
+    print(f"Using: WB PROJECT: {project_name}")
     # if get_rank() == 0:
     # tensorboard_dir = args.tensorboard_dir
     tensorboard_dir = None
@@ -341,7 +353,7 @@ def setup_wandb(
             )
         )
     if tensorboard_dir is not None:
-        log.info(f'Patching tensorboard from {tensorboard_dir}')
+        print(f'Patching tensorboard from {tensorboard_dir}')
         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
     # wbrun_id = wandb.util.generate_id()
     current_time = time.time()
@@ -354,7 +366,7 @@ def setup_wandb(
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
     )
     assert wandb.run is not None
-    log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+    print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
     wandb.run.config.update({'current_time': current_time})
     model_size = os.environ.get('MODEL_SIZE', None)
     wandb.run.config.update({'world_size': get_world_size()})
@@ -383,3 +395,133 @@ def setup_wandb(
     if model_size is not None:
         wandb.run.config.update({'MODEL_SIZE': model_size})
 
+
+def run_bash_command(cmd: str) -> Any:
+    import subprocess
+
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+    if error:
+        raise Exception(error)
+    else:
+        return output
+
+
+def inspect_cobalt_running_job() -> dict[str, str | os.PathLike]:
+    running_job_file = Path('/var/tmp/cobalt-running-job')
+    with running_job_file.open('r') as f:
+        tmp = f.readlines()
+        jobid, uname = tmp[0].rstrip('\n').split(':')
+        cobalt_nodefile = Path(f'/var/tmp/cobalt.{jobid}')
+        os.environ['COBALT_NODEFILE'] = cobalt_nodefile.as_posix()
+    return {
+        'user': uname,
+        'jobid': jobid,
+        'COBALT_NODEFILE': cobalt_nodefile,
+    }
+
+
+
+def get_cobalt_nodefile() -> Path:
+    cobalt_nodefile = os.environ.get('COBALT_NODEFILE', None)
+    if cobalt_nodefile is None:
+        log.warning('COBALT_NODEFILE not in `env`!')
+        print('Attempting to deduce from `/var/tmp/cobalt-running-job`...')
+        cobalt_info = inspect_cobalt_running_job()
+        print(f"Found COBALT info: {cobalt_info}")
+        cobalt_nodefile = cobalt_info['COBALT_NODEFILE']
+    return Path(cobalt_nodefile)
+
+
+def get_nodes_from_hostfile(hostfile: os.PathLike) -> list[str]:
+    # cobalt_nodefile = get_cobalt_nodefile()
+    fpath = Path(hostfile)
+    assert fpath.is_file()
+    with fpath.open('r') as f:
+        nodes = [i.rstrip('\n') for i in f.readlines()]
+    return nodes
+
+
+def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
+    import sh
+    gpus_per_node = int(sh.wc("-l", _in=sh.nvidia_smi("-L")).rstrip("\n"))
+    if _assert:
+        import torch
+        assert gpus_per_node == torch.cuda.device_count()
+    return gpus_per_node
+
+
+def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
+    cobalt_info = inspect_cobalt_running_job()
+    # cobalt_nodefile = get_cobalt_nodefile()
+    nodes = get_nodes_from_hostfile(cobalt_info["COBALT_NODEFILE"])
+    gpus_per_node = get_gpus_per_node()
+    cobalt_info |= {
+        'nodes': nodes,
+        'num_nodes': len(nodes),
+        'gpus_per_node': gpus_per_node,
+        'num_gpus': len(nodes) * gpus_per_node,
+        'machine': 'ThetaGPU',
+    }
+    return cobalt_info
+
+
+
+def build_mpiexec_thetagpu(
+        # ngpus: Optional[int] = None,
+        # hostfile: Optional[os.PathLike] = None
+):
+    import subprocess
+    jobenv = get_cobalt_resources()
+    # which_mpi = subprocess.Popen('which mpirun', shell=True)
+    import sh
+    which_mpi = sh.which('mpirun').rstrip('\n')
+    mpiexec = [
+        f"{which_mpi}",
+        f"-n {jobenv['num_nodes']}",
+        f"-npernode {jobenv['gpus_per_node']}",
+        f"--hostfile {jobenv['COBALT_NODEFILE']}",
+        "-x PATH",
+        "-x LD_LIBRARY_PATH",
+        "-x http_proxy",
+        "-x https_proxy",
+    ]
+    return mpiexec
+
+
+def run_mpiexec(cmd: str):
+    import subprocess
+    mpiexec = ' '.join(build_mpiexec_thetagpu())
+    # python3 = sys.executable
+    # ezpz_test = '-m ezpz.check'
+    print(f'Executing: {mpiexec} {cmd}')
+    return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
+
+
+
+def mpi_test_framework_backend(
+    framework: str = 'pytorch',
+    backend: str = 'DDP',
+):
+    import sys
+    python3 = sys.executable
+    py_cmd = f'{python3} -m ezpz.check {framework} {backend}'
+    run_mpiexec(py_cmd)
+
+
+
+if __name__ == '__main__':
+    from ezpz import test
+    import sys
+    try:
+        framework = sys.argv[1]
+    except IndexError:
+        framework = 'pytorch'
+    try:
+        backend = sys.argv[2]
+    except IndexError:
+        backend = 'deepspeed'
+    try:
+        port = sys.argv[3]
+    except IndexError:
+        port = '5432'
