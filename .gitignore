@@ -1,3 +1,4 @@
+venvs/*
 *old*
 *.DS_Store
 *.jukit
