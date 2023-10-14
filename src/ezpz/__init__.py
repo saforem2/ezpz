@@ -203,7 +203,7 @@ def get_logger(
     return log
 
 
-def test(
+def check(
         framework: str = 'pytorch',
         backend: str = 'deepspeed',
         port: int | str = '5432'
@@ -235,4 +235,4 @@ if __name__ == '__main__':
         port = sys.argv[3]
     except IndexError:
         port = '5432'
-    test_framework_backend(framework=framework, backend=backend, port=port)
+    check(framework=framework, backend=backend, port=port)
