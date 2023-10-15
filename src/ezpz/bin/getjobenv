@@ -5,14 +5,18 @@ export HOMEDIR="$HOME"
 
 
 getCOBALT_NODEFILE() {
-  if [[ "${HOSTNAME}" == x3* ]]; then
-    JOBENV_FILE="${HOME}/.jobenv-polaris"
-    export JOBENV_FILE="$JOBENV_FILE"
-    # if [[ -f "$HOME/.jobenv-polaris" ]] ; then
-    #   source "~/.jobenv-polaris"
-    # fi
-    # export MPI_COMMAND="mpiexec --verbose -n 2 --ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE --envall"
-  elif [[ "${HOSTNAME}" == thetagpu* ]]; then
+  # if [[ ${HOSTNAME}== x3* ]]; then
+  # if [[ $(hostname)==x3* ]]; then
+  #   # JOBENV_FILE="${HOME}/.jobenv-polaris"
+  #   JOBENV_FILE="${HOME}/.pbsenv"
+  #   export JOBENV_FILE="$JOBENV_FILE"
+  #   # if [[ -f "$HOME/.jobenv-polaris" ]] ; then
+  #   #   source "~/.jobenv-polaris"
+  #   # fi
+  #   # export MPI_COMMAND="mpiexec --verbose -n 2 --ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE --envall"
+  # # elif [[ ${HOSTNAME}==thetagpu* ]]; then
+  # if [[ $(hostname)==theta* ]]; then
+  if [[ "${HOSTNAME}" == thetagpu* ]]; then
     RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
     echo "RUNNING_JOB_FILE: $RUNNING_JOB_FILE"
     if [[ -f "$RUNNING_JOB_FILE" ]]; then
@@ -29,25 +33,62 @@ getCOBALT_NODEFILE() {
   fi
 }
 
-getJobEnv() {
+function getPBSenv() {
+  # if [[ "$(hostname)==x3*" ]]; then
   if [[ "${HOSTNAME}" == x3* ]]; then
-    JOBENV_FILE="${HOME}/.jobenv-polaris"
+    # JOBENV_FILE="${HOME}/.jobenv-polaris"
+    JOBENV_FILE="${HOME}/.pbsenv"
+    if [[ -f "${JOBENV_FILE}" ]]; then
+      source "${JOBENV_FILE}"
+    else
+      echo "NO $JOBENV_FILE"
+    fi
+    # [ "${JOBENV_FILE}" ] && source "${JOBENV_FILE}" || echo "No JOBENV_FILE at ${JOBENV_FILE}"
     export JOBENV_FILE="$JOBENV_FILE"
+    alias mpilaunch="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
     # if [[ -f "$HOME/.jobenv-polaris" ]] ; then
     #   source "~/.jobenv-polaris"
     # fi
     # export MPI_COMMAND="mpiexec --verbose -n 2 --ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE --envall"
-  elif [[ "${HOSTNAME}" == thetagpu* ]]; then
+    # elif [[ ${HOSTNAME}==thetagpu* ]]; then
+  fi
+}
+
+function getCOBALTenv() {
+  # if [[ "$(hostname)==thetagpu*" ]]; then
+  if [[ "${HOSTNAME}" == thetagpu* ]]; then
     getCOBALT_NODEFILE
-    JOBENV_FILE="${HOME}/.jobenv-thetaGPU"
+    JOBENV_FILE="${HOME}/.cobaltenv"
+    if [[ -f "${JOBENV_FILE}" ]]; then
+      source "${JOBENV_FILE}"
+    else
+      echo "NO $JOBENV_FILE"
+    fi
+    # [ "${JOBENV_FILE}" ] && source "${JOBENV_FILE}" || echo "No JOBENV_FILE at ${JOBENV_FILE}"
+    # [ "${JOBENV_FILE}" ] && source "${JOBENV_FILE}" || echo "No JOBENV_FILE at ${JOBENV_FILE}"
+    alias mpilaunch="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
     # if [[ -f "$HOME/.jobenv-thetaGPU" ]] ; then
     #   source "~/.jobenv-thetaGPU"
     # fi
-  else
-    JOBENV_FILE="$HOME/.jobenv"
   fi
+}
+
+function getJobEnv() {
+  # [ "$(hostname)==thetagpu*" ] && getCOBALTenv
+  if [[ "${HOSTNAME}" == thetagpu* ]]; then
+    getCOBALTenv
+  elif [[ "${HOSTNAME}" == x3* ]]; then
+    getPBSenv
+  else
+    echo "Unexpected hostname ${HOSTNAME}"
+  fi
+  # [ "$(hostname)==x3*" ] && getPBSenv
+  # else
+  #   JOBENV_FILE="$HOME/.jobenv"
+  # fi
   export JOBENV_FILE="$JOBENV_FILE"
   echo "Loading job env from: ${JOBENV_FILE}"
+  echo "Defining alias mpilaunch: $(which mpilaunch)"
   # cat "${JOBENV_FILE}"
   # test condition && echo "true" || echo "false"
   source "${JOBENV_FILE}"
