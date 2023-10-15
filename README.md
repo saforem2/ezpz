@@ -242,4 +242,100 @@ for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, dee
 
   </details>
 
+
+## Helper Utilities
+
+- [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv): 
+  - Shell script to save relevant job related environment variables to a file
+    which can be sourced from new login instances.
+  - e.g.:
+    ```bash
+    (thetalogin5) $ qsub-gpu -A datascience -n 4 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 12:00 -I
+    (thetagpu13) $ git clone https://github.com/saforem2/ezpz
+    (thetagpu13) $ cd ezpz/src/ezpz
+    (thetagpu13) $ ./bin/savejobenv
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ [DIST INFO]:
+    │   • Writing Job info to /home/foremans/.cobaltenv
+    │       • NHOSTS: 4
+    │       • NGPU_PER_HOST: 8
+    │       • NGPUS = (NHOSTS * NGPU_PER_HOST) = 32
+    └──────────────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ Saving COBALT env to /home/foremans/.cobaltenv from thetagpu13
+    │ Writing COBALT vars to /home/foremans/.cobaltenv                 │
+    └──────────────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ Copying COBALT_NODEFILE to clipboard...
+    │ COBALT_NODEFILE: /var/tmp/cobalt.10154591
+    │ [Hosts]:
+    │   thetagpu13 thetagpu12 thetagpu19 thetagpu18
+    └──────────────────────────────────────────────────────────────────┘
+    ┌───────────────────────────────────────────────────────────────────────┐
+    │ Run 'source getjobenv' in a NEW SHELL to automatically set env vars   │
+    └───────────────────────────────────────────────────────────────────────┘
+    ```
+
+  - now, in a **NEW SHELL**
+    ```bash
+    (localhost) $ ssh foremans@theta
+    (thetalogin5) $ ssh thetagpu18
+    (thetagpu18) $ module load conda/2023-01-11; cond activate base
+    (thetagpu18) $ cd ezpz
+    (thetagpu18) $ mkdir -p venvs/thetaGPU/2023-01-11
+    (thetagpu18) $ python3 -m venv venvs/thetaGPU/2023-01-11 --system-site-packages
+    (thetagpu18) $ source venvs/thetaGPU/2023-01-11/bin/activate
+    (thetagpu18) $ python3 -m pip install -e .
+    (thetagpu18) $ cd ezpz/src/ezpz
+    (thetagpu18) $ source bin/getjobenv
+    RUNNING_JOB_FILE: /var/tmp/cobalt-running-job
+    JOBID: 10154591
+    Loading job env from: /home/foremans/.cobaltenv
+    Defining alias mpilaunch: mpilaunch: aliased to mpirun -n 32 -N 8 --hostfile /var/tmp/cobalt.10154591 -x PATH -x LD_LIBRARY_PATH
+    HOSTFILE: /var/tmp/cobalt.10154591
+    NHOSTS: 4
+    NGPU_PER_HOST: 8
+    NGPUS (NHOSTS x NGPU_PER_HOST): 32
+    HOSTS: thetagpu13 thetagpu12 thetagpu19 thetagpu18
+    (thetagpu18) $ mpilaunch python3 -m ezpz pytorch DDP
+    Using DDP for distributed training
+    RANK: 0 / 31
+    RANK: 25 / 31
+    RANK: 24 / 31
+    RANK: 15 / 31
+    RANK: 26 / 31
+    RANK: 31 / 31
+    RANK: 2 / 31
+    RANK: 12 / 31
+    RANK: 1 / 31
+    RANK: 28 / 31
+    RANK: 3 / 31
+    RANK: 14 / 31
+    RANK: 4 / 31
+    RANK: 10 / 31
+    RANK: 27 / 31
+    RANK: 5 / 31
+    RANK: 30 / 31
+    RANK: 29 / 31
+    RANK: 9 / 31
+    RANK: 7 / 31
+    RANK: 6 / 31
+    RANK: 13 / 31
+    RANK: 8 / 31
+    RANK: 11 / 31
+    RANK: 18 / 31
+    RANK: 16 / 31
+    RANK: 21 / 31
+    RANK: 20 / 31
+    RANK: 22 / 31
+    RANK: 19 / 31
+    RANK: 17 / 31
+    RANK: 23 / 31
+    ```
+
+while this example looked at ThetaGPU, the exact same process will work on any
+of `{ThetaGPU, Polaris, Perlmutter}`.
+
+
+
 2ez
