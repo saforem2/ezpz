@@ -22,9 +22,10 @@ from ezpz.dist import (
     cleanup,
     get_world_size,
     get_rank,
-    query_environment
+    query_environment,
+    check
 )
-from ezpz.test import check
+# from ezpz.test import check
 
 __all__ = [
     'dist',
