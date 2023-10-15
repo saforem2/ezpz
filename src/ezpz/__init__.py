@@ -24,6 +24,7 @@ from ezpz.dist import (
     get_rank,
     query_environment
 )
+from ezpz.test import check
 
 __all__ = [
     'dist',
@@ -35,6 +36,7 @@ __all__ = [
     'get_rank',
     'get_world_size',
     'query_environment',
+    'check'
 ]
 
 # warnings.filterwarnings('ignore')
@@ -202,37 +204,19 @@ def get_logger(
         log.handlers = [log.handlers[0]]
     return log
 
-
-def check(
-        framework: str = 'pytorch',
-        backend: str = 'deepspeed',
-        port: int | str = '5432'
-):
-    if framework == 'pytorch':
-        _ = setup_torch(
-            backend=backend,
-            port=port,
-        )
-    elif framework == 'tensorflow':
-        _ = setup_tensorflow()
-    else:
-        raise ValueError
-    # WORLD_SIZE = get_world_size()
-    # print(f'{RANK} / {WORLD_SIZE}')
-
-
-if __name__ == '__main__':
-    import sys
-    try:
-        framework = sys.argv[1]
-    except IndexError:
-        framework = 'pytorch'
-    try:
-        backend = sys.argv[2]
-    except IndexError:
-        backend = 'deepspeed'
-    try:
-        port = sys.argv[3]
-    except IndexError:
-        port = '5432'
-    check(framework=framework, backend=backend, port=port)
+#
+# if __name__ == '__main__':
+#     import sys
+#     try:
+#         framework = sys.argv[1]
+#     except IndexError:
+#         framework = 'pytorch'
+#     try:
+#         backend = sys.argv[2]
+#     except IndexError:
+#         backend = 'deepspeed'
+#     try:
+#         port = sys.argv[3]
+#     except IndexError:
+#         port = '5432'
+#     check(framework=framework, backend=backend, port=port)
