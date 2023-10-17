@@ -25,7 +25,20 @@ from ezpz.dist import (
     query_environment,
     check
 )
-# from ezpz.test import check
+
+from ezpz.configs import (
+    HERE,
+    PROJECT_DIR,
+    PROJECT_ROOT,
+    CONF_DIR,
+    LOGS_DIR,
+    OUTPUTS_DIR,
+    QUARTO_OUTPUTS_DIR,
+    FRAMEWORKS,
+    BACKENDS,
+    load_ds_config,
+    TrainConfig
+)
 
 __all__ = [
     'dist',
@@ -38,23 +51,18 @@ __all__ = [
     'get_world_size',
     'query_environment',
     'check'
+    'HERE',
+    'PROJECT_DIR',
+    'PROJECT_ROOT',
+    'CONF_DIR',
+    'LOGS_DIR',
+    'OUTPUTS_DIR',
+    'QUARTO_OUTPUTS_DIR',
+    'FRAMEWORKS',
+    'BACKENDS',
+    'load_ds_config',
+    'TrainConfig',
 ]
-
-# warnings.filterwarnings('ignore')
-# -- Configure useful Paths -----------------------
-HERE = Path(os.path.abspath(__file__)).parent
-PROJECT_DIR = HERE.parent.parent
-PROJECT_ROOT = PROJECT_DIR
-CONF_DIR = HERE.joinpath('conf')
-LOGS_DIR = PROJECT_DIR.joinpath('logs')
-OUTPUTS_DIR = HERE.joinpath('outputs')
-QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
-
-CONF_DIR.mkdir(exist_ok=True, parents=True)
-LOGS_DIR.mkdir(exist_ok=True, parents=True)
-QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
-OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
-OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
