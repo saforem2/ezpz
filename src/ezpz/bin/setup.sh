@@ -111,17 +111,19 @@ function setupPolaris() {
 function setupPerlmutter() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export MACHINE="Perlmutter"
+        SLURM_NODES=$(scontrol show hostname "${SLURM_NODELIST}")
+        SLURM_NODEFILE="${HOME}/.slurm-nodefile"
+        printf "%s\n" "${SLURM_NODES[@]}" > "${SLURM_NODEFILE}"
+        export HOSTFILE="${HOSTFILE:-${SLURM_NODEFILE}}"
         [ "$SLURM_JOB_ID" ] \
             && echo "Caught SLURM_JOB_ID: ${SLURM_JOB_ID}" \
             || echo "!!!!!! Running without SLURM allocation !!!!!!!!"
-
         module load libfabric cudatoolkit pytorch/2.0.1
         export NODELIST="${SLURM_NODELIST:-$(hostname)}"
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
         export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
         LAUNCH="$(which srun) -N ${NHOSTS} -n ${NGPUS} -l u"
-        # alias mpilaunch="${LAUNCH}"
     else
         echo "[setupPerlmutter]: Unexpected hostname $(hostname)"
     fi
@@ -150,15 +152,16 @@ function pprint() {
 
 function printJobInfo() {
     ARGS=$*
-    if [[ "${HOSTFILE}" ]]; then
-        HOSTS_ARR=$(cat "${HOSTFILE}")
-        HOSTS=$(join_by ' ' "${HOSTS_ARR}")
-    elif [[ "${SLURM_NODELIST}" ]]; then
-        HOSTS="${SLURM_NODELIST}"
-    else
-        echo "[printJobInfo][WARNING]: HOSTFILE not set, using resources on localhost!"
-        HOSTS=$(hostname)
-    fi
+    HOSTS_ARR=$(cat "${HOSTFILE:-$(hostname)}")
+    # if [[ "${HOSTFILE}" ]]; then
+    #     HOSTS_ARR=$(cat "${HOSTFILE}")
+    #     HOSTS=$(join_by ' ' "${HOSTS_ARR}")
+    # elif [[ "${SLURM_NODELIST}" ]]; then
+    #     HOSTS="${SLURM_NODELIST}"
+    # else
+    #     echo "[printJobInfo][WARNING]: HOSTFILE not set, using resources on localhost!"
+    #     HOSTS=$(hostname)
+    # fi
     echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Job started at: ${TSTAMP} on ${HOST} by ${USER}"
     echo "│ [setup.sh]: Job running in: ${DIR}"
@@ -173,9 +176,13 @@ function printJobInfo() {
     echo "│ [setup.sh]: LOGDIR=${LOGDIR}"
     echo "│ [setup.sh]: LOGFILE=${LOGFILE}"
     echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    # echo "┌─────────────────────────────────────────────────────────────────────"  # ┐"
+    # echo "│ [setup.sh]: [Hosts][${HOSTFILE}]: "
+    # echo "│ [setup.sh]:   ${HOSTS[*]}"
+    # echo "└──────────────────────────────────────────────────────────────────┘"
     echo "┌─────────────────────────────────────────────────────────────────────"  # ┐"
-    echo "│ [setup.sh]: [Hosts][${HOSTFILE}]: "
-    echo "│ [setup.sh]:   ${HOSTS[*]}"
+    echo "│ [setup.sh]: HOSTS: "
+    echo "│   $(join_by ', ' $HOSTS_ARR)"
     echo "│ [setup.sh]: Using ${NHOSTS} hosts from ${HOSTFILE}"
     echo "│ [setup.sh]: With ${NGPU_PER_HOST} GPUs per host"
     echo "│ [setup.sh]: For a total of: ${NGPUS} GPUs"
