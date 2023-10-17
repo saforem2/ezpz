@@ -9,22 +9,12 @@ import os
 
 from typing import Optional, Callable, Any
 from pathlib import Path
+from omegaconf import DictConfig, OmegaConf
 from mpi4py import MPI
 import logging
-from ezpz.configs import FRAMEWORKS, BACKENDS
+from ezpz.configs import FRAMEWORKS, BACKENDS, HERE
 
 log = logging.getLogger(__name__)
-
-
-
-# BACKENDS = FRAMEWORKS.values()
-# BACKENDS = [
-#     'deepspeed',
-#     'ds',
-#     'ddp',
-#     'horovod',
-#     'hvd',
-# ]
 
 
 def seed_everything(seed: int):
@@ -124,7 +114,6 @@ def get_local_rank() -> int:
             )
         )
     )
-
 
 
 def query_environment() -> dict[str, int]:
@@ -331,10 +320,9 @@ def setup_tensorflow(
     return RANK
 
 
-
 def setup_wandb(
         project_name: Optional[str] = None,
-        config: Optional[dict] = None,
+        config: Optional[dict | DictConfig] = None,
 ):
     import wandb
     import socket
@@ -372,18 +360,27 @@ def setup_wandb(
     # local_time = time.localtime(current_time)
     # if wandb.run is None:
     wandb.init(
-        resume='allow',
+        # resume='allow',
+        dir=os.getcwd(),
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
     )
     assert wandb.run is not None
+    wandb.run.log_code(HERE.as_posix())
     log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
     wandb.run.config.update({'current_time': current_time})
-    model_size = os.environ.get('MODEL_SIZE', None)
     wandb.run.config.update({'world_size': get_world_size()})
+    wandb.run.config.update({'outdir': os.getcwd()})
+    wandb.run.config.update({'hostname': rank})
     if config is not None:
-        wandb.run.config.update(config)
+        if isinstance(config, DictConfig):
+            config = OmegaConf.to_container(
+                config,
+                resolve=True,
+                throw_on_missing=True
+            )
+        wandb.run.config.update({'config': config})
     env = {
         k: v for k, v in dict(os.environ).items()
         if not k.startswith('_ModuleTable')
@@ -392,6 +389,24 @@ def setup_wandb(
     _ = env.pop('PS1', None)
     wandb.run.config.update({'env': env})
     hostname = socket.gethostbyaddr(socket.gethostname())[0]
+    hostfile = os.environ.get(
+        'HOSTFILE',
+        os.environ.get(
+            'PBS_NODEFILE',
+            os.environ.get(
+                'COBALT_NODEFILE',
+                os.environ.get(
+                    'SLURM_JOB_NODELIST',
+                    None
+                )
+            )
+        )
+    )
+    if hostfile is not None:
+        if (hpath := Path(hostfile).resolve().is_file()):
+            with hpath.open('r') as f:
+                hosts = f.readlines()
+            wandb.run.config['hosts'] = hosts
     if hostname.startswith('theta'):
         wandb.run.config.update({'machine': 'ThetaGPU'})
     elif hostname.startswith('x3'):
@@ -404,6 +419,7 @@ def setup_wandb(
         wandb.run.config.update({'machine': 'NERSC'})
     else:
         wandb.run.config.update({'machine': hostname})
+    model_size = os.environ.get('MODEL_SIZE', None)
     if model_size is not None:
         wandb.run.config.update({'MODEL_SIZE': model_size})
 
