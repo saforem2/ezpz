@@ -3,156 +3,141 @@
 HOSTNAME=$(hostname)
 PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
+SLURM_ENV_FILE="${HOME}/.slurmenv"
 
 function join_by { local d=${1-} f=${2-}; if shift 2; then printf %s "$f" "${@/#/$d}"; fi; }
 
 
 function getCOBALT_NODEFILE() {
-  RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
-  if [[ -f "$RUNNING_JOB_FILE" ]]; then
-    JOBID=$(sed "s/:$USER//" /var/tmp/cobalt-running-job)
-    COBALT_NODEFILE="/var/tmp/cobalt.${JOBID}"
-    export JOBID="${JOBID}"
-    export HOSTFILE="${HOSTFILE}"
-    export COBALT_NODEFILE="${COBALT_NODEFILE}"
-  fi
+    RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
+    if [[ -f "$RUNNING_JOB_FILE" ]]; then
+        JOBID=$(sed "s/:$USER//" /var/tmp/cobalt-running-job)
+        COBALT_NODEFILE="/var/tmp/cobalt.${JOBID}"
+        export JOBID="${JOBID}"
+        export HOSTFILE="${HOSTFILE}"
+        export COBALT_NODEFILE="${COBALT_NODEFILE}"
+    fi
 }
 
 function saveCOBALTenv() {
-  if [[ $(hostname)==theta* ]]; then
-    COBALT_VARS=$(env | grep COBALT)
-    echo "│ Writing COBALT vars to ${COBALT_ENV_FILE}                 │ "
-    echo "${COBALT_VARS[*]}" > ${COBALT_ENV_FILE}
-    sed -i 's/^COBALT/export\ COBALT/g' ${COBALT_ENV_FILE}
-    export HOSTFILE="${COBALT_NODEFILE}"
-    export JOBENV_FILE="${COBALT_ENV_FILE}"
-  fi
+    if [[ $(hostname) == thetagpu* ]]; then
+        COBALT_VARS=$(env | grep COBALT)
+        echo "│ Writing COBALT vars to ${COBALT_ENV_FILE}"
+        echo "${COBALT_VARS[*]}" > "${COBALT_ENV_FILE}"
+        sed -i 's/^COBALT/export\ COBALT/g' "${COBALT_ENV_FILE}"
+        export HOSTFILE="${COBALT_NODEFILE}"
+        export JOBENV_FILE="${COBALT_ENV_FILE}"
+    fi
 }
 
 
-function savePBSenv(){
-  if [[ $(hostname)==x3* ]]; then
-    PBS_VARS=$(env | grep PBS)
-    echo "│ Writing PBS vars to ${PBS_ENV_FILE}"
-    echo "${PBS_VARS[*]}" > ${PBS_ENV_FILE}
-    sed -i 's/^PBS/export\ PBS/g' ${PBS_ENV_FILE}
-    export HOSTFILE="${PBS_NODEFILE}"
-    export JOBENV_FILE="${PBS_ENV_FILE}"
-  fi
+function savePBSenv() {
+    if [[ $(hostname) == x3* ]]; then
+        PBS_VARS=$(env | grep PBS)
+        echo "Writing PBS vars to ${PBS_ENV_FILE}"
+        echo "${PBS_VARS[*]}" > "${PBS_ENV_FILE}"
+        sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
+        export HOSTFILE="${PBS_NODEFILE}"
+        export JOBENV_FILE="${PBS_ENV_FILE}"
+    fi
 }
 
-# function getPBSEnv() {
-#   VARS=$(env | grep PBS)
-# }
 
-function savePBSenvOld() {
-  # PBS_VARS=$(env | grep PBS)
-  # echo "${PBS_VARS[*]}" > ~/.pbsenv
-  # sed -i 's/^PBS/export\ PBS/g' ~/.pbsenv
-  {
-    echo "export PBS_ACCOUNT=${PBS_ACCOUNT}"
-    echo "export PBS_JOBCOOKIE=${PBS_JOBCOOKIE}"
-    echo "export PBS_JOBID=${PBS_JOBID}"
-    echo "export PBS_MOMPORT=${PBS_MOMPORT}"
-    echo "export PBS_NODENUM=${PBS_NODENUM}"
-    echo "export PBS_O_HOST=${PBS_O_HOST}"
-    echo "export PBS_O_LOGNAME=${PBS_O_LOGNAME}"
-    echo "export PBS_O_PATH=${PBS_O_PATH}"
-    echo "export PBS_O_SHELL=${PBS_O_SHELL}"
-    echo "export PBS_O_TZ=${PBS_O_TZ}"
-    echo "export PBS_QUEUE=${PBS_QUEUE}"
-    echo "export PBS_ENVIRONMENT=${PBS_ENVIRONMENT}"
-    echo "export PBS_JOBDIR=${PBS_JOBDIR}"
-    echo "export PBS_JOBNAME=${PBS_JOBNAME}"
-    echo "export PBS_NODEFILE=${PBS_NODEFILE}"
-    echo "export PBS_O_HOME=${PBS_O_HOME}"
-    echo "export PBS_O_LANG=${PBS_O_LANG}"
-    echo "export PBS_O_MAIL=${PBS_O_MAIL}"
-    echo "export PBS_O_QUEUE=${PBS_O_QUEUE}"
-    echo "export PBS_O_SYSTEM=${PBS_O_SYSTEM}"
-    echo "export PBS_O_WORKDIR=${PBS_O_WORKDIR}"
-    echo "export PBS_TASKNUM=${PBS_TASKNUM}"
-  } >> "${JOBENV_FILE}"
+function saveSlurmEnv() {
+    if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        SLURM_VARS=$(env | grep SLU)
+        echo "Saving SLURM_* to ${SLURM_ENV_FILE}"
+        echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
+        sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
+        sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
+        SLURM_NODES=$(scontrol show hostname "${SLURM_NODELIST}")
+        SLURM_NODEFILE="${HOME}/.slurm-nodefile"
+        printf "%s\n" "${SLURM_NODES[@]}" > "${SLURM_NODEFILE}"
+        export HOSTFILE="${SLURM_NODEFILE}"
+        export JOBENV_FILE="${SLURM_ENV_FILE}"
+    fi
 }
+
 
 function envSave() {
-  echo "┌──────────────────────────────────────────────────────────────────┐"
-  if [[ "${HOSTNAME}" == x3* ]]; then
-    echo "│ Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
-    savePBSenv
-  elif [[ "${HOSTNAME}" == theta* ]]; then
-    echo "│ Saving COBALT env to ${COBALT_ENV_FILE} from ${HOSTNAME}"
-    saveCOBALTenv
-  else
-    echo "│ Unexpected hostname: ${HOSTNAME}"
-    HOSTFILE="~/hostfile.local"
-    echo "$(hostname)" > $HOSTFILE
-  fi
-  echo "└──────────────────────────────────────────────────────────────────┘"
-  {
-    echo "export HOSTFILE=${HOSTFILE}"
-    echo "export ${FNAME}=${HOSTFILE}"
-    echo "export NHOSTS=${NHOSTS}"
-    echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
-    echo "export NGPUS=${NGPUS}"
-  } > "${JOBENV_FILE}"
+    echo "┌──────────────────────────────────────────────────────────────────┐"
+    if [[ $(hostname) == x3* ]]; then
+        echo "│ Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
+        savePBSenv
+    elif [[ $(hostname) == theta* ]]; then
+        echo "│ Saving COBALT env to ${COBALT_ENV_FILE} from ${HOSTNAME}"
+        saveCOBALTenv
+    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        saveSlurmEnv
+    else
+        echo "│ Unexpected hostname: ${HOSTNAME}"
+        HOSTFILE="hostfile"
+        hostname > "${HOSTFILE}"
+    fi
+    echo "└──────────────────────────────────────────────────────────────────┘"
+    {
+        echo "export HOSTFILE=${HOSTFILE}"
+        echo "export ${FNAME}=${HOSTFILE}"
+        echo "export NHOSTS=${NHOSTS}"
+        echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
+        echo "export NGPUS=${NGPUS}"
+    } > "${JOBENV_FILE}"
 }
 
-# getPBSenv() {
-#   export FNAME="$P{}"
-# }
 
 function setup() {
-  if [[ "${HOSTNAME}" == x3* ]]; then
-    export FNAME="PBS_NODEFILE"
-    export HOSTFILE="${PBS_NODEFILE}"
-    export JOBENV_FILE="${PBS_ENV_FILE}"
-    alias mpilaunch="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
-    # export JOBENV_FILE="${HOME}/.jobenv-polaris"
-    echo "${PBS_NODEFILE}" | rpbcopy
-  elif [[ "${HOSTNAME}" == thetagpu* ]]; then
-    getCOBALT_NODEFILE
-    export FNAME="COBALT_NODEFILE"
-    export HOSTFILE="${COBALT_NODEFILE}"
-    export JOBENV_FILE="${COBALT_ENV_FILE}"
-    alias mpilaunch="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
-    # export JOBENV_FILE="${HOME}/.jobenv-thetaGPU"
-    echo "${COBALT_NODEFILE}" | rpbcopy
-  fi
-  NHOSTS=$(wc -l < "${HOSTFILE}")
-  NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
-  NGPUS="$((${NHOSTS}*${NGPU_PER_HOST}))"  # noqa
-  # ┌────┐
-  # │    │
-  # └────┘
-  echo "┌──────────────────────────────────────────────────────────────────┐"
-  echo "│ [DIST INFO]: "
-  echo "│   • Writing Job info to ${JOBENV_FILE}"
-  echo "│       • NHOSTS: $NHOSTS "
-  echo "│       • NGPU_PER_HOST: $NGPU_PER_HOST "
-  echo "│       • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
-  echo "└──────────────────────────────────────────────────────────────────┘"
-  export NHOSTS="${NHOSTS}"
-  export NGPU_PER_HOST="${NGPU_PER_HOST}"
-  export NGPUS="${NGPUS}"
-  envSave
+    if [[ "${HOSTNAME}" == x3* ]]; then
+        export FNAME="PBS_NODEFILE"
+        export HOSTFILE="${PBS_NODEFILE}"
+        export JOBENV_FILE="${PBS_ENV_FILE}"
+        alias mpilaunch="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${PBS_NODEFILE}"
+        echo "${PBS_NODEFILE}" | rpbcopy
+    elif [[ "${HOSTNAME}" == thetagpu* ]]; then
+        getCOBALT_NODEFILE
+        export FNAME="COBALT_NODEFILE"
+        export HOSTFILE="${COBALT_NODEFILE}"
+        export JOBENV_FILE="${COBALT_ENV_FILE}"
+        alias mpilaunch="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"
+        echo "${COBALT_NODEFILE}" | rpbcopy
+    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        export FNAME="SLURM_NODEFILE"
+        export HOSTFILE="${SLURM_NODEFILE}"
+        export JOBENV_FILE="${SLURM_ENV_FILE}"
+        alias mpilaunch="srun -N ${NHOSTS} -n ${NGPUS} -l -u"
+        echo "${SLURM_NODEFILE}" | rpbcopy
+    fi
+    NHOSTS=$(wc -l < "${HOSTFILE}")
+    NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+    NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
+    echo "┌──────────────────────────────────────────────────────────────────┐"
+    echo "│ [DIST INFO]: "
+    echo "│   • Writing Job info to ${JOBENV_FILE}"
+    echo "│       • NHOSTS: $NHOSTS "
+    echo "│       • NGPU_PER_HOST: $NGPU_PER_HOST "
+    echo "│       • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
+    echo "└──────────────────────────────────────────────────────────────────┘"
+    export NHOSTS="${NHOSTS}"
+    export NGPU_PER_HOST="${NGPU_PER_HOST}"
+    export NGPUS="${NGPUS}"
+    envSave
 }
 
 
 PrintAndCopy() {
-  echo "┌──────────────────────────────────────────────────────────────────┐"
-  echo "│ Copying ${FNAME} to clipboard..."
-  echo "│ ${FNAME}: ${HOSTFILE}"
-  HOSTS=$(join_by ' ' $(cat $HOSTFILE))
-  echo "│ [Hosts]: "
-  echo "│   ${HOSTS[*]}"
-  echo "└──────────────────────────────────────────────────────────────────┘"
-  # cat "${HOSTFILE}"
-  echo "${HOSTFILE}" | rpbcopy
-  echo "export ${FNAME}=${HOSTFILE}" | rpbcopy
-  echo "┌───────────────────────────────────────────────────────────────────────┐"
-  echo "│ Run 'source getjobenv' in a NEW SHELL to automatically set env vars   │"
-  echo "└───────────────────────────────────────────────────────────────────────┘"
+    HOSTS_ARR=$(cat "${HOSTFILE}")
+    HOSTS=$(join_by ' ' "${HOSTS_ARR}")
+    echo "┌──────────────────────────────────────────────────────────────────┐"
+    echo "│ Copying ${FNAME} to clipboard..."
+    echo "│ ${FNAME}: ${HOSTFILE}"
+    echo "│ [Hosts]: "
+    echo "│   ${HOSTS[*]}"
+    echo "└──────────────────────────────────────────────────────────────────┘"
+    # cat "${HOSTFILE}"
+    echo "${HOSTFILE}" | rpbcopy
+    echo "export ${FNAME}=${HOSTFILE}" | rpbcopy
+    echo "┌───────────────────────────────────────────────────────────────────────┐"
+    echo "│ Run 'source getjobenv' in a NEW SHELL to automatically set env vars   │"
+    echo "└───────────────────────────────────────────────────────────────────────┘"
 }
 
 setup
