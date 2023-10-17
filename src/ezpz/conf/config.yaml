@@ -4,6 +4,13 @@ _target_: ezpz.configs.TrainConfig
 # ----------------------------------------------------------------------------
 framework: pytorch          # ML framework to use: one of 'pytorch', 'tensorflow'
 backend: 'DDP'              # Backend to use for distributed training
+ds_config_path: null
+port: null
+seed: null
+use_wandb: false
+wandb_project_name: null
+precision: null
+ngpus: null
 defaults:
   - _self_
   - logdir: default.yaml    # Defines where to run experiment using info from cfg
