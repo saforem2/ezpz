@@ -1,8 +1,8 @@
-# ezpz
+# ✨ `ezpz`
 
 [![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
 [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](https://www.tensorflow.org)
-
+[![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc)
 <!-- <img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> -->
 <!-- <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>  -->
 
@@ -18,24 +18,6 @@ Simplifies the process of setting up distributed training for:
 > Any ideas / issues / suggestions for improving things would be greatly appreciated.
 
 ## Setup
-
-<!--
-Test
-----
-- Line1
-  ```bash
-  whoami
-  ```
-  - Line2
-    ```bash
-    echo "${USER}"
-    ```
-  - Line3
-    ```python
-    def f(x):
-        return x ** 2
-    ```
--->
 
 <details open><summary><h3>ALCF:</h3></summary>
 
@@ -80,6 +62,8 @@ cd ezpz
 # update pip and install `ezpz`
 python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install -e .
+cd src/ezpz
+./bin/train.sh framework=pytorch backend=DDP
 ```
 
 </details>
@@ -159,8 +143,8 @@ deepspeed, horovod}`[^tf-hvd]
 > [!IMPORTANT]
 > We can launch with a specific `{framework, backend}` combo by:
 > ```bash
-> export mpi_cmd="mpiexec --verbose --envall -n ${NGPUS} --ppn ${NGPU_PER_HOST}"
-> export launch="${mpi_cmd} $(which python3) -m ezpz"
+> mpi_cmd="mpiexec --verbose --envall -n ${NGPUS} --ppn ${NGPU_PER_HOST}"
+> launch="${mpi_cmd} $(which python3) -m ezpz"
 > launch framework=<framework> backend=<backend>
 > ```
 > for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
@@ -172,9 +156,8 @@ deepspeed, horovod}`[^tf-hvd]
 <details closed><summary><h4><code>DDP</code>:</h4></summary>
 
 ```bash
-$ launch framework=pytorch backend=DDP
+launch framework=pytorch backend=DDP
 ```
-<!--mpiexec --verbose --envall -n "${NGPUS}" --ppn "${NGPU_PER_HOST}" python3 test.py framework=pytorch framework=DDP-->
 
 <details closed><summary><b>Output:</b></summary>
 
@@ -199,7 +182,7 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 <details closed><summary><h4><code>deepspeed</code>:</h4></summary>
 
 ```bash
-$ launch framework=pytorch backend=deepspeed
+launch framework=pytorch backend=deepspeed
 ```
 
 <details closed><summary><b>Output:</b></summary>
@@ -258,7 +241,7 @@ Launching application c1c5bcd5-c300-4927-82e4-236d4643e31d
 <details closed><summary><h4><code>horovod</code></h4></summary>
 
 ```bash
-$ launch framework=pytorch backend=horovod
+launch framework=pytorch backend=horovod
 ```
 
 <details closed><summary><b>Output:</b></summary>
@@ -285,7 +268,7 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 <details closed><summary><h3>✅ TensorFlow + <code>horovod</code>:</h3></summary>
 
 ```bash
-$ launch framework=tensorflow backend=horovod
+launch framework=tensorflow backend=horovod
 ```
 
 <details closed><summary><b>Output:</b></summary>
