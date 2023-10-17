@@ -125,19 +125,19 @@ function setup() {
 
 PrintAndCopy() {
     HOSTS_ARR=$(cat "${HOSTFILE}")
-    HOSTS=$(join_by ' ' "${HOSTS_ARR}")
+    # HOSTS=$(join_by ' ' "${HOSTS_ARR}")
     echo "┌──────────────────────────────────────────────────────────────────┐"
     echo "│ Copying ${FNAME} to clipboard..."
     echo "│ ${FNAME}: ${HOSTFILE}"
     echo "│ [Hosts]: "
-    echo "│   ${HOSTS[*]}"
+    echo "│   $(join_by ', ' $HOSTS_ARR)"
     echo "└──────────────────────────────────────────────────────────────────┘"
     # cat "${HOSTFILE}"
     echo "${HOSTFILE}" | rpbcopy
     echo "export ${FNAME}=${HOSTFILE}" | rpbcopy
-    echo "┌───────────────────────────────────────────────────────────────────────┐"
-    echo "│ Run 'source getjobenv' in a NEW SHELL to automatically set env vars   │"
-    echo "└───────────────────────────────────────────────────────────────────────┘"
+    echo "┌───────────────────────────────────────────────────────────────────────────────┐"
+    echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars     │"
+    echo "└───────────────────────────────────────────────────────────────────────────────┘"
 }
 
 setup
