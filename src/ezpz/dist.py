@@ -12,7 +12,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 from mpi4py import MPI
 import logging
-from ezpz.configs import FRAMEWORKS, BACKENDS, HERE
+from ezpz.configs import FRAMEWORKS, BACKENDS, HERE, PROJECT_ROOT
 
 log = logging.getLogger(__name__)
 
@@ -402,8 +402,10 @@ def setup_wandb(
             )
         )
     )
+    # if (hpath := Path(hostfile).resolve().is_file()):
     if hostfile is not None:
-        if (hpath := Path(hostfile).resolve().is_file()):
+        hpath = Path(hostfile).resolve().absolute()
+        if hpath.is_file():
             with hpath.open('r') as f:
                 hosts = f.readlines()
             wandb.run.config['hosts'] = hosts
