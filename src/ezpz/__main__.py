@@ -17,7 +17,6 @@ import sys
 import hydra
 import logging
 
-from rich.json import JSON
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
@@ -46,9 +45,6 @@ def main(cfg: DictConfig) -> int:
                 project_name=config.wandb_project_name,
                 config=cfg,
             )
-    # log.info(f'config: {JSON(config.to_json())}')
-    # log.info(json.dumps())
-    # log.info(f'config: {config.}')
     log.info(f'Output dir: {os.getcwd()}')
     if rank == 0 and config.backend.lower() in ['ds', 'dspeed', 'deepspeed']:
         git_ds_info()
