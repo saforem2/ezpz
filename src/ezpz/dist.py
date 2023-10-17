@@ -10,30 +10,21 @@ import os
 from typing import Optional, Callable, Any
 from pathlib import Path
 from mpi4py import MPI
-from enrich import get_logger
-# from rich import print
+import logging
+from ezpz.configs import FRAMEWORKS, BACKENDS
 
-# comm = MPI.COMM_WORLD
-#
-# RANK = comm.Get_rank()
-# SIZE = comm.Get_size()
-#
-
-# if RANK == 0:
-log = get_logger(__name__, level='DEBUG')
-# else:
-#     log = get_logger(__name__, level='CRITICAL')
+log = logging.getLogger(__name__)
 
 
-BACKENDS = [
-    'deepspeed',
-    'ds',
-    'ddp',
-    'horovod',
-    'hvd',
-]
 
-
+# BACKENDS = FRAMEWORKS.values()
+# BACKENDS = [
+#     'deepspeed',
+#     'ds',
+#     'ddp',
+#     'horovod',
+#     'hvd',
+# ]
 
 
 def seed_everything(seed: int):
@@ -45,6 +36,27 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def print_dist_setup():
+    # print(' '.join(setup_strings))
+    # log.info(f"{get_log_prefix()}: {get_rank()} / {get_world_size() - 1}")
+    log.info(f"RANK: {get_rank()} / {get_world_size() - 1}")
+
+
+def setup(
+        framework: str = 'pytorch',
+        backend: str = 'DDP',
+        port: str = '5432',
+        seed: Optional[int] = None,
+        precision: Optional[str] = None,
+        ngpus: Optional[int] = None
+):
+    return (
+        setup_tensorflow(precision=precision, ngpus=ngpus)
+        if framework in ['tensorflow', 'tf', 't']
+        else setup_torch(backend=backend, port=port, seed=seed)
+    )
 
 
 def init_deepspeed():
@@ -157,7 +169,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     else:
         os.environ['MASTER_PORT'] = eport
         if rank == 0:
-            print(f'Caught MASTER_PORT:{eport} from environment!')
+            log.info(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
@@ -177,10 +189,10 @@ def setup_torch_distributed(
     world_size = get_world_size()
     local_rank = get_local_rank()
     be = backend.lower()
-    assert be in BACKENDS
+    assert be in BACKENDS['pytorch']
     if rank == 0 and local_rank == 0:
-        print(f'Using {backend} for distributed training')
-    if be in ['ddp', 'DDP']:
+        log.info(f'Using {backend} for distributed training')
+    if be == 'ddp':
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
         rank = dsetup['rank']
@@ -199,7 +211,7 @@ def setup_torch_distributed(
         if torch.cuda.is_available():
             torch.cuda.set_device(hvd.local_rank())
     else:
-        raise ValueError
+        raise ValueError(f'Unable to parse backend: {be}')
     os.environ['world_size'] = str(world_size)
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
@@ -212,7 +224,7 @@ def setup_torch(
         seed: Optional[int] = None,
 ) -> int:
     import torch
-    # from rich import print
+    # from rich import log.info
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     torch.backends.cudnn.deterministic = True     # type:ignore
     torch.backends.cudnn.benchmark = True         # type:ignore
@@ -231,7 +243,7 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    print(f'RANK: {rank} / {world_size-1}')
+    log.info(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
@@ -270,7 +282,7 @@ def setup_tensorflow(
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
     if eager_mode is not None:
-        print('Detected `TF_EAGER` from env. Running eagerly.')
+        log.info('Detected `TF_EAGER` from env. Running eagerly.')
         tf.config.run_functions_eagerly(True)
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -289,23 +301,23 @@ def setup_tensorflow(
             )
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             # if hvd.rank() == 0:
-            #     print(
+            #     log.info(
             #         f'{len(gpus)}, Physical GPUs and '
             #         f'{len(logical_gpus)} Logical GPUs'
             #     )
         except RuntimeError as e:
-            print(e)
+            log.info(e)
     elif cpus:
         try:
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices('CPU')
-            print(
+            log.info(
                 f'{len(cpus)}, Physical CPUs and '
                 f'{len(logical_cpus)} Logical CPUs'
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
-            print(e)
+            log.info(e)
     RANK = hvd.rank()
     WORLD_SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
@@ -313,9 +325,9 @@ def setup_tensorflow(
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
-    print(f'RANK: {RANK} / {WORLD_SIZE-1}')
+    log.info(f'RANK: {RANK} / {WORLD_SIZE-1}')
     if RANK == 0:
-        print(f"Using {TF_FLOAT} precision")
+        log.info(f"Using {TF_FLOAT} precision")
     return RANK
 
 
@@ -338,8 +350,8 @@ def setup_wandb(
             )
         )
     )
-    print(f"Setting up wandb from rank: {rank}")
-    print(f"Using: WB PROJECT: {project_name}")
+    log.info(f"Setting up wandb from rank: {rank}")
+    log.info(f"Using: WB PROJECT: {project_name}")
     # if get_rank() == 0:
     # tensorboard_dir = args.tensorboard_dir
     tensorboard_dir = None
@@ -353,7 +365,7 @@ def setup_wandb(
             )
         )
     if tensorboard_dir is not None:
-        print(f'Patching tensorboard from {tensorboard_dir}')
+        log.info(f'Patching tensorboard from {tensorboard_dir}')
         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
     # wbrun_id = wandb.util.generate_id()
     current_time = time.time()
@@ -366,7 +378,7 @@ def setup_wandb(
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
     )
     assert wandb.run is not None
-    print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+    log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
     wandb.run.config.update({'current_time': current_time})
     model_size = os.environ.get('MODEL_SIZE', None)
     wandb.run.config.update({'world_size': get_world_size()})
@@ -426,9 +438,9 @@ def get_cobalt_nodefile() -> Path:
     cobalt_nodefile = os.environ.get('COBALT_NODEFILE', None)
     if cobalt_nodefile is None:
         log.warning('COBALT_NODEFILE not in `env`!')
-        print('Attempting to deduce from `/var/tmp/cobalt-running-job`...')
+        log.info('Attempting to deduce from `/var/tmp/cobalt-running-job`...')
         cobalt_info = inspect_cobalt_running_job()
-        print(f"Found COBALT info: {cobalt_info}")
+        log.info(f"Found COBALT info: {cobalt_info}")
         cobalt_nodefile = cobalt_info['COBALT_NODEFILE']
     return Path(cobalt_nodefile)
 
@@ -494,7 +506,7 @@ def run_mpiexec(cmd: str):
     mpiexec = ' '.join(build_mpiexec_thetagpu())
     # python3 = sys.executable
     # ezpz_test = '-m ezpz.check'
-    print(f'Executing: {mpiexec} {cmd}')
+    log.info(f'Executing: {mpiexec} {cmd}')
     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
 
 
@@ -512,49 +524,14 @@ def mpi_test_framework_backend(
 def check(
         framework: str = 'pytorch',
         backend: str = 'deepspeed',
-        port: int | str = '5432'
+        port: int | str = '5432',
 ):
-    if framework == 'pytorch':
+    if framework in FRAMEWORKS['pytorch']:
         _ = setup_torch(
             backend=backend,
             port=port,
         )
-    elif framework == 'tensorflow':
+    elif framework in FRAMEWORKS['tensorflow']:
         _ = setup_tensorflow()
     else:
-        raise ValueError
-    # WORLD_SIZE = get_world_size()
-    # print(f'{RANK} / {WORLD_SIZE}')
-
-
-
-
-if __name__ == '__main__':
-    # from ezpz import test
-    # import sys
-    # try:
-    #     framework = sys.argv[1]
-    # except IndexError:
-    #     framework = 'pytorch'
-    # try:
-    #     backend = sys.argv[2]
-    # except IndexError:
-    #     backend = 'deepspeed'
-    # try:
-    #     port = sys.argv[3]
-    # except IndexError:
-    #     port = '5432'
-    import sys
-    try:
-        framework = sys.argv[1]
-    except IndexError:
-        framework = 'pytorch'
-    try:
-        backend = sys.argv[2]
-    except IndexError:
-        backend = 'deepspeed'
-    try:
-        port = sys.argv[3]
-    except IndexError:
-        port = '5432'
-    check(framework=framework, backend=backend, port=port)
+        raise ValueError(f"Unable to parse framework: {framework}")
