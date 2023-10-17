@@ -14,7 +14,7 @@ DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 PARENT=$(dirname "${DIR}")
 GRANDPARENT=$(dirname "${PARENT}")
 ROOT=$(dirname "${GRANDPARENT}")
-MAIN="$PARENT/train.py"
+MAIN="$PARENT/__main__.py"
 SETUP_SCRIPT="$DIR/setup.sh"
 TRAIN_SCRIPT="$DIR/train.sh"
 NCPUS=$(getconf _NPROCESSORS_ONLN)
@@ -74,15 +74,10 @@ function setupThetaGPU() {
         CONDA_DATE="2023-01-11"
         VENV_DIR="${ROOT}/venvs/${MACHINE}/${CONDA_DATE}"
         setupPython "${CONDA_DATE}" "${VENV_DIR}"
-        # loadCondaEnv "${CONDA_DATE}"
-        # setupVenv "${ROOT}/venvs/thetaGPU/2023-01-11"
-        # Distributed setup information
         NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS=$((NHOSTS * NGPU_PER_HOST))
         LAUNCH="$(which mpirun) -n $NGPUS -N $NGPU_PER_HOST --hostfile $HOSTFILE -x PATH -x LD_LIBRARY_PATH"
-        # alias mpilaunch="${LAUNCH}"
-        # alias mpilaunch="$(which mpirun) -n $NGPUS -N $NGPU_PER_HOST --hostfile $HOSTFILE} -x PATH -x LD_LIBRARY_PATH"
     else
         echo "[setupThetaGPU]: Unexpected hostname $(hostname)"
     fi
@@ -94,20 +89,17 @@ function setupThetaGPU() {
 function setupPolaris() {
     if [[ $(hostname) == x3* ]]; then
         export MACHINE="polaris"
-        # export NVME_PATH="/raid/scratch/"
+        export NVME_PATH="/raid/scratch/"
         HOSTFILE=${HOSTFILE:-${PBS_NODEFILE}}
         CONDA_DATE="2023-10-04"
         VENV_DIR="${ROOT}/venvs/${MACHINE}/${CONDA_DATE}"
         setupPython "${CONDA_DATE}" "${VENV_DIR}"
-        # loadCondaEnv "${CONDA_DATE}"
-        # setupVenv "${VENV_DIR}"
-        # Distributed setup information
         NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS=$((NHOSTS * NGPU_PER_HOST))
         LAUNCH="$(which mpiexec) --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
         # alias mpilaunch="$(which mpiexec) --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
-        alias mpilaunch="${LAUNCH}"
+        # alias mpilaunch="${LAUNCH}"
     else
         echo "[setupPolaris]: Unexpected hostname $(hostname)"
     fi
@@ -124,12 +116,12 @@ function setupPerlmutter() {
             || echo "!!!!!! Running without SLURM allocation !!!!!!!!"
 
         module load libfabric cudatoolkit pytorch/2.0.1
-        export NODELIST="${SLURM_JOB_NODELIST:-$(hostname)}"
+        export NODELIST="${SLURM_NODELIST:-$(hostname)}"
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
         export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
         LAUNCH="$(which srun) -N ${NHOSTS} -n ${NGPUS} -l u"
-        alias mpilaunch="${LAUNCH}"
+        # alias mpilaunch="${LAUNCH}"
     else
         echo "[setupPerlmutter]: Unexpected hostname $(hostname)"
     fi
@@ -148,14 +140,30 @@ function setupLogs() {
     echo "$LOGFILE" >> "${LOGDIR}/latest"
 }
 
+function pprint() {
+    OUTPUT="$*"
+    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "│ [setup.sh]:  ${OUTPUT[*]}"
+    echo "└─────────────────────────────────────────────────────────────────────┘"
+}
+
 
 function printJobInfo() {
     ARGS=$*
-    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    if [[ "${HOSTFILE}" ]]; then
+        HOSTS_ARR=$(cat "${HOSTFILE}")
+        HOSTS=$(join_by ' ' "${HOSTS_ARR}")
+    elif [[ "${SLURM_NODELIST}" ]]; then
+        HOSTS="${SLURM_NODELIST}"
+    else
+        echo "[printJobInfo][WARNING]: HOSTFILE not set, using resources on localhost!"
+        HOSTS=$(hostname)
+    fi
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Job started at: ${TSTAMP} on ${HOST} by ${USER}"
     echo "│ [setup.sh]: Job running in: ${DIR}"
-    echo "└─────────────────────────────────────────────────────────────────────┘"
-    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: DIR=${DIR}"
     echo "│ [setup.sh]: MAIN=${MAIN}"
     echo "│ [setup.sh]: SETUP_SCRIPT=${SETUP_SCRIPT}"
@@ -164,46 +172,38 @@ function printJobInfo() {
     echo "│ [setup.sh]: ROOT=${ROOT}"
     echo "│ [setup.sh]: LOGDIR=${LOGDIR}"
     echo "│ [setup.sh]: LOGFILE=${LOGFILE}"
-    echo "└─────────────────────────────────────────────────────────────────────┘"
-    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  # ┐"
+    echo "│ [setup.sh]: [Hosts][${HOSTFILE}]: "
+    echo "│ [setup.sh]:   ${HOSTS[*]}"
     echo "│ [setup.sh]: Using ${NHOSTS} hosts from ${HOSTFILE}"
-    echo "│ [setup.sh]: [Hosts]: "
-    echo "│ [setup.sh]:   ${HOSTS[*]:-$(cat "$HOSTFILE"):-${SLURM_JOB_NODELIST}}"
     echo "│ [setup.sh]: With ${NGPU_PER_HOST} GPUs per host"
     echo "│ [setup.sh]: For a total of: ${NGPUS} GPUs"
-    echo "└─────────────────────────────────────────────────────────────────────┘"
-    echo "┌─────────────────────────────────────────────────────────────────────┐"
-    echo "│ [setup.sh]: Using mpilaunch: $(which mpilaunch)"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Using python: $(which python3)"
-    echo "│ [setup.sh]: ARGS: " && echo "${ARGS[*]}"
+    echo "│ [setup.sh]: ARGS: ${ARGS[*]}"
     echo "│ [setup.sh]: LAUNCH: ${LAUNCH} $(which python3) ${MAIN} ${ARGS[*]}"
-    echo "└─────────────────────────────────────────────────────────────────────┘"
-    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Writing logs to ${LOGFILE}"
     echo '│ [setup.sh]: To view output: `tail -f $(tail -1 logs/latest)`'  # noqa
     echo "│ [setup.sh]: Latest logfile: $(tail -1 ./logs/latest)"
     echo "│ [setup.sh]: tail -f $(tail -1 logs/latest)"
-    echo "└─────────────────────────────────────────────────────────────────────┘"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo -e "\n"
 }
 
 function setupJob() {
     if [[ $(hostname) == x3* ]]; then
         setupPolaris
-        HOSTS_ARR=$(cat "${HOSTFILE}")
-        HOSTS=$(join_by ' ' "${HOSTS_ARR}")
     elif [[ $(hostname) == thetagpu* ]]; then
         setupThetaGPU
-        HOSTS_ARR=$(cat "${HOSTFILE}")
-        HOSTS=$(join_by ' ' "${HOSTS_ARR}")
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         setupPelmutter
-        HOSTS="${SLURM_JOB_NODELIST}"
+        HOSTS="${SLURM_NODELIST}"
     else
         echo "[setupJob]: Unexpected hostname $(hostname)"
-        # alias mpirun=''
-        # hostname > hostfile
-        # HOSTFILE="hostfile"
-        # [[ "$(mpirun)" ] && alias mpilaunch='mpirun' || alias mpilaunch=''
         exit 1
     fi
     export NHOSTS
