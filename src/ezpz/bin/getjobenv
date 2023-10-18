@@ -25,7 +25,7 @@ function getPBSenv() {
 
 function getCOBALTenv() {
     if [[ $(hostname) == thetagpu* ]]; then
-        export JOBENV_FILE="${COBAL_ENV_FILE}"
+        export JOBENV_FILE="${COBALT_ENV_FILE}"
         export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
     else
         echo "Skipping getCOBALTenv() on $(hostname)"
