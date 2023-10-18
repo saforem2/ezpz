@@ -1,74 +1,76 @@
 #!/bin/bash --login
 
 HOSTNAME=$(hostname)
-export HOMEDIR="$HOME"
+PBS_ENV_FILE="${HOME}/.pbsenv"
+COBALT_ENV_FILE="${HOME}/.cobaltenv"
+SLURM_ENV_FILE="${HOME}/.slurmenv"
 
+# function join_by { local d=${1-} f=${2-}; if shift 2; then printf %s "$f" "${@/#/$d}"; fi; }
 
-getCOBALT_NODEFILE() {
-    if [[ "${HOSTNAME}" == thetagpu* ]]; then
-        RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
-        echo "RUNNING_JOB_FILE: $RUNNING_JOB_FILE"
-        if [[ -f "$RUNNING_JOB_FILE" ]]; then
-            JOBID=$(sed "s/:$USER//" /var/tmp/cobalt-running-job)
-            COBALT_NODEFILE="/var/tmp/cobalt.${JOBID}"
-            export JOBID="${JOBID}"
-            export HOSTFILE="${HOSTFILE}"
-            export COBALT_NODEFILE="${COBALT_NODEFILE}"
-            echo "JOBID: ${JOBID}"
-            echo "HOSTFILE: ${HOSTFILE}"
-        fi
-    else
-        echo "NO RUNNING JOB FILE"
+function join_by {
+    local d=${1-} f=${2-}
+    if shift 2; then
+        printf %s "$f" "${@/#/$d}"
     fi
 }
 
 function getPBSenv() {
-    if [[ "${HOSTNAME}" == x3* ]]; then
-        JOBENV_FILE="${HOME}/.pbsenv"
-        if [[ -f "${JOBENV_FILE}" ]]; then
-            source "${JOBENV_FILE}"
-        else
-            echo "NO $JOBENV_FILE"
-        fi
-        export JOBENV_FILE="$JOBENV_FILE"
-        alias mpilaunch="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
+    if [[ $(hostname) == x3* ]]; then
+        export JOBENV_FILE="${PBS_ENV_FILE}"
+        export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
+    else
+        echo "Skipping getPBSenv() on $(hostname)"
     fi
 }
 
 function getCOBALTenv() {
-    if [[ "${HOSTNAME}" == thetagpu* ]]; then
-        getCOBALT_NODEFILE
-        JOBENV_FILE="${HOME}/.cobaltenv"
-        if [[ -f "${JOBENV_FILE}" ]]; then
-            source "${JOBENV_FILE}"
-        else
-            echo "NO $JOBENV_FILE"
-        fi
-        alias mpilaunch="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
+    if [[ $(hostname) == thetagpu* ]]; then
+        export JOBENV_FILE="${COBAL_ENV_FILE}"
+        export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
+    else
+        echo "Skipping getCOBALTenv() on $(hostname)"
     fi
 }
 
-function getJobEnv() {
-    if [[ "${HOSTNAME}" == thetagpu* ]]; then
+function getSLURMenv() {
+    if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        export JOBENV_FILE="${SLURM_ENV_FILE}"
+        export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
+    else
+        echo "Skipping getSLURMenv() on $(hostname)"
+    fi
+}
+
+function getJOBenv() {
+    if [[ $(hostname) == thetagpu* ]]; then
         getCOBALTenv
-    elif [[ "${HOSTNAME}" == x3* ]]; then
+    elif [[ $(hostname) == x3* ]]; then
         getPBSenv
+    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        getSLURMenv
     else
         echo "Unexpected hostname ${HOSTNAME}"
     fi
-    export JOBENV_FILE="$JOBENV_FILE"
-    echo "Loading job env from: ${JOBENV_FILE}"
-    echo "Defining alias mpilaunch: $(which mpilaunch)"
     source "${JOBENV_FILE}"
+    alias launch="${DIST_LAUNCH}"
     export HOSTFILE="${HOSTFILE}"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
-    echo "HOSTFILE: ${HOSTFILE}"
-    echo "NHOSTS: ${NHOSTS}"
-    echo "NGPU_PER_HOST: ${NGPU_PER_HOST}"
-    echo "NGPUS (NHOSTS x NGPU_PER_HOST): ${NGPUS}"
-    echo "HOSTS: $(cat "$HOSTFILE")"
+    HOSTS_ARR=$(cat "${HOSTFILE}")
+    echo "┌──────────────────────────────────────────────────────────────────"  # ┐"
+    echo "│ [Hosts]: "
+    echo "│     • $(join_by ', ' $HOSTS_ARR)"
+    echo "└──────────────────────────────────────────────────────────────────"  # ┘"
+    echo "┌──────────────────────────────────────────────────────────────────"  # ┐"
+    echo "│ [DIST INFO]: "
+    echo "│     • Loading job env from: ${JOBENV_FILE}"
+    echo "│     • Defining alias: $(which launch)"
+    echo "│     • HOSTFILE: ${HOSTFILE}"
+    echo "│     • NHOSTS: ${NHOSTS}"
+    echo "│     • NGPU_PER_HOST: ${NGPU_PER_HOST}"
+    echo "│     • NGPUS (NHOSTS x NGPU_PER_HOST): ${NGPUS}"
+    echo "└──────────────────────────────────────────────────────────────────"  #┘"
 }
 
-getJobEnv
+getJOBenv
