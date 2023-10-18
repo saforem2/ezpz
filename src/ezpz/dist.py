@@ -323,6 +323,7 @@ def setup_tensorflow(
 def setup_wandb(
         project_name: Optional[str] = None,
         config: Optional[dict | DictConfig] = None,
+        start_method: Optional[str] = None,
 ):
     import wandb
     import socket
@@ -359,11 +360,15 @@ def setup_wandb(
     current_time = time.time()
     # local_time = time.localtime(current_time)
     # if wandb.run is None:
+    wbsettings = None
+    if start_method is not None:
+        wbsettings = wandb.Settings(start_method=start_method)
     wandb.init(
         # resume='allow',
         dir=os.getcwd(),
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
+        settings=wbsettings,
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
     )
     assert wandb.run is not None
