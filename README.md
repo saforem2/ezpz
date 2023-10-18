@@ -365,10 +365,6 @@ Now, in a **NEW SHELL**
 (thetalogin5) $ ssh thetagpu18
 (thetagpu18) $ module load conda/2023-01-11; cond activate base
 (thetagpu18) $ cd ezpz
-(thetagpu18) $ mkdir -p venvs/thetaGPU/2023-01-11
-(thetagpu18) $ python3 -m venv venvs/thetaGPU/2023-01-11 --system-site-packages
-(thetagpu18) $ source venvs/thetaGPU/2023-01-11/bin/activate
-(thetagpu18) $ python3 -m pip install -e .
 (thetagpu18) $ cd ezpz/src/ezpz
 (thetagpu18) $ source bin/getjobenv
 RUNNING_JOB_FILE: /var/tmp/cobalt-running-job
@@ -421,4 +417,3 @@ while this example looked at ThetaGPU, the exact same process will work on any
 of `{ThetaGPU, Polaris, Perlmutter}`.
 
 2ez
-
