@@ -124,7 +124,7 @@ function setup() {
     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
     HOSTS_ARR=$(cat "${HOSTFILE}")
-    # HOSTS_STR=$(join_by ' ' "${HOSTS_ARR}")
+    alias launch="${LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
     echo "│ [DIST INFO]:"
     echo "│   • Writing Job info to ${JOBENV_FILE}"
@@ -150,10 +150,4 @@ function setup() {
 
 
 setup
-# launch () {
-#     "${LAUNCH}"
-# }
-# export -f launch
-# export -f launch="${LAUNCH}"
-# PrintAndCopy
 # vim: ft=bash
