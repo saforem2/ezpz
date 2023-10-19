@@ -172,8 +172,7 @@ deepspeed, horovod}`[^tf-hvd]
 > #!/bin/bash --login
 > git clone https://github.com/saforem2/ezpz
 > ./ezpz/src/ezpz/bin/savejobenv
-> launch $(which python3) -m ezpz framework=<framework> backend=<
-> launch framework=<framework> backend=<backend>
+> launch $(which python3) -m ezpz framework=<framework> backend=<backend>
 > ```
 > for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
 
