@@ -5,13 +5,16 @@ PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
 
-function join_by {
+function whereAmI() {
+    python3 -c 'import os; print(os.getcwd())'
+}
+
+function join_by() {
     local d=${1-} f=${2-}
     if shift 2; then
         printf %s "$f" "${@/#/$d}"
     fi
 }
-
 
 function getCOBALT_NODEFILE() {
     if [[ $(hostname) == thetagpu* ]]; then
@@ -70,7 +73,7 @@ function saveSLURMenv() {
 
 
 function envSave() {
-    echo "┌──────────────────────────────────────────────────────────────────┐"
+    echo "┌───────────────────────────────────────────────────────────────────"
     if [[ $(hostname) == x3* ]]; then
         echo "│ Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
         savePBSenv
@@ -84,7 +87,7 @@ function envSave() {
         HOSTFILE="hostfile"
         hostname > "${HOSTFILE}"
     fi
-    echo "└──────────────────────────────────────────────────────────────────┘"
+    echo "└───────────────────────────────────────────────────────────────────"
     {
         echo "export HOSTFILE=${HOSTFILE}"
         echo "export ${FNAME}=${HOSTFILE}"
@@ -98,59 +101,59 @@ function envSave() {
 function setup() {
     if [[ "${HOSTNAME}" == x3* ]]; then
         export FNAME="PBS_NODEFILE"
-        export HOSTFILE="${PBS_NODEFILE}"
+        export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
-        launch="$(which mpiexec) --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${PBS_NODEFILE}"
-        # echo "${PBS_NODEFILE}" | rpbcopy
+        MPI_LAUNCH=$(which mpiexec)
+        export LAUNCH_CMD="${MPI_LAUNCH} --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
     elif [[ "${HOSTNAME}" == thetagpu* ]]; then
         getCOBALT_NODEFILE
         export FNAME="COBALT_NODEFILE"
-        export HOSTFILE="${COBALT_NODEFILE}"
+        export HOSTFILE="${HOSTFILE:-${COBALT_NODEFILE}}"
         export JOBENV_FILE="${COBALT_ENV_FILE}"
-        launch="$(which mpirun) -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"
-        # echo "${COBALT_NODEFILE}" | rpbcopy
+        MPI_LAUNCH="$(which mpirun)"
+        export LAUNCH_CMD="${MPI_LAUNCH} -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"  #  "$@"
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then export FNAME="SLURM_NODEFILE"
-        export HOSTFILE="${SLURM_NODEFILE}"
+        export HOSTFILE="${HOSTFILE:-${SLURM_NODEFILE}}"
         export JOBENV_FILE="${SLURM_ENV_FILE}"
-        launch="$(which srun) --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
-        # echo "${SLURM_NODEFILE}" | rpbcopy
+        SRUN_LAUNCH="$(which srun)"
+        export LAUNCH_CMD="${SRUN_LAUNCH} --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
+        # }
     fi
+    export LAUNCH="${LAUNCH_CMD}"
     NHOSTS=${SLURM_NNODES:-$(wc -l < "${HOSTFILE}")}
     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
-    echo "┌──────────────────────────────────────────────────────────────────┐"
-    echo "│ [DIST INFO]: "
+    HOSTS_ARR=$(cat "${HOSTFILE}")
+    # HOSTS_STR=$(join_by ' ' "${HOSTS_ARR}")
+    echo "┌───────────────────────────────────────────────────────────────────"
+    echo "│ [DIST INFO]:"
     echo "│   • Writing Job info to ${JOBENV_FILE}"
-    echo "│       • NHOSTS: $NHOSTS "
-    echo "│       • NGPU_PER_HOST: $NGPU_PER_HOST "
-    echo "│       • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
-    echo ""
-    echo "└──────────────────────────────────────────────────────────────────┘"
+    echo "│     • HOSTFILE: ${HOSTFILE}"
+    echo "│     • NHOSTS: $NHOSTS "
+    echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
+    echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
+    echo "│ [Hosts]:"
+    echo "│     • $(join_by ', ' ${HOSTS_ARR[*]})"
+    echo "│ [Launch]:"
+    echo "│     • Use: 'launch' (=${LAUNCH})"
+    echo "│       to launch job"
+    echo "└───────────────────────────────────────────────────────────────────"
+    echo "┌────────────────────────────────────────────────────────────────────────────────"
+    echo "│ YOU ARE HERE: $(whereAmI)"
+    echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
+    echo "└────────────────────────────────────────────────────────────────────────────────"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
     envSave
-    export -f launch="${launch}"
 }
 
-
-function PrintAndCopy() {
-    # HOSTS=$(join_by ' ' "${HOSTS_ARR}")
-    # cat "${HOSTFILE}"
-    # echo "${HOSTFILE}" | rpbcopy
-    # echo "export ${FNAME}=${HOSTFILE}" | rpbcopy
-    HOSTS_ARR=$(cat "${HOSTFILE}")
-    echo "┌──────────────────────────────────────────────────────────────────┐"
-    echo "│ Copying ${FNAME} to clipboard..."
-    echo "│ ${FNAME}: ${HOSTFILE}"
-    echo "│ [Hosts]: "
-    echo "│   $(join_by ', ' "${HOSTS_ARR}")"
-    echo "└──────────────────────────────────────────────────────────────────┘"
-    echo "┌───────────────────────────────────────────────────────────────────────────────┐"
-    echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars     │"
-    echo "└───────────────────────────────────────────────────────────────────────────────┘"
-}
 
 setup
-PrintAndCopy
+# launch () {
+#     "${LAUNCH}"
+# }
+# export -f launch
+# export -f launch="${LAUNCH}"
+# PrintAndCopy
 # vim: ft=bash

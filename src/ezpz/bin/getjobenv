@@ -5,8 +5,6 @@ PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
 
-# function join_by { local d=${1-} f=${2-}; if shift 2; then printf %s "$f" "${@/#/$d}"; fi; }
-
 function join_by {
     local d=${1-} f=${2-}
     if shift 2; then
@@ -43,34 +41,42 @@ function getSLURMenv() {
 
 function getJOBenv() {
     if [[ $(hostname) == thetagpu* ]]; then
+        JOBENV_FILE="${COBALT_ENV_FILE}"
         getCOBALTenv
     elif [[ $(hostname) == x3* ]]; then
+        JOBENV_FILE="${PBS_ENV_FILE}"
         getPBSenv
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        JOBENV_FILE="${SLURM_ENV_FILE}"
         getSLURMenv
     else
         echo "Unexpected hostname ${HOSTNAME}"
     fi
-    source "${JOBENV_FILE}"
-    alias launch="${DIST_LAUNCH}"
+    if [[ -f "${JOBENV_FILE}" ]]; then
+        source "${JOBENV_FILE}"
+    else
+        echo "Unable to find ${JOBENV_FILE} on $(hostname)"
+        exit 1
+    fi
     export HOSTFILE="${HOSTFILE}"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
     HOSTS_ARR=$(cat "${HOSTFILE}")
-    echo "┌──────────────────────────────────────────────────────────────────"  # ┐"
+    echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [Hosts]: "
     echo "│     • $(join_by ', ' $HOSTS_ARR)"
-    echo "└──────────────────────────────────────────────────────────────────"  # ┘"
-    echo "┌──────────────────────────────────────────────────────────────────"  # ┐"
+    echo "└──────────────────────────────────────────────────────────────────"
+    echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [DIST INFO]: "
     echo "│     • Loading job env from: ${JOBENV_FILE}"
     echo "│     • Defining alias: $(which launch)"
+    echo "│     • DIST_LAUNCH: ${DIST_LAUNCH}"
     echo "│     • HOSTFILE: ${HOSTFILE}"
     echo "│     • NHOSTS: ${NHOSTS}"
     echo "│     • NGPU_PER_HOST: ${NGPU_PER_HOST}"
     echo "│     • NGPUS (NHOSTS x NGPU_PER_HOST): ${NGPUS}"
-    echo "└──────────────────────────────────────────────────────────────────"  #┘"
+    echo "└──────────────────────────────────────────────────────────────────"
 }
 
 getJOBenv
