@@ -1,21 +1,33 @@
 # ✨ `ezpz`
 
-[![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
-[![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](https://www.tensorflow.org)
-[![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc)
+[![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc)
 <!-- <img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> -->
 <!-- <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>  -->
-
-Simplifies the process of setting up distributed training for:
-
-- `pytorch` + `{DDP, deepspeed, horovod}`
-
-- `tensorflow` + `horovod`
-
 
 > [!NOTE]
 > This library is **very much** still a WIP.  
 > Any ideas / issues / suggestions for improving things would be greatly appreciated.
+
+Simplifies the process of setting up distributed training for:
+
+- [`framework=pytorch`](#pytorch) + `backend={DDP, deepspeed, horovod}`
+
+- [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+
+
+
+
+From any of `{thetaGPU, Polaris, Perlmutter}`:
+
+```bash
+#!/bin/bash --login
+git clone https://github.com/saforem2/ezpz .
+./ezpz/src/ezpz/bin/savejobenv
+python3 -m pip install -e ezpz --require-virtualenv
+# e.g. to launch src/ezpz/__main__.py with pytorch + deepspeed:
+launch $(which python3) -m ezpz framework=pytorch backend=deepspeed
+```
+
 
 ## Setup
 
@@ -138,18 +150,36 @@ deepspeed, horovod}`[^tf-hvd]
 </details>
 
 
-## Tests
+## Examples
 
 > [!IMPORTANT]
-> We can launch with a specific `{framework, backend}` combo by:
+> We can `launch` on any of `{ThetaGPU, Polaris, Perlmutter}` (*)
+> with a specific `{framework, backend}` combo by
+> 1. [`savejobenv`](./src/ezpz/bin/savejobenv):
+>     - This will `export launch=<launcher> <launcher-opts>`
+>       for `<launcher>` $\in$ `{mpirun,mpiexec,srun}`
+>       on (*) respectively.
+>     - By default, `launch <exec>` will launch `<exec>` across
+>       _all_ the available GPUs in your active `{COBALT,PBS,slurm}` job.
+> 2. `launch`
+>     - e.g. `launch $(which python3) -m ezpz framework=<framework> backend=<backend>`, will:
+>         - `launch` [`__main__.py`](./src/ezpz/__main__.py) (in this case)
+>           with framework `<framework>` and backend `<backend>`
+>           (e.g. `pytorch` and `deepspeed`)
+>
+> - Complete example:      
 > ```bash
-> mpi_cmd="mpiexec --verbose --envall -n ${NGPUS} --ppn ${NGPU_PER_HOST}"
-> launch="${mpi_cmd} $(which python3) -m ezpz"
+> #!/bin/bash --login
+> git clone https://github.com/saforem2/ezpz
+> ./ezpz/src/ezpz/bin/savejobenv
+> launch $(which python3) -m ezpz framework=<framework> backend=<
 > launch framework=<framework> backend=<backend>
 > ```
 > for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
 
 [^1]: `deepspeed`, `DDP` only support `pytorch`
+
+### PyTorch
 
 <details closed><summary><h3>✅ PyTorch + [...]</h3></summary>
   
@@ -264,6 +294,8 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 </details>
 </details>
 </details>
+
+### TensorFlow
 
 <details closed><summary><h3>✅ TensorFlow + <code>horovod</code>:</h3></summary>
 
