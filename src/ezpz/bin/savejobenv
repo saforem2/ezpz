@@ -59,7 +59,8 @@ function saveSLURMenv() {
         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
         sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
         sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
-        export SLURM_NODES=$(scontrol show hostname "${SLURM_NODELIST}")
+        SLURM_NODES=$(scontrol show hostname "${SLURM_NODELIST}")
+        export SLURM_NODES="${SLURM_NODES}"
         export SLURM_NODEFILE="${HOME}/.slurm-nodefile"
         printf "%s\n" "${SLURM_NODES[@]}" > "${SLURM_NODEFILE}"
         export HOSTFILE="${SLURM_NODEFILE}"
@@ -99,19 +100,19 @@ function setup() {
         export FNAME="PBS_NODEFILE"
         export HOSTFILE="${PBS_NODEFILE}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
-        alias launch="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${PBS_NODEFILE}"
+        launch="$(which mpiexec) --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${PBS_NODEFILE}"
         # echo "${PBS_NODEFILE}" | rpbcopy
     elif [[ "${HOSTNAME}" == thetagpu* ]]; then
         getCOBALT_NODEFILE
         export FNAME="COBALT_NODEFILE"
         export HOSTFILE="${COBALT_NODEFILE}"
         export JOBENV_FILE="${COBALT_ENV_FILE}"
-        alias launch="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"
+        launch="$(which mpirun) -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"
         # echo "${COBALT_NODEFILE}" | rpbcopy
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then export FNAME="SLURM_NODEFILE"
         export HOSTFILE="${SLURM_NODEFILE}"
         export JOBENV_FILE="${SLURM_ENV_FILE}"
-        alias launch="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
+        launch="$(which srun) --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
         # echo "${SLURM_NODEFILE}" | rpbcopy
     fi
     NHOSTS=${SLURM_NNODES:-$(wc -l < "${HOSTFILE}")}
@@ -123,11 +124,13 @@ function setup() {
     echo "│       • NHOSTS: $NHOSTS "
     echo "│       • NGPU_PER_HOST: $NGPU_PER_HOST "
     echo "│       • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
+    echo ""
     echo "└──────────────────────────────────────────────────────────────────┘"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
     envSave
+    export -f launch="${launch}"
 }
 
 
@@ -141,7 +144,7 @@ function PrintAndCopy() {
     echo "│ Copying ${FNAME} to clipboard..."
     echo "│ ${FNAME}: ${HOSTFILE}"
     echo "│ [Hosts]: "
-    echo "│   $(join_by ', ' $HOSTS_ARR)"
+    echo "│   $(join_by ', ' "${HOSTS_ARR}")"
     echo "└──────────────────────────────────────────────────────────────────┘"
     echo "┌───────────────────────────────────────────────────────────────────────────────┐"
     echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars     │"
