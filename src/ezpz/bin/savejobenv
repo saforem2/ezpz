@@ -87,6 +87,15 @@ function envSave() {
         HOSTFILE="hostfile"
         hostname > "${HOSTFILE}"
     fi
+    NHOSTS=$(wc -L "${HOSTFILE}")
+    NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+    NGPUS=$((NHOSTS * NGPU_PER_HOST))
+    export NHOSTS="${NHOSTS}"
+    export NGPU_PER_HOST="${NGPU_PER_HOST}"
+    export NGPUS="${NGPUS}"
+    # echo "NHOSTS=${NHOSTS}"
+    # echo "NGPU_PER_HOST=${NGPU_PER_HOST}"
+    # echo "NGPUS=${NGPUS}"
     echo "└───────────────────────────────────────────────────────────────────"
     {
         echo "export HOSTFILE=${HOSTFILE}"
