@@ -15,6 +15,7 @@ function join_by {
 function getPBSenv() {
     if [[ $(hostname) == x3* ]]; then
         export JOBENV_FILE="${PBS_ENV_FILE}"
+        source "${PBS_ENV_FILE}"
         MPI_LAUNCH="$(which mpiexec)"
         export DIST_LAUNCH="${MPI_LAUNCH} --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
     else
@@ -25,6 +26,7 @@ function getPBSenv() {
 function getCOBALTenv() {
     if [[ $(hostname) == thetagpu* ]]; then
         export JOBENV_FILE="${COBALT_ENV_FILE}"
+        source "${COBALT_ENV_FILE}"
         MPI_LAUNCH="$(which mpirun)"
         export DIST_LAUNCH="${MPI_LAUNCH} -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
     else
@@ -35,6 +37,7 @@ function getCOBALTenv() {
 function getSLURMenv() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
+        source "${SLURM_ENV_FILE}"
         SRUN_LAUNCH="$(which srun)"
         export DIST_LAUNCH="${SRUN_LAUNCH} --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
     else
