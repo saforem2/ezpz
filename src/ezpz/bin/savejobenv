@@ -122,7 +122,7 @@ function setup() {
     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
     # HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
-    HOSTS=$(join_by ' ' $(cat $HOSTFILE))
+    HOSTS=$(join_by ' ' $(/bin/cat $HOSTFILE))
     # NHOSTS=$(wc -L "${HOSTFILE}")
     # NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
     # NGPUS=$(( NHOSTS * NGPU_PER_HOST ))
