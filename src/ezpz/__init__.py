@@ -13,7 +13,8 @@ from enrich.handler import RichHandler
 import tqdm
 # from rich import print
 # from enrich import get_logger
-from pathlib import Path
+# from pathlib import Path
+from ezpz import dist
 from ezpz.dist import (
     setup_wandb,
     seed_everything,
@@ -50,7 +51,7 @@ __all__ = [
     'get_rank',
     'get_world_size',
     'query_environment',
-    'check'
+    'check',
     'HERE',
     'PROJECT_DIR',
     'PROJECT_ROOT',
