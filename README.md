@@ -1,8 +1,6 @@
 # ✨ `ezpz`
 
 [![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc)
-<!-- <img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> -->
-<!-- <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>  -->
 
 > [!NOTE]
 > This library is **very much** still a WIP.  
@@ -14,20 +12,17 @@ Simplifies the process of setting up distributed training for:
 
 - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
 
-
-
-
-From any of `{thetaGPU, Polaris, Perlmutter}`:
+ezpz setup on any of `{thetaGPU, Polaris, Perlmutter}`:
 
 ```bash
-#!/bin/bash --login
-git clone https://github.com/saforem2/ezpz .
-./ezpz/src/ezpz/bin/savejobenv
+git clone 'https://github.com/saforem2/ezpz' .
+source ./ezpz/src/ezpz/bin/savejobenv
 python3 -m pip install -e ezpz --require-virtualenv
 # e.g. to launch src/ezpz/__main__.py with pytorch + deepspeed:
 launch $(which python3) -m ezpz framework=pytorch backend=deepspeed
 ```
 
+_2ez_.
 
 ## Setup
 
@@ -355,19 +350,21 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
   variables.
 
 
-<!--<details closed><summary><h3><code>savejobenv</code></h3></summary>-->
+<!--<details open><summary><h3>savejobenv</h3></summary>-->
 
 ### `savejobenv`
 
 Launch a job, clone (or navigate into) `ezpz`, and `source` [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
 
 ```bash
-# from `thetalogin4`
 (thetalogin4) $ qsub-gpu -A datascience -n 2 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 06:00 -I
 Job routed to queue "full-node".
 Wait for job 10155652 to start...
 Opening interactive session to thetagpu04
 [...]
+```
+
+```bash
 (thetagpu04) $ git clone https://github.com/saforem2/ezpz
 (thetagpu04) $ source ezpz/src/ezpz/bin/savejobenv
 ┌───────────────────────────────────────────────────────────────────
@@ -396,6 +393,7 @@ Opening interactive session to thetagpu04
 └────────────────────────────────────────────────────────────────────────────────
 ```
 
+
 <!--
 <details closed><summary><h3><code>getjobenv</code></h3></summary>
 -->
@@ -407,14 +405,19 @@ Now, in a **NEW SHELL**
 
 ```bash
 (localhost)   $ ssh <user>@theta
+```
+
+```bash
 (thetalogin4) $ ssh thetagpu19
+```
+
+```bash
 (thetagpu19)  $ module load conda/2023-01-11; conda activate base
 (thetagpu19)  $ cd ezpz
 (thetagpu19)  $ source ./src/ezpz/bin/getjobenv
 ┌──────────────────────────────────────────────────────────────────
 │ [Hosts]: 
-│     • thetagpu04
-thetagpu19
+│     • thetagpu04, thetagpu19
 └──────────────────────────────────────────────────────────────────
 ┌──────────────────────────────────────────────────────────────────
 │ [DIST INFO]: 
