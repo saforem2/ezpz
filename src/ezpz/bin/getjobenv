@@ -16,7 +16,6 @@ function getPBSenv() {
     if [[ $(hostname) == x3* ]]; then
         export JOBENV_FILE="${PBS_ENV_FILE}"
         source "${PBS_ENV_FILE}"
-        # MPI_LAUNCH="$(which mpiexec)"
         export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
     else
         echo "Skipping getPBSenv() on $(hostname)"
@@ -27,7 +26,6 @@ function getCOBALTenv() {
     if [[ $(hostname) == thetagpu* ]]; then
         export JOBENV_FILE="${COBALT_ENV_FILE}"
         source "${COBALT_ENV_FILE}"
-        # MPI_LAUNCH="$(which mpirun)"
         export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
     else
         echo "Skipping getCOBALTenv() on $(hostname)"
@@ -38,7 +36,6 @@ function getSLURMenv() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
         source "${SLURM_ENV_FILE}"
-        # SRUN_LAUNCH="$(which srun)"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
     else
         echo "Skipping getSLURMenv() on $(hostname)"
@@ -69,7 +66,7 @@ function getJOBenv() {
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
-    HOSTS_ARR=$(cat "${HOSTFILE}")
+    HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
 }
 
 function printJOBenv() {
@@ -90,7 +87,4 @@ function printJOBenv() {
 }
 
 getJOBenv
-# if [[ -z "$(which launch)" ]]; then
-#     alias launch="${DIST_LAUNCH}"
-# fi
 printJOBenv

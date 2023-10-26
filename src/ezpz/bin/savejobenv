@@ -41,11 +41,7 @@ function saveCOBALTenv() {
         export FNAME="COBALT_NODEFILE"
         export HOSTFILE="${COBALT_NODEFILE}"
         export JOBENV_FILE="${COBALT_ENV_FILE}"
-        # HOSTFILE="${COBALT_NODEFILE}"
-        # export HOSTFILE="${HOSTFILE:-${COBALT_NODEFILE}}"
-        # export JOBENV_FILE="${COBALT_ENV_FILE}"
         sed -i 's/^COBALT/export\ COBALT/g' "${COBALT_ENV_FILE}"
-        # MPI_LAUNCH="$(which mpirun)"
         export LAUNCH_CMD="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"  #  "$@"
     fi
 }
@@ -61,7 +57,6 @@ function savePBSenv() {
         export HOSTFILE="${PBS_NODEFILE}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
         sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
-        # MPI_LAUNCH=$(which mpiexec)
         export LAUNCH_CMD="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
     fi
 }
@@ -82,9 +77,7 @@ function saveSLURMenv() {
         printf "%s\n" "${SLURM_NODES[@]}" > "${SLURM_NODEFILE}"
         sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
         sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
-        # SRUN_LAUNCH="$(which srun)"
         export LAUNCH_CMD="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
-        # }
     fi
 }
 
@@ -105,41 +98,32 @@ function saveSLURMenv() {
 
 function setup() {
     if [[ $(hostname) == x3* ]]; then
-        HOSTFILE="${PBS_NODEFILE}"
+        export HOSTFILE="${PBS_NODEFILE}"
         savePBSenv
     elif [[ $(hostname) == thetagpu* ]]; then
-        HOSTFILE="${COBALT_NODEFILE}"
+        export HOSTFILE="${COBALT_NODEFILE}"
         saveCOBALTenv
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
-        HOSTFILE="${SLURM_NODEFILE}"
+        export HOSTFILE="${SLURM_NODEFILE}"
         saveSLURMenv
-    # else
-    #     echo "│ Unexpected hostname: ${HOSTNAME}"
-    #     HOSTFILE="hostfile"
-    #     hostname > "${HOSTFILE}"
+    else
+        echo "│ Unexpected hostname: ${HOSTNAME}"
+        HOSTFILE="hostfile"
+        hostname > "${HOSTFILE}"
     fi
-    NHOSTS=${SLURM_NNODES:-$(wc -l < "${HOSTFILE}")}
+    NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
-    # HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
-    HOSTS=$(join_by ' ' $(/bin/cat $HOSTFILE))
-    # NHOSTS=$(wc -L "${HOSTFILE}")
-    # NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
-    # NGPUS=$(( NHOSTS * NGPU_PER_HOST ))
+    HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
+    export NHOSTS="${NHOSTS}"
+    export NGPU_PER_HOST="${NGPU_PER_HOST}"
+    export NGPUS="${NGPUS}"
     echo "│ HOSTFILE: ${HOSTFILE}"
     echo "│ NHOSTS: ${NHOSTS}"
     echo "│ $(nvidia-smi -L | wc -l) GPUs per host"
     echo "│ ${NGPUS} GPUs total"
-    export NHOSTS="${NHOSTS}"
-    export NGPU_PER_HOST="${NGPU_PER_HOST}"
-    export NGPUS="${NGPUS}"
-    # export NHOSTS="${NHOSTS}"
-    # export NGPU_PER_HOST="${NGPU_PER_HOST}"
-    # export NGPUS="${NGPUS}"
-    # echo "NHOSTS=${NHOSTS}"
-    # echo "NGPU_PER_HOST=${NGPU_PER_HOST}"
-    # echo "NGPUS=${NGPUS}"
     echo "└───────────────────────────────────────────────────────────────────"
+
     {
         echo "export HOSTFILE=${HOSTFILE}"
         echo "export ${FNAME}=${HOSTFILE}"
@@ -162,7 +146,6 @@ function setup() {
     echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
     echo "│ [Hosts]:"
     echo "│       • ${HOSTS[*]}"
-    # echo "│     • $(join_by ', ' ${HOSTS_ARR[*]})"
     echo "│ [Launch]:"
     echo "│     • Use: 'launch' (=${LAUNCH})"
     echo "│       to launch job"
@@ -174,7 +157,6 @@ function setup() {
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
-    # envSave
 }
 
 
