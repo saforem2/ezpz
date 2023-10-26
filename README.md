@@ -355,93 +355,144 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
   variables.
 
 
-<details closed><summary><h3><code>savejobenv</code></h3></summary>
+<!--<details closed><summary><h3><code>savejobenv</code></h3></summary>-->
 
-Launch a job, clone (or navigate into) `ezpz`, and run [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
+### `savejobenv`
+
+Launch a job, clone (or navigate into) `ezpz`, and `source` [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
 
 ```bash
-(thetalogin5) $ qsub-gpu -A datascience -n 4 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 12:00 -I
-(thetagpu13) $ git clone https://github.com/saforem2/ezpz
-(thetagpu13) $ cd ezpz/src/ezpz
-(thetagpu13) $ ./bin/savejobenv
-┌──────────────────────────────────────────────────────────────────┐
+# from `thetalogin4`
+(thetalogin4) $ qsub-gpu -A datascience -n 2 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 06:00 -I
+Job routed to queue "full-node".
+Wait for job 10155652 to start...
+Opening interactive session to thetagpu04
+[...]
+(thetagpu04) $ git clone https://github.com/saforem2/ezpz
+(thetagpu04) $ source ezpz/src/ezpz/bin/savejobenv
+┌───────────────────────────────────────────────────────────────────
+│ Writing COBALT vars to /home/foremans/.cobaltenv
+│ HOSTFILE: /var/tmp/cobalt.10155652
+│ NHOSTS: 2
+│ 8 GPUs per host
+│ 16 GPUs total
+└───────────────────────────────────────────────────────────────────
+┌───────────────────────────────────────────────────────────────────
 │ [DIST INFO]:
 │   • Writing Job info to /home/foremans/.cobaltenv
-│       • NHOSTS: 4
-│       • NGPU_PER_HOST: 8
-│       • NGPUS = (NHOSTS * NGPU_PER_HOST) = 32
-└──────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────┐
-│ Saving COBALT env to /home/foremans/.cobaltenv from thetagpu13
-│ Writing COBALT vars to /home/foremans/.cobaltenv                 │
-└──────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────┐
-│ Copying COBALT_NODEFILE to clipboard...
-│ COBALT_NODEFILE: /var/tmp/cobalt.10154591
+│     • HOSTFILE: /var/tmp/cobalt.10155652
+│     • NHOSTS: 2
+│     • NGPU_PER_HOST: 8
+│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = 16
 │ [Hosts]:
-│   thetagpu13 thetagpu12 thetagpu19 thetagpu18
-└──────────────────────────────────────────────────────────────────┘
-┌───────────────────────────────────────────────────────────────────────┐
-│ Run 'source getjobenv' in a NEW SHELL to automatically set env vars   │
-└───────────────────────────────────────────────────────────────────────┘
+│       • thetagpu04 thetagpu19
+│ [Launch]:
+│     • Use: 'launch' (=mpirun -n  -N  --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH)
+│       to launch job
+└───────────────────────────────────────────────────────────────────
+┌────────────────────────────────────────────────────────────────────────────────
+│ YOU ARE HERE: /home/foremans
+│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars
+└────────────────────────────────────────────────────────────────────────────────
 ```
-</details>
 
+<!--
 <details closed><summary><h3><code>getjobenv</code></h3></summary>
+-->
+
+
+### `getjobenv`
 
 Now, in a **NEW SHELL**
 
 ```bash
-(localhost) $ ssh foremans@theta
-(thetalogin5) $ ssh thetagpu18
-(thetagpu18) $ module load conda/2023-01-11; cond activate base
-(thetagpu18) $ cd ezpz
-(thetagpu18) $ cd ezpz/src/ezpz
-(thetagpu18) $ source bin/getjobenv
-RUNNING_JOB_FILE: /var/tmp/cobalt-running-job
-JOBID: 10154591
-Loading job env from: /home/foremans/.cobaltenv
-Defining alias mpilaunch: mpilaunch: aliased to mpirun -n 32 -N 8 --hostfile /var/tmp/cobalt.10154591 -x PATH -x LD_LIBRARY_PATH
-HOSTFILE: /var/tmp/cobalt.10154591
-NHOSTS: 4
-NGPU_PER_HOST: 8
-NGPUS (NHOSTS x NGPU_PER_HOST): 32
-HOSTS: thetagpu13 thetagpu12 thetagpu19 thetagpu18
-
-(thetagpu18) $ mpilaunch python3 -m ezpz pytorch DDP
-Using DDP for distributed training
-RANK: 0 / 31
-RANK: 25 / 31
-RANK: 24 / 31
-RANK: 15 / 31
-RANK: 26 / 31
-RANK: 31 / 31
-RANK: 2 / 31
-RANK: 12 / 31
-RANK: 1 / 31
-RANK: 28 / 31
-RANK: 3 / 31
-RANK: 14 / 31
-RANK: 4 / 31
-RANK: 10 / 31
-RANK: 27 / 31
-RANK: 5 / 31
-RANK: 30 / 31
-RANK: 29 / 31
-RANK: 9 / 31
-RANK: 7 / 31
-RANK: 6 / 31
-RANK: 13 / 31
-RANK: 8 / 31
-RANK: 11 / 31
-RANK: 18 / 31
-RANK: 16 / 31
-RANK: 21 / 31
-RANK: 20 / 31
-RANK: 22 / 31
-RANK: 19 / 31
-RANK: 17 / 31
-RANK: 23 / 31
+(localhost)   $ ssh <user>@theta
+(thetalogin4) $ ssh thetagpu19
+(thetagpu19)  $ module load conda/2023-01-11; conda activate base
+(thetagpu19)  $ cd ezpz
+(thetagpu19)  $ source ./src/ezpz/bin/getjobenv
+┌──────────────────────────────────────────────────────────────────
+│ [Hosts]: 
+│     • thetagpu04
+thetagpu19
+└──────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────
+│ [DIST INFO]: 
+│     • Loading job env from: /home/foremans/.cobaltenv
+│     • HOSTFILE: /var/tmp/cobalt.10155652
+│     • NHOSTS: 2
+│     • NGPU_PER_HOST: 8
+│     • NGPUS (NHOSTS x NGPU_PER_HOST): 16
+│     • DIST_LAUNCH: mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
+│     • Defining alias: launch: aliased to mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
+└──────────────────────────────────────────────────────────────────
+(thetagpu19) $ mkdir -p venvs/thetaGPU/2023-01-11
+(thetagpu19) $ python3 -m venv venvs/thetaGPU/2023-01-11 --system-site-packages
+(thetagpu19) $ source venvs/thetaGPU/2023-01-11/bin/activate
+(thetagpu19) $ python3 -m pip install -e . --require-virtualenv
+(thetagpu19) $ launch python3 -m ezpz framework=pytorch backend=DDP
+[2023-10-26 12:21:26,716][ezpz.dist][INFO] - Using DDP for distributed training
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 13
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 14
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 8
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 12
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 6
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 9
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 10
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 15
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 11
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 7
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 3
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 1
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 4
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 5
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 2
+[2023-10-26 12:21:26,798][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 0
+[2023-10-26 12:21:26,811][torch.distributed.distributed_c10d][INFO] - Rank 14: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,812][torch.distributed.distributed_c10d][INFO] - Rank 6: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,814][torch.distributed.distributed_c10d][INFO] - Rank 13: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,815][torch.distributed.distributed_c10d][INFO] - Rank 7: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,816][torch.distributed.distributed_c10d][INFO] - Rank 8: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,817][torch.distributed.distributed_c10d][INFO] - Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,819][torch.distributed.distributed_c10d][INFO] - Rank 12: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,820][torch.distributed.distributed_c10d][INFO] - Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,821][torch.distributed.distributed_c10d][INFO] - Rank 10: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,823][torch.distributed.distributed_c10d][INFO] - Rank 4: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 9: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 5: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,827][torch.distributed.distributed_c10d][INFO] - Rank 15: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,828][torch.distributed.distributed_c10d][INFO] - Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,830][torch.distributed.distributed_c10d][INFO] - Rank 11: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,831][torch.distributed.distributed_c10d][INFO] - Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:27,035][ezpz.dist][INFO] - RANK: 0 / 15
+{
+  "framework": "pytorch",
+  "backend": "DDP",
+  "use_wandb": false,
+  "seed": null,
+  "port": null,
+  "ds_config_path": null,
+  "wandb_project_name": null,
+  "precision": null,
+  "ngpus": null
+}
+[2023-10-26 12:21:27,038][__main__][INFO] - Output dir: /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/ezpz/outputs/runs/pytorch/DDP/2023-10-26/12-21-25
+[2023-10-26 12:21:27,097][ezpz.dist][INFO] - RANK: 8 / 15
+[2023-10-26 12:21:27,103][ezpz.dist][INFO] - RANK: 6 / 15
+[2023-10-26 12:21:27,104][ezpz.dist][INFO] - RANK: 14 / 15
+[2023-10-26 12:21:27,111][ezpz.dist][INFO] - RANK: 13 / 15
+[2023-10-26 12:21:27,116][ezpz.dist][INFO] - RANK: 1 / 15
+[2023-10-26 12:21:27,126][ezpz.dist][INFO] - RANK: 7 / 15
+[2023-10-26 12:21:27,135][ezpz.dist][INFO] - RANK: 10 / 15
+[2023-10-26 12:21:27,139][ezpz.dist][INFO] - RANK: 12 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 9 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 15 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 11 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 5 / 15
+[2023-10-26 12:21:27,144][ezpz.dist][INFO] - RANK: 2 / 15
+[2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 4 / 15
+[2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 3 / 15
+16.56s user 30.05s system 706% cpu 6.595s total
 ```
 
 while this example looked at ThetaGPU, the exact same process will work on any
