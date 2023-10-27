@@ -408,12 +408,12 @@ def setup_wandb(
         )
     )
     # if (hpath := Path(hostfile).resolve().is_file()):
-    if hostfile is not None:
-        hpath = Path(hostfile).resolve().absolute()
-        if hpath.is_file():
-            with hpath.open('r') as f:
-                hosts = f.readlines()
-            wandb.run.config['hosts'] = hosts
+    # if hostfile is not None:
+    #     hpath = Path(hostfile).resolve().absolute()
+    #     if hpath.is_file():
+    #         with hpath.open('r') as f:
+    #             hosts = f.readlines()
+    #         wandb.run.config['hosts'] = hosts
     if hostname.startswith('theta'):
         wandb.run.config.update({'machine': 'ThetaGPU'})
     elif hostname.startswith('x3'):
