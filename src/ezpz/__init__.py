@@ -23,6 +23,7 @@ from ezpz.dist import (
     cleanup,
     get_world_size,
     get_rank,
+    get_local_rank,
     query_environment,
     check
 )
@@ -49,6 +50,7 @@ __all__ = [
     'cleanup',
     'seed_everything',
     'get_rank',
+    'get_local_rank',
     'get_world_size',
     'query_environment',
     'check',
