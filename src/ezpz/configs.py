@@ -3,7 +3,7 @@ ezpz/configs.py
 """
 import os
 import json
-import logging
+# import logging
 import subprocess
 import rich.repr
 
@@ -12,14 +12,14 @@ from dataclasses import dataclass, asdict
 from copy import deepcopy
 from pathlib import Path
 from abc import ABC, abstractmethod
-
-log = logging.getLogger(__name__)
+from enrich import get_logger
 
 # -- Configure useful Paths -----------------------
 # warnings.filterwarnings('ignore')
 HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 PROJECT_ROOT = PROJECT_DIR
+BIN_DIR = HERE.joinpath('bin')
 CONF_DIR = HERE.joinpath('conf')
 DS_CONFIG_PATH = CONF_DIR.joinpath('ds_config.yaml')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
@@ -32,6 +32,9 @@ QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
+SAVEJOBENV = BIN_DIR.joinpath('savejobenv').resolve().as_posix()
+GETJOBENV = BIN_DIR.joinpath('getjobenv').resolve().as_posix()
+
 
 FRAMEWORKS = {
     'pytorch': ['p', 'pt', 'torch', 'pytorch'],
@@ -43,8 +46,12 @@ BACKENDS = {
 }
 
 
+# log = logging.getLogger(__name__)
+log = get_logger(__name__, 'INFO')
+
+
 def load_ds_config(fpath: Optional[os.PathLike] = None) -> dict:
-    cfgpath = Path(fpath)
+    cfgpath = Path(str(fpath))
     log.info(
         'Loading DeepSpeed config from: '
         f'{cfgpath.resolve().as_posix()}'
