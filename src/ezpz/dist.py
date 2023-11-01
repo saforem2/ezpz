@@ -12,7 +12,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 from mpi4py import MPI
 import logging
-from ezpz.configs import FRAMEWORKS, BACKENDS, HERE, PROJECT_ROOT
+from ezpz.configs import FRAMEWORKS, BACKENDS, HERE  # , PROJECT_ROOT
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def setup(
 ):
     return (
         setup_tensorflow(precision=precision, ngpus=ngpus)
-        if framework in ['tensorflow', 'tf', 't']
+        if framework in {'tensorflow', 'tf', 't'}
         else setup_torch(backend=backend, port=port, seed=seed)
     )
 
@@ -186,14 +186,15 @@ def setup_torch_distributed(
         world_size = dsetup['world_size']
         rank = dsetup['rank']
         local_rank = dsetup['local_rank']
-    elif be in ['deepspeed', 'ds']:
+    elif be in {'deepspeed', 'ds'}:
         init_deepspeed()
         world_size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
-    elif be in ['horovod', 'hvd']:
+    elif be in {'horovod', 'hvd'}:
         import horovod.torch as hvd
-        hvd.init() if not hvd.is_initialized() else None
+        _ = None if hvd.is_initialized() else hvd.init()
+        # hvd.init() if not hvd.is_initialized() else None
         rank = hvd.rank()
         world_size = hvd.size()
         local_rank = hvd.local_rank()
@@ -377,15 +378,17 @@ def setup_wandb(
     wandb.run.config.update({'current_time': current_time})
     wandb.run.config.update({'world_size': get_world_size()})
     wandb.run.config.update({'outdir': os.getcwd()})
-    wandb.run.config.update({'hostname': rank})
+    # wandb.run.config.update({'hostname': rank})
     if config is not None:
         if isinstance(config, DictConfig):
-            config = OmegaConf.to_container(
+            cfg = OmegaConf.to_container(
                 config,
                 resolve=True,
                 throw_on_missing=True
             )
-        wandb.run.config.update({'config': config})
+            wandb.run.config.update({'config': cfg})
+        else:
+            wandb.run.config.update({'config': config})
     env = {
         k: v for k, v in dict(os.environ).items()
         if not k.startswith('_ModuleTable')
@@ -393,17 +396,26 @@ def setup_wandb(
     _ = env.pop('LS_COLORS', None)
     _ = env.pop('PS1', None)
     wandb.run.config.update({'env': env})
-    hostname = socket.gethostbyaddr(socket.gethostname())[0]
+    try:
+        hostname = socket.gethostbyaddr(socket.gethostname())[0]
+    except Exception:
+        try:
+            hostname = socket.gethostname()
+        except Exception:
+            log.warning('Unable to determine hostname!')
+            hostname = 'unknown'
+
     hostfile = os.environ.get(
         'HOSTFILE',
         os.environ.get(
             'PBS_NODEFILE',
             os.environ.get(
                 'COBALT_NODEFILE',
-                os.environ.get(
-                    'SLURM_JOB_NODELIST',
-                    None
-                )
+                None,
+                # os.environ.get(
+                #     'SLURM_JOB_NODELIST',
+                #     None
+                # )
             )
         )
     )
@@ -506,6 +518,7 @@ def build_mpiexec_thetagpu(
         # ngpus: Optional[int] = None,
         # hostfile: Optional[os.PathLike] = None
 ):
+    # import subprocess
     import subprocess
     jobenv = get_cobalt_resources()
     # which_mpi = subprocess.Popen('which mpirun', shell=True)
@@ -552,7 +565,7 @@ def check(
     if framework in FRAMEWORKS['pytorch']:
         _ = setup_torch(
             backend=backend,
-            port=port,
+            port=str(port),
         )
     elif framework in FRAMEWORKS['tensorflow']:
         _ = setup_tensorflow()
