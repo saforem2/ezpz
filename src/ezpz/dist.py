@@ -12,10 +12,8 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 from mpi4py import MPI
 import logging
+# from enrich import get_logger
 from ezpz.configs import FRAMEWORKS, BACKENDS, HERE  # , PROJECT_ROOT
-
-log = logging.getLogger(__name__)
-
 
 def seed_everything(seed: int):
     import torch
@@ -31,22 +29,45 @@ def seed_everything(seed: int):
 def print_dist_setup():
     # print(' '.join(setup_strings))
     # log.info(f"{get_log_prefix()}: {get_rank()} / {get_world_size() - 1}")
-    log.info(f"RANK: {get_rank()} / {get_world_size() - 1}")
+    log.critical(f"RANK: {get_rank()} / {get_world_size() - 1}")
 
 
 def setup(
         framework: str = 'pytorch',
-        backend: str = 'DDP',
-        port: str = '5432',
+        backend: Optional[str] = None,
+        port: Optional[str] = None,
         seed: Optional[int] = None,
         precision: Optional[str] = None,
         ngpus: Optional[int] = None
 ):
-    return (
-        setup_tensorflow(precision=precision, ngpus=ngpus)
-        if framework in {'tensorflow', 'tf', 't'}
-        else setup_torch(backend=backend, port=port, seed=seed)
-    )
+    """Setup / initialize for distributed training.
+
+    Args:
+        - framework [str]: Framework to use. One of {'pytorch', 'tensorflow'}
+        - backend [str]: Backend to use w/ framework.
+          One of {'DDP', 'deepspeed', 'horovod'}.
+          NOTE: {'DDP', 'deepspeed'} only compatible with 'framework=pytorch'
+        - port [str]: Port to use.
+        - seed [int]: Seed to use for instantiating RNGs
+        - precision [str]: Explicit precision to use. Can be omitted.
+        - ngpus [int]: Limit to only use `ngpus` instead of all available.
+          Optional.
+    """
+    port = '5432' if port is None else port
+    if backend is None:
+        backend = (
+            'DDP' if framework in ['p', 'pt', 'torch', 'pytorch']
+            else 'horovod'
+        )
+    if framework in {'tensorflow', 'tf', 't'}:
+        return setup_tensorflow(precision=precision, ngpus=ngpus)
+    else:
+        return setup_torch(backend=backend, port=port, seed=seed)
+    # return (
+    #     setup_tensorflow(precision=precision, ngpus=ngpus)
+    #     if framework in {'tensorflow', 'tf', 't'}
+    #     else setup_torch(backend=backend, port=port, seed=seed)
+    # )
 
 
 def init_deepspeed():
@@ -209,7 +230,7 @@ def setup_torch_distributed(
 
 
 def setup_torch(
-        backend: str = 'deepspeed',
+        backend: str = 'DDP',
         port: str = '2345',
         seed: Optional[int] = None,
 ) -> int:
@@ -233,7 +254,7 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    log.info(f'RANK: {rank} / {world_size-1}')
+    log.critical(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
@@ -272,7 +293,7 @@ def setup_tensorflow(
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
     if eager_mode is not None:
-        log.info('Detected `TF_EAGER` from env. Running eagerly.')
+        log.critical('Detected `TF_EAGER` from env. Running eagerly.')
         tf.config.run_functions_eagerly(True)
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -315,9 +336,9 @@ def setup_tensorflow(
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
-    log.info(f'RANK: {RANK} / {WORLD_SIZE-1}')
+    log.critical(f'RANK: {RANK} / {WORLD_SIZE-1}')
     if RANK == 0:
-        log.info(f"Using {TF_FLOAT} precision")
+        log.critical(f"Using {TF_FLOAT} precision")
     return RANK
 
 
@@ -340,8 +361,8 @@ def setup_wandb(
             )
         )
     )
-    log.info(f"Setting up wandb from rank: {rank}")
-    log.info(f"Using: WB PROJECT: {project_name}")
+    log.warning(f"Setting up wandb from rank: {rank}")
+    log.warning(f"Using: WB PROJECT: {project_name}")
     # if get_rank() == 0:
     # tensorboard_dir = args.tensorboard_dir
     tensorboard_dir = None
@@ -374,7 +395,7 @@ def setup_wandb(
     )
     assert wandb.run is not None
     wandb.run.log_code(HERE.as_posix())
-    log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+    log.warning(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
     wandb.run.config.update({'current_time': current_time})
     wandb.run.config.update({'world_size': get_world_size()})
     wandb.run.config.update({'outdir': os.getcwd()})
@@ -518,7 +539,6 @@ def build_mpiexec_thetagpu(
         # ngpus: Optional[int] = None,
         # hostfile: Optional[os.PathLike] = None
 ):
-    # import subprocess
     import subprocess
     jobenv = get_cobalt_resources()
     # which_mpi = subprocess.Popen('which mpirun', shell=True)
@@ -548,8 +568,8 @@ def run_mpiexec(cmd: str):
 
 
 def mpi_test_framework_backend(
-    framework: str = 'pytorch',
-    backend: str = 'DDP',
+        framework: str = 'pytorch',
+        backend: str = 'DDP',
 ):
     import sys
     python3 = sys.executable
@@ -571,3 +591,10 @@ def check(
         _ = setup_tensorflow()
     else:
         raise ValueError(f"Unable to parse framework: {framework}")
+
+
+# LEVEL = 'INFO' if get_rank() == 0 else 'CRITICAL'
+# log = get_logger(__name__, "INFO")
+# if get_rank() != 0:
+#     log.setLevel('CRITICAL')
+log = logging.getLogger(__name__)
