@@ -21,6 +21,9 @@ HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 PROJECT_ROOT = PROJECT_DIR
 CONF_DIR = HERE.joinpath('conf')
+BIN_DIR = HERE.joinpath('bin')
+SAVEJOBENV = BIN_DIR.joinpath('savejobenv')
+GETJOBENV = BIN_DIR.joinpath('getjobenv')
 DS_CONFIG_PATH = CONF_DIR.joinpath('ds_config.yaml')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 OUTPUTS_DIR = HERE.joinpath('outputs')
@@ -41,6 +44,14 @@ BACKENDS = {
     'pytorch': ['ddp', 'ds', 'dspeed', 'deepspeed', 'h', 'hvd', 'horovod'],
     'tensorflow': ['h', 'hvd', 'horovod']
 }
+
+def getjobenv():
+    print(GETJOBENV)
+    return GETJOBENV
+
+def savejobenv():
+    print(SAVEJOBENV)
+    return SAVEJOBENV
 
 
 def load_ds_config(fpath: Optional[os.PathLike] = None) -> dict:
