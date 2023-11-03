@@ -359,11 +359,17 @@ def setup_wandb(
         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
     # wbrun_id = wandb.util.generate_id()
     current_time = time.time()
+    os.environ['WANDB_INIT_TIMEOUT'] = '300'
     # local_time = time.localtime(current_time)
     # if wandb.run is None:
     wbsettings = None
     if start_method is not None:
-        wbsettings = wandb.Settings(start_method=start_method)
+        wbsettings = wandb.Settings(
+            start_method=start_method,
+            init_timeout=300
+        )
+    else:
+        wbsettings = wandb.Settings(init_timeout=300)
     wandb.init(
         # resume='allow',
         dir=os.getcwd(),
