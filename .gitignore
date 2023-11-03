@@ -1,3 +1,4 @@
+src/ezpz/outputs/*
 venvs/*
 *old*
 *.DS_Store
