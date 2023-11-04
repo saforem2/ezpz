@@ -4,15 +4,16 @@ dist.py
 Contains methods for initializing distributed communication.
 """
 from __future__ import absolute_import, annotations, division, print_function
-
-import os
-
-from typing import Optional, Callable, Any
-from pathlib import Path
-from omegaconf import DictConfig, OmegaConf
-from mpi4py import MPI
+import datetime
 import logging
-from ezpz.configs import FRAMEWORKS, BACKENDS, HERE  # , PROJECT_ROOT
+import os
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from mpi4py import MPI
+from omegaconf import DictConfig, OmegaConf
+
+from ezpz.configs import BACKENDS, FRAMEWORKS, HERE  # , PROJECT_ROOT
 
 log = logging.getLogger(__name__)
 
@@ -324,11 +325,11 @@ def setup_tensorflow(
 def setup_wandb(
         project_name: Optional[str] = None,
         config: Optional[dict | DictConfig] = None,
-        start_method: Optional[str] = None,
+        start_method: str = 'thread',
+        init_timeout: int = 300,
 ):
     import wandb
     import socket
-    import time
     rank = get_rank()
     project_name = (
         project_name if project_name is not None
@@ -358,30 +359,23 @@ def setup_wandb(
         log.info(f'Patching tensorboard from {tensorboard_dir}')
         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
     # wbrun_id = wandb.util.generate_id()
-    current_time = time.time()
-    os.environ['WANDB_INIT_TIMEOUT'] = '300'
-    # local_time = time.localtime(current_time)
-    # if wandb.run is None:
-    wbsettings = None
-    if start_method is not None:
-        wbsettings = wandb.Settings(
-            start_method=start_method,
-            init_timeout=300
-        )
-    else:
-        wbsettings = wandb.Settings(init_timeout=300)
+    now = datetime.datetime.now()
+    dstr = now.strftime('%Y-%m-%d-%H%M%S')
     wandb.init(
         # resume='allow',
         dir=os.getcwd(),
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
-        settings=wbsettings,
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
+        settings=wandb.Settings(
+            start_method=start_method,
+            init_timeout=init_timeout
+        )
     )
     assert wandb.run is not None
     wandb.run.log_code(HERE.as_posix())
     log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
-    wandb.run.config.update({'current_time': current_time})
+    wandb.run.config.update({'created_at': dstr})
     wandb.run.config.update({'world_size': get_world_size()})
     wandb.run.config.update({'outdir': os.getcwd()})
     # wandb.run.config.update({'hostname': rank})
@@ -410,7 +404,23 @@ def setup_wandb(
         except Exception:
             log.warning('Unable to determine hostname!')
             hostname = 'unknown'
-
+    if hostname.startswith('theta'):
+        machine = "ThetaGPU"
+    elif hostname.startswith('x3'):
+        machine = "Polaris"
+    elif hostname.startswith('x1'):
+        machine = "Sunspot"
+    elif hostname.startswith('nid'):
+        machine = "Perlmutter"
+    elif hostname.startswith('login'):
+        machine = "Perlmutter"
+    else:
+        machine = hostname
+    log.info(f'Running on {machine}')
+    wandb.run.config.update({'machine': machine})
+    model_size = os.environ.get('MODEL_SIZE', None)
+    if model_size is not None:
+        wandb.run.config.update({'MODEL_SIZE': model_size})
     hostfile = os.environ.get(
         'HOSTFILE',
         os.environ.get(
@@ -418,35 +428,15 @@ def setup_wandb(
             os.environ.get(
                 'COBALT_NODEFILE',
                 None,
-                # os.environ.get(
-                #     'SLURM_JOB_NODELIST',
-                #     None
-                # )
             )
         )
     )
-    # if (hpath := Path(hostfile).resolve().is_file()):
-    # if hostfile is not None:
-    #     hpath = Path(hostfile).resolve().absolute()
-    #     if hpath.is_file():
-    #         with hpath.open('r') as f:
-    #             hosts = f.readlines()
-    #         wandb.run.config['hosts'] = hosts
-    if hostname.startswith('theta'):
-        wandb.run.config.update({'machine': 'ThetaGPU'})
-    elif hostname.startswith('x3'):
-        wandb.run.config.update({'machine': 'Polaris'})
-    elif hostname.startswith('x1'):
-        wandb.run.config.update({'machine': 'Sunspot'})
-    elif hostname.startswith('nid'):
-        wandb.run.config.update({'machine': 'Perlmutter'})
-    elif hostname.startswith('login'):
-        wandb.run.config.update({'machine': 'NERSC'})
-    else:
-        wandb.run.config.update({'machine': hostname})
-    model_size = os.environ.get('MODEL_SIZE', None)
-    if model_size is not None:
-        wandb.run.config.update({'MODEL_SIZE': model_size})
+    if hostfile is not None and Path(hostfile).is_file():
+        log.info(f'Reading hosts from {hostfile}')
+        hpath = Path(hostfile).resolve().absolute()
+        with hpath.open('r') as f:
+            hosts = f.readlines()
+        wandb.run.config['hosts'] = hosts
 
 
 def run_bash_command(cmd: str) -> Any:
@@ -496,8 +486,13 @@ def get_nodes_from_hostfile(hostfile: os.PathLike) -> list[str]:
 
 
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
-    import sh
-    gpus_per_node = int(sh.wc("-l", _in=sh.nvidia_smi("-L")).rstrip("\n"))
+    try:
+        import sh  # pyright: ignore
+        gpus_per_node = int(sh.wc("-l", _in=sh.nvidia_smi("-L")).rstrip("\n"))
+    except (ImportError, ModuleNotFoundError):
+        # import subprocess
+        gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
+        # gpus_per_node = subprocess.Popen('nvidia-smi -L | wc -l', shell=True)
     if _assert:
         import torch
         assert gpus_per_node == torch.cuda.device_count()
@@ -507,8 +502,8 @@ def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
 def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
     cobalt_info = inspect_cobalt_running_job()
     # cobalt_nodefile = get_cobalt_nodefile()
-    nodes = get_nodes_from_hostfile(cobalt_info["COBALT_NODEFILE"])
-    gpus_per_node = get_gpus_per_node()
+    nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
+    gpus_per_node = get_gpus_per_node(_assert=_assert)
     cobalt_info |= {
         'nodes': nodes,
         'num_nodes': len(nodes),
@@ -525,13 +520,15 @@ def build_mpiexec_thetagpu(
         # hostfile: Optional[os.PathLike] = None
 ):
     # import subprocess
-    import subprocess
+    # import subprocess
     jobenv = get_cobalt_resources()
     # which_mpi = subprocess.Popen('which mpirun', shell=True)
-    import sh
-    which_mpi = sh.which('mpirun').rstrip('\n')
+    # try:
+    #     import sh
+    #     which_mpi = sh.which('mpirun').rstrip('\n')
+    # except (ImportError, ModuleNotFoundError):
     mpiexec = [
-        f"{which_mpi}",
+        "mpirun",
         f"-n {jobenv['num_nodes']}",
         f"-npernode {jobenv['gpus_per_node']}",
         f"--hostfile {jobenv['COBALT_NODEFILE']}",
