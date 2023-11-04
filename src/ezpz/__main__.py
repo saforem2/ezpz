@@ -9,19 +9,18 @@ from __future__ import (
     annotations,
     division,
     print_function,
-    unicode_literals
+    unicode_literals,
 )
+import logging
 import os
 import sys
 
 import hydra
-import logging
-
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
-from ezpz.dist import setup, setup_wandb
 from ezpz.configs import TrainConfig, git_ds_info
+from ezpz.dist import setup, setup_wandb
 
 log = logging.getLogger(__name__)
 
@@ -38,8 +37,12 @@ def main(cfg: DictConfig) -> int:
     if rank != 0:
         log.setLevel("CRITICAL")
     else:
-        from rich import print_json
-        print_json(config.to_json())
+        try:
+            from omegaconf import OmegaConf
+            import json
+            log.info(json.dumps(OmegaConf.to_container(cfg), indent=4))
+        except (ImportError, ModuleNotFoundError):
+            log.info(config)
         if config.use_wandb:
             setup_wandb(
                 project_name=config.wandb_project_name,
@@ -52,9 +55,11 @@ def main(cfg: DictConfig) -> int:
 
 
 if __name__ == '__main__':
-    # import wandb
-    # wandb.require(experiment='service')
     rank = main()
-    # if wandb.run is not None:
-    #     wandb.finish(0)
+    try:
+        import wandb
+    except (ImportError, ModuleNotFoundError):
+        wandb = None
+    if wandb is not None and wandb.run is not None:
+        wandb.run.finish()
     sys.exit(0)
