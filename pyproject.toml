@@ -25,10 +25,11 @@ classifiers = [
 dependencies = [
   "mpi4py",
   "torch",
+  "xarray",
+  "ploterm",
   # "bokeh",
   # "h5py",
   # "pillow",
-  # "xarray",
   # "celerite",
   "joblib",
   "rich",
@@ -38,6 +39,7 @@ dependencies = [
   "hydra-colorlog",
   # "ipympl",
   # "tqdm",
+  "opinionated @ git+https://github.com/saforem2/opinionated",
   "enrich @ git+https://github.com/saforem2/enrich",
 ]
 
