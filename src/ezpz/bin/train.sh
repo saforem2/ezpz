@@ -58,11 +58,11 @@ function setup() {
     killIfRunning
     sourceFile "${DIR}/setup.sh"
     setupJob
-    EXEC="${LAUNCH} $(which python3) ${MAIN} ${args}"
+    EXEC="${LAUNCH} python3 ${MAIN} ${args}"  # | tee -a ${LOGFILE}"
     export EXEC
     pprint "EXEC: ${EXEC}"
     printJobInfo "$@" | tee -a "${LOGFILE}"
-    export NODE_RANK=0
+    # export NODE_RANK=0
     export NNODES=$NHOSTS
     export GPUS_PER_NODE=$NGPU_PER_HOST
     export WORLD_SIZE=$NGPUS
@@ -70,7 +70,17 @@ function setup() {
 
 setup "$@"
 ${EXEC} | tee -a "${LOGFILE}"
+# ${LAUNCH} python3 "${MAIN}" "$@" | tee -a "${LOGFILE}"
 wait $!
+# ${EXEC}
+# ${EXEC} >> ${LOGFILE} 2>&1
+# | tee -a "${LOGFILE}"
+# wait $!
+# ${EXEC} >> "${LOGFILE}" 2>&1 &
+# "${EXEC}" >> "${LOGFILE}" 2>&1 &
+# wait $!
+# ${EXEC} | tee -a "${LOGFILE}"
+# wait $!
 # "${EXEC}" > "${LOGFILE}" 2>&1
 # "${EXEC}" "$(which python3)" "${MAIN}" "$@" > "${LOGFILE}" 2>&1 &
 # wait $!

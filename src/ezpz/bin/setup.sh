@@ -77,7 +77,7 @@ function setupThetaGPU() {
         NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS=$((NHOSTS * NGPU_PER_HOST))
-        LAUNCH="$(which mpirun) -n $NGPUS -N $NGPU_PER_HOST --hostfile $HOSTFILE -x PATH -x LD_LIBRARY_PATH"
+        LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $HOSTFILE -x PATH -x LD_LIBRARY_PATH"
     else
         echo "[setupThetaGPU]: Unexpected hostname $(hostname)"
     fi
@@ -97,7 +97,7 @@ function setupPolaris() {
         NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS=$((NHOSTS * NGPU_PER_HOST))
-        LAUNCH="$(which mpiexec) --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
+        LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
         # alias mpilaunch="$(which mpiexec) --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
         # alias mpilaunch="${LAUNCH}"
     else
@@ -123,7 +123,7 @@ function setupPerlmutter() {
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
         export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-        LAUNCH="$(which srun) -N ${NHOSTS} -n ${NGPUS} -l u"
+        LAUNCH="srun -N ${NHOSTS} -n ${NGPUS} -l u"
     else
         echo "[setupPerlmutter]: Unexpected hostname $(hostname)"
     fi
@@ -190,7 +190,7 @@ function printJobInfo() {
     echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Using python: $(which python3)"
     echo "│ [setup.sh]: ARGS: ${ARGS[*]}"
-    echo "│ [setup.sh]: LAUNCH: ${LAUNCH} $(which python3) ${MAIN} ${ARGS[*]}"
+    echo "│ [setup.sh]: LAUNCH: ${LAUNCH} python3 ${MAIN} ${ARGS[*]}"
     echo "└─────────────────────────────────────────────────────────────────────"  #┘"
     echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
     echo "│ [setup.sh]: Writing logs to ${LOGFILE}"
