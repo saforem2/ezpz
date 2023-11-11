@@ -4,45 +4,43 @@ ezpz/__init__.py
 from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
-from typing import Optional
-from enrich.console import is_interactive, get_console
-# import warnings
+from typing import Any, Optional
+from typing import Union
 
+from enrich.console import get_console, is_interactive
 from mpi4py import MPI
-from enrich.handler import RichHandler
+import numpy as np
+import torch
 import tqdm
-# from rich import print
-# from enrich import get_logger
-# from pathlib import Path
+
 from ezpz import dist
+from ezpz.configs import (
+    BACKENDS,
+    BIN_DIR,
+    CONF_DIR,
+    FRAMEWORKS,
+    GETJOBENV,
+    HERE,
+    LOGS_DIR,
+    OUTPUTS_DIR,
+    PROJECT_DIR,
+    PROJECT_ROOT,
+    QUARTO_OUTPUTS_DIR,
+    SAVEJOBENV,
+    TrainConfig,
+    load_ds_config,
+)
 from ezpz.dist import (
-    setup_wandb,
+    check,
+    cleanup,
+    get_local_rank,
+    get_rank,
+    get_world_size,
+    query_environment,
     seed_everything,
     setup_tensorflow,
     setup_torch,
-    cleanup,
-    get_world_size,
-    get_rank,
-    get_local_rank,
-    query_environment,
-    check
-)
-
-from ezpz.configs import (
-    HERE,
-    PROJECT_DIR,
-    PROJECT_ROOT,
-    CONF_DIR,
-    BIN_DIR,
-    SAVEJOBENV,
-    GETJOBENV,
-    LOGS_DIR,
-    OUTPUTS_DIR,
-    QUARTO_OUTPUTS_DIR,
-    FRAMEWORKS,
-    BACKENDS,
-    load_ds_config,
-    TrainConfig
+    setup_wandb,
 )
 
 __all__ = [
@@ -71,6 +69,7 @@ __all__ = [
     'BACKENDS',
     'load_ds_config',
     'TrainConfig',
+    'grab_tensor',
 ]
 
 
@@ -78,23 +77,31 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
-# # Check that MPS is available
-# if (
-#         torch.backends.mps.is_available()
-#         and torch.get_default_dtype() != torch.float64
-# ):
-#     DEVICE = torch.device("mps")
-# elif not torch.backends.mps.is_built():
-#     DEVICE = 'cpu'
-#     print(
-#         "MPS not available because the current PyTorch install was not "
-#         "built with MPS enabled."
-#     )
-# else:
-#     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-#
-# DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-# print(f"Using device: {DEVICE}")
+ScalarLike = Union[int, float, bool, np.floating]
+
+
+def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
+    if x is None:
+        return None
+    if isinstance(x, (int, float, bool, np.floating)):
+        return x
+    if isinstance(x, list):
+        if isinstance(x[0], torch.Tensor):
+            return grab_tensor(torch.stack(x))
+        elif isinstance(x[0], np.ndarray):
+            return np.stack(x)
+        else:
+            import tensorflow as tf
+            if isinstance(x[0], tf.Tensor):
+                return grab_tensor(tf.stack(x))
+    elif isinstance(x, np.ndarray):
+        return x
+    elif isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+    elif callable(getattr(x, 'numpy', None)):
+        assert callable(getattr(x, 'numpy'))
+        return x.numpy()
+    raise ValueError
 
 
 class DummyTqdmFile(object):
@@ -119,6 +126,7 @@ def get_rich_logger(
         name: Optional[str] = None,
         level: str = 'INFO'
 ) -> logging.Logger:
+    from enrich.handler import RichHandler
     # log: logging.Logger = get_logger(name=name, level=level)
     log = logging.getLogger(name)
     log.handlers = []
@@ -177,6 +185,7 @@ def get_logger(
         **kwargs,
 ) -> logging.Logger:
     log = logging.getLogger(name)
+    from enrich.handler import RichHandler
     # log.handlers = []
     # from rich.logging import RichHandler
     # from l2hmc.utils.rich import get_console, is_interactive
