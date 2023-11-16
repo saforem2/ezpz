@@ -335,7 +335,6 @@ class BaseHistory:
                 # where arr[:, idx].shape = [ndraws, 1]
                 ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/2., **plot_kwargs)
 
-        # matplotx.line_labels()
         ax.set_xlabel('draw')
         if title is not None:
             fig.suptitle(title)
@@ -418,9 +417,6 @@ class BaseHistory:
             assert isinstance(ax, plt.Axes)
             _ = ax.set_ylabel(key)
             _ = ax.set_xlabel('draw')
-            # matplotx.line_labels()
-            # if line_labels:
-            #     matplotx.line_labels()
             # if num_chains > 0 and len(arr.shape) > 1:
             #     lw = LW / 2.
             #     #for idx in range(min(num_chains, arr.shape[1])):
@@ -573,7 +569,6 @@ class BaseHistory:
         #     color=color
         # )
         # for idx in range(min(num_chains, i.shape[1])):
-        # matplotx.line_labels()
         ax.set_xlabel('draw')
         if title is not None:
             fig.suptitle(title)
