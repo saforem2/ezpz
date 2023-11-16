@@ -27,6 +27,8 @@ dependencies = [
   "torch",
   "xarray",
   "plotext",
+  "ml_dtypes",
+  "jaxtyping",
   # "bokeh",
   # "h5py",
   # "pillow",
@@ -48,7 +50,6 @@ dynamic = ["version"]
 [project.optional-dependencies]
 dev = [
   "pudb",
-  "matplotx",
   "nodejs",
   "pynvim",
   "neovim",
