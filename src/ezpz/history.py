@@ -18,25 +18,27 @@ from enrich.console import is_interactive
 # from l2hmc.common import plot_dataset
 # from l2hmc.utils.rich import is_interactive
 import matplotlib.pyplot as plt
-import matplotx
 import numpy as np
 import seaborn as sns
-import tensorflow as tf
+# import tensorflow as tf
 import torch
 import wandb
 import xarray as xr
+from jaxtyping import Array, Float, Scalar, PyTree, ScalarLike
 
 from ezpz import grab_tensor
 # from ezpz import grab_tensor
 import ezpz.plot as ezplot
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
-TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
-ScalarLike = Union[float, int, bool, np.floating, np.integer]
+TensorLike = Union[torch.Tensor, np.ndarray, list]
+# ScalarLike = Union[float, int, bool, np.floating, np.integer]
 
 PT_FLOAT = torch.get_default_dtype()
-TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
-Scalar = Union[float, int, np.floating, bool]
+# TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
+# Scalar = Union[float, int, np.floating, bool]
+# Scalar = Shaped[Array, ""]
+# ScalarLike = Shaped[ArrayLike, ""]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
 # log = logging.getLogger(__name__)
@@ -138,31 +140,36 @@ class BaseHistory:
 
     def metric_to_numpy(
             self,
-            metric: Any,
+            metric: PyTree,
     ) -> np.ndarray | Scalar | None:
         if isinstance(metric, (Scalar, np.ndarray)):
             return metric
-
-        if (
-            isinstance(metric, tf.Tensor)
-            or isinstance(metric, torch.Tensor)
-        ):
-            return grab_tensor(metric)
-
         if isinstance(metric, list):
             if isinstance(metric[0], np.ndarray):
                 return np.stack(metric)
-            if isinstance(metric[0], tf.Tensor):
-                return grab_tensor(tf.stack(metric))
             if isinstance(metric[0], torch.Tensor):
                 return grab_tensor(torch.stack(metric))
+            if callable(getattr(metric, 'numpy', None)):
+                return grab_tensor(np.stack(metric))
+            # if isinstance(metric[0], tf.Tensor):
+            #     return grab_tensor(tf.stack(metric))
+        try:
+            marr = grab_tensor(metric)
+        except Exception:
+            marr = np.array(metric)
+        # if (
+        #     isinstance(metric, tf.Tensor)
+        #     or isinstance(metric, torch.Tensor)
+        # ):
+        #     return grab_tensor(metric)
+        return marr
 
-        return np.array(metric)
+
 
     def _update(
             self,
             key: str,
-            val: Any
+            val: Float[Array, "..."],
     ) -> float | int | bool | np.floating | np.integer:
         if isinstance(val, (list, tuple)):
             if isinstance(val[0], torch.Tensor):
@@ -171,8 +178,8 @@ class BaseHistory:
                 val = np.stack(val)
             else:
                 val = val
-        if isinstance(val, (tf.Tensor, torch.Tensor)):
-            val = grab_tensor(val)
+        # if isinstance(val, (tf.Tensor, torch.Tensor)):
+        val = grab_tensor(val)
         try:
             self.history[key].append(val)
         except KeyError:
@@ -328,7 +335,7 @@ class BaseHistory:
                 # where arr[:, idx].shape = [ndraws, 1]
                 ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/2., **plot_kwargs)
 
-        matplotx.line_labels()
+        # matplotx.line_labels()
         ax.set_xlabel('draw')
         if title is not None:
             fig.suptitle(title)
@@ -412,8 +419,8 @@ class BaseHistory:
             _ = ax.set_ylabel(key)
             _ = ax.set_xlabel('draw')
             # matplotx.line_labels()
-            if line_labels:
-                matplotx.line_labels()
+            # if line_labels:
+            #     matplotx.line_labels()
             # if num_chains > 0 and len(arr.shape) > 1:
             #     lw = LW / 2.
             #     #for idx in range(min(num_chains, arr.shape[1])):
