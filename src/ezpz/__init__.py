@@ -41,6 +41,7 @@ from ezpz.dist import (
     setup_tensorflow,
     setup_torch,
     setup_wandb,
+    setup_torch_distributed,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     'setup_wandb',
     'setup_tensorflow',
     'setup_torch',
+    'setup_torch_distributed',
     'cleanup',
     'seed_everything',
     'get_rank',
