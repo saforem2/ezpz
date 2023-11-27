@@ -171,7 +171,8 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
 def setup_torch_distributed(
         backend: str,
         port: str = '2345',
-) -> dict:
+) -> dict[str, int]:
+    """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     import torch
     rank = os.environ.get('RANK', None)
     world_size = os.environ.get('WORLD_SIZE', None)
@@ -214,6 +215,7 @@ def setup_torch(
         port: str = '2345',
         seed: Optional[int] = None,
 ) -> int:
+    """Returns RANK"""
     import torch
     # from rich import log.info
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -237,6 +239,7 @@ def setup_torch(
     log.info(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
+    # return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
     return rank
 
 
