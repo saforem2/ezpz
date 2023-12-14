@@ -48,7 +48,7 @@ function saveCOBALTenv() {
 
 
 function savePBSenv() {
-    if [[ $(hostname) == x3* || $(hostname) == x4* ]]; then
+    if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
         echo "┌───────────────────────────────────────────────────────────────────"
         echo "│ Writing PBS vars to ${PBS_ENV_FILE}"
         PBS_VARS=$(env | grep PBS)
@@ -100,7 +100,7 @@ function setupHost() {
         export GPU_TYPE="NVIDIA"
         export HOSTFILE="${PBS_NODEFILE}"
         savePBSenv
-    elif [[ $(hostname) == x4* ]]; then
+    elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         export GPU_TYPE="INTEL"
         export HOSTFILE="${PBS_NODEFILE}"
         NGPU_PER_TILE=6
@@ -232,6 +232,9 @@ function setup1() {
 
 function setup() {
     if [[ $(hostname) == x3* ]]; then
+        export HOSTFILE="${PBS_NODEFILE}"
+        savePBSenv
+    elif [[ $(hostname) == x1* ]]; then
         export HOSTFILE="${PBS_NODEFILE}"
         savePBSenv
     elif [[ $(hostname) == x4* ]]; then
