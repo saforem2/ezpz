@@ -99,6 +99,9 @@ function setup() {
     if [[ $(hostname) == x3* ]]; then
         export HOSTFILE="${PBS_NODEFILE}"
         savePBSenv
+    if [[ $(hostname) == x4* ]]; then
+        export HOSTFILE="${PBS_NODEFILE}"
+        savePBSenv
     elif [[ $(hostname) == thetagpu* ]]; then
         export HOSTFILE="${COBALT_NODEFILE}"
         saveCOBALTenv
