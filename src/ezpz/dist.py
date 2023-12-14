@@ -18,6 +18,7 @@ from ezpz.configs import BACKENDS, FRAMEWORKS, HERE  # , PROJECT_ROOT
 log = logging.getLogger(__name__)
 
 
+
 def seed_everything(seed: int):
     import torch
     import numpy as np
@@ -55,18 +56,39 @@ def init_deepspeed():
     deepspeed.init_distributed()
 
 
+def get_torch_device():
+    import torch
+    try:
+        import intel_extension_for_pytorch as ipex
+        device = "xpu"
+    except (ImportError, ModuleNotFoundError):
+        if torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+    log.info(f'Using {device=}')
+    return device
+
+
 def init_process_group(
         rank: int | str,
         world_size: int | str,
         backend: Optional[str] = None,
-) -> None:
+) -> str:
     import torch
     import torch.distributed as dist
-    if torch.cuda.is_available():
-        backend = 'nccl' if backend is None else str(backend)
-    else:
-        backend = 'gloo' if backend is None else str(backend)
-
+    # device = "cpu"
+    try:
+        import intel_extension_for_pytorch as ipex
+        # device = "xpu"
+        backend = "ccl" if backend is None else str(backend)
+    except (ImportError, ModuleNotFoundError):
+        if torch.cuda.is_available():
+            # device = "cuda"
+            backend = 'nccl' if backend is None else str(backend)
+        else:
+            backend = 'gloo' if backend is None else str(backend)
+    log.warning(f'Using {backend=}')
     if not dist.is_initialized():
         dist.init_process_group(
             backend=backend,
@@ -74,6 +96,7 @@ def init_process_group(
             world_size=int(world_size),
             init_method='env://',
         )
+    return backend
 
 
 def run_ddp(fn: Callable, world_size: int) -> None:
@@ -105,10 +128,13 @@ def get_local_rank() -> int:
                 os.environ.get(
                     'OMPI_COMM_WORLD_LOCAL_RANK',
                     os.environ.get(
-                        'RANK',
+                        'PMI_RANK',
                         os.environ.get(
-                            'SLURM_PROCID',
-                            '0',
+                            'RANK',
+                            os.environ.get(
+                                'SLURM_PROCID',
+                                '0',
+                            )
                         )
                     )
                 )
@@ -138,9 +164,17 @@ def query_environment() -> dict[str, int]:
 
 def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     import torch
-    rank = os.environ.get('RANK', None)
-    world_size = os.environ.get('WORLD_SIZE', None)
-    local_rank = os.environ.get('LOCAL_RANK', None)
+    # os.environ['MASTER_ADDR'] = '127.0.0.1'
+    # os.environ['MASTER_PORT'] = '29500'
+    # os.environ['RANK'] = os.environ.get('PMI_RANK', 0)
+    # os.environ['WORLD_SIZE'] = os.environ.get('PMI_SIZE', 1)
+    # local_rank = os.environ.get(
+    #     'LOCAL_RANK',
+    #     os.environ.get('P')
+    # )
+    local_rank = get_local_rank()
+    rank = os.environ.get('RANK', os.environ.get('PMI_RANK', None))
+    world_size = os.environ.get('WORLD_SIZE', os.environ.get('PMI_SIZE', None))
 
     import socket
     world_size = int(get_world_size())
@@ -163,7 +197,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     init_process_group(
         rank=rank,
         world_size=world_size,
-        backend='nccl' if torch.cuda.is_available() else 'gloo'
+        # backend='nccl' if torch.cuda.is_available() else 'gloo'
     )
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
@@ -217,12 +251,22 @@ def setup_torch(
 ) -> int:
     """Returns RANK"""
     import torch
+    import torch.distributed as tdist
+    try:
+        import intel_extension_for_pytorch as ipex
+        device = "xpu"
+    except (ImportError, ModuleNotFoundError):
+        if torch.cuda.is_available():
+            device = "cuda"
+            os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+            torch.backends.cudnn.deterministic = True     # type:ignore
+            torch.backends.cudnn.benchmark = True         # type:ignore
+            torch.backends.cudnn.allow_tf32 = True        # type:ignore
+            torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
+        else:
+            device = "cpu"
+    log.info(f'Using {device=}')
     # from rich import log.info
-    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    torch.backends.cudnn.deterministic = True     # type:ignore
-    torch.backends.cudnn.benchmark = True         # type:ignore
-    torch.backends.cudnn.allow_tf32 = True        # type:ignore
-    torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port)
     rank = dsetup['rank']
