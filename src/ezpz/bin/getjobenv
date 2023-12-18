@@ -13,7 +13,7 @@ function join_by {
 }
 
 function getPBSenv() {
-    if [[ $(hostname) == x3* ]]; then
+    if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
         export JOBENV_FILE="${PBS_ENV_FILE}"
         source "${PBS_ENV_FILE}"
         export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
@@ -47,6 +47,12 @@ function getJOBenv() {
         JOBENV_FILE="${COBALT_ENV_FILE}"
         getCOBALTenv
     elif [[ $(hostname) == x3* ]]; then
+        JOBENV_FILE="${PBS_ENV_FILE}"
+        getPBSenv
+    elif [[ $(hostname) == x1* ]]; then
+        JOBENV_FILE="${PBS_ENV_FILE}"
+        getPBSenv
+    elif [[ $(hostname) == x4* ]]; then
         JOBENV_FILE="${PBS_ENV_FILE}"
         getPBSenv
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
