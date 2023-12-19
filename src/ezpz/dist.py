@@ -79,6 +79,7 @@ def init_process_group(
     import torch.distributed as dist
     # device = "cpu"
     try:
+        import oneccl_bindings_for_pytorch
         import intel_extension_for_pytorch as ipex
         # device = "xpu"
         backend = "ccl" if backend is None else str(backend)
@@ -90,12 +91,23 @@ def init_process_group(
             backend = 'gloo' if backend is None else str(backend)
     log.warning(f'Using {backend=}')
     if not dist.is_initialized():
-        dist.init_process_group(
-            backend=backend,
-            rank=int(rank),
-            world_size=int(world_size),
-            init_method='env://',
-        )
+        try:
+            dist.init_process_group(
+                #backend=backend,
+                #backend="cpu:gloo,xpu:ccl",  # ,cuda:nccl",
+                rank=int(rank),
+                world_size=int(world_size),
+                init_method='env://',
+            )
+        except Exception as exc:
+            log.exception(exc)
+    # if not dist.is_initialized():
+    #     dist.init_process_group(
+    #         backend=backend,
+    #         rank=int(rank),
+    #         world_size=int(world_size),
+    #         init_method='env://',
+    #     )
     return backend
 
 
