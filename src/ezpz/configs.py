@@ -55,7 +55,7 @@ def savejobenv():
 
 
 def load_ds_config(fpath: Optional[os.PathLike] = None) -> dict:
-    cfgpath = Path(fpath)
+    cfgpath = Path(str(fpath))
     log.info(
         'Loading DeepSpeed config from: '
         f'{cfgpath.resolve().as_posix()}'
