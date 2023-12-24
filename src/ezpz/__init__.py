@@ -12,6 +12,10 @@ from mpi4py import MPI
 import numpy as np
 import torch
 import tqdm
+try:
+    import wandb  # type:ignore
+except (ImportError, ModuleNotFoundError):
+    wandb = None
 
 from ezpz import dist
 from ezpz.configs import (
@@ -20,6 +24,7 @@ from ezpz.configs import (
     CONF_DIR,
     FRAMEWORKS,
     GETJOBENV,
+    git_ds_info,
     HERE,
     LOGS_DIR,
     OUTPUTS_DIR,
@@ -32,24 +37,51 @@ from ezpz.configs import (
 )
 from ezpz.dist import (
     check,
+    timeit,
+    timeitlogit,
+    setup,
     cleanup,
+    get_dist_info,
     get_local_rank,
     get_rank,
     get_world_size,
     query_environment,
-    seed_everything,
-    setup_tensorflow,
-    setup_torch,
-    setup_wandb,
-    setup_torch_distributed,
+    init_deepspeed,     # ✔︎
+    setup_torch_DDP,    # ✔︎
+    seed_everything,     # ✔︎
+    setup_tensorflow,    # ✔︎
+    setup_torch,         # ✔︎
+    setup_torch_distributed,  # ✔︎
+    print_dist_setup,    # ✔︎
+    setup_wandb,         # ✔︎
+    inspect_cobalt_running_job,
+    get_cobalt_nodefile,
+    get_nodes_from_hostfile,
+    get_gpus_per_node,
+    get_cobalt_resources,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     'dist',
+    'setup',
     'setup_wandb',
     'setup_tensorflow',
+    'print_dist_setup',
+    'git_ds_info',
+    'get_dist_info',
     'setup_torch',
+    'timeit',
+    'timeitlogit',
+    'setup_torch_DDP',
+    'init_deepspeed',
     'setup_torch_distributed',
+    'inspect_cobalt_running_job',
+    'get_cobalt_nodefile',
+    'get_cobalt_resources',
+    'get_nodes_from_hostfile',
+    'get_gpus_per_node',
     'cleanup',
     'seed_everything',
     'get_rank',
