@@ -8,15 +8,23 @@ import datetime
 import logging
 import os
 from pathlib import Path
+import time
+from functools import wraps
 from typing import Any, Callable, Optional
+import socket
+import json
+
+try:
+    import wandb
+except (ImportError, ModuleNotFoundError):
+    wandb = None
 
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
-from ezpz.configs import BACKENDS, FRAMEWORKS, HERE  # , PROJECT_ROOT
+from ezpz.configs import BACKENDS, FRAMEWORKS, HERE, git_ds_info
 
 log = logging.getLogger(__name__)
-
 
 
 def seed_everything(seed: int):
@@ -28,6 +36,121 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
+    rank = get_rank() if rank is None else rank
+
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            assert isinstance(rank, int)
+            result = func(*args, **kwargs)
+            dt = time.perf_counter() - t0
+            if verbose:
+                if rank == 0:
+                    tstr = [f"`{func.__name__}`"]
+                    _ = tstr.append(f"({args}") if len(args) > 0 else None
+                    _ = (
+                        tstr.append(f", {kwargs})")
+                        if len(kwargs) > 0 else (
+                            tstr.append(")") if len(args) > 0
+                            else ""
+                        )
+                    )
+                    _ = tstr.append(f' took: {dt=:.4f}s')
+                    log.info("".join(tstr))
+                if wandb is not None and wandb.run is not None:
+                    log.info(
+                        f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
+                    )
+                    wandb.run.log({f'timeit/{func.__name__}': dt})
+            return result
+        return wrapper
+    return decorator
+
+
+def timeit(func: Callable):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        t0 = time.perf_counter()
+        result = func(*args, **kwargs)
+        dt = time.perf_counter() - t0
+        log.info(f'{func.__name__}({args}, {kwargs}) took: {dt=:.4f}s')
+        if wandb is not None and wandb.run is not None:
+            wandb.run.log({f'timeit/{func.__name__}': dt})
+        return result
+    return wrapper
+
+
+def get_hosts_from_hostfile(
+        hostfile: Optional[str | os.PathLike | Path] = None
+) -> tuple[str, list[str]]:
+    hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+    hostfile = os.environ.get(
+        'HOSTFILE',
+        os.environ.get(
+            'PBS_NODEFILE',
+            os.environ.get(
+                'COBALT_NODEFILE',
+                None,
+            )
+        )
+    )
+    hostfile = '' if hostfile is None else hostfile
+    hosts = []
+    if hostfile is not None and Path(hostfile).is_file():
+        log.info(f'Reading hosts from {hostfile}')
+        hpath = Path(hostfile).resolve().absolute()
+        with hpath.open('r') as f:
+            hosts.extend([h.rstrip('\n') for h in f.readlines()])
+    else:
+        hosts.append(hostname)
+    return Path(hostfile).as_posix(), hosts
+
+
+def get_dist_info(
+        verbose: Optional[bool] = None
+) -> dict[str, str | int | list]:
+    hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+    # master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    rank = get_rank()
+    world_size = get_world_size()
+    local_rank = get_local_rank()
+    num_nodes = get_num_nodes()
+    gpus_per_node = get_gpus_per_node()
+    node_id = rank % gpus_per_node
+    if hostname.startswith('theta'):
+        machine = 'ThetaGPU'
+    elif hostname.startswith('x1'):
+        machine = 'SunSpot'
+    elif hostname.startswith('x3'):
+        machine = 'Polaris'
+    elif hostname.startswith('x4'):
+        machine = 'Aurora'
+    elif hostname.startswith('login'):
+        machine = 'NERSC'
+    elif hostname.startswith('nid'):
+        machine = 'Perlmutter'
+    else:
+        machine = hostname
+        log.info(f'Unknown machine, setting {machine=}')
+    hostfile, hosts = get_hosts_from_hostfile()
+    dist_info = {
+        'rank': rank,
+        'local_rank': local_rank,
+        'world_size': world_size,
+        'num_nodes': num_nodes,
+        'gpus_per_node': gpus_per_node,
+        'node_id': node_id,
+        'machine': machine,
+        'hostfile': hostfile,
+        'hosts': hosts,
+    }
+    if verbose:
+        log.info(f'dist_info: {json.dumps(dist_info, indent=4)}')
+    return dist_info
 
 
 def print_dist_setup():
@@ -56,59 +179,68 @@ def init_deepspeed():
     deepspeed.init_distributed()
 
 
-def get_torch_device():
+def get_torch_device() -> str:
     import torch
     try:
         import intel_extension_for_pytorch as ipex
         device = "xpu"
     except (ImportError, ModuleNotFoundError):
-        if torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-    log.info(f'Using {device=}')
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # log.info(f'Using {device=}')
     return device
+
+
+def get_torch_backend(backend: Optional[str] = None) -> str:
+    import torch
+    try:
+        import oneccl_bindings_for_pytorch  # type:ignore  # noqa
+        import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
+        backend = "ccl" if backend is None else str(backend)
+    except (ImportError, ModuleNotFoundError):
+        if torch.cuda.is_available():
+            backend = 'nccl' if backend is None else str(backend)
+        else:
+            backend = 'gloo' if backend is None else str(backend)
+    return backend
+
 
 
 def init_process_group(
         rank: int | str,
         world_size: int | str,
         backend: Optional[str] = None,
-) -> str:
+) -> None:
     import torch
     import torch.distributed as dist
-    # device = "cpu"
-    try:
-        import oneccl_bindings_for_pytorch
-        import intel_extension_for_pytorch as ipex
-        # device = "xpu"
-        backend = "ccl" if backend is None else str(backend)
-    except (ImportError, ModuleNotFoundError):
-        if torch.cuda.is_available():
-            # device = "cuda"
-            backend = 'nccl' if backend is None else str(backend)
-        else:
-            backend = 'gloo' if backend is None else str(backend)
-    log.warning(f'Using {backend=}')
+    # try:
+    #     import oneccl_bindings_for_pytorch
+    #     import intel_extension_for_pytorch as ipex
+    #     backend = "ccl" if backend is None else str(backend)
+    # except (ImportError, ModuleNotFoundError):
+    #     if torch.cuda.is_available():
+    #         backend = 'nccl' if backend is None else str(backend)
+    #     else:
+    #         backend = 'gloo' if backend is None else str(backend)
+    backend = get_torch_backend(backend)
+    # log.warning(f'Using {backend=}')
+    from datetime import timedelta
+    delta = timedelta(
+        # days=50,
+        seconds=300,
+        # microseconds=10,
+        # milliseconds=29000,
+        # minutes=5,
+        # hours=8,
+        # weeks=2
+    )
     if not dist.is_initialized():
-        try:
-            dist.init_process_group(
-                #backend=backend,
-                #backend="cpu:gloo,xpu:ccl",  # ,cuda:nccl",
-                rank=int(rank),
-                world_size=int(world_size),
-                init_method='env://',
-            )
-        except Exception as exc:
-            log.exception(exc)
-    # if not dist.is_initialized():
-    #     dist.init_process_group(
-    #         backend=backend,
-    #         rank=int(rank),
-    #         world_size=int(world_size),
-    #         init_method='env://',
-    #     )
-    return backend
+        dist.init_process_group(
+            backend=backend,
+            timeout=delta,
+            rank=int(rank),
+            world_size=int(world_size),
+            init_method='env://',
+        )
 
 
 def run_ddp(fn: Callable, world_size: int) -> None:
@@ -140,13 +272,10 @@ def get_local_rank() -> int:
                 os.environ.get(
                     'OMPI_COMM_WORLD_LOCAL_RANK',
                     os.environ.get(
-                        'PMI_RANK',
+                        'RANK',
                         os.environ.get(
-                            'RANK',
-                            os.environ.get(
-                                'SLURM_PROCID',
-                                '0',
-                            )
+                            'SLURM_PROCID',
+                            '0',
                         )
                     )
                 )
@@ -157,6 +286,9 @@ def get_local_rank() -> int:
 
 def query_environment() -> dict[str, int]:
     """Query environment variables for info about distributed setup"""
+    # master_addr = (
+    #     socket.gethostname() if rank == 0 else None
+    # )
     ws = os.environ.get('WORLD_SIZE', None)
     r = os.environ.get('RANK', None)
     lr = os.environ.get('LOCAL_RANK', None)
@@ -164,7 +296,8 @@ def query_environment() -> dict[str, int]:
         return {
             'world_size': int(ws),
             'rank': int(r),
-            'local_rank': int(lr)
+            'local_rank': int(lr),
+            # 'machine': machine,
         }
 
     return {
@@ -176,17 +309,9 @@ def query_environment() -> dict[str, int]:
 
 def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     import torch
-    # os.environ['MASTER_ADDR'] = '127.0.0.1'
-    # os.environ['MASTER_PORT'] = '29500'
-    # os.environ['RANK'] = os.environ.get('PMI_RANK', 0)
-    # os.environ['WORLD_SIZE'] = os.environ.get('PMI_SIZE', 1)
-    # local_rank = os.environ.get(
-    #     'LOCAL_RANK',
-    #     os.environ.get('P')
-    # )
-    local_rank = get_local_rank()
-    rank = os.environ.get('RANK', os.environ.get('PMI_RANK', None))
-    world_size = os.environ.get('WORLD_SIZE', os.environ.get('PMI_SIZE', None))
+    rank = os.environ.get('RANK', None)
+    world_size = os.environ.get('WORLD_SIZE', None)
+    local_rank = os.environ.get('LOCAL_RANK', None)
 
     import socket
     world_size = int(get_world_size())
@@ -209,7 +334,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     init_process_group(
         rank=rank,
         world_size=world_size,
-        # backend='nccl' if torch.cuda.is_available() else 'gloo'
+        backend='nccl' if torch.cuda.is_available() else 'gloo'
     )
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
@@ -227,8 +352,6 @@ def setup_torch_distributed(
     local_rank = get_local_rank()
     be = backend.lower()
     assert be in BACKENDS['pytorch']
-    if rank == 0 and local_rank == 0:
-        log.info(f'Using {backend} for distributed training')
     if be == 'ddp':
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
@@ -257,28 +380,24 @@ def setup_torch_distributed(
 
 
 def setup_torch(
-        backend: str = 'deepspeed',
+        backend: str = 'DDP',
         port: str = '2345',
         seed: Optional[int] = None,
 ) -> int:
     """Returns RANK"""
     import torch
-    import torch.distributed as tdist
-    try:
-        import intel_extension_for_pytorch as ipex
-        device = "xpu"
-    except (ImportError, ModuleNotFoundError):
-        if torch.cuda.is_available():
-            device = "cuda"
-            os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-            torch.backends.cudnn.deterministic = True     # type:ignore
-            torch.backends.cudnn.benchmark = True         # type:ignore
-            torch.backends.cudnn.allow_tf32 = True        # type:ignore
-            torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
-        else:
-            device = "cpu"
-    log.info(f'Using {device=}')
-    # from rich import log.info
+    # import torch.distributed as tdist
+    device = get_torch_device()
+    if torch.cuda.is_available() and device == 'cuda':
+        # from rich import log.info
+        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+        torch.backends.cudnn.deterministic = True     # type:ignore
+        torch.backends.cudnn.benchmark = True         # type:ignore
+        torch.backends.cudnn.allow_tf32 = True        # type:ignore
+        torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
+    # try:
+    #     import intel_extension_for_pytorch as ipex
+    # except (ImportError, ModuleNotFoundError):
     torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port)
     rank = dsetup['rank']
@@ -292,10 +411,18 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-    log.info(f'RANK: {rank} / {world_size-1}')
+    # log.info(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
-    # return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
+    MPI.COMM_WORLD.Barrier()
+    if rank == 0:
+        _ = get_dist_info(verbose=True)
+        if backend in {'ds', 'deepspeed', 'dspeed'}:
+            git_ds_info()
+        log.info(
+            f"Using {device=} with {backend=} + '{get_torch_backend()}'"
+            "for distributed training."
+        )
     return rank
 
 
@@ -375,10 +502,23 @@ def setup_tensorflow(
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
-    log.info(f'RANK: {RANK} / {WORLD_SIZE-1}')
+    # log.info(f'RANK: {RANK} / {WORLD_SIZE-1}')
     if RANK == 0:
         log.info(f"Using {TF_FLOAT} precision")
     return RANK
+
+
+def include_file(f: os.PathLike | str | Path):
+    fpath = Path(f)
+    return fpath.suffix in {
+        '.py',
+        '.yaml',
+        '.sh',
+        '.md',
+        '.qmd',
+        '.yml',
+        '.toml',
+    }
 
 
 def setup_wandb(
@@ -420,7 +560,7 @@ def setup_wandb(
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
-    wandb.init(
+    run = wandb.init(
         # resume='allow',
         dir=os.getcwd(),
         sync_tensorboard=(tensorboard_dir is not None),  # True,
@@ -431,12 +571,17 @@ def setup_wandb(
             init_timeout=init_timeout
         )
     )
-    assert wandb.run is not None
-    wandb.run.log_code(HERE.as_posix())
-    log.info(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
-    wandb.run.config.update({'created_at': dstr})
-    wandb.run.config.update({'world_size': get_world_size()})
-    wandb.run.config.update({'outdir': os.getcwd()})
+    assert run is not None and run is wandb.run
+    run.log_code(HERE.as_posix(), include_fn=include_file)
+    log.info(f"W&B RUN: [{run.name}]({run.url})")
+    run.config.update(
+        {
+            f'dist_info/{k}': v for k, v in get_dist_info().items()
+        }
+    )
+    run.config.update({'created_at': dstr})
+    run.config.update({'world_size': get_world_size()})
+    run.config.update({'outdir': os.getcwd()})
     # wandb.run.config.update({'hostname': rank})
     if config is not None:
         if isinstance(config, DictConfig):
@@ -445,16 +590,16 @@ def setup_wandb(
                 resolve=True,
                 throw_on_missing=True
             )
-            wandb.run.config.update({'config': cfg})
+            run.config.update({'config': cfg})
         else:
-            wandb.run.config.update({'config': config})
+            run.config.update({'config': config})
     env = {
         k: v for k, v in dict(os.environ).items()
         if not k.startswith('_ModuleTable')
     }
     _ = env.pop('LS_COLORS', None)
     _ = env.pop('PS1', None)
-    wandb.run.config.update({'env': env})
+    run.config.update({'env': env})
     try:
         hostname = socket.gethostbyaddr(socket.gethostname())[0]
     except Exception:
@@ -475,27 +620,33 @@ def setup_wandb(
         machine = "Perlmutter"
     else:
         machine = hostname
-    log.info(f'Running on {machine}')
-    wandb.run.config.update({'machine': machine})
+    log.info(f'Running on {machine=}')
+    run.config.update({'machine': machine})
     model_size = os.environ.get('MODEL_SIZE', None)
     if model_size is not None:
-        wandb.run.config.update({'MODEL_SIZE': model_size})
-    hostfile = os.environ.get(
-        'HOSTFILE',
-        os.environ.get(
-            'PBS_NODEFILE',
-            os.environ.get(
-                'COBALT_NODEFILE',
-                None,
-            )
-        )
-    )
-    if hostfile is not None and Path(hostfile).is_file():
-        log.info(f'Reading hosts from {hostfile}')
-        hpath = Path(hostfile).resolve().absolute()
-        with hpath.open('r') as f:
-            hosts = f.readlines()
-        wandb.run.config['hosts'] = hosts
+        run.config.update({'MODEL_SIZE': model_size})
+    # hostfile, hosts = get_hosts_from_hostfile()
+    # run.config['dist_info/hostfile'] = hostfile
+    # run.config['dist_info/hosts'] = hosts
+    # hostfile = os.environ.get(
+    #     'HOSTFILE',
+    #     os.environ.get(
+    #         'PBS_NODEFILE',
+    #         os.environ.get(
+    #             'COBALT_NODEFILE',
+    #             None,
+    #         )
+    #     )
+    # )
+    # if hostfile is not None and Path(hostfile).is_file():
+    #     log.info(f'Reading hosts from {hostfile}')
+    #     hpath = Path(hostfile).resolve().absolute()
+    #     with hpath.open('r') as f:
+    #         hosts = f.readlines()
+    #     run.config['dist_info/hosts'] = hosts
+    #     run.config['dist_info/hostfile'] = hostfile
+
+    return wandb.run
 
 
 def run_bash_command(cmd: str) -> Any:
@@ -523,7 +674,6 @@ def inspect_cobalt_running_job() -> dict[str, str | os.PathLike]:
     }
 
 
-
 def get_cobalt_nodefile() -> Path:
     cobalt_nodefile = os.environ.get('COBALT_NODEFILE', None)
     if cobalt_nodefile is None:
@@ -545,17 +695,29 @@ def get_nodes_from_hostfile(hostfile: os.PathLike) -> list[str]:
 
 
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
-    try:
-        import sh  # pyright: ignore
-        gpus_per_node = int(sh.wc("-l", _in=sh.nvidia_smi("-L")).rstrip("\n"))
-    except (ImportError, ModuleNotFoundError):
-        # import subprocess
-        gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
-        # gpus_per_node = subprocess.Popen('nvidia-smi -L | wc -l', shell=True)
+    import torch
+    gpus_per_node = torch.cuda.device_count()
     if _assert:
-        import torch
-        assert gpus_per_node == torch.cuda.device_count()
+        try:
+            import sh  # pyright: ignore
+            gpus_per_node = int(
+                sh.wc(
+                    "-l",
+                    _in=sh.nvidia_smi("-L")
+                ).rstrip("\n")
+            )
+        except (ImportError, ModuleNotFoundError):
+            # import subprocess
+            gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
+            # gpus_per_node = subprocess.Popen(
+            #     'nvidia-smi -L | wc -l',
+            #     shell=True
+            # )
     return gpus_per_node
+
+
+def get_num_nodes():
+    return get_world_size() // get_gpus_per_node()
 
 
 def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
@@ -571,7 +733,6 @@ def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
         'machine': 'ThetaGPU',
     }
     return cobalt_info
-
 
 
 def build_mpiexec_thetagpu(
@@ -606,7 +767,6 @@ def run_mpiexec(cmd: str):
     # ezpz_test = '-m ezpz.check'
     log.info(f'Executing: {mpiexec} {cmd}')
     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
-
 
 
 def mpi_test_framework_backend(
