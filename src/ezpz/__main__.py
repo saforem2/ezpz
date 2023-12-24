@@ -13,53 +13,57 @@ from __future__ import (
 )
 import logging
 import os
-import sys
 
 import hydra
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
-from ezpz.configs import TrainConfig, git_ds_info
-from ezpz.dist import setup, setup_wandb
+from ezpz import TrainConfig, setup, setup_wandb, timeitlogit
+
+try:
+    import wandb
+except (ImportError, ModuleNotFoundError):
+    wandb = None
+
 
 log = logging.getLogger(__name__)
 
 
+@timeitlogit(verbose=True)
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> int:
-    config = instantiate(cfg)
+    config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
     rank = setup(
         framework=config.framework,
         backend=config.backend,
         seed=config.seed
     )
+    run = None
     if rank != 0:
         log.setLevel("CRITICAL")
     else:
-        try:
-            from omegaconf import OmegaConf
-            import json
-            log.info(json.dumps(OmegaConf.to_container(cfg), indent=4))
-        except (ImportError, ModuleNotFoundError):
-            log.info(config)
-        if config.use_wandb:
-            setup_wandb(
-                project_name=config.wandb_project_name,
+        if config.use_wandb and wandb is not None:
+            run = setup_wandb(
                 config=cfg,
+                project_name=config.wandb_project_name,
             )
+        log.info(f"{config=}")
     log.info(f'Output dir: {os.getcwd()}')
-    if rank == 0 and config.backend.lower() in ['ds', 'dspeed', 'deepspeed']:
-        git_ds_info()
+    if (
+            wandb is not None
+            and run is not None
+            and run is wandb.run
+            and config.use_wandb
+    ):
+        assert run is not None
+        from rich.emoji import Emoji
+        from rich.text import Text
+        log.warning(
+            Text(f'{Emoji("rocket")} [{run.name}]({run.url})')
+        )
     return rank
 
 
 if __name__ == '__main__':
     rank = main()
-    try:
-        import wandb
-    except (ImportError, ModuleNotFoundError):
-        wandb = None
-    if wandb is not None and wandb.run is not None:
-        wandb.run.finish()
-    sys.exit(0)
