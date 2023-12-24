@@ -29,6 +29,7 @@ dependencies = [
   "plotext",
   "ml_dtypes",
   "jaxtyping",
+  "sh",
   # "bokeh",
   # "h5py",
   # "pillow",
