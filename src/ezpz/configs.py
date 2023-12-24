@@ -7,7 +7,7 @@ import logging
 import subprocess
 import rich.repr
 
-from typing import Optional
+from typing import Any, Optional
 from dataclasses import dataclass, asdict
 from copy import deepcopy
 from pathlib import Path
@@ -45,17 +45,22 @@ BACKENDS = {
     'tensorflow': ['h', 'hvd', 'horovod']
 }
 
+
 def getjobenv():
     print(GETJOBENV)
     return GETJOBENV
+
 
 def savejobenv():
     print(SAVEJOBENV)
     return SAVEJOBENV
 
 
-def load_ds_config(fpath: Optional[os.PathLike] = None) -> dict:
-    cfgpath = Path(str(fpath))
+def load_ds_config(
+        fpath: Optional[str | Path | os.PathLike] = None
+) -> dict:
+    fpath = DS_CONFIG_PATH if fpath is None else fpath
+    cfgpath = Path(fpath)
     log.info(
         'Loading DeepSpeed config from: '
         f'{cfgpath.resolve().as_posix()}'
@@ -107,7 +112,6 @@ def git_ds_info():
     )
 
 
-
 @dataclass
 @rich.repr.auto
 class BaseConfig(ABC):
@@ -116,7 +120,7 @@ class BaseConfig(ABC):
         pass
 
     def to_json(self) -> str:
-        return json.dumps(self.__dict__)
+        return json.dumps(self.__dict__.items, indent=4)
 
     def get_config(self) -> dict:
         return asdict(self)
@@ -137,19 +141,25 @@ class BaseConfig(ABC):
         return super().__getattribute__(key)
 
 
-
-
 @dataclass
-# @rich.repr.auto
+@rich.repr.auto
 class TrainConfig(BaseConfig):
+    gas: int = 1
+    # ---- [NOTE]+ Framework + Backend ----------------
+    # `framework`: `{'backend'}`
+    #   • `tensorflow`: `{'horovod'}`
+    #   • `pytorch`: `{'DDP', 'deepspeed', 'horovod'}`
+    # -------------------------------------------------
     framework: str = "pytorch"
     backend: str = "DDP"
     use_wandb: bool = False
     seed: Optional[int] = None
     port: Optional[str] = None
-    ds_config_path: Optional[os.PathLike] = None
+    dtype: Optional[Any] = None
+    load_from: Optional[str] = None
+    save_to: Optional[str] = None
+    ds_config_path: Optional[str] = None
     wandb_project_name: Optional[str] = None
-    precision: Optional[str] = None
     ngpus: Optional[int] = None
 
     def to_str(self) -> str:
