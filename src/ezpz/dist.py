@@ -62,10 +62,13 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     _ = tstr.append(f' took: {dt=:.4f}s')
                     log.info("".join(tstr))
                 if wandb is not None and wandb.run is not None:
-                    log.info(
-                        f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
+                    # log.info(
+                    #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
+                    # )
+                    wandb.run.log(
+                        {f'timeit/{func.__name__}': dt},
+                        commit=False
                     )
-                    wandb.run.log({f'timeit/{func.__name__}': dt})
             return result
         return wrapper
     return decorator
@@ -204,13 +207,12 @@ def get_torch_backend(backend: Optional[str] = None) -> str:
     return backend
 
 
-
 def init_process_group(
         rank: int | str,
         world_size: int | str,
         backend: Optional[str] = None,
 ) -> None:
-    import torch
+    # import torch
     import torch.distributed as dist
     # try:
     #     import oneccl_bindings_for_pytorch
