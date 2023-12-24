@@ -1,6 +1,7 @@
 *.output
 *.error
 *.cobaltlog
+outputs/*
 src/ezpz/outputs/*
 venvs/*
 *old*
