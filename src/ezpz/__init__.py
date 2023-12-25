@@ -20,6 +20,7 @@ except (ImportError, ModuleNotFoundError):
 from ezpz import dist
 from ezpz.configs import (
     BACKENDS,
+    print_config_tree,
     BIN_DIR,
     CONF_DIR,
     FRAMEWORKS,
@@ -69,6 +70,7 @@ __all__ = [
     'dist',
     'setup',
     'setup_wandb',
+    'print_config_tree',
     'setup_tensorflow',
     'print_dist_setup',
     'get_torch_device',
