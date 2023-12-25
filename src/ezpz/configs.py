@@ -1,17 +1,20 @@
 """
 ezpz/configs.py
 """
-import os
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 import json
 import logging
-import subprocess
-import rich.repr
-
-from typing import Any, Optional
-from dataclasses import dataclass, asdict
-from copy import deepcopy
+import os
 from pathlib import Path
-from abc import ABC, abstractmethod
+import subprocess
+from typing import Any, Optional, Sequence
+
+from omegaconf import DictConfig, OmegaConf
+import rich.repr
+from rich.syntax import Syntax
+from rich.tree import Tree
 
 log = logging.getLogger(__name__)
 
@@ -194,3 +197,78 @@ class TrainConfig(BaseConfig):
                     DS_CONFIG_PATH if self.ds_config_path is None
                     else self.ds_config_path
                 )
+
+
+def print_config_tree(
+        cfg: DictConfig,
+        resolve: bool = True,
+        save_to_file: bool = True,
+        verbose: bool = True,
+        style: str = 'tree',
+        print_order: Optional[Sequence[str]] = None,
+        outfile: Optional[str | os.PathLike | Path] = None,
+) -> Tree:
+    """Prints the contents of a DictConfig as a tree structure using the Rich
+    library.
+
+    - cfg: A DictConfig composed by Hydra.
+    - print_order: Determines in what order config components are printed.
+    - resolve: Whether to resolve reference fields of DictConfig.
+    - save_to_file: Whether to export config to the hydra output folder.
+    """
+    # from enrich.console import get_console
+    from rich.console import Console
+    # from enrich.console import get_width()
+    from enrich.config import STYLES
+    from rich.theme import Theme
+    theme = Theme(STYLES)
+    # from enrich.console import get_theme
+
+    # console = get_console(record=True)  # , width=min(200))
+    console = Console(record=True, theme=Theme(STYLES))
+    style = "tree" if style is None else style
+    tree = Tree("CONFIG", style=style, guide_style=style)
+    queue = []
+    # add fields from `print_order` to queue
+    if print_order is not None:
+        for field in print_order:
+            queue.append(field) if field in cfg else log.warning(
+                f"Field '{field}' not found in config. "
+                f"Skipping '{field}' config printing..."
+            )
+    # add all the other fields to queue (not specified in `print_order`)
+    for field in cfg:
+        if field not in queue:
+            queue.append(field)
+    # generate config tree from queue
+    for field in queue:
+        branch = tree.add(field, style=style, guide_style=style)
+        config_group = cfg[field]
+        if isinstance(config_group, DictConfig):
+            branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
+        else:
+            branch_content = str(config_group)
+        branch.add(Syntax(branch_content, "yaml"))
+    # print config tree
+    if verbose or save_to_file:
+        console.print(tree)
+        if save_to_file:
+            outfpath = (
+                Path(os.getcwd()).joinpath('config_tree.log')
+                if outfile is None else Path(outfile)
+            )
+            console.save_text(outfpath.as_posix())
+            # with outfpath.open('w') as f:
+            #     rich.print(tree, file=f)
+        # console.print(tree)
+        # rich.print(tree)
+    # save config tree to file
+    # if save_to_file:
+    #     outfpath = (
+    #         Path(os.getcwd()).joinpath('config_tree.log')
+    #         if outfile is None else Path(outfile)
+    #     )
+    #     console.save_text(outfpath)
+    #     with outfpath.open('w') as f:
+    #         rich.print(tree, file=f)
+    return tree

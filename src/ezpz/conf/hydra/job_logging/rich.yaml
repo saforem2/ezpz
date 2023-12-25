@@ -9,6 +9,9 @@ version: 1
 #     markup: true
   # simple:
   #   format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
 handlers:
   stream:
     class: enrich.handler.RichHandler
@@ -16,6 +19,12 @@ handlers:
     show_level: true
     enable_link_path: false
     level: DEBUG
+  console:
+    class: logging.FileHandler
+    formatter: simple
+    filename: ${hydra.job.name}.log
+    level: INFO
+    mode: w
     # console:
     #   (): enrich.console.Console
     #   force_jupyter: false
@@ -31,6 +40,6 @@ handlers:
   #   class: enrich.handler.RichHandler
   #   level: INFO
 root:
-  handlers: [stream]
+  handlers: [stream, console]
 disable_existing_loggers: false
 ...

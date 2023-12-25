@@ -7,9 +7,8 @@ backend: 'DDP'              # Backend to use for distributed training
 ds_config_path: null
 port: null
 seed: null
-use_wandb: true
-gas: 1
-wandb_project_name: ezpz
+use_wandb: false
+wandb_project_name: null
 # precision: null
 save_to: null
 load_from: null
