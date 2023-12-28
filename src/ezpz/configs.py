@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union
 
 from omegaconf import DictConfig, OmegaConf
 import rich.repr
@@ -60,7 +60,7 @@ def savejobenv():
 
 
 def load_ds_config(
-        fpath: Optional[str | Path | os.PathLike] = None
+        fpath: Optional[Union[str, os.PathLike, Path]] = None
 ) -> dict:
     fpath = DS_CONFIG_PATH if fpath is None else fpath
     cfgpath = Path(fpath)
@@ -206,7 +206,7 @@ def print_config_tree(
         verbose: bool = True,
         style: str = 'tree',
         print_order: Optional[Sequence[str]] = None,
-        outfile: Optional[str | os.PathLike | Path] = None,
+        outfile: Optional[Union[str, os.PathLike, Path]] = None,
 ) -> Tree:
     """Prints the contents of a DictConfig as a tree structure using the Rich
     library.
