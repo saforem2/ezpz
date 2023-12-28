@@ -264,7 +264,7 @@ def get_world_size() -> int:
 
 
 def get_local_rank() -> int:
-    return int(
+    local_rank = (
         os.environ.get(
             'PMI_LOCAL_RANK',  # PMI_* for Polaris (/ Aurora) @ ALCF
             # OMPI_* for ThetaGPU @ ALCF
@@ -277,13 +277,16 @@ def get_local_rank() -> int:
                         'RANK',
                         os.environ.get(
                             'SLURM_PROCID',
-                            '0',
+                            None
                         )
                     )
                 )
             )
         )
     )
+    if local_rank is None:
+        return int(get_rank() % get_gpus_per_node())
+    return int(local_rank)
 
 
 def query_environment() -> dict[str, int]:
@@ -336,7 +339,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     init_process_group(
         rank=rank,
         world_size=world_size,
-        backend='nccl' if torch.cuda.is_available() else 'gloo'
+        backend=get_torch_backend(),
     )
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
@@ -347,8 +350,8 @@ def setup_torch_distributed(
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     import torch
-    rank = os.environ.get('RANK', None)
-    world_size = os.environ.get('WORLD_SIZE', None)
+    # rank = os.environ.get('RANK', None)
+    # world_size = os.environ.get('WORLD_SIZE', None)
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
@@ -411,8 +414,11 @@ def setup_torch(
     nthreads = os.environ.get('OMP_NUM_THREADS', None)
     if nthreads is not None:
         torch.set_num_threads(int(nthreads))
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and device == 'cuda':
         torch.cuda.set_device(local_rank)
+    elif device == 'xpu':
+        log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
+        torch.xpu.set_device(local_rank)
     # log.info(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
@@ -422,9 +428,14 @@ def setup_torch(
         if backend in {'ds', 'deepspeed', 'dspeed'}:
             git_ds_info()
         log.info(
-            f"Using {device=} with {backend=} + '{get_torch_backend()}'"
+            f"Using {device=} with {backend=} + '{get_torch_backend()}' "
             "for distributed training."
         )
+    log.info(
+        f'[LOCAL: {local_rank=} / {get_gpus_per_node()}] ; '
+        f'[GLOBAL: {rank=} / {world_size-1}] ; '
+        f'[device_id: {get_torch_device()}:{get_local_rank()}]'
+    )
     return rank
 
 
@@ -698,7 +709,18 @@ def get_nodes_from_hostfile(hostfile: os.PathLike) -> list[str]:
 
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     import torch
-    gpus_per_node = torch.cuda.device_count()
+    try:
+        import intel_extension_for_pytorch as ipex
+        try:
+            import oneccl_bindings_for_pytorch
+        except (ImportError, ModuleNotFoundError):
+            import torch_ccl
+        gpus_per_node = ipex.xpu.device_count()
+    except (ImportError, ModuleNotFoundError):
+        if torch.cuda.is_available():
+            gpus_per_node = torch.cuda.device_count()
+        else:
+            raise ValueError('No GPUs found. Exiting!')
     if _assert:
         try:
             import sh  # pyright: ignore
