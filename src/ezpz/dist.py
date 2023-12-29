@@ -123,7 +123,7 @@ def get_dist_info(
     local_rank = get_local_rank()
     num_nodes = get_num_nodes()
     gpus_per_node = get_gpus_per_node()
-    node_id = rank % gpus_per_node
+    node_id = rank % num_nodes
     if hostname.startswith('theta'):
         machine = 'ThetaGPU'
     elif hostname.startswith('x1'):
@@ -153,13 +153,31 @@ def get_dist_info(
     }
     if verbose:
         log.info(f'dist_info: {json.dumps(dist_info, indent=4)}')
+        if wandb is not None and wandb.run is not None:
+            wandb.run.config.update({'DIST_INFO': dist_info})
     return dist_info
 
 
-def print_dist_setup():
-    # print(' '.join(setup_strings))
-    # log.info(f"{get_log_prefix()}: {get_rank()} / {get_world_size() - 1}")
-    log.info(f"RANK: {get_rank()} / {get_world_size() - 1}")
+def print_dist_setup() -> str:
+    rank = get_rank()
+    device = get_torch_device()
+    world_size = get_world_size()
+    local_rank = get_local_rank()
+    gpus_per_node = get_gpus_per_node()
+    num_nodes = world_size // gpus_per_node
+    node = rank % num_nodes
+    rank_len = len(str(rank))
+    ws_len = len(str(world_size))
+    lr_len = len(str(local_rank))
+    gpn_len = len(str(gpus_per_node))
+    dist_str = ''.join([
+        f'[{node=}]',
+        f'[{rank=:>{rank_len}}/{(world_size-1):<{ws_len}}]',
+        f'[{local_rank=:>{lr_len}}/{gpus_per_node:<{gpn_len}}]',
+        f'[{device=}]'
+    ])
+    log.info(f'{dist_str}')
+    return dist_str
 
 
 def setup(
@@ -417,7 +435,7 @@ def setup_torch(
     if torch.cuda.is_available() and device == 'cuda':
         torch.cuda.set_device(local_rank)
     elif device == 'xpu':
-        log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
+        # log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
         torch.xpu.set_device(local_rank)
     # log.info(f'RANK: {rank} / {world_size-1}')
     if seed is not None:
@@ -431,11 +449,8 @@ def setup_torch(
             f"Using {device=} with {backend=} + '{get_torch_backend()}' "
             "for distributed training."
         )
-    log.info(
-        f'[LOCAL: {local_rank=} / {get_gpus_per_node()}] ; '
-        f'[GLOBAL: {rank=} / {world_size-1}] ; '
-        f'[device_id: {get_torch_device()}:{get_local_rank()}]'
-    )
+    _ = print_dist_setup()
+    # log.info(f'{dist_str}')
     return rank
 
 
