@@ -24,7 +24,6 @@ from ezpz.configs import (
     BIN_DIR,
     CONF_DIR,
     FRAMEWORKS,
-    GETJOBENV,
     git_ds_info,
     HERE,
     LOGS_DIR,
@@ -33,6 +32,7 @@ from ezpz.configs import (
     PROJECT_ROOT,
     QUARTO_OUTPUTS_DIR,
     SAVEJOBENV,
+    GETJOBENV,
     TrainConfig,
     load_ds_config,
 )
