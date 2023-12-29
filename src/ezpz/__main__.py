@@ -18,7 +18,18 @@ import hydra
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
-from ezpz import TrainConfig, setup, setup_wandb, timeitlogit
+from ezpz import (
+    TrainConfig,
+    setup,
+    setup_wandb,
+    timeitlogit,
+    get_rank,
+    get_torch_device,
+    get_torch_backend,
+    get_world_size,
+    get_local_rank,
+    get_gpus_per_node,
+)
 
 try:
     import wandb
@@ -27,6 +38,14 @@ except (ImportError, ModuleNotFoundError):
 
 
 log = logging.getLogger(__name__)
+
+RANK = get_rank()
+DEVICE = get_torch_device()
+BACKEND = get_torch_backend()
+WORLD_SIZE = get_world_size()
+LOCAL_RANK = get_local_rank()
+GPUS_PER_NODE = get_gpus_per_node()
+NUM_NODES = WORLD_SIZE // GPUS_PER_NODE
 
 
 @timeitlogit(verbose=True)
@@ -42,6 +61,9 @@ def main(cfg: DictConfig) -> int:
     run = None
     if rank != 0:
         log.setLevel("CRITICAL")
+    # log.info(f'[GLOBAL]: {RANK=} / {WORLD_SIZE-1=}, {NUM_NODES=}')
+    # log.info(f'[LOCAL]: {LOCAL_RANK=} / {GPUS_PER_NODE=}')
+    # if rank == 0:
     else:
         if config.use_wandb and wandb is not None:
             run = setup_wandb(
@@ -49,7 +71,7 @@ def main(cfg: DictConfig) -> int:
                 project_name=config.wandb_project_name,
             )
         log.info(f"{config=}")
-    log.info(f'Output dir: {os.getcwd()}')
+        log.info(f'Output dir: {os.getcwd()}')
     if (
             wandb is not None
             and run is not None
