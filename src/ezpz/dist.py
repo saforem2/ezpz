@@ -443,17 +443,17 @@ def setup_torch(
     if nthreads is not None:
         torch.set_num_threads(int(nthreads))
     # if torch.cuda.is_available() and device == 'cuda':
-    if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
-        torch.cuda.set_device(local_rank)
-    #     # torch.cuda.set_device('cuda')
-    # elif device == 'xpu':
-    elif ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
+    # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
+    #     torch.cuda.set_device(local_rank)
+    # #     # torch.cuda.set_device('cuda')
+    # # elif device == 'xpu':
+    # else:
+    #     log.warning(
+    #         f'No Intel or NVIDIA GPUs found, using: {ACCELERATOR_TYPE=}'
+    #     )
+    if ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
         # log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
         torch.xpu.set_device(local_rank)  # type:ignore
-    else:
-        log.warning(
-            f'No Intel or NVIDIA GPUs found, using: {ACCELERATOR_TYPE=}'
-        )
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     MPI.COMM_WORLD.Barrier()
