@@ -129,6 +129,7 @@ def get_hosts_from_hostfile(
 
 
 def get_dist_info(
+        framework: str = 'pytorch',
         verbose: Optional[bool] = None
 ) -> dict[str, str | int | list]:
     hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
@@ -138,22 +139,13 @@ def get_dist_info(
     local_rank = get_local_rank()
     num_nodes = get_num_nodes()
     gpus_per_node = get_gpus_per_node()
-    node_id = rank % num_nodes
-    if hostname.startswith('theta'):
-        machine = 'ThetaGPU'
-    elif hostname.startswith('x1'):
-        machine = 'SunSpot'
-    elif hostname.startswith('x3'):
-        machine = 'Polaris'
-    elif hostname.startswith('x4'):
-        machine = 'Aurora'
-    elif hostname.startswith('login'):
-        machine = 'NERSC'
-    elif hostname.startswith('nid'):
-        machine = 'Perlmutter'
-    else:
-        machine = hostname
-        log.info(f'Unknown machine, setting {machine=}')
+    node_id = get_node_index()
+    device = local_rank
+    distributed_backend = None
+    if framework in ['pt', 'torch', 'pytorch']:
+        device = get_torch_device()
+        distributed_backend = get_torch_backend()
+    machine = get_machine()
     hostfile, hosts = get_hosts_from_hostfile()
     dist_info = {
         'rank': rank,
@@ -165,6 +157,8 @@ def get_dist_info(
         'machine': machine,
         'hostfile': hostfile,
         'hosts': hosts,
+        'device': device,
+        'distributed_backend': distributed_backend,
     }
     if verbose:
         log.info(f'dist_info: {json.dumps(dist_info, indent=4)}')
@@ -173,14 +167,16 @@ def get_dist_info(
     return dist_info
 
 
-def print_dist_setup() -> str:
+def print_dist_setup(framework: str = 'torch') -> str:
     rank = get_rank()
-    device = get_torch_device()
     world_size = get_world_size()
     local_rank = get_local_rank()
     gpus_per_node = get_gpus_per_node()
     # num_nodes = get_num_nodes()
     node = get_node_index()
+    device = None
+    if framework.lower() in ['pt', 'torch', 'pytorch']:
+        device = get_torch_device()
     rank_len = len(str(rank))
     ws_len = len(str(world_size))
     lr_len = len(str(local_rank))
@@ -564,6 +560,34 @@ def include_file(f: os.PathLike | str | Path):
     }
 
 
+def get_machine(hostname: Optional[str] = None) -> str:
+    if hostname is None:
+        try:
+            hostname = socket.gethostbyaddr(socket.gethostname())[0]
+        except Exception:
+            try:
+                hostname = socket.gethostname()
+            except Exception:
+                log.warning('Unable to determine hostname!')
+                hostname = 'unknown'
+    if hostname.startswith('theta'):
+        machine = 'ThetaGPU'
+    elif hostname.startswith('x1'):
+        machine = 'SunSpot'
+    elif hostname.startswith('x3'):
+        machine = 'Polaris'
+    elif hostname.startswith('x4'):
+        machine = 'Aurora'
+    elif hostname.startswith('login'):
+        machine = 'NERSC'
+    elif hostname.startswith('nid'):
+        machine = 'Perlmutter'
+    else:
+        machine = hostname
+        log.info(f'Unknown machine, setting {machine=}')
+    return machine
+
+
 def setup_wandb(
         project_name: Optional[str] = None,
         config: Optional[dict | DictConfig] = None,
@@ -643,52 +667,12 @@ def setup_wandb(
     _ = env.pop('LS_COLORS', None)
     _ = env.pop('PS1', None)
     run.config.update({'env': env})
-    try:
-        hostname = socket.gethostbyaddr(socket.gethostname())[0]
-    except Exception:
-        try:
-            hostname = socket.gethostname()
-        except Exception:
-            log.warning('Unable to determine hostname!')
-            hostname = 'unknown'
-    if hostname.startswith('theta'):
-        machine = "ThetaGPU"
-    elif hostname.startswith('x3'):
-        machine = "Polaris"
-    elif hostname.startswith('x1'):
-        machine = "Sunspot"
-    elif hostname.startswith('nid'):
-        machine = "Perlmutter"
-    elif hostname.startswith('login'):
-        machine = "Perlmutter"
-    else:
-        machine = hostname
+    machine = get_machine()
     log.info(f'Running on {machine=}')
     run.config.update({'machine': machine})
     model_size = os.environ.get('MODEL_SIZE', None)
     if model_size is not None:
         run.config.update({'MODEL_SIZE': model_size})
-    # hostfile, hosts = get_hosts_from_hostfile()
-    # run.config['dist_info/hostfile'] = hostfile
-    # run.config['dist_info/hosts'] = hosts
-    # hostfile = os.environ.get(
-    #     'HOSTFILE',
-    #     os.environ.get(
-    #         'PBS_NODEFILE',
-    #         os.environ.get(
-    #             'COBALT_NODEFILE',
-    #             None,
-    #         )
-    #     )
-    # )
-    # if hostfile is not None and Path(hostfile).is_file():
-    #     log.info(f'Reading hosts from {hostfile}')
-    #     hpath = Path(hostfile).resolve().absolute()
-    #     with hpath.open('r') as f:
-    #         hosts = f.readlines()
-    #     run.config['dist_info/hosts'] = hosts
-    #     run.config['dist_info/hostfile'] = hostfile
-
     return wandb.run
 
 
