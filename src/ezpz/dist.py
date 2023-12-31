@@ -156,6 +156,7 @@ def get_dist_info(
         'node_id': node_id,
         'machine': machine,
         'hostfile': hostfile,
+        'hostname': hostname,
         'hosts': hosts,
         'device': device,
         'distributed_backend': distributed_backend,
