@@ -42,7 +42,8 @@ dependencies = [
   "hydra-colorlog",
   # "ipympl",
   # "tqdm",
-  "opinionated @ git+https://github.com/saforem2/opinionated",
+  # "opinionated @ git+https://github.com/saforem2/opinionated",
+  "ambivalent @ git+https://github.com/saforem2/ambivalent",
   "enrich @ git+https://github.com/saforem2/enrich",
 ]
 
@@ -57,6 +58,8 @@ dev = [
   "ruff",
   "ruff-lsp",
   "pyproject-flake8",
+  "black",
+  "mypy",
   "ipython",
   "ptipython",
 ]
