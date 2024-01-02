@@ -8,16 +8,6 @@ from typing import Any, Optional
 from typing import Union
 
 from enrich.console import get_console, is_interactive
-from mpi4py import MPI
-import numpy as np
-import torch
-import tqdm
-try:
-    import wandb  # type:ignore
-except (ImportError, ModuleNotFoundError):
-    wandb = None
-
-from ezpz import dist
 from ezpz.configs import (
     BACKENDS,
     print_config_tree,
@@ -36,6 +26,17 @@ from ezpz.configs import (
     TrainConfig,
     load_ds_config,
 )
+
+from mpi4py import MPI
+import numpy as np
+import torch
+import tqdm
+try:
+    import wandb  # type:ignore
+except (ImportError, ModuleNotFoundError):
+    wandb = None
+
+from ezpz import dist
 from ezpz.dist import (
     check,
     timeit,
