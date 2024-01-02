@@ -351,14 +351,24 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     master_addr = (
         socket.gethostname() if rank == 0 else None
     )
+    eport = os.environ.get("MASTER_PORT", None)
+    if eport is not None:
+        log.info(f'Caught MASTER_PORT: {eport=} from environment!')
+    else:
+        eport = port
+    master_port = (
+        eport if rank == 0 else None
+    )
+    master_port = MPI.COMM_WORLD.bcast(master_port, root=0)
     master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
     os.environ['MASTER_ADDR'] = master_addr
-    if (eport := os.environ.get('MASTER_PORT', None)) is None:
-        os.environ['MASTER_PORT'] = port
-    else:
-        os.environ['MASTER_PORT'] = eport
-        if rank == 0:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+    os.environ['MASTER_PORT'] = master_port
+    # if (eport := os.environ.get('MASTER_PORT', None)) is None:
+    #     os.environ['MASTER_PORT'] = port
+    # else:
+    #     os.environ['MASTER_PORT'] = eport
+    #     if rank == 0:
+    #         log.info(f'Caught MASTER_PORT:{eport} from environment!')
     init_process_group(
         rank=rank,
         world_size=world_size,
