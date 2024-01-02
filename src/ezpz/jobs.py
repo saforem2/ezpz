@@ -5,6 +5,7 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import os
 from pathlib import Path
+from typing import Optional
 
 SCHEDULERS = {
     'PBS',
@@ -17,10 +18,6 @@ def get_pbs_env() -> dict[str, str]:
     return {
         k: v for k, v in dict(os.environ).items() if 'PBS' in k
     }
-
-
-def get_jobdir_from_jobslog(idx: Optional[int] = -1, jobid: Optional[str | int] = None):
-    pass
 
 def get_jobdir_from_env(scheduler: str = 'pbs') -> Path:
     assert scheduler in SCHEDULERS
@@ -69,13 +66,17 @@ def get_jobenv(scheduler: str = 'pbs') -> dict:
     raise ValueError(f'{scheduler} not yet implemented!')
 
 
+def get_jobslog_file(scheduler: str = 'pbs') -> Path:
+    return Path.home().joinpath(f'{scheduler}-jobs.log')
+
+
 def add_to_jobslog(scheduler: str = 'pbs'):
     jobenv = get_jobenv(scheduler=scheduler)
     jobdir = get_jobdir_from_env(scheduler=scheduler)
     assert jobenv is not None
     assert jobdir is not None
-    jobslog = Path.home().joinpath(f'{scheduler}-jobs.log')
-    with jobslog.open('a') as f:
+    jobslog_file = get_jobslog_file(scheduler=scheduler)
+    with jobslog_file.open('a') as f:
         f.write(f'{jobdir}\n')
 
 
@@ -156,9 +157,22 @@ def save_job(scheduler: str = 'pbs'):
     #     for key, val in pbs_env.items():
     #         f.write(f'export {key}={val}\n')
 
-def get_jobenv_from_jobdir(scheduler: str = 'pbs'):
-    # jobdir = get_jobdir_from_env(scheduler=scheduler)
 
+def get_jobdir_from_jobslog(
+        idx: int = -1,
+        jobid: Optional[int | str] = None,
+        scheduler: str = 'pbs',
+):
+    # jobdir = get_jobdir_from_env(scheduler=scheduler)
+    jobslog_file = get_jobslog_file(scheduler=scheduler)
+    lines = []
+    with jobslog_file.open('r') as f:
+        for line in f.readlines()[-idx]
+
+    # for line in jobslog_file.open('r') as f:
+    #     for line in file.readlines()[-]
+    #         for line in (file.readlines() [-N:]):
+    #         print(line, end ='')
 
 
 if __name__ == '__main__':
@@ -167,4 +181,4 @@ if __name__ == '__main__':
     if args[0].lower() == 'savejobenv':
         save_job()
     elif args[0].lower() == 'getjobenv':
-        get
+        pass
