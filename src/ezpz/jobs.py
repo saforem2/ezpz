@@ -166,8 +166,9 @@ def get_jobdir_from_jobslog(
     # jobdir = get_jobdir_from_env(scheduler=scheduler)
     jobslog_file = get_jobslog_file(scheduler=scheduler)
     lines = []
-    with jobslog_file.open('r') as f:
-        for line in f.readlines()[-idx]
+    # with jobslog_file.open('r') as f:
+    #     for line in f.readlines()[-idx]
+    pass
 
     # for line in jobslog_file.open('r') as f:
     #     for line in file.readlines()[-]
