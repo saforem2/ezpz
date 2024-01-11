@@ -18,6 +18,7 @@ import hydra
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
+import time
 from ezpz import (
     TrainConfig,
     setup,
@@ -48,6 +49,16 @@ GPUS_PER_NODE = get_gpus_per_node()
 NUM_NODES = WORLD_SIZE // GPUS_PER_NODE
 
 
+def test_torch_tensor():
+    import torch
+    torch_device = get_torch_device()
+    local_rank = get_local_rank()
+    x = torch.tensor([1.]).to(
+        f"{torch_device}:{local_rank}"
+    )
+    log.info(f'{torch_device=}, {local_rank=}, {x=}, {x.device=}')
+
+
 @timeitlogit(verbose=True)
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> int:
@@ -58,12 +69,14 @@ def main(cfg: DictConfig) -> int:
         backend=config.backend,
         seed=config.seed
     )
+    t1 = time.perf_counter()
+    t0 = os.environ.get('START_TIME', None)
+    # if t0 is not None:
+    assert t0 is not None
+    startup_time = t1 - float(t0)
     run = None
     if rank != 0:
         log.setLevel("CRITICAL")
-    # log.info(f'[GLOBAL]: {RANK=} / {WORLD_SIZE-1=}, {NUM_NODES=}')
-    # log.info(f'[LOCAL]: {LOCAL_RANK=} / {GPUS_PER_NODE=}')
-    # if rank == 0:
     else:
         if config.use_wandb and wandb is not None:
             run = setup_wandb(
@@ -81,6 +94,8 @@ def main(cfg: DictConfig) -> int:
         assert run is not None
         from rich.emoji import Emoji
         from rich.text import Text
+        log.warning(f'Startup time: {startup_time}')
+        wandb.log({'startup_time': startup_time})
         log.warning(
             Text(f'{Emoji("rocket")} [{run.name}]({run.url})')
         )
@@ -88,4 +103,6 @@ def main(cfg: DictConfig) -> int:
 
 
 if __name__ == '__main__':
+    t0 = time.perf_counter()
+    os.environ['START_TIME'] = f'{t0}'
     rank = main()
