@@ -142,7 +142,7 @@ def get_dist_info(
     node_id = get_node_index()
     device = local_rank
     distributed_backend = None
-    if framework in ['pt', 'torch', 'pytorch']:
+    if framework in {'pt', 'torch', 'pytorch'}:
         device = get_torch_device()
         distributed_backend = get_torch_backend()
     machine = get_machine()
