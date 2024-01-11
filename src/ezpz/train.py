@@ -15,10 +15,16 @@ import logging
 import os
 import time
 
+import torch
+try:
+    import intel_extension_for_pytorch
+    import oneccl_bindings_for_pytorch
+except (ModuleNotFoundError, ImportError):
+    pass
+
 import hydra
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
-import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 import torch.optim as optim
@@ -74,8 +80,8 @@ def train_model() -> float:
     outputs = model(inputs)
     if RANK == 0:
         log.warning(f'{devid=}')
-        log.warning(f'{inputs.shape=}')
         log.warning(f'{model=}')
+        log.warning(f'{inputs.shape=}')
         log.warning(f'{outputs.shape=}')
     label = torch.full((1,), 1.0, dtype=torch.float, device=f'{devid}')
     loss = criterion(outputs, label)
