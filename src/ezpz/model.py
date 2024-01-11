@@ -7,13 +7,14 @@ import logging
 import os
 
 import hydra
+import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.distributed as dist
+# import torch.distributed as dist
 try:
     import intel_extension_for_pytorch
     import oneccl_bindings_for_pytorch
@@ -50,6 +51,17 @@ GPUS_PER_NODE = get_gpus_per_node()
 NUM_NODES = WORLD_SIZE // GPUS_PER_NODE
 
 
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(1, 1, 3)
+        self.pool = nn.MaxPool2d(2, 2)
+
+    def forward(self, inputs):
+        output = self.pool(F.relu(self.conv(inputs)))
+        output = output.view(1)
+        return output
+
 
 class Model(nn.Module):
     def __init__(self):
@@ -69,13 +81,13 @@ def setup_training(cfg: DictConfig) -> TrainConfig:
         seed=config.seed
     )
     run = None
-    if rank != 0:
-        # log.setLevel("CRITICAL")
-        pass
+    # if rank != 0:
+    #     # log.setLevel("CRITICAL")
+    #     pass
     # log.info(f'[GLOBAL]: {RANK=} / {WORLD_SIZE-1=}, {NUM_NODES=}')
     # log.info(f'[LOCAL]: {LOCAL_RANK=} / {GPUS_PER_NODE=}')
     # if rank == 0:
-    else:
+    if rank == 0:
         if config.use_wandb and wandb is not None:
             run = setup_wandb(
                 config=cfg,
