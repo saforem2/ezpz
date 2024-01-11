@@ -73,8 +73,10 @@ def train_model() -> float:
     inputs = torch.rand((1, 1, 5, 5), device=f'{devid}')
     outputs = model(inputs)
     if RANK == 0:
-        log.info(f'{model=}')
-        log.info(f'{outputs=}')
+        log.warning(f'{devid=}')
+        log.warning(f'{inputs=}')
+        log.warning(f'{model=}')
+        log.warning(f'{outputs=}')
     label = torch.full((1,), 1.0, dtype=torch.float, device=f'{devid}')
     loss = criterion(outputs, label)
     loss.backward()
