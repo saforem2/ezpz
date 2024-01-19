@@ -2,32 +2,295 @@
 
 [![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc)
 
+<!--
 > [!NOTE]
 > This library is **very much** still a WIP.  
 > Any ideas / issues / suggestions for improving things would be greatly appreciated.
+-->
 
-Simplifies the process of setting up distributed training for:
+> [!IMPORTANT]
+> Scale your application across **thousands** of GPUs with **minimal changes**.
+> 
+> `ezpz` simplifies the process of setting up +
+> launching distributed training
+> with your favorite `{framework, backend}` combination:
+> 
+> - [`framework=pytorch`](#pytorch) + `backend={DDP, deepspeed, horovod}`
+> 
+> - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+> 
+> _2ez_ 😎. <br>
 
-- [`framework=pytorch`](#pytorch) + `backend={DDP, deepspeed, horovod}`
+(see [frameworks](#frameworks) for additional details)
 
-- [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+## Setup + `launch`
 
-ezpz setup on any of `{thetaGPU, Polaris, Perlmutter}`:
+`ezpz` setup on any of `{thetaGPU, Polaris, Perlmutter}`:
+
+1. `git` clone + `pip` install:
+
+    ```bash
+    git clone 'https://github.com/saforem2/ezpz'
+    python3 -m pip install -e ezpz
+    ```
+
+1. Save Job info + define `launch` alias:
+
+    ```bash
+    source ezpz/src/ezpz/bin/savejobenv
+    ```
+    <details closed><summary>Output:</summary>
+
+    ```bash
+    ┌──────────────────────────────────────────────────────────────────
+    │ [Hosts]:
+    │     • x4415c6s5b0n0, x4415c6s6b0n0, x4415c6s7b0n0, x4415c7s0b0n0
+    └──────────────────────────────────────────────────────────────────
+    ┌──────────────────────────────────────────────────────────────────
+    │ [DIST INFO]:
+    │     • Loading job env from: /home/foremans/.pbsenv
+    │     • HOSTFILE: /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    │     • NHOSTS: 4
+    │     • NGPU_PER_HOST: 12
+    │     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
+    │     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    │     • Defining alias: launch: aliased to mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    └──────────────────────────────────────────────────────────────────
+    ```
+
+    </details>
+
+1. `launch` [`__main__.py`](./src/ezpz/__main__.py) with `pytorch` + `deepspeed`:
+
+    ```bash
+    $ launch $(which python3) -m ezpz framework=pytorch backend=deepspeed
+    ```
+
+    <details closed><summary>Output:</summary>
+
+    ```bash
+    $ launch python3 -m ezpz framework=pytorch backend=DDP
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:26][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:26][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:26][INFO][dist.py:243] - Using DDP for distributed training
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:28][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:28][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:34][INFO][dist.py:292] - Using device='xpu'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 1 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 2 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 3 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 4 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 0 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 5 / 47
+    [2023-12-19 13:33:35][INFO][__main__.py:49] - {
+        "_target_": "ezpz.configs.TrainConfig",
+        "framework": "pytorch",
+        "backend": "DDP",
+        "ds_config_path": null,
+        "port": null,
+        "seed": null,
+        "use_wandb": true,
+        "wandb_project_name": null,
+        "precision": null,
+        "ngpus": null
+    }
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 9 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 10 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 11 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 7 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 8 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 6 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 12 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 13 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 14 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 15 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 18 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 19 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 20 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 21 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 22 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 23 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 24 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 25 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 26 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 27 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 30 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 16 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 17 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 28 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 32 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 33 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 36 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 37 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 38 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 39 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 43 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 46 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 29 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 47 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 31 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 34 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 35 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 42 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 41 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 44 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 45 / 47
+    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 40 / 47
+    [2023-12-19 13:33:47][INFO][dist.py:415] - Setting up wandb from rank: 0
+    [2023-12-19 13:33:47][INFO][dist.py:416] - Using: WB PROJECT: ezpz
+    [2023-12-19 13:33:58][INFO][dist.py:448] - W&B RUN: [flowing-wood-8](https://wandb.ai/l2hmc-qcd/ezpz/runs/uya29gm5)
+    [2023-12-19 13:33:58][INFO][dist.py:490] - Running on x4415c6s5b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+    [2023-12-19 13:33:58][INFO][dist.py:506] - Reading hosts from /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    [2023-12-19 13:33:58][INFO][__main__.py:57] - Output dir: /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17
+    [2023-12-19 13:33:58][CRITICAL][dist.py:519] - 🚀 flowing-wood-8
+    [2023-12-19 13:33:58][CRITICAL][dist.py:520] - 🔗 https://wandb.ai/l2hmc-qcd/ezpz/runs/uya29gm5
+    [2023-12-19 13:33:58][CRITICAL][dist.py:521] - 📂/: /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/wandb/run-20231219_133354-uya29gm5/files
+    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/ezpz-pt-DDP-xpu.log to W&B artifact...
+    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/__main__.log to W&B artifact...
+    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/main_debug.log to W&B artifact...
+    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-16/__main__.log to W&B artifact...
+    ```
+    
+    </details>
+
+<details closed><summary><h2>Tested Machines</h2></summary>
+
+<details closed><summary><h3>Aurora (@ ALCF)</h3></summary>
+
+<!--#### Aurora (@ ALCF)-->
 
 ```bash
-git clone 'https://github.com/saforem2/ezpz' .
-source ./ezpz/src/ezpz/bin/savejobenv
-python3 -m pip install -e ezpz --require-virtualenv
-# e.g. to launch src/ezpz/__main__.py with pytorch + deepspeed:
-launch $(which python3) -m ezpz framework=pytorch backend=deepspeed
+# launch job
+$ qsub -q EarlyAppAccess -A Aurora_Deployment -l walltime=2:00:00 -l select=4 -I
+
+# load frameworks
+$ module use -a /soft/modulefiles ; module --ignore_cache load frameworks
+$ module load frameworks/.2023.12.15.001
+
+# install `ezpz`
+$ git clone https://github.com/saforem2/ezpz
+$ cd ezpz
+$ mkdir -p venvs/aurora/2023.12.15.001
+$ python3 -m venv venvs/aurora/2023.12.15.001 --system-site-packages
+$ source venvs/aurora/2023.12.15.001/bin/activate
+$ python3 -m pip install -e .
+
+# print job info and define `launch` alias
+$ source ezpz/src/ezpz/bin/savejobenv
+┌──────────────────────────────────────────────────────────────────
+│ [Hosts]:
+│     • x4415c6s5b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c6s6b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c6s7b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c7s0b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+└──────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────
+│ [DIST INFO]:
+│     • Loading job env from: /home/foremans/.pbsenv
+│     • HOSTFILE: /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+│     • NHOSTS: 4
+│     • NGPU_PER_HOST: 12
+│     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
+│     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+│     • Defining alias: launch: aliased to mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+└──────────────────────────────────────────────────────────────────
 ```
 
-_2ez_.
+</details>
 
-## Setup
-
-<details open><summary><h3>ALCF:</h3></summary>
-
+<!--#### Polaris (@ ALCF)-->
+<details closed><summary><h3>Polaris (@ ALCF)</h3></summary>
 
 ```bash
 # Most recent `conda` versions as of 10-17-2023
@@ -37,6 +300,8 @@ if [[ $(hostname) == x3* ]]; then
 elif [[ $(hostname) == theta* ]]; then
     export MACHINE="thetaGPU"
     export CONDA_DATE="2023-01-11"
+else
+    echo "Unknown hostname $(hostname)"
 fi
 module load "conda/${CONDA_DATE}" ; conda activate base
 # Clone saforem2/ezpz and navigate into it
@@ -56,7 +321,7 @@ cd src/ezpz
 ```
 </details>
 
-<details open><summary><h3>Perlmutter (@ NERSC):</h3></summary>
+<details closed><summary><h3>Perlmutter (@ NERSC):</h3></summary>
 
 ```bash
 # request slurm allocation with `salloc`
@@ -73,13 +338,12 @@ cd src/ezpz
 ./bin/train.sh framework=pytorch backend=DDP
 ```
 
-</details>
-
 where `framework` $\in$ `{pytorch, tensorflow}`, and `backend` $\in$ `{DDP,
 deepspeed, horovod}`[^tf-hvd]  
 
 [^tf-hvd]: Note `framework=tensorflow` is **only** compatible with `backend=horovod`
 
+</details>
 
 <details closed><summary><b>Deprecated:</b></summary>
 
@@ -144,16 +408,17 @@ deepspeed, horovod}`[^tf-hvd]
   
 </details>
 
+</details>
 
-## Examples
+## Details
 
-> [!IMPORTANT]
-> We can `launch` on any of `{ThetaGPU, Polaris, Perlmutter}` (*)
+> [!NOTE]
+> We can `launch` on any of `{ThetaGPU, Polaris, Perlmutter}`$\left(^{\ast}\right)$
 > with a specific `{framework, backend}` combo by
 > 1. [`savejobenv`](./src/ezpz/bin/savejobenv):
 >     - This will `export launch=<launcher> <launcher-opts>`
 >       for `<launcher>` $\in$ `{mpirun,mpiexec,srun}`
->       on (*) respectively.
+>       on $(^{\ast})$ respectively.
 >     - By default, `launch <exec>` will launch `<exec>` across
 >       _all_ the available GPUs in your active `{COBALT,PBS,slurm}` job.
 > 2. `launch`
@@ -162,20 +427,24 @@ deepspeed, horovod}`[^tf-hvd]
 >           with framework `<framework>` and backend `<backend>`
 >           (e.g. `pytorch` and `deepspeed`)
 >
-> - Complete example:      
-> ```bash
-> #!/bin/bash --login
-> git clone https://github.com/saforem2/ezpz
-> ./ezpz/src/ezpz/bin/savejobenv
-> launch $(which python3) -m ezpz framework=<framework> backend=<backend>
-> ```
-> for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
+
+### Complete Example
+
+```bash
+#!/bin/bash --login
+git clone https://github.com/saforem2/ezpz
+./ezpz/src/ezpz/bin/savejobenv
+launch $(which python3) -m ezpz framework=<framework> backend=<backend>
+```
+
+for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$ `{horovod, deepspeed, DDP}`[^1]
 
 [^1]: `deepspeed`, `DDP` only support `pytorch`
 
-### PyTorch
 
-<details closed><summary><h3>✅ PyTorch + [...]</h3></summary>
+## Frameworks
+
+<details closed><summary><h3>PyTorch</h3></summary>
   
 <details closed><summary><h4><code>DDP</code>:</h4></summary>
 
@@ -289,9 +558,7 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 </details>
 </details>
 
-### TensorFlow
-
-<details closed><summary><h3>✅ TensorFlow + <code>horovod</code>:</h3></summary>
+<details closed><summary><h3>TensorFlow</h3></summary>
 
 ```bash
 launch framework=tensorflow backend=horovod
@@ -349,10 +616,7 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
   sourced, will populate the current environment with the necessary job-related
   variables.
 
-
-<!--<details open><summary><h3>savejobenv</h3></summary>-->
-
-### `savejobenv`
+<details closed><summary><h3><code>savejobenv</code></h3></summary>
 
 Launch a job, clone (or navigate into) `ezpz`, and `source` [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
 
@@ -393,13 +657,9 @@ Opening interactive session to thetagpu04
 └────────────────────────────────────────────────────────────────────────────────
 ```
 
+</details>
 
-<!--
 <details closed><summary><h3><code>getjobenv</code></h3></summary>
--->
-
-
-### `getjobenv`
 
 Now, in a **NEW SHELL**
 
@@ -501,4 +761,4 @@ Now, in a **NEW SHELL**
 while this example looked at ThetaGPU, the exact same process will work on any
 of `{ThetaGPU, Polaris, Perlmutter}`.
 
-2ez
+</details>
