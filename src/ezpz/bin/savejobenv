@@ -38,7 +38,7 @@ function saveCOBALTenv() {
         getCOBALT_NODEFILE
         COBALT_VARS=$(env | grep COBALT)
         echo "${COBALT_VARS[*]}" > "${COBALT_ENV_FILE}"
-        export FNAME="COBALT_NODEFILE"
+        # export FNAME="COBALT_NODEFILE"
         export HOSTFILE="${COBALT_NODEFILE}"
         export JOBENV_FILE="${COBALT_ENV_FILE}"
         sed -i 's/^COBALT/export\ COBALT/g' "${COBALT_ENV_FILE}"
@@ -53,7 +53,7 @@ function savePBSenv() {
         echo "│ Writing PBS vars to ${PBS_ENV_FILE}"
         PBS_VARS=$(env | grep PBS)
         echo "${PBS_VARS[*]}" > "${PBS_ENV_FILE}"
-        export FNAME="PBS_NODEFILE"
+        # export FNAME="PBS_NODEFILE"
         export HOSTFILE="${PBS_NODEFILE}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
         sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
@@ -68,7 +68,7 @@ function saveSLURMenv() {
         echo "│ Saving SLURM_* to ${SLURM_ENV_FILE}"
         SLURM_VARS=$(env | grep SLU)
         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
-        export FNAME="SLURM_NODEFILE"
+        # export FNAME="SLURM_NODEFILE"
         export HOSTFILE="${HOME}/.slurm-nodefile"
         export JOBENV_FILE="${SLURM_ENV_FILE}"
         export SLURM_NODES="${SLURM_NODES}"
@@ -189,6 +189,7 @@ function setup1() {
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
+    export WORLD_SIZE="${NGPUS}"
     echo "│ HOSTFILE: ${HOSTFILE}"
     echo "│ NHOSTS: ${NHOSTS}"
     echo "│ NGPU_PER_HOST: ${NGPU_PER_HOST} GPUs per host"
@@ -197,15 +198,15 @@ function setup1() {
 
     {
         echo "export HOSTFILE=${HOSTFILE}"
-        echo "export ${FNAME}=${HOSTFILE}"
+        # echo "export ${FNAME}=${HOSTFILE}"
         echo "export NHOSTS=${NHOSTS}"
+        echo "export WORLD_SIZE=${WORLD_SIZE}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
-        echo "export LAUNCH=${LAUNCH}"
+        echo "alias LAUNCH='${LAUNCH}'"
     } >> "${JOBENV_FILE}"
 
     export LAUNCH="${LAUNCH_CMD}"
-    echo "export FNAME=${FNAME}" >> "${JOBENV_FILE}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
@@ -266,15 +267,13 @@ function setup() {
 
     {
         echo "export HOSTFILE=${HOSTFILE}"
-        echo "export ${FNAME}=${HOSTFILE}"
         echo "export NHOSTS=${NHOSTS}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
-        echo "export LAUNCH=${LAUNCH}"
+        echo "alias LAUNCH=${LAUNCH}"
     } >> "${JOBENV_FILE}"
 
     export LAUNCH="${LAUNCH_CMD}"
-    echo "export FNAME=${FNAME}" >> "${JOBENV_FILE}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
@@ -302,11 +301,9 @@ function setup() {
 
 function writeJobInfo() {
     NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
-    #NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-${NGPU_PER_HOST:-$(nvidia-smi -L | wc -l)}}
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
-
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
@@ -317,14 +314,12 @@ function writeJobInfo() {
     echo "└───────────────────────────────────────────────────────────────────"
     {
         echo "export HOSTFILE=${HOSTFILE}"
-        echo "export ${FNAME}=${HOSTFILE}"
         echo "export NHOSTS=${NHOSTS}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
-        echo "export LAUNCH=${LAUNCH}"
+        echo "alias LAUNCH='${LAUNCH}'"
     } >> "${JOBENV_FILE}"
     export LAUNCH="${LAUNCH_CMD}"
-    echo "export FNAME=${FNAME}" >> "${JOBENV_FILE}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
