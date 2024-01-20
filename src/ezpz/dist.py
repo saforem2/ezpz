@@ -13,11 +13,27 @@ from functools import wraps
 from typing import Any, Callable, Optional
 import socket
 import json
+from enrich.console import get_console
+from rich import print_json
+from rich.logging import RichHandler
+from rich.style import Style
+from rich.text import Text
 
 import torch
 import torch.distributed as dist
 from datetime import timedelta
 
+from mpi4py import MPI
+from omegaconf import DictConfig, OmegaConf
+
+from ezpz.configs import BACKENDS, FRAMEWORKS, HERE, git_ds_info
+
+try:
+    import wandb
+except (ImportError, ModuleNotFoundError):
+    wandb = None
+
+ipex = None
 try:
     import oneccl_bindings_for_pytorch  # type:ignore  # noqa
     import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
@@ -28,17 +44,8 @@ except (ImportError, ModuleNotFoundError):
     else:
         ACCELERATOR_TYPE = "CPU"
 
-try:
-    import wandb
-except (ImportError, ModuleNotFoundError):
-    wandb = None
-
-from mpi4py import MPI
-from omegaconf import DictConfig, OmegaConf
-
-from ezpz.configs import BACKENDS, FRAMEWORKS, HERE, git_ds_info
-
 log = logging.getLogger(__name__)
+logging.getLogger('sh').setLevel('WARNING')
 
 
 def seed_everything(seed: int):
@@ -105,7 +112,7 @@ def timeit(func: Callable):
 def get_hosts_from_hostfile(
         hostfile: Optional[str | os.PathLike | Path] = None
 ) -> tuple[str, list[str]]:
-    hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+    hostname = get_hostname()
     hostfile = os.environ.get(
         'HOSTFILE',
         os.environ.get(
@@ -128,12 +135,27 @@ def get_hosts_from_hostfile(
     return Path(hostfile).as_posix(), hosts
 
 
+def get_hostname() -> str:
+    import socket
+    try:
+        hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+    # except socket.herror as exc:
+    except Exception:
+        from sh import hostname as sh_hostname  # type:ignore noqa
+        hostname = sh_hostname()
+        # if get_rank() == 0:
+        #     log.debug('Unable to determine hostname with `socket`.')
+        #     log.debug(f'hostname from`sh`: {hostname}')
+        #     # log.exception(exc)
+    return hostname.rstrip('\n')
+
+
 def get_dist_info(
         framework: str = 'pytorch',
         verbose: Optional[bool] = None
 ) -> dict[str, str | int | list]:
-    hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
     # master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    hostname = get_hostname()
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
@@ -162,9 +184,44 @@ def get_dist_info(
         'distributed_backend': distributed_backend,
     }
     if verbose:
-        log.info(f'dist_info: {json.dumps(dist_info, indent=4)}')
-        if wandb is not None and wandb.run is not None:
-            wandb.run.config.update({'DIST_INFO': dist_info})
+        # cjson = config.to_json()
+        # text = Text("DistInfo:")
+        # text += json.dumps(dist_info, indent=4)
+        # log.info(f'{text}')
+        # console = get_console()
+        # from enrich.handler import RichHandler as EnrichHandler
+        # from rich.logging import RichHandler
+        # console = None
+        # for handler in log.handlers:
+        #     if isinstance(handler, (RichHandler, EnrichHandler)):
+        #         console = handler.console
+        # if console is None:
+        #     console = get_console()
+        # console.print_json(data=dist_info, indent=4, highlight=True)
+        # # get_console().print_json(data=dist_info, indent=4, highlight=True)
+        # from ezpz.configs import print_config
+        # print_config(dist_info)
+        # from rich.json import JSON
+        # log.info(
+        #     f'DistInfo: {JSON(json.dumps(dist_info, indent=4))}'
+        # )
+        # log.info(
+        #     ' '.join([
+        #         'DistInfo:',
+        #         "\n".join([f"{k}: {v}" for k, v in dist_info.items()])
+        #     ])
+        # )
+        from ezpz import get_console_from_logger
+        console = get_console_from_logger(log)
+        console.print(
+            Text(
+                'DistInfo: ',
+                style=Style(color='bright_green', bold=True, underline=True)
+            )
+        )
+        console.print_json(data=dist_info, indent=4)
+    if wandb is not None and wandb.run is not None:
+        wandb.run.config.update({'DIST_INFO': dist_info})
     return dist_info
 
 
@@ -208,16 +265,28 @@ def setup(
 
 
 def init_deepspeed():
-    import deepspeed
-    deepspeed.init_distributed()
+    try:
+        import deepspeed  # type:ignore noqa
+        deepspeed.init_distributed()
+    except (ImportError, ModuleNotFoundError) as exc:
+        log.warning('Unable to `import deepspeed`. Exiting!')
+        log.exception(exc)
+        raise exc
 
 
 def get_torch_device() -> str:
     try:
-        import intel_extension_for_pytorch as ipex
+        import intel_extension_for_pytorch as ipex  # type:ignore noqa
         device = "xpu"
     except (ImportError, ModuleNotFoundError):
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # if torch.cuda.is_available():
+        device = 'cuda' if torch.cuda.is_available() else (
+            'mps' if (
+                torch.backends.mps.is_available()
+                and torch.get_default_dtype() != torch.float64
+            )
+            else 'cpu'
+        )
     return device
 
 
@@ -226,14 +295,22 @@ def get_torch_backend() -> str:
     backend = 'nccl' if torch.cuda.is_available() else None
     if backend is None:
         try:
-            import oneccl_bindings_for_pytorch  # type:ignore  # noqa
-            import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
+            import oneccl_bindings_for_pytorch  # type:ignore noqa
+            import intel_extension_for_pytorch as ipex  # type:ignore noqa
             backend = "ccl"  # if backend is None else str(backend)
         except (ImportError, ModuleNotFoundError):
+            try:
+                import torch_ccl  # type: ignore  noqa
+                backend = 'ccl'
+            except (ImportError, ModuleNotFoundError):
+                backend = 'gloo'
             # if torch.cuda.is_available():
             #     backend = 'nccl' if backend is None else str(backend)
             # else:
-            backend = 'gloo'  # if backend is None else str(backend)
+            # backend = 'gloo'  # if backend is None else str(backend)
+    if backend is None:
+        log.critical(f'Using "gloo" backend on {get_torch_device()}')
+        backend = 'gloo'
     return backend
 
 
@@ -293,30 +370,7 @@ def get_world_size() -> int:
 
 
 def get_local_rank() -> int:
-    # local_rank = (
-    #     os.environ.get(
-    #         'PMI_LOCAL_RANK',  # PMI_* for Polaris (/ Aurora) @ ALCF
-    #         os.environ.get(
-    #             'LOCAL_RANK',
-    #             os.environ.get(
-    #                 'OMPI_COMM_WORLD_LOCAL_RANK',
-    #                 os.environ.get(
-    #                     'MPI_LOCALRANKID',
-    #                     os.environ.get(
-    #                         'SLURM_PROCID',
-    #                         os.environ.get(
-    #                             'PALS_LOCAL_RANKID',
-    #                             None
-    #                         )
-    #                     )
-    #                 )
-    #             )
-    #         )
-    #     )
-    # )
-    # if local_rank is None:
     return int(get_rank() % get_gpus_per_node())
-    # return int(local_rank)
 
 
 def query_environment() -> dict[str, int]:
@@ -402,7 +456,7 @@ def setup_torch_distributed(
         rank = get_rank()
         local_rank = get_local_rank()
     elif be in {'horovod', 'hvd'}:
-        import horovod.torch as hvd
+        import horovod.torch as hvd  # type:ignore noqa
         _ = None if hvd.is_initialized() else hvd.init()
         # hvd.init() if not hvd.is_initialized() else None
         rank = hvd.rank()
@@ -486,10 +540,10 @@ def setup_tensorflow(
         ngpus: Optional[int] = None,
 ) -> int:
     """Initialize TensorFlow + Horovod for Distributed Training"""
-    import tensorflow as tf
+    import tensorflow as tf  # type:ignore noqa
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow as hvd  # type:ignore noqa
     hvd.init() if not hvd.is_initialized() else None
     if precision in [
             'fp16',
@@ -595,7 +649,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
         machine = 'Perlmutter'
     else:
         machine = hostname
-        log.info(f'Unknown machine, setting {machine=}')
+        log.warning(f'Unknown machine, setting {machine=}')
     return machine
 
 
@@ -606,7 +660,6 @@ def setup_wandb(
         init_timeout: int = 300,
 ):
     import wandb
-    import socket
     rank = get_rank()
     project_name = (
         project_name if project_name is not None
@@ -620,8 +673,6 @@ def setup_wandb(
     )
     log.info(f"Setting up wandb from rank: {rank}")
     log.info(f"Using: WB PROJECT: {project_name}")
-    # if get_rank() == 0:
-    # tensorboard_dir = args.tensorboard_dir
     tensorboard_dir = None
     if config is None:
         tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
@@ -743,35 +794,44 @@ def get_num_nodes() -> int:
     )
 
 
+def get_cpus_per_node() -> int:
+    from sh import getconf as sh_getconf  # type:ignore noqa
+    return int(sh_getconf("_NPROCESSORS_ONLN").rstrip('\n'))
+
+
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     import torch
+    gpus_per_node = None
     try:
-        import intel_extension_for_pytorch as ipex  # type:ignore
+        import intel_extension_for_pytorch as ipex  # pyright:ignore  # noqa
         try:
-            import oneccl_bindings_for_pytorch  # type:ignore
+            import oneccl_bindings_for_pytorch  # type:ignore noqa
         except (ImportError, ModuleNotFoundError):
-            import torch_ccl  # type: ignore
+            import torch_ccl  # type: ignore  # noqa
         gpus_per_node = ipex.xpu.device_count()
     except (ImportError, ModuleNotFoundError):
         if torch.cuda.is_available():
             gpus_per_node = torch.cuda.device_count()
-        else:
-            raise ValueError('No GPUs found. Exiting!')
     if _assert:
         try:
-            import sh  # pyright: ignore
+            # import sh  # pyright: ignore
+            from sh import wc as sh_wc  # pyright: ignore
+            from sh import nvidia_smi as sh_nvidia_smi  # pyright: ignore
             gpus_per_node = int(
-                sh.wc(
+                sh_wc(
                     "-l",
-                    _in=sh.nvidia_smi("-L")
+                    _in=sh_nvidia_smi("-L")
                 ).rstrip("\n")
             )
         except (ImportError, ModuleNotFoundError):
-            gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
-            # gpus_per_node = subprocess.Popen(
-            #     'nvidia-smi -L | wc -l',
-            #     shell=True
-            # )
+            if torch.cuda.is_available():
+                gpus_per_node = torch.cuda.device_count()
+            else:
+                gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
+            raise ValueError('No GPUs found. Exiting!')
+    if gpus_per_node is None:
+        ncpus = get_cpus_per_node()
+        return ncpus
     return gpus_per_node
 
 
