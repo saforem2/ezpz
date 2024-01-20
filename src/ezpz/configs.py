@@ -51,15 +51,34 @@ BACKENDS = {
     'tensorflow': ['h', 'hvd', 'horovod']
 }
 
+SCHEDULERS = {
+    'ALCF': 'PBS',
+    'NERSC': 'SLURM',
+}
 
-def getjobenv():
+
+
+def getjobenv_dep():
     print(GETJOBENV)
     return GETJOBENV
 
 
-def savejobenv():
+def savejobenv_dep():
     print(SAVEJOBENV)
     return SAVEJOBENV
+
+
+def get_scheduler() -> str:
+    from ezpz import get_machine, get_hostname
+    machine = get_machine(get_hostname())
+    if machine.lower() in ['thetagpu', 'sunspot', 'polaris', 'aurora']:
+        return SCHEDULERS['ALCF']
+    elif machine.lower() in ['nersc', 'perlmutter']:
+        return SCHEDULERS['NERSC']
+    raise RuntimeError(f'Unknown {machine=}')
+
+
+
 
 
 def get_logging_config() -> dict:
@@ -148,7 +167,7 @@ def print_json(
     log.info(Text(str(json_renderable)).render(console=console))
 
 
-def print_config(cfg: dict | str) -> None:
+def print_config(cfg: Union[dict, str]) -> None:
     # try:
     #     from hydra.utils import instantiate
     #     config = instantiate(cfg)
