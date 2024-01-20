@@ -8,13 +8,19 @@ from typing import Any, Optional
 from typing import Union
 
 from enrich.console import get_console, is_interactive
+from rich.console import Console
+from rich.logging import RichHandler
 from ezpz.configs import (
+    getjobenv,
+    savejobenv,
+    load_ds_config,
+    command_exists,
+    git_ds_info,
     BACKENDS,
     print_config_tree,
     BIN_DIR,
     CONF_DIR,
     FRAMEWORKS,
-    git_ds_info,
     HERE,
     LOGS_DIR,
     OUTPUTS_DIR,
@@ -24,7 +30,6 @@ from ezpz.configs import (
     SAVEJOBENV,
     GETJOBENV,
     TrainConfig,
-    load_ds_config,
 )
 
 from mpi4py import MPI
@@ -38,6 +43,7 @@ except (ImportError, ModuleNotFoundError):
 
 from ezpz import dist
 from ezpz.dist import (
+    build_mpiexec_thetagpu,
     check,
     timeit,
     timeitlogit,
@@ -46,42 +52,62 @@ from ezpz.dist import (
     get_dist_info,
     get_torch_device,
     get_torch_backend,
+    get_hosts_from_hostfile,
+    get_machine,
+    get_hostname,
     get_local_rank,
     get_rank,
+    get_cobalt_nodefile,
+    get_nodes_from_hostfile,
+    get_num_nodes,
+    get_gpus_per_node,
+    get_cpus_per_node,
+    get_node_index,
+    get_cobalt_resources,
     get_world_size,
-    query_environment,
+    init_process_group,
     init_deepspeed,     # ✔︎
+    include_file,
+    query_environment,
+    print_dist_setup,    # ✔︎
+    run_bash_command,
     setup_torch_DDP,    # ✔︎
     seed_everything,     # ✔︎
     setup_tensorflow,    # ✔︎
     setup_torch,         # ✔︎
     setup_torch_distributed,  # ✔︎
-    print_dist_setup,    # ✔︎
     setup_wandb,         # ✔︎
     inspect_cobalt_running_job,
-    get_cobalt_nodefile,
-    get_nodes_from_hostfile,
-    get_gpus_per_node,
-    get_cobalt_resources,
 )
 
 log = logging.getLogger(__name__)
 
 __all__ = [
+    'build_mpiexec_thetagpu',
     'dist',
     'setup',
     'setup_wandb',
     'print_config_tree',
     'setup_tensorflow',
+    'getjobenv',
+    'savejobenv',
+    'command_exists',
     'print_dist_setup',
     'get_torch_device',
+    'get_hostname',
+    'get_hosts_from_hostfile',
     'get_torch_backend',
+    'get_cpus_per_node',
+    'get_num_nodes',
     'git_ds_info',
+    'init_process_group',
     'get_dist_info',
+    'get_machine',
     'setup_torch',
     'timeit',
     'timeitlogit',
     'setup_torch_DDP',
+    'include_file',
     'init_deepspeed',
     'setup_torch_distributed',
     'inspect_cobalt_running_job',
@@ -91,8 +117,10 @@ __all__ = [
     'get_gpus_per_node',
     'cleanup',
     'seed_everything',
+    'run_bash_command',
     'get_rank',
     'get_local_rank',
+    'get_node_index',
     'get_world_size',
     'query_environment',
     'check',
@@ -119,6 +147,15 @@ RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
 ScalarLike = Union[int, float, bool, np.floating]
+
+
+def get_console_from_logger(logger: logging.Logger) -> Console:
+    from enrich.handler import RichHandler as EnrichHandler
+    for handler in logger.handlers:
+        if isinstance(handler, (RichHandler, EnrichHandler)):
+            return handler.console
+    from enrich.console import get_console
+    return get_console()
 
 
 def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
