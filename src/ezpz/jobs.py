@@ -2,38 +2,30 @@
 jobs.py
 """
 from __future__ import absolute_import, annotations, division, print_function
-# import logging
-# import logging.config
+import logging
+import logging.config
 import os
+import json
+import yaml
 from pathlib import Path
-# from typing import Optional
+from typing import Optional
 
-from rich.text import Text
-
-# from ezpz.configs import get_logging_config
-from ezpz.dist import (
+from ezpz import (
+    get_dist_info,
     get_gpus_per_node,
     get_hosts_from_hostfile,
     get_machine,
-    get_rank,
-    get_dist_info,
-    get_hostname,
     get_torch_backend,
     get_torch_device,
 )
+from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS
 
-# logging.config.dictConfig(get_logging_config())
-# log = logging.getLogger(__name__)
-from enrich.console import get_console
+log_config = logging.config.dictConfig(get_logging_config())
+log = logging.getLogger(__name__)
 
-console = get_console()
+log.setLevel('INFO')
 
-
-SCHEDULERS = {
-    'PBS',
-    'SLURM',
-    'COBALT',
-}
+SCHEDULER = get_scheduler()
 
 
 def get_pbs_env(verbose: bool = False) -> dict[str, str]:
@@ -47,8 +39,6 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
         nhosts = len(hosts)
         ngpu_per_host = get_gpus_per_node()
         ngpus = nhosts * ngpu_per_host
-        # export LAUNCH_CMD="mpiexec --verbose --envall -n ${NGPUS}
-        # -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
         launch_cmd = ' '.join([
             'mpiexec',
             '--verbose',
@@ -57,7 +47,6 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
             f'-ppn {ngpu_per_host}',
             f'--hostfile {HOSTFILE}'
         ])
-        # pbsenv |= {'HOSTFILE': HOSTFILE, 'hosts': hosts}
         launch_info = {
             'HOSTFILE': HOSTFILE,
             'HOSTS': f'[{", ".join(hosts)}]',
@@ -71,87 +60,121 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
         }
         os.environ |= launch_info
         pbsenv |= launch_info
-        # os.environ.update(launch_info)
-        # pbsenv.update(launch_info)
-    pbsenv |= get_dist_info(framework='pytorch', verbose=verbose)
+    dist_info = get_dist_info(framework='pytorch', verbose=verbose)
+    pbsenv  |= {k: f'{v}' for k, v in dist_info.items()}
     return pbsenv
 
 
-def get_jobdir_from_env(scheduler: str = 'pbs') -> Path:
-    assert scheduler.upper() in SCHEDULERS
+def check_scheduler(scheduler: Optional[str] = None) -> bool:
+    scheduler = SCHEDULER if scheduler is None else scheduler
+    assert scheduler.upper() in SCHEDULERS.values()
     if scheduler.lower() != 'pbs':
         raise TypeError(f'{scheduler} not yet implemented!')
+    return True
+
+
+# def get_jobdir_from_env(scheduler: Optional[str] = None) -> Path:
+def get_jobdir_from_env() -> Path:
     pbs_env = get_pbs_env()
     jobid = pbs_env["PBS_JOBID"].split('.')[0]
-    jobdir = Path.home() / f'{scheduler}-jobs' / f'{jobid}'
+    jobdir = Path.home() / f'{SCHEDULER}-jobs' / f'{jobid}'
     jobdir.mkdir(exist_ok=True, parents=True)
-    # jobdir.parent.mkdir(exist_ok=True, parents=True)
     return jobdir
 
 
-def get_jobid(scheduler: str = 'pbs') -> str:
-    if scheduler.lower() == 'pbs':
-        pbs_env = get_pbs_env()
-    else:
-        raise ValueError(f'{scheduler} not implemented')
-    return pbs_env['PBS_JOBID'].split('.')[0]
+def get_jobid() -> str:
+    jobenv = get_jobenv()
+    return jobenv['PBS_JOBID'].split('.')[0]
 
 
-def get_jobfile_ext(ext: str, scheduler: str = 'pbs') -> Path:
-    jobid = get_jobid(scheduler)
-    jobdir = get_jobdir_from_env(scheduler)
-    return jobdir.joinpath(f'{scheduler}-{jobid}.{ext}')
+def get_jobfile_ext(ext: str) -> Path:
+    jobid = get_jobid()
+    jobdir = get_jobdir_from_env()
+    return jobdir.joinpath(f'{SCHEDULER}-{jobid}.{ext}')
 
 
-def get_jobfile_sh(scheduler: str = 'pbs') -> Path:
-    return get_jobfile_ext('sh', scheduler=scheduler)
+def get_jobfile_sh() -> Path:
+    jobfile_sh = get_jobfile_ext('sh')
+    jobfile_sh.parent.mkdir(exist_ok=True, parents=True)
+    return jobfile_sh
 
 
-def get_jobfile_yaml(scheduler: str = 'pbs') -> Path:
-    # jobid = get_jobid(scheduler)
-    # jobdir = get_jobdir_from_env(scheduler)
-    # return jobdir.joinpath(f'{scheduler}-{jobid}.yaml')
-    return get_jobfile_ext('yaml', scheduler=scheduler)
+def get_jobfile_yaml() -> Path:
+    jobfile_ext = get_jobfile_ext('yaml')
+    jobfile_ext.parent.mkdir(exist_ok=True, parents=True)
+    return jobfile_ext
 
 
-def get_jobfile_json(scheduler: str = 'pbs') -> Path:
-    return get_jobfile_ext('json', scheduler=scheduler)
+def get_jobfile_json() -> Path:
+    jobfile_ext = get_jobfile_ext('json')
+    jobfile_ext.parent.mkdir(exist_ok=True, parents=True)
+    return jobfile_ext
 
 
-def get_jobenv(scheduler: str = 'pbs') -> dict:
-    assert scheduler.upper() in SCHEDULERS
-    if scheduler.lower() == 'pbs':
+def get_jobenv() -> dict:
+    if SCHEDULER.lower() == 'pbs':
         return get_pbs_env()
-    raise ValueError(f'{scheduler} not yet implemented!')
+    raise ValueError(f'{SCHEDULER} not yet implemented!')
 
 
-def get_jobslog_file(scheduler: str = 'pbs') -> Path:
-    return Path.home().joinpath(f'{scheduler}-jobs.log')
+def get_jobslog_file() -> Path:
+    jobslog_file = Path.home().joinpath(f'{SCHEDULER}-jobs.log')
+    jobslog_file.parent.mkdir(exist_ok=True, parents=True)
+    return jobslog_file
 
 
-def add_to_jobslog(scheduler: str = 'pbs'):
-    jobenv = get_jobenv(scheduler=scheduler)
+def add_to_jobslog():
+    jobenv = get_jobenv()
     assert len(jobenv.keys()) > 0
-    jobdir = get_jobdir_from_env(scheduler=scheduler)
+    jobdir = get_jobdir_from_env()
     assert jobenv is not None
     assert jobdir is not None
-    jobslog_file = get_jobslog_file(scheduler=scheduler)
-    last_jobdir = get_jobdir_from_jobslog(-1, scheduler=scheduler)
+    jobslog_file = get_jobslog_file()
+    jobfile_sh = get_jobfile_sh()
+    jobfile_yaml = get_jobfile_yaml()
+    Path(jobslog_file).parent.mkdir(exist_ok=True, parents=True)
+    last_jobdir = get_jobdir_from_jobslog(-1)
     if jobdir.as_posix() != last_jobdir:
         with jobslog_file.open('a') as f:
             f.write(f'{jobdir}\n')
     else:
-        console.print(
-            Text(f'[orange]Warning![/orange]'
-                 f'{jobdir.as_posix()} already in {jobslog_file.as_posix()}')
+        log.warning(
+            f'{jobdir.as_posix()} '
+            f'already in {jobslog_file.as_posix()}, '
+            f'not appending !!'
         )
 
 
-def savejobenv_sh(jobenv: dict, scheduler: str = 'pbs'):
-    assert len(jobenv.keys()) > 0
-    jobfile_sh = get_jobfile_sh(scheduler=scheduler)
-    console.print(f'Saving job env to {jobfile_sh}')
-    # jobfile_sh.touch(exist_ok=True)
+def write_launch_shell_script():
+    contents = """
+    #!/bin/bash --login\n
+    \n
+    alias launch="${LAUNCH}"\n
+    echo $(which launch)\n
+    \n
+    function ezLaunch() {\n
+        launch "$@"\n
+    }\n
+    """
+    local_bin = Path().home().joinpath('.local', 'bin')
+    local_bin.mkdir(exist_ok=True, parents=True)
+    launch_file = local_bin.joinpath('launch.sh')
+    # launch_file.chmod(launch_file.stat().st_mode | stat.S_IEXEC)
+    log.info(f'Saving launch command to {launch_file} and adding to PATH')
+    with launch_file.open('w') as f:
+        f.write(contents)
+    os.chmod(path=launch_file, mode=755)
+    path = os.environ.get('PATH')
+    path = f'{path}:$HOME/.local/bin'
+    os.environ['PATH'] = f'{path}'
+
+
+
+def savejobenv_sh(jobenv: Optional[dict] = None) -> dict:
+    jobenv = get_jobenv() if jobenv is None else jobenv
+    jobfile_sh = get_jobfile_sh()
+    log.info(f'Saving job env to {jobfile_sh}')
+    jobenv |= {'jobfile_sh': jobfile_sh.as_posix()}
     with jobfile_sh.open('w') as f:
         f.write('#!/bin/bash --login\n')
         for key, val in jobenv.items():
@@ -159,126 +182,100 @@ def savejobenv_sh(jobenv: dict, scheduler: str = 'pbs'):
         launch_cmd = jobenv.get('launch_cmd')
         if launch_cmd is not None:
             f.write(f'alias launch="{launch_cmd}"')
+    return jobenv
 
 
-def savejobenv_json(jobenv: dict, scheduler: str = 'pbs'):
+def savejobenv_json(jobenv: Optional[dict] = None) -> dict:
+    jobenv = get_jobenv() if jobenv is None else jobenv
     assert len(jobenv.keys()) > 0
-    import json
-    jobfile_json = get_jobfile_json(scheduler=scheduler)
-    # jobfile_json.touch(exist_ok=True)
-    console.print(f'Saving job env to {jobfile_json}')
+    jobfile_json = get_jobfile_json()
+    jobenv |= {'jobfile_json': jobfile_json.as_posix()}
+    log.info(f'Saving job env to {jobfile_json}')
     with jobfile_json.open('w') as f:
         json.dump(json.dumps(jobenv, indent=4), f)
+    return jobenv
 
 
-def savejobenv_yaml(jobenv: dict, scheduler: str = 'pbs'):
+def savejobenv_yaml(
+        jobenv: Optional[dict] = None,
+        # scheduler: Optional[str] = None
+) -> dict:
+    jobenv = get_jobenv() if jobenv is None else jobenv
     assert len(jobenv.keys()) > 0
-    import yaml
-    jobfile_yaml = get_jobfile_yaml(scheduler=scheduler)
-    # jobfile_yaml.touch(exist_ok=True)
-    console.print(f'Saving job env to {jobfile_yaml}')
+    jobfile_yaml = get_jobfile_yaml()
+    jobenv |= {'jobfile_yaml': jobfile_yaml.as_posix()}
+    log.info(f'Saving job env to {jobfile_yaml}')
     with jobfile_yaml.open('w') as f:
         yaml.dump(jobenv, f)
+    return jobenv
 
 
 def savejobenv():
-    scheduler = get_scheduler()
-    jobenv = get_jobenv(scheduler=scheduler)
+    jobenv = get_jobenv()
     assert len(jobenv.keys()) > 0
-    jobid = get_jobid(scheduler=scheduler)
-    jobdir = get_jobdir_from_env(scheduler=scheduler)
+    jobid = get_jobid()
+    jobdir = get_jobdir_from_env()
     assert jobenv is not None
     assert jobdir is not None
-    if get_rank() == 0:
-        from rich import print_json
-        console.print(
-            f'Writing {scheduler} env vars to '
-            f'{jobdir} / {scheduler}-{jobid}.' + '{sh,yaml,json}'
-        )
-        print(
-            f'Writing {scheduler} env vars to '
-            f'{jobdir} / {scheduler}-{jobid}.' + '{sh,yaml,json}'
-        )
-        print_json(data=jobenv, indent=4)
+    from rich import print_json
     # -------------------------------------------------------------------
     # Append {jobdir} as a new line at the end of ~/{scheduler}-jobs.log
     # where:
     #   jobdir = Path.home() / f'{scheduler}-jobs' / f'{jobid}'
-    add_to_jobslog(scheduler)
+    add_to_jobslog()
     # -------------------------------------------------------------------
     # Save {scheduler}-related environment variables to
     # `{.sh,.yaml,.json}` files INSIDE {jobdir}
     # for easy loading in other processes
-    savejobenv_sh(jobenv, scheduler=scheduler)
-    savejobenv_json(jobenv, scheduler=scheduler)
-    savejobenv_yaml(jobenv, scheduler=scheduler)
+    jobenv = savejobenv_sh(jobenv)
+    jobenv = savejobenv_json(jobenv)
+    jobenv = savejobenv_yaml(jobenv)
+    log.info(
+        f'Writing {SCHEDULER} env vars to '
+        f'{jobdir} / {SCHEDULER}-{jobid}' + '{.sh, .yaml, .json}'
+    )
+    print_json(data=jobenv, indent=4)
     # ---------------------------------------------------
 
 
-# def write_to_jobsfile(scheduler: str = 'pbs'):
-#     assert scheduler in SCHEDULERS
-#     if scheduler == 'pbs':
-#         # jobfile_sh = get_jobfile_sh(scheduler)
-#         # jobfile_yaml = get_jobfile_yaml(scheduler)
-#         # jobfile_json = get_jobfile_json(scheduler)
-#         jobid = get_jobid(scheduler)
-#         jobdir = get_jobdir_from_env(scheduler=scheduler)
-#     else:
-#         raise TypeError(f'{scheduler} not yet implemented!')
-#     print(
-#         f'Writing {scheduler} env vars to '
-#         f'{jobdir} / {scheduler}-{jobid}.' + '{sh,yaml,json}'
-#     )
-#     jobsfile = Path.home().joinpath(f'{scheduler}-jobs.log')
-#     print(f'Adding {jobdir.as_posix()} to {jobsfile.as_posix()}')
-#     with jobsfile.open('w') as f:
-#         f.write(f'{jobsfile}\n')
-
-
-def save_job(scheduler: str = 'pbs'):
-    jobenv = get_jobenv(scheduler=scheduler)
-    # jobfile = get_jobfile()
-    savejobenv(jobenv, scheduler=scheduler)
-    # with jobfile.open('w') as f:
-    #     for key, val in pbs_env.items():
-    #         f.write(f'export {key}={val}\n')
-
-
-def get_jobdirs_from_jobslog(
-        # idx: int = -1,
-        # jobid: Optional[int | str] = None,
-        scheduler: str = 'pbs',
-) -> list[str]:
-    jobslog_file = get_jobslog_file(scheduler=scheduler)
+def get_jobdirs_from_jobslog() -> list[str]:
+    jobslog_file = get_jobslog_file()
     jobdirs = []
-    with jobslog_file.open('r') as f:
-        jobdirs.extend([jd.rstrip('\n') for jd in f.readlines()])
+    if jobslog_file.is_file():
+        with jobslog_file.open('r') as f:
+            jobdirs.extend([jd.rstrip('\n') for jd in f.readlines()])
     return jobdirs
 
 
 def get_jobdir_from_jobslog(
         idx: int = -1,
-        scheduler: str = 'pbs',
-):
-    jobdirs = get_jobdirs_from_jobslog(scheduler=scheduler)
-    return jobdirs[-idx]
+) -> str:
+    jobdirs = get_jobdirs_from_jobslog()
+    return jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
 
 
-def get_scheduler() -> str:
-    from ezpz import get_machine
-    machine = get_machine(get_hostname())
-    if machine.lower() in ['thetagpu', 'sunspot', 'polaris', 'aurora']:
-        return SCHEDULERS['ALCF']
-    elif machine.lower() in ['nersc', 'perlmutter']:
-        return SCHEDULERS['NERSC']
-    raise RuntimeError(f'Unknown {machine=}')
+def loadjobenv() -> dict:
+    jobenv = {}
+    last_jobdir = Path(get_jobdir_from_jobslog(-1))
+    assert last_jobdir.is_dir()
+    import yaml
+    if len((jobenv_files_yaml := list(last_jobdir.rglob('*.yaml')))) > 0:
+        jobenv_file = jobenv_files_yaml[0]
+        with jobenv_file.open('r') as stream:
+            jobenv = dict(yaml.safe_load(stream))
+        for key, val in jobenv.items():
+            os.environ[key] = val
+    return jobenv
 
 
 if __name__ == '__main__':
     import sys
     args = sys.argv[1:]
     scheduler = get_scheduler()
-    if args[0].lower() == 'savejobenv':
-        save_job(scheduler=scheduler)
-    elif args[0].lower() == 'getjobenv':
-        pass
+    line = None
+    last_jobdir = None
+    jobenv_file_sh = None
+    if args[0].lower().startswith('save'):
+        savejobenv()
+    elif args[0].lower().startswith('get'):
+        loadjobenv()
