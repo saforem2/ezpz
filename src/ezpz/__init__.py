@@ -11,12 +11,13 @@ from enrich.console import get_console, is_interactive
 from rich.console import Console
 from rich.logging import RichHandler
 from ezpz.configs import (
-    getjobenv,
-    savejobenv,
+    # getjobenv,
+    # savejobenv,
     load_ds_config,
     command_exists,
     git_ds_info,
     BACKENDS,
+    get_scheduler,
     print_config_tree,
     BIN_DIR,
     CONF_DIR,
@@ -27,6 +28,7 @@ from ezpz.configs import (
     PROJECT_DIR,
     PROJECT_ROOT,
     QUARTO_OUTPUTS_DIR,
+    SCHEDULERS,
     SAVEJOBENV,
     GETJOBENV,
     TrainConfig,
@@ -37,8 +39,8 @@ import numpy as np
 import torch
 import tqdm
 try:
-    import wandb  # type:ignore
-except (ImportError, ModuleNotFoundError):
+    import wandb  # type:ignore noqa
+except Exception:
     wandb = None
 
 from ezpz import dist
@@ -80,6 +82,11 @@ from ezpz.dist import (
     inspect_cobalt_running_job,
 )
 
+from ezpz.jobs import (
+    savejobenv,
+    loadjobenv,
+)
+
 log = logging.getLogger(__name__)
 
 __all__ = [
@@ -89,14 +96,16 @@ __all__ = [
     'setup_wandb',
     'print_config_tree',
     'setup_tensorflow',
-    'getjobenv',
+    'loadjobenv',
     'savejobenv',
     'command_exists',
     'print_dist_setup',
     'get_torch_device',
+    'get_scheduler',
     'get_hostname',
     'get_hosts_from_hostfile',
     'get_torch_backend',
+    'get_scheduler',
     'get_cpus_per_node',
     'get_num_nodes',
     'git_ds_info',
@@ -129,6 +138,7 @@ __all__ = [
     'PROJECT_ROOT',
     'CONF_DIR',
     'LOGS_DIR',
+    'SCHEDULERS',
     'BIN_DIR',
     "SAVEJOBENV",
     "GETJOBENV",
