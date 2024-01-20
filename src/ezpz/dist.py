@@ -127,7 +127,7 @@ def get_hosts_from_hostfile(
     hosts = []
     if hostfile is not None and Path(hostfile).is_file():
         if get_rank() == 0:
-            log.info(f'Reading hosts from {hostfile}')
+            log.debug(f'Reading hosts from {hostfile}')
         hpath = Path(hostfile).resolve().absolute()
         with hpath.open('r') as f:
             hosts.extend([h.rstrip('\n') for h in f.readlines()])
