@@ -62,6 +62,20 @@ def savejobenv():
     return SAVEJOBENV
 
 
+def get_logging_config() -> dict:
+    # import logging.config
+    import yaml
+    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'rich.yaml')
+
+    # with open('./test.yml', 'r') as stream:
+    with cfp.open('r') as stream:
+        config = yaml.load(stream, Loader=yaml.FullLoader)
+    # logging.config.dictConfig(config)
+    # return logging.getLogger(name)
+    # config['disable_existing_loggers'] = True
+    return config
+
+
 def print_json(
         json: Optional[str] = None,
         console: Optional[Console] = None,
