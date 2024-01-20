@@ -9,11 +9,14 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union
 
 from omegaconf import DictConfig, OmegaConf
+from rich.console import Console
 import rich.repr
-from rich.syntax import Syntax
+# from rich.style import Style
+# from rich.syntax import Syntax
+from rich.text import Text
 from rich.tree import Tree
 
 log = logging.getLogger(__name__)
@@ -57,6 +60,102 @@ def getjobenv():
 def savejobenv():
     print(SAVEJOBENV)
     return SAVEJOBENV
+
+
+def print_json(
+        json: Optional[str] = None,
+        console: Optional[Console] = None,
+        *,
+        data: Any = None,
+        indent: Union[None, int, str] = 2,
+        highlight: bool = True,
+        skip_keys: bool = False,
+        ensure_ascii: bool = False,
+        check_circular: bool = True,
+        allow_nan: bool = True,
+        default: Optional[Callable[[Any], Any]] = None,
+        sort_keys: bool = False,
+) -> None:
+    """Pretty prints JSON. Output will be valid JSON.
+
+    Args:
+        json (Optional[str]): A string containing JSON.
+        data (Any): If json is not supplied, then encode this data.
+        indent (Union[None, int, str], optional): Number of spaces to indent.
+            Defaults to 2.
+        highlight (bool, optional): Enable highlighting of output:
+            Defaults to True.
+        skip_keys (bool, optional): Skip keys not of a basic type.
+            Defaults to False.
+        ensure_ascii (bool, optional): Escape all non-ascii characters.
+            Defaults to False.
+        check_circular (bool, optional): Check for circular references.
+            Defaults to True.
+        allow_nan (bool, optional): Allow NaN and Infinity values.
+            Defaults to True.
+        default (Callable, optional): A callable that converts values
+            that can not be encoded in to something that can be JSON
+            encoded.
+            Defaults to None.
+        sort_keys (bool, optional): Sort dictionary keys. Defaults to False.
+    """
+    from enrich.console import get_console
+    from rich.json import JSON
+    console = get_console() if console is None else console
+    if json is None:
+        json_renderable = JSON.from_data(
+            data,
+            indent=indent,
+            highlight=highlight,
+            skip_keys=skip_keys,
+            ensure_ascii=ensure_ascii,
+            check_circular=check_circular,
+            allow_nan=allow_nan,
+            default=default,
+            sort_keys=sort_keys,
+        )
+    else:
+        if not isinstance(json, str):
+            raise TypeError(
+                f"json must be str. Did you mean print_json(data={json!r}) ?"
+            )
+        json_renderable = JSON(
+            json,
+            indent=indent,
+            highlight=highlight,
+            skip_keys=skip_keys,
+            ensure_ascii=ensure_ascii,
+            check_circular=check_circular,
+            allow_nan=allow_nan,
+            default=default,
+            sort_keys=sort_keys,
+        )
+    assert console is not None and isinstance(console, Console)
+    log.info(Text(str(json_renderable)).render(console=console))
+
+
+def print_config(cfg: dict | str) -> None:
+    # try:
+    #     from hydra.utils import instantiate
+    #     config = instantiate(cfg)
+    # except Exception:
+    #     config = OmegaConf.to_container(cfg, resolve=True)
+    #     config = OmegaConf.to_container(cfg, resolve=True)
+    # if isinstance(cfg, dict):
+    #     jstr = json.dumps(cfg, indent=4)
+    # else:
+    #     jstr = cfg
+    from enrich.handler import RichHandler as EnrichHandler
+    from rich.logging import RichHandler
+    console = None
+    for handler in log.handlers:
+        if isinstance(handler, (RichHandler, EnrichHandler)):
+            console = handler.console
+    if console is None:
+        from enrich.console import get_console
+        console = get_console()
+    # console.print_json(data=cfg, indent=4, highlight=True)
+    print_json(data=cfg, console=console, indent=4, highlight=True)
 
 
 def load_ds_config(
@@ -123,7 +222,18 @@ class BaseConfig(ABC):
         pass
 
     def to_json(self) -> str:
-        return json.dumps(self.__dict__.items, indent=4)
+        # name = (
+        #     f'{name=}' if name is not None
+        #     else f'{self.__class__.__name__}'
+        # )
+        return json.dumps(deepcopy(self.__dict__), indent=4)
+        # return '\n'.join(
+        #     [
+        #         (f'{name=}' if name is not None
+        #          else f'{self.__class__.__name__}'),
+        #         json.dumps(deepcopy(self.__dict__), indent=4),
+        #     ]
+        # )
 
     def get_config(self) -> dict:
         return asdict(self)
@@ -206,6 +316,7 @@ def print_config_tree(
         verbose: bool = True,
         style: str = 'tree',
         print_order: Optional[Sequence[str]] = None,
+        highlight: bool = True,
         outfile: Optional[Union[str, os.PathLike, Path]] = None,
 ) -> Tree:
     """Prints the contents of a DictConfig as a tree structure using the Rich
@@ -221,13 +332,12 @@ def print_config_tree(
     # from enrich.console import get_width()
     from enrich.config import STYLES
     from rich.theme import Theme
-    theme = Theme(STYLES)
     # from enrich.console import get_theme
 
     # console = get_console(record=True)  # , width=min(200))
+    name = cfg.get('_target_', 'cfg')
     console = Console(record=True, theme=Theme(STYLES))
-    style = "tree" if style is None else style
-    tree = Tree("CONFIG", style=style, guide_style=style)
+    tree = Tree(label=name, highlight=highlight)
     queue = []
     # add fields from `print_order` to queue
     if print_order is not None:
@@ -242,13 +352,29 @@ def print_config_tree(
             queue.append(field)
     # generate config tree from queue
     for field in queue:
-        branch = tree.add(field, style=style, guide_style=style)
+        branch = tree.add(field, highlight=highlight)  # , guide_style=style)
         config_group = cfg[field]
         if isinstance(config_group, DictConfig):
-            branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
+            branch_content = str(
+                OmegaConf.to_yaml(
+                    config_group,
+                    resolve=resolve
+                )
+            )
+            branch.add(Text(branch_content, style="red"))
+            # branch.add(
+            #     Text(
+            #         branch_content,
+            #         style="magenta",
+            #         # style=Style(color="magenta", bold=True),
+            #     ),
+            #     highlight=highlight,
+            # )
         else:
             branch_content = str(config_group)
-        branch.add(Syntax(branch_content, "yaml"))
+            branch.add(Text(branch_content, style="blue"))
+        # branch.add(Syntax(branch_content, "yaml"), highlight=highlight)
+        # branch.add(Text(branch_content))
     # print config tree
     if verbose or save_to_file:
         console.print(tree)
