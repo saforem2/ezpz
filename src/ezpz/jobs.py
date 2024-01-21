@@ -61,7 +61,8 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
         os.environ |= launch_info
         pbsenv |= launch_info
     dist_info = get_dist_info(framework='pytorch', verbose=verbose)
-    pbsenv  |= {k: f'{v}' for k, v in dist_info.items()}
+    # dist_info.pop('')
+    pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
     return pbsenv
 
 
@@ -130,8 +131,8 @@ def add_to_jobslog():
     assert jobenv is not None
     assert jobdir is not None
     jobslog_file = get_jobslog_file()
-    jobfile_sh = get_jobfile_sh()
-    jobfile_yaml = get_jobfile_yaml()
+    # jobfile_sh = get_jobfile_sh()
+    # jobfile_yaml = get_jobfile_yaml()
     Path(jobslog_file).parent.mkdir(exist_ok=True, parents=True)
     last_jobdir = get_jobdir_from_jobslog(-1)
     if jobdir.as_posix() != last_jobdir:
@@ -169,12 +170,11 @@ def write_launch_shell_script():
     os.environ['PATH'] = f'{path}'
 
 
-
 def savejobenv_sh(jobenv: Optional[dict] = None) -> dict:
     jobenv = get_jobenv() if jobenv is None else jobenv
     jobfile_sh = get_jobfile_sh()
-    log.info(f'Saving job env to {jobfile_sh}')
     jobenv |= {'jobfile_sh': jobfile_sh.as_posix()}
+    log.info(f'Saving job env to {jobfile_sh}')
     with jobfile_sh.open('w') as f:
         f.write('#!/bin/bash --login\n')
         for key, val in jobenv.items():
@@ -182,6 +182,14 @@ def savejobenv_sh(jobenv: Optional[dict] = None) -> dict:
         launch_cmd = jobenv.get('launch_cmd')
         if launch_cmd is not None:
             f.write(f'alias launch="{launch_cmd}"')
+    dotenv_file = Path(os.getcwd()).joinpath('.env')
+    log.info(
+        f'Saving job env to dot-env (.env) file in '
+        f'{dotenv_file.parent.as_posix()}'
+    )
+    with dotenv_file.open('w') as f:
+        for key, val in jobenv.items():
+            f.write(f'{key.upper()}="{val}"\n')
     return jobenv
 
 
@@ -230,11 +238,13 @@ def savejobenv():
     jobenv = savejobenv_sh(jobenv)
     jobenv = savejobenv_json(jobenv)
     jobenv = savejobenv_yaml(jobenv)
+    for key, val in jobenv.items():
+        os.environ[key] = f'{val}'
     log.info(
         f'Writing {SCHEDULER} env vars to '
         f'{jobdir} / {SCHEDULER}-{jobid}' + '{.sh, .yaml, .json}'
     )
-    print_json(data=jobenv, indent=4)
+    print_json(data=jobenv, indent=4, sort_keys=True)
     # ---------------------------------------------------
 
 
@@ -255,6 +265,7 @@ def get_jobdir_from_jobslog(
 
 
 def loadjobenv() -> dict:
+    from rich import print_json
     jobenv = {}
     last_jobdir = Path(get_jobdir_from_jobslog(-1))
     assert last_jobdir.is_dir()
@@ -265,6 +276,7 @@ def loadjobenv() -> dict:
             jobenv = dict(yaml.safe_load(stream))
         for key, val in jobenv.items():
             os.environ[key] = val
+    print_json(data=jobenv, indent=4, sort_keys=True)
     return jobenv
 
 
