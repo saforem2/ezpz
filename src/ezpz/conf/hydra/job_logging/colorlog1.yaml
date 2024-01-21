@@ -1,0 +1,16 @@
+---
+version: 1
+formatters:
+  colored:
+    class: colorlog.ColoredFormatter
+    format: "[%(black)s%(asctime)s][%s(reset)%(log_color)s%(levelname)-8s%(reset)s] %(message_log_color)s%(message)s"
+handlers:
+  stream:
+    class: logging.StreamHandler
+    formatter: colored
+    level: DEBUG
+root:
+  handlers: [stream]
+  level: DEBUG
+disable_existing_loggers: false
+...
