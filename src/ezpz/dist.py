@@ -367,7 +367,12 @@ def get_rank() -> int:
 
 
 def get_world_size() -> int:
-    return int(MPI.COMM_WORLD.Get_size())
+    world_size = int(MPI.COMM_WORLD.Get_size())
+    if world_size == 1:
+        gpus_per_node = get_gpus_per_node()
+        num_nodes = get_num_nodes()
+        world_size = num_nodes * gpus_per_node
+    return world_size
 
 
 def get_local_rank() -> int:
@@ -789,6 +794,17 @@ def get_node_index() -> int:
 
 
 def get_num_nodes() -> int:
+    hostfile = os.environ.get(
+        'PBS_NODEFILE',
+        os.environ.get(
+            'HOSTFILE',
+            None,
+        )
+    )
+    if hostfile is not None:
+        hostfile, hosts = get_hosts_from_hostfile(hostfile)
+        hosts = [h.split('.')[0] for h in hosts]
+        return len(hosts)
     return (
         1 if (ws := get_world_size()) < (gpn := get_gpus_per_node())
         else ws // gpn
@@ -804,17 +820,17 @@ def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     import torch
     gpus_per_node = None
     try:
-        import intel_extension_for_pytorch as ipex  # pyright:ignore  # noqa
+        import intel_extension_for_pytorch as ipex  # type:ignore  noqa
         try:
             import oneccl_bindings_for_pytorch  # type:ignore noqa
-        except (ImportError, ModuleNotFoundError):
-            import torch_ccl  # type: ignore  # noqa
+        except Exception:
+            import torch_ccl  # type: ignore  noqa
         gpus_per_node = ipex.xpu.device_count()
     except (ImportError, ModuleNotFoundError):
         if torch.cuda.is_available():
             gpus_per_node = torch.cuda.device_count()
     if _assert:
-        try:
+        try:  # type:ignore noqa
             # import sh  # pyright: ignore
             from sh import wc as sh_wc  # pyright: ignore
             from sh import nvidia_smi as sh_nvidia_smi  # pyright: ignore
@@ -824,16 +840,17 @@ def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
                     _in=sh_nvidia_smi("-L")
                 ).rstrip("\n")
             )
-        except (ImportError, ModuleNotFoundError):
+        except Exception:
             if torch.cuda.is_available():
                 gpus_per_node = torch.cuda.device_count()
             else:
                 gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
             raise ValueError('No GPUs found. Exiting!')
-    if gpus_per_node is None:
-        ncpus = get_cpus_per_node()
-        return ncpus
-    return gpus_per_node
+    # if gpus_per_node is None:
+    #     ncpus = get_cpus_per_node()
+    #     return ncpus
+    # return gpus_per_node
+    return get_cpus_per_node() if gpus_per_node is None else gpus_per_node
 
 
 def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
@@ -851,19 +868,9 @@ def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
     return cobalt_info
 
 
-def build_mpiexec_thetagpu(
-        # ngpus: Optional[int] = None,
-        # hostfile: Optional[os.PathLike] = None
-):
-    # import subprocess
-    # import subprocess
+def build_mpiexec_thetagpu():
     jobenv = get_cobalt_resources()
-    # which_mpi = subprocess.Popen('which mpirun', shell=True)
-    # try:
-    #     import sh
-    #     which_mpi = sh.which('mpirun').rstrip('\n')
-    # except (ImportError, ModuleNotFoundError):
-    mpiexec = [
+    return [
         "mpirun",
         f"-n {jobenv['num_nodes']}",
         f"-npernode {jobenv['gpus_per_node']}",
@@ -873,14 +880,11 @@ def build_mpiexec_thetagpu(
         "-x http_proxy",
         "-x https_proxy",
     ]
-    return mpiexec
 
 
 def run_mpiexec(cmd: str):
     import subprocess
     mpiexec = ' '.join(build_mpiexec_thetagpu())
-    # python3 = sys.executable
-    # ezpz_test = '-m ezpz.check'
     log.info(f'Executing: {mpiexec} {cmd}')
     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
 
