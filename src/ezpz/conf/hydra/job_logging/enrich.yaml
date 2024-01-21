@@ -19,11 +19,6 @@ handlers:
     show_level: true
     enable_link_path: false
     level: DEBUG
-  file:
-    class: logging.FileHandler
-    formatter: simple
-    # absolute file path
-    filename: ${hydra.runtime.output_dir}/${hydra.job.name}.log
   console:
     class: logging.FileHandler
     formatter: simple
@@ -46,5 +41,5 @@ handlers:
   #   level: INFO
 root:
   level: INFO
-  handlers: [stream, file]
+  handlers: [stream, console]
 disable_existing_loggers: false
