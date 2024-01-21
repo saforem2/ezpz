@@ -9,15 +9,22 @@ import json
 import yaml
 from pathlib import Path
 from typing import Optional
+from rich import print_json
 
 from ezpz import (
     get_dist_info,
-    get_gpus_per_node,
-    get_hosts_from_hostfile,
-    get_machine,
-    get_world_size,
-    get_torch_backend,
-    get_torch_device,
+    # get_gpus_per_node,
+    # get_nodes_from_hostfile,
+    # get_machine,
+    # get_world_size,
+    # get_torch_backend,
+    # get_torch_device,
+)
+from ezpz.dist import (
+    # get_pbs_jobid_from_qstat,
+    # get_pbs_nodefile_from_qstat,
+    # get_pbs_launch_info,
+    get_pbs_env,
 )
 from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS
 
@@ -27,53 +34,6 @@ log = logging.getLogger(__name__)
 log.setLevel('INFO')
 
 SCHEDULER = get_scheduler()
-
-
-def get_pbs_launch_info(hostfile: str | Path | os.PathLike) -> dict:
-    hfp = Path(hostfile)
-    HOSTFILE, hosts = get_hosts_from_hostfile(hfp)
-    hosts = [h.split('.')[0] for h in hosts]
-    nhosts = len(hosts)
-    ngpu_per_host = get_gpus_per_node()
-    # ngpus = nhosts * ngpu_per_host
-    ngpus = get_world_size()
-    launch_cmd = ' '.join([
-        'mpiexec',
-        '--verbose',
-        '--envall',
-        f'-n {ngpus}',
-        f'-ppn {ngpu_per_host}',
-        f'--hostfile {HOSTFILE}'
-    ])
-    return {
-        'HOSTFILE': HOSTFILE,
-        'HOSTS': f'[{", ".join(hosts)}]',
-        'NHOSTS': f'{nhosts}',
-        'NGPU_PER_HOST': f'{ngpu_per_host}',
-        'NGPUS': f'{ngpus}',
-        'MACHINE': get_machine(),
-        'DEVICE': get_torch_device(),
-        'BACKEND': get_torch_backend(),
-        'LAUNCH_CMD': launch_cmd,
-    }
-
-
-def get_pbs_env(verbose: bool = False) -> dict[str, str]:
-    pbsenv = {
-        k: v for k, v in dict(os.environ).items() if 'PBS' in k
-    }
-    hostfile = pbsenv.get('PBS_NODEFILE')
-    if hostfile is not None and (hfp := Path(hostfile)).is_file():
-        launch_info = {
-            f'{k.upper()}': f'{v}' for k, v in get_pbs_launch_info(hfp).items()
-        }
-        pbsenv |= launch_info
-        # os.environ |= launch_info
-    # dist_info = get_dist_info(framework='pytorch', verbose=verbose)
-    # dist_info.pop('')
-    # pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
-    os.environ |= pbsenv
-    return pbsenv
 
 
 def check_scheduler(scheduler: Optional[str] = None) -> bool:
@@ -125,7 +85,7 @@ def get_jobfile_json() -> Path:
 def get_jobenv(verbose: bool = False) -> dict:
     jobenv = get_dist_info(framework='pytorch', verbose=verbose)
     if SCHEDULER.lower() == 'pbs':
-        return get_pbs_env()
+        jobenv |= get_pbs_env()
     raise ValueError(f'{SCHEDULER} not yet implemented!')
 
 
@@ -278,8 +238,32 @@ def get_jobdir_from_jobslog(
     return jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
 
 
+def save_to_dotenv_file(jobenv: dict) -> Path:
+    dotenv_file = Path(os.getcwd()).joinpath('.env')
+    log.info(
+        f'Saving job env to dot-env (.env) file in '
+        f'{dotenv_file.parent.as_posix()}/.env'
+    )
+    with dotenv_file.open('w') as f:
+        f.write('#!/bin/bash --login\n')
+        for key, val in jobenv.items():
+            f.write(f'{key.upper()}="{val}"\n')
+        launch_cmd = jobenv.get('LAUNCH_CMD', jobenv.get('launch_cmd'))
+        if launch_cmd is not None:
+            log.warning(
+                f'Caught `launch={launch_cmd}` from env!\n'
+                f'To use `launch` alias, be sure to: '
+                f'`source {dotenv_file.as_posix()}'
+            )
+            f.write(f'echo "creating alias launch={launch_cmd}"\n')
+            f.write(f'alias launch="{launch_cmd}"\n')
+    # log.warning(
+    #     f'Run `source ./.env in your to load these into your environment`'
+    # )
+    return dotenv_file
+
+
 def loadjobenv() -> dict:
-    from rich import print_json
     jobenv = {}
     last_jobdir = Path(get_jobdir_from_jobslog(-1))
     assert last_jobdir.is_dir()
@@ -288,9 +272,25 @@ def loadjobenv() -> dict:
         jobenv_file = jobenv_files_yaml[0]
         with jobenv_file.open('r') as stream:
             jobenv = dict(yaml.safe_load(stream))
-        for key, val in jobenv.items():
-            os.environ[key] = val
+    from ezpz.dist import get_pbs_launch_info, get_dist_info
+    jobenv |= get_pbs_launch_info()
+    for key, val in jobenv.items():
+        os.environ[key] = val
+    jobenv |= {
+        f'{k.upper()}': f'{v}' for k, v in (
+                get_dist_info('pytorch', verbose=False).items()
+        )
+    }
+    dotenv_file = save_to_dotenv_file(jobenv)
     print_json(data=jobenv, indent=4, sort_keys=True)
+    log.critical(
+        '\n'.join(
+            [
+                'Run: `source ./.env` in your CURRENT shell to load these!!',
+                f'[Note] full_path: {dotenv_file.as_posix()}'
+            ]
+        )
+    )
     return jobenv
 
 
@@ -301,7 +301,14 @@ if __name__ == '__main__':
     line = None
     last_jobdir = None
     jobenv_file_sh = None
-    if args[0].lower().startswith('save'):
+    PBS_JOBID = os.environ.get('PBS_JOBID')
+    if PBS_JOBID is not None:
+        log.info(f'Caught {PBS_JOBID=} from env. Saving jobenv!')
         savejobenv()
-    elif args[0].lower().startswith('get'):
+    else:
+        log.info('Didnt catch PBS_JOBID in env, loading jobenv!')
         loadjobenv()
+    # if args[0].lower().startswith('save'):
+    #     savejobenv()
+    # elif args[0].lower().startswith('get'):
+    #     loadjobenv()
