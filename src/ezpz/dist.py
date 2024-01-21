@@ -34,15 +34,19 @@ except (ImportError, ModuleNotFoundError):
     wandb = None
 
 ipex = None
-try:
-    import oneccl_bindings_for_pytorch  # type:ignore  # noqa
-    import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
-    ACCELERATOR_TYPE = "IntelGPU"
-except (ImportError, ModuleNotFoundError):
-    if torch.cuda.is_available():
-        ACCELERATOR_TYPE = "NvidiaGPU"
-    else:
-        ACCELERATOR_TYPE = "CPU"
+ACCELERATOR_TYPE = "NvidiaGPU" if torch.cuda.is_available() else None
+# if torch.cuda.is_available():
+#     ACCELERATOR_TYPE = "NvidiaGPU"
+# else:
+if ACCELERATOR_TYPE is None:
+    try:
+        import oneccl_bindings_for_pytorch  # type:ignore  # noqa
+        import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
+        ACCELERATOR_TYPE = "IntelGPU"
+    except Exception:
+        ACCELERATOR_TYPE = (
+            "MPS" if torch.backends.mps.is_available() else "CPU"
+        )
 
 log = logging.getLogger(__name__)
 logging.getLogger('sh').setLevel('WARNING')
@@ -153,83 +157,63 @@ def get_hostname() -> str:
 
 def get_dist_info(
         framework: str = 'pytorch',
-        verbose: Optional[bool] = None
+        verbose: Optional[bool] = None,
+        max_hosts: int = 1000,
 ) -> dict[str, str | int | list]:
     # master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
-    hostname = get_hostname()
-    rank = get_rank()
-    world_size = get_world_size()
-    local_rank = get_local_rank()
-    num_nodes = get_num_nodes()
-    gpus_per_node = get_gpus_per_node()
-    node_id = get_node_index()
-    device = local_rank
-    distributed_backend = None
-    if framework in {'pt', 'torch', 'pytorch'}:
-        device = get_torch_device()
-        distributed_backend = get_torch_backend()
-    machine = get_machine()
+    # hostname = get_hostname()
+    # rank = get_rank()
+    # world_size = get_world_size()
+    # world_size_total = get_world_size_total()
+    # world_size_in_use = get_world_size_in_use()
+    # local_rank = get_local_rank()
+    # num_nodes = get_num_nodes()
+    # gpus_per_node = get_gpus_per_node()
+    # node_id = get_node_index()
+    # device = local_rank
+    # distributed_backend = None
+    # if framework in {'pt', 'torch', 'pytorch'}:
+    # device = get_torch_device()
+    # distributed_backend = get_torch_backend()
+    # machine = get_machine()
+    # device_id = f
     hostfile, hosts = get_hosts_from_hostfile()
-    hosts = [h.split('.')[0] for h in hosts]
+    if len(hosts) > max_hosts:
+        log.warning(f'{len(hosts)=} > {max_hosts=} in `dist.get_dist_info')
+        log.warning(f'Truncating `hosts: [addr1, addr2, ...] at {max_hosts}')
+    hosts = (
+        [h.split('.')[0] for h in hosts] if len(hosts) < max_hosts
+        else (
+            [h.split('.')[0] for h in hosts[:max_hosts]].append(
+                [
+                    f'[(...) truncated ({len(hosts) > {max_hosts}})]'
+                ]
+            )
+        )
+    )
+    # hostfile = os.environ.get('HOSTFILE', None)
     dist_info = {
-        'RANK': rank,
-        'LOCAL_RANK': local_rank,
-        'WORLD_SIZE': world_size,
-        'NGPUS': world_size,
-        'NUM_NODES': num_nodes,
-        'GPUS_PER_NODE': gpus_per_node,
-        'NODE_ID': node_id,
-        'MACHINE': machine,
-        'HOSTFILE': hostfile,
-        'HOSTNAME': hostname,
+        'DEVICE': get_torch_device(),
+        'DEVICE_ID': f'{get_torch_device()}:{get_local_rank()}',
+        'DISTRIBUTED_BACKEND': get_torch_backend(),
+        'GPUS_PER_NODE': get_gpus_per_node(),
         'HOSTS': hosts,
-        'DEVICE': device,
-        'DISTRIBUTED_BACKEND': distributed_backend,
+        'HOSTFILE': hostfile,
+        'HOSTNAME': get_hostname(),
+        'LOCAL_RANK': get_local_rank(),
+        'MACHINE': get_machine(),
+        'NUM_NODES': get_num_nodes(),
+        'NGPUS': get_world_size_total(),
+        'NODE_ID': get_node_index(),
+        'RANK': get_rank(),
+        'WORLD_SIZE': get_world_size(),
+        'WORLD_SIZE_TOTAL': get_world_size_total(),
+        'WORLD_SIZE_IN_USE': get_world_size_in_use(),
     }
     if verbose:
-        # cjson = config.to_json()
-        # text = Text("DistInfo:")
-        # text += json.dumps(dist_info, indent=4)
-        # log.info(f'{text}')
-        # console = get_console()
-        # from enrich.handler import RichHandler as EnrichHandler
-        # from rich.logging import RichHandler
-        # console = None
-        # for handler in log.handlers:
-        #     if isinstance(handler, (RichHandler, EnrichHandler)):
-        #         console = handler.console
-        # if console is None:
-        #     console = get_console()
-        # console.print_json(data=dist_info, indent=4, highlight=True)
-        # # get_console().print_json(data=dist_info, indent=4, highlight=True)
-        # from ezpz.configs import print_config
-        # print_config(dist_info)
-        # from rich.json import JSON
-        # log.info(
-        #     f'DistInfo: {JSON(json.dumps(dist_info, indent=4))}'
-        # )
-        # log.info(
-        #     ' '.join([
-        #         'DistInfo:',
-        #         "\n".join([f"{k}: {v}" for k, v in dist_info.items()])
-        #     ])
-        # )
-        # from ezpz import get_console_from_logger
-        # console = get_console_from_logger(log)
-        # console.print(
-        #     Text(
-        #         'DistInfo: ',
-        #         style=Style(color='bright_green', bold=True, underline=True)
-        #     )
-        # )
-        # from rich.json import JSON
-        # log.info(
-        #     f'DistInfo={JSON(json.dumps(dist_info, indent=4, sort_keys=True))}'
-        # )
         log.info(
             f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
         )
-        # console.print_json(data=dist_info, indent=4)
     if wandb is not None and wandb.run is not None:
         wandb.run.config.update({'DIST_INFO': dist_info})
     return dist_info
@@ -243,7 +227,7 @@ def print_dist_setup(framework: str = 'torch') -> str:
     # num_nodes = get_num_nodes()
     node = get_node_index()
     device = None
-    if framework.lower() in ['pt', 'torch', 'pytorch']:
+    if framework.lower() in {'pt', 'torch', 'pytorch'}:
         device = get_torch_device()
     rank_len = len(str(rank))
     ws_len = len(str(world_size))
@@ -372,15 +356,54 @@ def run_ddp(fn: Callable, world_size: int) -> None:
 
 
 def get_rank() -> int:
+    """Get current MPI rank"""
     return int(MPI.COMM_WORLD.Get_rank())
 
 
-def get_world_size() -> int:
-    world_size = int(MPI.COMM_WORLD.Get_size())
-    if world_size == 1:
-        gpus_per_node = get_gpus_per_node()
+def get_world_size_in_use() -> int:
+    """Get number of currently in use MPI ranks"""
+    return int(MPI.COMM_WORLD.Get_size())
+
+
+def get_world_size_total() -> int:
+    """Calculate total AVAILABLE *PUs as:
+
+    total = [num_hosts] * [num_*pu_per_host]
+    """
+    # nhosts = get_num_nodes()
+    # ngpu_per_host = get_gpus_per_node()
+    # return ngpu_per_host * nhosts
+    return get_gpus_per_node() * get_num_nodes()
+
+
+def get_world_size(
+        total: Optional[bool] = None,
+        in_use: Optional[bool] = None,
+) -> int:
+    if total:
+        return get_world_size_total()
+    if in_use:
+        return get_world_size_in_use()
+    # TODO: Deal with subtlety between:
+    # 1. 'world_size' == total AVAILABLE gpus (for record keeping)
+    # 2. 'world_size' == number of gpus CURRENTLY IN USE (from {`mpi`, ...})
+    # ¯\_(ツ)_/¯
+    try:
+        world_size = int(MPI.COMM_WORLD.Get_size())
+    except Exception:
         num_nodes = get_num_nodes()
+        gpus_per_node = get_gpus_per_node()
         world_size = num_nodes * gpus_per_node
+        log.warning(
+            'MPI not initialized !!'
+            'Calculating (and using!! ??) '
+            '[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]'
+            f'[{world_size}]=[({num_nodes}) x ({gpus_per_node})]'
+        )
+    # if world_size == 1:
+    #     gpus_per_node = get_gpus_per_node()
+    #     num_nodes = get_num_nodes()
+    #     world_size = num_nodes * gpus_per_node
     return world_size
 
 
@@ -828,16 +851,22 @@ def get_cpus_per_node() -> int:
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     import torch
     gpus_per_node = None
-    try:
-        import intel_extension_for_pytorch as ipex  # type:ignore  noqa
-        try:
-            import oneccl_bindings_for_pytorch  # type:ignore noqa
-        except Exception:
-            import torch_ccl  # type: ignore  noqa
-        gpus_per_node = ipex.xpu.device_count()
-    except (ImportError, ModuleNotFoundError):
-        if torch.cuda.is_available():
-            gpus_per_node = torch.cuda.device_count()
+    # try:
+    #     import intel_extension_for_pytorch as ipex  # type:ignore  noqa
+    #     try:
+    #         import oneccl_bindings_for_pytorch  # type:ignore noqa
+    #     except Exception:
+    #         import torch_ccl  # type: ignore  noqa
+    if torch.cuda.is_available():
+        gpus_per_node = torch.cuda.device_count()
+    else:
+        if ipex is not None:  # and ACCELERATOR_TYPE == 'IntelGPU':
+            try:
+                gpus_per_node = ipex.xpu.device_count()
+            except Exception as exc:
+                log.exception(exc)
+                raise exc
+    # except Exception:  # (ImportError, ModuleNotFoundError):
     if _assert:
         try:  # type:ignore noqa
             # import sh  # pyright: ignore
@@ -860,6 +889,97 @@ def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     #     return ncpus
     # return gpus_per_node
     return get_cpus_per_node() if gpus_per_node is None else gpus_per_node
+
+
+def get_pbs_launch_cmd(
+        ngpus: Optional[int] = None,
+        nhosts: Optional[int] = None,
+        ngpu_per_host: Optional[int] = None,
+        hostfile: Optional[str | os.PathLike | Path] = None,
+) -> str:
+    pass
+
+
+def get_pbs_jobid_from_qstat() -> int:
+    # try:
+    from sh import qstat as sh_qstat
+    qstat_out = sh_qstat("-u", os.environ.get("USER")).split('\n')[2:-1]
+    return int(qstat_out[-1].split('.')[0])
+    # except Exception as exc:
+    #     log.error('Unable to determine PBS_JOBID from `qstat` command...')
+    #     raise exc
+
+
+def get_pbs_nodefile_from_qstat() -> Path:
+    pbs_jobid = get_pbs_jobid_from_qstat()
+    matches = [
+        i for i in Path('/var/spool/pbs/aux/').rglob(f'*{pbs_jobid}*')
+        if i.is_file()
+    ]
+    assert len(matches) == 1
+    # if len(matches) > 1:
+    #     raise RuntimeError(
+    #         'More than one candidate PBS_NODEFILE found? '
+    #         f'{matches=}'
+    #     )
+    return matches[0]
+
+
+def get_pbs_launch_info(
+        hostfile: Optional[str | Path | os.PathLike] = None
+) -> dict:
+    if hostfile is None:
+        hostfile = get_pbs_nodefile_from_qstat()
+    assert hostfile is not None and Path(hostfile).is_file()
+    hfp = Path(hostfile)
+    hosts = get_nodes_from_hostfile(hfp)
+    hosts = [h.split('.')[0] for h in hosts]
+    nhosts = len(hosts)
+    ngpu_per_host = get_gpus_per_node()
+    # ngpus = nhosts * ngpu_per_host
+    ngpus = get_world_size()
+    launch_cmd = ' '.join([
+        'mpiexec',
+        '--verbose',
+        '--envall',
+        f'-n {ngpus}',
+        f'-ppn {ngpu_per_host}',
+        f'--hostfile {hfp.as_posix()}'
+    ])
+    return {
+        'HOSTFILE': hfp.as_posix(),
+        'HOSTS': (
+            f'[{", ".join(hosts)}]' if nhosts < 1000
+            else '[truncated (>1000 nodes)]'
+        ),
+        'NHOSTS': f'{nhosts}',
+        'NGPU_PER_HOST': f'{ngpu_per_host}',
+        'NGPUS': f'{ngpus}',
+        'MACHINE': get_machine(),
+        'DEVICE': get_torch_device(),
+        'BACKEND': get_torch_backend(),
+        'LAUNCH_CMD': launch_cmd,
+    }
+
+
+def get_pbs_env(verbose: bool = False) -> dict[str, str]:
+    pbsenv = {
+        k: v for k, v in dict(os.environ).items() if 'PBS' in k
+    }
+    hostfile = pbsenv.get('PBS_NODEFILE')
+    if hostfile is None:
+        hostfile = get_pbs_nodefile_from_qstat()
+    if hostfile is not None and (hfp := Path(hostfile)).is_file():
+        launch_info = {
+            f'{k.upper()}': f'{v}' for k, v in get_pbs_launch_info(hfp).items()
+        }
+        pbsenv |= launch_info
+        # os.environ |= launch_info
+    # dist_info = get_dist_info(framework='pytorch', verbose=verbose)
+    # dist_info.pop('')
+    # pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
+    os.environ |= pbsenv
+    return pbsenv
 
 
 def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
