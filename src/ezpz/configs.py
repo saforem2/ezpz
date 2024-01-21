@@ -78,25 +78,17 @@ def get_scheduler() -> str:
     raise RuntimeError(f'Unknown {machine=}')
 
 
-
-
-
 def get_logging_config() -> dict:
     # import logging.config
     import yaml
-    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'rich.yaml')
-
-    # with open('./test.yml', 'r') as stream:
+    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'enrich.yaml')
     with cfp.open('r') as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
-    # logging.config.dictConfig(config)
-    # return logging.getLogger(name)
-    # config['disable_existing_loggers'] = True
     return config
 
 
 def print_json(
-        json: Optional[str] = None,
+        json_str: Optional[str] = None,
         console: Optional[Console] = None,
         *,
         data: Any = None,
@@ -112,7 +104,7 @@ def print_json(
     """Pretty prints JSON. Output will be valid JSON.
 
     Args:
-        json (Optional[str]): A string containing JSON.
+        json_str (Optional[str]): A string containing JSON.
         data (Any): If json is not supplied, then encode this data.
         indent (Union[None, int, str], optional): Number of spaces to indent.
             Defaults to 2.
@@ -135,7 +127,7 @@ def print_json(
     from enrich.console import get_console
     from rich.json import JSON
     console = get_console() if console is None else console
-    if json is None:
+    if json_str is None:
         json_renderable = JSON.from_data(
             data,
             indent=indent,
@@ -148,12 +140,12 @@ def print_json(
             sort_keys=sort_keys,
         )
     else:
-        if not isinstance(json, str):
+        if not isinstance(json_str, str):
             raise TypeError(
-                f"json must be str. Did you mean print_json(data={json!r}) ?"
+                f"json must be str. Did you mean print_json(data={json_str!r}) ?"
             )
         json_renderable = JSON(
-            json,
+            json_str,
             indent=indent,
             highlight=highlight,
             skip_keys=skip_keys,
