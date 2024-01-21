@@ -7,7 +7,7 @@ backend: 'DDP'              # Backend to use for distributed training
 ds_config_path: null
 port: null
 seed: null
-use_wandb: false
+use_wandb: true
 wandb_project_name: null
 # precision: null
 save_to: null
