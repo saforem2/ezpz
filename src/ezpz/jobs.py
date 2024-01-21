@@ -15,6 +15,7 @@ from ezpz import (
     get_gpus_per_node,
     get_hosts_from_hostfile,
     get_machine,
+    get_world_size,
     get_torch_backend,
     get_torch_device,
 )
@@ -28,41 +29,50 @@ log.setLevel('INFO')
 SCHEDULER = get_scheduler()
 
 
+def get_pbs_launch_info(hostfile: str | Path | os.PathLike) -> dict:
+    hfp = Path(hostfile)
+    HOSTFILE, hosts = get_hosts_from_hostfile(hfp)
+    hosts = [h.split('.')[0] for h in hosts]
+    nhosts = len(hosts)
+    ngpu_per_host = get_gpus_per_node()
+    # ngpus = nhosts * ngpu_per_host
+    ngpus = get_world_size()
+    launch_cmd = ' '.join([
+        'mpiexec',
+        '--verbose',
+        '--envall',
+        f'-n {ngpus}',
+        f'-ppn {ngpu_per_host}',
+        f'--hostfile {HOSTFILE}'
+    ])
+    return {
+        'HOSTFILE': HOSTFILE,
+        'HOSTS': f'[{", ".join(hosts)}]',
+        'NHOSTS': f'{nhosts}',
+        'NGPU_PER_HOST': f'{ngpu_per_host}',
+        'NGPUS': f'{ngpus}',
+        'MACHINE': get_machine(),
+        'DEVICE': get_torch_device(),
+        'BACKEND': get_torch_backend(),
+        'LAUNCH_CMD': launch_cmd,
+    }
+
+
 def get_pbs_env(verbose: bool = False) -> dict[str, str]:
     pbsenv = {
         k: v for k, v in dict(os.environ).items() if 'PBS' in k
     }
     hostfile = pbsenv.get('PBS_NODEFILE')
     if hostfile is not None and (hfp := Path(hostfile)).is_file():
-        HOSTFILE, hosts = get_hosts_from_hostfile(hfp)
-        hosts = [h.split('.')[0] for h in hosts]
-        nhosts = len(hosts)
-        ngpu_per_host = get_gpus_per_node()
-        ngpus = nhosts * ngpu_per_host
-        launch_cmd = ' '.join([
-            'mpiexec',
-            '--verbose',
-            '--envall',
-            f'-n {ngpus}',
-            f'-ppn {ngpu_per_host}',
-            f'--hostfile {HOSTFILE}'
-        ])
         launch_info = {
-            'HOSTFILE': HOSTFILE,
-            'HOSTS': f'[{", ".join(hosts)}]',
-            'NHOSTS': f'{nhosts}',
-            'NGPU_PER_HOST': f'{ngpu_per_host}',
-            'NGPUS': f'{ngpus}',
-            'machine': get_machine(),
-            'device': get_torch_device(),
-            'backend': get_torch_backend(),
-            'launch_cmd': launch_cmd,
+            f'{k.upper()}': f'{v}' for k, v in get_pbs_launch_info(hfp).items()
         }
-        os.environ |= launch_info
         pbsenv |= launch_info
-    dist_info = get_dist_info(framework='pytorch', verbose=verbose)
+        # os.environ |= launch_info
+    # dist_info = get_dist_info(framework='pytorch', verbose=verbose)
     # dist_info.pop('')
-    pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
+    # pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
+    os.environ |= pbsenv
     return pbsenv
 
 
@@ -112,7 +122,8 @@ def get_jobfile_json() -> Path:
     return jobfile_ext
 
 
-def get_jobenv() -> dict:
+def get_jobenv(verbose: bool = False) -> dict:
+    jobenv = get_dist_info(framework='pytorch', verbose=verbose)
     if SCHEDULER.lower() == 'pbs':
         return get_pbs_env()
     raise ValueError(f'{SCHEDULER} not yet implemented!')
@@ -174,12 +185,12 @@ def savejobenv_sh(jobenv: Optional[dict] = None) -> dict:
     jobenv = get_jobenv() if jobenv is None else jobenv
     jobfile_sh = get_jobfile_sh()
     jobenv |= {'jobfile_sh': jobfile_sh.as_posix()}
+    launch_cmd = jobenv.get('LAUNCH_CMD')
     log.info(f'Saving job env to {jobfile_sh}')
     with jobfile_sh.open('w') as f:
         f.write('#!/bin/bash --login\n')
         for key, val in jobenv.items():
             f.write(f'export {key.upper()}="{val}"\n')
-        launch_cmd = jobenv.get('launch_cmd')
         if launch_cmd is not None:
             f.write(f'alias launch="{launch_cmd}"')
     dotenv_file = Path(os.getcwd()).joinpath('.env')
@@ -188,8 +199,11 @@ def savejobenv_sh(jobenv: Optional[dict] = None) -> dict:
         f'{dotenv_file.parent.as_posix()}'
     )
     with dotenv_file.open('w') as f:
+        f.write('#!/bin/bash --login\n')
         for key, val in jobenv.items():
             f.write(f'{key.upper()}="{val}"\n')
+        if launch_cmd is not None:
+            f.write(f'alias launch="{launch_cmd}"')
     return jobenv
 
 
