@@ -214,15 +214,22 @@ def get_dist_info(
         #         "\n".join([f"{k}: {v}" for k, v in dist_info.items()])
         #     ])
         # )
-        from ezpz import get_console_from_logger
-        console = get_console_from_logger(log)
-        console.print(
-            Text(
-                'DistInfo: ',
-                style=Style(color='bright_green', bold=True, underline=True)
-            )
+        # from ezpz import get_console_from_logger
+        # console = get_console_from_logger(log)
+        # console.print(
+        #     Text(
+        #         'DistInfo: ',
+        #         style=Style(color='bright_green', bold=True, underline=True)
+        #     )
+        # )
+        # from rich.json import JSON
+        # log.info(
+        #     f'DistInfo={JSON(json.dumps(dist_info, indent=4, sort_keys=True))}'
+        # )
+        log.info(
+            f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
         )
-        console.print_json(data=dist_info, indent=4)
+        # console.print_json(data=dist_info, indent=4)
     if wandb is not None and wandb.run is not None:
         wandb.run.config.update({'DIST_INFO': dist_info})
     return dist_info
