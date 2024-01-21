@@ -170,19 +170,21 @@ def get_dist_info(
         distributed_backend = get_torch_backend()
     machine = get_machine()
     hostfile, hosts = get_hosts_from_hostfile()
+    hosts = [h.split('.')[0] for h in hosts]
     dist_info = {
-        'rank': rank,
-        'local_rank': local_rank,
-        'world_size': world_size,
-        'num_nodes': num_nodes,
-        'gpus_per_node': gpus_per_node,
-        'node_id': node_id,
-        'machine': machine,
-        'hostfile': hostfile,
-        'hostname': hostname,
-        'hosts': hosts,
-        'device': device,
-        'distributed_backend': distributed_backend,
+        'RANK': rank,
+        'LOCAL_RANK': local_rank,
+        'WORLD_SIZE': world_size,
+        'NGPUS': world_size,
+        'NUM_NODES': num_nodes,
+        'GPUS_PER_NODE': gpus_per_node,
+        'NODE_ID': node_id,
+        'MACHINE': machine,
+        'HOSTFILE': hostfile,
+        'HOSTNAME': hostname,
+        'HOSTS': hosts,
+        'DEVICE': device,
+        'DISTRIBUTED_BACKEND': distributed_backend,
     }
     if verbose:
         # cjson = config.to_json()
