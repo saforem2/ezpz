@@ -1,45 +1,22 @@
-# @package hydra.job_logging
+---
 version: 1
-# formatters:
-#   console: 
-#     (): enrich.console.Console
-#     force_jupyter: false
-#     log_path: false
-#     soft_wrap: True
-#     markup: true
-  # simple:
-  #   format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
 formatters:
   simple:
     format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
 handlers:
-  stream:
+  term:
     class: enrich.handler.RichHandler
     show_time: true
     show_level: true
     enable_link_path: false
     level: DEBUG
-  console:
+  file:
     class: logging.FileHandler
     formatter: simple
-    filename: ${hydra:job.name}.log
+    filename: ${hydra.job.name}.log
     level: INFO
     mode: w
-    # console:
-    #   (): enrich.console.Console
-    #   force_jupyter: false
-    #   log_path: false
-    #   soft_wrap: true
-    #   markup: true
-    # formatter: console
-    # console: 
-    # formatter: simple
-    # filename: ${hydra.job.name}.log
-    # mode: w
-  # term:
-  #   class: enrich.handler.RichHandler
-  #   level: INFO
 root:
-  level: INFO
-  handlers: [stream, console]
+  handlers: [term, file]
 disable_existing_loggers: false
+...
