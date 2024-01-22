@@ -276,13 +276,16 @@ def loadjobenv() -> dict:
             jobenv = dict(yaml.safe_load(stream))
     from ezpz.dist import get_pbs_launch_info, get_dist_info
     jobenv |= get_pbs_launch_info()
-    for key, val in jobenv.items():
-        os.environ[key] = val
     jobenv |= {
         f'{k.upper()}': f'{v}' for k, v in (
                 get_dist_info('pytorch', verbose=False).items()
         )
     }
+    for key, val in jobenv.items():
+        os.environ[key] = (
+            val.as_posix() if isinstance(val, Path)
+            else f'{val}'
+        )
     dotenv_file = save_to_dotenv_file(jobenv)
     print_json(data=jobenv, indent=4, sort_keys=True)
     log.critical(
