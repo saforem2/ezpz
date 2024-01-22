@@ -57,6 +57,8 @@ SCHEDULERS = {
 }
 
 
+PathLike = Union[str, os.PathLike, Path]
+
 
 def getjobenv_dep():
     print(GETJOBENV)

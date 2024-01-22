@@ -26,7 +26,7 @@ from datetime import timedelta
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
-from ezpz.configs import FRAMEWORKS, HERE, git_ds_info
+from ezpz.configs import FRAMEWORKS, HERE, git_ds_info, PathLike
 
 try:
     import wandb
@@ -82,7 +82,6 @@ ACCELERATOR_TYPE = "IntelGPU" if ipex is not None else (
 log = logging.getLogger(__name__)
 logging.getLogger('sh').setLevel('WARNING')
 
-PathLike = str | os.PathLike | Path
 
 
 def seed_everything(seed: int):
@@ -930,8 +929,29 @@ def get_pbs_launch_cmd(
         ngpu_per_host: Optional[int] = None,
         hostfile: Optional[PathLike] = None,
 ) -> str:
-    # TODO: Move launch_cmd construction here
-    return ''
+    if hostfile is None:
+        hostfile = get_hostfile_with_fallback(hostfile)
+    ngpus = get_world_size_total() if ngpus is None else ngpus
+    nhosts = get_num_nodes() if nhosts is None else nhosts
+    ngpu_per_host = (
+        get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
+    )
+    hfp = Path(
+        get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
+    )
+    if ngpus != (ngpu_per_host * nhosts):
+        log.critical(
+            'Mismatch in `ngpu_per_host * nhosts` and `ngpus` '
+            f'{ngpus=} vs. {ngpu_per_host=} * {nhosts=}'
+        )
+    return ' '.join([
+        'mpiexec',
+        '--verbose',
+        '--envall',
+        f'-n {ngpus}',
+        f'-ppn {ngpu_per_host}',
+        f'--hostfile {hfp.as_posix()}'
+    ])
 
 
 def get_pbs_jobid_from_qstat() -> int:
@@ -972,14 +992,27 @@ def get_pbs_launch_info(
     ngpu_per_host = get_gpus_per_node()
     # ngpus = nhosts * ngpu_per_host
     ngpus = get_world_size(total=True)
-    launch_cmd = ' '.join([
-        'mpiexec',
-        '--verbose',
-        '--envall',
-        f'-n {ngpus}',
-        f'-ppn {ngpu_per_host}',
-        f'--hostfile {hfp.as_posix()}'
-    ])
+    world_size_total = get_world_size_total()
+    if ngpus != world_size_total:
+        log.critical('Disagreement in total world size!!')
+        log.critical(
+            f'{get_world_size(total=True)=}'
+            f' vs. {get_world_size_total()=}'
+        )
+        # if ngpus != (ngpu_per_host * nhosts):
+        log.critical(
+            'Mismatch in `ngpu_per_host * nhosts` and `ngpus` '
+            f'{ngpus=} vs. {ngpu_per_host=} * {nhosts=}'
+        )
+    # launch_cmd = ' '.join([
+    #     'mpiexec',
+    #     '--verbose',
+    #     '--envall',
+    #     f'-n {ngpus}',
+    #     f'-ppn {ngpu_per_host}',
+    #     f'--hostfile {hfp.as_posix()}'
+    # ])
+    launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
     return {
         'HOSTFILE': hfp.as_posix(),
         'HOSTS': (
