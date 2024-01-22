@@ -40,8 +40,8 @@ ACCELERATOR_TYPE = "NvidiaGPU" if torch.cuda.is_available() else None
 # else:
 if ACCELERATOR_TYPE is None:
     try:
-        import oneccl_bindings_for_pytorch  # type:ignore  # noqa
         import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
+        import oneccl_bindings_for_pytorch  # type:ignore  # noqa
         ACCELERATOR_TYPE = "IntelGPU"
     except Exception:
         ACCELERATOR_TYPE = (
@@ -269,34 +269,57 @@ def init_deepspeed():
 
 
 def get_torch_device() -> str:
-    try:
-        import intel_extension_for_pytorch as ipex  # type:ignore noqa
-        device = "xpu"
-    except (ImportError, ModuleNotFoundError):
-        # if torch.cuda.is_available():
-        device = 'cuda' if torch.cuda.is_available() else (
-            'mps' if (
-                torch.backends.mps.is_available()
-                and torch.get_default_dtype() != torch.float64
-            )
-            else 'cpu'
-        )
-    return device
+    if torch.cuda.is_available():
+        return 'cuda'
+    if (
+            torch.backends.mps.is_available()
+            and torch.get_default_dtype() != torch.float64
+    ):
+        return 'mps'
+    return (
+        'xpu' if ipex is not None and ACCELERATOR_TYPE == 'IntelGPU'
+        else 'cpu'
+    )
+    # if ipex is not None and ACCELERATOR_TYPE == 'IntelGPU':
+    #     return 'xpu'
+    # return 'cpu'
+    # try:
+    #     import intel_extension_for_pytorch as ipex  # type:ignore noqa
+    #     return "xpu"
+    # except (ImportError, ModuleNotFoundError):
+    #     return 'cpu'
+    # try:
+    #     import intel_extension_for_pytorch as ipex  # type:ignore noqa
+    #     device = "xpu"
+    # except (ImportError, ModuleNotFoundError):
+    #     # if torch.cuda.is_available():
+    #     device = 'cuda' if torch.cuda.is_available() else (
+    #         'mps' if (
+    #             torch.backends.mps.is_available()
+    #             and torch.get_default_dtype() != torch.float64
+    #         )
+    #         else 'cpu'
+    #     )
+    # return device
 
 
 def get_torch_backend() -> str:
-    import torch
+    # backend = 'nccl' if torch.cuda.is_available() else (
+    #     'ccl' if (
+    #         ipex is not None and ACCELERATOR_TYPE == 'IntelGPU'
+    #     ) else 'gloo'
+    # )
     backend = 'nccl' if torch.cuda.is_available() else None
     if backend is None:
         try:
             import oneccl_bindings_for_pytorch  # type:ignore noqa
             import intel_extension_for_pytorch as ipex  # type:ignore noqa
             backend = "ccl"  # if backend is None else str(backend)
-        except (ImportError, ModuleNotFoundError):
+        except Exception:  # (ImportError, ModuleNotFoundError):
             try:
                 import torch_ccl  # type: ignore  noqa
                 backend = 'ccl'
-            except (ImportError, ModuleNotFoundError):
+            except Exception:  # (ImportError, ModuleNotFoundError):
                 backend = 'gloo'
             # if torch.cuda.is_available():
             #     backend = 'nccl' if backend is None else str(backend)
@@ -478,7 +501,7 @@ def setup_torch_distributed(
     world_size = get_world_size()
     local_rank = get_local_rank()
     be = backend.lower()
-    assert be in BACKENDS['pytorch']
+    # assert be in BACKENDS['pytorch']
     if be == 'ddp':
         dsetup = setup_torch_DDP(port)
         world_size = dsetup['world_size']
@@ -503,7 +526,7 @@ def setup_torch_distributed(
         if torch.cuda.is_available():
             torch.cuda.set_device(hvd.local_rank())
     else:
-        raise ValueError(f'Unable to parse backend: {be}')
+        raise ValueError(f'Unable to parse backend: {be=}')
     os.environ['world_size'] = str(world_size)
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
@@ -825,22 +848,32 @@ def get_node_index() -> int:
     return get_rank() % get_num_nodes()
 
 
-def get_num_nodes() -> int:
-    hostfile = os.environ.get(
-        'PBS_NODEFILE',
-        os.environ.get(
-            'HOSTFILE',
-            None,
+def get_hostfile_with_fallback(
+        hostfile: Optional[str | os.PathLike | Path] = None
+) -> Path:
+    if hostfile is None:
+        hfp = Path(
+            os.environ.get(
+                'PBS_NODEFILE',
+                os.environ.get(
+                    'HOSTFILE',
+                    get_pbs_nodefile_from_qstat(),
+                )
+            )
         )
-    )
-    if hostfile is not None:
-        hostfile, hosts = get_hosts_from_hostfile(hostfile)
-        hosts = [h.split('.')[0] for h in hosts]
-        return len(hosts)
-    return (
-        1 if (ws := get_world_size()) < (gpn := get_gpus_per_node())
-        else ws // gpn
-    )
+    else:
+        hfp = Path(hostfile)
+    # if hfp is not None:
+    # hostfile, hosts = get_hosts_from_hostfile(hostfile)
+    # hosts = [h.split('.')[0] for h in hosts]
+    assert hfp is not None and hfp.is_file()
+    return hfp
+
+
+def get_num_nodes(hostfile: Optional[str | os.PathLike | Path] = None) -> int:
+    hfp = get_hostfile_with_fallback(hostfile)
+    hosts = [h.split('.')[0] for h in get_nodes_from_hostfile(hfp)]
+    return len(hosts)
 
 
 def get_cpus_per_node() -> int:
@@ -937,7 +970,7 @@ def get_pbs_launch_info(
     nhosts = len(hosts)
     ngpu_per_host = get_gpus_per_node()
     # ngpus = nhosts * ngpu_per_host
-    ngpus = get_world_size()
+    ngpus = get_world_size(total=True)
     launch_cmd = ' '.join([
         'mpiexec',
         '--verbose',
