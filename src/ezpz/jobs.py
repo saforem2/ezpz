@@ -257,9 +257,6 @@ def save_to_dotenv_file(jobenv: dict) -> Path:
             )
             f.write(f'echo "creating alias launch={launch_cmd}"\n')
             f.write(f'alias launch="{launch_cmd}"\n')
-    # log.warning(
-    #     f'Run `source ./.env in your to load these into your environment`'
-    # )
     return dotenv_file
 
 
