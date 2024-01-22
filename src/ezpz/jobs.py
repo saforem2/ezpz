@@ -13,17 +13,8 @@ from rich import print_json
 
 from ezpz import (
     get_dist_info,
-    # get_gpus_per_node,
-    # get_nodes_from_hostfile,
-    # get_machine,
-    # get_world_size,
-    # get_torch_backend,
-    # get_torch_device,
 )
 from ezpz.dist import (
-    # get_pbs_jobid_from_qstat,
-    # get_pbs_nodefile_from_qstat,
-    # get_pbs_launch_info,
     get_pbs_env,
 )
 from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS
@@ -307,13 +298,13 @@ if __name__ == '__main__':
     last_jobdir = None
     jobenv_file_sh = None
     PBS_JOBID = os.environ.get('PBS_JOBID')
-    if PBS_JOBID is not None:
-        log.info(f'Caught {PBS_JOBID=} from env. Saving jobenv!')
+    pbsnf = Path(os.environ.get('PBS_NODEFILE', ''))
+    if (PBS_JOBID is not None and pbsnf.is_file()):
+        log.info(
+            f'Caught {PBS_JOBID=}, {pbsnf=}'
+            'from env. Saving jobenv!'
+        )
         savejobenv()
     else:
         log.info('Didnt catch PBS_JOBID in env, loading jobenv!')
         loadjobenv()
-    # if args[0].lower().startswith('save'):
-    #     savejobenv()
-    # elif args[0].lower().startswith('get'):
-    #     loadjobenv()
