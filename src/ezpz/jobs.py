@@ -83,9 +83,14 @@ def get_jobfile_json() -> Path:
 
 
 def get_jobenv(verbose: bool = False) -> dict:
+    from ezpz.dist import get_pbs_launch_info
     jobenv = get_dist_info(framework='pytorch', verbose=verbose)
     if SCHEDULER.lower() == 'pbs':
         jobenv |= get_pbs_env()
+        jobenv |= get_pbs_launch_info()
+        jobenv |= get_dist_info()
+        return jobenv
+    # TODO: Add Slurm support to Python API
     raise ValueError(f'{SCHEDULER} not yet implemented!')
 
 
