@@ -857,10 +857,13 @@ def get_hostfile_with_fallback(
                 'PBS_NODEFILE',
                 os.environ.get(
                     'HOSTFILE',
-                    get_pbs_nodefile_from_qstat(),
+                    None,
                 )
             )
         )
+        if hfp is None or not hfp.is_file():
+            hfp = Path(get_pbs_nodefile_from_qstat())
+            os.environ['PBS_NODEFILE'] = hfp.as_posix()
     else:
         hfp = Path(hostfile)
     # if hfp is not None:
@@ -893,12 +896,13 @@ def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
     if torch.cuda.is_available():
         gpus_per_node = torch.cuda.device_count()
     else:
-        if ipex is not None:  # and ACCELERATOR_TYPE == 'IntelGPU':
-            try:
-                gpus_per_node = ipex.xpu.device_count()
-            except Exception as exc:
-                log.exception(exc)
-                raise exc
+        # if ipex is not None:  # and ACCELERATOR_TYPE == 'IntelGPU':
+        try:
+            import intel_extension_for_pytorch as ipex
+            gpus_per_node = ipex.xpu.device_count()
+        except Exception as exc:
+            log.exception(exc)
+            raise exc
     # except Exception:  # (ImportError, ModuleNotFoundError):
     if _assert:
         try:  # type:ignore noqa
