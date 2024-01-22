@@ -159,6 +159,7 @@ def get_dist_info(
         framework: str = 'pytorch',
         verbose: Optional[bool] = None,
         max_hosts: int = 1000,
+        hostfile: Optional[str | os.PathLike | Path] = None,
 ) -> dict[str, str | int | list]:
     # master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
     # hostname = get_hostname()
@@ -177,7 +178,13 @@ def get_dist_info(
     # distributed_backend = get_torch_backend()
     # machine = get_machine()
     # device_id = f
-    hostfile, hosts = get_hosts_from_hostfile()
+    # hostfile, hosts = get_hosts_from_hostfile()
+    hostfile = Path(get_hostfile_with_fallback(hostfile)).as_posix()
+    hosts = get_nodes_from_hostfile(hostfile)
+    # hosts_str = (
+    #     f'[{", ".join(hosts)}]' if len(hosts) < 1000
+    #     else '[truncated (>1000 nodes)]'
+    # )
     if len(hosts) > max_hosts:
         log.warning(f'{len(hosts)=} > {max_hosts=} in `dist.get_dist_info')
         log.warning(f'Truncating `hosts: [addr1, addr2, ...] at {max_hosts}')
@@ -197,7 +204,7 @@ def get_dist_info(
         'DEVICE_ID': f'{get_torch_device()}:{get_local_rank()}',
         'DISTRIBUTED_BACKEND': get_torch_backend(),
         'GPUS_PER_NODE': get_gpus_per_node(),
-        'HOSTS': hosts,
+        'HOSTS': f'{hosts}',
         'HOSTFILE': hostfile,
         'HOSTNAME': get_hostname(),
         'LOCAL_RANK': get_local_rank(),
@@ -852,7 +859,7 @@ def get_hostfile_with_fallback(
         hostfile: Optional[str | os.PathLike | Path] = None
 ) -> Path:
     if hostfile is None:
-        hfp = Path(
+        hfp = (
             os.environ.get(
                 'PBS_NODEFILE',
                 os.environ.get(
@@ -861,15 +868,17 @@ def get_hostfile_with_fallback(
                 )
             )
         )
-        if hfp is None or not hfp.is_file():
+        if hfp is None or not Path(hfp).is_file():
             hfp = Path(get_pbs_nodefile_from_qstat())
-            os.environ['PBS_NODEFILE'] = hfp.as_posix()
     else:
         hfp = Path(hostfile)
+    assert hfp is not None and Path(hfp).is_file()
+    assert Path(hfp).is_file()
+    hostfile = Path(hfp).as_posix()
     # if hfp is not None:
     # hostfile, hosts = get_hosts_from_hostfile(hostfile)
     # hosts = [h.split('.')[0] for h in hosts]
-    assert hfp is not None and hfp.is_file()
+    os.environ['PBS_NODEFILE'] = hostfile  # hfp.as_posix()
     return hfp
 
 
