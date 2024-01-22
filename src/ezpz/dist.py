@@ -26,7 +26,7 @@ from datetime import timedelta
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
-from ezpz.configs import FRAMEWORKS, HERE, git_ds_info, PathLike
+from ezpz.configs import FRAMEWORKS, HERE, git_ds_info, PathLike, get_scheduler
 
 try:
     import wandb
@@ -189,16 +189,18 @@ def get_hostname() -> str:
     return hostname.rstrip('\n')
 
 
-def get_dist_info(
-        framework: Optional[str] = None,
-        verbose: Optional[bool] = None,
-        max_hosts: int = 1000,
+def _get_dist_info(
         hostfile: Optional[PathLike] = None,
-) -> dict[str, str | int | list]:
+        framework: Optional[str] = None,
+        max_hosts: int = 1000,  # truncate in logs
+) -> dict:
     hostfile = (
         Path(get_hostfile_with_fallback(hostfile)).as_posix()
-        if hostfile is None else hostfile
     )
+    # hostfile = (
+    #     Path(get_hostfile_with_fallback(hostfile)).as_posix()
+    #     if hostfile is None else hostfile
+    # )
     assert hostfile is not None and Path(hostfile).is_file(), (
         f'{hostfile=} not None and {Path(hostfile).is_file()=}'
     )
@@ -230,17 +232,36 @@ def get_dist_info(
         'NGPUS': get_world_size_total(),
         'NODE_ID': get_node_index(),
         'RANK': get_rank(),
-        'WORLD_SIZE': get_world_size(),
+        'SCHEDULER': get_scheduler(),
+        # 'WORLD_SIZE': get_world_size(),
         'WORLD_SIZE_TOTAL': get_world_size_total(),
         'WORLD_SIZE_IN_USE': get_world_size_in_use(),
     }
     if framework is not None:
         dist_info |= {'FRAMEWORK': framework}
+    return dist_info
+
+
+def get_dist_info(
+        framework: Optional[str] = None,
+        verbose: Optional[bool] = None,
+        max_hosts: int = 1000,
+        hostfile: Optional[PathLike] = None,
+) -> dict[str, str | int | list]:
+    dist_info = _get_dist_info(
+        hostfile=hostfile,
+        framework=framework,
+        max_hosts=max_hosts
+    )
     if verbose:
         log.info(
             f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
         )
-    if wandb is not None and wandb.run is not None:
+    if (
+            wandb is not None 
+            and wandb.run is not None
+            and 'DIST_INFO' not in wandb.run.config
+    ):
         wandb.run.config.update({'DIST_INFO': dist_info})
     return dist_info
 
@@ -256,11 +277,15 @@ def print_dist_setup(
     local_rank = get_local_rank()
     gpus_per_node = get_gpus_per_node()
     hostfile = get_hostfile_with_fallback(hostfile)
-    num_nodes = wsa // gpus_per_node
+    # NOTE:
+    # We ensure that num_nodes is AT LEAST 1
+    # since if gpus_per_node > wsa, wsa // gpus_per_node = 0
+    # if gpus_per_node > wsa, wsa // gpus_per_node = 0
+    num_nodes = max((wsa // gpus_per_node, 1))
     num_nodes_from_hostfile = get_num_nodes()
     # assert num_nodes_from_hostfile == num_nodes
-    if num_nodes != num_nodes_from_hostfile:
-        log.critical(f'{num_nodes=} vs. {num_nodes_from_hostfile=} ??')
+    # if num_nodes != num_nodes_from_hostfile:
+    #     log.critical(f'{num_nodes=} vs. {num_nodes_from_hostfile=} ??')
     node = get_node_index()
     device = None
     # if framework.lower() in {'pt', 'torch', 'pytorch'}:
@@ -280,14 +305,20 @@ def print_dist_setup(
     if framework is not None:
         dist_list.append(f'[{framework=}]')
     dist_str = ''.join(dist_list)
-    if wsa > 1000 and rank == 0:
-        log.warning(
-            f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
-        )
-    else:
-        log.info(f'{dist_str}')
     if rank == 0:
+        if wsa > 1000:
+            log.warning(
+                f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
+            )
+        log.info(f'{dist_str}')
         log.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+        if num_nodes_from_hostfile != num_nodes:
+            log.critical(
+                f'num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]'
+                f'vs.'
+                f'[{wsa=} // {gpus_per_node=}] = {num_nodes}'
+                r'¯\_(ツ)_/¯ ??'
+            )
     return dist_str
 
 
@@ -331,7 +362,7 @@ def get_torch_device() -> str:
         'cuda' if torch.cuda.is_available() else (
             'mps' if (
                 (
-                    torch.backends.mps.is_availble()  # type:ignore
+                    torch.backends.mps.is_available()
                     and torch.get_default_dtype() != torch.float64
                 )
             ) else 'cpu'
@@ -732,7 +763,8 @@ def get_machine(hostname: Optional[str] = None) -> str:
         machine = 'Perlmutter'
     else:
         machine = hostname
-        log.warning(f'Unknown machine, setting {machine=}')
+        # if get_rank() == 0:
+        #     log.warning(f'Unknown machine, setting {machine=}')
     return machine
 
 
@@ -871,21 +903,46 @@ def get_node_index() -> int:
     return get_rank() % get_num_nodes()
 
 
+def write_localhost_to_hostfile(hostfile: PathLike):
+    # hostfile = (
+    #     Path(os.getcwd()).joinpath('hostfile') if hostfile is None
+    #     else Path(hostfile)
+    # )
+    if get_rank() == 0:
+        # log.info(
+        #     f'Writing {(hostname := get_hostname())} '
+        #     f'to {Path(hostfile).as_posix()}'
+        # )
+        hostname = get_hostname()
+        with Path(hostfile).open('w') as f:
+            f.write(f'{hostname}')
+
+
 def get_hostfile_with_fallback(
         hostfile: Optional[PathLike] = None
 ) -> Path:
+    scheduler = get_scheduler()
     if hostfile is None:
         hfp = (
             os.environ.get(
                 'PBS_NODEFILE',
                 os.environ.get(
                     'HOSTFILE',
-                    None,
+                    None,  # fallback_hostfile.as_posix()
                 )
             )
         )
-        if hfp is None or not Path(hfp).is_file():
-            hfp = Path(get_pbs_nodefile_from_qstat())
+        if (
+                (hfp is None or not Path(hfp).is_file())
+                # and scheduler == 'PBS'
+        ):
+            if scheduler == 'PBS':
+                hfp = Path(get_pbs_nodefile_from_qstat())
+            else:
+                # create makeshift hostfile containing 'localhost'
+                hfp = Path(os.getcwd()).joinpath('hostfile')
+                hfp.touch(exist_ok=True)
+                write_localhost_to_hostfile(hfp)
     else:
         hfp = Path(hostfile)
     assert hfp is not None and Path(hfp).is_file()
@@ -894,7 +951,12 @@ def get_hostfile_with_fallback(
     # if hfp is not None:
     # hostfile, hosts = get_hosts_from_hostfile(hostfile)
     # hosts = [h.split('.')[0] for h in hosts]
-    os.environ['PBS_NODEFILE'] = hostfile  # hfp.as_posix()
+    # if scheduler == 'PBS':
+    #     os.environ['PBS_NODEFILE'] = hostfile  # hfp.as_posix()
+    hfname = f'{scheduler.upper()}_NODEFILE'
+    if hfname not in os.environ:
+        os.environ |= {hfname: hostfile}
+    # os.environ[f'{scheduler.upper()}_NODEFILE'] = hostfile
     return Path(hfp)
 
 
@@ -909,17 +971,17 @@ def get_cpus_per_node() -> int:
     return int(sh_getconf("_NPROCESSORS_ONLN").rstrip('\n'))
 
 
-def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
+def get_gpus_per_node() -> int:
     if torch.cuda.is_available():
         return torch.cuda.device_count()
     if ipex is not None:
         return ipex.xpu.device_count()
-    if _assert:
-        raise RuntimeError(
-            'No {X, G}pus found; but _assert specified. Returning !!'
-        )
+    # if _assert:
+    #     raise RuntimeError(
+    #         'No {X, G}pus found; but _assert specified. Returning !!'
+    #     )
     cpus_per_node = get_cpus_per_node()
-    log.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
+    # log.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
     return cpus_per_node
 
 
@@ -955,7 +1017,8 @@ def get_pbs_launch_cmd(
 
 
 def get_pbs_jobid_from_qstat() -> int:
-    # try:
+    from ezpz.configs import get_scheduler
+    assert get_scheduler() == 'PBS'
     from sh import qstat as sh_qstat
     qstat_out = sh_qstat("-u", os.environ.get("USER")).split('\n')[2:-1]
     return int(qstat_out[-1].split('.')[0])
@@ -965,6 +1028,7 @@ def get_pbs_jobid_from_qstat() -> int:
 
 
 def get_pbs_nodefile_from_qstat() -> Path:
+    assert get_scheduler() == 'PBS'
     pbs_jobid = get_pbs_jobid_from_qstat()
     matches = [
         i for i in Path('/var/spool/pbs/aux/').rglob(f'*{pbs_jobid}*')
@@ -982,6 +1046,7 @@ def get_pbs_nodefile_from_qstat() -> Path:
 def get_pbs_launch_info(
         hostfile: Optional[PathLike] = None
 ) -> dict:
+    assert get_scheduler() == 'PBS'
     if hostfile is None:
         hostfile = get_pbs_nodefile_from_qstat()
     assert hostfile is not None and Path(hostfile).is_file()
@@ -1030,6 +1095,7 @@ def get_pbs_launch_info(
 
 
 def get_pbs_env(verbose: bool = False) -> dict[str, str]:
+    assert get_scheduler() == 'PBS'
     pbsenv = {
         k: v for k, v in dict(os.environ).items() if 'PBS' in k
     }
