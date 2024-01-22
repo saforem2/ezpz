@@ -72,6 +72,7 @@ function getJOBenv() {
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
+    export WORLD_SIZE="${NGPUS}"
     HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
 }
 
@@ -87,6 +88,7 @@ function printJOBenv() {
     echo "│     • NHOSTS: ${NHOSTS}"
     echo "│     • NGPU_PER_HOST: ${NGPU_PER_HOST}"
     echo "│     • NGPUS (NHOSTS x NGPU_PER_HOST): ${NGPUS}"
+    echo "│     • WORLD_SIZE: ${NGPUS}"
     echo "│     • DIST_LAUNCH: ${DIST_LAUNCH}"
     echo "│     • Defining alias: $(which launch)"
     echo "└──────────────────────────────────────────────────────────────────"
