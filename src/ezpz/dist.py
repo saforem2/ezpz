@@ -13,11 +13,11 @@ from functools import wraps
 from typing import Any, Callable, Optional
 import socket
 import json
-from enrich.console import get_console
-from rich import print_json
-from rich.logging import RichHandler
-from rich.style import Style
-from rich.text import Text
+# from enrich.console import get_console
+# from rich import print_json
+# from rich.logging import RichHandler
+# from rich.style import Style
+# from rich.text import Text
 
 import torch
 import torch.distributed as dist
@@ -26,30 +26,63 @@ from datetime import timedelta
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
-from ezpz.configs import BACKENDS, FRAMEWORKS, HERE, git_ds_info
+from ezpz.configs import FRAMEWORKS, HERE, git_ds_info
 
 try:
     import wandb
-except (ImportError, ModuleNotFoundError):
+except Exception:
     wandb = None
 
-ipex = None
-ACCELERATOR_TYPE = "NvidiaGPU" if torch.cuda.is_available() else None
-# if torch.cuda.is_available():
-#     ACCELERATOR_TYPE = "NvidiaGPU"
-# else:
-if ACCELERATOR_TYPE is None:
-    try:
-        import intel_extension_for_pytorch as ipex  # type:ignore  # noqa
-        import oneccl_bindings_for_pytorch  # type:ignore  # noqa
-        ACCELERATOR_TYPE = "IntelGPU"
-    except Exception:
-        ACCELERATOR_TYPE = (
-            "MPS" if torch.backends.mps.is_available() else "CPU"
-        )
+
+try:
+    import intel_extension_for_pytorch as ipex        # type:ignore
+except Exception:
+    ipex = None
+
+try:
+    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore
+except Exception:
+    oneccl_bpt = None
+
+try:
+    import torch_ccl as tccl  # type:ignore
+except Exception:
+    tccl = None
+
+    # _ = oneccl_bpt.__file__
+    # ACCELERATOR_TYPE = "IntelGPU"
+ACCELERATOR_TYPE = "IntelGPU" if ipex is not None else (
+    "NvidiaGPU" if (
+        torch.cuda.is_available() and torch.cuda.device_count() > 0
+    ) else (
+        "MPS" if torch.backends.mps.is_available()    # type:ignore
+        else "CPU"
+    )
+)
+# ACCELERATOR_TYPE = (
+#     "NvidiaGPU" if (
+#         torch.cuda.is_available() and torch.cuda.device_count() > 0
+#     ) else (
+#         "MPS" if torch.backends.mps.is_available()    # type:ignore
+#         else "CPU"
+#     )
+# )
+# if ACCELERATOR_TYPE is None:
+#     try:
+#         import intel_extension_for_pytorch as ipex        # type:ignore
+#         import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore
+#         _ = oneccl_bpt.__file__
+#         ACCELERATOR_TYPE = "IntelGPU"
+#     except Exception:
+#         ACCELERATOR_TYPE = (
+#             "MPS" if torch.backends.mps.is_available()    # type:ignore
+#             else "CPU"
+#         )
 
 log = logging.getLogger(__name__)
 logging.getLogger('sh').setLevel('WARNING')
+
+PathLike = str | os.PathLike | Path
 
 
 def seed_everything(seed: int):
@@ -77,7 +110,9 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             if verbose:
                 if rank == 0:
                     tstr = [f"`{func.__name__}`"]
-                    _ = tstr.append(f"({args}") if len(args) > 0 else None
+                    if len(args) > 0:
+                        tstr.append(f"({args}")
+                    # _ = tstr.append(f"({args}") if len(args) > 0 else None
                     _ = (
                         tstr.append(f", {kwargs})")
                         if len(kwargs) > 0 else (
@@ -114,7 +149,7 @@ def timeit(func: Callable):
 
 
 def get_hosts_from_hostfile(
-        hostfile: Optional[str | os.PathLike | Path] = None
+        hostfile: Optional[PathLike] = None
 ) -> tuple[str, list[str]]:
     hostname = get_hostname()
     hostfile = os.environ.get(
@@ -156,49 +191,32 @@ def get_hostname() -> str:
 
 
 def get_dist_info(
-        framework: str = 'pytorch',
+        framework: Optional[str] = None,
         verbose: Optional[bool] = None,
         max_hosts: int = 1000,
-        hostfile: Optional[str | os.PathLike | Path] = None,
+        hostfile: Optional[PathLike] = None,
 ) -> dict[str, str | int | list]:
-    # master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
-    # hostname = get_hostname()
-    # rank = get_rank()
-    # world_size = get_world_size()
-    # world_size_total = get_world_size_total()
-    # world_size_in_use = get_world_size_in_use()
-    # local_rank = get_local_rank()
-    # num_nodes = get_num_nodes()
-    # gpus_per_node = get_gpus_per_node()
-    # node_id = get_node_index()
-    # device = local_rank
-    # distributed_backend = None
-    # if framework in {'pt', 'torch', 'pytorch'}:
-    # device = get_torch_device()
-    # distributed_backend = get_torch_backend()
-    # machine = get_machine()
-    # device_id = f
-    # hostfile, hosts = get_hosts_from_hostfile()
-    hostfile = Path(get_hostfile_with_fallback(hostfile)).as_posix()
-    hosts = get_nodes_from_hostfile(hostfile)
-    # hosts_str = (
-    #     f'[{", ".join(hosts)}]' if len(hosts) < 1000
-    #     else '[truncated (>1000 nodes)]'
-    # )
+    hostfile = (
+        Path(get_hostfile_with_fallback(hostfile)).as_posix()
+        if hostfile is None else hostfile
+    )
+    assert hostfile is not None and Path(hostfile).is_file(), (
+        f'{hostfile=} not None and {Path(hostfile).is_file()=}'
+    )
+    hosts = get_nodes_from_hostfile(Path(hostfile).as_posix())
     if len(hosts) > max_hosts:
         log.warning(f'{len(hosts)=} > {max_hosts=} in `dist.get_dist_info')
         log.warning(f'Truncating `hosts: [addr1, addr2, ...] at {max_hosts}')
     hosts = (
         [h.split('.')[0] for h in hosts] if len(hosts) < max_hosts
         else (
-            [h.split('.')[0] for h in hosts[:max_hosts]].append(
+            [h.split('.')[0] for h in hosts[:max_hosts]].extend(
                 [
-                    f'[(...) truncated ({len(hosts) > {max_hosts}})]'
+                    f'[(...) truncated ({len(hosts)} > {max_hosts})]'
                 ]
             )
         )
     )
-    # hostfile = os.environ.get('HOSTFILE', None)
     dist_info = {
         'DEVICE': get_torch_device(),
         'DEVICE_ID': f'{get_torch_device()}:{get_local_rank()}',
@@ -217,6 +235,8 @@ def get_dist_info(
         'WORLD_SIZE_TOTAL': get_world_size_total(),
         'WORLD_SIZE_IN_USE': get_world_size_in_use(),
     }
+    if framework is not None:
+        dist_info |= {'FRAMEWORK': framework}
     if verbose:
         log.info(
             f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
@@ -226,27 +246,49 @@ def get_dist_info(
     return dist_info
 
 
-def print_dist_setup(framework: str = 'torch') -> str:
+def print_dist_setup(
+        framework: Optional[str] = None,
+        hostfile: Optional[PathLike] = None,
+) -> str:
     rank = get_rank()
-    world_size = get_world_size()
+    wst = get_world_size(total=True)
+    wsa = get_world_size(in_use=True)
+    # world_size = get_world_size()
     local_rank = get_local_rank()
     gpus_per_node = get_gpus_per_node()
-    # num_nodes = get_num_nodes()
+    hostfile = get_hostfile_with_fallback(hostfile)
+    num_nodes = wsa // gpus_per_node
+    num_nodes_from_hostfile = get_num_nodes()
+    # assert num_nodes_from_hostfile == num_nodes
+    if num_nodes != num_nodes_from_hostfile:
+        log.critical(f'{num_nodes=} vs. {num_nodes_from_hostfile=} ??')
     node = get_node_index()
     device = None
-    if framework.lower() in {'pt', 'torch', 'pytorch'}:
-        device = get_torch_device()
+    # if framework.lower() in {'pt', 'torch', 'pytorch'}:
+    device = get_torch_device()
     rank_len = len(str(rank))
-    ws_len = len(str(world_size))
+    ws_len = len(str(wsa))
     lr_len = len(str(local_rank))
     gpn_len = len(str(gpus_per_node))
-    dist_str = ''.join([
-        f'[{node=}]',
-        f'[{rank=:>{rank_len}}/{(world_size-1):<{ws_len}}]',
+    node_len = len(str(node))
+    num_nodes_len = len(str(num_nodes))
+    dist_list = [
+        f'[{device=}]',
+        f'[{rank=:>{rank_len}}/{(wsa-1):<{ws_len}}]',
         f'[{local_rank=:>{lr_len}}/{gpus_per_node-1:<{gpn_len}}]',
-        f'[{device=}]'
-    ])
-    log.info(f'{dist_str}')
+        f'[{node=:>{node_len}}/{(num_nodes-1):<{num_nodes_len}}]',
+    ]
+    if framework is not None:
+        dist_list.append(f'[{framework=}]')
+    dist_str = ''.join(dist_list)
+    if wsa > 1000 and rank == 0:
+        log.warning(
+            f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
+        )
+    else:
+        log.info(f'{dist_str}')
+    if rank == 0:
+        log.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
     return dist_str
 
 
@@ -269,69 +311,42 @@ def init_deepspeed():
     try:
         import deepspeed  # type:ignore noqa
         deepspeed.init_distributed()
-    except (ImportError, ModuleNotFoundError) as exc:
+    except Exception as exc:
         log.warning('Unable to `import deepspeed`. Exiting!')
         log.exception(exc)
         raise exc
 
 
 def get_torch_device() -> str:
-    if torch.cuda.is_available():
-        return 'cuda'
-    if (
-            torch.backends.mps.is_available()
-            and torch.get_default_dtype() != torch.float64
-    ):
-        return 'mps'
-    return (
-        'xpu' if ipex is not None and ACCELERATOR_TYPE == 'IntelGPU'
-        else 'cpu'
-    )
-    # if ipex is not None and ACCELERATOR_TYPE == 'IntelGPU':
+    # if ipex is not None:
     #     return 'xpu'
+    # if torch.cuda.is_available():
+    #     return 'cuda'
+    # if (
+    #         torch.backends.mps.is_available()  # type:ignore
+    #         and (torch.get_default_dtype() != torch.float64)
+    # ):
+    #     return 'mps'
     # return 'cpu'
-    # try:
-    #     import intel_extension_for_pytorch as ipex  # type:ignore noqa
-    #     return "xpu"
-    # except (ImportError, ModuleNotFoundError):
-    #     return 'cpu'
-    # try:
-    #     import intel_extension_for_pytorch as ipex  # type:ignore noqa
-    #     device = "xpu"
-    # except (ImportError, ModuleNotFoundError):
-    #     # if torch.cuda.is_available():
-    #     device = 'cuda' if torch.cuda.is_available() else (
-    #         'mps' if (
-    #             torch.backends.mps.is_available()
-    #             and torch.get_default_dtype() != torch.float64
-    #         )
-    #         else 'cpu'
-    #     )
-    # return device
+    return 'xpu' if ipex is not None else (
+        'cuda' if torch.cuda.is_available() else (
+            'mps' if (
+                (
+                    torch.backends.mps.is_availble()  # type:ignore
+                    and torch.get_default_dtype() != torch.float64
+                )
+            ) else 'cpu'
+        )
+    )
 
 
 def get_torch_backend() -> str:
-    # backend = 'nccl' if torch.cuda.is_available() else (
-    #     'ccl' if (
-    #         ipex is not None and ACCELERATOR_TYPE == 'IntelGPU'
-    #     ) else 'gloo'
-    # )
-    backend = 'nccl' if torch.cuda.is_available() else None
-    if backend is None:
-        try:
-            import oneccl_bindings_for_pytorch  # type:ignore noqa
-            import intel_extension_for_pytorch as ipex  # type:ignore noqa
-            backend = "ccl"  # if backend is None else str(backend)
-        except Exception:  # (ImportError, ModuleNotFoundError):
-            try:
-                import torch_ccl  # type: ignore  noqa
-                backend = 'ccl'
-            except Exception:  # (ImportError, ModuleNotFoundError):
-                backend = 'gloo'
-            # if torch.cuda.is_available():
-            #     backend = 'nccl' if backend is None else str(backend)
-            # else:
-            # backend = 'gloo'  # if backend is None else str(backend)
+    backend = (
+        'nccl' if torch.cuda.is_available() else (
+            'ccl' if (ipex is not None and tccl is not None)
+            else 'gloo'
+        )
+    )
     if backend is None:
         log.critical(f'Using "gloo" backend on {get_torch_device()}')
         backend = 'gloo'
@@ -590,8 +605,13 @@ def setup_torch(
         _ = get_dist_info(verbose=True)
         if backend in {'ds', 'deepspeed', 'dspeed'}:
             git_ds_info()
+        if oneccl_bpt is not None:
+            log.info(f'Using oneccl_bindings from: {oneccl_bpt.__file__}')
+        if ipex is not None:
+            log.info(f'Using ipex from: {ipex.__file__}')
         log.info(
-            f"Using {device=} with {backend=} + '{get_torch_backend()}' "
+            f"[{rank}/{world_size}] Using {device=} with {backend=} "
+            f"+ '{get_torch_backend()}' "
             "for distributed training."
         )
     _ = print_dist_setup()
@@ -612,7 +632,8 @@ def setup_tensorflow(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd  # type:ignore noqa
-    hvd.init() if not hvd.is_initialized() else None
+    _ = None if hvd.is_initialized() else hvd.init()
+    # hvd.init() if not hvd.is_initialized() else None
     if precision in [
             'fp16',
             'float16',
@@ -649,11 +670,6 @@ def setup_tensorflow(
                 'GPU',
             )
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            # if hvd.rank() == 0:
-            #     log.info(
-            #         f'{len(gpus)}, Physical GPUs and '
-            #         f'{len(logical_gpus)} Logical GPUs'
-            #     )
         except RuntimeError as e:
             log.info(e)
     elif cpus:
@@ -680,7 +696,7 @@ def setup_tensorflow(
     return RANK
 
 
-def include_file(f: os.PathLike | str | Path):
+def include_file(f: PathLike):
     fpath = Path(f)
     return fpath.suffix in {
         '.py',
@@ -808,7 +824,6 @@ def setup_wandb(
 
 def run_bash_command(cmd: str) -> Any:
     import subprocess
-
     process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
     if error:
@@ -817,7 +832,7 @@ def run_bash_command(cmd: str) -> Any:
         return output
 
 
-def inspect_cobalt_running_job() -> dict[str, str | os.PathLike]:
+def inspect_cobalt_running_job() -> dict[str, str | PathLike]:
     running_job_file = Path('/var/tmp/cobalt-running-job')
     with running_job_file.open('r') as f:
         tmp = f.readlines()
@@ -842,7 +857,9 @@ def get_cobalt_nodefile() -> Path:
     return Path(cobalt_nodefile)
 
 
-def get_nodes_from_hostfile(hostfile: os.PathLike) -> list[str]:
+def get_nodes_from_hostfile(
+        hostfile: PathLike,
+) -> list[str]:
     # cobalt_nodefile = get_cobalt_nodefile()
     fpath = Path(hostfile)
     assert fpath.is_file()
@@ -856,7 +873,7 @@ def get_node_index() -> int:
 
 
 def get_hostfile_with_fallback(
-        hostfile: Optional[str | os.PathLike | Path] = None
+        hostfile: Optional[PathLike] = None
 ) -> Path:
     if hostfile is None:
         hfp = (
@@ -879,10 +896,10 @@ def get_hostfile_with_fallback(
     # hostfile, hosts = get_hosts_from_hostfile(hostfile)
     # hosts = [h.split('.')[0] for h in hosts]
     os.environ['PBS_NODEFILE'] = hostfile  # hfp.as_posix()
-    return hfp
+    return Path(hfp)
 
 
-def get_num_nodes(hostfile: Optional[str | os.PathLike | Path] = None) -> int:
+def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
     hfp = get_hostfile_with_fallback(hostfile)
     hosts = [h.split('.')[0] for h in get_nodes_from_hostfile(hfp)]
     return len(hosts)
@@ -894,56 +911,27 @@ def get_cpus_per_node() -> int:
 
 
 def get_gpus_per_node(_assert: Optional[bool] = None) -> int:
-    import torch
-    gpus_per_node = None
-    # try:
-    #     import intel_extension_for_pytorch as ipex  # type:ignore  noqa
-    #     try:
-    #         import oneccl_bindings_for_pytorch  # type:ignore noqa
-    #     except Exception:
-    #         import torch_ccl  # type: ignore  noqa
     if torch.cuda.is_available():
-        gpus_per_node = torch.cuda.device_count()
-    else:
-        # if ipex is not None:  # and ACCELERATOR_TYPE == 'IntelGPU':
-        try:
-            import intel_extension_for_pytorch as ipex
-            gpus_per_node = ipex.xpu.device_count()
-        except Exception as exc:
-            log.exception(exc)
-            raise exc
-    # except Exception:  # (ImportError, ModuleNotFoundError):
+        return torch.cuda.device_count()
+    if ipex is not None:
+        return ipex.xpu.device_count()
     if _assert:
-        try:  # type:ignore noqa
-            # import sh  # pyright: ignore
-            from sh import wc as sh_wc  # pyright: ignore
-            from sh import nvidia_smi as sh_nvidia_smi  # pyright: ignore
-            gpus_per_node = int(
-                sh_wc(
-                    "-l",
-                    _in=sh_nvidia_smi("-L")
-                ).rstrip("\n")
-            )
-        except Exception:
-            if torch.cuda.is_available():
-                gpus_per_node = torch.cuda.device_count()
-            else:
-                gpus_per_node = int(run_bash_command('nvidia-smi -L | wc -l'))
-            raise ValueError('No GPUs found. Exiting!')
-    # if gpus_per_node is None:
-    #     ncpus = get_cpus_per_node()
-    #     return ncpus
-    # return gpus_per_node
-    return get_cpus_per_node() if gpus_per_node is None else gpus_per_node
+        raise RuntimeError(
+            'No {X, G}pus found; but _assert specified. Returning !!'
+        )
+    cpus_per_node = get_cpus_per_node()
+    log.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
+    return cpus_per_node
 
 
 def get_pbs_launch_cmd(
         ngpus: Optional[int] = None,
         nhosts: Optional[int] = None,
         ngpu_per_host: Optional[int] = None,
-        hostfile: Optional[str | os.PathLike | Path] = None,
+        hostfile: Optional[PathLike] = None,
 ) -> str:
-    pass
+    # TODO: Move launch_cmd construction here
+    return ''
 
 
 def get_pbs_jobid_from_qstat() -> int:
@@ -972,7 +960,7 @@ def get_pbs_nodefile_from_qstat() -> Path:
 
 
 def get_pbs_launch_info(
-        hostfile: Optional[str | Path | os.PathLike] = None
+        hostfile: Optional[PathLike] = None
 ) -> dict:
     if hostfile is None:
         hostfile = get_pbs_nodefile_from_qstat()
@@ -1025,6 +1013,8 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
     # dist_info.pop('')
     # pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
     os.environ |= pbsenv
+    if verbose and get_rank() == 0:
+        log.debug(f'pbsenv={json.dumps(pbsenv, indent=4, sort_keys=True)}')
     return pbsenv
 
 
