@@ -1,3 +1,5 @@
+*.hydra
+*hostfile*
 src/logs/*
 src/outputs/*
 src/ezpz/logs/*

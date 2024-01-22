@@ -54,6 +54,7 @@ BACKENDS = {
 SCHEDULERS = {
     'ALCF': 'PBS',
     'NERSC': 'SLURM',
+    'LOCAL': 'LOCAL',
 }
 
 
@@ -77,7 +78,9 @@ def get_scheduler() -> str:
         return SCHEDULERS['ALCF']
     elif machine.lower() in ['nersc', 'perlmutter']:
         return SCHEDULERS['NERSC']
-    raise RuntimeError(f'Unknown {machine=}')
+    else:
+        return 'LOCAL'
+    # raise RuntimeError(f'Unknown {machine=}')
 
 
 def get_logging_config() -> dict:

@@ -18,7 +18,12 @@ from ezpz.dist import (
     get_pbs_env,
     get_pbs_launch_info,
 )
-from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS, PathLike
+from ezpz.configs import (
+    get_logging_config,
+    get_scheduler,
+    SCHEDULERS,
+    PathLike
+)
 
 log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
@@ -30,7 +35,8 @@ SCHEDULER = get_scheduler()
 
 def check_scheduler(scheduler: Optional[str] = None) -> bool:
     scheduler = SCHEDULER if scheduler is None else scheduler
-    assert scheduler.upper() in SCHEDULERS.values()
+    if scheduler is not None and len(scheduler) > 0:
+        assert scheduler.upper() in SCHEDULERS.values()
     if scheduler.lower() != 'pbs':
         raise TypeError(f'{scheduler} not yet implemented!')
     return True
@@ -147,7 +153,6 @@ def save_to_dotenv_file(
     return denvf2
 
 
-
 def write_launch_shell_script():
     contents = """
     #!/bin/bash --login\n
@@ -226,7 +231,7 @@ def savejobenv_yaml(
 def savejobenv():
     jobenv = get_jobenv()
     assert len(jobenv.keys()) > 0
-    jobid = get_jobid()
+    # jobid = get_jobid()
     jobdir = get_jobdir_from_env()
     assert jobenv is not None
     assert jobdir is not None
