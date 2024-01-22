@@ -9,15 +9,16 @@ import json
 import yaml
 from pathlib import Path
 from typing import Optional
-from rich import print_json
+# from rich import print_json
 
 from ezpz import (
     get_dist_info,
 )
 from ezpz.dist import (
     get_pbs_env,
+    get_pbs_launch_info,
 )
-from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS
+from ezpz.configs import get_logging_config, get_scheduler, SCHEDULERS, PathLike
 
 log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
@@ -50,9 +51,10 @@ def get_jobid() -> str:
 
 
 def get_jobfile_ext(ext: str) -> Path:
-    jobid = get_jobid()
+    # jobid = get_jobid()
     jobdir = get_jobdir_from_env()
-    return jobdir.joinpath(f'{SCHEDULER}-{jobid}.{ext}')
+    # return jobdir.joinpath(f'{SCHEDULER}-{jobid}.{ext}')
+    return jobdir.joinpath(f'jobenv.{ext}')
 
 
 def get_jobfile_sh() -> Path:
@@ -111,6 +113,39 @@ def add_to_jobslog():
             f'already in {jobslog_file.as_posix()}, '
             f'not appending !!'
         )
+
+
+def save_to_dotenv_file(
+        jobenv: Optional[dict] = None,
+) -> Path:
+    jobenv = get_jobenv() if jobenv is None else jobenv
+    if (
+            'LAUNCH_CMD' in jobenv and 'launch_cmd' in jobenv
+            and jobenv['launch_cmd'] != jobenv['LAUNCH_CMD']
+    ):
+        jobenv['launch_cmd'] = jobenv['LAUNCH_CMD']
+    denvf1 = Path(get_jobdir_from_env()).joinpath('.env')
+    denvf2 = Path(os.getcwd()).joinpath('.env')
+    for denvf in [denvf1, denvf2]:
+        log.info(
+            f'Saving job env to dot-env (.env) file in '
+            f'{denvf.parent.as_posix()}/.env'
+        )
+        launch_cmd = jobenv.get('LAUNCH_CMD', get_jobenv()['LAUNCH_CMD'])
+        assert launch_cmd is not None
+        # if launch_cmd is not None:
+        with denvf.open('w') as f:
+            f.write('#!/bin/bash --login\n')
+            for key, val in jobenv.items():
+                f.write(f'{key.upper()}="{val}"\n')
+            f.write(f'echo "creating alias launch={launch_cmd}"\n')
+            f.write(f'alias launch="{launch_cmd}"\n')
+    log.warning(
+        f'To use `launch` alias, be sure to: '
+        f'`source {denvf2.as_posix()}'
+    )
+    return denvf2
+
 
 
 def write_launch_shell_script():
@@ -195,7 +230,7 @@ def savejobenv():
     jobdir = get_jobdir_from_env()
     assert jobenv is not None
     assert jobdir is not None
-    from rich import print_json
+    # from rich import print_json
     # -------------------------------------------------------------------
     # Append {jobdir} as a new line at the end of ~/{scheduler}-jobs.log
     # where:
@@ -212,9 +247,10 @@ def savejobenv():
         os.environ[key] = f'{val}'
     log.info(
         f'Writing {SCHEDULER} env vars to '
-        f'{jobdir} / {SCHEDULER}-{jobid}' + '{.sh, .yaml, .json}'
+        f'{jobdir} / jobenv' + '{.sh, .yaml, .json}'
     )
-    print_json(data=jobenv, indent=4, sort_keys=True)
+    # print_json(data=jobenv, indent=4, sort_keys=True)
+    log.info(f'jobenv={json.dumps(jobenv, indent=4, sort_keys=True)}')
     # ---------------------------------------------------
 
 
@@ -234,38 +270,26 @@ def get_jobdir_from_jobslog(
     return jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
 
 
-def save_to_dotenv_file(jobenv: dict) -> Path:
-    dotenv_file = Path(os.getcwd()).joinpath('.env')
-    log.info(
-        f'Saving job env to dot-env (.env) file in '
-        f'{dotenv_file.parent.as_posix()}/.env'
-    )
-    with dotenv_file.open('w') as f:
-        f.write('#!/bin/bash --login\n')
-        for key, val in jobenv.items():
-            f.write(f'{key.upper()}="{val}"\n')
-        launch_cmd = jobenv.get('LAUNCH_CMD', jobenv.get('launch_cmd'))
-        if launch_cmd is not None:
-            log.warning(
-                f'Caught `launch={launch_cmd}` from env!\n'
-                f'To use `launch` alias, be sure to: '
-                f'`source {dotenv_file.as_posix()}'
-            )
-            f.write(f'echo "creating alias launch={launch_cmd}"\n')
-            f.write(f'alias launch="{launch_cmd}"\n')
-    return dotenv_file
+def loadjobenv_from_yaml(jobdir: Optional[PathLike] = None) -> dict:
+    jobdir = Path(get_jobdir_from_jobslog(-1) if jobdir is None else jobdir)
+    assert jobdir.is_dir()
+    if len((jobenv_files_yaml := list(jobdir.rglob('*.yaml')))) == 0:
+        raise FileNotFoundError(
+            f'Unable to find `.yaml` file(s) in `{jobdir=}`'
+        )
+    jobenv_file = jobenv_files_yaml[0]
+    with jobenv_file.open('r') as stream:
+        jobenv = dict(yaml.safe_load(stream))
+    return jobenv
 
 
-def loadjobenv() -> dict:
+def loadjobenv(jobdir: Optional[PathLike] = None) -> dict:
     jobenv = {}
-    last_jobdir = Path(get_jobdir_from_jobslog(-1))
-    assert last_jobdir.is_dir()
-    import yaml
-    if len((jobenv_files_yaml := list(last_jobdir.rglob('*.yaml')))) > 0:
-        jobenv_file = jobenv_files_yaml[0]
-        with jobenv_file.open('r') as stream:
-            jobenv = dict(yaml.safe_load(stream))
-    from ezpz.dist import get_pbs_launch_info, get_dist_info
+    jobdir = Path(
+        get_jobdir_from_jobslog(-1) if jobdir is None else jobdir
+    )
+    assert jobdir.is_dir()
+    jobenv = loadjobenv_from_yaml(jobdir=jobdir)
     jobenv |= get_pbs_launch_info()
     jobenv |= {
         f'{k.upper()}': f'{v}' for k, v in (
@@ -278,7 +302,8 @@ def loadjobenv() -> dict:
             else f'{val}'
         )
     dotenv_file = save_to_dotenv_file(jobenv)
-    print_json(data=jobenv, indent=4, sort_keys=True)
+    # print_json(data=jobenv, indent=4, sort_keys=True)
+    log.info(f'jobenv={json.dumps(jobenv, indent=4, sort_keys=True)}')
     log.critical(
         '\n'.join(
             [
