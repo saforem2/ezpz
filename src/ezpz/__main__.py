@@ -13,23 +13,24 @@ from __future__ import (
 )
 import logging
 import os
+import time
 
 import hydra
 from hydra.utils import instantiate
+import numpy as np
 from omegaconf.dictconfig import DictConfig
 
-import time
 from ezpz import (
     TrainConfig,
+    get_gpus_per_node,
+    get_local_rank,
+    get_rank,
+    get_torch_backend,
+    get_torch_device,
+    get_world_size,
     setup,
     setup_wandb,
     timeitlogit,
-    get_rank,
-    get_torch_device,
-    get_torch_backend,
-    get_world_size,
-    get_local_rank,
-    get_gpus_per_node,
 )
 
 try:
@@ -62,29 +63,29 @@ def test_torch_tensor():
 @timeitlogit(verbose=True)
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> int:
+    rank = setup(
+        framework=cfg.get('framework'),
+        backend=cfg.get('backend'),
+        seed=(
+            cfg.get('seed') if cfg.get('seed') is not None
+            else np.random.randint(0, 2 ** 16)
+        ),
+    )
+    log_level = "CRITICAL" if rank != 0 else "INFO"
+    log.setLevel(log_level)
+    if rank == 0 and cfg.get('use_wandb') and wandb is not None:
+        run = setup_wandb(
+            config=cfg,
+            project_name=cfg.get('wandb_project_name'),
+        )
     config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
-    rank = setup(
-        framework=config.framework,
-        backend=config.backend,
-        seed=config.seed
-    )
     t1 = time.perf_counter()
     t0 = os.environ.get('START_TIME', None)
     # if t0 is not None:
     assert t0 is not None
     startup_time = t1 - float(t0)
     run = None
-    if rank != 0:
-        log.setLevel("CRITICAL")
-    else:
-        if config.use_wandb and wandb is not None:
-            run = setup_wandb(
-                config=cfg,
-                project_name=config.wandb_project_name,
-            )
-        log.info(f"{config=}")
-        log.info(f'Output dir: {os.getcwd()}')
     if (
             wandb is not None
             and run is not None
@@ -94,6 +95,8 @@ def main(cfg: DictConfig) -> int:
         assert run is not None
         from rich.emoji import Emoji
         from rich.text import Text
+        log.info(f"{config=}")
+        log.info(f'Output dir: {os.getcwd()}')
         log.warning(f'Startup time: {startup_time}')
         wandb.log({'startup_time': startup_time})
         log.warning(
