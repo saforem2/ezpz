@@ -44,10 +44,10 @@ try:
 except Exception:
     oneccl_bpt = None
 
-try:
-    import torch_ccl as tccl  # type:ignore
-except Exception:
-    tccl = None
+# try:
+#     import torch_ccl as tccl  # type:ignore
+# except Exception:
+#     tccl = None
 
     # _ = oneccl_bpt.__file__
     # ACCELERATOR_TYPE = "IntelGPU"
@@ -373,7 +373,7 @@ def get_torch_device() -> str:
 def get_torch_backend() -> str:
     backend = (
         'nccl' if torch.cuda.is_available() else (
-            'ccl' if (ipex is not None and tccl is not None)
+            'ccl' if (ipex is not None and oneccl_bpt is not None)
             else 'gloo'
         )
     )
