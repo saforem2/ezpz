@@ -44,10 +44,10 @@ try:
 except Exception:
     oneccl_bpt = None
 
-try:
-    import torch_ccl as tccl  # type:ignore
-except Exception:
-    tccl = None
+# try:
+#     import torch_ccl as tccl  # type:ignore
+# except Exception:
+#     tccl = None
 
     # _ = oneccl_bpt.__file__
     # ACCELERATOR_TYPE = "IntelGPU"
@@ -305,12 +305,12 @@ def print_dist_setup(
     if framework is not None:
         dist_list.append(f'[{framework=}]')
     dist_str = ''.join(dist_list)
+    log.info(f'{dist_str}')
     if rank == 0:
         if wsa > 1000:
             log.warning(
                 f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
             )
-        log.info(f'{dist_str}')
         log.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
         if num_nodes_from_hostfile != num_nodes:
             log.critical(
@@ -373,7 +373,7 @@ def get_torch_device() -> str:
 def get_torch_backend() -> str:
     backend = (
         'nccl' if torch.cuda.is_available() else (
-            'ccl' if (ipex is not None and tccl is not None)
+            'ccl' if (ipex is not None and oneccl_bpt is not None)
             else 'gloo'
         )
     )
