@@ -303,17 +303,31 @@ function getNumXPUs() {
 }
 
 function getNumGPUs() {
-    echo $(nvidia-smi -L | wc -l:-$(python3 -c 'import torch; print(torch.cuda.device_count())'))
+    NVIDIA_SMI_OUT=$(nvidia-smi -L | wc -l)
+    [ -n $NVIDIA_SMI_OUT ] && NGPU_PER_HOST="$NVIDIA_SMI_OUT" || NGPU_PER_HOST=$(python3 -c 'import torch; print(torch.cuda.device_count())')
+    #[ -x nvidia-smi ] && NGPU_PER_HOST=$(nvidia-smi -L | wc -l) || NGPU_PER_HOST=$(python3 -c 'import torch; print(torch.cuda.device_count())')
+    export NGPU_PER_HOST
+    # echo $(nvidia-smi -L | wc -l:-$(python3 -c 'import torch; print(torch.cuda.device_count())'))
 }
 
 function getNumHosts() {
-    echo "${NUM_HOSTS:-$(wc -l < ${HOSTFILE:-${PBS_NODEFILE}}):-${SLURM_NNODES}}}}"
+    HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+    [ -f "${HOSTFILE}" ] && NUM_HOSTS=$(wc -l < ${HOSTFILE}) || echo "No HOSTFILE found"
+    [ -z "${HOSTFILE}" ] && NUM_HOSTS="${SLURM_NNODES:-1}"
+    #echo "${NUM_HOSTS:-$(wc -l < ${HOSTFILE}):-${SLURM_NNODES}}}}"
+    # echo "NUM_HOSTS: ${NUM_HOSTS}"
+    export NUM_HOSTS
 }
 
 function writeJobInfo() {
-    NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
-    NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-${NGPU_PER_HOST:-$(nvidia-smi -L | wc -l):-$(getNumXPUs)}}
-    NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
+    getNumHosts
+    # NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
+    # NGPU_PER_HOST
+    getNumGPUs
+
+    # NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-${NGPU_PER_HOST:-$(getNumGPUs)}}
+    # NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-${NGPU_PER_HOST:-$(nvidia-smi -L | wc -l):-$(getNumXPUs)}}
+    NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
