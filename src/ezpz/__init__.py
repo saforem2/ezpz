@@ -13,9 +13,9 @@ from rich.logging import RichHandler
 from ezpz.configs import (
     # getjobenv,
     # savejobenv,
-    load_ds_config,
     command_exists,
     git_ds_info,
+    load_ds_config,
     BACKENDS,
     get_scheduler,
     print_config_tree,
