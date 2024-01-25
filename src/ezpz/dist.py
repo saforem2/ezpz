@@ -305,12 +305,12 @@ def print_dist_setup(
     if framework is not None:
         dist_list.append(f'[{framework=}]')
     dist_str = ''.join(dist_list)
+    log.info(f'{dist_str}')
     if rank == 0:
         if wsa > 1000:
             log.warning(
                 f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
             )
-        log.info(f'{dist_str}')
         log.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
         if num_nodes_from_hostfile != num_nodes:
             log.critical(
