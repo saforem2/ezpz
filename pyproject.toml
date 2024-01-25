@@ -28,6 +28,8 @@ dependencies = [
   "xarray",
   "plotext",
   "ml_dtypes",
+  "jax",
+  "jaxlib",
   "jaxtyping",
   "sh",
   # "bokeh",
