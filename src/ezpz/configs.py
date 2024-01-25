@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 import json
+import yaml
 import logging
 import os
 from pathlib import Path
@@ -81,6 +82,29 @@ def get_scheduler() -> str:
     else:
         return 'LOCAL'
     # raise RuntimeError(f'Unknown {machine=}')
+
+
+def load_ds_config(
+        fpath: Optional[Union[str, os.PathLike, Path]] = None
+) -> dict:
+    from ezpz.configs import DS_CONFIG_PATH
+    fpath = DS_CONFIG_PATH if fpath is None else fpath
+    cfgpath = Path(fpath)
+    # if get_rank() == 0:
+    #     log.info(
+    #         'Loading DeepSpeed config from: '
+    #         f'{cfgpath.resolve().as_posix()}'
+    #     )
+    if cfgpath.suffix == '.json':
+        with cfgpath.open('r') as f:
+            ds_config = json.load(f)
+        return ds_config
+    if cfgpath.suffix == '.yaml':
+        with cfgpath.open('r') as stream:
+            ds_config = dict(yaml.safe_load(stream))
+        return ds_config
+    raise TypeError('Unexpected FileType')
+
 
 
 def get_logging_config() -> dict:
@@ -186,28 +210,6 @@ def print_config(cfg: Union[dict, str]) -> None:
         console = get_console()
     # console.print_json(data=cfg, indent=4, highlight=True)
     print_json(data=cfg, console=console, indent=4, highlight=True)
-
-
-def load_ds_config(
-        fpath: Optional[Union[str, os.PathLike, Path]] = None
-) -> dict:
-    fpath = DS_CONFIG_PATH if fpath is None else fpath
-    cfgpath = Path(fpath)
-    log.info(
-        'Loading DeepSpeed config from: '
-        f'{cfgpath.resolve().as_posix()}'
-    )
-    if cfgpath.suffix == '.json':
-        import json
-        with cfgpath.open('r') as f:
-            ds_config = json.load(f)
-        return ds_config
-    if cfgpath.suffix == '.yaml':
-        import yaml
-        with cfgpath.open('r') as stream:
-            ds_config = dict(yaml.safe_load(stream))
-        return ds_config
-    raise TypeError('Unexpected FileType')
 
 
 def command_exists(cmd: str) -> bool:
