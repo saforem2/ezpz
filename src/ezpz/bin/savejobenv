@@ -286,5 +286,5 @@ setupHost > /tmp/setupHost.log 2>&1
 writeJobInfo > /tmp/writeJobInfo.log 2>&1
 setupHost
 writeJobInfo
-saveDeepSpeedEnv
+# saveDeepSpeedEnv
 # vim: ft=bash
