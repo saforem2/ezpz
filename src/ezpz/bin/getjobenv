@@ -4,6 +4,7 @@ HOSTNAME=$(hostname)
 PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
+UNKNOWN_ENV_FILE="${HOME}/.jobenv"
 
 function join_by {
     local d=${1-} f=${2-}
@@ -15,6 +16,7 @@ function join_by {
 function getPBSenv() {
     if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
         export JOBENV_FILE="${PBS_ENV_FILE}"
+        # shellcheck source=${HOME}/.pbsenv
         source "${PBS_ENV_FILE}"
         export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
     else
@@ -25,6 +27,7 @@ function getPBSenv() {
 function getCOBALTenv() {
     if [[ $(hostname) == thetagpu* ]]; then
         export JOBENV_FILE="${COBALT_ENV_FILE}"
+        # shellcheck source=${HOME}/.cobaltenv
         source "${COBALT_ENV_FILE}"
         export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
     else
@@ -35,6 +38,7 @@ function getCOBALTenv() {
 function getSLURMenv() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
+        # shellcheck source="${HOME}/.slurmenv"
         source "${SLURM_ENV_FILE}"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
     else
@@ -59,6 +63,8 @@ function getJOBenv() {
         JOBENV_FILE="${SLURM_ENV_FILE}"
         getSLURMenv
     else
+        JOBENV_FILE="${UNKNOWN_ENV_FILE}"
+
         echo "Unexpected hostname ${HOSTNAME}"
     fi
     if [[ -f "${JOBENV_FILE}" ]]; then
@@ -73,13 +79,15 @@ function getJOBenv() {
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
     export WORLD_SIZE="${NGPUS}"
-    HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
+    export HOSTS_ARR=$(/bin/cat "${HOSTFILE}")
 }
 
 function printJOBenv() {
     echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [Hosts]: "
     echo "│     • $(join_by "', '" "$HOSTS_ARR")"
+    echo "│ [Hosts]:"
+    echo "│       • ${HOSTS[*]}"
     echo "└──────────────────────────────────────────────────────────────────"
     echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [DIST INFO]: "
