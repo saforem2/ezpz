@@ -1,0 +1,43 @@
+format:
+  html:
+    callout-appearance: simple
+    code-link: true
+    code-line-numbers: false
+    toc: true
+    self-contained: false
+    toc-location: right
+    # grid:
+    #   body-width: 1150px
+    fig-responsive: true
+    anchor-sections: true
+    # highlight-style: atom-one
+    code-overflow: scroll
+    code-fold: false
+    code-copy: hover
+    code-summary: " "
+    code-tools:
+      source: repo
+      toggle: true
+      caption: none
+    html-math-method: katex
+    css:
+      - css/default.css
+      - css/callouts.css
+      - css/ansi.css
+      # - css/profile.css
+    theme:
+      dark:
+        - css/common.scss
+        - css/dark.scss
+        - css/syntax-dark.scss
+        - css/callout-cards.scss
+      light:
+        - css/common.scss
+        - css/light.scss
+        - css/syntax-light.scss
+        - css/callout-cards.scss
+    smooth-scroll: false
+    citations-hover: true
+    footnotes-hover: true
+    header-includes: |
+      <link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet" />

@@ -1,0 +1,50 @@
+title: Sam Foreman
+date: last-modified
+# date: today
+author-title: ""
+affiliation-title: ""
+published-title: ""
+modified-title: ""
+title-block-categories: false
+number-sections: false
+bibliography: references.bib
+# appendix-cite-as: display
+favicon: "favicon.svg"
+# twitter-card: true
+site-url: "https://samforeman.me"
+google-scholar: true
+citeproc: true
+# filters:
+#   - lightbox
+# lightbox: auto
+project:
+  render:
+    - index.qmd
+    - qmd/**/*.qmd
+    # - qmd/blog/*.qmd
+    # - qmd/ezpz/*.qmd
+    # - qmd/aurora-gpt/megatron-ds-intel.qmd
+  type: website
+  output-dir: "docs"
+  preview:
+    port: 4609
+author:
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  email: foremans@anl.gov
+  # affiliation: Argonne National Laboratory
+  # affiliation-url: https://alcf.anl.gov/about/people/sam-foreman
+citation:
+   author: Sam Foreman
+   type: webpage
+   title: "Personal Website"
+   url: https://samforeman.me
+execute:
+  keep-ipynb: true
+  # keep-md: true
+  freeze: auto
+
+metadata-files:
+  - ./quarto/_website.yml
+  - ./quarto/_format.yml
+  # - _reveal.yml
