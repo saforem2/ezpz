@@ -213,9 +213,9 @@ function getNumGPUsNVIDIA() {
 }
 
 function getNumGPUs() {
-    if [[ "$(hostname)" == "x4*" || "$(hostname) == x1*" ]]; then
+    if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         export NGPU_PER_HOST=12
-    elif [[ "$(hostname)" == "x3*" ]]; then
+    elif [[ $(hostname) == x3* ]]; then
         getNumGPUsNVIDIA
     else
         echo "Unknown host $(hostname)"
