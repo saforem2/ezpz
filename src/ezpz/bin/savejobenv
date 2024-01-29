@@ -46,7 +46,7 @@ function getCOBALT_NODEFILE() {
 #         export HOSTFILE="${COBALT_NODEFILE}"
 #         export JOBENV_FILE="${COBALT_ENV_FILE}"
 #         sed -i 's/^COBALT/export\ COBALT/g' "${COBALT_ENV_FILE}"
-#         export LAUNCH_CMD="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"  #  "$@"
+#         export DIST_LAUNCH="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"  #  "$@"
 #     fi
 # }
 # -------------------------------------------------------------------------------
@@ -62,7 +62,7 @@ function savePBSenv() {
         export HOSTFILE="${PBS_NODEFILE}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
         sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
-        export LAUNCH_CMD="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
+        export DIST_LAUNCH="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
     fi
 }
 
@@ -81,7 +81,7 @@ function saveSLURMenv() {
         printf "%s\n" "${SLURM_NODES[@]}" > $HOSTFILE
         sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
         sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
-        export LAUNCH_CMD="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
+        export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
     fi
 }
 
@@ -176,9 +176,9 @@ function setup() {
         echo "alias LAUNCH=${LAUNCH}"
     } >> "${JOBENV_FILE}"
 
-    export LAUNCH="${LAUNCH_CMD}"
+    export LAUNCH="${DIST_LAUNCH}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
-    alias launch="${LAUNCH}"
+    alias launch="${DIST_LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
     echo "│ [DIST INFO]:"
     echo "│   • Writing Job info to ${JOBENV_FILE}"
@@ -255,7 +255,7 @@ function writeJobInfo() {
         echo "export NGPUS=${NGPUS}"
         echo "alias LAUNCH='${LAUNCH}'"
     } >> "${JOBENV_FILE}"
-    export LAUNCH="${LAUNCH_CMD}"
+    export LAUNCH="${DIST_LAUNCH}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
     echo "┌───────────────────────────────────────────────────────────────────"
@@ -265,17 +265,21 @@ function writeJobInfo() {
     echo "│     • NHOSTS: $NHOSTS "
     echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
     echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
+    echo "└──────────────────────────────────────────────────────────────────"
+    echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [Hosts]:"
     echo "│       • ${HOSTS[*]}"
     printHosts
-    echo "│ [Launch]:"
-    printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${LAUNCH}"
-    echo "│       to launch job"
-    echo "└───────────────────────────────────────────────────────────────────"
+    echo "└──────────────────────────────────────────────────────────────────"
     echo "┌────────────────────────────────────────────────────────────────────────────────"
     echo "│ YOU ARE HERE: $(whereAmI)"
     echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
     echo "└────────────────────────────────────────────────────────────────────────────────"
+    echo "┌──────────────────────────────────────────────────────────────────"
+    echo "│ [Launch]:"
+    printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${LAUNCH}"
+    echo "│       to launch job"
+    echo "└───────────────────────────────────────────────────────────────────"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
