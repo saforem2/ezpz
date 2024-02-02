@@ -87,11 +87,8 @@ function getJOBenv() {
 
 function printHosts() {
     counter=0
-    # while read -r HOSTFILE; do
     for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
         printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
-    # printf "\e[1;34m%s\e[0m\n
-        # echo "│     • [host:${counter}] - ${f}" # && /bin/cat "${f}" && echo 
         counter=$((counter+1))
     done
 }
@@ -107,7 +104,6 @@ function printJOBenv() {
     HOSTS=$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")
     echo "┌──────────────────────────────────────────────────────────────────"
     echo "│ [Hosts]: "
-    # echo "│     • ${HOSTS[*]}"
     printHosts
     # echo "│     • $(join_by "', '" "$HOSTS_ARR")"
     #  |& tee combined-dust.log

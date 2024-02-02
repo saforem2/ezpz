@@ -234,6 +234,14 @@ function getNumHosts() {
     # [ -n "${HOSTFILE}" ] && export NHOSTS=$(wc -l < $HOSTFILE) || export NHOSTS=${SLURM_NNODES:-1}
 }
 
+function printHosts() {
+    counter=0
+    for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
+        printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
+        counter=$((counter+1))
+    done
+}
+
 function writeJobInfo() {
     getNumHosts
     getNumGPUs
