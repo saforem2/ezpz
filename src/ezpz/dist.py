@@ -750,22 +750,18 @@ def get_machine(hostname: Optional[str] = None) -> str:
                 log.warning('Unable to determine hostname!')
                 hostname = 'unknown'
     if hostname.startswith('theta'):
-        machine = 'ThetaGPU'
-    elif hostname.startswith('x1'):
-        machine = 'SunSpot'
-    elif hostname.startswith('x3'):
-        machine = 'Polaris'
-    elif hostname.startswith('x4'):
-        machine = 'Aurora'
-    elif hostname.startswith('login'):
-        machine = 'NERSC'
-    elif hostname.startswith('nid'):
-        machine = 'Perlmutter'
-    else:
-        machine = hostname
-        # if get_rank() == 0:
-        #     log.warning(f'Unknown machine, setting {machine=}')
-    return machine
+        return 'ThetaGPU'
+    if hostname.startswith('x1'):
+        return 'SunSpot'
+    if hostname.startswith('x3'):
+        return 'Polaris'
+    if hostname.startswith('x4'):
+        return 'Aurora'
+    if hostname.startswith('login'):
+        return 'NERSC'
+    if hostname.startswith('nid'):
+        return 'Perlmutter'
+    return f'{hostname}'
 
 
 def setup_wandb(
@@ -782,7 +778,10 @@ def setup_wandb(
             'WB_PROJECT',
             os.environ.get(
                 'WANDB_PROJECT',
-                os.environ.get("WB_PROJECT_NAME", None)
+                os.environ.get(
+                    "WB_PROJECT_NAME",
+                    'ezpz'
+                )
             )
         )
     )
@@ -972,17 +971,23 @@ def get_cpus_per_node() -> int:
 
 
 def get_gpus_per_node() -> int:
-    if torch.cuda.is_available():
-        return torch.cuda.device_count()
-    if ipex is not None:
-        return ipex.xpu.device_count()
+    # return torch.cuda.device_count() if torch.cuda.is_available() else (
+    #     (
+    #         ipex.xpu.device_count() if ipex is not None else (
+    #             get_cpus_per_node()
+    #         )
+    #     )
+    # )
     # if _assert:
     #     raise RuntimeError(
     #         'No {X, G}pus found; but _assert specified. Returning !!'
     #     )
-    cpus_per_node = get_cpus_per_node()
     # log.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
-    return cpus_per_node
+    if torch.cuda.is_available():
+        return torch.cuda.device_count()
+    if ipex is not None:
+        return ipex.xpu.device_count()
+    return get_cpus_per_node()
 
 
 def get_pbs_launch_cmd(
