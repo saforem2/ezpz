@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple
-import warnings
+# import warnings
 
 # import opinionated
 import matplotlib.pyplot as plt
@@ -22,9 +22,9 @@ import xarray as xr
 # import tensorflow as tf
 
 try:
-    import opinionated
+    import ambivalent
     # from toolbox import set_plot_style
-    from opinionated import STYLES
+    from ambivalent import STYLES
 except (ImportError, ModuleNotFoundError):
     STYLES = {}
 
