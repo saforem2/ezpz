@@ -8,6 +8,7 @@ import json
 import yaml
 import logging
 import os
+import shutil
 from pathlib import Path
 import subprocess
 from typing import Any, Callable, Optional, Sequence, Union
@@ -55,7 +56,7 @@ BACKENDS = {
 SCHEDULERS = {
     'ALCF': 'PBS',
     'NERSC': 'SLURM',
-    'LOCAL': 'LOCAL',
+    'LOCALHOST': 'NONE',
 }
 
 
@@ -70,6 +71,17 @@ def getjobenv_dep():
 def savejobenv_dep():
     print(SAVEJOBENV)
     return SAVEJOBENV
+
+
+def cmd_exists(cmd: str) -> bool:
+    """Check whether command exists.
+
+    >>> cmd_exists('ls')
+    True
+    >>> cmd_exists('hostname')
+    True
+    """
+    return shutil.which(cmd) is not None
 
 
 def get_scheduler() -> str:
@@ -104,7 +116,6 @@ def load_ds_config(
             ds_config = dict(yaml.safe_load(stream))
         return ds_config
     raise TypeError('Unexpected FileType')
-
 
 
 def get_logging_config() -> dict:
