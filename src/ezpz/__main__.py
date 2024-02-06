@@ -12,6 +12,7 @@ from __future__ import (
     unicode_literals,
 )
 import logging
+import logging.config
 import os
 import time
 
@@ -21,6 +22,7 @@ import numpy as np
 from omegaconf.dictconfig import DictConfig
 
 from ezpz import (
+    get_logging_config,
     TrainConfig,
     get_gpus_per_node,
     get_local_rank,
@@ -39,7 +41,10 @@ except (ImportError, ModuleNotFoundError):
     wandb = None
 
 
+log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
+
+log.setLevel('INFO')
 
 RANK = get_rank()
 DEVICE = get_torch_device()
