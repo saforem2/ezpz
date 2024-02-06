@@ -6,6 +6,7 @@ Contains methods for initializing distributed communication.
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import logging
+import logging.config
 import os
 from pathlib import Path
 import time
@@ -13,11 +14,6 @@ from functools import wraps
 from typing import Any, Callable, Optional
 import socket
 import json
-# from enrich.console import get_console
-# from rich import print_json
-# from rich.logging import RichHandler
-# from rich.style import Style
-# from rich.text import Text
 
 import torch
 import torch.distributed as dist
@@ -26,7 +22,14 @@ from datetime import timedelta
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
-from ezpz.configs import FRAMEWORKS, HERE, git_ds_info, PathLike, get_scheduler
+from ezpz.configs import (
+    FRAMEWORKS,
+    HERE,
+    git_ds_info,
+    PathLike,
+    get_scheduler,
+    get_logging_config,
+)
 
 try:
     import wandb
@@ -44,13 +47,14 @@ try:
 except Exception:
     oneccl_bpt = None
 
-# try:
-#     import torch_ccl as tccl  # type:ignore
-# except Exception:
-#     tccl = None
 
-    # _ = oneccl_bpt.__file__
-    # ACCELERATOR_TYPE = "IntelGPU"
+os.environ['COLORTERM'] = 'truecolor'
+log_config = logging.config.dictConfig(get_logging_config())
+log = logging.getLogger(__name__)
+log.setLevel('INFO')
+logging.getLogger('sh').setLevel('WARNING')
+
+
 ACCELERATOR_TYPE = "IntelGPU" if ipex is not None else (
     "NvidiaGPU" if (
         torch.cuda.is_available() and torch.cuda.device_count() > 0
@@ -59,29 +63,6 @@ ACCELERATOR_TYPE = "IntelGPU" if ipex is not None else (
         else "CPU"
     )
 )
-# ACCELERATOR_TYPE = (
-#     "NvidiaGPU" if (
-#         torch.cuda.is_available() and torch.cuda.device_count() > 0
-#     ) else (
-#         "MPS" if torch.backends.mps.is_available()    # type:ignore
-#         else "CPU"
-#     )
-# )
-# if ACCELERATOR_TYPE is None:
-#     try:
-#         import intel_extension_for_pytorch as ipex        # type:ignore
-#         import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore
-#         _ = oneccl_bpt.__file__
-#         ACCELERATOR_TYPE = "IntelGPU"
-#     except Exception:
-#         ACCELERATOR_TYPE = (
-#             "MPS" if torch.backends.mps.is_available()    # type:ignore
-#             else "CPU"
-#         )
-
-log = logging.getLogger(__name__)
-logging.getLogger('sh').setLevel('WARNING')
-
 
 
 def seed_everything(seed: int):
@@ -258,7 +239,7 @@ def get_dist_info(
             f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
         )
     if (
-            wandb is not None 
+            wandb is not None
             and wandb.run is not None
             and 'DIST_INFO' not in wandb.run.config
     ):
@@ -348,16 +329,9 @@ def init_deepspeed():
 
 
 def get_torch_device() -> str:
-    # if ipex is not None:
-    #     return 'xpu'
-    # if torch.cuda.is_available():
-    #     return 'cuda'
-    # if (
-    #         torch.backends.mps.is_available()  # type:ignore
-    #         and (torch.get_default_dtype() != torch.float64)
-    # ):
-    #     return 'mps'
-    # return 'cpu'
+    if (tdevice := os.environ.get('TORCH_DEVICE')) is not None:
+        assert tdevice is not None
+        return tdevice
     return 'xpu' if ipex is not None else (
         'cuda' if torch.cuda.is_available() else (
             'mps' if (
@@ -386,19 +360,7 @@ def get_torch_backend() -> str:
 def init_process_group(
         rank: int | str,
         world_size: int | str,
-        # backend: Optional[str] = None,
 ) -> None:
-    # import torch
-    # import torch.distributed as dist
-    # try:
-    #     import oneccl_bindings_for_pytorch
-    #     import intel_extension_for_pytorch as ipex
-    #     backend = "ccl" if backend is None else str(backend)
-    # except (ImportError, ModuleNotFoundError):
-    #     if torch.cuda.is_available():
-    #         backend = 'nccl' if backend is None else str(backend)
-    #     else:
-    #         backend = 'gloo' if backend is None else str(backend)
     backend = get_torch_backend()
     # log.warning(f'Using {backend=}')
     delta = timedelta(
@@ -917,10 +879,33 @@ def write_localhost_to_hostfile(hostfile: PathLike):
             f.write(f'{hostname}')
 
 
+def write_hostfile_from_list_of_hosts(
+        hosts: list[str],
+        hostfile: Optional[PathLike] = None,
+        rank_zero_only: bool = True,
+):
+    hostfile = (
+        Path(hostfile).as_posix()
+        if hostfile is not None
+        else Path(os.getcwd()).joinpath('hostfile').as_posix()
+    )
+    if (
+            (rank_zero_only and get_rank() == 0)
+            or not rank_zero_only
+    ):
+        log.info(f'Writing to {hostfile}')
+        with Path(hostfile).open('w') as f:
+            for host in hosts:
+                f.write(f'{host}\n')
+
+
 def get_hostfile_with_fallback(
         hostfile: Optional[PathLike] = None
 ) -> Path:
     scheduler = get_scheduler()
+    if scheduler.lower() == 'unknown':
+        log.debug('Unknown scheduler')
+        hostfile = Path(os.getcwd()).joinpath('hostfile"')
     if hostfile is None:
         hfp = (
             os.environ.get(
@@ -1024,7 +1009,10 @@ def get_pbs_launch_cmd(
 def get_pbs_jobid_from_qstat() -> int:
     from ezpz.configs import get_scheduler
     assert get_scheduler() == 'PBS'
-    from sh import qstat as sh_qstat
+    try:
+        from sh import qstat as sh_qstat
+    except Exception as exc:
+        raise exc
     qstat_out = sh_qstat("-u", os.environ.get("USER")).split('\n')[2:-1]
     return int(qstat_out[-1].split('.')[0])
     # except Exception as exc:
@@ -1122,11 +1110,11 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
     return pbsenv
 
 
-def get_cobalt_resources(_assert: Optional[bool] = None) -> dict:
+def get_cobalt_resources() -> dict:
     cobalt_info = inspect_cobalt_running_job()
     # cobalt_nodefile = get_cobalt_nodefile()
     nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
-    gpus_per_node = get_gpus_per_node(_assert=_assert)
+    gpus_per_node = get_gpus_per_node()
     cobalt_info |= {
         'nodes': nodes,
         'num_nodes': len(nodes),
