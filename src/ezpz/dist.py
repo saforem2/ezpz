@@ -15,7 +15,6 @@ from typing import Any, Callable, Optional
 import socket
 import json
 
-from enrich import get_logger
 import torch
 import torch.distributed as dist
 from datetime import timedelta
@@ -50,10 +49,10 @@ except Exception:
 
 
 os.environ['COLORTERM'] = 'truecolor'
-# log_config = logging.config.dictConfig(get_logging_config())
-# log = logging.getLogger(__name__)
-# log.setLevel('INFO')
-log = get_logger(__name__, level='INFO')
+log_config = logging.config.dictConfig(get_logging_config())
+log = logging.getLogger(__name__)
+log.setLevel('INFO')
+# log = get_logger(__name__, level='INFO')
 logging.getLogger('sh').setLevel('WARNING')
 
 
