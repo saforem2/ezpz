@@ -4,30 +4,26 @@ history.py
 Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
+import logging
+import logging.config
 from contextlib import ContextDecorator
-# from dataclasses import dataclass
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Union
 
-from enrich import get_logger
+from ezpz import get_logging_config
 from ezpz.plot import plot_dataset
 from enrich.console import is_interactive
-# from ezpz
-# from l2hmc.common import plot_dataset
-# from l2hmc.utils.rich import is_interactive
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-# import tensorflow as tf
 import torch
 import wandb
 import xarray as xr
 from jaxtyping import Array, Float, Scalar, PyTree, ScalarLike
 
 from ezpz import grab_tensor
-# from ezpz import grab_tensor
 import ezpz.plot as ezplot
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
@@ -43,7 +39,10 @@ PT_FLOAT = torch.get_default_dtype()
 
 # log = logging.getLogger(__name__)
 
-log = get_logger(__name__)
+log_config = logging.config.dictConfig(get_logging_config())
+log = logging.getLogger(__name__)
+
+log.setLevel('INFO')
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
