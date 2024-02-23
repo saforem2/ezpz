@@ -1,5 +1,6 @@
 format:
   html:
+    page-layout: full
     callout-appearance: simple
     code-link: true
     code-line-numbers: false

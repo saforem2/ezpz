@@ -1,23 +1,93 @@
+:root {
+  /* BLACK */
+  --ansi0:  #444444;
+  --ansi8:  #838383;
+  --ansi-black:  #444444;
+  --ansi-black-bright:  #838383;
+  /* RED */
+  --ansi1:  #fc1a70;
+  --ansi9:  #ff5252;
+  --ansi-red:  #ff5252;
+  --ansi-red-bright: #fc1a70;
+  /* GREEN */
+  --ansi2:  #63ff5b;
+  --ansi10: #b1ff59;
+  --ansi-green:  #63ff5b;
+  --ansi-green-bright: #b1ff59;
+  /* YELLOW */
+  --ansi3:  #ffff00;
+  --ansi11: #f2ab47;
+  --ansi-yellow:  #ffff00;
+  --ansi-yellow-bright: #f2ab47;
+  /* BLUE */
+  --ansi4:  #b388ff;
+  --ansi12: #00b3e3;
+  --ansi-blue:  #b388ff;
+  --ansi-blue-bright: #00b3e3;
+  /* MAGENTA */
+  --ansi5:  #ef7fff;
+  --ansi13: #ff00ff;
+  --ansi-magenta:  #ef7fff;
+  --ansi-magenta-bright: #ff00ff;
+  /* CYAN */
+  --ansi6:  #84d6eb;
+  --ansi14: #38d9a9;
+  --ansi-cyan:  #84d6eb;
+  --ansi-cyan-bright: #38d9a9;
+  /* WHITE */
+  --ansi7:  #cccccc;
+  --ansi15: #838383;
+  --ansi-white:  #cccccc;
+  --ansi-white-bright: #838383;
+  --black000: #000000;
+}
 .ansi2html-content { display: inline; white-space: pre-wrap; word-wrap: break-word; }
 .body_foreground { color: #AAAAAA; }
-.body_background { background-color: #000000; }
-.inv_foreground { color: #000000; }
-.inv_background { background-color: #AAAAAA; }
+.body_background { background-color: #1c1c1c; }
+.inv_foreground { color: #222222; }
+.inv_background { background-color: #ffffff; }
 .ansi1 { font-weight: bold; }
 .ansi3 { font-style: italic; }
 .ansi4 { text-decoration: underline; }
-.ansi30 { color: #000316; }
-.ansi31 { color: #aa0000; }
-.ansi32 { color: #00aa00; }
-.ansi33 { color: #aa5500; }
-.ansi35 { color: #E850A8; }
-.ansi36 { color: #00aaaa; }
-.ansi90 { color: #7f7f7f; }
-.ansi92 { color: #00ff00; }
-.ansi93 { color: #ffff00; }
-.ansi94 { color: #5c5cff; }
-.ansi95 { color: #ff00ff; }
+.ansi30 { color: var(--ansi0); }
+.ansi31 { color: var(--ansi1); }
+.ansi32 { color: var(--ansi2); }
+.ansi33 { color: var(--ansi3); }
+.ansi35 { color: var(--ansi4); }
+.ansi36 { color: var(--ansi5); }
+.ansi90 { color: var(--ansi6); }
+.ansi92 { color: var(--ansi7); }
+.ansi93 { color: var(--ansi8); }
+.ansi94 { color: var(--ansi9); }
+.ansi95 { color: var(--ansi10); }
 
+/* active_border_color     #00ccff */
+/* active_tab_background   #eeeeee */
+/* active_tab_foreground   #000000 */
+/* background              #1c1c1c */
+/* bell_border_color       #ff5a00 */
+/* color0:  #444444 */
+/* color1:  #fc1a70 */
+/* color2:  #63ff5b */
+/* color3:  #ffff00 */
+/* color4:  #b388ff */
+/* color5:  #ef7fff */
+/* color6:  #84d6eb */
+/* color7:  #cccccc */
+/* color8:  #666666 */
+/* color9:  #ff5252 */
+/* color10: #b1ff59 */
+/* color11: #f2ab47 */
+/* color12: #00b3e3 */
+/* color13: #ff00ff */
+/* color14: #38d9a9 */
+/* color15: #838383 */
+/* color16: #000000 */
+/* color17: #00005f */
+/* color18: #000087 */
+/* color19: #0000af */
+/* color20: #0000d7 */
+/* color21: #0000ff */
 /* color21: #0000ff */
 /* color22: #005f00 */
 /* color23: #005f5f */
@@ -269,3 +339,34 @@
 /* selection_foreground    #fefefe */
 /* tab_bar_background      #1c1c1c */
 /* url_color               #00ccff */
+/* active_border_color     #00ccff */
+/* active_tab_background   #eeeeee */
+/* active_tab_foreground   #000000 */
+/* background              #1c1c1c */
+/* bell_border_color       #ff5a00 */
+/* color0                  #444444 */
+/* color1                  #fc1a70 */
+/* color2                  #63ff5b */
+/* color3                  #ffff00 */
+/* color4                  #b388ff */
+/* color5                  #ef7fff */
+/* color6                  #84d6eb */
+/* color7                  #cccccc */
+/* color8                  #666666 */
+/* color9                  #ff5252 */
+/* color10                 #b1ff59 */
+/* color11                 #f2ab47 */
+/* color12                 #00b3e3 */
+/* color13                 #ff00ff */
+/* color14                 #38d9a9 */
+/* color15                 #838383 */
+/* color16                 #000000 */
+/* color17                 #00005f */
+/* color18                 #000087 */
+/* color19                 #0000af */
+/* color20                 #0000d7 */
+/* color21                 #0000ff */
+/* color22                 #005f00 */
+/* color23                 #005f5f */
+/* color24                 #005f87 */
+/* color25                 #005faf */

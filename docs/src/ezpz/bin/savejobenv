@@ -161,6 +161,7 @@ function setup() {
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
+    export WORLD_SIZE="${NGPUS}"
     echo "│ HOSTFILE: ${HOSTFILE}"
     echo "│ NHOSTS: ${NHOSTS}"
     echo "│ $(nvidia-smi -L | wc -l) GPUs per host"
@@ -207,13 +208,14 @@ function getNumXPUs() {
 }
 
 function getNumGPUsNVIDIA() {
-    export NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+    nGPU=$(nvidia-smi -L | wc -l)
+    export NGPU_PER_HOST="${nGPU}"
 }
 
 function getNumGPUs() {
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         export NGPU_PER_HOST=12
-    elif [ $(hostname) == x3* ]; then
+    elif [[ $(hostname) == x3* ]]; then
         getNumGPUsNVIDIA
     else
         echo "Unknown host $(hostname)"
@@ -223,13 +225,20 @@ function getNumGPUs() {
 
 function getNumHosts() {
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-    [ -n "${HOSTFILE}" ] && export NHOSTS=$(wc -l < $HOSTFILE) || export NHOSTS=${SLURM_NNODES:-1}
+    if [[ -n "${HOSTFILE}" ]]; then
+        nhosts=$(wc -l < "${HOSTFILE}")
+    else
+        nhosts=${SLURM_NNODES:-1}
+    fi
+    export NHOSTS="${nhosts}"
+    # [ -n "${HOSTFILE}" ] && export NHOSTS=$(wc -l < $HOSTFILE) || export NHOSTS=${SLURM_NNODES:-1}
 }
 
 function writeJobInfo() {
     getNumHosts
     getNumGPUs
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+    # HOSTS=$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")
     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
@@ -258,8 +267,9 @@ function writeJobInfo() {
     echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
     echo "│ [Hosts]:"
     echo "│       • ${HOSTS[*]}"
+    printHosts
     echo "│ [Launch]:"
-    echo "│     • Use: 'launch' (=${LAUNCH})"
+    printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${LAUNCH}"
     echo "│       to launch job"
     echo "└───────────────────────────────────────────────────────────────────"
     echo "┌────────────────────────────────────────────────────────────────────────────────"

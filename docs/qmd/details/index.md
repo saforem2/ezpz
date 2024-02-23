@@ -1,23 +1,117 @@
 # ✨ `ezpz`
 Sam Foreman
-2024-02-06
+2024-01-28
 
-[![Pytorch](https://img.shields.io/badge/PyTorch-222222?logo=pytorch&logoColor=white.png)](#pytorch)
+[![Pytorch](https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white.png)](#pytorch)
 [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow)
 [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd.png)](https://hydra.cc)
 
-<!--
+## Install
+
+``` bash
+$ python3 -m pip install "https://github.com/saforem2/ezpz"
+```
+
+``` python
+!export COLORTERM=truecolor && mpirun -np 6 python3 -m ezpz framework=pytorch backend=DDP use_wandb=true
+# %%bash
+# mpirun -np 6 python3 -m ezpz framework=pytorch backend=DDP use_wandb=true
+```
+
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=3/5][local_rank=3/11][node=0/0]
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=2/5][local_rank=2/11][node=0/0]
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=5/5][local_rank=5/11][node=0/0]
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=1/5][local_rank=1/11][node=0/0]
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=4/5][local_rank=4/11][node=0/0]
+    [2024-02-06 09:55:29][INFO][dist:238] - DistInfo={
+        "DEVICE": "mps",
+        "DEVICE_ID": "mps:0",
+        "DISTRIBUTED_BACKEND": "gloo",
+        "GPUS_PER_NODE": 12,
+        "HOSTFILE": "/Users/samforeman/projects/saforem2/ezpz/qmd/details/outputs/runs/pytorch/DDP/2024-02-06/09-55-29/hostfile",
+        "HOSTNAME": "localhost",
+        "HOSTS": "['localhost']",
+        "LOCAL_RANK": 0,
+        "MACHINE": "localhost",
+        "NGPUS": 12,
+        "NODE_ID": 0,
+        "NUM_NODES": 1,
+        "RANK": 0,
+        "SCHEDULER": "LOCAL",
+        "WORLD_SIZE_IN_USE": 6,
+        "WORLD_SIZE_TOTAL": 12
+    }
+    [2024-02-06 09:55:29][INFO][dist:604] - [0/6] Using device='mps' with backend='DDP' + 'gloo' for distributed training.
+    [2024-02-06 09:55:29][INFO][dist:289] - [device='mps'][rank=0/5][local_rank=0/11][node=0/0]
+    [2024-02-06 09:55:29][WARNING][dist:295] - Using [6 / 12] available "mps" devices !!
+    [2024-02-06 09:55:29][INFO][dist:750] - Setting up wandb from rank: 0
+    [2024-02-06 09:55:29][INFO][dist:751] - Using: WB PROJECT: ezpz
+    wandb: Currently logged in as: saforem2 (l2hmc-qcd). Use `wandb login --relogin` to force relogin
+    wandb: Tracking run with wandb version 0.16.2
+    wandb: Run data is saved locally in /Users/samforeman/projects/saforem2/ezpz/qmd/details/outputs/runs/pytorch/DDP/2024-02-06/09-55-29/wandb/run-20240206_095530-wcfxwty0
+    wandb: Run `wandb offline` to turn off syncing.
+    wandb: Syncing run silvery-glade-239
+    wandb: ⭐️ View project at https://wandb.ai/l2hmc-qcd/ezpz
+    wandb: 🚀 View run at https://wandb.ai/l2hmc-qcd/ezpz/runs/wcfxwty0
+    [2024-02-06 09:55:31][INFO][dist:781] - W&B RUN: [silvery-glade-239](https://wandb.ai/l2hmc-qcd/ezpz/runs/wcfxwty0)
+    [2024-02-06 09:55:31][INFO][dist:809] - Running on machine='localhost'
+    [2024-02-06 09:55:31][INFO][dist:104] - `main` took: dt=2.1730s
+    wandb: WARNING No program path found, not creating job artifact. See https://docs.wandb.ai/guides/launch/create-job
+    wandb: - 1.041 MB of 1.041 MB uploadedwandb: \ 1.060 MB of 1.060 MB uploadedwandb: 
+    wandb: Run history:
+    wandb: timeit/main ▁
+    wandb: 
+    wandb: Run summary:
+    wandb: timeit/main 2.17304
+    wandb: 
+    wandb: 🚀 View run silvery-glade-239 at: https://wandb.ai/l2hmc-qcd/ezpz/runs/wcfxwty0
+    wandb: Synced 6 W&B file(s), 0 media file(s), 0 artifact file(s) and 1 other file(s)
+    wandb: Find logs at: ./wandb/run-20240206_095530-wcfxwty0/logs
+
+``` python
+from ezpz import get_dist_info
+dist_info = get_dist_info(verbose=True)
+```
+
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #000000; text-decoration-color: #000000">[</span><span style="color: #808080; text-decoration-color: #808080">2024-02-06 09:55:38</span><span style="color: #000000; text-decoration-color: #000000">][</span><span style="color: #008000; text-decoration-color: #008000; font-weight: bold">INFO</span><span style="color: #000000; text-decoration-color: #000000">][</span><span style="color: #008080; text-decoration-color: #008080; font-style: italic">dist</span><span style="color: #00ff00; text-decoration-color: #00ff00">:</span><span style="color: #000000; text-decoration-color: #000000">238</span><span style="color: #000000; text-decoration-color: #000000">]</span><span style="color: #ffff00; text-decoration-color: #ffff00; font-weight: bold"> - </span><span style="color: #0000ff; text-decoration-color: #0000ff; font-style: italic">DistInfo</span>=<span style="color: #800000; text-decoration-color: #800000; font-weight: bold">{</span>
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"DEVICE"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"mps"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"DEVICE_ID"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"mps:0"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"DISTRIBUTED_BACKEND"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"gloo"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"GPUS_PER_NODE"</span>: <span style="color: #800080; text-decoration-color: #800080">12</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"HOSTFILE"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"/Users/samforeman/projects/saforem2/ezpz/qmd/details/hostfile"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"HOSTNAME"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"localhost"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"HOSTS"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"</span><span style="color: #808000; text-decoration-color: #808000; font-style: italic">[</span><span style="color: #808000; text-decoration-color: #808000; font-style: italic">'localhost'</span><span style="color: #808000; text-decoration-color: #808000; font-style: italic">]</span><span style="color: #808000; text-decoration-color: #808000; font-style: italic">"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"LOCAL_RANK"</span>: <span style="color: #800080; text-decoration-color: #800080">0</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"MACHINE"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"localhost"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"NGPUS"</span>: <span style="color: #800080; text-decoration-color: #800080">12</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"NODE_ID"</span>: <span style="color: #800080; text-decoration-color: #800080">0</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"NUM_NODES"</span>: <span style="color: #800080; text-decoration-color: #800080">1</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"RANK"</span>: <span style="color: #800080; text-decoration-color: #800080">0</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"SCHEDULER"</span>: <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"LOCAL"</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"WORLD_SIZE_IN_USE"</span>: <span style="color: #800080; text-decoration-color: #800080">1</span>,
+    <span style="color: #808000; text-decoration-color: #808000; font-style: italic">"WORLD_SIZE_TOTAL"</span>: <span style="color: #800080; text-decoration-color: #800080">12</span>
+<span style="color: #800000; text-decoration-color: #800000; font-weight: bold">}</span>
+</pre>
+
+- Apple Silicon (`mps`) device:
+
+  ``` bash
+  $ mpirun -np 2 python3 -c 'import ezpz; print(ezpz.get_rank()); ezpz.print_dist_setup()'
+  0
+  1
+  [2024-01-26 07:44:19][INFO][dist:319] - [device='mps'][rank=1/1][local_rank=1/11][node=0/0]
+  [2024-01-26 07:44:19][INFO][dist:319] - [device='mps'][rank=0/1][local_rank=0/11][node=0/0]
+  [2024-01-26 07:44:19][WARNING][dist:325] - Using [2 / 12] available "mps" devices !!
+  ```
+
+\`\`\`\` <!--
 > [!NOTE]
 > This library is **very much** still a WIP.  
 > Any ideas / issues / suggestions for improving things would be greatly appreciated.
 -->
 
-> [!IMPORTANT]
->
-> ### <span style="color: var(--ansi-red);">Important</span>
->
-> Scale your application across **thousands** of GPUs with **minimal
-> changes**.
+> \[!IMPORTANT\] Scale your application across **thousands** of GPUs
+> with **minimal changes**.
 >
 > `ezpz` simplifies the process of setting up + launching distributed
 > training with your favorite `{framework, backend}` combination:
@@ -28,12 +122,12 @@ Sam Foreman
 > - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
 >
 > *2ez* 😎. <br>
->
-> (see [frameworks](#frameworks) for additional details)
+
+(see [frameworks](#frameworks) for additional details)
 
 ## Setup + `launch`
 
-`ezpz` setup on any of `{thetaGPU, Polaris, Perlmutter}`:
+`ezpz` setup on any**where** ~~of `{thetaGPU, Polaris, Perlmutter}`~~:
 
 1.  `git` clone + `pip` install:
 
@@ -42,10 +136,17 @@ Sam Foreman
     python3 -m pip install -e ezpz
     ```
 
-2.  Save Job info + define `launch` alias:
+<details closed>
+<summary>
+<h3>
+IF YOU HAVE A SUPERCOMPUTER:
+</summary>
+</h3>
+
+1.  Save Job info + define `launch` alias:
 
     ``` bash
-    $ source ezpz/src/ezpz/bin/savejobenv
+    source ezpz/src/ezpz/bin/savejobenv
     ```
 
     <details closed>
@@ -74,7 +175,9 @@ Sam Foreman
 
     </details>
 
-3.  `launch` [`__main__.py`](./src/ezpz/__main__.py) with `pytorch` +
+</details>
+
+1.  `launch` [`__main__.py`](./src/ezpz/__main__.py) with `pytorch` +
     `deepspeed`:
 
     ``` bash
@@ -264,13 +367,17 @@ Sam Foreman
 
     </details>
 
-</details>
-
-## Tested Machines
-
 <details closed>
 <summary>
-<b>Aurora</b> (@ ALCF)
+<h2>
+Tested Machines
+</h2>
+</summary>
+<details closed>
+<summary>
+<h3>
+Aurora (@ ALCF)
+</h3>
 </summary>
 <!--#### Aurora (@ ALCF)-->
 
@@ -312,9 +419,12 @@ x4415c7s0b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
 ```
 
 </details>
+<!--#### Polaris (@ ALCF)-->
 <details closed>
 <summary>
-<b>Polaris</b> (@ ALCF)
+<h3>
+Polaris (@ ALCF)
+</h3>
 </summary>
 
 ``` bash
@@ -348,57 +458,103 @@ cd src/ezpz
 </details>
 <details closed>
 <summary>
-<b>Perlmutter</b> (@ NERSC):
+<h3>
+Perlmutter (@ NERSC):
+</h3>
 </summary>
 
 ``` bash
 # request slurm allocation with `salloc`
-$ NODES=2 ; HRS=2 ; salloc --nodes $NODES --qos preempt --time $HRS:00:00 -C 'gpu&hbm80g' --gpus=$(( 4 * NODES )) -A <proj>_g
+NODES=2 ; HRS=2 ; salloc --nodes $NODES --qos preempt --time $HRS:00:00 -C 'gpu&hbm80g' --gpus=$(( 4 * NODES )) -A <proj>_g
 # load `pytorch/2.0.1` module
-$ module load libfabric cudatoolkit pytorch/2.0.1
+module load libfabric cudatoolkit pytorch/2.0.1
 # Clone saforem2/ezpz and navigate into it
-$ git clone https://github.com/saforem2/ezpz
-$ cd ezpz
+git clone https://github.com/saforem2/ezpz
+cd ezpz
 # update pip and install `ezpz`
-$ python3 -m pip install --upgrade pip setuptools wheel
-$ python3 -m pip install -e .
-$ cd src/ezpz
-$ ./bin/train.sh framework=pytorch backend=DDP
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install -e .
+cd src/ezpz
+./bin/train.sh framework=pytorch backend=DDP
 ```
 
 where `framework` $\in$ `{pytorch, tensorflow}`, and `backend` $\in$
 `{DDP, deepspeed, horovod}`[^1]
 
 </details>
+<details closed>
+<summary>
+<b>Deprecated:</b>
+</summary>
+
+- Install:
+
+  ``` bash
+  git clone https://github.com/saforem2/ezpz
+  python3 -m pip install -e ezpz
+  ```
+
+- Determine available resources:
+  `bash [ "$(hostname)==theta*" ] && HOSTFILE="${COBALT_NODEFILE}"  # ThetaGPU @ ALCF [ "$(hostname)==x3*" ] && HOSTFILE="${PBS_NODEFILE}"        # Polaris @ ALCF [ "$(hostname)==nid*" ] && HOSTFILE="${SLURM_NODELIST}"     # Perlmutter @ NERSC NHOSTS=$(wc -l < "${HOSTFILE}") NGPU_PER_HOST=$(nvidia-smi -L | wc -l) NGPUS="$((${NHOSTS}*${NGPU_PER_HOST}))"; echo $NHOSTS $NGPU_PER_HOST $NGPUS 2 4 8`’
+
+- Example `python` script:
+
+  ``` python
+  """
+  ezpz/test.py
+  """
+  from ezpz import setup_torch, setup_tensorflow
+
+
+  def test(
+      framework: str = 'pytorch',
+      backend: str = 'deepspeed',
+      port: str = '5432'
+  ):
+  if framework == 'pytorch':
+      _ = setup_torch(
+          backend=backend,
+          port=port,
+      )
+  elif framework == 'tensorflow':
+      _ = setup_tensorflow()
+  else:
+      raise ValueError
+
+  if __name__ == '__main__':
+      import sys
+      try:
+          framework = sys.argv[1]
+      except IndexError:
+              framework = 'pytorch'
+      try:
+          backend = sys.argv[2]
+      except IndexError:
+          backend = 'deepspeed'
+      try:
+          port = sys.argv[3]
+      except IndexError:
+          port = '5432'
+      test(framework=framework, backend=backend, port=port)
+  ```
+
+</details>
+</details>
 
 ## Details
 
-We can `launch` on any of
-`{ThetaGPU, Polaris, Perlmutter}`$\left(^{\ast}\right)$ with a specific
-`{framework, backend}` combo by
-
-1.  [`savejobenv`](./src/ezpz/bin/savejobenv):
-
-    ``` bash
-    $ source src/ezpz/bin/savejobenv
-    ```
-
-    - This will `export launch=<launcher> <launcher-opts>` for
-      `<launcher>` $\in$ `{mpirun,mpiexec,srun}` on $(^{\ast})$
-      respectively.
-
-    - By default, `launch <exec>` will launch `<exec>` across *all* the
-      available GPUs in your active `{COBALT,PBS,slurm}` job.
-
-2.  `launch`
-
-    ``` bash
-    $ launch $(which python3) -m ezpz framework=<framework> backend=<backend>
-    ```
-
-    - Will `launch` [`__main__.py`](./src/ezpz/__main__.py) (in this
-      case) with framework `<framework>` and backend `<backend>`
-      (e.g. `pytorch` and `deepspeed`)
+> \[!NOTE\] We can `launch` on any of
+> `{ThetaGPU, Polaris, Perlmutter}`$\left(^{\ast}\right)$ with a
+> specific `{framework, backend}` combo by 1.
+> [`savejobenv`](./src/ezpz/bin/savejobenv): - This will
+> `export launch=<launcher> <launcher-opts>` for `<launcher>` $\in$
+> `{mpirun,mpiexec,srun}` on $(^{\ast})$ respectively. - By default,
+> `launch <exec>` will launch `<exec>` across *all* the available GPUs
+> in your active `{COBALT,PBS,slurm}` job. 2. `launch` -
+> e.g. `launch $(which python3) -m ezpz framework=<framework> backend=<backend>`,
+> will: - `launch` [`__main__.py`](./src/ezpz/__main__.py) (in this
+> case) with framework `<framework>` and backend `<backend>`
+> (e.g. `pytorch` and `deepspeed`)
 
 ### Complete Example
 
@@ -414,13 +570,17 @@ for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$
 
 ## Frameworks
 
-<!-- <details closed><summary>PyTorch</summary> -->
-
-### PyTorch
-
 <details closed>
 <summary>
+<h3>
+PyTorch
+</h3>
+</summary>
+<details closed>
+<summary>
+<h4>
 <code>DDP</code>:
+</h4>
 </summary>
 
 ``` bash
@@ -451,7 +611,9 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 </details>
 <details closed>
 <summary>
-<b><code>deepspeed</code>:</b>
+<h4>
+<code>deepspeed</code>:
+</h4>
 </summary>
 
 ``` bash
@@ -515,7 +677,9 @@ Launching application c1c5bcd5-c300-4927-82e4-236d4643e31d
 </details>
 <details closed>
 <summary>
-<b><code>horovod</code></b>
+<h4>
+<code>horovod</code>
+</h4>
 </summary>
 
 ``` bash
@@ -545,12 +709,11 @@ Launching application c079ffa9-4732-45ba-995b-e5685330311b
 </details>
 </details>
 </details>
-
-### TensorFlow
-
 <details closed>
 <summary>
-<b><code>horovod</b></code>
+<h3>
+TensorFlow
+</h3>
 </summary>
 
 ``` bash
@@ -608,239 +771,164 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
 - [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv): Shell script
   to save relevant job related environment variables to a file which can
   be `sourced` from new login instances.
-
-  <details closed>
-  <summary>
-
-  <b><code>savejobenv</code></b>
-
-  </summary>
-
-  Launch a job, clone (or navigate into) `ezpz`, and `source`
-  [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
-
-  ``` bash
-  (thetalogin4) $ qsub-gpu -A datascience -n 2 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 06:00 -I
-  Job routed to queue "full-node".
-  Wait for job 10155652 to start...
-  Opening interactive session to thetagpu04
-  [...]
-  ```
-
-  ``` bash
-  (thetagpu04) $ git clone https://github.com/saforem2/ezpz
-  (thetagpu04) $ source ezpz/src/ezpz/bin/savejobenv
-  ┌───────────────────────────────────────────────────────────────────
-  │ Writing COBALT vars to /home/foremans/.cobaltenv
-  │ HOSTFILE: /var/tmp/cobalt.10155652
-  │ NHOSTS: 2
-  │ 8 GPUs per host
-  │ 16 GPUs total
-  └───────────────────────────────────────────────────────────────────
-  ┌───────────────────────────────────────────────────────────────────
-  │ [DIST INFO]:
-  │   • Writing Job info to /home/foremans/.cobaltenv
-  │     • HOSTFILE: /var/tmp/cobalt.10155652
-  │     • NHOSTS: 2
-  │     • NGPU_PER_HOST: 8
-  │     • NGPUS = (NHOSTS * NGPU_PER_HOST) = 16
-  │ [Hosts]:
-  │       • thetagpu04 thetagpu19
-  │ [Launch]:
-  │     • Use: 'launch' (=mpirun -n  -N  --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH)
-  │       to launch job
-  └───────────────────────────────────────────────────────────────────
-  ┌────────────────────────────────────────────────────────────────────────────────
-  │ YOU ARE HERE: /home/foremans
-  │ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars
-  └────────────────────────────────────────────────────────────────────────────────
-  ```
-
-  </details>
-
 - [`src/ezpz/bin/getjobenv`](./src/ezpz/bin/getjobenv): Shell script
   that, when sourced, will populate the current environment with the
   necessary job-related variables.
 
-  <details closed>
-  <summary>
-
-  <b><code>getjobenv</code></b>
-
-  </summary>
-
-  Now, in a **NEW SHELL**
-
-  ``` bash
-  (localhost)   $ ssh <user>@theta
-  ```
-
-  ``` bash
-  (thetalogin4) $ ssh thetagpu19
-  ```
-
-  ``` bash
-  (thetagpu19)  $ module load conda/2023-01-11; conda activate base
-  (thetagpu19)  $ cd ezpz
-  (thetagpu19)  $ source ./src/ezpz/bin/getjobenv
-  ┌──────────────────────────────────────────────────────────────────
-  │ [Hosts]: 
-  │     • thetagpu04, thetagpu19
-  └──────────────────────────────────────────────────────────────────
-  ┌──────────────────────────────────────────────────────────────────
-  │ [DIST INFO]: 
-  │     • Loading job env from: /home/foremans/.cobaltenv
-  │     • HOSTFILE: /var/tmp/cobalt.10155652
-  │     • NHOSTS: 2
-  │     • NGPU_PER_HOST: 8
-  │     • NGPUS (NHOSTS x NGPU_PER_HOST): 16
-  │     • DIST_LAUNCH: mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
-  │     • Defining alias: launch: aliased to mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
-  └──────────────────────────────────────────────────────────────────
-  (thetagpu19) $ mkdir -p venvs/thetaGPU/2023-01-11
-  (thetagpu19) $ python3 -m venv venvs/thetaGPU/2023-01-11 --system-site-packages
-  (thetagpu19) $ source venvs/thetaGPU/2023-01-11/bin/activate
-  (thetagpu19) $ python3 -m pip install -e . --require-virtualenv
-  (thetagpu19) $ launch python3 -m ezpz framework=pytorch backend=DDP
-  [2023-10-26 12:21:26,716][ezpz.dist][INFO] - Using DDP for distributed training
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 13
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 14
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 8
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 12
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 6
-  [2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 9
-  [2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 10
-  [2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 15
-  [2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 11
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 7
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 3
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 1
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 4
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 5
-  [2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 2
-  [2023-10-26 12:21:26,798][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 0
-  [2023-10-26 12:21:26,811][torch.distributed.distributed_c10d][INFO] - Rank 14: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,812][torch.distributed.distributed_c10d][INFO] - Rank 6: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,814][torch.distributed.distributed_c10d][INFO] - Rank 13: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,815][torch.distributed.distributed_c10d][INFO] - Rank 7: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,816][torch.distributed.distributed_c10d][INFO] - Rank 8: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,817][torch.distributed.distributed_c10d][INFO] - Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,819][torch.distributed.distributed_c10d][INFO] - Rank 12: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,820][torch.distributed.distributed_c10d][INFO] - Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,821][torch.distributed.distributed_c10d][INFO] - Rank 10: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,823][torch.distributed.distributed_c10d][INFO] - Rank 4: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 9: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 5: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,827][torch.distributed.distributed_c10d][INFO] - Rank 15: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,828][torch.distributed.distributed_c10d][INFO] - Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,830][torch.distributed.distributed_c10d][INFO] - Rank 11: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:26,831][torch.distributed.distributed_c10d][INFO] - Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
-  [2023-10-26 12:21:27,035][ezpz.dist][INFO] - RANK: 0 / 15
-  {
-    "framework": "pytorch",
-    "backend": "DDP",
-    "use_wandb": false,
-    "seed": null,
-    "port": null,
-    "ds_config_path": null,
-    "wandb_project_name": null,
-    "precision": null,
-    "ngpus": null
-  }
-  [2023-10-26 12:21:27,038][__main__][INFO] - Output dir: /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/ezpz/outputs/runs/pytorch/DDP/2023-10-26/12-21-25
-  [2023-10-26 12:21:27,097][ezpz.dist][INFO] - RANK: 8 / 15
-  [2023-10-26 12:21:27,103][ezpz.dist][INFO] - RANK: 6 / 15
-  [2023-10-26 12:21:27,104][ezpz.dist][INFO] - RANK: 14 / 15
-  [2023-10-26 12:21:27,111][ezpz.dist][INFO] - RANK: 13 / 15
-  [2023-10-26 12:21:27,116][ezpz.dist][INFO] - RANK: 1 / 15
-  [2023-10-26 12:21:27,126][ezpz.dist][INFO] - RANK: 7 / 15
-  [2023-10-26 12:21:27,135][ezpz.dist][INFO] - RANK: 10 / 15
-  [2023-10-26 12:21:27,139][ezpz.dist][INFO] - RANK: 12 / 15
-  [2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 9 / 15
-  [2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 15 / 15
-  [2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 11 / 15
-  [2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 5 / 15
-  [2023-10-26 12:21:27,144][ezpz.dist][INFO] - RANK: 2 / 15
-  [2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 4 / 15
-  [2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 3 / 15
-  16.56s user 30.05s system 706% cpu 6.595s total
-  ```
-
-  while this example looked at ThetaGPU, the exact same process will
-  work on any of `{ThetaGPU, Polaris, Perlmutter}`.
-
-  </details>
-
-------------------------------------------------------------------------
-
-> [!TIP]
->
-> ### <span style="color: var(--ansi-red);">❤️‍🩹 Status</span>
->
-> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">02</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">06</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">10:21:21</span>
-> </pre>
-> <!-- [[![](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)]{style="text-align:center;"} -->
-> <p align="center">
-> <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io%2Fezpz&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
-> </p>
-
-------------------------------------------------------------------------
-
 <details closed>
 <summary>
-<b>Deprecated:</b>
+<h3>
+<code>savejobenv</code>
+</h3>
 </summary>
 
-- Install:
+Launch a job, clone (or navigate into) `ezpz`, and `source`
+[`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv):
 
-  ``` bash
-  git clone https://github.com/saforem2/ezpz
-  python3 -m pip install -e ezpz
-  ```
+``` bash
+(thetalogin4) $ qsub-gpu -A datascience -n 2 -q full-node --attrs="filesystems=home,grand,eagle,theta-fs0:ssds=required" -t 06:00 -I
+Job routed to queue "full-node".
+Wait for job 10155652 to start...
+Opening interactive session to thetagpu04
+[...]
+```
 
-- Determine available resources:
-  `bash [ "$(hostname)==theta*" ] && HOSTFILE="${COBALT_NODEFILE}"  # ThetaGPU @ ALCF [ "$(hostname)==x3*" ] && HOSTFILE="${PBS_NODEFILE}"        # Polaris @ ALCF [ "$(hostname)==nid*" ] && HOSTFILE="${SLURM_NODELIST}"     # Perlmutter @ NERSC NHOSTS=$(wc -l < "${HOSTFILE}") NGPU_PER_HOST=$(nvidia-smi -L | wc -l) NGPUS="$((${NHOSTS}*${NGPU_PER_HOST}))"; echo $NHOSTS $NGPU_PER_HOST $NGPUS 2 4 8`’
+``` bash
+(thetagpu04) $ git clone https://github.com/saforem2/ezpz
+(thetagpu04) $ source ezpz/src/ezpz/bin/savejobenv
+┌───────────────────────────────────────────────────────────────────
+│ Writing COBALT vars to /home/foremans/.cobaltenv
+│ HOSTFILE: /var/tmp/cobalt.10155652
+│ NHOSTS: 2
+│ 8 GPUs per host
+│ 16 GPUs total
+└───────────────────────────────────────────────────────────────────
+┌───────────────────────────────────────────────────────────────────
+│ [DIST INFO]:
+│   • Writing Job info to /home/foremans/.cobaltenv
+│     • HOSTFILE: /var/tmp/cobalt.10155652
+│     • NHOSTS: 2
+│     • NGPU_PER_HOST: 8
+│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = 16
+│ [Hosts]:
+│       • thetagpu04 thetagpu19
+│ [Launch]:
+│     • Use: 'launch' (=mpirun -n  -N  --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH)
+│       to launch job
+└───────────────────────────────────────────────────────────────────
+┌────────────────────────────────────────────────────────────────────────────────
+│ YOU ARE HERE: /home/foremans
+│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars
+└────────────────────────────────────────────────────────────────────────────────
+```
 
-- Example `python` script:
+</details>
+<details closed>
+<summary>
+<h3>
+<code>getjobenv</code>
+</h3>
+</summary>
 
-  ``` python
-  """
-  ezpz/test.py
-  """
-  from ezpz import setup_torch, setup_tensorflow
+Now, in a **NEW SHELL**
 
+``` bash
+(localhost)   $ ssh <user>@theta
+```
 
-  def test(
-      framework: str = 'pytorch',
-      backend: str = 'deepspeed',
-      port: str = '5432'
-  ):
-  if framework == 'pytorch':
-      _ = setup_torch(
-          backend=backend,
-          port=port,
-      )
-  elif framework == 'tensorflow':
-      _ = setup_tensorflow()
-  else:
-      raise ValueError
+``` bash
+(thetalogin4) $ ssh thetagpu19
+```
 
-  if __name__ == '__main__':
-      import sys
-      try:
-          framework = sys.argv[1]
-      except IndexError:
-              framework = 'pytorch'
-      try:
-          backend = sys.argv[2]
-      except IndexError:
-          backend = 'deepspeed'
-      try:
-          port = sys.argv[3]
-      except IndexError:
-          port = '5432'
-      test(framework=framework, backend=backend, port=port)
-  ```
+``` bash
+(thetagpu19)  $ module load conda/2023-01-11; conda activate base
+(thetagpu19)  $ cd ezpz
+(thetagpu19)  $ source ./src/ezpz/bin/getjobenv
+┌──────────────────────────────────────────────────────────────────
+│ [Hosts]: 
+│     • thetagpu04, thetagpu19
+└──────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────
+│ [DIST INFO]: 
+│     • Loading job env from: /home/foremans/.cobaltenv
+│     • HOSTFILE: /var/tmp/cobalt.10155652
+│     • NHOSTS: 2
+│     • NGPU_PER_HOST: 8
+│     • NGPUS (NHOSTS x NGPU_PER_HOST): 16
+│     • DIST_LAUNCH: mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
+│     • Defining alias: launch: aliased to mpirun -n 16 -N 8 --hostfile /var/tmp/cobalt.10155652 -x PATH -x LD_LIBRARY_PATH
+└──────────────────────────────────────────────────────────────────
+(thetagpu19) $ mkdir -p venvs/thetaGPU/2023-01-11
+(thetagpu19) $ python3 -m venv venvs/thetaGPU/2023-01-11 --system-site-packages
+(thetagpu19) $ source venvs/thetaGPU/2023-01-11/bin/activate
+(thetagpu19) $ python3 -m pip install -e . --require-virtualenv
+(thetagpu19) $ launch python3 -m ezpz framework=pytorch backend=DDP
+[2023-10-26 12:21:26,716][ezpz.dist][INFO] - Using DDP for distributed training
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 13
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 14
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 8
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 12
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 6
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 9
+[2023-10-26 12:21:26,787][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 10
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 15
+[2023-10-26 12:21:26,788][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 11
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 7
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 3
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 1
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 4
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 5
+[2023-10-26 12:21:26,789][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 2
+[2023-10-26 12:21:26,798][torch.distributed.distributed_c10d][INFO] - Added key: store_based_barrier_key:1 to store for rank: 0
+[2023-10-26 12:21:26,811][torch.distributed.distributed_c10d][INFO] - Rank 14: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,812][torch.distributed.distributed_c10d][INFO] - Rank 6: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,814][torch.distributed.distributed_c10d][INFO] - Rank 13: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,815][torch.distributed.distributed_c10d][INFO] - Rank 7: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,816][torch.distributed.distributed_c10d][INFO] - Rank 8: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,817][torch.distributed.distributed_c10d][INFO] - Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,819][torch.distributed.distributed_c10d][INFO] - Rank 12: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,820][torch.distributed.distributed_c10d][INFO] - Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,821][torch.distributed.distributed_c10d][INFO] - Rank 10: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,823][torch.distributed.distributed_c10d][INFO] - Rank 4: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 9: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,825][torch.distributed.distributed_c10d][INFO] - Rank 5: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,827][torch.distributed.distributed_c10d][INFO] - Rank 15: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,828][torch.distributed.distributed_c10d][INFO] - Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,830][torch.distributed.distributed_c10d][INFO] - Rank 11: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:26,831][torch.distributed.distributed_c10d][INFO] - Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.
+[2023-10-26 12:21:27,035][ezpz.dist][INFO] - RANK: 0 / 15
+{
+  "framework": "pytorch",
+  "backend": "DDP",
+  "use_wandb": false,
+  "seed": null,
+  "port": null,
+  "ds_config_path": null,
+  "wandb_project_name": null,
+  "precision": null,
+  "ngpus": null
+}
+[2023-10-26 12:21:27,038][__main__][INFO] - Output dir: /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/ezpz/outputs/runs/pytorch/DDP/2023-10-26/12-21-25
+[2023-10-26 12:21:27,097][ezpz.dist][INFO] - RANK: 8 / 15
+[2023-10-26 12:21:27,103][ezpz.dist][INFO] - RANK: 6 / 15
+[2023-10-26 12:21:27,104][ezpz.dist][INFO] - RANK: 14 / 15
+[2023-10-26 12:21:27,111][ezpz.dist][INFO] - RANK: 13 / 15
+[2023-10-26 12:21:27,116][ezpz.dist][INFO] - RANK: 1 / 15
+[2023-10-26 12:21:27,126][ezpz.dist][INFO] - RANK: 7 / 15
+[2023-10-26 12:21:27,135][ezpz.dist][INFO] - RANK: 10 / 15
+[2023-10-26 12:21:27,139][ezpz.dist][INFO] - RANK: 12 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 9 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 15 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 11 / 15
+[2023-10-26 12:21:27,141][ezpz.dist][INFO] - RANK: 5 / 15
+[2023-10-26 12:21:27,144][ezpz.dist][INFO] - RANK: 2 / 15
+[2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 4 / 15
+[2023-10-26 12:21:27,145][ezpz.dist][INFO] - RANK: 3 / 15
+16.56s user 30.05s system 706% cpu 6.595s total
+```
+
+while this example looked at ThetaGPU, the exact same process will work
+on any of `{ThetaGPU, Polaris, Perlmutter}`.
 
 </details>
 

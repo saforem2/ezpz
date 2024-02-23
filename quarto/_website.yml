@@ -12,13 +12,13 @@ website:
   open-graph:
     title: "`ezpz`"
     description: "Distributed training, ezpz."
-    image: "https://github.com/saforem2/personal_site/blob/main/assets/thumbnail.png?raw=true"
+    image: "./../assets/thumbnail.png"
   twitter-card:
     site: "@saforem2"
     creator: "@saforem2"
     title: "Sam Foreman"
     description: "My ramblings about science and computers"
-    image: "https://github.com/saforem2/personal_site/blob/main/assets/thumbnail.png?raw=true"
+    image: "../assets/thumbnail.png"
   navbar:
     # title: false
     logo: "./favicon.svg"
@@ -51,9 +51,9 @@ website:
         aria-label: GitHub
         menu:
           - text: Source Code
-            url: https://github.com/saforem2/personal_site/blob/main/index.qmd
+            url: https://github.com/saforem2/ezpz/blob/main/index.qmd
           - text: New Issue
-            url: https://github.com/saforem2/personal_site/issues/new/choose
+            url: https://github.com/saforem2/ezpz/issues/new/choose
 
   page-footer:
     left: "Copyright 2023, Sam Foreman" 
