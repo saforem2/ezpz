@@ -1,5 +1,11 @@
 website:
   sidebar: false
+  # sidebar:
+  #   search: true
+  #   collapse-level: 1
+  #   contents:
+  #     - auto: "qmd/**/*.qmd"
+
   title: "✨ `ezpz`"
   page-navigation: true
   favicon: "./favicon.svg"
@@ -33,15 +39,6 @@ website:
             url: https://github.com/saforem2/ezpz/blob/main/index.qmd
           - text: New Issue
             url: https://github.com/saforem2/ezpz/issues/new/choose
-    # left:
-    #   - href: "./qmd/posts.qmd"
-    #     text: "[{{< iconify line-md pencil >}}]{.red-text style='font-size: 1.0em;'} Posts"
-    #   - href: "./qmd/slides.qmd"
-    #     text: "[{{< iconify line-md image >}}]{.green-text style='font-size: 1.0em;'} Talks"
-    #   - href: "./qmd/projects.qmd"
-    #     text: "[{{< iconify line-md computer >}}]{.blue-text style='font-size:1.0em;'} Projects"
-    #   # - href: "./qmd/ezpz/ezpz.qmd"
-    #   #   text: "[{{< iconify ph sparkle >}}]{.yellow-text style='font-size:1.0em;'} Startup Times"
     right:
       - href: https://twitter.com/saforem2
         text: "[{{< iconify line-md twitter >}}]{style='font-size: 1.15em;'}"
@@ -54,6 +51,15 @@ website:
             url: https://github.com/saforem2/ezpz/blob/main/index.qmd
           - text: New Issue
             url: https://github.com/saforem2/ezpz/issues/new/choose
+    # left:
+    #   - href: "./qmd/posts.qmd"
+    #     text: "[{{< iconify line-md pencil >}}]{.red-text style='font-size: 1.0em;'} Posts"
+    #   - href: "./qmd/slides.qmd"
+    #     text: "[{{< iconify line-md image >}}]{.green-text style='font-size: 1.0em;'} Talks"
+    #   - href: "./qmd/projects.qmd"
+    #     text: "[{{< iconify line-md computer >}}]{.blue-text style='font-size:1.0em;'} Projects"
+    #   # - href: "./qmd/ezpz/ezpz.qmd"
+    #   #   text: "[{{< iconify ph sparkle >}}]{.yellow-text style='font-size:1.0em;'} Startup Times"
 
   page-footer:
     left: "Copyright 2023, Sam Foreman" 

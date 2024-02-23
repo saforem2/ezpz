@@ -335,6 +335,16 @@ Sam Foreman
     # where `deepspeed` and `DDP` only available for `pytorch`
     # ----------------------------------------------------------
     $ launch python3 -m ezpz framework=pytorch backend=DDP
+    ```
+
+    <details closed>
+    <summary>
+
+    <code>Output</code>
+
+    </summary>
+
+    ``` bash
     [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
     [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
     [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
@@ -506,3 +516,5 @@ Sam Foreman
     [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/main_debug.log to W&B artifact...
     [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-16/__main__.log to W&B artifact...
     ```
+
+    </details>

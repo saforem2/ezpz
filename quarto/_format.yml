@@ -22,9 +22,9 @@ format:
       caption: none
     html-math-method: katex
     css:
+      - css/ansi.css
       - css/default.css
       - css/callouts.css
-      - css/ansi.css
       # - css/profile.css
     theme:
       dark:
