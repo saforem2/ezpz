@@ -32,19 +32,11 @@ dependencies = [
   "jaxlib",
   "jaxtyping",
   "sh",
-  # "bokeh",
-  # "h5py",
-  # "pillow",
-  # "celerite",
   "joblib",
   "rich",
   "hydra-core",
-  # "wandb",
-  # "arviz",
+  "wandb",
   "hydra-colorlog",
-  # "ipympl",
-  # "tqdm",
-  # "opinionated @ git+https://github.com/saforem2/opinionated",
   "ambivalent @ git+https://github.com/saforem2/ambivalent",
   "enrich @ git+https://github.com/saforem2/enrich",
 ]
@@ -67,7 +59,7 @@ dev = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/saforem2/ezpz"
+Documentation = "https://saforem2.github.io/ezpz"
 Issues = "https://github.com/saforem2/ezpz/issues"
 Source = "https://github.com/saforem2/ezpz"
 
