@@ -9,19 +9,6 @@ import re
 from typing import Any, Optional
 from typing import Union
 
-import importlib.util
-import sys
-
-#
-# def lazy_import(name: str):
-#     spec = importlib.util.find_spec(name)
-#     loader = importlib.util.LazyLoader(spec.loader)
-#     spec.loader = loader
-#     module = importlib.util.module_from_spec(spec)
-#     sys.modules[name] = module
-#     loader.exec_module(module)
-#     return module
-
 from enrich.console import get_console, is_interactive
 from mpi4py import MPI
 import numpy as np
@@ -96,11 +83,31 @@ try:
 except Exception:
     wandb = None
 
+# import importlib.util
+# import sys
+
+#
+# def lazy_import(name: str):
+#     spec = importlib.util.find_spec(name)
+#     loader = importlib.util.LazyLoader(spec.loader)
+#     spec.loader = loader
+#     module = importlib.util.module_from_spec(spec)
+#     sys.modules[name] = module
+#     loader.exec_module(module)
+#     return module
+
 
 log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
 logging.getLogger('sh').setLevel('WARNING')
+
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+RANK = int(MPI.COMM_WORLD.Get_rank())
+WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
+
+ScalarLike = Union[int, float, bool, np.floating]
+
 
 __all__ = [
     'BACKENDS',
@@ -165,77 +172,6 @@ __all__ = [
     'timeitlogit'
 ]
 
-# __all__ = [
-#     'build_mpiexec_thetagpu',
-#     'dist',
-#     'loadjobenv',
-#     'command_exists',
-#     'get_loggingg_config',
-#     'get_torch_device',
-#     'get_scheduler',
-#     'get_hostname',
-#     'get_hosts_from_hostfile',
-#     'get_torch_backend',
-#     'get_scheduler',
-#     'get_cpus_per_node',
-#     'get_num_nodes',
-#     'git_ds_info',
-#     'init_process_group',
-#     'get_dist_info',
-#     'get_machine',
-#     'setup_torch',
-#     'timeit',
-#     'timeitlogit',
-#     'setup_torch_DDP',
-#     'include_file',
-#     'init_deepspeed',
-#     'inspect_cobalt_running_job',
-#     'get_cobalt_nodefile',
-#     'get_cobalt_resources',
-#     'get_nodes_from_hostfile',
-#     'get_gpus_per_node',
-#     'cleanup',
-#     'seed_everything',
-#     'run_bash_command',
-#     'get_rank',
-#     'get_local_rank',
-#     'get_node_index',
-#     'get_world_size',
-#     'query_environment',
-#     'check',
-#     'HERE',
-#     'setup_torch_distributed',
-#     'setup',
-#     'setup_wandb',
-#     'print_config_tree',
-#     'setup_tensorflow',
-#     'savejobenv',
-#     'print_dist_setup',
-#     'PROJECT_DIR',
-#     'PROJECT_ROOT',
-#     'CONF_DIR',
-#     'LOGS_DIR',
-#     'SCHEDULERS',
-#     'BIN_DIR',
-#     "SAVEJOBENV",
-#     "GETJOBENV",
-#     'OUTPUTS_DIR',
-#     'QUARTO_OUTPUTS_DIR',
-#     'FRAMEWORKS',
-#     'BACKENDS',
-#     'load_ds_config',
-#     'TrainConfig',
-#     'grab_tensor',
-# ]
-
-
-os.environ['PYTHONIOENCODING'] = 'utf-8'
-RANK = int(MPI.COMM_WORLD.Get_rank())
-WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
-
-ScalarLike = Union[int, float, bool, np.floating]
-
-
 def normalize(name):
     return re.sub(r"[-_.]+", "-", name).lower()
 
@@ -274,24 +210,6 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
         assert callable(getattr(x, 'numpy'))
         return x.numpy()
     raise ValueError
-
-
-class DummyTqdmFile(object):
-    """ Dummy file-like that will write to tqdm
-    https://github.com/tqdm/tqdm/issues/313
-    """
-    file = None
-
-    def __init__(self, file):
-        self.file = file
-
-    def write(self, x):
-        # Avoid print() second call (useless \n)
-        # if len(x.rstrip()) > 0:
-        tqdm.tqdm.write(x, file=self.file, end='\n')
-
-    def flush(self):
-        return getattr(self.file, "flush", lambda: None)()
 
 
 def get_rich_logger(
@@ -364,11 +282,15 @@ def get_logger(
     from enrich.console import get_console
     # from enrich import is_interactive
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-    if rank_zero_only:
-        if RANK != 0:
-            log.setLevel('CRITICAL')
-        else:
-            log.setLevel(level)
+    _ = (
+            log.setLevel("CRITICAL") if (RANK == 0 and rank_zero_only)
+            else log.setLevel(level)
+    )
+    # if rank_zero_only:
+    #     if RANK != 0:
+    #         log.setLevel('CRITICAL')
+    #     else:
+    #         log.setLevel(level)
     if RANK == 0:
         console = get_console(
             markup=True,  # (WORLD_SIZE == 1),
@@ -402,20 +324,3 @@ def get_logger(
     ):
         log.handlers = [log.handlers[0]]
     return log
-
-#
-# if __name__ == '__main__':
-#     import sys
-#     try:
-#         framework = sys.argv[1]
-#     except IndexError:
-#         framework = 'pytorch'
-#     try:
-#         backend = sys.argv[2]
-#     except IndexError:
-#         backend = 'deepspeed'
-#     try:
-#         port = sys.argv[3]
-#     except IndexError:
-#         port = '5432'
-#     check(framework=framework, backend=backend, port=port)
