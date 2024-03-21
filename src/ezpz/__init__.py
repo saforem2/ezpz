@@ -9,6 +9,19 @@ import re
 from typing import Any, Optional
 from typing import Union
 
+import importlib.util
+import sys
+
+#
+# def lazy_import(name: str):
+#     spec = importlib.util.find_spec(name)
+#     loader = importlib.util.LazyLoader(spec.loader)
+#     spec.loader = loader
+#     module = importlib.util.module_from_spec(spec)
+#     sys.modules[name] = module
+#     loader.exec_module(module)
+#     return module
+
 from enrich.console import get_console, is_interactive
 from mpi4py import MPI
 import numpy as np
