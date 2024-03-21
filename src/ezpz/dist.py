@@ -1007,6 +1007,20 @@ def get_pbs_launch_cmd(
     ])
 
 
+def get_running_jobs_from_qstat() -> list[int]:
+    try:
+        from sh import qstat as shqstat  # type: ignore
+    except Exception as e:
+        raise e
+    return [
+        int(i.split('.')[0])
+        for i in shqstat(
+            '-u',
+            os.environ.get("USER")
+        ).split("\n")[2:-1] if ' R ' in i
+    ]
+
+
 def get_pbs_jobid_from_qstat() -> int:
     from ezpz.configs import get_scheduler
     assert get_scheduler() == 'PBS'
