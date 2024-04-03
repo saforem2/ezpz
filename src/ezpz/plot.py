@@ -4,22 +4,16 @@ plot_helpers.py
 Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
-import datetime
-# import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple
-# import warnings
-
-# import opinionated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from ezpz import get_timestamp
 import xarray as xr
-# import torch
-# import tensorflow as tf
 
 try:
     import ambivalent
@@ -28,7 +22,6 @@ try:
 except (ImportError, ModuleNotFoundError):
     STYLES = {}
 
-# import logging
 from enrich import get_logger
 # try:
 #     import matplotx
@@ -137,14 +130,6 @@ def set_plot_style(**kwargs):
     #     y = figsize[1]
     #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
     #     plt.rcParams['figure.dpi'] = 400
-
-
-def get_timestamp(fstr=None):
-    """Get formatted timestamp."""
-    now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(fstr)
 
 
 def tplot(

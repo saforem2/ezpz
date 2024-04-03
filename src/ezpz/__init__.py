@@ -172,6 +172,16 @@ __all__ = [
     'timeitlogit'
 ]
 
+
+def get_timestamp(fstr=None) -> str:
+    """Get formatted timestamp."""
+    import datetime
+    now = datetime.datetime.now()
+    if fstr is None:
+        return now.strftime('%Y-%m-%d-%H%M%S')
+    return now.strftime(fstr)
+
+
 def normalize(name):
     return re.sub(r"[-_.]+", "-", name).lower()
 
