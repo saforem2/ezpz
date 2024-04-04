@@ -721,7 +721,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith('x4'):
         return 'Aurora'
     if hostname.startswith('login'):
-        return 'NERSC'
+        return 'Perlmutter'
     if hostname.startswith('nid'):
         return 'Perlmutter'
     return f'{hostname}'
