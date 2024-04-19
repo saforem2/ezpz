@@ -79,9 +79,21 @@ def main():
             )
         elif backend.lower() in ('ds', 'deepspeed'):
             import deepspeed
+            # config = ez.load_ds_config().update(
+            #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
+            # )
+            import argparse
+            parser = argparse.ArgumentParser(description='My training script.')
+            parser.add_argument('--local_rank', required=False, type=int, default=-1,  # default=ez.get_local_rank()),
+                                help='local rank passed from distributed launcher')
+            # Include DeepSpeed configuration arguments
+            parser = deepspeed.add_config_arguments(parser)
+            cmd_args = parser.parse_args()
+            logger.info(f'{cmd_args=}')
             model, optimizer, *_ = deepspeed.initialize(
+                args=cmd_args,
                 model=model,
-                optimizer=optimizer
+                optimizer=optimizer,
             )
 
     for iter in range(10):
