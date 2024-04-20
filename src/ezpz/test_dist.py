@@ -14,18 +14,28 @@ import torch
 import ezpz as ez
 
 # backend can be any of DDP, deespepeed, horovod
-RANK = ez.setup_torch(
+DIST_INIT = ez.setup_torch_distributed(
     backend=(
         backend := os.environ.get('BACKEND', 'DDP')
+    ),
+    port=(
+        port := os.environ.get("MASTER_PORT", "29500")
     )
 )
 WORLD_SIZE = ez.get_world_size()
 DEVICE = ez.get_torch_device()
+LOCAL_RANK = ez.get_local_rank()
+DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
+_ = ez.print_dist_setup()
+
+if DEVICE == "cuda":
+    torch.cuda.set_device(LOCAL_RANK)
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
+log.info(f"{DIST_INIT=}")
 BATCH_SIZE = 64
 INPUT_SIZE = 128
 OUTPUT_SIZE = 128
@@ -60,14 +70,13 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 def main():
-    model =  Network(
+    model = Network(
         input_dim=INPUT_SIZE,
         output_dim=OUTPUT_SIZE,
         sizes=[1024, 512, 256, 128]
     )
-    devid = f"{DEVICE}:{ez.get_local_rank()}"
-    model.to(devid)
-    model.to(DTYPE)
+    model.to(DEVICE)
+    model.to(DEVICE_ID)
     logger.info(f'{model=}')
     optimizer = torch.optim.Adam(model.parameters())
     if WORLD_SIZE > 1:
