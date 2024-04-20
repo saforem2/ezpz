@@ -22,24 +22,28 @@ DIST_INIT = ez.setup_torch_distributed(
         port := os.environ.get("MASTER_PORT", "29500")
     )
 )
-WORLD_SIZE = ez.get_world_size()
 DEVICE = ez.get_torch_device()
-LOCAL_RANK = ez.get_local_rank()
+RANK = DIST_INIT['rank']
+WORLD_SIZE = DIST_INIT['world_size']
+LOCAL_RANK = DIST_INIT['local_rank']
+# WORLD_SIZE = ez.get_world_size()
+# LOCAL_RANK = ez.get_local_rank()
 DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
 _ = ez.print_dist_setup()
 
-if DEVICE == "cuda":
+if DEVICE == "cuda" and torch.cuda.is_available():
     torch.cuda.set_device(LOCAL_RANK)
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
-log.info(f"{DIST_INIT=}")
 BATCH_SIZE = 64
 INPUT_SIZE = 128
 OUTPUT_SIZE = 128
 DTYPE = torch.get_default_dtype()
+
+logger.info(f"{DIST_INIT=}")
 
 
 class Network(torch.nn.Module):
