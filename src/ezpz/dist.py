@@ -16,7 +16,7 @@ import socket
 import json
 
 import torch
-import torch.distributed as dist
+import torch.distributed as tdist
 from datetime import timedelta
 
 from mpi4py import MPI
@@ -188,7 +188,7 @@ def _get_dist_info(
     )
     hosts = get_nodes_from_hostfile(Path(hostfile).as_posix())
     if len(hosts) > max_hosts:
-        log.warning(f'{len(hosts)=} > {max_hosts=} in `dist.get_dist_info')
+        log.warning(f'{len(hosts)=} > {max_hosts=} in dist.get_dist_info')
         log.warning(f'Truncating `hosts: [addr1, addr2, ...] at {max_hosts}')
     hosts = (
         [h.split('.')[0] for h in hosts] if len(hosts) < max_hosts
@@ -361,20 +361,21 @@ def get_torch_backend() -> str:
 def init_process_group(
         rank: int | str,
         world_size: int | str,
+        timeout: int = 600,
 ) -> None:
     backend = get_torch_backend()
     # log.warning(f'Using {backend=}')
     delta = timedelta(
         # days=50,
-        seconds=300,
+        seconds=timeout,
         # microseconds=10,
         # milliseconds=29000,
         # minutes=5,
         # hours=8,
         # weeks=2
     )
-    if not dist.is_initialized():
-        dist.init_process_group(
+    if not tdist.is_initialized():
+        tdist.init_process_group(
             backend=backend,
             timeout=delta,
             rank=int(rank),
