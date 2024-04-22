@@ -24,7 +24,7 @@ format:
   html: default
   gfm:
     author: Sam Foreman
-    output-file: "index.md"
+    output-file: "README.md"
 ---
 
 <!-- [![Pytorch](https://img.shields.io/badge/PyTorch-222222?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc) -->
