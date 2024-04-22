@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ezpz"
 description = '2ez'
-readme = "README.md"
+readme = "./docs/README.md"
 requires-python = ">=3.8"
 license = ""
 keywords = []
