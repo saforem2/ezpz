@@ -1,37 +1,319 @@
-# ezpz
+# `ezpz` 🍋
 Sam Foreman
-2024-02-23
+2024-04-20
 
-# ✨ `ezpz`
-
-[![Pytorch](https://img.shields.io/badge/PyTorch-222222?logo=pytorch&logoColor=white.png)](#pytorch)
-[![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow)
-[![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd.png)](https://hydra.cc)
-
+<!-- [![Pytorch](https://img.shields.io/badge/PyTorch-222222?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc) -->
 <!--
 > [!NOTE]
-> This library is **very much** still a WIP.  
+> This library is **very much** still a WIP
 > Any ideas / issues / suggestions for improving things would be greatly appreciated.
 -->
 
-> [!IMPORTANT]
+## Overview
+
+<!-- ::: {.callout-tip icon=false aria-title="Now Playing" title='[![](https://api.iconify.design/logos:spotify-icon.svg?color=%23888888) Now Playing:]{style="color:#1ED760;"}' collapse="true" style='width:100%; border: none!important; border-left: 1.5px solid #1ED760!important; border-radius: 0pt!important; opacity: 100%;'} -->
+<!-- ::: {.callout-tip icon="false" collapse="false" style='width:100%; background-color: rgba(28, 28, 28, 0.0)!important; border-color: var(--bg-border)!important;' } -->
+
+> [!TIP]
 >
-> ### <span style="color: var(--ansi-red);">Important</span>
+> ### <code>ezpz</code> 🍋
 >
-> Scale your application across **thousands** of GPUs with **minimal
-> changes**.
+> Launch and train across all your accelerators, using your favorite
+> framework + backend combo.
 >
-> `ezpz` simplifies the process of setting up + launching distributed
-> training with your favorite `{framework, backend}` combination:
+> `ezpz` simplifies the process of:
 >
-> - [`framework=pytorch`](#pytorch) +
->   `backend={DDP, deepspeed, horovod}`
+> - <details>
+>   <summary>
+>   Setting up + launching distributed training:
+>   </summary>
 >
-> - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+>   - <details closed>
+>     <summary>
+>     <code>import ezpz as ez</code>
+>     </summary>
 >
-> *2ez* 😎. <br>
+>     - `RANK =`
+>       [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
+>       <span class="dim-text">for `backend` $\in$ {`DDP`, `deepspeed`,
+>       `horovod`}</span>
 >
-> (see [frameworks](#frameworks) for additional details)
+>     - `RANK =`
+>       [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
+>
+>     - `LOCAL_RANK =`
+>       [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
+>
+>     - `WORLD_SIZE =`
+>       [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
+>
+>     <span class="dim-text">(see
+>     [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py)
+>     for more details).</span>
+>
+>   </details>
+>
+> </details>
+>
+> - <details closed>
+>   <summary>
+>
+>   Using your favorite `{framework, backend}`
+>
+>   </summary>
+>
+>   On any accelerator:
+>
+>   - [`framework=pytorch`](#pytorch) +
+>     `backend={DDP, deepspeed, horovod}`
+>
+>   - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+>
+>   - [`ez.get_torch_device()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332):
+>     {`cuda`, `xpu`, `mps`, `cpu`}
+>
+>   - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348):
+>     {`nccl`, `ccl`, `gloo`}
+>
+>   *2ez* 😎. (see [frameworks](#frameworks) for additional details)
+>
+> </details>
+>
+> - <details closed>
+>   <summary>
+>   Writing device agnostic code:
+>   </summary>
+>   <details closed>
+>   <summary>
+>   <code>ezpz_data_parallel.py</code>
+>   </summary>
+>
+>   ``` python
+>   """
+>   ezpz_ddp.py
+>
+>   - to launch:
+>
+>     $ source ezpz/src/ezpz/bin/savejobenv
+>     $ BACKEND=DDP launch python3 ezpz_ddp.py
+>   """
+>   import os
+>   import logging
+>   import torch
+>   import ezpz as ez
+>
+>   # backend can be any of DDP, deespepeed, horovod
+>   RANK = ez.setup_torch(
+>       backend=(
+>           backend := os.environ.get('BACKEND', 'DDP')
+>       )
+>   )
+>   WORLD_SIZE = ez.get_world_size()
+>   DEVICE = ez.get_device()
+>
+>   # log only from RANK == 0
+>   logger = logging.getLogger(__name__)
+>   logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
+>
+>   model = torch.nn.Linear(3, 4)
+>   model.to(DEVICE)
+>   optimizer = torch.optim.Adam(model.parameters())
+>   if WORLD_SIZE > 1:
+>       if backend.lower() == 'ddp':
+>           from torch.nn.parallel import DistributedDataParallel as DDP
+>           model = DDP(model)
+>       elif backend.lower() in ('ds', 'deepspeed'):
+>           import deepspeed
+>           model, optimizer, *_ = deepspeed.initialize(
+>               model=model,
+>               optimizer=optimizer
+>           )
+>
+>   x = torch.tensor([1.0, 2.0, 3.0]).to(DEVICE)
+>   y = model(x)
+>   loss = y.sum()
+>   if backend == 'deepspeed':
+>       model.backward(loss)
+>       model.step(loss)
+>   else:
+>       loss = loss.backward()
+>       optimizer.step()
+>   ```
+>
+>   <details closed>
+>   <summary>
+>   Output:
+>   </summary>
+>   <details closed>
+>   <summary>
+>   <code>XPU</code>
+>   </summary>
+>
+>   ``` bash
+>   [04:50:57 PM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed/dep/ezpz/s/ezpz  main q4-drop 32s
+>   $ launch python3 -Wignore test_dist.py
+>   Connected to tcp://x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com:7919
+>   Found executable /home/foremans/miniconda3/envs/q4-drop/bin/python3
+>   Launching application 5bf3e9e8-89fb-412a-a49e-3c81601436b7
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=9/23][local_rank=9/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=14/23][local_rank=2/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=3/23][local_rank=3/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=17/23][local_rank=5/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=6/23][local_rank=6/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=13/23][local_rank=1/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=7/23][local_rank=7/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=19/23][local_rank=7/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=8/23][local_rank=8/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=21/23][local_rank=9/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=10/23][local_rank=10/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=22/23][local_rank=10/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=11/23][local_rank=11/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=23/23][local_rank=11/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=2/23][local_rank=2/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=20/23][local_rank=8/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=4/23][local_rank=4/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=15/23][local_rank=3/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=18/23][local_rank=6/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=12/23][local_rank=0/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=1/23][local_rank=1/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=16/23][local_rank=4/11][node=0/1]
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=5/23][local_rank=5/11][node=1/1]
+>   [2024-04-19 16:51:06][INFO][dist:239] - DistInfo={
+>       "DEVICE": "xpu",
+>       "DEVICE_ID": "xpu:0",
+>       "DISTRIBUTED_BACKEND": "ccl",
+>       "GPUS_PER_NODE": 12,
+>       "HOSTFILE": "/var/spool/pbs/aux/8992337.amn-0001",
+>       "HOSTNAME": "x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com",
+>       "HOSTS": "['x1921c0s0b0n0', 'x1921c0s5b0n0']",
+>       "LOCAL_RANK": 0,
+>       "MACHINE": "SunSpot",
+>       "NGPUS": 24,
+>       "NODE_ID": 0,
+>       "NUM_NODES": 2,
+>       "RANK": 0,
+>       "SCHEDULER": "PBS",
+>       "WORLD_SIZE_IN_USE": 24,
+>       "WORLD_SIZE_TOTAL": 24
+>   }
+>   [2024-04-19 16:51:06][INFO][dist:602] - Using oneccl_bindings from: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/torch-ccl/oneccl_bindings_for_pytorch/__init__.py
+>   [2024-04-19 16:51:06][INFO][dist:604] - Using ipex from: /home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/intel_extension_for_pytorch/__init__.py
+>   [2024-04-19 16:51:06][INFO][dist:605] - [0/24] Using device='xpu' with backend='DDP' + 'ccl' for distributed training.
+>   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=0/23][local_rank=0/11][node=0/1]
+>   [2024-04-19 16:51:06][WARNING][dist:296] - Using [24 / 24] available "xpu" devices !!
+>   2024:04:19-16:51:06:(16909) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16910) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16912) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16913) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16914) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16915) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16916) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16917) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16918) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16919) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16920) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   2024:04:19-16:51:06:(16921) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+>   [2024-04-19 16:51:06][INFO][test_dist:71] - model=Network(
+>     (layers): Sequential(
+>       (0): Linear(in_features=128, out_features=1024, bias=True)
+>       (1): Linear(in_features=1024, out_features=512, bias=True)
+>       (2): Linear(in_features=512, out_features=256, bias=True)
+>       (3): Linear(in_features=256, out_features=128, bias=True)
+>       (4): Linear(in_features=128, out_features=128, bias=True)
+>     )
+>   )
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=0, loss=2709.53418, dt=1.380, dtf=0.950, dtb=0.430
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=1, loss=2058.49805, dt=0.133, dtf=0.002, dtb=0.131
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=2, loss=1507.91187, dt=0.004, dtf=0.001, dtb=0.004
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=3, loss=1181.78577, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=4, loss=949.43561, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=5, loss=848.14905, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=6, loss=788.76123, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=7, loss=753.59509, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=8, loss=750.62225, dt=0.004, dtf=0.001, dtb=0.003
+>   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=9, loss=740.23474, dt=0.004, dtf=0.001, dtb=0.003
+>   Application 5bf3e9e8 resources: utime=621s stime=111s maxrss=1746816KB inblock=192 oublock=16 minflt=10719359 majflt=7493 nvcsw=169332 nivcsw=77546
+>   ```
+>
+>   </details>
+>   <details closed>
+>   <summary>
+>   <code>CPU</code>
+>   </summary>
+>
+>   ``` bash
+>   2023-11-11 $ TORCH_DEVICE=cpu mpirun -np 12 python3 test_dist.py
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=1/11][local_rank=1/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=3/11][local_rank=3/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=6/11][local_rank=6/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=5/11][local_rank=5/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=2/11][local_rank=2/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=10/11][local_rank=10/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=4/11][local_rank=4/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=7/11][local_rank=7/11][node=0/0]
+>   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=9/11][local_rank=9/11][node=0/0]
+>   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=11/11][local_rank=11/11][node=0/0]
+>   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=8/11][local_rank=8/11][node=0/0]
+>   [2024-04-19 14:44:13][INFO][dist:239] - DistInfo={
+>       "DEVICE": "cpu",
+>       "DEVICE_ID": "cpu:0",
+>       "DISTRIBUTED_BACKEND": "gloo",
+>       "GPUS_PER_NODE": 12,
+>       "HOSTFILE": "/Users/samforeman/projects/saforem2/ezpz/src/ezpz/hostfile",
+>       "HOSTNAME": "Sams-MacBook-Pro.local",
+>       "HOSTS": "['Sams-MacBook-Pro']",
+>       "LOCAL_RANK": 0,
+>       "MACHINE": "Sams-MacBook-Pro.local",
+>       "NGPUS": 12,
+>       "NODE_ID": 0,
+>       "NUM_NODES": 1,
+>       "RANK": 0,
+>       "SCHEDULER": "LOCAL",
+>       "WORLD_SIZE_IN_USE": 12,
+>       "WORLD_SIZE_TOTAL": 12
+>   }
+>   [2024-04-19 14:44:13][INFO][dist:605] - [0/12] Using device='cpu' with backend='DDP' + 'gloo' for distributed training.
+>   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=0/11][local_rank=0/11][node=0/0]
+>   [2024-04-19 14:44:13][WARNING][dist:296] - Using [12 / 12] available "cpu" devices !!
+>   [2024-04-19 14:44:13][INFO][test_dist:72] - model=Network(
+>     (layers): Sequential(
+>       (0): Linear(in_features=128, out_features=1024, bias=True)
+>       (1): Linear(in_features=1024, out_features=512, bias=True)
+>       (2): Linear(in_features=512, out_features=256, bias=True)
+>       (3): Linear(in_features=256, out_features=128, bias=True)
+>       (4): Linear(in_features=128, out_features=128, bias=True)
+>     )
+>   )
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=0, loss=2801.62549, dt=0.389, dtf=0.042, dtb=0.348
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=1, loss=2092.84692, dt=0.051, dtf=0.010, dtb=0.041
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=2, loss=1482.45520, dt=0.037, dtf=0.004, dtb=0.033
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=3, loss=1174.38037, dt=0.033, dtf=0.002, dtb=0.031
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=4, loss=938.39917, dt=0.032, dtf=0.003, dtb=0.030
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=5, loss=888.37390, dt=0.035, dtf=0.001, dtb=0.033
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=6, loss=784.63470, dt=0.036, dtf=0.003, dtb=0.032
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=7, loss=749.53839, dt=0.033, dtf=0.002, dtb=0.031
+>   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=8, loss=732.22656, dt=0.036, dtf=0.003, dtb=0.034
+>   [2024-04-19 14:44:15][INFO][test_dist:102] - iter=9, loss=730.63776, dt=0.034, dtf=0.001, dtb=0.033
+>   35.68s user 17.20s system 546% cpu 9.681s total
+>   ```
+>
+>   </details>
+>   </details>
+>   </details>
+>
+> - <details closed>
+>   <summary>
+>   Using <code>wandb</code>:
+>   </summary>
+>
+>   - `ez.setup_wandb(project_name='ezpz')`
+>
+>   </details>
+>
+> - **Full support** for any {`device` + `framework` + `backend`}:
+>   - device: {`GPU`, `XPU`, `MPS`, `CPU`}
+>   - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
+>   - backend: {`DDP`, `deepspeed`, `horovod`}
 
 ## Setup + `launch`
 
@@ -53,7 +335,7 @@ Sam Foreman
     <details closed>
     <summary>
 
-    Output:
+    <code>output</code>
 
     </summary>
 
@@ -80,13 +362,13 @@ Sam Foreman
     `deepspeed`:
 
     ``` bash
-    $ launch $(which python3) -m ezpz framework=pytorch backend=deepspeed
+    $ launch python3 -m ezpz framework=pytorch backend=deepspeed
     ```
 
     <details closed>
     <summary>
 
-    Output:
+    <code>output</code>
 
     </summary>
 
@@ -268,13 +550,12 @@ Sam Foreman
 
 </details>
 
-## Tested Machines
+### Tested Machines
 
 <details closed>
 <summary>
 <b>Aurora</b> (@ ALCF)
 </summary>
-<!--#### Aurora (@ ALCF)-->
 
 ``` bash
 # launch job
@@ -779,7 +1060,7 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
 >
 > ### <span style="color: var(--ansi-red);">❤️‍🩹 Status</span>
 >
-> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">02</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">23</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">07:45:57</span>
+> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">20</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">11:35:28</span>
 > </pre>
 > <!-- [[![](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)]{style="text-align:center;"} -->
 > <p align="center">

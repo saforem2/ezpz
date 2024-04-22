@@ -6,7 +6,7 @@ website:
   #   contents:
   #     - auto: "qmd/**/*.qmd"
 
-  title: "✨ `ezpz`"
+  title: "`ezpz` 🍋"
   page-navigation: true
   favicon: "./favicon.svg"
   back-to-top-navigation: true
@@ -16,7 +16,7 @@ website:
   repo-url: https://github.com/saforem2/ezpz
   description: "Distributed training, ezpz."
   open-graph:
-    title: "`ezpz`"
+    title: "ezpz 🍋"
     description: "Distributed training, ezpz."
     image: "./../assets/thumbnail.png"
   twitter-card:
@@ -43,7 +43,7 @@ website:
       - href: https://twitter.com/saforem2
         text: "[{{< iconify line-md twitter >}}]{style='font-size: 1.15em;'}"
         aria-label: Twitter
-      - href: https://github.com/saforem2/personal_site
+      - href: https://github.com/saforem2/ezpz
         text: "[{{< iconify line-md github-loop >}}]{style='font-size: 1.15em;'}"
         aria-label: GitHub
         menu:
@@ -62,7 +62,7 @@ website:
     #   #   text: "[{{< iconify ph sparkle >}}]{.yellow-text style='font-size:1.0em;'} Startup Times"
 
   page-footer:
-    left: "Copyright 2023, Sam Foreman" 
+    left: "Copyright © 2024, Sam Foreman" 
     right: "[samforeman.me](https://samforeman.me)"
     center:
       - href: https://samforeman.me
