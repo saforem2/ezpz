@@ -53,7 +53,8 @@ function getCOBALT_NODEFILE() {
 
 
 function savePBSenv() {
-    if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
+    # if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
+    if [[ -n $(printenv | grep PBS_JOBID ) ]]; then
         echo "┌───────────────────────────────────────────────────────────────────"
         echo "│ Writing PBS vars to ${PBS_ENV_FILE}"
         PBS_VARS=$(env | grep PBS)
