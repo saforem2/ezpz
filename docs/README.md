@@ -1,21 +1,16 @@
 # `ezpz` 🍋
-Sam Foreman
-2024-04-23
-
-# `ezpz` 🍋
-
-\| \[Sam Foreman
-[<span class="orcid-green"></span>](https://orcid.org/0000-0002-9981-0876)\]()  
+[Sam Foreman](https://samforeman.me)  
 2024-04-23
 
 ## Overview
 
-> **<code>ezpz</code> 🍋**
->
-> Launch and train across all your accelerators, using your favorite
-> framework + backend combo.
->
-> `ezpz` simplifies the process of:
+> [!TIP]
+> **<code>ezpz</code> 🍋**: Distributed training, `ezpz`.
+> 
+> _Launch and train across all your accelerators, using your favorite
+> framework + backend combo_.
+> 
+> Simplifies the process of:
 >
 > - <details>
 >   <summary>
@@ -115,22 +110,10 @@ GPUs in your current {`PBS`, `slurm`} job and train a simple model using
 either `DDP` or `deepspeed`
 
 <details closed>
-<summary>
+  
+<summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a></summary>
 
-<code>test_dist.py</code>
-
-</summary>
-<!-- <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a>:</summary> -->
-
-``` python
-"""
-ezpz_ddp.py
-
-- to launch:
-
-$ source ezpz/src/ezpz/bin/savejobenv
-$ BACKEND=DDP launch python3 ezpz_ddp.py
-"""
+```python
 import os
 import logging
 import time
