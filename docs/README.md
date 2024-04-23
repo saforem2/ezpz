@@ -2,21 +2,15 @@
 Sam Foreman
 2024-04-22
 
-<!-- [![Pytorch](https://img.shields.io/badge/PyTorch-222222?logo=pytorch&logoColor=white)](#pytorch) [![Tensorflow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white)](#tensorflow) [![hydra](https://img.shields.io/badge/Config-Hydra-89b8cd)](https://hydra.cc) -->
-<!--
-> [!NOTE]
-> This library is **very much** still a WIP
-> Any ideas / issues / suggestions for improving things would be greatly appreciated.
--->
+# `ezpz` 🍋
+
+\| \[Sam Foreman
+[<span class="orcid-green"></span>](https://orcid.org/0000-0002-9981-0876)\]()  
+2024-04-22
 
 ## Overview
 
-<!-- ::: {.callout-tip icon=false aria-title="Now Playing" title='[![](https://api.iconify.design/logos:spotify-icon.svg?color=%23888888) Now Playing:]{style="color:#1ED760;"}' collapse="true" style='width:100%; border: none!important; border-left: 1.5px solid #1ED760!important; border-radius: 0pt!important; opacity: 100%;'} -->
-<!-- ::: {.callout-tip icon="false" collapse="false" style='width:100%; background-color: rgba(28, 28, 28, 0.0)!important; border-color: var(--bg-border)!important;' } -->
-
-> [!TIP]
->
-> ### <code>ezpz</code> 🍋
+> **<code>ezpz</code> 🍋**
 >
 > Launch and train across all your accelerators, using your favorite
 > framework + backend combo.
@@ -58,7 +52,7 @@ Sam Foreman
 > - <details closed>
 >   <summary>
 >
->   Using your favorite `{framework, backend}`
+>   Using your favorite <code>{framework, backend}</code>
 >
 >   </summary>
 >
@@ -83,222 +77,23 @@ Sam Foreman
 >   <summary>
 >   Writing device agnostic code:
 >   </summary>
->   <details closed>
->   <summary>
->   <code>ezpz_data_parallel.py</code>
->   </summary>
 >
->   ``` python
->   """
->   ezpz_ddp.py
+>   - <details>
+>     <summary>
+>     <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ezpz.get_torch_device()</code></a>
+>     </summary>
 >
->   - to launch:
+>     ``` python
+>     >>> import ezpz as ez
+>     >>> DEVICE = ez.get_torch_device()
+>     >>> model = torch.nn.Linear(10, 10)
+>     >>> model.to(DEVICE)
+>     >>> x = torch.randn((10, 10), device=DEVICE)
+>     >>> y = model(x)
+>     >>> y.device
+>     device(type='mps', index=0)
+>     ```
 >
->     $ source ezpz/src/ezpz/bin/savejobenv
->     $ BACKEND=DDP launch python3 ezpz_ddp.py
->   """
->   import os
->   import logging
->   import torch
->   import ezpz as ez
->
->   # backend can be any of DDP, deespepeed, horovod
->   RANK = ez.setup_torch(
->       backend=(
->           backend := os.environ.get('BACKEND', 'DDP')
->       )
->   )
->   WORLD_SIZE = ez.get_world_size()
->   DEVICE = ez.get_device()
->
->   # log only from RANK == 0
->   logger = logging.getLogger(__name__)
->   logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
->
->   model = torch.nn.Linear(3, 4)
->   model.to(DEVICE)
->   optimizer = torch.optim.Adam(model.parameters())
->   if WORLD_SIZE > 1:
->       if backend.lower() == 'ddp':
->           from torch.nn.parallel import DistributedDataParallel as DDP
->           model = DDP(model)
->       elif backend.lower() in ('ds', 'deepspeed'):
->           import deepspeed
->           model, optimizer, *_ = deepspeed.initialize(
->               model=model,
->               optimizer=optimizer
->           )
->
->   x = torch.tensor([1.0, 2.0, 3.0]).to(DEVICE)
->   y = model(x)
->   loss = y.sum()
->   if backend == 'deepspeed':
->       model.backward(loss)
->       model.step(loss)
->   else:
->       loss = loss.backward()
->       optimizer.step()
->   ```
->
->   <details closed>
->   <summary>
->   Output:
->   </summary>
->   <details closed>
->   <summary>
->   <code>XPU</code>
->   </summary>
->
->   ``` bash
->   [04:50:57 PM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed/dep/ezpz/s/ezpz  main q4-drop 32s
->   $ launch python3 -Wignore test_dist.py
->   Connected to tcp://x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com:7919
->   Found executable /home/foremans/miniconda3/envs/q4-drop/bin/python3
->   Launching application 5bf3e9e8-89fb-412a-a49e-3c81601436b7
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=9/23][local_rank=9/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=14/23][local_rank=2/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=3/23][local_rank=3/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=17/23][local_rank=5/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=6/23][local_rank=6/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=13/23][local_rank=1/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=7/23][local_rank=7/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=19/23][local_rank=7/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=8/23][local_rank=8/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=21/23][local_rank=9/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=10/23][local_rank=10/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=22/23][local_rank=10/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=11/23][local_rank=11/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=23/23][local_rank=11/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=2/23][local_rank=2/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=20/23][local_rank=8/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=4/23][local_rank=4/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=15/23][local_rank=3/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=18/23][local_rank=6/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=12/23][local_rank=0/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=1/23][local_rank=1/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=16/23][local_rank=4/11][node=0/1]
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=5/23][local_rank=5/11][node=1/1]
->   [2024-04-19 16:51:06][INFO][dist:239] - DistInfo={
->       "DEVICE": "xpu",
->       "DEVICE_ID": "xpu:0",
->       "DISTRIBUTED_BACKEND": "ccl",
->       "GPUS_PER_NODE": 12,
->       "HOSTFILE": "/var/spool/pbs/aux/8992337.amn-0001",
->       "HOSTNAME": "x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com",
->       "HOSTS": "['x1921c0s0b0n0', 'x1921c0s5b0n0']",
->       "LOCAL_RANK": 0,
->       "MACHINE": "SunSpot",
->       "NGPUS": 24,
->       "NODE_ID": 0,
->       "NUM_NODES": 2,
->       "RANK": 0,
->       "SCHEDULER": "PBS",
->       "WORLD_SIZE_IN_USE": 24,
->       "WORLD_SIZE_TOTAL": 24
->   }
->   [2024-04-19 16:51:06][INFO][dist:602] - Using oneccl_bindings from: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/torch-ccl/oneccl_bindings_for_pytorch/__init__.py
->   [2024-04-19 16:51:06][INFO][dist:604] - Using ipex from: /home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/intel_extension_for_pytorch/__init__.py
->   [2024-04-19 16:51:06][INFO][dist:605] - [0/24] Using device='xpu' with backend='DDP' + 'ccl' for distributed training.
->   [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=0/23][local_rank=0/11][node=0/1]
->   [2024-04-19 16:51:06][WARNING][dist:296] - Using [24 / 24] available "xpu" devices !!
->   2024:04:19-16:51:06:(16909) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16910) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16912) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16913) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16914) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16915) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16916) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16917) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16918) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16919) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16920) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   2024:04:19-16:51:06:(16921) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
->   [2024-04-19 16:51:06][INFO][test_dist:71] - model=Network(
->     (layers): Sequential(
->       (0): Linear(in_features=128, out_features=1024, bias=True)
->       (1): Linear(in_features=1024, out_features=512, bias=True)
->       (2): Linear(in_features=512, out_features=256, bias=True)
->       (3): Linear(in_features=256, out_features=128, bias=True)
->       (4): Linear(in_features=128, out_features=128, bias=True)
->     )
->   )
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=0, loss=2709.53418, dt=1.380, dtf=0.950, dtb=0.430
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=1, loss=2058.49805, dt=0.133, dtf=0.002, dtb=0.131
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=2, loss=1507.91187, dt=0.004, dtf=0.001, dtb=0.004
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=3, loss=1181.78577, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=4, loss=949.43561, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=5, loss=848.14905, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=6, loss=788.76123, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=7, loss=753.59509, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=8, loss=750.62225, dt=0.004, dtf=0.001, dtb=0.003
->   [2024-04-19 16:51:18][INFO][test_dist:101] - iter=9, loss=740.23474, dt=0.004, dtf=0.001, dtb=0.003
->   Application 5bf3e9e8 resources: utime=621s stime=111s maxrss=1746816KB inblock=192 oublock=16 minflt=10719359 majflt=7493 nvcsw=169332 nivcsw=77546
->   ```
->
->   </details>
->   <details closed>
->   <summary>
->   <code>CPU</code>
->   </summary>
->
->   ``` bash
->   2023-11-11 $ TORCH_DEVICE=cpu mpirun -np 12 python3 test_dist.py
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=1/11][local_rank=1/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=3/11][local_rank=3/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=6/11][local_rank=6/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=5/11][local_rank=5/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=2/11][local_rank=2/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=10/11][local_rank=10/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=4/11][local_rank=4/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=7/11][local_rank=7/11][node=0/0]
->   [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=9/11][local_rank=9/11][node=0/0]
->   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=11/11][local_rank=11/11][node=0/0]
->   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=8/11][local_rank=8/11][node=0/0]
->   [2024-04-19 14:44:13][INFO][dist:239] - DistInfo={
->       "DEVICE": "cpu",
->       "DEVICE_ID": "cpu:0",
->       "DISTRIBUTED_BACKEND": "gloo",
->       "GPUS_PER_NODE": 12,
->       "HOSTFILE": "/Users/samforeman/projects/saforem2/ezpz/src/ezpz/hostfile",
->       "HOSTNAME": "Sams-MacBook-Pro.local",
->       "HOSTS": "['Sams-MacBook-Pro']",
->       "LOCAL_RANK": 0,
->       "MACHINE": "Sams-MacBook-Pro.local",
->       "NGPUS": 12,
->       "NODE_ID": 0,
->       "NUM_NODES": 1,
->       "RANK": 0,
->       "SCHEDULER": "LOCAL",
->       "WORLD_SIZE_IN_USE": 12,
->       "WORLD_SIZE_TOTAL": 12
->   }
->   [2024-04-19 14:44:13][INFO][dist:605] - [0/12] Using device='cpu' with backend='DDP' + 'gloo' for distributed training.
->   [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=0/11][local_rank=0/11][node=0/0]
->   [2024-04-19 14:44:13][WARNING][dist:296] - Using [12 / 12] available "cpu" devices !!
->   [2024-04-19 14:44:13][INFO][test_dist:72] - model=Network(
->     (layers): Sequential(
->       (0): Linear(in_features=128, out_features=1024, bias=True)
->       (1): Linear(in_features=1024, out_features=512, bias=True)
->       (2): Linear(in_features=512, out_features=256, bias=True)
->       (3): Linear(in_features=256, out_features=128, bias=True)
->       (4): Linear(in_features=128, out_features=128, bias=True)
->     )
->   )
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=0, loss=2801.62549, dt=0.389, dtf=0.042, dtb=0.348
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=1, loss=2092.84692, dt=0.051, dtf=0.010, dtb=0.041
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=2, loss=1482.45520, dt=0.037, dtf=0.004, dtb=0.033
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=3, loss=1174.38037, dt=0.033, dtf=0.002, dtb=0.031
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=4, loss=938.39917, dt=0.032, dtf=0.003, dtb=0.030
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=5, loss=888.37390, dt=0.035, dtf=0.001, dtb=0.033
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=6, loss=784.63470, dt=0.036, dtf=0.003, dtb=0.032
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=7, loss=749.53839, dt=0.033, dtf=0.002, dtb=0.031
->   [2024-04-19 14:44:14][INFO][test_dist:102] - iter=8, loss=732.22656, dt=0.036, dtf=0.003, dtb=0.034
->   [2024-04-19 14:44:15][INFO][test_dist:102] - iter=9, loss=730.63776, dt=0.034, dtf=0.001, dtb=0.033
->   35.68s user 17.20s system 546% cpu 9.681s total
->   ```
->
->   </details>
->   </details>
 >   </details>
 >
 > - <details closed>
@@ -315,578 +110,458 @@ Sam Foreman
 >   - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
 >   - backend: {`DDP`, `deepspeed`, `horovod`}
 
-## Setup + `launch`
+## 📝 Example
 
-`ezpz` setup on any of `{thetaGPU, Polaris, Perlmutter}`:
+We provide below a complete example that will launch
+[`test_dist.py`](./src/ezpz/test_dist.py) across all GPUs in your
+current {`PBS`, `slurm`} job and train a simple model using either `DDP`
+or `deepspeed`.
 
-1.  `git` clone + `pip` install:
-
-    ``` bash
-    git clone 'https://github.com/saforem2/ezpz'
-    python3 -m pip install -e ezpz
-    ```
-
-2.  Save Job info + define `launch` alias:
+1.  `git clone` + `pip install ezpz`:
 
     ``` bash
-    $ source ezpz/src/ezpz/bin/savejobenv
+    $ git clone https://github.com/saforem2/ezpz
+    $ python3 -m pip install -e ezpz
     ```
 
-    <details closed>
-    <summary>
+2.  <span class="dim-text">\[optional\]</span> If using `PBS` or
+    `slurm`:
 
-    <code>output</code>
+    - <details closed>
+      <summary>
 
-    </summary>
+      Using a Job Scheduler:
 
-    ``` bash
-    ┌──────────────────────────────────────────────────────────────────
-    │ [Hosts]:
-    │     • x4415c6s5b0n0, x4415c6s6b0n0, x4415c6s7b0n0, x4415c7s0b0n0
-    └──────────────────────────────────────────────────────────────────
-    ┌──────────────────────────────────────────────────────────────────
-    │ [DIST INFO]:
-    │     • Loading job env from: /home/foremans/.pbsenv
-    │     • HOSTFILE: /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    │     • NHOSTS: 4
-    │     • NGPU_PER_HOST: 12
-    │     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
-    │     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    │     • Defining alias: launch: aliased to mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    └──────────────────────────────────────────────────────────────────
-    ```
+      </summary>
 
-    </details>
+      Save Job info [`savejobenv`](./src/ezpz/bin/savejobenv):
 
-3.  `launch` [`__main__.py`](./src/ezpz/__main__.py) with `pytorch` +
-    `deepspeed`:
+      ``` bash
+      $ source ezpz/src/ezpz/bin/savejobenv
+      ```
 
-    ``` bash
-    $ launch python3 -m ezpz framework=pytorch backend=deepspeed
-    ```
+      <details closed>
+      <summary>
 
-    <details closed>
-    <summary>
+      <code>output</code>:
 
-    <code>output</code>
+      </summary>
 
-    </summary>
+      ``` bash
+      ┌───────────────────────────────────────────────────────────────────
+      │ Writing PBS vars to /home/foremans/.pbsenv
+      │ HOSTFILE: /var/spool/pbs/aux/8992614.amn-0001
+      │ NHOSTS: 2
+      │ NGPU_PER_HOST: 12 GPUs per host
+      │ NGPUS: 24 GPUs total
+      └───────────────────────────────────────────────────────────────────
+      ┌───────────────────────────────────────────────────────────────────
+      │ [DIST INFO]:
+      │   • Writing Job info to /home/foremans/.pbsenv
+      │     • HOSTFILE: /var/spool/pbs/aux/8992614.amn-0001
+      │     • NHOSTS: 2
+      │     • NGPU_PER_HOST: 12
+      │     • NGPUS = (NHOSTS * NGPU_PER_HOST) = 24
+      └──────────────────────────────────────────────────────────────────
+      ┌──────────────────────────────────────────────────────────────────
+      │ [Hosts]:
+      │       • x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com, x1921c0s2b0n0.hostmgmt2000.cm.americas.sgi.com
+      │     • [host:0] - x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com
+      │     • [host:1] - x1921c0s2b0n0.hostmgmt2000.cm.americas.sgi.com
+      └──────────────────────────────────────────────────────────────────
+      ┌────────────────────────────────────────────────────────────────────────────────
+      │ YOU ARE HERE: /home/foremans
+      │ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars
+      └────────────────────────────────────────────────────────────────────────────────
+      ┌──────────────────────────────────────────────────────────────────
+      │ [Launch]:
+      │     • Use: 'launch' (=mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/8992614.amn-0001)
+      │       to launch job
+      └───────────────────────────────────────────────────────────────────
+      ```
 
-    ``` bash
-    $ launch python3 -m ezpz framework=pytorch backend=DDP
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:24][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:25][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:26][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:26][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:26][INFO][dist.py:243] - Using DDP for distributed training
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:26][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:27][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:28][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:28][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:29][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:30][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:34][INFO][dist.py:292] - Using device='xpu'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][WARNING][dist.py:104] - Using backend='ccl'
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 1 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 2 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 3 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 4 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 0 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 5 / 47
-    [2023-12-19 13:33:35][INFO][__main__.py:49] - {
-        "_target_": "ezpz.configs.TrainConfig",
-        "framework": "pytorch",
-        "backend": "DDP",
-        "ds_config_path": null,
-        "port": null,
-        "seed": null,
-        "use_wandb": true,
-        "wandb_project_name": null,
-        "precision": null,
-        "ngpus": null
-    }
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 9 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 10 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 11 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 7 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 8 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 6 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 12 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 13 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 14 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 15 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 18 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 19 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 20 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 21 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 22 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 23 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 24 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 25 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 26 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 27 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 30 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 16 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 17 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 28 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 32 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 33 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 36 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 37 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 38 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 39 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 43 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 46 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 29 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 47 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 31 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 34 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 35 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 42 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 41 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 44 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 45 / 47
-    [2023-12-19 13:33:35][INFO][dist.py:307] - RANK: 40 / 47
-    [2023-12-19 13:33:47][INFO][dist.py:415] - Setting up wandb from rank: 0
-    [2023-12-19 13:33:47][INFO][dist.py:416] - Using: WB PROJECT: ezpz
-    [2023-12-19 13:33:58][INFO][dist.py:448] - W&B RUN: [flowing-wood-8](https://wandb.ai/l2hmc-qcd/ezpz/runs/uya29gm5)
-    [2023-12-19 13:33:58][INFO][dist.py:490] - Running on x4415c6s5b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
-    [2023-12-19 13:33:58][INFO][dist.py:506] - Reading hosts from /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    [2023-12-19 13:33:58][INFO][__main__.py:57] - Output dir: /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17
-    [2023-12-19 13:33:58][CRITICAL][dist.py:519] - 🚀 flowing-wood-8
-    [2023-12-19 13:33:58][CRITICAL][dist.py:520] - 🔗 https://wandb.ai/l2hmc-qcd/ezpz/runs/uya29gm5
-    [2023-12-19 13:33:58][CRITICAL][dist.py:521] - 📂/: /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/wandb/run-20231219_133354-uya29gm5/files
-    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/ezpz-pt-DDP-xpu.log to W&B artifact...
-    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/__main__.log to W&B artifact...
-    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-17/main_debug.log to W&B artifact...
-    [2023-12-19 13:33:58][INFO][dist.py:563] - Adding /lus/gecko/projects/Aurora_deployment/foremans/projects/saforem2/ezpz/src/ezpz/outputs/runs/pytorch/DDP/2023-12-19/13-33-16/__main__.log to W&B artifact...
-    ```
+      </details>
 
-    </details>
+      this will automatically define a `launch` alias:
 
-</details>
+      ``` bash
+      ┌──────────────────────────────────────────────────────────────────
+      │ [Launch]:
+      │     • Use: 'launch' (=mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/8992614.amn-0001)
+      │       to launch job
+      └───────────────────────────────────────────────────────────────────
+      ```
 
-### Tested Machines
+      </details>
 
-<details closed>
-<summary>
-<b>Aurora</b> (@ ALCF)
-</summary>
+3.  Launch [`test_dist.py`](./src/ezpz/test_dist.py):
 
-``` bash
-# launch job
-$ qsub -q EarlyAppAccess -A Aurora_Deployment -l walltime=2:00:00 -l select=4 -I
+    - <details closed>
+      <summary>
 
-# load frameworks
-$ module use -a /soft/modulefiles ; module --ignore_cache load frameworks
-$ module load frameworks/.2023.12.15.001
+      <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a>:
 
-# install `ezpz`
-$ git clone https://github.com/saforem2/ezpz
-$ cd ezpz
-$ mkdir -p venvs/aurora/2023.12.15.001
-$ python3 -m venv venvs/aurora/2023.12.15.001 --system-site-packages
-$ source venvs/aurora/2023.12.15.001/bin/activate
-$ python3 -m pip install -e .
+      </summary>
 
-# print job info and define `launch` alias
-$ source ezpz/src/ezpz/bin/savejobenv
-┌──────────────────────────────────────────────────────────────────
-│ [Hosts]:
-│     • x4415c6s5b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
-x4415c6s6b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
-x4415c6s7b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
-x4415c7s0b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
-└──────────────────────────────────────────────────────────────────
-┌──────────────────────────────────────────────────────────────────
-│ [DIST INFO]:
-│     • Loading job env from: /home/foremans/.pbsenv
-│     • HOSTFILE: /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-│     • NHOSTS: 4
-│     • NGPU_PER_HOST: 12
-│     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
-│     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-│     • Defining alias: launch: aliased to mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-└──────────────────────────────────────────────────────────────────
-```
+      ``` python
+      """
+      ezpz_ddp.py
 
-</details>
-<details closed>
-<summary>
-<b>Polaris</b> (@ ALCF)
-</summary>
+      - to launch:
 
-``` bash
-# Most recent `conda` versions as of 10-17-2023
-if [[ $(hostname) == x3* ]]; then
-    export MACHINE="polaris"
-    export CONDA_DATE="2023-10-04"
-elif [[ $(hostname) == theta* ]]; then
-    export MACHINE="thetaGPU"
-    export CONDA_DATE="2023-01-11"
-else
-    echo "Unknown hostname $(hostname)"
-fi
-module load "conda/${CONDA_DATE}" ; conda activate base
-# Clone saforem2/ezpz and navigate into it
-git clone https://github.com/saforem2/ezpz
-cd ezpz
-# Make a new venv for this project,
-# in the project root: ./venvs/$MACHINE/$CONDA_DATE
-VENV_DIR="venvs/${MACHINE}/${CONDA_DATE}"
-python3 -m venv "${VENV_DIR}" --system-site-packages
-source "venvs/${MACHINE}/${CONDA_DATE}/bin/activate"
-# install `ezpz` into this `venv`
-python3 -m pip install -e .
-# to launch simple training example
-# (launches `src/ezpz/__main__.py`)
-cd src/ezpz
-./bin/train.sh framework=pytorch backend=DDP
-```
+        $ source ezpz/src/ezpz/bin/savejobenv
+        $ BACKEND=DDP launch python3 ezpz_ddp.py
+      """
+      import os
+      import logging
+      import time
+      from typing import Optional
+      import torch
+      import ezpz as ez
 
-</details>
-<details closed>
-<summary>
-<b>Perlmutter</b> (@ NERSC):
-</summary>
+      # backend can be any of DDP, deespepeed, horovod
+      DIST_INIT = ez.setup_torch_distributed(
+          backend=(
+              backend := os.environ.get('BACKEND', 'DDP')
+          ),
+          port=(
+              port := os.environ.get("MASTER_PORT", "29500")
+          )
+      )
+      DEVICE = ez.get_torch_device()
+      RANK = DIST_INIT['rank']
+      WORLD_SIZE = DIST_INIT['world_size']
+      LOCAL_RANK = DIST_INIT['local_rank']
+      DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
+      _ = ez.print_dist_setup()
 
-``` bash
-# request slurm allocation with `salloc`
-$ NODES=2 ; HRS=2 ; salloc --nodes $NODES --qos preempt --time $HRS:00:00 -C 'gpu&hbm80g' --gpus=$(( 4 * NODES )) -A <proj>_g
-# load `pytorch/2.0.1` module
-$ module load libfabric cudatoolkit pytorch/2.0.1
-# Clone saforem2/ezpz and navigate into it
-$ git clone https://github.com/saforem2/ezpz
-$ cd ezpz
-# update pip and install `ezpz`
-$ python3 -m pip install --upgrade pip setuptools wheel
-$ python3 -m pip install -e .
-$ cd src/ezpz
-$ ./bin/train.sh framework=pytorch backend=DDP
-```
+      if DEVICE == "cuda" and torch.cuda.is_available():
+          torch.cuda.set_device(LOCAL_RANK)
 
-where `framework` $\in$ `{pytorch, tensorflow}`, and `backend` $\in$
-`{DDP, deepspeed, horovod}`[^1]
+      # log only from RANK == 0
+      logger = logging.getLogger(__name__)
+      logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
-</details>
+      BATCH_SIZE = 64
+      INPUT_SIZE = 128
+      OUTPUT_SIZE = 128
+      DTYPE = torch.get_default_dtype()
 
-## Details
+      logger.info(f"{DIST_INIT=}")
 
-We can `launch` on any of
-`{ThetaGPU, Polaris, Perlmutter}`$\left(^{\ast}\right)$ with a specific
-`{framework, backend}` combo by
+      class Network(torch.nn.Module):
+          def __init__(
+                  self,
+                  input_dim: int = 128,
+                  output_dim: int = 128,
+                  sizes: Optional[list[int]] = None,
+          ):
+              super(Network, self).__init__()
+              if sizes is None:
+                  self.layers = torch.nn.Linear(input_dim, output_dim)
+              elif len(sizes) > 0:
+                  layers = [torch.nn.Linear(input_dim, sizes[0])]
+                  for idx, size in enumerate(sizes[1:]):
+                      layers.append(
+                          torch.nn.Linear(sizes[idx], size)
+                      )
+                  layers.append(torch.nn.Linear(sizes[-1], output_dim))
+                  self.layers = torch.nn.Sequential(*layers)
 
-1.  [`savejobenv`](./src/ezpz/bin/savejobenv):
+          def forward(self, x: torch.Tensor) -> torch.Tensor:
+              return self.layers(x)
 
-    ``` bash
-    $ source src/ezpz/bin/savejobenv
-    ```
 
-    - This will `export launch=<launcher> <launcher-opts>` for
-      `<launcher>` $\in$ `{mpirun,mpiexec,srun}` on $(^{\ast})$
-      respectively.
+      def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+          return (y - x).pow(2).sum()
 
-    - By default, `launch <exec>` will launch `<exec>` across *all* the
-      available GPUs in your active `{COBALT,PBS,slurm}` job.
 
-2.  `launch`
+      def main():
+          model = Network(
+              input_dim=INPUT_SIZE,
+              output_dim=OUTPUT_SIZE,
+              sizes=[1024, 512, 256, 128]
+          )
+          model.to(DEVICE)
+          model.to(DEVICE_ID)
+          logger.info(f'{model=}')
+          optimizer = torch.optim.Adam(model.parameters())
+          if WORLD_SIZE > 1:
+              if backend.lower() == 'ddp':
+                  from torch.nn.parallel import DistributedDataParallel as DDP
+                  model = DDP(
+                      model,
+                      device_ids=[]
+                  )
+              elif backend.lower() in ('ds', 'deepspeed'):
+                  import deepspeed
+                  import argparse
+                  parser = argparse.ArgumentParser(description='My training script.')
+                  parser.add_argument(
+                      '--local_rank',
+                      required=False,
+                      type=int,
+                      default=-1, 
+                      help='local rank passed from distributed launcher',
+                  ),
+                  # Include DeepSpeed configuration arguments
+                  parser = deepspeed.add_config_arguments(parser)
+                  cmd_args = parser.parse_args()
+                  logger.info(f'{cmd_args=}')
+                  model, optimizer, *_ = deepspeed.initialize(
+                      args=cmd_args,
+                      model=model,
+                      optimizer=optimizer,
+                  )
 
-    ``` bash
-    $ launch $(which python3) -m ezpz framework=<framework> backend=<backend>
-    ```
+          for iter in range(10):
+              t0 = time.perf_counter()
+              x = torch.rand((BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
+              y = model(x)
+              loss = calc_loss(x, y)
+              dtf = ((t1 := time.perf_counter()) - t0)
+              if backend == 'deepspeed':
+                  model.backward(loss)
+                  model.step(loss)
+              else:
+                  loss.backward()
+                  optimizer.step()
+              optimizer.zero_grad()
+              dtb = time.perf_counter() - t1
+              logger.info(
+                  ', '.join([
+                      f'{iter=}',
+                      f'loss={loss.item():.5f}',
+                      f'dt={dtf+dtb:.3f}',
+                      f'{dtf=:.3f}',
+                      f'{dtb=:.3f}'
+                  ])
+              )
 
-    - Will `launch` [`__main__.py`](./src/ezpz/__main__.py) (in this
-      case) with framework `<framework>` and backend `<backend>`
-      (e.g. `pytorch` and `deepspeed`)
 
-### Complete Example
+      if __name__ == '__main__':
+        main()
+      ```
 
-``` bash
-#!/bin/bash --login
-git clone https://github.com/saforem2/ezpz
-./ezpz/src/ezpz/bin/savejobenv
-launch $(which python3) -m ezpz framework=<framework> backend=<backend>
-```
+      </details>
 
-for `framework` $\in$ `{pytorch, tensorflow}` and `backend` $\in$
-`{horovod, deepspeed, DDP}`[^2]
+    - DDP:
 
-## Frameworks
+      ``` bash
+      $ launch python3 -m ezpz.test_dist
+      ```
 
-<!-- <details closed><summary>PyTorch</summary> -->
+    - DeepSpeed:
 
-### PyTorch
+      ``` bash
+      $ BACKEND=deepspeed launch python3 -m ezpz.test_dist --deepspeed --deepspeed_config ezpz/src/ezpz/conf/ds_config.json
+      ```
 
-<details closed>
-<summary>
-<code>DDP</code>:
-</summary>
+    - <details closed>
+      <summary>
 
-``` bash
-launch framework=pytorch backend=DDP
-```
+      Output:
 
-<details closed>
-<summary>
-<b>Output:</b>
-</summary>
+      </summary>
+      <details closed>
+      <summary>
 
-``` bash
-Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
-Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
-Launching application c079ffa9-4732-45ba-995b-e5685330311b
-[10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
-```
+      <code>GPU</code>
 
-</details>
-</details>
-<details closed>
-<summary>
-<b><code>deepspeed</code>:</b>
-</summary>
+      </summary>
 
-``` bash
-launch framework=pytorch backend=deepspeed
-```
+      ``` bash
+      # [07:26:13 PM] [foremans@x3005c0s25b1n0] ~ 2024-04-20
+      $ launch python3 -m ezpz.test_dist |& tee ezpz-test-dist.log
 
-<details closed>
-<summary>
-<b>Output:</b>
-</summary>
+      Connected to tcp://x3005c0s13b0n0.hsn.cm.polaris.alcf.anl.gov:7919
+      Found executable /lus/eagle/projects/datascience/foremans/miniconda3/envs/2024-04-20/bin/python3
+      Launching application 9e4c8311-1729-4385-b1d2-d4cd6006ac1d
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=1/7][local_rank=1/3][node=1/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=5/7][local_rank=1/3][node=1/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=3/7][local_rank=3/3][node=1/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=7/7][local_rank=3/3][node=1/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=4/7][local_rank=0/3][node=0/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=6/7][local_rank=2/3][node=0/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=2/7][local_rank=2/3][node=0/1]
+      [2024-04-20 19:26:22][INFO][dist:290] - [device='cuda'][rank=0/7][local_rank=0/3][node=0/1]
+      [2024-04-20 19:26:22][WARNING][dist:296] - Using [8 / 8] available "cuda" devices !!
+      [2024-04-20 19:26:22][INFO][test_dist:46] - DIST_INIT={'world_size': 8, 'rank': 0, 'local_rank': 0}
+      [2024-04-20 19:26:24][INFO][test_dist:84] - model=Network(
+        (layers): Sequential(
+          (0): Linear(in_features=128, out_features=1024, bias=True)
+          (1): Linear(in_features=1024, out_features=512, bias=True)
+          (2): Linear(in_features=512, out_features=256, bias=True)
+          (3): Linear(in_features=256, out_features=128, bias=True)
+          (4): Linear(in_features=128, out_features=128, bias=True)
+        )
+      )
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=0, loss=2789.99072, dt=0.664, dtf=0.659, dtb=0.005
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=1, loss=1961.33459, dt=0.002, dtf=0.001, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=2, loss=1450.47461, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=3, loss=1088.81958, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=4, loss=945.28839, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=5, loss=906.78857, dt=0.002, dtf=0.000, dtb=0.001
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=6, loss=789.18243, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=7, loss=751.63477, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=8, loss=735.62915, dt=0.002, dtf=0.000, dtb=0.002
+      [2024-04-20 19:26:28][INFO][test_dist:126] - iter=9, loss=732.12775, dt=0.002, dtf=0.000, dtb=0.001
+      ```
 
-``` bash
-Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
-Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
-Launching application c1c5bcd5-c300-4927-82e4-236d4643e31d
-[10/05/23 16:56:34][INFO][dist.py:362] - Using deepspeed for distributed training
-[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
-[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=4, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=5, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=0, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=6, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=1, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=7, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=2, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=3, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
-[2023-10-05 16:56:41,621] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 0 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 2 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 1 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 7 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 4 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 5 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 6 / 7
-[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 3 / 7
-```
+      </details>
+      <details closed>
+      <summary>
 
-</details>
-</details>
-<details closed>
-<summary>
-<b><code>horovod</code></b>
-</summary>
+      <code>XPU</code>
 
-``` bash
-launch framework=pytorch backend=horovod
-```
+      </summary>
 
-<details closed>
-<summary>
-<b>Output:</b>
-</summary>
+      ``` bash
+      # [04:50:57 PM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed/dep/ezpz/s/ezpz  main q4-drop 32s
+      $ launch python3 -Wignore test_dist.py
+      Connected to tcp://x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com:7919
+      Found executable /home/foremans/miniconda3/envs/q4-drop/bin/python3
+      Launching application 5bf3e9e8-89fb-412a-a49e-3c81601436b7
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=9/23][local_rank=9/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=14/23][local_rank=2/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=3/23][local_rank=3/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=17/23][local_rank=5/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=6/23][local_rank=6/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=13/23][local_rank=1/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=7/23][local_rank=7/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=19/23][local_rank=7/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=8/23][local_rank=8/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=21/23][local_rank=9/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=10/23][local_rank=10/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=22/23][local_rank=10/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=11/23][local_rank=11/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=23/23][local_rank=11/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=2/23][local_rank=2/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=20/23][local_rank=8/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=4/23][local_rank=4/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=15/23][local_rank=3/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=18/23][local_rank=6/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=12/23][local_rank=0/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=1/23][local_rank=1/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=16/23][local_rank=4/11][node=0/1]
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=5/23][local_rank=5/11][node=1/1]
+      [2024-04-19 16:51:06][INFO][dist:239] - DistInfo={
+          "DEVICE": "xpu",
+          "DEVICE_ID": "xpu:0",
+          "DISTRIBUTED_BACKEND": "ccl",
+          "GPUS_PER_NODE": 12,
+          "HOSTFILE": "/var/spool/pbs/aux/8992337.amn-0001",
+          "HOSTNAME": "x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com",
+          "HOSTS": "['x1921c0s0b0n0', 'x1921c0s5b0n0']",
+          "LOCAL_RANK": 0,
+          "MACHINE": "SunSpot",
+          "NGPUS": 24,
+          "NODE_ID": 0,
+          "NUM_NODES": 2,
+          "RANK": 0,
+          "SCHEDULER": "PBS",
+          "WORLD_SIZE_IN_USE": 24,
+          "WORLD_SIZE_TOTAL": 24
+      }
+      [2024-04-19 16:51:06][INFO][dist:602] - Using oneccl_bindings from: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/torch-ccl/oneccl_bindings_for_pytorch/__init__.py
+      [2024-04-19 16:51:06][INFO][dist:604] - Using ipex from: /home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/intel_extension_for_pytorch/__init__.py
+      [2024-04-19 16:51:06][INFO][dist:605] - [0/24] Using device='xpu' with backend='DDP' + 'ccl' for distributed training.
+      [2024-04-19 16:51:06][INFO][dist:290] - [device='xpu'][rank=0/23][local_rank=0/11][node=0/1]
+      [2024-04-19 16:51:06][WARNING][dist:296] - Using [24 / 24] available "xpu" devices !!
+      2024:04:19-16:51:06:(16909) |CCL_WARN| MPI was initialized externally, CCL-MPI specific environment is ignored
+      [2024-04-19 16:51:06][INFO][test_dist:71] - model=Network(
+        (layers): Sequential(
+          (0): Linear(in_features=128, out_features=1024, bias=True)
+          (1): Linear(in_features=1024, out_features=512, bias=True)
+          (2): Linear(in_features=512, out_features=256, bias=True)
+          (3): Linear(in_features=256, out_features=128, bias=True)
+          (4): Linear(in_features=128, out_features=128, bias=True)
+        )
+      )
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=0, loss=2709.53418, dt=1.380, dtf=0.950, dtb=0.430
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=1, loss=2058.49805, dt=0.133, dtf=0.002, dtb=0.131
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=2, loss=1507.91187, dt=0.004, dtf=0.001, dtb=0.004
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=3, loss=1181.78577, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=4, loss=949.43561, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=5, loss=848.14905, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=6, loss=788.76123, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=7, loss=753.59509, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=8, loss=750.62225, dt=0.004, dtf=0.001, dtb=0.003
+      [2024-04-19 16:51:18][INFO][test_dist:101] - iter=9, loss=740.23474, dt=0.004, dtf=0.001, dtb=0.003
+      Application 5bf3e9e8 resources: utime=621s stime=111s maxrss=1746816KB inblock=192 oublock=16 minflt=10719359 majflt=7493 nvcsw=169332 nivcsw=77546
+      ```
 
-``` bash
-Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
-Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
-Launching application c079ffa9-4732-45ba-995b-e5685330311b
-[10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
-[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
-```
+      </details>
+      <details closed>
+      <summary>
 
-</details>
-</details>
-</details>
+      <code>CPU</code>
 
-### TensorFlow
+      </summary>
 
-<details closed>
-<summary>
-<b><code>horovod</b></code>
-</summary>
+      ``` bash
+      $ TORCH_DEVICE=cpu mpirun -np 12 python3 test_dist.py
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=1/11][local_rank=1/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=3/11][local_rank=3/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=6/11][local_rank=6/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=5/11][local_rank=5/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=2/11][local_rank=2/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=10/11][local_rank=10/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=4/11][local_rank=4/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=7/11][local_rank=7/11][node=0/0]
+      [2024-04-19 14:44:12][INFO][dist:290] - [device='cpu'][rank=9/11][local_rank=9/11][node=0/0]
+      [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=11/11][local_rank=11/11][node=0/0]
+      [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=8/11][local_rank=8/11][node=0/0]
+      [2024-04-19 14:44:13][INFO][dist:239] - DistInfo={
+          "DEVICE": "cpu",
+          "DEVICE_ID": "cpu:0",
+          "DISTRIBUTED_BACKEND": "gloo",
+          "GPUS_PER_NODE": 12,
+          "HOSTFILE": "/Users/samforeman/projects/saforem2/ezpz/src/ezpz/hostfile",
+          "HOSTNAME": "Sams-MacBook-Pro.local",
+          "HOSTS": "['Sams-MacBook-Pro']",
+          "LOCAL_RANK": 0,
+          "MACHINE": "Sams-MacBook-Pro.local",
+          "NGPUS": 12,
+          "NODE_ID": 0,
+          "NUM_NODES": 1,
+          "RANK": 0,
+          "SCHEDULER": "LOCAL",
+          "WORLD_SIZE_IN_USE": 12,
+          "WORLD_SIZE_TOTAL": 12
+      }
+      [2024-04-19 14:44:13][INFO][dist:605] - [0/12] Using device='cpu' with backend='DDP' + 'gloo' for distributed training.
+      [2024-04-19 14:44:13][INFO][dist:290] - [device='cpu'][rank=0/11][local_rank=0/11][node=0/0]
+      [2024-04-19 14:44:13][WARNING][dist:296] - Using [12 / 12] available "cpu" devices !!
+      [2024-04-19 14:44:13][INFO][test_dist:72] - model=Network(
+        (layers): Sequential(
+          (0): Linear(in_features=128, out_features=1024, bias=True)
+          (1): Linear(in_features=1024, out_features=512, bias=True)
+          (2): Linear(in_features=512, out_features=256, bias=True)
+          (3): Linear(in_features=256, out_features=128, bias=True)
+          (4): Linear(in_features=128, out_features=128, bias=True)
+        )
+      )
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=0, loss=2801.62549, dt=0.389, dtf=0.042, dtb=0.348
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=1, loss=2092.84692, dt=0.051, dtf=0.010, dtb=0.041
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=2, loss=1482.45520, dt=0.037, dtf=0.004, dtb=0.033
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=3, loss=1174.38037, dt=0.033, dtf=0.002, dtb=0.031
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=4, loss=938.39917, dt=0.032, dtf=0.003, dtb=0.030
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=5, loss=888.37390, dt=0.035, dtf=0.001, dtb=0.033
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=6, loss=784.63470, dt=0.036, dtf=0.003, dtb=0.032
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=7, loss=749.53839, dt=0.033, dtf=0.002, dtb=0.031
+      [2024-04-19 14:44:14][INFO][test_dist:102] - iter=8, loss=732.22656, dt=0.036, dtf=0.003, dtb=0.034
+      [2024-04-19 14:44:15][INFO][test_dist:102] - iter=9, loss=730.63776, dt=0.034, dtf=0.001, dtb=0.033
+      35.68s user 17.20s system 546% cpu 9.681s total
+      ```
 
-``` bash
-launch framework=tensorflow backend=horovod
-```
-
-<details closed>
-<summary>
-<b>Output:</b>
-</summary>
-
-``` bash
-Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
-Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
-Launching application 2b7b89f3-5f40-42de-aa12-a15876baee09
-2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:49.870940: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:50.038353: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:56:50.038359: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2023-10-05 16:57:00.277129: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 4 / 7
-2023-10-05 16:57:00.303774: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 0 / 7
-2023-10-05 16:57:00.430211: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 5 / 7
-2023-10-05 16:57:00.445891: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
-2023-10-05 16:57:00.447921: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 1 / 7
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 2 / 7
-2023-10-05 16:57:00.452035: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 6 / 7
-2023-10-05 16:57:00.458780: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 7 / 7
-2023-10-05 16:57:00.472986: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
-[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 3 / 7
-```
-
-</details>
-</details>
+      </details>
+      </details>
 
 ## Helper Utilities
+
+We provide some shell scripts that are useful when working with a job
+scheduler (e.g. `PBS Pro` @ ALCF or `slurm` elsewhere).
 
 - [`src/ezpz/bin/savejobenv`](./src/ezpz/bin/savejobenv): Shell script
   to save relevant job related environment variables to a file which can
@@ -1054,45 +729,437 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
 
   </details>
 
+## Look at a file
+
+``` python
+"""
+ezpz_ddp.py
+
+- to launch:
+
+  $ source ezpz/src/ezpz/bin/savejobenv
+  $ BACKEND=DDP launch python3 ezpz_ddp.py
+"""
+import os
+import logging
+import time
+from typing import Optional
+import torch
+import ezpz as ez
+
+# backend can be any of DDP, deespepeed, horovod
+DIST_INIT = ez.setup_torch_distributed(
+    backend=(
+        backend := os.environ.get('BACKEND', 'DDP')
+    ),
+    port=(
+        port := os.environ.get("MASTER_PORT", "29500")
+    )
+)
+DEVICE = ez.get_torch_device()
+RANK = DIST_INIT['rank']
+WORLD_SIZE = DIST_INIT['world_size']
+LOCAL_RANK = DIST_INIT['local_rank']
+# WORLD_SIZE = ez.get_world_size()
+# LOCAL_RANK = ez.get_local_rank()
+DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
+_ = ez.print_dist_setup()
+
+if DEVICE == "cuda" and torch.cuda.is_available():
+    torch.cuda.set_device(LOCAL_RANK)
+
+# log only from RANK == 0
+logger = logging.getLogger(__name__)
+logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
+
+BATCH_SIZE = 64
+INPUT_SIZE = 128
+OUTPUT_SIZE = 128
+DTYPE = torch.get_default_dtype()
+
+logger.info(f"{DIST_INIT=}")
+
+
+class Network(torch.nn.Module):
+    def __init__(
+            self,
+            input_dim: int = 128,
+            output_dim: int = 128,
+            sizes: Optional[list[int]] = None,
+    ):
+        super(Network, self).__init__()
+        if sizes is None:
+            self.layers = torch.nn.Linear(input_dim, output_dim)
+        elif len(sizes) > 0:
+            layers = [torch.nn.Linear(input_dim, sizes[0])]
+            for idx, size in enumerate(sizes[1:]):
+                layers.append(
+                    torch.nn.Linear(sizes[idx], size)
+                )
+            layers.append(torch.nn.Linear(sizes[-1], output_dim))
+            self.layers = torch.nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layers(x)
+
+
+def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    return (y - x).pow(2).sum()
+
+
+def main():
+    model = Network(
+        input_dim=INPUT_SIZE,
+        output_dim=OUTPUT_SIZE,
+        sizes=[1024, 512, 256, 128]
+    )
+    model.to(DEVICE)
+    model.to(DEVICE_ID)
+    logger.info(f'{model=}')
+    optimizer = torch.optim.Adam(model.parameters())
+    if WORLD_SIZE > 1:
+        if backend.lower() == 'ddp':
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            model = DDP(
+                model,
+                device_ids=[]
+            )
+        elif backend.lower() in ('ds', 'deepspeed'):
+            import deepspeed
+            # config = ez.load_ds_config().update(
+            #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
+            # )
+            import argparse
+            parser = argparse.ArgumentParser(description='My training script.')
+            parser.add_argument('--local_rank', required=False, type=int, default=-1,  # default=ez.get_local_rank()),
+                                help='local rank passed from distributed launcher')
+            # Include DeepSpeed configuration arguments
+            parser = deepspeed.add_config_arguments(parser)
+            cmd_args = parser.parse_args()
+            logger.info(f'{cmd_args=}')
+            model, optimizer, *_ = deepspeed.initialize(
+                args=cmd_args,
+                model=model,
+                optimizer=optimizer,
+            )
+
+    for iter in range(10):
+        t0 = time.perf_counter()
+        x = torch.rand((BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
+        y = model(x)
+        loss = calc_loss(x, y)
+        dtf = ((t1 := time.perf_counter()) - t0)
+        if backend == 'deepspeed':
+            model.backward(loss)
+            model.step(loss)
+        else:
+            loss.backward()
+            optimizer.step()
+        optimizer.zero_grad()
+        dtb = time.perf_counter() - t1
+        logger.info(
+            ', '.join([
+                f'{iter=}',
+                f'loss={loss.item():.5f}',
+                f'dt={dtf+dtb:.3f}',
+                f'{dtf=:.3f}',
+                f'{dtb=:.3f}'
+            ])
+        )
+
+
+if __name__ == '__main__':
+    main()
+```
+
 ------------------------------------------------------------------------
 
-> [!TIP]
+> **<span style="color: var(--ansi-red);">❤️‍🩹 Status</span>**
 >
-> ### <span style="color: var(--ansi-red);">❤️‍🩹 Status</span>
->
-> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">22</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">08:12:53</span>
+> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">22</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">14:46:03</span>
 > </pre>
 > <!-- [[![](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)]{style="text-align:center;"} -->
 > <p align="center">
+>
 > <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io%2Fezpz&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
+>
 > </p>
 
 ------------------------------------------------------------------------
 
-<details closed>
-<summary>
-<b>Deprecated:</b>
-</summary>
-
-- Install:
-
-  ``` bash
+<!--
+&#10;<details closed><summary><b>Deprecated:</b></summary>
+&#10;## Details
+&#10;We can `launch` on any of `{ThetaGPU, Polaris, Perlmutter}`$\left(^{\ast}\right)$ 
+with a specific `{framework, backend}` combo by
+&#10;1. [`savejobenv`](./src/ezpz/bin/savejobenv):
+&#10;    ```bash
+    $ source src/ezpz/bin/savejobenv
+    ```
+&#10;    - This will `export launch=<launcher> <launcher-opts>`
+      for `<launcher>` $\in$ `{mpirun,mpiexec,srun}`
+      on $(^{\ast})$ respectively.
+&#10;    - By default, `launch <exec>` will launch `<exec>` across
+      _all_ the available GPUs in your active `{COBALT,PBS,slurm}` job.
+&#10;2. `launch`
+&#10;    ```bash
+    $ launch $(which python3) -m ezpz framework=<framework> backend=<backend>
+    ```
+&#10;    - Will `launch` [`__main__.py`](./src/ezpz/__main__.py) (in this case) with framework
+    `<framework>` and backend `<backend>` (e.g. `pytorch` and `deepspeed`)
+&#10;
+## Frameworks
+&#10;### PyTorch
+&#10;<details closed><summary><code>DDP</code>:</summary>
+&#10;```bash
+launch framework=pytorch backend=DDP
+```
+&#10;<details closed><summary><b>Output:</b></summary>
+&#10;```bash
+Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+Launching application c079ffa9-4732-45ba-995b-e5685330311b
+[10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
+```
+&#10;</details>
+&#10;</details>
+&#10;<details closed><summary><b><code>deepspeed</code>:</b></summary>
+&#10;```bash
+launch framework=pytorch backend=deepspeed
+```
+&#10;<details closed><summary><b>Output:</b></summary>
+&#10;```bash
+Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+Launching application c1c5bcd5-c300-4927-82e4-236d4643e31d
+[10/05/23 16:56:34][INFO][dist.py:362] - Using deepspeed for distributed training
+[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,949] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:34,953] [INFO] [real_accelerator.py:158:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,160] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,160] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:40,767] [INFO] [comm.py:637:init_distributed] cdb=None
+[2023-10-05 16:56:40,767] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=4, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=5, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=0, local_rank=0, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=6, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=1, local_rank=1, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=7, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=2, local_rank=2, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=3, local_rank=3, world_size=8, master_addr=10.140.57.89, master_port=29500
+[2023-10-05 16:56:41,621] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 0 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 2 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 1 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 7 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 4 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 5 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 6 / 7
+[10/05/23 16:56:41][INFO][dist.py:413] - RANK: 3 / 7
+```
+&#10;</details>
+&#10;</details>
+&#10;<details closed><summary><b><code>horovod</code></b></summary>
+&#10;```bash
+launch framework=pytorch backend=horovod
+```
+&#10;<details closed><summary><b>Output:</b></summary>
+&#10;```bash
+Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+Launching application c079ffa9-4732-45ba-995b-e5685330311b
+[10/05/23 16:56:26][INFO][dist.py:362] - Using DDP for distributed training
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 0 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 2 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 4 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 3 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 1 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 6 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 5 / 7
+[10/05/23 16:56:27][INFO][dist.py:413] - RANK: 7 / 7
+```
+&#10;</details>
+&#10;</details>
+&#10;</details>
+&#10;### TensorFlow
+&#10;<details closed><summary><b><code>horovod</b></code></summary>
+&#10;```bash
+launch framework=tensorflow backend=horovod
+```
+&#10;<details closed><summary><b>Output:</b></summary>
+&#10;```bash
+Connected to tcp://x3005c0s31b1n0.hsn.cm.polaris.alcf.anl.gov:7919
+Found executable /soft/datascience/conda/2023-10-04/mconda3/bin/python3
+Launching application 2b7b89f3-5f40-42de-aa12-a15876baee09
+2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:49.870938: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:49.870940: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:50.038355: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:50.038353: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:56:50.038359: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-10-05 16:57:00.277129: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 4 / 7
+2023-10-05 16:57:00.303774: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:07:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 0 / 7
+2023-10-05 16:57:00.430211: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 5 / 7
+2023-10-05 16:57:00.445891: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 1, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:46:00.0,compute capability: 8.0
+2023-10-05 16:57:00.447921: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 1 / 7
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 2 / 7
+2023-10-05 16:57:00.452035: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 2, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:85:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 6 / 7
+2023-10-05 16:57:00.458780: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 7 / 7
+2023-10-05 16:57:00.472986: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 38341 MB memory:  -> device: 3, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:c7:00.0,compute capability: 8.0
+[10/05/23 16:57:00][INFO][dist.py:203] - RANK: 3 / 7
+```
+&#10;</details>
+&#10;</details>
+&#10;<!-- TESTED MACHINES
+&#10;### Tested Machines
+&#10;<details closed><summary><b>Aurora</b> (@ ALCF)</summary>
+&#10;```bash
+# launch job
+$ qsub -q EarlyAppAccess -A Aurora_Deployment -l walltime=2:00:00 -l select=4 -I
+&#10;# load frameworks
+$ module use -a /soft/modulefiles ; module --ignore_cache load frameworks
+$ module load frameworks/.2023.12.15.001
+&#10;# install `ezpz`
+$ git clone https://github.com/saforem2/ezpz
+$ cd ezpz
+$ mkdir -p venvs/aurora/2023.12.15.001
+$ python3 -m venv venvs/aurora/2023.12.15.001 --system-site-packages
+$ source venvs/aurora/2023.12.15.001/bin/activate
+$ python3 -m pip install -e .
+&#10;# print job info and define `launch` alias
+$ source ezpz/src/ezpz/bin/savejobenv
+┌──────────────────────────────────────────────────────────────────
+│ [Hosts]:
+│     • x4415c6s5b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c6s6b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c6s7b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+x4415c7s0b0n0.hostmgmt2415.cm.aurora.alcf.anl.gov
+└──────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────
+│ [DIST INFO]:
+│     • Loading job env from: /home/foremans/.pbsenv
+│     • HOSTFILE: /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+│     • NHOSTS: 4
+│     • NGPU_PER_HOST: 12
+│     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
+│     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+│     • Defining alias: launch: aliased to mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/297306.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+└──────────────────────────────────────────────────────────────────
+```
+&#10;</details>
+&#10;<details closed><summary><b>Polaris</b> (@ ALCF)</summary>
+&#10;```bash
+# Most recent `conda` versions as of 10-17-2023
+if [[ $(hostname) == x3* ]]; then
+    export MACHINE="polaris"
+    export CONDA_DATE="2023-10-04"
+elif [[ $(hostname) == theta* ]]; then
+    export MACHINE="thetaGPU"
+    export CONDA_DATE="2023-01-11"
+else
+    echo "Unknown hostname $(hostname)"
+fi
+module load "conda/${CONDA_DATE}" ; conda activate base
+# Clone saforem2/ezpz and navigate into it
+git clone https://github.com/saforem2/ezpz
+cd ezpz
+# Make a new venv for this project,
+# in the project root: ./venvs/$MACHINE/$CONDA_DATE
+VENV_DIR="venvs/${MACHINE}/${CONDA_DATE}"
+python3 -m venv "${VENV_DIR}" --system-site-packages
+source "venvs/${MACHINE}/${CONDA_DATE}/bin/activate"
+# install `ezpz` into this `venv`
+python3 -m pip install -e .
+# to launch simple training example
+# (launches `src/ezpz/__main__.py`)
+cd src/ezpz
+./bin/train.sh framework=pytorch backend=DDP
+```
+&#10;</details>
+&#10;<details closed><summary><b>Perlmutter</b> (@ NERSC):</summary>
+&#10;```bash
+# request slurm allocation with `salloc`
+$ NODES=2 ; HRS=2 ; salloc --nodes $NODES --qos preempt --time $HRS:00:00 -C 'gpu&hbm80g' --gpus=$(( 4 * NODES )) -A <proj>_g
+# load `pytorch/2.0.1` module
+$ module load libfabric cudatoolkit pytorch/2.0.1
+# Clone saforem2/ezpz and navigate into it
+$ git clone https://github.com/saforem2/ezpz
+$ cd ezpz
+# update pip and install `ezpz`
+$ python3 -m pip install --upgrade pip setuptools wheel
+$ python3 -m pip install -e .
+$ cd src/ezpz
+$ ./bin/train.sh framework=pytorch backend=DDP
+```
+&#10;where `framework` $\in$ `{pytorch, tensorflow}`, and `backend` $\in$ `{DDP, deepspeed,
+horovod}`[^tf-hvd]  
+&#10;</details>
+&#10;[^tf-hvd]: Note `framework=tensorflow` is **only** compatible with `backend=horovod`
+&#10;- Install:
+  ```bash
   git clone https://github.com/saforem2/ezpz
   python3 -m pip install -e ezpz
   ```
-
-- Determine available resources:
-  `bash [ "$(hostname)==theta*" ] && HOSTFILE="${COBALT_NODEFILE}"  # ThetaGPU @ ALCF [ "$(hostname)==x3*" ] && HOSTFILE="${PBS_NODEFILE}"        # Polaris @ ALCF [ "$(hostname)==nid*" ] && HOSTFILE="${SLURM_NODELIST}"     # Perlmutter @ NERSC NHOSTS=$(wc -l < "${HOSTFILE}") NGPU_PER_HOST=$(nvidia-smi -L | wc -l) NGPUS="$((${NHOSTS}*${NGPU_PER_HOST}))"; echo $NHOSTS $NGPU_PER_HOST $NGPUS 2 4 8`’
-
-- Example `python` script:
-
-  ``` python
+&#10;- Determine available resources:
+  ```bash
+  [ "$(hostname)==theta*" ] && HOSTFILE="${COBALT_NODEFILE}"  # ThetaGPU @ ALCF
+  [ "$(hostname)==x3*" ] && HOSTFILE="${PBS_NODEFILE}"        # Polaris @ ALCF
+  [ "$(hostname)==nid*" ] && HOSTFILE="${SLURM_NODELIST}"     # Perlmutter @ NERSC
+  NHOSTS=$(wc -l < "${HOSTFILE}")
+  NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+  NGPUS="$((${NHOSTS}*${NGPU_PER_HOST}))";
+  echo $NHOSTS $NGPU_PER_HOST $NGPUS
+  2 4 8
+  ```'
+&#10;- Example `python` script:
+&#10;  ```python
   """
   ezpz/test.py
   """
   from ezpz import setup_torch, setup_tensorflow
-
-
+&#10;
   def test(
       framework: str = 'pytorch',
       backend: str = 'deepspeed',
@@ -1107,8 +1174,7 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
       _ = setup_tensorflow()
   else:
       raise ValueError
-
-  if __name__ == '__main__':
+&#10;  if __name__ == '__main__':
       import sys
       try:
           framework = sys.argv[1]
@@ -1124,10 +1190,5 @@ To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other 
           port = '5432'
       test(framework=framework, backend=backend, port=port)
   ```
-
-</details>
-
-[^1]: Note `framework=tensorflow` is **only** compatible with
-    `backend=horovod`
-
-[^2]: `deepspeed`, `DDP` only support `pytorch`
+&#10;</details>
+&#10;-->

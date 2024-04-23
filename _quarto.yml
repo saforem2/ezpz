@@ -21,6 +21,7 @@ project:
   render:
     - index.qmd
     - qmd/**/*.qmd
+    - ../ezpz/qmd/**/*.qmd
     # - qmd/blog/*.qmd
     # - qmd/ezpz/*.qmd
     # - qmd/aurora-gpt/megatron-ds-intel.qmd

@@ -30,15 +30,18 @@ website:
     logo: "./favicon.svg"
     background: "#222222"
     foregound: "#838383"
-    tools:
-      # - icon: twitter
-      #   href: https://twitter.com/saforem2
-      - icon: gear
-        menu:
-          - text: Source Code
-            url: https://github.com/saforem2/ezpz/blob/main/index.qmd
-          - text: New Issue
-            url: https://github.com/saforem2/ezpz/issues/new/choose
+    # tools:
+    #   # - icon: twitter
+    #   #   href: https://twitter.com/saforem2
+    #   - icon: gear
+    #     menu:
+    #       - text: Source Code
+    #         url: https://github.com/saforem2/ezpz/blob/main/index.qmd
+    #       - text: New Issue
+    #         url: https://github.com/saforem2/ezpz/issues/new/choose
+    left:
+      - text: "🪧 Posts"
+        href: "./qmd/listings/index.qmd"
     right:
       - href: https://twitter.com/saforem2
         text: "[{{< iconify line-md twitter >}}]{style='font-size: 1.15em;'}"

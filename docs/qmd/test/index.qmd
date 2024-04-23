@@ -1,8 +1,7 @@
 ---
 # sidebar: false
-title: "`ezpz` 🍋"
+title: "TEST `ezpz` 🍋"
 lightbox: true
-higlight-style: github
 # callout-appearance: simple
 title-block-banner: false
 citeproc: true
@@ -22,11 +21,11 @@ twitter-card:
 open-graph:
     image: "./assets/thumbnail.png"
 format:
-  html: default
+  html:
+    toc: true
+    html-math-method: katex
+    highlight-style: github
   ipynb: default
-  gfm:
-    author: Sam Foreman
-    output-file: "README.md"
 ---
 
 ## Overview
@@ -699,7 +698,7 @@ We provide some shell scripts that are useful when working with a job scheduler
 
 ::: {.callout-tip icon=false title='[❤️‍🩹 Status]{style="color: var(--ansi-red);"}' collapse=false style="text-align: left!important; width:100%; background-color: var(--code-bg); border:none!important; border-left: 2px solid var(--ansi-red)!important; opacity:100%; border-radius: 0pt!important;"}
 
-```{python code-line-numbers="true"}
+```{python}
 #| echo: false
 import datetime
 from rich import print

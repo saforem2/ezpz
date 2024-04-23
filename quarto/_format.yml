@@ -3,7 +3,7 @@ format:
     page-layout: full
     callout-appearance: simple
     code-link: true
-    code-line-numbers: false
+    code-line-numbers: true
     toc: true
     self-contained: false
     toc-location: right
@@ -21,6 +21,10 @@ format:
       toggle: true
       caption: none
     html-math-method: katex
+    highlight-style: a11y
+    # syntax-definitions:
+    #   - syntax/bash.xml
+    #   - syntax/python.xml
     css:
       - css/ansi.css
       - css/default.css
@@ -42,3 +46,15 @@ format:
     footnotes-hover: true
     header-includes: |
       <link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet" />
+    # <script type="module">
+    # // be sure to specify the exact version
+    # import { codeToHtml } from 'https://esm.sh/shiki@1.0.0'
+    # // or
+    # // import { codeToHtml } from 'https://esm.run/shiki@1.0.0'
+    #
+    # const foo = document.getElementById('foo')
+    # foo.innerHTML = await codeToHtml('console.log("Hi, Shiki on CDN :)")', {
+    #   lang: 'js',
+    #   theme: 'rose-pine'
+    # })
+    # </script>
