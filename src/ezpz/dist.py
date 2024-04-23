@@ -718,6 +718,10 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith('x1'):
         return 'SunSpot'
     if hostname.startswith('x3'):
+        if (pbs_host := os.environ.get('PBS_O_HOST', None)) is not None:
+            if str(pbs_host).startswith('sirius'):
+                return 'Sirius'
+            return 'Polaris'
         return 'Polaris'
     if hostname.startswith('x4'):
         return 'Aurora'
