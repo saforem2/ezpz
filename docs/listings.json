@@ -2,6 +2,7 @@
   {
     "listing": "/qmd/listings/index.html",
     "items": [
+      "/qmd/test/index.html",
       "/qmd/details/details.html",
       "/qmd/ezpz/ezpz.html"
     ]

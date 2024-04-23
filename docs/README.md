@@ -1,12 +1,12 @@
 # `ezpz` 🍋
 Sam Foreman
-2024-04-22
+2024-04-23
 
 # `ezpz` 🍋
 
 \| \[Sam Foreman
 [<span class="orcid-green"></span>](https://orcid.org/0000-0002-9981-0876)\]()  
-2024-04-22
+2024-04-23
 
 ## Overview
 
@@ -45,23 +45,17 @@ Sam Foreman
 >     [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py)
 >     for more details).</span>
 >
->   </details>
->
+> </details>
 > </details>
 >
 > - <details closed>
 >   <summary>
->
->   Using your favorite <code>{framework, backend}</code>
->
+>   Using your favorite framework:
 >   </summary>
 >
->   On any accelerator:
+>   - `framework=pytorch` + `backend={DDP, deepspeed, horovod}`
 >
->   - [`framework=pytorch`](#pytorch) +
->     `backend={DDP, deepspeed, horovod}`
->
->   - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+>   - `framework=tensorflow` + `backend=horovod`
 >
 >   - [`ez.get_torch_device()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332):
 >     {`cuda`, `xpu`, `mps`, `cpu`}
@@ -94,7 +88,8 @@ Sam Foreman
 >     device(type='mps', index=0)
 >     ```
 >
->   </details>
+> </details>
+> </details>
 >
 > - <details closed>
 >   <summary>
@@ -103,7 +98,7 @@ Sam Foreman
 >
 >   - `ez.setup_wandb(project_name='ezpz')`
 >
->   </details>
+> </details>
 >
 > - **Full support** for any {`device` + `framework` + `backend`}:
 >   - device: {`GPU`, `XPU`, `MPS`, `CPU`}
@@ -876,7 +871,7 @@ if __name__ == '__main__':
 
 > **<span style="color: var(--ansi-red);">❤️‍🩹 Status</span>**
 >
-> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">22</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">14:46:03</span>
+> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">23</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">09:05:27</span>
 > </pre>
 > <!-- [[![](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)]{style="text-align:center;"} -->
 > <p align="center">

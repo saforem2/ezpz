@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Sam Foreman ">
-<meta name="dcterms.date" content="2024-04-22">
+<meta name="dcterms.date" content="2024-04-23">
 
 <title>ezpz 🍋</title>
 <style>
@@ -187,10 +187,10 @@ window.Quarto = {
 <meta name="twitter:card" content="summary_large_image">
 <meta name="citation_title" content="`ezpz`">
 <meta name="citation_author" content="Sam Foreman">
-<meta name="citation_publication_date" content="2024-04-22">
-<meta name="citation_cover_date" content="2024-04-22">
+<meta name="citation_publication_date" content="2024-04-23">
+<meta name="citation_cover_date" content="2024-04-23">
 <meta name="citation_year" content="2024">
-<meta name="citation_online_date" content="2024-04-22">
+<meta name="citation_online_date" content="2024-04-23">
 <meta name="citation_fulltext_html_url" content="https://saforem2.github.io/ezpz">
 <meta name="citation_language" content="en">
 </head>
@@ -275,7 +275,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-      <p class="date">April 22, 2024</p>
+      <p class="date">April 23, 2024</p>
     </div>
   </div>
   
@@ -320,23 +320,22 @@ Setting up + launching distributed training:
 <li><p><code>WORLD_SIZE =</code> <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417"><code>ez.get_world_size()</code></a></p></li>
 </ul>
 <span class="dim-text">(see <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py"><code>ezpz/dist.py</code></a> for more details).</span></details></li>
+</ul></details></li>
 </ul>
-</details></li>
-</ul>
+
 
 <ul>
 <li><details closed="">
 <summary>
-<p>Using your favorite <code>{framework, backend}</code></p>
+Using your favorite framework:
 </summary>
-<p>On any accelerator:</p>
 <ul>
-<li><p><a href="#pytorch"><code>framework=pytorch</code></a> + <code>backend={DDP, deepspeed, horovod}</code></p></li>
-<li><p><a href="#tensorflow"><code>framework=tensorflow</code></a> + <code>backend=horovod</code></p></li>
+<li><p><code>framework=pytorch</code> + <code>backend={DDP, deepspeed, horovod}</code></p></li>
+<li><p><code>framework=tensorflow</code> + <code>backend=horovod</code></p></li>
 <li><p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ez.get_torch_device()</code></a>: {<code>cuda</code>, <code>xpu</code>, <code>mps</code>, <code>cpu</code>}</p></li>
 <li><p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348"><code>ez.get_torch_backend()</code></a>: {<code>nccl</code>, <code>ccl</code>, <code>gloo</code>}</p></li>
 </ul>
-<p><em>2ez</em> 😎. (see <a href="#frameworks">frameworks</a> for additional details)</p></details></li>
+<em>2ez</em> 😎. (see <a href="#frameworks">frameworks</a> for additional details)</details></li>
 </ul>
 
 <ul>
@@ -357,16 +356,21 @@ Writing device agnostic code:
 <span id="cb1-6"><a href="#cb1-6"></a><span class="op">&gt;&gt;&gt;</span> y <span class="op">=</span> model(x)</span>
 <span id="cb1-7"><a href="#cb1-7"></a><span class="op">&gt;&gt;&gt;</span> y.device</span>
 <span id="cb1-8"><a href="#cb1-8"></a>device(<span class="bu">type</span><span class="op">=</span><span class="st">'mps'</span>, index<span class="op">=</span><span class="dv">0</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></details></li>
+</ul></details></li>
 </ul>
-</details></li>
+
+
+<ul>
 <li><details closed="">
 <summary>
 Using <code>wandb</code>:
 </summary>
 <ul>
 <li><code>ez.setup_wandb(project_name='ezpz')</code></li>
+</ul></details></li>
 </ul>
-</details></li>
+
+<ul>
 <li><strong>Full support</strong> for any {<code>device</code> + <code>framework</code> + <code>backend</code>}:
 <ul>
 <li>device: {<code>GPU</code>, <code>XPU</code>, <code>MPS</code>, <code>CPU</code>}</li>
@@ -1058,9 +1062,9 @@ Using <code>wandb</code>:
 </div>
 <div id="callout-2" class="callout-2-contents callout-collapse collapse show">
 <div class="callout-body-container callout-body">
-<div id="4374699a" class="cell" data-execution_count="1">
+<div id="cf8d4c46" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
-<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">22</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">14:43:50</span>
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">23</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">09:05:08</span>
 </pre>
 </div>
 </div>
@@ -1446,12 +1450,12 @@ horovod}`[^tf-hvd]
 <a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a><div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" id="quarto-citation"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman2024,
   author = {Foreman, Sam},
   title = {`Ezpz`},
-  date = {2024-04-22},
+  date = {2024-04-23},
   url = {https://saforem2.github.io/ezpz},
   langid = {en}
 }
 </code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2024" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2024. <span>“`Ezpz`.”</span> April 22, 2024. <a href="https://saforem2.github.io/ezpz">https://saforem2.github.io/ezpz</a>.
+Foreman, Sam. 2024. <span>“`Ezpz`.”</span> April 23, 2024. <a href="https://saforem2.github.io/ezpz">https://saforem2.github.io/ezpz</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {

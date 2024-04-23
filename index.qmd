@@ -40,38 +40,36 @@ backend combo.
 
 - <details><summary>Setting up + launching distributed training:</summary>
 
-  - <details closed><summary><code>import ezpz as ez</code></summary>
+    - <details closed><summary><code>import ezpz as ez</code></summary>
 
-    - `RANK = `
-      [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
-      [for `backend` $\in$ \{`DDP`, `deepspeed`, `horovod`}]{.dim-text}
+        - `RANK = `
+          [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
+          [for `backend` $\in$ \{`DDP`, `deepspeed`, `horovod`}]{.dim-text}
 
-    - `RANK =`
-      [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
+        - `RANK =`
+          [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
 
-    - `LOCAL_RANK =`
-      [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
+        - `LOCAL_RANK =`
+          [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
 
-    - `WORLD_SIZE =`
-      [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
+        - `WORLD_SIZE =`
+          [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
 
-    [(see [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py) for more details).]{.dim-text}
-
-  </details>
+        [(see [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py) for more details).]{.dim-text}
 
 </details>
 
-- <details closed><summary>Using your favorite <code>{framework, backend}</code></summary>
+</details>
 
-  On any accelerator:
+- <details closed><summary>Using your favorite framework:</summary>
 
-  - [`framework=pytorch`](#pytorch) + `backend={DDP, deepspeed, horovod}`
+    - `framework=pytorch` + `backend={DDP, deepspeed, horovod}`
 
-  - [`framework=tensorflow`](#tensorflow) + `backend=horovod`
+    - `framework=tensorflow` + `backend=horovod`
 
-  - [`ez.get_torch_device()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332): {`cuda`, `xpu`, `mps`, `cpu`}
+    - [`ez.get_torch_device()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332): {`cuda`, `xpu`, `mps`, `cpu`}
 
-  - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
+    - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
 
   _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
 
@@ -92,13 +90,15 @@ backend combo.
         device(type='mps', index=0)
         ```
 
-    </details>
+</details>
+
+</details>
 
 - <details closed><summary>Using <code>wandb</code>:</summary>
 
     - `ez.setup_wandb(project_name='ezpz')`
 
-  </details>
+</details>
 
 - **Full support** for any {`device` + `framework` + `backend`}:
     - device: {`GPU`, `XPU`, `MPS`, `CPU`}

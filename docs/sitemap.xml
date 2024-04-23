@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://saforem2.github.io/ezpz/qmd/listings/index.html</loc>
-    <lastmod>2024-04-22T15:25:25.669Z</lastmod>
-  </url>
-  <url>
-    <loc>https://saforem2.github.io/ezpz/qmd/details/details.html</loc>
-    <lastmod>2024-01-28T19:03:19.414Z</lastmod>
-  </url>
-  <url>
-    <loc>https://saforem2.github.io/ezpz/index.html</loc>
-    <lastmod>2024-04-22T19:43:47.577Z</lastmod>
+    <loc>https://saforem2.github.io/ezpz/qmd/test/index.html</loc>
+    <lastmod>2024-04-22T19:26:13.643Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/ezpz/qmd/ezpz/ezpz.html</loc>
     <lastmod>2024-01-28T18:39:08.782Z</lastmod>
   </url>
   <url>
-    <loc>https://saforem2.github.io/ezpz/qmd/test/index.html</loc>
-    <lastmod>2024-04-22T19:26:13.643Z</lastmod>
+    <loc>https://saforem2.github.io/ezpz/index.html</loc>
+    <lastmod>2024-04-23T14:05:09.082Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/ezpz/qmd/details/details.html</loc>
+    <lastmod>2024-01-28T19:03:19.414Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/ezpz/qmd/listings/index.html</loc>
+    <lastmod>2024-04-22T15:25:25.669Z</lastmod>
   </url>
 </urlset>
