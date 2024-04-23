@@ -18,13 +18,13 @@ website:
   open-graph:
     title: "ezpz 🍋"
     description: "Distributed training, ezpz."
-    image: "./../assets/thumbnail.png"
+    image: "https://github.com/saforem2/ezpz/blob/main/assets/thumbnail.png?raw=true"
   twitter-card:
     site: "@saforem2"
     creator: "@saforem2"
     title: "Sam Foreman"
-    description: "My ramblings about science and computers"
-    image: "../assets/thumbnail.png"
+    description: "Distributed training, ezpz."
+    image: "https://github.com/saforem2/ezpz/blob/main/assets/thumbnail.png?raw=true"
   navbar:
     # title: false
     logo: "./favicon.svg"
