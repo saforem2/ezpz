@@ -268,7 +268,7 @@ function writeJobInfo() {
         echo "export NHOSTS=${NHOSTS}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
-        echo "alias LAUNCH='${LAUNCH}'"
+        echo "alias LAUNCH='${DIST_LAUNCH}'"
     } >> "${JOBENV_FILE}"
     export LAUNCH="${DIST_LAUNCH}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
