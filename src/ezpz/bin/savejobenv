@@ -111,8 +111,8 @@ function setupHost() {
         export NGPU_PER_TILE=6
         export NTILE_PER_HOST=2
         export NGPU_PER_HOST=$(( NGPU_PER_TILE * NTILE_PER_HOST ))
-        export GPU_ID=$(( (PALS_LOCAL_RANKID / NTILE_PER_HOST ) % NGPU_PER_TILE ))
-        export TILE_ID=$((PALS_LOCAL_RANKID % NTILE_PER_HOST ))
+        # export GPU_ID=$(( (PALS_LOCAL_RANKID / NTILE_PER_HOST ) % NGPU_PER_TILE ))
+        # export TILE_ID=$((PALS_LOCAL_RANKID % NTILE_PER_HOST ))
         # unset EnableWalkerPartition
         # export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
         # export ZE_AFFINITY_MASK=$GPU_ID.$TILE_ID
@@ -311,8 +311,8 @@ saveDeepSpeedEnv() {
 }
 
 
-setupHost > /tmp/setupHost.log 2>&1
-writeJobInfo > /tmp/writeJobInfo.log 2>&1
+setupHost # > /tmp/setupHost.log 2>&1
+writeJobInfo # > /tmp/writeJobInfo.log 2>&1
 setupHost
 writeJobInfo
 # saveDeepSpeedEnv
