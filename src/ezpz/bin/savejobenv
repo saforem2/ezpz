@@ -135,21 +135,27 @@ function setupHost() {
 }
 
 function setup() {
-    if [[ $(hostname) == x3* ]]; then
+    # if [[ $(hostname) == x3* ]]; then
+    #     export HOSTFILE="${PBS_NODEFILE}"
+    #     savePBSenv
+    # elif [[ $(hostname) == x1* ]]; then
+    #     export HOSTFILE="${PBS_NODEFILE}"
+    #     savePBSenv
+    # elif [[ $(hostname) == x4* ]]; then
+    #     export HOSTFILE="${PBS_NODEFILE}"
+    #     savePBSenv
+    if [[ -n "${PBS_NODEFILE}" ]]; then
         export HOSTFILE="${PBS_NODEFILE}"
         savePBSenv
-    elif [[ $(hostname) == x1* ]]; then
-        export HOSTFILE="${PBS_NODEFILE}"
-        savePBSenv
-    elif [[ $(hostname) == x4* ]]; then
-        export HOSTFILE="${PBS_NODEFILE}"
-        savePBSenv
+    elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
+        export HOSTFILE="${HOME}/.slurm-nodefile"
+        saveSLURMenv
     elif [[ $(hostname) == thetagpu* ]]; then
         export HOSTFILE="${COBALT_NODEFILE}"
         saveCOBALTenv
-    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
-        export HOSTFILE="${HOME}/.slurm-nodefile"
-        saveSLURMenv
+    # elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
+    #     export HOSTFILE="${HOME}/.slurm-nodefile"
+    #     saveSLURMenv
     else
         echo "│ Unexpected hostname: ${HOSTNAME}"
         HOSTFILE="hostfile"
