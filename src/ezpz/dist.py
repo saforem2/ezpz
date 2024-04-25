@@ -525,8 +525,8 @@ def setup_torch_distributed(
         local_rank = dsetup['local_rank']
         # if rank == 0:
         #     import pudb; pudb.set_trace()
-        # if torch.cuda.is_available():
-        #     torch.cuda.set_device(local_rank)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
     elif be in {'deepspeed', 'ds'}:
         init_deepspeed()
         world_size = get_world_size()
