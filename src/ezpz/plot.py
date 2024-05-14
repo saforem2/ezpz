@@ -70,8 +70,8 @@ plt.style.use('default')
 # set_plot_style()
 
 def set_plot_style(**kwargs):
-    #plt.style.use('default')
-    #plt.style.use(opinionated.STYLES['opinionated_min'])
+    # plt.style.use('default')
+    # plt.style.use(opinionated.STYLES['opinionated_min'])
     plt.rcParams.update({
         'image.cmap': 'viridis',
         'savefig.transparent': True,
@@ -140,13 +140,18 @@ def tplot(
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         bins: Optional[int] = None,
+        logfreq: int = 1,
         outfile: Optional[os.PathLike | str | Path] = None,
         type: Optional[str] = None,
         append: bool = True,
+        figsize: Optional[tuple[int, int]] = None,
 ):
+    figsize = (75, 25) if figsize is None else figsize
     import plotext as pltx
     pltx.clf()
     pltx.theme('clear')
+    pltx.plot_size(*figsize)
+    y = np.nan_to_num(y, nan=0.)
     if len(y.shape) == 2:
         pltx.hist(y.flatten(), bins=bins, label=label)
     elif len(y.shape) == 1:
@@ -162,6 +167,9 @@ def tplot(
             pltx.xlabel(xlabel)
         if ylabel is not None:
             pltx.ylabel(ylabel)
+        if x is None:
+            x = np.arange(len(y))
+            x = x * logfreq
         if x is not None:
             assert len(x.shape) == 1
             pltx.xticks(x.tolist())
@@ -432,7 +440,7 @@ def plot_combined(
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
     ax1.grid(alpha=0.2)
     ax2.grid(False)
-    sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, shade=True)
+    sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, fill=True)
     axes = (ax1, ax2)
     ax0 = subfigs[0].subplots(1, 1)
     if 'chain' in val.dims:
@@ -726,7 +734,7 @@ def plot_metric(
             for chain in range(min((num_chains, arr.shape[1]))):
                 plot_kwargs.update({'label': None})
                 ax.plot(steps, arr[:, chain], lw=LW/2., **plot_kwargs)
-        sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
+        sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, fill=True)
         _ = ax1.set_xticks([])
         _ = ax1.set_xticklabels([])
         _ = sns.despine(ax=ax, top=True, right=True)
@@ -896,7 +904,7 @@ def make_ridgeplots(
                 # Draw the densities in a few steps
                 _ = g.map(sns.kdeplot, key, cut=1,
                           bw_adjust=1., clip_on=False,
-                          shade=True, alpha=0.7, linewidth=1.25)
+                          fill=True, alpha=0.7, linewidth=1.25)
                 # _ = sns.histplot()
                 # _ = g.map(sns.histplot, key)
                 #           # rug=False, kde=False, norm_hist=False,
