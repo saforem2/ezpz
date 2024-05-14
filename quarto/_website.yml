@@ -41,7 +41,7 @@ website:
     #         url: https://github.com/saforem2/ezpz/issues/new/choose
     left:
       - text: "🪧 Posts"
-        href: "./qmd/listings/index.qmd"
+        href: "content/posts/"
     right:
       - href: https://twitter.com/saforem2
         text: "[{{< iconify line-md twitter >}}]{style='font-size: 1.15em;'}"

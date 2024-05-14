@@ -2,7 +2,7 @@
 # sidebar: false
 title: "`ezpz` 🍋"
 lightbox: true
-# higlight-style: github
+higlight-style: atom-one
 # callout-appearance: simple
 title-block-banner: false
 citeproc: true
@@ -24,14 +24,18 @@ execute:
 format:
   html: default
   ipynb: default
+  revealjs:
+    scrollable: true
+    output-file: "slides.html"
+  # pdf: default
   gfm:
     author: Sam Foreman
     output-file: "README.md"
 ---
 
-## Overview
+## 👀 Overview
 
-::: {.callout-important icon=false title="<code>ezpz</code> 🍋" collapse=false style="text-align: left!important; width:100%; background-color: var(--code-bg); border:none!important; border-left: 2px solid #1ED760!important; opacity:100%; border-radius: 0pt!important; margin-bottom: 0em; padding-bottom: 0.0rem;"}
+::: {.callout-tip icon=false title="<code>ezpz</code> 🍋" collapse=false style="text-align: left!important; width:100%; background-color: var(--code-bg); border:none!important; border-left: 2px solid #1ED760!important; opacity:100%; border-radius: 0pt!important; margin-bottom: 0em; padding-bottom: 0.0rem;"}
 
 Launch and train across all your accelerators, using your favorite framework +
 backend combo.
@@ -208,7 +212,6 @@ your current {`PBS`, `slurm`} job and train a simple model using either `DDP` or
         - <details closed><summary><code>GPU</code></summary>
 
             ```bash
-            # [07:26:13 PM] [foremans@x3005c0s25b1n0] ~ 2024-04-20
             $ launch python3 -m ezpz.test_dist |& tee ezpz-test-dist.log
 
             Connected to tcp://x3005c0s13b0n0.hsn.cm.polaris.alcf.anl.gov:7919
@@ -388,7 +391,7 @@ your current {`PBS`, `slurm`} job and train a simple model using either `DDP` or
     </details>
 
 
-## Helper Utilities
+## 🧰 Helper Utilities
 
 
 We provide some shell scripts that are useful when working with a job scheduler

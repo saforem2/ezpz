@@ -21,26 +21,31 @@ format:
       toggle: true
       caption: none
     html-math-method: katex
-    highlight-style: a11y
+    highlight-style: "atom-one"
     # syntax-definitions:
     #   - syntax/bash.xml
     #   - syntax/python.xml
     css:
+      # - css/asides.css
       - css/ansi.css
+      # - css/_slides_default.css
       - css/default.css
       - css/callouts.css
       # - css/profile.css
     theme:
       dark:
+        # - css/_slides.scss
         - css/common.scss
         - css/dark.scss
         - css/syntax-dark.scss
         - css/callout-cards.scss
       light:
+        # - css/_slides.scss
         - css/common.scss
         - css/light.scss
         - css/syntax-light.scss
         - css/callout-cards.scss
+    highlight-theme: "atom-one"
     smooth-scroll: false
     citations-hover: true
     footnotes-hover: true
@@ -58,3 +63,43 @@ format:
     #   theme: 'rose-pine'
     # })
     # </script>
+  revealjs:
+    # theme: [css/_slides.scss]
+    # css:
+    #   - css/_slides_default.css
+    #
+    title-block-style: none
+    slide-number: c
+    title-slide-style: default
+    chalkboard:
+      buttons: false
+    auto-animate: true
+    reference-location: section
+    touch: true
+    pause: false
+    footnotes-hover: true
+    citations-hover: true
+    preview-links: true
+    controls-tutorial: true
+    controls: false
+    logo: "https://raw.githubusercontent.com/saforem2/anl-job-talk/main/docs/assets/anl.svg"
+    history: false
+    theme: [css/revealjs/dark.scss]
+    callout-style: simple
+    # css: [css/revealjs/default.css, css/revealjs/callouts.css]
+    css:
+      # - css/asides.css
+      - css/revealjs/default.css
+      - css/revealjs/callouts.css
+    self-contained: false
+    embed-resources: false
+    self-contained-math: false
+    center: true
+    highlight-style: "atom-one"
+    default-image-extension: svg
+    code-line-numbers: true
+    code-overflow: scroll
+    html-math-method: katex
+    fig-align: center
+    mermaid:
+      theme: dark

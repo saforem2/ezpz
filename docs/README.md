@@ -1,16 +1,19 @@
 # `ezpz` 🍋
-[Sam Foreman](https://samforeman.me)  
-2024-04-23
+Sam Foreman
+2024-05-13
 
-## Overview
+\| \[Sam Foreman
+[<span class="orcid-green"></span>](https://orcid.org/0000-0002-9981-0876)\]()  
+2024-05-13
 
-> [!TIP]
-> **<code>ezpz</code> 🍋**: Distributed training, `ezpz`.
-> 
-> _Launch and train across all your accelerators, using your favorite
-> framework + backend combo_.
-> 
-> Simplifies the process of:
+## 👀 Overview
+
+> **<code>ezpz</code> 🍋**
+>
+> Launch and train across all your accelerators, using your favorite
+> framework + backend combo.
+>
+> `ezpz` simplifies the process of:
 >
 > - <details>
 >   <summary>
@@ -110,10 +113,22 @@ GPUs in your current {`PBS`, `slurm`} job and train a simple model using
 either `DDP` or `deepspeed`
 
 <details closed>
-  
-<summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a></summary>
+<summary>
 
-```python
+<code>test_dist.py</code>
+
+</summary>
+<!-- <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a>:</summary> -->
+
+``` python
+"""
+ezpz_ddp.py
+
+- to launch:
+
+$ source ezpz/src/ezpz/bin/savejobenv
+$ BACKEND=DDP launch python3 ezpz_ddp.py
+"""
 import os
 import logging
 import time
@@ -122,7 +137,7 @@ import torch
 import ezpz as ez
 
 # backend can be any of DDP, deespepeed, horovod
-DIST_INIT = ez.setup_torch_distributed(
+RANK = ez.setup_torch(
   backend=(
       backend := os.environ.get('BACKEND', 'DDP')
   ),
@@ -130,28 +145,28 @@ DIST_INIT = ez.setup_torch_distributed(
       port := os.environ.get("MASTER_PORT", "29500")
   )
 )
+# RANK = DIST_INIT['rank']
+# WORLD_SIZE = DIST_INIT['world_size']
+# LOCAL_RANK = DIST_INIT['local_rank']
+# if DEVICE == "cuda" and torch.cuda.is_available():
+#     torch.cuda.set_device(LOCAL_RANK)
 DEVICE = ez.get_torch_device()
-RANK = DIST_INIT['rank']
-WORLD_SIZE = DIST_INIT['world_size']
-LOCAL_RANK = DIST_INIT['local_rank']
-# WORLD_SIZE = ez.get_world_size()
-# LOCAL_RANK = ez.get_local_rank()
+WORLD_SIZE = ez.get_world_size()
+LOCAL_RANK = ez.get_local_rank()
 DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
-_ = ez.print_dist_setup()
 
-if DEVICE == "cuda" and torch.cuda.is_available():
-  torch.cuda.set_device(LOCAL_RANK)
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
-BATCH_SIZE = 64
-INPUT_SIZE = 128
-OUTPUT_SIZE = 128
-DTYPE = torch.get_default_dtype()
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 64))  # 64
+INPUT_SIZE = int(os.environ.get("INPUT_SIZE", 128))  # 128
+OUTPUT_SIZE = int(os.environ.get("OUTPUT_SIZE", 128))  # 128
+DTYPE = os.environ.get("DTYPE", torch.get_default_dtype())
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 50))
 
-logger.info(f"{DIST_INIT=}")
+# logger.info(f"{DIST_INIT=}")
 
 
 class Network(torch.nn.Module):
@@ -181,6 +196,17 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
   return (y - x).pow(2).sum()
 
 
+def plot_losses(losses: dict) -> None:
+  import plotext as pltx
+  # y = list(losses.values())
+  pltx.theme('clear')
+  pltx.scatter(list(losses.values()))
+  pltx.show()
+  pltx.save_fig("test_dist_losses.txt")
+  pltx.ylabel("loss")
+  pltx.xlabel("iteration")
+
+
 def main():
   model = Network(
       input_dim=INPUT_SIZE,
@@ -191,37 +217,47 @@ def main():
   model.to(DEVICE_ID)
   logger.info(f'{model=}')
   optimizer = torch.optim.Adam(model.parameters())
-  if WORLD_SIZE > 1:
-      if backend.lower() == 'ddp':
+  if backend.lower() == 'ddp':
+      if WORLD_SIZE > 1:
           from torch.nn.parallel import DistributedDataParallel as DDP
           model = DDP(
               model,
               device_ids=[]
           )
-      elif backend.lower() in ('ds', 'deepspeed'):
-          import deepspeed
-          # config = ez.load_ds_config().update(
-          #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
-          # )
-          import argparse
-          parser = argparse.ArgumentParser(description='My training script.')
-          parser.add_argument('--local_rank', required=False, type=int, default=-1,  # default=ez.get_local_rank()),
-                              help='local rank passed from distributed launcher')
-          # Include DeepSpeed configuration arguments
-          parser = deepspeed.add_config_arguments(parser)
-          cmd_args = parser.parse_args()
-          logger.info(f'{cmd_args=}')
-          model, optimizer, *_ = deepspeed.initialize(
-              args=cmd_args,
-              model=model,
-              optimizer=optimizer,
-          )
+  elif backend.lower() in ('ds', 'deepspeed'):
+      import deepspeed
+      # config = ez.load_ds_config().update(
+      #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
+      # )
+      import argparse
+      parser = argparse.ArgumentParser(
+          description='My training script.'
+      )
+      parser.add_argument(
+          '--local_rank',
+          required=False,
+          type=int,
+          default=-1,
+          # default=ez.get_local_rank()),
+          help='local rank passed from distributed launcher',
+      )
+      # Include DeepSpeed configuration arguments
+      parser = deepspeed.add_config_arguments(parser)
+      cmd_args = parser.parse_args()
+      logger.info(f'{cmd_args=}')
+      model, optimizer, *_ = deepspeed.initialize(
+          args=cmd_args,
+          model=model,
+          optimizer=optimizer,
+      )
 
-  for iter in range(10):
+  losses = {}
+  for iter in range(TRAIN_ITERS):
       t0 = time.perf_counter()
       x = torch.rand((BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
       y = model(x)
       loss = calc_loss(x, y)
+      losses[iter] = loss
       dtf = ((t1 := time.perf_counter()) - t0)
       if backend == 'deepspeed':
           model.backward(loss)
@@ -240,6 +276,8 @@ def main():
               f'{dtb=:.3f}'
           ])
       )
+  if RANK == 0:
+      plot_losses(losses)
 
 
 if __name__ == '__main__':
@@ -335,7 +373,6 @@ if __name__ == '__main__':
         </summary>
 
         ``` bash
-        # [07:26:13 PM] [foremans@x3005c0s25b1n0] ~ 2024-04-20
         $ launch python3 -m ezpz.test_dist |& tee ezpz-test-dist.log
 
         Connected to tcp://x3005c0s13b0n0.hsn.cm.polaris.alcf.anl.gov:7919
@@ -519,7 +556,7 @@ if __name__ == '__main__':
 
     </details>
 
-## Helper Utilities
+## 🧰 Helper Utilities
 
 We provide some shell scripts that are useful when working with a job
 scheduler (e.g. `PBS Pro` @ ALCF or `slurm` elsewhere).
@@ -690,7 +727,7 @@ scheduler (e.g. `PBS Pro` @ ALCF or `slurm` elsewhere).
 
 > **<span style="color: var(--ansi-red);">❤️‍🩹 Status</span>**
 >
-> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">04</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">23</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">11:19:36</span>
+> <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">05</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">13</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">22:04:56</span>
 > </pre>
 >
 > <span class="center"

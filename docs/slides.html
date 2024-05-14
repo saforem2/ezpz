@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<link href="././favicon.svg" rel="icon" type="image/svg+xml">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script><script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-html/tabby.min.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-html.min.css" rel="stylesheet" data-mode="light">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-contrib/academicons-1.9.2/all.css" rel="stylesheet">
+<link href="site_libs/quarto-contrib/academicons-1.9.2/size.css" rel="stylesheet"><meta charset="utf-8">
+  <meta name="generator" content="quarto-1.4.554">
+
+  <meta name="author" content="Sam Foreman ">
+  <meta name="dcterms.date" content="2024-05-13">
+  <title>ezpz 🍋</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <link rel="stylesheet" href="site_libs/revealjs/dist/reset.css">
+  <link rel="stylesheet" href="site_libs/revealjs/dist/reveal.css">
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+      }
+    pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+    div.sourceCode
+      { color: #abb2bf;  }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span { color: #abb2bf; } /* Normal */
+    code span.al { color: #95da4c; background-color: #4d1f24; font-weight: bold; } /* Alert */
+    code span.an { color: #98c379; } /* Annotation */
+    code span.at { color: #c678dd; } /* Attribute */
+    code span.bn { color: #d19a66; } /* BaseN */
+    code span.bu { color: #c678dd; } /* BuiltIn */
+    code span.cf { color: #c678dd; } /* ControlFlow */
+    code span.ch { color: #98c379; } /* Char */
+    code span.cn { color: #d19a66; } /* Constant */
+    code span.co { color: #5c6370; font-style: italic; } /* Comment */
+    code span.cv { color: #e06c75; font-style: italic; } /* CommentVar */
+    code span.do { color: #a43340; } /* Documentation */
+    code span.dt { color: #c678dd; } /* DataType */
+    code span.dv { color: #d19a66; } /* DecVal */
+    code span.er { color: #f44747; text-decoration: underline; } /* Error */
+    code span.ex { color: #61afef; font-weight: bold; } /* Extension */
+    code span.fl { color: #d19a66; } /* Float */
+    code span.fu { color: #61afef; } /* Function */
+    code span.im { color: #98c379; } /* Import */
+    code span.in { color: #c45b00; } /* Information */
+    code span.kw { color: #c678dd; } /* Keyword */
+    code span.op { color: #c678dd; } /* Operator */
+    code span.ot { color: #27ae60; } /* Other */
+    code span.pp { color: #c678dd; } /* Preprocessor */
+    code span.re { color: #2980b9; background-color: #153042; } /* RegionMarker */
+    code span.sc { color: #56b6c2; } /* SpecialChar */
+    code span.ss { color: #da4453; } /* SpecialString */
+    code span.st { color: #98c379; } /* String */
+    code span.va { color: #e06c75; } /* Variable */
+    code span.vs { color: #da4453; } /* VerbatimString */
+    code span.wa { color: #da4453; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="site_libs/revealjs/dist/theme/quarto.css">
+  <link rel="stylesheet" href="css/revealjs/default.css">
+  <link rel="stylesheet" href="css/revealjs/callouts.css">
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css">
+  <script async="" src="https://www.googletagmanager.com/gtag/js?id=G-XVM2Y822Y1"></script>
+
+  <script type="text/javascript">
+
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
+  </script>
+  <link href="site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
+  <link href="site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
+  <link href="site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
+  <link href="site_libs/revealjs/plugin/reveal-chalkboard/font-awesome/css/all.css" rel="stylesheet">
+  <link href="site_libs/revealjs/plugin/reveal-chalkboard/style.css" rel="stylesheet">
+  <link href="site_libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
+  <style type="text/css">
+
+  .callout {
+    margin-top: 1em;
+    margin-bottom: 1em;  
+    border-radius: .25rem;
+  }
+
+  .callout.callout-style-simple { 
+    padding: 0em 0.5em;
+    border-left: solid #acacac .3rem;
+    border-right: solid 1px silver;
+    border-top: solid 1px silver;
+    border-bottom: solid 1px silver;
+    display: flex;
+  }
+
+  .callout.callout-style-default {
+    border-left: solid #acacac .3rem;
+    border-right: solid 1px silver;
+    border-top: solid 1px silver;
+    border-bottom: solid 1px silver;
+  }
+
+  .callout .callout-body-container {
+    flex-grow: 1;
+  }
+
+  .callout.callout-style-simple .callout-body {
+    font-size: 1rem;
+    font-weight: 400;
+  }
+
+  .callout.callout-style-default .callout-body {
+    font-size: 0.9rem;
+    font-weight: 400;
+  }
+
+  .callout.callout-titled.callout-style-simple .callout-body {
+    margin-top: 0.2em;
+  }
+
+  .callout:not(.callout-titled) .callout-body {
+      display: flex;
+  }
+
+  .callout:not(.no-icon).callout-titled.callout-style-simple .callout-content {
+    padding-left: 1.6em;
+  }
+
+  .callout.callout-titled .callout-header {
+    padding-top: 0.2em;
+    margin-bottom: -0.2em;
+  }
+
+  .callout.callout-titled .callout-title  p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+  }
+    
+  .callout.callout-titled.callout-style-simple .callout-content  p {
+    margin-top: 0;
+  }
+
+  .callout.callout-titled.callout-style-default .callout-content  p {
+    margin-top: 0.7em;
+  }
+
+  .callout.callout-style-simple div.callout-title {
+    border-bottom: none;
+    font-size: .9rem;
+    font-weight: 600;
+    opacity: 75%;
+  }
+
+  .callout.callout-style-default  div.callout-title {
+    border-bottom: none;
+    font-weight: 600;
+    opacity: 85%;
+    font-size: 0.9rem;
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+  }
+
+  .callout.callout-style-default div.callout-content {
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+  }
+
+  .callout.callout-style-simple .callout-icon::before {
+    height: 1rem;
+    width: 1rem;
+    display: inline-block;
+    content: "";
+    background-repeat: no-repeat;
+    background-size: 1rem 1rem;
+  }
+
+  .callout.callout-style-default .callout-icon::before {
+    height: 0.9rem;
+    width: 0.9rem;
+    display: inline-block;
+    content: "";
+    background-repeat: no-repeat;
+    background-size: 0.9rem 0.9rem;
+  }
+
+  .callout-title {
+    display: flex
+  }
+    
+  .callout-icon::before {
+    margin-top: 1rem;
+    padding-right: .5rem;
+  }
+
+  .callout.no-icon::before {
+    display: none !important;
+  }
+
+  .callout.callout-titled .callout-body > .callout-content > :last-child {
+    padding-bottom: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  .callout.callout-titled .callout-icon::before {
+    margin-top: .5rem;
+    padding-right: .5rem;
+  }
+
+  .callout:not(.callout-titled) .callout-icon::before {
+    margin-top: 1rem;
+    padding-right: .5rem;
+  }
+
+  /* Callout Types */
+
+  div.callout-note {
+    border-left-color: #4582ec !important;
+  }
+
+  div.callout-note .callout-icon::before {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAAEU0lEQVRYCcVXTWhcVRQ+586kSUMMxkyaElstCto2SIhitS5Ek8xUKV2poatCcVHtUlFQk8mbaaziwpWgglJwVaquitBOfhQXFlqlzSJpFSpIYyXNjBNiTCck7x2/8/LeNDOZxDuEkgOXe++553zfefee+/OYLOXFk3+1LLrRdiO81yNqZ6K9cG0P3MeFaMIQjXssE8Z1JzLO9ls20MBZX7oG8w9GxB0goaPrW5aNMp1yOZIa7Wv6o2ykpLtmAPs/vrG14Z+6d4jpbSKuhdcSyq9wGMPXjonwmESXrriLzFGOdDBLB8Y6MNYBu0dRokSygMA/mrun8MGFN3behm6VVAwg4WR3i6FvYK1T7MHo9BK7ydH+1uurECoouk5MPRyVSBrBHMYwVobG2aOXM07sWrn5qgB60rc6mcwIDJtQrnrEr44kmy+UO9r0u9O5/YbkS9juQckLed3DyW2XV/qWBBB3ptvI8EUY3I9p/67OW+g967TNr3Sotn3IuVlfMLVnsBwH4fsnebJvyGm5GeIUA3jljERmrv49SizPYuq+z7c2H/jlGC+Ghhupn/hcapqmcudB9jwJ/3jvnvu6vu5lVzF1fXyZuZZ7U8nRmVzytvT+H3kilYvH09mLWrQdwFSsFEsxFVs5fK7A0g8gMZjbif4ACpKbjv7gNGaD8bUrlk8x+KRflttr22JEMRUbTUwwDQScyzPgedQHZT0xnx7ujw2jfVfExwYHwOsDTjLdJ2ebmeQIlJ7neo41s/DrsL3kl+W2lWvAga0tR3zueGr6GL78M3ifH0rGXrBC2aAR8uYcIA5gwV8zIE8onoh8u0Fca/ciF7j1uOzEnqcIm59sEXoGc0+z6+H45V1CvAvHcD7THztu669cnp+L0okAeIc6zjbM/24LgGM1gZk7jnRu1aQWoU9sfUOuhrmtaPIO3YY1KLLWZaEO5TKUbMY5zx8W9UJ6elpLwKXbsaZ4EFl7B4bMtDv0iRipKoDQT2sNQI9b1utXFdYisi+wzZ/ri/1m7QfDgEuvgUUEIJPq3DhX/5DWNqIXDOweC2wvIR90Oq3lDpdMIgD2r0dXvGdsEW5H6x6HLRJYU7C69VefO1x8Gde1ZFSJLfWS1jbCnhtOPxmpfv2LXOA2Xk2tvnwKKPFuZ/oRmwBwqRQDcKNeVQkYcOjtWVBuM/JuYw5b6isojIkYxyYAFn5K7ZBF10fea52y8QltAg6jnMqNHFBmGkQ1j+U43HMi2xMar1Nv0zGsf1s8nUsmUtPOOrbFIR8bHFDMB5zL13Gmr/kGlCkUzedTzzmzsaJXhYawnA3UmARpiYj5ooJZiUoxFRtK3X6pgNPv+IZVPcnwbOl6f+aBaO1CNvPW9n9LmCp01nuSaTRF2YxHqZ8DYQT6WsXT+RD6eUztwYLZ8rM+rcPxamv1VQzFUkzFXvkiVrySGQgJNvXHJAxiU3/NwiC03rSf05VBaPtu/Z7/B8Yn/w7eguloAAAAAElFTkSuQmCC');
+  }
+
+  div.callout-note.callout-style-default .callout-title {
+    background-color: #dae6fb
+  }
+
+  div.callout-important {
+    border-left-color: #d9534f !important;
+  }
+
+  div.callout-important .callout-icon::before {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAAEKklEQVRYCcVXTWhcVRS+575MJym48A+hSRFr00ySRQhURRfd2HYjk2SSTokuBCkU2o0LoSKKraKIBTcuFCoidGFD08nkBzdREbpQ1EDNIv8qSGMFUboImMSZd4/f9zJv8ibJMC8xJQfO3HPPPef7zrvvvnvviIkpC9nsw0UttFunbUhpFzFtarSd6WJkStVMw5xyVqYTvkwfzuf/5FgtkVoB0729j1rjXwThS7Vio+Mo6DNnvLfahoZ+i/o32lULuJ3NNiz7q6+pyAUkJaFF6JwaM2lUJlV0MlnQn5aTRbEu0SEqHUa0A4AdiGuB1kFXRfVyg5d87+Dg4DL6m2TLAub60ilj7A1Ec4odSAc8X95sHh7+ZRPCFo6Fnp7HfU/fBng/hi10CjCnWnJjsxvDNxWw0NfV6Rv5GgP3I3jGWXumdTD/3cbEOP2ZbOZp69yniG3FQ9z1jD7bnBu9Fc2tKGC2q+uAJOQHBDRiZX1x36o7fWBs7J9ownbtO+n0/qWkvW7UPIfc37WgT6ZGR++EOJyeQDSb9UB+DZ1G6DdLDzyS+b/kBCYGsYgJbSQHuThGKRcw5xdeQf8YdNHsc6ePXrlSYMBuSIAFTGAtQo+VuALo4BX83N190NWZWbynBjhOHsmNfFWLeL6v+ynsA58zDvvAC8j5PkbOcXCMg2PZFk3q8MjI7WAG/Dp9AwP7jdGBOOQkAvlFUB+irtm16I1Zw9YBcpGTGXYmk3kQIC/Cds55l+iMI3jqhjAuaoe+am2Jw5GT3Nbz3CkE12NavmzN5+erJW7046n/CH1RO/RVa8lBLozXk9uqykkGAyRXLWlLv5jyp4RFsG5vGVzpDLnIjTWgnRy2Rr+tDKvRc7Y8AyZq10jj8DqXdnIRNtFZb+t/ZRtXcDiVnzpqx8mPcDWxgARUqx0W1QB9MeUZiNrV4qP+Ehc+BpNgATsTX8ozYKL2NtFYAHc84fG7ndxUPr+AR/iQSns7uSUufAymwDOb2+NjK27lEFocm/EE2WpyIy/Hi66MWuMKJn8RvxIcj87IM5Vh9663ziW36kR0HNenXuxmfaD8JC7tfKbrhFr7LiZCrMjrzTeGx+PmkosrkNzW94ObzwocJ7A1HokLolY+AvkTiD/q1H0cN48c5EL8Crkttsa/AXQVDmutfyku0E7jShx49XqV3MFK8IryDhYVbj7Sj2P2eBxwcXoe8T8idsKKPRcnZw1b+slFTubwUwhktrfnAt7J++jwQtLZcm3sr9LQrjRzz6cfMv9aLvgmnAGvpoaGLxM4mAEaLV7iAzQ3oU0IvD5x9ix3yF2RAAuYAOO2f7PEFWCXZ4C9Pb2UsgDeVnFSpbFK7/IWu7TPTvBqzbGdCHOJQSxiEjt6IyZmxQyEJHv6xyQsYk//moVFsN2zP6fRImjfq7/n/wFDguUQFNEwugAAAABJRU5ErkJggg==');
+  }
+
+  div.callout-important.callout-style-default .callout-title {
+    background-color: #f7dddc
+  }
+
+  div.callout-warning {
+    border-left-color: #f0ad4e !important;
+  }
+
+  div.callout-warning .callout-icon::before {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAAETklEQVRYCeVWW2gcVRg+58yaTUnizqbipZeX4uWhBEniBaoUX1Ioze52t7sRq6APio9V9MEaoWlVsFasRq0gltaAPuxms8lu0gcviE/FFOstVbSIxgcv6SU7EZqmdc7v9+9mJtNks51NTUH84ed889/PP+cmxP+d5FIbMJmNbpREu4WUkiTtCicKny0l1pIKmBzovF2S+hIJHX8iEu3hZJ5lNZGqyRrGSIQpq15AzF28jgpeY6yk6GVdrfFqdrD6Iw+QlB8g0YS2g7dyQmXM/IDhBhT0UCiRf59lfqmmDvzRt6kByV/m4JjtzuaujMUM2c5Z2d6JdKrRb3K2q6mA+oYVz8JnDdKPmmNthzkAk/lN63sYPgevrguc72aZX/L9C6x09GYyxBgCX4NlvyGUHOKELlm5rXeR1kchuChJt4SSwyddZRXgvwMGvYo4QSlk3/zkHD8UHxwVJA6zjZZqP8v8kK8OWLnIZtLyCAJagYC4rTGW/9Pqj92N/c+LUaAj27movwbi19tk/whRCIE7Q9vyI6yvRpftAKVTdUjOW40X3h5OXsKCdmFcx0xlLJoSuQngnrJe7Kcjm4OMq9FlC7CMmScQANuNvjfP3PjGXDBaUQmbp296S5L4DrpbrHN1T87ZVEZVCzg1FF0Ft+dKrlLukI+/c9ENo+TvlTDbYFvuKPtQ9+l052rXrgKoWkDAFnvh0wTOmYn8R5f4k/jN/fZiCM1tQx9jQQ4ANhqG4hiL0qIFTGViG9DKB7GYzgubnpofgYRwO+DFjh0Zin2m4b/97EDkXkc+f6xYAPX0KK2I/7fUQuwzuwo/L3AkcjugPNixC8cHf0FyPjWlItmLxWw4Ou9YsQCr5fijMGoD/zpdRy95HRysyXA74MWOnscpO4j2y3HAVisw85hX5+AFBRSHt4ShfLFkIMXTqyKFc46xdzQM6XbAi702a7sy04J0+feReMFKp5q9esYLCqAZYw/k14E/xcLLsFElaornTuJB0svMuJINy8xkIYuL+xPAlWRceH6+HX7THJ0djLUom46zREu7tTkxwmf/FdOZ/sh6Q8qvEAiHpm4PJ4a/doJe0gH1t+aHRgCzOvBvJedEK5OFE5jpm4AGP2a8Dxe3gGJ/pAutug9Gp6he92CsSsWBaEcxGx0FHytmIpuqGkOpldqNYQK8cSoXvd+xLxXADw0kf6UkJNFtdo5MOgaLjiQOQHcn+A6h5NuL2s0qsC2LOM75PcF3yr5STuBSAcGG+meA14K/CI21HcS4LBT6tv0QAh8Dr5l93AhZzG5ZJ4VxAqdZUEl9z7WJ4aN+svMvwHHL21UKTd1mqvChH7/Za5xzXBBKrUcB0TQ+Ulgkfbi/H/YT5EptrGzsEK7tR1B7ln9BBwckYfMiuSqklSznIuoIIOM42MQO+QnduCoFCI0bpkzjCjddHPN/F+2Yu+sd9bKNpVwHhbS3LluK/0zgfwD0xYI5dXuzlQAAAABJRU5ErkJggg==');
+  }
+
+  div.callout-warning.callout-style-default .callout-title {
+    background-color: #fcefdc
+  }
+
+  div.callout-tip {
+    border-left-color: #02b875 !important;
+  }
+
+  div.callout-tip .callout-icon::before {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADr0lEQVRYCe1XTWgTQRj9ZjZV8a9SPIkKgj8I1bMHsUWrqYLVg4Ue6v9BwZOxSYsIerFao7UiUryIqJcqgtpimhbBXoSCVxUFe9CTiogUrUp2Pt+3aUI2u5vdNh4dmMzOzHvvezuz8xNFM0mjnbXaNu1MvFWRXkXEyE6aYOYJpdW4IXuA4r0fo8qqSMDBU0v1HJUgVieAXxzCsdE/YJTdFcVIZQNMyhruOMJKXYFoLfIfIvVIMWdsrd+Rpd86ZmyzzjJmLStqRn0v8lzkb4rVIXvnpScOJuAn2ACC65FkPzEdEy4TPWRLJ2h7z4cArXzzaOdKlbOvKKX25Wl00jSnrwVxAg3o4dRxhO13RBSdNvH0xSARv3adTXbBdTf64IWO2vH0LT+cv4GR1DJt+DUItaQogeBX/chhbTBxEiZ6gftlDNXTrvT7co4ub5A6gp9HIcHvzTa46OS5fBeP87Qm0fQkr4FsYgVQ7Qg+ZayaDg9jhg1GkWj8RG6lkeSacrrHgDaxdoBiZPg+NXV/KifMuB6//JmYH4CntVEHy/keA6x4h4CU5oFy8GzrBS18cLJMXcljAKB6INjWsRcuZBWVaS3GDrqB7rdapVIeA+isQ57Eev9eCqzqOa81CY05VLd6SamW2wA2H3SiTbnbSxmzfp7WtKZkqy4mdyAlGx7ennghYf8voqp9cLSgKdqNfa6RdRsAAkPwRuJZNbpByn+RrJi1RXTwdi8RQF6ymDwGMAtZ6TVE+4uoKh+MYkcLsT0Hk8eAienbiGdjJHZTpmNjlbFJNKDVAp2fJlYju6IreQxQ08UJDNYdoLSl6AadO+fFuCQqVMB1NJwPm69T04Wv5WhfcWyfXQB+wXRs1pt+nCknRa0LVzSA/2B+a9+zQJadb7IyyV24YAxKp2Jqs3emZTuNnKxsah+uabKbMk7CbTgJx/zIgQYErIeTKRQ9yD9wxVof5YolPHqaWo7TD6tJlh7jQnK5z2n3+fGdggIOx2kaa2YI9QWarc5Ce1ipNWMKeSG4DysFF52KBmTNMmn5HqCFkwy34rDg05gDwgH3bBi+sgFhN/e8QvRn8kbamCOhgrZ9GJhFDgfcMHzFb6BAtjKpFhzTjwv1KCVuxHvCbsSiEz4CANnj84cwHdFXAbAOJ4LTSAawGWFn5tDhLMYz6nWeU2wJfIhmIJBefcd/A5FWQWGgrWzyORZ3Q6HuV+Jf0Bj+BTX69fm1zWgK7By1YTXchFDORywnfQ7GpzOo6S+qECrsx2ifVQAAAABJRU5ErkJggg==');
+  }
+
+  div.callout-tip.callout-style-default .callout-title {
+    background-color: #ccf1e3
+  }
+
+  div.callout-caution {
+    border-left-color: #fd7e14 !important;
+  }
+
+  div.callout-caution .callout-icon::before {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAACV0lEQVRYCdVWzWoUQRCuqp2ICBLJXgITZL1EfQDBW/bkzUMUD7klD+ATSHBEfAIfQO+iXsWDxJsHL96EHAwhgzlkg8nBg25XWb0zIb0zs9muYYWkoKeru+vn664fBqElyZNuyh167NXJ8Ut8McjbmEraKHkd7uAnAFku+VWdb3reSmRV8PKSLfZ0Gjn3a6Xlcq9YGb6tADjn+lUfTXtVmaZ1KwBIvFI11rRXlWlatwIAAv2asaa9mlB9wwygiDX26qaw1yYPzFXg2N1GgG0FMF8Oj+VIx7E/03lHx8UhvYyNZLN7BwSPgekXXLribw7w5/c8EF+DBK5idvDVYtEEwMeYefjjLAdEyQ3M9nfOkgnPTEkYU+sxMq0BxNR6jExrAI31H1rzvLEfRIdgcv1XEdj6QTQAS2wtstEALLG1yEZ3QhH6oDX7ExBSFEkFINXH98NTrme5IOaaA7kIfiu2L8A3qhH9zRbukdCqdsA98TdElyeMe5BI8Rs2xHRIsoTSSVFfCFCWGPn9XHb4cdobRIWABNf0add9jakDjQJpJ1bTXOJXnnRXHRf+dNL1ZV1MBRCXhMbaHqGI1JkKIL7+i8uffuP6wVQAzO7+qVEbF6NbS0LJureYcWXUUhH66nLR5rYmva+2tjRFtojkM2aD76HEGAD3tPtKM309FJg5j/K682ywcWJ3PASCcycH/22u+Bh7Aa0ehM2Fu4z0SAE81HF9RkB21c5bEn4Dzw+/qNOyXr3DCTQDMBOdhi4nAgiFDGCinIa2owCEChUwD8qzd03PG+qdW/4fDzjUMcE1ZpIAAAAASUVORK5CYII=');
+  }
+
+  div.callout-caution.callout-style-default .callout-title {
+    background-color: #ffe5d0
+  }
+
+  </style>
+  <style type="text/css">
+    .reveal div.sourceCode {
+      margin: 0;
+      overflow: auto;
+    }
+    .reveal div.hanging-indent {
+      margin-left: 1em;
+      text-indent: -1em;
+    }
+    .reveal .slide:not(.center) {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide.scrollable {
+      overflow-y: auto;
+    }
+    .reveal .footnotes {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide .absolute {
+      position: absolute;
+      display: block;
+    }
+    .reveal .footnotes ol {
+      counter-reset: ol;
+      list-style-type: none; 
+      margin-left: 0;
+    }
+    .reveal .footnotes ol li:before {
+      counter-increment: ol;
+      content: counter(ol) ". "; 
+    }
+    .reveal .footnotes ol li > p:first-child {
+      display: inline-block;
+    }
+    .reveal .slide ul,
+    .reveal .slide ol {
+      margin-bottom: 0.5em;
+    }
+    .reveal .slide ul li,
+    .reveal .slide ol li {
+      margin-top: 0.4em;
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide ul[role="tablist"] li {
+      margin-bottom: 0;
+    }
+    .reveal .slide ul li > *:first-child,
+    .reveal .slide ol li > *:first-child {
+      margin-block-start: 0;
+    }
+    .reveal .slide ul li > *:last-child,
+    .reveal .slide ol li > *:last-child {
+      margin-block-end: 0;
+    }
+    .reveal .slide .columns:nth-child(3) {
+      margin-block-start: 0.8em;
+    }
+    .reveal blockquote {
+      box-shadow: none;
+    }
+    .reveal .tippy-content>* {
+      margin-top: 0.2em;
+      margin-bottom: 0.7em;
+    }
+    .reveal .tippy-content>*:last-child {
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide > img.stretch.quarto-figure-center,
+    .reveal .slide > img.r-stretch.quarto-figure-center {
+      display: block;
+      margin-left: auto;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-left,
+    .reveal .slide > img.r-stretch.quarto-figure-left  {
+      display: block;
+      margin-left: 0;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-right,
+    .reveal .slide > img.r-stretch.quarto-figure-right  {
+      display: block;
+      margin-left: auto;
+      margin-right: 0; 
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+  
+  <script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<meta property="og:title" content="ezpz 🍋">
+<meta property="og:description" content="Distributed training, ezpz.">
+<meta property="og:image" content="https://github.com/saforem2/ezpz/blob/main/assets/thumbnail.png?raw=true">
+<meta property="og:site_name" content="`ezpz` 🍋">
+<meta name="twitter:title" content="Sam Foreman">
+<meta name="twitter:description" content="Distributed training, ezpz.">
+<meta name="twitter:image" content="https://github.com/saforem2/ezpz/blob/main/assets/thumbnail.png?raw=true">
+<meta name="twitter:creator" content="@saforem2">
+<meta name="twitter:site" content="@saforem2">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="citation_title" content="`ezpz`">
+<meta name="citation_author" content="Sam Foreman">
+<meta name="citation_publication_date" content="2024-05-13">
+<meta name="citation_cover_date" content="2024-05-13">
+<meta name="citation_year" content="2024">
+<meta name="citation_online_date" content="2024-05-13">
+<meta name="citation_fulltext_html_url" content="https://saforem2.github.io/ezpz">
+<meta name="citation_language" content="en">
+</head>
+<body class="quarto-dark">
+  <div class="reveal">
+    <div class="slides">
+
+<section id="title-slide" class="quarto-title-block center">
+  <h1 class="title"><code>ezpz</code> 🍋</h1>
+
+<div class="quarto-title-authors">
+<div class="quarto-title-author">
+<div class="quarto-title-author-name">
+<a href="https://samforeman.me">Sam Foreman </a><a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a> 
+</div>
+<div class="quarto-title-author-email">
+<a href="mailto:foremans@anl.gov">foremans@anl.gov</a>
+</div>
+</div>
+</div>
+
+  <p class="date">2024-05-13</p>
+</section>
+<section id="overview" class="slide level2 center">
+<h2>👀 Overview</h2>
+<div title="<code>ezpz</code> 🍋" style="text-align: left!important; width:100%; background-color: var(--code-bg); border:none!important; border-left: 2px solid #1ED760!important; opacity:100%; border-radius: 0pt!important; margin-bottom: 0em; padding-bottom: 0.0rem;">
+<div class="callout callout-tip no-icon callout-titled callout-style-default">
+<div class="callout-body">
+<div class="callout-title">
+<p><strong><code>ezpz</code> 🍋</strong></p>
+</div>
+<div class="callout-content">
+<p>Launch and train across all your accelerators, using your favorite framework + backend combo.</p>
+<p><code>ezpz</code> simplifies the process of:</p>
+<ul>
+<li><details>
+<summary>
+Setting up + launching distributed training:
+</summary>
+<ul>
+<li><details closed="">
+<summary>
+<code>import ezpz as ez</code>
+</summary>
+<ul>
+<li><p><code>RANK =</code> <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551"><code>ez.setup_torch(backend=backend)</code></a> <span class="dim-text">for <code>backend</code> <span class="math inline">\in</span> {<code>DDP</code>, <code>deepspeed</code>, <code>horovod</code>}</span></p></li>
+<li><p><code>RANK =</code> <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396"><code>ez.get_rank()</code></a></p></li>
+<li><p><code>LOCAL_RANK =</code> <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448"><code>ez.get_local_rank()</code></a></p></li>
+<li><p><code>WORLD_SIZE =</code> <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417"><code>ez.get_world_size()</code></a></p></li>
+</ul>
+<span class="dim-text">(see <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py"><code>ezpz/dist.py</code></a> for more details).</span></details></li>
+</ul>
+</details></li>
+</ul>
+
+<ul>
+<li><details closed="">
+<summary>
+Using your favorite framework:
+</summary>
+<ul>
+<li><p><code>framework=pytorch</code> + <code>backend={DDP, deepspeed, horovod}</code></p></li>
+<li><p><code>framework=tensorflow</code> + <code>backend=horovod</code></p></li>
+<li><p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ez.get_torch_device()</code></a>: {<code>cuda</code>, <code>xpu</code>, <code>mps</code>, <code>cpu</code>}</p></li>
+<li><p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348"><code>ez.get_torch_backend()</code></a>: {<code>nccl</code>, <code>ccl</code>, <code>gloo</code>}</p></li>
+</ul>
+<em>2ez</em> 😎. (see <a href="#/frameworks">frameworks</a> for additional details)</details></li>
+</ul>
+
+<ul>
+<li><details closed="">
+<summary>
+Writing device agnostic code:
+</summary>
+<ul>
+<li><details>
+<summary>
+<a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ezpz.get_torch_device()</code></a>
+</summary>
+<div class="sourceCode" id="cb1"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a></a><span class="op">&gt;&gt;&gt;</span> <span class="im">import</span> ezpz <span class="im">as</span> ez</span>
+<span id="cb1-2"><a></a><span class="op">&gt;&gt;&gt;</span> DEVICE <span class="op">=</span> ez.get_torch_device()</span>
+<span id="cb1-3"><a></a><span class="op">&gt;&gt;&gt;</span> model <span class="op">=</span> torch.nn.Linear(<span class="dv">10</span>, <span class="dv">10</span>)</span>
+<span id="cb1-4"><a></a><span class="op">&gt;&gt;&gt;</span> model.to(DEVICE)</span>
+<span id="cb1-5"><a></a><span class="op">&gt;&gt;&gt;</span> x <span class="op">=</span> torch.randn((<span class="dv">10</span>, <span class="dv">10</span>), device<span class="op">=</span>DEVICE)</span>
+<span id="cb1-6"><a></a><span class="op">&gt;&gt;&gt;</span> y <span class="op">=</span> model(x)</span>
+<span id="cb1-7"><a></a><span class="op">&gt;&gt;&gt;</span> y.device</span>
+<span id="cb1-8"><a></a>device(<span class="bu">type</span><span class="op">=</span><span class="st">'mps'</span>, index<span class="op">=</span><span class="dv">0</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></details></li>
+</ul>
+</details></li>
+</ul>
+
+<ul>
+<li><details closed="">
+<summary>
+Using <code>wandb</code>:
+</summary>
+<ul>
+<li><code>ez.setup_wandb(project_name='ezpz')</code></li>
+</ul></details></li>
+</ul>
+
+<ul>
+<li><strong>Full support</strong> for any {<code>device</code> + <code>framework</code> + <code>backend</code>}:
+<ul>
+<li>device: {<code>GPU</code>, <code>XPU</code>, <code>MPS</code>, <code>CPU</code>}</li>
+<li>framework: {<code>torch</code>, <code>deepspeed</code>, <code>horovod</code>, <code>tensorflow</code>}</li>
+<li>backend: {<code>DDP</code>, <code>deepspeed</code>, <code>horovod</code>}</li>
+</ul></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="example" class="slide level2 center scrollable">
+<h2>📝 Example</h2>
+<p>We provide below a complete example that will launch <a href="./src/ezpz/test_dist.py"><code>test_dist.py</code></a> (included below) across all GPUs in your current {<code>PBS</code>, <code>slurm</code>} job and train a simple model using either <code>DDP</code> or <code>deepspeed</code></p>
+<details closed="">
+<summary>
+<code>test_dist.py</code>
+</summary>
+<!-- <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a>:</summary> -->
+<div class="sourceCode" id="cb2"><pre class="sourceCode numberSource python number-lines code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a></a><span class="co">"""</span></span>
+<span id="cb2-2"><a></a><span class="co">ezpz_ddp.py</span></span>
+<span id="cb2-3"><a></a></span>
+<span id="cb2-4"><a></a><span class="co">- to launch:</span></span>
+<span id="cb2-5"><a></a></span>
+<span id="cb2-6"><a></a><span class="co">$ source ezpz/src/ezpz/bin/savejobenv</span></span>
+<span id="cb2-7"><a></a><span class="co">$ BACKEND=DDP launch python3 ezpz_ddp.py</span></span>
+<span id="cb2-8"><a></a><span class="co">"""</span></span>
+<span id="cb2-9"><a></a><span class="im">import</span> os</span>
+<span id="cb2-10"><a></a><span class="im">import</span> logging</span>
+<span id="cb2-11"><a></a><span class="im">import</span> time</span>
+<span id="cb2-12"><a></a><span class="im">from</span> typing <span class="im">import</span> Optional</span>
+<span id="cb2-13"><a></a><span class="im">import</span> torch</span>
+<span id="cb2-14"><a></a><span class="im">import</span> ezpz <span class="im">as</span> ez</span>
+<span id="cb2-15"><a></a></span>
+<span id="cb2-16"><a></a><span class="co"># backend can be any of DDP, deespepeed, horovod</span></span>
+<span id="cb2-17"><a></a>RANK <span class="op">=</span> ez.setup_torch(</span>
+<span id="cb2-18"><a></a>  backend<span class="op">=</span>(</span>
+<span id="cb2-19"><a></a>      backend <span class="op">:=</span> os.environ.get(<span class="st">'BACKEND'</span>, <span class="st">'DDP'</span>)</span>
+<span id="cb2-20"><a></a>  ),</span>
+<span id="cb2-21"><a></a>  port<span class="op">=</span>(</span>
+<span id="cb2-22"><a></a>      port <span class="op">:=</span> os.environ.get(<span class="st">"MASTER_PORT"</span>, <span class="st">"29500"</span>)</span>
+<span id="cb2-23"><a></a>  )</span>
+<span id="cb2-24"><a></a>)</span>
+<span id="cb2-25"><a></a><span class="co"># RANK = DIST_INIT['rank']</span></span>
+<span id="cb2-26"><a></a><span class="co"># WORLD_SIZE = DIST_INIT['world_size']</span></span>
+<span id="cb2-27"><a></a><span class="co"># LOCAL_RANK = DIST_INIT['local_rank']</span></span>
+<span id="cb2-28"><a></a><span class="co"># if DEVICE == "cuda" and torch.cuda.is_available():</span></span>
+<span id="cb2-29"><a></a><span class="co">#     torch.cuda.set_device(LOCAL_RANK)</span></span>
+<span id="cb2-30"><a></a>DEVICE <span class="op">=</span> ez.get_torch_device()</span>
+<span id="cb2-31"><a></a>WORLD_SIZE <span class="op">=</span> ez.get_world_size()</span>
+<span id="cb2-32"><a></a>LOCAL_RANK <span class="op">=</span> ez.get_local_rank()</span>
+<span id="cb2-33"><a></a>DEVICE_ID <span class="op">=</span> <span class="ss">f"</span><span class="sc">{</span>DEVICE<span class="sc">}</span><span class="ss">:</span><span class="sc">{</span>LOCAL_RANK<span class="sc">}</span><span class="ss">"</span></span>
+<span id="cb2-34"><a></a></span>
+<span id="cb2-35"><a></a></span>
+<span id="cb2-36"><a></a><span class="co"># log only from RANK == 0</span></span>
+<span id="cb2-37"><a></a>logger <span class="op">=</span> logging.getLogger(<span class="va">__name__</span>)</span>
+<span id="cb2-38"><a></a>logger.setLevel(<span class="st">"INFO"</span>) <span class="cf">if</span> RANK <span class="op">==</span> <span class="dv">0</span> <span class="cf">else</span> logger.setLevel(<span class="st">"CRITICAL"</span>)</span>
+<span id="cb2-39"><a></a></span>
+<span id="cb2-40"><a></a>BATCH_SIZE <span class="op">=</span> <span class="bu">int</span>(os.environ.get(<span class="st">"BATCH_SIZE"</span>, <span class="dv">64</span>))  <span class="co"># 64</span></span>
+<span id="cb2-41"><a></a>INPUT_SIZE <span class="op">=</span> <span class="bu">int</span>(os.environ.get(<span class="st">"INPUT_SIZE"</span>, <span class="dv">128</span>))  <span class="co"># 128</span></span>
+<span id="cb2-42"><a></a>OUTPUT_SIZE <span class="op">=</span> <span class="bu">int</span>(os.environ.get(<span class="st">"OUTPUT_SIZE"</span>, <span class="dv">128</span>))  <span class="co"># 128</span></span>
+<span id="cb2-43"><a></a>DTYPE <span class="op">=</span> os.environ.get(<span class="st">"DTYPE"</span>, torch.get_default_dtype())</span>
+<span id="cb2-44"><a></a>TRAIN_ITERS <span class="op">=</span> <span class="bu">int</span>(os.environ.get(<span class="st">"TRAIN_ITERS"</span>, <span class="dv">50</span>))</span>
+<span id="cb2-45"><a></a></span>
+<span id="cb2-46"><a></a><span class="co"># logger.info(f"{DIST_INIT=}")</span></span>
+<span id="cb2-47"><a></a></span>
+<span id="cb2-48"><a></a></span>
+<span id="cb2-49"><a></a><span class="kw">class</span> Network(torch.nn.Module):</span>
+<span id="cb2-50"><a></a>  <span class="kw">def</span> <span class="fu">__init__</span>(</span>
+<span id="cb2-51"><a></a>          <span class="va">self</span>,</span>
+<span id="cb2-52"><a></a>          input_dim: <span class="bu">int</span> <span class="op">=</span> <span class="dv">128</span>,</span>
+<span id="cb2-53"><a></a>          output_dim: <span class="bu">int</span> <span class="op">=</span> <span class="dv">128</span>,</span>
+<span id="cb2-54"><a></a>          sizes: Optional[<span class="bu">list</span>[<span class="bu">int</span>]] <span class="op">=</span> <span class="va">None</span>,</span>
+<span id="cb2-55"><a></a>  ):</span>
+<span id="cb2-56"><a></a>      <span class="bu">super</span>(Network, <span class="va">self</span>).<span class="fu">__init__</span>()</span>
+<span id="cb2-57"><a></a>      <span class="cf">if</span> sizes <span class="kw">is</span> <span class="va">None</span>:</span>
+<span id="cb2-58"><a></a>          <span class="va">self</span>.layers <span class="op">=</span> torch.nn.Linear(input_dim, output_dim)</span>
+<span id="cb2-59"><a></a>      <span class="cf">elif</span> <span class="bu">len</span>(sizes) <span class="op">&gt;</span> <span class="dv">0</span>:</span>
+<span id="cb2-60"><a></a>          layers <span class="op">=</span> [torch.nn.Linear(input_dim, sizes[<span class="dv">0</span>])]</span>
+<span id="cb2-61"><a></a>          <span class="cf">for</span> idx, size <span class="kw">in</span> <span class="bu">enumerate</span>(sizes[<span class="dv">1</span>:]):</span>
+<span id="cb2-62"><a></a>              layers.append(</span>
+<span id="cb2-63"><a></a>                  torch.nn.Linear(sizes[idx], size)</span>
+<span id="cb2-64"><a></a>              )</span>
+<span id="cb2-65"><a></a>          layers.append(torch.nn.Linear(sizes[<span class="op">-</span><span class="dv">1</span>], output_dim))</span>
+<span id="cb2-66"><a></a>          <span class="va">self</span>.layers <span class="op">=</span> torch.nn.Sequential(<span class="op">*</span>layers)</span>
+<span id="cb2-67"><a></a></span>
+<span id="cb2-68"><a></a>  <span class="kw">def</span> forward(<span class="va">self</span>, x: torch.Tensor) <span class="op">-&gt;</span> torch.Tensor:</span>
+<span id="cb2-69"><a></a>      <span class="cf">return</span> <span class="va">self</span>.layers(x)</span>
+<span id="cb2-70"><a></a></span>
+<span id="cb2-71"><a></a></span>
+<span id="cb2-72"><a></a><span class="kw">def</span> calc_loss(x: torch.Tensor, y: torch.Tensor) <span class="op">-&gt;</span> torch.Tensor:</span>
+<span id="cb2-73"><a></a>  <span class="cf">return</span> (y <span class="op">-</span> x).<span class="bu">pow</span>(<span class="dv">2</span>).<span class="bu">sum</span>()</span>
+<span id="cb2-74"><a></a></span>
+<span id="cb2-75"><a></a></span>
+<span id="cb2-76"><a></a><span class="kw">def</span> plot_losses(losses: <span class="bu">dict</span>) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb2-77"><a></a>  <span class="im">import</span> plotext <span class="im">as</span> pltx</span>
+<span id="cb2-78"><a></a>  <span class="co"># y = list(losses.values())</span></span>
+<span id="cb2-79"><a></a>  pltx.theme(<span class="st">'clear'</span>)</span>
+<span id="cb2-80"><a></a>  pltx.scatter(<span class="bu">list</span>(losses.values()))</span>
+<span id="cb2-81"><a></a>  pltx.show()</span>
+<span id="cb2-82"><a></a>  pltx.save_fig(<span class="st">"test_dist_losses.txt"</span>)</span>
+<span id="cb2-83"><a></a>  pltx.ylabel(<span class="st">"loss"</span>)</span>
+<span id="cb2-84"><a></a>  pltx.xlabel(<span class="st">"iteration"</span>)</span>
+<span id="cb2-85"><a></a></span>
+<span id="cb2-86"><a></a></span>
+<span id="cb2-87"><a></a><span class="kw">def</span> main():</span>
+<span id="cb2-88"><a></a>  model <span class="op">=</span> Network(</span>
+<span id="cb2-89"><a></a>      input_dim<span class="op">=</span>INPUT_SIZE,</span>
+<span id="cb2-90"><a></a>      output_dim<span class="op">=</span>OUTPUT_SIZE,</span>
+<span id="cb2-91"><a></a>      sizes<span class="op">=</span>[<span class="dv">1024</span>, <span class="dv">512</span>, <span class="dv">256</span>, <span class="dv">128</span>]</span>
+<span id="cb2-92"><a></a>  )</span>
+<span id="cb2-93"><a></a>  model.to(DEVICE)</span>
+<span id="cb2-94"><a></a>  model.to(DEVICE_ID)</span>
+<span id="cb2-95"><a></a>  logger.info(<span class="ss">f'</span><span class="sc">{</span>model<span class="op">=</span><span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb2-96"><a></a>  optimizer <span class="op">=</span> torch.optim.Adam(model.parameters())</span>
+<span id="cb2-97"><a></a>  <span class="cf">if</span> backend.lower() <span class="op">==</span> <span class="st">'ddp'</span>:</span>
+<span id="cb2-98"><a></a>      <span class="cf">if</span> WORLD_SIZE <span class="op">&gt;</span> <span class="dv">1</span>:</span>
+<span id="cb2-99"><a></a>          <span class="im">from</span> torch.nn.parallel <span class="im">import</span> DistributedDataParallel <span class="im">as</span> DDP</span>
+<span id="cb2-100"><a></a>          model <span class="op">=</span> DDP(</span>
+<span id="cb2-101"><a></a>              model,</span>
+<span id="cb2-102"><a></a>              device_ids<span class="op">=</span>[]</span>
+<span id="cb2-103"><a></a>          )</span>
+<span id="cb2-104"><a></a>  <span class="cf">elif</span> backend.lower() <span class="kw">in</span> (<span class="st">'ds'</span>, <span class="st">'deepspeed'</span>):</span>
+<span id="cb2-105"><a></a>      <span class="im">import</span> deepspeed</span>
+<span id="cb2-106"><a></a>      <span class="co"># config = ez.load_ds_config().update(</span></span>
+<span id="cb2-107"><a></a>      <span class="co">#     {"train_micro_batch_size_per_gpu": BATCH_SIZE}</span></span>
+<span id="cb2-108"><a></a>      <span class="co"># )</span></span>
+<span id="cb2-109"><a></a>      <span class="im">import</span> argparse</span>
+<span id="cb2-110"><a></a>      parser <span class="op">=</span> argparse.ArgumentParser(</span>
+<span id="cb2-111"><a></a>          description<span class="op">=</span><span class="st">'My training script.'</span></span>
+<span id="cb2-112"><a></a>      )</span>
+<span id="cb2-113"><a></a>      parser.add_argument(</span>
+<span id="cb2-114"><a></a>          <span class="st">'--local_rank'</span>,</span>
+<span id="cb2-115"><a></a>          required<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb2-116"><a></a>          <span class="bu">type</span><span class="op">=</span><span class="bu">int</span>,</span>
+<span id="cb2-117"><a></a>          default<span class="op">=-</span><span class="dv">1</span>,</span>
+<span id="cb2-118"><a></a>          <span class="co"># default=ez.get_local_rank()),</span></span>
+<span id="cb2-119"><a></a>          <span class="bu">help</span><span class="op">=</span><span class="st">'local rank passed from distributed launcher'</span>,</span>
+<span id="cb2-120"><a></a>      )</span>
+<span id="cb2-121"><a></a>      <span class="co"># Include DeepSpeed configuration arguments</span></span>
+<span id="cb2-122"><a></a>      parser <span class="op">=</span> deepspeed.add_config_arguments(parser)</span>
+<span id="cb2-123"><a></a>      cmd_args <span class="op">=</span> parser.parse_args()</span>
+<span id="cb2-124"><a></a>      logger.info(<span class="ss">f'</span><span class="sc">{</span>cmd_args<span class="op">=</span><span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb2-125"><a></a>      model, optimizer, <span class="op">*</span>_ <span class="op">=</span> deepspeed.initialize(</span>
+<span id="cb2-126"><a></a>          args<span class="op">=</span>cmd_args,</span>
+<span id="cb2-127"><a></a>          model<span class="op">=</span>model,</span>
+<span id="cb2-128"><a></a>          optimizer<span class="op">=</span>optimizer,</span>
+<span id="cb2-129"><a></a>      )</span>
+<span id="cb2-130"><a></a></span>
+<span id="cb2-131"><a></a>  losses <span class="op">=</span> {}</span>
+<span id="cb2-132"><a></a>  <span class="cf">for</span> <span class="bu">iter</span> <span class="kw">in</span> <span class="bu">range</span>(TRAIN_ITERS):</span>
+<span id="cb2-133"><a></a>      t0 <span class="op">=</span> time.perf_counter()</span>
+<span id="cb2-134"><a></a>      x <span class="op">=</span> torch.rand((BATCH_SIZE, INPUT_SIZE), dtype<span class="op">=</span>DTYPE).to(DEVICE)</span>
+<span id="cb2-135"><a></a>      y <span class="op">=</span> model(x)</span>
+<span id="cb2-136"><a></a>      loss <span class="op">=</span> calc_loss(x, y)</span>
+<span id="cb2-137"><a></a>      losses[<span class="bu">iter</span>] <span class="op">=</span> loss</span>
+<span id="cb2-138"><a></a>      dtf <span class="op">=</span> ((t1 <span class="op">:=</span> time.perf_counter()) <span class="op">-</span> t0)</span>
+<span id="cb2-139"><a></a>      <span class="cf">if</span> backend <span class="op">==</span> <span class="st">'deepspeed'</span>:</span>
+<span id="cb2-140"><a></a>          model.backward(loss)</span>
+<span id="cb2-141"><a></a>          model.step(loss)</span>
+<span id="cb2-142"><a></a>      <span class="cf">else</span>:</span>
+<span id="cb2-143"><a></a>          loss.backward()</span>
+<span id="cb2-144"><a></a>          optimizer.step()</span>
+<span id="cb2-145"><a></a>      optimizer.zero_grad()</span>
+<span id="cb2-146"><a></a>      dtb <span class="op">=</span> time.perf_counter() <span class="op">-</span> t1</span>
+<span id="cb2-147"><a></a>      logger.info(</span>
+<span id="cb2-148"><a></a>          <span class="st">', '</span>.join([</span>
+<span id="cb2-149"><a></a>              <span class="ss">f'</span><span class="sc">{</span><span class="bu">iter</span><span class="op">=</span><span class="sc">}</span><span class="ss">'</span>,</span>
+<span id="cb2-150"><a></a>              <span class="ss">f'loss=</span><span class="sc">{</span>loss<span class="sc">.</span>item()<span class="sc">:.5f}</span><span class="ss">'</span>,</span>
+<span id="cb2-151"><a></a>              <span class="ss">f'dt=</span><span class="sc">{</span>dtf<span class="op">+</span>dtb<span class="sc">:.3f}</span><span class="ss">'</span>,</span>
+<span id="cb2-152"><a></a>              <span class="ss">f'</span><span class="sc">{</span>dtf<span class="op">=</span><span class="sc">:.3f}</span><span class="ss">'</span>,</span>
+<span id="cb2-153"><a></a>              <span class="ss">f'</span><span class="sc">{</span>dtb<span class="op">=</span><span class="sc">:.3f}</span><span class="ss">'</span></span>
+<span id="cb2-154"><a></a>          ])</span>
+<span id="cb2-155"><a></a>      )</span>
+<span id="cb2-156"><a></a>  <span class="cf">if</span> RANK <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb2-157"><a></a>      plot_losses(losses)</span>
+<span id="cb2-158"><a></a></span>
+<span id="cb2-159"><a></a></span>
+<span id="cb2-160"><a></a><span class="cf">if</span> <span class="va">__name__</span> <span class="op">==</span> <span class="st">'__main__'</span>:</span>
+<span id="cb2-161"><a></a>  main()</span>
+<span id="cb2-162"><a></a></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<h3 id="running">🏃🏻‍♂️ Running</h3>
+<ol type="1">
+<li><p><code>git clone</code> + <code>pip install ezpz</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a></a><span class="ex">$</span> git clone https://github.com/saforem2/ezpz</span>
+<span id="cb3-2"><a></a><span class="ex">$</span> python3 <span class="at">-m</span> pip install <span class="at">-e</span> ezpz</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p><span class="dim-text">[optional]</span> If using <code>PBS</code> or <code>slurm</code>:</p>
+<ul>
+<li><details closed="">
+<summary>
+Save Job info:
+</summary>
+<ul>
+<li><p><a href="./src/ezpz/bin/savejobenv"><code>savejobenv</code></a>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a></a><span class="ex">$</span> source ezpz/src/ezpz/bin/savejobenv</span>
+<span id="cb4-2"><a></a><span class="ex">┌───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-3"><a></a><span class="ex">│</span> Writing PBS vars to /home/foremans/.pbsenv</span>
+<span id="cb4-4"><a></a><span class="ex">│</span> HOSTFILE: /var/spool/pbs/aux/8992614.amn-0001</span>
+<span id="cb4-5"><a></a><span class="ex">│</span> NHOSTS: 2</span>
+<span id="cb4-6"><a></a><span class="ex">│</span> NGPU_PER_HOST: 12 GPUs per host</span>
+<span id="cb4-7"><a></a><span class="ex">│</span> NGPUS: 24 GPUs total</span>
+<span id="cb4-8"><a></a><span class="ex">└───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-9"><a></a><span class="ex">┌───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-10"><a></a><span class="ex">│</span> [DIST INFO]:</span>
+<span id="cb4-11"><a></a><span class="ex">│</span>   • Writing Job info to /home/foremans/.pbsenv</span>
+<span id="cb4-12"><a></a><span class="ex">│</span>     • HOSTFILE: /var/spool/pbs/aux/8992614.amn-0001</span>
+<span id="cb4-13"><a></a><span class="ex">│</span>     • NHOSTS: 2</span>
+<span id="cb4-14"><a></a><span class="ex">│</span>     • NGPU_PER_HOST: 12</span>
+<span id="cb4-15"><a></a><span class="ex">│</span>     • NGPUS = <span class="er">(</span><span class="ex">NHOSTS</span> <span class="pp">*</span> NGPU_PER_HOST<span class="kw">)</span> <span class="ex">=</span> 24</span>
+<span id="cb4-16"><a></a><span class="ex">└──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-17"><a></a><span class="ex">┌──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-18"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Hosts</span><span class="pp">]</span>:</span>
+<span id="cb4-19"><a></a><span class="ex">│</span>       • x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com, x1921c0s2b0n0.hostmgmt2000.cm.americas.sgi.com</span>
+<span id="cb4-20"><a></a><span class="ex">│</span>     • <span class="pp">[</span><span class="ss">host:0</span><span class="pp">]</span> <span class="at">-</span> x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com</span>
+<span id="cb4-21"><a></a><span class="ex">│</span>     • <span class="pp">[</span><span class="ss">host:1</span><span class="pp">]</span> <span class="at">-</span> x1921c0s2b0n0.hostmgmt2000.cm.americas.sgi.com</span>
+<span id="cb4-22"><a></a><span class="ex">└──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-23"><a></a><span class="ex">┌────────────────────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-24"><a></a><span class="ex">│</span> YOU ARE HERE: /home/foremans</span>
+<span id="cb4-25"><a></a><span class="ex">│</span> Run <span class="st">'source ./bin/getjobenv'</span> in a NEW SHELL to automatically set env vars</span>
+<span id="cb4-26"><a></a><span class="ex">└────────────────────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-27"><a></a><span class="ex">┌──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb4-28"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Launch</span><span class="pp">]</span>:</span>
+<span id="cb4-29"><a></a><span class="ex">│</span>     • Use: <span class="st">'launch'</span> <span class="er">(</span><span class="ex">=mpiexec</span> <span class="at">--verbose</span> <span class="at">--envall</span> <span class="at">-n</span> 24 <span class="at">-ppn</span> 12 <span class="at">--hostfile</span> /var/spool/pbs/aux/8992614.amn-0001<span class="kw">)</span></span>
+<span id="cb4-30"><a></a><span class="ex">│</span>       to launch job</span>
+<span id="cb4-31"><a></a><span class="ex">└───────────────────────────────────────────────────────────────────</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>this will automatically define a <code>launch</code> alias:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a></a><span class="ex">┌──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb5-2"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Launch</span><span class="pp">]</span>:</span>
+<span id="cb5-3"><a></a><span class="ex">│</span>     • Use: <span class="st">'launch'</span> <span class="er">(</span><span class="ex">=mpiexec</span> <span class="at">--verbose</span> <span class="at">--envall</span> <span class="at">-n</span> 24 <span class="at">-ppn</span> 12 <span class="at">--hostfile</span> /var/spool/pbs/aux/8992614.amn-0001<span class="kw">)</span></span>
+<span id="cb5-4"><a></a><span class="ex">│</span>       to launch job</span>
+<span id="cb5-5"><a></a><span class="ex">└───────────────────────────────────────────────────────────────────</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+</details></li>
+</ul></li>
+<li><p>Launch <a href="./src/ezpz/test_dist.py"><code>test_dist.py</code></a>:</p>
+<ul>
+<li><p>DDP:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a></a><span class="ex">$</span> launch python3 <span class="at">-m</span> ezpz.test_dist</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>DeepSpeed:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a></a><span class="ex">$</span> BACKEND=deepspeed launch python3 <span class="at">-m</span> ezpz.test_dist <span class="at">--deepspeed</span> <span class="at">--deepspeed_config</span> ezpz/src/ezpz/conf/ds_config.json</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+<li><p>Output:</p>
+<ul>
+<li><details closed="">
+<summary>
+<code>GPU</code>
+</summary>
+<div class="sourceCode" id="cb8"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a></a><span class="ex">$</span> launch python3 <span class="at">-m</span> ezpz.test_dist <span class="kw">|&amp;</span> <span class="fu">tee</span> ezpz-test-dist.log</span>
+<span id="cb8-2"><a></a></span>
+<span id="cb8-3"><a></a><span class="ex">Connected</span> to tcp://x3005c0s13b0n0.hsn.cm.polaris.alcf.anl.gov:7919</span>
+<span id="cb8-4"><a></a><span class="ex">Found</span> executable /lus/eagle/projects/datascience/foremans/miniconda3/envs/2024-04-20/bin/python3</span>
+<span id="cb8-5"><a></a><span class="ex">Launching</span> application 9e4c8311-1729-4385-b1d2-d4cd6006ac1d</span>
+<span id="cb8-6"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=1/7</span><span class="pp">][</span><span class="ss">local_rank=1/3</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb8-7"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=5/7</span><span class="pp">][</span><span class="ss">local_rank=1/3</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb8-8"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=3/7</span><span class="pp">][</span><span class="ss">local_rank=3/3</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb8-9"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=7/7</span><span class="pp">][</span><span class="ss">local_rank=3/3</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb8-10"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=4/7</span><span class="pp">][</span><span class="ss">local_rank=0/3</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb8-11"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=6/7</span><span class="pp">][</span><span class="ss">local_rank=2/3</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb8-12"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=2/7</span><span class="pp">][</span><span class="ss">local_rank=2/3</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb8-13"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cuda'</span><span class="pp">][</span><span class="ss">rank=0/7</span><span class="pp">][</span><span class="ss">local_rank=0/3</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb8-14"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">WARNING</span><span class="pp">][</span><span class="ss">dist:296</span><span class="pp">]</span> <span class="at">-</span> Using [8 / 8] available <span class="st">"cuda"</span> devices !!</span>
+<span id="cb8-15"><a></a><span class="ex">[2024-04-20</span> 19:26:22]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:46</span><span class="pp">]</span> <span class="at">-</span> DIST_INIT={<span class="st">'world_size'</span>: 8, <span class="st">'rank'</span>: 0, <span class="st">'local_rank'</span>: 0}</span>
+<span id="cb8-16"><a></a><span class="ex">[2024-04-20</span> 19:26:24]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:84</span><span class="pp">]</span> <span class="at">-</span> model=Network<span class="er">(</span></span>
+<span id="cb8-17"><a></a>  <span class="kw">(</span><span class="ex">layers</span><span class="kw">)</span><span class="bu">:</span> Sequential<span class="er">(</span></span>
+<span id="cb8-18"><a></a>    <span class="kw">(</span><span class="ex">0</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>1024, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb8-19"><a></a>    <span class="kw">(</span><span class="ex">1</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>1024, <span class="va">out_features</span><span class="op">=</span>512, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb8-20"><a></a>    <span class="kw">(</span><span class="ex">2</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>512, <span class="va">out_features</span><span class="op">=</span>256, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb8-21"><a></a>    <span class="kw">(</span><span class="ex">3</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>256, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb8-22"><a></a>    <span class="kw">(</span><span class="ex">4</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb8-23"><a></a>  <span class="kw">)</span></span>
+<span id="cb8-24"><a></a><span class="kw">)</span></span>
+<span id="cb8-25"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=0, loss=2789.99072, dt=0.664, dtf=0.659, dtb=0.005</span>
+<span id="cb8-26"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=1, loss=1961.33459, dt=0.002, dtf=0.001, dtb=0.002</span>
+<span id="cb8-27"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=2, loss=1450.47461, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-28"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=3, loss=1088.81958, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-29"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=4, loss=945.28839, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-30"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=5, loss=906.78857, dt=0.002, dtf=0.000, dtb=0.001</span>
+<span id="cb8-31"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=6, loss=789.18243, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-32"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=7, loss=751.63477, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-33"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=8, loss=735.62915, dt=0.002, dtf=0.000, dtb=0.002</span>
+<span id="cb8-34"><a></a><span class="ex">[2024-04-20</span> 19:26:28]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:126</span><span class="pp">]</span> <span class="at">-</span> iter=9, loss=732.12775, dt=0.002, dtf=0.000, dtb=0.001</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details></li>
+<li><details closed="">
+<summary>
+<code>XPU</code>
+</summary>
+<div class="sourceCode" id="cb9"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a></a><span class="co"># [04:50:57 PM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed/dep/ezpz/s/ezpz  main q4-drop 32s</span></span>
+<span id="cb9-2"><a></a><span class="ex">$</span> launch python3 <span class="at">-Wignore</span> test_dist.py</span>
+<span id="cb9-3"><a></a><span class="ex">Connected</span> to tcp://x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com:7919</span>
+<span id="cb9-4"><a></a><span class="ex">Found</span> executable /home/foremans/miniconda3/envs/q4-drop/bin/python3</span>
+<span id="cb9-5"><a></a><span class="ex">Launching</span> application 5bf3e9e8-89fb-412a-a49e-3c81601436b7</span>
+<span id="cb9-6"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=9/23</span><span class="pp">][</span><span class="ss">local_rank=9/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-7"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=14/23</span><span class="pp">][</span><span class="ss">local_rank=2/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-8"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=3/23</span><span class="pp">][</span><span class="ss">local_rank=3/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-9"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=17/23</span><span class="pp">][</span><span class="ss">local_rank=5/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-10"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=6/23</span><span class="pp">][</span><span class="ss">local_rank=6/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-11"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=13/23</span><span class="pp">][</span><span class="ss">local_rank=1/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-12"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=7/23</span><span class="pp">][</span><span class="ss">local_rank=7/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-13"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=19/23</span><span class="pp">][</span><span class="ss">local_rank=7/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-14"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=8/23</span><span class="pp">][</span><span class="ss">local_rank=8/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-15"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=21/23</span><span class="pp">][</span><span class="ss">local_rank=9/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-16"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=10/23</span><span class="pp">][</span><span class="ss">local_rank=10/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-17"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=22/23</span><span class="pp">][</span><span class="ss">local_rank=10/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-18"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=11/23</span><span class="pp">][</span><span class="ss">local_rank=11/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-19"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=23/23</span><span class="pp">][</span><span class="ss">local_rank=11/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-20"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=2/23</span><span class="pp">][</span><span class="ss">local_rank=2/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-21"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=20/23</span><span class="pp">][</span><span class="ss">local_rank=8/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-22"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=4/23</span><span class="pp">][</span><span class="ss">local_rank=4/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-23"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=15/23</span><span class="pp">][</span><span class="ss">local_rank=3/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-24"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=18/23</span><span class="pp">][</span><span class="ss">local_rank=6/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-25"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=12/23</span><span class="pp">][</span><span class="ss">local_rank=0/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-26"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=1/23</span><span class="pp">][</span><span class="ss">local_rank=1/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-27"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=16/23</span><span class="pp">][</span><span class="ss">local_rank=4/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-28"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=5/23</span><span class="pp">][</span><span class="ss">local_rank=5/11</span><span class="pp">][</span><span class="ss">node=1/1</span><span class="pp">]</span></span>
+<span id="cb9-29"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:239</span><span class="pp">]</span> <span class="at">-</span> DistInfo={</span>
+<span id="cb9-30"><a></a>    <span class="st">"DEVICE"</span><span class="ex">:</span> <span class="st">"xpu"</span>,</span>
+<span id="cb9-31"><a></a>    <span class="st">"DEVICE_ID"</span><span class="ex">:</span> <span class="st">"xpu:0"</span>,</span>
+<span id="cb9-32"><a></a>    <span class="st">"DISTRIBUTED_BACKEND"</span><span class="ex">:</span> <span class="st">"ccl"</span>,</span>
+<span id="cb9-33"><a></a>    <span class="st">"GPUS_PER_NODE"</span><span class="ex">:</span> 12,</span>
+<span id="cb9-34"><a></a>    <span class="st">"HOSTFILE"</span><span class="ex">:</span> <span class="st">"/var/spool/pbs/aux/8992337.amn-0001"</span>,</span>
+<span id="cb9-35"><a></a>    <span class="st">"HOSTNAME"</span><span class="ex">:</span> <span class="st">"x1921c0s0b0n0.hostmgmt2000.cm.americas.sgi.com"</span>,</span>
+<span id="cb9-36"><a></a>    <span class="st">"HOSTS"</span><span class="ex">:</span> <span class="st">"['x1921c0s0b0n0', 'x1921c0s5b0n0']"</span>,</span>
+<span id="cb9-37"><a></a>    <span class="st">"LOCAL_RANK"</span><span class="ex">:</span> 0,</span>
+<span id="cb9-38"><a></a>    <span class="st">"MACHINE"</span><span class="ex">:</span> <span class="st">"SunSpot"</span>,</span>
+<span id="cb9-39"><a></a>    <span class="st">"NGPUS"</span><span class="ex">:</span> 24,</span>
+<span id="cb9-40"><a></a>    <span class="st">"NODE_ID"</span><span class="ex">:</span> 0,</span>
+<span id="cb9-41"><a></a>    <span class="st">"NUM_NODES"</span><span class="ex">:</span> 2,</span>
+<span id="cb9-42"><a></a>    <span class="st">"RANK"</span><span class="ex">:</span> 0,</span>
+<span id="cb9-43"><a></a>    <span class="st">"SCHEDULER"</span><span class="ex">:</span> <span class="st">"PBS"</span>,</span>
+<span id="cb9-44"><a></a>    <span class="st">"WORLD_SIZE_IN_USE"</span><span class="ex">:</span> 24,</span>
+<span id="cb9-45"><a></a>    <span class="st">"WORLD_SIZE_TOTAL"</span><span class="ex">:</span> 24</span>
+<span id="cb9-46"><a></a><span class="er">}</span></span>
+<span id="cb9-47"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:602</span><span class="pp">]</span> <span class="at">-</span> Using oneccl_bindings from: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/torch-ccl/oneccl_bindings_for_pytorch/__init__.py</span>
+<span id="cb9-48"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:604</span><span class="pp">]</span> <span class="at">-</span> Using ipex from: /home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/intel_extension_for_pytorch/__init__.py</span>
+<span id="cb9-49"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:605</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">0/24</span><span class="pp">]</span> Using device=<span class="st">'xpu'</span> with backend=<span class="st">'DDP'</span> + <span class="st">'ccl'</span> for distributed training.</span>
+<span id="cb9-50"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'xpu'</span><span class="pp">][</span><span class="ss">rank=0/23</span><span class="pp">][</span><span class="ss">local_rank=0/11</span><span class="pp">][</span><span class="ss">node=0/1</span><span class="pp">]</span></span>
+<span id="cb9-51"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">WARNING</span><span class="pp">][</span><span class="ss">dist:296</span><span class="pp">]</span> <span class="at">-</span> Using [24 / 24] available <span class="st">"xpu"</span> devices !!</span>
+<span id="cb9-52"><a></a><span class="ex">2024:04:19-16:51:06:</span><span class="er">(</span><span class="ex">16909</span><span class="kw">)</span> <span class="kw">|</span><span class="ex">CCL_WARN</span><span class="kw">|</span> <span class="ex">MPI</span> was initialized externally, CCL-MPI specific environment is ignored</span>
+<span id="cb9-53"><a></a><span class="ex">[2024-04-19</span> 16:51:06]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:71</span><span class="pp">]</span> <span class="at">-</span> model=Network<span class="er">(</span></span>
+<span id="cb9-54"><a></a>  <span class="kw">(</span><span class="ex">layers</span><span class="kw">)</span><span class="bu">:</span> Sequential<span class="er">(</span></span>
+<span id="cb9-55"><a></a>    <span class="kw">(</span><span class="ex">0</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>1024, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb9-56"><a></a>    <span class="kw">(</span><span class="ex">1</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>1024, <span class="va">out_features</span><span class="op">=</span>512, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb9-57"><a></a>    <span class="kw">(</span><span class="ex">2</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>512, <span class="va">out_features</span><span class="op">=</span>256, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb9-58"><a></a>    <span class="kw">(</span><span class="ex">3</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>256, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb9-59"><a></a>    <span class="kw">(</span><span class="ex">4</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb9-60"><a></a>  <span class="kw">)</span></span>
+<span id="cb9-61"><a></a><span class="kw">)</span></span>
+<span id="cb9-62"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=0, loss=2709.53418, dt=1.380, dtf=0.950, dtb=0.430</span>
+<span id="cb9-63"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=1, loss=2058.49805, dt=0.133, dtf=0.002, dtb=0.131</span>
+<span id="cb9-64"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=2, loss=1507.91187, dt=0.004, dtf=0.001, dtb=0.004</span>
+<span id="cb9-65"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=3, loss=1181.78577, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-66"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=4, loss=949.43561, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-67"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=5, loss=848.14905, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-68"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=6, loss=788.76123, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-69"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=7, loss=753.59509, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-70"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=8, loss=750.62225, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-71"><a></a><span class="ex">[2024-04-19</span> 16:51:18]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:101</span><span class="pp">]</span> <span class="at">-</span> iter=9, loss=740.23474, dt=0.004, dtf=0.001, dtb=0.003</span>
+<span id="cb9-72"><a></a><span class="ex">Application</span> 5bf3e9e8 resources: utime=621s stime=111s maxrss=1746816KB inblock=192 oublock=16 minflt=10719359 majflt=7493 nvcsw=169332 nivcsw=77546</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></details></li>
+</ul>
+
+<ul>
+<li><details closed="">
+<summary>
+<code>CPU</code>
+</summary>
+<div class="sourceCode" id="cb10"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a></a><span class="ex">$</span> TORCH_DEVICE=cpu mpirun <span class="at">-np</span> 12 python3 test_dist.py</span>
+<span id="cb10-2"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=1/11</span><span class="pp">][</span><span class="ss">local_rank=1/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-3"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=3/11</span><span class="pp">][</span><span class="ss">local_rank=3/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-4"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=6/11</span><span class="pp">][</span><span class="ss">local_rank=6/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-5"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=5/11</span><span class="pp">][</span><span class="ss">local_rank=5/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-6"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=2/11</span><span class="pp">][</span><span class="ss">local_rank=2/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-7"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=10/11</span><span class="pp">][</span><span class="ss">local_rank=10/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-8"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=4/11</span><span class="pp">][</span><span class="ss">local_rank=4/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-9"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=7/11</span><span class="pp">][</span><span class="ss">local_rank=7/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-10"><a></a><span class="ex">[2024-04-19</span> 14:44:12]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=9/11</span><span class="pp">][</span><span class="ss">local_rank=9/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-11"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=11/11</span><span class="pp">][</span><span class="ss">local_rank=11/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-12"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=8/11</span><span class="pp">][</span><span class="ss">local_rank=8/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-13"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:239</span><span class="pp">]</span> <span class="at">-</span> DistInfo={</span>
+<span id="cb10-14"><a></a>    <span class="st">"DEVICE"</span><span class="ex">:</span> <span class="st">"cpu"</span>,</span>
+<span id="cb10-15"><a></a>    <span class="st">"DEVICE_ID"</span><span class="ex">:</span> <span class="st">"cpu:0"</span>,</span>
+<span id="cb10-16"><a></a>    <span class="st">"DISTRIBUTED_BACKEND"</span><span class="ex">:</span> <span class="st">"gloo"</span>,</span>
+<span id="cb10-17"><a></a>    <span class="st">"GPUS_PER_NODE"</span><span class="ex">:</span> 12,</span>
+<span id="cb10-18"><a></a>    <span class="st">"HOSTFILE"</span><span class="ex">:</span> <span class="st">"/Users/samforeman/projects/saforem2/ezpz/src/ezpz/hostfile"</span>,</span>
+<span id="cb10-19"><a></a>    <span class="st">"HOSTNAME"</span><span class="ex">:</span> <span class="st">"Sams-MacBook-Pro.local"</span>,</span>
+<span id="cb10-20"><a></a>    <span class="st">"HOSTS"</span><span class="ex">:</span> <span class="st">"['Sams-MacBook-Pro']"</span>,</span>
+<span id="cb10-21"><a></a>    <span class="st">"LOCAL_RANK"</span><span class="ex">:</span> 0,</span>
+<span id="cb10-22"><a></a>    <span class="st">"MACHINE"</span><span class="ex">:</span> <span class="st">"Sams-MacBook-Pro.local"</span>,</span>
+<span id="cb10-23"><a></a>    <span class="st">"NGPUS"</span><span class="ex">:</span> 12,</span>
+<span id="cb10-24"><a></a>    <span class="st">"NODE_ID"</span><span class="ex">:</span> 0,</span>
+<span id="cb10-25"><a></a>    <span class="st">"NUM_NODES"</span><span class="ex">:</span> 1,</span>
+<span id="cb10-26"><a></a>    <span class="st">"RANK"</span><span class="ex">:</span> 0,</span>
+<span id="cb10-27"><a></a>    <span class="st">"SCHEDULER"</span><span class="ex">:</span> <span class="st">"LOCAL"</span>,</span>
+<span id="cb10-28"><a></a>    <span class="st">"WORLD_SIZE_IN_USE"</span><span class="ex">:</span> 12,</span>
+<span id="cb10-29"><a></a>    <span class="st">"WORLD_SIZE_TOTAL"</span><span class="ex">:</span> 12</span>
+<span id="cb10-30"><a></a><span class="er">}</span></span>
+<span id="cb10-31"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:605</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">0/12</span><span class="pp">]</span> Using device=<span class="st">'cpu'</span> with backend=<span class="st">'DDP'</span> + <span class="st">'gloo'</span> for distributed training.</span>
+<span id="cb10-32"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">dist:290</span><span class="pp">]</span> <span class="at">-</span> <span class="pp">[</span><span class="ss">device=</span><span class="st">'cpu'</span><span class="pp">][</span><span class="ss">rank=0/11</span><span class="pp">][</span><span class="ss">local_rank=0/11</span><span class="pp">][</span><span class="ss">node=0/0</span><span class="pp">]</span></span>
+<span id="cb10-33"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">WARNING</span><span class="pp">][</span><span class="ss">dist:296</span><span class="pp">]</span> <span class="at">-</span> Using [12 / 12] available <span class="st">"cpu"</span> devices !!</span>
+<span id="cb10-34"><a></a><span class="ex">[2024-04-19</span> 14:44:13]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:72</span><span class="pp">]</span> <span class="at">-</span> model=Network<span class="er">(</span></span>
+<span id="cb10-35"><a></a>  <span class="kw">(</span><span class="ex">layers</span><span class="kw">)</span><span class="bu">:</span> Sequential<span class="er">(</span></span>
+<span id="cb10-36"><a></a>    <span class="kw">(</span><span class="ex">0</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>1024, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb10-37"><a></a>    <span class="kw">(</span><span class="ex">1</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>1024, <span class="va">out_features</span><span class="op">=</span>512, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb10-38"><a></a>    <span class="kw">(</span><span class="ex">2</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>512, <span class="va">out_features</span><span class="op">=</span>256, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb10-39"><a></a>    <span class="kw">(</span><span class="ex">3</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>256, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb10-40"><a></a>    <span class="kw">(</span><span class="ex">4</span><span class="kw">)</span><span class="bu">:</span> Linear<span class="er">(</span><span class="va">in_features</span><span class="op">=</span>128, <span class="va">out_features</span><span class="op">=</span>128, <span class="va">bias</span><span class="op">=</span>True<span class="kw">)</span></span>
+<span id="cb10-41"><a></a>  <span class="kw">)</span></span>
+<span id="cb10-42"><a></a><span class="kw">)</span></span>
+<span id="cb10-43"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=0, loss=2801.62549, dt=0.389, dtf=0.042, dtb=0.348</span>
+<span id="cb10-44"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=1, loss=2092.84692, dt=0.051, dtf=0.010, dtb=0.041</span>
+<span id="cb10-45"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=2, loss=1482.45520, dt=0.037, dtf=0.004, dtb=0.033</span>
+<span id="cb10-46"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=3, loss=1174.38037, dt=0.033, dtf=0.002, dtb=0.031</span>
+<span id="cb10-47"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=4, loss=938.39917, dt=0.032, dtf=0.003, dtb=0.030</span>
+<span id="cb10-48"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=5, loss=888.37390, dt=0.035, dtf=0.001, dtb=0.033</span>
+<span id="cb10-49"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=6, loss=784.63470, dt=0.036, dtf=0.003, dtb=0.032</span>
+<span id="cb10-50"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=7, loss=749.53839, dt=0.033, dtf=0.002, dtb=0.031</span>
+<span id="cb10-51"><a></a><span class="ex">[2024-04-19</span> 14:44:14]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=8, loss=732.22656, dt=0.036, dtf=0.003, dtb=0.034</span>
+<span id="cb10-52"><a></a><span class="ex">[2024-04-19</span> 14:44:15]<span class="pp">[</span><span class="ss">INFO</span><span class="pp">][</span><span class="ss">test_dist:102</span><span class="pp">]</span> <span class="at">-</span> iter=9, loss=730.63776, dt=0.034, dtf=0.001, dtb=0.033</span>
+<span id="cb10-53"><a></a><span class="ex">35.68s</span> user 17.20s system 546% cpu 9.681s total</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></details></li>
+</ul></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="helper-utilities" class="slide level2 center">
+<h2>🧰 Helper Utilities</h2>
+<p>We provide some shell scripts that are useful when working with a job scheduler (e.g.&nbsp;<code>PBS Pro</code> @ ALCF or <code>slurm</code> elsewhere).</p>
+<ul>
+<li><p><a href="./src/ezpz/bin/savejobenv"><code>src/ezpz/bin/savejobenv</code></a>:</p>
+<p>Shell script to save relevant job related environment variables to a file which can be <code>sourced</code> from new login instances.</p>
+<ul>
+<li><details closed="">
+<summary>
+<b><code>savejobenv</code></b>
+</summary>
+<ul>
+<li>Launch a job, clone (or navigate into) <code>ezpz</code>, and <code>source</code> <a href="./src/ezpz/bin/savejobenv"><code>src/ezpz/bin/savejobenv</code></a>:</li>
+</ul>
+<div class="sourceCode" id="cb11"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a></a><span class="kw">(</span><span class="ex">thetalogin4</span><span class="kw">)</span> <span class="ex">$</span> qsub-gpu <span class="at">-A</span> datascience <span class="at">-n</span> 2 <span class="at">-q</span> full-node <span class="at">--attrs</span><span class="op">=</span><span class="st">"filesystems=home,grand,eagle,theta-fs0:ssds=required"</span> <span class="at">-t</span> 06:00 <span class="at">-I</span></span>
+<span id="cb11-2"><a></a><span class="ex">Job</span> routed to queue <span class="st">"full-node"</span>.</span>
+<span id="cb11-3"><a></a><span class="ex">Wait</span> for job 10155652 to start...</span>
+<span id="cb11-4"><a></a><span class="ex">Opening</span> interactive session to thetagpu04</span>
+<span id="cb11-5"><a></a><span class="ex">[...]</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a></a><span class="kw">(</span><span class="ex">thetagpu04</span><span class="kw">)</span> <span class="ex">$</span> git clone https://github.com/saforem2/ezpz</span>
+<span id="cb12-2"><a></a><span class="kw">(</span><span class="ex">thetagpu04</span><span class="kw">)</span> <span class="ex">$</span> source ezpz/src/ezpz/bin/savejobenv</span>
+<span id="cb12-3"><a></a><span class="ex">┌───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb12-4"><a></a><span class="ex">│</span> Writing COBALT vars to /home/foremans/.cobaltenv</span>
+<span id="cb12-5"><a></a><span class="ex">│</span> HOSTFILE: /var/tmp/cobalt.10155652</span>
+<span id="cb12-6"><a></a><span class="ex">│</span> NHOSTS: 2</span>
+<span id="cb12-7"><a></a><span class="ex">│</span> 8 GPUs per host</span>
+<span id="cb12-8"><a></a><span class="ex">│</span> 16 GPUs total</span>
+<span id="cb12-9"><a></a><span class="ex">└───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb12-10"><a></a><span class="ex">┌───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb12-11"><a></a><span class="ex">│</span> [DIST INFO]:</span>
+<span id="cb12-12"><a></a><span class="ex">│</span>   • Writing Job info to /home/foremans/.cobaltenv</span>
+<span id="cb12-13"><a></a><span class="ex">│</span>     • HOSTFILE: /var/tmp/cobalt.10155652</span>
+<span id="cb12-14"><a></a><span class="ex">│</span>     • NHOSTS: 2</span>
+<span id="cb12-15"><a></a><span class="ex">│</span>     • NGPU_PER_HOST: 8</span>
+<span id="cb12-16"><a></a><span class="ex">│</span>     • NGPUS = <span class="er">(</span><span class="ex">NHOSTS</span> <span class="pp">*</span> NGPU_PER_HOST<span class="kw">)</span> <span class="ex">=</span> 16</span>
+<span id="cb12-17"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Hosts</span><span class="pp">]</span>:</span>
+<span id="cb12-18"><a></a><span class="ex">│</span>       • thetagpu04 thetagpu19</span>
+<span id="cb12-19"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Launch</span><span class="pp">]</span>:</span>
+<span id="cb12-20"><a></a><span class="ex">│</span>     • Use: <span class="st">'launch'</span> <span class="er">(</span><span class="ex">=mpirun</span> <span class="at">-n</span>  <span class="at">-N</span>  <span class="at">--hostfile</span> /var/tmp/cobalt.10155652 <span class="at">-x</span> PATH <span class="at">-x</span> LD_LIBRARY_PATH<span class="kw">)</span></span>
+<span id="cb12-21"><a></a><span class="ex">│</span>       to launch job</span>
+<span id="cb12-22"><a></a><span class="ex">└───────────────────────────────────────────────────────────────────</span></span>
+<span id="cb12-23"><a></a><span class="ex">┌────────────────────────────────────────────────────────────────────────────────</span></span>
+<span id="cb12-24"><a></a><span class="ex">│</span> YOU ARE HERE: /home/foremans</span>
+<span id="cb12-25"><a></a><span class="ex">│</span> Run <span class="st">'source ./bin/getjobenv'</span> in a NEW SHELL to automatically set env vars</span>
+<span id="cb12-26"><a></a><span class="ex">└────────────────────────────────────────────────────────────────────────────────</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details></li>
+</ul></li>
+<li><p><a href="./src/ezpz/bin/getjobenv"><code>src/ezpz/bin/getjobenv</code></a>:</p>
+<p>Shell script that, when sourced, will populate the current environment with the necessary job-related variables.</p>
+<ul>
+<li><details closed="">
+<summary>
+<b><code>getjobenv</code></b>
+</summary>
+<ul>
+<li><p>Now, in a <strong>NEW SHELL</strong></p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a></a><span class="kw">(</span><span class="ex">localhost</span><span class="kw">)</span>   <span class="ex">$</span> ssh <span class="op">&lt;</span>user<span class="op">&gt;</span>@theta</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a></a><span class="kw">(</span><span class="ex">thetalogin4</span><span class="kw">)</span> <span class="ex">$</span> ssh thetagpu19</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode numberSource bash number-lines code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span>  <span class="ex">$</span> module load conda/2023-01-11<span class="kw">;</span> <span class="ex">conda</span> activate base</span>
+<span id="cb15-2"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span>  <span class="ex">$</span> cd ezpz</span>
+<span id="cb15-3"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span>  <span class="ex">$</span> source ./src/ezpz/bin/getjobenv</span>
+<span id="cb15-4"><a></a><span class="ex">┌──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb15-5"><a></a><span class="ex">│</span> <span class="pp">[</span><span class="ss">Hosts</span><span class="pp">]</span>: </span>
+<span id="cb15-6"><a></a><span class="ex">│</span>     • thetagpu04, thetagpu19</span>
+<span id="cb15-7"><a></a><span class="ex">└──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb15-8"><a></a><span class="ex">┌──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb15-9"><a></a><span class="ex">│</span> [DIST INFO]: </span>
+<span id="cb15-10"><a></a><span class="ex">│</span>     • Loading job env from: /home/foremans/.cobaltenv</span>
+<span id="cb15-11"><a></a><span class="ex">│</span>     • HOSTFILE: /var/tmp/cobalt.10155652</span>
+<span id="cb15-12"><a></a><span class="ex">│</span>     • NHOSTS: 2</span>
+<span id="cb15-13"><a></a><span class="ex">│</span>     • NGPU_PER_HOST: 8</span>
+<span id="cb15-14"><a></a><span class="ex">│</span>     • NGPUS <span class="er">(</span><span class="ex">NHOSTS</span> x NGPU_PER_HOST<span class="kw">)</span><span class="bu">:</span> 16</span>
+<span id="cb15-15"><a></a><span class="ex">│</span>     • DIST_LAUNCH: mpirun <span class="at">-n</span> 16 <span class="at">-N</span> 8 <span class="at">--hostfile</span> /var/tmp/cobalt.10155652 <span class="at">-x</span> PATH <span class="at">-x</span> LD_LIBRARY_PATH</span>
+<span id="cb15-16"><a></a><span class="ex">│</span>     • Defining alias: launch: aliased to mpirun <span class="at">-n</span> 16 <span class="at">-N</span> 8 <span class="at">--hostfile</span> /var/tmp/cobalt.10155652 <span class="at">-x</span> PATH <span class="at">-x</span> LD_LIBRARY_PATH</span>
+<span id="cb15-17"><a></a><span class="ex">└──────────────────────────────────────────────────────────────────</span></span>
+<span id="cb15-18"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span> <span class="ex">$</span> mkdir <span class="at">-p</span> venvs/thetaGPU/2023-01-11</span>
+<span id="cb15-19"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span> <span class="ex">$</span> python3 <span class="at">-m</span> venv venvs/thetaGPU/2023-01-11 <span class="at">--system-site-packages</span></span>
+<span id="cb15-20"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span> <span class="ex">$</span> source venvs/thetaGPU/2023-01-11/bin/activate</span>
+<span id="cb15-21"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span> <span class="ex">$</span> python3 <span class="at">-m</span> pip install <span class="at">-e</span> . <span class="at">--require-virtualenv</span></span>
+<span id="cb15-22"><a></a><span class="kw">(</span><span class="ex">thetagpu19</span><span class="kw">)</span> <span class="ex">$</span> launch python3 <span class="at">-m</span> ezpz framework=pytorch backend=DDP</span>
+<span id="cb15-23"><a></a><span class="ex">[2023-10-26</span> 12:21:26,716]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Using DDP for distributed training</span>
+<span id="cb15-24"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 13</span>
+<span id="cb15-25"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 14</span>
+<span id="cb15-26"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 8</span>
+<span id="cb15-27"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 12</span>
+<span id="cb15-28"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 6</span>
+<span id="cb15-29"><a></a><span class="ex">[2023-10-26</span> 12:21:26,788]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 9</span>
+<span id="cb15-30"><a></a><span class="ex">[2023-10-26</span> 12:21:26,787]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 10</span>
+<span id="cb15-31"><a></a><span class="ex">[2023-10-26</span> 12:21:26,788]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 15</span>
+<span id="cb15-32"><a></a><span class="ex">[2023-10-26</span> 12:21:26,788]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 11</span>
+<span id="cb15-33"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 7</span>
+<span id="cb15-34"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 3</span>
+<span id="cb15-35"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 1</span>
+<span id="cb15-36"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 4</span>
+<span id="cb15-37"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 5</span>
+<span id="cb15-38"><a></a><span class="ex">[2023-10-26</span> 12:21:26,789]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 2</span>
+<span id="cb15-39"><a></a><span class="ex">[2023-10-26</span> 12:21:26,798]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Added key: store_based_barrier_key:1 to store for rank: 0</span>
+<span id="cb15-40"><a></a><span class="ex">[2023-10-26</span> 12:21:26,811]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 14: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-41"><a></a><span class="ex">[2023-10-26</span> 12:21:26,812]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 6: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-42"><a></a><span class="ex">[2023-10-26</span> 12:21:26,814]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 13: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-43"><a></a><span class="ex">[2023-10-26</span> 12:21:26,815]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 7: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-44"><a></a><span class="ex">[2023-10-26</span> 12:21:26,816]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 8: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-45"><a></a><span class="ex">[2023-10-26</span> 12:21:26,817]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-46"><a></a><span class="ex">[2023-10-26</span> 12:21:26,819]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 12: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-47"><a></a><span class="ex">[2023-10-26</span> 12:21:26,820]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-48"><a></a><span class="ex">[2023-10-26</span> 12:21:26,821]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 10: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-49"><a></a><span class="ex">[2023-10-26</span> 12:21:26,823]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 4: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-50"><a></a><span class="ex">[2023-10-26</span> 12:21:26,825]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 9: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-51"><a></a><span class="ex">[2023-10-26</span> 12:21:26,825]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 5: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-52"><a></a><span class="ex">[2023-10-26</span> 12:21:26,827]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 15: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-53"><a></a><span class="ex">[2023-10-26</span> 12:21:26,828]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-54"><a></a><span class="ex">[2023-10-26</span> 12:21:26,830]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 11: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-55"><a></a><span class="ex">[2023-10-26</span> 12:21:26,831]<span class="pp">[</span><span class="ss">torch.distributed.distributed_c10d</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 16 nodes.</span>
+<span id="cb15-56"><a></a><span class="ex">[2023-10-26</span> 12:21:27,035]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 0 / 15</span>
+<span id="cb15-57"><a></a><span class="kw">{</span></span>
+<span id="cb15-58"><a></a>  <span class="st">"framework"</span><span class="ex">:</span> <span class="st">"pytorch"</span>,</span>
+<span id="cb15-59"><a></a>  <span class="st">"backend"</span><span class="ex">:</span> <span class="st">"DDP"</span>,</span>
+<span id="cb15-60"><a></a>  <span class="st">"use_wandb"</span><span class="ex">:</span> false,</span>
+<span id="cb15-61"><a></a>  <span class="st">"seed"</span><span class="ex">:</span> null,</span>
+<span id="cb15-62"><a></a>  <span class="st">"port"</span><span class="ex">:</span> null,</span>
+<span id="cb15-63"><a></a>  <span class="st">"ds_config_path"</span><span class="ex">:</span> null,</span>
+<span id="cb15-64"><a></a>  <span class="st">"wandb_project_name"</span><span class="ex">:</span> null,</span>
+<span id="cb15-65"><a></a>  <span class="st">"precision"</span><span class="ex">:</span> null,</span>
+<span id="cb15-66"><a></a>  <span class="st">"ngpus"</span><span class="ex">:</span> null</span>
+<span id="cb15-67"><a></a><span class="kw">}</span></span>
+<span id="cb15-68"><a></a><span class="ex">[2023-10-26</span> 12:21:27,038]<span class="pp">[</span><span class="ss">__main__</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> Output dir: /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/ezpz/outputs/runs/pytorch/DDP/2023-10-26/12-21-25</span>
+<span id="cb15-69"><a></a><span class="ex">[2023-10-26</span> 12:21:27,097]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 8 / 15</span>
+<span id="cb15-70"><a></a><span class="ex">[2023-10-26</span> 12:21:27,103]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 6 / 15</span>
+<span id="cb15-71"><a></a><span class="ex">[2023-10-26</span> 12:21:27,104]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 14 / 15</span>
+<span id="cb15-72"><a></a><span class="ex">[2023-10-26</span> 12:21:27,111]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 13 / 15</span>
+<span id="cb15-73"><a></a><span class="ex">[2023-10-26</span> 12:21:27,116]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 1 / 15</span>
+<span id="cb15-74"><a></a><span class="ex">[2023-10-26</span> 12:21:27,126]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 7 / 15</span>
+<span id="cb15-75"><a></a><span class="ex">[2023-10-26</span> 12:21:27,135]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 10 / 15</span>
+<span id="cb15-76"><a></a><span class="ex">[2023-10-26</span> 12:21:27,139]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 12 / 15</span>
+<span id="cb15-77"><a></a><span class="ex">[2023-10-26</span> 12:21:27,141]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 9 / 15</span>
+<span id="cb15-78"><a></a><span class="ex">[2023-10-26</span> 12:21:27,141]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 15 / 15</span>
+<span id="cb15-79"><a></a><span class="ex">[2023-10-26</span> 12:21:27,141]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 11 / 15</span>
+<span id="cb15-80"><a></a><span class="ex">[2023-10-26</span> 12:21:27,141]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 5 / 15</span>
+<span id="cb15-81"><a></a><span class="ex">[2023-10-26</span> 12:21:27,144]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 2 / 15</span>
+<span id="cb15-82"><a></a><span class="ex">[2023-10-26</span> 12:21:27,145]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 4 / 15</span>
+<span id="cb15-83"><a></a><span class="ex">[2023-10-26</span> 12:21:27,145]<span class="pp">[</span><span class="ss">ezpz.dist</span><span class="pp">][</span><span class="ss">INFO</span><span class="pp">]</span> <span class="at">-</span> RANK: 3 / 15</span>
+<span id="cb15-84"><a></a><span class="ex">16.56s</span> user 30.05s system 706% cpu 6.595s total</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>while this example looked at ThetaGPU, the exact same process will work on any of <code>{ThetaGPU, Polaris, Perlmutter}</code>.</p></li>
+</ul></details></li>
+</ul>
+</li>
+</ul>
+<div title="[❤️‍🩹 Status]{style=&quot;color: var(--ansi-red);&quot;}" style="text-align: left!important; width:100%; background-color: var(--code-bg); border:none!important; border-left: 2px solid var(--ansi-red)!important; opacity:100%; border-radius: 0pt!important;">
+<div class="callout callout-tip no-icon callout-titled callout-style-default">
+<div class="callout-body">
+<div class="callout-title">
+<p><strong><span style="color: var(--ansi-red);">❤️‍🩹 Status</span></strong></p>
+</div>
+<div class="callout-content">
+<div id="83e8f500" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #7f7f7f; text-decoration-color: #7f7f7f; font-style: italic">Last Updated</span>: <span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">05</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">13</span><span style="color: #f06292; text-decoration-color: #f06292">/</span><span style="color: #f06292; text-decoration-color: #f06292; font-weight: bold">2024</span> <span style="color: #7f7f7f; text-decoration-color: #7f7f7f">@</span> <span style="color: #1a8fff; text-decoration-color: #1a8fff; font-weight: bold">19:16:46</span>
+</pre>
+</div>
+</div>
+<p><span class="center" style="text-align:center;"><a href="https://hits.seeyoufarm.com"><img data-src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io%2Fezpz&amp;count_bg=%2300CCFF&amp;title_bg=%23303030&amp;icon=&amp;icon_color=%23E7E7E7&amp;title=hits&amp;edge_flat=false"></a></span></p>
+</div>
+</div>
+</div>
+</div>
+
+<div class="quarto-auto-generated-content">
+<p><img src="https://raw.githubusercontent.com/saforem2/anl-job-talk/main/docs/assets/anl.svg" class="slide-logo"></p>
+<div class="footer footer-default">
+
+</div>
+</div>
+</section>
+    </div>
+  </div>
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script>
+  <script src="site_libs/revealjs/dist/reveal.js"></script>
+  <!-- reveal.js plugins -->
+  <script src="site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
+  <script src="site_libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
+  <script src="site_libs/revealjs/plugin/reveal-menu/menu.js"></script>
+  <script src="site_libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
+  <script src="site_libs/revealjs/plugin/reveal-chalkboard/plugin.js"></script>
+  <script src="site_libs/revealjs/plugin/quarto-support/support.js"></script>
+  
+
+  <script src="site_libs/revealjs/plugin/notes/notes.js"></script>
+  <script src="site_libs/revealjs/plugin/search/search.js"></script>
+  <script src="site_libs/revealjs/plugin/zoom/zoom.js"></script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
+
+  <script>
+
+      // Full list of configuration options available at:
+      // https://revealjs.com/config/
+      Reveal.initialize({
+'controlsAuto': false,
+'previewLinksAuto': false,
+'pdfSeparateFragments': false,
+'autoAnimateEasing': "ease",
+'autoAnimateDuration': 1,
+'autoAnimateUnmatched': true,
+'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleChalkboard(event)\"><kbd>b</kbd> Toggle Chalkboard</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleNotesCanvas(event)\"><kbd>c</kbd> Toggle Notes Canvas</a></li>\n<li class=\"slide-tool-item\" data-item=\"6\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.downloadDrawings(event)\"><kbd>d</kbd> Download Drawings</a></li>\n<li class=\"slide-tool-item\" data-item=\"7\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
+'chalkboard': {"buttons":false},
+'smaller': false,
+ 
+        // Display controls in the bottom right corner
+        controls: false,
+
+        // Help the user learn the controls by providing hints, for example by
+        // bouncing the down arrow when they first encounter a vertical slide
+        controlsTutorial: true,
+
+        // Determines where controls appear, "edges" or "bottom-right"
+        controlsLayout: 'edges',
+
+        // Visibility rule for backwards navigation arrows; "faded", "hidden"
+        // or "visible"
+        controlsBackArrows: 'faded',
+
+        // Display a presentation progress bar
+        progress: true,
+
+        // Display the page number of the current slide
+        slideNumber: 'c',
+
+        // 'all', 'print', or 'speaker'
+        showSlideNumber: 'all',
+
+        // Add the current slide number to the URL hash so that reloading the
+        // page/copying the URL will return you to the same slide
+        hash: true,
+
+        // Start with 1 for the hash rather than 0
+        hashOneBasedIndex: false,
+
+        // Flags if we should monitor the hash and change slides accordingly
+        respondToHashChanges: true,
+
+        // Push each slide change to the browser history
+        history: false,
+
+        // Enable keyboard shortcuts for navigation
+        keyboard: true,
+
+        // Enable the slide overview mode
+        overview: true,
+
+        // Disables the default reveal.js slide layout (scaling and centering)
+        // so that you can use custom CSS layout
+        disableLayout: false,
+
+        // Vertical centering of slides
+        center: true,
+
+        // Enables touch navigation on devices with touch input
+        touch: true,
+
+        // Loop the presentation
+        loop: false,
+
+        // Change the presentation direction to be RTL
+        rtl: false,
+
+        // see https://revealjs.com/vertical-slides/#navigation-mode
+        navigationMode: 'linear',
+
+        // Randomizes the order of slides each time the presentation loads
+        shuffle: false,
+
+        // Turns fragments on and off globally
+        fragments: true,
+
+        // Flags whether to include the current fragment in the URL,
+        // so that reloading brings you to the same fragment position
+        fragmentInURL: false,
+
+        // Flags if the presentation is running in an embedded mode,
+        // i.e. contained within a limited portion of the screen
+        embedded: false,
+
+        // Flags if we should show a help overlay when the questionmark
+        // key is pressed
+        help: true,
+
+        // Flags if it should be possible to pause the presentation (blackout)
+        pause: false,
+
+        // Flags if speaker notes should be visible to all viewers
+        showNotes: false,
+
+        // Global override for autoplaying embedded media (null/true/false)
+        autoPlayMedia: null,
+
+        // Global override for preloading lazy-loaded iframes (null/true/false)
+        preloadIframes: null,
+
+        // Number of milliseconds between automatically proceeding to the
+        // next slide, disabled when set to 0, this value can be overwritten
+        // by using a data-autoslide attribute on your slides
+        autoSlide: 0,
+
+        // Stop auto-sliding after user input
+        autoSlideStoppable: true,
+
+        // Use this method for navigation when auto-sliding
+        autoSlideMethod: null,
+
+        // Specify the average time in seconds that you think you will spend
+        // presenting each slide. This is used to show a pacing timer in the
+        // speaker view
+        defaultTiming: null,
+
+        // Enable slide navigation via mouse wheel
+        mouseWheel: false,
+
+        // The display mode that will be used to show slides
+        display: 'block',
+
+        // Hide cursor if inactive
+        hideInactiveCursor: true,
+
+        // Time before the cursor is hidden (in ms)
+        hideCursorTime: 5000,
+
+        // Opens links in an iframe preview overlay
+        previewLinks: true,
+
+        // Transition style (none/fade/slide/convex/concave/zoom)
+        transition: 'none',
+
+        // Transition speed (default/fast/slow)
+        transitionSpeed: 'default',
+
+        // Transition style for full page slide backgrounds
+        // (none/fade/slide/convex/concave/zoom)
+        backgroundTransition: 'none',
+
+        // Number of slides away from the current that are visible
+        viewDistance: 3,
+
+        // Number of slides away from the current that are visible on mobile
+        // devices. It is advisable to set this to a lower number than
+        // viewDistance in order to save resources.
+        mobileViewDistance: 2,
+
+        // The "normal" size of the presentation, aspect ratio will be preserved
+        // when the presentation is scaled to fit different resolutions. Can be
+        // specified using percentage units.
+        width: 1050,
+
+        height: 700,
+
+        // Factor of the display size that should remain empty around the content
+        margin: 0.1,
+
+        // reveal.js plugins
+        plugins: [QuartoLineHighlight, PdfExport, RevealMenu, RevealChalkboard, QuartoSupport,
+
+          RevealNotes,
+          RevealSearch,
+          RevealZoom
+        ]
+      });
+    </script>
+    <script id="quarto-html-after-body" type="application/javascript">
+    window.document.addEventListener("DOMContentLoaded", function (event) {
+      const toggleBodyColorMode = (bsSheetEl) => {
+        const mode = bsSheetEl.getAttribute("data-mode");
+        const bodyEl = window.document.querySelector("body");
+        if (mode === "dark") {
+          bodyEl.classList.add("quarto-dark");
+          bodyEl.classList.remove("quarto-light");
+        } else {
+          bodyEl.classList.add("quarto-light");
+          bodyEl.classList.remove("quarto-dark");
+        }
+      }
+      const toggleBodyColorPrimary = () => {
+        const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+        if (bsSheetEl) {
+          toggleBodyColorMode(bsSheetEl);
+        }
+      }
+      toggleBodyColorPrimary();  
+      const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+      tabsets.forEach(function(tabset) {
+        const tabby = new Tabby('#' + tabset.id);
+      });
+      const isCodeAnnotation = (el) => {
+        for (const clz of el.classList) {
+          if (clz.startsWith('code-annotation-')) {                     
+            return true;
+          }
+        }
+        return false;
+      }
+      const clipboard = new window.ClipboardJS('.code-copy-button', {
+        text: function(trigger) {
+          const codeEl = trigger.previousElementSibling.cloneNode(true);
+          for (const childEl of codeEl.children) {
+            if (isCodeAnnotation(childEl)) {
+              childEl.remove();
+            }
+          }
+          return codeEl.innerText;
+        }
+      });
+      clipboard.on('success', function(e) {
+        // button target
+        const button = e.trigger;
+        // don't keep focus
+        button.blur();
+        // flash "checked"
+        button.classList.add('code-copy-button-checked');
+        var currentTitle = button.getAttribute("title");
+        button.setAttribute("title", "Copied!");
+        let tooltip;
+        if (window.bootstrap) {
+          button.setAttribute("data-bs-toggle", "tooltip");
+          button.setAttribute("data-bs-placement", "left");
+          button.setAttribute("data-bs-title", "Copied!");
+          tooltip = new bootstrap.Tooltip(button, 
+            { trigger: "manual", 
+              customClass: "code-copy-button-tooltip",
+              offset: [0, -8]});
+          tooltip.show();    
+        }
+        setTimeout(function() {
+          if (tooltip) {
+            tooltip.hide();
+            button.removeAttribute("data-bs-title");
+            button.removeAttribute("data-bs-toggle");
+            button.removeAttribute("data-bs-placement");
+          }
+          button.setAttribute("title", currentTitle);
+          button.classList.remove('code-copy-button-checked');
+        }, 1000);
+        // clear code selection
+        e.clearSelection();
+      });
+        var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+        var mailtoRegex = new RegExp(/^mailto:/);
+          var filterRegex = new RegExp("https:\/\/saforem2\.github\.io\/ezpz");
+        var isInternal = (href) => {
+            return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+        }
+        // Inspect non-navigation links and adorn them if external
+     	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool)');
+        for (var i=0; i<links.length; i++) {
+          const link = links[i];
+          if (!isInternal(link.href)) {
+            // undo the damage that might have been done by quarto-nav.js in the case of
+            // links that we want to consider external
+            if (link.dataset.originalHref !== undefined) {
+              link.href = link.dataset.originalHref;
+            }
+          }
+        }
+      function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+        const config = {
+          allowHTML: true,
+          maxWidth: 500,
+          delay: 100,
+          arrow: false,
+          appendTo: function(el) {
+              return el.closest('section.slide') || el.parentElement;
+          },
+          interactive: true,
+          interactiveBorder: 10,
+          theme: 'light-border',
+          placement: 'bottom-start',
+        };
+        if (contentFn) {
+          config.content = contentFn;
+        }
+        if (onTriggerFn) {
+          config.onTrigger = onTriggerFn;
+        }
+        if (onUntriggerFn) {
+          config.onUntrigger = onUntriggerFn;
+        }
+          config['offset'] = [0,0];
+          config['maxWidth'] = 700;
+        window.tippy(el, config); 
+      }
+      const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+      for (var i=0; i<noterefs.length; i++) {
+        const ref = noterefs[i];
+        tippyHover(ref, function() {
+          // use id or data attribute instead here
+          let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+          try { href = new URL(href).hash; } catch {}
+          const id = href.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note) {
+            return note.innerHTML;
+          } else {
+            return "";
+          }
+        });
+      }
+      const findCites = (el) => {
+        const parentEl = el.parentElement;
+        if (parentEl) {
+          const cites = parentEl.dataset.cites;
+          if (cites) {
+            return {
+              el,
+              cites: cites.split(' ')
+            };
+          } else {
+            return findCites(el.parentElement)
+          }
+        } else {
+          return undefined;
+        }
+      };
+      var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+      for (var i=0; i<bibliorefs.length; i++) {
+        const ref = bibliorefs[i];
+        const citeInfo = findCites(ref);
+        if (citeInfo) {
+          tippyHover(citeInfo.el, function() {
+            var popup = window.document.createElement('div');
+            citeInfo.cites.forEach(function(cite) {
+              var citeDiv = window.document.createElement('div');
+              citeDiv.classList.add('hanging-indent');
+              citeDiv.classList.add('csl-entry');
+              var biblioDiv = window.document.getElementById('ref-' + cite);
+              if (biblioDiv) {
+                citeDiv.innerHTML = biblioDiv.innerHTML;
+              }
+              popup.appendChild(citeDiv);
+            });
+            return popup.innerHTML;
+          });
+        }
+      }
+    });
+    </script>
+    
+
+</body></html>

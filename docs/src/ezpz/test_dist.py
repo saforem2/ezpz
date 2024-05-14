@@ -14,7 +14,7 @@ import torch
 import ezpz as ez
 
 # backend can be any of DDP, deespepeed, horovod
-DIST_INIT = ez.setup_torch_distributed(
+RANK = ez.setup_torch(
     backend=(
         backend := os.environ.get('BACKEND', 'DDP')
     ),
@@ -22,28 +22,28 @@ DIST_INIT = ez.setup_torch_distributed(
         port := os.environ.get("MASTER_PORT", "29500")
     )
 )
+# RANK = DIST_INIT['rank']
+# WORLD_SIZE = DIST_INIT['world_size']
+# LOCAL_RANK = DIST_INIT['local_rank']
+# if DEVICE == "cuda" and torch.cuda.is_available():
+#     torch.cuda.set_device(LOCAL_RANK)
 DEVICE = ez.get_torch_device()
-RANK = DIST_INIT['rank']
-WORLD_SIZE = DIST_INIT['world_size']
-LOCAL_RANK = DIST_INIT['local_rank']
-# WORLD_SIZE = ez.get_world_size()
-# LOCAL_RANK = ez.get_local_rank()
+WORLD_SIZE = ez.get_world_size()
+LOCAL_RANK = ez.get_local_rank()
 DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
-_ = ez.print_dist_setup()
 
-if DEVICE == "cuda" and torch.cuda.is_available():
-    torch.cuda.set_device(LOCAL_RANK)
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
-BATCH_SIZE = 64
-INPUT_SIZE = 128
-OUTPUT_SIZE = 128
-DTYPE = torch.get_default_dtype()
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 64))  # 64
+INPUT_SIZE = int(os.environ.get("INPUT_SIZE", 128))  # 128
+OUTPUT_SIZE = int(os.environ.get("OUTPUT_SIZE", 128))  # 128
+DTYPE = os.environ.get("DTYPE", torch.get_default_dtype())
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 50))
 
-logger.info(f"{DIST_INIT=}")
+# logger.info(f"{DIST_INIT=}")
 
 
 class Network(torch.nn.Module):
@@ -73,6 +73,17 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
 
+def plot_losses(losses: dict) -> None:
+    import plotext as pltx
+    # y = list(losses.values())
+    pltx.theme('clear')
+    pltx.scatter(list(losses.values()))
+    pltx.show()
+    pltx.save_fig("test_dist_losses.txt")
+    pltx.ylabel("loss")
+    pltx.xlabel("iteration")
+
+
 def main():
     model = Network(
         input_dim=INPUT_SIZE,
@@ -83,37 +94,47 @@ def main():
     model.to(DEVICE_ID)
     logger.info(f'{model=}')
     optimizer = torch.optim.Adam(model.parameters())
-    if WORLD_SIZE > 1:
-        if backend.lower() == 'ddp':
+    if backend.lower() == 'ddp':
+        if WORLD_SIZE > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
             model = DDP(
                 model,
                 device_ids=[]
             )
-        elif backend.lower() in ('ds', 'deepspeed'):
-            import deepspeed
-            # config = ez.load_ds_config().update(
-            #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
-            # )
-            import argparse
-            parser = argparse.ArgumentParser(description='My training script.')
-            parser.add_argument('--local_rank', required=False, type=int, default=-1,  # default=ez.get_local_rank()),
-                                help='local rank passed from distributed launcher')
-            # Include DeepSpeed configuration arguments
-            parser = deepspeed.add_config_arguments(parser)
-            cmd_args = parser.parse_args()
-            logger.info(f'{cmd_args=}')
-            model, optimizer, *_ = deepspeed.initialize(
-                args=cmd_args,
-                model=model,
-                optimizer=optimizer,
-            )
+    elif backend.lower() in ('ds', 'deepspeed'):
+        import deepspeed
+        # config = ez.load_ds_config().update(
+        #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
+        # )
+        import argparse
+        parser = argparse.ArgumentParser(
+            description='My training script.'
+        )
+        parser.add_argument(
+            '--local_rank',
+            required=False,
+            type=int,
+            default=-1,
+            # default=ez.get_local_rank()),
+            help='local rank passed from distributed launcher',
+        )
+        # Include DeepSpeed configuration arguments
+        parser = deepspeed.add_config_arguments(parser)
+        cmd_args = parser.parse_args()
+        logger.info(f'{cmd_args=}')
+        model, optimizer, *_ = deepspeed.initialize(
+            args=cmd_args,
+            model=model,
+            optimizer=optimizer,
+        )
 
-    for iter in range(10):
+    losses = {}
+    for iter in range(TRAIN_ITERS):
         t0 = time.perf_counter()
         x = torch.rand((BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
         y = model(x)
         loss = calc_loss(x, y)
+        losses[iter] = loss
         dtf = ((t1 := time.perf_counter()) - t0)
         if backend == 'deepspeed':
             model.backward(loss)
@@ -132,6 +153,8 @@ def main():
                 f'{dtb=:.3f}'
             ])
         )
+    if RANK == 0:
+        plot_losses(losses)
 
 
 if __name__ == '__main__':

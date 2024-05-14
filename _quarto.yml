@@ -9,7 +9,7 @@ title-block-categories: false
 number-sections: false
 bibliography: references.bib
 # appendix-cite-as: display
-favicon: "favicon.svg"
+favicon: "https://raw.githubusercontent.com/saforem2/personal_site/5f1edba57aab59fb628d30203019937bf8ca5775/assets/favicon.svg"
 # twitter-card: true
 site-url: "https://samforeman.me"
 google-scholar: true
@@ -20,11 +20,17 @@ citeproc: true
 project:
   render:
     - index.qmd
-    - qmd/**/*.qmd
-    - ../ezpz/qmd/**/*.qmd
-    # - qmd/blog/*.qmd
-    # - qmd/ezpz/*.qmd
-    # - qmd/aurora-gpt/megatron-ds-intel.qmd
+    - ./qmd/**/*.qmd
+    # - /**/*.qmd
+    # - ! /**/*.bak
+    # - docs/**/*.qmd
+    # - docs/**/*.qmd
+    # - docs/**/*.qmd
+    # - /**/*.qmd
+    # - ../ezpz//**/*.qmd
+    # - /blog/*.qmd
+    # - /ezpz/*.qmd
+    # - /aurora-gpt/megatron-ds-intel.qmd
   type: website
   output-dir: "docs"
   preview:
