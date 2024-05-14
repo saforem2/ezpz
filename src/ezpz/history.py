@@ -13,7 +13,9 @@ import time
 from typing import Any, Optional, Union
 
 from ezpz import get_logging_config
+from ezpz.configs import PathLike
 from ezpz.plot import plot_dataset
+from ezpz.utils import save_dataset
 from enrich.console import is_interactive
 import matplotlib.pyplot as plt
 import numpy as np
@@ -129,8 +131,6 @@ class History:
                 self.history[key] = [val]
 
 
-
-
 class BaseHistory:
     def __init__(self):
         self.history = {}
@@ -162,8 +162,6 @@ class BaseHistory:
         # ):
         #     return grab_tensor(metric)
         return marr
-
-
 
     def _update(
             self,
@@ -212,13 +210,23 @@ class BaseHistory:
 
         return avgs
 
-    def tplot(self):
+    def tplot(
+            self,
+            outdir: Optional[PathLike] = None,
+            logfreq: int = 1,
+    ):
         dset = self.get_dataset()
         for key, val in dset.items():
-            outfile = Path(os.getcwd()).joinpath(f'{key}.txt').as_posix()
+            outdir = Path(os.getcwd()) if outdir is None else outdir
+            outfile = Path(outdir).joinpath(f'{key}.txt').as_posix()
+            # x = dset.get('iter')
+            # if x is not None:
+            #     x = x.values
             ezplot.tplot(
                 y=val.values,
-                ylabel=str(key),
+                # x=x,
+                label=str(key),
+                # xlabel='iter' if x is not None else None,
                 outfile=outfile,
             )
 
@@ -672,6 +680,11 @@ class BaseHistory:
 
         return dataset
 
+    def history_to_dict(self) -> dict:
+        return {
+            k: np.stack(v).squeeze() for k, v in self.history.items()
+        }
+
     def to_DataArray(
             self,
             x: Union[list, np.ndarray],
@@ -717,7 +730,7 @@ class BaseHistory:
             data: Optional[dict[str, Union[list, np.ndarray]]] = None,
             therm_frac: Optional[float] = 0.0,
     ):
-        data = self.history if data is None else data
+        data = self.history_to_dict() if data is None else data
         data_vars = {}
         for key, val in data.items():
             name = key.replace('/', '_')
@@ -726,5 +739,22 @@ class BaseHistory:
             except ValueError:
                 log.error(f'Unable to create DataArray for {key}! Skipping!')
                 log.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
-
         return xr.Dataset(data_vars)
+
+    def save_dataset(
+            self,
+            outdir: PathLike,
+            fname: str = 'dataset',
+            use_hdf5: bool = True,
+            data: Optional[dict[str, Union[list, np.ndarray]]] = None,
+            **kwargs,
+    ) -> Path:
+        data = self.history if data is None else data
+        dataset = self.get_dataset(data)
+        return save_dataset(
+            dataset,
+            outdir=outdir,
+            fname=fname,
+            use_hdf5=use_hdf5,
+            **kwargs,
+        )
