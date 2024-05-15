@@ -1,17 +1,16 @@
 # `ezpz` 🍋
-Sam Foreman
-2024-05-13
 
-\| \[Sam Foreman
-[<span class="orcid-green"></span>](https://orcid.org/0000-0002-9981-0876)\]()  
-2024-05-13
+[Sam Foreman](https://samforeman.me)  
+_2024-05-14_
 
 ## 👀 Overview
 
-> **<code>ezpz</code> 🍋**
+
+>  **<code>ezpz</code> 🍋**
 >
-> Launch and train across all your accelerators, using your favorite
-> framework + backend combo.
+> Launch, train and communicate across all your accelerators, `ezpz`.
+> 
+> _Full support for your favorite framework + backend combo ❤️_.
 >
 > `ezpz` simplifies the process of:
 >
@@ -96,39 +95,43 @@ Sam Foreman
 >   Using <code>wandb</code>:
 >   </summary>
 >
->   - `ez.setup_wandb(project_name='ezpz')`
+>     - [`ez.setup_wandb(project_name='ezpz')`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L735)
 >
 > </details>
 >
 > - **Full support** for any {`device` + `framework` + `backend`}:
->   - device: {`GPU`, `XPU`, `MPS`, `CPU`}
->   - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
->   - backend: {`DDP`, `deepspeed`, `horovod`}
+>     - device: {`GPU`, `XPU`, `MPS`, `CPU`}
+>     - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
+>     - backend: {`DDP`, `deepspeed`, `horovod`}
 
 ## 📝 Example
 
-We provide below a complete example that will launch
-[`test_dist.py`](./src/ezpz/test_dist.py) (included below) across all
-GPUs in your current {`PBS`, `slurm`} job and train a simple model using
-either `DDP` or `deepspeed`
+> [!IMPORTANT]
+> We walk through a [complete example](#running) below that will:
+> 1. Install `ezpz`
+> 2. `launch` [`test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py) across all the GPUs in your active {`PBS`, `slurm`} job
 
-<details closed>
-<summary>
+<!--
+> 4. \[Optional\] If you're using {`PBS`, `slurm`} at {ALCF, OLCF, NERSC, etc}:
+>
+>    <details closed><summary><code>launch</code>:</summary>
+>
+>     - automatically `launch` a simple distributed training example:
+>         
+>         - [`test_dist.py`](./src/ezpz/test_dist.py) (included below)
+>
+>       across all GPUs in your current {`PBS`, `slurm`} job
+>       and train a simple model using either `DDP` or `deepspeed`
+>
+>     </details>
 
-<code>test_dist.py</code>
 
-</summary>
-<!-- <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a>:</summary> -->
+We provide below a complete example that will launch test_dist.py (included below) across all GPUs in your current {PBS, slurm} job and train a simple model using either DDP or deepspeed
+-->
 
-``` python
-"""
-ezpz_ddp.py
+<details closed><summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py"><code>test_dist.py</code></a></summary>
 
-- to launch:
-
-$ source ezpz/src/ezpz/bin/savejobenv
-$ BACKEND=DDP launch python3 ezpz_ddp.py
-"""
+```python
 import os
 import logging
 import time
@@ -286,7 +289,7 @@ if __name__ == '__main__':
 
 </details>
 
-### 🏃🏻‍♂️ Running
+### Running 🏃🏻‍♂️
 
 1.  `git clone` + `pip install ezpz`:
 
