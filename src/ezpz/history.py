@@ -16,7 +16,7 @@ from ezpz import get_logging_config
 from ezpz.configs import PathLike
 from ezpz.plot import plot_dataset
 from ezpz.utils import save_dataset
-from enrich.console import is_interactive
+from ezpz.log.console import is_interactive
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
