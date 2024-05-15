@@ -10,6 +10,7 @@ import logging.config
 import os
 from pathlib import Path
 import time
+import datetime
 from functools import wraps
 from typing import Any, Callable, Optional
 import socket
@@ -319,10 +320,34 @@ def setup(
     )
 
 
-def init_deepspeed():
+def init_deepspeed(
+        dist_backend: Optional[str] = None,
+        auto_mpi_discovery: bool = True,
+        distributed_port: int | str = 29500,
+        verbose: bool = True,
+        timeout: Optional[int] = None,
+        init_method: Optional[str] = None,
+        dist_init_required: Optional[bool] = None,
+        config: Optional[dict] = None,
+        rank: Optional[int] = -1,
+        world_size: Optional[int] = -1,
+):
     try:
-        import deepspeed  # type:ignore noqa
-        deepspeed.init_distributed()
+        import deepspeed
+        log.warning(f'Setting {timeout=}')
+        dt = 3600 if timeout is None else timeout
+        deepspeed.init_distributed(
+            dist_backend=dist_backend,
+            auto_mpi_discovery=auto_mpi_discovery,
+            distributed_port=distributed_port,
+            verbose=verbose,
+            timeout=datetime.timedelta(seconds=dt),
+            init_method=init_method,
+            dist_init_required=dist_init_required,
+            config=config,
+            rank=rank,
+            world_size=world_size
+        )
     except Exception as exc:
         log.warning('Unable to `import deepspeed`. Exiting!')
         log.exception(exc)
@@ -511,6 +536,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
 def setup_torch_distributed(
         backend: str,
         port: str = '2345',
+        timeout: Optional[int] = 3600,
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     rank = get_rank()
@@ -528,7 +554,7 @@ def setup_torch_distributed(
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
     elif be in {'deepspeed', 'ds'}:
-        init_deepspeed()
+        init_deepspeed(timeout=timeout)
         world_size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
@@ -553,6 +579,7 @@ def setup_torch(
         backend: str = 'DDP',
         port: str = '2345',
         seed: Optional[int] = None,
+        timeout: Optional[int] = 3600,
 ) -> int:
     """Returns RANK"""
     import torch
@@ -570,7 +597,7 @@ def setup_torch(
     #     import intel_extension_for_pytorch as ipex
     # except (ImportError, ModuleNotFoundError):
     torch.use_deterministic_algorithms(True)
-    dsetup = setup_torch_distributed(backend=backend, port=port)
+    dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
     rank = dsetup['rank']
     world_size = dsetup['world_size']
     local_rank = dsetup['local_rank']
