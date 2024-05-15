@@ -22,7 +22,7 @@ try:
 except (ImportError, ModuleNotFoundError):
     STYLES = {}
 
-from enrich import get_logger
+from ezpz.log import get_logger
 # try:
 #     import matplotx
 #     MATPLOTX = True

@@ -16,8 +16,6 @@ from typing import Any, Callable, Optional, Sequence, Union
 from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
 import rich.repr
-# from rich.style import Style
-# from rich.syntax import Syntax
 from rich.text import Text
 from rich.tree import Tree
 
@@ -174,7 +172,7 @@ def print_json(
             Defaults to None.
         sort_keys (bool, optional): Sort dictionary keys. Defaults to False.
     """
-    from enrich.console import get_console
+    from ezpz.log.console import get_console
     from rich.json import JSON
     console = get_console() if console is None else console
     if json_str is None:
@@ -220,14 +218,14 @@ def print_config(cfg: Union[dict, str]) -> None:
     #     jstr = json.dumps(cfg, indent=4)
     # else:
     #     jstr = cfg
-    from enrich.handler import RichHandler as EnrichHandler
+    from ezpz.log.handler import RichHandler as EnrichHandler
     from rich.logging import RichHandler
     console = None
     for handler in log.handlers:
         if isinstance(handler, (RichHandler, EnrichHandler)):
             console = handler.console
     if console is None:
-        from enrich.console import get_console
+        from ezpz.log.console import get_console
         console = get_console()
     # console.print_json(data=cfg, indent=4, highlight=True)
     print_json(data=cfg, console=console, indent=4, highlight=True)
@@ -380,14 +378,10 @@ def print_config_tree(
     - resolve: Whether to resolve reference fields of DictConfig.
     - save_to_file: Whether to export config to the hydra output folder.
     """
-    # from enrich.console import get_console
     from rich.console import Console
-    # from enrich.console import get_width()
-    from enrich.config import STYLES
+    from ezpz.log.config import STYLES
     from rich.theme import Theme
-    # from enrich.console import get_theme
 
-    # console = get_console(record=True)  # , width=min(200))
     name = cfg.get('_target_', 'cfg')
     console = Console(record=True, theme=Theme(STYLES))
     tree = Tree(label=name, highlight=highlight)
@@ -415,20 +409,9 @@ def print_config_tree(
                 )
             )
             branch.add(Text(branch_content, style="red"))
-            # branch.add(
-            #     Text(
-            #         branch_content,
-            #         style="magenta",
-            #         # style=Style(color="magenta", bold=True),
-            #     ),
-            #     highlight=highlight,
-            # )
         else:
             branch_content = str(config_group)
             branch.add(Text(branch_content, style="blue"))
-        # branch.add(Syntax(branch_content, "yaml"), highlight=highlight)
-        # branch.add(Text(branch_content))
-    # print config tree
     if verbose or save_to_file:
         console.print(tree)
         if save_to_file:
@@ -437,17 +420,4 @@ def print_config_tree(
                 if outfile is None else Path(outfile)
             )
             console.save_text(outfpath.as_posix())
-            # with outfpath.open('w') as f:
-            #     rich.print(tree, file=f)
-        # console.print(tree)
-        # rich.print(tree)
-    # save config tree to file
-    # if save_to_file:
-    #     outfpath = (
-    #         Path(os.getcwd()).joinpath('config_tree.log')
-    #         if outfile is None else Path(outfile)
-    #     )
-    #     console.save_text(outfpath)
-    #     with outfpath.open('w') as f:
-    #         rich.print(tree, file=f)
     return tree
