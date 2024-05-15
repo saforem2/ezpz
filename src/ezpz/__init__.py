@@ -2,6 +2,7 @@
 ezpz/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
+from mpi4py import MPI
 import logging
 import logging.config
 import os
@@ -10,7 +11,6 @@ from typing import Any, Optional
 from typing import Union
 
 from ezpz.log.console import get_console, is_interactive
-from mpi4py import MPI
 import numpy as np
 from rich.console import Console
 from rich.logging import RichHandler
