@@ -2,7 +2,6 @@
 ezpz/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
-from mpi4py import MPI
 import logging
 import logging.config
 import os
@@ -16,6 +15,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 import torch
 # import tqdm
+from mpi4py import MPI
 
 from ezpz import dist
 from ezpz.configs import (
@@ -136,12 +136,14 @@ except Exception:
 
 log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
-log.setLevel('INFO')
+# log.setLevel('INFO')
 logging.getLogger('sh').setLevel('WARNING')
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
+
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 ScalarLike = Union[int, float, bool, np.floating]
 

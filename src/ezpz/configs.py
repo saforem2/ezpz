@@ -119,7 +119,7 @@ def load_ds_config(
 def get_logging_config() -> dict:
     # import logging.config
     import yaml
-    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'enrich.yaml')
+    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'custom.yaml')
     with cfp.open('r') as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
     return config

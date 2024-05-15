@@ -4,13 +4,14 @@ ezpz/utils.py
 import h5py
 import xarray as xr
 from typing import Optional
+from ezpz import RANK
 from ezpz.configs import PathLike
 from pathlib import Path
 
 import logging
 
 log = logging.getLogger(__name__)
-log.setLevel("INFO")
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 
 def save_dataset(
