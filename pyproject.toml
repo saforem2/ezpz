@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ezpz"
-description = '2ez'
+description = 'Distributed Training, ezpz.'
 readme = "./docs/README.md"
 requires-python = ">=3.8"
 license = ""
@@ -29,19 +29,21 @@ dependencies = [
   "plotext",
   "ml_dtypes",
   "jax",
+  "tqdm",
   "jaxlib",
   "jaxtyping",
   "sh",
   "joblib",
   "rich",
   "tensorboard",
+  "seaborn",
+  "omegaconf",
   "sentencepiece",
   "ipython",
   "hydra-core",
   "wandb",
   "hydra-colorlog",
-  "ambivalent @ git+https://github.com/saforem2/ambivalent",
-  "enrich @ git+https://github.com/saforem2/enrich",
+  "ambivalent",
 ]
 
 dynamic = ["version"]
