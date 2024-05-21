@@ -2,6 +2,10 @@
 ezpz/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
+import socket
+if socket.gethostname().startswith('x3'):
+    from mpi4py import MPI
+
 import logging
 import logging.config
 import os
@@ -15,7 +19,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 import torch
 # import tqdm
-from mpi4py import MPI
+# from mpi4py import MPI
 
 from ezpz import dist
 from ezpz.configs import (
@@ -140,6 +144,7 @@ log = logging.getLogger(__name__)
 logging.getLogger('sh').setLevel('WARNING')
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
+from mpi4py import MPI  # noqa: E402
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
