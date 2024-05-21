@@ -5,6 +5,7 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import os
+import ezpz as ez
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple
@@ -12,8 +13,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from ezpz import get_timestamp
+# from ezpz import get_timestamp
 import xarray as xr
+import logging
 
 try:
     import ambivalent
@@ -22,19 +24,22 @@ try:
 except (ImportError, ModuleNotFoundError):
     STYLES = {}
 
-from ezpz.log import get_logger
+# from ezpz.log import get_logger
 # try:
 #     import matplotx
 #     MATPLOTX = True
 # except (ImportError, ModuleNotFoundError):
 #     MATPLOTX = False
 
+RANK = ez.get_rank()
 
 # warnings.filterwarnings('ignore')
 
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+
+# log = get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 

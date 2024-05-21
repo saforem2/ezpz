@@ -4,6 +4,7 @@ history.py
 Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
+import ezpz as ez
 import logging
 import logging.config
 from contextlib import ContextDecorator
@@ -12,7 +13,7 @@ from pathlib import Path
 import time
 from typing import Any, Optional, Union
 
-from ezpz import get_logging_config
+# from ezpz import get_logging_config
 from ezpz.configs import PathLike
 from ezpz.plot import plot_dataset
 from ezpz.utils import save_dataset
@@ -28,6 +29,8 @@ from jaxtyping import Array, Float, Scalar, PyTree, ScalarLike
 from ezpz import grab_tensor
 import ezpz.plot as ezplot
 
+RANK = ez.get_rank()
+
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[torch.Tensor, np.ndarray, list]
 # ScalarLike = Union[float, int, bool, np.floating, np.integer]
@@ -41,10 +44,10 @@ PT_FLOAT = torch.get_default_dtype()
 
 # log = logging.getLogger(__name__)
 
-log_config = logging.config.dictConfig(get_logging_config())
+# log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
 
-log.setLevel('INFO')
+log.setLevel('INFO') if RANK == 0 else log.setLevel("CRITICAL")
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
