@@ -81,10 +81,10 @@ exclude = [
 allow-direct-references = true
 
 
-[tool.hatch.build.targets.sdist]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/ezpz"]
+# [tool.hatch.build.targets.sdist]
+#
+# [tool.hatch.build.targets.wheel]
+# packages = ["src/ezpz"]
 
 [tool.hatch.envs.default]
 dependencies = [
