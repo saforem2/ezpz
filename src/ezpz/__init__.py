@@ -6,20 +6,16 @@ import socket
 if socket.gethostname().startswith('x3'):
     from mpi4py import MPI
 
+import torch
 import logging
 import logging.config
 import os
 import re
+
+import numpy as np
+
 from typing import Any, Optional
 from typing import Union
-
-from ezpz.log.console import get_console, is_interactive
-import numpy as np
-from rich.console import Console
-from rich.logging import RichHandler
-import torch
-# import tqdm
-# from mpi4py import MPI
 
 from ezpz import dist
 from ezpz.configs import (
@@ -45,11 +41,11 @@ from ezpz.configs import (
     print_config_tree,
 )
 from ezpz.dist import (
-    build_mpiexec_thetagpu,
+    # build_mpiexec_thetagpu,
     check,
     cleanup,
-    get_cobalt_nodefile,
-    get_cobalt_resources,
+    # get_cobalt_nodefile,
+    # get_cobalt_resources,
     get_cpus_per_node,
     get_dist_info,
     get_gpus_per_node,
@@ -67,7 +63,7 @@ from ezpz.dist import (
     include_file,
     init_deepspeed,
     init_process_group,
-    inspect_cobalt_running_job,
+    # inspect_cobalt_running_job,
     print_dist_setup,
     query_environment,
     run_bash_command,
@@ -124,6 +120,13 @@ try:
 except Exception:
     wandb = None
 
+from rich.console import Console
+from rich.logging import RichHandler
+from ezpz.log.console import get_console, is_interactive
+# import tqdm
+# from mpi4py import MPI
+
+
 # import importlib.util
 # import sys
 
@@ -158,7 +161,8 @@ __all__ = [
     "BIN_DIR",
     "CONF_DIR",
     "FRAMEWORKS",
-    "GETJOBENV", "HERE",
+    "GETJOBENV",
+    "HERE",
     "LOGS_DIR",
     "OUTPUTS_DIR",
     "PROJECT_DIR",
@@ -168,13 +172,13 @@ __all__ = [
     "SAVEJOBENV",
     "SCHEDULERS",
     "TrainConfig",
-    "build_mpiexec_thetagpu",
+    # "build_mpiexec_thetagpu",
     "check",
     "cleanup",
     "command_exists",
     "dist",
-    "get_cobalt_nodefile",
-    "get_cobalt_resources",
+    # "get_cobalt_nodefile",
+    # "get_cobalt_resources",
     "get_cpus_per_node",
     "get_dist_info",
     "get_gpus_per_node",
@@ -197,7 +201,7 @@ __all__ = [
     "include_file",
     "init_deepspeed",
     "init_process_group",
-    "inspect_cobalt_running_job",
+    # "inspect_cobalt_running_job",
     "load_ds_config",
     "loadjobenv",
     "print_config_tree",
@@ -314,25 +318,25 @@ def get_rich_logger(
     return log
 
 
-def _get_file_logger_old(
-        name: Optional[str] = None,
-        level: str = 'INFO',
-        rank_zero_only: bool = True,
-        fname: Optional[str] = None,
-) -> logging.Logger:
-    import logging
-    fname = 'output' if fname is None else fname
-    log = logging.getLogger(name)
-    fh = logging.FileHandler(f"{fname}.log")
-    log.setLevel(level)
-    fh.setLevel(level)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter(
-        "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-    )
-    fh.setFormatter(formatter)
-    log.addHandler(fh)
-    return log
+# def _get_file_logger_old(
+#         name: Optional[str] = None,
+#         level: str = 'INFO',
+#         rank_zero_only: bool = True,
+#         fname: Optional[str] = None,
+# ) -> logging.Logger:
+#     import logging
+#     fname = 'output' if fname is None else fname
+#     log = logging.getLogger(name)
+#     fh = logging.FileHandler(f"{fname}.log")
+#     log.setLevel(level)
+#     fh.setLevel(level)
+#     # create formatter and add it to the handlers
+#     formatter = logging.Formatter(
+#         "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+#     )
+#     fh.setFormatter(formatter)
+#     log.addHandler(fh)
+#     return log
 
 
 def get_enrich_logging_config_as_yaml(
@@ -353,35 +357,6 @@ def get_enrich_logging_config_as_yaml(
     disable_existing_loggers: false
     ...
     """
-
-
-# def get_logging_config_as_yaml(level: str = 'DEBUG') -> str:
-#     # >>> import yaml
-#     # >>>
-#     # >>> names_yaml = """
-#     # ... - 'eric'
-#     # ... - 'justin'
-#     # ... - 'mary-kate'
-#     # ... """
-#     return fr"""
-#     handlers:
-#       term:
-#         class: ezpz.log.handler.RichHandler
-#         show_time: true
-#         show_level: true
-#         enable_link_path: false
-#         level: {level}
-#     root:
-#       handlers: [term]
-#     disable_existing_loggers: false
-#     """
-#
-
-# def get_logging_config(level: str = 'INFO') -> logging.config.dictConfig:
-#     config = yaml.safe_load(get_logging_config_as_yaml(level=level))
-#     # with Path('logconf.yaml').open('r') as stream:
-#     #     config = yaml.load(stream, Loader=yaml.FullLoader)
-#     return logging.config.dictConfig(config)
 
 
 def get_logger_new(
