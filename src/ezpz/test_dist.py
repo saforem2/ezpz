@@ -73,15 +73,23 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
 
-def plot_losses(losses: dict) -> None:
+def tplot_dict(
+        data: dict,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        outfile: Optional[str | Path] = None,
+) -> None:
     import plotext as pltx
     # y = list(losses.values())
     pltx.theme('clear')
-    pltx.scatter(list(losses.values()))
+    pltx.scatter(list(data.values()))
     pltx.show()
-    pltx.save_fig("test_dist_losses.txt")
-    pltx.ylabel("loss")
-    pltx.xlabel("iteration")
+    if ylabel is not None:
+        pltx.ylabel("loss")
+    if xlabel is not None:
+        pltx.xlabel("iteration")
+    if outfile is not None:
+        pltx.save_fig(outfile)
 
 
 def main():
@@ -154,7 +162,12 @@ def main():
             ])
         )
     if RANK == 0:
-        plot_losses(losses)
+        tplot_dict(
+            losses,
+            xlabel="iter",
+            ylabel="loss",
+            outfile="./test_dist_loss.txt",
+        )
 
 
 if __name__ == '__main__':
