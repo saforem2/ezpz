@@ -19,6 +19,7 @@ function getPBSenv() {
         # shellcheck source=${HOME}/.pbsenv
         source "${PBS_ENV_FILE}"
         export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
+        export ezlaunch="${DIST_LAUNCH}"
     else
         echo "Skipping getPBSenv() on $(hostname)"
     fi
@@ -30,6 +31,7 @@ function getCOBALTenv() {
         # shellcheck source=${HOME}/.cobaltenv
         source "${COBALT_ENV_FILE}"
         export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
+        export ezlaunch="${DIST_LAUNCH}"
     else
         echo "Skipping getCOBALTenv() on $(hostname)"
     fi
@@ -41,6 +43,7 @@ function getSLURMenv() {
         # shellcheck source="${HOME}/.slurmenv"
         source "${SLURM_ENV_FILE}"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
+        export ezlaunch="${DIST_LAUNCH}"
     else
         echo "Skipping getSLURMenv() on $(hostname)"
     fi
@@ -74,6 +77,7 @@ function getJOBenv() {
         exit 1
     fi
     alias launch="${DIST_LAUNCH}"
+    export ezlaunch="${DIST_LAUNCH}"
     export HOSTFILE="${HOSTFILE}"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
