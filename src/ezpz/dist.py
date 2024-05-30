@@ -1068,17 +1068,15 @@ def get_pbs_jobid_from_qstat() -> int:
 
 def get_pbs_nodefile_from_qstat() -> Path:
     assert get_scheduler() == 'PBS'
+    nodefile = os.environ.get("PBS_NODEFILE", None)
+    if nodefile is not None and (nf := Path(nodefile)).is_file():
+        return nf
     pbs_jobid = get_pbs_jobid_from_qstat()
     matches = [
         i for i in Path('/var/spool/pbs/aux/').rglob(f'*{pbs_jobid}*')
         if i.is_file()
     ]
     assert len(matches) == 1
-    # if len(matches) > 1:
-    #     raise RuntimeError(
-    #         'More than one candidate PBS_NODEFILE found? '
-    #         f'{matches=}'
-    #     )
     return matches[0]
 
 
@@ -1086,10 +1084,12 @@ def get_pbs_launch_info(
         hostfile: Optional[str | Path]  = None  # type:ignore[reportDeprecated]
 ) -> dict[str, str]:
     assert get_scheduler() == 'PBS'
-    hostfile = (
-            get_pbs_nodefile_from_qstat() if hostfile is None else
-            Path(hostfile)
-    )
+    hostfile = os.environ.get("PBS_NODEFILE", None)
+    if hostfile is None:
+        hostfile = (
+                get_pbs_nodefile_from_qstat() if hostfile is None else
+                Path(hostfile)
+        )
     assert hostfile is not None
     hf = Path(hostfile)
     assert hostfile is not None and hf.is_file()
