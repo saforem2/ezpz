@@ -10,18 +10,18 @@ from pathlib import Path
 from typing import Optional, Any
 # from rich import print_json
 
-from ezpz import (
-    get_dist_info,
-)
-from ezpz.dist import (
-    get_pbs_env,
-    get_pbs_launch_info,
-)
+# from ezpz import (
+#     get_dist_info,
+# )
+# from ezpz.dist import (
+#     # get_pbs_env,
+#     # get_pbs_launch_info,
+# )
 from ezpz.configs import (
-    get_logging_config,
+#     # get_logging_config,
     get_scheduler,
-    SCHEDULERS,
-    PathLike
+#     SCHEDULERS,
+#     # PathLike
 )
 
 # log_config = logging.config.dictConfig(get_logging_config())
@@ -32,6 +32,7 @@ SCHEDULER = get_scheduler()
 
 
 def check_scheduler(scheduler: Optional[str] = None) -> bool:
+    from ezpz.configs import SCHEDULERS
     scheduler = SCHEDULER if scheduler is None else scheduler
     if scheduler is not None and len(scheduler) > 0:
         assert scheduler.upper() in SCHEDULERS.values()
@@ -42,6 +43,7 @@ def check_scheduler(scheduler: Optional[str] = None) -> bool:
 
 # def get_jobdir_from_env(scheduler: Optional[str] = None) -> Path:
 def get_jobdir_from_env() -> Path:
+    from ezpz.dist import get_pbs_env
     pbs_env = get_pbs_env()
     jobid = pbs_env["PBS_JOBID"].split('.')[0]
     jobdir = Path.home() / f'{SCHEDULER}-jobs' / f'{jobid}'
@@ -80,7 +82,7 @@ def get_jobfile_json() -> Path:
 
 
 def get_jobenv(verbose: bool = False) -> dict:
-    from ezpz.dist import get_pbs_launch_info
+    from ezpz.dist import get_pbs_launch_info, get_dist_info, get_pbs_env
     jobenv: dict[str, str | int | list[Any]] = get_dist_info(framework='pytorch', verbose=verbose)
     if SCHEDULER.lower() == 'pbs':
         jobenv |= get_pbs_env()
@@ -234,7 +236,20 @@ def savejobenv_yaml(
     return jobenv
 
 
-def savejobenv():
+def get_launch_cmd(verbose: bool = True):
+    lcmd = (jobenv := get_jobenv()).get(
+        "LAUNCH_CMD",
+        jobenv.get('launch_cmd', os.environ.get("DIST_LAUNCH", None))
+    )
+    if lcmd is not None and verbose:
+        log.critical('\n'.join([
+            f"To launch across ALL GPUs in your job, use:",
+            f"LAUNCH_CMD={lcmd}"
+        ]))
+    return lcmd
+
+
+def savejobenv(verbose: bool = True):
     jobenv: dict[str, Any] = get_jobenv()
     assert len(jobenv.keys()) > 0
     # jobid = get_jobid()
@@ -257,15 +272,17 @@ def savejobenv():
     _ = save_to_dotenv_file(jobenv)
     for key, val in jobenv.items():
         os.environ[key] = f'{val}'
-    log.info(f'jobenv={json.dumps(jobenv, indent=4, sort_keys=True)}')
+    if verbose:
+        log.info(f'jobenv={json.dumps(jobenv, indent=4, sort_keys=True)}')
     log.info(' '.join([
         f'Writing {SCHEDULER} env vars to ',
         f'{jobdir} / jobenv' + '{.sh, .yaml, .json}'
     ]))
-    log.critical(
+    log.warning(
         f'Run: `source ./.jobenv` in your current shell to set job variables'
     )
-    # ---------------------------------------------------
+    if verbose:
+        lcmd = get_launch_cmd(verbose=verbose)
 
 
 def get_jobdirs_from_jobslog() -> list[str]:
@@ -277,9 +294,7 @@ def get_jobdirs_from_jobslog() -> list[str]:
     return jobdirs
 
 
-def get_jobdir_from_jobslog(
-        idx: int = -1,
-) -> str:
+def get_jobdir_from_jobslog(idx: int = -1) -> str:
     # return Path(jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
     # jobdirs = get_jobdirs_from_jobslog()
     # if len(jobdirs) > 0:
@@ -306,6 +321,7 @@ def loadjobenv_from_yaml(
 
 
 def loadjobenv(jobdir: Optional[str | Path] = None) -> dict[str, str]:
+    from ezpz.dist import get_pbs_launch_info, get_dist_info
     jobenv = {}
     jobdir = Path(
         get_jobdir_from_jobslog(-1) if jobdir is None else jobdir
@@ -348,7 +364,37 @@ if __name__ == '__main__':
     pbsnf = Path(os.environ.get('PBS_NODEFILE', ''))
     if (PBS_JOBID is not None and pbsnf.is_file()):
         log.info(f'Caught {PBS_JOBID=}, {pbsnf=} from env. Saving jobenv!')
-        savejobenv()
+        savejobenv(verbose=False)
     else:
         log.info('Didnt catch PBS_JOBID in env, loading jobenv!')
         _ = loadjobenv()
+
+    from ezpz.dist import get_dist_info
+    dinfo = get_dist_info()
+    log.info(
+        '\n'.join(
+            ["[DIST_INFO]:"]
+            + [f"  • {k}={v}" for k, v in dinfo.items()]
+            + [40 * '#']
+        )
+    )
+    _ = get_launch_cmd(verbose=True)
+    # ┌──────────────────────────────────────────────────────────────────
+    # │ [Hosts]:
+    # /bin/cat: /var/spool/pbs/aux/9002883.amn-0001: No such file or directory
+    # └──────────────────────────────────────────────────────────────────
+    # ┌──────────────────────────────────────────────────────────────────
+    # │ [DIST INFO]:
+    # │     • Loading job env from: /home/foremans/.pbsenv
+    # │     • HOSTFILE: /var/spool/pbs/aux/9002883.amn-0001
+    # │     • NHOSTS: 4
+    # │     • NGPU_PER_HOST: 12
+    # │     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
+    # │     • WORLD_SIZE: 48
+    # │     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/9002883.amn-0001
+    # └──────────────────────────────────────────────────────────────────
+    # ┌──────────────────────────────────────────────────────────────────
+    # │ [Launch]:
+    # │     • Use: 'launch' (=mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/9002883.amn-0001)
+    # │       to launch job
+    # └──────────────────────────────────────────────────────────────────
