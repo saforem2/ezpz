@@ -2,11 +2,23 @@
 #set -euxo pipefail
 #IFS=$'\n\t'
 
+RESET="\e[0m"
+BLACK="\e[1;30m"
+RED="\e[1;31m"
+GREEN="\e[1;32m"
+YELLOW="\e[1;33m"
+BLUE="\e[1;34m"
+MAGENTA="\e[1;35m"
+CYAN="\e[1;36m"
+WHITE="\e[1;37m"
 
 HOSTNAME=$(hostname)
 PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
+
+HEADER="┌─────────────────────────────────────────────────────────────────────┐\n"
+FOOTER="└─────────────────────────────────────────────────────────────────────┘\n"
 
 function whereAmI() {
     python3 -c 'import os; print(os.getcwd())'
@@ -55,8 +67,6 @@ function getCOBALT_NODEFILE() {
 function savePBSenv() {
     # if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
     if [[ -n $(printenv | grep PBS_JOBID ) ]]; then
-        echo "┌───────────────────────────────────────────────────────────────────"
-        echo "│ Writing PBS vars to ${PBS_ENV_FILE}"
         PBS_VARS=$(env | grep PBS)
         echo "${PBS_VARS[*]}" > "${PBS_ENV_FILE}"
         # export FNAME="PBS_NODEFILE"
@@ -71,7 +81,6 @@ function savePBSenv() {
 
 function saveSLURMenv() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-        echo "┌───────────────────────────────────────────────────────────────────"
         echo "│ Saving SLURM_* to ${SLURM_ENV_FILE}"
         SLURM_VARS=$(env | grep SLU)
         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
@@ -103,6 +112,12 @@ function saveSLURMenv() {
 # }
 
 function setupHost() {
+    # printf "┌─────────────────────────────────────────────────────────────────────┐\n"
+    printf "${HEADER}"
+    printf "│ [${YELLOW}savejobenv${RESET}]:\n"
+    printf "│     • Writing PBS vars to: ${YELLOW}${PBS_ENV_FILE}${RESET}\n"
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────┘\n"
     if [[ $(hostname) == x3* ]]; then
         export GPU_TYPE="NVIDIA"
         export HOSTFILE="${PBS_NODEFILE}"
@@ -136,80 +151,94 @@ function setupHost() {
     fi
 }
 
-function setup() {
-    # if [[ $(hostname) == x3* ]]; then
-    #     export HOSTFILE="${PBS_NODEFILE}"
-    #     savePBSenv
-    # elif [[ $(hostname) == x1* ]]; then
-    #     export HOSTFILE="${PBS_NODEFILE}"
-    #     savePBSenv
-    # elif [[ $(hostname) == x4* ]]; then
-    #     export HOSTFILE="${PBS_NODEFILE}"
-    #     savePBSenv
-    if [[ -n "${PBS_NODEFILE}" ]]; then
-        export HOSTFILE="${PBS_NODEFILE}"
-        savePBSenv
-    elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
-        export HOSTFILE="${HOME}/.slurm-nodefile"
-        saveSLURMenv
-    elif [[ $(hostname) == thetagpu* ]]; then
-        export HOSTFILE="${COBALT_NODEFILE}"
-        saveCOBALTenv
-    # elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
-    #     export HOSTFILE="${HOME}/.slurm-nodefile"
-    #     saveSLURMenv
-    else
-        echo "│ Unexpected hostname: ${HOSTNAME}"
-        HOSTFILE="hostfile"
-        hostname > "${HOSTFILE}"
-    fi
-    NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
-    NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
-    NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
-    HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
-    export NHOSTS="${NHOSTS}"
-    export NGPU_PER_HOST="${NGPU_PER_HOST}"
-    export NGPUS="${NGPUS}"
-    export WORLD_SIZE="${NGPUS}"
-    echo "│ HOSTFILE: ${HOSTFILE}"
-    echo "│ NHOSTS: ${NHOSTS}"
-    echo "│ $(nvidia-smi -L | wc -l) GPUs per host"
-    echo "│ ${NGPUS} GPUs total"
-    echo "└───────────────────────────────────────────────────────────────────"
-
-    {
-        echo "export HOSTFILE=${HOSTFILE}"
-        echo "export NHOSTS=${NHOSTS}"
-        echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
-        echo "export NGPUS=${NGPUS}"
-        echo "alias LAUNCH=${LAUNCH}"
-    } >> "${JOBENV_FILE}"
-
-    export LAUNCH="${DIST_LAUNCH}"
-    export ezlaunch="${DIST_LAUNCH}"
-    echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
-    alias launch="${DIST_LAUNCH}"
-    echo "┌───────────────────────────────────────────────────────────────────"
-    echo "│ [DIST INFO]:"
-    echo "│   • Writing Job info to ${JOBENV_FILE}"
-    echo "│     • HOSTFILE: ${HOSTFILE}"
-    echo "│     • NHOSTS: $NHOSTS "
-    echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
-    echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
-    echo "│ [Hosts]:"
-    echo "│       • ${HOSTS[*]}"
-    echo "│ [Launch]:"
-    echo "│     • Use: 'launch' (=${LAUNCH})"
-    echo "│       to launch job"
-    echo "└───────────────────────────────────────────────────────────────────"
-    echo "┌────────────────────────────────────────────────────────────────────────────────"
-    echo "│ YOU ARE HERE: $(whereAmI)"
-    echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
-    echo "└────────────────────────────────────────────────────────────────────────────────"
-    export NHOSTS="${NHOSTS}"
-    export NGPU_PER_HOST="${NGPU_PER_HOST}"
-    export NGPUS="${NGPUS}"
+function printHosts() {
+    counter=0
+    for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
+        # printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
+        printf "│     • [host:%s] - ${CYAN}%s${RESET}\n" "${counter}" "${f}"
+        counter=$((counter+1))
+    done
 }
+
+
+# function setup() {
+#     echo "┌───────────────────────────────────────────────────────────────────"
+#     if [[ -n "${PBS_NODEFILE}" ]]; then
+#         export HOSTFILE="${PBS_NODEFILE}"
+#         savePBSenv
+#     elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
+#         export HOSTFILE="${HOME}/.slurm-nodefile"
+#         saveSLURMenv
+#     elif [[ $(hostname) == thetagpu* ]]; then
+#         export HOSTFILE="${COBALT_NODEFILE}"
+#         saveCOBALTenv
+#     else
+#         echo "│ Unexpected hostname: ${HOSTNAME}"
+#         HOSTFILE="hostfile"
+#         hostname > "${HOSTFILE}"
+#     fi
+#     NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
+#     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
+#     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
+#     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
+#     export NHOSTS="${NHOSTS}"
+#     export NGPU_PER_HOST="${NGPU_PER_HOST}"
+#     export NGPUS="${NGPUS}"
+#     export WORLD_SIZE="${NGPUS}"
+#     echo "│ HOSTFILE: ${HOSTFILE}"
+#     echo "│ NHOSTS: ${NHOSTS}"
+#     echo "│ $(nvidia-smi -L | wc -l) GPUs per host"
+#     echo "│ ${NGPUS} GPUs total"
+#     echo "└───────────────────────────────────────────────────────────────────"
+#     {
+#         echo "export HOSTFILE=${HOSTFILE}"
+#         echo "export NHOSTS=${NHOSTS}"
+#         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
+#         echo "export NGPUS=${NGPUS}"
+#         echo "alias LAUNCH=${LAUNCH}"
+#     } >> "${JOBENV_FILE}"
+#     export LAUNCH="${DIST_LAUNCH}"
+#     export ezlaunch="${DIST_LAUNCH}"
+#     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
+#     alias launch="${DIST_LAUNCH}"
+#     # HOSTS=$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")
+#     echo "┌──────────────────────────────────────────────────────────────────"
+#     echo "│ [HOSTS]: "
+#     printHosts
+#     echo "└──────────────────────────────────────────────────────────────────"
+#     echo "┌───────────────────────────────────────────────────────────────────"
+#     echo "│ [DIST INFO]:"
+#     echo "│   • Writing Job info to ${JOBENV_FILE}"
+#     echo "│     • HOSTFILE: ${HOSTFILE}"
+#     echo "│     • NHOSTS: $NHOSTS "
+#     echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
+#     echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
+#     printf "│     • \033[0;31mWORLD_SIZE\033[0m: \033[0;36m%s\033[0m\n" "${WORLD_SIZE}"
+#     printf "│     • DIST_LAUNCH: \033[33;1m%s\033[0m\n" "${DIST_LAUNCH}"
+#     # echo "│     • Defining alias: $(which launch)"
+#     # printf "\033[0;32mHello World! green\033[0m\n"
+#     # printf "│     • \033[0:33mDefining alias\033[0m: %s\n" "$(which launch)"
+#     # printf "│     • Defining alias: %s\n" "$(which launch)"
+#     echo "└──────────────────────────────────────────────────────────────────"
+#     echo "┌──────────────────────────────────────────────────────────────────"
+#     echo "│ [LAUNCH]:"
+#     printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${DIST_LAUNCH}"
+#     echo "│       to launch job"
+#     echo "└──────────────────────────────────────────────────────────────────"
+#     # echo "│ [Hosts]:"
+#     # echo "│       • ${HOSTS[*]}"
+#     # echo "│ [Launch]:"
+#     # echo "│     • Use: 'launch' (=${LAUNCH})"
+#     # echo "│       to launch job"
+#     # echo "└───────────────────────────────────────────────────────────────────"
+#     # echo "┌────────────────────────────────────────────────────────────────────────────────"
+#     # echo "│ YOU ARE HERE: $(whereAmI)"
+#     # echo "│ Run 'source ezpz/src/ezpz/bin/getjobenv' in a NEW SHELL to automatically set env vars      "
+#     # echo "└────────────────────────────────────────────────────────────────────────────────"
+#     export NHOSTS="${NHOSTS}"
+#     export NGPU_PER_HOST="${NGPU_PER_HOST}"
+#     export NGPUS="${NGPUS}"
+# }
 
 
 
@@ -244,28 +273,20 @@ function getNumHosts() {
     # [ -n "${HOSTFILE}" ] && export NHOSTS=$(wc -l < $HOSTFILE) || export NHOSTS=${SLURM_NNODES:-1}
 }
 
-function printHosts() {
-    counter=0
-    for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
-        printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
-        counter=$((counter+1))
-    done
-}
 
 function writeJobInfo() {
     getNumHosts
     getNumGPUs
     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-    # HOSTS=$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")
     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
-    echo "│ HOSTFILE: ${HOSTFILE}"
-    echo "│ NHOSTS: ${NHOSTS}"
-    echo "│ NGPU_PER_HOST: ${NGPU_PER_HOST} GPUs per host"
-    echo "│ NGPUS: ${NGPUS} GPUs total"
-    echo "└───────────────────────────────────────────────────────────────────"
+    # echo "│   • HOSTFILE: ${HOSTFILE}"
+    # echo "│   • NHOSTS: ${NHOSTS}"
+    # echo "│   • NGPU_PER_HOST: ${NGPU_PER_HOST} GPUs per host"
+    # echo "│   • NGPUS: ${NGPUS} GPUs total"
+    # echo "└───────────────────────────────────────────────────────────────────"
     {
         echo "export HOSTFILE=${HOSTFILE}"
         echo "export NHOSTS=${NHOSTS}"
@@ -277,28 +298,33 @@ function writeJobInfo() {
     export ezlaunch="${DIST_LAUNCH}"
     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
-    echo "┌───────────────────────────────────────────────────────────────────"
-    echo "│ [DIST INFO]:"
-    echo "│   • Writing Job info to ${JOBENV_FILE}"
-    echo "│     • HOSTFILE: ${HOSTFILE}"
-    echo "│     • NHOSTS: $NHOSTS "
-    echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
-    echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
-    echo "└──────────────────────────────────────────────────────────────────"
-    echo "┌──────────────────────────────────────────────────────────────────"
-    echo "│ [Hosts]:"
-    echo "│       • ${HOSTS[*]}"
+    # printf "┌─────────────────────────────────────────────────────────────────────\n"
+    printf "${HEADER}"
+    printf "│ [${CYAN}HOSTS${RESET}]:\n"
     printHosts
-    echo "└──────────────────────────────────────────────────────────────────"
-    echo "┌────────────────────────────────────────────────────────────────────────────────"
-    echo "│ YOU ARE HERE: $(whereAmI)"
-    echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
-    echo "└────────────────────────────────────────────────────────────────────────────────"
-    echo "┌──────────────────────────────────────────────────────────────────"
-    echo "│ [Launch]:"
-    printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${LAUNCH}"
-    echo "│       to launch job"
-    echo "└───────────────────────────────────────────────────────────────────"
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────\n"
+    # printf "┌─────────────────────────────────────────────────────────────────────\n"
+    printf "${HEADER}"
+    printf "│ [${MAGENTA}DIST INFO${RESET}]:\n"
+    printf "│     • HOSTFILE=${MAGENTA}${HOSTFILE}${RESET}\n"
+    printf "│     • NHOSTS=$NHOSTS\n"
+    printf "│     • NGPU_PER_HOST=$NGPU_PER_HOST\n"
+    printf "│     • NGPUS=${MAGENTA}$NGPUS${RESET}\n"
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────\n"
+    # printf "┌─────────────────────────────────────────────────────────────────────\n"
+    printf "${HEADER}"
+    printf "│ [${GREEN}LAUNCH${RESET}]:\n"
+    printf "│     • To launch across all available GPUs, use:\n"
+    printf "│       '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────\n"
+    # echo "┌────────────────────────────────────────────────────────────────────────────────"
+    # echo "│ YOU ARE HERE: $(whereAmI)"
+    # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
+    # echo "└────────────────────────────────────────────────────────────────────────────────"
+    # printf "│       to launch job across all ${NGPUS} GPUs\n"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
@@ -315,9 +341,11 @@ saveDeepSpeedEnv() {
 }
 
 
-setupHost # > /tmp/setupHost.log 2>&1
-writeJobInfo # > /tmp/writeJobInfo.log 2>&1
-setupHost
-writeJobInfo
-# saveDeepSpeedEnv
-# vim: ft=bash
+main() {
+    setupHost
+    writeJobInfo
+}
+
+
+main > /tmp/ezpz-main.log
+main
