@@ -373,9 +373,8 @@ if __name__ == '__main__':
     dinfo = get_dist_info()
     log.info(
         '\n'.join(
-            ["[DIST_INFO]:"]
+            ['\n', "[DIST_INFO]:"]
             + [f"  • {k}={v}" for k, v in dinfo.items()]
-            + [40 * '#']
         )
     )
     _ = get_launch_cmd(verbose=True)
