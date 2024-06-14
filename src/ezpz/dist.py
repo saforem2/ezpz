@@ -10,7 +10,6 @@ import logging.config
 import os
 from pathlib import Path
 import time
-import datetime
 from functools import wraps
 from typing import Any, Callable, Optional
 import socket
@@ -29,8 +28,8 @@ from ezpz.configs import (
     git_ds_info,
     PathLike,
     get_scheduler,
-    # get_logging_config,
 )
+# get_logging_config,
 
 try:
     import wandb
@@ -39,12 +38,12 @@ except Exception:
 
 
 try:
-    import intel_extension_for_pytorch as ipex        # type:ignore
+    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
 except Exception:
     ipex = None
 
 try:
-    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore
+    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
 except Exception:
     oneccl_bpt = None
 
@@ -61,7 +60,7 @@ ACCELERATOR_TYPE = "IntelGPU" if ipex is not None else (
     "NvidiaGPU" if (
         torch.cuda.is_available() and torch.cuda.device_count() > 0
     ) else (
-        "MPS" if torch.backends.mps.is_available()    # type:ignore
+        "MPS" if torch.backends.mps.is_available()
         else "CPU"
     )
 )
@@ -74,7 +73,7 @@ def seed_everything(seed: int):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    _ = torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
 
@@ -131,7 +130,7 @@ def timeit(func: Callable):
 
 
 def get_hosts_from_hostfile(
-        hostfile: Optional[PathLike] = None
+        hostfile: Optional[str | Path] = None  # type:ignore[reportDeprecated]
 ) -> tuple[str, list[str]]:
     hostname = get_hostname()
     hostfile = os.environ.get(
@@ -144,9 +143,10 @@ def get_hosts_from_hostfile(
             )
         )
     )
-    hostfile = '' if hostfile is None else hostfile
-    hosts = []
-    if hostfile is not None and Path(hostfile).is_file():
+    # hostfile = '' if hostfile is None else hostfile
+    hosts: list[str] = []
+    assert hostfile is not None
+    if Path(hostfile).is_file():
         if get_rank() == 0:
             log.debug(f'Reading hosts from {hostfile}')
         hpath = Path(hostfile).resolve().absolute()
@@ -163,7 +163,7 @@ def get_hostname() -> str:
         hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
     # except socket.herror as exc:
     except Exception:
-        from sh import hostname as sh_hostname  # type:ignore noqa
+        from sh import hostname as sh_hostname  # type:ignore[missingTypeStubs]
         hostname = sh_hostname()
         # if get_rank() == 0:
         #     log.debug('Unable to determine hostname with `socket`.')
@@ -583,30 +583,28 @@ def setup_torch(
 ) -> int:
     """Returns RANK"""
     import torch
-    # import torch.distributed as tdist
     device = get_torch_device()
-    # if torch.cuda.is_available() and device == 'cuda':
     if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
-        # from rich import log.info
         os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
         torch.backends.cudnn.deterministic = True     # type:ignore
         torch.backends.cudnn.benchmark = True         # type:ignore
         torch.backends.cudnn.allow_tf32 = True        # type:ignore
         torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
-    # try:
-    #     import intel_extension_for_pytorch as ipex
-    # except (ImportError, ModuleNotFoundError):
     torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
     rank = dsetup['rank']
     world_size = dsetup['world_size']
     local_rank = dsetup['local_rank']
-    os.environ['LOCAL_RANK'] = str(local_rank)
+    local_size = get_gpus_per_node()
+    num_nodes = get_num_nodes()
     os.environ['RANK'] = str(rank)
+    os.environ['LOCAL_RANK'] = str(local_rank)
+    os.environ['NUM_NODES'] = str(num_nodes)
+    os.environ['LOCAL_SIZE'] = str(local_size)
     os.environ['WORLD_SIZE'] = str(world_size)
-    nthreads = os.environ.get('OMP_NUM_THREADS', None)
-    if nthreads is not None:
-        torch.set_num_threads(int(nthreads))
+    # nthreads = os.environ.get('OMP_NUM_THREADS', None)
+    # if nthreads is not None:
+    #     torch.set_num_threads(int(nthreads))
     # if torch.cuda.is_available() and device == 'cuda':
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
     #     torch.cuda.set_device(local_rank)
@@ -618,6 +616,9 @@ def setup_torch(
     #     )
     if ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
         # log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
+        os.environ['CCL_LOCAL_RANK'] = str(local_rank)
+        os.environ['CCL_LOCAL_SIZE'] = str(local_size)
+        # return get_gpus_per_node() * get_num_nodes()
         torch.xpu.set_device(local_rank)  # type:ignore
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
@@ -666,10 +667,6 @@ def setup_tensorflow(
         tf.keras.mixed_precision.set_global_policy(
             'mixed_float16'
         )
-        # tf.keras.backend.set_floatx('float16')
-        # mixed_precision.set_global_policy('mixed_float16')
-    # else:
-    #     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
     if eager_mode is not None:
@@ -810,7 +807,7 @@ def setup_wandb(
         )
     )
     assert run is not None and run is wandb.run
-    run.log_code(HERE.as_posix(), include_fn=include_file)
+    # run.log_code(HERE.as_posix(), include_fn=include_file)
     log.info(f"W&B RUN: [{run.name}]({run.url})")
     run.config.update(
         {
@@ -820,7 +817,6 @@ def setup_wandb(
     run.config.update({'created_at': dstr})
     run.config.update({'world_size': get_world_size()})
     run.config.update({'outdir': os.getcwd()})
-    # wandb.run.config.update({'hostname': rank})
     if config is not None:
         if isinstance(config, DictConfig):
             cfg = OmegaConf.to_container(
@@ -1001,6 +997,9 @@ def get_gpus_per_node() -> int:
     #         'No {X, G}pus found; but _assert specified. Returning !!'
     #     )
     # log.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
+    ngpu_per_host = os.environ.get("NGPU_PER_HOST", None)
+    if ngpu_per_host is not None:
+        return int(ngpu_per_host)
     if torch.cuda.is_available():
         return torch.cuda.device_count()
     if ipex is not None:
@@ -1069,27 +1068,31 @@ def get_pbs_jobid_from_qstat() -> int:
 
 def get_pbs_nodefile_from_qstat() -> Path:
     assert get_scheduler() == 'PBS'
+    nodefile = os.environ.get("PBS_NODEFILE", None)
+    if nodefile is not None and (nf := Path(nodefile)).is_file():
+        return nf
     pbs_jobid = get_pbs_jobid_from_qstat()
     matches = [
         i for i in Path('/var/spool/pbs/aux/').rglob(f'*{pbs_jobid}*')
         if i.is_file()
     ]
     assert len(matches) == 1
-    # if len(matches) > 1:
-    #     raise RuntimeError(
-    #         'More than one candidate PBS_NODEFILE found? '
-    #         f'{matches=}'
-    #     )
     return matches[0]
 
 
 def get_pbs_launch_info(
-        hostfile: Optional[PathLike] = None
-) -> dict:
+        hostfile: Optional[str | Path]  = None  # type:ignore[reportDeprecated]
+) -> dict[str, str]:
     assert get_scheduler() == 'PBS'
+    hostfile = os.environ.get("PBS_NODEFILE", None)
     if hostfile is None:
-        hostfile = get_pbs_nodefile_from_qstat()
-    assert hostfile is not None and Path(hostfile).is_file()
+        hostfile = (
+                get_pbs_nodefile_from_qstat() if hostfile is None else
+                Path(hostfile)
+        )
+    assert hostfile is not None
+    hf = Path(hostfile)
+    assert hostfile is not None and hf.is_file()
     hfp = Path(hostfile)
     hosts = get_nodes_from_hostfile(hfp)
     hosts = [h.split('.')[0] for h in hosts]
@@ -1100,23 +1103,14 @@ def get_pbs_launch_info(
     world_size_total = get_world_size_total()
     if ngpus != world_size_total:
         log.critical('Disagreement in total world size!!')
-        log.critical(
-            f'{get_world_size(total=True)=}'
+        log.critical(' '.join([
+            f'{get_world_size(total=True)=}',
             f' vs. {get_world_size_total()=}'
-        )
-        # if ngpus != (ngpu_per_host * nhosts):
-        log.critical(
-            'Mismatch in `ngpu_per_host * nhosts` and `ngpus` '
+        ]))
+        log.critical(' '.join([
+            'Mismatch in `ngpu_per_host * nhosts` and `ngpus` ',
             f'{ngpus=} vs. {ngpu_per_host=} * {nhosts=}'
-        )
-    # launch_cmd = ' '.join([
-    #     'mpiexec',
-    #     '--verbose',
-    #     '--envall',
-    #     f'-n {ngpus}',
-    #     f'-ppn {ngpu_per_host}',
-    #     f'--hostfile {hfp.as_posix()}'
-    # ])
+        ]))
     launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
     return {
         'HOSTFILE': hfp.as_posix(),
@@ -1142,65 +1136,61 @@ def get_pbs_env(verbose: bool = False) -> dict[str, str]:
     hostfile = pbsenv.get('PBS_NODEFILE')
     if hostfile is None:
         hostfile = get_pbs_nodefile_from_qstat()
-    if hostfile is not None and (hfp := Path(hostfile)).is_file():
+    if (hfp := Path(hostfile)).is_file():
         launch_info = {
             f'{k.upper()}': f'{v}' for k, v in get_pbs_launch_info(hfp).items()
         }
         pbsenv |= launch_info
-        # os.environ |= launch_info
-    # dist_info = get_dist_info(framework='pytorch', verbose=verbose)
-    # dist_info.pop('')
-    # pbsenv |= {k: f'{v}' for k, v in dist_info.items()}
     os.environ |= pbsenv
     if verbose and get_rank() == 0:
         log.debug(f'pbsenv={json.dumps(pbsenv, indent=4, sort_keys=True)}')
     return pbsenv
 
 
-def get_cobalt_resources() -> dict:
-    cobalt_info = inspect_cobalt_running_job()
-    # cobalt_nodefile = get_cobalt_nodefile()
-    nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
-    gpus_per_node = get_gpus_per_node()
-    cobalt_info |= {
-        'nodes': nodes,
-        'num_nodes': len(nodes),
-        'gpus_per_node': gpus_per_node,
-        'num_gpus': len(nodes) * gpus_per_node,
-        'machine': 'ThetaGPU',
-    }
-    return cobalt_info
+# def get_cobalt_resources() -> dict:
+#     cobalt_info = inspect_cobalt_running_job()
+#     # cobalt_nodefile = get_cobalt_nodefile()
+#     nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
+#     gpus_per_node = get_gpus_per_node()
+#     cobalt_info |= {
+#         'nodes': nodes,
+#         'num_nodes': len(nodes),
+#         'gpus_per_node': gpus_per_node,
+#         'num_gpus': len(nodes) * gpus_per_node,
+#         'machine': 'ThetaGPU',
+#     }
+#     return cobalt_info
 
 
-def build_mpiexec_thetagpu():
-    jobenv = get_cobalt_resources()
-    return [
-        "mpirun",
-        f"-n {jobenv['num_nodes']}",
-        f"-npernode {jobenv['gpus_per_node']}",
-        f"--hostfile {jobenv['COBALT_NODEFILE']}",
-        "-x PATH",
-        "-x LD_LIBRARY_PATH",
-        "-x http_proxy",
-        "-x https_proxy",
-    ]
+# def build_mpiexec_thetagpu():
+#     jobenv = get_cobalt_resources()
+#     return [
+#         "mpirun",
+#         f"-n {jobenv['num_nodes']}",
+#         f"-npernode {jobenv['gpus_per_node']}",
+#         f"--hostfile {jobenv['COBALT_NODEFILE']}",
+#         "-x PATH",
+#         "-x LD_LIBRARY_PATH",
+#         "-x http_proxy",
+#         "-x https_proxy",
+#     ]
 
 
-def run_mpiexec(cmd: str):
-    import subprocess
-    mpiexec = ' '.join(build_mpiexec_thetagpu())
-    log.info(f'Executing: {mpiexec} {cmd}')
-    return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
+# def run_mpiexec(cmd: str):
+#     import subprocess
+#     mpiexec = ' '.join(build_mpiexec_thetagpu())
+#     log.info(f'Executing: {mpiexec} {cmd}')
+#     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
 
 
-def mpi_test_framework_backend(
-    framework: str = 'pytorch',
-    backend: str = 'DDP',
-):
-    import sys
-    python3 = sys.executable
-    py_cmd = f'{python3} -m ezpz.check {framework} {backend}'
-    run_mpiexec(py_cmd)
+# def mpi_test_framework_backend(
+#     framework: str = 'pytorch',
+#     backend: str = 'DDP',
+# ):
+#     import sys
+#     python3 = sys.executable
+#     py_cmd = f'{python3} -m ezpz.check {framework} {backend}'
+#     run_mpiexec(py_cmd)
 
 
 def check(

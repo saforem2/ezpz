@@ -9,9 +9,10 @@ ezpz_ddp.py
 import os
 import logging
 import time
-from typing import Optional
+from typing import Optional, Union
 import torch
 import ezpz as ez
+from pathlib import Path
 
 # backend can be any of DDP, deespepeed, horovod
 RANK = ez.setup_torch(
@@ -37,13 +38,25 @@ DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
+WARMUP = 10
+LOG_FREQ = int(os.environ.get("LOG_FREQ", 1))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 64))  # 64
 INPUT_SIZE = int(os.environ.get("INPUT_SIZE", 128))  # 128
 OUTPUT_SIZE = int(os.environ.get("OUTPUT_SIZE", 128))  # 128
-DTYPE = os.environ.get("DTYPE", torch.get_default_dtype())
+# dtype = os.environ.get("DTYPE", None)
+# torch.get_num_interop_threads
+# DTYPE = torch.dtype(dtype) if dtype is not None else torch.get_default_dtype()
+DTYPE: torch.dtype  = torch.get_default_dtype()
+if (dtype := os.environ.get("DTYPE", None)) is not None:
+    if dtype.startswith('fp16'):
+        DTYPE = torch.half
+    elif dtype.startswith('bf16'):
+        DTYPE = torch.bfloat16
+
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 50))
 
 # logger.info(f"{DIST_INIT=}")
+# logger.info(f'
 
 
 class Network(torch.nn.Module):
@@ -73,15 +86,28 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
 
-def plot_losses(losses: dict) -> None:
+def tplot_dict(
+        data: dict,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        title: Optional[str] = None,
+        outfile: Optional[Union[str, Path]] = None,
+        append: bool = True,
+) -> None:
     import plotext as pltx
-    # y = list(losses.values())
+    pltx.clear_figure()
     pltx.theme('clear')
-    pltx.scatter(list(losses.values()))
+    pltx.scatter(list(data.values()))
+    if ylabel is not None:
+        pltx.ylabel(ylabel)
+    if xlabel is not None:
+        pltx.xlabel(xlabel)
+    if title is not None:
+        pltx.title(title)
     pltx.show()
-    pltx.save_fig("test_dist_losses.txt")
-    pltx.ylabel("loss")
-    pltx.xlabel("iteration")
+    if outfile is not None:
+        logger.info(f'Appending plot to: {outfile}')
+        pltx.save_fig(outfile, append=append)
 
 
 def main():
@@ -128,33 +154,78 @@ def main():
             optimizer=optimizer,
         )
 
-    losses = {}
+    metrics = {
+        'dt': [],    # time per iteration
+        'dtf': [],   # time in forward pass
+        'dtb': [],   # time in backward pass
+        'loss': [],  # loss
+        'iter': [],  # iteration
+    }
     for iter in range(TRAIN_ITERS):
         t0 = time.perf_counter()
-        x = torch.rand((BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
+        x = torch.rand(*(BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
         y = model(x)
         loss = calc_loss(x, y)
-        losses[iter] = loss
-        dtf = ((t1 := time.perf_counter()) - t0)
+        t1 = time.perf_counter()
+        # dtf = ((t1 := time.perf_counter()) - t0)
         if backend == 'deepspeed':
             model.backward(loss)
             model.step(loss)
         else:
             loss.backward()
             optimizer.step()
+        t2 = time.perf_counter()
         optimizer.zero_grad()
-        dtb = time.perf_counter() - t1
-        logger.info(
-            ', '.join([
-                f'{iter=}',
-                f'loss={loss.item():.5f}',
-                f'dt={dtf+dtb:.3f}',
-                f'{dtf=:.3f}',
-                f'{dtb=:.3f}'
-            ])
-        )
+        if iter > WARMUP and iter % LOG_FREQ == 0:
+            dt = t2 - t0
+            dtf = t1 - t0
+            dtb = t2 - t1
+            metrics['iter'].append(iter)
+            metrics['dt'].append(dt)
+            metrics['dtf'].append(dtf)
+            metrics['dtb'].append(dtb)
+            metrics['loss'].append(loss)
+            logger.info(
+                ', '.join([
+                    f'{iter=}',
+                    f'loss={loss.item():.4f}',
+                    f'dt={dtf+dtb:.4f}',
+                    f'{dtf=:.6g}',
+                    f'{dtb=:.6g}'
+                ])
+            )
     if RANK == 0:
-        plot_losses(losses)
+        outdir = Path(os.getcwd()).joinpath('test-dist-plots')
+        outdir.mkdir(parents=True, exist_ok=True)
+        for key, val in metrics.items():
+            if key == 'iter':
+                continue
+            tplot_dict(
+                data=dict(zip(metrics['iter'], val)),
+                xlabel="iter",
+                ylabel=key,
+                append=True,
+                title=f"{key} [{ez.get_timestamp()}]",
+                outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+            )
+        # tplot_dict(
+        #     data=dict(zip(metrics['iter'], metrics['dtf'])),
+        #     xlabel="iter",
+        #     title="loss",
+        #     outfile="./test_dist_loss.txt",
+        # )
+        # tplot_dict(
+        #     data=dict(zip(metrics['iter'], metrics['dtb'])),
+        #     xlabel="iter",
+        #     title="loss",
+        #     outfile="./test_dist_loss.txt",
+        # )
+        # tplot_dict(
+        #     data=dict(zip(metrics['iter'], metrics['dt'])),
+        #     xlabel="iter",
+        #     title="loss",
+        #     outfile="./test_dist_loss.txt",
+        # )
 
 
 if __name__ == '__main__':

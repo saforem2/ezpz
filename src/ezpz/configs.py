@@ -95,24 +95,19 @@ def get_scheduler() -> str:
 
 
 def load_ds_config(
-        fpath: Optional[Union[str, os.PathLike, Path]] = None
-) -> dict:
+        fpath: Optional[Union[str, os.PathLike, Path]] = None  # type:ignore[reportDeprecated]
+) -> dict[str, Any]:
     from ezpz.configs import DS_CONFIG_PATH
-    fpath = DS_CONFIG_PATH if fpath is None else fpath
+    fpath = Path(DS_CONFIG_PATH) if fpath is None else f'{fpath}'
     cfgpath = Path(fpath)
-    # if get_rank() == 0:
-    #     log.info(
-    #         'Loading DeepSpeed config from: '
-    #         f'{cfgpath.resolve().as_posix()}'
-    #     )
     if cfgpath.suffix == '.json':
         with cfgpath.open('r') as f:
-            ds_config = json.load(f)
+            ds_config: dict[str, Any]  = json.load(f)
         return ds_config
     if cfgpath.suffix == '.yaml':
         with cfgpath.open('r') as stream:
-            ds_config = dict(yaml.safe_load(stream))
-        return ds_config
+            dsconfig: dict[str, Any] = dict(yaml.safe_load(stream))
+        return dsconfig
     raise TypeError('Unexpected FileType')
 
 
