@@ -6,15 +6,23 @@ ezpz_ddp.py
   $ source ezpz/src/ezpz/bin/savejobenv
   $ BACKEND=DDP launch python3 ezpz_ddp.py
 """
+import time
+T0 = time.perf_counter()
+
 import os
 import logging
-import time
 from typing import Optional, Union
 import torch
 import ezpz as ez
 from pathlib import Path
+try:
+    import wandb
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+except Exception:
+    WANDB_DISABLED = True
 
 # backend can be any of DDP, deespepeed, horovod
+T1 = time.perf_counter()
 RANK = ez.setup_torch(
     backend=(
         backend := os.environ.get('BACKEND', 'DDP')
@@ -23,6 +31,11 @@ RANK = ez.setup_torch(
         port := os.environ.get("MASTER_PORT", "29500")
     )
 )
+T2 = time.perf_counter()
+TIMERS = {
+    'timers/ezpz.setup_torch': T2 - T1,
+    'timers/imports': T1 - T0,
+}
 # RANK = DIST_INIT['rank']
 # WORLD_SIZE = DIST_INIT['world_size']
 # LOCAL_RANK = DIST_INIT['local_rank']
@@ -35,10 +48,11 @@ DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
 
 
 # log only from RANK == 0
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+from ezpz.log import get_logger
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
-WARMUP = 10
+WARMUP = 0
 LOG_FREQ = int(os.environ.get("LOG_FREQ", 1))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 64))  # 64
 INPUT_SIZE = int(os.environ.get("INPUT_SIZE", 128))  # 128
@@ -53,7 +67,25 @@ if (dtype := os.environ.get("DTYPE", None)) is not None:
     elif dtype.startswith('bf16'):
         DTYPE = torch.bfloat16
 
-TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 50))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 100))
+
+CONFIG = {
+    'warmup': WARMUP,
+    'log_freq': LOG_FREQ,
+    'batch_size': BATCH_SIZE,
+    'input_size': INPUT_SIZE,
+    'output_size': OUTPUT_SIZE,
+    'dtype': DTYPE,
+    'device': DEVICE,
+    'world_size': WORLD_SIZE,
+    'train_iters': TRAIN_ITERS,
+}
+
+run = None
+if not WANDB_DISABLED and RANK == 0:
+    run = ez.setup_wandb(project_name='ezpz.test_dist')
+    assert run is wandb.run
+    run.config.update(CONFIG)
 
 # logger.info(f"{DIST_INIT=}")
 # logger.info(f'
@@ -116,6 +148,9 @@ def main():
         output_dim=OUTPUT_SIZE,
         sizes=[1024, 512, 256, 128]
     )
+    if RANK == 0 and not WANDB_DISABLED:
+        assert run is wandb.run
+        wandb.run.watch(model, log='all')
     model.to(DEVICE)
     model.to(DEVICE_ID)
     logger.info(f'{model=}')
@@ -161,6 +196,8 @@ def main():
         'loss': [],  # loss
         'iter': [],  # iteration
     }
+    T3 = time.perf_counter()
+    TIMERS['timers/init_to_first_step'] = T3 - T0
     for iter in range(TRAIN_ITERS):
         t0 = time.perf_counter()
         x = torch.rand(*(BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
@@ -180,11 +217,24 @@ def main():
             dt = t2 - t0
             dtf = t1 - t0
             dtb = t2 - t1
-            metrics['iter'].append(iter)
-            metrics['dt'].append(dt)
-            metrics['dtf'].append(dtf)
-            metrics['dtb'].append(dtb)
-            metrics['loss'].append(loss)
+            _metrics = {
+                'iter': iter,
+                'dt': dt,
+                'dtf': dtf,
+                'dtb': dtb,
+                'loss': loss,
+            }
+            for k, v in _metrics.items():
+                try:
+                    metrics[k].append(v)
+                except KeyError:
+                    metrics[k] = [v]
+            # metrics = {k: v.append(_v) for k, v in metrics.items()}
+            # metrics['iter'].append(iter)
+            # metrics['dt'].append(dt)
+            # metrics['dtf'].append(dtf)
+            # metrics['dtb'].append(dtb)
+            # metrics['loss'].append(loss)
             logger.info(
                 ', '.join([
                     f'{iter=}',
@@ -194,6 +244,9 @@ def main():
                     f'{dtb=:.6g}'
                 ])
             )
+            if not WANDB_DISABLED and RANK == 0:
+                wandb.log(_metrics)
+                # wandb.log({'iteration': iter, **_metrics})
     if RANK == 0:
         outdir = Path(os.getcwd()).joinpath('test-dist-plots')
         outdir.mkdir(parents=True, exist_ok=True)
@@ -230,3 +283,8 @@ def main():
 
 if __name__ == '__main__':
     main()
+    T4 = time.perf_counter()
+    TIMERS['timers/runtime'] = T4 - T0
+    if not WANDB_DISABLED and RANK == 0:
+        wandb.log(TIMERS)
+        wandb.finish()
