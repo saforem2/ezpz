@@ -48,8 +48,7 @@ DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
 
 
 # log only from RANK == 0
-# logger = logging.getLogger(__name__)
-from ezpz.log import get_logger
+logger = logging.getLogger(__name__)
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
 WARMUP = 0
