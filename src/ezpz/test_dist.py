@@ -9,17 +9,21 @@ ezpz_ddp.py
 import time
 T0 = time.perf_counter()
 
-import os
-import logging
-from typing import Optional, Union
-import torch
-import ezpz as ez
-from pathlib import Path
+# noqa: E402
+import os  # noqa:E402
+import logging  # noqa:E402
+from typing import Optional, Union  # noqa:E402
+import torch  # noqa: E402
+import ezpz as ez  # noqa: E402
+from pathlib import Path  # noqa: E402
 try:
     import wandb
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
     WANDB_DISABLED = True
+
+# log only from RANK == 0
+logger = logging.getLogger(__name__)
 
 # backend can be any of DDP, deespepeed, horovod
 T1 = time.perf_counter()
@@ -36,16 +40,11 @@ TIMERS = {
     'timers/ezpz.setup_torch': T2 - T1,
     'timers/imports': T1 - T0,
 }
-# RANK = DIST_INIT['rank']
-# WORLD_SIZE = DIST_INIT['world_size']
-# LOCAL_RANK = DIST_INIT['local_rank']
-# if DEVICE == "cuda" and torch.cuda.is_available():
-#     torch.cuda.set_device(LOCAL_RANK)
+logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 DEVICE = ez.get_torch_device()
 WORLD_SIZE = ez.get_world_size()
 LOCAL_RANK = ez.get_local_rank()
 DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
-
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
@@ -59,12 +58,13 @@ OUTPUT_SIZE = int(os.environ.get("OUTPUT_SIZE", 128))  # 128
 # dtype = os.environ.get("DTYPE", None)
 # torch.get_num_interop_threads
 # DTYPE = torch.dtype(dtype) if dtype is not None else torch.get_default_dtype()
-DTYPE: torch.dtype  = torch.get_default_dtype()
 if (dtype := os.environ.get("DTYPE", None)) is not None:
     if dtype.startswith('fp16'):
         DTYPE = torch.half
     elif dtype.startswith('bf16'):
         DTYPE = torch.bfloat16
+else:
+    DTYPE: torch.dtype  = torch.get_default_dtype()
 
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 100))
 
@@ -127,7 +127,7 @@ def tplot_dict(
 ) -> None:
     import plotext as pltx
     pltx.clear_figure()
-    pltx.theme('clear')
+    pltx.theme('clear')  # pyright[ReportUnknownMemberType]
     pltx.scatter(list(data.values()))
     if ylabel is not None:
         pltx.ylabel(ylabel)
@@ -138,6 +138,8 @@ def tplot_dict(
     pltx.show()
     if outfile is not None:
         logger.info(f'Appending plot to: {outfile}')
+        if not Path(outfile).parent.exists():
+            _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
         pltx.save_fig(outfile, append=append)
 
 
@@ -189,11 +191,11 @@ def main():
         )
 
     metrics = {
-        'dt': [],    # time per iteration
-        'dtf': [],   # time in forward pass
-        'dtb': [],   # time in backward pass
-        'loss': [],  # loss
-        'iter': [],  # iteration
+        'train/dt': [],    # time per iteration
+        'train/dtf': [],   # time in forward pass
+        'train/dtb': [],   # time in backward pass
+        'train/loss': [],  # loss
+        'train/iter': [],  # iteration
     }
     T3 = time.perf_counter()
     TIMERS['timers/init_to_first_step'] = T3 - T0
@@ -217,23 +219,17 @@ def main():
             dtf = t1 - t0
             dtb = t2 - t1
             _metrics = {
-                'iter': iter,
-                'dt': dt,
-                'dtf': dtf,
-                'dtb': dtb,
-                'loss': loss,
+                'train/iter': iter,
+                'train/dt': dt,
+                'train/dtf': dtf,
+                'train/dtb': dtb,
+                'train/loss': loss,
             }
             for k, v in _metrics.items():
                 try:
                     metrics[k].append(v)
                 except KeyError:
                     metrics[k] = [v]
-            # metrics = {k: v.append(_v) for k, v in metrics.items()}
-            # metrics['iter'].append(iter)
-            # metrics['dt'].append(dt)
-            # metrics['dtf'].append(dtf)
-            # metrics['dtb'].append(dtb)
-            # metrics['loss'].append(loss)
             logger.info(
                 ', '.join([
                     f'{iter=}',
@@ -253,7 +249,7 @@ def main():
             if key == 'iter':
                 continue
             tplot_dict(
-                data=dict(zip(metrics['iter'], val)),
+                data=dict(zip(metrics['train/iter'], val)),
                 xlabel="iter",
                 ylabel=key,
                 append=True,
