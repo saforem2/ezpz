@@ -24,7 +24,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from ezpz.configs import (
     FRAMEWORKS,
-    HERE,
+    # HERE,
     git_ds_info,
     PathLike,
     get_scheduler,
@@ -590,7 +590,7 @@ def setup_torch(
         torch.backends.cudnn.benchmark = True         # type:ignore
         torch.backends.cudnn.allow_tf32 = True        # type:ignore
         torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
-    torch.use_deterministic_algorithms(True)
+    # torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
     rank = dsetup['rank']
     world_size = dsetup['world_size']
@@ -755,7 +755,6 @@ def get_machine(hostname: Optional[str] = None) -> str:
         return 'Perlmutter'
     return f'{hostname}'
 
-
 def setup_wandb(
         project_name: Optional[str] = None,
         config: Optional[dict | DictConfig] = None,
@@ -809,11 +808,17 @@ def setup_wandb(
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
     log.info(f"W&B RUN: [{run.name}]({run.url})")
-    run.config.update(
-        {
-            f'dist_info/{k}': v for k, v in get_dist_info().items()
-        }
-    )
+    # run.config.update(
+    #     {
+    #         f'dist_info/{k}': v for k, v in get_dist_info().items()
+    #     }
+    # )
+    if (
+            wandb is not None
+            and wandb.run is not None
+            and 'DIST_INFO' not in wandb.run.config
+    ):
+        wandb.run.config.update({'DIST_INFO': get_dist_info()})
     run.config.update({'created_at': dstr})
     run.config.update({'world_size': get_world_size()})
     run.config.update({'outdir': os.getcwd()})
