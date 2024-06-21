@@ -121,32 +121,6 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
 
-def tplot_dict(
-        data: dict,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
-        title: Optional[str] = None,
-        outfile: Optional[Union[str, Path]] = None,
-        append: bool = True,
-) -> None:
-    import plotext as pltx
-    pltx.clear_figure()
-    pltx.theme('clear')  # pyright[ReportUnknownMemberType]
-    pltx.scatter(list(data.values()))
-    if ylabel is not None:
-        pltx.ylabel(ylabel)
-    if xlabel is not None:
-        pltx.xlabel(xlabel)
-    if title is not None:
-        pltx.title(title)
-    pltx.show()
-    if outfile is not None:
-        logger.info(f'Appending plot to: {outfile}')
-        if not Path(outfile).parent.exists():
-            _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        pltx.save_fig(outfile, append=append)
-
-
 def main():
     model = Network(
         input_dim=INPUT_SIZE,
@@ -246,7 +220,7 @@ def main():
         for key, val in metrics.items():
             if key == 'iter':
                 continue
-            tplot_dict(
+            ez.plot.tplot_dict(
                 data=dict(zip(metrics['train/iter'], val)),
                 xlabel="iter",
                 ylabel=key,
