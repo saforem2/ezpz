@@ -41,7 +41,10 @@ class PyInstrumentProfiler:
             import pyinstrument
         except (ImportError, ModuleNotFoundError):
             pyinstrument = None
-        assert pyinstrument is not None
+        assert pyinstrument is not None, (
+            "Unable to import 'pyinstrument',"
+            "install with 'pip install pyinstrument'"
+        )
         self.profiler = (
             pyinstrument.Profiler()
             if (
@@ -50,6 +53,8 @@ class PyInstrumentProfiler:
             else None
         )
         self._start = time.perf_counter_ns()
+        outdir = os.getcwd() if outdir is None else outdir
+        self.outdir = Path(outdir).joinpath("ezpz_pyinstrument_profiles")
         self.outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
         self.outdir.mkdir(exist_ok=True, parents=True)
 
