@@ -5,10 +5,10 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import os
-import ezpz as ez
+# import ezpz as ez
 from pathlib import Path
 import time
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -17,21 +17,14 @@ import seaborn as sns
 import xarray as xr
 import logging
 
-try:
-    import ambivalent
-    # from toolbox import set_plot_style
-    from ambivalent import STYLES
-except (ImportError, ModuleNotFoundError):
-    STYLES = {}
-
 # from ezpz.log import get_logger
 # try:
 #     import matplotx
 #     MATPLOTX = True
 # except (ImportError, ModuleNotFoundError):
 #     MATPLOTX = False
-
-RANK = ez.get_rank()
+from ezpz.dist import get_rank
+RANK = get_rank()
 
 # warnings.filterwarnings('ignore')
 
@@ -76,7 +69,15 @@ plt.style.use('default')
 
 def set_plot_style(**kwargs):
     # plt.style.use('default')
-    # plt.style.use(opinionated.STYLES['opinionated_min'])
+    try:
+        import ambivalent
+        STYLES = ambivalent.STYLES
+        # from toolbox import set_plot_style
+        from ambivalent import STYLES
+        plt.style.use(STYLES['opinionated_min'])
+    except (ImportError, ModuleNotFoundError):
+        STYLES = {}
+
     plt.rcParams.update({
         'image.cmap': 'viridis',
         'savefig.transparent': True,
@@ -135,6 +136,34 @@ def set_plot_style(**kwargs):
     #     y = figsize[1]
     #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
     #     plt.rcParams['figure.dpi'] = 400
+
+
+def tplot_dict(
+        data: dict,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        title: Optional[str] = None,
+        outfile: Optional[Union[str, Path]] = None,
+        append: bool = True,
+) -> None:
+    import plotext as pltx
+    pltx.clear_figure()
+    pltx.theme('clear')  # pyright[ReportUnknownMemberType]
+    pltx.scatter(list(data.values()))
+    if ylabel is not None:
+        pltx.ylabel(ylabel)
+    if xlabel is not None:
+        pltx.xlabel(xlabel)
+    if title is not None:
+        pltx.title(title)
+    pltx.show()
+    if outfile is not None:
+        log.info(f'Appending plot to: {outfile}')
+        if not Path(outfile).parent.exists():
+            _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+        pltx.save_fig(outfile, append=append)
+
+
 
 
 def tplot(
