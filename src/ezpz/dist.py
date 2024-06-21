@@ -47,8 +47,25 @@ try:
 except Exception:
     oneccl_bpt = None
 
+# from dataclasses import dataclass
 
-os.environ['COLORTERM'] = 'truecolor'
+# @dataclass
+# class TorchDistributedInfo:
+#     backend: str  # [DDP, deepspeed, horovod]
+#     rank: int    # [0, ..., world_size - 1]
+#     local_rank: int  # [0, ..., ]
+#     world_size: int
+
+if not os.environ.get(
+    "DUMB", os.environ.get(
+        "NOCOLOR", os.environ.get(
+            "NO_COLOR",
+            False
+        )
+    )
+):
+    os.environ['COLORTERM'] = 'truecolor'
+
 # log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
 log.setLevel('INFO')
@@ -272,7 +289,7 @@ def print_dist_setup(
     node = get_node_index()
     device = None
     # if framework.lower() in {'pt', 'torch', 'pytorch'}:
-    device = get_torch_device()
+    device = get_torch_device_type()
     rank_len = len(str(rank))
     ws_len = len(str(wsa))
     lr_len = len(str(local_rank))
@@ -329,9 +346,11 @@ def init_deepspeed(
         init_method: Optional[str] = None,
         dist_init_required: Optional[bool] = None,
         config: Optional[dict] = None,
-        rank: Optional[int] = -1,
-        world_size: Optional[int] = -1,
+        rank: Optional[int] = None,
+        world_size: Optional[int] = None,
 ):
+    rank = get_rank() if rank is None else rank
+    world_size = get_world_size() if world_size is None else world_size
     try:
         import deepspeed
         log.warning(f'Setting {timeout=}')
@@ -339,7 +358,7 @@ def init_deepspeed(
         deepspeed.init_distributed(
             dist_backend=dist_backend,
             auto_mpi_discovery=auto_mpi_discovery,
-            distributed_port=distributed_port,
+            distributed_port=int(distributed_port),
             verbose=verbose,
             timeout=datetime.timedelta(seconds=dt),
             init_method=init_method,
@@ -354,10 +373,27 @@ def init_deepspeed(
         raise exc
 
 
-def get_torch_device() -> str:
+def get_torch_device_type(device_type: Optional[str] = None) -> str:
+    if device_type is not None:
+        assert device_type in (
+            "cpu", "mps", "xpu", "cuda",
+        )
+        log.warning(
+            ' '.join(
+                [
+                    f"device_type: {device_type} passed to",
+                    "ezpz.dist.get_torch_device_type"
+                ]
+            )
+        )
+        return device_type
     if (tdevice := os.environ.get('TORCH_DEVICE')) is not None:
-        assert tdevice is not None
-        return tdevice
+        log.warning(f"Caught 'TORCH_DEVICE'={tdevice}' from environment!")
+        tdevice = tdevice.lower()
+        assert tdevice is not None and tdevice in (
+            "cpu", "mps", "xpu", "cuda",
+        )
+        return tdevice.lower()
     return 'xpu' if ipex is not None else (
         'cuda' if torch.cuda.is_available() else (
             'mps' if (
@@ -367,6 +403,17 @@ def get_torch_device() -> str:
                 )
             ) else 'cpu'
         )
+    )
+
+
+def get_torch_device(
+        *,
+        device_type: Optional[str] = None,
+        as_torch_device: Optional[bool] = None,
+) -> str | torch.device:
+    device_type = get_torch_device_type(device_type)
+    return (
+        torch.device(device_type) if as_torch_device else device_type
     )
 
 
@@ -472,6 +519,7 @@ def get_world_size(
 
 
 def get_local_rank() -> int:
+    """Return `get_rank() % get_gpus_per_node()`"""
     return int(get_rank() % get_gpus_per_node())
 
 
@@ -572,6 +620,7 @@ def setup_torch_distributed(
     os.environ['world_size'] = str(world_size)
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
+    # return TorchDistributedInfo
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
 
@@ -581,7 +630,10 @@ def setup_torch(
         seed: Optional[int] = None,
         timeout: Optional[int] = 3600,
 ) -> int:
-    """Returns RANK"""
+    """Setup torch.
+
+    If launched with
+    """
     import torch
     device = get_torch_device()
     if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
@@ -603,22 +655,10 @@ def setup_torch(
     os.environ['LOCAL_SIZE'] = str(local_size)
     os.environ['WORLD_SIZE'] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
-    # if nthreads is not None:
-    #     torch.set_num_threads(int(nthreads))
-    # if torch.cuda.is_available() and device == 'cuda':
-    # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
-    #     torch.cuda.set_device(local_rank)
-    # #     # torch.cuda.set_device('cuda')
-    # # elif device == 'xpu':
-    # else:
-    #     log.warning(
-    #         f'No Intel or NVIDIA GPUs found, using: {ACCELERATOR_TYPE=}'
-    #     )
     if ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
         # log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
         os.environ['CCL_LOCAL_RANK'] = str(local_rank)
         os.environ['CCL_LOCAL_SIZE'] = str(local_size)
-        # return get_gpus_per_node() * get_num_nodes()
         torch.xpu.set_device(local_rank)  # type:ignore
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
@@ -762,6 +802,7 @@ def setup_wandb(
         init_timeout: int = 300,
 ):
     import wandb
+    wandb.require("core")
     rank = get_rank()
     project_name = (
         project_name if project_name is not None
@@ -1127,7 +1168,7 @@ def get_pbs_launch_info(
         'NGPU_PER_HOST': f'{ngpu_per_host}',
         'NGPUS': f'{ngpus}',
         'MACHINE': get_machine(),
-        'DEVICE': get_torch_device(),
+        'DEVICE': get_torch_device_type(),
         'BACKEND': get_torch_backend(),
         'LAUNCH_CMD': launch_cmd,
     }

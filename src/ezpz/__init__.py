@@ -77,6 +77,7 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
+from ezpz.profile import PyInstrumentProfiler
 from ezpz.jobs import loadjobenv, savejobenv
 
 from ezpz.log import get_logger, get_file_logger

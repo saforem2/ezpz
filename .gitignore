@@ -1,3 +1,6 @@
+# user added
+wandb/*
+*test-dist-plots*
 *.hydra
 *hostfile*
 src/logs/*

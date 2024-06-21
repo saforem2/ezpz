@@ -18,8 +18,10 @@ import ezpz as ez  # noqa: E402
 from pathlib import Path  # noqa: E402
 try:
     import wandb
+    wandb.require("core")
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
+    wandb = None
     WANDB_DISABLED = True
 
 # log only from RANK == 0
@@ -52,21 +54,23 @@ logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
 WARMUP = 0
 LOG_FREQ = int(os.environ.get("LOG_FREQ", 1))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 100))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 64))  # 64
 INPUT_SIZE = int(os.environ.get("INPUT_SIZE", 128))  # 128
 OUTPUT_SIZE = int(os.environ.get("OUTPUT_SIZE", 128))  # 128
+PYINSTRUMENT_PROFILER = os.environ.get(
+    "PYINSTRUMENT_PROFILER",
+    None
+)
+
 # dtype = os.environ.get("DTYPE", None)
 # torch.get_num_interop_threads
-# DTYPE = torch.dtype(dtype) if dtype is not None else torch.get_default_dtype()
+DTYPE: torch.dtype  = torch.get_default_dtype()
 if (dtype := os.environ.get("DTYPE", None)) is not None:
     if dtype.startswith('fp16'):
         DTYPE = torch.half
     elif dtype.startswith('bf16'):
         DTYPE = torch.bfloat16
-else:
-    DTYPE: torch.dtype  = torch.get_default_dtype()
-
-TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 100))
 
 CONFIG = {
     'warmup': WARMUP,
@@ -81,10 +85,10 @@ CONFIG = {
 }
 
 run = None
-if not WANDB_DISABLED and RANK == 0:
+if not WANDB_DISABLED and RANK == 0 and wandb is not None:
     run = ez.setup_wandb(project_name='ezpz.test_dist')
-    assert run is wandb.run
-    run.config.update(CONFIG)
+    assert wandb.run is not None
+    wandb.run.config.update(CONFIG)
 
 # logger.info(f"{DIST_INIT=}")
 # logger.info(f'
@@ -149,8 +153,8 @@ def main():
         output_dim=OUTPUT_SIZE,
         sizes=[1024, 512, 256, 128]
     )
-    if RANK == 0 and not WANDB_DISABLED:
-        assert run is wandb.run
+    if RANK == 0 and not WANDB_DISABLED and wandb is not None:
+        assert wandb.run is not None
         wandb.run.watch(model, log='all')
     model.to(DEVICE)
     model.to(DEVICE_ID)
@@ -165,9 +169,6 @@ def main():
             )
     elif backend.lower() in ('ds', 'deepspeed'):
         import deepspeed
-        # config = ez.load_ds_config().update(
-        #     {"train_micro_batch_size_per_gpu": BATCH_SIZE}
-        # )
         import argparse
         parser = argparse.ArgumentParser(
             description='My training script.'
@@ -177,7 +178,6 @@ def main():
             required=False,
             type=int,
             default=-1,
-            # default=ez.get_local_rank()),
             help='local rank passed from distributed launcher',
         )
         # Include DeepSpeed configuration arguments
@@ -205,7 +205,6 @@ def main():
         y = model(x)
         loss = calc_loss(x, y)
         t1 = time.perf_counter()
-        # dtf = ((t1 := time.perf_counter()) - t0)
         if backend == 'deepspeed':
             model.backward(loss)
             model.step(loss)
@@ -239,9 +238,8 @@ def main():
                     f'{dtb=:.6g}'
                 ])
             )
-            if not WANDB_DISABLED and RANK == 0:
+            if not WANDB_DISABLED and RANK == 0 and wandb is not None:
                 wandb.log(_metrics)
-                # wandb.log({'iteration': iter, **_metrics})
     if RANK == 0:
         outdir = Path(os.getcwd()).joinpath('test-dist-plots')
         outdir.mkdir(parents=True, exist_ok=True)
@@ -256,30 +254,18 @@ def main():
                 title=f"{key} [{ez.get_timestamp()}]",
                 outfile=outdir.joinpath(f"{key}.txt").as_posix(),
             )
-        # tplot_dict(
-        #     data=dict(zip(metrics['iter'], metrics['dtf'])),
-        #     xlabel="iter",
-        #     title="loss",
-        #     outfile="./test_dist_loss.txt",
-        # )
-        # tplot_dict(
-        #     data=dict(zip(metrics['iter'], metrics['dtb'])),
-        #     xlabel="iter",
-        #     title="loss",
-        #     outfile="./test_dist_loss.txt",
-        # )
-        # tplot_dict(
-        #     data=dict(zip(metrics['iter'], metrics['dt'])),
-        #     xlabel="iter",
-        #     title="loss",
-        #     outfile="./test_dist_loss.txt",
-        # )
 
 
 if __name__ == '__main__':
-    main()
+    from ezpz.profile import get_context_manager
+    # NOTE: if rank is passed to get_context_manager,
+    # it will ONLY be instantiated if rank == 0,
+    # otherwise, it will return a contextlib.nullcontext() instance.
+    cm = get_context_manager(rank=RANK, strict=False)
+    with cm:
+        main()
     T4 = time.perf_counter()
     TIMERS['timers/runtime'] = T4 - T0
-    if not WANDB_DISABLED and RANK == 0:
+    if not WANDB_DISABLED and RANK == 0 and wandb is not None:
         wandb.log(TIMERS)
         wandb.finish()
