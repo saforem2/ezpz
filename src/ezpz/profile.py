@@ -1,7 +1,37 @@
 """
 profile.py
 
-Contains helper functions for using Profilers.
+Sam Foreman
+[2024-06-21]
+
+Contains implementation of:
+
+- `get_context_manager`
+- `PyInstrumentProfiler`
+
+which can be used as a context manager to profile a block of code, e.g.
+
+
+```python
+# test.py
+
+def main():
+    print("Hello!")
+    from ezpz.profile import get_context_manager
+    # NOTE: 
+    # 1. if `rank` is passed to `get_context_manager`:
+    #        - it will ONLY be instantiated if rank == 0,
+    #          otherwise, it will return a contextlib.nullcontext() instance.
+    # 2. if `strict=True`:
+    #        - only run if "PYINSTRUMENT_PROFILER=1" in environment
+    cm = get_context_manager(rank=RANK, strict=False)
+    with cm:
+        main()
+
+if __name__ == '__main__':
+    main()
+```
+
 """
 import os
 import time
@@ -14,6 +44,7 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 from contextlib import nullcontext, AbstractContextManager
+
 
 def get_context_manager(
         rank: Optional[int] = None,
@@ -38,20 +69,26 @@ class PyInstrumentProfiler:
             outdir: Optional[str] = None,
     ):
         try:
-            import pyinstrument
+            import pyinstrument  # pyright: ignore
         except (ImportError, ModuleNotFoundError):
             pyinstrument = None
-        assert pyinstrument is not None, (
-            "Unable to import 'pyinstrument',"
-            "install with 'pip install pyinstrument'"
-        )
-        self.profiler = (
-            pyinstrument.Profiler()
-            if (
-                rank is None or (rank is not None and rank == 0)
+        if pyinstrument is None:
+            self.profiler = None
+            log.critical(
+                "Unable to import 'pyinstrument', not running profiles!!"
             )
-            else None
-        )
+            log.error(
+                "To run with 'pyinstrument',"
+                "run: 'python3 -m pip install pyinstrument'"
+            )
+        else:
+            self.profiler = (
+                pyinstrument.Profiler()
+                if (
+                    rank is None or (rank is not None and rank == 0)
+                )
+                else None
+            )
         self._start = time.perf_counter_ns()
         outdir = os.getcwd() if outdir is None else outdir
         self.outdir = Path(outdir).joinpath("ezpz_pyinstrument_profiles")
