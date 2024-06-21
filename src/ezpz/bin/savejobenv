@@ -69,11 +69,10 @@ function savePBSenv() {
     if [[ -n $(printenv | grep PBS_JOBID ) ]]; then
         PBS_VARS=$(env | grep PBS)
         echo "${PBS_VARS[*]}" > "${PBS_ENV_FILE}"
-        # export FNAME="PBS_NODEFILE"
         export HOSTFILE="${PBS_NODEFILE}"
         export JOBENV_FILE="${PBS_ENV_FILE}"
         sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
-        export DIST_LAUNCH="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"   # "$@"
+        export DIST_LAUNCH="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE} --cpu-bind depth -d 16"   # "$@"
         export ezlaunch="${DIST_LAUNCH}"
     fi
 }
@@ -84,7 +83,6 @@ function saveSLURMenv() {
         echo "│ Saving SLURM_* to ${SLURM_ENV_FILE}"
         SLURM_VARS=$(env | grep SLU)
         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
-        # export FNAME="SLURM_NODEFILE"
         export HOSTFILE="${HOME}/.slurm-nodefile"
         export JOBENV_FILE="${SLURM_ENV_FILE}"
         export SLURM_NODES="${SLURM_NODES}"
@@ -347,5 +345,5 @@ main() {
 }
 
 
-main > /tmp/ezpz-main.log
+main 1> /dev/null
 main
