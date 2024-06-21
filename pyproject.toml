@@ -44,6 +44,7 @@ dependencies = [
   "wandb",
   "hydra-colorlog",
   "ambivalent",
+  "pyinstrument",
 ]
 
 dynamic = ["version"]
