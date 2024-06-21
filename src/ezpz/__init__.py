@@ -19,6 +19,7 @@ from rich.logging import RichHandler
 import torch
 
 from ezpz import dist
+from ezpz import plot
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
@@ -206,6 +207,7 @@ __all__ = [
     'loadjobenv',
     'make_layout',
     'nested_dict_to_df',
+    'plot',
     'print_config',
     'print_config_tree',
     'print_dist_setup',
