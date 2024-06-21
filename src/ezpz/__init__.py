@@ -2,20 +2,21 @@
 ezpz/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
-import socket
-if socket.gethostname().startswith('x3'):
-    from mpi4py import MPI
-
-import torch
+# import socket
+# if socket.gethostname().startswith('x3'):
+from mpi4py import MPI
 import logging
 import logging.config
 import os
 import re
-
-import numpy as np
-
+# import socket
 from typing import Any, Optional
 from typing import Union
+
+import numpy as np
+from rich.console import Console
+from rich.logging import RichHandler
+import torch
 
 from ezpz import dist
 from ezpz.configs import (
@@ -41,11 +42,8 @@ from ezpz.configs import (
     print_config_tree,
 )
 from ezpz.dist import (
-    # build_mpiexec_thetagpu,
     check,
     cleanup,
-    # get_cobalt_nodefile,
-    # get_cobalt_resources,
     get_cpus_per_node,
     get_dist_info,
     get_gpus_per_node,
@@ -63,7 +61,6 @@ from ezpz.dist import (
     include_file,
     init_deepspeed,
     init_process_group,
-    # inspect_cobalt_running_job,
     print_dist_setup,
     query_environment,
     run_bash_command,
@@ -77,53 +74,40 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.profile import PyInstrumentProfiler
 from ezpz.jobs import loadjobenv, savejobenv
-
-from ezpz.log import get_logger, get_file_logger
-
+from ezpz.log import get_file_logger, get_logger
+from ezpz.log.config import DEFAULT_STYLES, NO_COLOR, STYLES
+from ezpz.log.console import (
+    Console,
+    get_console,
+    get_theme,
+    get_width,
+    is_interactive,
+    should_do_markup,
+    to_bool,
+)
+from ezpz.log.console import get_console, is_interactive
+from ezpz.log.handler import FluidLogRender, RichHandler
 from ezpz.log.style import (
-    make_layout,
-    build_layout,
+    BEAT_TIME,
+    COLORS,
+    CustomLogging,
     add_columns,
+    build_layout,
     flatten_dict,
+    make_layout,
     nested_dict_to_df,
     print_config,
-    CustomLogging,
     printarr,
-    BEAT_TIME,
-    COLORS
 )
-
-from ezpz.log.handler import (
-    RichHandler,
-    FluidLogRender,
-)
-
-from ezpz.log.console import (
-    get_theme,
-    is_interactive,
-    get_width,
-    Console,
-    to_bool,
-    should_do_markup,
-    get_console,
-)
-
-from ezpz.log.config import (
-    STYLES,
-    NO_COLOR,
-    DEFAULT_STYLES,
-)
+from ezpz.profile import PyInstrumentProfiler, get_context_manager
 
 try:
     import wandb  # type: ignore
 except Exception:
     wandb = None
 
-from rich.console import Console
-from rich.logging import RichHandler
-from ezpz.log.console import get_console, is_interactive
+
 # import tqdm
 # from mpi4py import MPI
 
@@ -148,7 +132,7 @@ log = logging.getLogger(__name__)
 logging.getLogger('sh').setLevel('WARNING')
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
-from mpi4py import MPI  # noqa: E402
+# noqa: E402
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
@@ -156,94 +140,93 @@ log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 ScalarLike = Union[int, float, bool, np.floating]
 
-
 __all__ = [
-    "BACKENDS",
-    "BIN_DIR",
-    "CONF_DIR",
-    "FRAMEWORKS",
-    "GETJOBENV",
-    "HERE",
-    "LOGS_DIR",
-    "OUTPUTS_DIR",
-    "PROJECT_DIR",
-    "PROJECT_DIR",
-    "PROJECT_ROOT",
-    "QUARTO_OUTPUTS_DIR",
-    "SAVEJOBENV",
-    "SCHEDULERS",
-    "TrainConfig",
-    # "build_mpiexec_thetagpu",
-    "check",
-    "cleanup",
-    "command_exists",
-    "dist",
-    # "get_cobalt_nodefile",
-    # "get_cobalt_resources",
-    "get_cpus_per_node",
-    "get_dist_info",
-    "get_gpus_per_node",
-    "get_hostname",
-    "get_hosts_from_hostfile",
-    "get_local_rank",
-    "get_logging_config",
-    "get_machine",
-    "get_node_index",
-    "get_nodes_from_hostfile",
-    "get_num_nodes",
-    "get_rank",
-    "get_scheduler",
-    "get_scheduler",
-    "get_torch_backend",
-    "get_torch_device",
-    "get_world_size",
-    "git_ds_info",
-    "grab_tensor",
-    "include_file",
-    "init_deepspeed",
-    "init_process_group",
-    # "inspect_cobalt_running_job",
-    "load_ds_config",
-    "loadjobenv",
-    "print_config_tree",
-    "print_dist_setup",
-    "query_environment",
-    "run_bash_command",
-    "savejobenv",
-    "seed_everything",
-    "setup",
-    "setup_tensorflow",
-    "setup_torch",
-    "setup_torch_DDP",
-    "setup_torch_distributed",
-    "setup_wandb",
-    "timeit",
-    "make_layout",
-    "build_layout",
-    "add_columns",
-    "flatten_dict",
-    "nested_dict_to_df",
-    "print_config",
-    "CustomLogging",
-    "printarr",
-    "BEAT_TIME",
-    "COLORS",
-    "RichHandler",
-    "FluidLogRender",
-    "get_console",
-    "get_theme",
-    "is_interactive",
-    "get_width",
-    "should_do_markup",
-    "to_bool",
-    "Console",
-    "STYLES",
-    "NO_COLOR",
-    "DEFAULT_STYLES",
+    'BACKENDS',
+    'BEAT_TIME',
+    'BIN_DIR',
+    'COLORS',
+    'CONF_DIR',
+    'Console',
+    'CustomLogging',
+    'DEFAULT_STYLES',
+    'FRAMEWORKS',
+    'FluidLogRender',
+    'GETJOBENV',
+    'HERE',
+    'LOGS_DIR',
+    'NO_COLOR',
+    'OUTPUTS_DIR',
+    'PROJECT_DIR',
+    'PROJECT_DIR',
+    'PROJECT_ROOT',
+    'QUARTO_OUTPUTS_DIR',
+    'RichHandler',
+    'SAVEJOBENV',
+    'SCHEDULERS',
+    'STYLES',
+    'PyInstrumentProfiler',
+    'TrainConfig',
+    'add_columns',
+    'build_layout',
+    'check',
+    'cleanup',
+    'command_exists',
+    'dist',
+    'flatten_dict',
+    'get_console',
+    'get_context_manager',
+    'get_cpus_per_node',
+    'get_dist_info',
+    'get_file_logger',
+    'get_gpus_per_node',
+    'get_hostname',
+    'get_hosts_from_hostfile',
+    'get_local_rank',
+    'get_logger',
+    'get_logging_config',
+    'get_machine',
+    'get_node_index',
+    'get_nodes_from_hostfile',
+    'get_num_nodes',
+    'get_rank',
+    'get_scheduler',
+    'get_scheduler',
+    'get_theme',
+    'get_torch_backend',
+    'get_torch_device',
+    'get_width',
+    'get_world_size',
+    'git_ds_info',
+    'grab_tensor',
+    'include_file',
+    'init_deepspeed',
+    'init_process_group',
+    'is_interactive',
+    'load_ds_config',
+    'loadjobenv',
+    'make_layout',
+    'nested_dict_to_df',
+    'print_config',
+    'print_config_tree',
+    'print_dist_setup',
+    'printarr',
+    'query_environment',
+    'run_bash_command',
+    'savejobenv',
+    'seed_everything',
+    'setup',
+    'setup_tensorflow',
+    'setup_torch',
+    'setup_torch_DDP',
+    'setup_torch_distributed',
+    'setup_wandb',
+    'should_do_markup',
+    'timeit',
     'timeitlogit',
-    "get_logger",
-    "get_file_logger",
+    'to_bool',
 ]
+
+# assert __all__ == sorted
 
 
 def get_timestamp(fstr=None) -> str:
