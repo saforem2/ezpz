@@ -5,15 +5,12 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import os
-# import ezpz as ez
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
-# from ezpz import get_timestamp
 import xarray as xr
 import logging
 
@@ -874,6 +871,7 @@ def make_ridgeplots(
         save_plot: bool = True,
 ):
     """Make ridgeplots."""
+    import pandas as pd
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
     # sns.set(style='white', palette='bright', context='paper')
