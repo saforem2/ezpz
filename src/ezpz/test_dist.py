@@ -24,7 +24,6 @@ except Exception:
     wandb = None
     WANDB_DISABLED = True
 
-# log only from RANK == 0
 logger = logging.getLogger(__name__)
 
 # backend can be any of DDP, deespepeed, horovod
@@ -42,6 +41,7 @@ TIMERS = {
     'timers/ezpz.setup_torch': T2 - T1,
     'timers/imports': T1 - T0,
 }
+# log only from RANK == 0
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 DEVICE = ez.get_torch_device()
 WORLD_SIZE = ez.get_world_size()
