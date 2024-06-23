@@ -24,7 +24,6 @@ except Exception:
     wandb = None
     WANDB_DISABLED = True
 
-# log only from RANK == 0
 logger = logging.getLogger(__name__)
 
 # backend can be any of DDP, deespepeed, horovod
@@ -42,6 +41,7 @@ TIMERS = {
     'timers/ezpz.setup_torch': T2 - T1,
     'timers/imports': T1 - T0,
 }
+# log only from RANK == 0
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 DEVICE = ez.get_torch_device()
 WORLD_SIZE = ez.get_world_size()
@@ -119,32 +119,6 @@ class Network(torch.nn.Module):
 
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
-
-
-def tplot_dict(
-        data: dict,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
-        title: Optional[str] = None,
-        outfile: Optional[Union[str, Path]] = None,
-        append: bool = True,
-) -> None:
-    import plotext as pltx
-    pltx.clear_figure()
-    pltx.theme('clear')  # pyright[ReportUnknownMemberType]
-    pltx.scatter(list(data.values()))
-    if ylabel is not None:
-        pltx.ylabel(ylabel)
-    if xlabel is not None:
-        pltx.xlabel(xlabel)
-    if title is not None:
-        pltx.title(title)
-    pltx.show()
-    if outfile is not None:
-        logger.info(f'Appending plot to: {outfile}')
-        if not Path(outfile).parent.exists():
-            _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        pltx.save_fig(outfile, append=append)
 
 
 def main():
@@ -246,7 +220,7 @@ def main():
         for key, val in metrics.items():
             if key == 'iter':
                 continue
-            tplot_dict(
+            ez.plot.tplot_dict(
                 data=dict(zip(metrics['train/iter'], val)),
                 xlabel="iter",
                 ylabel=key,

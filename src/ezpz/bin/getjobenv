@@ -1,10 +1,24 @@
 #!/bin/bash --login
+#
+# set -euxo pipefail
+
+RESET="\e[0m"
+BLACK="\e[1;30m"
+RED="\e[1;31m"
+GREEN="\e[1;32m"
+YELLOW="\e[1;33m"
+BLUE="\e[1;34m"
+MAGENTA="\e[1;35m"
+CYAN="\e[1;36m"
+WHITE="\e[1;37m"
 
 HOSTNAME=$(hostname)
 PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
-UNKNOWN_ENV_FILE="${HOME}/.jobenv"
+
+HEADER="┌─────────────────────────────────────────────────────────────────────┐\n"
+FOOTER="└─────────────────────────────────────────────────────────────────────┘\n"
 
 function join_by {
     local d=${1-} f=${2-}
@@ -16,24 +30,19 @@ function join_by {
 function getPBSenv() {
     if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
         export JOBENV_FILE="${PBS_ENV_FILE}"
-        # shellcheck source=${HOME}/.pbsenv
-        source "${PBS_ENV_FILE}"
-        export DIST_LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile $PBS_NODEFILE"
-        export ezlaunch="${DIST_LAUNCH}"
+        if [[ -f "${PBS_ENV_FILE}" ]]; then
+            envfile="${PBS_ENV_FILE:-}"
+            nodefile=$(/bin/cat "${envfile}" | grep PBS_NODEFILE | sed 's/export\ PBS_NODEFILE=//g')
+        fi
+        if [[ -n $(cat "${nodefile:-${PBS_NODEFILE:-HOSTFILE}}" | grep $(hostname)) ]]; then
+            source "${PBS_ENV_FILE}"
+            export DIST_LAUNCH="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE} --cpu-bind depth -d 16"   # "$@"
+            export ezlaunch="${DIST_LAUNCH}"
+        else
+            echo "$(hostname) not found in ${nodefile} ... ?"
+        fi
     else
         echo "Skipping getPBSenv() on $(hostname)"
-    fi
-}
-
-function getCOBALTenv() {
-    if [[ $(hostname) == thetagpu* ]]; then
-        export JOBENV_FILE="${COBALT_ENV_FILE}"
-        # shellcheck source=${HOME}/.cobaltenv
-        source "${COBALT_ENV_FILE}"
-        export DIST_LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $COBALT_NODEFILE -x PATH -x LD_LIBRARY_PATH"
-        export ezlaunch="${DIST_LAUNCH}"
-    else
-        echo "Skipping getCOBALTenv() on $(hostname)"
     fi
 }
 
@@ -76,6 +85,8 @@ function getJOBenv() {
         echo "Unable to find ${JOBENV_FILE} on $(hostname)"
         exit 1
     fi
+    export LAUNCH="${DIST_LAUNCH}"
+    export ezlaunch="${DIST_LAUNCH}"
     alias launch="${DIST_LAUNCH}"
     export ezlaunch="${DIST_LAUNCH}"
     export HOSTFILE="${HOSTFILE}"
@@ -89,19 +100,29 @@ function getJOBenv() {
     export HOSTS="${HOSTS}"
 }
 
+# function printHosts() {
+#     counter=0
+#     for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
+#         printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
+#         counter=$((counter+1))
+#     done
+# }
+
 function printHosts() {
     counter=0
     for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
-        printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
+        # printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
+        printf "│     • [host:%s] - ${CYAN}%s${RESET}\n" "${counter}" "${f}"
         counter=$((counter+1))
     done
 }
 
-RED="31"
-GREEN="32"
-BOLDGREEN="\e[1;${GREEN}m"
-ITALICRED="\e[3;${RED}m"
-ENDCOLOR="\e[0m"
+
+# RED="31"
+# GREEN="32"
+# BOLDGREEN="\e[1;${GREEN}m"
+# ITALICRED="\e[3;${RED}m"
+# ENDCOLOR="\e[0m"
 # NC='\033[0m'
 
 function printJOBenv() {
@@ -136,5 +157,29 @@ function printJOBenv() {
     echo "└──────────────────────────────────────────────────────────────────"
 }
 
+print_job_env() {
+    printf "${HEADER}"
+    printf "│ [${CYAN}HOSTS${RESET}]:\n"
+    printHosts
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────\n"
+    # printf "┌─────────────────────────────────────────────────────────────────────\n"
+    printf "${HEADER}"
+    printf "│ [${MAGENTA}DIST INFO${RESET}]:\n"
+    printf "│     • HOSTFILE=${MAGENTA}${HOSTFILE}${RESET}\n"
+    printf "│     • NHOSTS=$NHOSTS\n"
+    printf "│     • NGPU_PER_HOST=$NGPU_PER_HOST\n"
+    printf "│     • NGPUS=${MAGENTA}$NGPUS${RESET}\n"
+    printf "${FOOTER}"
+    # printf "└─────────────────────────────────────────────────────────────────────\n"
+    # printf "┌─────────────────────────────────────────────────────────────────────\n"
+    printf "${HEADER}"
+    printf "│ [${GREEN}LAUNCH${RESET}]:\n"
+    printf "│     • To launch across all available GPUs, use:\n"
+    printf "│       '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
+    printf "${FOOTER}"
+}
+
 getJOBenv
-printJOBenv
+print_job_env
+# printJOBenv
