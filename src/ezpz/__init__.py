@@ -20,6 +20,7 @@ import torch
 
 from ezpz import dist
 from ezpz import plot
+from ezpz import profile
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
@@ -227,6 +228,7 @@ __all__ = [
     "print_config_tree",
     "print_dist_setup",
     "printarr",
+    "profile",
     "query_environment",
     "run_bash_command",
     "savejobenv",
@@ -358,8 +360,8 @@ def get_enrich_logging_config_as_yaml(name: str = "enrich", level: str = "INFO")
 
 
 def get_logger_new(
-    name: str,
-    level: str = "INFO",
+        name: str,
+        level: str = "INFO",
 ):
     import yaml
     config = yaml.safe_load(
