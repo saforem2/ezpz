@@ -7,15 +7,15 @@ ezpz_ddp.py
   $ BACKEND=DDP launch python3 ezpz_ddp.py
 """
 import time
-T0 = time.perf_counter()
+T0 = time.perf_counter()  # start time
 
-# noqa: E402
-import os  # noqa:E402
-import logging  # noqa:E402
-from typing import Optional, Union  # noqa:E402
-import torch  # noqa: E402
-import ezpz as ez  # noqa: E402
-from pathlib import Path  # noqa: E402
+import os
+import logging
+
+from typing import Optional
+import torch
+import ezpz as ez
+from pathlib import Path
 try:
     import wandb
     wandb.require("core")
@@ -26,8 +26,8 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+T1 = time.perf_counter()  # import time = (T1 - T0)
 # backend can be any of DDP, deespepeed, horovod
-T1 = time.perf_counter()
 RANK = ez.setup_torch(
     backend=(
         backend := os.environ.get('BACKEND', 'DDP')
@@ -36,17 +36,15 @@ RANK = ez.setup_torch(
         port := os.environ.get("MASTER_PORT", "29500")
     )
 )
-T2 = time.perf_counter()
+T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
 TIMERS = {
     'timers/ezpz.setup_torch': T2 - T1,
     'timers/imports': T1 - T0,
 }
-# log only from RANK == 0
-logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
-DEVICE = ez.get_torch_device()
+DEVICE_TYPE = ez.get_torch_device()
 WORLD_SIZE = ez.get_world_size()
 LOCAL_RANK = ez.get_local_rank()
-DEVICE_ID = f"{DEVICE}:{LOCAL_RANK}"
+DEVICE_ID = f"{DEVICE_TYPE}:{LOCAL_RANK}"
 
 # log only from RANK == 0
 logger = logging.getLogger(__name__)
@@ -62,6 +60,24 @@ PYINSTRUMENT_PROFILER = os.environ.get(
     "PYINSTRUMENT_PROFILER",
     None
 )
+sizes = os.environ.get(
+    "LAYER_SIZES",
+    os.environ.get(
+        "SIZES",
+        os.environ.get(
+            "LAYERS",
+            None,   # [1024, 512, 256, 128]
+        )
+    )
+)
+if sizes is not None:
+    LAYER_SIZES = [int(i) for i in sizes.split(',')]
+    logger.info(f'Caught: {LAYER_SIZES=}')
+else:
+    LAYER_SIZES = [1024, 512, 256, 128]
+
+# LAYER_SIZES = ()
+# [1024, 512, 256, 128]
 
 # dtype = os.environ.get("DTYPE", None)
 # torch.get_num_interop_threads
@@ -79,7 +95,7 @@ CONFIG = {
     'input_size': INPUT_SIZE,
     'output_size': OUTPUT_SIZE,
     'dtype': DTYPE,
-    'device': DEVICE,
+    'device': DEVICE_TYPE,
     'world_size': WORLD_SIZE,
     'train_iters': TRAIN_ITERS,
 }
@@ -89,9 +105,6 @@ if not WANDB_DISABLED and RANK == 0 and wandb is not None:
     run = ez.setup_wandb(project_name='ezpz.test_dist')
     assert wandb.run is not None
     wandb.run.config.update(CONFIG)
-
-# logger.info(f"{DIST_INIT=}")
-# logger.info(f'
 
 
 class Network(torch.nn.Module):
@@ -120,23 +133,30 @@ class Network(torch.nn.Module):
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
+import torch
+# import deepspeed
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-def main():
+# Model = Callable[[torch.Tensor], torch.Tensor]
+ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
+
+def build_model_and_optimizer() -> ModelOptimizerPair:
+    # :   #  -> tuple[Union[torch.nn.Module, DDP, deepspeed.DeepSpeedEngine], torch:
     model = Network(
         input_dim=INPUT_SIZE,
         output_dim=OUTPUT_SIZE,
-        sizes=[1024, 512, 256, 128]
+        sizes=LAYER_SIZES,  # [1024, 512, 256, 128]
     )
     if RANK == 0 and not WANDB_DISABLED and wandb is not None:
         assert wandb.run is not None
         wandb.run.watch(model, log='all')
-    model.to(DEVICE)
+    model.to(DEVICE_TYPE)
     model.to(DEVICE_ID)
     logger.info(f'{model=}')
     optimizer = torch.optim.Adam(model.parameters())
+    # with profiler:
     if backend.lower() == 'ddp':
         if WORLD_SIZE > 1:
-            from torch.nn.parallel import DistributedDataParallel as DDP
             model = DDP(
                 model,
                 device_ids=[]
@@ -163,6 +183,10 @@ def main():
             model=model,
             optimizer=optimizer,
         )
+    return model, optimizer
+
+
+def main():
 
     metrics = {
         'train/dt': [],    # time per iteration
@@ -173,18 +197,32 @@ def main():
     }
     T3 = time.perf_counter()
     TIMERS['timers/init_to_first_step'] = T3 - T0
-    for iter in range(TRAIN_ITERS):
-        t0 = time.perf_counter()
-        x = torch.rand(*(BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE)
+
+    model, optimizer = build_model_and_optimizer()
+
+    def _forward_step() -> torch.Tensor:
+        x = torch.rand(*(BATCH_SIZE, INPUT_SIZE), dtype=DTYPE).to(DEVICE_TYPE)
         y = model(x)
-        loss = calc_loss(x, y)
-        t1 = time.perf_counter()
+        return calc_loss(x, y)
+
+    def _backward_step(loss: torch.Tensor) -> None:
         if backend == 'deepspeed':
             model.backward(loss)
             model.step(loss)
         else:
             loss.backward()
             optimizer.step()
+
+    # with profiler:
+    #     loss = _forward_step()
+    # with profiler:
+    #     _ = _backward_step(loss)
+
+    for iter in range(TRAIN_ITERS):
+        t0 = time.perf_counter()
+        loss = _forward_step()
+        t1 = time.perf_counter()
+        _ = _backward_step(loss)
         t2 = time.perf_counter()
         optimizer.zero_grad()
         if iter > WARMUP and iter % LOG_FREQ == 0:
@@ -231,12 +269,12 @@ def main():
 
 
 if __name__ == '__main__':
-    from ezpz.profile import get_context_manager
+    # from ezpz.profile import get_context_manager
     # NOTE: if rank is passed to get_context_manager,
     # it will ONLY be instantiated if rank == 0,
     # otherwise, it will return a contextlib.nullcontext() instance.
-    cm = get_context_manager(rank=RANK, strict=False)
-    with cm:
+    profiler = ez.profile.get_context_manager(rank=RANK, strict=False)
+    with profiler:
         main()
     T4 = time.perf_counter()
     TIMERS['timers/runtime'] = T4 - T0

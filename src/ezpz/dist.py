@@ -66,9 +66,10 @@ if not os.environ.get(
 ):
     os.environ['COLORTERM'] = 'truecolor'
 
+LOG_LEVEL = str(os.environ.get("LOG_LEVEL", "INFO")).upper()
 # log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
-log.setLevel('INFO')
+log.setLevel(LOG_LEVEL)
 # log = get_logger(__name__, level='INFO')
 logging.getLogger('sh').setLevel('WARNING')
 
