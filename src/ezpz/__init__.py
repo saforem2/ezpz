@@ -14,9 +14,9 @@ from typing import Any, Optional
 from typing import Union
 
 import numpy as np
+import rich
 from rich.console import Console
 from rich.logging import RichHandler
-import torch
 
 from ezpz import dist
 from ezpz import plot
@@ -132,18 +132,8 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
-log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
-log.info("Setting logging level to 'INFO' on 'RANK == 0'")
-log.info("Setting logging level to 'CRITICAL' on 'RANK != 0'")
-log.info(
-    ' ' .join(
-        [
-            "To disable this behavior,",
-            "and log from ALL ranks (not recommended), set:",
-            "'export LOG_FROM_ALL_RANKS=1' in your environment, and re-run."
-        ]
-    )
-)
+LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+# log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 LOG_FROM_ALL_RANKS = os.environ.get(
     "LOG_FROM_ALL_RANKS",
     os.environ.get(
@@ -154,6 +144,18 @@ LOG_FROM_ALL_RANKS = os.environ.get(
 if LOG_FROM_ALL_RANKS:
     log.setLevel("INFO")
 else:
+    if RANK == 0:
+        log.info("Setting logging level to 'INFO' on 'RANK == 0'")
+        log.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
+        log.info(
+            ' ' .join(
+                [
+                    "To disable this behavior,",
+                    "and log from ALL ranks (not recommended), set:",
+                    "'export LOG_FROM_ALL_RANKS=1' in your environment, and re-run."
+                ]
+            )
+        )
     log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 
@@ -272,6 +274,7 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
 
 
 def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
+    import torch
     if x is None:
         return None
     if isinstance(x, (int, float, bool, np.floating)):
