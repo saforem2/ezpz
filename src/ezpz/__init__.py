@@ -76,7 +76,8 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.jobs import loadjobenv, savejobenv
+# from ezpz.jobs import loadjobenv, savejobenv
+# from ezpz import jobs
 from ezpz.log import get_file_logger, get_logger
 from ezpz.log.config import DEFAULT_STYLES, NO_COLOR, STYLES
 from ezpz.log.console import (
@@ -122,7 +123,6 @@ except Exception:
 
 log_config = logging.config.dictConfig(get_logging_config())
 log = logging.getLogger(__name__)
-# log.setLevel('INFO')
 logging.getLogger("sh").setLevel("WARNING")
 
 
@@ -133,7 +133,6 @@ RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
-# log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 LOG_FROM_ALL_RANKS = os.environ.get(
     "LOG_FROM_ALL_RANKS",
     os.environ.get(
@@ -142,21 +141,24 @@ LOG_FROM_ALL_RANKS = os.environ.get(
     )
 )
 if LOG_FROM_ALL_RANKS:
-    log.setLevel("INFO")
+    log.setLevel(LOG_LEVEL)
 else:
     if RANK == 0:
         log.info("Setting logging level to 'INFO' on 'RANK == 0'")
-        log.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
+        log.info(
+            "Setting logging level to 'CRITICAL' on all others 'RANK != 0'"
+        )
         log.info(
             ' ' .join(
                 [
                     "To disable this behavior,",
-                    "and log from ALL ranks (not recommended), set:",
-                    "'export LOG_FROM_ALL_RANKS=1' in your environment, and re-run."
+                    "and log from ALL ranks (not recommended),",
+                    "set: 'export LOG_FROM_ALL_RANKS=1' ",
+                    "in your environment, and re-run."
                 ]
             )
         )
-    log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+    log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 
 
 __all__ = [
