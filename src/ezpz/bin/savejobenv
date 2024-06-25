@@ -1,5 +1,6 @@
 #!/bin/bash --login
-#set -euxo pipefail
+
+# set -euxo pipefail
 #IFS=$'\n\t'
 
 RESET="\e[0m"
@@ -13,6 +14,18 @@ CYAN="\e[1;36m"
 WHITE="\e[1;37m"
 
 HOSTNAME=$(hostname)
+
+# if [[ $# == 0 ]]; then
+#     PBS_ENV_FILE="${HOME}/.pbsenv"
+#     COBALT_ENV_FILE="${HOME}/.cobaltenv"
+#     SLURM_ENV_FILE="${HOME}/.slurmenv"
+# elif [[ $# == 1 ]]; then
+#     PBS_ENV_FILE="$1"
+# elif [[ $# == 2 ]]; then
+#     PBS_ENV_FILE="$1"
+#     HOSTFILE="$2"
+# fi
+
 PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
@@ -31,54 +44,68 @@ function join_by() {
     fi
 }
 
-function getCOBALT_NODEFILE() {
-    if [[ $(hostname) == thetagpu* ]]; then
-        RUNNING_JOB_FILE="/var/tmp/cobalt-running-job"
-        if [[ -f "$RUNNING_JOB_FILE" ]]; then
-            JOBID=$(sed "s/:$USER//" /var/tmp/cobalt-running-job)
-            COBALT_NODEFILE="/var/tmp/cobalt.${JOBID}"
-            export JOBID="${JOBID}"
-            export HOSTFILE="${HOSTFILE}"
-            export COBALT_NODEFILE="${COBALT_NODEFILE}"
-        fi
-    else
-        echo "Skipping getCOBALT_NODEFILE on $(hostname)"
-    fi
-}
 
-# -------------------------------- RIP THETA ------------------------------------
-# function saveCOBALTenv() {
-#     if [[ $(hostname) == thetagpu* ]]; then
-#         echo "┌───────────────────────────────────────────────────────────────────"
-#         echo "│ Writing COBALT vars to ${COBALT_ENV_FILE}"
-#         getCOBALT_NODEFILE
-#         COBALT_VARS=$(env | grep COBALT)
-#         echo "${COBALT_VARS[*]}" > "${COBALT_ENV_FILE}"
-#         # export FNAME="COBALT_NODEFILE"
-#         export HOSTFILE="${COBALT_NODEFILE}"
-#         export JOBENV_FILE="${COBALT_ENV_FILE}"
-#         sed -i 's/^COBALT/export\ COBALT/g' "${COBALT_ENV_FILE}"
-#         export DIST_LAUNCH="mpirun -n ${NGPUS} -N ${NGPU_PER_HOST} --hostfile ${COBALT_NODEFILE} -x PATH -x LD_LIBRARY_PATH"  #  "$@"
-#     fi
-# }
-# -------------------------------------------------------------------------------
-
-
-function savePBSenv() {
+function save_pbs_env() {
     # if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
+    # if [[ "$#" == 1]]; then
+    #     jobenv_file="$1"
+    #     echo "Caught jobenv_file: ${jobenv_file}"
+    # elif [[ "$#" == 2 ]]; then
+    #     jobenv_file="$1"
+    #     hostfile="$2"
+    #     echo "Caught jobenv_file: ${jobenv_file}"
+    #     echo "Caught hostfile: ${hostfile}"
+    # else
+    #     jobenv_file="${PBS_ENV_FILE}"
+    #     hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+    # fi
+    # if [[ -n "${PBS_NODEFILE}" ]]; then
+    if [[ "$#" == 0 ]]; then
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    elif [[ "$#" == 1 ]]; then
+        hostfile="$1"
+    elif [[ "$#" == 2 ]]; then
+        hostfile="$1"
+        jobenv_file="$2"
+    else
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    fi
+    # printf "[save_pbs_env] Caught hostfile: %s\n" "${hostfile}"
+    # printf "[save_pbs_env] Caught jobenv_file: %s\n" "${jobenv_file}"
     if [[ -n $(printenv | grep PBS_JOBID ) ]]; then
         PBS_VARS=$(env | grep PBS)
-        echo "${PBS_VARS[*]}" > "${PBS_ENV_FILE}"
-        export HOSTFILE="${PBS_NODEFILE}"
-        export JOBENV_FILE="${PBS_ENV_FILE}"
-        sed -i 's/^PBS/export\ PBS/g' "${PBS_ENV_FILE}"
-        export DIST_LAUNCH="mpiexec --verbose --envall -n ${NGPUS} -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE} --cpu-bind depth -d 16"   # "$@"
+        # PBS_VARS+=("${hostfile}")
+        # PBS_VARS+=("${jobenv_file}")
+        echo "${PBS_VARS[*]}" > "${jobenv_file}"
+        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+        if [[ "${hostfile}" != "${PBS_NODEFILE:-}" ]]; then
+            printf "[!! save_pbs_env] Caught HOSTFILE != PBS_NODEFILE \n"
+            printf "[!! save_pbs_env] HOSTFILE: %s\n" "${hostfile}"
+            printf "[!! save_pbs_env] PBS_NODEFILE: %s\n" "${PBS_NODEFILE}"
+        fi
+        # export JOBENV_FILE="${PBS_ENV_FILE}"
+        sed -i 's/^PBS/export\ PBS/g' "${jobenv_file}"
+        sed -i 's/^HOSTFILE/export\ HOSTFILE/g' "${jobenv_file}"
+        num_hosts=$(get_num_hosts "${hostfile}")
+        num_gpus_per_host=$(get_num_gpus_per_host)
+        num_gpus=$(( num_hosts * num_gpus_per_host ))
+        # getNumHosts "${hostfile}"
+
+        # getNumGPUs
+        # NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        export DIST_LAUNCH="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
         export ezlaunch="${DIST_LAUNCH}"
     fi
+    export JOBENV_FILE="${jobenv_file}"
+    export HOSTFILE="${hostfile}"
+    # printf "Using JOBENV_FILE: %s\n" "${JOBENV_FILE}"
+    # printf "Using HOSTFILE: %s\n" "${HOSTFILE}"
 }
 
 
-function saveSLURMenv() {
+function save_slurm_env() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         echo "│ Saving SLURM_* to ${SLURM_ENV_FILE}"
         SLURM_VARS=$(env | grep SLU)
@@ -100,49 +127,51 @@ function saveSLURMenv() {
 #     echo "┌───────────────────────────────────────────────────────────────────"
 #     if [[ $(hostname) == x3* ]]; then
 #         echo "│ Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
-#         savePBSenv
+#         save_pbs_env
 #     elif [[ $(hostname) == theta* ]]; then
 #         echo "│ Saving COBALT env to ${COBALT_ENV_FILE} from ${HOSTNAME}"
 #         saveCOBALTenv
 #     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-#         saveSLURMenv
+#         save_slurm_env
 #     fi
 # }
 
 function setupHost() {
-    # printf "┌─────────────────────────────────────────────────────────────────────┐\n"
+    if [[ "$#" == 0 ]]; then
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    elif [[ "$#" == 1 ]]; then
+        hostfile="$1"
+    elif [[ "$#" == 2 ]]; then
+        hostfile="$1"
+        jobenv_file="$2"
+    else
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    fi
+    printf "[setupHost] Caught jobenv_file: %s\n" "${jobenv_file}"
+    printf "[setupHost] Caught hostfile: %s\n" "${hostfile}"
     printf "${HEADER}"
     printf "│ [${YELLOW}savejobenv${RESET}]:\n"
-    printf "│     • Writing PBS vars to: ${YELLOW}${PBS_ENV_FILE}${RESET}\n"
+    printf "│     • Writing PBS vars to: ${YELLOW}${jobenv_file}${RESET}\n"
     printf "${FOOTER}"
-    # printf "└─────────────────────────────────────────────────────────────────────┘\n"
     if [[ $(hostname) == x3* ]]; then
         export GPU_TYPE="NVIDIA"
-        export HOSTFILE="${PBS_NODEFILE}"
-        savePBSenv
+        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+        save_pbs_env "$@"
     elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         export GPU_TYPE="INTEL"
-        export HOSTFILE="${PBS_NODEFILE}"
+        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
         export NGPU_PER_TILE=6
         export NTILE_PER_HOST=2
         export NGPU_PER_HOST=$(( NGPU_PER_TILE * NTILE_PER_HOST ))
-        # export GPU_ID=$(( (PALS_LOCAL_RANKID / NTILE_PER_HOST ) % NGPU_PER_TILE ))
-        # export TILE_ID=$((PALS_LOCAL_RANKID % NTILE_PER_HOST ))
-        # unset EnableWalkerPartition
-        # export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
-        # export ZE_AFFINITY_MASK=$GPU_ID.$TILE_ID
-        # echo "RANK=${PALS_RANKID} LOCAL_RANK=${PALS_LOCAL_RANKID} GPU=${GPU_ID} TILE=${TILE_ID}"
-        savePBSenv
-    elif [[ $(hostname) == thetagpu* ]]; then
-        export GPU_TYPE="NVIDIA"
-        export HOSTFILE="${COBALT_NODEFILE}"
-        saveCOBALTenv
+        save_pbs_env "$@"
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
         export GPU_TYPE="NVIDIA"
         export HOSTFILE="${HOME}/.slurm-nodefile"
-        saveSLURMenv
+        save_slurm_env
     else
-        echo "│ Unexpected hostname: ${HOSTNAME}"
+        echo "│ Unexpected hostname: ${hostname}"
         export GPU_TYPE="NONE"
         HOSTFILE="hostfile"
         hostname > "${HOSTFILE}"
@@ -150,94 +179,21 @@ function setupHost() {
 }
 
 function printHosts() {
+    if [[ "$#" == 0 ]]; then
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+    elif [[ "$#" == 1 ]]; then
+        hostfile="$1"
+    else
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+    fi
     counter=0
-    for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
+    # for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
+    for f in $(/bin/cat "${hostfile}"); do
         # printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
         printf "│     • [host:%s] - ${CYAN}%s${RESET}\n" "${counter}" "${f}"
         counter=$((counter+1))
     done
 }
-
-
-# function setup() {
-#     echo "┌───────────────────────────────────────────────────────────────────"
-#     if [[ -n "${PBS_NODEFILE}" ]]; then
-#         export HOSTFILE="${PBS_NODEFILE}"
-#         savePBSenv
-#     elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
-#         export HOSTFILE="${HOME}/.slurm-nodefile"
-#         saveSLURMenv
-#     elif [[ $(hostname) == thetagpu* ]]; then
-#         export HOSTFILE="${COBALT_NODEFILE}"
-#         saveCOBALTenv
-#     else
-#         echo "│ Unexpected hostname: ${HOSTNAME}"
-#         HOSTFILE="hostfile"
-#         hostname > "${HOSTFILE}"
-#     fi
-#     NHOSTS=${SLURM_NNODES:-"$(wc -l < "${HOSTFILE}")"}
-#     NGPU_PER_HOST=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
-#     NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"  # noqa
-#     HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
-#     export NHOSTS="${NHOSTS}"
-#     export NGPU_PER_HOST="${NGPU_PER_HOST}"
-#     export NGPUS="${NGPUS}"
-#     export WORLD_SIZE="${NGPUS}"
-#     echo "│ HOSTFILE: ${HOSTFILE}"
-#     echo "│ NHOSTS: ${NHOSTS}"
-#     echo "│ $(nvidia-smi -L | wc -l) GPUs per host"
-#     echo "│ ${NGPUS} GPUs total"
-#     echo "└───────────────────────────────────────────────────────────────────"
-#     {
-#         echo "export HOSTFILE=${HOSTFILE}"
-#         echo "export NHOSTS=${NHOSTS}"
-#         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
-#         echo "export NGPUS=${NGPUS}"
-#         echo "alias LAUNCH=${LAUNCH}"
-#     } >> "${JOBENV_FILE}"
-#     export LAUNCH="${DIST_LAUNCH}"
-#     export ezlaunch="${DIST_LAUNCH}"
-#     echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
-#     alias launch="${DIST_LAUNCH}"
-#     # HOSTS=$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")
-#     echo "┌──────────────────────────────────────────────────────────────────"
-#     echo "│ [HOSTS]: "
-#     printHosts
-#     echo "└──────────────────────────────────────────────────────────────────"
-#     echo "┌───────────────────────────────────────────────────────────────────"
-#     echo "│ [DIST INFO]:"
-#     echo "│   • Writing Job info to ${JOBENV_FILE}"
-#     echo "│     • HOSTFILE: ${HOSTFILE}"
-#     echo "│     • NHOSTS: $NHOSTS "
-#     echo "│     • NGPU_PER_HOST: $NGPU_PER_HOST "
-#     echo "│     • NGPUS = (NHOSTS * NGPU_PER_HOST) = $NGPUS"
-#     printf "│     • \033[0;31mWORLD_SIZE\033[0m: \033[0;36m%s\033[0m\n" "${WORLD_SIZE}"
-#     printf "│     • DIST_LAUNCH: \033[33;1m%s\033[0m\n" "${DIST_LAUNCH}"
-#     # echo "│     • Defining alias: $(which launch)"
-#     # printf "\033[0;32mHello World! green\033[0m\n"
-#     # printf "│     • \033[0:33mDefining alias\033[0m: %s\n" "$(which launch)"
-#     # printf "│     • Defining alias: %s\n" "$(which launch)"
-#     echo "└──────────────────────────────────────────────────────────────────"
-#     echo "┌──────────────────────────────────────────────────────────────────"
-#     echo "│ [LAUNCH]:"
-#     printf "│     • Use: '\033[0;32mlaunch\033[0m' (=\033[32;1m%s\033[0m)\n" "${DIST_LAUNCH}"
-#     echo "│       to launch job"
-#     echo "└──────────────────────────────────────────────────────────────────"
-#     # echo "│ [Hosts]:"
-#     # echo "│       • ${HOSTS[*]}"
-#     # echo "│ [Launch]:"
-#     # echo "│     • Use: 'launch' (=${LAUNCH})"
-#     # echo "│       to launch job"
-#     # echo "└───────────────────────────────────────────────────────────────────"
-#     # echo "┌────────────────────────────────────────────────────────────────────────────────"
-#     # echo "│ YOU ARE HERE: $(whereAmI)"
-#     # echo "│ Run 'source ezpz/src/ezpz/bin/getjobenv' in a NEW SHELL to automatically set env vars      "
-#     # echo "└────────────────────────────────────────────────────────────────────────────────"
-#     export NHOSTS="${NHOSTS}"
-#     export NGPU_PER_HOST="${NGPU_PER_HOST}"
-#     export NGPUS="${NGPUS}"
-# }
-
 
 
 function getNumXPUs() {
@@ -247,82 +203,148 @@ function getNumXPUs() {
 function getNumGPUsNVIDIA() {
     nGPU=$(nvidia-smi -L | wc -l)
     export NGPU_PER_HOST="${nGPU}"
+    echo "${nGPU}"
 }
 
-function getNumGPUs() {
+# function getNumGPUs1() {
+#     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
+#         export NGPU_PER_HOST=12
+#     elif [[ $(hostname) == x3* ]]; then
+#         getNumGPUsNVIDIA
+#     else
+#         echo "Unknown host $(hostname)"
+#         getNumGPUsNVIDIA
+#     fi
+# }
+
+get_num_gpus_per_host() {
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
-        export NGPU_PER_HOST=12
-    elif [[ $(hostname) == x3* ]]; then
-        getNumGPUsNVIDIA
+        # export NGPU_PER_HOST=12
+        ngpu_per_host=12
+    # elif [[ $(hostname) == x3* ]]; then
+    #     ngpu_per_host=$(getNumGPUsNVIDIA)
     else
-        echo "Unknown host $(hostname)"
-        getNumGPUsNVIDIA
+        # echo "Unknown host $(hostname)"
+        ngpu_per_host=$(getNumGPUsNVIDIA)
     fi
+    export NGPU_PER_HOST="${ngpu_per_host}"
+    echo "${ngpu_per_host}"
 }
 
-function getNumHosts() {
-    export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-    if [[ -n "${HOSTFILE}" ]]; then
-        nhosts=$(wc -l < "${HOSTFILE}")
+# function getNumHosts1() {
+#     # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+#     if [[ "$#" == 0 ]]; then
+#         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+#     elif [[ "$#" == 1 ]]; then
+#         hostfile="$1"
+#     else
+#         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+#     fi
+#     # if [[ -z "${hostfile}" ]]; then
+#     if [[ -n "${hostfile}" ]]; then
+#         nhosts=$(wc -l < "${hostfile}")
+#     elif [[ -n "${SLURM_NNODES:-}" ]]; then
+#         nhosts=${SLURM_NNODES:-1}
+#     else
+#         # printf "[getNumHosts] Unable to locate %s\n"  "${hostfile}"
+#         # printf "[getNumHosts] received arguments: %s\n" "$@"
+#         # printf "[getNumHosts] [!! ERROR] Setting nhosts: 1\n"
+#         nhosts=1
+#     fi
+#     if [[ -n "${nhosts}" ]]; then
+#         export NHOSTS="${nhosts}"
+#         # printf "[getNumHosts] caught %s from %s\n" "${nhosts}" "${hostfile}"
+#     # else
+#     #     printf "[getNumHosts]"
+#     fi
+#     echo "${nhosts}"
+# }
+
+get_num_hosts() {
+    if [[ "$#" == 0 ]]; then
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+    elif [[ "$#" == 1 ]]; then
+        hostfile="$1"
     else
-        nhosts=${SLURM_NNODES:-1}
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
     fi
-    export NHOSTS="${nhosts}"
-    # [ -n "${HOSTFILE}" ] && export NHOSTS=$(wc -l < $HOSTFILE) || export NHOSTS=${SLURM_NNODES:-1}
+    if [[ -n "${hostfile}" ]]; then
+        nhosts=$(wc -l < "${hostfile}")
+    elif [[ -n "${SLURM_NNODES:-}" ]]; then
+        nhosts=${SLURM_NNODES:-1}
+    else
+        nhosts=1
+    fi
+    if [[ -n "${nhosts}" ]]; then
+        export NHOSTS="${nhosts}"
+    fi
+    echo "${nhosts}"
 }
+
+get_num_gpus_total() {
+    num_hosts=$(get_num_hosts "$@")
+    num_gpus_per_host=$(get_num_gpus_per_host)
+    num_gpus=$(( num_hosts * num_gpus_per_host ))
+    echo "${num_gpus}"
+}
+
+
 
 
 function writeJobInfo() {
-    getNumHosts
-    getNumGPUs
-    NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-    HOSTS=$(join_by ', ' $(/bin/cat $HOSTFILE))
-    export NHOSTS="${NHOSTS}"
-    export NGPU_PER_HOST="${NGPU_PER_HOST}"
-    export NGPUS="${NGPUS}"
-    # echo "│   • HOSTFILE: ${HOSTFILE}"
-    # echo "│   • NHOSTS: ${NHOSTS}"
-    # echo "│   • NGPU_PER_HOST: ${NGPU_PER_HOST} GPUs per host"
-    # echo "│   • NGPUS: ${NGPUS} GPUs total"
-    # echo "└───────────────────────────────────────────────────────────────────"
+    if [[ "$#" == 0 ]]; then
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    elif [[ "$#" == 1 ]]; then
+        hostfile="$1"
+    elif [[ "$#" == 2 ]]; then
+        hostfile="$1"
+        jobenv_file="$2"
+    else
+        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    fi
+    # printf "[writeJobInfo] Caught jobenv_file: %s\n" "${jobenv_file}"
+    # printf "[writeJobInfo] Caught hostfile: %s\n" "${hostfile}"
+    num_hosts=$(get_num_hosts "${hostfile}")
+    num_gpus_per_host=$(get_num_gpus_per_host)
+    # getNumGPUs
+    num_gpus="$(( num_hosts * num_gpus_per_host ))"
+    HOSTS=$(join_by ', ' $(/bin/cat ${hostfile}))
+    export NHOSTS="${num_hosts}"
+    export NGPU_PER_HOST="${num_gpus_per_host}"
+    export NGPUS="${num_gpus}"
     {
-        echo "export HOSTFILE=${HOSTFILE}"
+        echo "export HOSTFILE=${hostfile}"
         echo "export NHOSTS=${NHOSTS}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
         echo "alias LAUNCH='${DIST_LAUNCH}'"
-    } >> "${JOBENV_FILE}"
+    } >> "${jobenv_file}"
     export LAUNCH="${DIST_LAUNCH}"
     export ezlaunch="${DIST_LAUNCH}"
-    echo "export HOSTFILE=${HOSTFILE}" >> "${JOBENV_FILE}"
+    # echo "export HOSTFILE=${hostfile}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
-    # printf "┌─────────────────────────────────────────────────────────────────────\n"
     printf "${HEADER}"
     printf "│ [${CYAN}HOSTS${RESET}]:\n"
     printHosts
     printf "${FOOTER}"
-    # printf "└─────────────────────────────────────────────────────────────────────\n"
-    # printf "┌─────────────────────────────────────────────────────────────────────\n"
     printf "${HEADER}"
     printf "│ [${MAGENTA}DIST INFO${RESET}]:\n"
-    printf "│     • HOSTFILE=${MAGENTA}${HOSTFILE}${RESET}\n"
+    printf "│     • HOSTFILE=${MAGENTA}${hostfile}${RESET}\n"
     printf "│     • NHOSTS=$NHOSTS\n"
     printf "│     • NGPU_PER_HOST=$NGPU_PER_HOST\n"
     printf "│     • NGPUS=${MAGENTA}$NGPUS${RESET}\n"
     printf "${FOOTER}"
-    # printf "└─────────────────────────────────────────────────────────────────────\n"
-    # printf "┌─────────────────────────────────────────────────────────────────────\n"
     printf "${HEADER}"
     printf "│ [${GREEN}LAUNCH${RESET}]:\n"
     printf "│     • To launch across all available GPUs, use:\n"
     printf "│       '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
     printf "${FOOTER}"
-    # printf "└─────────────────────────────────────────────────────────────────────\n"
     # echo "┌────────────────────────────────────────────────────────────────────────────────"
     # echo "│ YOU ARE HERE: $(whereAmI)"
     # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
     # echo "└────────────────────────────────────────────────────────────────────────────────"
-    # printf "│       to launch job across all ${NGPUS} GPUs\n"
     export NHOSTS="${NHOSTS}"
     export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export NGPUS="${NGPUS}"
@@ -340,10 +362,12 @@ saveDeepSpeedEnv() {
 
 
 main() {
-    setupHost
-    writeJobInfo
+    setupHost "$@"
+    writeJobInfo "$@"
 }
 
-
-main 1> /dev/null
-main
+# args="$@"
+#
+# main "${args}" 1> /dev/null
+# main "${args}"
+main "$@"
