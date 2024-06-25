@@ -8,6 +8,7 @@ import json
 import yaml
 from pathlib import Path
 from typing import Optional, Any
+from ezpz.dist import get_rank
 from ezpz.configs import (
     get_scheduler,
 )
