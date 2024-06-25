@@ -4,41 +4,28 @@ plot_helpers.py
 Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
+import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple, Union
+
+from ezpz.dist import get_rank
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import xarray as xr
-import logging
 
-# from ezpz.log import get_logger
-# try:
-#     import matplotx
-#     MATPLOTX = True
-# except (ImportError, ModuleNotFoundError):
-#     MATPLOTX = False
-from ezpz.dist import get_rank
 RANK = get_rank()
 
 # warnings.filterwarnings('ignore')
 
-# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
-
-# log = get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
-
-# plt.rcParams['svg.fonttype'] = 'none'
-
 FigAxes = Tuple[plt.Figure, plt.Axes]
-
 PLOTS_LOG = Path(os.getcwd()).joinpath('plots.txt')
 
 COLORS = {
@@ -53,9 +40,7 @@ COLORS = {
     'white':    '#CFCFCF',
 }
 
-
 # ["#2196F3", "#EF5350", "#4CAF50", "#FFA726", "#AE81FF", "#ffeb3b", "#EC407A", "#009688", "#CFCFCF"]
-
 
 # sns.set_context('talk')
 # set_plot_style()
@@ -447,6 +432,7 @@ def plot_combined(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
 ) -> tuple:
+    import seaborn as sns
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     figsize = subplots_kwargs.get('figsize', set_size())
@@ -726,6 +712,7 @@ def plot_metric(
         ext: Optional[str] = 'png',
         # line_labels: Optional[bool] = False,
 ) -> tuple:
+    import seaborn as sns
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     figsize = subplots_kwargs.get('figsize', set_size())
@@ -872,6 +859,7 @@ def make_ridgeplots(
 ):
     """Make ridgeplots."""
     import pandas as pd
+    import seaborn as sns
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
     # sns.set(style='white', palette='bright', context='paper')

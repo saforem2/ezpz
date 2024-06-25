@@ -55,10 +55,10 @@ def get_context_manager(
         if os.environ.get("PYINSTRUMENT_PROFILER", None) is not None:
             return PyInstrumentProfiler(rank=rank, outdir=outdir)
         return nullcontext()
-    if rank is None:
+    if rank is None or rank == 0:
         return PyInstrumentProfiler(rank=rank, outdir=outdir)
-    if rank == 0:
-        return PyInstrumentProfiler(rank=rank, outdir=outdir)
+    # if rank == 0:
+    #     return PyInstrumentProfiler(rank=rank, outdir=outdir)
     return nullcontext()
 
 
@@ -92,7 +92,7 @@ class PyInstrumentProfiler:
         self._start = time.perf_counter_ns()
         outdir = os.getcwd() if outdir is None else outdir
         self.outdir = Path(outdir).joinpath("ezpz_pyinstrument_profiles")
-        self.outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
+        # self.outdir = Path(outdir) if outdir is None else Path(outdir)
         self.outdir.mkdir(exist_ok=True, parents=True)
 
     def __enter__(self):

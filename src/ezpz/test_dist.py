@@ -9,7 +9,12 @@ ezpz_ddp.py
 import time
 T0 = time.perf_counter()  # start time
 
+import sys
 import os
+os.environ['NUMEXPR_MAX_THREADS'] = os.environ.get(
+    "NUMEXPR_MAX_THREADS",
+    "16",
+)
 import logging
 
 from typing import Optional
@@ -79,8 +84,6 @@ else:
 # LAYER_SIZES = ()
 # [1024, 512, 256, 128]
 
-# dtype = os.environ.get("DTYPE", None)
-# torch.get_num_interop_threads
 DTYPE: torch.dtype  = torch.get_default_dtype()
 if (dtype := os.environ.get("DTYPE", None)) is not None:
     if dtype.startswith('fp16'):
@@ -103,7 +106,7 @@ CONFIG = {
 run = None
 if not WANDB_DISABLED and RANK == 0 and wandb is not None:
     run = ez.setup_wandb(project_name='ezpz.test_dist')
-    assert wandb.run is not None
+    assert wandb is not None and run is  wandb.run
     wandb.run.config.update(CONFIG)
 
 
@@ -253,12 +256,13 @@ def main():
             if not WANDB_DISABLED and RANK == 0 and wandb is not None:
                 wandb.log(_metrics)
     if RANK == 0:
+        from ezpz.plot import tplot_dict
         outdir = Path(os.getcwd()).joinpath('test-dist-plots')
         outdir.mkdir(parents=True, exist_ok=True)
         for key, val in metrics.items():
             if key == 'iter':
                 continue
-            ez.plot.tplot_dict(
+            tplot_dict(
                 data=dict(zip(metrics['train/iter'], val)),
                 xlabel="iter",
                 ylabel=key,
@@ -277,7 +281,13 @@ if __name__ == '__main__':
     with profiler:
         main()
     T4 = time.perf_counter()
-    TIMERS['timers/runtime'] = T4 - T0
+    runtime=(T4 - T0)
+    TIMERS['timers/runtime'] = runtime
+    logger.critical(f'[{RANK}] {runtime=:.6f}s')
     if not WANDB_DISABLED and RANK == 0 and wandb is not None:
-        wandb.log(TIMERS)
-        wandb.finish()
+        if (
+            (run := getattr(wandb, 'run', None)) is not None
+            and run is wandb.run
+        ):
+            wandb.log(TIMERS)
+        # wandb.finish()

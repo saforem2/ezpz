@@ -354,7 +354,7 @@ def init_deepspeed(
     world_size = get_world_size() if world_size is None else world_size
     try:
         import deepspeed
-        log.warning(f'Setting {timeout=}')
+        # log.warning(f'Setting {timeout=}')
         dt = 3600 if timeout is None else timeout
         deepspeed.init_distributed(
             dist_backend=dist_backend,
@@ -637,12 +637,12 @@ def setup_torch(
     """
     import torch
     device = get_torch_device()
-    if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
-        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-        torch.backends.cudnn.deterministic = True     # type:ignore
-        torch.backends.cudnn.benchmark = True         # type:ignore
-        torch.backends.cudnn.allow_tf32 = True        # type:ignore
-        torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
+    # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
+    #     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    #     torch.backends.cudnn.deterministic = True     # type:ignore
+    #     torch.backends.cudnn.benchmark = True         # type:ignore
+    #     torch.backends.cudnn.allow_tf32 = True        # type:ignore
+    #     torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     # torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
     rank = dsetup['rank']
@@ -658,8 +658,8 @@ def setup_torch(
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     if ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
         # log.warning(f'Using {get_torch_device()}:{get_local_rank()}')
-        os.environ['CCL_LOCAL_RANK'] = str(local_rank)
-        os.environ['CCL_LOCAL_SIZE'] = str(local_size)
+        # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
+        # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
         torch.xpu.set_device(local_rank)  # type:ignore
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
@@ -795,6 +795,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith('nid'):
         return 'Perlmutter'
     return f'{hostname}'
+
 
 def setup_wandb(
         project_name: Optional[str] = None,
