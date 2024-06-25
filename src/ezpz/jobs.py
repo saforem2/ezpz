@@ -12,22 +12,16 @@ from ezpz.configs import (
     get_scheduler,
 )
 
-from ezpz import get_logger
-# from ezpz.log import get_logger
-# log_config = logging.config.dictConfig(get_logging_config())
-# log = logging.getLogger(__name__)
+RANK = get_rank()
+SCHEDULER = get_scheduler()
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 LOG_FROM_ALL_RANKS = os.environ.get("LOG_FROM_ALL_RANKS", False)
-# log.setLevel('INFO')
-# log.setLevel(LOG_LEVEL)
 
-log = get_logger(
-    name=__name__,
-    level=LOG_LEVEL,
-    rank_zero_only=(not LOG_FROM_ALL_RANKS)
-)
-
-SCHEDULER = get_scheduler()
+log = logging.getLogger(__name__)
+if LOG_FROM_ALL_RANKS:
+    log.setLevel(LOG_LEVEL)
+else:
+    log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 
 
 def check_scheduler(scheduler: Optional[str] = None) -> bool:
@@ -195,17 +189,6 @@ def savejobenv_sh(
             _ = f.write(f'export {key.upper()}="{val}"\n')
         if launch_cmd is not None:
             _ = f.write(f'alias launch="{launch_cmd}"')
-    # dotenv_file = Path(os.getcwd()).joinpath('.jobenv')
-    # log.info(' '.join([
-    #     f'Saving job env to dot-env (`.jobenv`) file in ',
-    #     f'{dotenv_file.parent.as_posix()}'
-    # ]))
-    # with dotenv_file.open('w') as f:
-    #     _ = f.write('#!/bin/bash --login\n')
-    #     for key, val in jobenv.items():
-    #         _ = f.write(f'{key.upper()}="{val}"\n')
-    #     if launch_cmd is not None:
-    #         _ = f.write(f'alias launch="{launch_cmd}"')
     return jobenv
 
 
@@ -377,22 +360,3 @@ if __name__ == '__main__':
         )
     )
     _ = get_launch_cmd(verbose=True)
-    # ┌──────────────────────────────────────────────────────────────────
-    # │ [Hosts]:
-    # /bin/cat: /var/spool/pbs/aux/9002883.amn-0001: No such file or directory
-    # └──────────────────────────────────────────────────────────────────
-    # ┌──────────────────────────────────────────────────────────────────
-    # │ [DIST INFO]:
-    # │     • Loading job env from: /home/foremans/.pbsenv
-    # │     • HOSTFILE: /var/spool/pbs/aux/9002883.amn-0001
-    # │     • NHOSTS: 4
-    # │     • NGPU_PER_HOST: 12
-    # │     • NGPUS (NHOSTS x NGPU_PER_HOST): 48
-    # │     • WORLD_SIZE: 48
-    # │     • DIST_LAUNCH: mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/9002883.amn-0001
-    # └──────────────────────────────────────────────────────────────────
-    # ┌──────────────────────────────────────────────────────────────────
-    # │ [Launch]:
-    # │     • Use: 'launch' (=mpiexec --verbose --envall -n 48 -ppn 12 --hostfile /var/spool/pbs/aux/9002883.amn-0001)
-    # │       to launch job
-    # └──────────────────────────────────────────────────────────────────
