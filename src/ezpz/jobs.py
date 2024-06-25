@@ -8,25 +8,24 @@ import json
 import yaml
 from pathlib import Path
 from typing import Optional, Any
-# from rich import print_json
-
-# from ezpz import (
-#     get_dist_info,
-# )
-# from ezpz.dist import (
-#     # get_pbs_env,
-#     # get_pbs_launch_info,
-# )
 from ezpz.configs import (
-#     # get_logging_config,
     get_scheduler,
-#     SCHEDULERS,
-#     # PathLike
 )
 
+from ezpz import get_logger
+# from ezpz.log import get_logger
 # log_config = logging.config.dictConfig(get_logging_config())
-log = logging.getLogger(__name__)
-log.setLevel('INFO')
+# log = logging.getLogger(__name__)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+LOG_FROM_ALL_RANKS = os.environ.get("LOG_FROM_ALL_RANKS", False)
+# log.setLevel('INFO')
+# log.setLevel(LOG_LEVEL)
+
+log = get_logger(
+    name=__name__,
+    level=LOG_LEVEL,
+    rank_zero_only=(not LOG_FROM_ALL_RANKS)
+)
 
 SCHEDULER = get_scheduler()
 
