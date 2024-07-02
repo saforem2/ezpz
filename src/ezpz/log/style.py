@@ -15,12 +15,13 @@ from typing import Optional
 from typing import Any
 from typing import Generator
 
-from ezpz.log import get_logger
+import logging
+
+# from ezpz.log import get_logger
 from ezpz.log.config import STYLES, DEFAULT_STYLES
 from ezpz.log.console import get_console
 from ezpz.log.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
-import pandas as pd
 import rich
 from rich import print
 from rich.box import MINIMAL, SIMPLE, SIMPLE_HEAD, SQUARE
@@ -188,6 +189,7 @@ def flatten_dict(d) -> dict:
 
 
 def nested_dict_to_df(d):
+    import pandas as pd
     dflat = flatten_dict(d)
     df = pd.DataFrame.from_dict(dflat, orient='index')
     df.index = pd.MultiIndex.from_tuples(df.index)
@@ -209,6 +211,7 @@ def print_config(
         resolve (bool, optional): Whether to resolve reference fields of
             DictConfig.
     """
+    import pandas as pd
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
     quee = []
     for f in config:
@@ -456,15 +459,17 @@ BEAT_TIME = 0.008
 
 COLORS = ["cyan", "magenta", "red", "green", "blue", "purple"]
 
-log = get_logger(__name__)
-handlers = log.handlers
-if (
-        len(handlers) > 0
-        and isinstance(handlers[0], RichHandler)
-):
-    console = handlers[0].console
-else:
-    console = get_console(markup=True)
+# log = get_logger(__name__)
+
+log = logging.getLogger(__name__)
+# handlers = log.handlers
+# if (
+#         len(handlers) > 0
+#         and isinstance(handlers[0], RichHandler)
+# ):
+#     console = handlers[0].console
+# else:
+#     console = get_console(markup=True)
 
 
 @contextmanager
@@ -501,6 +506,7 @@ class DataFramePrettify:
          If this is set to False the previous console
          input/output is maintained
     """
+    import pandas as pd
 
     def __init__(
         self,
@@ -661,7 +667,7 @@ class DataFramePrettify:
 
 
 def prettify(
-    df: pd.DataFrame,
+    df: Any,
     row_limit: int = 20,
     col_limit: int = 10,
     first_rows: bool = True,
@@ -688,6 +694,7 @@ def prettify(
     clear_console: bool, optional
         Clear the console before printing the table, by default True. If this is set to false the previous console input/output is maintained
     """
+    import pandas as pd
     if isinstance(df, pd.DataFrame):
         DataFramePrettify(
             df, row_limit, col_limit, first_rows, first_cols, delay_time,clear_console
