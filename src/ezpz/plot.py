@@ -11,7 +11,6 @@ import time
 from typing import Any, Optional, Tuple, Union
 
 from ezpz.dist import get_rank
-import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
@@ -24,8 +23,6 @@ log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 xplt = xr.plot  # type: ignore
 
-LW = plt.rcParams.get('axes.linewidth', 1.75)
-FigAxes = Tuple[plt.Figure, plt.Axes]
 PLOTS_LOG = Path(os.getcwd()).joinpath('plots.txt')
 
 COLORS = {
@@ -46,10 +43,26 @@ COLORS = {
 # set_plot_style()
 # matplotlib_inline.backend_inline.set_matplotlib_formats('svg')
 
-plt.style.use('default')
 # set_plot_style()
 
+
+def _get_timestamp(fstr: Optional[str] = None) -> str:
+    """Get formatted timestamp."""
+    import datetime
+
+    now = datetime.datetime.now()
+    if fstr is None:
+        return now.strftime("%Y-%m-%d-%H%M%S")
+    return now.strftime(fstr)
+
+
+
+
 def set_plot_style(**kwargs):
+    import matplotlib.pyplot as plt
+    # LW = plt.rcParams.get('axes.linewidth', 1.75)
+    FigAxes = Tuple[plt.Figure, plt.Axes]
+    plt.style.use('default')
     # plt.style.use('default')
     try:
         import ambivalent
@@ -199,8 +212,7 @@ def tplot(
 
 
 
-
-def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
+def save_figure(fig: Any, fname: str, outdir: os.PathLike):
     pngdir = Path(outdir).joinpath('pngs')
     pngdir.mkdir(exist_ok=True, parents=True)
     pngfile = pngdir.joinpath(f'{fname}.png')
@@ -212,7 +224,7 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
         f.write(f'{fname}: {svgfile.as_posix()}\n')
 
 
-def savefig(fig: plt.Figure, outfile: os.PathLike):
+def savefig(fig: Any, outfile: os.PathLike):
     fout = Path(outfile)
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
@@ -226,7 +238,9 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
     _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
 
 
-def subplots(**kwargs) -> tuple[plt.Figure, plt.Axes]:
+def subplots(**kwargs) -> tuple:
+    """Returns (fig, axis) tuple"""
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots(**kwargs)
     assert isinstance(fig, plt.Figure)
     assert isinstance(ax, plt.Axes)
@@ -236,7 +250,8 @@ def subplots(**kwargs) -> tuple[plt.Figure, plt.Axes]:
 def plot_arr(
         metric: list,
         name: Optional[str] = None,
-) -> FigAxes:
+) -> tuple:
+    """Returns (fig, axis) tuple"""
     assert len(metric) > 0
     y = np.stack(metric)
     if isinstance(metric[0], (int, float, bool, np.floating)):
@@ -257,10 +272,10 @@ def plot_scalar(
         label: Optional[str] = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
-        fig_axes: Optional[FigAxes] = None,
+        fig_axes: Optional[tuple] = None,
         outfile: Optional[os.PathLike] = None,
         **kwargs,
-) -> FigAxes:
+) -> tuple:
     assert len(y.shape) == 1
     if x is None:
         x = np.arange(len(y))
@@ -288,13 +303,13 @@ def plot_chains(
         y: np.ndarray,
         x: Optional[np.ndarray] = None,
         num_chains: Optional[int] = 8,
-        fig_axes: Optional[FigAxes] = None,
+        fig_axes: Optional[tuple] = None,
         label: Optional[str] = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         outfile: Optional[os.PathLike] = None,
         **kwargs,
-) -> FigAxes:
+) -> tuple:
     assert len(y.shape) == 2
     # y.shape = [ndraws, nchains]
     num_chains = 8 if num_chains is None else num_chains
@@ -343,12 +358,13 @@ def plot_chains(
 def plot_leapfrogs(
         y: np.ndarray,
         x: Optional[np.ndarray] = None,
-        fig_axes: Optional[FigAxes] = None,
+        fig_axes: Optional[tuple] = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         outfile: Optional[os.PathLike] = None,
         # line_labels: Optional[bool] = False,
-) -> FigAxes:
+) -> tuple:
+    import matplotlib.pyplot as plt
     assert len(y.shape) == 3
 
     if fig_axes is None:
@@ -390,7 +406,7 @@ def plot_dataset(
         job_type: Optional[str] = None,
         save_plots: bool = True,
 ) -> None:
-    tstamp = get_timestamp()
+    tstamp = _get_timestamp()
     outdir = Path(outdir) if outdir is not None else (
         Path(os.getcwd()).joinpath(f"{tstamp}")
     )
@@ -432,6 +448,7 @@ def plot_combined(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
 ) -> tuple:
+    import matplotlib.pyplot as plt
     import seaborn as sns
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -442,6 +459,7 @@ def plot_combined(
 
     _ = subplots_kwargs.pop('constrained_layout', True)
     figsize = (3 * figsize[0], 1.5 * figsize[1])
+    line_width = plt.rcParams.get('axes.linewidth', 1.75)
     fig = plt.figure(figsize=figsize, constrained_layout=True)
     subfigs = fig.subfigures(1, 2)
     gs_kw = {'width_ratios': [1.33, 0.33]}
@@ -485,7 +503,7 @@ def plot_combined(
                 val.coords['draw'].values,
                 val.values[idx, :],
                 color=color,
-                lw=LW/2.,
+                lw=line_width/2.,
                 alpha=0.6
             )
 
@@ -494,7 +512,7 @@ def plot_combined(
         val.mean('chain'),
         color=color,
         label=label,
-        lw=1.5*LW
+        lw=1.5*line_width
     )
     if key is not None and 'eps' in key:
         _ = ax0.set_ylabel('leapfrog')
@@ -523,6 +541,7 @@ def plot_dataArray(
         # line_labels: Optional[bool] = False,
         save_plot: bool = True,
 ) -> tuple:
+    import matplotlib.pyplot as plt
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     set_plot_style()
@@ -598,7 +617,7 @@ def plot_dataArray(
     if outdir is not None and save_plot:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
-            tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+            tstamp = _get_timestamp('%Y-%m-%d-%H%M%S')
             pngdir = Path(outdir).joinpath('pngs')
             pngdir.mkdir(exist_ok=True, parents=True)
             pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
@@ -618,7 +637,8 @@ def plot_array(
         num_chains: Optional[int] = 10,
         outdir: Optional[str | Path] = None,
         **kwargs,
-) -> tuple[plt.Figure, plt.Axes]:
+) -> tuple:
+    import matplotlib.pyplot as plt
     fig, ax = subplots(constrained_layout=True)
     arr = np.array(val)
     if num_chains is None:
@@ -661,7 +681,7 @@ def plot_array(
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
-            tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+            tstamp = _get_timestamp('%Y-%m-%d-%H%M%S')
             pngdir = Path(outdir).joinpath('pngs')
             pngdir.mkdir(exist_ok=True, parents=True)
             pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
@@ -712,6 +732,7 @@ def plot_metric(
         ext: Optional[str] = 'png',
         # line_labels: Optional[bool] = False,
 ) -> tuple:
+    import matplotlib.pyplot as plt
     import seaborn as sns
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -719,6 +740,7 @@ def plot_metric(
     subplots_kwargs.update({'figsize': figsize})
     therm_frac = 0.0 if therm_frac is None else therm_frac
     num_chains = 16 if num_chains is None else num_chains
+    line_width = plt.rcParams.get('axes.linewidth', 1.75)
 
     # tmp = val[0]
     arr = np.array(val)
@@ -747,11 +769,17 @@ def plot_metric(
         label = plot_kwargs.pop('label', None)
         # label = r'$\langle$' + f' {key} ' + r'$\rangle$'
         label = f'{key}_avg'
-        _ = ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
+        _ = ax.plot(
+            steps,
+            arr.mean(-1),
+            lw=1.5*line_width,
+            label=label,
+            **plot_kwargs
+        )
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
                 plot_kwargs.update({'label': None})
-                ax.plot(steps, arr[:, chain], lw=LW/2., **plot_kwargs)
+                ax.plot(steps, arr[:, chain], lw=line_width/2., **plot_kwargs)
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, fill=True)
         _ = ax1.set_xticks([])
         _ = ax1.set_xticklabels([])
@@ -787,11 +815,21 @@ def plot_metric(
                     # TOO: Plot chains
                     if num_chains > 0:
                         for idx in range(min((num_chains, y.shape[1]))):
-                            _ = ax.plot(steps, y[:, idx], color=color,
-                                        lw=LW/4., alpha=0.7, **plot_kwargs)
-
-                    _ = ax.plot(steps, y.mean(-1), color=color,
-                                label=label, **plot_kwargs)
+                            _ = ax.plot(
+                                steps,
+                                y[:, idx],
+                                color=color,
+                                lw=line_width/4.,
+                                alpha=0.7,
+                                **plot_kwargs
+                            )
+                    _ = ax.plot(
+                        steps,
+                        y.mean(-1),
+                        color=color,
+                        label=label,
+                        **plot_kwargs
+                    )
                 else:
 
                     _ = ax.plot(steps, y, color=color,
@@ -802,7 +840,7 @@ def plot_metric(
 
         _ = ax.set_ylabel(key)
     if num_chains > 0 and len(arr.shape) > 1:
-        lw = LW / 2.
+        lw = line_width / 2.
         for idx in range(min(num_chains, arr.shape[1])):
             # plot values of invidual chains, arr[:, idx]
             # where arr[:, idx].shape = [ndraws, 1]
@@ -860,6 +898,7 @@ def make_ridgeplots(
     """Make ridgeplots."""
     import pandas as pd
     import seaborn as sns
+    import matplotlib.pyplot as plt
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
     # sns.set(style='white', palette='bright', context='paper')
@@ -869,7 +908,7 @@ def make_ridgeplots(
     with sns.plotting_context(
             context='paper',
     ):
-        sns.set(
+        sns.set_theme(
             style='white',
             palette='bright',
         )
@@ -956,7 +995,7 @@ def make_ridgeplots(
                             transform=ax.transAxes,
                             color=ax.lines[-1].get_color())
                 # Set the subplots to overlap
-                _ = g.fig.subplots_adjust(hspace=-0.75)
+                _ = g.figure.subplots_adjust(hspace=-0.75)
                 # Remove the axes details that don't play well with overlap
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
