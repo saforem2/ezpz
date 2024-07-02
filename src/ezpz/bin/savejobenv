@@ -30,8 +30,40 @@ PBS_ENV_FILE="${HOME}/.pbsenv"
 COBALT_ENV_FILE="${HOME}/.cobaltenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
 
-HEADER="┌─────────────────────────────────────────────────────────────────────┐\n"
-FOOTER="└─────────────────────────────────────────────────────────────────────┘\n"
+# HEADER="┌─────────────────────────────────────────────────────────────────────┐\n"
+# FOOTER="└─────────────────────────────────────────────────────────────────────┘\n"
+HEADER="\n"
+FOOTER="\n"
+LOGO_BRACKETS=$(cat << "EOF"
+  __                       __ 
+ | _|   ___ _____ __ ____ |_ |
+ | |   / _ \_  / '_ \_  /  | |
+ | |  |  __// /| |_) / /   | |
+ | |   \___/___| .__/___|  | |
+ |__|          |_|        |__|
+EOF
+)
+LOGO_SHADOW=$(cat << "EOF"
+ ███╗    ███████╗███████╗██████╗ ███████╗    ███╗
+ ██╔╝    ██╔════╝╚══███╔╝██╔══██╗╚══███╔╝    ╚██║
+ ██║     █████╗    ███╔╝ ██████╔╝  ███╔╝      ██║
+ ██║     ██╔══╝   ███╔╝  ██╔═══╝  ███╔╝       ██║
+ ███╗    ███████╗███████╗██║     ███████╗    ███║
+ ╚══╝    ╚══════╝╚══════╝╚═╝     ╚══════╝    ╚══╝
+
+EOF
+)
+LOGO=$(cat << EOF
+ ___                       ___ 
+|  _|                     |_  |
+| |     ___ _____ __ ____   | |
+| |    / _ \_  / '_ \_  /   | |
+| |   |  __// /| |_) / /    | |
+| |_   \___/___| .__/___|  _| |
+|___|          | |        |___|
+               |_|
+EOF
+)
 
 function whereAmI() {
     python3 -c 'import os; print(os.getcwd())'
@@ -46,20 +78,9 @@ function join_by() {
 
 
 function save_pbs_env() {
-    # if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
-    # if [[ "$#" == 1]]; then
-    #     jobenv_file="$1"
-    #     echo "Caught jobenv_file: ${jobenv_file}"
-    # elif [[ "$#" == 2 ]]; then
-    #     jobenv_file="$1"
-    #     hostfile="$2"
-    #     echo "Caught jobenv_file: ${jobenv_file}"
-    #     echo "Caught hostfile: ${hostfile}"
-    # else
-    #     jobenv_file="${PBS_ENV_FILE}"
-    #     hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-    # fi
-    # if [[ -n "${PBS_NODEFILE}" ]]; then
+    printf "${HEADER}"
+    printf "[${BLUE}save_pbs_env${RESET}]\n"
+    printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
@@ -72,34 +93,43 @@ function save_pbs_env() {
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     fi
-    # printf "[save_pbs_env] Caught hostfile: %s\n" "${hostfile}"
-    # printf "[save_pbs_env] Caught jobenv_file: %s\n" "${jobenv_file}"
     if [[ -n $(printenv | grep PBS_JOBID ) ]]; then
         PBS_VARS=$(env | grep PBS)
-        # PBS_VARS+=("${hostfile}")
-        # PBS_VARS+=("${jobenv_file}")
         echo "${PBS_VARS[*]}" > "${jobenv_file}"
-        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
         if [[ "${hostfile}" != "${PBS_NODEFILE:-}" ]]; then
-            printf "[!! save_pbs_env] Caught HOSTFILE != PBS_NODEFILE \n"
-            printf "[!! save_pbs_env] HOSTFILE: %s\n" "${hostfile}"
-            printf "[!! save_pbs_env] PBS_NODEFILE: %s\n" "${PBS_NODEFILE}"
+            printf "\n"
+            printf "    • Caught ${RED}hostfile${RESET} != ${RED}PBS_NODEFILE${RESET} \n"
+            printf "        • hostfile: ${RED}%s${RESET}\n" "${hostfile}"
+            printf "        • PBS_NODEFILE: ${RED}%s${RESET}\n" "${PBS_NODEFILE}"
+            printf "\n"
         fi
-        # export JOBENV_FILE="${PBS_ENV_FILE}"
+        printf "    • Using:\n"
+        printf "        • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
+        printf "        • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
         sed -i 's/^PBS/export\ PBS/g' "${jobenv_file}"
         sed -i 's/^HOSTFILE/export\ HOSTFILE/g' "${jobenv_file}"
         num_hosts=$(get_num_hosts "${hostfile}")
         num_gpus_per_host=$(get_num_gpus_per_host)
         num_gpus=$(( num_hosts * num_gpus_per_host ))
-        # getNumHosts "${hostfile}"
-
+        printf "      to calculate:\n"
+        printf "        • num_hosts: ${BLUE}%s${RESET}\n" "${num_hosts}"
+        printf "        • num_gpus_per_host: ${BLUE}%s${RESET}\n" "${num_gpus_per_host}"
+        printf "        • num_gpus: ${BLUE}%s${RESET}\n" "${num_gpus}"
         # getNumGPUs
         # NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
         export DIST_LAUNCH="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
         export ezlaunch="${DIST_LAUNCH}"
+        # printf "Caught ${BLUE}HOSTFILE${RESET} != ${BLUE}PBS_NODEFILE${RESET} \n"
+        printf "        • DIST_LAUNCH: ${BLUE}%s${RESET}\n" "${DIST_LAUNCH}"
     fi
-    export JOBENV_FILE="${jobenv_file}"
     export HOSTFILE="${hostfile}"
+    export JOBENV_FILE="${jobenv_file}"
+    # printf "│\n"
+    printf "    • Setting:\n" 
+    printf "        • HOSTFILE: ${BLUE}%s${RESET}\n" "${HOSTFILE}"
+    printf "        • JOBENV_FILE: ${BLUE}%s${RESET}\n" "${JOBENV_FILE}"
+    # printf "│\n"
+    printf "${FOOTER}"
     # printf "Using JOBENV_FILE: %s\n" "${JOBENV_FILE}"
     # printf "Using HOSTFILE: %s\n" "${HOSTFILE}"
 }
@@ -107,7 +137,7 @@ function save_pbs_env() {
 
 function save_slurm_env() {
     if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-        echo "│ Saving SLURM_* to ${SLURM_ENV_FILE}"
+        echo "  Saving SLURM_* to ${SLURM_ENV_FILE}"
         SLURM_VARS=$(env | grep SLU)
         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
         export HOSTFILE="${HOME}/.slurm-nodefile"
@@ -126,35 +156,77 @@ function save_slurm_env() {
 # function envSave() {
 #     echo "┌───────────────────────────────────────────────────────────────────"
 #     if [[ $(hostname) == x3* ]]; then
-#         echo "│ Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
+#         echo "  Saving PBS env to ${PBS_ENV_FILE} from ${HOSTNAME}"
 #         save_pbs_env
 #     elif [[ $(hostname) == theta* ]]; then
-#         echo "│ Saving COBALT env to ${COBALT_ENV_FILE} from ${HOSTNAME}"
+#         echo "  Saving COBALT env to ${COBALT_ENV_FILE} from ${HOSTNAME}"
 #         saveCOBALTenv
 #     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
 #         save_slurm_env
 #     fi
 # }
 
+###########################
+# setupHost
+#
+# takes 0, 1, or 2 arguments
+#
+# 0.
+#   - hostfile: Look for $HOSTFILE or $PBS_NODEFILE from environment
+#   - jobenv_file: Look for $JOBENV_FILE or $PBS_ENV_FILE from environment
+#
+# 1. hostfile: Specific hostfile to use
+# 
+# 2.
+#   - hostfile: Specific hostfile to use
+#   - jobenv_file: Specific `.jobenv` file to use
+#
+#
+# Then, if `hostname` starts with:
+#
+# - `x3*`: We're on Polaris, with 4 Nvidia A100s per node
+# - `x4*` or `x1`: We're on Aurora or Sunspot with 12 Intel PVCs per node
+# - `nid` or `login`: We're on Perlmutter with 4 Nvidia A100s per node
+#
+# if we're on any of the ALCF systems (`x[1-4]*`), we call `save_pbs_env`,
+# passing along any received arguments
+###########################
 function setupHost() {
+    printf "${HEADER}"
+    printf "[${CYAN}setupHost${RESET}]\n"
+    printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        # printf "│\n"
+        printf "    • From environment:\n"
+        printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
+        printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
+        printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
+        printf "    • Caught hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
+        printf "        • hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
+        printf "        • jobenv_file=${CYAN}%s${RESET}\n" "${jobenv_file}"
     else
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        printf "    • From environment:\n"
+        printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
+        printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
+        printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
     fi
-    printf "[setupHost] Caught jobenv_file: %s\n" "${jobenv_file}"
-    printf "[setupHost] Caught hostfile: %s\n" "${hostfile}"
-    printf "${HEADER}"
-    printf "│ [${YELLOW}savejobenv${RESET}]:\n"
-    printf "│     • Writing PBS vars to: ${YELLOW}${jobenv_file}${RESET}\n"
-    printf "${FOOTER}"
+    # printf "${HEADER}"
+    # printf "│ [${CYAN}getPBSenv${RESET}]: Caught ${CYAN}%s${RESET} arguments\n" "$#"
+    # printf "│     • hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
+    # printf "│     • jobenv_file: ${CYAN}%s${RESET}\n" "${jobenv_file}"
+    # printf "│     • hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
+    # printf "│     • jobenv_file: ${CYAN}%s${RESET}\n" "${jobenv_file}"
+    # printf "│     • Writing PBS vars to: ${CYAN}${jobenv_file}${RESET}\n"
+    printf "        • Writing PBS vars to: ${CYAN}${jobenv_file}${RESET}\n"
     if [[ $(hostname) == x3* ]]; then
         export GPU_TYPE="NVIDIA"
         # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -171,7 +243,7 @@ function setupHost() {
         export HOSTFILE="${HOME}/.slurm-nodefile"
         save_slurm_env
     else
-        echo "│ Unexpected hostname: ${hostname}"
+        echo "    Unexpected hostname: ${hostname}"
         export GPU_TYPE="NONE"
         HOSTFILE="hostfile"
         hostname > "${HOSTFILE}"
@@ -187,10 +259,9 @@ function printHosts() {
         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
     fi
     counter=0
-    # for f in $(/bin/cat "${HOSTFILE:-${PBS_NODEFILE}}"); do
     for f in $(/bin/cat "${hostfile}"); do
         # printf "│     • [host:%s] - \e[1;34m%s\e[0m\n" "${counter}" "${f}"
-        printf "│     • [host:%s] - ${CYAN}%s${RESET}\n" "${counter}" "${f}"
+        printf "    • [host:%s] - ${MAGENTA}%s${RESET}\n" "${counter}" "${f}"
         counter=$((counter+1))
     done
 }
@@ -323,24 +394,29 @@ function writeJobInfo() {
     } >> "${jobenv_file}"
     export LAUNCH="${DIST_LAUNCH}"
     export ezlaunch="${DIST_LAUNCH}"
-    # echo "export HOSTFILE=${hostfile}" >> "${JOBENV_FILE}"
     alias launch="${LAUNCH}"
-    printf "${HEADER}"
-    printf "│ [${CYAN}HOSTS${RESET}]:\n"
+    printf "[${MAGENTA}HOSTS${RESET}]\n"
+    # printf "hostfile: ${MAGENTA}%s${RESET}\n" "${hostfile}"
     printHosts
+    printf "\n"
+    printf "[${YELLOW}DIST INFO${RESET}]\n"
+    printf "    • HOSTFILE=${YELLOW}${hostfile}${RESET}\n"
+    printf "    • NHOSTS=${YELLOW}$NHOSTS${RESET}\n"
+    printf "    • NGPU_PER_HOST=${YELLOW}$NGPU_PER_HOST${RESET}\n"
+    printf "    • NGPUS=${YELLOW}$NGPUS${RESET}\n"
+    printf "    • ${YELLOW}DIST_LAUNCH${RESET}=${YELLOW}%s${RESET}\n" "${DIST_LAUNCH}"
     printf "${FOOTER}"
-    printf "${HEADER}"
-    printf "│ [${MAGENTA}DIST INFO${RESET}]:\n"
-    printf "│     • HOSTFILE=${MAGENTA}${hostfile}${RESET}\n"
-    printf "│     • NHOSTS=$NHOSTS\n"
-    printf "│     • NGPU_PER_HOST=$NGPU_PER_HOST\n"
-    printf "│     • NGPUS=${MAGENTA}$NGPUS${RESET}\n"
-    printf "${FOOTER}"
-    printf "${HEADER}"
-    printf "│ [${GREEN}LAUNCH${RESET}]:\n"
-    printf "│     • To launch across all available GPUs, use:\n"
-    printf "│       '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
-    printf "${FOOTER}"
+    # printf "${HEADER}"
+    if [[ -n "$(which launch)" ]]; then
+        printf "[${GREEN}LAUNCH${RESET}]:\n"
+        printf "    • To launch across all available GPUs, use: ${GREEN}launch${RESET}\n"
+        printf "      '${GREEN}%s${RESET}'\n" "$(which launch)"
+        # printf "      '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
+    fi
+    # printf "${FOOTER}"
+    # echo "export HOSTFILE=${hostfile}" >> "${JOBENV_FILE}"
+    # printf "${HEADER}"
+    # printf "${HEADER}"
     # echo "┌────────────────────────────────────────────────────────────────────────────────"
     # echo "│ YOU ARE HERE: $(whereAmI)"
     # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
@@ -362,6 +438,8 @@ saveDeepSpeedEnv() {
 
 
 main() {
+    # printf "${BLACK}%s${RESET}\n" "${LOGO}"
+    # printf "${BLACK}[ezpz]${RESET}\n" "${LOGO_DOOM}"
     setupHost "$@"
     writeJobInfo "$@"
 }
