@@ -29,6 +29,7 @@ PROJECT_ROOT = PROJECT_DIR
 CONF_DIR = HERE.joinpath('conf')
 BIN_DIR = HERE.joinpath('bin')
 SAVEJOBENV = BIN_DIR.joinpath('savejobenv')
+UTILS = BIN_DIR.joinpath('utils.sh')
 GETJOBENV = BIN_DIR.joinpath('getjobenv')
 DS_CONFIG_PATH = CONF_DIR.joinpath('ds_config.yaml')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
