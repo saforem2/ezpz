@@ -19,7 +19,8 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from ezpz import dist
-from ezpz import plot
+# from ezpz import plot
+from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
 from ezpz.configs import (
     BACKENDS,
@@ -35,6 +36,7 @@ from ezpz.configs import (
     QUARTO_OUTPUTS_DIR,
     SAVEJOBENV,
     SCHEDULERS,
+    UTILS,
     TrainConfig,
     command_exists,
     get_logging_config,
@@ -121,7 +123,11 @@ except Exception:
 #     return module
 
 
-log_config = logging.config.dictConfig(get_logging_config())
+try:
+    log_config = logging.config.dictConfig(get_logging_config())
+except Exception:
+    pass
+
 log = logging.getLogger(__name__)
 logging.getLogger("sh").setLevel("WARNING")
 
@@ -185,6 +191,7 @@ __all__ = [
     "SAVEJOBENV",
     "SCHEDULERS",
     "STYLES",
+    "UTILS",
     "PyInstrumentProfiler",
     "TrainConfig",
     "add_columns",
@@ -224,10 +231,10 @@ __all__ = [
     "init_process_group",
     "is_interactive",
     "load_ds_config",
-    "loadjobenv",
+    # "loadjobenv",
     "make_layout",
     "nested_dict_to_df",
-    "plot",
+    # "plot",
     "print_config",
     "print_config_tree",
     "print_dist_setup",
@@ -235,7 +242,7 @@ __all__ = [
     "profile",
     "query_environment",
     "run_bash_command",
-    "savejobenv",
+    # "savejobenv",
     "seed_everything",
     "setup",
     "setup_tensorflow",
@@ -245,6 +252,8 @@ __all__ = [
     "setup_wandb",
     "should_do_markup",
     "timeit",
+    "tplot",
+    "tplot_dict",
     "timeitlogit",
     "to_bool",
 ]
@@ -376,3 +385,7 @@ def get_logger_new(
     log = logging.getLogger(name=name)
     log.setLevel(level)
     return log
+
+
+if __name__ == '__main__':
+    pass
