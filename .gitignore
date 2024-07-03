@@ -1,4 +1,8 @@
 # user added
+.deepspeed_env
+.jobenv
+**ezpz_pyinstrument_profiles**
+**nodefile**
 wandb/*
 *test-dist-plots*
 *.hydra
