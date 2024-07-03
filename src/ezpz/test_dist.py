@@ -8,19 +8,26 @@ ezpz_ddp.py
 """
 import time
 T0 = time.perf_counter()  # start time
+timers_import = {}
 
-import sys
 import os
-os.environ['NUMEXPR_MAX_THREADS'] = os.environ.get(
-    "NUMEXPR_MAX_THREADS",
-    "16",
-)
+t_os = time.perf_counter()
+
 import logging
+t_logging = time.perf_counter()
 
 from typing import Optional
-import torch
-import ezpz as ez
+t_typing = time.perf_counter()
+
 from pathlib import Path
+t_pathlib = time.perf_counter()
+
+import ezpz as ez
+t_ezpz = time.perf_counter()
+
+import torch
+t_torch = time.perf_counter()
+
 try:
     import wandb
     wandb.require("core")
@@ -28,6 +35,18 @@ try:
 except Exception:
     wandb = None
     WANDB_DISABLED = True
+t_wandb = time.perf_counter()
+
+timers_import = {
+    'os': t_os - T0,
+    'logging': t_logging - t_os,
+    'typing': t_typing - t_logging,
+    'pathlib': t_pathlib - t_typing,
+    'ezpz': t_ezpz - t_pathlib,
+    'torch': t_torch - t_ezpz,
+    'wandb': t_wandb - t_torch,
+    'total': t_wandb - T0,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +123,19 @@ CONFIG = {
 }
 
 run = None
-if not WANDB_DISABLED and RANK == 0 and wandb is not None:
+if wandb is not None and not WANDB_DISABLED and RANK == 0:
     run = ez.setup_wandb(project_name='ezpz.test_dist')
-    assert wandb is not None and run is  wandb.run
+    assert wandb is not None and run is wandb.run and wandb.run is not None
     wandb.run.config.update(CONFIG)
+
+if RANK == 0:
+    import json
+    logger.info(f"import times:\n {json.dumps(timers_import, indent=4)}")
+    json_config = json.dumps(
+        {k: f"{v}" for k, v in CONFIG.items()},
+        indent=4
+    )
+    logger.info("\n".join([f"CONFIG:", f"{json_config}"]))
 
 
 class Network(torch.nn.Module):
