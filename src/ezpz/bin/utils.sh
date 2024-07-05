@@ -285,13 +285,14 @@ join_by() {
 
 save_pbs_env() {
     printf "\n[${BLUE}%s${RESET}]\n" "save_pbs_env"
-    printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     elif [[ "$#" == 1 ]]; then
+        printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
         hostfile="$1"
     elif [[ "$#" == 2 ]]; then
+        printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
         hostfile="$1"
         jobenv_file="$2"
     else
@@ -380,7 +381,6 @@ save_slurm_env() {
 ###########################
 setupHost() {
     printf "[${CYAN}%s${RESET}]\n" "setupHost"
-    printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
@@ -390,11 +390,13 @@ setupHost() {
         printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
         printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 1 ]]; then
+        printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
         hostfile="$1"
         printf "    • Caught hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
+        printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
         printf "        • hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
         printf "        • jobenv_file=${CYAN}%s${RESET}\n" "${jobenv_file}"
     else
