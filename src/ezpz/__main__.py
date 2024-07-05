@@ -12,7 +12,6 @@ from __future__ import (
     unicode_literals,
 )
 import logging
-import logging.config
 import os
 import time
 
@@ -22,7 +21,6 @@ import numpy as np
 from omegaconf.dictconfig import DictConfig
 
 from ezpz import (
-    get_logging_config,
     TrainConfig,
     get_gpus_per_node,
     get_local_rank,
@@ -41,10 +39,6 @@ except (ImportError, ModuleNotFoundError):
     wandb = None
 
 
-log_config = logging.config.dictConfig(get_logging_config())
-log = logging.getLogger(__name__)
-
-log.setLevel('INFO')
 
 RANK = get_rank()
 DEVICE = get_torch_device()
@@ -53,6 +47,11 @@ WORLD_SIZE = get_world_size()
 LOCAL_RANK = get_local_rank()
 GPUS_PER_NODE = get_gpus_per_node()
 NUM_NODES = WORLD_SIZE // GPUS_PER_NODE
+
+# log.setLevel('INFO')
+log = logging.getLogger(__name__)
+
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 
 def test_torch_tensor():
@@ -76,8 +75,6 @@ def main(cfg: DictConfig) -> int:
             else np.random.randint(0, 2 ** 16)
         ),
     )
-    log_level = "CRITICAL" if rank != 0 else "INFO"
-    log.setLevel(log_level)
     if rank == 0 and cfg.get('use_wandb') and wandb is not None:
         run = setup_wandb(
             config=cfg,
