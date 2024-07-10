@@ -285,7 +285,7 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
     return get_console()
 
 
-def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
+def grab_tensor(x: Any) -> Union[np.ndarray, ScalarLike, None]:
     import torch
     if x is None:
         return None
