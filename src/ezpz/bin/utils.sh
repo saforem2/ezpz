@@ -668,7 +668,6 @@ get_job_env() {
                 fi
             fi
         fi
-        echo "hostfile: ${hostfile}"
         if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
             jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
             get_pbs_env "$@"
