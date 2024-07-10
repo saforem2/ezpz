@@ -119,13 +119,13 @@ STYLES: Dict[str, Style] = {
     'log.level.warning': Style(color="bright_yellow", bold=True),
     'logging.level.warn': Style(color="bright_yellow"),
     'logging.level.warning': Style(color="bright_yellow"),
-    'log.colon': Style(color="blue"),
+    'log.colon': Style(color="bright_blue"),
     "log.linenumber": Style(color="black", bold=False),
     # "none": Style(color="red"),
     "log.path": Style(color="blue", bold=False, italic=True),
-    'log.time': Style(color='black'),
-    'logging.time': Style(color='black'),
-    'logging.date': Style(color='bright_black'),  # , italic=False),
+    'log.time': Style(color='bright_black'),
+    'logging.time': Style(color='bright_black'),
+    'logging.date': Style(color='black'),  # , italic=False),
     "hidden": Style(color="bright_black", dim=True),
     'repr.attr': Style(color='blue'),
     'repr.attrib_name': Style(color="bright_blue", bold=False, italic=True),
@@ -344,4 +344,3 @@ DEFAULT_STYLES |= STYLES
 #     "iso8601.timezone": Style(color="yellow"),
 # }
 #
-
