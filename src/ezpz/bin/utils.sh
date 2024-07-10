@@ -381,18 +381,31 @@ save_slurm_env() {
 ###########################
 setupHost() {
     printf "[${CYAN}%s${RESET}]\n" "setupHost"
+    #########################################
+    # If no arguments passed ("$#" == 0):
+    #
+    # - `hostfile` assigned to to the first non-zero variable from:
+    #       1. `HOSTFILE`
+    #       2. `PBS_NODEFILE`
+    # - `jobenv_file` assigned to first non-zero variable from:
+    #       1. `JOBENV_FILE`
+    #       2. `PBS_ENV_FILE`
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
-        # printf "│\n"
-        printf "    • From environment:\n"
-        printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
-        printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
         printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
+        printf "    • Found in environment:\n"
+        if [[ -n "${HOSTFILE}" ]]; then
+            printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
+        fi
+        if [[ "${hostfile}" != "${PBS_NODEFILE}" ]]; then
+            printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
+        fi
     elif [[ "$#" == 1 ]]; then
         printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
         hostfile="$1"
-        printf "    • Caught hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
+        printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
+        printf "    • hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
@@ -400,20 +413,8 @@ setupHost() {
         printf "        • hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
         printf "        • jobenv_file=${CYAN}%s${RESET}\n" "${jobenv_file}"
     else
-        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
-        printf "    • From environment:\n"
-        printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
-        printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
-        printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
+        echo "Expected exactly 0, 1, or 2 arguments, received: $#"
     fi
-    # printf "${HEADER}"
-    # printf "│ [${CYAN}get_pbs_env${RESET}]: Caught ${CYAN}%s${RESET} arguments\n" "$#"
-    # printf "│     • hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
-    # printf "│     • jobenv_file: ${CYAN}%s${RESET}\n" "${jobenv_file}"
-    # printf "│     • hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
-    # printf "│     • jobenv_file: ${CYAN}%s${RESET}\n" "${jobenv_file}"
-    # printf "│     • Writing PBS vars to: ${CYAN}${jobenv_file}${RESET}\n"
     printf "        • Writing PBS vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
     if [[ $(hostname) == x3* ]]; then
         export GPU_TYPE="NVIDIA"
@@ -750,9 +751,18 @@ setup_alcf() {
     local mn="${mn}"
     local hn="${hn}"
     printf "\n"
-    printf "[${BLACK}%s${RESET}]\n" "ezpz/bin/utils.sh"
-    printf "      • ${BLACK}%s${RESET}\n" "$(get_tstamp)"
-    printf "      • %s ${BLACK}@${RESET} %s\n" "${mn}" "${hn}"
+    printf "[${RED}%s${RESET}]\n" "ezpz/bin/utils.sh"
+    printf "\n"
+    # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+    # [tstamp] user @ machine (hostname) in $()
+    printf "[${BLACK}%s${RESET}]\n" $(get_tstamp)
+    printf "    • USER=${BLACK}%s${RESET}\n" "$(echo ${USER})"
+    printf "    • MACHINE=${BLACK}%s${RESET}\n" "${mn}"
+    printf "    • HOST=${BLACK}%s${RESET}\n" "${hn}"
+    #
+    # printf "%s ${BLACK}@${RESET} %s (${BLACK}%s${RESET}) in %s" "$(echo $USER)" "${mn}" "${hn}" "${WORKING_DIR}"
+    # # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+    # printf "      • timestamp: ${BLACK}%s${RESET}\n" "$(get_tstamp)"
     printf "\n"
     if [[ "${hn}" == x1* || "${hn}" == x3* || "${hn}" == x4* ]]; then
         if [[ -n "${PBS_NODEFILE}" ]]; then
