@@ -120,8 +120,8 @@ def get_logger(
 ) -> logging.Logger:
     import logging
     import logging.config
-    # from ezpz.configs import get_logging_config
-    # log_config = logging.config.dictConfig(get_logging_config())
+    from ezpz.configs import get_logging_config
+    logging.config.dictConfig(get_logging_config())
     log = logging.getLogger(name if name is not None else __name__)
     if rank_zero_only:
         if RANK == 0:
