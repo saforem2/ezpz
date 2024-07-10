@@ -154,12 +154,6 @@ def save_to_dotenv_file(
         verbose: Optional[bool] = None,
 ) -> Path:
     jobenv = get_jobenv(hostfile=hostfile) if jobenv is None else jobenv
-    # if (
-    #         'LAUNCH_CMD' in jobenv and 'launch_cmd' in jobenv
-    #         and jobenv['launch_cmd'] != jobenv['LAUNCH_CMD']
-    # ):
-    #     jobenv['launch_cmd'] = jobenv['LAUNCH_CMD']
-    #     jobenv['DIST_LAUNCH'] = jobenv['LAUNCH_CMD']
     denvf1 = Path(get_jobdir_from_env()).joinpath('.jobenv')
     denvf2 = Path(os.getcwd()).joinpath('.jobenv')
     # launch_cmd = jobenv.get('LAUNCH_CMD', get_pbs_launch_cmd)
@@ -168,7 +162,7 @@ def save_to_dotenv_file(
     assert launch_cmd is not None
     for denvf in [denvf1, denvf2]:
         log.info(' '.join([
-            f'Saving job env to',
+            'Saving job env to',
             f'{denvf.parent.as_posix()}/.jobenv'
         ]))
         # launch_cmd = jobenv.get(
@@ -346,7 +340,11 @@ def savejobenv(
     )
     assert len(jobenv.keys()) > 0
     # assert jobenv is not None
-    dotenv_file = save_to_dotenv_file(jobenv, verbose=verbose_dotenv)
+    dotenv_file = save_to_dotenv_file(
+        jobenv=jobenv,
+        hostfile=hostfile,
+        verbose=verbose_dotenv
+    )
     # jobid = get_jobid()
     pbs_jobid = os.environ.get('PBS_JOBID')
     pbs_nodefile = Path(os.environ.get('PBS_NODEFILE', ''))
