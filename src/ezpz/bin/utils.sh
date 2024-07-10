@@ -662,10 +662,13 @@ get_job_env() {
             jobid=$(get_jobid_from_hostname)
             if [[ -n "${jobid}" ]]; then
                 match=$(/bin/ls /var/spool/pbs/aux/ | grep ${jobid})
-                PBS_NODEFILE="/var/spool/pbs/aux/${match}"
-                get_job_env
+                hostfile="/var/spool/pbs/aux/${match}"
+                if [[ -f "${hostfile}" ]]; then
+                    export PBS_NODEFILE="${hostfile}"
+                fi
             fi
         fi
+        echo "hostfile: ${hostfile}"
         if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
             jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
             get_pbs_env "$@"
