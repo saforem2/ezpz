@@ -10,23 +10,26 @@ import time
 T0 = time.perf_counter()  # start time
 timers_import = {}
 
-import os
+import os  # noqa E402
 t_os = time.perf_counter()
 
-import logging
+import logging  # noqa: E402
 t_logging = time.perf_counter()
 
-from typing import Optional
+from typing import Optional  # noqa: E402
 t_typing = time.perf_counter()
 
-from pathlib import Path
+from pathlib import Path     # noqa: E402
 t_pathlib = time.perf_counter()
 
-import ezpz as ez
+import ezpz as ez  # noqa: E402
 t_ezpz = time.perf_counter()
 
-import torch
+import torch  # noqa: E402
 t_torch = time.perf_counter()
+
+from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
+t_torch_ddp = time.perf_counter()
 
 try:
     import wandb
@@ -44,11 +47,15 @@ timers_import = {
     'pathlib': t_pathlib - t_typing,
     'ezpz': t_ezpz - t_pathlib,
     'torch': t_torch - t_ezpz,
-    'wandb': t_wandb - t_torch,
+    'torch_ddp': t_torch_ddp - t_torch,
+    'wandb': t_wandb - t_torch_ddp,
     'total': t_wandb - T0,
 }
 
 logger = logging.getLogger(__name__)
+
+# Model = Callable[[torch.Tensor], torch.Tensor]
+ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 T1 = time.perf_counter()  # import time = (T1 - T0)
 # backend can be any of DDP, deespepeed, horovod
@@ -129,15 +136,8 @@ if wandb is not None and not WANDB_DISABLED and RANK == 0:
     wandb.run.config.update(CONFIG)
 
 if RANK == 0:
-    import json
     ez.dist.log_dict_as_bulleted_list(timers_import, name='timers_import')
     ez.dist.log_dict_as_bulleted_list(CONFIG, name='CONFIG')
-    # logger.info(f"import times:\n {json.dumps(timers_import, indent=4)}")
-    # json_config = json.dumps(
-    #     {k: f"{v}" for k, v in CONFIG.items()},
-    #     indent=4
-    # )
-    # logger.info("\n".join([f"CONFIG:", f"{json_config}"]))
 
 
 class Network(torch.nn.Module):
@@ -165,13 +165,6 @@ class Network(torch.nn.Module):
 
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
-
-import torch
-# import deepspeed
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-# Model = Callable[[torch.Tensor], torch.Tensor]
-ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 def build_model_and_optimizer() -> ModelOptimizerPair:
     # :   #  -> tuple[Union[torch.nn.Module, DDP, deepspeed.DeepSpeedEngine], torch:
@@ -220,13 +213,13 @@ def build_model_and_optimizer() -> ModelOptimizerPair:
 
 
 def main():
-
     metrics = {
         'train/dt': [],    # time per iteration
         'train/dtf': [],   # time in forward pass
         'train/dtb': [],   # time in backward pass
         'train/loss': [],  # loss
         'train/iter': [],  # iteration
+        'train/sps': [],   # samples per second = (BATCH_SIZE / dt)
     }
     T3 = time.perf_counter()
     TIMERS['timers/init_to_first_step'] = T3 - T0
@@ -262,12 +255,14 @@ def main():
             dt = t2 - t0
             dtf = t1 - t0
             dtb = t2 - t1
+            sps = BATCH_SIZE / dt
             _metrics = {
                 'train/iter': iter,
                 'train/dt': dt,
                 'train/dtf': dtf,
                 'train/dtb': dtb,
                 'train/loss': loss,
+                'train/sps': sps,
             }
             for k, v in _metrics.items():
                 try:
@@ -277,10 +272,13 @@ def main():
             logger.info(
                 ', '.join([
                     f'{iter=}',
-                    f'loss={loss.item():.4f}',
-                    f'dt={dtf+dtb:.4f}',
-                    f'{dtf=:.6g}',
-                    f'{dtb=:.6g}'
+                    f'loss={loss.item():<.6g}',
+                    f'{sps=:<.4g}',
+                    # f'sps={sps:<.6f}',
+                    # f'dt={dtf+dtb:<3.6f}',
+                    f'{dt=:<4g}',
+                    f'{dtf=:<3.4g}',
+                    f'{dtb=:<3.4g}'
                 ])
             )
             if not WANDB_DISABLED and RANK == 0 and wandb is not None:
