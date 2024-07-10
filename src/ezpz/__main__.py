@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 """
 ezpz/__main__.py
 
 Contains main entry point for training.
 """
-from __future__ import (
-    absolute_import,
-    annotations,
-    division,
-    print_function,
-    unicode_literals,
-)
+# from __future__ import (
+#     absolute_import,
+#     annotations,
+#     division,
+#     print_function,
+# )
 import logging
 import os
 import time
@@ -20,14 +18,15 @@ from hydra.utils import instantiate
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
+import ezpz as ez
 from ezpz import (
     TrainConfig,
-    get_gpus_per_node,
+    # get_gpus_per_node,
     get_local_rank,
-    get_rank,
-    get_torch_backend,
+    # get_rank,
+    # get_torch_backend,
     get_torch_device,
-    get_world_size,
+    # get_world_size,
     setup,
     setup_wandb,
     timeitlogit,
@@ -40,17 +39,16 @@ except (ImportError, ModuleNotFoundError):
 
 
 
-RANK = get_rank()
-DEVICE = get_torch_device()
-BACKEND = get_torch_backend()
-WORLD_SIZE = get_world_size()
-LOCAL_RANK = get_local_rank()
-GPUS_PER_NODE = get_gpus_per_node()
+RANK = ez.get_rank()
+DEVICE = ez.get_torch_device()
+BACKEND = ez.get_torch_backend()
+WORLD_SIZE = ez.get_world_size()
+LOCAL_RANK = ez.get_local_rank()
+GPUS_PER_NODE = ez.get_gpus_per_node()
 NUM_NODES = WORLD_SIZE // GPUS_PER_NODE
 
 # log.setLevel('INFO')
 log = logging.getLogger(__name__)
-
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 
