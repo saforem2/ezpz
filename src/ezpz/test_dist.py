@@ -130,12 +130,14 @@ if wandb is not None and not WANDB_DISABLED and RANK == 0:
 
 if RANK == 0:
     import json
-    logger.info(f"import times:\n {json.dumps(timers_import, indent=4)}")
-    json_config = json.dumps(
-        {k: f"{v}" for k, v in CONFIG.items()},
-        indent=4
-    )
-    logger.info("\n".join([f"CONFIG:", f"{json_config}"]))
+    ez.dist.log_dict_as_bulleted_list(timers_import, name='timers_import')
+    ez.dist.log_dict_as_bulleted_list(CONFIG, name='CONFIG')
+    # logger.info(f"import times:\n {json.dumps(timers_import, indent=4)}")
+    # json_config = json.dumps(
+    #     {k: f"{v}" for k, v in CONFIG.items()},
+    #     indent=4
+    # )
+    # logger.info("\n".join([f"CONFIG:", f"{json_config}"]))
 
 
 class Network(torch.nn.Module):
