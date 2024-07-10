@@ -2,7 +2,7 @@
 ezpz/__init__.py
 """
 
-from __future__ import absolute_import, annotations, division, print_function
+# from __future__ import absolute_import, annotations, division, print_function
 from mpi4py import MPI
 import logging
 import logging.config
@@ -14,11 +14,12 @@ from typing import Any, Optional
 from typing import Union
 
 import numpy as np
-import rich
-from rich.console import Console
-from rich.logging import RichHandler
+# import rich
+# from rich.console import Console
+# from rich.logging import RichHandler
 
 from ezpz import dist
+from ezpz import log
 # from ezpz import plot
 from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
@@ -91,7 +92,6 @@ from ezpz.log.console import (
     should_do_markup,
     to_bool,
 )
-from ezpz.log.console import get_console, is_interactive
 from ezpz.log.handler import FluidLogRender, RichHandler
 from ezpz.log.style import (
     BEAT_TIME,
@@ -128,7 +128,7 @@ try:
 except Exception:
     pass
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 logging.getLogger("sh").setLevel("WARNING")
 
 
@@ -147,14 +147,14 @@ LOG_FROM_ALL_RANKS = os.environ.get(
     )
 )
 if LOG_FROM_ALL_RANKS:
-    log.setLevel(LOG_LEVEL)
+    logger.setLevel(LOG_LEVEL)
 else:
     if RANK == 0:
-        log.info("Setting logging level to 'INFO' on 'RANK == 0'")
-        log.info(
+        logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
+        logger.info(
             "Setting logging level to 'CRITICAL' on all others 'RANK != 0'"
         )
-        log.info(
+        logger.info(
             ' ' .join(
                 [
                     "To disable this behavior,",
@@ -164,7 +164,7 @@ else:
                 ]
             )
         )
-    log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
+    logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 
 __all__ = [
@@ -230,6 +230,7 @@ __all__ = [
     "init_deepspeed",
     "init_process_group",
     "is_interactive",
+    "log",
     "load_ds_config",
     # "loadjobenv",
     "make_layout",
