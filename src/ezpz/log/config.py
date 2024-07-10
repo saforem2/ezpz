@@ -119,7 +119,7 @@ STYLES: Dict[str, Style] = {
     'log.level.warning': Style(color="bright_yellow", bold=True),
     'logging.level.warn': Style(color="bright_yellow"),
     'logging.level.warning': Style(color="bright_yellow"),
-    'log.colon': Style(color="bright_magenta"),
+    'log.colon': Style(color="blue"),
     "log.linenumber": Style(color="black", bold=False),
     # "none": Style(color="red"),
     "log.path": Style(color="blue", bold=False, italic=True),
