@@ -30,6 +30,16 @@ get_tstamp () {
     printf "%s" "$(date "+%Y-%m-%d-%H%M%S")"
 }
 
+qsme_running() {
+    qstat -u $USER -n1rw | sed -e "s/\/0\*208/\ /g" | tr "+|." "\ " | awk '{a = ""; for (i = 13 ; i <= NF ; i++) a = a " " $i; print $1 a}' | egrep -v "aurora-pbs|Req|Job|\-\-"
+}
+
+
+get_jobid_from_hostname() {
+    jobid=$(qsme_running | grep "$(hostname)" | awk '{print $1}')
+    echo "${jobid}"
+}
+
 save_dotenv() {
     if [[ "$#" -ne 1 ]]; then
         estr="[error]"
@@ -579,11 +589,6 @@ saveDeepSpeedEnv() {
     [ "${https_proxy}" ] && echo "https_proxy=${https_proxy}" >> .deepspeed_env
 }
 
-get_jobid_from_hostname() {
-    jobid=$(qsme_running | grep "$(hostname)" | awk '{print $1}')
-    echo "${jobid}"
-}
-
 get_pbs_env() {
     # if [[ "$#" == 0 ]]; then
     #     jobenv_file="${PBS_ENV_FILE}"
@@ -653,19 +658,14 @@ get_job_env() {
     else
         # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
         hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-        # if [[ $(hostname) == thetagpu* ]]; then
-        #     jobenv_file="${COBALT_ENV_FILE}"
-        #     getCOBALTenv
-        # if [[ $(hostname) == x3* ]]; then
-        #     jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
-        #     get_pbs_env
-        # elif [[ $(hostname) == x1* ]]; then
-        #     jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
-        #     jobenv_file="${PBS_ENV_FILE}"
-        #     get_pbs_env
-        # elif [[ $(hostname) == x4* ]]; then
-        #     jobenv_file="${PBS_ENV_FILE}"
-        #     get_pbs_env
+        if [[ -z "${hostfile}" ]]; then
+            jobid=$(get_jobid_from_hostname)
+            if [[ -n "${jobid}" ]]; then
+                match=$(/bin/ls /var/spool/pbs/aux/ | grep ${jobid})
+                PBS_NODEFILE="/var/spool/pbs/aux/${match}"
+                get_job_env
+            fi
+        fi
         if [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
             jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
             get_pbs_env "$@"
@@ -726,7 +726,7 @@ print_job_env() {
     printf "      • NGPUS=${YELLOW}%s${RESET}\n" "${num_gpus}"
     printf "      • DIST_LAUNCH=${YELLOW}%s${RESET}\n" "${DIST_LAUNCH}"
     printf "\n"
-    printf "  [${GREEN}%s${RESET}]:\n" "${LAUNCH}"
+    printf "  [${GREEN}%s${RESET}]:\n" "LAUNCH"
     printf "      • To launch across all available GPUs, use:\n"
     printf "        '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
     printf "\n"
