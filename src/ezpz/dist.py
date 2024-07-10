@@ -89,6 +89,31 @@ def seed_everything(seed: int):
         torch.cuda.manual_seed(seed)
 
 
+def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
+    """Print dictionary as list"""
+    tag = name if name is not None else d.__qualname__
+    log.info(
+        '\n'.join(
+            ['\n', f"[{tag}]:"]
+            + [f"  • {k}={v}" for k, v in d.items()]
+            + ['\n']
+        )
+    )
+    # lol = ["\n"]
+    # if name is not None:
+    #     lol += [f'[{name}]:']
+    # lol += [f'[{name}]:'] if name is not None else []
+    # lol += 
+    #         + [f"  • {k}={v}" for k, v in d.items()]
+    # log.info(
+    #     '\n'.join(
+    #         ['\n', f'[{name}]:'] if name is not None else []
+    #         + [f"  • {k}={v}" for k, v in d.items()]
+    #         + ['\n']
+    #     )
+    # )
+
+
 def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
     rank = get_rank() if rank is None else rank
 
@@ -268,13 +293,14 @@ def get_dist_info(
         framework=framework,
     )
     if verbose:
-        log.info(
-            '\n'.join(
-                ['\n', "[dist_info]:"]
-                + [f"  • {k}={v}" for k, v in dist_info.items()]
-                + ['\n']
-            )
-        )
+        # log.info(
+        #     '\n'.join(
+        #         ['\n', "[dist_info]:"]
+        #         + [f"  • {k}={v}" for k, v in dist_info.items()]
+        #         + ['\n']
+        #     )
+        # )
+        log_dict_as_bulleted_list(dist_info, name='dist_info')
         # log.info(
         #     f'DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}'
         # )
@@ -1237,7 +1263,8 @@ def get_pbs_env(
         pbsenv |= {'LAUNCH_CMD': get_pbs_launch_cmd(hostfile=hostfile)}
     os.environ |= pbsenv
     if verbose and get_rank() == 0:
-        log.debug(f'pbsenv={json.dumps(pbsenv, indent=4, sort_keys=True)}')
+        # log.debug(f'pbsenv={json.dumps(pbsenv, indent=4, sort_keys=True)}')
+        log_dict_as_bulleted_list(pbsenv, name='pbsenv')
     return pbsenv
 
 
