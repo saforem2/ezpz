@@ -1,7 +1,7 @@
 ---
-dump_state: false
+train_micro_batch_size_per_gpu: 1
 gradient_accumulation_steps: 1
-wall_clock_breakdown: true
+# dump_state: false
 # prescale_gradients: false
 # zero_allow_untested_optimizer: true
 # optimizer:
@@ -17,15 +17,15 @@ wall_clock_breakdown: true
 #   params:
 #     lr: 0.001
 # flops_profiler:
-#   enabled: false
+#   enabled: true
 #   profile_step: 1
-#   module_depth: -1
-#   top_modules: 1
-#   detailed: false
-#   output_file: null
-fp16:
-  enabled: false
-  # min_loss_scale: 0
+#   # module_depth: -1
+#   # top_modules: 1
+#   # detailed: false
+#   # output_file: null
+# # fp16:
+# #   enabled: false
+#   # min_loss_scale: 0
 # bf16:
 #   enabled: false
 # comms_logger:
@@ -33,8 +33,8 @@ fp16:
 #   verbose: false
 #   prof_all: false
 #   debug: false
-wandb:
-  enabled: false
+# wandb:
+#   enabled: false
 # autotuning:
 #   enabled: false
 #   arg_mappings:
@@ -55,7 +55,6 @@ wandb:
 #   offload_param:
 #     # nvme_path: /raid/scratch
 #     device: cpu
-
 # activation_checkpointing:
 #   partition_activations: true
 #   cpu_checkpointing: true
@@ -63,4 +62,3 @@ wandb:
 #   number_checkpoints: null
 #   synchronize_checkpoint_boundary: false
 #   profile: true
-...

@@ -65,7 +65,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             show_time: bool = True,
             show_level: bool = True,
             show_path: bool = True,
-            time_format: str = "%Y-%m-%d %H:%M:%S",
+            time_format: str = "%Y-%m-%d %H:%M:%S.%f",
             link_path: Optional[bool] = False,
 
     ) -> None:
@@ -81,7 +81,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             console: Console,  # type: ignore
             renderables: Iterable[ConsoleRenderable],
             log_time: Optional[datetime] = None,
-            time_format: str = '%Y-%m-%d %H:%M:%S',
+            time_format: str = '%Y-%m-%d %H:%M:%S.%f',
             level: TextType = "",
             path: Optional[str] = None,
             line_no: Optional[int] = None,

@@ -2,7 +2,7 @@
 ezpz/__init__.py
 """
 
-from __future__ import absolute_import, annotations, division, print_function
+# from __future__ import absolute_import, annotations, division, print_function
 from mpi4py import MPI
 import logging
 import logging.config
@@ -14,17 +14,22 @@ from typing import Any, Optional
 from typing import Union
 
 import numpy as np
-from rich.console import Console
-from rich.logging import RichHandler
-import torch
+# import rich
+# from rich.console import Console
+# from rich.logging import RichHandler
 
 from ezpz import dist
-from ezpz import plot
+from ezpz import log
+# from ezpz import plot
+from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
     CONF_DIR,
+    DS_CONFIG_PATH,
+    DS_CONFIG_JSON,
+    DS_CONFIG_YAML,
     FRAMEWORKS,
     GETJOBENV,
     HERE,
@@ -35,6 +40,7 @@ from ezpz.configs import (
     QUARTO_OUTPUTS_DIR,
     SAVEJOBENV,
     SCHEDULERS,
+    UTILS,
     TrainConfig,
     command_exists,
     get_logging_config,
@@ -76,7 +82,8 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.jobs import loadjobenv, savejobenv
+# from ezpz.jobs import loadjobenv, savejobenv
+# from ezpz import jobs
 from ezpz.log import get_file_logger, get_logger
 from ezpz.log.config import DEFAULT_STYLES, NO_COLOR, STYLES
 from ezpz.log.console import (
@@ -88,7 +95,6 @@ from ezpz.log.console import (
     should_do_markup,
     to_bool,
 )
-from ezpz.log.console import get_console, is_interactive
 from ezpz.log.handler import FluidLogRender, RichHandler
 from ezpz.log.style import (
     BEAT_TIME,
@@ -120,9 +126,12 @@ except Exception:
 #     return module
 
 
-log_config = logging.config.dictConfig(get_logging_config())
-log = logging.getLogger(__name__)
-# log.setLevel('INFO')
+try:
+    log_config = logging.config.dictConfig(get_logging_config())
+except Exception:
+    pass
+
+logger = logging.getLogger(__name__)
 logging.getLogger("sh").setLevel("WARNING")
 
 
@@ -132,18 +141,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
-log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
-log.info("Setting logging level to 'INFO' on 'RANK == 0'")
-log.info("Setting logging level to 'CRITICAL' on 'RANK != 0'")
-log.info(
-    ' ' .join(
-        [
-            "To disable this behavior,",
-            "and log from ALL ranks (not recommended), set:",
-            "'export LOG_FROM_ALL_RANKS=1' in your environment, and re-run."
-        ]
-    )
-)
+LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
 LOG_FROM_ALL_RANKS = os.environ.get(
     "LOG_FROM_ALL_RANKS",
     os.environ.get(
@@ -152,9 +150,24 @@ LOG_FROM_ALL_RANKS = os.environ.get(
     )
 )
 if LOG_FROM_ALL_RANKS:
-    log.setLevel("INFO")
+    logger.setLevel(LOG_LEVEL)
 else:
-    log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+    if RANK == 0:
+        logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
+        logger.info(
+            "Setting logging level to 'CRITICAL' on all others 'RANK != 0'"
+        )
+        logger.info(
+            ' ' .join(
+                [
+                    "To disable this behavior,",
+                    "and log from ALL ranks (not recommended),",
+                    "set: 'export LOG_FROM_ALL_RANKS=1' ",
+                    "in your environment, and re-run."
+                ]
+            )
+        )
+    logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 
 __all__ = [
@@ -166,6 +179,9 @@ __all__ = [
     "Console",
     "CustomLogging",
     "DEFAULT_STYLES",
+    "DS_CONFIG_PATH",
+    "DS_CONFIG_JSON",
+    "DS_CONFIG_YAML",
     "FRAMEWORKS",
     "FluidLogRender",
     "GETJOBENV",
@@ -181,6 +197,7 @@ __all__ = [
     "SAVEJOBENV",
     "SCHEDULERS",
     "STYLES",
+    "UTILS",
     "PyInstrumentProfiler",
     "TrainConfig",
     "add_columns",
@@ -219,11 +236,12 @@ __all__ = [
     "init_deepspeed",
     "init_process_group",
     "is_interactive",
+    "log",
     "load_ds_config",
-    "loadjobenv",
+    # "loadjobenv",
     "make_layout",
     "nested_dict_to_df",
-    "plot",
+    # "plot",
     "print_config",
     "print_config_tree",
     "print_dist_setup",
@@ -231,7 +249,7 @@ __all__ = [
     "profile",
     "query_environment",
     "run_bash_command",
-    "savejobenv",
+    # "savejobenv",
     "seed_everything",
     "setup",
     "setup_tensorflow",
@@ -241,6 +259,8 @@ __all__ = [
     "setup_wandb",
     "should_do_markup",
     "timeit",
+    "tplot",
+    "tplot_dict",
     "timeitlogit",
     "to_bool",
 ]
@@ -271,7 +291,8 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
     return get_console()
 
 
-def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
+def grab_tensor(x: Any) -> Union[np.ndarray, ScalarLike, None]:
+    import torch
     if x is None:
         return None
     if isinstance(x, (int, float, bool, np.floating)):
@@ -371,3 +392,7 @@ def get_logger_new(
     log = logging.getLogger(name=name)
     log.setLevel(level)
     return log
+
+
+if __name__ == '__main__':
+    pass

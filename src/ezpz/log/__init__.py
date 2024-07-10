@@ -3,10 +3,9 @@ enrich/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-import os
-import yaml
 from typing import Optional
 import logging.config
+from ezpz.log.config import STYLES
 #
 # # os.environ['PYTHONIOENCODING'] = 'utf-8'
 #
@@ -93,6 +92,7 @@ def print_styles_alt(
     from rich.text import Text
     from ezpz.log.style import DEFAULT_STYLES
     from rich.table import Table
+    from ezpz.log.console import get_console
     console = get_console(record=html, width=150)
     table = Table("Name", "Styling")
     styles = DEFAULT_STYLES
@@ -121,7 +121,7 @@ def get_logger(
     import logging
     import logging.config
     from ezpz.configs import get_logging_config
-    log_config = logging.config.dictConfig(get_logging_config())
+    logging.config.dictConfig(get_logging_config())
     log = logging.getLogger(name if name is not None else __name__)
     if rank_zero_only:
         if RANK == 0:
@@ -131,7 +131,6 @@ def get_logger(
     else:
         log.setLevel(level)
     return log
-
 
 
 def _get_logger(
@@ -208,7 +207,7 @@ def get_logger1(
     from ezpz.log.console import get_console
     from ezpz.log.console import is_interactive
     from ezpz.log.handler import RichHandler as EnrichHandler
-    from rich.logging import RichHandler
+    from rich.logging import RichHandler as OriginalRichHandler
     _ = (
             log.setLevel("CRITICAL") if (RANK == 0 and rank_zero_only)
             else log.setLevel(level)
@@ -233,7 +232,7 @@ def get_logger1(
             and not is_interactive()
         )
         log.addHandler(
-            RichHandler(
+            OriginalRichHandler(
                 omit_repeated_times=False,
                 level=level,
                 console=console,
@@ -273,5 +272,3 @@ def get_logger1(
             f'{log.handlers}'
         )
     return log
-
-

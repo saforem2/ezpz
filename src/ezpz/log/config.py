@@ -17,10 +17,10 @@ os.environ['COLUMNS'] = f'{WIDTH}'
 
 # -- Configure useful Paths -----------------------
 # warnings.filterwarnings('ignore')
-HERE = Path(os.path.abspath(__file__)).parent
-PROJECT_DIR = HERE.parent.parent
-PROJECT_ROOT = PROJECT_DIR
-CONF_DIR = HERE.joinpath('conf')
+# HERE = Path(os.path.abspath(__file__)).parent
+# PROJECT_DIR = HERE.parent.parent
+# PROJECT_ROOT = PROJECT_DIR
+# CONF_DIR = HERE.joinpath('conf')
 # BIN_DIR = HERE.joinpath('bin')
 # SAVEJOBENV = BIN_DIR.joinpath('savejobenv')
 # GETJOBENV = BIN_DIR.joinpath('getjobenv')
@@ -29,7 +29,7 @@ CONF_DIR = HERE.joinpath('conf')
 # OUTPUTS_DIR = HERE.joinpath('outputs')
 # QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
 
-CONF_DIR.mkdir(exist_ok=True, parents=True)
+# CONF_DIR.mkdir(exist_ok=True, parents=True)
 # LOGS_DIR.mkdir(exist_ok=True, parents=True)
 # QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 # OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
