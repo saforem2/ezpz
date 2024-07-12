@@ -26,6 +26,7 @@ import ezpz as ez  # noqa: E402
 t_ezpz = time.perf_counter()
 
 import torch  # noqa: E402
+import torch.distributed as tdist  # noqa: E402
 t_torch = time.perf_counter()
 
 from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
@@ -139,6 +140,7 @@ if RANK == 0:
     ez.dist.log_dict_as_bulleted_list(timers_import, name='timers_import')
     ez.dist.log_dict_as_bulleted_list(CONFIG, name='CONFIG')
 
+tdist.barrier()
 
 class Network(torch.nn.Module):
     def __init__(
@@ -298,6 +300,7 @@ def main():
                 title=f"{key} [{ez.get_timestamp()}]",
                 outfile=outdir.joinpath(f"{key}.txt").as_posix(),
             )
+    tdist.barrier()
 
 
 if __name__ == '__main__':
@@ -309,9 +312,10 @@ if __name__ == '__main__':
     with profiler:
         main()
     T4 = time.perf_counter()
-    runtime=(T4 - T0)
-    TIMERS['timers/runtime'] = runtime
-    logger.critical(f'[{RANK}] {runtime=:.6f}s')
+    runtime = torch.tensor(T4 - T0)
+    # tdist.all_reduce(runtime)
+    TIMERS['timers/runtime'] = runtime.item()
+    logger.info(f'[{RANK}] {runtime=:.6f}s')
     if not WANDB_DISABLED and RANK == 0 and wandb is not None:
         if (
             (run := getattr(wandb, 'run', None)) is not None
@@ -319,3 +323,6 @@ if __name__ == '__main__':
         ):
             wandb.log(TIMERS)
         # wandb.finish()
+    tdist.barrier()
+    import sys
+    sys.exit(0)
