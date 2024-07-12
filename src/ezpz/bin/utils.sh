@@ -50,6 +50,106 @@ ezpz_get_tstamp () {
     printf "%s" "$(date "+%Y-%m-%d-%H%M%S")"
 }
 
+####################
+# ezpz_qsme_running
+#
+# prints 1 line for each running job owned by $USER
+#
+# each line of the form:
+#
+# <jobid> <elapsed_time> <node0> <node1> <node2> ...
+####################
+ezpz_qsme_running() {
+    qstat -u $USER -n1rw | sed -e "s/\/0\*208/\ /g" | tr "+|." "\ " | awk '{a = ""; for (i = 13 ; i <= NF ; i++) a = a " " $i; print $1 a}' | egrep -v "aurora-pbs|Req|Job|\-\-"
+}
+
+###############################
+# ezpz_get_jobid_from_hostname
+#
+# Identify jobid containing "$(hostname)" from all active (running) jobs owned
+# by the $USER.
+#
+# Example:
+# --------
+# Look for `$(hostname)` in output from `ezpz_qsme_running`, and print the first
+# column
+#
+#  |   jobid   |   host0  |   host1   |  host2   |
+#  |:---------:|:--------:|:---------:|:--------:|
+#  |  jobid0   |  host00  |  host10   |  host20  |
+#  |  jobid1   |  host01  |  host11   |  host21  |
+#  |  jobid2   |  host02  |  host12   |  host22  |
+#
+###############################
+ezpz_get_jobid_from_hostname() {
+    jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
+    echo "${jobid}"
+}
+
+
+#######################
+# Unset all:
+#
+# - `PBS_*`
+# - {host,HOST}file
+#
+# environment variables
+ezpz_reset_pbs_vars() {
+    wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
+    vars=($(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}'))
+    for v in "$vars[@]"; do echo "Unsetting $v" && unset -v "${v}"; done
+    # matches=($(printenv | grep -iE "^PBS|host"))
+    # for v in "${matches[*]}" ; do
+    # for v in ${vars}; do
+    #     echo "Unsetting $v" && unset -v ${v}
+    #     # vname=$(echo "${v}" | tr "=" " " | awk '{print $1}')
+    #     # echo "unsetting $vname" && unset $vname
+    #     # unset $vname
+    # done
+    export PBS_O_WORKDIR="${wd}"
+    # for v in $(printenv | grep -ie "PBS|host"); do
+    #     # if [[ "${v}" != "PBS_O_WORKDIR" ]]; then
+
+}
+
+
+######################################
+# ezpz_get_pbs_nodefile_from_hostname
+#
+# Return path to PBS_NODEFILE corresponding to the jobid that was identified as
+# containing the (currently active, determined by `$(hostname)`) host.
+#
+# Example:
+# --------
+# Look for $(hostname) in output from `ezpz_qsme_running`
+#
+#  |   jobid   |   host0  |   host1   |  host2   |
+#  |:---------:|:--------:|:---------:|:--------:|
+#  |  jobid0   |  host00  |  host10   |  host20  |
+#  |  jobid1   |  host01  |  host11   |  host21  |
+#  |  jobid2   |  host02  |  host12   |  host22  |
+#
+# then, once we've identified the `jobid` containing `$(hostname)`, we can use
+# that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
+#
+#     ```bash
+#     /var/spool/pbs/aux/${jobid}
+#     ````
+######################################
+ezpz_get_pbs_nodefile_from_hostname() {
+    jobid=$(ezpz_get_jobid_from_hostname)
+    if [[ -n "${jobid}" ]]; then
+        match=$(/bin/ls /var/spool/pbs/aux/ | grep ${jobid})
+        hostfile="/var/spool/pbs/aux/${match}"
+        if [[ -f "${hostfile}" ]]; then
+            export PBS_NODEFILE="${hostfile}"
+            export PBS_JOBID=$(echo "${PBS_NODEFILE}" | tr "/" " " | awk '{print $NF}')
+            echo "${hostfile}"
+        fi
+    fi
+}
+
+
 ezpz_save_dotenv() {
     if [[ "$#" -ne 1 ]]; then
         estr="[error]"
@@ -613,7 +713,8 @@ ezpz_get_pbs_env() {
         hostfile="$1"
         jobenv_file="$2"
     else
-        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        # hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        hostfile="${HOSTFILE:-$(ezpz_get_pbs_nodefile_from_hostname)}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     fi
     printf "\n"
@@ -621,21 +722,18 @@ ezpz_get_pbs_env() {
     printf "      • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
     printf "      • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
     if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
-        # export JOBENV_FILE="${PBS_ENV_FILE}"
-        if [[ -f "${jobenv_file}" ]]; then
-            # envfile="${PBS_ENV_FILE:-}"
-            # nodefile=$(/bin/cat "${envfile}" | grep PBS_NODEFILE | sed 's/export\ PBS_NODEFILE=//g')
-            # nodefile=$(/bin/cat "${jobenv_file}" | grep "${hostfile}" | sed 's/export\ PBS_NODEFILE=//g')
-            nodefile=$(cat "${jobenv_file}" | grep "export HOSTFILE=${hostfile}" | uniq | tr '=' ' ' | awk '{print $NF}')
-        else
-            nodefile="${nodefile:-${HOSTFILE:-${PBS_NODEFILE}}}"
-        fi
+        # if [[ -f "${jobenv_file}" ]]; then
+        #     # envfile="${PBS_ENV_FILE:-}"
+        #     # nodefile=$(/bin/cat "${envfile}" | grep PBS_NODEFILE | sed 's/export\ PBS_NODEFILE=//g')
+        #     # nodefile=$(/bin/cat "${jobenv_file}" | grep "${hostfile}" | sed 's/export\ PBS_NODEFILE=//g')
+        #     nodefile=$(cat "${jobenv_file}" | grep "export HOSTFILE=${hostfile}" | uniq | tr '=' ' ' | awk '{print $NF}')
+        # else
+        #     nodefile="${nodefile:-${HOSTFILE:-${PBS_NODEFILE}}}"
+        # fi
         # printf "[${BLUE}ezpz_get_pbs_env${RESET}] Using nodefile: ${BLUE}%s${RESET}\n" "${nodefile}"
         # printf "      • NGPU_PER_HOST=${MAGENTA}${num_gpus_per_host}${RESET}\n"
         # if [[ -n $(cat "${nodefile:-${PBS_NODEFILE:-HOSTFILE}}" | grep $(hostname)) ]]; then
-        if [[ -n $(cat "${nodefile:-}" | grep "$(hostname)") ]]; then
-            source "${jobenv_file}" || exit
-            # source "${PBS_ENV_FILE}"
+        if [[ -n $(cat "${hostfile:-}" | grep "$(hostname)") ]]; then
             num_hosts=$(ezpz_get_num_hosts "${nodefile}")
             num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
             num_gpus="$(( num_hosts * num_gpus_per_host ))"
@@ -663,103 +761,6 @@ ezpz_get_slurm_env() {
     fi
 }
 
-####################
-# ezpz_qsme_running
-#
-# prints 1 line for each running job owned by $USER
-#
-# each line of the form:
-#
-# <jobid> <elapsed_time> <node0> <node1> <node2> ...
-####################
-ezpz_qsme_running() {
-    qstat -u $USER -n1rw | sed -e "s/\/0\*208/\ /g" | tr "+|." "\ " | awk '{a = ""; for (i = 13 ; i <= NF ; i++) a = a " " $i; print $1 a}' | egrep -v "aurora-pbs|Req|Job|\-\-"
-}
-
-
-###############################
-# ezpz_get_jobid_from_hostname
-#
-# Identify jobid containing "$(hostname)" from all active (running) jobs owned
-# by the $USER.
-#
-# Example:
-# --------
-# Look for `$(hostname)` in output from `ezpz_qsme_running`, and print the first
-# column
-#
-#  |   jobid   |   host0  |   host1   |  host2   |
-#  |:---------:|:--------:|:---------:|:--------:|
-#  |  jobid0   |  host00  |  host10   |  host20  |
-#  |  jobid1   |  host01  |  host11   |  host21  |
-#  |  jobid2   |  host02  |  host12   |  host22  |
-#
-###############################
-ezpz_get_jobid_from_hostname() {
-    jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
-    echo "${jobid}"
-}
-
-
-#######################
-# Unset all:
-#
-# - `PBS_*`
-# - {host,HOST}file
-#
-# environment variables
-ezpz_reset_pbs_vars() {
-    wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
-    vars=$(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}')
-    # matches=($(printenv | grep -iE "^PBS|host"))
-    # for v in "${matches[*]}" ; do
-    for v in ${vars}; do
-        echo "Unsetting $v" && unset ${v}
-        # vname=$(echo "${v}" | tr "=" " " | awk '{print $1}')
-        # echo "unsetting $vname" && unset $vname
-        # unset $vname
-    done
-    export PBS_O_WORKDIR="${wd}"
-    # for v in $(printenv | grep -ie "PBS|host"); do
-    #     # if [[ "${v}" != "PBS_O_WORKDIR" ]]; then
-
-}
-
-
-######################################
-# ezpz_get_pbs_nodefile_from_hostname
-#
-# Return path to PBS_NODEFILE corresponding to the jobid that was identified as
-# containing the (currently active, determined by `$(hostname)`) host.
-#
-# Example:
-# --------
-# Look for $(hostname) in output from `ezpz_qsme_running`
-#
-#  |   jobid   |   host0  |   host1   |  host2   |
-#  |:---------:|:--------:|:---------:|:--------:|
-#  |  jobid0   |  host00  |  host10   |  host20  |
-#  |  jobid1   |  host01  |  host11   |  host21  |
-#  |  jobid2   |  host02  |  host12   |  host22  |
-#
-# then, once we've identified the `jobid` containing `$(hostname)`, we can use
-# that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
-#
-#     ```bash
-#     /var/spool/pbs/aux/${jobid}
-#     ````
-######################################
-ezpz_get_pbs_nodefile_from_hostname() {
-    jobid=$(ezpz_get_jobid_from_hostname)
-    if [[ -n "${jobid}" ]]; then
-        match=$(/bin/ls /var/spool/pbs/aux/ | grep ${jobid})
-        hostfile="/var/spool/pbs/aux/${match}"
-        if [[ -f "${hostfile}" ]]; then
-            export PBS_NODEFILE="${hostfile}"
-            echo "${hostfile}"
-        fi
-    fi
-}
 
 ezpz_get_job_env() {
     if [[ "$#" == 1 ]]; then
@@ -790,12 +791,12 @@ ezpz_get_job_env() {
             echo "Unexpected hostname ${HOSTNAME}"
         fi
     fi
-    if [[ -f "${jobenv_file}" ]]; then
-        source "${jobenv_file}" || exit
-    else
-        echo "Unable to find ${jobenv_file} on $(hostname)"
-        exit 1
-    fi
+    # if [[ -f "${jobenv_file}" ]]; then
+    #     source "${jobenv_file}" || exit
+    # else
+    #     echo "Unable to find ${jobenv_file} on $(hostname)"
+    #     exit 1
+    # fi
     nhosts=$(wc -l < "${hostfile}")
     local nhosts="${nhosts}"
     export LAUNCH="${DIST_LAUNCH}"
@@ -847,7 +848,9 @@ ezpz_print_job_env() {
 
 ezpz_getjobenv_main() {
     ezpz_get_job_env "$@"
-    ezpz_print_job_env "$@"
+    ezpz_setup_host "$@"
+    ezpz_write_job_info "$@"
+    # ezpz_print_job_env "$@"
 }
 
 ezpz_savejobenv_main() {
