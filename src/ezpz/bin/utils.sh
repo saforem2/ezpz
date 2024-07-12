@@ -246,7 +246,11 @@ ezpz_setup_conda_sunspot() {
 # Setup conda on Aurora
 ###########################
 ezpz_setup_conda_aurora() {
-    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+    # if [[ -n $(command -v mm) ]]; then
+    #     mm activate anl_2024_5_v2
+    if [[ -n "${MAMBA_ROOT_PREFIX:-}" ]]; then
+        micromamba activate anl_2024_5_v2
+    elif [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use -a /soft/modulefiles ; module load frameworks/2024.1
     fi
 }
@@ -407,6 +411,36 @@ join_by() {
 }
 
 
+ezpz_parse_hostfile() {
+    if [[ "$#" != 1 ]]; then
+        echo "Expected exactly one argument: hostfile"
+        echo "Received: $#"
+    fi
+    hf="$1"
+    num_hosts=$(ezpz_get_num_hosts "${hf}")
+    num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    num_gpus=$(( num_gpus * num_gpus_per_host ))
+    ret=("${num_hosts}" "${num_gpus_per_host}" "${num_gpus}")
+    # echo ("${num_hosts}" "${num_gpus_per_host}" "${num_gpus}")
+    echo "${ret}"
+}
+
+ezpz_get_dist_launch_cmd() {
+    if [[ "$#" != 3 ]]; then
+        echo "Expected exactly three arguments: hostfile, num_gpus_per_host, num_gpus"
+        echo "Received: $#"
+    fi
+    # hf="$1"
+    # # local num_hosts=$(ezpz_get_num_hosts "${hf}")
+    # # local num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    # # local num_gpus=$(( num_gpus * num_gpus_per_host ))
+    # local dist_env=$(ezpz_parse_hostfile "${hf}")
+    # local num_hosts="${dist_env[1]}"
+    # local num_gpus_per_host="${dist_env[2]}"
+    # local num_gpus="${dist_env[3]}"
+    echo "mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hf} --cpu-bind depth -d 16"
+}
+
 ezpz_save_pbs_env() {
     printf "\n[${BLUE}%s${RESET}]\n" "ezpz_save_pbs_env"
     if [[ "$#" == 0 ]]; then
@@ -438,16 +472,24 @@ ezpz_save_pbs_env() {
         printf "        • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
         sed -i 's/^PBS/export\ PBS/g' "${jobenv_file}"
         sed -i 's/^HOSTFILE/export\ HOSTFILE/g' "${jobenv_file}"
-        num_hosts=$(ezpz_get_num_hosts "${hostfile}")
-        num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-        num_gpus=$(( num_hosts * num_gpus_per_host ))
+        # dist_env=$(ezpz_parse_hostfile "${hostfile}")
+        dist_env=() ; dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
+        num_hosts="${dist_env[1]}"
+        num_gpus_per_host="${dist_env[2]}"
+        num_gpus="${dist_env[3]}"
+        # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+        # num_hosts=$(ezpz_get_num_hosts "${hostfile}")
+        # num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+        # num_gpus=$(( num_hosts * num_gpus_per_host ))
         printf "      to calculate:\n"
         printf "        • num_hosts: ${BLUE}%s${RESET}\n" "${num_hosts}"
         printf "        • num_gpus_per_host: ${BLUE}%s${RESET}\n" "${num_gpus_per_host}"
         printf "        • num_gpus: ${BLUE}%s${RESET}\n" "${num_gpus}"
         # getNumGPUs
         # NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-        export DIST_LAUNCH="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+        # export DIST_LAUNCH="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+        export DIST_LAUNCH="${dist_launch_cmd}"
         export ezlaunch="${DIST_LAUNCH}"
         # printf "Caught ${BLUE}HOSTFILE${RESET} != ${BLUE}PBS_NODEFILE${RESET} \n"
         printf "        • DIST_LAUNCH: ${BLUE}%s${RESET}\n" "${DIST_LAUNCH}"
@@ -648,10 +690,16 @@ ezpz_write_job_info() {
     fi
     # printf "[ezpz_write_job_info] Caught jobenv_file: %s\n" "${jobenv_file}"
     # printf "[ezpz_write_job_info] Caught hostfile: %s\n" "${hostfile}"
+    # getNumGPUs
+    # dist_env=$(ezpz_parse_hostfile "${hostfile}")
     num_hosts=$(ezpz_get_num_hosts "${hostfile}")
     num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-    # getNumGPUs
     num_gpus="$(( num_hosts * num_gpus_per_host ))"
+    # num_hosts="${dist_env[1]}"
+    # num_gpus_per_host="${dist_env[2]}"
+    # num_gpus="${dist_env[3]}"
+    # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+    dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
     HOSTS=$(join_by ', ' $(/bin/cat ${hostfile}))
     export NHOSTS="${num_hosts}"
     export NGPU_PER_HOST="${num_gpus_per_host}"
@@ -661,8 +709,19 @@ ezpz_write_job_info() {
         echo "export NHOSTS=${NHOSTS}"
         echo "export NGPU_PER_HOST=${NGPU_PER_HOST}"
         echo "export NGPUS=${NGPUS}"
-        echo "alias LAUNCH='${DIST_LAUNCH}'"
     } >> "${jobenv_file}"
+    export LAUNCH="${dist_launch_cmd}"
+    export DIST_LAUNCH="${dist_launch_cmd}"
+    export ezlaunch="${DIST_LAUNCH}"
+    if [[ -n "${DIST_LAUNCH:-}" ]]; then
+        echo "alias LAUNCH='${DIST_LAUNCH}'"
+    fi
+    # if [[ -n "${DIST_LAUNCH:-}" ]]; then
+    #     echo "alias LAUNCH='${DIST_LAUNCH}'"
+    # else
+    #     export DIST_LAUNCH="${dist_launch_cmd}"
+    #     export ezlaunch="${DIST_LAUNCH}"
+    # fi
     export LAUNCH="${DIST_LAUNCH}"
     export ezlaunch="${DIST_LAUNCH}"
     alias launch="${LAUNCH}"
@@ -704,16 +763,12 @@ ezpz_save_deepspeed_env() {
 }
 
 ezpz_get_pbs_env() {
-    # if [[ "$#" == 0 ]]; then
-    #     jobenv_file="${PBS_ENV_FILE}"
-    #     hostfile="${HOSTFILE:-$PBS_NODEFILE}"
     if [[ "$#" == 1 ]]; then
         hostfile="$1"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
     else
-        # hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
         hostfile="${HOSTFILE:-$(ezpz_get_pbs_nodefile_from_hostname)}"
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     fi
@@ -722,17 +777,6 @@ ezpz_get_pbs_env() {
     printf "      • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
     printf "      • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
     if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
-        # if [[ -f "${jobenv_file}" ]]; then
-        #     # envfile="${PBS_ENV_FILE:-}"
-        #     # nodefile=$(/bin/cat "${envfile}" | grep PBS_NODEFILE | sed 's/export\ PBS_NODEFILE=//g')
-        #     # nodefile=$(/bin/cat "${jobenv_file}" | grep "${hostfile}" | sed 's/export\ PBS_NODEFILE=//g')
-        #     nodefile=$(cat "${jobenv_file}" | grep "export HOSTFILE=${hostfile}" | uniq | tr '=' ' ' | awk '{print $NF}')
-        # else
-        #     nodefile="${nodefile:-${HOSTFILE:-${PBS_NODEFILE}}}"
-        # fi
-        # printf "[${BLUE}ezpz_get_pbs_env${RESET}] Using nodefile: ${BLUE}%s${RESET}\n" "${nodefile}"
-        # printf "      • NGPU_PER_HOST=${MAGENTA}${num_gpus_per_host}${RESET}\n"
-        # if [[ -n $(cat "${nodefile:-${PBS_NODEFILE:-HOSTFILE}}" | grep $(hostname)) ]]; then
         if [[ -n $(cat "${hostfile:-}" | grep "$(hostname)") ]]; then
             num_hosts=$(ezpz_get_num_hosts "${nodefile}")
             num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
@@ -838,6 +882,7 @@ ezpz_print_job_env() {
     printf "      • NHOSTS=${YELLOW}%s${RESET}\n" "${num_hosts}"
     printf "      • NGPU_PER_HOST=${YELLOW}%s${RESET}\n" "${num_gpus_per_host}"
     printf "      • NGPUS=${YELLOW}%s${RESET}\n" "${num_gpus}"
+    printf "      • LAUNCH=${YELLOW}%s${RESET}\n" "${LAUNCH}"
     printf "      • DIST_LAUNCH=${YELLOW}%s${RESET}\n" "${DIST_LAUNCH}"
     printf "\n"
     printf "  [${GREEN}%s${RESET}]:\n" "LAUNCH"
