@@ -1,5 +1,36 @@
 # Notes
 
+## Startup Files
+
+In your `{.bashrc,.zshrc}`, you can:
+
+```bash
+ezpz_setup_alcf() {
+    file=$(mktemp)
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh > "${file}"
+    echo "Saving 'utils.sh' to ${file} and sourcing..."
+    source "${file}" || exit
+    hn=$(hostname)
+    setup_alcf
+}
+
+hn=$(hostname)
+if [[ "${hn}" == x1 || "${hn}" == x]]
+if [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
+  
+elif [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
+elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
+elif [[ $(hostname) == bastion* ]]; then
+else
+fi
+
+MACHINE=$(echo "${machine}" | tr '[:upper:]' '[:lower:]')
+export PATH="${HOME}/bin/${MACHINE}:${PATH}"
+export HISTFILE="$HOME/.zsh_history-${MACHINE}"
+# export CODESTATS_API_KEY="SFMyNTY.YzJGdFptOXlaVzFoYmc9PSMjTWpBNE1UST0.NQ4Oy3FSJcT4nMaMlVnYcnCtPc2mqImViSGiIxyJFrg"
+export ZSH_COMPDUMP="${ZSH}/cache/.zcompdump-${MACHINE}"
+```
+
 1. Clone `ezpz` + navigate into it:
 
     ```bash
