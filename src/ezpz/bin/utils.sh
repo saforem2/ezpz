@@ -246,12 +246,10 @@ ezpz_setup_conda_sunspot() {
 # Setup conda on Aurora
 ###########################
 ezpz_setup_conda_aurora() {
-    # if [[ -n $(command -v mm) ]]; then
-    #     mm activate anl_2024_5_v2
-    if [[ -n "${MAMBA_ROOT_PREFIX:-}" ]]; then
-        micromamba activate anl_2024_5_v2
-    elif [[ -z "${CONDA_PREFIX:-}" ]]; then
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use -a /soft/modulefiles ; module load frameworks/2024.1
+    else
+        printf "Caught CONDA_PREFIX=%s from environment, using this!" "${CONDA_PREFIX}"
     fi
 }
 
