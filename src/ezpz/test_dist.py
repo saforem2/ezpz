@@ -275,10 +275,10 @@ def main():
                 ', '.join([
                     f'{iter=}',
                     f'loss={loss.item():<.6g}',
-                    f'{sps=:<.4g}',
+                    f'{sps=:<.4f}',
                     # f'sps={sps:<.6f}',
                     # f'dt={dtf+dtb:<3.6f}',
-                    f'{dt=:<4g}',
+                    f'{dt=:<.4f}',
                     f'{dtf=:<3.4g}',
                     f'{dtb=:<3.4g}'
                 ])
