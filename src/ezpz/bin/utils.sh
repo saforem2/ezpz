@@ -180,6 +180,8 @@ ezpz_get_machine_name() {
         else
             machine="polaris"
         fi
+    elif [[ $(hostname) == frontier* ]]; then
+        machine="frontier"
     elif [[ $(hostname) == nid* ]]; then
         machine="perlmutter"
     else
@@ -198,16 +200,29 @@ ezpz_check_and_kill_if_running() {
     fi
 }
 
+ezpz_make_slurm_nodefile() {
+    if [[ "$#" == 1 ]]; then
+        outfile="$1"
+    else
+        outfile="nodefile"
+    fi
+    scontrol show hostname $SLURM_NODELIST > "${outfile}"
+    # srun -l /bin/hostname | sort -n | awk '{print $2}' > "${outfile}"
+    echo "${outfile}"
+}
+
 
 ezpz_setup_srun() {
-    if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-        export NHOSTS="${SLURM_NNODES:-1}"
-        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
-        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-        export SRUN_EXEC="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
-    else
-        echo "Skipping ezpz_setup_srun() on $(hostname)"
-    fi
+    # if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+    export NHOSTS="${SLURM_NNODES:-1}"
+    export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+    export HOSTFILE="${HOSTFILE:-$(ezpz_make_slurm_nodefile)}"
+    export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+    export SRUN_EXEC="srun -l -u --verbose -N${SLURM_NNODES} -n$(( SLURM_NNODES * SLURM_GPUS_ON_NODE ))"
+    # export SRUN_EXEC="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
+    # else
+    #     echo "Skipping ezpz_setup_srun() on $(hostname)"
+    # fi
 }
 
 ############################################################################
@@ -228,6 +243,20 @@ ezpz_save_ds_env() {
     } > .deepspeed_env
 }
 
+
+###########################
+# Setup conda on Frontier
+###########################
+ezpz_setup_conda_frontier() {
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        module load PrgEnv-gnu/8.5.0
+        module load craype-accel-amd-gfx90a
+        module load rocm
+        # module load miniforge3/23.11.0-0
+        # eval "$(/autofs/nccs-svm1_sw/frontier/miniforge3/23.11.0-0/bin/conda "shell.$(echo $SHELL | tr '/' ' ' | awk '{print $NF}')" hook)"
+        conda activate pytorch2.2-rocm5.7
+    fi
+}
 
 ###########################
 # Setup conda on Sunspot
@@ -417,7 +446,7 @@ ezpz_parse_hostfile() {
     hf="$1"
     num_hosts=$(ezpz_get_num_hosts "${hf}")
     num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-    num_gpus=$(( num_gpus * num_gpus_per_host ))
+    num_gpus=$(( num_hosts * num_gpus_per_host ))
     ret=("${num_hosts}" "${num_gpus_per_host}" "${num_gpus}")
     # echo ("${num_hosts}" "${num_gpus_per_host}" "${num_gpus}")
     echo "${ret}"
@@ -500,21 +529,80 @@ ezpz_save_pbs_env() {
 }
 
 
+# _ezpz_save_slurm_env() {
+#     # if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+#     mn="$(ezpz_get_machine_name)"
+#     if [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" ]]; then
+#         echo "  Saving SLURM_* to ${SLURM_ENV_FILE}"
+#         SLURM_VARS=$(env | grep SLU)
+#         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
+#         export HOSTFILE="${HOME}/.slurm-nodefile"
+#         export JOBENV_FILE="${SLURM_ENV_FILE}"
+#         export SLURM_NODES="${SLURM_NODES}"
+#         SLURM_NODES=$(scontrol show hostname $SLURM_NODELIST)
+#         printf "%s\n" "${SLURM_NODES[@]}" > $HOSTFILE
+#         sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
+#         sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
+#         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
+#         export ezlaunch="${DIST_LAUNCH}"
+#     fi
+# }
+
 ezpz_save_slurm_env() {
-    if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-        echo "  Saving SLURM_* to ${SLURM_ENV_FILE}"
-        SLURM_VARS=$(env | grep SLU)
-        echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
-        export HOSTFILE="${HOME}/.slurm-nodefile"
-        export JOBENV_FILE="${SLURM_ENV_FILE}"
-        export SLURM_NODES="${SLURM_NODES}"
-        SLURM_NODES=$(scontrol show hostname $SLURM_NODELIST)
-        printf "%s\n" "${SLURM_NODES[@]}" > $HOSTFILE
-        sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
-        sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
-        export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
-        export ezlaunch="${DIST_LAUNCH}"
+    printf "\n[${BLUE}%s${RESET}]\n" "ezpz_save_slurm_env"
+    if [[ "$#" == 0 ]]; then
+        # hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        hostfile="${HOSTFILE:-$(ezpz_make_slurm_nodefile)}"
+        jobenv_file="${JOBENV_FILE:-${SLURM_ENV_FILE}}"
+    elif [[ "$#" == 1 ]]; then
+        printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
+        hostfile="$1"
+        jobenv_file="${JOBENV_FILE:-${SLURM_ENV_FILE}}"
+    elif [[ "$#" == 2 ]]; then
+        printf "    • Caught ${BLUE}%s${RESET} arguments\n" "$#"
+        hostfile="$1"
+        jobenv_file="$2"
+    else
+        hostfile="${HOSTFILE:-$(ezpz_make_slurm_nodefile)}"
+        jobenv_file="${JOBENV_FILE:-${SLURM_ENV_FILE}}"
     fi
+    if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        SLURM_VARS=$(env | grep SLU)
+        echo "${SLURM_VARS[*]}" > "${jobenv_file}"
+        # if [[ "${hostfile}" != "${SLURM_NODEFILE:-}" ]]; then
+        #     printf "\n"
+        #     printf "    • Caught ${RED}%s${RESET} != ${RED}%s${RESET} \n" "hostfile" "SLURM_NODEFILE"
+        #     printf "        • hostfile: ${RED}%s${RESET}\n" "${hostfile}"
+        #     printf "        • SLURM_NODEFILE: ${RED}%s${RESET}\n" "${SLURM_NODEFILE}"
+        #     printf "\n"
+        # fi
+        printf "    • Using:\n"
+        printf "        • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
+        printf "        • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
+        sed -i 's/^SLURM/export\ SLURM/g' "${jobenv_file}"
+        sed -i 's/^HOSTFILE/export\ HOSTFILE/g' "${jobenv_file}"
+        # dist_env=$(ezpz_parse_hostfile "${hostfile}")
+        # dist_env=() ; dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
+        dist_env=()
+        dist_env+=($(ezpz_parse_hostfile "$(ezpz_make_slurm_nodefile)"))
+        num_hosts="${dist_env[1]}"
+        num_gpus_per_host="${dist_env[2]}"
+        num_gpus="${dist_env[3]}"
+        # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
+        dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$(( SLURM_NNODES * SLURM_GPUS_ON_NODE ))"
+        printf "      to calculate:\n"
+        printf "        • num_hosts: ${BLUE}%s${RESET}\n" "${num_hosts}"
+        printf "        • num_gpus_per_host: ${BLUE}%s${RESET}\n" "${num_gpus_per_host}"
+        printf "        • num_gpus: ${BLUE}%s${RESET}\n" "${num_gpus}"
+        export DIST_LAUNCH="${dist_launch_cmd}"
+        export ezlaunch="${DIST_LAUNCH}"
+        printf "        • DIST_LAUNCH: ${BLUE}%s${RESET}\n" "${DIST_LAUNCH}"
+    fi
+    export HOSTFILE="${hostfile}"
+    export JOBENV_FILE="${jobenv_file}"
+    printf "    • Setting:\n" 
+    printf "        • HOSTFILE: ${BLUE}%s${RESET}\n" "${HOSTFILE}"
+    printf "        • JOBENV_FILE: ${BLUE}%s${RESET}\n\n" "${JOBENV_FILE}"
 }
 
 
@@ -545,6 +633,8 @@ ezpz_save_slurm_env() {
 ###########################
 ezpz_setup_host() {
     printf "[${CYAN}%s${RESET}]\n" "ezpz_setup_host"
+    mn=$(ezpz_get_machine_name)
+    scheduler_type=$(ezpz_get_scheduler_type)
     #########################################
     # If no arguments passed ("$#" == 0):
     #
@@ -555,19 +645,24 @@ ezpz_setup_host() {
     #       1. `JOBENV_FILE`
     #       2. `PBS_ENV_FILE`
     if [[ "$#" == 0 ]]; then
-        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        # hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
+        # jobenv_file="$(ezpz_get_jobenv_file)"
+        # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
         printf "    • Using hostfile: ${CYAN}%s${RESET}\n" "${hostfile}"
         printf "    • Found in environment:\n"
         if [[ -n "${HOSTFILE}" ]]; then
             printf "        • HOSTFILE: ${CYAN}%s${RESET}\n" "${HOSTFILE}"
         fi
-        if [[ "${hostfile}" != "${PBS_NODEFILE}" ]]; then
+        # if [[ "${hostfile}" != "${PBS_NODEFILE}" ]]; then
+        if [[ "${scheduler_type}" == "pbs" && "${hostfile}" != "${PBS_NODEFILE:-}" ]]; then
             printf "        • PBS_NODEFILE: ${CYAN}%s${RESET}\n" "${PBS_NODEFILE}"
         fi
     elif [[ "$#" == 1 ]]; then
         printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
         hostfile="$1"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
         printf "    • Caught ${CYAN}%s${RESET} arguments\n" "$#"
         printf "    • hostfile=${CYAN}%s${RESET}\n" "${hostfile}"
     elif [[ "$#" == 2 ]]; then
@@ -579,22 +674,32 @@ ezpz_setup_host() {
     else
         echo "Expected exactly 0, 1, or 2 arguments, received: $#"
     fi
-    printf "        • Writing PBS vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
-    if [[ $(hostname) == x3* ]]; then
-        export GPU_TYPE="NVIDIA"
-        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-        ezpz_save_pbs_env "$@"
-    elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
-        export GPU_TYPE="INTEL"
-        # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-        export NGPU_PER_TILE=6
-        export NTILE_PER_HOST=2
-        export NGPU_PER_HOST=$(( NGPU_PER_TILE * NTILE_PER_HOST ))
-        ezpz_save_pbs_env "$@"
-    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
-        export GPU_TYPE="NVIDIA"
-        export HOSTFILE="${HOME}/.slurm-nodefile"
-        ezpz_save_slurm_env
+    if [[ "${scheduler_type}" == "pbs" && "${hostfile}" != "${PBS_NODEFILE:-}" ]]; then
+        printf "        • Writing PBS vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
+        # if [[ $(hostname) == x3* ]]; then
+        if [[ "${mn}" == "polaris" || "${mn}" == "sirius" ]]; then
+            export GPU_TYPE="NVIDIA"
+            # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+            ezpz_save_pbs_env "$@"
+        # elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
+        elif [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
+            export GPU_TYPE="INTEL"
+            export NGPU_PER_TILE=6
+            export NTILE_PER_HOST=2
+            export NGPU_PER_HOST=$(( NGPU_PER_TILE * NTILE_PER_HOST ))
+            ezpz_save_pbs_env "$@"
+        fi
+    elif [[ "${scheduler_type}" == "slurm" ]]; then
+        printf "        • Writing SLURM vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
+        if [[ "${mn}" == "frontier" ]]; then
+            export GPU_TYPE="AMD"
+            export HOSTFILE=$(ezpz_make_slurm_nodefile)
+            ezpz_save_slurm_env "$@"
+        elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then 
+            export GPU_TYPE="NVIDIA"
+            export HOSTFILE="$(ezpz_make_slurm_nodefile)"
+            ezpz_save_slurm_env "$@"
+        fi
     else
         echo "    Unexpected hostname: $(hostname)"
         export GPU_TYPE="NONE"
@@ -605,11 +710,12 @@ ezpz_setup_host() {
 
 ezpz_print_hosts() {
     if [[ "$#" == 0 ]]; then
-        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
     else
-        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+        # hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
     fi
     counter=0
     for f in $(/bin/cat "${hostfile}"); do
@@ -625,19 +731,24 @@ ezpz_get_num_xpus() {
 }
 
 ezpz_get_num_gpus_nvidia() {
-    nGPU=$(nvidia-smi -L | wc -l)
-    export NGPU_PER_HOST="${nGPU}"
-    echo "${nGPU}"
+    if [[ -n "$(command -v nvidia-smi)" ]]; then
+        num_gpus=$(nvidia-smi -L | wc -l)
+    else
+        num_gpus=$(python3 -c 'import torch; print(torch.cuda.device_count())')
+    fi
+    export NGPU_PER_HOST="${num_gpus}"
+    echo "${num_gpus}"
 }
 
 ezpz_get_num_gpus_per_host() {
-    if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
+    mn=$(ezpz_get_machine_name)
+    # if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         # export NGPU_PER_HOST=12
+    if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
         ngpu_per_host=12
-    # elif [[ $(hostname) == x3* ]]; then
-    #     ngpu_per_host=$(ezpz_get_num_gpus_nvidia)
+    elif [[ "${mn}" == "frontier" ]]; then
+        ngpu_per_host=8
     else
-        # echo "Unknown host $(hostname)"
         ngpu_per_host=$(ezpz_get_num_gpus_nvidia)
     fi
     export NGPU_PER_HOST="${ngpu_per_host}"
@@ -646,11 +757,11 @@ ezpz_get_num_gpus_per_host() {
 
 ezpz_get_num_hosts() {
     if [[ "$#" == 0 ]]; then
-        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
     else
-        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
     fi
     if [[ -n "${hostfile}" ]]; then
         nhosts=$(wc -l < "${hostfile}")
@@ -673,18 +784,40 @@ ezpz_get_num_gpus_total() {
 }
 
 
+ezpz_get_jobenv_file() {
+    mn=$(ezpz_get_machine_name)
+    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" ]]; then
+        echo "${JOBENV_FILE:-${PBS_ENV_FILE}}"
+    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID}" ]]; then
+        echo "${JOBENV_FILE:-${SLURM_ENV_FILE}}"
+    fi
+}
+
+ezpz_get_scheduler_type() {
+    mn=$(ezpz_get_machine_name)
+    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" ]]; then
+        echo "pbs"
+    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID}" ]]; then
+        echo "slurm"
+    fi
+
+}
+
 ezpz_write_job_info() {
     if [[ "$#" == 0 ]]; then
-        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
+        # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
     else
-        hostfile="${HOSTFILE:-${PBS_NODEFILE}}"
-        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
+        # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     fi
     # printf "[ezpz_write_job_info] Caught jobenv_file: %s\n" "${jobenv_file}"
     # printf "[ezpz_write_job_info] Caught hostfile: %s\n" "${hostfile}"
@@ -697,7 +830,15 @@ ezpz_write_job_info() {
     # num_gpus_per_host="${dist_env[2]}"
     # num_gpus="${dist_env[3]}"
     # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
-    dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+    scheduler_type=$(ezpz_get_scheduler_type)
+    if [[ "${scheduler_type}" == "pbs" ]]; then
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+    elif [[ "${scheduler_type}" == "slurm" ]]; then
+        # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
+        dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$(( SLURM_NNODES * SLURM_GPUS_ON_NODE ))"
+    else
+        echo Unknown scheduler!
+    fi
     HOSTS=$(join_by ', ' $(/bin/cat ${hostfile}))
     export NHOSTS="${num_hosts}"
     export NGPU_PER_HOST="${num_gpus_per_host}"
@@ -714,18 +855,12 @@ ezpz_write_job_info() {
     if [[ -n "${DIST_LAUNCH:-}" ]]; then
         echo "alias LAUNCH='${DIST_LAUNCH}'"
     fi
-    # if [[ -n "${DIST_LAUNCH:-}" ]]; then
-    #     echo "alias LAUNCH='${DIST_LAUNCH}'"
-    # else
-    #     export DIST_LAUNCH="${dist_launch_cmd}"
-    #     export ezlaunch="${DIST_LAUNCH}"
-    # fi
     export LAUNCH="${DIST_LAUNCH}"
     export ezlaunch="${DIST_LAUNCH}"
     alias launch="${LAUNCH}"
     printf "[${MAGENTA}%s${RESET}]\n" "HOSTS"
     # printf "hostfile: ${MAGENTA}%s${RESET}\n" "${hostfile}"
-    ezpz_print_hosts
+    ezpz_print_hosts "${hostfile}"
     printf "\n"
     printf "[${YELLOW}%s${RESET}]\n" "DIST INFO"
     printf "    • HOSTFILE=${YELLOW}%s${RESET}\n" "${hostfile}"
@@ -763,12 +898,13 @@ ezpz_save_deepspeed_env() {
 ezpz_get_pbs_env() {
     if [[ "$#" == 1 ]]; then
         hostfile="$1"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"
     else
         hostfile="${HOSTFILE:-$(ezpz_get_pbs_nodefile_from_hostname)}"
-        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
+        jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     fi
     printf "\n"
     printf "  [${BLUE}ezpz_get_pbs_env${RESET}]: Caught ${BLUE}%s${RESET} arguments\n" "$#"
@@ -792,8 +928,10 @@ ezpz_get_pbs_env() {
 }
 
 ezpz_get_slurm_env() {
-    if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+    # if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+    if [[ -n "${SLURM_JOB_ID}" ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
+        # export jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
         # shellcheck source="${HOME}/.slurmenv"
         source "${SLURM_ENV_FILE}"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
@@ -825,9 +963,9 @@ ezpz_get_job_env() {
         if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" ]]; then
             jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
             ezpz_get_pbs_env "$@"
-        elif [[ "${mn}" == "perlmutter" ]]; then
+        elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" ]]; then
             jobenv_file="${SLURM_ENV_FILE}"
-            ezpz_get_slurm_env
+            ezpz_get_slurm_env "$@"
         else
             jobenv_file="${UNKNOWN_ENV_FILE}"
             echo "Unexpected hostname ${HOSTNAME}"
@@ -923,7 +1061,7 @@ ezpz_setup_alcf() {
     # # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
     # printf "      • timestamp: ${BLACK}%s${RESET}\n" "$(ezpz_get_tstamp)"
     printf "\n"
-    if [[ "${hn}" == x1* || "${hn}" == x3* || "${hn}" == x4* ]]; then
+    # if [[ "${hn}" == x1* || "${hn}" == x3* || "${hn}" == x4* ]]; then
         # if [[ -z "${PBS_NODEFILE}" ]]; then
         #     pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
         #     if  [[ -f "${pbs_nodefile}" ]]; then
@@ -933,14 +1071,103 @@ ezpz_setup_alcf() {
         #     fi
         # fi
         # if [[ -n "${PBS_NODEFILE:-}" || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
-        if [[ -n "${PBS_NODEFILE:-}" ]]; then # || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
-            ezpz_savejobenv_main "$@"
-        else
-            export PBS_NODEFILE=$(ezpz_get_pbs_nodefile_from_hostname)
-            ezpz_getjobenv_main "$@"
-        fi
+    if [[ -n "${PBS_NODEFILE:-}" ]]; then # || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
+        ezpz_savejobenv_main "$@"
+    elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        ezpz_savejobenv_main "$@"
+    else
+        export PBS_NODEFILE=$(ezpz_get_pbs_nodefile_from_hostname)
+        ezpz_getjobenv_main "$@"
     fi
+    # elif [[ "${hn}" == fontier* ]]; then
+    #     if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    #         ezpz_savejobenv_main "$@"
+    # fi
 }
+
+ezpz_setup_job() {
+    mn=$(ezpz_get_machine_name)
+    hn=$(hostname)
+    local mn="${mn}"
+    local hn="${hn}"
+    printf "\n"
+    printf "[${RED}%s${RESET}]\n" "ezpz/bin/utils.sh"
+    printf "\n"
+    # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+    # [tstamp] user @ machine (hostname) in $()
+    printf "[${BLACK}%s${RESET}]\n" $(ezpz_get_tstamp)
+    printf "    • USER=${BLACK}%s${RESET}\n" "$(echo ${USER})"
+    printf "    • MACHINE=${BLACK}%s${RESET}\n" "${mn}"
+    printf "    • HOST=${BLACK}%s${RESET}\n" "${hn}"
+    #
+    # printf "%s ${BLACK}@${RESET} %s (${BLACK}%s${RESET}) in %s" "$(echo $USER)" "${mn}" "${hn}" "${WORKING_DIR}"
+    # # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+    # printf "      • timestamp: ${BLACK}%s${RESET}\n" "$(ezpz_get_tstamp)"
+    printf "\n"
+    # if [[ "${hn}" == x1* || "${hn}" == x3* || "${hn}" == x4* ]]; then
+        # if [[ -z "${PBS_NODEFILE}" ]]; then
+        #     pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
+        #     if  [[ -f "${pbs_nodefile}" ]]; then
+        #         export PBS_NODEFILE="${pbs_nodefile}"
+        #     else
+        #         echo "Unable to determine PBS_NODEFILE from hostname"
+        #     fi
+        # fi
+        # if [[ -n "${PBS_NODEFILE:-}" || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
+    if [[ -n "${PBS_NODEFILE:-}" ]]; then # || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
+        ezpz_savejobenv_main "$@"
+    elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        ezpz_savejobenv_main "$@"
+    else
+        export PBS_NODEFILE=$(ezpz_get_pbs_nodefile_from_hostname)
+        ezpz_getjobenv_main "$@"
+    fi
+    # elif [[ "${hn}" == fontier* ]]; then
+    #     if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    #         ezpz_savejobenv_main "$@"
+    # fi
+}
+
+# ezpz_setup_job() {
+#     mn=$(ezpz_get_machine_name)
+#     hn=$(hostname)
+#     local mn="${mn}"
+#     local hn="${hn}"
+#     printf "\n"
+#     printf "[${RED}%s${RESET}]\n" "ezpz/bin/utils.sh"
+#     printf "\n"
+#     # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+#     # [tstamp] user @ machine (hostname) in $()
+#     printf "[${BLACK}%s${RESET}]\n" $(ezpz_get_tstamp)
+#     printf "    • USER=${BLACK}%s${RESET}\n" "$(echo ${USER})"
+#     printf "    • MACHINE=${BLACK}%s${RESET}\n" "${mn}"
+#     printf "    • HOST=${BLACK}%s${RESET}\n" "${hn}"
+#     #
+#     # printf "%s ${BLACK}@${RESET} %s (${BLACK}%s${RESET}) in %s" "$(echo $USER)" "${mn}" "${hn}" "${WORKING_DIR}"
+#     # # printf "      • %s: ${BLACK}%s${RESET} ${BLACK}@${RESET} %s\n" "${mn}" $(echo $USER) "${hn}"
+#     # printf "      • timestamp: ${BLACK}%s${RESET}\n" "$(ezpz_get_tstamp)"
+#     printf "\n"
+#     if [[ "${hn}" == x1* || "${hn}" == x3* || "${hn}" == x4* ]]; then
+#         # if [[ -z "${PBS_NODEFILE}" ]]; then
+#         #     pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
+#         #     if  [[ -f "${pbs_nodefile}" ]]; then
+#         #         export PBS_NODEFILE="${pbs_nodefile}"
+#         #     else
+#         #         echo "Unable to determine PBS_NODEFILE from hostname"
+#         #     fi
+#         # fi
+#         # if [[ -n "${PBS_NODEFILE:-}" || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
+#         if [[ -n "${PBS_NODEFILE:-}" ]]; then # || -f "$(ezpz_get_pbs_nodefile_from_hostname)}" ]]; then
+#             ezpz_savejobenv_main "$@"
+#         else
+#             export PBS_NODEFILE=$(ezpz_get_pbs_nodefile_from_hostname)
+#             ezpz_getjobenv_main "$@"
+#         fi
+#     elif [[ "${hn}" == fontier* ]]; then
+#         if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+#             ezpz_savejobenv_main "$@"
+#     fi
+# }
 
 ###############################################
 # Helper functions for printing colored text
