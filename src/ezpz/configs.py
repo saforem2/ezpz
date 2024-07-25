@@ -56,6 +56,7 @@ BACKENDS = {
 
 SCHEDULERS = {
     'ALCF': 'PBS',
+    'OLCF': 'SLURM',
     'NERSC': 'SLURM',
     'LOCALHOST': 'NONE',
 }
@@ -90,6 +91,8 @@ def get_scheduler() -> str:
     machine = get_machine(get_hostname())
     if machine.lower() in ['thetagpu', 'sunspot', 'polaris', 'aurora']:
         return SCHEDULERS['ALCF']
+    elif machine.lower() in ['frontier']:
+        return SCHEDULERS['OLCF']
     elif machine.lower() in ['nersc', 'perlmutter']:
         return SCHEDULERS['NERSC']
     else:
