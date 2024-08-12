@@ -144,7 +144,7 @@ def tplot_dict(
     import plotext as pltx
     pltx.clear_figure()
     pltx.theme('clear')  # pyright[ReportUnknownMemberType]
-    pltx.scatter(list(data.values()))
+    pltx.plot(list(data.values()))
     if ylabel is not None:
         pltx.ylabel(ylabel)
     if xlabel is not None:
@@ -168,6 +168,7 @@ def tplot(
         title: Optional[str] = None,
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
+        marker: Optional[str] = None,
         bins: Optional[int] = None,
         logfreq: int = 1,
         outfile: Optional[os.PathLike | str | Path] = None,
@@ -177,9 +178,10 @@ def tplot(
 ):
     figsize = (75, 25) if figsize is None else figsize
     import plotext as pltx
-    pltx.clf()
+    pltx.clear_figure()
     pltx.theme('clear')
     pltx.plot_size(*figsize)
+    marker = 'fhd' if marker is None else marker
     y = np.nan_to_num(y, nan=0.)
     if len(y.shape) == 2:
         pltx.hist(y.flatten(), bins=bins, label=label)
@@ -187,7 +189,7 @@ def tplot(
         # if type is not None:
         #     assert type in ['scatter', 'line']
         if type is not None and type == 'scatter':
-            pltx.scatter(y, label=label)
+            pltx.scatter(y, label=label, marker=marker)
         else:
             pltx.plot(y, label=label)
         if title is not None:
@@ -204,6 +206,9 @@ def tplot(
             pltx.xticks(x.tolist())
     pltx.show()
     if outfile is not None:
+        log.info(f'Appending plot to: {outfile}')
+        if not Path(outfile).parent.exists():
+            _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
         pltx.savefig(
             Path(outfile).resolve().as_posix(),
             append=append,

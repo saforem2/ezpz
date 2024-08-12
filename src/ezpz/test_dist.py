@@ -286,20 +286,66 @@ def main():
             if not WANDB_DISABLED and RANK == 0 and wandb is not None:
                 wandb.log(_metrics)
     if RANK == 0:
-        from ezpz.plot import tplot_dict
+        import numpy as np
+        from ezpz.plot import tplot, tplot_dict, plot_metric,
         outdir = Path(os.getcwd()).joinpath('test-dist-plots')
+        tplotdir = outdir.joinpath('tplot')
+        mplotdir = outdir.joinpath('mplot')
         outdir.mkdir(parents=True, exist_ok=True)
+        import plotext as pltx
         for key, val in metrics.items():
+            # pltx.clear_figure()
             if key == 'iter':
                 continue
-            tplot_dict(
-                data=dict(zip(metrics['train/iter'], val)),
+            # tplot_dict(
+            #     data=dict(zip(metrics['train/iter'], val)),
+            #     xlabel="iter",
+            #     ylabel=key,
+            #     append=True,
+            #     title=f"{key} [{ez.get_timestamp()}]",
+            #     outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+            # )
+            # pltx.show()
+            tplot(
+                y=np.array(val),
+                x=np.array(metrics['train/iter']),
+                label=f"{key} vs. train iter",
                 xlabel="iter",
                 ylabel=key,
                 append=True,
                 title=f"{key} [{ez.get_timestamp()}]",
-                outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+                outfile=tplotdir.joinpath(f"{key}_line.txt").as_posix(),
             )
+            # pltx.show()
+            # tplot(
+            #     y=np.array(val),
+            #     x=np.array(metrics['train/iter']),
+            #     label=f"{key} vs. train iter",
+            #     xlabel="iter",
+            #     ylabel=key,
+            #     type="scatter",
+            #     append=True,
+            #     title=f"{key} [{ez.get_timestamp()}]",
+            #     outfile=outdir.joinpath(f"{key}_scatter.txt").as_posix(),
+            # )
+        for key, val in metrics.items():
+            # pltx.clear_figure()
+            if key == 'iter':
+                continue
+            plot_metric(
+                val=np.array(val),
+                outdir=mplotdir.joinpath(f'{key}'),
+                key=key,
+            )
+            # tplot_dict(
+            #     data=dict(zip(metrics['train/iter'], val)),
+            #     xlabel="iter",
+            #     ylabel=key,
+            #     append=True,
+            #     title=f"{key} [{ez.get_timestamp()}]",
+            #     outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+            # )
+            # pltx.show()
     tdist.barrier()
 
 
