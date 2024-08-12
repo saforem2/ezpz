@@ -208,6 +208,8 @@ ezpz_get_machine_name() {
         machine="aurora"
     elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
         machine="sunspot"
+    elif [[ $(hostname) == sophia* ]]; then
+        machine="sophia"
     elif [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
         if [[ "${PBS_O_HOST}" == sirius* ]]; then
             machine="sirius"
@@ -370,18 +372,21 @@ ezpz_setup_conda_polaris() {
     fi
 }
 
+ezpz_setup_conda_sophia() {
+  micromamba activate 2024-07-24
+}
+
 ezpz_setup_conda() {
     # machine_name=$(ezpz_get_machine_name)
     # if [[ "${machine_name}" == "aurora" ]]; then
     machine_name=$(ezpz_get_machine_name)
     # echo "machine name: ${machine_name}"
-    # if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
     if [[ "${machine_name}" == "aurora" ]]; then
         ezpz_setup_conda_aurora
-        # elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
+    elif [[ "${machine_name}" == "sophia" ]]; then
+        ezpz_setup_conda_sophia
     elif [[ "${machine_name}" == "sunspot" ]]; then
         ezpz_setup_conda_sunspot
-        # elif [[ $(hostname) == x3*  || $(hostname) == polaris* ]]; then
     elif [[ "${machine_name}" == "polaris" ]]; then
         if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
             ezpz_setup_conda_sirius
@@ -589,24 +594,6 @@ ezpz_save_pbs_env() {
     printf "        • JOBENV_FILE: ${BLUE}%s${RESET}\n\n" "${JOBENV_FILE}"
 }
 
-# _ezpz_save_slurm_env() {
-#     # if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-#     mn="$(ezpz_get_machine_name)"
-#     if [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" ]]; then
-#         echo "  Saving SLURM_* to ${SLURM_ENV_FILE}"
-#         SLURM_VARS=$(env | grep SLU)
-#         echo "${SLURM_VARS[*]}" > "${SLURM_ENV_FILE}"
-#         export HOSTFILE="${HOME}/.slurm-nodefile"
-#         export JOBENV_FILE="${SLURM_ENV_FILE}"
-#         export SLURM_NODES="${SLURM_NODES}"
-#         SLURM_NODES=$(scontrol show hostname $SLURM_NODELIST)
-#         printf "%s\n" "${SLURM_NODES[@]}" > $HOSTFILE
-#         sed -i 's/^SLURM/export\ SLURM/g' "${SLURM_ENV_FILE}"
-#         sed -i 's/(x2)//g' "${SLURM_ENV_FILE}"
-#         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"  #  "$@"
-#         export ezlaunch="${DIST_LAUNCH}"
-#     fi
-# }
 
 ezpz_save_slurm_env() {
     printf "\n[${BLUE}%s${RESET}]\n" "ezpz_save_slurm_env"
@@ -646,7 +633,6 @@ ezpz_save_slurm_env() {
         num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
         num_gpus="$((num_hosts * num_gpus_per_host))"
         # dist_env=$(ezpz_parse_hostfile "${hostfile}")
-        # dist_env=() ; dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
         # dist_env=()
         # dist_env+=("$(ezpz_parse_hostfile "$(ezpz_make_slurm_nodefile)")")
         # num_hosts="${dist_env[1]}"
@@ -766,15 +752,12 @@ ezpz_setup_host_pbs() {
         else
             echo "Expected exactly 0, 1, or 2 arguments, received: $#"
         fi
-        # if [[ $(hostname) == x3* ]]; then
         local hn=$(hostname)
-        if [[ "${hn}" == x* ]]; then
+        if [[ "${hn}" == x* || "${hn}" == "sophia*" ]]; then
             printf "        • Writing PBS vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
-            if [[ "${mn}" == "polaris" || "${mn}" == "sirius" ]]; then
+            if [[ "${mn}" == "polaris" || "${mn}" == "sirius" || "${mn}" == "sophia*" ]]; then
                 export GPU_TYPE="NVIDIA"
-                # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
                 ezpz_save_pbs_env "$@"
-                # elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
             elif [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
                 export GPU_TYPE="INTEL"
                 export NGPU_PER_TILE=6
@@ -876,13 +859,11 @@ ezpz_setup_host_old() {
     if [[ "${scheduler_type:-}" == "pbs" ]]; then # && "${hostfile}" != "${PBS_NODEFILE:-}" ]]; then
         # if [[ $(hostname) == x3* ]]; then
         local hn=$(hostname)
-        if [[ "${hn}" == x* ]]; then
+        if [[ "${hn}" == x* || "${hn}" == "sophia*" ]]; then
             printf "        • Writing PBS vars to: ${CYAN}%s${RESET}\n" "${jobenv_file}"
-            if [[ "${mn}" == "polaris" || "${mn}" == "sirius" ]]; then
+            if [[ "${mn}" == "polaris" || "${mn}" == "sirius" || "${mn}" == "sophia" ]]; then
                 export GPU_TYPE="NVIDIA"
-                # export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
                 ezpz_save_pbs_env "$@"
-                # elif [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
             elif [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
                 export GPU_TYPE="INTEL"
                 export NGPU_PER_TILE=6
@@ -946,7 +927,6 @@ ezpz_get_num_gpus_nvidia() {
 
 ezpz_get_num_gpus_per_host() {
     mn=$(ezpz_get_machine_name)
-    # if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
     # export NGPU_PER_HOST=12
     if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
         ngpu_per_host=12
@@ -998,7 +978,7 @@ ezpz_get_jobenv_file() {
 
 ezpz_get_scheduler_type() {
     mn=$(ezpz_get_machine_name)
-    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" ]]; then
+    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" || "${mn}" == "sophia" ]]; then
         echo "pbs"
     elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID}" ]]; then
         echo "slurm"
@@ -1117,7 +1097,7 @@ ezpz_get_pbs_env() {
     printf "  [${BLUE}ezpz_get_pbs_env${RESET}]: Caught ${BLUE}%s${RESET} arguments\n" "$#"
     printf "      • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
     printf "      • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
-    if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* ]]; then
+    if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* || $(hostname) == sophia* ]]; then
         if [[ -n $(cat "${hostfile:-}" | grep "$(hostname)") ]]; then
             num_hosts=$(ezpz_get_num_hosts "${hostfile}")
             num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
@@ -1135,7 +1115,6 @@ ezpz_get_pbs_env() {
 }
 
 ezpz_get_slurm_env() {
-    # if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
     if [[ -n "${SLURM_JOB_ID}" ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
         # export jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
@@ -1168,24 +1147,7 @@ ezpz_get_job_env() {
         else
             echo "[ezpz_get_job_env] Unknown scheduler ${scheduler_type}"
         fi
-        # mn=$(ezpz_get_machine_name)
-        # if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" ]]; then
-        #   jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
-        #   ezpz_get_pbs_env "$@"
-        # elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" ]]; then
-        #   jobenv_file="${SLURM_ENV_FILE}"
-        #   ezpz_get_slurm_env "$@"
-        # else
-        #   jobenv_file="${UNKNOWN_ENV_FILE}"
-        #   echo "Unexpected hostname ${HOSTNAME}"
-        # fi
     fi
-    # if [[ -f "${jobenv_file}" ]]; then
-    #     source "${jobenv_file}" || exit
-    # else
-    #     echo "Unable to find ${jobenv_file} on $(hostname)"
-    #     exit 1
-    # fi
     if [[ -f "${hostfile:-}" ]]; then
         nhosts=$(wc -l <"${hostfile}")
         local nhosts="${nhosts}"
