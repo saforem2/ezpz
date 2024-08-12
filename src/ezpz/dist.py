@@ -832,6 +832,8 @@ def get_machine(hostname: Optional[str] = None) -> str:
                 hostname = 'unknown'
     if hostname.startswith('frontier'):
         return 'Frontier'
+    if hostname.startswith('sophia'):
+        return 'Sophia'
     if hostname.startswith('theta'):
         return 'ThetaGPU'
     if hostname.startswith('x1'):
