@@ -32,6 +32,14 @@ import ezpz.plot as ezplot
 
 RANK = ez.get_rank()
 
+try:
+    import wandb
+
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+except Exception:
+    wandb = None
+    WANDB_DISABLED = True
+
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[torch.Tensor, np.ndarray, list]
 # ScalarLike = Union[float, int, bool, np.floating, np.integer]
@@ -734,26 +742,26 @@ class History:
         self.history = {}
 
     def _update(
-            self,
-            key: str,
-            val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]
+        self, key: str, val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]
     ):
-        if isinstance(val, (list, np.ndarray, torch.Tensor)):
-            val = grab_tensor(val)
         try:
             self.history[key].append(val)
         except KeyError:
             self.history[key] = [val]
+        return val
 
     def update(self, metrics: dict):
         for key, val in metrics.items():
-            self._update(key, val)
+            if isinstance(val, (list, np.ndarray, torch.Tensor)):
+                val = grab_tensor(val)
             # if isinstance(val, (list, np.ndarray, torch.Tensor)):
             #     val = torch.Tensor(val).numpy()
             # try:
             #     self.history[key].append(val)
             # except KeyError:
             #     self.history[key] = [val]
+        if wandb is not None and not WANDB_DISABLED:
+            wandb.log(metrics)
 
     def tplot(
         self,
@@ -1286,5 +1294,3 @@ class History:
             use_hdf5=use_hdf5,
             **kwargs,
         )
-
-
