@@ -7,6 +7,8 @@ ezpz_ddp.py
   $ BACKEND=DDP launch python3 ezpz_ddp.py
 """
 import time
+
+from ezpz.history import History, summarize_dict
 T0 = time.perf_counter()  # start time
 timers_import = {}
 
@@ -223,6 +225,16 @@ def main():
         'train/iter': [],  # iteration
         'train/sps': [],   # samples per second = (BATCH_SIZE / dt)
     }
+    history = History(
+        keys=[
+            'train/dt',
+            'train/dtf',
+            'train/dtb',
+            'train/loss',
+            'train/iter',
+            'train/sps',
+        ],
+    )
     T3 = time.perf_counter()
     TIMERS['timers/init_to_first_step'] = T3 - T0
 
@@ -266,86 +278,75 @@ def main():
                 'train/loss': loss,
                 'train/sps': sps,
             }
-            for k, v in _metrics.items():
-                try:
-                    metrics[k].append(v)
-                except KeyError:
-                    metrics[k] = [v]
-            logger.info(
-                ', '.join([
-                    f'{iter=}',
-                    f'loss={loss.item():<.6g}',
-                    f'{sps=:<.4f}',
-                    # f'sps={sps:<.6f}',
-                    # f'dt={dtf+dtb:<3.6f}',
-                    f'{dt=:<.4f}',
-                    f'{dtf=:<3.4g}',
-                    f'{dtb=:<3.4g}'
-                ])
-            )
+            _ = history.update(_metrics)
+            summary = summarize_dict(_metrics)
+            logger.info(summary)
+            # for k, v in _metrics.items():
+            #     try:
+            #         metrics[k].append(v)
+            #     except KeyError:
+            #         metrics[k] = [v]
+            # logger.info(
+            #     ', '.join([
+            #         f'{iter=}',
+            #         f'loss={loss.item():<.6g}',
+            #         f'{sps=:<.4f}',
+            #         # f'sps={sps:<.6f}',
+            #         # f'dt={dtf+dtb:<3.6f}',
+            #         f'{dt=:<.4f}',
+            #         f'{dtf=:<3.4g}',
+            #         f'{dtb=:<3.4g}'
+            #     ])
             if not WANDB_DISABLED and RANK == 0 and wandb is not None:
                 wandb.log(_metrics)
     if RANK == 0:
         import numpy as np
-        from ezpz.plot import tplot, tplot_dict, plot_metric,
+        from ezpz.plot import tplot, tplot_dict, plot_metric, plot_array, plot_arr
         outdir = Path(os.getcwd()).joinpath('test-dist-plots')
         tplotdir = outdir.joinpath('tplot')
         mplotdir = outdir.joinpath('mplot')
         outdir.mkdir(parents=True, exist_ok=True)
+        tplotdir.mkdir(exist_ok=True, parents=True)
+        mplotdir.mkdir(exist_ok=True, parents=True)
+        import matplotlib.pyplot as plt
+        import ambivalent
+        plt.style.use(ambivalent.STYLES['ambivalent'])
         import plotext as pltx
         for key, val in metrics.items():
-            # pltx.clear_figure()
             if key == 'iter':
                 continue
-            # tplot_dict(
-            #     data=dict(zip(metrics['train/iter'], val)),
-            #     xlabel="iter",
-            #     ylabel=key,
-            #     append=True,
-            #     title=f"{key} [{ez.get_timestamp()}]",
-            #     outfile=outdir.joinpath(f"{key}.txt").as_posix(),
-            # )
-            # pltx.show()
+            try:
+                arr = np.array(val)
+            except Exception:
+                arr = torch.Tensor(val).cpu().numpy()
             tplot(
-                y=np.array(val),
+                y=arr,
                 x=np.array(metrics['train/iter']),
-                label=f"{key} vs. train iter",
+                # label=f"{key} vs. train iter",
                 xlabel="iter",
                 ylabel=key,
                 append=True,
                 title=f"{key} [{ez.get_timestamp()}]",
                 outfile=tplotdir.joinpath(f"{key}_line.txt").as_posix(),
             )
-            # pltx.show()
             # tplot(
-            #     y=np.array(val),
+            #     y=arr,
             #     x=np.array(metrics['train/iter']),
-            #     label=f"{key} vs. train iter",
+            #     # label=f"{key} vs. train iter",
             #     xlabel="iter",
             #     ylabel=key,
             #     type="scatter",
             #     append=True,
             #     title=f"{key} [{ez.get_timestamp()}]",
-            #     outfile=outdir.joinpath(f"{key}_scatter.txt").as_posix(),
+            #     outfile=tplotdir.joinpath(f"{key}_scatter.txt").as_posix(),
             # )
-        for key, val in metrics.items():
-            # pltx.clear_figure()
-            if key == 'iter':
-                continue
-            plot_metric(
-                val=np.array(val),
-                outdir=mplotdir.joinpath(f'{key}'),
-                key=key,
-            )
-            # tplot_dict(
-            #     data=dict(zip(metrics['train/iter'], val)),
-            #     xlabel="iter",
-            #     ylabel=key,
-            #     append=True,
-            #     title=f"{key} [{ez.get_timestamp()}]",
-            #     outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+            # plot_array(val=arr, key=key, xlabel='iter', outdir=mplotdir)
+            # plt.show()
+            # plot_metric(
+            #     val=arr,
+            #     outdir=mplotdir.joinpath(f'{key}'),
+            #     key=key,
             # )
-            # pltx.show()
     tdist.barrier()
 
 
