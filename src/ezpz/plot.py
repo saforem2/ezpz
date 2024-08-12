@@ -162,8 +162,8 @@ def tplot_dict(
 
 
 def tplot(
-        y: np.ndarray,
-        x: Optional[np.ndarray] = None,
+        y: Optional[list, np.ndarray, torch.Tensor],
+        x: Optional[list, np.ndarray, torch.Tensor] = None,
         label: Optional[str] = None,
         title: Optional[str] = None,
         xlabel: Optional[str] = None,
@@ -176,6 +176,14 @@ def tplot(
         append: bool = True,
         figsize: Optional[tuple[int, int]] = None,
 ):
+    # if isinstance(y, list):
+    #     if len(y) > 0 and isinstance(y[0], torch.Tensor):
+    #         y = torch.stack(y)
+    #     if isinstance(y[0], )
+    if isinstance(y, list):
+        y = torch.stack(y)
+    if isinstance(x, list):
+        x = torch.stack(x)
     figsize = (75, 25) if figsize is None else figsize
     import plotext as pltx
     pltx.clear_figure()
@@ -863,10 +871,15 @@ def plot_metric(
         ])
 
     if outdir is not None:
+        _ = Path(outdir).mkdir(exist_ok=True, parents=True)
         outfile = Path(outdir).joinpath(f'{key}.{ext}')
         if not outfile.is_file():
-            _ = plt.savefig(Path(outdir).joinpath(f'{key}.{ext}'),
-                            dpi=400, bbox_inches='tight')
+            fig = plt.gcf() if fig is None else fig
+            save_figure(fig, fname=f'{key}', outdir=outdir)
+            # savefig(fig)
+            # _ = Path(outdir).parent().mkdir(exist_ok=True, parents=True)
+            # _ = plt.savefig(Path(outdir).joinpath(f'{key}.{ext}'),
+            #                 dpi=400, bbox_inches='tight')
 
     return fig, subfigs, axes
 
