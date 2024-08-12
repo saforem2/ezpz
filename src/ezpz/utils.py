@@ -7,20 +7,21 @@ import h5py
 import xarray as xr
 import numpy as np
 from typing import Optional, Union, Any
-import ezpz as ez
+from ezpz.dist import get_rank
+from ezpz.configs import ScalarLike
 
 from ezpz.configs import PathLike
 from pathlib import Path
 
 import logging
 
-RANK = ez.get_rank()
+RANK = get_rank()
 log = logging.getLogger(__name__)
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 _ = log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 
 
-def grab_tensor(x: Any) -> Union[np.ndarray, ez.configs.ScalarLike, None]:
+def grab_tensor(x: Any) -> Union[np.ndarray, ScalarLike, None]:
     import torch
 
     if x is None:
