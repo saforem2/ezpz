@@ -145,7 +145,8 @@ if RANK == 0:
     ez.dist.log_dict_as_bulleted_list(timers_import, name="timers_import")
     ez.dist.log_dict_as_bulleted_list(CONFIG, name="CONFIG")
 
-tdist.barrier()
+if WORLD_SIZE > 1:
+    tdist.barrier()
 
 
 class Network(torch.nn.Module):
@@ -174,7 +175,6 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 def build_model_and_optimizer() -> ModelOptimizerPair:
-    # :   #  -> tuple[Union[torch.nn.Module, DDP, deepspeed.DeepSpeedEngine], torch:
     model = Network(
         input_dim=INPUT_SIZE,
         output_dim=OUTPUT_SIZE,
@@ -216,14 +216,6 @@ def build_model_and_optimizer() -> ModelOptimizerPair:
 
 
 def main():
-    metrics = {
-        "train/dt": [],  # time per iteration
-        "train/dtf": [],  # time in forward pass
-        "train/dtb": [],  # time in backward pass
-        "train/loss": [],  # loss
-        "train/iter": [],  # iteration
-        "train/sps": [],  # samples per second = (BATCH_SIZE / dt)
-    }
     history = History(
         keys=[
             "train/dt",
@@ -279,28 +271,10 @@ def main():
             }
             _ = history.update(_metrics)
             summary = summarize_dict(_metrics)
-            logger.info(summary)
-            # for k, v in _metrics.items():
-            #     try:
-            #         metrics[k].append(v)
-            #     except KeyError:
-            #         metrics[k] = [v]
-            # logger.info(
-            #     ', '.join([
-            #         f'{iter=}',
-            #         f'loss={loss.item():<.6g}',
-            #         f'{sps=:<.4f}',
-            #         # f'sps={sps:<.6f}',
-            #         # f'dt={dtf+dtb:<3.6f}',
-            #         f'{dt=:<.4f}',
-            #         f'{dtf=:<3.4g}',
-            #         f'{dtb=:<3.4g}'
-            #     ])
-            # if not WANDB_DISABLED and RANK == 0 and wandb is not None:
-            #     wandb.log(_metrics)
+            logger.info(summary.replace("train/", ""))
     if RANK == 0:
-        import numpy as np
-        from ezpz.plot import tplot, tplot_dict, plot_metric, plot_array, plot_arr
+        # import numpy as np
+        # from ezpz.plot import tplot, tplot_dict, plot_metric, plot_array, plot_arr
 
         outdir = Path(os.getcwd()).joinpath("test-dist-plots")
         tplotdir = outdir.joinpath("tplot")
@@ -315,50 +289,20 @@ def main():
         plt.style.use(ambivalent.STYLES["ambivalent"])
 
         dataset = history.plot_all(outdir=mplotdir)
+        _ = history.tplot_all(
+            outdir=tplotdir,
+            append=True,
+            xkey="train/iter",
+            dataset=dataset
+        )
         logger.info(f"{dataset=}")
-        plt.show()
-
-        import plotext as pltx
-
-        for key, val in metrics.items():
-            if key == "iter":
-                continue
-            try:
-                arr = np.array(val)
-            except Exception:
-                arr = torch.Tensor(val).cpu().numpy()
-            tplot(
-                y=arr,
-                x=np.array(metrics["train/iter"]),
-                # label=f"{key} vs. train iter",
-                xlabel="iter",
-                ylabel=key,
-                append=True,
-                title=f"{key} [{ez.get_timestamp()}]",
-                outfile=tplotdir.joinpath(f"{key}_line.txt").as_posix(),
-            )
-            # tplot(
-            #     y=arr,
-            #     x=np.array(metrics['train/iter']),
-            #     # label=f"{key} vs. train iter",
-            #     xlabel="iter",
-            #     ylabel=key,
-            #     type="scatter",
-            #     append=True,
-            #     title=f"{key} [{ez.get_timestamp()}]",
-            #     outfile=tplotdir.joinpath(f"{key}_scatter.txt").as_posix(),
-            # )
-            # plot_array(val=arr, key=key, xlabel='iter', outdir=mplotdir)
-            # plt.show()
-            # plot_metric(
-            #     val=arr,
-            #     outdir=mplotdir.joinpath(f'{key}'),
-            #     key=key,
-            # )
-    tdist.barrier()
+        # plt.show()
+    if WORLD_SIZE > 1:
+        tdist.barrier()
 
 
 if __name__ == "__main__":
+    import sys
     # from ezpz.profile import get_context_manager
     # NOTE: if rank is passed to get_context_manager,
     # it will ONLY be instantiated if rank == 0,
@@ -375,7 +319,6 @@ if __name__ == "__main__":
         if (run := getattr(wandb, "run", None)) is not None and run is wandb.run:
             wandb.log(TIMERS)
         # wandb.finish()
-    tdist.barrier()
-    import sys
-
+    if WORLD_SIZE > 1:
+        tdist.barrier()
     sys.exit(0)
