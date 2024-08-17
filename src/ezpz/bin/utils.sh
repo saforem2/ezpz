@@ -1,4 +1,5 @@
 #!/bin/bash --login
+#
 
 if [[ "$(command -v setopt)" ]]; then
     setopt aliases
@@ -356,6 +357,22 @@ ezpz_setup_conda_sirius() {
 }
 
 ########################
+# Setup conda on Sophia
+########################
+ezpz_setup_conda_sophia() {
+    # unset MPICH_GPU_SUPPORT_ENABLED
+    ###### check if CONDA_PREFIX non-empty ################
+    if [[ -z "${CONDA_PREFIX-}" ]]; then
+        # if so, load the default conda
+        # module and activate base environment
+        module load conda
+        conda activate base
+    else
+        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    fi
+}
+
+########################
 # Setup conda on Polaris
 ########################
 ezpz_setup_conda_polaris() {
@@ -373,7 +390,7 @@ ezpz_setup_conda_polaris() {
 }
 
 ezpz_setup_conda_sophia() {
-  micromamba activate 2024-07-24
+    micromamba activate 2024-07-24
 }
 
 ezpz_setup_conda() {
@@ -593,7 +610,6 @@ ezpz_save_pbs_env() {
     printf "        • HOSTFILE: ${BLUE}%s${RESET}\n" "${HOSTFILE}"
     printf "        • JOBENV_FILE: ${BLUE}%s${RESET}\n\n" "${JOBENV_FILE}"
 }
-
 
 ezpz_save_slurm_env() {
     printf "\n[${BLUE}%s${RESET}]\n" "ezpz_save_slurm_env"
@@ -969,9 +985,9 @@ ezpz_get_num_gpus_total() {
 
 ezpz_get_jobenv_file() {
     mn=$(ezpz_get_machine_name)
-    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" ]]; then
+    if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" || "${mn}" == "sophia" ]]; then
         echo "${JOBENV_FILE:-${PBS_ENV_FILE}}"
-    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID}" ]]; then
+    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID:-}" ]]; then
         echo "${JOBENV_FILE:-${SLURM_ENV_FILE}}"
     fi
 }
@@ -980,7 +996,7 @@ ezpz_get_scheduler_type() {
     mn=$(ezpz_get_machine_name)
     if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" || "${mn}" == "sophia" ]]; then
         echo "pbs"
-    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID}" ]]; then
+    elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID:-}" ]]; then
         echo "slurm"
     fi
 
