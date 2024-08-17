@@ -760,7 +760,7 @@ class History:
             #     self.history[key].append(val)
             # except KeyError:
             #     self.history[key] = [val]
-        if wandb is not None and not WANDB_DISABLED:
+        if wandb is not None and not WANDB_DISABLED and getattr(wandb, 'run', None) is not None:
             wandb.log(metrics)
 
     def tplot(
