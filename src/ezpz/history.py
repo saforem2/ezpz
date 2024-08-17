@@ -444,9 +444,7 @@ class BaseHistory:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
             _ = ax.set_xticklabels(
-                [  # type: ignore
-                    f"{logfreq * int(i)}" for i in xticks
-                ]
+                [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
             dirs = {
@@ -754,13 +752,17 @@ class History:
         for key, val in metrics.items():
             if isinstance(val, (list, np.ndarray, torch.Tensor)):
                 val = grab_tensor(val)
-            # if isinstance(val, (list, np.ndarray, torch.Tensor)):
-            #     val = torch.Tensor(val).numpy()
-            # try:
-            #     self.history[key].append(val)
-            # except KeyError:
-            #     self.history[key] = [val]
-        if wandb is not None and not WANDB_DISABLED and getattr(wandb, 'run', None) is not None:
+            if isinstance(val, (list, np.ndarray, torch.Tensor)):
+                val = torch.Tensor(val).numpy()
+            try:
+                self.history[key].append(val)
+            except KeyError:
+                self.history[key] = [val]
+        if (
+            wandb is not None
+            and not WANDB_DISABLED
+            and getattr(wandb, "run", None) is not None
+        ):
             wandb.log(metrics)
 
     def tplot(
@@ -1004,9 +1006,7 @@ class History:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
             _ = ax.set_xticklabels(
-                [  # type: ignore
-                    f"{logfreq * int(i)}" for i in xticks
-                ]
+                [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
             dirs = {
@@ -1138,13 +1138,47 @@ class History:
             #             dpi=400, bbox_inches='tight')
             outfile = Path(outdir).joinpath(f"{label}.svg")
             if outfile.is_file():
-                tstamp = ezplot.get_timestamp("%Y-%m-%d-%H%M%S")
+                tstamp = ez.get_timestamp("%Y-%m-%d-%H%M%S")
                 pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{label}-{tstamp}.png")
                 svgfile = Path(outdir).joinpath(f"{label}-{tstamp}.svg")
                 plt.savefig(pngfile, dpi=400, bbox_inches="tight")
                 plt.savefig(svgfile, dpi=400, bbox_inches="tight")
+
+    def tplot_all(
+        self,
+        outdir: Optional[os.PathLike] = None,
+        xkey: Optional[str] = None,
+        append: bool = True,
+        dataset: Optional[xr.Dataset] = None,
+    ):
+        dataset = self.get_dataset() if dataset is None else dataset
+        od = os.getcwd() if outdir is None else outdir
+        assert od is not None
+        pdir = Path(str(od)).joinpath("tplots/history")
+        pdir.mkdir(exist_ok=True, parents=True)
+        for key, val in enumerate(dataset.data_vars.items()):
+            if xkey is not None and key == xkey:
+                continue
+            if isinstance(val, xr.DataArray) and callable(
+                getattr(val, "to_numpy", None)
+            ):
+                yarr = val.to_numpy()
+            else:
+                try:
+                    yarr = np.array(val)
+                except Exception:
+                    yarr = torch.Tensor(val).cpu().numpy()
+            xarr = np.arange(len(yarr)) if xkey is None else dataset.get(xkey)
+            ez.tplot(
+                y=yarr,
+                x=xarr,
+                xlabel="iter" if xkey is None else xkey,
+                title=f"{key} [{ez.get_timestamp()}]",
+                append=append,
+                outfile=pdir.joinpath(f"{key}.txt").as_posix(),
+            )
 
     def plot_all(
         self,
