@@ -141,8 +141,10 @@ def tplot_dict(
     title: Optional[str] = None,
     outfile: Optional[Union[str, Path]] = None,
     append: bool = True,
+    figsize: Optional[tuple[int, int]] = None,
 ) -> None:
     import plotext as pltx
+    figsize = (75, 25) if figsize is None else figsize
 
     pltx.clear_figure()
     pltx.theme("clear")  # pyright[ReportUnknownMemberType]

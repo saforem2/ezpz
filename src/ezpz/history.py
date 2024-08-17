@@ -16,7 +16,7 @@ from typing import Any, Optional, Union
 
 # from ezpz import get_logging_config
 from ezpz.configs import PathLike
-from ezpz.plot import plot_dataset
+from ezpz.plot import plot_dataset, tplot_dict
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 import matplotlib.pyplot as plt
@@ -739,6 +739,50 @@ class History:
         self.keys = [] if keys is None else keys
         self.history = {}
 
+    def _update_alt(
+        self,
+        key: str,
+        val: Any,
+        # val: Float[Array, "..."],
+    ) -> float | int | bool | np.floating | np.integer:
+        if isinstance(val, (list, tuple)):
+            if isinstance(val[0], torch.Tensor):
+                val = grab_tensor(torch.stack(val))
+            elif isinstance(val, np.ndarray):
+                val = np.stack(val)
+            else:
+                val = val
+        val = grab_tensor(val)
+        try:
+            self.history[key].append(val)
+        except KeyError:
+            self.history[key] = [val]
+
+        # ScalarLike = Union[float, int, bool, np.floating]
+        if isinstance(val, (float, int, bool, np.floating, np.integer)):
+            return val
+        #     return val
+        avg = np.mean(val).real
+        assert isinstance(avg, np.floating)
+        return avg
+
+    def update_alt(self, metrics: dict) -> dict[str, Any]:
+        avgs = {}
+        avg = 0.0
+        for key, val in metrics.items():
+            if val is None:
+                continue
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    kk = f"{key}/{k}"
+                    avg = self._update(kk, v)
+                    avgs[kk] = avg
+            else:
+                avg = self._update(key, val)
+                avgs[key] = avg
+
+        return avgs
+
     def _update(
         self, key: str, val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]
     ):
@@ -752,8 +796,6 @@ class History:
         for key, val in metrics.items():
             if isinstance(val, (list, np.ndarray, torch.Tensor)):
                 val = grab_tensor(val)
-            if isinstance(val, (list, np.ndarray, torch.Tensor)):
-                val = torch.Tensor(val).numpy()
             try:
                 self.history[key].append(val)
             except KeyError:
@@ -1149,36 +1191,53 @@ class History:
     def tplot_all(
         self,
         outdir: Optional[os.PathLike] = None,
-        xkey: Optional[str] = None,
         append: bool = True,
+        xkey: Optional[str] = None,
         dataset: Optional[xr.Dataset] = None,
     ):
         dataset = self.get_dataset() if dataset is None else dataset
-        od = os.getcwd() if outdir is None else outdir
-        assert od is not None
-        pdir = Path(str(od)).joinpath("tplots/history")
-        pdir.mkdir(exist_ok=True, parents=True)
-        for key, val in enumerate(dataset.data_vars.items()):
+        outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
+        for idx, (key, val) in enumerate(dataset.items()):
             if xkey is not None and key == xkey:
                 continue
-            if isinstance(val, xr.DataArray) and callable(
-                getattr(val, "to_numpy", None)
-            ):
-                yarr = val.to_numpy()
+            if callable(getattr(val, 'to_numpy', None)):
+                arr = val.to_numpy()
             else:
                 try:
-                    yarr = np.array(val)
+                    # arr = grab_tensor(val)
+                    arr = np.array(val)
                 except Exception:
-                    yarr = torch.Tensor(val).cpu().numpy()
-            xarr = np.arange(len(yarr)) if xkey is None else dataset.get(xkey)
-            ez.tplot(
-                y=yarr,
-                x=xarr,
-                xlabel="iter" if xkey is None else xkey,
-                title=f"{key} [{ez.get_timestamp()}]",
-                append=append,
-                outfile=pdir.joinpath(f"{key}.txt").as_posix(),
-            )
+                    arr = torch.Tensor(val).cpu().numpy()
+                finally:
+                    arr = grab_tensor(val)
+            # assert arr is not None and len(arr) > 1
+            if len(arr) > 1:
+                if xkey is None:
+                    xarr = np.arange(len(arr))
+                else:
+                    xval = dataset.get(xkey.replace('/', '_'))
+                    assert xval is not None
+                    xarr = xval.to_numpy()
+                assert xarr is not None
+                ez.tplot(
+                    y=arr,
+                    x=xarr,
+                    xlabel=xkey,
+                    ylabel=str(key),
+                    append=append,
+                    title=f"{key} [{ez.get_timestamp()}]",
+                    outfile=outdir.joinpath(f"{key}.txt").as_posix(),
+                )
+                # tplot_dict(
+                #     data=dict(zip(xarr, arr)),
+                #     xlabel=xkey,
+                #     ylabel=str(key),
+                #     append=append,
+                #     title=f"{key} [{ez.get_timestamp()}]",
+                #     outfile=Path(outdir).joinpath(f"{key}.txt").as_posix(),
+                # )
+            else:
+                log.warning(f'{key}: {len(arr)=}')
 
     def plot_all(
         self,

@@ -3,7 +3,10 @@ ezpz/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-from mpi4py import MPI
+import socket
+if 'x3' in socket.gethostname():
+    from mpi4py import MPI
+
 import logging
 import logging.config
 import os
@@ -137,6 +140,7 @@ except Exception:
 #     loader.exec_module(module)
 #     return module
 
+from mpi4py import MPI
 
 TERM = os.environ.get("TERM", None)
 PLAIN = os.environ.get(
@@ -162,6 +166,7 @@ logging.getLogger("sh").setLevel("WARNING")
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 # noqa: E402
+
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 

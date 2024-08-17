@@ -692,12 +692,21 @@ def setup_torch(
     #     torch.backends.cudnn.allow_tf32 = True        # type:ignore
     #     torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     # torch.use_deterministic_algorithms(True)
-    dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
-    rank = dsetup['rank']
-    world_size = dsetup['world_size']
-    local_rank = dsetup['local_rank']
-    local_size = get_gpus_per_node()
-    num_nodes = get_num_nodes()
+    ws_from_env = os.environ.get("WORLD_SIZE", None)
+    if ws_from_env is not None and int(ws_from_env) == 1:
+        log.info(f'Running on a single {device}, not initializing torch.distributed!')
+        rank = 0
+        world_size = 1
+        local_rank = 0
+        local_size = 1
+        num_nodes = 1
+    else:
+        dsetup = setup_torch_distributed(backend=backend, port=port, timeout=timeout)
+        rank = dsetup['rank']
+        world_size = dsetup['world_size']
+        local_rank = dsetup['local_rank']
+        local_size = get_gpus_per_node()
+        num_nodes = get_num_nodes()
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
     os.environ['NUM_NODES'] = str(num_nodes)
@@ -726,7 +735,8 @@ def setup_torch(
             "for distributed training."
         )
     _ = print_dist_setup()
-    torch.distributed.barrier()
+    if world_size > 1:
+        torch.distributed.barrier()
     # MPI.COMM_WORLD.Barrier()
     return rank
 
