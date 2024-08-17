@@ -582,19 +582,26 @@ ezpz_save_pbs_env() {
         num_hosts=$(ezpz_get_num_hosts "${hostfile}")
         num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
         num_gpus="$((num_hosts * num_gpus_per_host))"
+
+        num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
+        num_cpus_per_host=$(( num_cores_per_host / 2 ))
+        depth=$(( num_cpus_per_host / num_gpus_per_host ))
         # dist_env=()
         # dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
         # num_hosts="${dist_env[1]}"
         # num_gpus_per_host="${dist_env[2]}"
         # num_gpus="${dist_env[3]}"
         # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
-        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
         # num_hosts=$(ezpz_get_num_hosts "${hostfile}")
         # num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
         # num_gpus=$(( num_hosts * num_gpus_per_host ))
         printf "      to calculate:\n"
         printf "        • num_hosts: ${BLUE}%s${RESET}\n" "${num_hosts}"
+        printf "        • num_cores_per_host: ${BLUE}%s${RESET}\n" "${num_cores_per_host}"
+        printf "        • num_cpus_per_host: ${BLUE}%s${RESET}\n" "${num_cpus_per_host}"
         printf "        • num_gpus_per_host: ${BLUE}%s${RESET}\n" "${num_gpus_per_host}"
+        printf "        • depth: ${BLUE}%s${RESET}\n" "${depth}"
         printf "        • num_gpus: ${BLUE}%s${RESET}\n" "${num_gpus}"
         # getNumGPUs
         # NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
