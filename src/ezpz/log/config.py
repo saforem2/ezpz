@@ -1,6 +1,7 @@
 """
 src/ezpz/logging/__init__.py
 """
+
 from __future__ import absolute_import, annotations, division, print_function
 import shutil
 import os
@@ -13,7 +14,7 @@ from rich.default_styles import DEFAULT_STYLES
 size = shutil.get_terminal_size()
 WIDTH = size.columns
 HEIGHT = size.lines
-os.environ['COLUMNS'] = f'{WIDTH}'
+os.environ["COLUMNS"] = f"{WIDTH}"
 
 # -- Configure useful Paths -----------------------
 # warnings.filterwarnings('ignore')
@@ -79,34 +80,26 @@ CYAN = Style(color=DARK["cyan"])
 GREY_MED = "#838383"
 
 
-NO_COLOR = (
+TERM = os.environ.get("TERM", None)
+NO_COLOR = os.environ.get(
+    "NO_COLOR",
     os.environ.get(
-        'NO_COLOR',
+        "NOCOLOR",
         os.environ.get(
-            'NOCOLOR',
-            os.environ.get(
-                'COLOR',
-                os.environ.get(
-                    'COLORS',
-                    os.environ.get(
-                        'DUMB',
-                        False
-                    )
-                )
-            )
-        )
-    )
+            "COLOR", os.environ.get("COLORS", os.environ.get("DUMB", False))
+        ),
+    ),
 )
 
 STYLES: Dict[str, Style] = {
-    'url': Style(conceal=True, underline=True, color="blue"),
-    'num': Style(color="blue"),
+    "url": Style(conceal=True, underline=True, color="blue"),
+    "num": Style(color="blue"),
     # 'repr.brace': Style(bold=True, color="magenta"),
-    'repr.brace': Style(color="bright_white", dim=False, bold=True),
-    'log.brace': Style(color="black", dim=False),
-    'repr.comma': Style(color="bright_yellow"),
-    'repr.colon': Style(color="green", bold=True),
-    'repr.dash': Style(color='#838383', bold=True),
+    "repr.brace": Style(color="bright_white", dim=False, bold=True),
+    "log.brace": Style(color="black", dim=False),
+    "repr.comma": Style(color="bright_yellow"),
+    "repr.colon": Style(color="green", bold=True),
+    "repr.dash": Style(color="#838383", bold=True),
     # 'repr.number': Style(color="#69DB7C"),
     # 'num': Style(color="#69DB7C"),
     # 'repr.number': Style(color="#69DB7C"),
@@ -114,21 +107,21 @@ STYLES: Dict[str, Style] = {
     "logging.level.notset": Style(dim=True),
     "logging.level.debug": Style(color="bright_blue", bold=True),
     "logging.level.error": Style(color="bright_red", bold=True),
-    'log.level.warn': Style(color="bright_yellow"),
-    'logging.level.info': Style(color="green", bold=True),
-    'log.level.warning': Style(color="bright_yellow", bold=True),
-    'logging.level.warn': Style(color="bright_yellow"),
-    'logging.level.warning': Style(color="bright_yellow"),
-    'log.colon': Style(color="bright_blue"),
+    "log.level.warn": Style(color="bright_yellow"),
+    "logging.level.info": Style(color="green", bold=True),
+    "log.level.warning": Style(color="bright_yellow", bold=True),
+    "logging.level.warn": Style(color="bright_yellow"),
+    "logging.level.warning": Style(color="bright_yellow"),
+    "log.colon": Style(color="bright_blue"),
     "log.linenumber": Style(color="black", bold=False),
     # "none": Style(color="red"),
     "log.path": Style(color="blue", bold=False, italic=True),
-    'log.time': Style(color='bright_black'),
-    'logging.time': Style(color='bright_black'),
-    'logging.date': Style(color='black'),  # , italic=False),
+    "log.time": Style(color="bright_black"),
+    "logging.time": Style(color="bright_black"),
+    "logging.date": Style(color="black"),  # , italic=False),
     "hidden": Style(color="bright_black", dim=True),
-    'repr.attr': Style(color='blue'),
-    'repr.attrib_name': Style(color="bright_blue", bold=False, italic=True),
+    "repr.attr": Style(color="blue"),
+    "repr.attrib_name": Style(color="bright_blue", bold=False, italic=True),
     "repr.attrib_equal": Style(bold=True, color="yellow"),
     "repr.attrib_value": Style(color="bright_magenta", italic=False),
     "repr.ellipsis": Style(color="bright_yellow"),
@@ -144,8 +137,10 @@ STYLES: Dict[str, Style] = {
     "repr.tag_name": Style(color="bright_magenta", bold=True),
     # "repr.tag_contents": Style(color="default"),
     # 'repr.number': Style(color="magenta", bold=False, italic=False),
-    'repr.number': Style(color="bright_magenta", bold=False, italic=False),
-    "repr.number_complex": Style(color="bright_magenta", bold=True, italic=False),  # same
+    "repr.number": Style(color="bright_magenta", bold=False, italic=False),
+    "repr.number_complex": Style(
+        color="bright_magenta", bold=True, italic=False
+    ),  # same
     "repr.bool_true": Style(color="bright_green", italic=True),
     "repr.bool_false": Style(color="bright_red", italic=True),
     "repr.none": Style(color="bright_magenta", italic=True),
@@ -165,10 +160,8 @@ STYLES: Dict[str, Style] = {
     "json.key": Style(color="bright_blue", bold=True),
 }
 
-if NO_COLOR:
-    STYLES = {
-        f'{k}': Style.null() for k in STYLES.items()
-    }
+if NO_COLOR or TERM in ["dumb", "unknown"]:
+    STYLES = {f"{k}": Style.null() for k in STYLES.items()}
     # for key, val in STYLES.items():
     #     STYLES[key] = Style.null()
 

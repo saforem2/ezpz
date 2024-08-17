@@ -12,7 +12,6 @@ import time
 from functools import wraps
 from typing import Any, Callable, Optional, Union
 import socket
-import json
 
 from mpi4py import MPI
 
@@ -712,7 +711,6 @@ def setup_torch(
         torch.xpu.set_device(local_rank)  # type:ignore
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
-    MPI.COMM_WORLD.Barrier()
     if rank == 0:
         from ezpz.configs import git_ds_info
         _ = get_dist_info(verbose=True)
@@ -728,6 +726,8 @@ def setup_torch(
             "for distributed training."
         )
     _ = print_dist_setup()
+    torch.distributed.barrier()
+    # MPI.COMM_WORLD.Barrier()
     return rank
 
 
@@ -830,6 +830,10 @@ def get_machine(hostname: Optional[str] = None) -> str:
             except Exception:
                 log.warning('Unable to determine hostname!')
                 hostname = 'unknown'
+    if hostname.startswith('frontier'):
+        return 'Frontier'
+    if hostname.startswith('sophia'):
+        return 'Sophia'
     if hostname.startswith('theta'):
         return 'ThetaGPU'
     if hostname.startswith('x1'):
@@ -990,6 +994,10 @@ def get_nodes_from_hostfile(
 
 
 def get_node_index() -> int:
+    # rank = get_rank()
+    # log.info(f'{rank=}')
+    # log.info(f'{get_num_nodes()=}')
+    # log.info(f'{get_rank() % get_num_nodes()=}')
     return get_rank() % get_num_nodes()
 
 
@@ -1028,6 +1036,33 @@ def write_hostfile_from_list_of_hosts(
                 f.write(f'{host}\n')
 
 
+def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
+    nodes = os.environ.get("SLURM_NODELIST", None)
+    # if nodes is not None:
+    assert nodes is not None
+    # machine = get_machine()
+    prefix, idxs = nodes.split('[')
+    idxs = idxs.rstrip(']')
+    idxs = '-'.join(idxs.split(',')).split('-')
+    nodelist = [f'{prefix}{i}' for i in idxs]
+    # idxs = (
+    #     nodes.split
+    # )
+    # idxs = (
+    #     nodes.lstrip('frontier').replace('[', '').replace(']', '').split('-')
+    # )
+    # nodelist = [f'frontier{i}' for i in idxs]
+    if outfile is None:
+        outfile = Path(os.getcwd()).joinpath('hostfile')
+    else:
+        outfile = Path(outfile)
+    with outfile.open('w') as f:
+        for node in nodelist:
+            f.write(f'{node}\n')
+    return outfile
+
+
+
 def get_hostfile_with_fallback(
         hostfile: Optional[PathLike] = None
 ) -> Path:
@@ -1036,6 +1071,9 @@ def get_hostfile_with_fallback(
     if scheduler.lower() == 'unknown':
         log.debug('Unknown scheduler')
         hostfile = Path(os.getcwd()).joinpath('hostfile"')
+    if scheduler.lower() == 'slurm':
+        hostfile = make_hostfile_from_slurm_env()
+        assert Path(hostfile).is_file()
     if hostfile is None:
         hfp = (
             os.environ.get(
@@ -1075,6 +1113,9 @@ def get_hostfile_with_fallback(
 
 
 def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
+    num_nodes = os.environ.get("SLURM_NNODES", None)
+    if num_nodes is not None:
+        return int(num_nodes)
     hfp = get_hostfile_with_fallback(hostfile)
     hosts = [h.split('.')[0] for h in get_nodes_from_hostfile(hfp)]
     return len(hosts)
