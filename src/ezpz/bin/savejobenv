@@ -86,6 +86,7 @@ function save_pbs_env() {
         jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
+        jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     elif [[ "$#" == 2 ]]; then
         hostfile="$1"
         jobenv_file="$2"

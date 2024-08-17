@@ -444,9 +444,7 @@ class BaseHistory:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
             _ = ax.set_xticklabels(
-                [  # type: ignore
-                    f"{logfreq * int(i)}" for i in xticks
-                ]
+                [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
             dirs = {
@@ -798,13 +796,15 @@ class History:
         for key, val in metrics.items():
             if isinstance(val, (list, np.ndarray, torch.Tensor)):
                 val = grab_tensor(val)
-            # if isinstance(val, (list, np.ndarray, torch.Tensor)):
-            #     val = torch.Tensor(val).numpy()
             try:
                 self.history[key].append(val)
             except KeyError:
                 self.history[key] = [val]
-        if wandb is not None and not WANDB_DISABLED and getattr(wandb, 'run', None) is not None:
+        if (
+            wandb is not None
+            and not WANDB_DISABLED
+            and getattr(wandb, "run", None) is not None
+        ):
             wandb.log(metrics)
 
     def tplot(
@@ -1048,9 +1048,7 @@ class History:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
             _ = ax.set_xticklabels(
-                [  # type: ignore
-                    f"{logfreq * int(i)}" for i in xticks
-                ]
+                [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
             dirs = {
@@ -1182,7 +1180,7 @@ class History:
             #             dpi=400, bbox_inches='tight')
             outfile = Path(outdir).joinpath(f"{label}.svg")
             if outfile.is_file():
-                tstamp = ezplot.get_timestamp("%Y-%m-%d-%H%M%S")
+                tstamp = ez.get_timestamp("%Y-%m-%d-%H%M%S")
                 pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{label}-{tstamp}.png")
