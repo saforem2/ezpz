@@ -25,7 +25,7 @@ from ezpz import log
 from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
 from ezpz import configs
-from ezpz import utils
+# from ezpz import utils
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
