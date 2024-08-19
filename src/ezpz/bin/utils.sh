@@ -531,20 +531,43 @@ ezpz_parse_hostfile() {
     echo "${num_hosts}" "${num_gpus_per_host}" "${num_gpus}"
 }
 
+# ezpz_get_dist_launch_cmd() {
+#     if [[ "$#" != 3 ]]; then
+#         echo "Expected exactly three arguments: hostfile, num_gpus_per_host, num_gpus"
+#         echo "Received: $#"
+#     fi
+#     # hf="$1"
+#     # # local num_hosts=$(ezpz_get_num_hosts "${hf}")
+#     # # local num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+#     # # local num_gpus=$(( num_gpus * num_gpus_per_host ))
+#     # local dist_env=$(ezpz_parse_hostfile "${hf}")
+#     # local num_hosts="${dist_env[1]}"
+#     # local num_gpus_per_host="${dist_env[2]}"
+#     # local num_gpus="${dist_env[3]}"
+#     echo "mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hf} --cpu-bind depth -d 16"
+# }
+#
 ezpz_get_dist_launch_cmd() {
-    if [[ "$#" != 3 ]]; then
-        echo "Expected exactly three arguments: hostfile, num_gpus_per_host, num_gpus"
+    if [[ "$#" != 1 ]]; then
+        echo "Expected exactly one argument: hostfile"
         echo "Received: $#"
     fi
-    # hf="$1"
-    # # local num_hosts=$(ezpz_get_num_hosts "${hf}")
-    # # local num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-    # # local num_gpus=$(( num_gpus * num_gpus_per_host ))
-    # local dist_env=$(ezpz_parse_hostfile "${hf}")
-    # local num_hosts="${dist_env[1]}"
-    # local num_gpus_per_host="${dist_env[2]}"
-    # local num_gpus="${dist_env[3]}"
-    echo "mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hf} --cpu-bind depth -d 16"
+    hf="$1"
+    num_hosts=$(ezpz_get_num_hosts "${hf}")
+    num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    num_gpus="$((num_hosts * num_gpus_per_host))"
+
+    num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
+    num_cpus_per_host=$((num_cores_per_host / 2))
+    depth=$((num_cpus_per_host / num_gpus_per_host))
+    # dist_env=()
+    # dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
+    # num_hosts="${dist_env[1]}"
+    # num_gpus_per_host="${dist_env[2]}"
+    # num_gpus="${dist_env[3]}"
+    # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+    dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+    echo "${dist_launch_cmd}"
 }
 
 ezpz_save_pbs_env() {
@@ -582,17 +605,16 @@ ezpz_save_pbs_env() {
         num_hosts=$(ezpz_get_num_hosts "${hostfile}")
         num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
         num_gpus="$((num_hosts * num_gpus_per_host))"
-
         num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
-        num_cpus_per_host=$(( num_cores_per_host / 2 ))
-        depth=$(( num_cpus_per_host / num_gpus_per_host ))
+        num_cpus_per_host=$((num_cores_per_host / 2))
+        depth=$((num_cpus_per_host / num_gpus_per_host))
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
         # dist_env=()
         # dist_env+=($(ezpz_parse_hostfile "$(ezpz_get_pbs_nodefile_from_hostname)"))
         # num_hosts="${dist_env[1]}"
         # num_gpus_per_host="${dist_env[2]}"
         # num_gpus="${dist_env[3]}"
         # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
-        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
         # num_hosts=$(ezpz_get_num_hosts "${hostfile}")
         # num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
         # num_gpus=$(( num_hosts * num_gpus_per_host ))
@@ -1029,16 +1051,22 @@ ezpz_write_job_info() {
     # printf "[ezpz_write_job_info] Caught hostfile: %s\n" "${hostfile}"
     # getNumGPUs
     # dist_env=$(ezpz_parse_hostfile "${hostfile}")
-    num_hosts=$(ezpz_get_num_hosts "${hostfile}")
-    num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-    num_gpus="$((num_hosts * num_gpus_per_host))"
+    # num_hosts=$(ezpz_get_num_hosts "${hostfile}")
+    # num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    # num_gpus="$((num_hosts * num_gpus_per_host))"
     # num_hosts="${dist_env[1]}"
     # num_gpus_per_host="${dist_env[2]}"
     # num_gpus="${dist_env[3]}"
     # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
     scheduler_type=$(ezpz_get_scheduler_type)
+    num_hosts=$(ezpz_get_num_hosts "${hostfile}")
+    num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
+    num_gpus="$((num_hosts * num_gpus_per_host))"
+    num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
+    num_cpus_per_host=$((num_cores_per_host / 2))
+    depth=$((num_cpus_per_host / num_gpus_per_host))
     if [[ "${scheduler_type}" == "pbs" ]]; then
-        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
     elif [[ "${scheduler_type}" == "slurm" ]]; then
         # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
         dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$((SLURM_NNODES * SLURM_GPUS_ON_NODE))"
