@@ -43,8 +43,9 @@ dependencies = [
   "hydra-core",
   "wandb",
   "hydra-colorlog",
-  "ambivalent",
+  # "ambivalent @ git+https://github.com/saforem2/ambivalent",
   "pyinstrument",
+  "h5py"
 ]
 
 dynamic = ["version"]
