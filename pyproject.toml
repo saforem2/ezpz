@@ -9,60 +9,58 @@ readme = "./docs/README.md"
 requires-python = ">=3.8"
 license = ""
 keywords = []
-authors = [
-  { name = "Sam Foreman", email = "saforem2@gmail.com" },
-]
+authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "mpi4py",
-  "torch",
-  "xarray",
-  "plotext",
-  "ml_dtypes",
-  "jax",
-  "tqdm",
-  "jaxlib",
-  "jaxtyping",
-  "sh",
-  "joblib",
-  "rich",
-  "tensorboard",
-  "seaborn",
-  "omegaconf",
-  "sentencepiece",
-  "ipython",
-  "hydra-core",
-  "wandb",
-  "hydra-colorlog",
-  # "ambivalent @ git+https://github.com/saforem2/ambivalent",
-  "pyinstrument",
-  "h5py"
+    "mpi4py",
+    "torch",
+    "xarray",
+    "plotext",
+    "ml_dtypes",
+    "jax",
+    "tqdm",
+    "jaxlib",
+    "jaxtyping",
+    "sh",
+    "joblib",
+    "rich",
+    "tensorboard",
+    "seaborn",
+    "omegaconf",
+    "sentencepiece",
+    "ipython",
+    "hydra-core",
+    "wandb",
+    "hydra-colorlog",
+    "ambivalent @ git+https://github.com/saforem2/ambivalent",
+    "pyinstrument",
+    "h5py",
 ]
 
 dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
-  "pudb",
-  "nodejs",
-  "pynvim",
-  "neovim",
-  "ruff",
-  "ruff-lsp",
-  "pyproject-flake8",
-  "black",
-  "mypy",
-  "ipython",
-  "ptipython",
+    "pudb",
+    "nodejs",
+    "pynvim",
+    "neovim",
+    "ruff",
+    "ruff-lsp",
+    "pyproject-flake8",
+    "black",
+    "mypy",
+    "ipython",
+    "ptipython",
 ]
 
 [project.urls]
@@ -74,10 +72,7 @@ Source = "https://github.com/saforem2/ezpz"
 path = "src/ezpz/__about__.py"
 
 [tool.hatch.build]
-exclude = [
-  "src/ezpz/outputs/",
-  "**old**",
-]
+exclude = ["src/ezpz/outputs/", "**old**"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -89,10 +84,7 @@ allow-direct-references = true
 # packages = ["src/ezpz"]
 
 [tool.hatch.envs.default]
-dependencies = [
-  "pytest",
-  "pytest-cov",
-]
+dependencies = ["pytest", "pytest-cov"]
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
 no-cov = "cov --no-cov"
@@ -103,13 +95,7 @@ python = ["38", "39", "310", "311"]
 [tool.coverage.run]
 branch = true
 parallel = true
-omit = [
-  "ezpz/__about__.py",
-]
+omit = ["ezpz/__about__.py"]
 
 [tool.coverage.report]
-exclude_lines = [
-  "no cov",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
-]
+exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
