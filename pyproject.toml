@@ -51,16 +51,13 @@ dynamic = ["version"]
 [project.optional-dependencies]
 dev = [
     "pudb",
-    "nodejs",
     "pynvim",
     "neovim",
     "ruff",
     "ruff-lsp",
-    "pyproject-flake8",
-    "black",
-    "mypy",
     "ipython",
     "ptipython",
+    "jupyter",
 ]
 
 [project.urls]
