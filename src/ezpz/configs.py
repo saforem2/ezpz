@@ -105,7 +105,9 @@ def get_scheduler() -> str:
 
 
 def load_ds_config(
-    fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
+    fpath: Optional[
+        Union[str, os.PathLike, Path]
+    ] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
     from ezpz.configs import DS_CONFIG_PATH
 
@@ -274,7 +276,6 @@ def git_ds_info():
 
 
 @dataclass
-@rich.repr.auto
 class BaseConfig(ABC):
     @abstractmethod
     def to_str(self) -> str:
@@ -403,9 +404,13 @@ def print_config_tree(
     # add fields from `print_order` to queue
     if print_order is not None:
         for field in print_order:
-            queue.append(field) if field in cfg else log.warning(
-                f"Field '{field}' not found in config. "
-                f"Skipping '{field}' config printing..."
+            (
+                queue.append(field)
+                if field in cfg
+                else log.warning(
+                    f"Field '{field}' not found in config. "
+                    f"Skipping '{field}' config printing..."
+                )
             )
     # add all the other fields to queue (not specified in `print_order`)
     for field in cfg:
