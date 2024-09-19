@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Union
+from collections.abc import Iterable
 
 # from ezpz import get_logging_config
 from ezpz.configs import PathLike
@@ -136,7 +137,7 @@ class BaseHistory:
     def metric_to_numpy(
         self,
         metric: PyTree,
-    ) -> np.ndarray | Scalar | None:
+    ) -> np.ndarray | Scalar | None | ScalarLike:
         if isinstance(metric, (Scalar, np.ndarray)):
             return metric
         if isinstance(metric, list):
@@ -162,44 +163,114 @@ class BaseHistory:
     def _update(
         self,
         key: str,
-        val: Float[Array, "..."],
-    ) -> float | int | bool | np.floating | np.integer:
+        val: Union[Iterable, Float[Array, "..."]],
+    ) -> float | int | bool | np.floating | np.integer | None:
         if isinstance(val, (list, tuple)):
-            if isinstance(val[0], torch.Tensor):
-                val = grab_tensor(torch.stack(val))
-            elif isinstance(val, np.ndarray):
-                val = np.stack(val)
-            else:
-                val = val
-        # if isinstance(val, (tf.Tensor, torch.Tensor)):
-        val = grab_tensor(val)
+            if len(val) == 0:
+                return None
+            v = grab_tensor(torch.stack(val))
+        elif isinstance(val, (int, bool, np.floating)):
+            return val
+        elif isinstance(val, torch.Tensor):
+            v = grab_tensor(val)
+        else:
+            v = val
+        #
+        #
+        # # if (_len := getattr(val, "__len__", None)) is not None and _len > 0:
+        # #     try:
+        # #         v = grab_tensor(val)
+        # #     except Exception:
+        # #         # try:
+        # #         v = grab_tensor(torch.stack(val))
+        # #     finally:
+        # #         import pudb
+        # #
+        # #         pudb.set_trace()
+        # #         # except Exception:
+        # #         #     v = val
+        # #         #     # import pudb; pudb.set_trace()
+        # # else:
+        # #     v = val
+        # # if isinstance(val, ScalarLike):
+        # #     v = val
+        # try:
+        #     v = grab_tensor(val)
+        # except Exception:
+        #     # if (m := getattr(val, "__len__", 0)) > 0:
+        #     v = grab_tensor(torch.stack(list(val)))
+        #     # else:
+        #     # if isinstance(val, (list, tuple)) or hasattr(val, "__len__"):
+        #     #     if getattr(val, '__len__', 0) > 0:
+        #     #         v = grab_tensor(torch.stack(val))  # type:ignore
+        #     # else:
+        # else:
+        #     v = val
+        #     #     v = val
+        # finally:
+        #     log.error(f"Unable to _update({key})")
+        #     log.error(f"{val=}")
+        #     log.error("Continuing!")
+        #     return None
+        #
+        # v = None
+        # if isinstance(val, Iterable) and len(val) > 0:
+        #     try:
+        #         v = grab_tensor(torch.stack(val))
+        #     except Exception:
+        #         v = val
+        #         # import pudb; pudb.set_trace()
+        #
+        #     # if isinstance(val[0], torch.Tensor):
+        #     #     v = grab_tensor(torch.stack(val))
+        #     # # elif isinstance(val, np.ndarray):
+        #     # #     v = np.stack(val)
+        #     # else:
+        #     #     v = val
+        # else:
+        #     # if isinstance(v, (tf.Tensor, torch.Tensor)):
+        #     try:
+        #         v = grab_tensor(val)
+        #     except Exception:
+        #         import pudb
+        #         pudb.set_trace()
+        assert v is not None
         try:
-            self.history[key].append(val)
+            self.history[key].append(v)
         except KeyError:
-            self.history[key] = [val]
+            self.history[key] = [v]
 
         # ScalarLike = Union[float, int, bool, np.floating]
-        if isinstance(val, (float, int, bool, np.floating, np.integer)):
-            return val
-        #     return val
-        avg = np.mean(val).real
-        assert isinstance(avg, np.floating)
-        return avg
+        if isinstance(v, (float, int, bool, np.floating, np.integer)):
+            return v
+        #     return v
+        # # avg = np.mean(v)
+        # assert isinstance(avg, np.floating)
+        # return avg
+        assert v is not None
+        # return v.mean()
+        # return np.mean(v)
 
     def update(self, metrics: dict) -> dict[str, Any]:
         avgs = {}
         avg = 0.0
         for key, val in metrics.items():
-            if val is None:
-                continue
             if isinstance(val, dict):
-                for k, v in val.items():
-                    kk = f"{key}/{k}"
-                    avg = self._update(kk, v)
-                    avgs[kk] = avg
+                # if isinstance(val, dict):
+                avgs |= self.update({f"{key}/{k}": v for k, v in val.items()})
+                # for k, v in val.items():
+                #     kk = f"{key}/{k}"
+                #     avg = self._update(kk, v)
+                #     avgs[kk] = avg
             else:
+                # try:
                 avg = self._update(key, val)
-                avgs[key] = avg
+                if avg is not None:
+                    avgs[key] = avg
+                # except Exception:
+                #     import pudb
+                #
+                #     pudb.set_trace()
 
         return avgs
 
@@ -805,6 +876,12 @@ class History:
             and not WANDB_DISABLED
             and getattr(wandb, "run", None) is not None
         ):
+            metrics |= {
+                f"{k}/hist": (
+                    wandb.Histogram(v.tolist()) if isinstance(v, np.ndarray) else v
+                )
+                for k, v in metrics.items()
+            }
             wandb.log(metrics)
 
     def tplot(
@@ -1200,7 +1277,7 @@ class History:
         for idx, (key, val) in enumerate(dataset.items()):
             if xkey is not None and key == xkey:
                 continue
-            if callable(getattr(val, 'to_numpy', None)):
+            if callable(getattr(val, "to_numpy", None)):
                 arr = val.to_numpy()
             else:
                 try:
@@ -1215,7 +1292,7 @@ class History:
                 if xkey is None:
                     xarr = np.arange(len(arr))
                 else:
-                    xval = dataset.get(xkey.replace('/', '_'))
+                    xval = dataset.get(xkey.replace("/", "_"))
                     assert xval is not None
                     xarr = xval.to_numpy()
                 assert xarr is not None
@@ -1237,7 +1314,7 @@ class History:
                 #     outfile=Path(outdir).joinpath(f"{key}.txt").as_posix(),
                 # )
             else:
-                log.warning(f'{key}: {len(arr)=}')
+                log.warning(f"{key}: {len(arr)=}")
 
     def plot_all(
         self,
