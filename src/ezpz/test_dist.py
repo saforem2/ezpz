@@ -290,10 +290,7 @@ def main():
 
         dataset = history.plot_all(outdir=mplotdir)
         _ = history.tplot_all(
-            outdir=tplotdir,
-            append=True,
-            xkey="train/iter",
-            dataset=dataset
+            outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
         )
         logger.info(f"{dataset=}")
         # plt.show()
@@ -303,6 +300,7 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     # from ezpz.profile import get_context_manager
     # NOTE: if rank is passed to get_context_manager,
     # it will ONLY be instantiated if rank == 0,
