@@ -46,7 +46,7 @@ t_torch_ddp = time.perf_counter()
 try:
     import wandb
 
-    wandb.require("core")
+    # wandb.require("core")
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
     wandb = None
