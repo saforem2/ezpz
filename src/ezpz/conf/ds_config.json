@@ -1,4 +1,10 @@
 {
     "train_micro_batch_size_per_gpu": 1,
-    "gradient_accumulation_steps": 1
+    "gradient_accumulation_steps": 1,
+    "comms_logger": {
+        "enabled": true,
+        "verbose": false,
+        "prof_all": true,
+        "debug": false
+    }
 }
