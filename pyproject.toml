@@ -4,22 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ezpz"
-description = 'Distributed Training, ezpz.'
-readme = "./docs/README.md"
+dynamic = ["version"]
 requires-python = ">=3.8"
 license = ""
 keywords = []
+readme = "./docs/README.md"
+description = 'Distributed Training, ezpz.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
 dependencies = [
     "mpi4py",
     "torch",
@@ -45,8 +36,16 @@ dependencies = [
     "pyinstrument",
     "h5py",
 ]
-
-dynamic = ["version"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -95,4 +94,8 @@ parallel = true
 omit = ["ezpz/__about__.py"]
 
 [tool.coverage.report]
+
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.uv.sources]
+ezpz = { workspace = true }

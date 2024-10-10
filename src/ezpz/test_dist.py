@@ -6,64 +6,29 @@ test_dist.py
   $ source ezpz/src/ezpz/bin/savejobenv
   $ BACKEND=DDP launch python3 ezpz_ddp.py
 """
-
 import time
-
-from ezpz.history import History, summarize_dict
-
 T0 = time.perf_counter()  # start time
-timers_import = {}
 
 import os  # noqa E402
-
-t_os = time.perf_counter()
-
 import logging  # noqa: E402
-
-t_logging = time.perf_counter()
-
 from typing import Optional  # noqa: E402
-
-t_typing = time.perf_counter()
-
 from pathlib import Path  # noqa: E402
-
-t_pathlib = time.perf_counter()
-
-import ezpz as ez  # noqa: E402
-
-t_ezpz = time.perf_counter()
 
 import torch  # noqa: E402
 import torch.distributed as tdist  # noqa: E402
-
-t_torch = time.perf_counter()
-
 from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
 
-t_torch_ddp = time.perf_counter()
+import ezpz as ez  # noqa: E402
+from ezpz.history import History, summarize_dict
 
 try:
     import wandb
 
-    wandb.require("core")
+    # wandb.require("core")
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
     wandb = None
     WANDB_DISABLED = True
-t_wandb = time.perf_counter()
-
-timers_import = {
-    "os": t_os - T0,
-    "logging": t_logging - t_os,
-    "typing": t_typing - t_logging,
-    "pathlib": t_pathlib - t_typing,
-    "ezpz": t_ezpz - t_pathlib,
-    "torch": t_torch - t_ezpz,
-    "torch_ddp": t_torch_ddp - t_torch,
-    "wandb": t_wandb - t_torch_ddp,
-    "total": t_wandb - T0,
-}
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +38,7 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 T1 = time.perf_counter()  # import time = (T1 - T0)
 # backend can be any of DDP, deespepeed, horovod
 RANK = ez.setup_torch(
-    backend=(backend := os.environ.get("BACKEND", "DDP")),
+    backend=(BACKEND := os.environ.get("BACKEND", "DDP")),
     port=(port := os.environ.get("MASTER_PORT", "29500")),
 )
 T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
@@ -142,7 +107,7 @@ if wandb is not None and not WANDB_DISABLED and RANK == 0:
     wandb.run.config.update(CONFIG)
 
 if RANK == 0:
-    ez.dist.log_dict_as_bulleted_list(timers_import, name="timers_import")
+    # ez.dist.log_dict_as_bulleted_list(timers_import, name="timers_import")
     ez.dist.log_dict_as_bulleted_list(CONFIG, name="CONFIG")
 
 if WORLD_SIZE > 1:
@@ -188,10 +153,10 @@ def build_model_and_optimizer() -> ModelOptimizerPair:
     logger.info(f"{model=}")
     optimizer = torch.optim.Adam(model.parameters())
     # with profiler:
-    if backend.lower() == "ddp":
+    if BACKEND.lower() == "ddp":
         if WORLD_SIZE > 1:
             model = DDP(model, device_ids=[])
-    elif backend.lower() in ("ds", "deepspeed"):
+    elif BACKEND.lower() in ("ds", "deepspeed"):
         import deepspeed
         import argparse
 
@@ -237,17 +202,12 @@ def main():
         return calc_loss(x, y)
 
     def _backward_step(loss: torch.Tensor) -> None:
-        if backend == "deepspeed":
+        if BACKEND == "deepspeed":
             model.backward(loss)
             model.step(loss)
         else:
             loss.backward()
             optimizer.step()
-
-    # with profiler:
-    #     loss = _forward_step()
-    # with profiler:
-    #     _ = _backward_step(loss)
 
     for iter in range(TRAIN_ITERS):
         t0 = time.perf_counter()
@@ -273,9 +233,6 @@ def main():
             summary = summarize_dict(_metrics)
             logger.info(summary.replace("train/", ""))
     if RANK == 0:
-        # import numpy as np
-        # from ezpz.plot import tplot, tplot_dict, plot_metric, plot_array, plot_arr
-
         outdir = Path(os.getcwd()).joinpath("test-dist-plots")
         tplotdir = outdir.joinpath("tplot")
         mplotdir = outdir.joinpath("mplot")
@@ -290,35 +247,30 @@ def main():
 
         dataset = history.plot_all(outdir=mplotdir)
         _ = history.tplot_all(
-            outdir=tplotdir,
-            append=True,
-            xkey="train/iter",
-            dataset=dataset
+            outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
         )
         logger.info(f"{dataset=}")
-        # plt.show()
     if WORLD_SIZE > 1:
         tdist.barrier()
 
 
 if __name__ == "__main__":
     import sys
-    # from ezpz.profile import get_context_manager
-    # NOTE: if rank is passed to get_context_manager,
-    # it will ONLY be instantiated if rank == 0,
-    # otherwise, it will return a contextlib.nullcontext() instance.
-    profiler = ez.profile.get_context_manager(rank=RANK, strict=False)
-    with profiler:
+    # Wrap training loop in pyinstrument profiler context block
+    with ez.profile.get_context_manager(rank=RANK, strict=False):
         main()
     T4 = time.perf_counter()
     runtime = torch.tensor(T4 - T0)
     # tdist.all_reduce(runtime)
-    TIMERS["timers/runtime"] = runtime.item()
-    logger.info(f"[{RANK}] {runtime=:.6f}s")
+    if BACKEND.lower() in ["ds", "deepspeed"]:
+        import deepspeed.comm as dscomm
+        dscomm.log_summary()
     if not WANDB_DISABLED and RANK == 0 and wandb is not None:
         if (run := getattr(wandb, "run", None)) is not None and run is wandb.run:
             wandb.log(TIMERS)
         # wandb.finish()
     if WORLD_SIZE > 1:
         tdist.barrier()
+    TIMERS["timers/runtime"] = runtime.item()
+    logger.info(f"[{RANK}] {runtime=:.6f}s")
     sys.exit(0)
