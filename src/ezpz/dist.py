@@ -865,11 +865,11 @@ def setup_wandb(
     project_name: Optional[str] = None,
     config: Optional[dict | DictConfig] = None,
     start_method: str = "thread",
+    outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
     import wandb
-
-    wandb.require("core")
+    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
     rank = get_rank()
     project_name = (
         project_name
@@ -897,7 +897,7 @@ def setup_wandb(
     dstr = now.strftime("%Y-%m-%d-%H%M%S")
     run = wandb.init(
         # resume='allow',
-        dir=os.getcwd(),
+        dir=outdir,
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),

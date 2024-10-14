@@ -109,7 +109,7 @@ from ezpz.history import (
     summarize_dict,
     StopWatch,
     History,
-    BaseHistory,
+    # BaseHistory,
 )
 from ezpz.log.style import (
     BEAT_TIME,

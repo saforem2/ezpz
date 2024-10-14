@@ -13,7 +13,7 @@ from rich.style import Style
 from rich.logging import RichHandler as OriginalRichHandler
 from rich.text import Text, TextType, Span
 
-from ezpz.log.config import STYLES, NO_COLOR
+from ezpz.log.config import NO_COLOR
 from ezpz.log.console import get_console, Console
 from rich.console import ConsoleRenderable
 
@@ -23,6 +23,11 @@ from rich.console import ConsoleRenderable
 # from rich.logging import RichHandler as OriginalRichHandler
 # from rich.text import Text, TextType, Span
 COLOR = (not NO_COLOR)
+if not COLOR:
+    STYLES = {}
+else:
+    from ezpz.log.config import STYLES
+
 
 
 class RichHandler(OriginalRichHandler):
@@ -125,7 +130,8 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             path_text = Text("[", style=STYLES.get('log.brace', ''))
             # path_text.append( /)
             path_text.append(
-                path.rstrip('.py'),
+                # path.rstrip('.py'),
+                path,
                 style=STYLES.get('log.path', ''),
                 # style=STYLES.get('log.path', Style(color='black')),
                 # style=(
