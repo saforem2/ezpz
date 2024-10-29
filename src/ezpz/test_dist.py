@@ -30,9 +30,6 @@ except Exception:
     wandb = None
     WANDB_DISABLED = True
 
-logger = logging.getLogger(__name__)
-
-# Model = Callable[[torch.Tensor], torch.Tensor]
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 T1 = time.perf_counter()  # import time = (T1 - T0)
@@ -51,8 +48,8 @@ WORLD_SIZE = ez.get_world_size()
 LOCAL_RANK = ez.get_local_rank()
 DEVICE_ID = f"{DEVICE_TYPE}:{LOCAL_RANK}"
 
-# log only from RANK == 0
 logger = logging.getLogger(__name__)
+# log only from RANK == 0
 logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 
 WARMUP = 0
@@ -77,9 +74,6 @@ if sizes is not None:
     logger.info(f"Caught: {LAYER_SIZES=}")
 else:
     LAYER_SIZES = [1024, 512, 256, 128]
-
-# LAYER_SIZES = ()
-# [1024, 512, 256, 128]
 
 DTYPE: torch.dtype = torch.get_default_dtype()
 if (dtype := os.environ.get("DTYPE", None)) is not None:
