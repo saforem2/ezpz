@@ -1,23 +1,71 @@
 # 🍋 `ezpz`
 
-## Getting Started
+## 🚀 Getting Started
+
+```bash
+git clone https://github.com/saforem2/ezpz deps/ezpz
+```
+
+### Using Bash Helper Functions
+
+We provide a variety of useful functions in [`utils.sh`](/ezpz/src/ezpz/bin/utils.sh)
+
+```bash
+git clone https://github.com/saforem2/ezpz deps/ezpz
+source deps/ezpz/src/ezpz/bin/utils.sh
+```
+
+- 🐍 Setup Python:
+
+    ```bash
+    ezpz_setup_python
+    ```
+
+- 🛰️ Setup communications:
+
+    ```bash
+    ezpz_setup_job
+    ```
+
+> [!WARNING]<br> **Where am I?**
+> 
+> _Some_ of the `ezpz_*` functions
+> (e.g. `ezpz_setup_python`),
+> will try to create / look for certain directories.
+>
+> In an effort to be explicit,
+> these directories will be defined
+> **relative to** a `WORKING_DIR`
+> (e.g. `"${WORKING_DIR}/venvs/"`)
+>
+> This `WORKING_DIR` will be assigned to the first non-zero match found below:
+> 
+> 1. `PBS_O_WORKDIR`: If found in environment, paths will be relative to this
+> 2. `SLURM_SUBMIT_DIR`: Next in line. If not @ ALCF, maybe using `slurm`...
+> 3. `$(pwd)`: Otherwise, no worries. Use your _actual_ working directory.
+
+## 🔍 In Detail
 
 There are two main, distinct components of `ezpz`:
 
-1. [Shell interface](#shell-interface)
-2. [Python Library](#python-library)
+1. 🐚 [Shell interface](#shell-interface)
+2. 🐍 [Python Library](#python-library)
 
 ### Shell Interface
 
-- [`bin/utils.sh`](/src/ezpz/bin/utils.sh):
-  - Provides various (`bash` / shell) helper functions to make life easy
-  - Designed to be `source`-d, e.g.
-  
-     ```bash
-     source ezpz/src/ezpz/bin/utils.sh
-     ```
-     
-  - All functions prefixed with `ezpz_`
+> [!IMPORTANT]
+> All `ezpz_*` helper functions are defined in:
+> 
+> [`ezpz/src/ezpz/bin/utils.sh`](/ezpz/src/ezpz/bin/utils.sh)
+
+- Provides various (`bash` / shell) helper functions to make life easy
+- Designed to be `source`-d, e.g.
+
+   ```bash
+   source ezpz/src/ezpz/bin/utils.sh
+   ```
+   
+- All functions prefixed with `ezpz_`
 
 To use:
 
