@@ -2,7 +2,7 @@
 
 ## 2024-11-06
 
-- [ ] Save `PBS_*` env to `~/pbs_jobenvs/${PBS_JOBID}.env` when dumping vars in [`utils.sh`](/src/ezpz/bin/utils.sh)
+- [ ] Save `PBS_*` env to `~/pbs_jobenvs/${PBS_JOBID}.env` when dumping vars in [`utils.sh`](/ezpz/src/ezpz/bin/utils.sh)
 
 ## Getting Started
 
