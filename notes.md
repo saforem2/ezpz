@@ -1,5 +1,44 @@
 # Notes
 
+## Getting Started
+
+There are two main, distinct components of `ezpz`:
+
+1. [Shell interface](#shell-interface)
+2. [Python Library](#python-library)
+
+### Shell Interface
+
+- [`bin/utils.sh`](/src/ezpz/bin/utils.sh):
+  - Provides various (`bash` / shell) helper functions to make life easy
+  - Designed to be `source`-d, e.g.
+  
+     ```bash
+     source ezpz/src/ezpz/bin/utils.sh
+     ```
+     
+  - All functions prefixed with `ezpz_`
+
+To use:
+
+```bash
+git clone https://github.com/saforem2/ezpz deps/ezpz
+# on ALCF:
+export PBS_O_WORKDIR=$(pwd)
+source deps/ezpz/src/ezpz/bin/utils.sh
+ezpz_setup_python
+# from a compute node:
+ezpz_setup_job
+```
+
+### Python Library
+
+WIP
+
+## Old
+
+<details closed><summary>Old:</summary>
+
 ## Startup Files
 
 In your `{.bashrc,.zshrc}`, you can:
@@ -466,3 +505,5 @@ $ setup_alcf
     • To launch across all available GPUs, use: launch
       launch = mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16
 ```
+
+</details>
