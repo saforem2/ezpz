@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ezpz"
 dynamic = ["version"]
 requires-python = ">=3.8"
-license = ""
+license = {file = "LICENSE"}
 keywords = []
 readme = "./docs/README.md"
 description = 'Distributed Training, ezpz.'
