@@ -326,8 +326,10 @@ ezpz_setup_conda_frontier() {
 ezpz_setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        module use /soft/preview-modulefiles/24.086.0
-        module load frameworks/2024.04.15.002.lua
+        module use /opt/aurora/24.180.1/modulefiles
+        module load frameworks/2024.2.1_u1
+        # module use /soft/preview-modulefiles/24.086.0
+        # module load frameworks/2024.04.15.002.lua
         # module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
         # source "${WORKING_DIR}/ALCF/sunspot-env-2024-q2.sh"
     fi
