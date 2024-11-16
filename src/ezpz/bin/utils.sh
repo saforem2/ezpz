@@ -135,7 +135,8 @@ ezpz_qsme_running() {
 #
 ###############################
 ezpz_get_jobid_from_hostname() {
-    jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
+    # jobid=$(ezpz_qsme_running | sed 's/\/.*\ /\ /g' | sed 's/\/.*//g' | grep "$(hostname | sed 's/\..*//g')" | awk '{print $1}')
+    jobid=$(ezpz_qsme_running | grep "^[0-9]" | grep $(hostname) | awk '{print $1}')
     echo "${jobid}"
 }
 
