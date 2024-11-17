@@ -219,7 +219,7 @@ ezpz_get_machine_name() {
     elif [[ $(hostname) == sophia* ]]; then
         machine="sophia"
     elif [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
-        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+        if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
             machine="sirius"
         else
             machine="polaris"
