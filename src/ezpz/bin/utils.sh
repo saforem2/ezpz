@@ -135,7 +135,8 @@ ezpz_qsme_running() {
 #
 ###############################
 ezpz_get_jobid_from_hostname() {
-    jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
+    # jobid=$(ezpz_qsme_running | sed 's/\/.*\ /\ /g' | sed 's/\/.*//g' | grep "$(hostname | sed 's/\..*//g')" | awk '{print $1}')
+    jobid=$(ezpz_qsme_running | grep "^[0-9]" | grep $(hostname) | awk '{print $1}')
     echo "${jobid}"
 }
 
@@ -218,7 +219,7 @@ ezpz_get_machine_name() {
     elif [[ $(hostname) == sophia* ]]; then
         machine="sophia"
     elif [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
-        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+        if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
             machine="sirius"
         else
             machine="polaris"
@@ -536,15 +537,18 @@ ezpz_get_dist_launch_cmd() {
         echo "Received: $#"
     fi
     hf="$1"
+    mn=$(ezpz_get_machine_name)
     num_hosts=$(ezpz_get_num_hosts "${hf}")
     num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
     num_gpus="$((num_hosts * num_gpus_per_host))"
-
     num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
     num_cpus_per_host=$((num_cores_per_host / 2))
     depth=$((num_cpus_per_host / num_gpus_per_host))
-    dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
-    mn=$(ezpz_get_machine_name)
+    if [[ "${mn}" == "sophia" ]]; then
+        dist_launch_cmd="mpirun -n ${num_gpus} -N ${num_gpus_per_host} --hostfile ${hostfile} -x PATH -x LD_LIBRARY_PATH"
+    else
+        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+    fi
     if [[ "${mn}" == "aurora" ]]; then
         dist_launch_cmd="${dist_launch_cmd} --no-vni"
     fi
@@ -1129,17 +1133,15 @@ ezpz_get_pbs_env() {
         jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     fi
     printf "\n"
-    printf "  [${BLUE}ezpz_get_pbs_env${RESET}]: Caught ${BLUE}%s${RESET} arguments\n" "$#"
-    printf "      • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
-    printf "      • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
+    printf "[${BLUE}ezpz_get_pbs_env${RESET}]: Caught ${BLUE}%s${RESET} arguments\n" "$#"
+    printf "    • hostfile: ${BLUE}%s${RESET}\n" "${hostfile}"
+    printf "    • jobenv_file: ${BLUE}%s${RESET}\n" "${jobenv_file}"
     if [[ $(hostname) == x3* || $(hostname) == x1* || $(hostname) == x4* || $(hostname) == sophia* ]]; then
         if [[ -n $(/bin/cat "${hostfile:-}" | grep "$(hostname)") ]]; then
             num_hosts=$(ezpz_get_num_hosts "${hostfile}")
             num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
             num_gpus="$((num_hosts * num_gpus_per_host))"
-            # ezpz_get_dist_launch_cmd() {
             dist_launch=$(ezpz_get_dist_launch_cmd "${hostfile}")
-            # dist_launch="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d 16"
             export DIST_LAUNCH="${dist_launch}"
             export ezlaunch="${DIST_LAUNCH}"
         else
@@ -1327,6 +1329,11 @@ ezpz_setup_job() {
             fi
         fi
     fi
+}
+
+
+ezpz_setup_env() {
+    ezpz_setup_python && ezpz_setup_job
 }
 
 ###############################################
