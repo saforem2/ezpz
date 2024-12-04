@@ -3,32 +3,27 @@ ezpz/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-# import socket
-
-# if "x3" in socket.gethostname():
-from mpi4py import MPI
-
 import logging
 import logging.config
 import os
 import re
+from typing import Optional
+import warnings
+
 import yaml
 
-from typing import Optional
+from mpi4py import MPI
 
 from ezpz import dist
 from ezpz import log
-
-from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
 from ezpz import configs
-
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
     CONF_DIR,
-    DS_CONFIG_PATH,
     DS_CONFIG_JSON,
+    DS_CONFIG_PATH,
     DS_CONFIG_YAML,
     FRAMEWORKS,
     GETJOBENV,
@@ -40,8 +35,8 @@ from ezpz.configs import (
     QUARTO_OUTPUTS_DIR,
     SAVEJOBENV,
     SCHEDULERS,
-    UTILS,
     TrainConfig,
+    UTILS,
     command_exists,
     get_logging_config,
     get_scheduler,
@@ -82,10 +77,7 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.utils import grab_tensor
-
-# from ezpz.jobs import loadjobenv, savejobenv
-# from ezpz import jobs
+from ezpz.history import History, StopWatch, format_pair, summarize_dict
 from ezpz.log import get_file_logger, get_logger
 from ezpz.log.config import NO_COLOR, STYLES
 from ezpz.log.console import (
@@ -98,13 +90,6 @@ from ezpz.log.console import (
     to_bool,
 )
 from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.history import (
-    format_pair,
-    summarize_dict,
-    StopWatch,
-    History,
-    # BaseHistory,
-)
 from ezpz.log.style import (
     BEAT_TIME,
     COLORS,
@@ -117,7 +102,9 @@ from ezpz.log.style import (
     print_config,
     printarr,
 )
+from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
+from ezpz.utils import grab_tensor
 
 try:
     import wandb  # pyright: ignore
@@ -145,11 +132,18 @@ PLAIN = os.environ.get(
     ),
 )
 if (not PLAIN) and TERM not in ["dumb", "unknown"]:
-    log_config = logging.config.dictConfig(get_logging_config())
+    try:
+        log_config = logging.config.dictConfig(get_logging_config())
+    except (ValueError, TypeError, AttributeError) as e:
+        warnings.warn(f"Failed to configure logging: {e}")
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
+        )
 else:
     logging.basicConfig(
-        format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
         level=logging.INFO,
+        format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
     )
 
 
