@@ -3,38 +3,27 @@ ezpz/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-import socket
-if 'x3' in socket.gethostname():
-    from mpi4py import MPI
-
 import logging
 import logging.config
 import os
 import re
-
-# import socket
 from typing import Optional
-# from typing import Union
+import warnings
 
-# import numpy as np
-# import rich
-# from rich.console import Console
-# from rich.logging import RichHandler
+import yaml
+
+from mpi4py import MPI
 
 from ezpz import dist
 from ezpz import log
-
-# from ezpz import plot
-from ezpz.plot import tplot, tplot_dict
 from ezpz import profile
 from ezpz import configs
-# from ezpz import utils
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
     CONF_DIR,
-    DS_CONFIG_PATH,
     DS_CONFIG_JSON,
+    DS_CONFIG_PATH,
     DS_CONFIG_YAML,
     FRAMEWORKS,
     GETJOBENV,
@@ -46,8 +35,8 @@ from ezpz.configs import (
     QUARTO_OUTPUTS_DIR,
     SAVEJOBENV,
     SCHEDULERS,
-    UTILS,
     TrainConfig,
+    UTILS,
     command_exists,
     get_logging_config,
     get_scheduler,
@@ -88,12 +77,9 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.utils import grab_tensor
-
-# from ezpz.jobs import loadjobenv, savejobenv
-# from ezpz import jobs
+from ezpz.history import History, StopWatch, format_pair, summarize_dict
 from ezpz.log import get_file_logger, get_logger
-from ezpz.log.config import DEFAULT_STYLES, NO_COLOR, STYLES
+from ezpz.log.config import NO_COLOR, STYLES
 from ezpz.log.console import (
     Console,
     get_console,
@@ -104,13 +90,6 @@ from ezpz.log.console import (
     to_bool,
 )
 from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.history import (
-    format_pair,
-    summarize_dict,
-    StopWatch,
-    History,
-    # BaseHistory,
-)
 from ezpz.log.style import (
     BEAT_TIME,
     COLORS,
@@ -123,7 +102,9 @@ from ezpz.log.style import (
     print_config,
     printarr,
 )
+from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
+from ezpz.utils import grab_tensor
 
 try:
     import wandb  # pyright: ignore
@@ -140,8 +121,6 @@ except Exception:
 #     loader.exec_module(module)
 #     return module
 
-from mpi4py import MPI
-
 TERM = os.environ.get("TERM", None)
 PLAIN = os.environ.get(
     "NO_COLOR",
@@ -152,15 +131,24 @@ PLAIN = os.environ.get(
         ),
     ),
 )
-if not PLAIN and TERM not in ["dumb", "unknown"]:
+if (not PLAIN) and TERM not in ["dumb", "unknown"]:
     try:
         log_config = logging.config.dictConfig(get_logging_config())
-    except Exception:
-        pass
+    except (ValueError, TypeError, AttributeError) as e:
+        warnings.warn(f"Failed to configure logging: {e}")
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
+        )
 else:
-    print("Disabling color from logs!")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
+    )
+
 
 logger = logging.getLogger(__name__)
+# logger.setLevel("INFO")
 logging.getLogger("sh").setLevel("WARNING")
 
 
@@ -201,7 +189,7 @@ __all__ = [
     "CONF_DIR",
     "Console",
     "CustomLogging",
-    "DEFAULT_STYLES",
+    # "DEFAULT_STYLES",
     "DS_CONFIG_PATH",
     "DS_CONFIG_JSON",
     "DS_CONFIG_YAML",
@@ -221,7 +209,6 @@ __all__ = [
     "SCHEDULERS",
     "STYLES",
     "UTILS",
-    "BaseHistory",
     "History",
     "PyInstrumentProfiler",
     "StopWatch",
@@ -292,7 +279,7 @@ __all__ = [
     "tplot_dict",
     "timeitlogit",
     "to_bool",
-    "utils",
+    # "utils",
 ]
 
 
@@ -321,7 +308,9 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
     return get_console()
 
 
-def get_rich_logger(name: Optional[str] = None, level: str = "INFO") -> logging.Logger:
+def get_rich_logger(
+    name: Optional[str] = None, level: str = "INFO"
+) -> logging.Logger:
     from ezpz.log.handler import RichHandler
 
     # log: logging.Logger = get_logger(name=name, level=level)
@@ -364,7 +353,9 @@ def get_rich_logger(name: Optional[str] = None, level: str = "INFO") -> logging.
 #     return log
 
 
-def get_enrich_logging_config_as_yaml(name: str = "enrich", level: str = "INFO") -> str:
+def get_enrich_logging_config_as_yaml(
+    name: str = "enrich", level: str = "INFO"
+) -> str:
     return rf"""
     ---
     # version: 1
@@ -386,8 +377,6 @@ def get_logger_new(
     name: str,
     level: str = "INFO",
 ):
-    import yaml
-
     config = yaml.safe_load(
         get_enrich_logging_config_as_yaml(name=name, level=level),
     )
