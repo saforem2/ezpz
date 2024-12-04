@@ -152,15 +152,55 @@ PLAIN = os.environ.get(
         ),
     ),
 )
-if not PLAIN and TERM not in ["dumb", "unknown"]:
-    try:
-        log_config = logging.config.dictConfig(get_logging_config())
-    except Exception:
-        pass
+COLORFUL = not PLAIN
+# if not PLAIN and TERM not in ["dumb", "unknown"]:
+if COLORFUL and TERM not in ["dumb", "unknown"]:
+    # try:
+    log_config = logging.config.dictConfig(get_logging_config())
+    # except Exception:
+        # pass
 else:
+    logging.basicConfig(
+        format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s',
+        level=logging.INFO
+    )
     print("Disabling color from logs!")
 
+# LOGGING_CONFIG = { 
+#     'version': 1,
+#     # 'disable_existing_loggers': True,
+#     'formatters': {
+#         'standard': {
+#             'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+#         },
+#     },
+#     # 'handlers': {
+#     #     'default': {
+#     #         'level': 'INFO',
+#     #         'formatter': 'standard',
+#     #         'class': 'logging.StreamHandler',
+#     #         'stream': 'ext://sys.stdout',  # Default is stderr
+#     #     },
+#     # },
+#     'loggers': {
+#         '': {  # root logger
+#             # 'handlers': ['default'],
+#             'level': 'INFO',
+#             # 'propagate': False
+#         },
+#         # '__main__': {  # if __name__ == '__main__'
+#         #     'handlers': ['default'],
+#         #     'level': 'DEBUG',
+#         #     'propagate': False
+#         # },
+#     }
+# }
+# log_config = logging.config.dictConfig(LOGGING_CONFIG)
+
+
 logger = logging.getLogger(__name__)
+
+# logger.setLevel("INFO")
 logging.getLogger("sh").setLevel("WARNING")
 
 
