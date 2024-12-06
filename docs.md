@@ -85,8 +85,8 @@ Now, there are a few functions in particular worth elaborating on.
 |:---|:---|:---|
 | [Setup Environment](#setup-environment) | `ezpz_setup_env` | Wrapper around `ezpz_setup_python` `&&` `ezpz_setup_job` |
 | [Setup Job](#setup-job) | `ezpz_setup_job` | Determine {`NGPUS`, `NGPU_PER_HOST`, `NHOSTS`}, build `launch` command alias |
-| [Setup Python](#setup-python) | `ezpz_setup_python` | Load python modules and activate virtual environment |
-| [Setup Conda](#setup-conda) | `ezpz_setup_conda` | Identify appropriate `conda` module to load |
+| [Setup Python](#setup-python) | `ezpz_setup_python` | Wrapper around `ezpz_setup_conda` `&&` `ezpz_setup_venv_from_conda` |
+| [Setup Conda](#setup-conda) | `ezpz_setup_conda` | Find and activate appropriate `conda` module to load[^2] |
 | [Setup Virtual Environment](#setup-virtual-environment) | `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the virtual env located in `venvs/${CONDA_NAME}/` |
 
 Table 1: Shell Functions
@@ -662,7 +662,7 @@ This will:
 
     How this is done, in practice, varies from machine to machine:
 
-    - **ALCF**[^2]: Automatically load the most recent `conda` module
+    - **ALCF**[^3]: Automatically load the most recent `conda` module
       and activate the base environment.
 
     - **Frontier**: Load the appropriate AMD modules (e.g. `rocm`,
@@ -734,7 +734,7 @@ depend on the job scheduler in use.
 To identify where we are, we look at our `$(hostname)` and see if we’re
 running on one of the known machines:
 
-- **ALCF**[^3]: Using PBS Pro via `qsub` and `mpiexec` / `mpirun`.
+- **ALCF**[^4]: Using PBS Pro via `qsub` and `mpiexec` / `mpirun`.
   - `x4*`: **Aurora**
   - **Aurora**: `x4*` (or `aurora*` on login nodes)
   - **Sunspot**: `x1*` (or `uan*`)
@@ -786,7 +786,7 @@ running on one of the known machines:
 
 ## 🐍 Python Library
 
-To install[^4]:
+To install[^5]:
 
 ``` bash
 python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --require-virtualenv
@@ -912,11 +912,14 @@ python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --requ
     --More--
     ```
 
-[^2]: Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}
+[^2]: This is system dependent. See
+    [ezpz_setup_conda](../../src/ezpz/bin/utils.sh)
 
-[^3]: At ALCF, if our `$(hostname)` starts with `x*`, we’re on a compute
+[^3]: Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}
+
+[^4]: At ALCF, if our `$(hostname)` starts with `x*`, we’re on a compute
     node.
 
-[^4]: Note the `--require-virtualenv` isn’t *strictly* required, but I
+[^5]: Note the `--require-virtualenv` isn’t *strictly* required, but I
     highly recommend to always try and work within a virtual
     environment, when possible.
