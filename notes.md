@@ -1,5 +1,9 @@
 # Notes
 
+## 2024-11-06
+
+- [ ] Save `PBS_*` env to `~/pbs_jobenvs/${PBS_JOBID}.env` when dumping vars in [`utils.sh`](/ezpz/src/ezpz/bin/utils.sh)
+
 ## Getting Started
 
 There are two main, distinct components of `ezpz`:
