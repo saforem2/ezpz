@@ -1,4 +1,8 @@
-# 🍋 <code>ezpz</code> @ ALCF
+# 🍋 `ezpz`
+
+> *Work smarter, not harder*
+
+[Sam Foreman](https://samforeman.me)
 
 <details closed><summary>Contents:</summary></details>
 
@@ -13,10 +17,6 @@
 </details>
 
 ## Overview
-
-> *Work smarter, not harder*.
-
-[Sam Foreman](https://samforeman.me)
 
 > [!IMPORTANT]
 > The documentation below is a work in progress.
@@ -53,11 +53,11 @@ We provide a completely (self-contained) example in
 The Shell Utilities can be roughly broken up further into two main
 components
 
-1.  [Setup Environment](#setup-environment):
-    1.  [Setup Python](#setup-python):
-        1.  [Setup Conda](#setup-conda)
-        2.  [Setup Virtual Environment](#setup-virtual-environment)
-    2.  [Setup Job](#setup-job):
+1. 🏞️ [Setup Environment](#setup-environment):
+    1.  🛠️ [Setup Python](#setup-python):
+        1.  🐍 [Setup Conda](#setup-conda)
+        2.  👻 [Setup Virtual Environment](#setup-virtual-environment)
+    2. 💼 [Setup Job](#setup-job):
 
 We provide a variety of helper functions designed to make your life
 easier when working with job schedulers (e.g. `PBS Pro` @ ALCF or
@@ -75,7 +75,7 @@ export PBS_O_WORKDIR=$(pwd) # if on ALCF
 source /dev/stdin <<< $(curl 'https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh')
 ```
 
-#### ⚙️ Setup Environment
+#### 🏞️  Setup Environment
 
 We would like to write our application in such a way that it is able to
 take full advantage of the resources allocated by the job scheduler.

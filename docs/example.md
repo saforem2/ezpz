@@ -1,4 +1,4 @@
-## 📝 Example
+# 📝 Example
 
 1.  Clone repo:
 
