@@ -89,6 +89,8 @@ Now, there are a few functions in particular worth elaborating on.
 | [Setup Conda](#setup-conda) | `ezpz_setup_conda` | Find and activate appropriate `conda` module to load[^2] |
 | [Setup Virtual Environment](#setup-virtual-environment) | `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the virtual env located in `venvs/${CONDA_NAME}/` |
 
+Shell Functions
+
 Table 1: Shell Functions
 
 </div>
@@ -675,18 +677,19 @@ This will:
       `micromamba` executable, and if found, use that to activate the
       base environment.
 
-    > [!TIP]
-    >
-    > ### Using your own `conda`
-    >
-    > If you are already in a conda environment when calling
-    > `ezpz_setup_python` then it will try and use this instead.
-    >
-    > For example, if you have a custom `conda` env at
-    > `~/conda/envs/custom`, then this would bootstrap the `custom`
-    > conda environment and create the virtual env in `venvs/custom/`
-
 <!-- -->
+
+> [!TIP]
+>
+> ### Using your own `conda`
+>
+> If you are already in a conda environment when calling
+> `ezpz_setup_python` then it will try and use this instead.
+>
+> For example, if you have a custom `conda` env at
+> `~/conda/envs/custom`, then this would bootstrap the `custom`
+> conda environment and create the virtual env in `venvs/custom/`
+
 
 2.  Build (or activate, if found) a virtual environment on top of (the
     active) base `conda` environment.
@@ -913,7 +916,7 @@ python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --requ
     ```
 
 [^2]: This is system dependent. See
-    [ezpz_setup_conda](../../src/ezpz/bin/utils.sh)
+    [`ezpz_setup_conda`](../../src/ezpz/bin/utils.sh)
 
 [^3]: Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}
 
@@ -923,3 +926,4 @@ python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --requ
 [^5]: Note the `--require-virtualenv` isn’t *strictly* required, but I
     highly recommend to always try and work within a virtual
     environment, when possible.
+
