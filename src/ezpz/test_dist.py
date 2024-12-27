@@ -6,19 +6,22 @@ test_dist.py
   $ source ezpz/src/ezpz/bin/savejobenv
   $ BACKEND=DDP launch python3 ezpz_ddp.py
 """
+
 import time
+import argparse
+
 T0 = time.perf_counter()  # start time
 
-import os  # noqa E402
-import logging  # noqa: E402
-from typing import Optional  # noqa: E402
-from pathlib import Path  # noqa: E402
+import os
+import logging
+from typing import Optional
+# from pathlib import Path
 
-import torch  # noqa: E402
-import torch.distributed as tdist  # noqa: E402
-from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
+import torch
+import torch.distributed as tdist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-import ezpz as ez  # noqa: E402
+import ezpz
 from ezpz.history import History, summarize_dict
 
 try:
@@ -34,7 +37,7 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 T1 = time.perf_counter()  # import time = (T1 - T0)
 # backend can be any of DDP, deespepeed, horovod
-RANK = ez.setup_torch(
+RANK = ezpz.setup_torch(
     backend=(BACKEND := os.environ.get("BACKEND", "DDP")),
     port=(port := os.environ.get("MASTER_PORT", "29500")),
 )
@@ -43,9 +46,9 @@ TIMERS = {
     "timers/ezpz.setup_torch": T2 - T1,
     "timers/imports": T1 - T0,
 }
-DEVICE_TYPE = ez.get_torch_device()
-WORLD_SIZE = ez.get_world_size()
-LOCAL_RANK = ez.get_local_rank()
+DEVICE_TYPE = ezpz.get_torch_device()
+WORLD_SIZE = ezpz.get_world_size()
+LOCAL_RANK = ezpz.get_local_rank()
 DEVICE_ID = f"{DEVICE_TYPE}:{LOCAL_RANK}"
 
 logger = logging.getLogger(__name__)
@@ -96,13 +99,13 @@ CONFIG = {
 
 run = None
 if wandb is not None and not WANDB_DISABLED and RANK == 0:
-    run = ez.setup_wandb(project_name="ezpz.test_dist")
+    run = ezpz.setup_wandb(project_name="ezpz.test_dist")
     assert wandb is not None and run is wandb.run and wandb.run is not None
     wandb.run.config.update(CONFIG)
 
 if RANK == 0:
-    # ez.dist.log_dict_as_bulleted_list(timers_import, name="timers_import")
-    ez.dist.log_dict_as_bulleted_list(CONFIG, name="CONFIG")
+    # ezpz.dist.log_dict_as_bulleted_list(timers_import, name="timers_import")
+    ezpz.dist.log_dict_as_bulleted_list(CONFIG, name="CONFIG")
 
 if WORLD_SIZE > 1:
     tdist.barrier()
@@ -151,8 +154,11 @@ def build_model_and_optimizer() -> ModelOptimizerPair:
         if WORLD_SIZE > 1:
             model = DDP(model, device_ids=[])
     elif BACKEND.lower() in ("ds", "deepspeed"):
-        import deepspeed
-        import argparse
+        try:
+            import deepspeed  # type:ignore
+        except (ImportError, ModuleNotFoundError):
+            logger.error("deepspeed not installed")
+            raise
 
         parser = argparse.ArgumentParser(description="My training script.")
         parser.add_argument(
@@ -165,26 +171,17 @@ def build_model_and_optimizer() -> ModelOptimizerPair:
         # Include DeepSpeed configuration arguments
         parser = deepspeed.add_config_arguments(parser)
         cmd_args = parser.parse_args()
-        logger.info(f"{cmd_args=}")
         model, optimizer, *_ = deepspeed.initialize(
             args=cmd_args,
             model=model,
             optimizer=optimizer,
         )
+        logger.info(f"{cmd_args=}")
     return model, optimizer
 
 
 def main():
-    history = History(
-        keys=[
-            "train/dt",
-            "train/dtf",
-            "train/dtb",
-            "train/loss",
-            "train/iter",
-            "train/sps",
-        ],
-    )
+    history = History()
     T3 = time.perf_counter()
     TIMERS["timers/init_to_first_step"] = T3 - T0
 
@@ -211,17 +208,13 @@ def main():
         t2 = time.perf_counter()
         optimizer.zero_grad()
         if iter > WARMUP and iter % LOG_FREQ == 0:
-            dt = t2 - t0
-            dtf = t1 - t0
-            dtb = t2 - t1
-            sps = BATCH_SIZE / dt
             _metrics = {
                 "train/iter": iter,
-                "train/dt": dt,
-                "train/dtf": dtf,
-                "train/dtb": dtb,
+                "train/dt": (dt := (t2 - t0)),
+                "train/dtf": (t1 - t0),
+                "train/dtb": (t2 - t1),
                 "train/loss": loss,
-                "train/sps": sps,
+                "train/sps": (BATCH_SIZE / dt),
             }
             _ = history.update(_metrics)
             summary = summarize_dict(_metrics)
@@ -229,43 +222,26 @@ def main():
     if RANK == 0:
         import matplotlib.pyplot as plt
         import ambivalent
-        plt.style.use(ambivalent.STYLES['ambivalent'])
+
+        plt.style.use(ambivalent.STYLES["ambivalent"])
         dataset = history.finalize()
         logger.info(f"{dataset=}")
-
-
-        # outdir = Path(os.getcwd()).joinpath("test-dist-plots")
-        # from ezpz import OUTPUTS_DIR
-        # outdir = OUTPUTS_DIR.joinpath("ezpz", "test_dist", "plots")
-        # tplotdir = outdir.joinpath("tplot")
-        # mplotdir = outdir.joinpath("mplot")
-        # tplotdir.mkdir(exist_ok=True, parents=True)
-        # mplotdir.mkdir(exist_ok=True, parents=True)
-        #
-        # import matplotlib.pyplot as plt
-        # import ambivalent
-        #
-        # plt.style.use(ambivalent.STYLES["ambivalent"])
-        #
-        # dataset = history.plot_all(outdir=mplotdir)
-        # _ = history.tplot_all(
-        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
-        # )
-        # logger.info(f"{dataset=}")
     if WORLD_SIZE > 1:
         tdist.barrier()
 
 
 if __name__ == "__main__":
     import sys
+
     # Wrap training loop in pyinstrument profiler context block
-    with ez.profile.get_context_manager(rank=RANK, strict=False):
+    with ezpz.profile.get_context_manager(rank=RANK, strict=False):
         main()
     T4 = time.perf_counter()
     runtime = torch.tensor(T4 - T0)
     # tdist.all_reduce(runtime)
     if BACKEND.lower() in ["ds", "deepspeed"]:
-        import deepspeed.comm as dscomm
+        import deepspeed.comm as dscomm  # type:ignore
+
         dscomm.log_summary()
     if not WANDB_DISABLED and RANK == 0 and wandb is not None:
         if (run := getattr(wandb, "run", None)) is not None and run is wandb.run:
