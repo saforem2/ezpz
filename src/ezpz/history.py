@@ -13,12 +13,12 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Union
-from collections.abc import Iterable
+# from collections.abc import Iterable
 
 # from ezpz import get_logging_config
 import ezpz
 from ezpz.configs import PathLike
-from ezpz.plot import plot_dataset, tplot_dict
+from ezpz.plot import plot_dataset
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 import matplotlib.pyplot as plt
@@ -26,9 +26,9 @@ import numpy as np
 import torch
 import wandb
 import xarray as xr
-from jaxtyping import Array, Float, Scalar, PyTree, ScalarLike
+from jaxtyping import ScalarLike
 
-from ezpz.utils import grab_tensor
+# from ezpz.utils import grab_tensor
 import ezpz.plot as ezplot
 
 RANK = ez.get_rank()
@@ -444,7 +444,7 @@ class History:
         if logfreq is not None:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
-            _ = ax.set_xticklabels(
+            _ = ax.set_xticklabels(   # type: ignore
                 [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
@@ -612,7 +612,7 @@ class History:
             # assert arr is not None and len(arr) > 1
             arr_len = 0
             try:
-                arr_len = len(arr)
+                arr_len = len(arr)  # type:ignore
             except Exception as exc:
                 log.exception(exc)
             # if len(arr) > 1:
