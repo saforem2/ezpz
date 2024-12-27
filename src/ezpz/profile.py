@@ -38,6 +38,7 @@ import time
 import logging
 import datetime
 
+import ezpz
 from pathlib import Path
 from typing import Optional
 
@@ -51,12 +52,16 @@ def get_context_manager(
         outdir: Optional[str] = None,
         strict: Optional[bool] = True,
 ) -> AbstractContextManager:
+    d = ezpz.OUTPUTS_DIR if outdir is None else outdir
+    fp = Path(d)
+    fp = fp.joinpath("ezpz", "pyinstrument_profiles")
+
     if strict:
         if os.environ.get("PYINSTRUMENT_PROFILER", None) is not None:
-            return PyInstrumentProfiler(rank=rank, outdir=outdir)
+            return PyInstrumentProfiler(rank=rank, outdir=fp.as_posix())
         return nullcontext()
     if rank is None or rank == 0:
-        return PyInstrumentProfiler(rank=rank, outdir=outdir)
+        return PyInstrumentProfiler(rank=rank, outdir=fp.as_posix())
     # if rank == 0:
     #     return PyInstrumentProfiler(rank=rank, outdir=outdir)
     return nullcontext()
@@ -90,7 +95,8 @@ class PyInstrumentProfiler:
                 else None
             )
         self._start = time.perf_counter_ns()
-        outdir = os.getcwd() if outdir is None else outdir
+        # outdir = os.getcwd() if outdir is None else outdir
+        outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir
         self.outdir = Path(outdir).joinpath("ezpz_pyinstrument_profiles")
         # self.outdir = Path(outdir) if outdir is None else Path(outdir)
         self.outdir.mkdir(exist_ok=True, parents=True)
@@ -100,7 +106,7 @@ class PyInstrumentProfiler:
         if self.profiler is not None:
             self.profiler.start()
 
-    def __exit__(self, type, value, traceback):  # pyright: ignore
+    def __exit__(self, type, value, traceback):  # noqa
         dtpyinstrument = (time.perf_counter_ns() - self._start) / (10 ** 9)
         if self.profiler is not None:
             self.profiler.stop()
