@@ -8,7 +8,7 @@ dynamic = ["version"]
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 keywords = []
-readme = "./docs/README.md"
+readme = "README.md"
 description = 'Distributed Training, ezpz.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 dependencies = [
