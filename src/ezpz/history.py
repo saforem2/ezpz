@@ -16,6 +16,7 @@ from typing import Any, Optional, Union
 from collections.abc import Iterable
 
 # from ezpz import get_logging_config
+import ezpz
 from ezpz.configs import PathLike
 from ezpz.plot import plot_dataset, tplot_dict
 from ezpz.utils import save_dataset, grab_tensor
@@ -120,11 +121,13 @@ class StopWatch(ContextDecorator):
     def __exit__(self, t, v, traceback):
         dt = time.perf_counter() - self.time
         # if self.wbtag is not None and wandb.run is not None:
-        if len(self.data) > 0 and wandb.run is not None:
+        # if len(self.data) > 0 and wandb.run is not None:
+        if len(self.data) > 0 and (wbrun := getattr(wandb, "run", None)) is not None:
             self.data |= {f"{self.wbtag}/dt": dt}
-            wandb.run.log({self.prefix: self.data}, commit=self.commit)
+            wbrun.log({self.prefix: self.data}, commit=self.commit)
         if self.log_output:
             log.info(f"{self.msg} took " f"{dt:.3f} seconds")
+
 
 class History:
     def __init__(self, keys: Optional[list[str]] = None) -> None:
@@ -248,6 +251,7 @@ class History:
 
         if len(arr.shape) == 2:
             import seaborn as sns
+
             _ = subplots_kwargs.pop("constrained_layout", True)
             figsize = (3 * figsize[0], 1.5 * figsize[1])
 
@@ -348,7 +352,7 @@ class History:
             #             dpi=400, bbox_inches='tight')
             outfile = Path(outdir).joinpath(f"{key}.svg")
             if outfile.is_file():
-                tstamp = ezplot.get_timestamp("%Y-%m-%d-%H%M%S")
+                tstamp = ezpz.get_timestamp()
                 pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{key}-{tstamp}.png")
@@ -488,6 +492,7 @@ class History:
         plot_kwargs: Optional[dict[str, Any]] = None,
     ):
         import seaborn as sns
+
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         assert len(xarr.shape) == 2
@@ -594,7 +599,7 @@ class History:
         for idx, (key, val) in enumerate(dataset.items()):
             if xkey is not None and key == xkey:
                 continue
-            if callable(getattr(val, 'to_numpy', None)):
+            if callable(getattr(val, "to_numpy", None)):
                 arr = val.to_numpy()
             else:
                 try:
@@ -605,11 +610,17 @@ class History:
                 finally:
                     arr = grab_tensor(val)
             # assert arr is not None and len(arr) > 1
-            if len(arr) > 1:
+            arr_len = 0
+            try:
+                arr_len = len(arr)
+            except Exception as exc:
+                log.exception(exc)
+            # if len(arr) > 1:
+            if arr_len > 1:
                 if xkey is None:
-                    xarr = np.arange(len(arr))
+                    xarr = np.arange(arr_len)
                 else:
-                    xval = dataset.get(xkey.replace('/', '_'))
+                    xval = dataset.get(xkey.replace("/", "_"))
                     assert xval is not None
                     xarr = xval.to_numpy()
                 assert xarr is not None
@@ -631,7 +642,7 @@ class History:
                 #     outfile=Path(outdir).joinpath(f"{key}.txt").as_posix(),
                 # )
             else:
-                log.warning(f'{key}: {len(arr)=}')
+                log.warning(f"{key}: {arr_len=}")
 
     def plot_all(
         self,
@@ -641,12 +652,14 @@ class History:
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
+        dataset: Optional[xr.Dataset] = None,
     ):
         import seaborn as sns
+
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
 
-        dataset = self.get_dataset()
+        dataset = self.get_dataset() if dataset is None else dataset
 
         _ = ezplot.make_ridgeplots(
             dataset,
@@ -711,7 +724,7 @@ class History:
 
     def to_DataArray(
         self,
-        x: Union[list, np.ndarray],
+        x: Union[list, np.ndarray, torch.Tensor],
         therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
         try:
@@ -751,7 +764,7 @@ class History:
 
     def get_dataset(
         self,
-        data: Optional[dict[str, Union[list, np.ndarray]]] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         therm_frac: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
@@ -770,11 +783,19 @@ class History:
         outdir: PathLike,
         fname: str = "dataset",
         use_hdf5: bool = True,
-        data: Optional[dict[str, Union[list, np.ndarray]]] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        dataset: Optional[xr.Dataset] = None,
         **kwargs,
     ) -> Path:
-        data = self.history if data is None else data
-        dataset = self.get_dataset(data)
+        if dataset is None:
+            if data is None:
+                dataset = self.get_dataset(self.history)
+            else:
+                dataset = self.get_dataset(data)
+        # data = self.history if data is None else data
+        # dataset = self.get_dataset(data) if dataset is None else dataset
+        # if dataset is None:
+        #     dataset = self.get_dataset(data)
         return save_dataset(
             dataset,
             outdir=outdir,
@@ -782,3 +803,61 @@ class History:
             use_hdf5=use_hdf5,
             **kwargs,
         )
+
+    def finalize(
+        self,
+        outdir: Optional[PathLike] = None,
+        dataset_fname: Optional[str] = None,
+        num_chains: int = 128,
+        therm_frac: float = 0.0,
+        save: bool = True,
+        plot: bool = True,
+        append_tplot: bool = True,
+        title: Optional[str] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        dataset: Optional[xr.Dataset] = None,
+        xkey: Optional[str] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+    ) -> xr.Dataset:
+        if dataset is None:
+            if data is not None:
+                dataset = self.get_dataset(data)
+            else:
+                dataset = self.get_dataset(self.history)
+        # dataset = self.get_dataset() if dataset is None else dataset
+        outdir = ezpz.OUTPUTS_DIR if outdir is None else Path(outdir)
+        if plot:
+            plotdir = outdir.joinpath("outputs")
+            tplotdir = plotdir.joinpath("tplot")
+            mplotdir = plotdir.joinpath("mplot")
+            tplotdir.mkdir(exist_ok=True, parents=True)
+            mplotdir.mkdir(exist_ok=True, parents=True)
+            _ = self.plot_all(
+                dataset=dataset,
+                outdir=mplotdir,
+                num_chains=num_chains,
+                therm_frac=therm_frac,
+                title=title,
+                plot_kwargs=plot_kwargs,
+                subplots_kwargs=subplots_kwargs,
+            )
+            _ = self.tplot_all(
+                dataset=dataset,
+                outdir=tplotdir,
+                append=append_tplot,
+                xkey=xkey,
+            )
+        if save:
+            fname = 'dataset' if dataset_fname is None else dataset_fname
+            _ = self.save_dataset(dataset=dataset, outdir=outdir, fname=fname)
+        return dataset
+        # _ = history.tplot_all(
+        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
+        # )
+        # logger.info(f"{dataset=}")
+        # dataset = history.plot_all(outdir=mplotdir,
+        # _ = history.tplot_all(
+        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
+        # )
+        # logger.info(f"{dataset=}")

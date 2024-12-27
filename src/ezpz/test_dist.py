@@ -227,23 +227,31 @@ def main():
             summary = summarize_dict(_metrics)
             logger.info(summary.replace("train/", ""))
     if RANK == 0:
-        outdir = Path(os.getcwd()).joinpath("test-dist-plots")
-        tplotdir = outdir.joinpath("tplot")
-        mplotdir = outdir.joinpath("mplot")
-        outdir.mkdir(parents=True, exist_ok=True)
-        tplotdir.mkdir(exist_ok=True, parents=True)
-        mplotdir.mkdir(exist_ok=True, parents=True)
-
         import matplotlib.pyplot as plt
         import ambivalent
-
-        plt.style.use(ambivalent.STYLES["ambivalent"])
-
-        dataset = history.plot_all(outdir=mplotdir)
-        _ = history.tplot_all(
-            outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
-        )
+        plt.style.use(ambivalent.STYLES['ambivalent'])
+        dataset = history.finalize()
         logger.info(f"{dataset=}")
+
+
+        # outdir = Path(os.getcwd()).joinpath("test-dist-plots")
+        # from ezpz import OUTPUTS_DIR
+        # outdir = OUTPUTS_DIR.joinpath("ezpz", "test_dist", "plots")
+        # tplotdir = outdir.joinpath("tplot")
+        # mplotdir = outdir.joinpath("mplot")
+        # tplotdir.mkdir(exist_ok=True, parents=True)
+        # mplotdir.mkdir(exist_ok=True, parents=True)
+        #
+        # import matplotlib.pyplot as plt
+        # import ambivalent
+        #
+        # plt.style.use(ambivalent.STYLES["ambivalent"])
+        #
+        # dataset = history.plot_all(outdir=mplotdir)
+        # _ = history.tplot_all(
+        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
+        # )
+        # logger.info(f"{dataset=}")
     if WORLD_SIZE > 1:
         tdist.barrier()
 
