@@ -36,8 +36,19 @@ GETJOBENV = BIN_DIR.joinpath("getjobenv")
 DS_CONFIG_PATH = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
-LOGS_DIR = PROJECT_DIR.joinpath("logs")
-OUTPUTS_DIR = HERE.joinpath("outputs")
+# LOGS_DIR = PROJECT_DIR.joinpath("logs")
+WORKING_DIR = Path(
+    os.environ.get(
+        "PBS_O_WORKDIR",
+        os.environ.get(
+            "SLURM_SUBMIT_DIR",
+            os.getcwd()
+        )
+    )
+)
+LOGS_DIR = WORKING_DIR.joinpath("logs")
+OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
+# OUTPUTS_DIR = HERE.joinpath("outputs")
 QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 
 CONF_DIR.mkdir(exist_ok=True, parents=True)
@@ -76,6 +87,16 @@ def getjobenv_dep():
 def savejobenv_dep():
     print(SAVEJOBENV)
     return SAVEJOBENV
+
+
+def get_timestamp(fstr: Optional[str] = None) -> str:
+    """Get formatted timestamp."""
+    import datetime
+
+    now = datetime.datetime.now()
+    if fstr is None:
+        return now.strftime("%Y-%m-%d-%H%M%S")
+    return now.strftime(fstr)
 
 
 def cmd_exists(cmd: str) -> bool:
