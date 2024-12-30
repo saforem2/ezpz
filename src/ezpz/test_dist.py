@@ -12,15 +12,18 @@ import argparse
 
 T0 = time.perf_counter()  # start time
 
-import os
-from typing import Optional
+import os  # noqa: E402
+from typing import Optional  # noqa: E402
 
-import torch
-import torch.distributed as tdist
-from torch.nn.parallel import DistributedDataParallel as DDP
+import ezpz  # noqa: E402
+from ezpz import summarize_dict  # noqa: E402
+from ezpz.history import History  # noqa: E402
 
-import ezpz
-from ezpz.history import History, summarize_dict
+import torch  # noqa: E402
+import torch.distributed as tdist  # noqa: E402
+from torch.nn.parallel import DistributedDataParallel as DDP  # noqa: E402
+
+# from ezpz.history import History, summarize_dict
 
 try:
     import wandb
@@ -37,15 +40,10 @@ T1 = time.perf_counter()  # import time = (T1 - T0)
 RANK = ezpz.setup_torch(
     backend=(BACKEND := os.environ.get('BACKEND', 'DDP')),
     port=(port := os.environ.get('MASTER_PORT', '29500')),
+    model_parallel_size=(mpsize := os.environ.get('MPSIZE', '1')),
+    pipeline_length=(plength := os.environ.get('PPSIZE', '1')),
+    context_parallel_size=(cpsize := os.environ.get('CPSIZE', '1')),
 )
-
-
-from ezpz import mp
-
-_ = mp.initialize_model_parallel(model_parallel_size=1)
-DP_SIZE = mp.get_data_parallel_world_size()
-MP_SIZE = mp.get_model_parallel_world_size()
-
 
 T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
 TIMERS = {
@@ -58,9 +56,6 @@ LOCAL_RANK = ezpz.get_local_rank()
 DEVICE_ID = f'{DEVICE_TYPE}:{LOCAL_RANK}'
 
 logger = ezpz.get_logger(__name__)
-# logger = logging.getLogger(__name__)
-# # log only from RANK == 0
-# logger.setLevel('INFO') if RANK == 0 else logger.setLevel('CRITICAL')
 
 WARMUP = 0
 LOG_FREQ = int(os.environ.get('LOG_FREQ', 1))
@@ -223,15 +218,16 @@ def main():
                 'train/loss': loss,
                 'train/sps': (BATCH_SIZE / dt),
             }
-            _ = history.update(_metrics)
-            summary = summarize_dict(_metrics)
+            summary = history.update(_metrics)
             logger.info(summary.replace('train/', ''))
     if RANK == 0:
         import matplotlib.pyplot as plt
         import ambivalent
 
         plt.style.use(ambivalent.STYLES['ambivalent'])
-        dataset = history.finalize()
+        dataset = history.finalize(
+            run_name='ezpz.test_dist', dataset_fname='train'
+        )
         logger.info(f'{dataset=}')
     if WORLD_SIZE > 1:
         tdist.barrier()
