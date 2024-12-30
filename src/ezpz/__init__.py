@@ -18,6 +18,7 @@ from ezpz import dist
 from ezpz import log
 from ezpz import profile
 from ezpz import configs
+
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
@@ -122,50 +123,50 @@ except Exception:
 #     loader.exec_module(module)
 #     return module
 
-TERM = os.environ.get("TERM", None)
+TERM = os.environ.get('TERM', None)
 PLAIN = os.environ.get(
-    "NO_COLOR",
+    'NO_COLOR',
     os.environ.get(
-        "NOCOLOR",
+        'NOCOLOR',
         os.environ.get(
-            "COLOR", os.environ.get("COLORS", os.environ.get("DUMB", False))
+            'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
         ),
     ),
 )
-if (not PLAIN) and TERM not in ["dumb", "unknown"]:
+if (not PLAIN) and TERM not in ['dumb', 'unknown']:
     try:
         log_config = logging.config.dictConfig(get_logging_config())
     except (ValueError, TypeError, AttributeError) as e:
-        warnings.warn(f"Failed to configure logging: {e}")
+        warnings.warn(f'Failed to configure logging: {e}')
         logging.basicConfig(
             level=logging.INFO,
-            format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
+            format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s',
         )
 else:
     logging.basicConfig(
         level=logging.INFO,
-        format="[%(asctime)s][%(levelname)s][%(name)s]: %(message)s",
+        format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s',
     )
 
 
 logger = logging.getLogger(__name__)
 # logger.setLevel("INFO")
-logging.getLogger("sh").setLevel("WARNING")
+logging.getLogger('sh').setLevel('WARNING')
 
 
-os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 # noqa: E402
 
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
-LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL: str = os.environ.get('LOG_LEVEL', 'INFO').upper()
 LOG_FROM_ALL_RANKS = os.environ.get(
-    "LOG_FROM_ALL_RANKS", os.environ.get("LOG_FROM_ALL_RANK", False)
+    'LOG_FROM_ALL_RANKS', os.environ.get('LOG_FROM_ALL_RANK', False)
 )
 if LOG_FROM_ALL_RANKS:
     if RANK == 0:
-        logger.info("LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!")
+        logger.info('LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!')
     logger.setLevel(LOG_LEVEL)
 # logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
 # logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
@@ -180,123 +181,113 @@ if LOG_FROM_ALL_RANKS:
 #     )
 # )
 else:
-    logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
+    logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel('CRITICAL')
 
 __all__ = [
-    "BACKENDS",
-    "BEAT_TIME",
-    "BIN_DIR",
-    "COLORS",
-    "CONF_DIR",
-    "Console",
-    "CustomLogging",
+    'BACKENDS',
+    'BEAT_TIME',
+    'BIN_DIR',
+    'COLORS',
+    'CONF_DIR',
+    'Console',
+    'CustomLogging',
     # "DEFAULT_STYLES",
-    "DS_CONFIG_PATH",
-    "DS_CONFIG_JSON",
-    "DS_CONFIG_YAML",
-    "FRAMEWORKS",
-    "FluidLogRender",
-    "GETJOBENV",
-    "HERE",
-    "LOGS_DIR",
-    "NO_COLOR",
-    "OUTPUTS_DIR",
-    "PROJECT_DIR",
-    "PROJECT_DIR",
-    "PROJECT_ROOT",
-    "QUARTO_OUTPUTS_DIR",
-    "RichHandler",
-    "SAVEJOBENV",
-    "SCHEDULERS",
-    "STYLES",
-    "UTILS",
-    "History",
-    "PyInstrumentProfiler",
-    "StopWatch",
-    "TrainConfig",
-    "add_columns",
-    "build_layout",
-    "check",
-    "cleanup",
-    "command_exists",
-    "configs",
-    "dist",
-    "format_pair",
-    "flatten_dict",
-    "get_console",
-    "get_context_manager",
-    "get_cpus_per_node",
-    "get_dist_info",
-    "get_file_logger",
-    "get_gpus_per_node",
-    "get_hostname",
-    "get_hosts_from_hostfile",
-    "get_local_rank",
-    "get_logger",
-    "get_logging_config",
-    "get_machine",
-    "get_node_index",
-    "get_nodes_from_hostfile",
-    "get_num_nodes",
-    "get_rank",
-    "get_scheduler",
-    "get_scheduler",
-    "get_theme",
-    "get_timestamp",
-    "get_torch_backend",
-    "get_torch_device",
-    "get_width",
-    "get_world_size",
-    "git_ds_info",
-    "grab_tensor",
-    "include_file",
-    "init_deepspeed",
-    "init_process_group",
-    "is_interactive",
-    "log",
-    "load_ds_config",
+    'DS_CONFIG_PATH',
+    'DS_CONFIG_JSON',
+    'DS_CONFIG_YAML',
+    'FRAMEWORKS',
+    'FluidLogRender',
+    'GETJOBENV',
+    'HERE',
+    'LOGS_DIR',
+    'NO_COLOR',
+    'OUTPUTS_DIR',
+    'PROJECT_DIR',
+    'PROJECT_DIR',
+    'PROJECT_ROOT',
+    'QUARTO_OUTPUTS_DIR',
+    'RichHandler',
+    'SAVEJOBENV',
+    'SCHEDULERS',
+    'STYLES',
+    'UTILS',
+    'History',
+    'PyInstrumentProfiler',
+    'StopWatch',
+    'TrainConfig',
+    'add_columns',
+    'build_layout',
+    'check',
+    'cleanup',
+    'command_exists',
+    'configs',
+    'dist',
+    'format_pair',
+    'flatten_dict',
+    'get_console',
+    'get_context_manager',
+    'get_cpus_per_node',
+    'get_dist_info',
+    'get_file_logger',
+    'get_gpus_per_node',
+    'get_hostname',
+    'get_hosts_from_hostfile',
+    'get_local_rank',
+    'get_logger',
+    'get_logging_config',
+    'get_machine',
+    'get_node_index',
+    'get_nodes_from_hostfile',
+    'get_num_nodes',
+    'get_rank',
+    'get_scheduler',
+    'get_scheduler',
+    'get_theme',
+    'get_timestamp',
+    'get_torch_backend',
+    'get_torch_device',
+    'get_width',
+    'get_world_size',
+    'git_ds_info',
+    'grab_tensor',
+    'include_file',
+    'init_deepspeed',
+    'init_process_group',
+    'is_interactive',
+    'log',
+    'load_ds_config',
     # "loadjobenv",
-    "make_layout",
-    "nested_dict_to_df",
+    'make_layout',
+    'nested_dict_to_df',
     # "plot",
-    "print_config",
-    "print_config_tree",
-    "print_dist_setup",
-    "printarr",
-    "profile",
-    "query_environment",
-    "run_bash_command",
+    'print_config',
+    'print_config_tree',
+    'print_dist_setup',
+    'printarr',
+    'profile',
+    'query_environment',
+    'run_bash_command',
     # "savejobenv",
-    "seed_everything",
-    "setup",
-    "setup_tensorflow",
-    "setup_torch",
-    "setup_torch_DDP",
-    "setup_torch_distributed",
-    "setup_wandb",
-    "should_do_markup",
-    "summarize_dict",
-    "timeit",
-    "tplot",
-    "tplot_dict",
-    "timeitlogit",
-    "to_bool",
+    'seed_everything',
+    'setup',
+    'setup_tensorflow',
+    'setup_torch',
+    'setup_torch_DDP',
+    'setup_torch_distributed',
+    'setup_wandb',
+    'should_do_markup',
+    'summarize_dict',
+    'timeit',
+    'tplot',
+    'tplot_dict',
+    'timeitlogit',
+    'to_bool',
     # "utils",
 ]
 
 
-def get_timestamp(fstr: Optional[str] = None) -> str:
-    """Get formatted timestamp."""
-    import datetime
-
-    now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime("%Y-%m-%d-%H%M%S")
-    return now.strftime(fstr)
-
-
 def normalize(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
+    return re.sub(r'[-_.]+', '-', name).lower()
 
 
 def get_console_from_logger(logger: logging.Logger) -> Console:
@@ -311,7 +302,7 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
 
 
 def get_rich_logger(
-    name: Optional[str] = None, level: str = "INFO"
+    name: Optional[str] = None, level: str = 'INFO'
 ) -> logging.Logger:
     from ezpz.log.handler import RichHandler
 
@@ -356,7 +347,7 @@ def get_rich_logger(
 
 
 def get_enrich_logging_config_as_yaml(
-    name: str = "enrich", level: str = "INFO"
+    name: str = 'enrich', level: str = 'INFO'
 ) -> str:
     return rf"""
     ---
@@ -377,7 +368,7 @@ def get_enrich_logging_config_as_yaml(
 
 def get_logger_new(
     name: str,
-    level: str = "INFO",
+    level: str = 'INFO',
 ):
     config = yaml.safe_load(
         get_enrich_logging_config_as_yaml(name=name, level=level),
@@ -388,5 +379,5 @@ def get_logger_new(
     return log
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     pass
