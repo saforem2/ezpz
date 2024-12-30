@@ -620,10 +620,50 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
 
 def setup_torch_distributed(
     backend: str,
-    port: str = '2345',
-    timeout: Optional[int] = 3600,
+    *,
+    model_parallel_size: Optional[int | str] = None,
+    pipeline_length: Optional[int | str] = None,
+    context_parallel_size: Optional[int | str] = None,
+    model_parallel_backend: Optional[str] = None,
+    pipeline_backend: Optional[str] = None,
+    cp_backend: Optional[str] = None,
+    ddp_backend: Optional[str] = None,
+    port: Optional[str | int] = None,
+    timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
+    model_parallel_size = (
+        1
+        if model_parallel_size is None
+        else int(model_parallel_size)
+        if isinstance(model_parallel_size, str)
+        else model_parallel_size
+    )
+    pipeline_length = (
+        1
+        if pipeline_length is None
+        else int(pipeline_length)
+        if isinstance(pipeline_length, str)
+        else pipeline_length
+    )
+    context_parallel_size = (
+        1
+        if context_parallel_size is None
+        else int(context_parallel_size)
+        if isinstance(context_parallel_size, str)
+        else context_parallel_size
+    )
+    timeout = (
+        3600
+        if timeout is None
+        else int(timeout)
+        if isinstance(timeout, str)
+        else timeout
+    )
+    timeout = datetime.timedelta(seconds=timeout)
+    port = (
+        '1234' if port is None else str(port) if isinstance(port, int) else port
+    )
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
@@ -634,8 +674,6 @@ def setup_torch_distributed(
         world_size = dsetup['world_size']
         rank = dsetup['rank']
         local_rank = dsetup['local_rank']
-        # if rank == 0:
-        #     import pudb; pudb.set_trace()
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
     elif be in {'deepspeed', 'ds'}:
@@ -658,16 +696,39 @@ def setup_torch_distributed(
     os.environ['world_size'] = str(world_size)
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
+
+    import ezpz.mp as mp
+
+    if not mp.model_parallel_is_initialized():
+        mp.initialize_model_parallel(
+            model_parallel_size=model_parallel_size,
+            pipeline_length=pipeline_length,
+            context_parallel_size=context_parallel_size,
+            model_parallel_backend=model_parallel_backend,
+            pipeline_backend=pipeline_backend,
+            cp_backend=cp_backend,
+            ddp_backend=ddp_backend,
+            timeout=timeout,
+        )
+
     # return TorchDistributedInfo
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
 
 def setup_torch(
     backend: str = 'DDP',
-    port: str = '2345',
+    *,
+    port: Optional[str | int] = None,
     seed: Optional[int] = None,
-    timeout: Optional[int] = 3600,
+    timeout: Optional[str | int] = None,
     verbose: Optional[bool] = True,
+    model_parallel_size: Optional[int | str] = None,
+    pipeline_length: Optional[int | str] = None,
+    context_parallel_size: Optional[int | str] = None,
+    model_parallel_backend: Optional[str] = None,
+    pipeline_backend: Optional[str] = None,
+    cp_backend: Optional[str] = None,
+    ddp_backend: Optional[str] = None,
 ) -> int:
     """Setup torch.
 
@@ -695,7 +756,16 @@ def setup_torch(
         num_nodes = 1
     else:
         dsetup = setup_torch_distributed(
-            backend=backend, port=port, timeout=timeout
+            backend=backend,
+            port=port,
+            timeout=timeout,
+            model_parallel_size=model_parallel_size,
+            pipeline_length=pipeline_length,
+            context_parallel_size=context_parallel_size,
+            model_parallel_backend=model_parallel_backend,
+            pipeline_backend=pipeline_backend,
+            cp_backend=cp_backend,
+            ddp_backend=ddp_backend,
         )
         rank = dsetup['rank']
         world_size = dsetup['world_size']
