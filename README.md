@@ -2,26 +2,23 @@
 
 > *Work smarter, not harder*
 
-[Sam Foreman](https://samforeman.me)
+<!--- <details closed><summary>Contents:</summary></details>-->
 
-<details closed><summary>Contents:</summary></details>
-
-- [🐣 Getting Started](#hatching_chick-getting-started)
-- [🐚 Shell Utilities](#shell-shell-utilities)
-  - [⚙️ Setup Environment](#gear-setup-environment)
-  <!-- - [📝 Example](#pencil-example) -->
-  - [🛠️ Setup Python](#setup-python)
-  - [🧰 Setup Job](#setup-job)
-- [🐍 Python Library](#snake-python-library)
-
-</details>
-
-## Overview
+1. [🐣 Getting Started](#-getting-started)
+   1. 📝 [Example](#-example)
+1. [🐚 Shell Utilities](#-shell-utilities)
+   1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)
+       1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
+       1. [🧰 Setup Job](#-setup-job)
+ 1. [🐍 Python Library](#-python-library) 
 
 > [!IMPORTANT]
-> The documentation below is a work in progress.
-> Please feel free to provide input / suggest changes if you notice something
-> that could be improved or is unclear.
+> The documentation below is a work in progress.  
+> *Please* feel free to provide input / suggest changes !
+
+## 🐣 Getting Started
+
+<!--
 
 - `ezpz` is:
 
@@ -30,34 +27,37 @@
 
   with the goal of making life easy.
 
-## 🐣 Getting Started
+-->
 
 There are two main, distinct components of `ezpz`:
 
-1.  🐍 [**Python Library**](#python-library)
-2.  🐚 [**Shell Utilities**](#shell-utilities)
+1.  🐍 [**Python Library**](#python-library) (`import ezpz`)
+2.  🐚 [**Shell Utilities**](#shell-utilities) (`ezpz_*`)
 
+designed to make life easy.
 
 ### 📝 Example
 
-We provide a completely (self-contained) example in
+We provide a complete, entirely self-contained example in
 [docs/example.md](/docs/example.md) that walks through:
 
 1. Setting up a suitable python environment + installing `ezpz` into it
 2. Launching a (simple) distributed training job across all available resources
    in your {slurm, PBS} job allocation.
 
-
-### 🐚 Shell Utilities
+## 🐚 Shell Utilities
 
 The Shell Utilities can be roughly broken up further into two main
-components
+components:
 
-1. 🏞️ [Setup Environment](#setup-environment):
-    1.  🛠️ [Setup Python](#setup-python):
-        1.  🐍 [Setup Conda](#setup-conda)
-        2.  👻 [Setup Virtual Environment](#setup-virtual-environment)
-    2. 💼 [Setup Job](#setup-job):
+<!--1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)-->
+1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
+1. [🧰 Setup Job](#-setup-job)
+
+<!--
+        1.  🐍 [Setup Conda](#-setup-conda)
+        2.  👻 [Setup Virtual Environment](#-setup-virtual-environment)
+-->
 
 We provide a variety of helper functions designed to make your life
 easier when working with job schedulers (e.g. `PBS Pro` @ ALCF or
@@ -74,8 +74,6 @@ To use these, we can `source` the file directly via:
 export PBS_O_WORKDIR=$(pwd) # if on ALCF
 source /dev/stdin <<< $(curl 'https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh')
 ```
-
-#### 🏞️  Setup Environment
 
 We would like to write our application in such a way that it is able to
 take full advantage of the resources allocated by the job scheduler.
@@ -112,15 +110,13 @@ Now, there are a few functions in particular worth elaborating on.
 
 <div id="tbl-shell-fns">
 
-|   | Function | Description |
-|:---|:---|:---|
-| [Setup Environment](#setup-environment) | `ezpz_setup_env` | Wrapper around `ezpz_setup_python` `&&` `ezpz_setup_job` |
-| [Setup Job](#setup-job) | `ezpz_setup_job` | Determine {`NGPUS`, `NGPU_PER_HOST`, `NHOSTS`}, build `launch` command alias |
-| [Setup Python](#setup-python) | `ezpz_setup_python` | Wrapper around `ezpz_setup_conda` `&&` `ezpz_setup_venv_from_conda` |
-| [Setup Conda](#setup-conda) | `ezpz_setup_conda` | Find and activate appropriate `conda` module to load[^2] |
-| [Setup Virtual Environment](#setup-virtual-environment) | `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the virtual env located in `venvs/${CONDA_NAME}/` |
-
-Shell Functions
+| Function                     | Description                                                                               |
+|------------------------------|-------------------------------------------------------------------------------------------|
+| `ezpz_setup_env`             | Wrapper around `ezpz_setup_python` `&&` `ezpz_setup_job`                                  |
+| `ezpz_setup_job`             | Determine {`NGPUS`, `NGPU_PER_HOST`, `NHOSTS`}, build `launch` command alias              |
+| `ezpz_setup_python`          | Wrapper around `ezpz_setup_conda` `&&` `ezpz_setup_venv_from_conda`                       |
+| `ezpz_setup_conda`           | Find and activate appropriate `conda` module to load[^2]                                  |
+| `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the virtual env located in `venvs/${CONDA_NAME}/` |
 
 Table 1: Shell Functions
 
@@ -176,7 +172,7 @@ This will:
 
 > [!TIP]
 >
-> ### Using your own `conda`
+> **Using your own `conda`**
 >
 > If you are already in a conda environment when calling
 > `ezpz_setup_python` then it will try and use this instead.
@@ -283,6 +279,82 @@ running on one of the known machines:
   2.  Identify number of available accelerators:
 
 ## 🐍 Python Library
+
+### 👀 Overview
+
+Launch and train across all your accelerators, using your favorite framework +
+backend combo.
+
+`ezpz` simplifies the process of:
+
+- <details><summary>Setting up + launching distributed training:</summary>
+
+    - <details closed><summary><code>import ezpz as ez</code></summary>
+
+        - `RANK = `
+          [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
+          [for `backend` $\in$ \{`DDP`, `deepspeed`, `horovod`}]{.dim-text}
+
+        - `RANK =`
+          [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
+
+        - `LOCAL_RANK =`
+          [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
+
+        - `WORLD_SIZE =`
+          [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
+
+        [(see [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py) for more details).]{.dim-text}
+
+    </details>
+
+</details>
+
+- <details closed><summary>Using your favorite framework:</summary>
+
+    - `framework=pytorch` + `backend={DDP, deepspeed, horovod}`
+
+    - `framework=tensorflow` + `backend=horovod`
+
+    - [`ez.get_torch_device()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332): {`cuda`, `xpu`, `mps`, `cpu`}
+
+    - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
+
+  _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
+
+</details>
+
+- <details closed><summary>Writing device agnostic code:</summary>
+
+    - <details><summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ezpz.get_torch_device()</code></a></summary>
+
+        ```python
+        >>> import ezpz as ez
+        >>> DEVICE = ez.get_torch_device()
+        >>> model = torch.nn.Linear(10, 10)
+        >>> model.to(DEVICE)
+        >>> x = torch.randn((10, 10), device=DEVICE)
+        >>> y = model(x)
+        >>> y.device
+        device(type='mps', index=0)
+        ```
+
+    </details>
+
+</details>
+
+- <details closed><summary>Using <code>wandb</code>:</summary>
+
+    - `ez.setup_wandb(project_name='ezpz')`
+
+</details>
+
+- **Full support** for any {`device` + `framework` + `backend`}:
+    - device: {`GPU`, `XPU`, `MPS`, `CPU`}
+    - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
+    - backend: {`DDP`, `deepspeed`, `horovod`}
+ 
+### Install
 
 To install[^5]:
 
