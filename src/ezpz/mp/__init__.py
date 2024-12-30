@@ -27,13 +27,15 @@ https://github.com/facebookresearch/fairscale/blob/5f484b3545f27eddb19d970fbe1d3
 """
 
 import logging
-import os
-from typing import List, Optional
 
-import ezpz
+from typing import List, Optional
 
 import torch
 from datetime import timedelta
+
+logger = logging.getLogger(__name__)
+logger.setLevel('INFO')
+
 
 # Model parallel group that the current rank belongs to.
 _MODEL_PARALLEL_GROUP = None
@@ -45,30 +47,6 @@ _PIPELINE_PARALLEL_RANKS = None
 
 _CONTEXT_PARALLEL_GROUP = None
 _CONTEXT_PARALLEL_GROUP_RANKS = None
-
-try:
-    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-except Exception:
-    ipex = None
-
-try:
-    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
-except Exception:
-    oneccl_bpt = None
-
-
-logger = logging.getLogger(__name__)
-# log only from RANK == 0
-logger.setLevel(
-    os.environ.get('LOG_LEVEL', 'INFO')
-) if ezpz.get_rank() == 0 else logger.setLevel('CRITICAL')
-
-
-BACKEND = (
-    'nccl'
-    if torch.cuda.is_available()
-    else ('ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo')
-)
 
 
 def ensure_divisibility(numerator: int, denominator: int) -> None:
@@ -141,17 +119,23 @@ def initialize_model_parallel(
         / (model_parallel_size * pipeline_length * context_parallel_size)
     )
 
-    # if torch.distributed.get_rank() == 0:
-    logger.info(
-        '> initializing model parallel with size {}'.format(model_parallel_size)
-    )
-    logger.info(
-        '> initializing context parallel with size {}'.format(
-            context_parallel_size
+    if torch.distributed.get_rank() == 0:
+        logger.info(
+            '> initializing model parallel with size {}'.format(
+                model_parallel_size
+            )
         )
-    )
-    logger.info('> initializing pipeline with size {}'.format(pipeline_length))
-    logger.info('> initializing ddp with size {}'.format(data_parallel_size))
+        logger.info(
+            '> initializing context parallel with size {}'.format(
+                context_parallel_size
+            )
+        )
+        logger.info(
+            '> initializing pipeline with size {}'.format(pipeline_length)
+        )
+        logger.info(
+            '> initializing ddp with size {}'.format(data_parallel_size)
+        )
 
     groups = torch.LongTensor(range(world_size)).reshape(
         data_parallel_size,
