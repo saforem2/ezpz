@@ -10,15 +10,10 @@ import re
 from typing import Optional
 import warnings
 
-import yaml
-
-from mpi4py import MPI
-
 from ezpz import dist
 from ezpz import log
 from ezpz import profile
 from ezpz import configs
-
 from ezpz.configs import (
     BACKENDS,
     BIN_DIR,
@@ -39,9 +34,9 @@ from ezpz.configs import (
     TrainConfig,
     UTILS,
     command_exists,
-    get_timestamp,
     get_logging_config,
     get_scheduler,
+    get_timestamp,
     git_ds_info,
     load_ds_config,
     print_config_tree,
@@ -79,7 +74,6 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.history import History, StopWatch, format_pair, summarize_dict
 from ezpz.log import get_file_logger, get_logger
 from ezpz.log.config import NO_COLOR, STYLES
 from ezpz.log.console import (
@@ -104,9 +98,32 @@ from ezpz.log.style import (
     print_config,
     printarr,
 )
+from ezpz.mp import (
+    destroy_model_parallel,
+    ensure_divisibility,
+    get_context_parallel_group,
+    get_context_parallel_rank,
+    get_context_parallel_ranks,
+    get_context_parallel_world_size,
+    get_data_parallel_group,
+    get_data_parallel_rank,
+    get_data_parallel_world_size,
+    get_model_parallel_group,
+    get_model_parallel_rank,
+    get_model_parallel_src_rank,
+    get_model_parallel_world_size,
+    get_pipeline_parallel_group,
+    get_pipeline_parallel_ranks,
+    initialize_model_parallel,
+    model_parallel_is_initialized,
+)
 from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
 from ezpz.utils import grab_tensor
+from jaxtyping import ScalarLike
+from mpi4py import MPI
+import numpy as np
+import yaml
 
 try:
     import wandb  # pyright: ignore
@@ -183,6 +200,7 @@ if LOG_FROM_ALL_RANKS:
 else:
     logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel('CRITICAL')
 
+
 __all__ = [
     'BACKENDS',
     'BEAT_TIME',
@@ -191,42 +209,50 @@ __all__ = [
     'CONF_DIR',
     'Console',
     'CustomLogging',
-    # "DEFAULT_STYLES",
-    'DS_CONFIG_PATH',
     'DS_CONFIG_JSON',
+    'DS_CONFIG_PATH',
     'DS_CONFIG_YAML',
     'FRAMEWORKS',
     'FluidLogRender',
     'GETJOBENV',
     'HERE',
+    # 'History',
     'LOGS_DIR',
     'NO_COLOR',
     'OUTPUTS_DIR',
     'PROJECT_DIR',
     'PROJECT_DIR',
     'PROJECT_ROOT',
+    'PyInstrumentProfiler',
     'QUARTO_OUTPUTS_DIR',
     'RichHandler',
     'SAVEJOBENV',
     'SCHEDULERS',
     'STYLES',
-    'UTILS',
-    'History',
-    'PyInstrumentProfiler',
-    'StopWatch',
+    # 'StopWatch',
     'TrainConfig',
+    'UTILS',
     'add_columns',
     'build_layout',
     'check',
     'cleanup',
     'command_exists',
     'configs',
+    'destroy_model_parallel',
     'dist',
-    'format_pair',
+    'ensure_divisibility',
     'flatten_dict',
+    'format_pair',
     'get_console',
     'get_context_manager',
+    'get_context_parallel_group',
+    'get_context_parallel_rank',
+    'get_context_parallel_ranks',
+    'get_context_parallel_world_size',
     'get_cpus_per_node',
+    'get_data_parallel_group',
+    'get_data_parallel_rank',
+    'get_data_parallel_world_size',
     'get_dist_info',
     'get_file_logger',
     'get_gpus_per_node',
@@ -236,9 +262,15 @@ __all__ = [
     'get_logger',
     'get_logging_config',
     'get_machine',
+    'get_model_parallel_group',
+    'get_model_parallel_rank',
+    'get_model_parallel_src_rank',
+    'get_model_parallel_world_size',
     'get_node_index',
     'get_nodes_from_hostfile',
     'get_num_nodes',
+    'get_pipeline_parallel_group',
+    'get_pipeline_parallel_ranks',
     'get_rank',
     'get_scheduler',
     'get_scheduler',
@@ -253,13 +285,13 @@ __all__ = [
     'include_file',
     'init_deepspeed',
     'init_process_group',
+    'initialize_model_parallel',
     'is_interactive',
-    'log',
     'load_ds_config',
-    # "loadjobenv",
+    'log',
     'make_layout',
+    'model_parallel_is_initialized',
     'nested_dict_to_df',
-    # "plot",
     'print_config',
     'print_config_tree',
     'print_dist_setup',
@@ -267,7 +299,6 @@ __all__ = [
     'profile',
     'query_environment',
     'run_bash_command',
-    # "savejobenv",
     'seed_everything',
     'setup',
     'setup_tensorflow',
@@ -278,12 +309,23 @@ __all__ = [
     'should_do_markup',
     'summarize_dict',
     'timeit',
-    'tplot',
-    'tplot_dict',
     'timeitlogit',
     'to_bool',
-    # "utils",
+    'tplot',
+    'tplot_dict',
 ]
+
+
+def format_pair(k: str, v: ScalarLike) -> str:
+    if isinstance(v, (int, bool, np.integer)):
+        # return f'{k}={v:<3}'
+        return f'{k}={v}'
+    # return f'{k}={v:<3.4f}'
+    return f'{k}={v:<.6f}'
+
+
+def summarize_dict(d: dict) -> str:
+    return ' '.join([format_pair(k, v) for k, v in d.items()])
 
 
 def normalize(name: str) -> str:
