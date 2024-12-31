@@ -40,7 +40,7 @@ Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
   ```
 
 
-- `TP = CP = PP = 2`, `DP = 2`
+- `TP = CP = PP = 2`, `DP = 3`
 
   ```bash
   $ launch python3 -Wignore -m ezpz.test_dist --tp 2 --cp 2 --pp 2 #--dtype=float32
