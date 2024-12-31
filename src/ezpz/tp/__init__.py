@@ -66,7 +66,7 @@ __all__ = [
     'get_context_parallel_rank',
 ]
 
-# Model parallel group that the current rank belongs to.
+# tensor parallel group that the current rank belongs to.
 _TENSOR_PARALLEL_GROUP = None
 _TENSOR_PARALLEL_RANKS = None
 # Data parallel group that the current rank belongs to.
@@ -91,15 +91,15 @@ def initialize_tensor_parallel(
     timeout: Optional[timedelta] = None,
 ) -> None:
     """
-    Initialize model data parallel groups.
+    Initialize tensor data parallel groups.
 
     Arguments:
         tensor_parallel_size: number of GPUs used to parallelize model.
 
     Let's say we have a total of 8 GPUs denoted by g0 ... g7 and we
     use 2 GPUs to parallelize the model. The present function will
-    create 4 model parallel groups and 2 data parallel groups as:
-        4 model parallel groups:
+    create 4 tensor parallel groups and 2 data parallel groups as:
+        4 tensor parallel groups:
             [g0, g1], [g2, g3], [g4, g5], [g6, g7]
         2 data parallel groups:
             [g0, g2, g4, g6], [g1, g3, g5, g7]
@@ -111,8 +111,8 @@ def initialize_tensor_parallel(
     process groups initialized in the order of TP, CP, PP, DP.
 
     Let's say we have a total of 16 GPUs denoted by g0 ... g15 and we
-    use 2 GPUs to parallelize the model tensor, 2 GPUs to parallelize context(seq len), and 2 GPUs to parallelize
-    the model pipeline. The present function will
+    use 2 GPUs to parallelize the tensor tensor, 2 GPUs to parallelize context(seq len), and 2 GPUs to parallelize
+    the tensor pipeline. The present function will
     create 8 tensor model-parallel groups, 8 context-parallel group, 8 pipeline model-parallel groups
     and 8 data-parallel groups as:
     when alternate_pp_config = False,
@@ -144,7 +144,7 @@ def initialize_tensor_parallel(
 
     if tdist.get_rank() == 0:
         logger.info(
-            '> initializing model parallel with size {}'.format(
+            '> initializing tensor parallel with size {}'.format(
                 tensor_parallel_size
             )
         )
@@ -193,15 +193,15 @@ def initialize_tensor_parallel(
                     _DATA_PARALLEL_GROUP = group
                     _DATA_PARALLEL_RANKS = ranks
 
-    # Build the model parallel groups.
+    # Build the tensor parallel groups.
     global _TENSOR_PARALLEL_GROUP
     global _TENSOR_PARALLEL_RANKS
     assert (
         _TENSOR_PARALLEL_GROUP is None
-    ), 'Model parallel group is already initialized'
+    ), 'tensor parallel group is already initialized'
     assert (
         _TENSOR_PARALLEL_RANKS is None
-    ), 'Model parallel ranks are already initialized'
+    ), 'tensor parallel ranks are already initialized'
     for i in range(data_parallel_size):
         for j in range(pipeline_length):
             for k in range(context_parallel_size):
@@ -252,7 +252,7 @@ def initialize_tensor_parallel(
 
 
 def tensor_parallel_is_initialized() -> bool:
-    """Check if model and data parallel groups are initialized."""
+    """Check if tensor and data parallel groups are initialized."""
     if (
         _TENSOR_PARALLEL_GROUP is None
         or _DATA_PARALLEL_GROUP is None
@@ -264,34 +264,35 @@ def tensor_parallel_is_initialized() -> bool:
 
 
 def get_tensor_parallel_group() -> tdist.ProcessGroup:
-    """Get the model parallel group the caller rank belongs to."""
+    """Get the tensor parallel group the caller rank belongs to."""
     assert (
         _TENSOR_PARALLEL_GROUP is not None
-    ), 'model parallel group is not initialized'
+    ), 'tensor parallel group is not initialized'
     return _TENSOR_PARALLEL_GROUP
 
 
 def get_tensor_parallel_ranks() -> List[int]:
-    """Get the model parallel group the caller rank belongs to."""
+    """Get the tensor parallel group the caller rank belongs to."""
     assert (
         _TENSOR_PARALLEL_RANKS is not None
-    ), 'model parallel group is not initialized'
+    ), 'tensor parallel group is not initialized'
     return _TENSOR_PARALLEL_RANKS
 
 
 def get_tensor_parallel_world_size() -> int:
-    """Return world size for the model parallel group."""
+    """Return world size for the tensor parallel group."""
     return tdist.get_world_size(group=get_tensor_parallel_group())
 
 
 def get_tensor_parallel_rank() -> int:
-    """Return my rank for the model parallel group."""
+    """Return my rank for the tensor parallel group."""
     return tdist.get_rank(group=get_tensor_parallel_group())
 
 
 def get_tensor_parallel_src_rank() -> int:
-    """Calculate the global rank corresponding to a local rank zero
-    in the model parallel group."""
+    """
+    Calculate the global rank corresponding to local rank 0 in the TP group.
+    """
     global_rank = tdist.get_rank()
     local_world_size = get_tensor_parallel_world_size()
     return (global_rank // local_world_size) * local_world_size

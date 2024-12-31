@@ -15,6 +15,8 @@ from typing import Optional
 
 import ezpz
 
+import warnings
+
 # from ezpz import summarize_dict
 from ezpz.history import History
 import torch
@@ -26,6 +28,8 @@ T0 = time.perf_counter()  # start time
 # noqa: E402
 
 # from ezpz.history import History, summarize_dict
+#
+warnings.filterwarnings('ignore')
 
 try:
     import wandb
@@ -88,9 +92,9 @@ logger = ezpz.get_logger(__name__)
 class TrainConfig:
     warmup: int
     log_freq: int
-    tpsize: int
-    plength: int
-    cpsize: int
+    tp: int
+    pp: int
+    cp: int
     batch_size: int
     input_size: int
     output_size: int
@@ -129,19 +133,19 @@ def parse_args():
         help='Logging frequency',
     )
     parser.add_argument(
-        '--tpsize',
+        '--tp',
         type=int,
         default=1,
-        help='Model parallel size',
+        help='Tensor parallel size',
     )
     parser.add_argument(
-        '--plength',
+        '--pp',
         type=int,
         default=1,
         help='Pipeline length',
     )
     parser.add_argument(
-        '--cpsize',
+        '--cp',
         type=int,
         default=1,
         help='Context parallel size',
@@ -208,9 +212,9 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
     config = TrainConfig(
         warmup=0,
         log_freq=args.log_freq,
-        tpsize=args.tpsize,
-        plength=args.plength,
-        cpsize=args.cpsize,
+        tp=args.tp,
+        pp=args.pp,
+        cp=args.cp,
         batch_size=args.batch_size,
         input_size=args.input_size,
         output_size=args.output_size,
@@ -355,9 +359,9 @@ def train(config: TrainConfig) -> Trainer:
     rank = ezpz.setup_torch(
         backend=config.backend,
         # port=(),
-        tensor_parallel_size=config.tpsize,
-        pipeline_length=config.plength,
-        context_parallel_size=config.cpsize,
+        tensor_parallel_size=config.tp,
+        pipeline_length=config.pp,
+        context_parallel_size=config.cp,
     )
 
     # T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
