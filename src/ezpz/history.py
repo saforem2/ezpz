@@ -20,7 +20,7 @@ import ezpz
 # from ezpz import format_pair, summarize_dict
 from ezpz.configs import PathLike
 from ezpz.plot import plot_dataset
-from ezpz.utils import save_dataset, grab_tensor
+from ezpz.utils import save_dataset, grab_tensor, breakpoint
 from ezpz.log.console import is_interactive
 
 import matplotlib.pyplot as plt
@@ -183,8 +183,8 @@ class History:
 
     def update(self, metrics: dict) -> str:
         for key, val in metrics.items():
-            if isinstance(val, (list, np.ndarray, torch.Tensor)):
-                val = grab_tensor(val)
+            # if isinstance(val, (list, np.ndarray, torch.Tensor)):
+            #     val = grab_tensor(val)
             try:
                 self.history[key].append(val)
             except KeyError:
@@ -736,15 +736,24 @@ class History:
         x: Union[list, np.ndarray, torch.Tensor],
         therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
+        if isinstance(x, list) and isinstance(x[0], torch.Tensor):
+            x = torch.Tensor(x).numpy(force=True)
         try:
-            arr = np.array(x).real
+            # if isinstance(x, (list, torch.Tensor)):
+            # try:
+            arr = grab_tensor(x)
+            # except TypeError:
+            #     breakpoint(0)
         except ValueError:
-            arr = np.array(x)
+            arr = np.array(x).real
+            # arr = np.array(x)
             log.info(f'len(x): {len(x)}')
             log.info(f'x[0].shape: {x[0].shape}')
             log.info(f'arr.shape: {arr.shape}')
-        if therm_frac is not None and therm_frac > 0:
-            drop = int(therm_frac * arr.shape[0])
+        assert isinstance(arr, np.ndarray)
+        if therm_frac is not None and therm_frac > 0 and len(arr) > 0:
+            # drop = int(therm_frac * arr.shape[0])
+            drop = int(therm_frac * len(arr))
             arr = arr[drop:]
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:  # [ndraws]
