@@ -74,6 +74,7 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
+from ezpz.history import History, StopWatch
 from ezpz.log import get_file_logger, get_logger
 from ezpz.log.config import NO_COLOR, STYLES
 from ezpz.log.console import (
@@ -98,8 +99,10 @@ from ezpz.log.style import (
     print_config,
     printarr,
 )
-from ezpz.mp import (
-    destroy_model_parallel,
+import ezpz.tp
+
+from ezpz.tp import (
+    destroy_tensor_parallel,
     ensure_divisibility,
     get_context_parallel_group,
     get_context_parallel_rank,
@@ -108,14 +111,14 @@ from ezpz.mp import (
     get_data_parallel_group,
     get_data_parallel_rank,
     get_data_parallel_world_size,
-    get_model_parallel_group,
-    get_model_parallel_rank,
-    get_model_parallel_src_rank,
-    get_model_parallel_world_size,
+    get_tensor_parallel_group,
+    get_tensor_parallel_rank,
+    get_tensor_parallel_src_rank,
+    get_tensor_parallel_world_size,
     get_pipeline_parallel_group,
     get_pipeline_parallel_ranks,
-    initialize_model_parallel,
-    model_parallel_is_initialized,
+    initialize_tensor_parallel,
+    tensor_parallel_is_initialized,
 )
 from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
@@ -125,10 +128,10 @@ from mpi4py import MPI
 import numpy as np
 import yaml
 
-try:
-    import wandb  # pyright: ignore
-except Exception:
-    wandb = None
+# try:
+#     import wandb  # pyright: ignore
+# except Exception:
+#     wandb = None
 
 
 # def lazy_import(name: str):
@@ -216,7 +219,7 @@ __all__ = [
     'FluidLogRender',
     'GETJOBENV',
     'HERE',
-    # 'History',
+    'History',
     'LOGS_DIR',
     'NO_COLOR',
     'OUTPUTS_DIR',
@@ -229,7 +232,7 @@ __all__ = [
     'SAVEJOBENV',
     'SCHEDULERS',
     'STYLES',
-    # 'StopWatch',
+    'StopWatch',
     'TrainConfig',
     'UTILS',
     'add_columns',
@@ -238,7 +241,9 @@ __all__ = [
     'cleanup',
     'command_exists',
     'configs',
-    'destroy_model_parallel',
+    # 'initialize_tensor_parallel',
+    # 'tensor_parallel_is_initialized',
+    'destroy_tensor_parallel',
     'dist',
     'ensure_divisibility',
     'flatten_dict',
@@ -262,10 +267,10 @@ __all__ = [
     'get_logger',
     'get_logging_config',
     'get_machine',
-    'get_model_parallel_group',
-    'get_model_parallel_rank',
-    'get_model_parallel_src_rank',
-    'get_model_parallel_world_size',
+    'get_tensor_parallel_group',
+    'get_tensor_parallel_rank',
+    'get_tensor_parallel_src_rank',
+    'get_tensor_parallel_world_size',
     'get_node_index',
     'get_nodes_from_hostfile',
     'get_num_nodes',
@@ -285,12 +290,12 @@ __all__ = [
     'include_file',
     'init_deepspeed',
     'init_process_group',
-    'initialize_model_parallel',
+    'initialize_tensor_parallel',
     'is_interactive',
     'load_ds_config',
     'log',
     'make_layout',
-    'model_parallel_is_initialized',
+    'tensor_parallel_is_initialized',
     'nested_dict_to_df',
     'print_config',
     'print_config_tree',
