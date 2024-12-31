@@ -2,28 +2,69 @@
 ezpz/utils.py
 """
 
+import sys
+import pdb
 import os
 import h5py
+import logging
 import xarray as xr
 import numpy as np
 from typing import Optional, Union, Any
-from ezpz.dist import get_rank
-from ezpz.configs import ScalarLike
 
-from ezpz.configs import PathLike
+from ezpz.configs import ScalarLike, PathLike
+
+import torch
+import torch.distributed as tdist
+
+from ezpz.dist import get_rank
 from pathlib import Path
 
-import logging
 
+# logger = ezpz.get_logger(__name__)
 RANK = get_rank()
-log = logging.getLogger(__name__)
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
-_ = log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
+logger = logging.getLogger(__name__)
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+_ = logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel('CRITICAL')
 
 
-def grab_tensor(x: Any) -> Union[np.ndarray, ScalarLike, None]:
-    import torch
+class DistributedPdb(pdb.Pdb):
+    """
+    Supports using PDB from inside a multiprocessing child process.
 
+    Usage:
+    DistributedPdb().set_trace()
+    """
+
+    def interaction(self, *args, **kwargs):
+        _stdin = sys.stdin
+        try:
+            sys.stdin = open('/dev/stdin')
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
+
+
+def breakpoint(rank: int = 0):
+    """
+    Set a breakpoint, but only on a single rank.  All other ranks will wait for you to be
+    done with the breakpoint before continuing.
+
+    Args:
+        rank (int): Which rank to break on.  Default: ``0``
+    """
+    if get_rank() == rank:
+        pdb = DistributedPdb()
+        pdb.message(
+            '\n!!! ATTENTION !!!\n\n'
+            f"Type 'up' to get to the frame that called dist.breakpoint(rank={rank})\n"
+        )
+        pdb.set_trace()
+    tdist.barrier()
+
+
+def grab_tensor(
+    x: Any, force: bool = False
+) -> Union[np.ndarray, ScalarLike, None]:
     if x is None:
         return None
     if isinstance(x, (int, float, bool, np.floating)):
@@ -31,23 +72,29 @@ def grab_tensor(x: Any) -> Union[np.ndarray, ScalarLike, None]:
     if isinstance(x, list):
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
-        elif isinstance(x[0], np.ndarray):
+        if isinstance(x[0], np.ndarray):
             return np.stack(x)
+        if isinstance(x[0], (int, float, bool, np.floating)):
+            return np.array(x)
         else:
-            try:
-                import tensorflow as tf  # type:ignore
-            except (ImportError, ModuleNotFoundError) as exc:
-                raise exc
-            if isinstance(x[0], tf.Tensor):
-                return grab_tensor(tf.stack(x))
+            raise ValueError(f'Unable to convert list: \n {x=}\n to array')
+        # else:
+        #     try:
+        #         import tensorflow as tf  # type:ignore
+        #     except (ImportError, ModuleNotFoundError) as exc:
+        #         raise exc
+        #     if isinstance(x[0], tf.Tensor):
+        #         return grab_tensor(tf.stack(x))
     elif isinstance(x, np.ndarray):
         return x
     elif isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
-    elif callable(getattr(x, "numpy", None)):
-        assert callable(getattr(x, "numpy"))
-        return x.numpy()
-    raise ValueError
+        return x.numpy(force=force)
+        # return x.detach().cpu().numpy()
+    elif callable(getattr(x, 'numpy', None)):
+        assert callable(getattr(x, 'numpy'))
+        return x.numpy(force=force)
+    breakpoint(0)
+    # raise ValueError
 
 
 def save_dataset(
@@ -58,19 +105,23 @@ def save_dataset(
     **kwargs,
 ) -> Path:
     if use_hdf5:
-        fname = "dataset.h5" if fname is None else f"{fname}_dataset.h5"
+        fname = 'dataset.h5' if fname is None else f'{fname}_dataset.h5'
         outfile = Path(outdir).joinpath(fname)
         Path(outdir).mkdir(exist_ok=True, parents=True)
         try:
             dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
         except TypeError:
-            log.warning("Unable to save as `.h5` file, falling back to `netCDF4`")
-            save_dataset(dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs)
+            logger.warning(
+                'Unable to save as `.h5` file, falling back to `netCDF4`'
+            )
+            save_dataset(
+                dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs
+            )
     else:
-        fname = "dataset.nc" if fname is None else f"{fname}_dataset.nc"
+        fname = 'dataset.nc' if fname is None else f'{fname}_dataset.nc'
         outfile = Path(outdir).joinpath(fname)
-        mode = "a" if outfile.is_file() else "w"
-        log.info(f"Saving dataset to: {outfile.as_posix()}")
+        mode = 'a' if outfile.is_file() else 'w'
+        logger.info(f'Saving dataset to: {outfile.as_posix()}')
         outfile.parent.mkdir(exist_ok=True, parents=True)
         dataset.to_netcdf(outfile.as_posix(), mode=mode)
 
@@ -78,8 +129,8 @@ def save_dataset(
 
 
 def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
-    log.info(f"Saving dataset to: {hfile}")
-    f = h5py.File(hfile, "a")
+    logger.info(f'Saving dataset to: {hfile}')
+    f = h5py.File(hfile, 'a')
     for key, val in dataset.data_vars.items():
         arr = val.values
         if len(arr) == 0:
@@ -98,14 +149,14 @@ def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
 
 
 def dict_from_h5pyfile(hfile: PathLike) -> dict:
-    f = h5py.File(hfile, "r")
+    f = h5py.File(hfile, 'r')
     data = {key: f[key] for key in list(f.keys())}
     f.close()
     return data
 
 
 def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
-    f = h5py.File(hfile, "r")
+    f = h5py.File(hfile, 'r')
     data = {key: f[key] for key in list(f.keys())}
     f.close()
 
