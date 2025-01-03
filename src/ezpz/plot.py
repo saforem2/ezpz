@@ -9,8 +9,9 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
+import torch
 from ezpz.dist import get_rank
 import numpy as np
 import xarray as xr
@@ -61,13 +62,13 @@ def set_plot_style(**kwargs):
     import matplotlib.pyplot as plt
 
     # LW = plt.rcParams.get('axes.linewidth', 1.75)
-    FigAxes = Tuple[plt.Figure, plt.Axes]
+    # FigAxes = Tuple[plt.Figure, plt.Axes]
     plt.style.use("default")
     # plt.style.use('default')
     try:
-        import ambivalent
+        # import ambivalent
 
-        STYLES = ambivalent.STYLES
+        # STYLES = ambivalent.STYLES
         # from toolbox import set_plot_style
         from ambivalent import STYLES
 
@@ -164,8 +165,8 @@ def tplot_dict(
 
 
 def tplot(
-    y: Optional[list, np.ndarray, torch.Tensor],
-    x: Optional[list, np.ndarray, torch.Tensor] = None,
+    y: Union[list, np.ndarray, torch.Tensor],
+    x: Optional[Union[list, np.ndarray, torch.Tensor]] = None,
     label: Optional[str] = None,
     title: Optional[str] = None,
     xlabel: Optional[str] = None,
@@ -176,6 +177,7 @@ def tplot(
     outfile: Optional[os.PathLike | str | Path] = None,
     type: Optional[str] = None,
     append: bool = True,
+    verbose: bool = False,
     figsize: Optional[tuple[int, int]] = None,
 ):
     # if isinstance(y, list):
@@ -217,7 +219,8 @@ def tplot(
             pltx.xticks(x.tolist())
     pltx.show()
     if outfile is not None:
-        log.info(f"Appending plot to: {outfile}")
+        if verbose:
+            log.info(f"Appending plot to: {outfile}")
         if not Path(outfile).parent.exists():
             _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
         pltx.savefig(
@@ -624,7 +627,7 @@ def plot_dataArray(
     if logfreq is not None:
         ax = plt.gca()
         xticks = ax.get_xticks()  # type:ignore
-        _ = ax.set_xticklabels(
+        _ = ax.set_xticklabels(  # type:ignore
             [  # type:ignore
                 f"{logfreq * int(i)}" for i in xticks
             ]
@@ -991,6 +994,7 @@ def make_ridgeplots(
 
                 # Define and use a simple function to
                 # label the plot in axes coords:
+
                 def label(_, color, label):  # type: ignore # noqa
                     ax = plt.gca()
                     # assert isinstance(ax, plt.Axes)
