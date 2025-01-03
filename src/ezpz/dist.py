@@ -709,16 +709,17 @@ def setup_torch_distributed(
 
     # from ezpz.utils import breakpoint
     # breakpoint(0)
-    ezpz.tp.initialize_tensor_parallel(
-        tensor_parallel_size=tensor_parallel_size,
-        pipeline_length=pipeline_length,
-        context_parallel_size=context_parallel_size,
-        tensor_parallel_backend=tensor_parallel_backend,
-        pipeline_backend=pipeline_backend,
-        cp_backend=cp_backend,
-        ddp_backend=ddp_backend,
-        timeout=timedelta(seconds=timeout),
-    )
+    if tensor_parallel_size > 1 or context_parallel_size > 1 or pipeline_length > 1:
+        ezpz.tp.initialize_tensor_parallel(
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_length=pipeline_length,
+            context_parallel_size=context_parallel_size,
+            tensor_parallel_backend=tensor_parallel_backend,
+            pipeline_backend=pipeline_backend,
+            cp_backend=cp_backend,
+            ddp_backend=ddp_backend,
+            timeout=timedelta(seconds=timeout),
+        )
 
     os.environ['world_size'] = str(world_size)
     os.environ['RANK'] = str(rank)
@@ -824,37 +825,38 @@ def setup_torch(
     # nz = lrank - len(str(rank))
     hn = socket.gethostname()
     psizes = [f"['{hn}']" + f'[{rank:>{lrank}}/{world_size-1:<{lrank}}] ']
-    import ezpz.tp
+    if tensor_parallel_size > 1 or context_parallel_size > 1 or pipeline_length > 1:
+        import ezpz.tp
 
-    tprank = ezpz.tp.get_tensor_parallel_rank()
-    # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-    tpsize = ezpz.tp.get_tensor_parallel_world_size()
-    dprank = ezpz.tp.get_data_parallel_rank()
-    # dpranks = ezpz.tp.get_data_parallel_ranks()
-    dpsize = ezpz.tp.get_data_parallel_world_size()
-    pprank = ezpz.tp.get_pipeline_parallel_rank()
-    # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
-    ppsize = ezpz.tp.get_pipeline_parallel_world_size()
-    # cpranks = ezpz.tp.get_context_parallel_ranks()
-    cprank = ezpz.tp.get_context_parallel_rank()
-    cpsize = ezpz.tp.get_context_parallel_world_size()
-    if cpsize > 1 or ppsize > 1 or tpsize > 1:
-        if cpsize > 1:
-            lcp = len(str(cpsize - 1))
-            psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
-            tdist.barrier(group=ezpz.tp.get_context_parallel_group())
-        if ppsize > 1:
-            lpp = len(str(ppsize - 1))
-            psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
-            tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-        if tpsize > 1:
-            ltp = len(str(tpsize - 1))
-            psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
-            tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-        if dpsize > 1:
-            ldp = len(str(dpsize - 1))
-            psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
-            tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+        tprank = ezpz.tp.get_tensor_parallel_rank()
+        # tpranks = ezpz.tp.get_tensor_parallel_ranks()
+        tpsize = ezpz.tp.get_tensor_parallel_world_size()
+        dprank = ezpz.tp.get_data_parallel_rank()
+        # dpranks = ezpz.tp.get_data_parallel_ranks()
+        dpsize = ezpz.tp.get_data_parallel_world_size()
+        pprank = ezpz.tp.get_pipeline_parallel_rank()
+        # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
+        ppsize = ezpz.tp.get_pipeline_parallel_world_size()
+        # cpranks = ezpz.tp.get_context_parallel_ranks()
+        cprank = ezpz.tp.get_context_parallel_rank()
+        cpsize = ezpz.tp.get_context_parallel_world_size()
+        if cpsize > 1 or ppsize > 1 or tpsize > 1:
+            if cpsize > 1:
+                lcp = len(str(cpsize - 1))
+                psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
+                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+            if ppsize > 1:
+                lpp = len(str(ppsize - 1))
+                psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
+                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+            if tpsize > 1:
+                ltp = len(str(tpsize - 1))
+                psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
+                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+            if dpsize > 1:
+                ldp = len(str(dpsize - 1))
+                psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
+                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info(''.join(psizes))
     tdist.barrier()
