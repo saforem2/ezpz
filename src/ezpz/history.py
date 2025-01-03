@@ -19,8 +19,8 @@ import ezpz
 
 # from ezpz import format_pair, summarize_dict
 from ezpz.configs import PathLike
-from ezpz.plot import plot_dataset
-from ezpz.utils import save_dataset, grab_tensor, breakpoint
+from ezpz.plot import plot_dataset, tplot
+from ezpz.utils import save_dataset, grab_tensor  # , breakpoint
 from ezpz.log.console import is_interactive
 
 import matplotlib.pyplot as plt
@@ -373,6 +373,7 @@ class History:
         outdir: Optional[str] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
+        verbose: bool = False,
         line_labels: bool = False,
         logfreq: Optional[int] = None,
     ):
@@ -456,7 +457,8 @@ class History:
             _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
             # from l2hmc.configs import PROJECT_DIR
             # from ezpz
-            log.info(f'Saving {key} plot to: ' f'{Path(outdir).resolve()}')
+            if verbose:
+                log.info(f'Saving {key} plot to: ' f'{Path(outdir).resolve()}')
             for ext, d in dirs.items():
                 outfile = d.joinpath(f'{key}.{ext}')
                 plt.savefig(outfile, dpi=400, bbox_inches='tight')
@@ -594,10 +596,12 @@ class History:
         append: bool = True,
         xkey: Optional[str] = None,
         dataset: Optional[xr.Dataset] = None,
+        verbose: bool = False,
     ):
         dataset = self.get_dataset() if dataset is None else dataset
         outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-        for idx, (key, val) in enumerate(dataset.items()):
+        log.info(f'Saving tplots to {outdir.as_posix()}')
+        for _, (key, val) in enumerate(dataset.items()):
             if xkey is not None and key == xkey:
                 continue
             if callable(getattr(val, 'to_numpy', None)):
@@ -625,13 +629,14 @@ class History:
                     assert xval is not None
                     xarr = xval.to_numpy()
                 assert xarr is not None
-                ezpz.tplot(
-                    y=arr,
+                tplot(
+                    y=np.array(arr),
                     x=xarr,
                     xlabel=xkey,
                     ylabel=str(key),
                     append=append,
                     title=f'{key} [{ezpz.get_timestamp()}]',
+                    verbose=verbose,
                     outfile=outdir.joinpath(f'{key}.txt').as_posix(),
                 )
                 # tplot_dict(
@@ -650,6 +655,7 @@ class History:
         num_chains: int = 128,
         therm_frac: float = 0.0,
         title: Optional[str] = None,
+        verbose: bool = False,
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
@@ -713,15 +719,17 @@ class History:
                 _ = [
                     i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
                 ]
+                # if verbose:
                 log.info(f'Saving {key} plot to: ' f'{Path(outdir).resolve()}')
                 for ext, d in dirs.items():
                     outfile = d.joinpath(f'{key}.{ext}')
                     if outfile.is_file():
+                        outfile = d.joinpath(f'{key}-subfig.{ext}')
+                    # log.info(f"Saving {key}.ext to: {outfile}")
+                    if verbose:
                         log.info(
                             f'Saving {key} plot to: ' f'{outfile.resolve()}'
                         )
-                        outfile = d.joinpath(f'{key}-subfig.{ext}')
-                    # log.info(f"Saving {key}.ext to: {outfile}")
                     plt.savefig(outfile, dpi=400, bbox_inches='tight')
             if is_interactive():
                 plt.show()
@@ -729,7 +737,11 @@ class History:
         return dataset
 
     def history_to_dict(self) -> dict:
-        return {k: np.stack(v).squeeze() for k, v in self.history.items()}
+        # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
+        return {
+            k: torch.Tensor(v).numpy(force=True)
+            for k, v in self.history.items()
+        }
 
     def to_DataArray(
         self,
@@ -829,6 +841,7 @@ class History:
         dataset_fname: Optional[str] = None,
         num_chains: int = 128,
         therm_frac: float = 0.0,
+        verbose: bool = False,
         save: bool = True,
         plot: bool = True,
         append_tplot: bool = True,
@@ -859,6 +872,7 @@ class History:
             _ = self.plot_all(
                 dataset=dataset,
                 outdir=mplotdir,
+                verbose=verbose,
                 num_chains=num_chains,
                 therm_frac=therm_frac,
                 title=title,
@@ -870,6 +884,7 @@ class History:
                 outdir=tplotdir,
                 append=append_tplot,
                 xkey=xkey,
+                verbose=verbose,
             )
         if save:
             fname = 'dataset' if dataset_fname is None else dataset_fname
