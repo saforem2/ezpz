@@ -128,7 +128,9 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     # logger.info(
                     #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
                     # )
-                    wandb.run.log({f'timeit/{func.__name__}': dt}, commit=False)
+                    wandb.run.log(
+                        {f'timeit/{func.__name__}': dt}, commit=False
+                    )
             return result
 
         return wrapper
@@ -345,7 +347,9 @@ def print_dist_setup(
             logger.warning(
                 f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
             )
-        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+        logger.warning(
+            f'Using [{wsa} / {wst}] available "{device}" devices !!'
+        )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f'num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]'
@@ -667,7 +671,11 @@ def setup_torch_distributed(
         else timeout
     )
     port = (
-        '1234' if port is None else str(port) if isinstance(port, int) else port
+        '1234'
+        if port is None
+        else str(port)
+        if isinstance(port, int)
+        else port
     )
     rank = get_rank()
     world_size = get_world_size()
@@ -834,21 +842,22 @@ def setup_torch(
         if cpsize > 1:
             lcp = len(str(cpsize - 1))
             psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
+            tdist.barrier(group=ezpz.tp.get_context_parallel_group())
         if ppsize > 1:
             lpp = len(str(ppsize - 1))
             psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
+            tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
         if tpsize > 1:
             ltp = len(str(tpsize - 1))
             psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
+            tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
         if dpsize > 1:
             ldp = len(str(dpsize - 1))
             psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
+            tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info(''.join(psizes))
-    tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-    tdist.barrier(group=ezpz.tp.get_data_parallel_group())
-    tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-    tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+    tdist.barrier()
     # MPI.COMM_WORLD.Barrier()
     return rank
 
@@ -1354,7 +1363,9 @@ def get_pbs_launch_info(
 
     assert get_scheduler() == 'PBS'
     if hostfile is None:
-        hostfile = os.environ.get('PBS_NODEFILE', get_pbs_nodefile_from_qstat())
+        hostfile = os.environ.get(
+            'PBS_NODEFILE', get_pbs_nodefile_from_qstat()
+        )
     assert hostfile is not None
     hfp = Path(hostfile)
     # hostfile = os.environ.get("PBS_NODEFILE", None)
