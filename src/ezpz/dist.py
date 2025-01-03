@@ -8,11 +8,11 @@ from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import logging
 import os
+import socket
 from pathlib import Path
 import time
 from functools import wraps
 from typing import Any, Callable, Optional, Union
-import socket
 import ezpz.tp
 
 from mpi4py import MPI
@@ -727,7 +727,7 @@ def setup_torch(
     port: Optional[str | int] = None,
     seed: Optional[int] = None,
     timeout: Optional[str | int] = None,
-    verbose: Optional[bool] = True,
+    verbose: Optional[bool] = False,
     tensor_parallel_size: int = 1,
     pipeline_length: int = 1,
     context_parallel_size: int = 1,
@@ -783,20 +783,6 @@ def setup_torch(
     os.environ['NUM_NODES'] = str(num_nodes)
     os.environ['LOCAL_SIZE'] = str(local_size)
     os.environ['WORLD_SIZE'] = str(world_size)
-    import ezpz.tp
-
-    tprank = ezpz.tp.get_tensor_parallel_rank()
-    # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-    tpsize = ezpz.tp.get_tensor_parallel_world_size()
-    dprank = ezpz.tp.get_data_parallel_rank()
-    # dpranks = ezpz.tp.get_data_parallel_ranks()
-    dpsize = ezpz.tp.get_data_parallel_world_size()
-    pprank = ezpz.tp.get_pipeline_parallel_rank()
-    # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
-    ppsize = ezpz.tp.get_pipeline_parallel_world_size()
-    # cpranks = ezpz.tp.get_context_parallel_ranks()
-    cprank = ezpz.tp.get_context_parallel_rank()
-    cpsize = ezpz.tp.get_context_parallel_world_size()
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     if ACCELERATOR_TYPE == 'IntelGPU' and device == 'xpu':
         # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
@@ -826,33 +812,39 @@ def setup_torch(
             f"+ '{get_torch_backend()}' "
             'for distributed training.'
         )
-    # prefix = ''.join(
     lrank = len(str(world_size - 1))
-    nz = lrank - len(str(rank))
-    zstr = f'0{nz}'
-    psizes = [f'[{rank:>{lrank}}/{world_size-1:<{lrank}}]: ']
-    if cpsize > 1:
-        lcp = len(str(cpsize - 1))
-        psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
-    if ppsize > 1:
-        lpp = len(str(ppsize - 1))
-        psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
-    if tpsize > 1:
-        ltp = len(str(tpsize - 1))
-        psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
-    if dpsize > 1:
-        ldp = len(str(dpsize - 1))
-        psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
-    logger.info(''.join(psizes))
+    # nz = lrank - len(str(rank))
+    hn = socket.gethostname()
+    psizes = [f"['{hn}']" + f'[{rank:>{lrank}}/{world_size-1:<{lrank}}] ']
+    import ezpz.tp
 
-    # )
-    #         f'[tp:{tprank}/{tpsize-1}]',
-    #         f'[dp:{dprank}/{dpsize-1}]',
-    #         f'[pp:{pprank}/{ppsize-1}]',
-    #         f'[cp:{cprank}/{cpsize-1}]',
-    #     ]
-    # )
-    # logger.info(f'{prefix}')
+    tprank = ezpz.tp.get_tensor_parallel_rank()
+    # tpranks = ezpz.tp.get_tensor_parallel_ranks()
+    tpsize = ezpz.tp.get_tensor_parallel_world_size()
+    dprank = ezpz.tp.get_data_parallel_rank()
+    # dpranks = ezpz.tp.get_data_parallel_ranks()
+    dpsize = ezpz.tp.get_data_parallel_world_size()
+    pprank = ezpz.tp.get_pipeline_parallel_rank()
+    # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
+    ppsize = ezpz.tp.get_pipeline_parallel_world_size()
+    # cpranks = ezpz.tp.get_context_parallel_ranks()
+    cprank = ezpz.tp.get_context_parallel_rank()
+    cpsize = ezpz.tp.get_context_parallel_world_size()
+    if cpsize > 1 or ppsize > 1 or tpsize > 1:
+        if cpsize > 1:
+            lcp = len(str(cpsize - 1))
+            psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
+        if ppsize > 1:
+            lpp = len(str(ppsize - 1))
+            psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
+        if tpsize > 1:
+            ltp = len(str(tpsize - 1))
+            psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
+        if dpsize > 1:
+            ldp = len(str(dpsize - 1))
+            psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
+    # tdist.all_gather(psizes)
+    logger.info(''.join(psizes))
     tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
     tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
