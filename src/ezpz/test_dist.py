@@ -374,12 +374,13 @@ def train(config: TrainConfig) -> Trainer:
     local_rank = ezpz.get_local_rank()
     device_id = f'{device_type}:{local_rank}'
 
-    import ezpz.tp
+    if config.tp > 1 or config.pp > 1 or config.cp > 1:
+        import ezpz.tp
 
-    tpgroup = ezpz.tp.get_tensor_parallel_group()
-    dpgroup = ezpz.tp.get_data_parallel_group()
-    ppgroup = ezpz.tp.get_pipeline_parallel_group()
-    cpgroup = ezpz.tp.get_context_parallel_group()
+        tpgroup = ezpz.tp.get_tensor_parallel_group()
+        dpgroup = ezpz.tp.get_data_parallel_group()
+        ppgroup = ezpz.tp.get_pipeline_parallel_group()
+        cpgroup = ezpz.tp.get_context_parallel_group()
 
     # tprank = ezpz.tp.get_tensor_parallel_rank()
     # tpranks = ezpz.tp.get_tensor_parallel_ranks()
@@ -413,11 +414,11 @@ def train(config: TrainConfig) -> Trainer:
     # # print(f'[{pprank}]: {ppranks=}')
     # # print(f'[{cprank}]: {cpranks=}')
 
-    tdist.barrier(group=tpgroup)
-    tdist.barrier(group=dpgroup)
-    tdist.barrier(group=cpgroup)
-    tdist.barrier(group=ppgroup)
-    # tdist.barrier(group=tpgroup)
+        tdist.barrier(group=tpgroup)
+        tdist.barrier(group=dpgroup)
+        tdist.barrier(group=cpgroup)
+        tdist.barrier(group=ppgroup)
+        # tdist.barrier(group=tpgroup)
     run = None
     if wandb is not None and not WANDB_DISABLED and rank == 0:
         run = ezpz.setup_wandb(project_name='ezpz.test_dist')
