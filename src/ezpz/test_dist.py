@@ -220,6 +220,7 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
         output_size=args.output_size,
         dtype=args.dtype,
         train_iters=args.train_iters,
+        backend=args.backend,
         pyinstrument_profiler=args.pyinstrument_profiler,
         layer_sizes=args.layer_sizes,
     )
@@ -359,9 +360,9 @@ def train(config: TrainConfig) -> Trainer:
     rank = ezpz.setup_torch(
         backend=config.backend,
         # port=(),
-        tensor_parallel_size=config.tp,
-        pipeline_length=config.pp,
-        context_parallel_size=config.cp,
+        tpsize=config.tp,
+        ppsize=config.pp,
+        cpsize=config.cp,
     )
 
     # T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
