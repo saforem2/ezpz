@@ -1,7 +1,9 @@
 """
 src/ezpz/logging/style.py
 """
+
 from __future__ import absolute_import, annotations, division, print_function
+
 # from typing import Dict
 # from rich.style import Style
 from contextlib import contextmanager
@@ -9,6 +11,7 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+
 # import shutil
 import time
 from typing import Optional
@@ -54,16 +57,16 @@ def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
 
 
 def build_layout(
-        steps: Any,
-        visible: bool = True,
-        job_type: Optional[str] = 'train',
+    steps: Any,
+    visible: bool = True,
+    job_type: Optional[str] = 'train',
 ) -> dict:
     job_progress = Progress(
-        "{task.description}",
+        '{task.description}',
         SpinnerColumn('dots'),
         BarColumn(),
         TimeElapsedColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
         TimeRemainingColumn(),
     )
     tasks = {}
@@ -71,7 +74,7 @@ def build_layout(
     if job_type == 'train':
         border_style = 'green'
         tasks['step'] = job_progress.add_task(
-            "[blue]Total",
+            '[blue]Total',
             total=(steps.nera * steps.nepoch),
         )
         # tasks['era'] = job_progress.add_task(
@@ -79,19 +82,18 @@ def build_layout(
         #     total=steps.nera
         # )
         tasks['epoch'] = job_progress.add_task(
-            "[cyan]Epoch",
-            total=steps.nepoch
+            '[cyan]Epoch', total=steps.nepoch
         )
     elif job_type == 'eval':
         border_style = 'green'
         tasks['step'] = job_progress.add_task(
-            "[green]Eval",
+            '[green]Eval',
             total=steps.test,
         )
     elif job_type == 'hmc':
         border_style = 'yellow'
         tasks['step'] = job_progress.add_task(
-            "[green]HMC",
+            '[green]HMC',
             total=steps.test,
         )
     else:
@@ -143,29 +145,18 @@ def add_columns(
             continue
 
         if key == 'loss':
-            table.add_column(str(key),
-                             justify='center',
-                             style='green')
+            table.add_column(str(key), justify='center', style='green')
         elif key == 'dt':
-            table.add_column(str(key),
-                             justify='center',
-                             style='red')
+            table.add_column(str(key), justify='center', style='red')
 
         elif key == 'acc':
-            table.add_column(str(key),
-                             justify='center',
-                             style='magenta')
+            table.add_column(str(key), justify='center', style='magenta')
         elif key == 'dQint':
-            table.add_column(str(key),
-                             justify='center',
-                             style='cyan')
+            table.add_column(str(key), justify='center', style='cyan')
         elif key == 'dQsin':
-            table.add_column(str(key),
-                             justify='center',
-                             style='yellow')
+            table.add_column(str(key), justify='center', style='yellow')
         else:
-            table.add_column(str(key),
-                             justify='center')
+            table.add_column(str(key), justify='center')
 
     return table
 
@@ -190,11 +181,12 @@ def flatten_dict(d) -> dict:
 
 def nested_dict_to_df(d):
     import pandas as pd
+
     dflat = flatten_dict(d)
     df = pd.DataFrame.from_dict(dflat, orient='index')
     df.index = pd.MultiIndex.from_tuples(df.index)
     df = df.unstack(level=-1)
-    df.columns = df.columns.map("{0[1]}".format)
+    df.columns = df.columns.map('{0[1]}'.format)
     return df
 
 
@@ -212,7 +204,8 @@ def print_config(
             DictConfig.
     """
     import pandas as pd
-    tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
+
+    tree = rich.tree.Tree('CONFIG')  # , style=style, guide_style=style)
     quee = []
     for f in config:
         if f not in quee:
@@ -228,7 +221,7 @@ def print_config(
             branch_content = str(config_group)
             cfg = str(config_group)
         dconfig[f] = cfg
-        branch.add(rich.syntax.Syntax(branch_content, "yaml"))
+        branch.add(rich.syntax.Syntax(branch_content, 'yaml'))
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
     with outfile.open('wt') as f:
         console = rich.console.Console(file=f)
@@ -250,11 +243,7 @@ def print_config(
         mode = 'w'
         header = True
     df = pd.DataFrame({logdir: cfgdict})
-    df.T.to_csv(
-        dbfpath.resolve().as_posix(),
-        mode=mode,
-        header=header
-    )
+    df.T.to_csv(dbfpath.resolve().as_posix(), mode=mode, header=header)
     os.environ['LOGDIR'] = logdir
 
 
@@ -275,7 +264,7 @@ class CustomLogging:
             'console': {
                 'class': 'rich.logging.RichHandler',
                 'formatter': 'simple',
-                'rich_tracebacks': 'true'
+                'rich_tracebacks': 'true',
             },
             'file': {
                 'class': 'logging.FileHander',
@@ -321,6 +310,7 @@ def printarr(*arrs, float_width=6):
     reference.
     """
     import inspect
+
     frame_ = inspect.currentframe()
     assert frame_ is not None
     frame = frame_.f_back
@@ -328,7 +318,7 @@ def printarr(*arrs, float_width=6):
     #     frame = frame_.f_back
     # else:
     #     frame = inspect.getouterframes()
-    default_name = "[temporary]"
+    default_name = '[temporary]'
 
     # helpers to gather data about each array
 
@@ -372,10 +362,10 @@ def printarr(*arrs, float_width=6):
                 # heuristic: jax returns some goofy long string we don't want,
                 # ignore it
                 return device_str
-        return ""
+        return ''
 
     def format_float(x):
-        return f"{x:{float_width}g}"
+        return f'{x:{float_width}g}'
 
     def minmaxmean_str(a):
         if a is None:
@@ -384,17 +374,17 @@ def printarr(*arrs, float_width=6):
             return (format_float(a), format_float(a), format_float(a))
 
         # compute min/max/mean. if anything goes wrong, just print 'N/A'
-        min_str = "N/A"
+        min_str = 'N/A'
         try:
             min_str = format_float(a.min())
         except Exception:
             pass
-        max_str = "N/A"
+        max_str = 'N/A'
         try:
             max_str = format_float(a.max())
         except Exception:
             pass
-        mean_str = "N/A"
+        mean_str = 'N/A'
         try:
             mean_str = format_float(a.mean())
         except Exception:
@@ -403,23 +393,33 @@ def printarr(*arrs, float_width=6):
         return (min_str, max_str, mean_str)
 
     try:
-        props = ['name', 'dtype', 'shape', 'type', 'device', 'min', 'max',
-                 'mean']
+        props = [
+            'name',
+            'dtype',
+            'shape',
+            'type',
+            'device',
+            'min',
+            'max',
+            'mean',
+        ]
 
         # precompute all of the properties for each input
         str_props = []
         for a in arrs:
             minmaxmean = minmaxmean_str(a)
-            str_props.append({
-                'name': name_from_outer_scope(a),
-                'dtype': dtype_str(a),
-                'shape': shape_str(a),
-                'type': type_str(a),
-                'device': device_str(a),
-                'min': minmaxmean[0],
-                'max': minmaxmean[1],
-                'mean': minmaxmean[2],
-            })
+            str_props.append(
+                {
+                    'name': name_from_outer_scope(a),
+                    'dtype': dtype_str(a),
+                    'shape': shape_str(a),
+                    'type': type_str(a),
+                    'device': device_str(a),
+                    'min': minmaxmean[0],
+                    'max': minmaxmean[1],
+                    'mean': minmaxmean[2],
+                }
+            )
 
         # for each property, compute its length
         maxlen = {}
@@ -434,20 +434,20 @@ def printarr(*arrs, float_width=6):
         props = [p for p in props if maxlen[p] > 0]
 
         # print a header
-        header_str = ""
+        header_str = ''
         for p in props:
-            prefix = "" if p == 'name' else " | "
-            fmt_key = ">" if p == 'name' else "<"
-            header_str += f"{prefix}{p:{fmt_key}{maxlen[p]}}"
+            prefix = '' if p == 'name' else ' | '
+            fmt_key = '>' if p == 'name' else '<'
+            header_str += f'{prefix}{p:{fmt_key}{maxlen[p]}}'
         print(header_str)
-        print("-"*len(header_str))
+        print('-' * len(header_str))
         # now print the acual arrays
         for strp in str_props:
             for p in props:
-                prefix = "" if p == 'name' else " | "
-                fmt_key = ">" if p == 'name' else "<"
-                print(f"{prefix}{strp[p]:{fmt_key}{maxlen[p]}}", end='')
-            print("")
+                prefix = '' if p == 'name' else ' | '
+                fmt_key = '>' if p == 'name' else '<'
+                print(f'{prefix}{strp[p]:{fmt_key}{maxlen[p]}}', end='')
+            print('')
 
     finally:
         del frame
@@ -457,7 +457,7 @@ def printarr(*arrs, float_width=6):
 
 BEAT_TIME = 0.008
 
-COLORS = ["cyan", "magenta", "red", "green", "blue", "purple"]
+COLORS = ['cyan', 'magenta', 'red', 'green', 'blue', 'purple']
 
 # log = get_logger(__name__)
 
@@ -506,6 +506,7 @@ class DataFramePrettify:
          If this is set to False the previous console
          input/output is maintained
     """
+
     import pandas as pd
 
     def __init__(
@@ -518,10 +519,10 @@ class DataFramePrettify:
         delay_time: int = 5,
         clear_console: bool = True,
     ) -> None:
-        self.df = df.reset_index().rename(columns={"index": ""})
+        self.df = df.reset_index().rename(columns={'index': ''})
         self.table = Table(show_footer=False)
         self.table_centered = Columns(
-            (self.table,), align="center", expand=True
+            (self.table,), align='center', expand=True
         )
         self.num_colors = len(COLORS)
         self.delay_time = delay_time
@@ -534,7 +535,7 @@ class DataFramePrettify:
             self.columns = self.df.columns[:col_limit]
         else:
             self.columns = list(self.df.columns[-col_limit:])
-            self.columns.insert(0, "index")
+            self.columns.insert(0, 'index')
         if first_rows:
             self.rows = self.df.values[:row_limit]
         else:
@@ -550,11 +551,10 @@ class DataFramePrettify:
     def _add_rows(self):
         for row in self.rows:
             with beat(self.delay_time):
-
                 if self.first_cols:
                     row = row[: self.col_limit]
                 else:
-                    row = row[-self.col_limit:]
+                    row = row[-self.col_limit :]
 
                 row = [str(item) for item in row]
                 self.table.add_row(*list(row))
@@ -562,20 +562,18 @@ class DataFramePrettify:
     def _move_text_to_right(self):
         for i in range(len(self.table.columns)):
             with beat(self.delay_time):
-                self.table.columns[i].justify = "right"
+                self.table.columns[i].justify = 'right'
 
     def _add_random_color(self):
         for i in range(len(self.table.columns)):
             with beat(self.delay_time):
-                self.table.columns[i].header_style = COLORS[
-                    i % self.num_colors
-                ]
+                self.table.columns[i].header_style = COLORS[i % self.num_colors]
 
     def _add_style(self):
         for i in range(len(self.table.columns)):
             with beat(self.delay_time):
                 self.table.columns[i].style = (
-                    "bold " + COLORS[i % self.num_colors]
+                    'bold ' + COLORS[i % self.num_colors]
                 )
 
     def _adjust_box(self):
@@ -585,17 +583,15 @@ class DataFramePrettify:
 
     def _dim_row(self):
         with beat(self.delay_time):
-            self.table.row_styles = ["none", "dim"]
+            self.table.row_styles = ['none', 'dim']
 
     def _adjust_border_color(self):
         with beat(self.delay_time):
-            self.table.border_style = "bright_yellow"
+            self.table.border_style = 'bright_yellow'
 
     def _change_width(self):
         original_width = Measurement.get(
-            console=console,
-            options=console.options,
-            renderable=self.table
+            console=console, options=console.options, renderable=self.table
         ).maximum
         width_ranges = [
             [original_width, console.width, 2],
@@ -614,38 +610,38 @@ class DataFramePrettify:
 
     def _add_caption(self):
         if self.first_rows:
-            row_text = "first"
+            row_text = 'first'
         else:
-            row_text = "last"
+            row_text = 'last'
         if self.first_cols:
-            col_text = "first"
+            col_text = 'first'
         else:
-            col_text = "last"
+            col_text = 'last'
 
         with beat(self.delay_time):
             self.table.caption = (
-                f"Only the {row_text} "
-                f"{self.row_limit} rows "
-                f"and the {col_text} "
-                f"{self.col_limit} columns "
-                "is shown here."
+                f'Only the {row_text} '
+                f'{self.row_limit} rows '
+                f'and the {col_text} '
+                f'{self.col_limit} columns '
+                'is shown here.'
             )
         with beat(self.delay_time):
             self.table.caption = (
-                f"Only the [bold green] {row_text} "
-                "{self.row_limit} rows[/bold green] and the "
-                "[bold red]{self.col_limit} {col_text} "
-                "columns[/bold red] is shown here."
+                f'Only the [bold green] {row_text} '
+                '{self.row_limit} rows[/bold green] and the '
+                '[bold red]{self.col_limit} {col_text} '
+                'columns[/bold red] is shown here.'
             )
         with beat(self.delay_time):
             self.table.caption = (
-                f"Only the [bold magenta not dim] "
-                f"{row_text} {self.row_limit} rows "
-                f"[/bold magenta not dim] and the "
-                f"[bold green not dim]{col_text} "
-                f"{self.col_limit} columns "
-                f"[/bold green not dim] "
-                f"are shown here."
+                f'Only the [bold magenta not dim] '
+                f'{row_text} {self.row_limit} rows '
+                f'[/bold magenta not dim] and the '
+                f'[bold green not dim]{col_text} '
+                f'{self.col_limit} columns '
+                f'[/bold green not dim] '
+                f'are shown here.'
             )
 
     def prettify(self):
@@ -653,7 +649,7 @@ class DataFramePrettify:
             self.table_centered,
             console=console,
             refresh_per_second=self.delay_time,
-            vertical_overflow="ellipsis",
+            vertical_overflow='ellipsis',
         ):
             self._add_columns()
             self._add_rows()
@@ -695,9 +691,16 @@ def prettify(
         Clear the console before printing the table, by default True. If this is set to false the previous console input/output is maintained
     """
     import pandas as pd
+
     if isinstance(df, pd.DataFrame):
         DataFramePrettify(
-            df, row_limit, col_limit, first_rows, first_cols, delay_time,clear_console
+            df,
+            row_limit,
+            col_limit,
+            first_rows,
+            first_cols,
+            delay_time,
+            clear_console,
         ).prettify()
 
     else:
@@ -705,18 +708,22 @@ def prettify(
         print(df)
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == '__main__':  # pragma: no cover
     import argparse
+
     parser = argparse.ArgumentParser()
     from rich.text import Text
+
     # from ezpz.log.console import Console
-    parser.add_argument("--html", action="store_true", help="Export as HTML table")
+    parser.add_argument(
+        '--html', action='store_true', help='Export as HTML table'
+    )
     args = parser.parse_args()
     html: bool = args.html
     # from rich.table import Table
     # console = Console(record=True, width=120) if html else Console()
     console = get_console(record=html, width=150)
-    table = Table("Name", "Styling")
+    table = Table('Name', 'Styling')
     styles = DEFAULT_STYLES
     styles |= STYLES
     for style_name, style in styles.items():
