@@ -47,9 +47,7 @@ def use_colored_logs() -> bool:
             ),
         ),
     )
-    if (not plain) and term not in ['dumb', 'unknown']:
-        return True
-    return False
+    return not plain and term not in ['dumb', 'unknown']
 
 
 DARK = {
