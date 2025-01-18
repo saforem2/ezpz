@@ -13,6 +13,8 @@ import os
 import time
 from typing import Optional
 
+from xarray import Dataset
+
 import ezpz
 
 import warnings
@@ -312,12 +314,13 @@ class Trainer:
         self.optimizer = optimizer
         self.history = History()
         self.train_iter = 0
+        self.device_type = ezpz.get_torch_device_type()
 
     def _forward_step(self) -> dict:
         t0 = time.perf_counter()
         x = torch.rand(
             *(self.config.batch_size, self.config.input_size),
-            device=self.model.device,
+            device=self.device_type,
             dtype=self.config.get_torch_dtype(),
         )
         # with torch.autocast(device_type=str(DEVICE_TYPE), dtype=dtype):
@@ -348,6 +351,17 @@ class Trainer:
         self.train_iter += 1
         return metrics
 
+    def finalize(self) -> Dataset:
+        import matplotlib.pyplot as plt
+        import ambivalent
+
+        plt.style.use(ambivalent.STYLES['ambivalent'])
+        dataset = self.history.finalize(
+            run_name='ezpz.test_dist', dataset_fname='train'
+        )
+        logger.info(f'{dataset=}')
+        return dataset
+
 
 def train(config: TrainConfig) -> Trainer:
     config_dict = asdict(config)
@@ -355,8 +369,6 @@ def train(config: TrainConfig) -> Trainer:
 
     import ezpz
 
-    # T1 = time.perf_counter()  # import time = (T1 - T0)
-    # backend can be any of DDP, deespepeed, horovod
     rank = ezpz.setup_torch(
         backend=config.backend,
         # port=(),
@@ -365,14 +377,9 @@ def train(config: TrainConfig) -> Trainer:
         cpsize=config.cp,
     )
 
-    # T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
-    # timers = {
-    #     'timers/ezpz.setup_torch': T2 - T1,
-    #     'timers/imports': T1 - T0,
-    # }
-    device_type = ezpz.get_torch_device()
     world_size = ezpz.get_world_size()
     local_rank = ezpz.get_local_rank()
+    device_type = ezpz.get_torch_device()
     device_id = f'{device_type}:{local_rank}'
 
     if config.tp > 1 or config.pp > 1 or config.cp > 1:
@@ -382,38 +389,6 @@ def train(config: TrainConfig) -> Trainer:
         dpgroup = ezpz.tp.get_data_parallel_group()
         ppgroup = ezpz.tp.get_pipeline_parallel_group()
         cpgroup = ezpz.tp.get_context_parallel_group()
-
-    # tprank = ezpz.tp.get_tensor_parallel_rank()
-    # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-    #
-    # dprank = ezpz.tp.get_data_parallel_rank()
-    # dpranks = ezpz.tp.get_data_parallel_ranks()
-    #
-    # pprank = ezpz.tp.get_pipeline_parallel_rank()
-    # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
-    #
-    # cpranks = ezpz.tp.get_context_parallel_ranks()
-    # cprank = ezpz.tp.get_context_parallel_rank()
-
-    # if dprank == 0 or tprank == 0 or cprank == 0 or pprank == 0:
-    #     print(f'[{tprank}]: {tpranks=}')
-    #     # print(f'[{tprank}]: {tpgroup=}')
-    #
-    #     print(f'[{dprank}]: {dpranks=}')
-    #     # print(f'[{dprank}]: {dpgroup=}')
-    #
-    #     print(f'[{pprank}]: {ppranks=}')
-    #     # print(f'[{pprank}]: {ppgroup=}')
-    #
-    #     print(f'[{cprank}]: {cpranks=}')
-    #     # logger.info(f'[{cprank}]: {cpgroup=}')
-    #
-    # # from rich import print
-    # #
-    # # print(f'[{tprank}]: {tpranks=}')
-    # # print(f'[{dprank}]: {dpranks=}')
-    # # print(f'[{pprank}]: {ppranks=}')
-    # # print(f'[{cprank}]: {cpranks=}')
 
         tdist.barrier(group=tpgroup)
         tdist.barrier(group=dpgroup)
@@ -437,44 +412,19 @@ def train(config: TrainConfig) -> Trainer:
         output_dim=config.output_size,
         sizes=config.layer_sizes,  # [1024, 512, 256, 128]
     )
-    # T3 = time.perf_counter()
-    # timers['timers/init_to_first_step'] = T3 - T0
 
     model, optimizer = build_model_and_optimizer(model, backend=config.backend)
     dtype = config.get_torch_dtype()
     model.to(device_id)
     model.to(dtype)
     trainer = Trainer(config=config, model=model, optimizer=optimizer)
-    # device_str = ezpz.get_torch_device(as_torch_device=False)
 
     for _ in range(config.train_iters):
         _ = trainer.train_step()
-        # t0 = time.perf_counter()
-        # loss = _forward_step()
-        # t1 = time.perf_counter()
-        # _ = _backward_step(loss)
-        # t2 = time.perf_counter()
-        # optimizer.zero_grad()
-        # if iter > config.warmup and iter % config.log_freq == 0:
-        #     _metrics = {
-        #         'train/iter': iter,
-        #         'train/dt': (dt := (t2 - t0)),
-        #         'train/dtf': (t1 - t0),
-        #         'train/dtb': (t2 - t1),
-        #         'train/loss': loss,
-        #         'train/sps': (config.batch_size / dt),
-        #     }
-        #     summary = history.update(_metrics)
-        #     logger.info(summary.replace('train/', ''))
-    if rank == 0:
-        import matplotlib.pyplot as plt
-        import ambivalent
 
-        plt.style.use(ambivalent.STYLES['ambivalent'])
-        dataset = trainer.history.finalize(
-            run_name='ezpz.test_dist', dataset_fname='train'
-        )
-        logger.info(f'{dataset=}')
+    if rank == 0:
+        _ = trainer.finalize()
+
     if world_size > 1:
         tdist.barrier()
 
@@ -490,44 +440,14 @@ def main():
 
 
 if __name__ == '__main__':
-    import sys
-
-    # T1 = time.perf_counter()  # import time = (T1 - T0)
-    # # backend can be any of DDP, deespepeed, horovod
-    # RANK = ezpz.setup_torch(
-    #     backend=(BACKEND := os.environ.get('BACKEND', 'DDP')),
-    #     port=(port := os.environ.get('MASTER_PORT', '29500')),
-    #     tensor_parallel_size=(mpsize := os.environ.get('MPSIZE', '1')),
-    #     pipeline_length=(plength := os.environ.get('PPSIZE', '1')),
-    #     context_parallel_size=(cpsize := os.environ.get('CPSIZE', '1')),
-    # )
-    #
-    # T2 = time.perf_counter()  # torch_setup_time = (T2 - T1)
-    # TIMERS = {
-    #     'timers/ezpz.setup_torch': T2 - T1,
-    #     'timers/imports': T1 - T0,
-    # }
-    # DEVICE_TYPE = ezpz.get_torch_device()
-    # WORLD_SIZE = ezpz.get_world_size()
-    # LOCAL_RANK = ezpz.get_local_rank()
-    # DEVICE_ID = f'{DEVICE_TYPE}:{LOCAL_RANK}'
     # Wrap training loop in pyinstrument profiler context block
-    trainer = main()
-    # T4 = time.perf_counter()
-    # runtime = torch.tensor(T4 - T0)
-    # tdist.all_reduce(runtime)
+    with ezpz.profile.get_context_manager(rank=ezpz.get_rank(), strict=False):
+        trainer = main()
+
     if trainer.config.backend.lower() in ['ds', 'deepspeed']:
         import deepspeed.comm as dscomm  # type:ignore
 
         dscomm.log_summary()
-    # if not WANDB_DISABLED and ezpz.get_rank() == 0 and wandb is not None:
-    #     if (
-    #         run := getattr(wandb, 'run', None)
-    #     ) is not None and run is wandb.run:
-    #         wandb.log()
-    # wandb.finish()
+
     if ezpz.get_world_size() > 1:
         tdist.barrier()
-    # TIMERS['timers/runtime'] = runtime.item()
-    # logger.info(f'[{ezpz.get_rank()}] {runtime=:.6f}s')
-    sys.exit(0)
