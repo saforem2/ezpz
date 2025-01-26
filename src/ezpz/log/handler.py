@@ -188,7 +188,8 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             text_arr = []
             parent, remainder = path.split('/')
             if '.' in remainder:
-                module, fn = remainder.split('.')
+                module, *fn = remainder.split('.')
+                fn = '.'.join(fn)
             else:
                 module = remainder
                 fn = None
