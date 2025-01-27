@@ -76,30 +76,55 @@ from ezpz.dist import (
     timeitlogit,
 )
 from ezpz.history import History, StopWatch
-from ezpz.log import get_file_logger, get_logger
-from ezpz.log.config import NO_COLOR, STYLES
-from ezpz.log.console import (
+import ezpz.log
+from ezpz.log import (
+    get_file_logger,
+    get_logger,
+    COLORS,
     Console,
+    RichHandler,
+    STYLES,
+    use_colored_logs,
+    add_columns,
+    build_layout,
+    flatten_dict,
     get_console,
     get_theme,
     get_width,
     is_interactive,
-    should_do_markup,
-    to_bool,
-)
-from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.log.style import (
-    BEAT_TIME,
-    COLORS,
-    CustomLogging,
-    add_columns,
-    build_layout,
-    flatten_dict,
     make_layout,
     nested_dict_to_df,
     print_config,
     printarr,
+    should_do_markup,
+    to_bool,
 )
+
+
+# from ezpz.log import get_file_logger, get_logger
+# from ezpz.log.config import STYLES
+# from ezpz.log.console import (
+#     Console,
+#     get_console,
+#     get_theme,
+#     get_width,
+#     is_interactive,
+#     should_do_markup,
+#     to_bool,
+# )
+# from ezpz.log.handler import FluidLogRender, RichHandler
+# from ezpz.log.style import (
+#     BEAT_TIME,
+#     COLORS,
+#     CustomLogging,
+#     add_columns,
+#     build_layout,
+#     flatten_dict,
+#     make_layout,
+#     nested_dict_to_df,
+#     print_config,
+#     printarr,
+# )
 import ezpz.tp
 
 from ezpz.tp import (
@@ -144,17 +169,21 @@ import yaml
 #     loader.exec_module(module)
 #     return module
 
-TERM = os.environ.get('TERM', None)
-PLAIN = os.environ.get(
-    'NO_COLOR',
-    os.environ.get(
-        'NOCOLOR',
-        os.environ.get(
-            'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
-        ),
-    ),
-)
-if (not PLAIN) and TERM not in ['dumb', 'unknown']:
+# TERM = os.environ.get('TERM', None)
+# PLAIN = os.environ.get(
+#     'NO_COLOR',
+#     os.environ.get(
+#         'NOCOLOR',
+#         os.environ.get(
+#             'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
+#         ),
+#     ),
+# )
+# if (not PLAIN) and TERM not in ['dumb', 'unknown']:
+
+if use_colored_logs():
+    from ezpz.log.config import use_colored_logs
+
     try:
         log_config = logging.config.dictConfig(get_logging_config())
     except (ValueError, TypeError, AttributeError) as e:
@@ -207,17 +236,17 @@ else:
 
 __all__ = [
     'BACKENDS',
-    'BEAT_TIME',
+    # 'BEAT_TIME',
     'BIN_DIR',
     'COLORS',
     'CONF_DIR',
     'Console',
-    'CustomLogging',
+    # 'CustomLogging',
     'DS_CONFIG_JSON',
     'DS_CONFIG_PATH',
     'DS_CONFIG_YAML',
     'FRAMEWORKS',
-    'FluidLogRender',
+    # 'FluidLogRender',
     'GETJOBENV',
     'HERE',
     'History',
@@ -337,95 +366,6 @@ def summarize_dict(d: dict) -> str:
 
 def normalize(name: str) -> str:
     return re.sub(r'[-_.]+', '-', name).lower()
-
-
-def get_console_from_logger(logger: logging.Logger) -> Console:
-    from ezpz.log.handler import RichHandler as EnrichHandler
-
-    for handler in logger.handlers:
-        if isinstance(handler, (RichHandler, EnrichHandler)):
-            return handler.console  # type: ignore
-    from ezpz.log.console import get_console
-
-    return get_console()
-
-
-def get_rich_logger(
-    name: Optional[str] = None, level: str = 'INFO'
-) -> logging.Logger:
-    from ezpz.log.handler import RichHandler
-
-    # log: logging.Logger = get_logger(name=name, level=level)
-    log = logging.getLogger(name)
-    log.handlers = []
-    console = get_console(
-        markup=True,
-        redirect=(WORLD_SIZE > 1),
-    )
-    handler = RichHandler(
-        level,
-        rich_tracebacks=False,
-        console=console,
-        show_path=False,
-        enable_link_path=False,
-    )
-    log.handlers = [handler]
-    log.setLevel(level)
-    return log
-
-
-# def _get_file_logger_old(
-#         name: Optional[str] = None,
-#         level: str = 'INFO',
-#         rank_zero_only: bool = True,
-#         fname: Optional[str] = None,
-# ) -> logging.Logger:
-#     import logging
-#     fname = 'output' if fname is None else fname
-#     log = logging.getLogger(name)
-#     fh = logging.FileHandler(f"{fname}.log")
-#     log.setLevel(level)
-#     fh.setLevel(level)
-#     # create formatter and add it to the handlers
-#     formatter = logging.Formatter(
-#         "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-#     )
-#     fh.setFormatter(formatter)
-#     log.addHandler(fh)
-#     return log
-
-
-def get_enrich_logging_config_as_yaml(
-    name: str = 'enrich', level: str = 'INFO'
-) -> str:
-    return rf"""
-    ---
-    # version: 1
-    handlers:
-      {name}:
-        (): ezpz.log.handler.RichHandler
-        show_time: true
-        show_level: true
-        enable_link_path: false
-        level: {level.upper()}
-    root:
-      handlers: [{name}]
-    disable_existing_loggers: false
-    ...
-    """
-
-
-def get_logger_new(
-    name: str,
-    level: str = 'INFO',
-):
-    config = yaml.safe_load(
-        get_enrich_logging_config_as_yaml(name=name, level=level),
-    )
-    logging.config.dictConfig(config)
-    log = logging.getLogger(name=name)
-    log.setLevel(level)
-    return log
 
 
 if __name__ == '__main__':

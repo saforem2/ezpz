@@ -5,7 +5,6 @@ src/ezpz/logging/__init__.py
 from __future__ import absolute_import, annotations, division, print_function
 import shutil
 import os
-from pathlib import Path
 from rich.style import Style
 from typing import Dict
 from rich.default_styles import DEFAULT_STYLES
@@ -14,7 +13,7 @@ from rich.default_styles import DEFAULT_STYLES
 size = shutil.get_terminal_size()
 WIDTH = size.columns
 HEIGHT = size.lines
-os.environ["COLUMNS"] = f"{WIDTH}"
+os.environ['COLUMNS'] = f'{WIDTH}'
 
 # -- Configure useful Paths -----------------------
 # warnings.filterwarnings('ignore')
@@ -36,136 +35,163 @@ os.environ["COLUMNS"] = f"{WIDTH}"
 # OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 # OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
+
+def use_colored_logs() -> bool:
+    term = os.environ.get('TERM', None)
+    plain = os.environ.get(
+        'NO_COLOR',
+        os.environ.get(
+            'NOCOLOR',
+            os.environ.get(
+                'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
+            ),
+        ),
+    )
+    return not plain and term not in ['dumb', 'unknown']
+
+
 DARK = {
-    "red": "#FF5252",
-    "pink": "#EB53EB",
-    "cyan": "#09A979",
-    "blue": "#2094F3",
+    'red': '#FF5252',
+    'pink': '#EB53EB',
+    'cyan': '#09A979',
+    'blue': '#2094F3',
     # "green": "#69DB7C",
-    "green": "#50a14f",
-    "orange": "#FD971F",
-    "magenta": "#FF00FF",
-    "blue_grey": "#7D8697",
-    "light_pink": "#F06292",
+    'green': '#50a14f',
+    'orange': '#FD971F',
+    'magenta': '#FF00FF',
+    'blue_grey': '#7D8697',
+    'light_pink': '#F06292',
 }
 
-RED_ = "#FF5252"
-ORANGE_ = "#FD971F"
+RED_ = '#FF5252'
+ORANGE_ = '#FD971F'
 
-GREEN_ = "#69DB7C"
-CYAN_ = "#09A979"
-DARK_GREEN_ = "#14AC3C"
-INFO_ = "#00B0FF"
-URL_ = "#119EDE"
-BLUE_ = "#2094F3"
+GREEN_ = '#69DB7C'
+CYAN_ = '#09A979'
+DARK_GREEN_ = '#14AC3C'
+INFO_ = '#00B0FF'
+URL_ = '#119EDE'
+BLUE_ = '#2094F3'
 
-PURPLE_ = "#AE81FF"
-PURPLE_ALT_ = "#9775FA"
-LIGHT_PINK_ = "#F06292"
-ATTR_ = "#F06292"
-PINK_ = "#EB53EB"
-MAGENTA_ = "#FF00FF"
+PURPLE_ = '#AE81FF'
+PURPLE_ALT_ = '#9775FA'
+LIGHT_PINK_ = '#F06292'
+ATTR_ = '#F06292'
+PINK_ = '#EB53EB'
+MAGENTA_ = '#FF00FF'
 
-WHITE_ = "#F8F8F8"
-BLACK_ = "#161616"
-LIGHT_GREY_ = "#bdbdbd"
-GREY_ = "#838383"
+WHITE_ = '#F8F8F8'
+BLACK_ = '#161616'
+LIGHT_GREY_ = '#bdbdbd'
+GREY_ = '#838383'
 
-GREEN = Style(color=DARK["green"])
+GREEN = Style(color=DARK['green'])
 PINK = Style(color=PINK_)
 BLUE = Style(color=BLUE_)
-RED = Style(color=DARK["red"])
+RED = Style(color=DARK['red'])
 MAGENTA = Style(color=MAGENTA_)
-CYAN = Style(color=DARK["cyan"])
-GREY_MED = "#838383"
+CYAN = Style(color=DARK['cyan'])
+GREY_MED = '#838383'
 
 
-TERM = os.environ.get("TERM", None)
-NO_COLOR = os.environ.get(
-    "NO_COLOR",
-    os.environ.get(
-        "NOCOLOR",
-        os.environ.get(
-            "COLOR", os.environ.get("COLORS", os.environ.get("DUMB", False))
+# TERM = os.environ.get('TERM', None)
+# NO__COLOR = use_colorized_logs()
+# NO_COLOR = os.environ.get(
+#     'NO_COLOR',
+#     os.environ.get(
+#         'NOCOLOR',
+#         os.environ.get(
+#             'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
+#         ),
+#     ),
+# )
+
+
+if not use_colored_logs():
+    STYLES = {f'{k}': Style.null() for k in DEFAULT_STYLES.keys()}
+    DEFAULT_STYLES |= STYLES
+    # STYLES = {f'{k}': Style.null() for k in STYLES.items()}
+else:
+    STYLES: Dict[str, Style] = {
+        'color.black': Style(color='black'),
+        'color.red': Style(color='red'),
+        'color.green': Style(color='green'),
+        'color.yellow': Style(color='yellow'),
+        'color.blue': Style(color='blue'),
+        'color.magenta': Style(color='magenta'),
+        'color.cyan': Style(color='cyan'),
+        'color.white': Style(color='white'),
+        'color.bright_black': Style(color='bright_black'),
+        'color.bright_red': Style(color='bright_red'),
+        'color.bright_green': Style(color='bright_green'),
+        'color.bright_yellow': Style(color='bright_yellow'),
+        'color.bright_blue': Style(color='bright_blue'),
+        'color.bright_magenta': Style(color='bright_magenta'),
+        'color.bright_cyan': Style(color='bright_cyan'),
+        'color.bright_white': Style(color='bright_white'),
+        'url': Style(conceal=True, underline=True, color='blue'),
+        'num': Style(color='blue'),
+        'repr.brace': Style(color='bright_white', dim=False),
+        'log.brace': Style(color='black', dim=False),
+        'repr.comma': Style(color='bright_yellow'),
+        'repr.colon': Style(color='green'),
+        'repr.function': Style(color='bright_green', italic=True),
+        'repr.dash': Style(color='#838383'),
+        'logging.keyword': Style(bold=True, color='bright_yellow'),
+        'logging.level.notset': Style(dim=True),
+        'logging.level.debug': Style(color='bright_blue', bold=True),
+        'logging.level.error': Style(color='bright_red', bold=True),
+        'log.level.warn': Style(color='bright_yellow'),
+        'logging.level.info': Style(color='green', bold=True),
+        'log.level.warning': Style(color='bright_yellow', bold=True),
+        'logging.level.warn': Style(color='bright_yellow'),
+        'logging.level.warning': Style(color='bright_yellow'),
+        'log.colon': Style(color='bright_blue'),
+        'log.linenumber': Style(color='black', bold=False),
+        'log.parent': Style(color='cyan', italic=True),
+        'log.path': Style(color='blue', bold=False, italic=False),
+        'log.time': Style(color='bright_black'),
+        'logging.time': Style(color='bright_black'),
+        'logging.date': Style(color='black'),  # , italic=False),
+        'hidden': Style(color='bright_black', dim=True),
+        'repr.attr': Style(color='blue'),
+        'repr.attrib_name': Style(color='bright_blue', bold=False, italic=True),
+        'repr.attrib_equal': Style(bold=True, color='yellow'),
+        'repr.attrib_value': Style(color='bright_magenta', italic=False),
+        'repr.ellipsis': Style(color='bright_yellow'),
+        'repr.indent': Style(color='bright_green', dim=True),
+        'repr.error': Style(color='bright_green', bold=True),
+        'repr.str': Style(color='bright_green', italic=True, bold=False),
+        'repr.ipv4': Style(bold=True, color='bright_green'),
+        'repr.ipv6': Style(bold=True, color='bright_green'),
+        'repr.eui48': Style(bold=True, color='bright_green'),
+        'repr.eui64': Style(bold=True, color='bright_green'),
+        'repr.tag_name': Style(color='bright_magenta', bold=True),
+        'repr.number': Style(color='bright_magenta', bold=False, italic=False),
+        'repr.number_complex': Style(
+            color='bright_magenta', bold=True, italic=False
+        ),  # same
+        'repr.bool_true': Style(color='bright_green', italic=True),
+        'repr.bool_false': Style(color='bright_red', italic=True),
+        'repr.none': Style(color='bright_magenta', italic=True),
+        'repr.null': Style(color='bright_magenta', italic=True),
+        'repr.url': Style(
+            underline=True, color='bright_blue', italic=False, bold=False
         ),
-    ),
-)
-
-STYLES: Dict[str, Style] = {
-    "url": Style(conceal=True, underline=True, color="blue"),
-    "num": Style(color="blue"),
-    # 'repr.brace': Style(bold=True, color="magenta"),
-    "repr.brace": Style(color="bright_white", dim=False),
-    "log.brace": Style(color="black", dim=False),
-    "repr.comma": Style(color="bright_yellow"),
-    "repr.colon": Style(color="green"),
-    "repr.dash": Style(color="#838383"),
-    # 'repr.number': Style(color="#69DB7C"),
-    # 'num': Style(color="#69DB7C"),
-    # 'repr.number': Style(color="#69DB7C"),
-    "logging.keyword": Style(bold=True, color="bright_yellow"),
-    "logging.level.notset": Style(dim=True),
-    "logging.level.debug": Style(color="bright_blue", bold=True),
-    "logging.level.error": Style(color="bright_red", bold=True),
-    "log.level.warn": Style(color="bright_yellow"),
-    "logging.level.info": Style(color="green", bold=True),
-    "log.level.warning": Style(color="bright_yellow", bold=True),
-    "logging.level.warn": Style(color="bright_yellow"),
-    "logging.level.warning": Style(color="bright_yellow"),
-    "log.colon": Style(color="bright_blue"),
-    "log.linenumber": Style(color="black", bold=False),
-    # "none": Style(color="red"),
-    "log.path": Style(color="blue", bold=False, italic=True),
-    "log.time": Style(color="bright_black"),
-    "logging.time": Style(color="bright_black"),
-    "logging.date": Style(color="black"),  # , italic=False),
-    "hidden": Style(color="bright_black", dim=True),
-    "repr.attr": Style(color="blue"),
-    "repr.attrib_name": Style(color="bright_blue", bold=False, italic=True),
-    "repr.attrib_equal": Style(bold=True, color="yellow"),
-    "repr.attrib_value": Style(color="bright_magenta", italic=False),
-    "repr.ellipsis": Style(color="bright_yellow"),
-    "repr.indent": Style(color="bright_green", dim=True),
-    "repr.error": Style(color="bright_green", bold=True),
-    "repr.str": Style(color="bright_green", italic=True, bold=False),
-    "repr.ipv4": Style(bold=True, color="bright_green"),
-    "repr.ipv6": Style(bold=True, color="bright_green"),
-    "repr.eui48": Style(bold=True, color="bright_green"),
-    "repr.eui64": Style(bold=True, color="bright_green"),
-    # "repr.tag_start": Style(bold=True),
-    # "repr.tag_end": Style(bold=True),
-    "repr.tag_name": Style(color="bright_magenta", bold=True),
-    # "repr.tag_contents": Style(color="default"),
-    # 'repr.number': Style(color="magenta", bold=False, italic=False),
-    "repr.number": Style(color="bright_magenta", bold=False, italic=False),
-    "repr.number_complex": Style(
-        color="bright_magenta", bold=True, italic=False
-    ),  # same
-    "repr.bool_true": Style(color="bright_green", italic=True),
-    "repr.bool_false": Style(color="bright_red", italic=True),
-    "repr.none": Style(color="bright_magenta", italic=True),
-    "repr.null": Style(color="bright_magenta", italic=True),
-    "repr.url": Style(underline=True, color="bright_blue", italic=False, bold=False),
-    "repr.uuid": Style(color="yellow", bold=False),
-    "repr.call": Style(color="magenta", bold=True),
-    "repr.path": Style(color="green"),
-    "repr.filename": Style(color="magenta"),
-    "rule.line": Style(color="bright_green"),
-    "json.brace": Style(bold=True, color="bright_yellow"),
-    "json.bool_true": Style(color="bright_green", italic=True),
-    "json.bool_false": Style(color="bright_red", italic=True),
-    "json.null": Style(color="bright_red", italic=True),
-    "json.number": Style(color="cyan", bold=True, italic=False),
-    "json.str": Style(color="bright_green", italic=False, bold=False),
-    "json.key": Style(color="bright_blue", bold=True),
-}
-
-if NO_COLOR or TERM in ["dumb", "unknown"]:
-    STYLES = {f"{k}": Style.null() for k in STYLES.items()}
-    # for key, val in STYLES.items():
-    #     STYLES[key] = Style.null()
-
-DEFAULT_STYLES |= STYLES
+        'repr.uuid': Style(color='yellow', bold=False),
+        'repr.call': Style(color='magenta', bold=True),
+        'repr.path': Style(color='green'),
+        'repr.filename': Style(color='magenta'),
+        'rule.line': Style(color='bright_green'),
+        'json.brace': Style(bold=True, color='bright_yellow'),
+        'json.bool_true': Style(color='bright_green', italic=True),
+        'json.bool_false': Style(color='bright_red', italic=True),
+        'json.null': Style(color='bright_red', italic=True),
+        'json.number': Style(color='cyan', bold=True, italic=False),
+        'json.str': Style(color='bright_green', italic=False, bold=False),
+        'json.key': Style(color='bright_blue', bold=True),
+    }
+    DEFAULT_STYLES |= STYLES
 
 
 #     # "num": Style(color='#409CDC', bold=True),

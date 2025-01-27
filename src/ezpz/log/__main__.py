@@ -1,38 +1,31 @@
-import logging
-from ezpz.configs import get_logging_config
-from ezpz.log import get_logger, _get_logger
+from ezpz.log import get_logger
 
 log = get_logger(__name__)
-# log = _get_logger(__name__)
-# log = logging.getLogger(__name__)
-
-# log.setLevel('DEBUG')
-# log_config = logging.config.dictConfig(get_logging_config())
-# log = logging.getLogger(__name__)
-# log.setLevel('INFO')
 
 
 def test_log():
     import numpy as np
     import pandas as pd
+    import json
+
     log.debug('Debug')
     log.info('info')
     log.warning('warning')
     log.error('error')
     log.critical('critical')
     log.info('Long lines are automatically wrapped by the terminal!')
-    log.info(250 * '-')
-    x = np.random.rand(100).reshape(10, 10)
+    log.info('[start]' + 250 * '-' + '[end]')
+    x = np.arange(16).reshape(4, 4)
     data = {
         'a': 1,
         'b': 2,
-        'c': 3.,
+        'c': 3.0,
     }
-    import json
-    log.info(f'data: {json.dumps(data, indent=4)}')
+
     df = pd.DataFrame().from_dict(data, orient='index')
-    log.info(f'{x=}')
-    log.info(f'{df=}')
+    log.info(f'json:\n{json.dumps(data, indent=4)}')
+    log.info(f'array:\n{np.array2string(x)}')
+    log.info(f'dataframe:\n{df.T}')
 
 
 if __name__ == '__main__':

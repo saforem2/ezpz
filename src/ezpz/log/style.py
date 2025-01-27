@@ -23,7 +23,8 @@ import logging
 # from ezpz.log import get_logger
 from ezpz.log.config import STYLES, DEFAULT_STYLES
 from ezpz.log.console import get_console
-from ezpz.log.handler import RichHandler
+
+# from ezpz.log.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
 import rich
 from rich import print

@@ -15,17 +15,34 @@ from rich.style import Style
 from rich.logging import RichHandler as OriginalRichHandler
 from rich.text import Text, TextType, Span
 
-from ezpz.log.config import NO_COLOR
+# from ezpz.log.config import NO_COLOR
+from ezpz.log.config import use_colored_logs
 from ezpz.log.console import get_console, Console
 from rich.console import ConsoleRenderable
 
 from logging import LogRecord
 
-COLOR = not NO_COLOR
-if not COLOR:
-    STYLES = {}
-else:
-    from ezpz.log.config import STYLES
+
+def get_styles(colorized: bool = True) -> dict:
+    styles = {}
+    if colorized and use_colored_logs():
+        from rich.default_styles import DEFAULT_STYLES
+
+        styles |= {k: v for k, v in DEFAULT_STYLES.items()}
+
+        from ezpz.log.config import STYLES
+
+        styles |= {k: v for k, v in STYLES.items()}
+    return styles
+
+
+# if not COLOR:
+# else:
+#     import ezpz.log.config as logconfig
+# from ezpz.log.config import STYLES as logstyle
+#
+#
+# STYLES = logconfig.STYLES
 
 
 class RichHandler(OriginalRichHandler):
@@ -33,7 +50,9 @@ class RichHandler(OriginalRichHandler):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         if 'console' not in kwargs:
-            console = get_console(redirect=False, width=9999, markup=COLOR)
+            console = get_console(
+                redirect=False, width=9999, markup=use_colored_logs()
+            )
             kwargs['console'] = console
             self.__console = console
         super().__init__(*args, **kwargs)
@@ -76,7 +95,8 @@ class RichHandler(OriginalRichHandler):
 
         level = self.get_level_text(record)
         time_format = None if self.formatter is None else self.formatter.datefmt
-        default_time_fmt = '%Y-%m-%d %H:%M:%S.%f'
+        # default_time_fmt = '%Y-%m-%d %H:%M:%S.%f'
+        default_time_fmt = '%Y-%m-%d %H:%M:%S'  # .%f'
         time_format = time_format if time_format else default_time_fmt
         log_time = datetime.fromtimestamp(record.created)
 
@@ -112,6 +132,8 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         self.time_format = time_format
         self.link_path = link_path
         self._last_time: Optional[str] = None
+        self.colorized = use_colored_logs()
+        self.styles = get_styles()
 
     def __call__(  # pylint: disable=too-many-arguments
         self,
@@ -131,53 +153,92 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
                 time_format or self.time_format
             )
             d, t = log_time_display.split(' ')
-            result += Text('[', style=STYLES.get('log.brace', ''))
-            result += Text(f'{d} ', style=STYLES.get('logging.date', ''))
-            result += Text(t, style=STYLES.get('logging.time', ''))
-            result += Text(']', style=STYLES.get('log.brace', ''))
-            # result += Text(log_time_display, style=STYLES['logging.time'])
+            result += Text('[', style=self.styles.get('log.brace', ''))
+            result += Text(f'{d} ', style=self.styles.get('logging.date', ''))
+            result += Text(t, style=self.styles.get('logging.time', ''))
+            result += Text(']', style=self.styles.get('log.brace', ''))
+            # result += Text(log_time_display, style=self.styles['logging.time'])
             self._last_time = log_time_display
         if self.show_level:
             if isinstance(level, Text):
-                lstr = level.plain.rstrip(' ')
-                if COLOR:
+                lstr = level.plain.rstrip(' ')[0]
+                if self.colorized:
                     style = level.spans[0].style
                 else:
                     style = Style.null()
                 level.spans = [Span(0, len(lstr), style)]
-                ltext = Text('[', style=STYLES.get('log.brace', ''))
+                ltext = Text('[', style=self.styles.get('log.brace', ''))
                 ltext.append(Text(f'{lstr}', style=style))
-                ltext.append(Text(']', style=STYLES.get('log.brace', '')))
+                ltext.append(Text(']', style=self.styles.get('log.brace', '')))
                 # ltext = Text(f'[{lstr}]', style=style)
             elif isinstance(level, str):
-                lstr = level.rstrip(' ')
-                style = f'logging.level.{str(lstr)}' if COLOR else Style.null()
-                ltext = Text('[', style=STYLES.get('log.brace', ''))
+                lstr = level.rstrip(' ')[0]
+                style = (
+                    f'logging.level.{str(lstr)}'
+                    if self.colorized
+                    else Style.null()
+                )
+                ltext = Text('[', style=self.styles.get('log.brace', ''))
                 ltext = Text(
                     f'{lstr}', style=style
                 )  # f"logging.level.{str(lstr)}")
-                ltext.append(Text(']', style=STYLES.get('log.brace', '')))
+                ltext.append(Text(']', style=self.styles.get('log.brace', '')))
             result += ltext
         if self.show_path and path:
-            path_text = Text('[', style=STYLES.get('log.brace', ''))
+            path_text = Text('[', style=self.styles.get('log.brace', ''))
+            text_arr = []
             parent, remainder = path.split('/')
-            path_text.append(
-                Text(f'{parent}', style='cyan'),
-            )
-            path_text.append(Text('/'))
-            path_text.append(
-                remainder,
-                style=STYLES.get('log.path', ''),
-            )
+            if '.' in remainder:
+                module, *fn = remainder.split('.')
+                fn = '.'.join(fn)
+            else:
+                module = remainder
+                fn = None
+            text_arr += [
+                Text(
+                    f'{parent}', style='log.parent'
+                ),  # self.styles.get('log.pa', '')),
+                Text('/'),
+                Text(f'{module}', style='log.path'),
+            ]
             if line_no:
-                path_text.append(Text(':', style=STYLES.get('log.colon', '')))
-                path_text.append(
-                    f'{line_no}',
-                    style=STYLES.get('log.linenumber', ''),
-                )
-            path_text.append(']', style=STYLES.get('log.brace', ''))
+                text_arr += [
+                    Text(':', style=self.styles.get('log.colon', '')),
+                    Text(
+                        f'{line_no}',
+                        style=self.styles.get('log.linenumber', ''),
+                    ),
+                ]
+                # text_arr.append(Text(':', style=self.styles.get('log.colon', '')))
+                # text_arr.append(
+                #     Text(f'{line_no}', style=self.styles.get('log.linenumber', '')),
+                # )
+            if fn is not None:
+                text_arr += [
+                    Text(':', style='log.colon'),
+                    Text(
+                        f'{fn}',
+                        style='repr.function',  # self.styles.get('repr.inspect.def', 'json.key'),
+                    ),
+                ]
+            path_text.append(Text.join(Text(''), text_arr))
+
+            # for t in text_arr:
+            #     path_text.append(t)
+            # path_text.append(
+            #     Text(f'{parent}', style='cyan'),
+            # )
+            # path_text.append(Text('/'))
+            # path_text.append(
+            #     remainder,
+            #     style=STYLES.get('log.path', ''),
+            # )
+            # if fn is not None:
+            #     path_text += [Text('.'), Text(f'{fn}', style='cyan')]
+
+            path_text.append(']', style=self.styles.get('log.brace', ''))
             result += path_text
-        result += Text(' - ', style=STYLES.get('repr.dash', ''))
+        result += Text(' ', style=self.styles.get('repr.dash', ''))
         for elem in renderables:
             result += elem
         return result
