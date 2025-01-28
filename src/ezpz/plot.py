@@ -12,31 +12,34 @@ import time
 from typing import Any, Optional, Union
 
 import torch
-from ezpz.dist import get_rank
+import ezpz
+
+# from ezpz.dist import get_rank
 import numpy as np
 import xarray as xr
 
-RANK = get_rank()
+RANK = ezpz.get_rank()
 
 # warnings.filterwarnings('ignore')
 
-log = logging.getLogger(__name__)
-log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+# logger = logging.getLogger(__name__)
+# logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
+logger = ezpz.get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 
-PLOTS_LOG = Path(os.getcwd()).joinpath("plots.txt")
+PLOTS_LOG = Path(os.getcwd()).joinpath('plots.txt')
 
 COLORS = {
-    "blue": "#2196F3",
-    "red": "#EF5350",
-    "green": "#4CAF50",
-    "orange": "#FFA726",
-    "purple": "#AE81FF",
-    "yellow": "#ffeb3b",
-    "pink": "#EC407A",
-    "teal": "#009688",
-    "white": "#CFCFCF",
+    'blue': '#2196F3',
+    'red': '#EF5350',
+    'green': '#4CAF50',
+    'orange': '#FFA726',
+    'purple': '#AE81FF',
+    'yellow': '#ffeb3b',
+    'pink': '#EC407A',
+    'teal': '#009688',
+    'white': '#CFCFCF',
 }
 
 # ["#2196F3", "#EF5350", "#4CAF50", "#FFA726", "#AE81FF", "#ffeb3b", "#EC407A", "#009688", "#CFCFCF"]
@@ -54,7 +57,7 @@ def _get_timestamp(fstr: Optional[str] = None) -> str:
 
     now = datetime.datetime.now()
     if fstr is None:
-        return now.strftime("%Y-%m-%d-%H%M%S")
+        return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
 
 
@@ -63,7 +66,7 @@ def set_plot_style(**kwargs):
 
     # LW = plt.rcParams.get('axes.linewidth', 1.75)
     # FigAxes = Tuple[plt.Figure, plt.Axes]
-    plt.style.use("default")
+    plt.style.use('default')
     # plt.style.use('default')
     try:
         # import ambivalent
@@ -72,14 +75,14 @@ def set_plot_style(**kwargs):
         # from toolbox import set_plot_style
         from ambivalent import STYLES
 
-        plt.style.use(STYLES["opinionated_min"])
+        plt.style.use(STYLES['opinionated_min'])
     except (ImportError, ModuleNotFoundError):
         STYLES = {}
 
     plt.rcParams.update(
         {
-            "image.cmap": "viridis",
-            "savefig.transparent": True,
+            'image.cmap': 'viridis',
+            'savefig.transparent': True,
             # 'text.color': '#666666',
             # 'xtick.color': '#66666604',
             # 'ytick.color': '#66666604',
@@ -90,36 +93,36 @@ def set_plot_style(**kwargs):
             # 'grid.linestyle': ':',
             # 'grid.alpha': 0.4,
             # 'grid.color': '#353535',
-            "path.simplify": True,
-            "savefig.bbox": "tight",
-            "legend.labelcolor": "#838383",
+            'path.simplify': True,
+            'savefig.bbox': 'tight',
+            'legend.labelcolor': '#838383',
             # 'axes.labelcolor': (189, 189, 189, 1.0),
             # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
             # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
             # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
-            "axes.facecolor": "none",
-            "figure.facecolor": "none",
-            "savefig.facecolor": "none",
-            "savefig.format": "svg",
-            "axes.edgecolor": "none",
-            "axes.grid": True,
-            "axes.labelcolor": "#838383",
-            "axes.titlecolor": "#838383",
-            "grid.color": "#838383",
-            "text.color": "#838383",
-            "grid.linestyle": "--",
-            "grid.linewidth": 0.5,
-            "grid.alpha": 0.33,
-            "xtick.color": "none",
-            "ytick.color": "none",
-            "xtick.labelcolor": "#838383",
-            "legend.edgecolor": "none",
-            "ytick.labelcolor": "#838383",
+            'axes.facecolor': 'none',
+            'figure.facecolor': 'none',
+            'savefig.facecolor': 'none',
+            'savefig.format': 'svg',
+            'axes.edgecolor': 'none',
+            'axes.grid': True,
+            'axes.labelcolor': '#838383',
+            'axes.titlecolor': '#838383',
+            'grid.color': '#838383',
+            'text.color': '#838383',
+            'grid.linestyle': '--',
+            'grid.linewidth': 0.5,
+            'grid.alpha': 0.33,
+            'xtick.color': 'none',
+            'ytick.color': 'none',
+            'xtick.labelcolor': '#838383',
+            'legend.edgecolor': 'none',
+            'ytick.labelcolor': '#838383',
             # 'savefig.transparent': True,
         }
     )
-    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", list(COLORS.values()))
-    plt.rcParams["axes.labelcolor"] = "#838383"
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', list(COLORS.values()))
+    plt.rcParams['axes.labelcolor'] = '#838383'
     plt.rcParams.update(**kwargs)
     # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
     # plt.style.use(STYLES['opinionated_min'])
@@ -145,10 +148,11 @@ def tplot_dict(
     figsize: Optional[tuple[int, int]] = None,
 ) -> None:
     import plotext as pltx
+
     figsize = (75, 25) if figsize is None else figsize
 
     pltx.clear_figure()
-    pltx.theme("clear")  # pyright[ReportUnknownMemberType]
+    pltx.theme('clear')  # pyright[ReportUnknownMemberType]
     pltx.plot(list(data.values()))
     if ylabel is not None:
         pltx.ylabel(ylabel)
@@ -158,7 +162,7 @@ def tplot_dict(
         pltx.title(title)
     pltx.show()
     if outfile is not None:
-        log.info(f"Appending plot to: {outfile}")
+        logger.info(f'Appending plot to: {outfile}')
         if not Path(outfile).parent.exists():
             _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
         pltx.save_fig(outfile, append=append)
@@ -171,11 +175,12 @@ def tplot(
     title: Optional[str] = None,
     xlabel: Optional[str] = None,
     ylabel: Optional[str] = None,
-    marker: Optional[str] = None,
+    marker: str = 'braille',
     bins: Optional[int] = None,
+    # bins: int = 60,
     logfreq: int = 1,
     outfile: Optional[os.PathLike | str | Path] = None,
-    type: Optional[str] = None,
+    plot_type: Optional[str] = None,
     append: bool = True,
     verbose: bool = False,
     figsize: Optional[tuple[int, int]] = None,
@@ -184,33 +189,59 @@ def tplot(
     #     if len(y) > 0 and isinstance(y[0], torch.Tensor):
     #         y = torch.stack(y)
     #     if isinstance(y[0], )
+    tstamp = _get_timestamp()
+    # if plot_type is not None:
+    #     if plot_type != "hist":
+    #         title = title if title is not None else (
+    #             f"{ylabel} vs {xlabel}" if ylabel is not None and xlabel is not None else (
+    #                 f"{label}" if label is not None else f"{tstamp}"
+    #             )
+    #         )
+    #     else:
+    #         title = title if title is not None else f"{ylabel} hist"
+    # title = f'{title} {tstamp}' if title is not None else f'{tstamp}'
+    if title is None:
+        title = (
+            f'{ylabel} vs {xlabel}'
+            if ylabel is not None and xlabel is not None
+            else (
+                f'{ylabel}'
+                if ylabel is not None
+                else f'{label}'
+                if label is not None
+                else ''
+            )
+        )
     if isinstance(y, list):
         y = torch.stack(y)
     if isinstance(x, list):
         x = torch.stack(x)
-    figsize = (75, 25) if figsize is None else figsize
+    figsize = (60, 20) if figsize is None else figsize
     import plotext as pltx
 
     pltx.clear_figure()
-    pltx.theme("clear")
+    pltx.theme('clear')
     pltx.plot_size(*figsize)
-    marker = "fhd" if marker is None else marker
+    # marker = "braille" if (marker is None and type == 'scatter') else marker
     y = np.nan_to_num(y, nan=0.0)
     if len(y.shape) == 2:
         pltx.hist(y.flatten(), bins=bins, label=label)
     elif len(y.shape) == 1:
         # if type is not None:
         #     assert type in ['scatter', 'line']
-        if type is not None and type == "scatter":
+        if plot_type is not None and plot_type == 'scatter':
             pltx.scatter(y, label=label, marker=marker)
+        elif plot_type is not None and plot_type == 'hist':
+            pltx.hist(y, bins=bins, label=label)
         else:
             pltx.plot(y, label=label)
-        if title is not None:
-            pltx.title(title)
-        if xlabel is not None:
-            pltx.xlabel(xlabel)
-        if ylabel is not None:
-            pltx.ylabel(ylabel)
+    if title is not None:
+        pltx.title(title)
+    if ylabel is not None:
+        pltx.ylabel(ylabel)
+    if xlabel is not None:
+        pltx.xlabel(xlabel)
+    if plot_type != 'hist':
         if x is None:
             x = np.arange(len(y))
             x = x * logfreq
@@ -220,7 +251,10 @@ def tplot(
     pltx.show()
     if outfile is not None:
         if verbose:
-            log.info(f"Appending plot to: {outfile}")
+            if append:
+                logger.info(f'Appending plot to: {outfile}')
+            else:
+                logger.info(f'Saving plot to: {outfile}')
         if not Path(outfile).parent.exists():
             _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
         pltx.savefig(
@@ -229,15 +263,15 @@ def tplot(
 
 
 def save_figure(fig: Any, fname: str, outdir: os.PathLike):
-    pngdir = Path(outdir).joinpath("pngs")
+    pngdir = Path(outdir).joinpath('pngs')
     pngdir.mkdir(exist_ok=True, parents=True)
-    pngfile = pngdir.joinpath(f"{fname}.png")
-    svgfile = Path(outdir).joinpath(f"{fname}.svg")
+    pngfile = pngdir.joinpath(f'{fname}.png')
+    svgfile = Path(outdir).joinpath(f'{fname}.svg')
 
-    _ = fig.savefig(pngfile, dpi=400, bbox_inches="tight")
-    _ = fig.savefig(svgfile, dpi=400, bbox_inches="tight")
-    with PLOTS_LOG.open("a") as f:
-        f.write(f"{fname}: {svgfile.as_posix()}\n")
+    _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
+    _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+    with PLOTS_LOG.open('a') as f:
+        f.write(f'{fname}: {svgfile.as_posix()}\n')
 
 
 def savefig(fig: Any, outfile: os.PathLike):
@@ -245,10 +279,12 @@ def savefig(fig: Any, outfile: os.PathLike):
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
     relpath = fout.relative_to(os.getcwd())
-    log.info("Saving figure to: " rf"[link={fout.as_posix()}]{relpath}[\link]")
-    with PLOTS_LOG.open("a") as f:
-        f.write(f"{fout.as_posix()}\n")
-    _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches="tight")
+    logger.info(
+        'Saving figure to: ' rf'[link={fout.as_posix()}]{relpath}[\link]'
+    )
+    with PLOTS_LOG.open('a') as f:
+        f.write(f'{fout.as_posix()}\n')
+    _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
 
 
 def subplots(**kwargs) -> tuple:
@@ -337,10 +373,10 @@ def plot_chains(
         fig, ax = fig_axes
 
     if label is not None:
-        label = f"{label}, avg: {y.mean():4.3g}"
+        label = f'{label}, avg: {y.mean():4.3g}'
 
-    _ = kwargs.pop("color", None)
-    color = f"C{np.random.randint(8)}"
+    _ = kwargs.pop('color', None)
+    color = f'C{np.random.randint(8)}'
     _ = ax.plot(x, y.mean(-1), label=label, color=color, lw=1.5, **kwargs)
     for idx in range(nchains):
         _ = ax.plot(
@@ -393,10 +429,10 @@ def plot_leapfrogs(
     # y.shape = [ndraws, nleapfrog, nchains]
     nlf = y.shape[1]
     yavg = y.mean(-1)
-    cmap = plt.get_cmap("viridis")
+    cmap = plt.get_cmap('viridis')
     colors = {n: cmap(n / nlf) for n in range(nlf)}
     for lf in range(nlf):
-        _ = ax.plot(x, yavg[:, lf], color=colors[lf], label=f"{lf}")
+        _ = ax.plot(x, yavg[:, lf], color=colors[lf], label=f'{lf}')
 
     # if line_labels:
     #     _ = matplotx.line_labels(font_kwargs={'size': 'small'})
@@ -425,10 +461,10 @@ def plot_dataset(
     outdir = (
         Path(outdir)
         if outdir is not None
-        else (Path(os.getcwd()).joinpath(f"{tstamp}"))
+        else (Path(os.getcwd()).joinpath(f'{tstamp}'))
     )
     outdir.mkdir(exist_ok=True, parents=True)
-    job_type = job_type if job_type is not None else f"job-{tstamp}"
+    job_type = job_type if job_type is not None else f'job-{tstamp}'
     # set_plot_style()
 
     _ = make_ridgeplots(
@@ -437,10 +473,10 @@ def plot_dataset(
         drop_nans=True,
         drop_zeros=False,
         num_chains=nchains,
-        cmap="viridis",
+        cmap='viridis',
     )
     for key, val in dataset.data_vars.items():
-        if key == "x":
+        if key == 'x':
             continue
 
         fig, _, _ = plot_dataArray(
@@ -469,25 +505,25 @@ def plot_combined(
 
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-    figsize = subplots_kwargs.get("figsize", set_size())
-    subplots_kwargs.update({"figsize": figsize})
+    figsize = subplots_kwargs.get('figsize', set_size())
+    subplots_kwargs.update({'figsize': figsize})
     subfigs = None
     num_chains = 10 if num_chains is None else num_chains
 
-    _ = subplots_kwargs.pop("constrained_layout", True)
+    _ = subplots_kwargs.pop('constrained_layout', True)
     figsize = (3 * figsize[0], 1.5 * figsize[1])
-    line_width = plt.rcParams.get("axes.linewidth", 1.75)
+    line_width = plt.rcParams.get('axes.linewidth', 1.75)
     fig = plt.figure(figsize=figsize, constrained_layout=True)
     subfigs = fig.subfigures(1, 2)
-    gs_kw = {"width_ratios": [1.33, 0.33]}
+    gs_kw = {'width_ratios': [1.33, 0.33]}
     vmin = np.min(val)
     vmax = np.max(val)
     if vmin < 0 < vmax:
-        color = "#FF5252" if val.mean() > 0 else "#2979FF"
+        color = '#FF5252' if val.mean() > 0 else '#2979FF'
     elif 0 < vmin < vmax:
-        color = "#3FB5AD"
+        color = '#3FB5AD'
     else:
-        color = plot_kwargs.get("color", f"C{np.random.randint(5)}")
+        color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
 
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
     ax1.grid(alpha=0.2)
@@ -495,24 +531,29 @@ def plot_combined(
     sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, fill=True)
     axes = (ax1, ax2)
     ax0 = subfigs[0].subplots(1, 1)
-    if "chain" in val.dims:
-        val = val.dropna("chain")
+    if 'chain' in val.dims:
+        val = val.dropna('chain')
         _ = xplt.imshow(
-            val[:num_chains, :], "draw", "chain", ax=ax0, robust=True, add_colorbar=True
+            val[:num_chains, :],
+            'draw',
+            'chain',
+            ax=ax0,
+            robust=True,
+            add_colorbar=True,
         )
     # _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
     #                     robust=True, add_colorbar=True)
     # sns.despine(ax0)
-    nchains = min(num_chains, len(val.coords["chain"]))
-    label = f"{key}_avg"
+    nchains = min(num_chains, len(val.coords['chain']))
+    label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
     # steps = np.arange(len(val.coords['draw']))
     # steps = val.coords['draw']
-    chain_axis = val.get_axis_num("chain")
+    chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
         for idx in range(nchains):
             _ = ax1.plot(
-                val.coords["draw"].values,
+                val.coords['draw'].values,
                 val.values[idx, :],
                 color=color,
                 lw=line_width / 2.0,
@@ -520,21 +561,21 @@ def plot_combined(
             )
 
     _ = ax1.plot(
-        val.coords["draw"].values,
-        val.mean("chain"),
+        val.coords['draw'].values,
+        val.mean('chain'),
         color=color,
         label=label,
         lw=1.5 * line_width,
     )
-    if key is not None and "eps" in key:
-        _ = ax0.set_ylabel("leapfrog")
+    if key is not None and 'eps' in key:
+        _ = ax0.set_ylabel('leapfrog')
     _ = ax2.set_xticks([])
     _ = ax2.set_xticklabels([])
     # sns.despine(ax=ax0, top=True, right=True, left=True, bottom=True)
     _ = sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
     _ = sns.despine(ax=ax2, top=True, right=True, left=True, bottom=True)
-    _ = ax2.set_xlabel("")
-    _ = ax1.set_xlabel("draw")
+    _ = ax2.set_xlabel('')
+    _ = ax1.set_xlabel('draw')
     _ = sns.despine(subfigs[0])
     _ = plt.autoscale(enable=True, axis=ax0)
     return (fig, axes)
@@ -558,15 +599,15 @@ def plot_dataArray(
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     set_plot_style()
-    plt.rcParams["axes.labelcolor"] = "#bdbdbd"
-    figsize = subplots_kwargs.get("figsize", set_size())
-    subplots_kwargs.update({"figsize": figsize})
+    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    figsize = subplots_kwargs.get('figsize', set_size())
+    subplots_kwargs.update({'figsize': figsize})
     subfigs = None
     # if key == 'dt':
     #     therm_frac = 0.2
     arr = val.values  # shape: [nchains, ndraws]
     # steps = np.arange(len(val.coords['draw']))
-    steps = val.coords["draw"]
+    steps = val.coords['draw']
     if therm_frac is not None and therm_frac > 0.0:
         drop = int(therm_frac * arr.shape[0])
         arr = arr[drop:]
@@ -588,26 +629,26 @@ def plot_dataArray(
                 try:
                     ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
                 except Exception:
-                    log.error(f"Unable to plot {key}! Continuing")
+                    logger.error(f'Unable to plot {key}! Continuing')
             _ = ax.grid(True, alpha=0.2)
             axes = ax
         elif len(arr.shape) == 3:
             fig, ax = subplots(**subplots_kwargs)
-            cmap = plt.get_cmap("viridis")
-            y = val.mean("chain")
-            for idx in range(len(val.coords["leapfrog"])):
+            cmap = plt.get_cmap('viridis')
+            y = val.mean('chain')
+            for idx in range(len(val.coords['leapfrog'])):
                 pkwargs = {
-                    "color": cmap(idx / len(val.coords["leapfrog"])),
-                    "label": f"{idx}",
+                    'color': cmap(idx / len(val.coords['leapfrog'])),
+                    'label': f'{idx}',
                 }
                 ax.plot(steps, y[idx], **pkwargs)
             axes = ax
         else:
-            raise ValueError("Unexpected shape encountered")
+            raise ValueError('Unexpected shape encountered')
         ax = plt.gca()
         assert isinstance(ax, plt.Axes)
         _ = ax.set_ylabel(key)
-        _ = ax.set_xlabel("draw")
+        _ = ax.set_xlabel('draw')
         # matplotx.line_labels()
         # if line_labels:
         #     matplotx.line_labels()
@@ -629,19 +670,19 @@ def plot_dataArray(
         xticks = ax.get_xticks()  # type:ignore
         _ = ax.set_xticklabels(  # type:ignore
             [  # type:ignore
-                f"{logfreq * int(i)}" for i in xticks
+                f'{logfreq * int(i)}' for i in xticks
             ]
         )
     if outdir is not None and save_plot:
-        outfile = Path(outdir).joinpath(f"{key}.svg")
+        outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
-            tstamp = _get_timestamp("%Y-%m-%d-%H%M%S")
-            pngdir = Path(outdir).joinpath("pngs")
+            tstamp = _get_timestamp('%Y-%m-%d-%H%M%S')
+            pngdir = Path(outdir).joinpath('pngs')
             pngdir.mkdir(exist_ok=True, parents=True)
-            pngfile = pngdir.joinpath(f"{key}-{tstamp}.png")
-            svgfile = Path(outdir).joinpath(f"{key}-{tstamp}.svg")
-            _ = plt.savefig(pngfile, dpi=400, bbox_inches="tight")
-            _ = plt.savefig(svgfile, dpi=400, bbox_inches="tight")
+            pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+            svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+            _ = plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
     return (fig, subfigs, axes)
@@ -666,13 +707,13 @@ def plot_array(
     if len(arr.shape) == 3:
         ndraws, nlf, _ = arr.shape
         lfarr = np.arange(nlf)
-        cmap = plt.get_cmap("viridis")
+        cmap = plt.get_cmap('viridis')
         colors = {lf: cmap(lf / nlf) for lf in lfarr}
         yarr = arr.transpose((1, 0, 2))  # shape: [nleapfrog, ndraws, nchains]
         for idx, ylf in enumerate(yarr):
             y = ylf.mean(-1)  # average over chains, shape = [ndraws]
             x = np.arange(len(y))
-            _ = ax.plot(x, y, label=f"{idx}", color=colors[idx], **kwargs)
+            _ = ax.plot(x, y, label=f'{idx}', color=colors[idx], **kwargs)
         x = np.arange(ndraws)
         _ = ax.plot(x, yarr.mean((0, 1)), **kwargs)
         # arr = arr.mean()
@@ -691,22 +732,22 @@ def plot_array(
         x = np.arange(y.shape[0])
         _ = ax.plot(x, y, label=key, **kwargs)
     else:
-        raise ValueError(f"Unexpected shape encountered: {arr.shape}")
+        raise ValueError(f'Unexpected shape encountered: {arr.shape}')
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
     if title is not None:
         _ = ax.set_title(title)
-    _ = ax.legend(loc="best")
+    _ = ax.legend(loc='best')
     if outdir is not None:
-        outfile = Path(outdir).joinpath(f"{key}.svg")
+        outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
-            tstamp = _get_timestamp("%Y-%m-%d-%H%M%S")
-            pngdir = Path(outdir).joinpath("pngs")
+            tstamp = _get_timestamp('%Y-%m-%d-%H%M%S')
+            pngdir = Path(outdir).joinpath('pngs')
             pngdir.mkdir(exist_ok=True, parents=True)
-            pngfile = pngdir.joinpath(f"{key}-{tstamp}.png")
-            svgfile = Path(outdir).joinpath(f"{key}-{tstamp}.svg")
-            _ = plt.savefig(pngfile, dpi=400, bbox_inches="tight")
-            _ = plt.savefig(svgfile, dpi=400, bbox_inches="tight")
+            pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+            svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+            _ = plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
     return fig, ax
 
 
@@ -717,9 +758,9 @@ def set_size(
 ) -> tuple[float, float]:
     """Set figure dimensions to avoid scaling in LaTeX."""
     width_pt = 345.0
-    if width == "thesis":
+    if width == 'thesis':
         width_pt = 426.79135
-    elif width == "beamer":
+    elif width == 'beamer':
         width_pt = 307.28987
     fraction = 1.0 if fraction is None else fraction
     subplots = (1, 1) if subplots is None else subplots
@@ -748,7 +789,7 @@ def plot_metric(
     outdir: Optional[os.PathLike] = None,
     subplots_kwargs: Optional[dict[str, Any]] = None,
     plot_kwargs: Optional[dict[str, Any]] = None,
-    ext: Optional[str] = "png",
+    ext: Optional[str] = 'png',
     # line_labels: Optional[bool] = False,
 ) -> tuple:
     import matplotlib.pyplot as plt
@@ -756,11 +797,11 @@ def plot_metric(
 
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-    figsize = subplots_kwargs.get("figsize", set_size())
-    subplots_kwargs.update({"figsize": figsize})
+    figsize = subplots_kwargs.get('figsize', set_size())
+    subplots_kwargs.update({'figsize': figsize})
     therm_frac = 0.0 if therm_frac is None else therm_frac
     num_chains = 16 if num_chains is None else num_chains
-    line_width = plt.rcParams.get("axes.linewidth", 1.75)
+    line_width = plt.rcParams.get('axes.linewidth', 1.75)
 
     # tmp = val[0]
     arr = np.array(val)
@@ -774,36 +815,38 @@ def plot_metric(
 
     # arr.shape = [draws, chains]
     if len(arr.shape) == 2:
-        _ = subplots_kwargs.pop("constrained_layout", True)
+        _ = subplots_kwargs.pop('constrained_layout', True)
         figsize = (3 * figsize[0], 1.5 * figsize[1])
 
         fig = plt.figure(figsize=figsize, constrained_layout=True)
         subfigs = fig.subfigures(1, 2)
 
-        gs_kw = {"width_ratios": [1.33, 0.33]}
+        gs_kw = {'width_ratios': [1.33, 0.33]}
         (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
         _ = ax.grid(alpha=0.4)
         _ = ax1.grid(False)
-        color = plot_kwargs.get("color", "C0")
-        label = plot_kwargs.pop("label", None)
+        color = plot_kwargs.get('color', 'C0')
+        label = plot_kwargs.pop('label', None)
         # label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-        label = f"{key}_avg"
+        label = f'{key}_avg'
         _ = ax.plot(
             steps, arr.mean(-1), lw=1.5 * line_width, label=label, **plot_kwargs
         )
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
-                plot_kwargs.update({"label": None})
-                ax.plot(steps, arr[:, chain], lw=line_width / 2.0, **plot_kwargs)
+                plot_kwargs.update({'label': None})
+                ax.plot(
+                    steps, arr[:, chain], lw=line_width / 2.0, **plot_kwargs
+                )
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, fill=True)
         _ = ax1.set_xticks([])
         _ = ax1.set_xticklabels([])
         _ = sns.despine(ax=ax, top=True, right=True)
         _ = sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-        _ = ax1.set_xlabel("")
+        _ = ax1.set_xlabel('')
         if logfreq is not None:
             xticks = ax.get_xticks()
-            _ = ax.set_xticklabels([f"{logfreq * int(i)}" for i in xticks])
+            _ = ax.set_xticklabels([f'{logfreq * int(i)}' for i in xticks])
         axes = (ax, ax1)
     else:
         # arr.shape = [draws]
@@ -815,15 +858,15 @@ def plot_metric(
         # arr.shape = [draws, nleapfrog, chains]
         elif len(arr.shape) == 3:
             fig, ax = subplots(**subplots_kwargs)
-            cmap = plt.get_cmap("viridis", lut=arr.shape[1])
-            _ = plot_kwargs.pop("color", None)
+            cmap = plt.get_cmap('viridis', lut=arr.shape[1])
+            _ = plot_kwargs.pop('color', None)
             for idx in range(arr.shape[1]):
-                label = plot_kwargs.pop("label", None)
+                label = plot_kwargs.pop('label', None)
                 if label is not None:
-                    label = f"{label}-{idx}"
+                    label = f'{label}-{idx}'
                 y = arr[:, idx]
                 color = cmap(idx / y.shape[1])
-                _ = plot_kwargs.pop("color", None)
+                _ = plot_kwargs.pop('color', None)
                 if len(y.shape) == 2:
                     # TOO: Plot chains
                     if num_chains > 0:
@@ -837,13 +880,19 @@ def plot_metric(
                                 **plot_kwargs,
                             )
                     _ = ax.plot(
-                        steps, y.mean(-1), color=color, label=label, **plot_kwargs
+                        steps,
+                        y.mean(-1),
+                        color=color,
+                        label=label,
+                        **plot_kwargs,
                     )
                 else:
-                    _ = ax.plot(steps, y, color=color, label=label, **plot_kwargs)
+                    _ = ax.plot(
+                        steps, y, color=color, label=label, **plot_kwargs
+                    )
             axes = ax
         else:
-            raise ValueError("Unexpected shape encountered")
+            raise ValueError('Unexpected shape encountered')
 
         _ = ax.set_ylabel(key)
     if num_chains > 0 and len(arr.shape) > 1:
@@ -851,9 +900,11 @@ def plot_metric(
         for idx in range(min(num_chains, arr.shape[1])):
             # plot values of invidual chains, arr[:, idx]
             # where arr[:, idx].shape = [ndraws, 1]
-            _ = ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw / 2.0, **plot_kwargs)
+            _ = ax.plot(
+                steps, arr[:, idx], alpha=0.5, lw=lw / 2.0, **plot_kwargs
+            )
 
-    _ = ax.set_xlabel("draw")
+    _ = ax.set_xlabel('draw')
     if title is not None:
         _ = fig.suptitle(title)
 
@@ -862,16 +913,16 @@ def plot_metric(
         xticks = ax.get_xticks()  # type:ignore
         _ = ax.set_xticklabels(
             [  # type:ignore
-                f"{logfreq * int(i)}" for i in xticks
+                f'{logfreq * int(i)}' for i in xticks
             ]
         )
 
     if outdir is not None:
         _ = Path(outdir).mkdir(exist_ok=True, parents=True)
-        outfile = Path(outdir).joinpath(f"{key}.{ext}")
+        outfile = Path(outdir).joinpath(f'{key}.{ext}')
         if not outfile.is_file():
             fig = plt.gcf() if fig is None else fig
-            save_figure(fig, fname=f"{key}", outdir=outdir)
+            save_figure(fig, fname=f'{key}', outdir=outdir)
             # savefig(fig)
             # _ = Path(outdir).parent().mkdir(exist_ok=True, parents=True)
             # _ = plt.savefig(Path(outdir).joinpath(f'{key}.{ext}'),
@@ -906,7 +957,7 @@ def make_ridgeplots(
     outdir: Optional[os.PathLike] = None,
     drop_zeros: Optional[bool] = False,
     drop_nans: Optional[bool] = True,
-    cmap: Optional[str] = "viridis_r",
+    cmap: Optional[str] = 'viridis_r',
     save_plot: bool = True,
 ):
     """Make ridgeplots."""
@@ -919,28 +970,28 @@ def make_ridgeplots(
     # sns.set(style='white', palette='bright', context='paper')
     # with sns.set_style(style='white'):
     outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-    outdir = outdir.joinpath("ridgeplots")
+    outdir = outdir.joinpath('ridgeplots')
     with sns.plotting_context(
-        context="paper",
+        context='paper',
     ):
         sns.set_theme(
-            style="white",
-            palette="bright",
+            style='white',
+            palette='bright',
         )
-        plt.rcParams["axes.facecolor"] = (0, 0, 0, 0.0)
-        plt.rcParams["figure.facecolor"] = (0, 0, 0, 0.0)
+        plt.rcParams['axes.facecolor'] = (0, 0, 0, 0.0)
+        plt.rcParams['figure.facecolor'] = (0, 0, 0, 0.0)
         for key, val in dataset.data_vars.items():
             tstart = time.time()
-            if "leapfrog" in val.coords.dims:
+            if 'leapfrog' in val.coords.dims:
                 lf_data = {
                     key: [],
-                    "lf": [],
-                    "avg": [],
+                    'lf': [],
+                    'avg': [],
                 }
                 for lf in val.leapfrog.values:
                     # val.shape = (chain, leapfrog, draw)
                     # x.shape = (chain, draw);  selects data for a single lf
-                    x = val[{"leapfrog": lf}].values
+                    x = val[{'leapfrog': lf}].values
                     # if num_chains is not None, keep `num_chains` for plotting
                     if num_chains is not None:
                         x = x[:num_chains, :]
@@ -952,23 +1003,23 @@ def make_ridgeplots(
                     if drop_nans:
                         x = x[np.isfinite(x)]
 
-                    lf_arr = np.array(len(x) * [f"{lf}"])
+                    lf_arr = np.array(len(x) * [f'{lf}'])
                     avg_arr = np.array(len(x) * [x.mean()])
                     lf_data[key].extend(x)
-                    lf_data["lf"].extend(lf_arr)
-                    lf_data["avg"].extend(avg_arr)
+                    lf_data['lf'].extend(lf_arr)
+                    lf_data['avg'].extend(avg_arr)
 
                 lfdf = pd.DataFrame(lf_data)
-                lfdf_avg = lfdf.groupby("lf")["avg"].mean()
-                lfdf["lf_avg"] = lfdf["lf"].map(lfdf_avg)  # type:ignore
+                lfdf_avg = lfdf.groupby('lf')['avg'].mean()
+                lfdf['lf_avg'] = lfdf['lf'].map(lfdf_avg)  # type:ignore
 
                 # Initialize the FacetGrid object
                 ncolors = len(val.leapfrog.values)
                 pal = sns.color_palette(cmap, n_colors=ncolors)
                 g = sns.FacetGrid(
                     lfdf,
-                    row="lf",
-                    hue="lf_avg",
+                    row='lf',
+                    hue='lf_avg',
                     aspect=15,
                     height=0.25,  # type:ignore
                     palette=pal,  # type:ignore
@@ -998,7 +1049,7 @@ def make_ridgeplots(
                 def label(_, color, label):  # type: ignore # noqa
                     ax = plt.gca()
                     # assert isinstance(ax, plt.Axes)
-                    _ = ax.set_ylabel("")  # type:ignore
+                    _ = ax.set_ylabel('')  # type:ignore
                     _ = ax.set_yticks([])  # type:ignore
                     _ = ax.set_yticklabels([])  # type:ignore
                     color = ax.lines[-1].get_color()  # type:ignore
@@ -1006,52 +1057,58 @@ def make_ridgeplots(
                         0,
                         0.10,
                         label,
-                        fontweight="bold",
+                        fontweight='bold',
                         color=color,
-                        ha="left",
-                        va="center",
+                        ha='left',
+                        va='center',
                         transform=ax.transAxes,  # type:ignore
                     )
 
                 # _ = g.map(label, key)
                 for i, ax in enumerate(g.axes.flat):
-                    _ = ax.set_ylabel("")
+                    _ = ax.set_ylabel('')
                     _ = ax.set_yticks([])
                     _ = ax.set_yticklabels([])
                     ax.text(
                         0,
                         0.10,
-                        f"{i}",
-                        fontweight="bold",
-                        ha="left",
-                        va="center",
+                        f'{i}',
+                        fontweight='bold',
+                        ha='left',
+                        va='center',
                         transform=ax.transAxes,
                         color=ax.lines[-1].get_color(),
                     )
                 # Set the subplots to overlap
                 _ = g.figure.subplots_adjust(hspace=-0.75)
                 # Remove the axes details that don't play well with overlap
-                _ = g.set_titles("")
+                _ = g.set_titles('')
                 _ = g.set(yticks=[])
                 _ = g.set(yticklabels=[])
-                plt.rcParams["axes.labelcolor"] = "#bdbdbd"
-                _ = g.set(xlabel=f"{key}")
+                plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+                _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
                 if outdir is not None and save_plot:
                     outdir = Path(outdir)
-                    pngdir = outdir.joinpath("pngs")
-                    svgdir = outdir.joinpath("svgs")
-                    fsvg = Path(svgdir).joinpath(f"{key}_ridgeplot.svg")
-                    fpng = Path(pngdir).joinpath(f"{key}_ridgeplot.png")
+                    pngdir = outdir.joinpath('pngs')
+                    svgdir = outdir.joinpath('svgs')
+                    fsvg = Path(svgdir).joinpath(f'{key}_ridgeplot.svg')
+                    fpng = Path(pngdir).joinpath(f'{key}_ridgeplot.png')
 
                     svgdir.mkdir(exist_ok=True, parents=True)
                     pngdir.mkdir(exist_ok=True, parents=True)
 
-                    log.info(f"Saving figure to: {fsvg.as_posix()}")
-                    _ = plt.savefig(fsvg.as_posix(), dpi=400, bbox_inches="tight")
-                    _ = plt.savefig(fpng.as_posix(), dpi=400, bbox_inches="tight")
+                    logger.info(f'Saving figure to: {fsvg.as_posix()}')
+                    _ = plt.savefig(
+                        fsvg.as_posix(), dpi=400, bbox_inches='tight'
+                    )
+                    _ = plt.savefig(
+                        fpng.as_posix(), dpi=400, bbox_inches='tight'
+                    )
 
-                log.debug(f"Ridgeplot for {key} took {time.time() - tstart:.3f}s")
+                logger.debug(
+                    f'Ridgeplot for {key} took {time.time() - tstart:.3f}s'
+                )
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
