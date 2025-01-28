@@ -11,36 +11,6 @@ from typing import Optional
 import warnings
 
 from ezpz import dist
-from ezpz import log
-from ezpz import profile
-from ezpz import configs
-from ezpz.configs import (
-    BACKENDS,
-    BIN_DIR,
-    CONF_DIR,
-    DS_CONFIG_JSON,
-    DS_CONFIG_PATH,
-    DS_CONFIG_YAML,
-    FRAMEWORKS,
-    GETJOBENV,
-    HERE,
-    LOGS_DIR,
-    OUTPUTS_DIR,
-    PROJECT_DIR,
-    PROJECT_ROOT,
-    QUARTO_OUTPUTS_DIR,
-    SAVEJOBENV,
-    SCHEDULERS,
-    TrainConfig,
-    UTILS,
-    command_exists,
-    get_logging_config,
-    get_scheduler,
-    get_timestamp,
-    git_ds_info,
-    load_ds_config,
-    print_config_tree,
-)
 from ezpz.dist import (
     check,
     cleanup,
@@ -75,8 +45,9 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.history import History, StopWatch
-import ezpz.log
+# import ezpz.log
+
+# from ezpz import log
 from ezpz.log import (
     get_file_logger,
     get_logger,
@@ -99,6 +70,37 @@ from ezpz.log import (
     should_do_markup,
     to_bool,
 )
+
+from ezpz import profile
+from ezpz import configs
+from ezpz.configs import (
+    BACKENDS,
+    BIN_DIR,
+    CONF_DIR,
+    DS_CONFIG_JSON,
+    DS_CONFIG_PATH,
+    DS_CONFIG_YAML,
+    FRAMEWORKS,
+    GETJOBENV,
+    HERE,
+    LOGS_DIR,
+    OUTPUTS_DIR,
+    PROJECT_DIR,
+    PROJECT_ROOT,
+    QUARTO_OUTPUTS_DIR,
+    SAVEJOBENV,
+    SCHEDULERS,
+    TrainConfig,
+    UTILS,
+    command_exists,
+    get_logging_config,
+    get_scheduler,
+    get_timestamp,
+    git_ds_info,
+    load_ds_config,
+    print_config_tree,
+)
+from ezpz.history import History, StopWatch
 
 
 # from ezpz.log import get_file_logger, get_logger
