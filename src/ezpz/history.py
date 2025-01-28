@@ -5,22 +5,18 @@ Contains implementation of History object for tracking / aggregating metrics.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-import logging
-import logging.config
 from contextlib import ContextDecorator
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Union
-# from collections.abc import Iterable
 
-# from ezpz import get_logging_config
 import ezpz
 
-# from ezpz import format_pair, summarize_dict
+import ezpz.plot as ezplot
+
 from ezpz.configs import PathLike
-from ezpz.plot import plot_dataset, tplot
-from ezpz.utils import save_dataset, grab_tensor  # , breakpoint
+from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 
 import matplotlib.pyplot as plt
@@ -30,10 +26,10 @@ import wandb
 import xarray as xr
 from jaxtyping import ScalarLike
 
-# from ezpz.utils import grab_tensor
-import ezpz.plot as ezplot
 
 RANK = ezpz.get_rank()
+
+logger = ezpz.get_logger(__name__)
 
 try:
     import wandb
@@ -43,38 +39,12 @@ except Exception:
     wandb = None
     WANDB_DISABLED = True
 
-# TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[torch.Tensor, np.ndarray, list]
-# ScalarLike = Union[float, int, bool, np.floating, np.integer]
 
 PT_FLOAT = torch.get_default_dtype()
-# TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
-# Scalar = Union[float, int, np.floating, bool]
-# Scalar = Shaped[Array, ""]
-# ScalarLike = Shaped[ArrayLike, ""]
-# Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
-
-# log = logging.getLogger(__name__)
-
-# log_config = logging.config.dictConfig(get_logging_config())
-log = logging.getLogger(__name__)
-
-log.setLevel('INFO') if RANK == 0 else log.setLevel('CRITICAL')
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
-
-# def subsample_dict(d: dict) -> dict:
-#     for key, val in d.items():
-#         pass
-
-# def timeit(func):
-#     @functools.wraps(func)
-#     def time_closure(*args, **kwargs):
-#         start = time.perf_counter()
-#         result = func(*args, **kwargs)
-#         end = time.perf_counter() - start
-#         log.info(f')
 
 
 class StopWatch(ContextDecorator):
@@ -118,57 +88,13 @@ class StopWatch(ContextDecorator):
             self.data |= {f'{self.wbtag}/dt': dt}
             wbrun.log({self.prefix: self.data}, commit=self.commit)
         if self.log_output:
-            log.info(f'{self.msg} took ' f'{dt:.3f} seconds')
+            logger.info(f'{self.msg} took {dt:.3f} seconds')
 
 
 class History:
     def __init__(self, keys: Optional[list[str]] = None) -> None:
         self.keys = [] if keys is None else keys
         self.history = {}
-
-    def _update_alt(
-        self,
-        key: str,
-        val: Any,
-        # val: Float[Array, "..."],
-    ) -> float | int | bool | np.floating | np.integer:
-        if isinstance(val, (list, tuple)):
-            if isinstance(val[0], torch.Tensor):
-                val = grab_tensor(torch.stack(val))
-            elif isinstance(val, np.ndarray):
-                val = np.stack(val)
-            else:
-                val = val
-        val = grab_tensor(val)
-        try:
-            self.history[key].append(val)
-        except KeyError:
-            self.history[key] = [val]
-
-        # ScalarLike = Union[float, int, bool, np.floating]
-        if isinstance(val, (float, int, bool, np.floating, np.integer)):
-            return val
-        #     return val
-        avg = np.mean(val).real
-        assert isinstance(avg, np.floating)
-        return avg
-
-    def update_alt(self, metrics: dict) -> dict[str, Any]:
-        avgs = {}
-        avg = 0.0
-        for key, val in metrics.items():
-            if val is None:
-                continue
-            if isinstance(val, dict):
-                for k, v in val.items():
-                    kk = f'{key}/{k}'
-                    avg = self._update(kk, v)
-                    avgs[kk] = avg
-            else:
-                avg = self._update(key, val)
-                avgs[key] = avg
-
-        return avgs
 
     def _update(
         self,
@@ -197,31 +123,58 @@ class History:
             wandb.log(metrics)
         return ezpz.summarize_dict(metrics)
 
-    def tplot(
+    def _tplot(
         self,
-        outdir: Optional[PathLike] = None,
-        logfreq: int = 1,
+        y: np.ndarray,
+        x: Optional[np.ndarray] = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        append: bool = True,
+        title: Optional[str] = None,
+        verbose: bool = False,
+        outfile: Optional[str] = None,
+        logfreq: Optional[int] = None,
     ):
-        dset = self.get_dataset()
-        for key, val in dset.items():
-            outdir = Path(os.getcwd()) if outdir is None else outdir
-            outfile = Path(outdir).joinpath(f'{key}.txt').as_posix()
-            # x = dset.get('iter')
-            # if x is not None:
-            #     x = x.values
+        if xlabel is not None and ylabel == xlabel:
+            return
+        if len(y) > 1:
+            x = x if x is not None else np.arange(len(y))
+            assert x is not None
             ezplot.tplot(
-                y=val.values,
-                # x=x,
-                label=str(key),
-                # xlabel='iter' if x is not None else None,
+                y=y,
+                x=x,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                logfreq=(1 if logfreq is None else logfreq),
+                append=append,
+                verbose=verbose,
                 outfile=outfile,
+                plot_type='scatter',
+                title=title,
+                # plot_type=('scatter' if 'dt' in ylabel else None),
             )
+        if ylabel is not None and 'dt' in ylabel:
+            of = Path(outfile) if outfile is not None else None
+            if of is not None:
+                of = Path(of.parent).joinpath(f'{of.stem}-hist{of.suffix}')
+            ezplot.tplot(
+                y=y,
+                xlabel=ylabel,
+                title=title,
+                ylabel='freq',
+                append=append,
+                verbose=verbose,
+                outfile=(of if of is not None else None),
+                plot_type='hist',
+            )
+            # ylabel=str(title),
+            # title=f'{title} [{ezpz.get_timestamp()}]',
 
     def plot(
         self,
         val: np.ndarray,
         key: Optional[str] = None,
-        therm_frac: Optional[float] = 0.0,
+        warmup: Optional[float] = 0.0,
         num_chains: Optional[int] = 128,
         title: Optional[str] = None,
         outdir: Optional[os.PathLike] = None,
@@ -239,8 +192,8 @@ class History:
 
         subfigs = None
         steps = np.arange(arr.shape[0])
-        if therm_frac is not None and therm_frac > 0:
-            drop = int(therm_frac * arr.shape[0])
+        if warmup is not None and warmup > 0:
+            drop = int(warmup * arr.shape[0])
             arr = arr[drop:]
             steps = steps[drop:]
 
@@ -367,7 +320,7 @@ class History:
         self,
         val: xr.DataArray,
         key: Optional[str] = None,
-        therm_frac: Optional[float] = 0.0,
+        warmup: Optional[float] = 0.0,
         num_chains: Optional[int] = 0,
         title: Optional[str] = None,
         outdir: Optional[str] = None,
@@ -385,12 +338,12 @@ class History:
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
         # if key == 'dt':
-        #     therm_frac = 0.2
+        #     warmup = 0.2
         arr = val.values  # shape: [nchains, ndraws]
         # steps = np.arange(len(val.coords['draw']))
         steps = val.coords['draw']
-        if therm_frac is not None and therm_frac > 0.0:
-            drop = int(therm_frac * arr.shape[0])
+        if warmup is not None and warmup > 0.0:
+            drop = int(warmup * arr.shape[0])
             arr = arr[drop:]
             steps = steps[drop:]
         if len(arr.shape) == 2:
@@ -410,7 +363,7 @@ class History:
                     try:
                         ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
                     except Exception:
-                        log.error(f'Unable to plot {key}! Continuing')
+                        logger.error(f'Unable to plot {key}! Continuing')
                 _ = ax.grid(True, alpha=0.2)
                 axes = ax
             elif len(arr.shape) == 3:
@@ -458,7 +411,7 @@ class History:
             # from l2hmc.configs import PROJECT_DIR
             # from ezpz
             if verbose:
-                log.info(f'Saving {key} plot to: ' f'{Path(outdir).resolve()}')
+                logger.info(f'Saving {key} plot to: {Path(outdir).resolve()}')
             for ext, d in dirs.items():
                 outfile = d.joinpath(f'{key}.{ext}')
                 plt.savefig(outfile, dpi=400, bbox_inches='tight')
@@ -466,22 +419,30 @@ class History:
 
     def plot_dataset(
         self,
-        # therm_frac: float = 0.,
         title: Optional[str] = None,
         nchains: Optional[int] = None,
         outdir: Optional[os.PathLike] = None,
+        dataset: Optional[xr.Dataset] = None,
+        data: Optional[dict] = None,
+        warmup: Optional[int | float] = None,
         # subplots_kwargs: Optional[dict[str, Any]] = None,
         # plot_kwargs: Optional[dict[str, Any]] = None,
     ):
-        dataset = self.get_dataset()
-        return plot_dataset(
+        dataset = (
+            dataset
+            if dataset is not None
+            else (
+                self.get_dataset(
+                    data=(data if data is not None else self.history),
+                    warmup=warmup,
+                )
+            )
+        )
+        return ezplot.plot_dataset(
             dataset=dataset,
             nchains=nchains,
-            # therm_frac=therm_frac,
             title=title,
             outdir=outdir,
-            # subplots_kwargs=subplots_kwargs,
-            # plot_kwargs=plot_kwargs
         )
 
     def plot_2d_xarr(
@@ -593,80 +554,74 @@ class History:
     def tplot_all(
         self,
         outdir: Optional[os.PathLike] = None,
+        warmup: Optional[float] = 0.0,
         append: bool = True,
         xkey: Optional[str] = None,
         dataset: Optional[xr.Dataset] = None,
+        data: Optional[dict] = None,
+        logfreq: Optional[int] = None,
         verbose: bool = False,
     ):
-        dataset = self.get_dataset() if dataset is None else dataset
+        dataset = (
+            dataset
+            if dataset is not None
+            else (
+                self.get_dataset(
+                    data=(data if data is not None else self.history),
+                    warmup=warmup,
+                )
+            )
+        )
+
         outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-        log.info(f'Saving tplots to {outdir.as_posix()}')
+        logger.info(f'Saving tplots to {outdir.as_posix()}')
         for _, (key, val) in enumerate(dataset.items()):
-            if xkey is not None and key == xkey:
+            if (xkey is not None and key == xkey) or xkey in ['iter', 'draw']:
                 continue
-            if callable(getattr(val, 'to_numpy', None)):
-                arr = val.to_numpy()
-            else:
-                try:
-                    # arr = grab_tensor(val)
-                    arr = np.array(val)
-                except Exception:
-                    arr = torch.Tensor(val).cpu().numpy()
-                finally:
-                    arr = grab_tensor(val)
-            # assert arr is not None and len(arr) > 1
-            arr_len = 0
-            try:
-                arr_len = len(arr)  # type:ignore
-            except Exception as exc:
-                log.exception(exc)
-            # if len(arr) > 1:
-            if arr_len > 1:
-                if xkey is None:
-                    xarr = np.arange(arr_len)
-                else:
-                    xval = dataset.get(xkey.replace('/', '_'))
-                    assert xval is not None
-                    xarr = xval.to_numpy()
-                assert xarr is not None
-                tplot(
-                    y=np.array(arr),
-                    x=xarr,
-                    xlabel=xkey,
+            if len(val.values) > 0:
+                self._tplot(
+                    y=val.values,
+                    x=None,
+                    xlabel='iter',
                     ylabel=str(key),
                     append=append,
                     title=f'{key} [{ezpz.get_timestamp()}]',
                     verbose=verbose,
                     outfile=outdir.joinpath(f'{key}.txt').as_posix(),
+                    logfreq=logfreq,
                 )
-                # tplot_dict(
-                #     data=dict(zip(xarr, arr)),
-                #     xlabel=xkey,
-                #     ylabel=str(key),
-                #     append=append,
-                #     title=f"{key} [{ez.get_timestamp()}]",
-                #     outfile=Path(outdir).joinpath(f"{key}.txt").as_posix(),
-                # )
             else:
-                log.warning(f'{key}: {arr_len=}')
+                logger.warning(
+                    f'No data found in {key=}: {len(val.values)=} <= 0'
+                )
 
     def plot_all(
         self,
         num_chains: int = 128,
-        therm_frac: float = 0.0,
+        warmup: float = 0.0,
         title: Optional[str] = None,
         verbose: bool = False,
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         dataset: Optional[xr.Dataset] = None,
+        data: Optional[dict] = None,
     ):
         import seaborn as sns
 
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
 
-        dataset = self.get_dataset() if dataset is None else dataset
+        dataset = (
+            dataset
+            if dataset is not None
+            else (
+                self.get_dataset(
+                    data=(data if data is not None else self.history),
+                    warmup=warmup,
+                )
+            )
+        )
 
         _ = ezplot.make_ridgeplots(
             dataset,
@@ -679,7 +634,7 @@ class History:
         )
 
         for idx, (key, val) in enumerate(dataset.data_vars.items()):
-            color = f'C{idx%9}'
+            color = f'C{idx % 9}'
             plot_kwargs['color'] = color
 
             fig, subfigs, ax = self.plot(
@@ -687,7 +642,7 @@ class History:
                 key=str(key),
                 title=title,
                 outdir=outdir,
-                therm_frac=therm_frac,
+                warmup=warmup,
                 num_chains=num_chains,
                 plot_kwargs=plot_kwargs,
                 subplots_kwargs=subplots_kwargs,
@@ -720,15 +675,15 @@ class History:
                     i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
                 ]
                 # if verbose:
-                log.info(f'Saving {key} plot to: ' f'{Path(outdir).resolve()}')
+                logger.info(f'Saving {key} plot to: {Path(outdir).resolve()}')
                 for ext, d in dirs.items():
                     outfile = d.joinpath(f'{key}.{ext}')
                     if outfile.is_file():
                         outfile = d.joinpath(f'{key}-subfig.{ext}')
-                    # log.info(f"Saving {key}.ext to: {outfile}")
+                    # logger.info(f"Saving {key}.ext to: {outfile}")
                     if verbose:
-                        log.info(
-                            f'Saving {key} plot to: ' f'{outfile.resolve()}'
+                        logger.info(
+                            f'Saving {key} plot to: {outfile.resolve()}'
                         )
                     plt.savefig(outfile, dpi=400, bbox_inches='tight')
             if is_interactive():
@@ -746,26 +701,24 @@ class History:
     def to_DataArray(
         self,
         x: Union[list, np.ndarray, torch.Tensor],
-        therm_frac: Optional[float] = 0.0,
+        warmup: Optional[float] = 0.0,
     ) -> xr.DataArray:
         if isinstance(x, list) and isinstance(x[0], torch.Tensor):
             x = torch.Tensor(x).numpy(force=True)
         try:
-            # if isinstance(x, (list, torch.Tensor)):
-            # try:
             arr = grab_tensor(x)
-            # except TypeError:
-            #     breakpoint(0)
         except ValueError:
             arr = np.array(x).real
             # arr = np.array(x)
-            log.info(f'len(x): {len(x)}')
-            log.info(f'x[0].shape: {x[0].shape}')
-            log.info(f'arr.shape: {arr.shape}')
+            logger.info(f'len(x): {len(x)}')
+            logger.info(f'x[0].shape: {x[0].shape}')
+            logger.info(f'arr.shape: {arr.shape}')
         assert isinstance(arr, np.ndarray)
-        if therm_frac is not None and therm_frac > 0 and len(arr) > 0:
-            # drop = int(therm_frac * arr.shape[0])
-            drop = int(therm_frac * len(arr))
+        if warmup is not None and warmup > 0 and len(arr) > 0:
+            if isinstance(warmup, int):
+                warmup = warmup / len(arr)
+            # drop = int(warmup * arr.shape[0])
+            drop = int(warmup * len(arr))
             arr = arr[drop:]
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:  # [ndraws]
@@ -795,17 +748,17 @@ class History:
     def get_dataset(
         self,
         data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
-        therm_frac: Optional[float] = 0.0,
+        warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
         data_vars = {}
         for key, val in data.items():
             name = key.replace('/', '_')
             try:
-                data_vars[name] = self.to_DataArray(val, therm_frac)
+                data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                log.error(f'Unable to create DataArray for {key}! Skipping!')
-                log.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
+                logger.error(f'Unable to create DataArray for {key}! Skipping!')
+                logger.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
         return xr.Dataset(data_vars)
 
     def save_dataset(
@@ -815,17 +768,19 @@ class History:
         use_hdf5: bool = True,
         data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
+        warmup: Optional[int | float] = None,
         **kwargs,
     ) -> Path:
-        if dataset is None:
-            if data is None:
-                dataset = self.get_dataset(self.history)
-            else:
-                dataset = self.get_dataset(data)
-        # data = self.history if data is None else data
-        # dataset = self.get_dataset(data) if dataset is None else dataset
-        # if dataset is None:
-        #     dataset = self.get_dataset(data)
+        dataset = (
+            dataset
+            if dataset is not None
+            else (
+                self.get_dataset(
+                    data=(data if data is not None else self.history),
+                    warmup=warmup,
+                )
+            )
+        )
         return save_dataset(
             dataset,
             outdir=outdir,
@@ -840,7 +795,7 @@ class History:
         run_name: Optional[str] = None,
         dataset_fname: Optional[str] = None,
         num_chains: int = 128,
-        therm_frac: float = 0.0,
+        warmup: Optional[int | float] = 0.0,
         verbose: bool = False,
         save: bool = True,
         plot: bool = True,
@@ -852,12 +807,16 @@ class History:
         plot_kwargs: Optional[dict[str, Any]] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
     ) -> xr.Dataset:
-        if dataset is None:
-            if data is not None:
-                dataset = self.get_dataset(data)
-            else:
-                dataset = self.get_dataset(self.history)
-        # dataset = self.get_dataset() if dataset is None else dataset
+        dataset = (
+            dataset
+            if dataset is not None
+            else (
+                self.get_dataset(
+                    data=(data if data is not None else self.history),
+                    warmup=warmup,
+                )
+            )
+        )
         run_name = (
             f'History-{ezpz.get_timestamp()}' if run_name is None else run_name
         )
@@ -874,7 +833,7 @@ class History:
                 outdir=mplotdir,
                 verbose=verbose,
                 num_chains=num_chains,
-                therm_frac=therm_frac,
+                warmup=warmup,
                 title=title,
                 plot_kwargs=plot_kwargs,
                 subplots_kwargs=subplots_kwargs,
@@ -882,6 +841,7 @@ class History:
             _ = self.tplot_all(
                 dataset=dataset,
                 outdir=tplotdir,
+                warmup=warmup,
                 append=append_tplot,
                 xkey=xkey,
                 verbose=verbose,
@@ -890,12 +850,3 @@ class History:
             fname = 'dataset' if dataset_fname is None else dataset_fname
             _ = self.save_dataset(dataset=dataset, outdir=outdir, fname=fname)
         return dataset
-        # _ = history.tplot_all(
-        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
-        # )
-        # logger.info(f"{dataset=}")
-        # dataset = history.plot_all(outdir=mplotdir,
-        # _ = history.tplot_all(
-        #     outdir=tplotdir, append=True, xkey="train/iter", dataset=dataset
-        # )
-        # logger.info(f"{dataset=}")
