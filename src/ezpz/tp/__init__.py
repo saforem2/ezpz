@@ -81,13 +81,13 @@ _CONTEXT_PARALLEL_GROUP_RANKS = None
 
 
 def initialize_tensor_parallel(
-    tpsize: int = 1,
-    ppsize: int = 1,
-    cpsize: int = 1,
-    tpbackend: Optional[str] = None,
-    ppbackend: Optional[str] = None,
-    cpbackend: Optional[str] = None,
-    dpbackend: Optional[str] = None,
+    tensor_parallel_size: int = 1,
+    pipeline_parallel_size: int = 1,
+    context_parallel_size: int = 1,
+    tensor_parallel_backend: Optional[str] = None,
+    pipeline_parallel_backend: Optional[str] = None,
+    context_parallel_backend: Optional[str] = None,
+    data_parallel_backend: Optional[str] = None,
     timeout: Optional[timedelta] = None,
 ) -> None:
     """
@@ -128,33 +128,33 @@ def initialize_tensor_parallel(
     # Get world size and rank. Ensure some consistencies.
     assert tdist.is_initialized()
     world_size = tdist.get_world_size()
-    tpsize = int(min(tpsize, world_size))
-    ensure_divisibility(world_size, tpsize)
-    ensure_divisibility(world_size, cpsize)
+    tensor_parallel_size = int(min(tensor_parallel_size, world_size))
+    ensure_divisibility(world_size, tensor_parallel_size)
+    ensure_divisibility(world_size, context_parallel_size)
     ensure_divisibility(
         world_size,
-        tpsize * ppsize * cpsize,
+        tensor_parallel_size * pipeline_parallel_size * context_parallel_size,
     )
     rank = tdist.get_rank()
 
     dpsize = int(
         world_size
-        / (tpsize * ppsize * cpsize)
+        / (tensor_parallel_size * pipeline_parallel_size * context_parallel_size)
     )
 
     if tdist.get_rank() == 0:
         logger.info(
             '> initializing tensor parallel with size {}'.format(
-                tpsize
+                tensor_parallel_size
             )
         )
         logger.info(
             '> initializing context parallel with size {}'.format(
-                cpsize
+                context_parallel_size
             )
         )
         logger.info(
-            '> initializing pipeline with size {}'.format(ppsize)
+            '> initializing pipeline with size {}'.format(pipeline_parallel_size)
         )
         logger.info(
             '> initializing ddp with size {}'.format(dpsize)
@@ -162,9 +162,9 @@ def initialize_tensor_parallel(
 
     groups = torch.LongTensor(range(world_size)).reshape(
         dpsize,
-        ppsize,
-        cpsize,
-        tpsize,
+        pipeline_parallel_size,
+        context_parallel_size,
+        tensor_parallel_size,
     )
 
     found = torch.where(groups == rank)
@@ -180,13 +180,13 @@ def initialize_tensor_parallel(
     assert (
         _DATA_PARALLEL_RANKS is None
     ), 'data parallel ranks are already initialized'
-    for i in range(ppsize):
-        for j in range(cpsize):
-            for k in range(tpsize):
+    for i in range(pipeline_parallel_size):
+        for j in range(context_parallel_size):
+            for k in range(tensor_parallel_size):
                 ranks = groups[:, i, j, k].tolist()
                 group = tdist.new_group(
                     groups[:, i, j, k].tolist(),
-                    backend=dpbackend,
+                    backend=data_parallel_backend,
                     timeout=timeout,
                 )
                 if i == found[1] and j == found[2] and k == found[3]:
@@ -203,12 +203,12 @@ def initialize_tensor_parallel(
         _TENSOR_PARALLEL_RANKS is None
     ), 'tensor parallel ranks are already initialized'
     for i in range(dpsize):
-        for j in range(ppsize):
-            for k in range(cpsize):
+        for j in range(pipeline_parallel_size):
+            for k in range(context_parallel_size):
                 ranks = groups[i, j, k, :].tolist()
                 group = tdist.new_group(
                     groups[i, j, k, :].tolist(),
-                    backend=tpbackend,
+                    backend=tensor_parallel_backend,
                     timeout=timeout,
                 )
                 if i == found[0] and j == found[1] and k == found[2]:
@@ -222,11 +222,11 @@ def initialize_tensor_parallel(
         _PIPELINE_PARALLEL_GROUP is None
     ), 'Pipeline parallel group is already initialized'
     for i in range(dpsize):
-        for j in range(cpsize):
-            for k in range(tpsize):
+        for j in range(context_parallel_size):
+            for k in range(tensor_parallel_size):
                 ranks = groups[i, :, j, k].tolist()
                 group = tdist.new_group(
-                    ranks, backend=ppbackend, timeout=timeout
+                    ranks, backend=pipeline_parallel_backend, timeout=timeout
                 )
                 if i == found[0] and j == found[2] and k == found[3]:
                     _PIPELINE_PARALLEL_GROUP = group
@@ -240,11 +240,11 @@ def initialize_tensor_parallel(
         _CONTEXT_PARALLEL_GROUP is None
     ), 'Context parallelism is already initialized.'
     for i in range(dpsize):
-        for j in range(ppsize):
-            for k in range(tpsize):
+        for j in range(pipeline_parallel_size):
+            for k in range(tensor_parallel_size):
                 ranks = groups[i, j, :, k].tolist()
                 group = tdist.new_group(
-                    ranks, backend=cpbackend, timeout=timeout
+                    ranks, backend=context_parallel_backend, timeout=timeout
                 )
                 if i == found[0] and j == found[1] and k == found[3]:
                     _CONTEXT_PARALLEL_GROUP = group
