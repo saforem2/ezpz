@@ -1,6 +1,28 @@
-# 🍋 `ezpz`
+# 🍋 ezpz
 
-> *Work smarter, not harder*
+> <q align="center" style="text-align:center;"><i>Work smarter, not harder</i></q>
+
+<!--
+<h4 align="center">
+    <p>
+        <a href="#installation">Installation</a> •
+        <a href="#quick-start">Quick Start</a> •
+        <a href="#features">Features</a> •
+        <a href="CONTRIBUTING.md">Contributing</a>
+    <p>
+</h4>
+
+<h3 align="center">
+    <a href="https://huggingface.co/nanotron"><img style="float: middle; padding: 10px 10px 10px 10px;" width="60" height="55" src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.png" /></a>
+</h3>
+<h3 align="center">
+<p>Pretraining models made easy
+</h3>
+-->
+
+<!--
+# 🍋 `ezpz`
+--
 
 <!--- <details closed><summary>Contents:</summary></details>-->
 
