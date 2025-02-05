@@ -644,7 +644,10 @@ def setup_torch_DDP(
     # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
     eport = os.environ.get('MASTER_PORT', None)
     if eport is not None:
-        logger.info(f'Caught MASTER_PORT: {eport=} from environment!')
+        _ = (
+            logger.info(f'Caught MASTER_PORT={eport} from environment!')
+            if rank == 0 else None
+        )
     else:
         eport = port
     # grab it from rank 0
