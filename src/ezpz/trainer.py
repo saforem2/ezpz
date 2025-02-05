@@ -7,6 +7,7 @@ wordplay/trainer.py
 >  `NCCL_IB_DISABLE=1`
 ```
 """
+
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import asdict
 import logging
@@ -17,17 +18,20 @@ from pathlib import Path
 import time
 from typing import Any, Optional, Union
 from omegaconf import DictConfig
-from torch import optim
-from torch import nn
+
+import ezpz
 
 from ezpz import (
     get_rank,
     get_torch_device,
     get_world_size,
     timeitlogit,
-    get_local_rank
+    get_local_rank,
 )
-from ezpz.history import BaseHistory
+
+# from ezpz.history import BaseHistory
+from torch import optim
+from torch import nn
 import numpy as np
 from rich.text import Text
 import torch
@@ -37,6 +41,7 @@ import wandb
 
 from wordplay.configs import ExperimentConfig, ModelConfig, add_to_ckpts_file
 from wordplay.model import GPT
+
 GradScaler = None
 if torch.cuda.is_available():
     from torch.cuda.amp import GradScaler
@@ -77,6 +82,7 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
             return np.stack(x)
         else:
             import tensorflow as tf
+
             if isinstance(x[0], tf.Tensor):
                 return grab_tensor(tf.stack(x))
     elif isinstance(x, np.ndarray):
@@ -170,13 +176,14 @@ class TrainerMNIST:
 
     def build_model(self) -> nn.Module:
         from ezpz.model import MnistCNN
+
         return MnistCNN()
 
     def build_optimizer(self, model: nn.Module) -> torch.optim.Optimizer:
         # DDP: scale learning rate by the number of GPUs
         return optim.Adam(
             model.parameters(),
-            lr=(self.world_size*self.cfg.lr_init),
+            lr=(self.world_size * self.cfg.lr_init),
         )
 
     def setup_torch(self):
@@ -187,33 +194,38 @@ class TrainerMNIST:
             torch.cuda.manual_seed(self.cfg.seed)
 
         if (
-                self.cfg.num_threads is not None
-                and isinstance(self.cfg.num_threads, int)
-                and self.cfg.num_threads > 0
+            self.cfg.num_threads is not None
+            and isinstance(self.cfg.num_threads, int)
+            and self.cfg.num_threads > 0
         ):
             torch.set_num_threads(self.cfg.num_threads)
 
         if RANK == 0:
-            log.info('\n'.join([
-                'Torch Thread Setup:',
-                f' Number of threads: {torch.get_num_threads()}',
-            ]))
+            log.info(
+                '\n'.join(
+                    [
+                        'Torch Thread Setup:',
+                        f' Number of threads: {torch.get_num_threads()}',
+                    ]
+                )
+            )
 
     def setup_data(self):
         # kwargs = {}
         # if self.device == 'gpu':
         from torchvision import datasets, transforms
+
         #     kwargs = {'num_workers': 1, 'pin_memory': True}
-        train_dataset = (
-            datasets.MNIST(
-                self.cfg.data_dir,
-                train=True,
-                download=True,
-                transform=transforms.Compose([
+        train_dataset = datasets.MNIST(
+            self.cfg.data_dir,
+            train=True,
+            download=True,
+            transform=transforms.Compose(
+                [
                     transforms.ToTensor(),
                     transforms.Normalize((0.1307,), (0.3081,)),
-                ])
-            )
+                ]
+            ),
         )
         # DDP: use DistributedSampler to partition training data
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -227,25 +239,22 @@ class TrainerMNIST:
             sampler=train_sampler,
             # **kwargs
         )
-        test_dataset = (
-            datasets.MNIST(
-                self.cfg.data_dir,
-                train=False,
-                transform=transforms.Compose([
+        test_dataset = datasets.MNIST(
+            self.cfg.data_dir,
+            train=False,
+            transform=transforms.Compose(
+                [
                     transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,))
-                ])
-            )
+                    transforms.Normalize((0.1307,), (0.3081,)),
+                ]
+            ),
         )
         # DDP: use DistributedSampler to partition the test data
         test_sampler = torch.utils.data.distributed.DistributedSampler(
-            test_dataset,
-            num_replicas=self.world_size,
-            rank=self.rank
+            test_dataset, num_replicas=self.world_size, rank=self.rank
         )
         test_loader = torch.utils.data.DataLoader(
-            test_dataset,
-            batch_size=self.cfg.batch_size
+            test_dataset, batch_size=self.cfg.batch_size
         )
         return {
             'train': {
@@ -255,13 +264,13 @@ class TrainerMNIST:
             'test': {
                 'sampler': test_sampler,
                 'loader': test_loader,
-            }
+            },
         }
 
     def train_step(
-            self,
-            data: torch.Tensor,
-            target: torch.Tensor,
+        self,
+        data: torch.Tensor,
+        target: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # if WITH_CUDA:
         #     data, target = data.cuda(), target.cuda()
@@ -281,13 +290,13 @@ class TrainerMNIST:
         return loss, acc
 
     def train_epoch(
-            self,
-            epoch: int,
+        self,
+        epoch: int,
     ) -> dict:
         self.model.train()
         start = time.time()
-        running_acc = torch.tensor(0.).to(self.device_id)
-        running_loss = torch.tensor(0.).to(self.device_id)
+        running_acc = torch.tensor(0.0).to(self.device_id)
+        running_loss = torch.tensor(0.0).to(self.device_id)
         # if self.device_type == 'cuda':
         #     running_acc = running_acc.cuda()
         #     running_loss = running_loss.cuda()
@@ -315,15 +324,17 @@ class TrainerMNIST:
                 }
                 pre = [
                     f'[{RANK}]',
-                    (   # looks like: [num_processed/total (% complete)]
+                    (  # looks like: [num_processed/total (% complete)]
                         f'[{epoch}/{self.cfg.epochs}:'
                         f' {bidx * len(data)}/{len(train_sampler)}'
-                        f' ({100. * bidx / len(train_loader):.0f}%)]'
+                        f' ({100.0 * bidx / len(train_loader):.0f}%)]'
                     ),
                 ]
-                log.info(' '.join([
-                    *pre, *[f'{k}={v:.4f}' for k, v in metrics.items()]
-                ]))
+                log.info(
+                    ' '.join(
+                        [*pre, *[f'{k}={v:.4f}' for k, v in metrics.items()]]
+                    )
+                )
 
         running_loss = running_loss / len(train_sampler)
         running_acc = running_acc / len(train_sampler)
@@ -362,7 +373,7 @@ class TrainerLLM:
         #     1 if config.optimizer.gradient_accumulation_steps is None
         #     else config.optimizer.gradient_accumulation_steps
         # ) -------------------------------------------------------------
-        self.train_history = BaseHistory()
+        self.train_history = ezpz.History()
         self._gas = self.config.optimizer.gas
         self._lr = self.config.optimizer.learning_rate
         self._min_lr = self.config.optimizer.min_lr
@@ -421,6 +432,7 @@ class TrainerLLM:
         if self.config.train.backend.lower() == 'ddp':
             if torch.cuda.is_available():
                 from torch.cuda.amp.grad_scaler import GradScaler
+
                 grad_scaler = GradScaler(
                     enabled=(self.config.train.dtype == 'float16')
                 )
@@ -428,25 +440,25 @@ class TrainerLLM:
             assert isinstance(model, torch.nn.Module)
             device = get_torch_device()
             local_rank = get_local_rank()
-            devid = f"{device}:{local_rank}"
+            devid = f'{device}:{local_rank}'
             log.critical(f'"{devid=}"')
             model.to(devid)
             model_engine = DDP(model, device_ids=[devid])
         elif self.config.train.backend.lower() in ['deepspeed', 'ds']:
             from ezpz import load_ds_config
+
             grad_scaler = None
             ds_config_path = self.config.train.ds_config_path
             if ds_config_path is None:
                 from wordplay.configs import DS_CONFIG_PATH
+
                 ds_config_path = DS_CONFIG_PATH
             self.ds_config = load_ds_config(ds_config_path)
             if 'optimizer' in self.ds_config.keys():
                 optimizer = None
             assert isinstance(model, torch.nn.Module)
             ds_out = self._setup_deepspeed(
-                ds_config=self.ds_config,
-                model=model,
-                optimizer=optimizer
+                ds_config=self.ds_config, model=model, optimizer=optimizer
             )
             model_engine = ds_out['model_engine']
             optimizer = ds_out['optimizer']
@@ -463,29 +475,27 @@ class TrainerLLM:
             f'{self.config.train.init_from}'
         )
         override_args = {'dropout': self.config.model.dropout}
-        model = GPT.from_pretrained(
-            self.config.train.init_from,
-            override_args
-        )
+        model = GPT.from_pretrained(self.config.train.init_from, override_args)
         model_cfg = {
-            k: getattr(model.config, k) for k in [
+            k: getattr(model.config, k)
+            for k in [
                 'n_layer',
                 'n_head',
                 'n_embd',
                 'block_size',
                 'bias',
-                'vocab_size'
+                'vocab_size',
             ]
         }
         self.config.reset_model_config(ModelConfig(**model_cfg))
         return model
 
     def _setup_deepspeed(
-            self,
-            model: Optional[torch.nn.Module | GPT],
-            ds_config: Optional[dict] = None,
-            ds_config_path: Optional[os.PathLike] = None,
-            optimizer: Optional[torch.optim.Optimizer] = None,
+        self,
+        model: Optional[torch.nn.Module | GPT],
+        ds_config: Optional[dict] = None,
+        ds_config_path: Optional[os.PathLike] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
     ) -> dict:
         """Setup DeepSpeed.
 
@@ -495,6 +505,7 @@ class TrainerLLM:
         """
         import deepspeed
         from ezpz import load_ds_config
+
         if ds_config is None:
             assert ds_config_path is not None, (
                 'One of `ds_config` or `ds_config_path` must be specified.'
@@ -502,27 +513,26 @@ class TrainerLLM:
             ds_config = load_ds_config(Path(ds_config_path).as_posix())
         assert ds_config is not None
         if self.config.train.wandb_project is not None:
-            ds_config['wandb'].update({
-                'enabled': True,
-                'project': self.config.train.wandb_project,
-            })
+            ds_config['wandb'].update(
+                {
+                    'enabled': True,
+                    'project': self.config.train.wandb_project,
+                }
+            )
         log.warning(
             f'Setting `train_micro_batch_size_per_gpu` to '
             f'{self.config.model.batch_size=}'
         )
-        ds_config.update({
-            'train_micro_batch_size_per_gpu': self.config.model.batch_size
-        })
-        assert (
-            model is not None and (
-                isinstance(model, (torch.nn.Module, GPT))
-                or issubclass(model, torch.nn.Module)
-            )
+        ds_config.update(
+            {'train_micro_batch_size_per_gpu': self.config.model.batch_size}
+        )
+        assert model is not None and (
+            isinstance(model, (torch.nn.Module, GPT))
+            or issubclass(model, torch.nn.Module)
         )
         assert model is not None
-        if (
-                optimizer is not None
-                and isinstance(optimizer, torch.optim.Optimizer)
+        if optimizer is not None and isinstance(
+            optimizer, torch.optim.Optimizer
         ):
             engine, optimizer, *_ = deepspeed.initialize(
                 model=model,
@@ -533,7 +543,7 @@ class TrainerLLM:
             engine, optimizer, *_ = deepspeed.initialize(
                 model=model,
                 config=ds_config,
-                model_parameters=model.parameters()
+                model_parameters=model.parameters(),
             )
         else:
             raise ValueError('Unable to initialize DeepSpeed')
@@ -551,18 +561,20 @@ class TrainerLLM:
         assert data is not None
         ix = torch.randint(
             len(data) - self.config.model.block_size,
-            (self.config.model.batch_size,)
+            (self.config.model.batch_size,),
         )
         block_size = self.config.model.block_size
         x = torch.stack(
             [
-                torch.from_numpy((data[i:i+block_size]).astype(np.int64))
+                torch.from_numpy((data[i : i + block_size]).astype(np.int64))
                 for i in ix
             ]
         )
         y = torch.stack(
             [
-                torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64))
+                torch.from_numpy(
+                    (data[i + 1 : i + 1 + block_size]).astype(np.int64)
+                )
                 for i in ix
             ]
         )
@@ -600,19 +612,16 @@ class TrainerLLM:
         return out
 
     def restore_from_ckpt(
-            self,
-            ckpt_dir: Optional[str | PathLike] = None
+        self, ckpt_dir: Optional[str | PathLike] = None
     ) -> tuple[torch.nn.Module, dict]:
         log.info(f'Resuming training from {self.config.data.out_dir}')
         ckpt_dir = (
-            str(self.config.data.out_dir) if ckpt_dir is None
-            else ckpt_dir
+            str(self.config.data.out_dir) if ckpt_dir is None else ckpt_dir
         )
         assert ckpt_dir is not None
         ckpt_path = Path(ckpt_dir).joinpath('ckpt.pt')
         checkpoint = torch.load(
-            ckpt_path,
-            map_location=self.config.train.device
+            ckpt_path, map_location=self.config.train.device
         )
         ckpt_model = checkpoint['model_args']
         model_config = ModelConfig(
@@ -628,7 +637,7 @@ class TrainerLLM:
         unwanted_prefix = '_orig_mod.'
         for k, _ in list(state_dict.items()):
             if k.startswith(unwanted_prefix):
-                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+                state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
         model.load_state_dict(state_dict)
         return model, checkpoint
 
@@ -636,21 +645,17 @@ class TrainerLLM:
         t0 = time.perf_counter()
         with self.config.ctx:
             logits, loss = self.model_engine(x, y)
-        return {
-            'logits': logits,
-            'loss': loss,
-            'dt': time.perf_counter() - t0
-        }
+        return {'logits': logits, 'loss': loss, 'dt': time.perf_counter() - t0}
 
     def _backward_step(
-            self,
-            loss: torch.Tensor,
-            propagate_grads: bool = False,
+        self,
+        loss: torch.Tensor,
+        propagate_grads: bool = False,
     ) -> float:
         t0 = time.perf_counter()
         if self.config.train.backend.lower() in ['ds', 'deepspeed']:
             self.model_engine.backward(loss)  # type:ignore
-            self.model_engine.step(loss)      # type:ignore
+            self.model_engine.step(loss)  # type:ignore
         else:
             if self.grad_scaler is not None:
                 self.grad_scaler.scale(loss).backward()  # type:ignore
@@ -660,7 +665,7 @@ class TrainerLLM:
                         self.grad_scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(  # pyright: ignore
                         self.model_engine.parameters(),
-                        self.config.optimizer.grad_clip
+                        self.config.optimizer.grad_clip,
                     )
                 if self.grad_scaler is not None:
                     self.grad_scaler.step(self.optimizer)
@@ -670,9 +675,9 @@ class TrainerLLM:
         return time.perf_counter() - t0
 
     def train_step(
-            self,
-            x: torch.Tensor,
-            y: torch.Tensor,
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
     ) -> dict:
         lr = (
             self.get_lr(self.config.iter_num)
@@ -686,7 +691,7 @@ class TrainerLLM:
         dt = []
         loss = torch.tensor(0.0)
         for micro_step in range(self._gas):
-            is_last_micro_step = (micro_step == self._gas - 1)
+            is_last_micro_step = micro_step == self._gas - 1
             # NOTE: -----------------------------------------------------------
             # In DDP training we only need to sync gradients at the last micro
             # step. the official way to do this is with model.no_sync() context
@@ -706,10 +711,7 @@ class TrainerLLM:
             x, y = self.get_batch('train')
             loss = fout['loss'] / self._gas
             dtf.append(fout['dt'])
-            dtb_ = self._backward_step(
-                loss,
-                propagate_grads=is_last_micro_step
-            )
+            dtb_ = self._backward_step(loss, propagate_grads=is_last_micro_step)
             dtb.append(dtb_)
             dt.append(dtf + dtb)
         timers = {
@@ -722,7 +724,7 @@ class TrainerLLM:
             'dtf_avg': np.mean(dtf),
             'dtb': np.array(dtb),
             'dtb_tot': np.sum(dtb),
-            'dtb_avg': np.mean(dtb)
+            'dtb_avg': np.mean(dtb),
         }
         metrics = {
             'iter': self.config.iter_num,
@@ -738,9 +740,9 @@ class TrainerLLM:
         }
 
     def save_ckpt(
-            self,
-            raw_model: Optional[torch.nn.Module | GPT] = None,
-            add_to_wandb: bool = False
+        self,
+        raw_model: Optional[torch.nn.Module | GPT] = None,
+        add_to_wandb: bool = False,
     ):
         model = raw_model if raw_model is None else self.model
         # if raw_model is None:
@@ -777,8 +779,8 @@ class TrainerLLM:
 
     @timeitlogit(rank=RANK, verbose=(RANK != 0))
     def train(
-            self,
-            train_iters: Optional[int] = None,
+        self,
+        train_iters: Optional[int] = None,
     ):
         x, y = self.get_batch('train')
         t0 = time.perf_counter()
@@ -787,13 +789,12 @@ class TrainerLLM:
         t0 = time.perf_counter()
         losses = {}
         train_iters = (
-            self.config.train.max_iters
-            if train_iters is None else train_iters
+            self.config.train.max_iters if train_iters is None else train_iters
         )
         for train_iter in trange(
-                train_iters,
-                disable=(self.rank != 0),
-                total=train_iters,
+            train_iters,
+            disable=(self.rank != 0),
+            total=train_iters,
         ):
             if self.config.iter_num == 0:
                 start_time = os.environ.get('START_TIME', None)
@@ -802,20 +803,18 @@ class TrainerLLM:
                     log.info(f'Startup time: {startup_time:.4f}')
                     if wandb is not None and wandb.run is not None:
                         wandb.run.log(
-                            {'Timing/startup_time': startup_time},
-                            commit=False
+                            {'Timing/startup_time': startup_time}, commit=False
                         )
             if self.config.iter_num == 0 and self.config.train.eval_only:
                 return
             if (
-                    self.config.iter_num % self.config.train.eval_interval == 0
-                    and self.rank == 0
+                self.config.iter_num % self.config.train.eval_interval == 0
+                and self.rank == 0
             ):
                 losses = self.estimate_loss()
-                if (
-                    self.config.iter_num > 0
-                    and (losses.get('val', np.inf) < self.config.best_val_loss
-                         or self.config.train.always_save_checkpoint)
+                if self.config.iter_num > 0 and (
+                    losses.get('val', np.inf) < self.config.best_val_loss
+                    or self.config.train.always_save_checkpoint
                 ):
                     self.save_ckpt(add_to_wandb=False)
             output = self.train_step(x=output['x'], y=output['y'])
@@ -836,9 +835,8 @@ class TrainerLLM:
             _ = self.train_history.update(output['timers'])
             _ = self.train_history.update(output['metrics'])
             zero = torch.tensor(0.0)
-            if (
-                    self.config.iter_num % self.config.train.log_interval == 0
-                    and (self.rank == 0)
+            if self.config.iter_num % self.config.train.log_interval == 0 and (
+                self.rank == 0
             ):
                 if train_iter >= 5:
                     mfu = self.model.estimate_mfu(
@@ -846,10 +844,11 @@ class TrainerLLM:
                             self.config.model.batch_size
                             * self.config.optimizer.gas
                         ),
-                        dt=dt
+                        dt=dt,
                     )
                     running_mfu = (
-                        mfu if running_mfu == -1.0
+                        mfu
+                        if running_mfu == -1.0
                         else 0.9 * running_mfu + 0.1 * mfu
                     )
                 pvars = {
@@ -876,19 +875,21 @@ class TrainerLLM:
                     losses['iter'] = self.config.iter_num
                     wbmetrics = {  # type:ignore
                         f'Training/{k}': (
-                            (wandb.Histogram(v.tolist())
-                                if isinstance(v, np.ndarray) else v)
-                        ) for k, v in output['metrics'].items()
+                            wandb.Histogram(v.tolist())
+                            if isinstance(v, np.ndarray)
+                            else v
+                        )
+                        for k, v in output['metrics'].items()
                     }
                     wbmetrics |= {
                         f'Timing/{k}': (
-                            (wandb.Histogram(v.tolist())
-                                if isinstance(v, np.ndarray) else v)
-                        ) for k, v in output['timers'].items()
+                            wandb.Histogram(v.tolist())
+                            if isinstance(v, np.ndarray)
+                            else v
+                        )
+                        for k, v in output['timers'].items()
                     }
-                    wbmetrics |= {
-                        f'Loss/{k}': v for k, v in losses.items()
-                    }
+                    wbmetrics |= {f'Loss/{k}': v for k, v in losses.items()}
                     wandb.run.log(wbmetrics)
                     # wandb.run.log({
                     #     'losses': losses,
@@ -898,13 +899,13 @@ class TrainerLLM:
                     # })
 
     def evaluate(
-            self,
-            s: str,
-            num_samples: int = 10,
-            max_new_tokens: int = 500,
-            temperature: float = 0.8,
-            top_k: int = 200,
-            display: Optional[bool] = True,
+        self,
+        s: str,
+        num_samples: int = 10,
+        max_new_tokens: int = 500,
+        temperature: float = 0.8,
+        top_k: int = 200,
+        display: Optional[bool] = True,
     ) -> dict[str, str]:
         # seed: Optional[int] = None,
         assert isinstance(self.model.module, GPT)
@@ -914,25 +915,21 @@ class TrainerLLM:
         with torch.no_grad():
             start_ids = self.config.data.encode(s)
             x = torch.tensor(
-                    start_ids,
-                    dtype=torch.long,
-                    device=self.device,
+                start_ids,
+                dtype=torch.long,
+                device=self.device,
             )[None, ...]
             for idx in range(num_samples):
                 y = self.model.module.generate(
-                    x,
-                    max_new_tokens,
-                    temperature=temperature,
-                    top_k=top_k
+                    x, max_new_tokens, temperature=temperature, top_k=top_k
                 )
                 response = [
-                    i for i in self.config.data.decode(
-                        y[0].tolist()
-                    ).split('\n')
+                    i
+                    for i in self.config.data.decode(y[0].tolist()).split('\n')
                 ]
                 prompt = response[0]
                 responses = [*response[1:]]
-                ret0 = fr"[prompt]: '{prompt}'"
+                ret0 = rf"[prompt]: '{prompt}'"
                 ret1 = '> ' + '\n> '.join(responses)
                 if display:
                     log.info(f'{ret0}')
