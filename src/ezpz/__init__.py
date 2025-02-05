@@ -7,7 +7,6 @@ import logging
 import logging.config
 import os
 import re
-from typing import Optional
 import warnings
 
 from ezpz import dist
@@ -127,7 +126,11 @@ from ezpz.history import History, StopWatch
 #     print_config,
 #     printarr,
 # )
-import ezpz.tp
+# import ezpz.tp
+# import ezpz.log
+
+from ezpz import tp
+from ezpz import log
 
 from ezpz.tp import (
     destroy_tensor_parallel,
@@ -154,7 +157,6 @@ from ezpz.utils import grab_tensor
 from jaxtyping import ScalarLike
 from mpi4py import MPI
 import numpy as np
-import yaml
 
 # try:
 #     import wandb  # pyright: ignore
@@ -253,7 +255,7 @@ __all__ = [
     'HERE',
     'History',
     'LOGS_DIR',
-    'NO_COLOR',
+    # 'NO_COLOR',
     'OUTPUTS_DIR',
     'PROJECT_DIR',
     'PROJECT_DIR',
@@ -328,6 +330,7 @@ __all__ = [
     'load_ds_config',
     'log',
     'make_layout',
+    'tp',
     'tensor_parallel_is_initialized',
     'nested_dict_to_df',
     'print_config',
