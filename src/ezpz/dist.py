@@ -629,11 +629,11 @@ def setup_torch_DDP(
     rank = int(get_rank())
     local_rank = int(get_local_rank())
     # ensure there is no funny business going on
-    if os_rank and os_rank != rank:
+    if os_rank and int(os_rank) != int(rank):
         logger.warning(f'Mismatch between {os_rank=} and {rank=}')
-    if os_world_size and os_world_size != world_size:
+    if os_world_size and int(os_world_size) != int(world_size):
         logger.warning(f'Mismatch between {os_world_size=} and {world_size=}')
-    if os_local_rank and os_local_rank != local_rank:
+    if os_local_rank and int(os_local_rank) != int(local_rank):
         logger.warning(f'Mismatch between {os_local_rank=} and {local_rank=}')
     # now, set these variables explicitly in the process' environment
     os.environ['LOCAL_RANK'] = str(local_rank)
