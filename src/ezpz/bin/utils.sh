@@ -1078,6 +1078,17 @@ ezpz_write_job_info() {
         # if [[ -n "${DIST_LAUNCH:-}" ]]; then
         #     echo "alias LAUNCH='${DIST_LAUNCH}'"
         # fi
+        yeet() {
+          if [[ -v WORLD_SIZE ]]; then
+            dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/${NGPUS}/${WORLD_SIZE}/g")"
+          else
+            dlaunch="${DIST_LAUNCH}"
+          fi
+          _args=("${@}")
+          printf "evaluating:\n${GREEN}%s${RESET}\n" "${dlaunch}"
+          printf "with arguments:\n${BLUE}%s${RESET}\n" "${dlaunch}" "${_args[*]}"
+          eval "${dlaunch} ${@}"
+        }
         export LAUNCH="${DIST_LAUNCH}"
         export ezlaunch="${DIST_LAUNCH}"
         alias launch="${LAUNCH}"
