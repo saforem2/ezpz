@@ -121,7 +121,9 @@ def set_plot_style(**kwargs):
             # 'savefig.transparent': True,
         }
     )
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', list(COLORS.values()))
+    plt.rcParams['axes.prop_cycle'] = plt.cycler(
+        'color', list(COLORS.values())
+    )
     plt.rcParams['axes.labelcolor'] = '#838383'
     plt.rcParams.update(**kwargs)
     # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
@@ -175,7 +177,7 @@ def tplot(
     title: Optional[str] = None,
     xlabel: Optional[str] = None,
     ylabel: Optional[str] = None,
-    marker: str = 'braille',
+    marker: Optional[str] = None,
     bins: Optional[int] = None,
     # bins: int = 60,
     logfreq: int = 1,
@@ -200,6 +202,7 @@ def tplot(
     #     else:
     #         title = title if title is not None else f"{ylabel} hist"
     # title = f'{title} {tstamp}' if title is not None else f'{tstamp}'
+    plot_type = 'line' if plot_type is None else plot_type
     if title is None:
         title = (
             f'{ylabel} vs {xlabel}'
@@ -229,12 +232,19 @@ def tplot(
     elif len(y.shape) == 1:
         # if type is not None:
         #     assert type in ['scatter', 'line']
-        if plot_type is not None and plot_type == 'scatter':
+        if plot_type is None or plot_type == 'line':
+            marker = 'hd' if marker is None else marker
+            pltx.plot(y, marker=marker, label=label)
+        elif plot_type is not None and plot_type == 'scatter':
+            marker = 'braille' if marker is None else marker
             pltx.scatter(y, label=label, marker=marker)
         elif plot_type is not None and plot_type == 'hist':
             pltx.hist(y, bins=bins, label=label)
         else:
+            logger.warning(f'Unknown plot type: {plot_type}')
             pltx.plot(y, label=label)
+        # else:
+        #     pltx.plot(y, label=label)
     if title is not None:
         pltx.title(title)
     if ylabel is not None:
@@ -830,7 +840,11 @@ def plot_metric(
         # label = r'$\langle$' + f' {key} ' + r'$\rangle$'
         label = f'{key}_avg'
         _ = ax.plot(
-            steps, arr.mean(-1), lw=1.5 * line_width, label=label, **plot_kwargs
+            steps,
+            arr.mean(-1),
+            lw=1.5 * line_width,
+            label=label,
+            **plot_kwargs,
         )
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
