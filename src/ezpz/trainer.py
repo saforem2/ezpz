@@ -873,23 +873,25 @@ class TrainerLLM:
                     }
                     losses['lossf'] = lossf
                     losses['iter'] = self.config.iter_num
-                    wbmetrics = {  # type:ignore
-                        f'Training/{k}': (
-                            wandb.Histogram(v.tolist())
-                            if isinstance(v, np.ndarray)
-                            else v
-                        )
-                        for k, v in output['metrics'].items()
-                    }
-                    wbmetrics |= {
-                        f'Timing/{k}': (
-                            wandb.Histogram(v.tolist())
-                            if isinstance(v, np.ndarray)
-                            else v
-                        )
-                        for k, v in output['timers'].items()
-                    }
-                    wbmetrics |= {f'Loss/{k}': v for k, v in losses.items()}
+                    wbmetrics = (
+                        {  # type:ignore
+                            f'Training/{k}': (
+                                wandb.Histogram(v.tolist())
+                                if isinstance(v, np.ndarray)
+                                else v
+                            )
+                            for k, v in output['metrics'].items()
+                        }
+                        | {
+                            f'Timing/{k}': (
+                                wandb.Histogram(v.tolist())
+                                if isinstance(v, np.ndarray)
+                                else v
+                            )
+                            for k, v in output['timers'].items()
+                        }
+                        | {f'Loss/{k}': v for k, v in losses.items()}
+                    )
                     wandb.run.log(wbmetrics)
                     # wandb.run.log({
                     #     'losses': losses,
