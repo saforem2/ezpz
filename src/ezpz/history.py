@@ -180,6 +180,13 @@ class History:
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
     ):
+        """
+        Plot a single variable from the history.
+
+        NOTE: The `warmup` argument can be used to drop the first `warmup`
+        iterations (as a percent of the total number of iterations) from the
+        plot.
+        """
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', ezplot.set_size())
