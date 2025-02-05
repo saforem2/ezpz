@@ -20,10 +20,6 @@ import xarray as xr
 
 RANK = ezpz.get_rank()
 
-# warnings.filterwarnings('ignore')
-
-# logger = logging.getLogger(__name__)
-# logger.setLevel("INFO") if RANK == 0 else logger.setLevel("CRITICAL")
 logger = ezpz.get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
@@ -170,6 +166,16 @@ def tplot_dict(
         pltx.save_fig(outfile, append=append)
 
 
+def get_plot_title(ylabel: Optional[str], xlabel: Optional[str], label: Optional[str]) -> str:
+    if ylabel is not None and xlabel is not None:
+        return f'{ylabel} vs {xlabel}'
+    if ylabel is not None:
+        return ylabel
+    if label is not None:
+        return label
+    return ''
+
+
 def tplot(
     y: Union[list, np.ndarray, torch.Tensor],
     x: Optional[Union[list, np.ndarray, torch.Tensor]] = None,
@@ -192,29 +198,11 @@ def tplot(
     #         y = torch.stack(y)
     #     if isinstance(y[0], )
     tstamp = _get_timestamp()
-    # if plot_type is not None:
-    #     if plot_type != "hist":
-    #         title = title if title is not None else (
-    #             f"{ylabel} vs {xlabel}" if ylabel is not None and xlabel is not None else (
-    #                 f"{label}" if label is not None else f"{tstamp}"
-    #             )
-    #         )
-    #     else:
-    #         title = title if title is not None else f"{ylabel} hist"
-    # title = f'{title} {tstamp}' if title is not None else f'{tstamp}'
     plot_type = 'line' if plot_type is None else plot_type
-    if title is None:
-        title = (
-            f'{ylabel} vs {xlabel}'
-            if ylabel is not None and xlabel is not None
-            else (
-                f'{ylabel}'
-                if ylabel is not None
-                else f'{label}'
-                if label is not None
-                else ''
-            )
-        )
+    title = (
+        get_plot_title(ylabel=ylabel, xlabel=xlabel, label=label)
+        if title is None else title
+    )
     if isinstance(y, list):
         y = torch.stack(y)
     if isinstance(x, list):
