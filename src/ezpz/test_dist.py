@@ -241,6 +241,19 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help='Pipeline length',
     )
+
+    # parser.add_argument(
+    #     '--deepspeed',
+    #     action='store_true',
+    #     default=True,
+    #     help='Use deepspeed',
+    # )
+    parser.add_argument(
+        '--deepspeed_config',
+        type=str,
+        default='deepspeed_config.json',
+        help='Deepspeed config file',
+    )
     parser.add_argument(
         '--cp',
         type=int,
@@ -249,6 +262,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--backend',
+        required=False,
         type=str,
         default='DDP',
         help='Backend (DDP, DeepSpeed, etc.)',
@@ -308,6 +322,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    if args.backend.lower() in {'ds', 'deepspeed'}:
+        try:
+            import deepspeed  # type:ignore
+        except (ImportError, ModuleNotFoundError) as e:
+            logger.error(
+                'Deepspeed not available. '
+                'Install via `python3 -m pip install deepspeed`'
+            )
+            raise e
+        args.deepspeed = True
     return args
 
 
@@ -370,15 +394,12 @@ def build_model_and_optimizer(
     optimizer = torch.optim.Adam(model.parameters())
     if backend.lower() == 'ddp':
         if world_size > 1:
-            model = DDP(model, device_ids=[])
+            # model = DDP(model, device_ids=[])
+            model = DDP(model, device_ids=[ezpz.get_local_rank()])
     elif backend.lower() in ('ds', 'deepspeed'):
-        try:
-            import deepspeed  # type:ignore
-        except (ImportError, ModuleNotFoundError):
-            logger.error('deepspeed not installed')
-            raise
-
-        parser = argparse.ArgumentParser(description='My training script.')
+        parser = argparse.ArgumentParser(
+            prog='deepspeed', description='My training script.'
+        )
         parser.add_argument(
             '--local_rank',
             required=False,
@@ -386,6 +407,27 @@ def build_model_and_optimizer(
             default=-1,
             help='local rank passed from distributed launcher',
         )
+        # parser.add_argument(
+        #     '--deepspeed',
+        #     action='store_true',
+        #     default=True,
+        #     help='Use deepspeed',
+        # )
+        # parser.add_argument(
+        #     '--deepspeed_config',
+        #     type=str,
+        #     default='deepspeed_config.json',
+        #     help='Deepspeed config file',
+        # )
+        try:
+            import deepspeed  # type:ignore
+        except (ImportError, ModuleNotFoundError) as e:
+            logger.error(
+                'Deepspeed not available. '
+                'Install via `python3 -m pip install deepspeed`'
+            )
+            raise e
+
         # Include DeepSpeed configuration arguments
         parser = deepspeed.add_config_arguments(parser)
         cmd_args = parser.parse_args()
@@ -409,8 +451,8 @@ def main() -> Trainer:
 
         dscomm.log_summary()
 
-    if ezpz.get_world_size() > 1:
-        tdist.barrier()
+    # if ezpz.get_world_size() > 1:
+    #     tdist.barrier()
 
     logger.info(f'Took: {time.perf_counter() - T0:.2f} seconds')
     return trainer
