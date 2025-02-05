@@ -7,40 +7,9 @@ import logging
 import logging.config
 import os
 import re
-from typing import Optional
 import warnings
 
 from ezpz import dist
-from ezpz import log
-from ezpz import profile
-from ezpz import configs
-from ezpz.configs import (
-    BACKENDS,
-    BIN_DIR,
-    CONF_DIR,
-    DS_CONFIG_JSON,
-    DS_CONFIG_PATH,
-    DS_CONFIG_YAML,
-    FRAMEWORKS,
-    GETJOBENV,
-    HERE,
-    LOGS_DIR,
-    OUTPUTS_DIR,
-    PROJECT_DIR,
-    PROJECT_ROOT,
-    QUARTO_OUTPUTS_DIR,
-    SAVEJOBENV,
-    SCHEDULERS,
-    TrainConfig,
-    UTILS,
-    command_exists,
-    get_logging_config,
-    get_scheduler,
-    get_timestamp,
-    git_ds_info,
-    load_ds_config,
-    print_config_tree,
-)
 from ezpz.dist import (
     check,
     cleanup,
@@ -75,8 +44,9 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
-from ezpz.history import History, StopWatch
-import ezpz.log
+# import ezpz.log
+
+# from ezpz import log
 from ezpz.log import (
     get_file_logger,
     get_logger,
@@ -99,6 +69,37 @@ from ezpz.log import (
     should_do_markup,
     to_bool,
 )
+
+from ezpz import profile
+from ezpz import configs
+from ezpz.configs import (
+    BACKENDS,
+    BIN_DIR,
+    CONF_DIR,
+    DS_CONFIG_JSON,
+    DS_CONFIG_PATH,
+    DS_CONFIG_YAML,
+    FRAMEWORKS,
+    GETJOBENV,
+    HERE,
+    LOGS_DIR,
+    OUTPUTS_DIR,
+    PROJECT_DIR,
+    PROJECT_ROOT,
+    QUARTO_OUTPUTS_DIR,
+    SAVEJOBENV,
+    SCHEDULERS,
+    TrainConfig,
+    UTILS,
+    command_exists,
+    get_logging_config,
+    get_scheduler,
+    get_timestamp,
+    git_ds_info,
+    load_ds_config,
+    print_config_tree,
+)
+from ezpz.history import History, StopWatch
 
 
 # from ezpz.log import get_file_logger, get_logger
@@ -125,7 +126,11 @@ from ezpz.log import (
 #     print_config,
 #     printarr,
 # )
-import ezpz.tp
+# import ezpz.tp
+# import ezpz.log
+
+from ezpz import tp
+from ezpz import log
 
 from ezpz.tp import (
     destroy_tensor_parallel,
@@ -152,7 +157,6 @@ from ezpz.utils import grab_tensor
 from jaxtyping import ScalarLike
 from mpi4py import MPI
 import numpy as np
-import yaml
 
 # try:
 #     import wandb  # pyright: ignore
@@ -251,7 +255,7 @@ __all__ = [
     'HERE',
     'History',
     'LOGS_DIR',
-    'NO_COLOR',
+    # 'NO_COLOR',
     'OUTPUTS_DIR',
     'PROJECT_DIR',
     'PROJECT_DIR',
@@ -326,6 +330,7 @@ __all__ = [
     'load_ds_config',
     'log',
     'make_layout',
+    'tp',
     'tensor_parallel_is_initialized',
     'nested_dict_to_df',
     'print_config',

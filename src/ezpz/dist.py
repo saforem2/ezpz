@@ -19,15 +19,17 @@ from mpi4py import MPI
 
 import torch
 import torch.distributed as tdist
-from torch.distributed.device_mesh import init_device_mesh, DeviceMesh
 from datetime import timedelta
 
 from omegaconf import DictConfig, OmegaConf
 
 try:
     import wandb
+
+    WANDB_DISABLED = os.environ.get('WANDB_DISABLED', False)
 except Exception:
     wandb = None
+    WANDB_DISABLED = True
 
 
 try:
@@ -129,7 +131,9 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     # logger.info(
                     #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
                     # )
-                    wandb.run.log({f'timeit/{func.__name__}': dt}, commit=False)
+                    wandb.run.log(
+                        {f'timeit/{func.__name__}': dt}, commit=False
+                    )
             return result
 
         return wrapper
@@ -333,9 +337,9 @@ def print_dist_setup(
     num_nodes_len = len(str(num_nodes))
     dist_list = [
         f'[{device=}]',
-        f'[{rank=:>{rank_len}}/{(wsa-1):<{ws_len}}]',
-        f'[{local_rank=:>{lr_len}}/{gpus_per_node-1:<{gpn_len}}]',
-        f'[{node=:>{node_len}}/{(num_nodes-1):<{num_nodes_len}}]',
+        f'[{rank=:>{rank_len}}/{(wsa - 1):<{ws_len}}]',
+        f'[{local_rank=:>{lr_len}}/{gpus_per_node - 1:<{gpn_len}}]',
+        f'[{node=:>{node_len}}/{(num_nodes - 1):<{num_nodes_len}}]',
     ]
     if framework is not None:
         dist_list.append(f'[{framework=}]')
@@ -346,7 +350,9 @@ def print_dist_setup(
             logger.warning(
                 f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
             )
-        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+        logger.warning(
+            f'Using [{wsa} / {wst}] available "{device}" devices !!'
+        )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f'num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]'
@@ -427,7 +433,10 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         )
         return device_type
     if (tdevice := os.environ.get('TORCH_DEVICE')) is not None:
-        logger.warning(f"Caught 'TORCH_DEVICE'={tdevice}' from environment!")
+        if get_rank() == 0:
+            logger.warning(
+                f"Caught 'TORCH_DEVICE'={tdevice}' from environment!"
+            )
         tdevice = tdevice.lower()
         assert tdevice is not None and tdevice in (
             'cpu',
@@ -438,7 +447,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         return tdevice.lower()
     return (
         'xpu'
-        if ipex is not None
+        if torch.xpu.is_available()
         else (
             'cuda'
             if torch.cuda.is_available()
@@ -463,18 +472,43 @@ def get_torch_device(
     return torch.device(device_type) if as_torch_device else device_type
 
 
+# def get_torch_backend() -> str:
+#     tdevice = get_torch_device_type()
+#     if tdevice == 'cuda' and torch.cuda.is_available():
+#         return 'nccl'
+#     if tdevice == 'xpu' and torch.xpu.is_available():
+#         return 'ccl'
+#         # return 'mpi'
+#     return 'gloo'
+#     #
+#     # backend = (
+#     #     'nccl'
+#     #     if torch.cuda.is_available()
+#     #     else (
+#     #         'ccl' if torch.xpu.is_available() else 'gloo'
+#     #         # 'ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo'
+#     #     )
+#     # )
+#     # if backend is None:
+#     #     logger.critical(f'Using "gloo" backend on {get_torch_device()}')
+#     #     backend = 'gloo'
+#     # return backend
+
+
 def get_torch_backend() -> str:
-    backend = (
+    backend_from_env = os.environ.get('TORCH_BACKEND', None)
+    if backend_from_env is not None:
+        logger.warning(
+            f'Caught `TORCH_BACKEND`={backend_from_env} from environment!'
+        )
+        return backend_from_env
+    return (
         'nccl'
         if torch.cuda.is_available()
         else (
             'ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo'
         )
     )
-    if backend is None:
-        logger.critical(f'Using "gloo" backend on {get_torch_device()}')
-        backend = 'gloo'
-    return backend
 
 
 def init_process_group(
@@ -483,16 +517,11 @@ def init_process_group(
     timeout: str | int | timedelta,
 ) -> None:
     backend = get_torch_backend()
-    # logger.warning(f'Using {backend=}')
+    if get_rank() == 0:
+        logger.info(f'Using {get_torch_device_type()=} with {backend=}')
     if not isinstance(timeout, timedelta):
         timeout = timedelta(
-            # days=50,
             seconds=int(timeout),
-            # microseconds=10,
-            # milliseconds=29000,
-            # minutes=5,
-            # hours=8,
-            # weeks=2
         )
     if not tdist.is_initialized():
         tdist.init_process_group(
@@ -593,73 +622,65 @@ def setup_torch_DDP(
 ) -> dict[str, int]:
     if not isinstance(timeout, timedelta):
         timeout = timedelta(seconds=int(timeout))
-    # rank: int | str,
-    # world_size: int | str,
-    # timeout: int = 600,
-    rank = os.environ.get('RANK', None)
-    world_size = os.environ.get('WORLD_SIZE', None)
-    local_rank = os.environ.get('LOCAL_RANK', None)
+    os_rank = os.environ.get('RANK', None)
+    os_world_size = os.environ.get('WORLD_SIZE', None)
+    os_local_rank = os.environ.get('LOCAL_RANK', None)
     world_size = int(get_world_size())
     rank = int(get_rank())
     local_rank = int(get_local_rank())
+    # ensure there is no funny business going on
+    if os_rank and int(os_rank) != int(rank):
+        logger.warning(f'Mismatch between {os_rank=} and {rank=}')
+    if os_world_size and int(os_world_size) != int(world_size):
+        logger.warning(f'Mismatch between {os_world_size=} and {world_size=}')
+    if os_local_rank and int(os_local_rank) != int(local_rank):
+        logger.warning(f'Mismatch between {os_local_rank=} and {local_rank=}')
+    # now, set these variables explicitly in the process' environment
     os.environ['LOCAL_RANK'] = str(local_rank)
     os.environ['RANK'] = str(rank)
     os.environ['WORLD_SIZE'] = str(world_size)
+    # get `hostname` ONLY from rank 0
     master_addr = socket.gethostname() if rank == 0 else None
+    # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
     eport = os.environ.get('MASTER_PORT', None)
     if eport is not None:
-        logger.info(f'Caught MASTER_PORT: {eport=} from environment!')
+        _ = (
+            logger.info(f'Caught MASTER_PORT={eport} from environment!')
+            if rank == 0 else None
+        )
     else:
         eport = port
+    # grab it from rank 0
     master_port = eport if rank == 0 else None
+    # broadcast it to make sure everyones tapped in
     master_port = MPI.COMM_WORLD.bcast(master_port, root=0)
     master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    # set it explicitly in each process' environment
     os.environ['MASTER_ADDR'] = master_addr
     os.environ['MASTER_PORT'] = master_port
+    # now, torch is ready for us
     init_process_group(
         rank=rank,
         world_size=world_size,
         timeout=timeout,
-        # backend=get_torch_backend(),
     )
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
 
 def setup_torch_distributed(
     backend: str,
-    tpsize: int = 1,
-    ppsize: int = 1,
-    cpsize: int = 1,
-    tpbackend: Optional[str] = None,
-    ppbackend: Optional[str] = None,
-    cpbackend: Optional[str] = None,
-    dpbackend: Optional[str] = None,
+    tensor_parallel_size: int = 1,
+    pipeline_parallel_size: int = 1,
+    context_parallel_size: int = 1,
+    tensor_parallel_backend: Optional[str] = None,
+    pipeline_parallel_backend: Optional[str] = None,
+    context_parallel_backend: Optional[str] = None,
+    data_parallel_backend: Optional[str] = None,
     port: Optional[str | int] = None,
     timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     assert backend.upper() in {'DDP', 'DEEPSPEED', 'DS', 'HOROVOD', 'HVD'}
-    # tensor_parallel_size = (
-    #     1
-    #     if tensor_parallel_size is None
-    #     else int(tensor_parallel_size)
-    #     if isinstance(tensor_parallel_size, str)
-    #     else tensor_parallel_size
-    # )
-    # pipeline_length = (
-    #     1
-    #     if pipeline_length is None
-    #     else int(pipeline_length)
-    #     if isinstance(pipeline_length, str)
-    #     else pipeline_length
-    # )
-    # context_parallel_size = (
-    #     1
-    #     if context_parallel_size is None
-    #     else int(context_parallel_size)
-    #     if isinstance(context_parallel_size, str)
-    #     else context_parallel_size
-    # )
     timeout = (
         3600
         if timeout is None
@@ -668,7 +689,11 @@ def setup_torch_distributed(
         else timeout
     )
     port = (
-        '1234' if port is None else str(port) if isinstance(port, int) else port
+        '1234'
+        if port is None
+        else str(port)
+        if isinstance(port, int)
+        else port
     )
     rank = get_rank()
     world_size = get_world_size()
@@ -700,17 +725,19 @@ def setup_torch_distributed(
     else:
         raise ValueError(f'Unable to parse backend: {be=}')
 
-    # from ezpz.utils import breakpoint
-    # breakpoint(0)
-    if tpsize > 1 or cpsize > 1 or ppsize > 1:
+    if (
+        tensor_parallel_size > 1
+        or context_parallel_size > 1
+        or pipeline_parallel_size > 1
+    ):
         ezpz.tp.initialize_tensor_parallel(
-            tpsize=tpsize,
-            ppsize=ppsize,
-            cpsize=cpsize,
-            tpbackend=tpbackend,
-            ppbackend=ppbackend,
-            cpbackend=cpbackend,
-            dpbackend=dpbackend,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            context_parallel_size=context_parallel_size,
+            tensor_parallel_backend=tensor_parallel_backend,
+            pipeline_parallel_backend=pipeline_parallel_backend,
+            context_parallel_backend=context_parallel_backend,
+            data_parallel_backend=data_parallel_backend,
             timeout=timedelta(seconds=timeout),
         )
 
@@ -718,9 +745,6 @@ def setup_torch_distributed(
     os.environ['RANK'] = str(rank)
     os.environ['LOCAL_RANK'] = str(local_rank)
 
-    # if not mp.tensor_parallel_is_initialized():
-
-    # return TorchDistributedInfo
     return {'world_size': world_size, 'rank': rank, 'local_rank': local_rank}
 
 
@@ -730,19 +754,18 @@ def setup_torch(
     seed: Optional[int] = None,
     timeout: Optional[str | int] = None,
     verbose: Optional[bool] = False,
-    tpsize: int = 1,
-    ppsize: int = 1,
-    cpsize: int = 1,
-    tpbackend: Optional[str] = None,
-    ppbackend: Optional[str] = None,
-    cpbackend: Optional[str] = None,
-    dpbackend: Optional[str] = None,
+    tensor_parallel_size: int = 1,
+    pipeline_parallel_size: int = 1,
+    context_parallel_size: int = 1,
+    tensor_parallel_backend: Optional[str] = None,
+    pipeline_parallel_backend: Optional[str] = None,
+    context_parallel_backend: Optional[str] = None,
+    data_parallel_backend: Optional[str] = None,
 ) -> int:
     """Setup torch.
 
     If launched with
     """
-    import torch
 
     device = get_torch_device()
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
@@ -754,7 +777,7 @@ def setup_torch(
     # torch.use_deterministic_algorithms(True)
     ws_from_env = os.environ.get('WORLD_SIZE', None)
     if ws_from_env is not None and ws_from_env == '1':
-        print(
+        logger.info(
             f'Running on a single {device}, not initializing torch.distributed!'
         )
         rank = 0
@@ -767,13 +790,13 @@ def setup_torch(
             backend=backend,
             port=port,
             timeout=timeout,
-            tpsize=int(tpsize),
-            ppsize=int(ppsize),
-            cpsize=int(cpsize),
-            tpbackend=tpbackend,
-            ppbackend=ppbackend,
-            cpbackend=cpbackend,
-            dpbackend=dpbackend,
+            tensor_parallel_size=int(tensor_parallel_size),
+            pipeline_parallel_size=int(pipeline_parallel_size),
+            context_parallel_size=int(context_parallel_size),
+            tensor_parallel_backend=tensor_parallel_backend,
+            pipeline_parallel_backend=pipeline_parallel_backend,
+            context_parallel_backend=context_parallel_backend,
+            data_parallel_backend=data_parallel_backend,
         )
         rank = dsetup['rank']
         world_size = dsetup['world_size']
@@ -805,8 +828,8 @@ def setup_torch(
         logger.debug(f'Using oneccl_bindings from: {oneccl_bpt.__file__}')
     if ipex is not None:
         logger.debug(f'Using ipex from: {ipex.__file__}')
-    if world_size > 1:
-        tdist.barrier()
+    # if world_size > 1:
+    #     tdist.barrier()
 
     if rank == 0:
         logger.info(
@@ -817,101 +840,51 @@ def setup_torch(
     lrank = len(str(world_size - 1))
     # nz = lrank - len(str(rank))
     hn = socket.gethostname()
-    psizes = [f"['{hn}']" + f'[{rank:>{lrank}}/{world_size-1:<{lrank}}] ']
-    if tpsize > 1 or cpsize > 1 or ppsize > 1:
+    psizes = [f"['{hn}']" + f'[{rank:>{lrank}}/{world_size - 1:<{lrank}}] ']
+    if (
+        tensor_parallel_size > 1
+        or context_parallel_size > 1
+        or pipeline_parallel_size > 1
+    ):
         import ezpz.tp
 
         tprank = ezpz.tp.get_tensor_parallel_rank()
         # tpranks = ezpz.tp.get_tensor_parallel_ranks()
         tpsize = ezpz.tp.get_tensor_parallel_world_size()
+
         dprank = ezpz.tp.get_data_parallel_rank()
         # dpranks = ezpz.tp.get_data_parallel_ranks()
         dpsize = ezpz.tp.get_data_parallel_world_size()
+
         pprank = ezpz.tp.get_pipeline_parallel_rank()
         # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
         ppsize = ezpz.tp.get_pipeline_parallel_world_size()
+
         # cpranks = ezpz.tp.get_context_parallel_ranks()
         cprank = ezpz.tp.get_context_parallel_rank()
         cpsize = ezpz.tp.get_context_parallel_world_size()
-        if cpsize > 1 or ppsize > 1 or tpsize > 1:
-            if cpsize > 1:
-                lcp = len(str(cpsize - 1))
-                psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize-1:<{lcp}}]')
-                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
-            if ppsize > 1:
-                lpp = len(str(ppsize - 1))
-                psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize-1:<{lpp}}]')
-                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-            if tpsize > 1:
-                ltp = len(str(tpsize - 1))
-                psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize-1:<{ltp}}]')
-                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-            if dpsize > 1:
-                ldp = len(str(dpsize - 1))
-                psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize-1:<{ldp}}]')
-                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+
+        # if cpsize > 1 or ppsize > 1 or tpsize > 1:
+        #     if cpsize > 1:
+        #         lcp = len(str(cpsize - 1))
+        #         psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]')
+        #         tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+        #     if ppsize > 1:
+        #         lpp = len(str(ppsize - 1))
+        #         psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]')
+        #         tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+        #     if tpsize > 1:
+        #         ltp = len(str(tpsize - 1))
+        #         psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]')
+        #         tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+        #     if dpsize > 1:
+        #         ldp = len(str(dpsize - 1))
+        #         psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]')
+        #         tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info(''.join(psizes))
-    tdist.barrier()
-    # MPI.COMM_WORLD.Barrier()
+    MPI.COMM_WORLD.Barrier()
     return rank
-
-
-def get_device_mesh(
-    tpsize: int = 1,
-    ppsize: int = 1,
-    cpsize: int = 1,
-    tpbackend: Optional[str] = None,
-    ppbackend: Optional[str] = None,
-    cpbackend: Optional[str] = None,
-    dpbackend: Optional[str] = None,
-    timeout: Optional[str | int] = None,
-) -> DeviceMesh:
-    if tpsize > 1 or cpsize > 1 or ppsize > 1:
-        import ezpz.tp
-        from datetime import timedelta
-
-        _ = ezpz.tp.initialize_tensor_parallel(
-            tpsize=tpsize,
-            ppsize=ppsize,
-            cpsize=cpsize,
-            tpbackend=tpbackend,
-            ppbackend=ppbackend,
-            cpbackend=cpbackend,
-            dpbackend=dpbackend,
-            timeout=(
-                timedelta(seconds=timeout) if timeout is not None else None
-            ),
-        )
-
-        tprank = ezpz.tp.get_tensor_parallel_rank()
-        # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-        tpsize = ezpz.tp.get_tensor_parallel_world_size()
-        dprank = ezpz.tp.get_data_parallel_rank()
-        # dpranks = ezpz.tp.get_data_parallel_ranks()
-        dpsize = ezpz.tp.get_data_parallel_world_size()
-        pprank = ezpz.tp.get_pipeline_parallel_rank()
-        # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
-        ppsize = ezpz.tp.get_pipeline_parallel_world_size()
-        # cpranks = ezpz.tp.get_context_parallel_ranks()
-        cprank = ezpz.tp.get_context_parallel_rank()
-        cpsize = ezpz.tp.get_context_parallel_world_size()
-        if cpsize > 1 or ppsize > 1 or tpsize > 1:
-            if cpsize > 1:
-                lcp = len(str(cpsize - 1))
-                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
-            if ppsize > 1:
-                lpp = len(str(ppsize - 1))
-                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-            if tpsize > 1:
-                ltp = len(str(tpsize - 1))
-                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-            if dpsize > 1:
-                ldp = len(str(dpsize - 1))
-                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
-
-        # mesh = init_device_mesh(device_type, dims, mesh_dim_names=names)
-        #
 
 
 def cleanup() -> None:
@@ -962,7 +935,7 @@ def setup_tensorflow(
                 gpus[hvd.local_rank()],
                 'GPU',
             )
-            logical_gpus = (  # pyright:ignore
+            _ = (  # pyright:ignore
                 tf.config.experimental.list_logical_devices('GPU')
             )
         except RuntimeError as e:
@@ -1039,12 +1012,25 @@ def get_machine(hostname: Optional[str] = None) -> str:
 
 def setup_wandb(
     project_name: Optional[str] = None,
+    entity: Optional[str] = None,
     config: Optional[dict | DictConfig] = None,
     start_method: str = 'thread',
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
-    import wandb
+    if WANDB_DISABLED:
+        logger.warning(
+            f'Logging with W&B is disabled!, caught: {WANDB_DISABLED=}'
+        )
+        return None
+
+    try:
+        import wandb
+    except (ImportError, ModuleNotFoundError) as e:
+        logger.warning(
+            'Unable to import `wandb`. Install with `pip install wandb`'
+        )
+        raise e
 
     outdir = (
         Path(os.getcwd()).as_posix()
@@ -1058,27 +1044,34 @@ def setup_wandb(
         else os.environ.get(
             'WB_PROJECT',
             os.environ.get(
-                'WANDB_PROJECT', os.environ.get('WB_PROJECT_NAME', 'ezpz')
+                'WANDB_PROJECT',
+                os.environ.get('WB_PROJECT_NAME', None),
             ),
         )
     )
-    logger.info(f'Setting up wandb from rank: {rank}')
-    logger.info(f'Using: WB PROJECT: {project_name}')
-    tensorboard_dir = None
-    if config is None:
-        tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
-    else:
-        tensorboard_dir = config.get(
-            'tensorboard_dir',
-            None,  # os.getcwd()
-        )
+    if project_name is None:
+        import sys
+
+        frame = sys._getframe().f_back
+        calling_module = frame.f_code.co_filename
+        fp = Path(calling_module)
+        project_name = f'{fp.parent.stem}.{fp.stem}'
+
+    logger.info(f'Setting up wandb from {rank=}')
+    logger.info(f'Using=WB PROJECT={project_name}')
+    tensorboard_dir = (
+        os.environ.get('TENSORBOARD_DIR', None)
+        if config is None
+        else config.get('tensorboard_dir', None)
+    )
     if tensorboard_dir is not None:
         logger.info(f'Patching tensorboard from {tensorboard_dir}')
-        wandb.tensorboard.patch(root_logdir=tensorboard_dir)  # type: ignore
+        wandb.tensorboard.patch(root_logdir=tensorboard_dir)
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run = wandb.init(
+        entity=entity,
         # resume='allow',
         dir=outdir,
         sync_tensorboard=(tensorboard_dir is not None),  # True,
@@ -1090,7 +1083,7 @@ def setup_wandb(
     )
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
-    logger.info(f'W&B RUN: [{run.name}]({run.url})')
+    logger.info(f'W&B RUN=[{run.name}]({run.url})')
     # run.config.update(
     #     {
     #         f'dist_info/{k}': v for k, v in get_dist_info().items()
@@ -1101,7 +1094,15 @@ def setup_wandb(
         and wandb.run is not None
         and 'DIST_INFO' not in wandb.run.config
     ):
-        wandb.run.config.update({'DIST_INFO': get_dist_info()})
+        wandb.run.config.update({'dist_info': get_dist_info()})
+    torch_version = torch.__version__
+    torch_file = torch.__file__
+    run.config.update(
+        {
+            'torch_version': torch_version,
+            'torch_file': torch_file,
+        }
+    )
     run.config.update({'created_at': dstr})
     run.config.update({'world_size': get_world_size()})
     run.config.update({'outdir': os.getcwd()})
@@ -1324,6 +1325,8 @@ def get_gpus_per_node() -> int:
         return int(ngpu_per_host)
     if torch.cuda.is_available():
         return torch.cuda.device_count()
+    if torch.xpu.is_available():
+        return torch.xpu.device_count()
     if ipex is not None:
         return ipex.xpu.device_count()  # type:ignore
     return get_cpus_per_node()
@@ -1415,7 +1418,9 @@ def get_pbs_launch_info(
 
     assert get_scheduler() == 'PBS'
     if hostfile is None:
-        hostfile = os.environ.get('PBS_NODEFILE', get_pbs_nodefile_from_qstat())
+        hostfile = os.environ.get(
+            'PBS_NODEFILE', get_pbs_nodefile_from_qstat()
+        )
     assert hostfile is not None
     hfp = Path(hostfile)
     # hostfile = os.environ.get("PBS_NODEFILE", None)
@@ -1462,6 +1467,7 @@ def get_pbs_launch_info(
         'DEVICE': get_torch_device_type(),
         'BACKEND': get_torch_backend(),
         'LAUNCH_CMD': launch_cmd,
+        'world_size_total': f'{world_size_total}',
     }
 
 
