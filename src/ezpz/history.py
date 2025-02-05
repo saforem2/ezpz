@@ -134,6 +134,7 @@ class History:
         verbose: bool = False,
         outfile: Optional[str] = None,
         logfreq: Optional[int] = None,
+        plot_type: Optional[str] = None,
     ):
         if xlabel is not None and ylabel == xlabel:
             return
@@ -149,7 +150,7 @@ class History:
                 append=append,
                 verbose=verbose,
                 outfile=outfile,
-                plot_type='scatter',
+                plot_type=plot_type,
                 title=title,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
@@ -167,8 +168,6 @@ class History:
                 outfile=(of if of is not None else None),
                 plot_type='hist',
             )
-            # ylabel=str(title),
-            # title=f'{title} [{ezpz.get_timestamp()}]',
 
     def plot(
         self,
@@ -560,6 +559,7 @@ class History:
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
         logfreq: Optional[int] = None,
+        plot_type: Optional[str] = None,
         verbose: bool = False,
     ):
         dataset = (
@@ -583,6 +583,7 @@ class History:
                     y=val.values,
                     x=None,
                     xlabel='iter',
+                    plot_type=plot_type,
                     ylabel=str(key),
                     append=append,
                     title=f'{key} [{ezpz.get_timestamp()}]',
@@ -747,7 +748,9 @@ class History:
 
     def get_dataset(
         self,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
@@ -757,7 +760,9 @@ class History:
             try:
                 data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                logger.error(f'Unable to create DataArray for {key}! Skipping!')
+                logger.error(
+                    f'Unable to create DataArray for {key}! Skipping!'
+                )
                 logger.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
         return xr.Dataset(data_vars)
 
@@ -766,7 +771,9 @@ class History:
         outdir: PathLike,
         fname: str = 'dataset',
         use_hdf5: bool = True,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         dataset: Optional[xr.Dataset] = None,
         warmup: Optional[int | float] = None,
         **kwargs,
@@ -801,11 +808,14 @@ class History:
         plot: bool = True,
         append_tplot: bool = True,
         title: Optional[str] = None,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         dataset: Optional[xr.Dataset] = None,
         xkey: Optional[str] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
+        tplot_type: Optional[str] = None,
     ) -> xr.Dataset:
         dataset = (
             dataset
@@ -843,6 +853,7 @@ class History:
                 outdir=tplotdir,
                 warmup=warmup,
                 append=append_tplot,
+                plot_type=tplot_type,
                 xkey=xkey,
                 verbose=verbose,
             )
