@@ -44,7 +44,6 @@ WORKING_DIR = Path(
 )
 LOGS_DIR = WORKING_DIR.joinpath('logs')
 OUTPUTS_DIR = WORKING_DIR.joinpath('outputs')
-# OUTPUTS_DIR = HERE.joinpath("outputs")
 QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
 
 # CONF_DIR.mkdir(exist_ok=True, parents=True)
