@@ -15,7 +15,7 @@ import ezpz
 
 import ezpz.plot as ezplot
 
-from ezpz.configs import PathLike
+from ezpz.configs import PathLike, get_timestamp
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 
@@ -606,7 +606,7 @@ class History:
     def plot_all(
         self,
         num_chains: int = 128,
-        warmup: float = 0.0,
+        warmup: Optional[float | int] = 0.0,
         title: Optional[str] = None,
         verbose: bool = False,
         outdir: Optional[os.PathLike] = None,
@@ -755,9 +755,7 @@ class History:
 
     def get_dataset(
         self,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
@@ -767,9 +765,7 @@ class History:
             try:
                 data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                logger.error(
-                    f'Unable to create DataArray for {key}! Skipping!'
-                )
+                logger.error(f'Unable to create DataArray for {key}! Skipping!')
                 logger.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
         return xr.Dataset(data_vars)
 
@@ -778,9 +774,7 @@ class History:
         outdir: PathLike,
         fname: str = 'dataset',
         use_hdf5: bool = True,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
         warmup: Optional[int | float] = None,
         **kwargs,
@@ -815,9 +809,7 @@ class History:
         plot: bool = True,
         append_tplot: bool = True,
         title: Optional[str] = None,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
         xkey: Optional[str] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
@@ -837,7 +829,15 @@ class History:
         run_name = (
             f'History-{ezpz.get_timestamp()}' if run_name is None else run_name
         )
-        outdir = ezpz.OUTPUTS_DIR if outdir is None else Path(outdir)
+        fallback_outdir = Path(os.getcwd()).joinpath('outputs')
+        if run_name is not None:
+            fallback_outdir = (
+                fallback_outdir.joinpath(run_name, get_timestamp())
+            )
+        outdir = (
+            # Path(os.getcwd()).joinpath('outputs')
+            fallback_outdir if outdir is None else Path(outdir)
+        )
         outdir = outdir.joinpath(run_name)
         if plot:
             plotdir = outdir.joinpath('plots')
