@@ -17,8 +17,8 @@ dtype: null
 ngpus: null
 defaults:
   - _self_
-  - logdir: default.yaml    # Defines where to run experiment using info from cfg
-  - override hydra/hydra_logging: colorlog
+  # - logdir: default.yaml    # Defines where to run experiment using info from cfg
+  # - override hydra/hydra_logging: colorlog
   - override hydra/job_logging: custom
   # - override hydra/launcher: joblib
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
@@ -27,8 +27,8 @@ defaults:
   # - debug: true
   # - verbose: true
 # debug: true
-hydra:
-  # verbose: true
-  job:
-    chdir: true
+# hydra:
+#   # verbose: true
+#   job:
+#     chdir: true
 ...
