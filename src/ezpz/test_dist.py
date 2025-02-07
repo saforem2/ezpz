@@ -11,6 +11,7 @@ import argparse
 from dataclasses import asdict, dataclass, field
 import json
 import os
+from pathlib import Path
 import time
 from typing import Optional
 import warnings
@@ -180,6 +181,7 @@ class Trainer:
             warmup=self.config.warmup,
             save=(self.rank == 0),
             plot=(self.rank == 0),
+            outdir=Path(os.getcwd()).joinpath('outputs', 'ezpz.test_dist'),
         )
         logger.info(f'{dataset=}')
         return dataset
