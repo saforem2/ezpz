@@ -47,11 +47,11 @@ OUTPUTS_DIR = WORKING_DIR.joinpath('outputs')
 # OUTPUTS_DIR = HERE.joinpath("outputs")
 QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
 
-CONF_DIR.mkdir(exist_ok=True, parents=True)
-LOGS_DIR.mkdir(exist_ok=True, parents=True)
-QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
-OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
-OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
+# CONF_DIR.mkdir(exist_ok=True, parents=True)
+# LOGS_DIR.mkdir(exist_ok=True, parents=True)
+# QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
+# OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
+# OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
 FRAMEWORKS = {
