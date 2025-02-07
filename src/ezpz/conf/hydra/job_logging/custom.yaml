@@ -11,7 +11,7 @@ handlers:
     show_time: true
     show_level: true
     enable_link_path: false
-    level: DEBUG
+    level: INFO
   # file:
   #   class: logging.FileHandler
   #   formatter: simple
