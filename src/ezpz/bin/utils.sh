@@ -1080,13 +1080,14 @@ ezpz_write_job_info() {
         # fi
         yeet() {
           if [[ -v WORLD_SIZE ]]; then
-            dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/${NGPUS}/${WORLD_SIZE}/g")"
+            dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
           else
             dlaunch="${DIST_LAUNCH}"
           fi
           _args=("${@}")
-          printf "evaluating:\n${GREEN}%s${RESET}\n" "${dlaunch}"
-          printf "with arguments:\n${BLUE}%s${RESET}\n" "${dlaunch}" "${_args[*]}"
+          printf "[yeet]:\n"
+          printf "evaluating:\n\t${GREEN}%s${RESET}\n" "${dlaunch}"
+          printf "with arguments:\n\t${BLUE}%s${RESET}\n" "${_args[*]}"
           eval "${dlaunch} ${@}"
         }
         export LAUNCH="${DIST_LAUNCH}"
