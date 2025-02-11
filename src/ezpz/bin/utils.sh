@@ -343,7 +343,7 @@ ezpz_setup_conda_aurora() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         # NOTE: Updated 2024-10-08 [@saforem2]
         module load frameworks
-        module load mpich
+        module load mpich/opt/4.3.0rc3
     else
         printf "Caught CONDA_PREFIX=%s from environment, using this!" "${CONDA_PREFIX}"
     fi
@@ -1075,10 +1075,7 @@ ezpz_write_job_info() {
         export LAUNCH="${dist_launch_cmd}"
         export DIST_LAUNCH="${dist_launch_cmd}"
         export ezlaunch="${DIST_LAUNCH}"
-        # if [[ -n "${DIST_LAUNCH:-}" ]]; then
-        #     echo "alias LAUNCH='${DIST_LAUNCH}'"
-        # fi
-        yeet() {
+        ezpz_launch() {
           if [[ -v WORLD_SIZE ]]; then
             dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
           else
