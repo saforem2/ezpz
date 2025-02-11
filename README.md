@@ -2,15 +2,13 @@
 
 > *Work smarter, not harder*
 
-<!--- <details closed><summary>Contents:</summary></details>-->
-
 1. [🐣 Getting Started](#-getting-started)
    1. 📝 [Example](#-example)
-1. [🐚 Shell Utilities](#-shell-utilities)
+1. [🐚 **Shell Utilities**](#-shell-utilities)
    1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)
        1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
        1. [🧰 Setup Job](#-setup-job)
- 1. [🐍 Python Library](#-python-library) 
+ 1. [🐍 **Python Library**](#-python-library)
 
 > [!IMPORTANT]
 > The documentation below is a work in progress.  
@@ -47,17 +45,24 @@ We provide a complete, entirely self-contained example in
 
 ## 🐚 Shell Utilities
 
-The Shell Utilities can be roughly broken up further into two main
-components:
+> [!IMPORTANT]
+> 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+>
+>     ``` bash
+>     source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
+>     ```
+> 2. Use the `ezpz_setup_env` function to setup your environment:
+>
+>     ```bash
+>     ezpz_setup_env
+>     ```
 
-<!--1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)-->
-1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
-1. [🧰 Setup Job](#-setup-job)
+This will 🪄 _automagically_:
 
-<!--
-        1.  🐍 [Setup Conda](#-setup-conda)
-        2.  👻 [Setup Virtual Environment](#-setup-virtual-environment)
--->
+1. [🐍 **Setup Python**](#%EF%B8%8F-setup-python): Load the appropriate module(s)
+   and put you inside a suitable python environment
+1. [🧰 **Setup Job**](#-setup-job): Determine the resources available in the
+   current job and build a `launch` alias for launching executables
 
 We provide a variety of helper functions designed to make your life
 easier when working with job schedulers (e.g. `PBS Pro` @ ALCF or
@@ -67,13 +72,6 @@ easier when working with job schedulers (e.g. `PBS Pro` @ ALCF or
 
 - located in [`utils.sh`](../../src/ezpz/bin/utils.sh)
 - prefixed with `ezpz_*` (e.g. `ezpz_setup_python`)[^1]
-
-To use these, we can `source` the file directly via:
-
-``` bash
-export PBS_O_WORKDIR=$(pwd) # if on ALCF
-source /dev/stdin <<< $(curl 'https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh')
-```
 
 We would like to write our application in such a way that it is able to
 take full advantage of the resources allocated by the job scheduler.
