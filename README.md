@@ -10,7 +10,7 @@
        1. [🧰 Setup Job](#-setup-job)
  1. [🐍 **Python Library**](#-python-library)
 
-> [!IMPORTANT]
+> [!WARNING]
 > The documentation below is a work in progress.  
 > *Please* feel free to provide input / suggest changes !
 
@@ -45,7 +45,7 @@ We provide a complete, entirely self-contained example in
 
 ## 🐚 Shell Utilities
 
-> [!IMPORTANT]
+> [!NOTE]
 > 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
 >
 >     ``` bash
