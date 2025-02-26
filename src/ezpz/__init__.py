@@ -41,6 +41,7 @@ from ezpz.dist import (
     setup_torch_DDP,
     setup_torch_distributed,
     setup_wandb,
+    synchronize,
     timeit,
     timeitlogit,
 )
@@ -349,6 +350,7 @@ __all__ = [
     'setup_wandb',
     'should_do_markup',
     'summarize_dict',
+    'synchronize',
     'timeit',
     'timeitlogit',
     'to_bool',
