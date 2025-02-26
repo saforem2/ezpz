@@ -1110,13 +1110,18 @@ def setup_wandb(
     torch_file = torch.__file__
     run.config.update(
         {
-            'torch_version': torch_version,
-            'torch_file': torch_file,
         }
     )
-    run.config.update({'created_at': dstr})
-    run.config.update({'world_size': get_world_size()})
-    run.config.update({'outdir': os.getcwd()})
+    run.config.update({
+        'created_at': dstr,
+        'day': ezpz.get_timestamp('%d'),
+        'month': ezpz.get_timestamp('%m'),
+        'outdir': os.getcwd(),
+        'torch_version': torch_version,
+        'torch_file': torch_file,
+        'world_size': get_world_size(),
+        'year': ezpz.get_timestamp('%Y'),
+    })
     if config is not None:
         if isinstance(config, DictConfig):
             cfg = OmegaConf.to_container(
