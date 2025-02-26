@@ -362,6 +362,16 @@ def print_dist_setup(
             )
     return dist_str
 
+def synchronize(device: torch.device | int | str = 'cuda'):
+    return (
+            torch.cuda.synchronize(device) if torch.cuda.is_available()
+            else (
+                torch.xpu.synchronize(device) if torch.xpu.is_available()
+                else torch.mps.synchronize() if torch.backends.mps.is_available()
+                else torch.cpu.synchronize(device)
+            )
+    )
+
 
 def setup(
     framework: str = 'pytorch',
@@ -1053,6 +1063,7 @@ def setup_wandb(
         import sys
 
         frame = sys._getframe().f_back
+        assert frame is not None
         calling_module = frame.f_code.co_filename
         fp = Path(calling_module)
         project_name = f'{fp.parent.stem}.{fp.stem}'
