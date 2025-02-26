@@ -154,7 +154,14 @@ from ezpz.tp import (
 )
 from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
-from ezpz.utils import grab_tensor
+from ezpz.utils import (
+    breakpoint,
+	grab_tensor,
+	save_dataset,
+	dataset_to_h5pyfile,
+	dataset_from_h5pyfile,
+	dict_from_h5pyfile
+)
 from jaxtyping import ScalarLike
 from mpi4py import MPI
 import numpy as np
@@ -272,13 +279,17 @@ __all__ = [
     'UTILS',
     'add_columns',
     'build_layout',
+    'breakpoint',
     'check',
     'cleanup',
     'command_exists',
     'configs',
     # 'initialize_tensor_parallel',
     # 'tensor_parallel_is_initialized',
+    'dataset_from_h5pyfile',
+    'dataset_to_h5pyfile',
     'destroy_tensor_parallel',
+    'dict_from_h5pyfile',
     'dist',
     'ensure_divisibility',
     'flatten_dict',
@@ -341,6 +352,7 @@ __all__ = [
     'profile',
     'query_environment',
     'run_bash_command',
+    'save_dataset',
     'seed_everything',
     'setup',
     'setup_tensorflow',
