@@ -45,6 +45,7 @@ from ezpz.dist import (
     timeit,
     timeitlogit,
 )
+from ezpz.event import get_default_event
 # import ezpz.log
 
 # from ezpz import log
@@ -293,6 +294,7 @@ __all__ = [
     'get_data_parallel_group',
     'get_data_parallel_rank',
     'get_data_parallel_world_size',
+    'get_default_event',
     'get_dist_info',
     'get_file_logger',
     'get_gpus_per_node',
