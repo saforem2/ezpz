@@ -30,6 +30,8 @@ import logging
 
 from typing import List, Optional
 
+from mpi4py import MPI
+
 import torch
 import torch.distributed as tdist
 from datetime import timedelta
