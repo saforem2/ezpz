@@ -107,7 +107,14 @@ class History:
             self.history[key] = [val]
         return val
 
-    def update(self, metrics: dict) -> str:
+    def update(
+        self,
+        metrics: dict,
+        precision: int = 6,
+        use_wandb: Optional[bool] = True,
+        commit: Optional[bool] = True,
+        summarize: Optional[bool] = True,
+    ) -> str:
         for key, val in metrics.items():
             # if isinstance(val, (list, np.ndarray, torch.Tensor)):
             #     val = grab_tensor(val)
@@ -117,11 +124,14 @@ class History:
                 self.history[key] = [val]
         if (
             wandb is not None
+            and use_wandb
             and not WANDB_DISABLED
             and getattr(wandb, 'run', None) is not None
         ):
-            wandb.log(metrics)
-        return ezpz.summarize_dict(metrics)
+            wandb.log(metrics, commit=commit)
+        if summarize:
+            return ezpz.summarize_dict(metrics, precision=precision)
+        return ''
 
     def _tplot(
         self,
@@ -831,8 +841,8 @@ class History:
         )
         fallback_outdir = Path(os.getcwd()).joinpath('outputs')
         if run_name is not None:
-            fallback_outdir = (
-                fallback_outdir.joinpath(run_name, get_timestamp())
+            fallback_outdir = fallback_outdir.joinpath(
+                run_name, get_timestamp()
             )
         outdir = (
             # Path(os.getcwd()).joinpath('outputs')
