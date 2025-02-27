@@ -156,11 +156,13 @@ from ezpz.plot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
 from ezpz.utils import (
     breakpoint,
-	grab_tensor,
-	save_dataset,
-	dataset_to_h5pyfile,
-	dataset_from_h5pyfile,
-	dict_from_h5pyfile
+    get_max_memory_allocated,
+    get_max_memory_reserved,
+    grab_tensor,
+    save_dataset,
+    dataset_to_h5pyfile,
+    dataset_from_h5pyfile,
+    dict_from_h5pyfile,
 )
 from jaxtyping import ScalarLike
 from mpi4py import MPI
@@ -313,6 +315,8 @@ __all__ = [
     'get_logger',
     'get_logging_config',
     'get_machine',
+    'get_max_memory_allocated',
+    'get_max_memory_reserved',
     'get_tensor_parallel_group',
     'get_tensor_parallel_rank',
     'get_tensor_parallel_src_rank',
@@ -371,16 +375,18 @@ __all__ = [
 ]
 
 
-def format_pair(k: str, v: ScalarLike) -> str:
+def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
     if isinstance(v, (int, bool, np.integer)):
         # return f'{k}={v:<3}'
         return f'{k}={v}'
     # return f'{k}={v:<3.4f}'
-    return f'{k}={v:<.6f}'
+    return f'{k}={v:<.{precision}f}'
 
 
-def summarize_dict(d: dict) -> str:
-    return ' '.join([format_pair(k, v) for k, v in d.items()])
+def summarize_dict(d: dict, precision: int = 6) -> str:
+    return ' '.join(
+        [format_pair(k, v, precision=precision) for k, v in d.items()]
+    )
 
 
 def normalize(name: str) -> str:
