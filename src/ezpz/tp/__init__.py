@@ -1,24 +1,4 @@
 # coding=utf-8
-
-# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
-#
-# This source code is licensed under the BSD license found in the
-# LICENSE file in the root directory of this source tree.
-
-# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 """
 ezpz/tp/__init__.py
 
@@ -34,11 +14,11 @@ import socket
 
 # NOTE: Need to swap import order on Polaris (hostname: [x3...])
 if socket.gethostname().startswith('x3'):
-    from mpi4py import MPI
+    from mpi4py import MPI  # type:ignore  # noqa: F401
     import torch
 else:
     import torch
-    from mpi4py import MPI  # type:ignore
+    from mpi4py import MPI  # type:ignore  # noqa: F401
 
 import torch.distributed as tdist
 from datetime import timedelta
@@ -148,26 +128,39 @@ def initialize_tensor_parallel(
 
     dpsize = int(
         world_size
-        / (tensor_parallel_size * pipeline_parallel_size * context_parallel_size)
+        / (
+            tensor_parallel_size
+            * pipeline_parallel_size
+            * context_parallel_size
+        )
     )
 
     if tdist.get_rank() == 0:
-        logger.info(
-            '> initializing tensor parallel with size {}'.format(
-                tensor_parallel_size
-            )
+        pstr = ', '.join(
+            [
+                f'TP: {tensor_parallel_size}',
+                f'PP: {pipeline_parallel_size}',
+                f'CP: {context_parallel_size}',
+                f'DP: {dpsize}',
+            ]
         )
-        logger.info(
-            '> initializing context parallel with size {}'.format(
-                context_parallel_size
-            )
-        )
-        logger.info(
-            '> initializing pipeline with size {}'.format(pipeline_parallel_size)
-        )
-        logger.info(
-            '> initializing ddp with size {}'.format(dpsize)
-        )
+        logger.info(pstr)
+        # pstr = f'TP: {tensor_parallel_size}, PP: {pipeline_parallel_size}, CP: {context_parallel_size}, DP: {dpsize}'
+        # logger.info(
+        #     '> initializing tensor parallel with size {}'.format(
+        #         tensor_parallel_size
+        #     )
+        # )
+        # logger.info(
+        #     '> initializing context parallel with size {}'.format(
+        #         context_parallel_size
+        #     )
+        # )
+        # logger.info(
+        #     '> initializing pipeline with size {}'.format(
+        #         pipeline_parallel_size
+        #     )
+        # )
 
     groups = torch.LongTensor(range(world_size)).reshape(
         dpsize,
@@ -183,12 +176,12 @@ def initialize_tensor_parallel(
     # Build the data parallel groups.
     global _DATA_PARALLEL_GROUP
     global _DATA_PARALLEL_RANKS
-    assert (
-        _DATA_PARALLEL_GROUP is None
-    ), 'data parallel group is already initialized'
-    assert (
-        _DATA_PARALLEL_RANKS is None
-    ), 'data parallel ranks are already initialized'
+    assert _DATA_PARALLEL_GROUP is None, (
+        'data parallel group is already initialized'
+    )
+    assert _DATA_PARALLEL_RANKS is None, (
+        'data parallel ranks are already initialized'
+    )
     for i in range(pipeline_parallel_size):
         for j in range(context_parallel_size):
             for k in range(tensor_parallel_size):
@@ -205,12 +198,12 @@ def initialize_tensor_parallel(
     # Build the tensor parallel groups.
     global _TENSOR_PARALLEL_GROUP
     global _TENSOR_PARALLEL_RANKS
-    assert (
-        _TENSOR_PARALLEL_GROUP is None
-    ), 'tensor parallel group is already initialized'
-    assert (
-        _TENSOR_PARALLEL_RANKS is None
-    ), 'tensor parallel ranks are already initialized'
+    assert _TENSOR_PARALLEL_GROUP is None, (
+        'tensor parallel group is already initialized'
+    )
+    assert _TENSOR_PARALLEL_RANKS is None, (
+        'tensor parallel ranks are already initialized'
+    )
     for i in range(dpsize):
         for j in range(pipeline_parallel_size):
             for k in range(context_parallel_size):
@@ -227,9 +220,9 @@ def initialize_tensor_parallel(
     # Build the pipeline parallel groups.
     global _PIPELINE_PARALLEL_GROUP
     global _PIPELINE_PARALLEL_RANKS
-    assert (
-        _PIPELINE_PARALLEL_GROUP is None
-    ), 'Pipeline parallel group is already initialized'
+    assert _PIPELINE_PARALLEL_GROUP is None, (
+        'Pipeline parallel group is already initialized'
+    )
     for i in range(dpsize):
         for j in range(context_parallel_size):
             for k in range(tensor_parallel_size):
@@ -245,9 +238,9 @@ def initialize_tensor_parallel(
     global _CONTEXT_PARALLEL_GROUP
     global _CONTEXT_PARALLEL_GROUP_RANKS
 
-    assert (
-        _CONTEXT_PARALLEL_GROUP is None
-    ), 'Context parallelism is already initialized.'
+    assert _CONTEXT_PARALLEL_GROUP is None, (
+        'Context parallelism is already initialized.'
+    )
     for i in range(dpsize):
         for j in range(pipeline_parallel_size):
             for k in range(tensor_parallel_size):
@@ -274,17 +267,17 @@ def tensor_parallel_is_initialized() -> bool:
 
 def get_tensor_parallel_group() -> tdist.ProcessGroup:
     """Get the tensor parallel group the caller rank belongs to."""
-    assert (
-        _TENSOR_PARALLEL_GROUP is not None
-    ), 'tensor parallel group is not initialized'
+    assert _TENSOR_PARALLEL_GROUP is not None, (
+        'tensor parallel group is not initialized'
+    )
     return _TENSOR_PARALLEL_GROUP
 
 
 def get_tensor_parallel_ranks() -> List[int]:
     """Get the tensor parallel group the caller rank belongs to."""
-    assert (
-        _TENSOR_PARALLEL_RANKS is not None
-    ), 'tensor parallel group is not initialized'
+    assert _TENSOR_PARALLEL_RANKS is not None, (
+        'tensor parallel group is not initialized'
+    )
     return _TENSOR_PARALLEL_RANKS
 
 
@@ -309,17 +302,17 @@ def get_tensor_parallel_src_rank() -> int:
 
 def get_context_parallel_group() -> tdist.ProcessGroup:
     """Get the context parallel group the caller rank belongs to."""
-    assert (
-        _CONTEXT_PARALLEL_GROUP is not None
-    ), 'context parallel group is not initialized'
+    assert _CONTEXT_PARALLEL_GROUP is not None, (
+        'context parallel group is not initialized'
+    )
     return _CONTEXT_PARALLEL_GROUP
 
 
 def get_context_parallel_ranks() -> List[int]:
     """Return context parallel ranks for the context parallel group."""
-    assert (
-        _CONTEXT_PARALLEL_GROUP_RANKS is not None
-    ), 'context parallel group is not initialized'
+    assert _CONTEXT_PARALLEL_GROUP_RANKS is not None, (
+        'context parallel group is not initialized'
+    )
     return _CONTEXT_PARALLEL_GROUP_RANKS
 
 
@@ -335,17 +328,17 @@ def get_context_parallel_rank() -> int:
 
 def get_pipeline_parallel_group() -> tdist.ProcessGroup:
     """Get the pipeline parallel group the caller rank belongs to."""
-    assert (
-        _PIPELINE_PARALLEL_GROUP is not None
-    ), 'pipeline parallel group is not initialized'
+    assert _PIPELINE_PARALLEL_GROUP is not None, (
+        'pipeline parallel group is not initialized'
+    )
     return _PIPELINE_PARALLEL_GROUP
 
 
 def get_pipeline_parallel_ranks() -> List[int]:
     """Get the pipeline parallel group the caller rank belongs to."""
-    assert (
-        _PIPELINE_PARALLEL_RANKS is not None
-    ), 'pipeline parallel group is not initialized'
+    assert _PIPELINE_PARALLEL_RANKS is not None, (
+        'pipeline parallel group is not initialized'
+    )
     return _PIPELINE_PARALLEL_RANKS
 
 
@@ -361,17 +354,17 @@ def get_pipeline_parallel_rank() -> int:
 
 def get_data_parallel_group() -> tdist.ProcessGroup:
     """Get the data parallel group the caller rank belongs to."""
-    assert (
-        _DATA_PARALLEL_GROUP is not None
-    ), 'data parallel group is not initialized'
+    assert _DATA_PARALLEL_GROUP is not None, (
+        'data parallel group is not initialized'
+    )
     return _DATA_PARALLEL_GROUP
 
 
 def get_data_parallel_ranks() -> List[int]:
     """Get the data parallel group the caller rank belongs to."""
-    assert (
-        _DATA_PARALLEL_RANKS is not None
-    ), 'data parallel group is not initialized'
+    assert _DATA_PARALLEL_RANKS is not None, (
+        'data parallel group is not initialized'
+    )
     return _DATA_PARALLEL_RANKS
 
 
