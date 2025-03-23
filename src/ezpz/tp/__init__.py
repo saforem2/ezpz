@@ -30,9 +30,16 @@ import logging
 
 from typing import List, Optional
 
-from mpi4py import MPI
+import socket
 
-import torch
+# NOTE: Need to swap import order on Polaris (hostname: [x3...])
+if socket.gethostname().startswith('x3'):
+    from mpi4py import MPI
+    import torch
+else:
+    import torch
+    from mpi4py import MPI  # type:ignore
+
 import torch.distributed as tdist
 from datetime import timedelta
 from ezpz.tp.utils import (
