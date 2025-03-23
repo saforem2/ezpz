@@ -511,6 +511,20 @@ def get_torch_version_as_float():
 
 
 def get_torch_backend_on_xpu() -> str:
+    """Deal with breaking change introduced in torch 2.6:
+
+    See: https://github.com/pytorch/pytorch/pull/141856
+
+    Example:
+
+        ```python
+        >>> torch_version = float('.'join(torch.__version__.split('.')[:2]))
+        >>> if torch_version >= 2.6:
+        >>>     backend = 'xccl'
+        >>> else:
+        >>>     backend = 'ccl'
+        ```
+    """
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
     if torch_version >= 2.5:
@@ -529,8 +543,7 @@ def get_torch_backend() -> str:
         'nccl'
         if torch.cuda.is_available()
         else (
-            get_torch_backend_on_xpu()
-            if (ipex is not None and oneccl_bpt is not None)
+            get_torch_backend_on_xpu() if torch.xpu.is_available()
             else 'gloo'
         )
     )
