@@ -543,8 +543,7 @@ def get_torch_backend() -> str:
         'nccl'
         if torch.cuda.is_available()
         else (
-            get_torch_backend_on_xpu() if torch.xpu.is_available()
-            else 'gloo'
+            get_torch_backend_on_xpu() if torch.xpu.is_available() else 'gloo'
         )
     )
 
@@ -899,23 +898,23 @@ def setup_torch(
         cprank = ezpz.tp.get_context_parallel_rank()
         cpsize = ezpz.tp.get_context_parallel_world_size()
 
-        # if cpsize > 1 or ppsize > 1 or tpsize > 1:
-        #     if cpsize > 1:
-        #         lcp = len(str(cpsize - 1))
-        #         psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]')
-        #         tdist.barrier(group=ezpz.tp.get_context_parallel_group())
-        #     if ppsize > 1:
-        #         lpp = len(str(ppsize - 1))
-        #         psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]')
-        #         tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-        #     if tpsize > 1:
-        #         ltp = len(str(tpsize - 1))
-        #         psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]')
-        #         tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-        #     if dpsize > 1:
-        #         ldp = len(str(dpsize - 1))
-        #         psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]')
-        #         tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+        if cpsize > 1 or ppsize > 1 or tpsize > 1:
+            if cpsize > 1:
+                lcp = len(str(cpsize - 1))
+                psizes.append(f'[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]')
+                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+            if ppsize > 1:
+                lpp = len(str(ppsize - 1))
+                psizes.append(f'[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]')
+                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+            if tpsize > 1:
+                ltp = len(str(tpsize - 1))
+                psizes.append(f'[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]')
+                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+            if dpsize > 1:
+                ldp = len(str(dpsize - 1))
+                psizes.append(f'[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]')
+                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info(''.join(psizes))
     MPI.COMM_WORLD.Barrier()
@@ -1102,7 +1101,10 @@ def setup_wandb(
     )
     if tensorboard_dir is not None:
         logger.info(f'Patching tensorboard from {tensorboard_dir}')
-        wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+        try:
+            wandb.tensorboard.patch(root_logdir=tensorboard_dir)  # type:ignore
+        except Exception as exc:
+            logger.exception(exc)
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
