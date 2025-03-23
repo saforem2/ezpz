@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from functools import wraps
 from typing import Any, Callable, Optional, Union
+
 import ezpz.tp
 
 from mpi4py import MPI
@@ -131,9 +132,7 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     # logger.info(
                     #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
                     # )
-                    wandb.run.log(
-                        {f'timeit/{func.__name__}': dt}, commit=False
-                    )
+                    wandb.run.log({f'timeit/{func.__name__}': dt}, commit=False)
             return result
 
         return wrapper
@@ -350,9 +349,7 @@ def print_dist_setup(
             logger.warning(
                 f'WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}'
             )
-        logger.warning(
-            f'Using [{wsa} / {wst}] available "{device}" devices !!'
-        )
+        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f'num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]'
@@ -362,14 +359,18 @@ def print_dist_setup(
             )
     return dist_str
 
+
 def synchronize(device: torch.device | int | str = 'cuda'):
     return (
-            torch.cuda.synchronize(device) if torch.cuda.is_available()
-            else (
-                torch.xpu.synchronize(device) if torch.xpu.is_available()
-                else torch.mps.synchronize() if torch.backends.mps.is_available()
-                else torch.cpu.synchronize(device)
-            )
+        torch.cuda.synchronize(device)
+        if torch.cuda.is_available()
+        else (
+            torch.xpu.synchronize(device)
+            if torch.xpu.is_available()
+            else torch.mps.synchronize()
+            if torch.backends.mps.is_available()
+            else torch.cpu.synchronize(device)
+        )
     )
 
 
@@ -505,6 +506,18 @@ def get_torch_device(
 #     # return backend
 
 
+def get_torch_version_as_float():
+    return float('.'.join(torch.__version__.split('.')[:2]))
+
+
+def get_torch_backend_on_xpu() -> str:
+    torch_version = get_torch_version_as_float()
+    assert torch.xpu.is_available()
+    if torch_version >= 2.5:
+        return 'xccl'
+    return 'ccl'
+
+
 def get_torch_backend() -> str:
     backend_from_env = os.environ.get('TORCH_BACKEND', None)
     if backend_from_env is not None:
@@ -516,7 +529,9 @@ def get_torch_backend() -> str:
         'nccl'
         if torch.cuda.is_available()
         else (
-            'ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo'
+            get_torch_backend_on_xpu()
+            if (ipex is not None and oneccl_bpt is not None)
+            else 'gloo'
         )
     )
 
@@ -656,7 +671,8 @@ def setup_torch_DDP(
     if eport is not None:
         _ = (
             logger.info(f'Caught MASTER_PORT={eport} from environment!')
-            if rank == 0 else None
+            if rank == 0
+            else None
         )
     else:
         eport = port
@@ -699,11 +715,7 @@ def setup_torch_distributed(
         else timeout
     )
     port = (
-        '1234'
-        if port is None
-        else str(port)
-        if isinstance(port, int)
-        else port
+        '1234' if port is None else str(port) if isinstance(port, int) else port
     )
     rank = get_rank()
     world_size = get_world_size()
@@ -1108,20 +1120,19 @@ def setup_wandb(
         wandb.run.config.update({'dist_info': get_dist_info()})
     torch_version = torch.__version__
     torch_file = torch.__file__
+    run.config.update({})
     run.config.update(
         {
+            'created_at': dstr,
+            'day': ezpz.get_timestamp('%d'),
+            'month': ezpz.get_timestamp('%m'),
+            'outdir': os.getcwd(),
+            'torch_version': torch_version,
+            'torch_file': torch_file,
+            'world_size': get_world_size(),
+            'year': ezpz.get_timestamp('%Y'),
         }
     )
-    run.config.update({
-        'created_at': dstr,
-        'day': ezpz.get_timestamp('%d'),
-        'month': ezpz.get_timestamp('%m'),
-        'outdir': os.getcwd(),
-        'torch_version': torch_version,
-        'torch_file': torch_file,
-        'world_size': get_world_size(),
-        'year': ezpz.get_timestamp('%Y'),
-    })
     if config is not None:
         if isinstance(config, DictConfig):
             cfg = OmegaConf.to_container(
@@ -1434,9 +1445,7 @@ def get_pbs_launch_info(
 
     assert get_scheduler() == 'PBS'
     if hostfile is None:
-        hostfile = os.environ.get(
-            'PBS_NODEFILE', get_pbs_nodefile_from_qstat()
-        )
+        hostfile = os.environ.get('PBS_NODEFILE', get_pbs_nodefile_from_qstat())
     assert hostfile is not None
     hfp = Path(hostfile)
     # hostfile = os.environ.get("PBS_NODEFILE", None)
