@@ -27,7 +27,7 @@ dependencies = [
     "tensorboard",
     "seaborn",
     "omegaconf",
-    "sentencepiece",
+    # "sentencepiece",
     "ipython",
     "hydra-core",
     "wandb",
