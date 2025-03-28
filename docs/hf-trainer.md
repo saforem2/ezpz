@@ -37,9 +37,9 @@ supported and can be configured by specifying
 
     1. Update {`transformers`, `evaluate`}:
 
-      ```bash
-      python3 -m pip install --upgrade transformers evaluate
-      ```
+        ```bash
+        python3 -m pip install --upgrade transformers evaluate
+        ```
 
 1. 🚀 Launch training:
 
