@@ -10,6 +10,10 @@ object with **_any_** (compatible) combination of
 {[`models`](https://huggingface.co/models),
 [`datasets`](https://huggingface.co/datasets)}.
 
+Additionally, [DeepSpeed](https://github.com/deepspeedai/deepspeed) is fully
+supported and can be configured by specifying
+`--deepspeed=/path/to/deepspeed_config.json` in the command line.
+
 ## Usage
 
 1. Setup environment (on ANY {Intel, NVIDIA, AMD} accelerator)
