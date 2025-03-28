@@ -14,42 +14,43 @@ https://huggingface.co/models?filter=text-generation
 import math
 import os
 import sys
+import logging
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional
 
 import ezpz
-import evaluate
+try:
+    import evaluate
+except (ImportError, ModuleNotFoundError):
+    print(f'"evaluate" library is not installed. Please install it using "pip install evaluate"')
+
 import torch
 from datasets import load_dataset
 
-import transformers
-from transformers import (
-    CONFIG_MAPPING,
-    MODEL_FOR_CAUSAL_LM_MAPPING,
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-    default_data_collator,
-    is_torch_xla_available,
-    set_seed,
-)
-from transformers.testing_utils import CaptureLogger
-from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import send_example_telemetry, check_min_version
-from transformers.utils.versions import require_version
+try:
+    import transformers
+    from transformers import (
+        CONFIG_MAPPING,
+        MODEL_FOR_CAUSAL_LM_MAPPING,
+        AutoConfig,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        HfArgumentParser,
+        Trainer,
+        TrainingArguments,
+        default_data_collator,
+        is_torch_xla_available,
+        set_seed,
+    )
+    from transformers.testing_utils import CaptureLogger
+    from transformers.trainer_utils import get_last_checkpoint
+    from transformers.utils import send_example_telemetry, check_min_version
+    from transformers.utils.versions import require_version
+except (ImportError, ModuleNotFoundError):
+    print('"transformers" library is not installed. Please install it using "pip install transformers"')
+    sys.exit(1)
 
-
-# Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.49.0")
-
-require_version(
-    "datasets>=2.14.0",
-    "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt",
-)
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(getattr(conf, "model_type", "") for conf in MODEL_CONFIG_CLASSES)
@@ -254,26 +255,44 @@ class DataTrainingArguments:
             )
         if self.train_file is not None:
             extension = self.train_file.split(".")[-1]
-            assert extension in ["csv", "json", "txt"], (
-                "`train_file` should be a csv, a json or a txt file."
-            )
+            assert extension in [
+                "csv",
+                "json",
+                "txt",
+            ], "`train_file` should be a csv, a json or a txt file."
         if self.validation_file is not None:
             extension = self.validation_file.split(".")[-1]
-            assert extension in ["csv", "json", "txt"], (
-                "`validation_file` should be a csv, a json or a txt file."
-            )
+            assert extension in [
+                "csv",
+                "json",
+                "txt",
+            ], "`validation_file` should be a csv, a json or a txt file."
 
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
 
 def main():
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
-
-    _ = ezpz.setup_torch(
+    rank = ezpz.setup_torch(
         # backend='deepspeed' if training_args.deepspeed else 'DDP'
         backend="DDP"
     )
     logger = ezpz.get_logger(__name__)
+    hfloglevel = "INFO" if rank == 0 else "ERROR"
+    logging.getLogger("datasets").setLevel(hfloglevel)
+
+    # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
+    check_min_version("4.49.0")
+
+    require_version(
+        "datasets>=2.14.0",
+        "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt",
+    )
+
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)  # type:ignore
@@ -305,7 +324,7 @@ def main():
     # Log on each process the small summary:
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
-        + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
+        + f'distributed training: {training_args.parallel_mode.value == "distributed"}, 16-bits training: {training_args.fp16}'
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
@@ -597,14 +616,18 @@ def main():
                 batched=True,
             )
 
+    train_dataset = None
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]  # type:ignore
         if data_args.max_train_samples is not None:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
-            train_dataset = train_dataset.select(range(max_train_samples))  # type:ignore
+            train_dataset = train_dataset.select(  # type:ignore
+                range(max_train_samples)
+            )  # type:ignore
 
+    eval_dataset = None
     if training_args.do_eval:
         if "validation" not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
@@ -639,12 +662,20 @@ def main():
         processing_class=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
         data_collator=default_data_collator,
-        compute_metrics=compute_metrics  # type:ignore
-        if training_args.do_eval and not is_torch_xla_available()  # type:ignore
-        else None,
-        preprocess_logits_for_metrics=preprocess_logits_for_metrics  # type:ignore
-        if training_args.do_eval and not is_torch_xla_available()
-        else None,
+        compute_metrics=(
+            compute_metrics  # type:ignore
+            if training_args.do_eval and not is_torch_xla_available()  # type:ignore
+            else None
+        ),
+        preprocess_logits_for_metrics=(
+            preprocess_logits_for_metrics  # type:ignore
+            if training_args.do_eval and not is_torch_xla_available()
+            else None
+        ),
+    )
+
+    assert any([training_args.do_train, training_args.do_eval]), (
+        "Nothing to do! Set --do_train or --do_eval."
     )
 
     # Training
@@ -664,7 +695,10 @@ def main():
             if data_args.max_train_samples is not None
             else len(train_dataset)  # type:ignore
         )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))  # type:ignore
+        assert train_dataset is not None
+        metrics["train_samples"] = min(
+            max_train_samples, len(train_dataset)
+        )  # type:ignore
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -673,6 +707,9 @@ def main():
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
+        assert eval_dataset is not None, (
+            "eval_dataset must be defined for evaluation."
+        )
 
         metrics = trainer.evaluate()
 
@@ -681,7 +718,9 @@ def main():
             if data_args.max_eval_samples is not None
             else len(eval_dataset)  # type:ignore
         )
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type:ignore
+        metrics["eval_samples"] = min(
+            max_eval_samples, len(eval_dataset)
+        )  # type:ignore
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
@@ -709,11 +748,6 @@ def main():
         trainer.push_to_hub(**kwargs)
     else:
         trainer.create_model_card(**kwargs)
-
-
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
 
 
 if __name__ == "__main__":
