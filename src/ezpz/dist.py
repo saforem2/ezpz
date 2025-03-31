@@ -1291,7 +1291,7 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     scheduler = get_scheduler()
     if scheduler.lower() == "unknown":
         logger.debug("Unknown scheduler")
-        hostfile = Path(os.getcwd()).joinpath('hostfile"')
+        hostfile = Path(os.getcwd()).joinpath('hostfile')
     if scheduler.lower() == "slurm":
         hostfile = make_hostfile_from_slurm_env()
         assert Path(hostfile).is_file()
