@@ -6,7 +6,6 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import logging.config
 import os
-import socket
 import warnings
 
 logging.getLogger("deepseed").setLevel(logging.ERROR)
@@ -33,7 +32,7 @@ from ezpz import dist
 
 
 # from jaxtyping import ScalarLike
-import numpy as np
+# import numpy as np
 
 from ezpz import profile
 from ezpz import configs
@@ -187,13 +186,6 @@ try:
 except Exception:
     pass
 
-
-# try:
-#     import wandb  # pyright: ignore
-# except Exception:
-#     wandb = None
-
-
 # def lazy_import(name: str):
 #     spec = importlib.util.find_spec(name)
 #     loader = importlib.util.LazyLoader(spec.loader)
@@ -202,18 +194,6 @@ except Exception:
 #     sys.modules[name] = module
 #     loader.exec_module(module)
 #     return module
-
-# TERM = os.environ.get('TERM', None)
-# PLAIN = os.environ.get(
-#     'NO_COLOR',
-#     os.environ.get(
-#         'NOCOLOR',
-#         os.environ.get(
-#             'COLOR', os.environ.get('COLORS', os.environ.get('DUMB', False))
-#         ),
-#     ),
-# )
-# if (not PLAIN) and TERM not in ['dumb', 'unknown']:
 
 if use_colored_logs():
     from ezpz.log.config import use_colored_logs
@@ -252,19 +232,19 @@ if LOG_FROM_ALL_RANKS:
     if RANK == 0:
         logger.info("LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!")
     logger.setLevel(LOG_LEVEL)
-# logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
-# logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
-# logger.info(
-#     " ".join(
-#         [
-#             "To disable this behavior,",
-#             "and log from ALL ranks (not recommended),",
-#             "set: 'export LOG_FROM_ALL_RANKS=1' ",
-#             "in your environment, and re-run.",
-#         ]
-#     )
-# )
 else:
+    # logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
+    # logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
+    # logger.info(
+    #     " ".join(
+    #         [
+    #             "To disable this behavior,",
+    #             "and log from ALL ranks (not recommended),",
+    #             "set: 'export LOG_FROM_ALL_RANKS=1' ",
+    #             "in your environment, and re-run.",
+    #         ]
+    #     )
+    # )
     logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 
