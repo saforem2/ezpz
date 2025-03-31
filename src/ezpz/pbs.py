@@ -56,7 +56,9 @@ import ezpz
 
 import sys
 import socket
-import sh
+
+
+logger = ezpz.get_logger(__name__)
 
 
 def get_pbs_running_jobs_for_user():
@@ -145,6 +147,7 @@ def get_pbs_nodefile(jobid: Optional[int | str] = None) -> str | None:
     if jobid is None:
         jobid = get_pbs_jobid_of_active_job()
     if jobid is None:
+        logger.warning("No active job found.")
         return None
     return get_pbs_nodefile_from_jobid(jobid)
 
@@ -155,14 +158,9 @@ def build_launch_cmd():
     Returns:
         str: The launch command.
     """
-    jobenv = ezpz.get_jobenv()
-    # return jobenv["LAUNCH_CMD"]
-
-    launch_cmd = f"{jobenv['LAUNCH_CMD']} {sys.executable}"
-    return launch_cmd
+    return f"{ezpz.get_jobenv()['LAUNCH_CMD']} {sys.executable}"
 
 
 if __name__ == "__main__":
-    import sh
     jobenv = ezpz.get_jobenv()
     os.system(jobenv["LAUNCH_CMD"])
