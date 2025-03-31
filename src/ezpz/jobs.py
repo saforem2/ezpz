@@ -37,16 +37,15 @@ def check_scheduler(scheduler: Optional[str] = None) -> bool:
     return True
 
 
-# def get_jobdir_from_env(scheduler: Optional[str] = None) -> Path:
 def get_jobdir_from_env() -> Path:
     from ezpz.dist import get_pbs_env
 
     pbs_env = get_pbs_env()
-    hostfile = os.environ.get(
+    _ = os.environ.get(
         "HOSTFILE",
         os.environ.get("PBS_NODEFILE", os.environ.get("HOSTFILE", None)),
     )
-    # jobid = pbs_env["PBS_JOBID"].split('.')[0]
+    jobid = pbs_env["PBS_JOBID"].split('.')[0]
     jobdir = Path.home() / f"{SCHEDULER}-jobs" / f"{jobid}"
     jobdir.mkdir(exist_ok=True, parents=True)
     return jobdir
@@ -154,7 +153,7 @@ def add_to_jobslog(hostfile: Optional[Union[str, Path]] = None):
                 [
                     f"{jobdir.as_posix()} ",
                     f"already in {jobslog_file.as_posix()}, ",
-                    f"not appending !!",
+                    "not appending !!",
                 ]
             )
         )
@@ -190,7 +189,7 @@ def save_to_dotenv_file(
             for key, val in jobenv.items():
                 _ = f.write(f'{key.upper()}="{val}"\n')
             _ = f.write(f'alias launch="{launch_cmd}"\n')
-            _ = f.write(f'echo "$(which launch)"\n')
+            _ = f.write('echo "$(which launch)"\n')
     # log.warning(' '.join([
     #     f'To use `launch` alias, be sure to: ',
     #     f'`source {denvf2.as_posix()}'
@@ -223,16 +222,6 @@ def save_to_dotenv_file(
             )
         )
     return denvf2
-
-
-def write_pbs_launch_shell_script():
-    contents = f"""#!/bin/bash --login
-    # This script is used to set up the environment for running jobs on a PBS system.
-    source <(curl 'https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh')
-    ezpz_setup_env
-    launch python3 -m ezpz.test_dist
-    """
-    return contents
 
 
 def write_launch_shell_script():
