@@ -88,10 +88,7 @@ def get_pbs_nodefile_from_jobid(jobid: int | str) -> str:
 def get_pbs_nodefile_of_active_job() -> str | None:
     """Get the nodefile for the currently active job."""
     jobid = get_pbs_jobid_of_active_job()
-    if jobid is None:
-        return None
-    pbs_nodefile = get_pbs_nodefile_from_jobid(jobid)
-    return pbs_nodefile
+    return None if jobid is None else get_pbs_nodefile_from_jobid(jobid)
 
 
 def get_pbs_nodefile(jobid: Optional[int | str] = None) -> str | None:
