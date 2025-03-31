@@ -526,9 +526,9 @@ def get_torch_backend_on_xpu() -> str:
     """
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
-    if torch_version >= 2.5:
-        return "xccl"
-    return "ccl"
+    if torch_version > 2.5:
+        return 'xccl'
+    return 'ccl'
 
 
 def get_torch_backend() -> str:
