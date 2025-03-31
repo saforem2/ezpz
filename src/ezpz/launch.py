@@ -3,6 +3,7 @@ ezpz/launch.py
 """
 
 import subprocess
+import time
 from typing import Optional
 
 import ezpz
@@ -48,6 +49,7 @@ def run_command(command, filters: Optional[list] = None):
 
 
 def main():
+    """Launch a command on the current PBS job."""
     import ezpz.pbs
 
     jobid = ezpz.pbs.get_pbs_jobid_of_active_job()
@@ -63,10 +65,32 @@ def main():
     import sys
 
     assert len(sys.argv) > 1, "No command to run."
-    # _ = os.system("clear")
-    cmd = f"{launch_cmd} {' '.join(sys.argv[1:])}"
-    logger.info(f"Evaluating:\n'{cmd}'")
+    cmdlist = sys.argv[1:]
+    # if 'python' not in cmdlist[0]:
+    #     cmdlist = [sys.executable] + cmdlist
+    cmd_to_launch = " ".join(sys.argv[1:])
+    logger.info(
+        "\n".join(
+            [
+                "Building command to execute from: '{launch_cmd}' + '{python}' + '{cmd_to_launch}'",
+                "",
+                f"launch_cmd={launch_cmd}",
+                f"python={sys.executable}",
+                f"cmd_to_launch={cmd_to_launch}",
+                "",
+            ]
+        )
+    )
+
+    if "python" not in cmd_to_launch:
+        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
+
+    cmd = f"{launch_cmd} {cmd_to_launch}"
+
+    logger.info(f"Evaluating:\n{cmd}")
+    t0 = time.perf_counter()
     _ = run_command(cmd)
+    logger.info(f"Command took {time.perf_counter() - t0:.2f} seconds to run.")
 
 
 if __name__ == "__main__":
