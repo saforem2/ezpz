@@ -73,9 +73,9 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
     import datetime
 
     now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime("%Y-%m-%d-%H%M%S")
-    return now.strftime(fstr)
+    return (
+        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    )
 
 
 def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
