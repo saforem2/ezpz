@@ -28,23 +28,23 @@ log = logging.getLogger(__name__)
 HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 PROJECT_ROOT = PROJECT_DIR
-CONF_DIR = HERE.joinpath('conf')
-BIN_DIR = HERE.joinpath('bin')
-SAVEJOBENV = BIN_DIR.joinpath('savejobenv')
-UTILS = BIN_DIR.joinpath('utils.sh')
-GETJOBENV = BIN_DIR.joinpath('getjobenv')
-DS_CONFIG_PATH = CONF_DIR.joinpath('ds_config.yaml')
-DS_CONFIG_YAML = CONF_DIR.joinpath('ds_config.yaml')
-DS_CONFIG_JSON = CONF_DIR.joinpath('ds_config.json')
+CONF_DIR = HERE.joinpath("conf")
+BIN_DIR = HERE.joinpath("bin")
+SAVEJOBENV = BIN_DIR.joinpath("savejobenv")
+UTILS = BIN_DIR.joinpath("utils.sh")
+GETJOBENV = BIN_DIR.joinpath("getjobenv")
+DS_CONFIG_PATH = CONF_DIR.joinpath("ds_config.yaml")
+DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
+DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
 # LOGS_DIR = PROJECT_DIR.joinpath("logs")
 WORKING_DIR = Path(
     os.environ.get(
-        'PBS_O_WORKDIR', os.environ.get('SLURM_SUBMIT_DIR', os.getcwd())
+        "PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
     )
 )
-LOGS_DIR = WORKING_DIR.joinpath('logs')
-OUTPUTS_DIR = WORKING_DIR.joinpath('outputs')
-QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
+LOGS_DIR = WORKING_DIR.joinpath("logs")
+OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
+QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 
 # CONF_DIR.mkdir(exist_ok=True, parents=True)
 # LOGS_DIR.mkdir(exist_ok=True, parents=True)
@@ -54,19 +54,19 @@ QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath('qmd', 'outputs')
 
 
 FRAMEWORKS = {
-    'pytorch': ['p', 'pt', 'torch', 'pytorch'],
-    'tensorflow': ['t', 'tf', 'tflow', 'tensorflow'],
+    "pytorch": ["p", "pt", "torch", "pytorch"],
+    "tensorflow": ["t", "tf", "tflow", "tensorflow"],
 }
 BACKENDS = {
-    'pytorch': ['ddp', 'ds', 'dspeed', 'deepspeed', 'h', 'hvd', 'horovod'],
-    'tensorflow': ['h', 'hvd', 'horovod'],
+    "pytorch": ["ddp", "ds", "dspeed", "deepspeed", "h", "hvd", "horovod"],
+    "tensorflow": ["h", "hvd", "horovod"],
 }
 
 SCHEDULERS = {
-    'ALCF': 'PBS',
-    'OLCF': 'SLURM',
-    'NERSC': 'SLURM',
-    'LOCALHOST': 'NONE',
+    "ALCF": "PBS",
+    "OLCF": "SLURM",
+    "NERSC": "SLURM",
+    "LOCALHOST": "NONE",
 }
 
 
@@ -84,22 +84,12 @@ def savejobenv_dep():
     return SAVEJOBENV
 
 
-def get_timestamp(fstr: Optional[str] = None) -> str:
-    """Get formatted timestamp."""
-    import datetime
-
-    now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(fstr)
-
-
 def cmd_exists(cmd: str) -> bool:
     """Check whether command exists.
 
-    >>> cmd_exists('ls')
+    >>> cmd_exists("ls")
     True
-    >>> cmd_exists('hostname')
+    >>> cmd_exists("hostname")
     True
     """
     return shutil.which(cmd) is not None
@@ -109,14 +99,14 @@ def get_scheduler() -> str:
     from ezpz import get_machine, get_hostname
 
     machine = get_machine(get_hostname())
-    if machine.lower() in ['thetagpu', 'sunspot', 'polaris', 'aurora']:
-        return SCHEDULERS['ALCF']
-    elif machine.lower() in ['frontier']:
-        return SCHEDULERS['OLCF']
-    elif machine.lower() in ['nersc', 'perlmutter']:
-        return SCHEDULERS['NERSC']
+    if machine.lower() in ["thetagpu", "sunspot", "polaris", "aurora"]:
+        return SCHEDULERS["ALCF"]
+    elif machine.lower() in ["frontier"]:
+        return SCHEDULERS["OLCF"]
+    elif machine.lower() in ["nersc", "perlmutter"]:
+        return SCHEDULERS["NERSC"]
     else:
-        return 'LOCAL'
+        return "LOCAL"
     # raise RuntimeError(f'Unknown {machine=}')
 
 
@@ -125,25 +115,25 @@ def load_ds_config(
 ) -> dict[str, Any]:
     from ezpz.configs import DS_CONFIG_PATH
 
-    fpath = Path(DS_CONFIG_PATH) if fpath is None else f'{fpath}'
+    fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
     cfgpath = Path(fpath)
-    if cfgpath.suffix == '.json':
-        with cfgpath.open('r') as f:
+    if cfgpath.suffix == ".json":
+        with cfgpath.open("r") as f:
             ds_config: dict[str, Any] = json.load(f)
         return ds_config
-    if cfgpath.suffix == '.yaml':
-        with cfgpath.open('r') as stream:
+    if cfgpath.suffix == ".yaml":
+        with cfgpath.open("r") as stream:
             dsconfig: dict[str, Any] = dict(yaml.safe_load(stream))
         return dsconfig
-    raise TypeError('Unexpected FileType')
+    raise TypeError("Unexpected FileType")
 
 
 def get_logging_config() -> dict:
     # import logging.config
     import yaml
 
-    cfp = CONF_DIR.joinpath('hydra', 'job_logging', 'custom.yaml')
-    with cfp.open('r') as stream:
+    cfp = CONF_DIR.joinpath("hydra", "job_logging", "custom.yaml")
+    with cfp.open("r") as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
     return config
 
@@ -155,7 +145,7 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
     logging.config.dictConfig(get_logging_config())
     log = logging.getLogger(name)
     if level is not None:
-        log.setLevel('INFO')
+        log.setLevel("INFO")
     return log
 
 
@@ -215,7 +205,7 @@ def print_json(
     else:
         if not isinstance(json_str, str):
             raise TypeError(
-                f'json must be str. Did you mean print_json(data={json_str!r}) ?'
+                f"json must be str. Did you mean print_json(data={json_str!r}) ?"
             )
         json_renderable = JSON(
             json_str,
@@ -259,7 +249,7 @@ def print_config(cfg: Union[dict, str]) -> None:
 
 
 def command_exists(cmd: str) -> bool:
-    result = subprocess.Popen(f'type {cmd}', stdout=subprocess.PIPE, shell=True)
+    result = subprocess.Popen(f"type {cmd}", stdout=subprocess.PIPE, shell=True)
     return result.wait() == 0
 
 
@@ -269,23 +259,23 @@ def git_ds_info():
     ds_report()
 
     # Write out version/git info
-    git_hash_cmd = 'git rev-parse --short HEAD'
-    git_branch_cmd = 'git rev-parse --abbrev-ref HEAD'
-    if command_exists('git'):
+    git_hash_cmd = "git rev-parse --short HEAD"
+    git_branch_cmd = "git rev-parse --abbrev-ref HEAD"
+    if command_exists("git"):
         try:
             result = subprocess.check_output(git_hash_cmd, shell=True)
-            git_hash = result.decode('utf-8').strip()
+            git_hash = result.decode("utf-8").strip()
             result = subprocess.check_output(git_branch_cmd, shell=True)
-            git_branch = result.decode('utf-8').strip()
+            git_branch = result.decode("utf-8").strip()
         except subprocess.CalledProcessError:
-            git_hash = 'unknown'
-            git_branch = 'unknown'
+            git_hash = "unknown"
+            git_branch = "unknown"
     else:
-        git_hash = 'unknown'
-        git_branch = 'unknown'
+        git_hash = "unknown"
+        git_branch = "unknown"
     log.info(
-        f'**** Git info for DeepSpeed:'
-        f' git_hash={git_hash} git_branch={git_branch} ****'
+        f"**** Git info for DeepSpeed:"
+        f" git_hash={git_hash} git_branch={git_branch} ****"
     )
 
 
@@ -316,11 +306,11 @@ class BaseConfig(ABC):
         return deepcopy(self.__dict__)
 
     def to_file(self, fpath: os.PathLike) -> None:
-        with Path(fpath).open('w') as f:
+        with Path(fpath).open("w") as f:
             json.dump(self.to_json(), f, indent=4)
 
     def from_file(self, fpath: os.PathLike) -> None:
-        with Path(fpath).open('r') as f:
+        with Path(fpath).open("r") as f:
             config = json.load(f)
         self.__init__(**config)
 
@@ -337,8 +327,8 @@ class TrainConfig(BaseConfig):
     #   • `tensorflow`: `{'horovod'}`
     #   • `pytorch`: `{'DDP', 'deepspeed', 'horovod'}`
     # -------------------------------------------------
-    framework: str = 'pytorch'
-    backend: str = 'DDP'
+    framework: str = "pytorch"
+    backend: str = "DDP"
     use_wandb: bool = False
     seed: Optional[int] = None
     port: Optional[str] = None
@@ -350,10 +340,10 @@ class TrainConfig(BaseConfig):
     ngpus: Optional[int] = None
 
     def to_str(self) -> str:
-        return '_'.join(
+        return "_".join(
             [
-                f'fw-{self.framework}',
-                f'be-{self.backend}',
+                f"fw-{self.framework}",
+                f"be-{self.backend}",
             ]
         )
 
@@ -362,26 +352,26 @@ class TrainConfig(BaseConfig):
         # if self.seed is None:
         #     self.seed = np.random.randint(0, 2**32 - 1)
         assert self.framework in [
-            't',
-            'tf',
-            'tflow',
-            'tensorflow',
-            'p',
-            'pt',
-            'ptorch',
-            'torch',
-            'pytorch',
+            "t",
+            "tf",
+            "tflow",
+            "tensorflow",
+            "p",
+            "pt",
+            "ptorch",
+            "torch",
+            "pytorch",
         ]
-        if self.framework in ['t', 'tf', 'tensorflow']:
-            assert self.backend.lower() in BACKENDS['tensorflow']
+        if self.framework in ["t", "tf", "tensorflow"]:
+            assert self.backend.lower() in BACKENDS["tensorflow"]
         else:
-            assert self.backend.lower() in BACKENDS['pytorch']
+            assert self.backend.lower() in BACKENDS["pytorch"]
         if self.use_wandb and self.wandb_project_name is None:
             self.wandb_project_name = os.environ.get(
-                'WANDB_PROJECT', os.environ.get('WB_PROJECT', 'ezpz')
+                "WANDB_PROJECT", os.environ.get("WB_PROJECT", "ezpz")
             )
-        if self.framework in ['p', 'pt', 'ptorch', 'torch', 'pytorch']:
-            if self.backend.lower() in ['ds', 'deepspeed', 'dspeed']:
+        if self.framework in ["p", "pt", "ptorch", "torch", "pytorch"]:
+            if self.backend.lower() in ["ds", "deepspeed", "dspeed"]:
                 self.ds_config = load_ds_config(
                     DS_CONFIG_PATH
                     if self.ds_config_path is None
@@ -394,7 +384,7 @@ def print_config_tree(
     resolve: bool = True,
     save_to_file: bool = True,
     verbose: bool = True,
-    style: str = 'tree',
+    style: str = "tree",
     print_order: Optional[Sequence[str]] = None,
     highlight: bool = True,
     outfile: Optional[Union[str, os.PathLike, Path]] = None,
@@ -411,7 +401,7 @@ def print_config_tree(
     from ezpz.log.config import STYLES
     from rich.theme import Theme
 
-    name = cfg.get('_target_', 'cfg')
+    name = cfg.get("_target_", "cfg")
     console = Console(record=True, theme=Theme(STYLES))
     tree = Tree(label=name, highlight=highlight)
     queue = []
@@ -438,15 +428,15 @@ def print_config_tree(
             branch_content = str(
                 OmegaConf.to_yaml(config_group, resolve=resolve)
             )
-            branch.add(Text(branch_content, style='red'))
+            branch.add(Text(branch_content, style="red"))
         else:
             branch_content = str(config_group)
-            branch.add(Text(branch_content, style='blue'))
+            branch.add(Text(branch_content, style="blue"))
     if verbose or save_to_file:
         console.print(tree)
         if save_to_file:
             outfpath = (
-                Path(os.getcwd()).joinpath('config_tree.log')
+                Path(os.getcwd()).joinpath("config_tree.log")
                 if outfile is None
                 else Path(outfile)
             )
