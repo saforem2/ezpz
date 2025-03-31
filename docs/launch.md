@@ -1,8 +1,8 @@
 # 🍋 `ezpz.launch`: Launching Distributed Training with Python
 
-## 🐣 Getting Started
+## 👀 Overview
 
-This PR adds a mechanism for `launch`-ing distributed training using directly from `python`.
+We recently introduced a mechanism for `launch`-ing distributed training directly from `python`.
 
 - In particular, it will use the default "launcher" depending on availability:
 
@@ -13,24 +13,20 @@ This PR adds a mechanism for `launch`-ing distributed training using directly fr
   and automatically pull in the specifics about the currently active job when
   building the appropriate.
 
-For example, on any of the ALCF systems, it will automatically:
-
-- Identify `$"{PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
-- Use this to calculate:
-	- `NHOSTS`
-	- `NGPUS_PER_HOST`
-	- `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
-- With this information, we can construct the full `mpiexec ...` command needed to launch our distributed application:
-
-
-	```bash
-	; python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
-	mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3773945.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16 /lus/flare/projects/datascience/foremans/projects/saforem2/mmm/venvs/aurora_nre_models_frameworks-2024.2.1_u1/bin/python3
-	```
-
-## 📓 Example\[s\]
-
-### 🧰 Setup
+- For example, on any of the ALCF systems, it will automatically:
+	- Identify `$"{PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
+	- Use this to calculate:
+	  - `NHOSTS`
+	  - `NGPUS_PER_HOST`
+	  - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
+	- With this information, we can construct the full `mpiexec ...` command needed to launch our distributed application:
+		
+		```bash
+		; python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
+		mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3774365.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-binddepth -d 16
+		```
+	
+## 🐣 Getting Started
 
 - Setup environment (load modules, activate base (`conda`) environment):
 
