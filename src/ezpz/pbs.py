@@ -114,7 +114,7 @@ def build_launch_cmd():
     Returns:
         str: The launch command.
     """
-    return f"{ezpz.get_jobenv()['LAUNCH_CMD']} {sys.executable}"
+    return f"{ezpz.get_jobenv()['LAUNCH_CMD']}"
 
 
 if __name__ == "__main__":
