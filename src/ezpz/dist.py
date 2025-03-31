@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from functools import wraps
 from typing import Any, Callable, Optional, Union
+# from dataclasses import dataclass
 
 import ezpz.tp
 
@@ -21,7 +22,6 @@ from mpi4py import MPI
 import torch
 import torch.distributed as tdist
 from datetime import timedelta
-
 from omegaconf import DictConfig, OmegaConf
 
 try:
@@ -42,15 +42,6 @@ try:
     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
 except Exception:
     oneccl_bpt = None
-
-# from dataclasses import dataclass
-
-# @dataclass
-# class TorchDistributedInfo:
-#     backend: str  # [DDP, deepspeed, horovod]
-#     rank: int    # [0, ..., world_size - 1]
-#     local_rank: int  # [0, ..., ]
-#     world_size: int
 
 if not os.environ.get(
     "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
@@ -74,6 +65,14 @@ ACCELERATOR_TYPE = (
         else ("MPS" if torch.backends.mps.is_available() else "CPU")
     )
 )
+
+
+# @dataclass
+# class TorchDistributedInfo:
+#     backend: str  # [DDP, deepspeed, horovod]
+#     rank: int    # [0, ..., world_size - 1]
+#     local_rank: int  # [0, ..., ]
+#     world_size: int
 
 
 def seed_everything(seed: int):
@@ -706,7 +705,7 @@ def setup_torch_DDP(
 
 
 def setup_torch_distributed(
-    backend: str = "DDP",
+    backend: Optional[str] = None,
     tensor_parallel_size: int = 1,
     pipeline_parallel_size: int = 1,
     context_parallel_size: int = 1,
@@ -718,7 +717,14 @@ def setup_torch_distributed(
     timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
-    assert backend.upper() in {"DDP", "DEEPSPEED", "DS", "HOROVOD", "HVD"}
+    backend = "DDP" if backend is None else backend
+    assert backend.lower() in {
+        "ddp",
+        "ds",
+        "deepspeed",
+        "horovod",
+        "hvd",
+    }
     timeout = (
         3600
         if timeout is None
@@ -783,7 +789,7 @@ def setup_torch_distributed(
 
 
 def setup_torch(
-    backend: str = "DDP",
+    backend: Optional[str] = None,
     port: Optional[str | int] = None,
     seed: Optional[int] = None,
     timeout: Optional[str | int] = None,
@@ -796,11 +802,7 @@ def setup_torch(
     context_parallel_backend: Optional[str] = None,
     data_parallel_backend: Optional[str] = None,
 ) -> int:
-    """Setup torch.
-
-    If launched with
-    """
-
+    """Setup torch."""
     device = get_torch_device()
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
     #     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -810,6 +812,8 @@ def setup_torch(
     #     torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     # torch.use_deterministic_algorithms(True)
     ws_from_env = os.environ.get("WORLD_SIZE", None)
+    backend = "DDP" if backend is None else backend
+    backend = backend.lower()
     if ws_from_env is not None and ws_from_env == "1":
         logger.info(
             f"Running on a single {device}, not initializing torch.distributed!"
@@ -1123,17 +1127,12 @@ def setup_wandb(
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
     logger.info(f"W&B RUN=[{run.name}]({run.url})")
-    # run.config.update(
-    #     {
-    #         f'dist_info/{k}': v for k, v in get_dist_info().items()
-    #     }
-    # )
     if (
         wandb is not None
         and wandb.run is not None
         and "DIST_INFO" not in wandb.run.config
     ):
-        wandb.run.config.update({"dist_info": get_dist_info()})
+        wandb.run.config.update({"DIST_INFO": get_dist_info()})
     torch_version = torch.__version__
     torch_file = torch.__file__
     run.config.update({})
@@ -1224,23 +1223,17 @@ def get_nodes_from_hostfile(
 
 
 def get_node_index() -> int:
-    # rank = get_rank()
-    # logger.info(f'{rank=}')
-    # logger.info(f'{get_num_nodes()=}')
-    # logger.info(f'{get_rank() % get_num_nodes()=}')
+    """Get the index of the current node in the hostfile"""
     return get_rank() % get_num_nodes()
 
 
 def write_localhost_to_hostfile(hostfile: PathLike):
-    # hostfile = (
-    #     Path(os.getcwd()).joinpath('hostfile') if hostfile is None
-    #     else Path(hostfile)
-    # )
+    """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
-        # logger.info(
-        #     f'Writing {(hostname := get_hostname())} '
-        #     f'to {Path(hostfile).as_posix()}'
-        # )
+        logger.debug(
+            f"Writing {(hostname := get_hostname())} "
+            f"to {Path(hostfile).as_posix()}"
+        )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
             f.write(f"{hostname}")
@@ -1251,6 +1244,7 @@ def write_hostfile_from_list_of_hosts(
     hostfile: Optional[PathLike] = None,
     rank_zero_only: bool = True,
 ):
+    """Write a list of hosts to the hostfile"""
     hostfile = (
         Path(hostfile).as_posix()
         if hostfile is not None
@@ -1264,6 +1258,7 @@ def write_hostfile_from_list_of_hosts(
 
 
 def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
+    """Make a hostfile from the SLURM_NODELIST environment variable"""
     nodes = os.environ.get("SLURM_NODELIST", None)
     # if nodes is not None:
     assert nodes is not None
@@ -1290,6 +1285,7 @@ def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
 
 
 def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
+    """Get the hostfile from the environment or create one if it doesn't exist"""
     from ezpz.configs import get_scheduler
 
     scheduler = get_scheduler()
@@ -1336,6 +1332,7 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
 
 
 def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
+    """Get the number of nodes from the hostfile"""
     num_nodes = os.environ.get("SLURM_NNODES", None)
     if num_nodes is not None:
         return int(num_nodes)
@@ -1345,12 +1342,14 @@ def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
 
 
 def get_cpus_per_node() -> int:
+    """Get the number of CPUs per node"""
     from sh import getconf as sh_getconf  # type:ignore noqa
 
     return int(sh_getconf("_NPROCESSORS_ONLN").rstrip("\n"))
 
 
 def get_gpus_per_node() -> int:
+    """Get the number of GPUs per node"""
     # return torch.cuda.device_count() if torch.cuda.is_available() else (
     #     (
     #         ipex.xpu.device_count() if ipex is not None else (
@@ -1381,6 +1380,7 @@ def get_pbs_launch_cmd(
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[PathLike] = None,
 ) -> str:
+    """Get the PBS launch command"""
     nhosts = get_num_nodes(hostfile=hostfile) if nhosts is None else nhosts
     ngpu_per_host = (
         get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
@@ -1411,6 +1411,7 @@ def get_pbs_launch_cmd(
 
 
 def get_running_jobs_from_qstat() -> list[int]:
+    """Get the running jobs from qstat"""
     try:
         from sh import qstat as shqstat  # type: ignore
     except Exception as e:
@@ -1423,6 +1424,7 @@ def get_running_jobs_from_qstat() -> list[int]:
 
 
 def get_pbs_jobid_from_qstat() -> int:
+    """Get the PBS job ID from qstat"""
     from ezpz.configs import get_scheduler
 
     assert get_scheduler() == "PBS"
@@ -1438,6 +1440,7 @@ def get_pbs_jobid_from_qstat() -> int:
 
 
 def get_pbs_nodefile_from_qstat() -> Path:
+    """Get the PBS nodefile from qstat"""
     from ezpz.configs import get_scheduler
 
     assert get_scheduler() == "PBS"
@@ -1457,6 +1460,7 @@ def get_pbs_nodefile_from_qstat() -> Path:
 def get_pbs_launch_info(
     hostfile: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, str]:
+    """Get the PBS launch info"""
     from ezpz.configs import get_scheduler
 
     assert get_scheduler() == "PBS"
@@ -1516,6 +1520,7 @@ def get_pbs_env(
     hostfile: Optional[Union[str, Path]] = None,
     verbose: Optional[bool] = None,
 ) -> dict[str, str]:
+    """Get the PBS environment variables"""
     from ezpz.configs import get_scheduler
 
     assert get_scheduler() == "PBS"
@@ -1585,6 +1590,7 @@ def check(
     backend: str = "deepspeed",
     port: int | str = "5432",
 ):
+    """Check if the framework is installed and working"""
     from ezpz.configs import FRAMEWORKS
 
     if framework in FRAMEWORKS["pytorch"]:
