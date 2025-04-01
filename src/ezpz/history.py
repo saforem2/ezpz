@@ -11,11 +11,16 @@ from pathlib import Path
 import time
 from typing import Any, Optional, Union
 
-import ezpz
+# import ezpz
 
-import ezpz.plot as ezplot
+from ezpz.log import get_logger
 
-from ezpz.configs import PathLike, get_timestamp
+# from ezpz.dist import get_rank
+from ezpz import plot as ezplot
+from ezpz.utils import summarize_dict, get_timestamp
+# import ezpz.plot as ezplot
+
+from ezpz.configs import PathLike
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 
@@ -24,17 +29,20 @@ import numpy as np
 import torch
 import wandb
 import xarray as xr
-from jaxtyping import ScalarLike
+
+# from jaxtyping import ScalarLike
+#
+ScalarLike = Union[float, int, bool]
 
 
-RANK = ezpz.get_rank()
+# RANK = get_rank()
 
-logger = ezpz.get_logger(__name__)
+logger = get_logger(__name__)
 
 try:
     import wandb
 
-    WANDB_DISABLED = os.environ.get('WANDB_DISABLED', False)
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
     wandb = None
     WANDB_DISABLED = True
@@ -44,7 +52,7 @@ TensorLike = Union[torch.Tensor, np.ndarray, list]
 PT_FLOAT = torch.get_default_dtype()
 
 xplt = xr.plot  # type:ignore
-LW = plt.rcParams.get('axes.linewidth', 1.75)
+LW = plt.rcParams.get("axes.linewidth", 1.75)
 
 
 class StopWatch(ContextDecorator):
@@ -54,7 +62,7 @@ class StopWatch(ContextDecorator):
         wbtag: Optional[str] = None,
         iter: Optional[int] = None,
         commit: Optional[bool] = False,
-        prefix: str = 'StopWatch/',
+        prefix: str = "StopWatch/",
         log_output: bool = True,
     ) -> None:
         self.msg = msg
@@ -66,11 +74,11 @@ class StopWatch(ContextDecorator):
         self.commit = commit
         if wbtag is not None:
             self.data = {
-                f'{self.wbtag}/dt': None,
+                f"{self.wbtag}/dt": None,
             }
             if iter is not None:
                 self.data |= {
-                    f'{self.wbtag}/iter': self.iter,
+                    f"{self.wbtag}/iter": self.iter,
                 }
 
     def __enter__(self):
@@ -83,12 +91,12 @@ class StopWatch(ContextDecorator):
         # if len(self.data) > 0 and wandb.run is not None:
         if (
             len(self.data) > 0
-            and (wbrun := getattr(wandb, 'run', None)) is not None
+            and (wbrun := getattr(wandb, "run", None)) is not None
         ):
-            self.data |= {f'{self.wbtag}/dt': dt}
+            self.data |= {f"{self.wbtag}/dt": dt}
             wbrun.log({self.prefix: self.data}, commit=self.commit)
         if self.log_output:
-            logger.info(f'{self.msg} took {dt:.3f} seconds')
+            logger.info(f"{self.msg} took {dt:.3f} seconds")
 
 
 class History:
@@ -126,12 +134,12 @@ class History:
             wandb is not None
             and use_wandb
             and not WANDB_DISABLED
-            and getattr(wandb, 'run', None) is not None
+            and getattr(wandb, "run", None) is not None
         ):
             wandb.log(metrics, commit=commit)
         if summarize:
-            return ezpz.summarize_dict(metrics, precision=precision)
-        return ''
+            return summarize_dict(metrics, precision=precision)
+        return ""
 
     def _tplot(
         self,
@@ -164,19 +172,19 @@ class History:
                 title=title,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
-        if ylabel is not None and 'dt' in ylabel:
+        if ylabel is not None and "dt" in ylabel:
             of = Path(outfile) if outfile is not None else None
             if of is not None:
-                of = Path(of.parent).joinpath(f'{of.stem}-hist{of.suffix}')
+                of = Path(of.parent).joinpath(f"{of.stem}-hist{of.suffix}")
             ezplot.tplot(
                 y=y,
                 xlabel=ylabel,
                 title=title,
-                ylabel='freq',
+                ylabel="freq",
                 append=append,
                 verbose=verbose,
                 outfile=(of if of is not None else None),
-                plot_type='hist',
+                plot_type="hist",
             )
 
     def plot(
@@ -199,8 +207,8 @@ class History:
         """
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', ezplot.set_size())
-        subplots_kwargs.update({'figsize': figsize})
+        figsize = subplots_kwargs.get("figsize", ezplot.set_size())
+        subplots_kwargs.update({"figsize": figsize})
         num_chains = 16 if num_chains is None else num_chains
 
         # tmp = val[0]
@@ -216,20 +224,20 @@ class History:
         if len(arr.shape) == 2:
             import seaborn as sns
 
-            _ = subplots_kwargs.pop('constrained_layout', True)
+            _ = subplots_kwargs.pop("constrained_layout", True)
             figsize = (3 * figsize[0], 1.5 * figsize[1])
 
             fig = plt.figure(figsize=figsize, constrained_layout=True)
             subfigs = fig.subfigures(1, 2)
 
-            gs_kw = {'width_ratios': [1.33, 0.33]}
+            gs_kw = {"width_ratios": [1.33, 0.33]}
             (ax, ax1) = subfigs[1].subplots(
                 1, 2, sharey=True, gridspec_kw=gs_kw
             )
             ax.grid(alpha=0.2)
             ax1.grid(False)
-            color = plot_kwargs.get('color', None)
-            label = r'$\langle$' + f' {key} ' + r'$\rangle$'
+            color = plot_kwargs.get("color", None)
+            label = r"$\langle$" + f" {key} " + r"$\rangle$"
             ax.plot(
                 steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs
             )
@@ -241,7 +249,7 @@ class History:
             sns.despine(ax=ax, top=True, right=True)
             sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
             # ax.legend(loc='best', frameon=False)
-            ax1.set_xlabel('')
+            ax1.set_xlabel("")
             # ax1.set_ylabel('')
             # ax.set_yticks(ax.get_yticks())
             # ax.set_yticklabels(ax.get_yticklabels())
@@ -257,7 +265,7 @@ class History:
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 assert isinstance(ax, plt.Axes)
-                cmap = plt.get_cmap('viridis')
+                cmap = plt.get_cmap("viridis")
                 nlf = arr.shape[1]
                 for idx in range(nlf):
                     # y = arr[:, idx, :].mean(-1)
@@ -266,12 +274,12 @@ class History:
                     #     'label': f'{idx}',
                     # }
                     # ax.plot(steps, y, **pkwargs)
-                    label = plot_kwargs.pop('label', None)
+                    label = plot_kwargs.pop("label", None)
                     if label is not None:
-                        label = f'{label}-{idx}'
+                        label = f"{label}-{idx}"
                     y = arr[:, idx, :]
                     color = cmap(idx / y.shape[1])
-                    plot_kwargs['color'] = cmap(idx / y.shape[1])
+                    plot_kwargs["color"] = cmap(idx / y.shape[1])
                     if len(y.shape) == 2:
                         # TOO: Plot chains
                         if num_chains > 0:
@@ -299,7 +307,7 @@ class History:
                         )
                 axes = ax
             else:
-                raise ValueError('Unexpected shape encountered')
+                raise ValueError("Unexpected shape encountered")
 
             ax.set_ylabel(key)
 
@@ -313,22 +321,22 @@ class History:
                     steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
                 )
 
-        ax.set_xlabel('draw')
+        ax.set_xlabel("draw")
         if title is not None:
             fig.suptitle(title)
 
         if outdir is not None:
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
-            outfile = Path(outdir).joinpath(f'{key}.svg')
+            outfile = Path(outdir).joinpath(f"{key}.svg")
             if outfile.is_file():
                 tstamp = ezpz.get_timestamp()
-                pngdir = Path(outdir).joinpath('pngs')
+                pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
-                pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
-                svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
-                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
-                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+                pngfile = pngdir.joinpath(f"{key}-{tstamp}.png")
+                svgfile = Path(outdir).joinpath(f"{key}-{tstamp}.svg")
+                plt.savefig(pngfile, dpi=400, bbox_inches="tight")
+                plt.savefig(svgfile, dpi=400, bbox_inches="tight")
 
         return fig, subfigs, axes
 
@@ -349,15 +357,15 @@ class History:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         ezplot.set_plot_style()
-        plt.rcParams['axes.labelcolor'] = '#bdbdbd'
-        figsize = subplots_kwargs.get('figsize', ezplot.set_size())
-        subplots_kwargs.update({'figsize': figsize})
+        plt.rcParams["axes.labelcolor"] = "#bdbdbd"
+        figsize = subplots_kwargs.get("figsize", ezplot.set_size())
+        subplots_kwargs.update({"figsize": figsize})
         subfigs = None
         # if key == 'dt':
         #     warmup = 0.2
         arr = val.values  # shape: [nchains, ndraws]
         # steps = np.arange(len(val.coords['draw']))
-        steps = val.coords['draw']
+        steps = val.coords["draw"]
         if warmup is not None and warmup > 0.0:
             drop = int(warmup * arr.shape[0])
             arr = arr[drop:]
@@ -379,26 +387,26 @@ class History:
                     try:
                         ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
                     except Exception:
-                        logger.error(f'Unable to plot {key}! Continuing')
+                        logger.error(f"Unable to plot {key}! Continuing")
                 _ = ax.grid(True, alpha=0.2)
                 axes = ax
             elif len(arr.shape) == 3:
                 fig, ax = ezplot.subplots(**subplots_kwargs)
-                cmap = plt.get_cmap('viridis')
-                y = val.mean('chain')
-                for idx in range(len(val.coords['leapfrog'])):
+                cmap = plt.get_cmap("viridis")
+                y = val.mean("chain")
+                for idx in range(len(val.coords["leapfrog"])):
                     pkwargs = {
-                        'color': cmap(idx / len(val.coords['leapfrog'])),
-                        'label': f'{idx}',
+                        "color": cmap(idx / len(val.coords["leapfrog"])),
+                        "label": f"{idx}",
                     }
                     ax.plot(steps, y[idx], **pkwargs)
                 axes = ax
             else:
-                raise ValueError('Unexpected shape encountered')
+                raise ValueError("Unexpected shape encountered")
             ax = plt.gca()
             assert isinstance(ax, plt.Axes)
             _ = ax.set_ylabel(key)
-            _ = ax.set_xlabel('draw')
+            _ = ax.set_xlabel("draw")
             # if num_chains > 0 and len(arr.shape) > 1:
             #     lw = LW / 2.
             #     #for idx in range(min(num_chains, arr.shape[1])):
@@ -416,21 +424,21 @@ class History:
             ax = plt.gca()
             xticks = ax.get_xticks()  # type: ignore
             _ = ax.set_xticklabels(  # type: ignore
-                [f'{logfreq * int(i)}' for i in xticks]  # type: ignore
+                [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
         if outdir is not None:
             dirs = {
-                'png': Path(outdir).joinpath('pngs/'),
-                'svg': Path(outdir).joinpath('svgs/'),
+                "png": Path(outdir).joinpath("pngs/"),
+                "svg": Path(outdir).joinpath("svgs/"),
             }
             _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
             # from l2hmc.configs import PROJECT_DIR
             # from ezpz
             if verbose:
-                logger.info(f'Saving {key} plot to: {Path(outdir).resolve()}')
+                logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
             for ext, d in dirs.items():
-                outfile = d.joinpath(f'{key}.{ext}')
-                plt.savefig(outfile, dpi=400, bbox_inches='tight')
+                outfile = d.joinpath(f"{key}.{ext}")
+                plt.savefig(outfile, dpi=400, bbox_inches="tight")
         return (fig, subfigs, axes)
 
     def plot_dataset(
@@ -476,22 +484,22 @@ class History:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         assert len(xarr.shape) == 2
-        assert 'draw' in xarr.coords and 'chain' in xarr.coords
+        assert "draw" in xarr.coords and "chain" in xarr.coords
         num_chains = len(xarr.chain) if num_chains is None else num_chains
         # _ = subplots_kwargs.pop('constrained_layout', True)
-        figsize = plt.rcParams.get('figure.figsize', (8, 6))
+        figsize = plt.rcParams.get("figure.figsize", (8, 6))
         figsize = (3 * figsize[0], 1.5 * figsize[1])
         fig = plt.figure(figsize=figsize, constrained_layout=True)
         subfigs = fig.subfigures(1, 2)
-        gs_kw = {'width_ratios': [1.33, 0.33]}
+        gs_kw = {"width_ratios": [1.33, 0.33]}
         (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
         ax.grid(alpha=0.2)
         ax1.grid(False)
-        color = plot_kwargs.get('color', f'C{np.random.randint(6)}')
-        label = r'$\langle$' + f' {label} ' + r'$\rangle$'
+        color = plot_kwargs.get("color", f"C{np.random.randint(6)}")
+        label = r"$\langle$" + f" {label} " + r"$\rangle$"
         ax.plot(
             xarr.draw.values,
-            xarr.mean('chain'),
+            xarr.mean("chain"),
             color=color,
             lw=1.5 * LW,
             label=label,
@@ -526,7 +534,7 @@ class History:
         sns.despine(ax=ax, top=True, right=True)
         sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
         # ax.legend(loc='best', frameon=False)
-        ax1.set_xlabel('')
+        ax1.set_xlabel("")
         # ax1.set_ylabel('')
         # ax.set_yticks(ax.get_yticks())
         # ax.set_yticklabels(ax.get_yticklabels())
@@ -549,7 +557,7 @@ class History:
         #     color=color
         # )
         # for idx in range(min(num_chains, i.shape[1])):
-        ax.set_xlabel('draw')
+        ax.set_xlabel("draw")
         if title is not None:
             fig.suptitle(title)
 
@@ -557,15 +565,15 @@ class History:
             assert label is not None
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
-            outfile = Path(outdir).joinpath(f'{label}.svg')
+            outfile = Path(outdir).joinpath(f"{label}.svg")
             if outfile.is_file():
-                tstamp = ezpz.get_timestamp('%Y-%m-%d-%H%M%S')
-                pngdir = Path(outdir).joinpath('pngs')
+                tstamp = ezpz.get_timestamp("%Y-%m-%d-%H%M%S")
+                pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
-                pngfile = pngdir.joinpath(f'{label}-{tstamp}.png')
-                svgfile = Path(outdir).joinpath(f'{label}-{tstamp}.svg')
-                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
-                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+                pngfile = pngdir.joinpath(f"{label}-{tstamp}.png")
+                svgfile = Path(outdir).joinpath(f"{label}-{tstamp}.svg")
+                plt.savefig(pngfile, dpi=400, bbox_inches="tight")
+                plt.savefig(svgfile, dpi=400, bbox_inches="tight")
 
     def tplot_all(
         self,
@@ -591,26 +599,26 @@ class History:
         )
 
         outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-        logger.info(f'Saving tplots to {outdir.as_posix()}')
+        logger.info(f"Saving tplots to {outdir.as_posix()}")
         for _, (key, val) in enumerate(dataset.items()):
-            if (xkey is not None and key == xkey) or xkey in ['iter', 'draw']:
+            if (xkey is not None and key == xkey) or xkey in ["iter", "draw"]:
                 continue
             if len(val.values) > 0:
                 self._tplot(
                     y=val.values,
                     x=None,
-                    xlabel='iter',
+                    xlabel="iter",
                     plot_type=plot_type,
                     ylabel=str(key),
                     append=append,
-                    title=f'{key} [{ezpz.get_timestamp()}]',
+                    title=f"{key} [{get_timestamp()}]",
                     verbose=verbose,
-                    outfile=outdir.joinpath(f'{key}.txt').as_posix(),
+                    outfile=outdir.joinpath(f"{key}.txt").as_posix(),
                     logfreq=logfreq,
                 )
             else:
                 logger.warning(
-                    f'No data found in {key=}: {len(val.values)=} <= 0'
+                    f"No data found in {key=}: {len(val.values)=} <= 0"
                 )
 
     def plot_all(
@@ -647,13 +655,13 @@ class History:
             drop_nans=True,
             drop_zeros=False,
             num_chains=num_chains,
-            cmap='viridis',
+            cmap="viridis",
             save_plot=(outdir is not None),
         )
 
         for idx, (key, val) in enumerate(dataset.data_vars.items()):
-            color = f'C{idx % 9}'
-            plot_kwargs['color'] = color
+            color = f"C{idx % 9}"
+            plot_kwargs["color"] = color
 
             fig, subfigs, ax = self.plot(
                 val=val.values.T.real,
@@ -673,11 +681,11 @@ class History:
             # _ = plt.grid(True, alpha=0.4)
             if subfigs is not None:
                 # edgecolor = plt.rcParams['axes.edgecolor']
-                plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
+                plt.rcParams["axes.edgecolor"] = plt.rcParams["axes.facecolor"]
                 ax = subfigs[0].subplots(1, 1)
                 # ax = fig[1].subplots(constrained_layout=True)
                 _ = xplt.pcolormesh(
-                    val, 'draw', 'chain', ax=ax, robust=True, add_colorbar=True
+                    val, "draw", "chain", ax=ax, robust=True, add_colorbar=True
                 )
                 # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
                 # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
@@ -686,24 +694,24 @@ class History:
                 )
             if outdir is not None:
                 dirs = {
-                    'png': Path(outdir).joinpath('pngs/'),
-                    'svg': Path(outdir).joinpath('svgs/'),
+                    "png": Path(outdir).joinpath("pngs/"),
+                    "svg": Path(outdir).joinpath("svgs/"),
                 }
                 _ = [
                     i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
                 ]
                 # if verbose:
-                logger.info(f'Saving {key} plot to: {Path(outdir).resolve()}')
+                logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
                 for ext, d in dirs.items():
-                    outfile = d.joinpath(f'{key}.{ext}')
+                    outfile = d.joinpath(f"{key}.{ext}")
                     if outfile.is_file():
-                        outfile = d.joinpath(f'{key}-subfig.{ext}')
+                        outfile = d.joinpath(f"{key}-subfig.{ext}")
                     # logger.info(f"Saving {key}.ext to: {outfile}")
                     if verbose:
                         logger.info(
-                            f'Saving {key} plot to: {outfile.resolve()}'
+                            f"Saving {key} plot to: {outfile.resolve()}"
                         )
-                    plt.savefig(outfile, dpi=400, bbox_inches='tight')
+                    plt.savefig(outfile, dpi=400, bbox_inches="tight")
             if is_interactive():
                 plt.show()
 
@@ -728,9 +736,9 @@ class History:
         except ValueError:
             arr = np.array(x).real
             # arr = np.array(x)
-            logger.info(f'len(x): {len(x)}')
-            logger.info(f'x[0].shape: {x[0].shape}')
-            logger.info(f'arr.shape: {arr.shape}')
+            logger.info(f"len(x): {len(x)}")
+            logger.info(f"x[0].shape: {x[0].shape}")
+            logger.info(f"arr.shape: {arr.shape}")
         assert isinstance(arr, np.ndarray)
         if warmup is not None and warmup > 0 and len(arr) > 0:
             if isinstance(warmup, int):
@@ -741,27 +749,27 @@ class History:
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:  # [ndraws]
             ndraws = arr.shape[0]
-            dims = ['draw']
+            dims = ["draw"]
             coords = [np.arange(len(arr))]
             return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         if len(arr.shape) == 2:  # [nchains, ndraws]
             arr = arr.T
             nchains, ndraws = arr.shape
-            dims = ('chain', 'draw')
+            dims = ("chain", "draw")
             coords = [np.arange(nchains), np.arange(ndraws)]
             return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         if len(arr.shape) == 3:  # [nchains, nlf, ndraws]
             arr = arr.T
             nchains, nlf, ndraws = arr.shape
-            dims = ('chain', 'leapfrog', 'draw')
+            dims = ("chain", "leapfrog", "draw")
             coords = [np.arange(nchains), np.arange(nlf), np.arange(ndraws)]
             return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         else:
-            print(f'arr.shape: {arr.shape}')
-            raise ValueError('Invalid shape encountered')
+            print(f"arr.shape: {arr.shape}")
+            raise ValueError("Invalid shape encountered")
 
     def get_dataset(
         self,
@@ -771,18 +779,18 @@ class History:
         data = self.history_to_dict() if data is None else data
         data_vars = {}
         for key, val in data.items():
-            name = key.replace('/', '_')
+            name = key.replace("/", "_")
             try:
                 data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                logger.error(f'Unable to create DataArray for {key}! Skipping!')
-                logger.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
+                logger.error(f"Unable to create DataArray for {key}! Skipping!")
+                logger.error(f"{key}.shape= {np.stack(val).shape}")  # type:ignore
         return xr.Dataset(data_vars)
 
     def save_dataset(
         self,
         outdir: PathLike,
-        fname: str = 'dataset',
+        fname: str = "dataset",
         use_hdf5: bool = True,
         data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
@@ -837,9 +845,9 @@ class History:
             )
         )
         run_name = (
-            f'History-{ezpz.get_timestamp()}' if run_name is None else run_name
+            f"History-{get_timestamp()}" if run_name is None else run_name
         )
-        fallback_outdir = Path(os.getcwd()).joinpath('outputs')
+        fallback_outdir = Path(os.getcwd()).joinpath("outputs")
         if run_name is not None:
             fallback_outdir = fallback_outdir.joinpath(
                 run_name, get_timestamp()
@@ -850,9 +858,9 @@ class History:
         )
         outdir = outdir.joinpath(run_name)
         if plot:
-            plotdir = outdir.joinpath('plots')
-            tplotdir = plotdir.joinpath('tplot')
-            mplotdir = plotdir.joinpath('mplot')
+            plotdir = outdir.joinpath("plots")
+            tplotdir = plotdir.joinpath("tplot")
+            mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
             mplotdir.mkdir(exist_ok=True, parents=True)
             _ = self.plot_all(
@@ -875,6 +883,6 @@ class History:
                 verbose=verbose,
             )
         if save:
-            fname = 'dataset' if dataset_fname is None else dataset_fname
+            fname = "dataset" if dataset_fname is None else dataset_fname
             _ = self.save_dataset(dataset=dataset, outdir=outdir, fname=fname)
         return dataset

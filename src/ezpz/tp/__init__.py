@@ -12,13 +12,14 @@ from typing import List, Optional
 
 import socket
 
-# NOTE: Need to swap import order on Polaris (hostname: [x3...])
-if socket.gethostname().startswith('x3'):
-    from mpi4py import MPI  # type:ignore  # noqa: F401
-    import torch
-else:
-    import torch
-    from mpi4py import MPI  # type:ignore  # noqa: F401
+import torch
+# # NOTE: Need to swap import order on Polaris (hostname: [x3...])
+# if socket.gethostname().startswith('x3'):
+#     from mpi4py import MPI  # type:ignore  # noqa: F401
+#     import torch
+# else:
+#     import torch
+#     from mpi4py import MPI  # type:ignore  # noqa: F401
 
 import torch.distributed as tdist
 from datetime import timedelta

@@ -111,13 +111,13 @@ class Trainer:
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
             tpgroup = ezpz.tp.get_tensor_parallel_group()
+            tdist.barrier(group=tpgroup)
             dpgroup = ezpz.tp.get_data_parallel_group()
+            tdist.barrier(group=dpgroup)
             ppgroup = ezpz.tp.get_pipeline_parallel_group()
+            tdist.barrier(group=ppgroup)
             cpgroup = ezpz.tp.get_context_parallel_group()
             tdist.barrier(group=cpgroup)
-            tdist.barrier(group=ppgroup)
-            tdist.barrier(group=dpgroup)
-            tdist.barrier(group=tpgroup)
 
         if wandb is not None and not WANDB_DISABLED and self.rank == 0:
             run = ezpz.setup_wandb(project_name='ezpz.test_dist')
