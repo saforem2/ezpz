@@ -7,32 +7,26 @@ import logging
 import logging.config
 import os
 import warnings
+import socket
 
 logging.getLogger("deepseed").setLevel(logging.ERROR)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("datasets").setLevel(logging.ERROR)
+
+# NOTE: Need to swap import order on Polaris (hostname: [x3...])
+if socket.gethostname().startswith("x3"):
+    from mpi4py import MPI  # type:ignore  # noqa: F401
+    import torch  # type:ignore
+else:
+    import torch  # type: ignore
+    from mpi4py import MPI  # type:ignore  # noqa: F401
 
 try:
     import deepspeed
 except Exception:
     pass
 
-import torch  # type:ignore
-from mpi4py import MPI  # type:ignore  # noqa: F401
-
-# # NOTE: Need to swap import order on Polaris (hostname: [x3...])
-# if socket.gethostname().startswith("x3"):
-#     from mpi4py import MPI  # type:ignore  # noqa: F401
-#     import torch  # type:ignore
-# else:
-#     import torch  # type: ignore
-#     from mpi4py import MPI  # type:ignore  # noqa: F401
-
 from ezpz import dist
-
-
-# from jaxtyping import ScalarLike
-# import numpy as np
 
 from ezpz import profile
 from ezpz import configs
