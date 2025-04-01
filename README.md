@@ -1,20 +1,65 @@
 # 🍋 `ezpz`
 
-> *Work smarter, not harder*
+1. 🏖️ Setup shell environment (see [here](https://github.com/saforem2/ezpz/blob/main/README.md#-shell-environment)):
+   
+   ```bash
+   source <(curl https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh) && ezpz_setup_env
+   ```
+   
+   this will 🪄 _automagically_[^magic] source [`ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh)
+   and (`&&`) call `ezpz_setup_env`
+   
+   [^magic]: TODO, explain here
 
-1. [🐣 Getting Started](#-getting-started)
-   1. 📝 [Example](#-example)
-1. [🐚 **Shell Utilities**](#-shell-utilities)
-   1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)
-       1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
-       1. [🧰 Setup Job](#-setup-job)
- 1. [🐍 **Python Library**](#-python-library)
+2. 📦 Install `ezpz`:
+
+   ```bash
+   python3 -m pip install "git+https://github.com/saforem2/ezpz"
+   ``` 
+    
+3. 🚀 Launch _any_ `*.py` **_from_** python (see [launch](docs/launch.md)):
+   
+    ```bash
+    python3 -m ezpz.launch -m ezpz.test_dist
+    ```
+
+    [`ezpz/test_dist.py`](src/ezpz/test_dist.py), in this example.
+   
+   <!--
+   will build and execute the appropriate {`mpi{exec,run}`, `srun`} command, _launching_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py) (as a module, `-m`).
+   -->
+
+> 2ez.
+
+<!--
+>     
+> 
+> - Install 🍋 `ezpz`:
+> 
+>     ```bash
+>     python3 -m pip install "git+https://github.com/saforem2/ezpz"
+>     ```
+> 
+-->
+
+## 🐣 Getting Started
 
 > [!WARNING]
 > The documentation below is a work in progress.  
 > *Please* feel free to provide input / suggest changes !
 
-## 🐣 Getting Started
+<!--
+1. [🐣 Getting Started](#-getting-started)
+   1. 📝 [Example](#-example)
+-->
+
+<!--
+1. [🐚 **Shell Utilities**](#-shell-utilities)
+   1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)
+       1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
+       1. [🧰 Setup Job](#-setup-job)
+ 1. [🐍 **Python Library**](#-python-library)
+-->
 
 <!--
 
@@ -29,8 +74,10 @@
 
 There are two main, distinct components of `ezpz`:
 
-1.  🐍 [**Python Library**](#python-library) (`import ezpz`)
-2.  🐚 [**Shell Utilities**](#shell-utilities) (`ezpz_*`)
+1. 🐍 [**Python Library**](#python-library), e.g. `import ezpz`
+1. 🏖️ [**Shell Environment**](#shell-utilities) (`ezpz_setup`)
+   1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
+   1. [🧰 Setup Job](#-setup-job)
 
 designed to make life easy.
 
@@ -43,7 +90,7 @@ We provide a complete, entirely self-contained example in
 2. Launching a (simple) distributed training job across all available resources
    in your {slurm, PBS} job allocation.
 
-## 🐚 Shell Utilities
+## 🏖️ Shell Environment
 
 > [!NOTE]
 > 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
