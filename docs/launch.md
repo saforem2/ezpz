@@ -14,27 +14,29 @@ We recently introduced a mechanism for `launch`-ing distributed training directl
   building the appropriate.
 
 - For example, on any of the ALCF systems, it will automatically:
-    - Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
-	  - Use this to calculate:
-        - `NHOSTS`
-        - `NGPUS_PER_HOST`
-        - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
-	- With this information, we can construct the full `mpiexec ...` command needed to launch our distributed application:
-		
-		```bash
-		; python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
-		mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3774365.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-binddepth -d 16
-		```
-	
+	- Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
+	- Use this to calculate:
+		- `NHOSTS`
+		- `NGPUS_PER_HOST`
+		- `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
+  - With this information, we can construct the full `mpiexec ...` command needed to launch our distributed application:
+
+	  ```python
+    >>> import ezpz.pbs
+    >>> print(ezpz.pbs.build_launch_cmd())
+    mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3774365.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-binddepth -d 16
+    ```
+
 ## 🐣 Getting Started
 
-- Setup environment (load modules, activate base (`conda`) environment):
+- 🏡 Setup environment (load modules, activate base (`conda`) environment):
 
 	```bash
-	source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh) && ezpz_setup_env
+	source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
+ 	ezpz_setup_env
 	```
 
-- Install 🍋 `ezpz`:
+- 📦 Install 🍋 `ezpz`:
 
 	```bash
 	python3 -m pip install "git+https://github.com/saforem2/ezpz"
@@ -46,14 +48,15 @@ We recently introduced a mechanism for `launch`-ing distributed training directl
 - Command:
 
     ```bash
-    #[🐍 aurora_nre_models_frameworks-2024.2.1_u1](👻 aurora_nre_models_frameworks-2024.2.1_u1)
-    #[08:54:56 AM][x4317c7s7b0n0][/flare/datascience/foremans/projects/saforem2/tmp/2025-04-01-084856]
-    $ python3 -m ezpz.launch -m ezpz.test_dist --tp 4 --pp 3
+    python3 -m ezpz.launch -m ezpz.test_dist --tp 4 --pp 3
     ```
 
 - <details closed><summary>Output:</summary>
 
-    ```bash
+    ```python
+		#[🐍 aurora_nre_models_frameworks-2024.2.1_u1](👻 aurora_nre_models_frameworks-2024.2.1_u1)
+    #[08:54:56 AM][x4317c7s7b0n0][/flare/datascience/foremans/projects/saforem2/tmp/2025-04-01-084856]
+    $ python3 -m ezpz.launch -m ezpz.test_dist --tp 4 --pp 3
     [2025-04-01 08:55:21,413] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
     [2025-04-01 08:55:29,530] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
     [2025-04-01 08:56:06][I][ezpz/launch:56:__main__] Job ID: 3842171
@@ -365,7 +368,7 @@ We recently introduced a mechanism for `launch`-ing distributed training directl
 
 - <details closed><summary>Output:</summary>
 
-    ```bash
+    ```python
     (👻 2024-04-29)
     #[09:22:22 AM][x3006c0s19b0n0][/e/d/f/p/s/t/ezpz][🌱 feat/python-launcher][📦✓] [⏱️ 58s]
     $ python3 -m ezpz.launch -m ezpz.test_dist --tp 2 --pp 2
