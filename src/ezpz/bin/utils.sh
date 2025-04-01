@@ -1345,6 +1345,16 @@ ezpz_setup_env() {
     ezpz_setup_python && ezpz_setup_job
 }
 
+ezpz_setup() {
+  printf "[ezpz] Loading python modules and looking for virtual environment..."
+  ezpz_setup_python
+  printf "[ezpz] Determining job information from hostname=%s..." "$(hostname)"
+  ezpz_setup_job
+  printf "[ezpz] Installing https://github.com/saforem2/ezpz into %s" "${VIRTUAL_ENV}"
+  python3 -m pip install "git+https://github.com/saforem2/ezpz" --require-virtualenv
+  printf "[ezpz] :check: Done!"
+}
+
 ###############################################
 # Helper functions for printing colored text
 ###############################################
