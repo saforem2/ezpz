@@ -44,7 +44,7 @@ supported and can be configured by specifying
 1. 🚀 Launch training:
 
     ```bash
-    launch python3 -m ezpz.hf_trainer \
+    python3 -m ezpz.launch -m ezpz.hf_trainer \
       --dataset_name stanfordnlp/imdb \                 # Example dataset
       --model_name_or_path meta-llama/Llama-3.2-1B \    # Example model
       --bf16 \                                          # TrainingArguments
