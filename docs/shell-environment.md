@@ -169,7 +169,7 @@ ezpz_setup_job
 ```
 
 Now that we are in a suitable python environment, we need to construct
-the command that we will use to run python on each of our acceleratorss.
+the command that we will use to run python on each of our accelerators.
 
 To do this, we need a few things:
 
