@@ -7,17 +7,17 @@
    ```
 
    [^magic]: This will 🪄 _automagically_ source
-         [`ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh)
+         [`ezpz/bin/utils.sh`](src/ezpz/bin/utils.sh)
          and (`&&`) call `ezpz_setup_env` to setup your
          python environment.
 
-3. 🐍 Install `ezpz` (see [Python Library](docs/python-library.md)):
+1. 🐍 Install `ezpz` (see [Python Library](docs/python-library.md)):
 
    ```bash
    python3 -m pip install "git+https://github.com/saforem2/ezpz"
    ```
 
-4. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](docs/launch.md)):
+1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](docs/launch.md)):
 
     ```bash
     python3 -m ezpz.launch -m ezpz.test_dist

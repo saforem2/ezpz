@@ -1,5 +1,9 @@
 # 🐍 Python Library
 
+- [🐍 Python Library](#-python-library)
+  - [👀 Overview](#-overview)
+  - [Install](#install)
+
 ### 👀 Overview
 
 Launch and train across all your accelerators, using your favorite framework +

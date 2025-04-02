@@ -1,5 +1,11 @@
 # 🏖️ Shell Environment
 
+- [🏖️ Shell Environment](#-shell-environment)
+  - [🐣 Getting Started](#-getting-started)
+    - [🛠️ Setup Python](#-setup-python)
+    - [🧰 Setup Job](#-setup-job)
+
+
 ## 🐣 Getting Started
 
 > [!WARNING]
