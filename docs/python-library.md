@@ -82,6 +82,11 @@ To install[^5]:
 python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --require-virtualenv
 ```
 
+[^5]: Note the `--require-virtualenv` isn’t *strictly* required, but I
+    highly recommend to always try and work within a virtual
+    environment, when possible.
+
+
 - 📂 `ezpz` / `src` / [`ezpz/`](https://github.com/saforem2/ezpz)
   - 📂
     [`bin/`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/):
