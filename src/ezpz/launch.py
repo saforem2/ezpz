@@ -82,7 +82,8 @@ def main():
         )
     )
 
-    if "python" not in cmd_to_launch:
+    # if "python" not in cmd_to_launch:
+    if not cmd_to_launch.startswith("python"):
         cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
 
     cmd = f"{launch_cmd} {cmd_to_launch}"
