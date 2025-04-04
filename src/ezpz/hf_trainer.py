@@ -352,10 +352,7 @@ def parse_args() -> dict:
         run = ezpz.setup_wandb(project_name="ezpz.hf_trainer")
         assert wandb is not None and run is wandb.run and run is not None
         wandb.run.config.update(ezpz.get_dist_info())  # type:ignore
-        # try:
         wandb.run.config.update(training_args.to_dict())
-        # except Exception:
-        #     ezpz.breakpoint(0)
     # NOTE:
     #   Sending telemetry.
     #   Tracking the example usage helps us better allocate resources to
@@ -507,9 +504,6 @@ def main():
                     trust_remote_code=model_args.trust_remote_code,
                 )
             except ValueError:
-                from ezpz import breakpoint
-
-                breakpoint(0)
                 # In some cases, the dataset doesn't support slicing.
                 # In this case, we just use the full training set as validation set.
                 raw_datasets[validation_split_name] = load_dataset(  # type:ignore
