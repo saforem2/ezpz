@@ -5,35 +5,34 @@ build-backend = "hatchling.build"
 [project]
 name = "ezpz"
 dynamic = ["version"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 keywords = []
 readme = "README.md"
-description = 'Distributed Training, ezpz.'
+description = 'Distributed training, :lemon: `ezpz`.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 dependencies = [
-    "mpi4py",
-    "torch",
-    "xarray",
-    "plotext",
-    "sh",
-    "rich",
-    "seaborn",
-    "omegaconf",
-    "hydra-core",
-    "transformers",
-    "evaluate",
     "accelerate",
-    "wandb",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
-    "pyinstrument",
+    "evaluate",
     "h5py",
+    "hydra-core",
+    "mpi4py",
+    "omegaconf",
+    "plotext",
+    "pyinstrument",
+    "rich",
+    "scikit-learn",
+    "seaborn",
+    "sh",
+    "torch",
+    "transformers>=4.50.1",
+    "wandb",
+    "xarray",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: Implementation :: CPython",

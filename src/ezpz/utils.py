@@ -221,3 +221,83 @@ def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
     f.close()
 
     return xr.Dataset(data)
+
+
+def write_deepspeed_zero12_auto_config(
+    zero_stage: int = 1, output_dir: Optional[PathLike] = None
+) -> dict:
+    """
+    Write a deepspeed zero1 auto config to the output directory.
+    """
+    import json
+
+    ds_config = {
+        "gradient_accumulation_steps": 1,
+        "gradient_clipping": "auto",
+        "steps_per_print": 10,
+        "train_batch_size": "auto",
+        "train_micro_batch_size_per_gpu": "auto",
+        "wall_clock_breakdown": False,
+        "wandb": {"enabled": True},
+        "bf16": {"enabled": True},
+        "fp16": {
+            "enabled": False,
+            "loss_scale": 0,
+            "loss_scale_window": 1000,
+            "initial_scale_power": 16,
+            "hysteresis": 2,
+            "min_loss_scale": 1,
+        },
+        "flops_profiler": {
+            "enabled": True,
+            "profile_step": 1,
+            "module_depth": -1,
+            "top_modules": 1,
+            "detailed": True,
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "params": {
+                "lr": "auto",
+                "weight_decay": "auto",
+                "torch_adam": True,
+                "adam_w_mode": True,
+            },
+        },
+        "scheduler": {
+            "type": "WarmupDecayLR",
+            "params": {
+                "warmup_min_lr": "auto",
+                "warmup_max_lr": "auto",
+                "warmup_num_steps": "auto",
+                "total_num_steps": "auto",
+            },
+        },
+        "zero_optimization": {
+            "stage": 2,
+            "allgather_partitions": True,
+            "allgather_bucket_size": 2e8,
+            "overlap_comm": True,
+            "reduce_scatter": True,
+            "reduce_bucket_size": "auto",
+            "contiguous_gradients": True,
+        },
+    }
+    if output_dir is None:
+        output_dir = Path(os.getcwd()).joinpath("ds_configs")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
+    outfile = output_dir.joinpath("deepspeed_zero1_auto_config.json")
+    logger.info(
+        f"Saving DeepSpeed ZeRO Stage {zero_stage} "
+        f"auto config to: {outfile.as_posix()}"
+    )
+    with outfile.open("w") as f:
+        json.dump(
+            ds_config,
+            fp=f,
+            indent=4,
+        )
+
+    return ds_config
