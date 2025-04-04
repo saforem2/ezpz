@@ -65,6 +65,15 @@ class ModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
     """
 
+    wandb_project_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The name of the wandb project to use. If not specified, will use the model name."
+            )
+        },
+    )
+
     model_name_or_path: Optional[str] = field(
         default=None,
         metadata={
@@ -349,11 +358,17 @@ def parse_args() -> dict:
         and rank == 0
         and not os.environ.get("WANDB_DISABLED", False)
     ):
-        run = ezpz.setup_wandb(project_name="ezpz.hf_trainer")
-        assert wandb is not None and run is wandb.run and run is not None
-        wandb.run.config.update(ezpz.get_dist_info())  # type:ignore
-        # try:
-        wandb.run.config.update(training_args.to_dict())
+        wbproj_name = (
+            model_args.wandb_project_name
+            if model_args.wandb_project_name is not None
+            else model_args.model_name_or_path
+        )
+        run = ezpz.setup_wandb(project_name=wbproj_name.replace('/', '-'))
+        if run is not None:
+            # assert wandb is not None and run is wandb.run and run is not None
+            run.config.update(ezpz.get_dist_info())
+            # try:
+            run.config.update(training_args.to_dict())
         # except Exception:
         #     ezpz.breakpoint(0)
     # NOTE:
