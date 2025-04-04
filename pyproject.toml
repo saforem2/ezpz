@@ -16,22 +16,15 @@ dependencies = [
     "torch",
     "xarray",
     "plotext",
-    "ml_dtypes",
-    "jax",
-    "tqdm",
-    "jaxlib",
-    "jaxtyping",
     "sh",
-    "joblib",
     "rich",
-    "tensorboard",
     "seaborn",
     "omegaconf",
-    # "sentencepiece",
-    "ipython",
     "hydra-core",
+    "transformers",
+    "evaluate",
+    "accelerate",
     "wandb",
-    "hydra-colorlog",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
     "pyinstrument",
     "h5py",
@@ -49,10 +42,19 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
+    # "sentencepiece",
+    # "joblib",
+    # "ml_dtypes",
+    # "tqdm",
+    # "tensorboard",
+    "ipython",
+    # "hydra-colorlog",
     "pudb",
     "pynvim",
-    "neovim",
     "ruff",
+    "black",
+    "pyright",
+    "isort",
     "ruff-lsp",
     "ipython",
     "ptipython",
@@ -136,7 +138,7 @@ exclude = [
 line-length = 80
 indent-width = 4
 
-# Assume Python 3.9
+# Assume Python 3.10
 target-version = "py310"
 
 [tool.ruff.lint]
