@@ -15,12 +15,14 @@ import ezpz
 
 import ezpz.plot as ezplot
 
+from ezpz.log.style import flatten
 from ezpz.configs import PathLike, get_timestamp
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import wandb
 import xarray as xr
@@ -95,6 +97,9 @@ class History:
     def __init__(self, keys: Optional[list[str]] = None) -> None:
         self.keys = [] if keys is None else keys
         self.history = {}
+
+    def _nested_dict_to_dataset(self, data: dict, **kwargs) -> xr.Dataset:
+        return xr.Dataset.from_dataframe(pd.json_normalize(data, **kwargs))
 
     def _update(
         self,
@@ -251,12 +256,12 @@ class History:
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
+                # assert isinstance(ax, plt.Axes)
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
+                # assert isinstance(ax, plt.Axes)
                 cmap = plt.get_cmap('viridis')
                 nlf = arr.shape[1]
                 for idx in range(nlf):
@@ -709,24 +714,58 @@ class History:
 
         return dataset
 
-    def history_to_dict(self) -> dict:
-        # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
-        return {
-            k: torch.Tensor(v).numpy(force=True)
-            for k, v in self.history.items()
-        }
+    def history_to_dict(self, sep='/') -> dict:
+        # return {
+        #     k: torch.Tensor(v).numpy(force=True)
+        #     for k, v in self.history.items()
+        # }
+        # if len(self.history.keys())
+        # return flatten(self.history)
+        try:
+            d = pd.json_normalize(
+                self.history, record_path=list(self.history.keys()), sep=sep
+            ).to_dict(orient='list')
+            return {k: torch.Tensor(v).numpy(force=True) for k, v in d.items()}
+        except TypeError:
+            return {
+                k: torch.Tensor(v).numpy(force=True)
+                for k, v in self.history.items()
+            }
 
     def to_DataArray(
         self,
         x: Union[list, np.ndarray, torch.Tensor],
         warmup: Optional[float] = 0.0,
+        sep: str = '/',
     ) -> xr.DataArray:
-        if isinstance(x, list) and isinstance(x[0], torch.Tensor):
+        if isinstance(x, list) and isinstance(x[0], dict):
+            dfd = pd.json_normalize(
+                x, record_path=list(x[0].keys()), sep=sep
+            ).to_dict(orient='list')
+        elif isinstance(x, list) and isinstance(x[0], torch.Tensor):
             x = torch.Tensor(x).numpy(force=True)
+
+        # elif isinstance(x, list) and isinstance(x[0], dict):
+        #     # Handle the case where x is a list of dictionaries
+        #     # Convert the list of dictionaries to a dictionary of lists
+        #     dict_of_lists = {}
+        #     for item in x:
+        #         for key, value in item.items():
+        #             if key not in dict_of_lists:
+        #                 dict_of_lists[key] = []
+        #             dict_of_lists[key].append(value)
+        #
+        #     # Convert each list in the dictionary to a DataArray
+        #     data_vars = {}
+        #     for key, val in dict_of_lists.items():
+        #         data_vars[key] = self.to_DataArray(val, warmup)
+        #
+        #     # Create a Dataset from the DataArrays
+        #     return xr.Dataset(data_vars)
         try:
             arr = grab_tensor(x)
         except ValueError:
-            arr = np.array(x).real
+            arr = np.array(x)  # .real
             # arr = np.array(x)
             logger.info(f'len(x): {len(x)}')
             logger.info(f'x[0].shape: {x[0].shape}')
@@ -769,6 +808,7 @@ class History:
         warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
+
         data_vars = {}
         for key, val in data.items():
             name = key.replace('/', '_')
@@ -806,6 +846,92 @@ class History:
             use_hdf5=use_hdf5,
             **kwargs,
         )
+
+    def _finalize_dataset(
+        self,
+        key: Optional[str] = None,
+        dataset: Optional[Any] = None,
+        outdir: Optional[PathLike] = None,
+        run_name: Optional[str] = None,
+        dataset_fname: Optional[str] = None,
+        num_chains: int = 128,
+        warmup: Optional[int | float] = 0.0,
+        verbose: bool = False,
+        save: bool = True,
+        plot: bool = True,
+        append_tplot: bool = True,
+        title: Optional[str] = None,
+        xkey: Optional[str] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        tplot_type: Optional[str] = None,
+    ) -> xr.Dataset:
+        #     import pandas as pd
+        #
+        #     if key is None:
+        #         key = 'dataset'
+        #         dataset = self.history if dataset is None else dataset
+        #     else:
+        #         dataset = (
+        #             self.history[key]
+        #             if dataset is None and key is not None and key in self.history
+        #             else self.history
+        #         )
+        #     assert dataset is not None
+        #     df = pd.json_normalize(dataset, sep='/')
+        # dataset = xr.Dataset(df.to_dict(orient='list'))
+        # datasets[key] = xr.Dataset.from_dataframe(df)
+        if run_name is None:
+            if key is None:
+                run_name = (
+                    f'History-{ezpz.get_timestamp()}'
+                    if key is not None and run_name is None
+                    else run_name
+                )
+            else:
+                run_name = f'History-{key}-{ezpz.get_timestamp()}'
+        fallback_outdir = Path(os.getcwd()).joinpath('outputs')
+        if run_name is not None:
+            fallback_outdir = fallback_outdir.joinpath(
+                run_name, get_timestamp()
+            )
+        outdir = (
+            # Path(os.getcwd()).joinpath('outputs')
+            fallback_outdir if outdir is None else Path(outdir)
+        )
+        if run_name is not None:
+            outdir = outdir.joinpath(run_name)
+        if plot:
+            plotdir = outdir.joinpath('plots')
+            tplotdir = plotdir.joinpath('tplot')
+            mplotdir = plotdir.joinpath('mplot')
+            tplotdir.mkdir(exist_ok=True, parents=True)
+            mplotdir.mkdir(exist_ok=True, parents=True)
+            _ = self.plot_all(
+                dataset=dataset,
+                outdir=mplotdir,
+                verbose=verbose,
+                num_chains=num_chains,
+                warmup=warmup,
+                title=title,
+                plot_kwargs=plot_kwargs,
+                subplots_kwargs=subplots_kwargs,
+            )
+            _ = self.tplot_all(
+                dataset=dataset,
+                outdir=tplotdir,
+                warmup=warmup,
+                append=append_tplot,
+                plot_type=tplot_type,
+                xkey=xkey,
+                verbose=verbose,
+            )
+        if save:
+            fname = key if dataset_fname is None else dataset_fname
+            assert fname is not None
+            _ = self.save_dataset(dataset=dataset, outdir=outdir, fname=fname)
+        assert dataset is not None
+        return dataset
 
     def finalize(
         self,

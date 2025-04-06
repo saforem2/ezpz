@@ -376,11 +376,21 @@ __all__ = [
 
 
 def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
-    if isinstance(v, (int, bool, np.integer)):
-        # return f'{k}={v:<3}'
-        return f'{k}={v}'
+    # if isinstance(v, (int, bool, np.integer)):
+    #     # return f'{k}={v:<3}'
+    #     return f'{k}={v}'
     # return f'{k}={v:<3.4f}'
-    return f'{k}={v:<.{precision}f}'
+    # if isinstance(v, (float, np.floating)):
+    try:
+        return f'{k}={v:<.{precision}f}'
+    except Exception:
+        return f'{k}={v:<{precision}}'
+    finally:
+        # return f'{k}={v}'
+        try:
+            return f'{k}={v:<{precision}}'
+        except Exception:
+            return f'{k}={v}'
 
 
 def summarize_dict(d: dict, precision: int = 6) -> str:

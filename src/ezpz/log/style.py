@@ -3,28 +3,18 @@ src/ezpz/logging/style.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-
-# from typing import Dict
-# from rich.style import Style
+from collections.abc import MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 from pathlib import Path
-
-# import shutil
 import time
 from typing import Optional
 from typing import Any
 from typing import Generator
 
-import logging
-
-# from ezpz.log import get_logger
-from ezpz.log.config import STYLES, DEFAULT_STYLES
-from ezpz.log.console import get_console
-
-# from ezpz.log.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
 import rich
 from rich import print
@@ -45,6 +35,9 @@ from rich.progress import (
 import rich.syntax
 from rich.table import Table
 import rich.tree
+
+from ezpz.log.config import DEFAULT_STYLES, STYLES
+from ezpz.log.console import get_console
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
@@ -178,6 +171,17 @@ def flatten_dict(d) -> dict:
         res[()] = d
 
     return res
+
+
+def flatten(d: MutableMapping, parent_key: str = '', sep: str = '/') -> dict:
+    items = []
+    for key, val in d.items():
+        new_key = f'{parent_key}{sep}{key}' if parent_key else key
+        if isinstance(val, MutableMapping):
+            items.extend(flatten(val, new_key, sep=sep).items())
+        else:
+            items.append((new_key, val))
+    return dict(items)
 
 
 def nested_dict_to_df(d):

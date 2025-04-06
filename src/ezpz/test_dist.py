@@ -165,7 +165,7 @@ class Trainer:
             self.train_iter % self.config.log_freq == 0
             or self.train_iter % self.config.print_freq == 0
         ):
-            summary = self.history.update({'iter': self.train_iter, **metrics})
+            summary = self.history.update({'iter': self.train_iter, **metrics}, precision=4)
             if self.train_iter % self.config.print_freq == 0:
                 logger.info(f'{summary}')
         return metrics

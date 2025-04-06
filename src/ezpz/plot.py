@@ -18,6 +18,8 @@ import ezpz
 import numpy as np
 import xarray as xr
 
+from ezpz.utils import grab_tensor
+
 RANK = ezpz.get_rank()
 
 logger = ezpz.get_logger(__name__)
@@ -117,9 +119,7 @@ def set_plot_style(**kwargs):
             # 'savefig.transparent': True,
         }
     )
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(
-        'color', list(COLORS.values())
-    )
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', list(COLORS.values()))
     plt.rcParams['axes.labelcolor'] = '#838383'
     plt.rcParams.update(**kwargs)
     # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
@@ -166,7 +166,9 @@ def tplot_dict(
         pltx.save_fig(outfile, append=append)
 
 
-def get_plot_title(ylabel: Optional[str], xlabel: Optional[str], label: Optional[str]) -> str:
+def get_plot_title(
+    ylabel: Optional[str], xlabel: Optional[str], label: Optional[str]
+) -> str:
     if ylabel is not None and xlabel is not None:
         return f'{ylabel} vs {xlabel}'
     if ylabel is not None:
@@ -201,7 +203,8 @@ def tplot(
     plot_type = 'line' if plot_type is None else plot_type
     title = (
         get_plot_title(ylabel=ylabel, xlabel=xlabel, label=label)
-        if title is None else title
+        if title is None
+        else title
     )
     if isinstance(y, list):
         y = torch.stack(y)
@@ -218,6 +221,11 @@ def tplot(
     if len(y.shape) == 2:
         pltx.hist(y.flatten(), bins=bins, label=label)
     elif len(y.shape) == 1:
+        try:
+            y = torch.Tensor(y[0]).flatten().detach().cpu().numpy(force=True)
+        except Exception:
+            pass
+            # logger.warning(f'Unable to flatten y: {y}')
         # if type is not None:
         #     assert type in ['scatter', 'line']
         if plot_type is None or plot_type == 'line':
