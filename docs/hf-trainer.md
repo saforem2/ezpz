@@ -1,3 +1,6 @@
+---
+created: 03/28/2025
+---
 
 # Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
 
@@ -35,11 +38,17 @@ supported and can be configured by specifying
         python3 -m pip install -e "git+https://github.com/saforem2/ezpz" --require-virtualenv
         ```
 
-    1. Update {`transformers`, `evaluate`}:
+    1. Update {`tiktoken`, `sentencepiece`, `transformers`, `evaluate`}:
 
         ```bash
-        python3 -m pip install --upgrade transformers evaluate
+        python3 -m pip install --upgrade tiktoken sentencepiece transformers evaluate
         ```
+
+1. ⚙️ Build DeepSpeed config:
+
+    ```bash
+    python3 -c 'import ezpz; ezpz.utils.write_deepspeed_zero12_auto_config(zero_stage=1)'
+    ```
 
 1. 🚀 Launch training:
 
