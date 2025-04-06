@@ -223,6 +223,42 @@ def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
     return xr.Dataset(data)
 
 
+def write_generic_deepspeed_config(
+    gradient_accumulation_steps: int = 1,
+    gradient_clipping: str | float = "auto",
+    steps_per_print: int = 10,
+    train_batch_size: str = "auto",
+    train_micro_batch_size_per_gpu: str = "auto",
+    wall_clock_breakdown: bool = False,
+    wandb: Optional[dict] = None,
+    bf16: Optional[dict] = None,
+    fp16: Optional[dict] = None,
+    flops_profiler: Optional[dict] = None,
+    optimizer: Optional[dict] = None,
+    scheduler: Optional[dict] = None,
+    zero_optimization: Optional[dict] = None,
+):
+    """
+    Write a generic deepspeed config to the output directory.
+    """
+    ds_config = {
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "gradient_clipping": gradient_clipping,
+        "steps_per_print": steps_per_print,
+        "train_batch_size": train_batch_size,
+        "train_micro_batch_size_per_gpu": train_micro_batch_size_per_gpu,
+        "wall_clock_breakdown": wall_clock_breakdown,
+        "wandb": wandb,
+        "bf16": bf16,
+        "fp16": fp16,
+        "flops_profiler": flops_profiler,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+        "zero_optimization": zero_optimization,
+    }
+    return ds_config
+
+
 def write_deepspeed_zero12_auto_config(
     zero_stage: int = 1, output_dir: Optional[PathLike] = None
 ) -> dict:
@@ -234,20 +270,12 @@ def write_deepspeed_zero12_auto_config(
     ds_config = {
         "gradient_accumulation_steps": 1,
         "gradient_clipping": "auto",
-        "steps_per_print": 10,
+        "steps_per_print": 1,
         "train_batch_size": "auto",
         "train_micro_batch_size_per_gpu": "auto",
-        "wall_clock_breakdown": False,
+        "wall_clock_breakdown": True,
         "wandb": {"enabled": True},
         "bf16": {"enabled": True},
-        "fp16": {
-            "enabled": False,
-            "loss_scale": 0,
-            "loss_scale_window": 1000,
-            "initial_scale_power": 16,
-            "hysteresis": 2,
-            "min_loss_scale": 1,
-        },
         "flops_profiler": {
             "enabled": True,
             "profile_step": 1,
@@ -274,7 +302,7 @@ def write_deepspeed_zero12_auto_config(
             },
         },
         "zero_optimization": {
-            "stage": 2,
+            "stage": zero_stage,
             "allgather_partitions": True,
             "allgather_bucket_size": 2e8,
             "overlap_comm": True,
@@ -288,7 +316,7 @@ def write_deepspeed_zero12_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath("deepspeed_zero1_auto_config.json")
+    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
