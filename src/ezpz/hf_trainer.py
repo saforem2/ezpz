@@ -522,9 +522,6 @@ def main():
                     trust_remote_code=model_args.trust_remote_code,
                 )
             except ValueError:
-                from ezpz import breakpoint
-
-                breakpoint(0)
                 # In some cases, the dataset doesn't support slicing.
                 # In this case, we just use the full training set as validation set.
                 raw_datasets[validation_split_name] = load_dataset(  # type:ignore
