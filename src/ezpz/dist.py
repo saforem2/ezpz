@@ -935,11 +935,18 @@ def setup_tensorflow(
     ngpus: Optional[int] = None,
 ) -> int:
     """Initialize TensorFlow + Horovod for Distributed Training"""
-    import tensorflow as tf  # type:ignore noqa
+    try:
+        import tensorflow as tf  # type:ignore noqa
 
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    import horovod.tensorflow as hvd  # type:ignore noqa
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        import horovod.tensorflow as hvd  # type:ignore noqa
+    except Exception:
+        logger.warning(
+            "Unable to import `tensorflow` or `horovod.tensorflow`. "
+            "Install with `pip install tensorflow horovod`"
+        )
+        raise
 
     _ = None if hvd.is_initialized() else hvd.init()
     # hvd.init() if not hvd.is_initialized() else None
