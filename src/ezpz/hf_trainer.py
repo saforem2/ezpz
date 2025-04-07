@@ -363,7 +363,11 @@ def parse_args() -> dict:
             if model_args.wandb_project_name is not None
             else model_args.model_name_or_path
         )
-        run = ezpz.setup_wandb(project_name=wbproj_name.replace('/', '-'))
+        wbproj_name = f"ezpz-hf_trainer-{wbproj_name}".replace("/", "-")
+        run = ezpz.setup_wandb(project_name=wbproj_name)
+        wandb.define_metric(
+            "num_input_tokens_seen"
+        )  # Allow us to track the number of tokens seen during training
         if run is not None:
             # assert wandb is not None and run is wandb.run and run is not None
             run.config.update(ezpz.get_dist_info())
@@ -376,12 +380,24 @@ def parse_args() -> dict:
     #   Tracking the example usage helps us better allocate resources to
     #   maintain them. The information sent is the one passed as arguments
     #   along with your Python/PyTorch versions.
-    send_example_telemetry("hf_trainer", model_args, data_args)
+    # send_example_telemetry("hf_trainer", model_args, data_args)
 
     if training_args.should_log:
         # The default of training_args.log_level is passive,
         # so we set log level at info here to have that default.
         transformers.utils.logging.set_verbosity_info()
+
+    # Log on each process the small summary:
+    logger.warning(
+        ", ".join(
+            [
+                f"Process rank: {rank}",
+                f"device: {training_args.device}",
+                f"n_gpu: {training_args.n_gpu}",
+                f"distributed training: {training_args.parallel_mode.value == 'distributed'}",
+            ]
+        )
+    )
 
     # log_level = training_args.get_process_log_level()
     # log_level = training_args.get_log_level() if rank == 0 else 50  # "CRITICAL"
@@ -399,22 +415,11 @@ def parse_args() -> dict:
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # Log on each process the small summary:
-    logger.warning(
-        ", ".join(
-            [
-                f"Process rank: {rank}",
-                f"device: {training_args.device}",
-                f"n_gpu: {training_args.n_gpu}",
-                f"distributed training: {training_args.parallel_mode.value == 'distributed'}",
-            ]
-        )
-    )
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, "
-        f"device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
-        + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
-    )
+    # logger.warning(
+    #     f"Process rank: {training_args.local_rank}, "
+    #     f"device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
+    #     + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
+    # )
     if rank == 0:
         logger.info(f"Training/evaluation parameters {training_args}")
 
