@@ -53,14 +53,25 @@ supported and can be configured by specifying
 1. 🚀 Launch training:
 
     ```bash
+    TSTAMP=$(date +%s)  # For logging purposes
     python3 -m ezpz.launch -m ezpz.hf_trainer \
-      --dataset_name stanfordnlp/imdb \                 # Example dataset
-      --model_name_or_path meta-llama/Llama-3.2-1B \    # Example model
-      --bf16 \                                          # TrainingArguments
-      --do_train \
-      --block_size=8 \
-      --gradient_checkpointing \
-      --per_device_train_batch_size=1 \
-      --deepspeed=ds_configs/zero_stage1_config.json \
-      --output_dir=trainer_output-$(date "+%Y-%m-%d-%H%M%S")
+        --model_name_or_path meta-llama/Llama-3.2-1B \
+        --dataset_name stanfordnlp/imdb \
+        --deepspeed=ds_configs/deepspeed_zero1_auto_config.json \
+        --auto-find-batch-size=true \
+        --bf16=true \
+        --block-size=4096 \
+        --do-eval=true \
+        --do-predict=true \
+        --do-train=true \
+        --gradient-checkpointing=true \
+        --include-for-metrics=inputs,loss \
+        --include-num-input-tokens-seen=true \
+        --include-tokens-per-second=true \
+        --log-level=info \
+        --logging-steps=1 \
+        --max-steps=10000 \
+        --output_dir="hf-trainer-output/${TSTAMP}" \
+        --report-to=wandb \
+        | tee "hf-trainer-output-${TSTAMP}.log"
     ```
