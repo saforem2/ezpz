@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Optional
 import ezpz
 
-import sys
 import socket
 
 
