@@ -7,7 +7,7 @@ name = "ezpz"
 dynamic = ["version"]
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
-keywords = []
+keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
 readme = "README.md"
 description = 'Distributed training, :lemon: `ezpz`.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
@@ -23,7 +23,6 @@ dependencies = [
     "plotext",
     "pyinstrument",
     "rich",
-    # "scikit-learn",
     "seaborn",
     "sh",
     "tiktoken",
@@ -31,7 +30,7 @@ dependencies = [
     "torch",
     "transformers>=4.50.1",
     "wandb",
-    # "xarray",
+    "xarray",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -85,12 +84,13 @@ allow-direct-references = true
 
 [tool.hatch.envs.default]
 dependencies = ["pytest", "pytest-cov"]
+
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
 no-cov = "cov --no-cov"
 
 [[tool.hatch.envs.test.matrix]]
-python = ["38", "39", "310", "311"]
+python = ["310", "311", "312"]
 
 [tool.coverage.run]
 branch = true
