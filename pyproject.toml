@@ -15,23 +15,23 @@ dependencies = [
     "accelerate",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
     "evaluate",
-    "h5py",
+    # "h5py",
     "hydra-core",
     "mpi4py",
+    "numpy<2",
     "omegaconf",
     "plotext",
     "pyinstrument",
     "rich",
-    "scikit-learn",
+    # "scikit-learn",
     "seaborn",
     "sh",
-    "ipython",
     "tiktoken",
     "sentencepiece",
     "torch",
     "transformers>=4.50.1",
     "wandb",
-    "xarray",
+    # "xarray",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -100,6 +100,11 @@ omit = ["ezpz/__about__.py"]
 [tool.coverage.report]
 
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.uv]
+override-dependencies = [
+  "torch; sys_platform == 'never'",
+]
 
 [tool.uv.sources]
 ezpz = { workspace = true }
