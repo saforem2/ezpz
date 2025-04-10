@@ -35,7 +35,6 @@ try:
 except Exception:
     pass
 
-from ezpz import dist
 
 from ezpz.__about__ import __version__
 
@@ -67,6 +66,7 @@ from ezpz.configs import (
     load_ds_config,
     print_config_tree,
 )
+# from ezpz import dist
 from ezpz.dist import (
     check,
     cleanup,
@@ -151,7 +151,8 @@ from ezpz.log import (
 )
 from ezpz import pbs
 
-from ezpz.plot import tplot, tplot_dict
+# from ezpz.plot import tplot, tplot_dict
+from ezpz.tplot import tplot, tplot_dict
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
 from ezpz.tp import (
     destroy_tensor_parallel,
@@ -318,7 +319,7 @@ __all__ = [
     "dataset_to_h5pyfile",
     "destroy_tensor_parallel",
     "dict_from_h5pyfile",
-    "dist",
+    # "dist",
     "ensure_divisibility",
     "flatten_dict",
     "format_pair",
