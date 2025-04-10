@@ -6,6 +6,8 @@ import subprocess
 import time
 from typing import Optional
 
+from rich.text import Text
+
 import ezpz
 
 logger = ezpz.get_logger(__name__)
@@ -65,31 +67,32 @@ def main():
     import sys
 
     assert len(sys.argv) > 1, "No command to run."
-    cmdlist = sys.argv[1:]
-    # if 'python' not in cmdlist[0]:
-    #     cmdlist = [sys.executable] + cmdlist
     cmd_to_launch = " ".join(sys.argv[1:])
+    # if "python" not in cmd_to_launch:
+    if not cmd_to_launch.startswith("python"):
+        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
+
+    lcmd_str = Text("launch_cmd", style="blue")
+    pystr = Text("python", style="blue")
+    cmdstr = Text("cmd_to_launch", style="blue")
     logger.info(
         "\n".join(
             [
                 "Building command to execute from: '{launch_cmd}' + '{python}' + '{cmd_to_launch}'",
                 "",
-                f"launch_cmd={launch_cmd}",
-                f"python={sys.executable}",
-                f"cmd_to_launch={cmd_to_launch}",
+                f"'{lcmd_str}':\n\t{launch_cmd}",
+                f"'{pystr}':\n\t{sys.executable}",
+                f"'{cmdstr}':\n\t{cmd_to_launch.replace(sys.executable, '')}",
                 "",
             ]
         )
     )
 
-    # if "python" not in cmd_to_launch:
-    if not cmd_to_launch.startswith("python"):
-        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
-
     cmd = f"{launch_cmd} {cmd_to_launch}"
 
-    logger.info(f"Evaluating:\n{cmd}")
+    logger.info(f"\nEvaluating:\n\t{cmd}")
     t0 = time.perf_counter()
+
     _ = run_command(cmd)
     logger.info(f"Command took {time.perf_counter() - t0:.2f} seconds to run.")
 
