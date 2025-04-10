@@ -9,6 +9,15 @@ import os
 import warnings
 import socket
 
+os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
+os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
+os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
+    "ITEX_CPP_MIN_LOG_LEVEL", "5"
+)
+os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
+warnings.filterwarnings("once")
+
 logging.getLogger("deepseed").setLevel(logging.ERROR)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("datasets").setLevel(logging.ERROR)
@@ -22,11 +31,13 @@ else:
     from mpi4py import MPI  # type:ignore  # noqa: F401
 
 try:
-    import deepspeed
+    import deepspeed  # type:ignore
 except Exception:
     pass
 
 from ezpz import dist
+
+from ezpz.__about__ import __version__
 
 from ezpz import profile
 from ezpz import configs
@@ -243,6 +254,7 @@ else:
 
 
 __all__ = [
+    "__version__",
     "BACKENDS",
     # 'BEAT_TIME',
     "BIN_DIR",
