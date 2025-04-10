@@ -17,6 +17,7 @@ from ezpz.log import get_logger
 
 # from ezpz.dist import get_rank
 from ezpz import plot as ezplot
+from ezpz import tplot as eztplot
 from ezpz.utils import summarize_dict, get_timestamp
 # import ezpz.plot as ezplot
 
@@ -27,7 +28,6 @@ from ezpz.log.console import is_interactive
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import wandb
 import xarray as xr
 
 # from jaxtyping import ScalarLike
@@ -159,7 +159,7 @@ class History:
         if len(y) > 1:
             x = x if x is not None else np.arange(len(y))
             assert x is not None
-            ezplot.tplot(
+            eztplot.tplot(
                 y=y,
                 x=x,
                 xlabel=xlabel,
@@ -176,7 +176,7 @@ class History:
             of = Path(outfile) if outfile is not None else None
             if of is not None:
                 of = Path(of.parent).joinpath(f"{of.stem}-hist{of.suffix}")
-            ezplot.tplot(
+            eztplot.tplot(
                 y=y,
                 xlabel=ylabel,
                 title=title,
@@ -567,7 +567,7 @@ class History:
             #             dpi=400, bbox_inches='tight')
             outfile = Path(outdir).joinpath(f"{label}.svg")
             if outfile.is_file():
-                tstamp = ezpz.get_timestamp("%Y-%m-%d-%H%M%S")
+                tstamp = get_timestamp("%Y-%m-%d-%H%M%S")
                 pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{label}-{tstamp}.png")
