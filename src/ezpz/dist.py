@@ -25,6 +25,28 @@ import torch.distributed as tdist
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
+try:
+    import wandb
+
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+except Exception:
+    wandb = None
+    WANDB_DISABLED = True
+
+try:
+    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+except Exception:
+    ipex = None
+# if ipex is not None:
+#     logger.debug(f"Using ipex from: {ipex.__file__}")
+
+try:
+    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+except Exception:
+    oneccl_bpt = None
+# if oneccl_bpt is not None:
+#     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
+
 
 if not os.environ.get(
     "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
@@ -39,18 +61,18 @@ logger.setLevel(LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
 
-def try_import(module_name: str):
-    try:
-        return __import__(module_name)
-    except Exception:
-        logger.info(f"Unable to import '{module_name}', trying to continue")
+# def try_import(module_name: str):
+#     try:
+#         return __import__(module_name)
+#     except Exception:
+#         logger.info(f"Unable to import '{module_name}', trying to continue")
 
 
-ipex = None
-oneccl_bpt = None
-if torch.xpu.is_available():
-    ipex = try_import("intel_extension_for_pytorch")
-    oneccl_bpt = try_import("oneccl_bindings_for_pytorch")
+# ipex = None
+# oneccl_bpt = None
+# if torch.xpu.is_available():
+#     ipex = try_import("intel_extension_for_pytorch")
+#     oneccl_bpt = try_import("oneccl_bindings_for_pytorch")
 
 
 ACCELERATOR_TYPE = (
@@ -805,10 +827,24 @@ def setup_torch(
     os.environ["WORLD_SIZE"] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
-        # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
-        # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
-        # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
         torch.xpu.set_device(local_rank)  # type:ignore
+        # try:
+        #     import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+        # except Exception:
+        #     ipex = None
+        # if ipex is not None:
+        #     logger.debug(f"Using ipex from: {ipex.__file__}")
+        #
+        # try:
+        #     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+        # except Exception:
+        #     oneccl_bpt = None
+        # if oneccl_bpt is not None:
+        #     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
+        #
+        #     # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
+        #     # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
+        #     # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     if rank == 0:
@@ -819,10 +855,6 @@ def setup_torch(
         _ = get_dist_info(verbose=verbose)
         if verbose:
             _ = print_dist_setup()
-    if oneccl_bpt is not None:
-        logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
-    if ipex is not None:
-        logger.debug(f"Using ipex from: {ipex.__file__}")
     # if world_size > 1:
     #     tdist.barrier()
 
