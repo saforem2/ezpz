@@ -3,6 +3,7 @@ src/ezpz/logging/console.py
 
 Module that helps integrating with rich library.
 """
+
 import os
 import sys
 from typing import Any, TextIO
@@ -20,27 +21,31 @@ def get_theme():
 
 
 def is_interactive() -> bool:
-    from IPython.core.getipython import get_ipython
-    # from IPython import get_ipython
-    eval = os.environ.get('INTERACTIVE', None) is not None
-    bval = get_ipython() is not None
-    return (eval or bval)
+    # from IPython.core.getipython import get_ipython
+    # # from IPython import get_ipython
+    # eval = os.environ.get('INTERACTIVE', None) is not None
+    # bval = get_ipython() is not None
+    # return (eval or bval)
+    return hasattr(sys, "ps1")
 
 
 def get_width():
     import shutil
-    width = os.environ.get('COLUMNS', os.environ.get('WIDTH', 255))
+
+    width = os.environ.get("COLUMNS", os.environ.get("WIDTH", 255))
     if width is not None:
         return int(width)
     size = shutil.get_terminal_size()
-    os.environ['COLUMNS'] = str(size.columns)
+    os.environ["COLUMNS"] = str(size.columns)
     return size.columns
 
 
 class Console(rich_console.Console):
     """Extends rich Console class."""
 
-    def __init__(self, *args: str, redirect: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: str, redirect: bool = True, **kwargs: Any
+    ) -> None:
         """
         enrich console does soft-wrapping by default and this diverge from
         original rich console which does not, creating hard-wraps instead.
@@ -51,13 +56,13 @@ class Console(rich_console.Console):
             kwargs["soft_wrap"] = True
 
         if "theme" not in kwargs:
-            kwargs['theme'] = get_theme()
+            kwargs["theme"] = get_theme()
 
         if "markup" not in kwargs:
-            kwargs['markup'] = True
+            kwargs["markup"] = True
 
         if "width" not in kwargs:
-            kwargs['width'] = 55510
+            kwargs["width"] = 55510
 
         # Unless user already mentioning terminal preference, we use our
         # heuristic to make an informed decision.
@@ -105,7 +110,12 @@ def should_do_markup(stream: TextIO = sys.stdout) -> bool:
     py_colors = None
 
     # https://xkcd.com/927/
-    for env_var in ["PY_COLORS", "CLICOLOR", "FORCE_COLOR", "ANSIBLE_FORCE_COLOR"]:
+    for env_var in [
+        "PY_COLORS",
+        "CLICOLOR",
+        "FORCE_COLOR",
+        "ANSIBLE_FORCE_COLOR",
+    ]:
         value = os.environ.get(env_var, None)
         if value is not None:
             py_colors = to_bool(value)
@@ -136,36 +146,42 @@ def should_do_markup(stream: TextIO = sys.stdout) -> bool:
 def get_console(**kwargs) -> Console:
     # interactive = is_interactive()
     from rich.theme import Theme
+
     # theme = Theme(STYLES)
     # if "width" not in kwargs:
     #     kwargs['width'] = 9999
     if "log_path" not in kwargs:
-        kwargs['log_path'] = True
+        kwargs["log_path"] = True
     if "soft_wrap" not in kwargs:
-        kwargs['soft_wrap'] = False
+        kwargs["soft_wrap"] = False
     if "theme" not in kwargs:
-        kwargs['theme'] = Theme(STYLES)
-    if "force_jupyter" not in kwargs:
-        kwargs['force_jupyter'] = is_interactive()
+        kwargs["theme"] = Theme(STYLES)
+    # if "force_jupyter" not in kwargs:
+    #     kwargs["force_jupyter"] = is_interactive()
     console = Console(
-        color_system='truecolor',
+        color_system="truecolor",
         # force_jupyter=interactive,
         # log_path=False,
         # theme=theme,
         # soft_wrap=False,
-        **kwargs
+        **kwargs,
     )
     return console
 
 
 if __name__ == "__main__":  # pragma: no cover
     import argparse
+
     parser = argparse.ArgumentParser()
     from rich.text import Text
-    parser.add_argument("--html", action="store_true", help="Export as HTML table")
+
+    parser.add_argument(
+        "--html", action="store_true", help="Export as HTML table"
+    )
     args = parser.parse_args()
     html: bool = args.html
     from rich.table import Table
+
     console = Console(record=True, width=120) if html else Console()
     table = Table("Name", "Styling")
     for style_name, style in STYLES.items():
@@ -173,9 +189,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     console.print(table)
     if html:
-        outfile = 'enrich_styles.html'
-        print(f'Saving to `{outfile}`')
-        with open(outfile, 'w') as f:
+        outfile = "enrich_styles.html"
+        print(f"Saving to `{outfile}`")
+        with open(outfile, "w") as f:
             f.write(console.export_html(inline_styles=True))
-
-
