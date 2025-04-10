@@ -38,22 +38,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
+
+def try_import(module_name: str):
+    try:
+        return __import__(module_name)
+    except Exception:
+        logger.info(f"Unable to import '{module_name}', trying to continue")
+
+
 ipex = None
 oneccl_bpt = None
 if torch.xpu.is_available():
-    try:
-        import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-    except Exception:
-        logger.info(
-            'Unable to import "intel_extension_for_pytorch", trying to continue...'
-        )
-
-    try:
-        import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
-    except Exception:
-        logger.info(
-            'Unable to import "oneccl_bindings_for_pytorch", trying to continue...'
-        )
+    ipex = try_import("intel_extension_for_pytorch")
+    oneccl_bpt = try_import("oneccl_bindings_for_pytorch")
 
 
 ACCELERATOR_TYPE = (
@@ -467,29 +464,6 @@ def get_torch_device(
     return torch.device(device_type) if as_torch_device else device_type
 
 
-# def get_torch_backend() -> str:
-#     tdevice = get_torch_device_type()
-#     if tdevice == 'cuda' and torch.cuda.is_available():
-#         return 'nccl'
-#     if tdevice == 'xpu' and torch.xpu.is_available():
-#         return 'ccl'
-#         # return 'mpi'
-#     return 'gloo'
-#     #
-#     # backend = (
-#     #     'nccl'
-#     #     if torch.cuda.is_available()
-#     #     else (
-#     #         'ccl' if torch.xpu.is_available() else 'gloo'
-#     #         # 'ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo'
-#     #     )
-#     # )
-#     # if backend is None:
-#     #     logger.critical(f'Using "gloo" backend on {get_torch_device()}')
-#     #     backend = 'gloo'
-#     # return backend
-
-
 def get_torch_version_as_float():
     return float(".".join(torch.__version__.split(".")[:2]))
 
@@ -503,7 +477,7 @@ def get_torch_backend_on_xpu() -> str:
 
         ```python
         >>> torch_version = float('.'join(torch.__version__.split('.')[:2]))
-        >>> if torch_version >= 2.6:
+        >>> if torch_version > 2.5:
         >>>     backend = 'xccl'
         >>> else:
         >>>     backend = 'ccl'
@@ -511,9 +485,7 @@ def get_torch_backend_on_xpu() -> str:
     """
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
-    if torch_version > 2.5:
-        return "xccl"
-    return "ccl"
+    return "xccl" if torch_version > 2.5 else "ccl"
 
 
 def get_torch_backend() -> str:
