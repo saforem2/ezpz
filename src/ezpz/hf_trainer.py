@@ -358,23 +358,25 @@ def parse_args() -> dict:
         and rank == 0
         and not os.environ.get("WANDB_DISABLED", False)
     ):
-        wbproj_name = (
-            model_args.wandb_project_name
-            if model_args.wandb_project_name is not None
-            else model_args.model_name_or_path
-        )
-        wbproj_name = f"ezpz-hf_trainer-{wbproj_name}".replace("/", "-")
-        run = ezpz.setup_wandb(project_name=wbproj_name)
+        if (
+            model_args.wandb_project_name is None
+            and model_args.model_name_or_path is None
+        ):
+            wbproj_name = "ezpz-hf_trainer-default-project"
+        else:
+            wbproj_name = (
+                model_args.wandb_project_name
+                if model_args.wandb_project_name is not None
+                else model_args.model_name_or_path
+            )
+            wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
+        run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
         wandb.define_metric(
             "num_input_tokens_seen"
         )  # Allow us to track the number of tokens seen during training
         if run is not None:
-            # assert wandb is not None and run is wandb.run and run is not None
             run.config.update(ezpz.get_dist_info())
-            # try:
             run.config.update(training_args.to_dict())
-        # except Exception:
-        #     ezpz.breakpoint(0)
     # NOTE:
     #   Sending telemetry.
     #   Tracking the example usage helps us better allocate resources to
