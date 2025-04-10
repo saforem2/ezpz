@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from functools import wraps
 from typing import Any, Callable, Optional, Union
+
 # from dataclasses import dataclass
 
 import ezpz.tp
@@ -24,24 +25,6 @@ import torch.distributed as tdist
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
-try:
-    import wandb
-
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-except Exception:
-    wandb = None
-    WANDB_DISABLED = True
-
-
-try:
-    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-except Exception:
-    ipex = None
-
-try:
-    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
-except Exception:
-    oneccl_bpt = None
 
 if not os.environ.get(
     "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
@@ -55,10 +38,27 @@ logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
+ipex = None
+oneccl_bpt = None
+if torch.xpu.is_available():
+    try:
+        import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+    except Exception:
+        logger.info(
+            'Unable to import "intel_extension_for_pytorch", trying to continue...'
+        )
+
+    try:
+        import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+    except Exception:
+        logger.info(
+            'Unable to import "oneccl_bindings_for_pytorch", trying to continue...'
+        )
+
 
 ACCELERATOR_TYPE = (
     "IntelGPU"
-    if ipex is not None
+    if torch.xpu.is_available() and torch.xpu.device_count() > 0
     else (
         "NvidiaGPU"
         if (torch.cuda.is_available() and torch.cuda.device_count() > 0)
@@ -86,6 +86,8 @@ def seed_everything(seed: int):
     _ = torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+    if torch.xpu.is_available():
+        torch.xpu.manual_seed(seed)
 
 
 def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
@@ -102,6 +104,10 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
 
 def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
     rank = get_rank() if rank is None else rank
+    try:
+        import wandb
+    except Exception:
+        wandb = None
 
     def decorator(func: Callable):
         @wraps(func)
@@ -123,10 +129,6 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     )
                     _ = tstr.append(f" took: {dt=:.4f}s")
                     logger.info("".join(tstr))
-                # try:
-                #     import wandb
-                # except:
-                #     wandb = None
                 if wandb is not None and wandb.run is not None:
                     # logger.info(
                     #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
@@ -280,26 +282,9 @@ def get_dist_info(
     if verbose:
         import json
 
-        # logger.info(
-        #     '\n'.join(
-        #         ['\n', "[dist_info]:"]
-        #         + [f"  • {k}={v}" for k, v in dist_info.items()]
-        #         + ['\n']
-        #     )
-        # )
-        # log_dict_as_bulleted_list(dist_info, name='dist_info')
         logger.info(
             f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
         )
-    if (
-        wandb is not None
-        and wandb.run is not None
-        and "DIST_INFO" not in wandb.run.config
-    ):
-        logger.info(
-            f'Updating wandb.run: {wandb.run.name} config with "DIST_INFO"'
-        )
-        wandb.run.config.update({"DIST_INFO": dist_info})
     return dist_info
 
 
@@ -359,7 +344,7 @@ def print_dist_setup(
     return dist_str
 
 
-def synchronize(device: torch.device | int | str = "cuda"):
+def synchronize(device: Optional[torch.device | int | str] = None):
     return (
         torch.cuda.synchronize(device)
         if torch.cuda.is_available()
@@ -527,8 +512,8 @@ def get_torch_backend_on_xpu() -> str:
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
     if torch_version > 2.5:
-        return 'xccl'
-    return 'ccl'
+        return "xccl"
+    return "ccl"
 
 
 def get_torch_backend() -> str:
@@ -1064,7 +1049,16 @@ def setup_wandb(
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
-    if WANDB_DISABLED:
+    # try:
+    #     import wandb
+    #
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+    # except Exception:
+    #     wandb = None
+    #     WANDB_DISABLED = True
+
+    if WANDB_DISABLED or WANDB_MODE == "disabled":
         logger.warning(
             f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
         )
@@ -1142,7 +1136,6 @@ def setup_wandb(
         wandb.run.config.update({"DIST_INFO": get_dist_info()})
     torch_version = torch.__version__
     torch_file = torch.__file__
-    run.config.update({})
     run.config.update(
         {
             "created_at": dstr,
@@ -1153,6 +1146,8 @@ def setup_wandb(
             "torch_file": torch_file,
             "world_size": get_world_size(),
             "year": ezpz.get_timestamp("%Y"),
+            "ezpz_version": ezpz.__version__,
+            "ezpz_file": ezpz.__file__,
         }
     )
     if config is not None:
@@ -1298,7 +1293,7 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     scheduler = get_scheduler()
     if scheduler.lower() == "unknown":
         logger.debug("Unknown scheduler")
-        hostfile = Path(os.getcwd()).joinpath('hostfile')
+        hostfile = Path(os.getcwd()).joinpath("hostfile")
     if scheduler.lower() == "slurm":
         hostfile = make_hostfile_from_slurm_env()
         assert Path(hostfile).is_file()
