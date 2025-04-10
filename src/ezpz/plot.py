@@ -201,7 +201,7 @@ def tplot(
     #     if len(y) > 0 and isinstance(y[0], torch.Tensor):
     #         y = torch.stack(y)
     #     if isinstance(y[0], )
-    tstamp = get_timestamp()
+    # tstamp = get_timestamp()
     plot_type = "line" if plot_type is None else plot_type
     title = (
         get_plot_title(ylabel=ylabel, xlabel=xlabel, label=label)
@@ -225,12 +225,12 @@ def tplot(
     elif len(y.shape) == 1:
         # if type is not None:
         #     assert type in ['scatter', 'line']
-        if plot_type is None or plot_type == "line":
-            marker = "hd" if marker is None else marker
-            pltx.plot(y, marker=marker, label=label)
-        elif plot_type is not None and plot_type == "scatter":
+        if plot_type is not None and plot_type == "scatter":
             marker = "braille" if marker is None else marker
             pltx.scatter(y, label=label, marker=marker)
+        elif plot_type is None or plot_type == "line":
+            # marker = "braille" if marker is None else marker
+            pltx.plot(y, marker=marker, label=label)
         elif plot_type is not None and plot_type == "hist":
             pltx.hist(y, bins=bins, label=label)
         else:
