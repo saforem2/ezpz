@@ -138,15 +138,15 @@ def get_logging_config() -> dict:
     return config
 
 
-def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
-    import logging
-    import logging.config
-
-    logging.config.dictConfig(get_logging_config())
-    log = logging.getLogger(name)
-    if level is not None:
-        log.setLevel("INFO")
-    return log
+# def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
+#     import logging
+#     import logging.config
+#
+#     logging.config.dictConfig(get_logging_config())
+#     log = logging.getLogger(name)
+#     if level is not None:
+#         log.setLevel("INFO")
+#     return log
 
 
 def print_json(
