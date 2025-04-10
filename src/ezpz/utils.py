@@ -6,7 +6,6 @@ import sys
 import pdb
 import os
 import re
-import h5py
 import logging
 import xarray as xr
 import numpy as np
@@ -17,7 +16,7 @@ from ezpz.configs import ScalarLike, PathLike
 import torch
 import torch.distributed as tdist
 
-from ezpz.dist import get_rank
+from ezpz import get_rank
 from pathlib import Path
 
 
@@ -189,6 +188,13 @@ def save_dataset(
 
 
 def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
+
     logger.info(f"Saving dataset to: {hfile}")
     f = h5py.File(hfile, "a")
     for key, val in dataset.data_vars.items():
@@ -209,6 +215,12 @@ def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
 
 
 def dict_from_h5pyfile(hfile: PathLike) -> dict:
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
     f = h5py.File(hfile, "r")
     data = {key: f[key] for key in list(f.keys())}
     f.close()
@@ -216,6 +228,12 @@ def dict_from_h5pyfile(hfile: PathLike) -> dict:
 
 
 def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
     f = h5py.File(hfile, "r")
     data = {key: f[key] for key in list(f.keys())}
     f.close()
@@ -316,7 +334,9 @@ def write_deepspeed_zero12_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
