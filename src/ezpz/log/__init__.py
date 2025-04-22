@@ -7,6 +7,7 @@ import os
 import logging
 import logging.config
 from typing import Optional
+# from ezpz.dist import get_rank, get_world_size
 from ezpz.log.config import STYLES, use_colored_logs
 from ezpz.configs import get_logging_config
 from ezpz.log.console import (
@@ -63,10 +64,10 @@ __all__ = [
 # #
 # # if __name__ == "__main__":  # pragma: no cover
 # #     print_styles()
-from ezpz.dist import get_rank, get_world_size
-
-RANK = get_rank()
-WORLD_SIZE = get_world_size()
+# from ezpz.dist import get_rank, get_world_size
+#
+# RANK = get_rank()
+# WORLD_SIZE = get_world_size()
 
 
 def get_file_logger(
@@ -76,6 +77,7 @@ def get_file_logger(
     fname: Optional[str] = None,
     # rich_stdout: bool = True,
 ) -> logging.Logger:
+    from ezpz.dist import get_rank
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     import logging
 
@@ -83,14 +85,14 @@ def get_file_logger(
     log = logging.getLogger(name)
     if rank_zero_only:
         fh = logging.FileHandler(f"{fname}.log")
-        if RANK == 0:
+        if get_rank() == 0:
             log.setLevel(level)
             fh.setLevel(level)
         else:
             log.setLevel("CRITICAL")
             fh.setLevel("CRITICAL")
     else:
-        fh = logging.FileHandler(f"{fname}-{RANK}.log")
+        fh = logging.FileHandler(f"{fname}-{get_rank()}.log")
         log.setLevel(level)
         fh.setLevel(level)
     # create formatter and add it to the handlers
@@ -174,13 +176,14 @@ def get_logger(
     level: Optional[str] = None,
     rank_zero_only: bool = True,
 ) -> logging.Logger:
+    from ezpz.dist import get_rank
     # if is_interactive():
     #     return get_rich_logger(name=name, level=level)
     level = os.environ.get("LOG_LEVEL", "INFO") if level is None else level
     logging.config.dictConfig(get_logging_config())
     log = logging.getLogger(name if name is not None else __name__)
     if rank_zero_only:
-        if RANK == 0:
+        if get_rank() == 0:
             log.setLevel(level)
         else:
             log.setLevel("CRITICAL")
@@ -261,6 +264,7 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
 def get_rich_logger(
     name: Optional[str] = None, level: Optional[str] = None
 ) -> logging.Logger:
+    from ezpz.dist import get_world_size
     from ezpz.log.handler import RichHandler
 
     level = "INFO" if level is None else level
@@ -269,7 +273,7 @@ def get_rich_logger(
     log.handlers = []
     console = get_console(
         markup=True,
-        redirect=(WORLD_SIZE > 1),
+        redirect=(get_world_size() > 1),
     )
     handler = RichHandler(
         level,
@@ -345,6 +349,7 @@ def get_logger1(
     rank_zero_only: bool = True,
     **kwargs,
 ) -> logging.Logger:
+    from ezpz.dist import get_rank, get_world_size
     log = logging.getLogger(name)
     # from ezpz.log.handler import RichHandler
     from ezpz.log.console import get_console
@@ -354,7 +359,7 @@ def get_logger1(
 
     _ = (
         log.setLevel("CRITICAL")
-        if (RANK == 0 and rank_zero_only)
+        if (get_rank() == 0 and rank_zero_only)
         else log.setLevel(level)
     )
     # if rank_zero_only:
@@ -362,17 +367,17 @@ def get_logger1(
     #         log.setLevel('CRITICAL')
     #     else:
     #         log.setLevel(level)
-    if RANK == 0:
+    if get_rank() == 0:
         console = get_console(
             markup=True,  # (WORLD_SIZE == 1),
-            redirect=(WORLD_SIZE > 1),
+            redirect=(get_world_size() > 1),
             **kwargs,
         )
         # if console.is_jupyter:
         #     console.is_jupyter = False
         # log.propagate = True
         # log.handlers = []
-        use_markup = WORLD_SIZE == 1 and not is_interactive()
+        use_markup = get_world_size() == 1 and not is_interactive()
         log.addHandler(
             OriginalRichHandler(
                 omit_repeated_times=False,
