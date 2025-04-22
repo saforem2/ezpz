@@ -9,8 +9,10 @@ for more information.
 """
 
 import os
+from getpass import getuser
 from pathlib import Path
 from typing import Optional
+
 import ezpz
 
 import socket
@@ -28,7 +30,7 @@ def get_pbs_running_jobs_for_user():
         raise e
 
     jobarr = [
-        i for i in qstat(f"-fn1wru {os.getlogin()}").split("\n") if " R " in i
+        i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i
     ]
     jobs = {}
     for row in jobarr:
