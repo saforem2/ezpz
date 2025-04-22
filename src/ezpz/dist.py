@@ -25,16 +25,25 @@ import torch.distributed as tdist
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
-try:
-    import wandb
+# try:
+#     import wandb
+#
+#     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+# except Exception:
+#     wandb = None
+#     WANDB_DISABLED = True
+#
+from ezpz.lazy import lazy_import
 
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+try:
+    wandb = lazy_import("wandb")
 except Exception:
     wandb = None
-    WANDB_DISABLED = True
 
 try:
-    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+    import intel_extension_for_pytorch
+    # import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+    # ipex = lazy_import("intel_extension_for_pytorch")
 except Exception:
     ipex = None
 # if ipex is not None:
@@ -161,6 +170,10 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
 
 
 def timeit(func: Callable):
+    try:
+        import wandb
+    except Exception:
+        wandb = None
     @wraps(func)
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
@@ -1053,6 +1066,10 @@ def setup_wandb(
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
+    # try:
+    #     import wandb
+    # except Exception:
+    #     wandb = None
     # try:
     #     import wandb
     #
