@@ -16,8 +16,10 @@ import time
 from typing import Optional
 import warnings
 
-import ezpz as ezpz
-import ezpz.tp
+# from ezpz.lazy import lazy_import
+# ezpz = lazy_import('ezpz')
+import ezpz
+# import ezpz.tp
 
 import torch
 import torch.distributed as tdist
