@@ -50,8 +50,9 @@ def run_command(command, filters: Optional[list] = None):
             print(decoded.rstrip())
 
 
-def main():
+def launch():
     """Launch a command on the current PBS job."""
+    start = time.perf_counter()
     import ezpz.pbs
 
     jobid = ezpz.pbs.get_pbs_jobid_of_active_job()
@@ -78,11 +79,13 @@ def main():
     logger.info(
         "\n".join(
             [
-                "Building command to execute from: '{launch_cmd}' + '{python}' + '{cmd_to_launch}'",
+                "Building command to execute from: '[launch_cmd]' + '[python]' + '[cmd_to_launch]'",
                 "",
-                f"'{lcmd_str}':\n\t{launch_cmd}",
-                f"'{pystr}':\n\t{sys.executable}",
-                f"'{cmdstr}':\n\t{cmd_to_launch.replace(sys.executable, '')}",
+                f"[{lcmd_str}]:\n\t{launch_cmd}",
+                "",
+                f"[{pystr}]:\n\t{sys.executable}",
+                "",
+                f"[{cmdstr}]:\n\t{cmd_to_launch.replace(sys.executable, '')}",
                 "",
             ]
         )
@@ -90,7 +93,8 @@ def main():
 
     cmd = f"{launch_cmd} {cmd_to_launch}"
 
-    logger.info(f"\nEvaluating:\n\t{cmd}")
+    logger.info(f"Took: {time.perf_counter() - start:.2f} seconds to build command.")
+    logger.info(f"Evaluating:\n\t{cmd}")
     t0 = time.perf_counter()
 
     _ = run_command(cmd)
@@ -101,4 +105,4 @@ if __name__ == "__main__":
     import warnings
 
     warnings.filterwarnings("ignore")
-    main()
+    launch()
