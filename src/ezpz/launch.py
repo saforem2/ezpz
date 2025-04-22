@@ -33,6 +33,35 @@ logger = ezpz.get_logger(__name__)
 #             print(line.rstrip().decode("utf-8"))
 
 
+def parse_args():
+    """Parse command line arguments."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Launch a command on the current PBS job."
+    )
+    parser.add_argument(
+        "command",
+        type=str,
+        help="The command to run on the current PBS job.",
+    )
+    parser.add_argument(
+        "--filter",
+        type=str,
+        nargs="+",
+        help="Filter output lines by these strings.",
+    )
+    # add argument for controlling WORLD_SIZE
+    parser.add_argument(
+        "--world_size",
+        required=False,
+        type=int,
+        default=-1,
+        help="Number of processes to launch.",
+    )
+    return parser.parse_args()
+
+
 def run_command(command, filters: Optional[list] = None):
     with subprocess.Popen(
         command,
@@ -73,27 +102,29 @@ def launch():
     if not cmd_to_launch.startswith("python"):
         cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
 
-    lcmd_str = Text("launch_cmd", style="blue")
-    pystr = Text("python", style="blue")
-    cmdstr = Text("cmd_to_launch", style="blue")
+    # lcmd_str = Text("launch_cmd", style="blue")
+    # pystr = Text("python", style="blue")
+    # cmdstr = Text("cmd_to_launch", style="blue")
     logger.info(
         "\n".join(
             [
-                "Building command to execute from: '[launch_cmd]' + '[python]' + '[cmd_to_launch]'",
+                "Building command to execute by piecing together:",
+                "\t(1) ['launch_cmd'] + (2) ['python'] + (3) ['cmd_to_launch']",
                 "",
-                f"[{lcmd_str}]:\n\t{launch_cmd}",
+                f"1. ['launch_cmd']:\n\t{launch_cmd}",
                 "",
-                f"[{pystr}]:\n\t{sys.executable}",
+                f"2. ['python']:\n\t{sys.executable}",
                 "",
-                f"[{cmdstr}]:\n\t{cmd_to_launch.replace(sys.executable, '')}",
+                f"3. ['cmd_to_launch']:\n\t{cmd_to_launch.replace(sys.executable, '')}",
                 "",
             ]
         )
     )
-
     cmd = f"{launch_cmd} {cmd_to_launch}"
 
-    logger.info(f"Took: {time.perf_counter() - start:.2f} seconds to build command.")
+    logger.info(
+        f"Took: {time.perf_counter() - start:.2f} seconds to build command."
+    )
     logger.info(f"Evaluating:\n\t{cmd}")
     t0 = time.perf_counter()
 
