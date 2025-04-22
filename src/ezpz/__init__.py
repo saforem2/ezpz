@@ -3,12 +3,20 @@ ezpz/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+# import importlib.util
+# from importlib import import_module
 import logging
 import logging.config
 import os
+# import sys
 import warnings
 import socket
 
+
+
+# sys.flags.lazy_imports = 1
+
+os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
 os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
@@ -16,11 +24,13 @@ os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
     "ITEX_CPP_MIN_LOG_LEVEL", "5"
 )
 os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
+# noqa: E402
 warnings.filterwarnings("once")
 
 logging.getLogger("deepseed").setLevel(logging.ERROR)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("datasets").setLevel(logging.ERROR)
+logging.getLogger("sh").setLevel("WARNING")
 
 # NOTE: Need to swap import order on Polaris (hostname: [x3...])
 if socket.gethostname().startswith("x3"):
@@ -30,15 +40,14 @@ else:
     import torch  # type: ignore
     from mpi4py import MPI  # type:ignore  # noqa: F401
 
-try:
-    import deepspeed  # type:ignore
-except Exception:
-    pass
+# try:
+#     import deepspeed  # type:ignore
+# except Exception:
+#     pass
 
 
 from ezpz.__about__ import __version__
 
-from ezpz import profile
 from ezpz import configs
 from ezpz import tp
 from ezpz import log
@@ -67,6 +76,45 @@ from ezpz.configs import (
     print_config_tree,
 )
 # from ezpz import dist
+# dist_imports = [
+#     'check',
+#     'cleanup',
+#     'get_cpus_per_node',
+#     'get_dist_info',
+#     'get_gpus_per_node',
+#     'get_hostname',
+#     'get_hosts_from_hostfile',
+#     'get_local_rank',
+#     'get_machine',
+#     'get_node_index',
+#     'get_nodes_from_hostfile',
+#     'get_num_nodes',
+#     'get_rank',
+#     'get_torch_backend',
+#     'get_torch_device',
+#     'get_torch_device_type',
+#     'get_world_size',
+#     'include_file',
+#     'init_deepspeed',
+#     'init_process_group',
+#     'print_dist_setup',
+#     'query_environment',
+#     'run_bash_command',
+#     'seed_everything',
+#     'setup',
+#     # setup_tensorflow,
+#     'setup_torch',
+#     'setup_torch_DDP',
+#     'setup_torch_distributed',
+#     'setup_wandb',
+#     'synchronize',
+#     'timeit',
+#     'timeitlogit',
+# ]
+# for name in dist_imports:
+#     module = lazy_import(f"ezpz.dist.{name}")
+#     globals()[name] = module
+
 from ezpz.dist import (
     check,
     cleanup,
@@ -127,32 +175,34 @@ from ezpz.jobs import (
     savejobenv_yaml,
     write_launch_shell_script,
 )
+
 from ezpz.log import (
-    COLORS,
-    Console,
-    RichHandler,
-    STYLES,
-    add_columns,
-    build_layout,
-    flatten_dict,
-    get_console,
-    get_file_logger,
+#     # COLORS,
+#     # Console,
+#     # RichHandler,
+#     # STYLES,
+#     # add_columns,
+#     # build_layout,
+#     flatten_dict,
+#     get_console,
+#     # get_file_logger,
     get_logger,
-    get_theme,
-    get_width,
-    is_interactive,
-    make_layout,
-    nested_dict_to_df,
-    print_config,
-    printarr,
-    should_do_markup,
-    to_bool,
+#     # get_theme,
+#     # get_width,
+#     is_interactive,
+#     # make_layout,
+#     nested_dict_to_df,
+#     print_config,
+#     printarr,
+#     should_do_markup,
+#     # to_bool,
     use_colored_logs,
 )
 from ezpz import pbs
 
 # from ezpz.plot import tplot, tplot_dict
 from ezpz.tplot import tplot, tplot_dict
+from ezpz import profile
 from ezpz.profile import PyInstrumentProfiler, get_context_manager
 from ezpz.tp import (
     destroy_tensor_parallel,
@@ -187,10 +237,10 @@ from ezpz.utils import (
     save_dataset,
 )
 
-try:
-    import deepspeed
-except Exception:
-    pass
+# try:
+#     import deepspeed
+# except Exception:
+#     pass
 
 # def lazy_import(name: str):
 #     spec = importlib.util.find_spec(name)
@@ -221,11 +271,6 @@ else:
 
 logger = logging.getLogger(__name__)
 # logger.setLevel("INFO")
-logging.getLogger("sh").setLevel("WARNING")
-
-
-os.environ["PYTHONIOENCODING"] = "utf-8"
-# noqa: E402
 
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
@@ -259,9 +304,9 @@ __all__ = [
     "BACKENDS",
     # 'BEAT_TIME',
     "BIN_DIR",
-    "COLORS",
+    # "COLORS",
     "CONF_DIR",
-    "Console",
+    # "Console",
     # 'CustomLogging',
     "DS_CONFIG_JSON",
     "DS_CONFIG_PATH",
@@ -279,16 +324,16 @@ __all__ = [
     "PROJECT_ROOT",
     "PyInstrumentProfiler",
     # 'QUARTO_OUTPUTS_DIR',
-    "RichHandler",
+    # "RichHandler",
     "SAVEJOBENV",
     "SCHEDULERS",
-    "STYLES",
+    # "STYLES",
     "StopWatch",
     "TrainConfig",
     "UTILS",
     "add_to_jobslog",
-    "add_columns",
-    "build_layout",
+    # "add_columns",
+    # "build_layout",
     "breakpoint",
     "check",
     "cleanup",
@@ -321,9 +366,9 @@ __all__ = [
     "dict_from_h5pyfile",
     # "dist",
     "ensure_divisibility",
-    "flatten_dict",
+    # "flatten_dict",
     "format_pair",
-    "get_console",
+    # "get_console",
     "get_context_manager",
     "get_context_parallel_group",
     "get_context_parallel_rank",
@@ -334,7 +379,7 @@ __all__ = [
     "get_data_parallel_rank",
     "get_data_parallel_world_size",
     "get_dist_info",
-    "get_file_logger",
+    # "get_file_logger",
     "get_gpus_per_node",
     "get_hostname",
     "get_hosts_from_hostfile",
@@ -356,12 +401,12 @@ __all__ = [
     "get_rank",
     "get_scheduler",
     "get_scheduler",
-    "get_theme",
+    # "get_theme",
     "get_timestamp",
     "get_torch_backend",
     "get_torch_device",
     "get_torch_device_type",
-    "get_width",
+    # "get_width",
     "get_world_size",
     "git_ds_info",
     "grab_tensor",
@@ -369,19 +414,19 @@ __all__ = [
     "init_deepspeed",
     "init_process_group",
     "initialize_tensor_parallel",
-    "is_interactive",
+    # "is_interactive",
     "load_ds_config",
     "log",
-    "make_layout",
+    # "make_layout",
     "pbs",
     # 'print_job_env',
     "tp",
     "tensor_parallel_is_initialized",
-    "nested_dict_to_df",
-    "print_config",
+    # "nested_dict_to_df",
+    # "print_config",
     "print_config_tree",
     "print_dist_setup",
-    "printarr",
+    # "printarr",
     "profile",
     "query_environment",
     "run_bash_command",
@@ -393,12 +438,12 @@ __all__ = [
     "setup_torch_DDP",
     "setup_torch_distributed",
     "setup_wandb",
-    "should_do_markup",
+    # "should_do_markup",
     "summarize_dict",
     "synchronize",
     "timeit",
     "timeitlogit",
-    "to_bool",
+    # "to_bool",
     "tplot",
     "tplot_dict",
 ]
