@@ -29,9 +29,9 @@ jobs:
       - run: pip install mkdocs mkdocs-autorefs mkdocs-material mkdocstrings mkdocstrings-python pymdown-extensions mkdocs-mermaid2-plugin
 
       - name: Build documentation
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GOOGLE_ANALYTICS_KEY: ${{ secrets.GOOGLE_ANALYTICS_KEY }}
+        # env:
+        #   GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        #   GOOGLE_ANALYTICS_KEY: ${{ secrets.GOOGLE_ANALYTICS_KEY }}
         run: |
           mkdocs build --clean
           mkdocs --version
