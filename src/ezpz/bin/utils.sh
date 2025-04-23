@@ -288,8 +288,21 @@ ezpz_setup_srun() {
     # fi
 }
 
+#############################################################################
+# ezpz_set_proxy_alcf
+#
+# Set proxy variables for ALCF
+#
+ezpz_set_proxy_alcf() {
+    export HTTP_PROXY="http://proxy.alcf.anl.gov:3128"
+    export HTTPS_PROXY="http://proxy.alcf.anl.gov:3128"
+    export http_proxy="http://proxy.alcf.anl.gov:3128"
+    export https_proxy="http://proxy.alcf.anl.gov:3128"
+    export ftp_proxy="http://proxy.alcf.anl.gov:3128"
+}
+
 ############################################################################
-# save_ds_env
+# ezpz_save_ds_env
 #
 # Save important environment variables to .deepspeed_env, which will be
 # forwarded to ALL ranks with DeepSpeed
@@ -420,6 +433,29 @@ ezpz_setup_conda() {
         exit 1
     fi
     # # ----- [Perlmutter @ NERSC] -------------------------------------
+}
+
+########################
+# ezpz_install_uv
+#
+# Install `uv` package.
+# See: https://docs.astral.sh/uv/#installation
+# #######################
+ezpz_install_uv() {
+    ezpz_set_proxy_alcf
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+}
+
+# if [[ -n "$(command -v nvidia-smi)" ]]; then
+ezpz_setup_uv_venv() {
+    if [[ -n "$(command -v uv)" ]]; then
+        echo "uv already installed. Skipping..."
+    else
+        echo "Installing uv..."
+        ezpz_install_uv
+    fi
+    env_name=$(echo "${CONDA_PREFIX}" | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+    uv venv --python=$(which python3) --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
 }
 
 ########################
@@ -1076,16 +1112,16 @@ ezpz_write_job_info() {
         export DIST_LAUNCH="${dist_launch_cmd}"
         export ezlaunch="${DIST_LAUNCH}"
         ezpz_launch() {
-          if [[ -v WORLD_SIZE ]]; then
-            dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
-          else
-            dlaunch="${DIST_LAUNCH}"
-          fi
-          _args=("${@}")
-          printf "[yeet]:\n"
-          printf "evaluating:\n\t${GREEN}%s${RESET}\n" "${dlaunch}"
-          printf "with arguments:\n\t${BLUE}%s${RESET}\n" "${_args[*]}"
-          eval "${dlaunch} ${@}"
+            if [[ -v WORLD_SIZE ]]; then
+                dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
+            else
+                dlaunch="${DIST_LAUNCH}"
+            fi
+            _args=("${@}")
+            printf "[yeet]:\n"
+            printf "evaluating:\n\t${GREEN}%s${RESET}\n" "${dlaunch}"
+            printf "with arguments:\n\t${BLUE}%s${RESET}\n" "${_args[*]}"
+            eval "${dlaunch} ${@}"
         }
         export LAUNCH="${DIST_LAUNCH}"
         export ezlaunch="${DIST_LAUNCH}"
@@ -1340,22 +1376,21 @@ ezpz_setup_job() {
     fi
 }
 
-
 ezpz_setup_env() {
     ezpz_setup_python && ezpz_setup_job
 }
 
 ezpz_setup_install() {
-  printf "[ezpz] Loading python modules and looking for virtual environment...\n"
-  ezpz_setup_python
-  printf "[ezpz] Determining job information from hostname=%s...\n" "$(hostname)"
-  ezpz_setup_job
-  printf "[ezpz] Installing https://github.com/saforem2/ezpz into %s\n" "${VIRTUAL_ENV}"
-  if ! python3 -m pip install "git+https://github.com/saforem2/ezpz" --require-virtualenv; then
-    printf "[ezpz] :x: Failed to install ezpz into %s\n" "${VIRTUAL_ENV}"
-    exit 1
-  fi
-  printf "[ezpz] :check: Done!"
+    printf "[ezpz] Loading python modules and looking for virtual environment...\n"
+    ezpz_setup_python
+    printf "[ezpz] Determining job information from hostname=%s...\n" "$(hostname)"
+    ezpz_setup_job
+    printf "[ezpz] Installing https://github.com/saforem2/ezpz into %s\n" "${VIRTUAL_ENV}"
+    if ! python3 -m pip install "git+https://github.com/saforem2/ezpz" --require-virtualenv; then
+        printf "[ezpz] :x: Failed to install ezpz into %s\n" "${VIRTUAL_ENV}"
+        exit 1
+    fi
+    printf "[ezpz] :check: Done!"
 }
 
 ###############################################
