@@ -1,0 +1,149 @@
+site_name: "ezpz"
+site_url: https://saforem2.github.io/ezpz
+repo_name: "saforem2/ezpz"
+repo_url: https://github.com/saforem2/ezpz
+edit_uri: edit/main/docs/
+theme:
+  custom_dir: docs/overrides
+  name: material
+  favicoon: assets/lemon.png
+  features:
+    - content.action.edit
+    - navigation.indexes
+    - content.code.select
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  icon:
+    logo: custom/lemon
+    repo: custom/github
+    # logo: 🍋
+    # repo: ":simple-refinedgithub:"
+
+plugins:
+  # - typeset
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+    # enabled: true
+    # custom_templates: templates
+    # default_handler: python
+    # handlers:
+    #   python:
+    #     options:
+    #       show_source: false
+
+# markdown_extensions:
+#   - attr_list
+#   - pymdownx.inlinehilite
+#   - pymdownx.snippets
+#   - pymdownx.superfences
+#   - pymdownx.highlight:
+#       anchor_linenums: true
+#       line_spans: __span
+#       pygments_lang_class: true
+#   - pymdownx.superfences:
+#       # make exceptions to highlighting of code:
+#       custom_fences:
+#         - name: mermaid
+#           class: mermaid
+#           format: !!python/name:mermaid2.fence_mermaid_custom
+#   - pymdownx.emoji:
+#       emoji_index: !!python/name:material.extensions.emoji.twemoji
+#       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+#
+#   # - pymdownx.emoji:
+#   #     emoji_index: !!python/name:material.extensions.emoji.twemoji
+#   #     emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_javascript:
+  # - javascripts/shiki.js
+  # - https://unpkg.com/shikijs@3.3.0
+  # - https://unpkg.com/shikijs/langs@3.3.0
+  # - https://unpkg.com/shikijs/themes@3.3.0
+  - https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js
+  - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
+
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - pymdownx.blocks.admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  # Python Markdown Extensions
+  - pymdownx.betterem
+  - pymdownx.extra
+  - pymdownx.critic
+  # - pymdownx.blocks.caption
+  - pymdownx.caret
+  - pymdownx.blocks.details
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.tilde
+  - pymdownx.highlight:
+      use_pygments: true
+      anchor_linenums: true
+      pygments_lang_class: true
+      linenums: true
+      # auto_title: true
+  - pymdownx.superfences:
+      preserve_tabs: true
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+            # - name: mathjax
+            #   class: mathjax
+            #   format: !!python/name:material.extensions.mathjax.fence_mathjax_custom
+            # - name: mathjax2
+            #   class: mathjax2
+            #   format: !!python/name:material.extensions.mathjax.fence_mathjax_custom
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - 🏡 Home: index.md
+  - 📝 Example: example.md
+  - 🚀 Launch: launch.md
+  - 📓 Notes: notes.md
+  - 🤗 HF Trainer: hf-trainer.md
+  - 🕸️ Parallelism: parallelism.md
+  - 🗓️ PBS: pbs.md
+  - 🐍 Python Library: python-library.md
+  - 🏖️ Shell Environment: shell-environment.md
+  - 💾 Code Reference:
+    - Code-Reference/index.md
+    - ezpz: Code-Reference/ezpz-reference.md
+    - ezpz.dist: Code-Reference/dist-reference.md
+    - ezpz.config: Code-Reference/config-reference.md
+
+

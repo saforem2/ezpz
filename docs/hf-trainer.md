@@ -1,7 +1,7 @@
 
 # Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
 
-The [`src/ezpz/hf_trainer.py`](/src/ezpz/hf_trainer.py) module provides a
+The [`src/ezpz/hf_trainer.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/hf_trainer.py) module provides a
 mechanism for distributed training with 🤗 [huggingface /
 transformers](https://github.com/huggingface/transformers).
 
