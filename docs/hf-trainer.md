@@ -89,21 +89,26 @@ Additionally, [DeepSpeed](https://github.com/deepspeedai/deepspeed) is fully
 supported and can be configured by specifying the path to a compatible
 [DeepSpeed Config JSON file](https://www.deepspeed.ai/docs/config-json/), e.g.:
 
-```bash
-python3 -m ezpz.hf_trainer --deepspeed="/path/to/deepspeed_config.json" <remaining args>
-```
+1. Build a DeepSpeed config:
 
-> [!TIP]
-> You can build a minimal ZeRO-{1,2} config template via:
->
-> ```bash
-> python3 -c 'import ezpz; ezpz.utils.write_deepspeed_zero12_auto_config(zero_stage=2)'
-> ```
->
-> <details closed><summary>Output:</summary>
->
-> ```bash
-> [2025-04-22 19:44:46][I][ezpz/utils:340] Saving DeepSpeed ZeRO Stage 2 auto config to: /lus/flare/projects/datascience/foremans/projects/argonne-lcf/tmp/2025-04-22-153356/Megatron-DeepSpeed/ds_configs/deepspeed_zero2_auto_config.json
-> ```
->
-> </details>
+    ```bash
+    python3 -c 'import ezpz; ezpz.utils.write_deepspeed_zero12_auto_config(zero_stage=2)'
+    ```
+
+2. Train:
+
+
+    ```bash
+    python3 -m ezpz.launch -m ezpz.hf_trainer \
+      --dataset_name stanfordnlp/imdb \
+      --model_name_or_path meta-llama/Llama-3.2-1B \
+      --bf16 \
+      --do_train \
+      --report-to=wandb \
+      --logging-steps=1 \
+      --include-tokens-per-second=true \
+      --auto-find-batch-size=true \
+      --deepspeed=ds_configs/deepspeed_zero2_auto_config.json
+    ```
+
+😎 2 ez
