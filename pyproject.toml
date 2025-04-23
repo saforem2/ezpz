@@ -43,23 +43,35 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
+    "black",
+    "bpython",
+    "ipython",
+    "ipython",
+    "isort",
+    "jupyter",
+    "ptipython",
+    "pudb",
+    "pynvim",
+    "pyright",
+    "ruff",
+    "ruff-lsp",
     # "sentencepiece",
     # "joblib",
     # "ml_dtypes",
     # "tqdm",
-    # "tensorboard",
-    "ipython",
     # "hydra-colorlog",
-    "pudb",
-    "pynvim",
-    "ruff",
-    "black",
-    "pyright",
-    "isort",
-    "ruff-lsp",
-    "ipython",
-    "ptipython",
-    "jupyter",
+    # "tensorboard",
+]
+
+docs = [
+  "mkdocs-material",
+  "mkdocs",
+  "mkdocs-autorefs",
+  "mkdocs-material",
+  "mkdocstrings",
+  "mkdocstrings-python",
+  "pymdown-extensions",
+  "mkdocs-mermaid2-plugin"
 ]
 
 [project.urls]
