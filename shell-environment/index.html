@@ -1,0 +1,1175 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://saforem2.github.io/ezpz/shell-environment/">
+      
+      
+        <link rel="prev" href="../python-library/">
+      
+      
+        <link rel="next" href="../Code-Reference/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+    
+    
+      
+        <title>🏖️ Shell Environment - ezpz</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.2afb09e1.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#shell-environment" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ezpz" class="md-header__button md-logo" aria-label="ezpz" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48"><!-- Icon from Streamline Emojis by Streamline - https://creativecommons.org/licenses/by/4.0/ --><path fill="#45413c" d="M8.77 45.36a12.6 1.64 0 1 0 25.2 0a12.6 1.64 0 1 0-25.2 0" opacity=".15"/><path fill="#ffe500" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#fff48c" d="M10.13 22.22c4.45-4.44 10.56-6.7 16.18-5.19a13.9 13.9 0 0 0 4.17.54a5.56 5.56 0 0 1 4.17 1.67l.94.93a5.6 5.6 0 0 1 1.67 4.18a13.8 13.8 0 0 0 .54 4.16c.09.36.17.72.24 1.09a14.4 14.4 0 0 0-.24-6.09a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19C6 21.38 3.73 27 4.69 32.32a19.16 19.16 0 0 1 5.44-10.1"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#debb7e" d="M33.27 15a14.8 14.8 0 0 1 6.59-4.26c2.48-.67 3 .84 3.14 2a1.11 1.11 0 0 1-1 1.19a16 16 0 0 0-7.22 2.64c-1.35.1-1.51-1.57-1.51-1.57"/><path fill="#f0d5a8" d="M33.89 16.27a14.3 14.3 0 0 1 6-3.61c1.7-.45 2.49.12 2.86.89a1.14 1.14 0 0 0 .28-.82c-.09-1.14-.66-2.65-3.14-2A14.8 14.8 0 0 0 33.27 15a2.16 2.16 0 0 0 .62 1.27"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.27 15a14.9 14.9 0 0 1 6.59-4.26c2.48-.66 3 .85 3.14 2a1.11 1.11 0 0 1-1 1.19a16.1 16.1 0 0 0-7.22 2.64c-1.35.09-1.51-1.57-1.51-1.57"/><path fill="#6dd627" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="#9ceb60" d="M20.09 6a9.4 9.4 0 0 1 10.54 2.07a9.5 9.5 0 0 1 3.05 5.5a9.18 9.18 0 0 0-3.05-8.46a9.38 9.38 0 0 0-10.54-2.06a1.07 1.07 0 0 0-.64 1a11.7 11.7 0 0 0 .25 2.27a1.1 1.1 0 0 1 .39-.32"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15s0-5.93-5.56-8.38"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ezpz
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              🏖️ Shell Environment
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/saforem2/ezpz" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Line Icons by Vjacheslav Trushkin - https://github.com/cyberalien/line-md/blob/master/license.txt --><mask id="lineMdGithubLoop0" width="24" height="24" x="0" y="0"><g fill="#fff"><ellipse cx="9.5" cy="9" rx="1.5" ry="1"/><ellipse cx="14.5" cy="9" rx="1.5" ry="1"/></g></mask><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="32" stroke-dashoffset="32" d="M12 4c1.67 0 2.61 0.4 3 0.5c0.53 -0.43 1.94 -1.5 3.5 -1.5c0.34 1 0.29 2.22 0 3c0.75 1 1 2 1 3.5c0 2.19 -0.48 3.58 -1.5 4.5c-1.02 0.92 -2.11 1.37 -3.5 1.5c0.65 0.54 0.5 1.87 0.5 2.5c0 0.73 0 3 0 3M12 4c-1.67 0 -2.61 0.4 -3 0.5c-0.53 -0.43 -1.94 -1.5 -3.5 -1.5c-0.34 1 -0.29 2.22 0 3c-0.75 1 -1 2 -1 3.5c0 2.19 0.48 3.58 1.5 4.5c1.02 0.92 2.11 1.37 3.5 1.5c-0.65 0.54 -0.5 1.87 -0.5 2.5c0 0.73 0 3 0 3"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.7s" values="32;0"/></path><path stroke-dasharray="10" stroke-dashoffset="10" d="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"><animate attributeName="d" dur="3s" repeatCount="indefinite" values="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5;M9 19c-1.406 0-3-.5-4-.5-.532 0-1 0-2-.5;M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"/><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.8s" dur="0.2s" values="10;0"/></path></g><rect width="8" height="4" x="8" y="11" fill="currentColor" mask="url(#lineMdGithubLoop0)"><animate attributeName="y" dur="10s" keyTimes="0;0.45;0.46;0.54;0.55;1" repeatCount="indefinite" values="11;11;7;7;11;11"/></rect></svg>
+  </div>
+  <div class="md-source__repository">
+    saforem2/ezpz
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ezpz" class="md-nav__button md-logo" aria-label="ezpz" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48"><!-- Icon from Streamline Emojis by Streamline - https://creativecommons.org/licenses/by/4.0/ --><path fill="#45413c" d="M8.77 45.36a12.6 1.64 0 1 0 25.2 0a12.6 1.64 0 1 0-25.2 0" opacity=".15"/><path fill="#ffe500" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#fff48c" d="M10.13 22.22c4.45-4.44 10.56-6.7 16.18-5.19a13.9 13.9 0 0 0 4.17.54a5.56 5.56 0 0 1 4.17 1.67l.94.93a5.6 5.6 0 0 1 1.67 4.18a13.8 13.8 0 0 0 .54 4.16c.09.36.17.72.24 1.09a14.4 14.4 0 0 0-.24-6.09a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19C6 21.38 3.73 27 4.69 32.32a19.16 19.16 0 0 1 5.44-10.1"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#debb7e" d="M33.27 15a14.8 14.8 0 0 1 6.59-4.26c2.48-.67 3 .84 3.14 2a1.11 1.11 0 0 1-1 1.19a16 16 0 0 0-7.22 2.64c-1.35.1-1.51-1.57-1.51-1.57"/><path fill="#f0d5a8" d="M33.89 16.27a14.3 14.3 0 0 1 6-3.61c1.7-.45 2.49.12 2.86.89a1.14 1.14 0 0 0 .28-.82c-.09-1.14-.66-2.65-3.14-2A14.8 14.8 0 0 0 33.27 15a2.16 2.16 0 0 0 .62 1.27"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.27 15a14.9 14.9 0 0 1 6.59-4.26c2.48-.66 3 .85 3.14 2a1.11 1.11 0 0 1-1 1.19a16.1 16.1 0 0 0-7.22 2.64c-1.35.09-1.51-1.57-1.51-1.57"/><path fill="#6dd627" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="#9ceb60" d="M20.09 6a9.4 9.4 0 0 1 10.54 2.07a9.5 9.5 0 0 1 3.05 5.5a9.18 9.18 0 0 0-3.05-8.46a9.38 9.38 0 0 0-10.54-2.06a1.07 1.07 0 0 0-.64 1a11.7 11.7 0 0 0 .25 2.27a1.1 1.1 0 0 1 .39-.32"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15s0-5.93-5.56-8.38"/></svg>
+
+    </a>
+    ezpz
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/saforem2/ezpz" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Line Icons by Vjacheslav Trushkin - https://github.com/cyberalien/line-md/blob/master/license.txt --><mask id="lineMdGithubLoop0" width="24" height="24" x="0" y="0"><g fill="#fff"><ellipse cx="9.5" cy="9" rx="1.5" ry="1"/><ellipse cx="14.5" cy="9" rx="1.5" ry="1"/></g></mask><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="32" stroke-dashoffset="32" d="M12 4c1.67 0 2.61 0.4 3 0.5c0.53 -0.43 1.94 -1.5 3.5 -1.5c0.34 1 0.29 2.22 0 3c0.75 1 1 2 1 3.5c0 2.19 -0.48 3.58 -1.5 4.5c-1.02 0.92 -2.11 1.37 -3.5 1.5c0.65 0.54 0.5 1.87 0.5 2.5c0 0.73 0 3 0 3M12 4c-1.67 0 -2.61 0.4 -3 0.5c-0.53 -0.43 -1.94 -1.5 -3.5 -1.5c-0.34 1 -0.29 2.22 0 3c-0.75 1 -1 2 -1 3.5c0 2.19 0.48 3.58 1.5 4.5c1.02 0.92 2.11 1.37 3.5 1.5c-0.65 0.54 -0.5 1.87 -0.5 2.5c0 0.73 0 3 0 3"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.7s" values="32;0"/></path><path stroke-dasharray="10" stroke-dashoffset="10" d="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"><animate attributeName="d" dur="3s" repeatCount="indefinite" values="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5;M9 19c-1.406 0-3-.5-4-.5-.532 0-1 0-2-.5;M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"/><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.8s" dur="0.2s" values="10;0"/></path></g><rect width="8" height="4" x="8" y="11" fill="currentColor" mask="url(#lineMdGithubLoop0)"><animate attributeName="y" dur="10s" keyTimes="0;0.45;0.46;0.54;0.55;1" repeatCount="indefinite" values="11;11;7;7;11;11"/></rect></svg>
+  </div>
+  <div class="md-source__repository">
+    saforem2/ezpz
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🏡 Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../example/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    📝 Example
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../launch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🚀 Launch
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    📓 Notes
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hf-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🤗 HF Trainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🕸️ Parallelism
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pbs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🗓️ PBS
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🐍 Python Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    🏖️ Shell Environment
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    🏖️ Shell Environment
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      🐣 Getting Started
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🐣 Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-am-i" class="md-nav__link">
+    <span class="md-ellipsis">
+      Where am I?
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where am I?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      🛠️ Setup Python
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      🧰 Setup Job
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../Code-Reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    💾 Code Reference
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            💾 Code Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/ezpz-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/dist-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz.dist
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/config-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz.config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      🐣 Getting Started
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🐣 Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-am-i" class="md-nav__link">
+    <span class="md-ellipsis">
+      Where am I?
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Where am I?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      🛠️ Setup Python
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      🧰 Setup Job
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/saforem2/ezpz/edit/main/docs/shell-environment.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="shell-environment">🏖️ Shell Environment<a class="headerlink" href="#shell-environment" title="Permanent link">&para;</a></h1>
+<ul>
+<li><a href="#-shell-environment">🏖️ Shell Environment</a></li>
+<li><a href="#-getting-started">🐣 Getting Started</a><ul>
+<li><a href="#-setup-python">🛠️ Setup Python</a></li>
+<li><a href="#-setup-job">🧰 Setup Job</a></li>
+</ul>
+</li>
+</ul>
+<h2 id="getting-started">🐣 Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>[!WARNING]
+The documentation below is a work in progress.<br />
+<em>Please</em> feel free to provide input / suggest changes !</p>
+<p>[!NOTE]
+1. Source the <a href="./src/ezpz/bin/utils.sh"><code>src/ezpz/bin/utils.sh</code></a> file:</p>
+<div class="language-text highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1</span>
+<span class="normal">2</span>
+<span class="normal">3</span></pre></div></td><td class="code"><div><pre><span></span><code>``` bash
+source &lt;(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
+```
+</code></pre></div></td></tr></table></div>
+<ol>
+<li>
+<p>Use the <code>ezpz_setup_env</code> function to setup your environment:</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-1-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1"></a>ezpz_setup_env
+</code></pre></div></td></tr></table></div>
+</li>
+</ol>
+</blockquote>
+<p>This will 🪄 <em>automagically</em>:</p>
+<ol>
+<li><a href="#%EF%B8%8F-setup-python">🐍 <strong>Setup Python</strong></a>: Load the appropriate module(s)
+   and put you inside a suitable python environment</li>
+<li><a href="#-setup-job">🧰 <strong>Setup Job</strong></a>: Determine the resources available in the
+   current job and build a <code>launch</code> alias for launching executables</li>
+</ol>
+<p>We provide a variety of helper functions designed to make your life
+easier when working with job schedulers (e.g. <code>PBS Pro</code> @ ALCF or
+<code>slurm</code> elsewhere).</p>
+<p><strong>All</strong> of these functions are:</p>
+<ul>
+<li>located in <a href="../../src/ezpz/bin/utils.sh"><code>utils.sh</code></a></li>
+<li>prefixed with <code>ezpz_*</code> (e.g. <code>ezpz_setup_python</code>)<sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup></li>
+</ul>
+<p>We would like to write our application in such a way that it is able to
+take full advantage of the resources allocated by the job scheduler.</p>
+<p>That is to say, we want to have a single script with the ability to
+dynamically <code>launch</code> python applications across any number of
+accelerators on any of the systems under consideration.</p>
+<p>In order to do this, there is some basic setup and information gathering
+that needs to occur.</p>
+<p>In particular, we need mechanisms for:</p>
+<ol>
+<li>Setting up a python environment</li>
+<li>Determining what system / machine we’re on<ul>
+<li>+ what job scheduler we’re using (e.g. <code>PBS Pro</code> @ ALCF or
+  <code>slurm</code> elsewhere)</li>
+</ul>
+</li>
+<li>Determining how many nodes have been allocated in the current job
+    (<code>NHOSTS</code>)<ul>
+<li>+ Determining how many accelerators exist on each of these nodes
+  (<code>NGPU_PER_HOST</code>)</li>
+</ul>
+</li>
+</ol>
+<p>This allows us to calculate the total number of accelerators (GPUs) as:
+<span class="arithmatex">\(N_{\mathrm{GPU}} = N_{\mathrm{HOST}} \times n_{\mathrm{GPU}}\)</span></p>
+<p>where <span class="arithmatex">\(n_{\mathrm{GPU}} = N_{\mathrm{GPU}} / N_{\mathrm{HOST}}\)</span> is the
+number of GPUs per host.</p>
+<p>With this we have everything we need to build the appropriate
+{<code>mpi</code>{<code>run</code>, <code>exec</code>}, <code>slurm</code>} command for launching our python
+application across them.</p>
+<p>Now, there are a few functions in particular worth elaborating on.</p>
+<div id="tbl-shell-fns">
+
+| Function                     | Description                                                                               |
+|------------------------------|-------------------------------------------------------------------------------------------|
+| `ezpz_setup_env`             | Wrapper around `ezpz_setup_python` `&&` `ezpz_setup_job`                                  |
+| `ezpz_setup_job`             | Determine {`NGPUS`, `NGPU_PER_HOST`, `NHOSTS`}, build `launch` command alias              |
+| `ezpz_setup_python`          | Wrapper around `ezpz_setup_conda` `&&` `ezpz_setup_venv_from_conda`                       |
+| `ezpz_setup_conda`           | Find and activate appropriate `conda` module to load[^2]                                  |
+| `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the virtual env located in `venvs/${CONDA_NAME}/` |
+
+Table 1: Shell Functions
+
+</div>
+
+<blockquote>
+<p>[!WARNING]</p>
+<h3 id="where-am-i">Where am I?<a class="headerlink" href="#where-am-i" title="Permanent link">&para;</a></h3>
+<p><em>Some</em> of the <code>ezpz_*</code> functions (e.g. <code>ezpz_setup_python</code>), will try
+to create / look for certain directories.</p>
+<p>In an effort to be explicit, these directories will be defined
+<strong>relative to</strong> a <code>WORKING_DIR</code> (e.g. <code>"${WORKING_DIR}/venvs/"</code>)</p>
+<p>This <code>WORKING_DIR</code> will be assigned to the first non-zero match found
+below:</p>
+<ol>
+<li><code>PBS_O_WORKDIR</code>: If found in environment, paths will be relative
+    to this</li>
+<li><code>SLURM_SUBMIT_DIR</code>: Next in line. If not @ ALCF, maybe using
+    <code>slurm</code>…</li>
+<li><code>$(pwd)</code>: Otherwise, no worries. Use your <em>actual</em> working
+    directory.</li>
+</ol>
+</blockquote>
+<h4 id="setup-python">🛠️ Setup Python<a class="headerlink" href="#setup-python" title="Permanent link">&para;</a></h4>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-2-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1"></a>ezpz_setup_python
+</code></pre></div></td></tr></table></div>
+<p>This will:</p>
+<ol>
+<li>
+<p>Automatically load and activate <code>conda</code> using the <code>ezpz_setup_conda</code>
+    function.</p>
+<p>How this is done, in practice, varies from machine to machine:</p>
+<ul>
+<li>
+<p><strong>ALCF</strong><sup id="fnref:3"><a class="footnote-ref" href="#fn:3">3</a></sup>: Automatically load the most recent <code>conda</code> module
+  and activate the base environment.</p>
+</li>
+<li>
+<p><strong>Frontier</strong>: Load the appropriate AMD modules (e.g. <code>rocm</code>,
+  <code>RCCL</code>, etc.), and activate base <code>conda</code></p>
+</li>
+<li>
+<p><strong>Perlmutter</strong>: Load the appropriate <code>pytorch</code> module and activate
+  environment</p>
+</li>
+<li>
+<p><strong>Unknown</strong>: In this case, we will look for a <code>conda</code>, <code>mamba</code>, or
+  <code>micromamba</code> executable, and if found, use that to activate the
+  base environment.</p>
+</li>
+</ul>
+</li>
+</ol>
+<!-- -->
+
+<blockquote>
+<p>[!TIP]</p>
+<p><strong>Using your own <code>conda</code></strong></p>
+<p>If you are already in a conda environment when calling
+<code>ezpz_setup_python</code> then it will try and use this instead.</p>
+<p>For example, if you have a custom <code>conda</code> env at
+<code>~/conda/envs/custom</code>, then this would bootstrap the <code>custom</code>
+conda environment and create the virtual env in <code>venvs/custom/</code></p>
+</blockquote>
+<ol>
+<li>
+<p>Build (or activate, if found) a virtual environment on top of (the
+    active) base <code>conda</code> environment.</p>
+<p>By default, it will try looking in:</p>
+<ul>
+<li><code>$PBS_O_WORKDIR</code>, otherwise</li>
+<li><code>${SLURM_SUBMIT_DIR}</code>, otherwise</li>
+<li><code>$(pwd)</code></li>
+</ul>
+<p>for a nested folder named <code>"venvs/${CONDA_NAME}"</code>.</p>
+<p>If this doesn’t exist, it will attempt to create a new virtual
+environment at this location using:</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-3-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1"></a>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>venvs/<span class="si">${</span><span class="nv">CONDA_NAME</span><span class="si">}</span><span class="w"> </span>--system-site-packages
+</code></pre></div></td></tr></table></div>
+<p>(where we’ve pulled in the <code>--system-site-packages</code> from conda).</p>
+</li>
+</ol>
+<h4 id="setup-job">🧰 Setup Job<a class="headerlink" href="#setup-job" title="Permanent link">&para;</a></h4>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-4-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1"></a>ezpz_setup_job
+</code></pre></div></td></tr></table></div>
+<p>Now that we are in a suitable python environment, we need to construct
+the command that we will use to run python on each of our accelerators.</p>
+<p>To do this, we need a few things:</p>
+<ol>
+<li>What machine we’re on (and what scheduler is it using i.e. {PBS,
+    SLURM})</li>
+<li>How many nodes are available in our active job</li>
+<li>How many GPUs are on each of those nodes</li>
+<li>What type of GPUs are they</li>
+</ol>
+<p>With this information, we can then use <code>mpi{exec,run}</code> or <code>srun</code> to
+launch python across all of our accelerators.</p>
+<p>Again, how this is done will vary from machine to machine and will
+depend on the job scheduler in use.</p>
+<p>To identify where we are, we look at our <code>$(hostname)</code> and see if we’re
+running on one of the known machines:</p>
+<ul>
+<li><strong>ALCF</strong><sup id="fnref:4"><a class="footnote-ref" href="#fn:4">4</a></sup>: Using PBS Pro via <code>qsub</code> and <code>mpiexec</code> / <code>mpirun</code>.</li>
+<li><code>x4*</code>: <strong>Aurora</strong></li>
+<li><strong>Aurora</strong>: <code>x4*</code> (or <code>aurora*</code> on login nodes)</li>
+<li><strong>Sunspot</strong>: <code>x1*</code> (or <code>uan*</code>)</li>
+<li><strong>Sophia</strong>: <code>sophia-*</code></li>
+<li><strong>Polaris</strong> / <strong>Sirius</strong>: <code>x3*</code><ul>
+<li>to determine between the two, we look at <code>"${PBS_O_HOST}"</code></li>
+</ul>
+</li>
+</ul>
+<!-- -->
+
+<ul>
+<li>
+<p><strong>OLCF</strong>: Using Slurm via <code>sbatch</code> / <code>srun</code>.</p>
+</li>
+<li>
+<p><code>frontier*</code>: <strong>Frontier</strong>, using Slurm</p>
+</li>
+<li>
+<p><code>nid*</code>: Perlmutter, using Slurm</p>
+</li>
+<li>
+<p>Unknown machine: If <code>$(hostname)</code> does not match one of these patterns
+  we assume that we are running on an unknown machine and will try to
+  use <code>mpirun</code> as our generic launch command</p>
+</li>
+</ul>
+<p>Once we have this, we can:</p>
+<ol>
+<li>
+<p>Get <code>PBS_NODEFILE</code> from <code>$(hostname)</code>:</p>
+<ul>
+<li>
+<p><code>ezpz_qsme_running</code>: For each (running) job owned by <code>${USER}</code>,
+    print out both the jobid as well as a list of hosts the job is
+    running on, e.g.:</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-5-1">1</a></span>
+<span class="normal"><a href="#__codelineno-5-2">2</a></span>
+<span class="normal"><a href="#__codelineno-5-3">3</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1"></a>&lt;jobid0&gt;<span class="w"> </span>host00<span class="w"> </span>host01<span class="w"> </span>host02<span class="w"> </span>host03<span class="w"> </span>...
+<a id="__codelineno-5-2" name="__codelineno-5-2"></a>&lt;jobid1&gt;<span class="w"> </span>host10<span class="w"> </span>host11<span class="w"> </span>host12<span class="w"> </span>host13<span class="w"> </span>...
+<a id="__codelineno-5-3" name="__codelineno-5-3"></a>...
+</code></pre></div></td></tr></table></div>
+</li>
+<li>
+<p><code>ezpz_get_pbs_nodefile_from_hostname</code>: Look for <code>$(hostname)</code> in
+    the output from the above command to determine our
+    <code>${PBS_JOBID}</code>.</p>
+<p>Once we’ve identified our <code>${PBS_JOBID}</code> we then know the
+location of our <code>${PBS_NODEFILE}</code> since they are named according
+to:</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-6-1">1</a></span>
+<span class="normal"><a href="#__codelineno-6-2">2</a></span>
+<span class="normal"><a href="#__codelineno-6-3">3</a></span>
+<span class="normal"><a href="#__codelineno-6-4">4</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="nv">jobid</span><span class="o">=</span><span class="k">$(</span>ezpz_qsme_running<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>hostname<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $1}&#39;</span><span class="k">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2"></a><span class="nv">prefix</span><span class="o">=</span>/var/spool/pbs/aux
+<a id="__codelineno-6-3" name="__codelineno-6-3"></a><span class="nv">match</span><span class="o">=</span><span class="k">$(</span>/bin/ls<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">prefix</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">jobid</span><span class="si">}</span><span class="s2">&quot;</span><span class="k">)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4"></a><span class="nv">hostfile</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">prefix</span><span class="si">}</span><span class="s2">/</span><span class="si">${</span><span class="nv">match</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div></td></tr></table></div>
+</li>
+</ul>
+</li>
+<li>
+<p>Identify number of available accelerators:</p>
+</li>
+</ol>
+<!--
+   will build and execute the appropriate {`mpi{exec,run}`, `srun`} command, _launching_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py) (as a module, `-m`).
+   -->
+
+<!--
+- There are two main, distinct components of `ezpz`:
+
+  1. 🐍 [**Python Library**](docs/python-library.md), e.g. `import ezpz`
+  1. 🏖️ [**Shell Environment**](/docs/shell-environment.md) (`ezpz_setup`)
+
+   designed to make life easy.
+-->
+
+<!--
+>     
+> 
+> - Install 🍋 `ezpz`:
+> 
+>     <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-8-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1"></a>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;git+https://github.com/saforem2/ezpz&quot;</span>
+</code></pre></div></td></tr></table></div>
+> 
+-->
+
+<!--
+1. [🐣 Getting Started](#-getting-started)
+   1. 📝 [Example](#-example)
+-->
+
+<!--
+1. [🐚 **Shell Utilities**](#-shell-utilities)
+   1. [🏖️ Setup Shell Environment](#%EF%B8%8F-setup-shell-environment)
+       1. [🛠️ Setup Python](#%EF%B8%8F-setup-python)
+       1. [🧰 Setup Job](#-setup-job)
+ 1. [🐍 **Python Library**](#-python-library)
+-->
+
+<!--
+
+- `ezpz` is:
+
+  - A standalone Python library (`import ezpz`)
+  - A collection of Shell utilities (`ezpz_*`)
+
+  with the goal of making life easy.
+
+-->
+
+<!--
+
+### 📝 Example
+
+We provide a complete, entirely self-contained example in
+[docs/example.md](/docs/example.md) that walks through:
+
+1. Setting up a suitable python environment + installing `ezpz` into it
+2. Launching a (simple) distributed training job across all available resources
+   in your {slurm, PBS} job allocation.
+
+-->
+
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:1">
+<p>Plus this is useful for tab-completions in your shell, e.g.:</p>
+<p><div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-7-1">1</a></span>
+<span class="normal"><a href="#__codelineno-7-2">2</a></span>
+<span class="normal"><a href="#__codelineno-7-3">3</a></span>
+<span class="normal"><a href="#__codelineno-7-4">4</a></span>
+<span class="normal"><a href="#__codelineno-7-5">5</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1"></a>$<span class="w"> </span>ezpz_&lt;TAB&gt;
+<a id="__codelineno-7-2" name="__codelineno-7-2"></a>ezpz_check_and_kill_if_running
+<a id="__codelineno-7-3" name="__codelineno-7-3"></a>ezpz_get_dist_launch_cmd
+<a id="__codelineno-7-4" name="__codelineno-7-4"></a>ezpz_get_job_env
+<a id="__codelineno-7-5" name="__codelineno-7-5"></a>--More--
+</code></pre></div></td></tr></table></div>&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:2">
+<p>This is system dependent. See
+<a href="../../src/ezpz/bin/utils.sh"><code>ezpz_setup_conda</code></a>&#160;<a class="footnote-backref" href="#fnref:2" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+<li id="fn:3">
+<p>Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}&#160;<a class="footnote-backref" href="#fnref:3" title="Jump back to footnote 3 in the text">&#8617;</a></p>
+</li>
+<li id="fn:4">
+<p>At ALCF, if our <code>$(hostname)</code> starts with <code>x*</code>, we’re on a compute
+node.&#160;<a class="footnote-backref" href="#fnref:4" title="Jump back to footnote 4 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["content.action.edit", "navigation.indexes", "content.code.select", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js"></script>
+      
+    
+  </body>
+</html>

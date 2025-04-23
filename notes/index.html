@@ -1,0 +1,1844 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://saforem2.github.io/ezpz/notes/">
+      
+      
+        <link rel="prev" href="../launch/">
+      
+      
+        <link rel="next" href="../hf-trainer/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+    
+    
+      
+        <title>📓 Notes - ezpz</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.2afb09e1.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#notes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ezpz" class="md-header__button md-logo" aria-label="ezpz" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48"><!-- Icon from Streamline Emojis by Streamline - https://creativecommons.org/licenses/by/4.0/ --><path fill="#45413c" d="M8.77 45.36a12.6 1.64 0 1 0 25.2 0a12.6 1.64 0 1 0-25.2 0" opacity=".15"/><path fill="#ffe500" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#fff48c" d="M10.13 22.22c4.45-4.44 10.56-6.7 16.18-5.19a13.9 13.9 0 0 0 4.17.54a5.56 5.56 0 0 1 4.17 1.67l.94.93a5.6 5.6 0 0 1 1.67 4.18a13.8 13.8 0 0 0 .54 4.16c.09.36.17.72.24 1.09a14.4 14.4 0 0 0-.24-6.09a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19C6 21.38 3.73 27 4.69 32.32a19.16 19.16 0 0 1 5.44-10.1"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#debb7e" d="M33.27 15a14.8 14.8 0 0 1 6.59-4.26c2.48-.67 3 .84 3.14 2a1.11 1.11 0 0 1-1 1.19a16 16 0 0 0-7.22 2.64c-1.35.1-1.51-1.57-1.51-1.57"/><path fill="#f0d5a8" d="M33.89 16.27a14.3 14.3 0 0 1 6-3.61c1.7-.45 2.49.12 2.86.89a1.14 1.14 0 0 0 .28-.82c-.09-1.14-.66-2.65-3.14-2A14.8 14.8 0 0 0 33.27 15a2.16 2.16 0 0 0 .62 1.27"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.27 15a14.9 14.9 0 0 1 6.59-4.26c2.48-.66 3 .85 3.14 2a1.11 1.11 0 0 1-1 1.19a16.1 16.1 0 0 0-7.22 2.64c-1.35.09-1.51-1.57-1.51-1.57"/><path fill="#6dd627" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="#9ceb60" d="M20.09 6a9.4 9.4 0 0 1 10.54 2.07a9.5 9.5 0 0 1 3.05 5.5a9.18 9.18 0 0 0-3.05-8.46a9.38 9.38 0 0 0-10.54-2.06a1.07 1.07 0 0 0-.64 1a11.7 11.7 0 0 0 .25 2.27a1.1 1.1 0 0 1 .39-.32"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15s0-5.93-5.56-8.38"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ezpz
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              📓 Notes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/saforem2/ezpz" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Line Icons by Vjacheslav Trushkin - https://github.com/cyberalien/line-md/blob/master/license.txt --><mask id="lineMdGithubLoop0" width="24" height="24" x="0" y="0"><g fill="#fff"><ellipse cx="9.5" cy="9" rx="1.5" ry="1"/><ellipse cx="14.5" cy="9" rx="1.5" ry="1"/></g></mask><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="32" stroke-dashoffset="32" d="M12 4c1.67 0 2.61 0.4 3 0.5c0.53 -0.43 1.94 -1.5 3.5 -1.5c0.34 1 0.29 2.22 0 3c0.75 1 1 2 1 3.5c0 2.19 -0.48 3.58 -1.5 4.5c-1.02 0.92 -2.11 1.37 -3.5 1.5c0.65 0.54 0.5 1.87 0.5 2.5c0 0.73 0 3 0 3M12 4c-1.67 0 -2.61 0.4 -3 0.5c-0.53 -0.43 -1.94 -1.5 -3.5 -1.5c-0.34 1 -0.29 2.22 0 3c-0.75 1 -1 2 -1 3.5c0 2.19 0.48 3.58 1.5 4.5c1.02 0.92 2.11 1.37 3.5 1.5c-0.65 0.54 -0.5 1.87 -0.5 2.5c0 0.73 0 3 0 3"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.7s" values="32;0"/></path><path stroke-dasharray="10" stroke-dashoffset="10" d="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"><animate attributeName="d" dur="3s" repeatCount="indefinite" values="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5;M9 19c-1.406 0-3-.5-4-.5-.532 0-1 0-2-.5;M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"/><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.8s" dur="0.2s" values="10;0"/></path></g><rect width="8" height="4" x="8" y="11" fill="currentColor" mask="url(#lineMdGithubLoop0)"><animate attributeName="y" dur="10s" keyTimes="0;0.45;0.46;0.54;0.55;1" repeatCount="indefinite" values="11;11;7;7;11;11"/></rect></svg>
+  </div>
+  <div class="md-source__repository">
+    saforem2/ezpz
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ezpz" class="md-nav__button md-logo" aria-label="ezpz" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48"><!-- Icon from Streamline Emojis by Streamline - https://creativecommons.org/licenses/by/4.0/ --><path fill="#45413c" d="M8.77 45.36a12.6 1.64 0 1 0 25.2 0a12.6 1.64 0 1 0-25.2 0" opacity=".15"/><path fill="#ffe500" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#fff48c" d="M10.13 22.22c4.45-4.44 10.56-6.7 16.18-5.19a13.9 13.9 0 0 0 4.17.54a5.56 5.56 0 0 1 4.17 1.67l.94.93a5.6 5.6 0 0 1 1.67 4.18a13.8 13.8 0 0 0 .54 4.16c.09.36.17.72.24 1.09a14.4 14.4 0 0 0-.24-6.09a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19C6 21.38 3.73 27 4.69 32.32a19.16 19.16 0 0 1 5.44-10.1"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M37.8 23.51a13.8 13.8 0 0 1-.54-4.16a5.6 5.6 0 0 0-1.67-4.18l-.94-.93a5.56 5.56 0 0 0-4.17-1.67a13.9 13.9 0 0 1-4.17-.57c-5.62-1.51-11.73.75-16.18 5.19s-6.7 10.59-5.19 16.22a13.7 13.7 0 0 1 .53 4.16a5.65 5.65 0 0 0 1.68 4.18l.93.93a5.6 5.6 0 0 0 4.18 1.67a13.8 13.8 0 0 1 4.16.54c5.63 1.51 11.74-.75 16.18-5.19s6.7-10.56 5.2-16.19"/><path fill="#debb7e" d="M33.27 15a14.8 14.8 0 0 1 6.59-4.26c2.48-.67 3 .84 3.14 2a1.11 1.11 0 0 1-1 1.19a16 16 0 0 0-7.22 2.64c-1.35.1-1.51-1.57-1.51-1.57"/><path fill="#f0d5a8" d="M33.89 16.27a14.3 14.3 0 0 1 6-3.61c1.7-.45 2.49.12 2.86.89a1.14 1.14 0 0 0 .28-.82c-.09-1.14-.66-2.65-3.14-2A14.8 14.8 0 0 0 33.27 15a2.16 2.16 0 0 0 .62 1.27"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.27 15a14.9 14.9 0 0 1 6.59-4.26c2.48-.66 3 .85 3.14 2a1.11 1.11 0 0 1-1 1.19a16.1 16.1 0 0 0-7.22 2.64c-1.35.09-1.51-1.57-1.51-1.57"/><path fill="#6dd627" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="#9ceb60" d="M20.09 6a9.4 9.4 0 0 1 10.54 2.07a9.5 9.5 0 0 1 3.05 5.5a9.18 9.18 0 0 0-3.05-8.46a9.38 9.38 0 0 0-10.54-2.06a1.07 1.07 0 0 0-.64 1a11.7 11.7 0 0 0 .25 2.27a1.1 1.1 0 0 1 .39-.32"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15a9.1 9.1 0 0 0-2.69-9.84a9.38 9.38 0 0 0-10.54-2.11a1.07 1.07 0 0 0-.64 1A10 10 0 0 0 23.21 12c3.95 3 7.99-.46 10.11 3"/><path fill="none" stroke="#45413c" stroke-linecap="round" stroke-linejoin="round" d="M33.32 15s0-5.93-5.56-8.38"/></svg>
+
+    </a>
+    ezpz
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/saforem2/ezpz" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Material Line Icons by Vjacheslav Trushkin - https://github.com/cyberalien/line-md/blob/master/license.txt --><mask id="lineMdGithubLoop0" width="24" height="24" x="0" y="0"><g fill="#fff"><ellipse cx="9.5" cy="9" rx="1.5" ry="1"/><ellipse cx="14.5" cy="9" rx="1.5" ry="1"/></g></mask><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="32" stroke-dashoffset="32" d="M12 4c1.67 0 2.61 0.4 3 0.5c0.53 -0.43 1.94 -1.5 3.5 -1.5c0.34 1 0.29 2.22 0 3c0.75 1 1 2 1 3.5c0 2.19 -0.48 3.58 -1.5 4.5c-1.02 0.92 -2.11 1.37 -3.5 1.5c0.65 0.54 0.5 1.87 0.5 2.5c0 0.73 0 3 0 3M12 4c-1.67 0 -2.61 0.4 -3 0.5c-0.53 -0.43 -1.94 -1.5 -3.5 -1.5c-0.34 1 -0.29 2.22 0 3c-0.75 1 -1 2 -1 3.5c0 2.19 0.48 3.58 1.5 4.5c1.02 0.92 2.11 1.37 3.5 1.5c-0.65 0.54 -0.5 1.87 -0.5 2.5c0 0.73 0 3 0 3"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.7s" values="32;0"/></path><path stroke-dasharray="10" stroke-dashoffset="10" d="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"><animate attributeName="d" dur="3s" repeatCount="indefinite" values="M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5;M9 19c-1.406 0-3-.5-4-.5-.532 0-1 0-2-.5;M9 19c-1.406 0-2.844-.563-3.688-1.188C4.47 17.188 4.22 16.157 3 15.5"/><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.8s" dur="0.2s" values="10;0"/></path></g><rect width="8" height="4" x="8" y="11" fill="currentColor" mask="url(#lineMdGithubLoop0)"><animate attributeName="y" dur="10s" keyTimes="0;0.45;0.46;0.54;0.55;1" repeatCount="indefinite" values="11;11;7;7;11;11"/></rect></svg>
+  </div>
+  <div class="md-source__repository">
+    saforem2/ezpz
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🏡 Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../example/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    📝 Example
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../launch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🚀 Launch
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    📓 Notes
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    📓 Notes
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2024-12-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      2024-12-30
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2024-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      2024-11-06
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Started
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shell-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      Shell Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python Library
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#old" class="md-nav__link">
+    <span class="md-ellipsis">
+      Old
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hf-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🤗 HF Trainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🕸️ Parallelism
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pbs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🗓️ PBS
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🐍 Python Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shell-environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    🏖️ Shell Environment
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../Code-Reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    💾 Code Reference
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            💾 Code Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/ezpz-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/dist-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz.dist
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Code-Reference/config-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    ezpz.config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2024-12-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      2024-12-30
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2024-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      2024-11-06
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Started
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shell-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      Shell Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python Library
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#old" class="md-nav__link">
+    <span class="md-ellipsis">
+      Old
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/saforem2/ezpz/edit/main/docs/notes.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="notes">📝 Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h1>
+<h2 id="2024-12-30">2024-12-30<a class="headerlink" href="#2024-12-30" title="Permanent link">&para;</a></h2>
+<p>Launch and train across all your accelerators, using your favorite framework +
+backend combo.</p>
+<p><code>ezpz</code> simplifies the process of:</p>
+<ul>
+<li>
+<p><details><summary>Setting up + launching distributed training:</summary></p>
+<ul>
+<li>
+<p><details closed><summary><code>import ezpz as ez</code></summary></p>
+<ul>
+<li>
+<p><code>RANK =</code>
+  <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551"><code>ez.setup_torch(backend=backend)</code></a>
+  [for <code>backend</code> <span class="arithmatex">\(\in\)</span> {<code>DDP</code>, <code>deepspeed</code>, <code>horovod</code>}]{.dim-text}</p>
+</li>
+<li>
+<p><code>RANK =</code>
+  <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396"><code>ez.get_rank()</code></a></p>
+</li>
+<li>
+<p><code>LOCAL_RANK =</code>
+  <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448"><code>ez.get_local_rank()</code></a></p>
+</li>
+<li>
+<p><code>WORLD_SIZE =</code>
+  <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417"><code>ez.get_world_size()</code></a></p>
+</li>
+</ul>
+<p>[(see <a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py"><code>ezpz/dist.py</code></a> for more details).]{.dim-text}</p>
+</li>
+</ul>
+</details>
+</li>
+</ul>
+</details>
+<ul>
+<li>
+<p><details closed><summary>Using your favorite framework:</summary></p>
+<ul>
+<li>
+<p><code>framework=pytorch</code> + <code>backend={DDP, deepspeed, horovod}</code></p>
+</li>
+<li>
+<p><code>framework=tensorflow</code> + <code>backend=horovod</code></p>
+</li>
+<li>
+<p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ez.get_torch_device()</code></a>: {<code>cuda</code>, <code>xpu</code>, <code>mps</code>, <code>cpu</code>}</p>
+</li>
+<li>
+<p><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348"><code>ez.get_torch_backend()</code></a>: {<code>nccl</code>, <code>ccl</code>, <code>gloo</code>}</p>
+</li>
+</ul>
+</li>
+</ul>
+<p><em>2ez</em> 😎. (see <a href="#frameworks">frameworks</a> for additional details)</p>
+</details>
+<ul>
+<li>
+<p><details closed><summary>Writing device agnostic code:</summary></p>
+<ul>
+<li>
+<p><details><summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ezpz.get_torch_device()</code></a></summary></p>
+<div class="language-python highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
+<span class="normal"><a href="#__codelineno-0-2">2</a></span>
+<span class="normal"><a href="#__codelineno-0-3">3</a></span>
+<span class="normal"><a href="#__codelineno-0-4">4</a></span>
+<span class="normal"><a href="#__codelineno-0-5">5</a></span>
+<span class="normal"><a href="#__codelineno-0-6">6</a></span>
+<span class="normal"><a href="#__codelineno-0-7">7</a></span>
+<span class="normal"><a href="#__codelineno-0-8">8</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">import</span><span class="w"> </span><span class="nn">ezpz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ez</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">DEVICE</span> <span class="o">=</span> <span class="n">ez</span><span class="o">.</span><span class="n">get_torch_device</span><span class="p">()</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">y</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">y</span><span class="o">.</span><span class="n">device</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8"></a><span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;mps&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+</li>
+</ul>
+</details>
+</li>
+</ul>
+</details>
+<ul>
+<li>
+<p><details closed><summary>Using <code>wandb</code>:</summary></p>
+<ul>
+<li><code>ez.setup_wandb(project_name='ezpz')</code></li>
+</ul>
+</li>
+</ul>
+</details>
+<ul>
+<li><strong>Full support</strong> for any {<code>device</code> + <code>framework</code> + <code>backend</code>}:<ul>
+<li>device: {<code>GPU</code>, <code>XPU</code>, <code>MPS</code>, <code>CPU</code>}</li>
+<li>framework: {<code>torch</code>, <code>deepspeed</code>, <code>horovod</code>, <code>tensorflow</code>}</li>
+<li>backend: {<code>DDP</code>, <code>deepspeed</code>, <code>horovod</code>}</li>
+</ul>
+</li>
+</ul>
+<h2 id="2024-11-06">2024-11-06<a class="headerlink" href="#2024-11-06" title="Permanent link">&para;</a></h2>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Save <code>PBS_*</code> env to <code>~/pbs_jobenvs/${PBS_JOBID}.env</code> when dumping vars in <a href="/ezpz/src/ezpz/bin/utils.sh"><code>utils.sh</code></a></li>
+</ul>
+<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<p>There are two main, distinct components of <code>ezpz</code>:</p>
+<ol>
+<li><a href="#shell-interface">Shell interface</a></li>
+<li><a href="#python-library">Python Library</a></li>
+</ol>
+<h3 id="shell-interface">Shell Interface<a class="headerlink" href="#shell-interface" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="/src/ezpz/bin/utils.sh"><code>bin/utils.sh</code></a>:</li>
+<li>Provides various (<code>bash</code> / shell) helper functions to make life easy</li>
+<li>
+<p>Designed to be <code>source</code>-d, e.g.</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-1-1">1</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nb">source</span><span class="w"> </span>ezpz/src/ezpz/bin/utils.sh
+</code></pre></div></td></tr></table></div>
+</li>
+<li>
+<p>All functions prefixed with <code>ezpz_</code></p>
+</li>
+</ul>
+<p>To use:</p>
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-2-1">1</a></span>
+<span class="normal"><a href="#__codelineno-2-2">2</a></span>
+<span class="normal"><a href="#__codelineno-2-3">3</a></span>
+<span class="normal"><a href="#__codelineno-2-4">4</a></span>
+<span class="normal"><a href="#__codelineno-2-5">5</a></span>
+<span class="normal"><a href="#__codelineno-2-6">6</a></span>
+<span class="normal"><a href="#__codelineno-2-7">7</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/saforem2/ezpz<span class="w"> </span>deps/ezpz
+<a id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="c1"># on ALCF:</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PBS_O_WORKDIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4"></a><span class="nb">source</span><span class="w"> </span>deps/ezpz/src/ezpz/bin/utils.sh
+<a id="__codelineno-2-5" name="__codelineno-2-5"></a>ezpz_setup_python
+<a id="__codelineno-2-6" name="__codelineno-2-6"></a><span class="c1"># from a compute node:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7"></a>ezpz_setup_job
+</code></pre></div></td></tr></table></div>
+<h3 id="python-library">Python Library<a class="headerlink" href="#python-library" title="Permanent link">&para;</a></h3>
+<p>WIP</p>
+<h2 id="old">Old<a class="headerlink" href="#old" title="Permanent link">&para;</a></h2>
+<details closed><summary>Old:</summary>
+
+## Startup Files
+
+In your `{.bashrc,.zshrc}`, you can:
+
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-3-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-3-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-3-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-3-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-3-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-3-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-3-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-3-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-3-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-3-10">10</a></span>
+<span class="normal"><a href="#__codelineno-3-11">11</a></span>
+<span class="normal"><a href="#__codelineno-3-12">12</a></span>
+<span class="normal"><a href="#__codelineno-3-13">13</a></span>
+<span class="normal"><a href="#__codelineno-3-14">14</a></span>
+<span class="normal"><a href="#__codelineno-3-15">15</a></span>
+<span class="normal"><a href="#__codelineno-3-16">16</a></span>
+<span class="normal"><a href="#__codelineno-3-17">17</a></span>
+<span class="normal"><a href="#__codelineno-3-18">18</a></span>
+<span class="normal"><a href="#__codelineno-3-19">19</a></span>
+<span class="normal"><a href="#__codelineno-3-20">20</a></span>
+<span class="normal"><a href="#__codelineno-3-21">21</a></span>
+<span class="normal"><a href="#__codelineno-3-22">22</a></span>
+<span class="normal"><a href="#__codelineno-3-23">23</a></span>
+<span class="normal"><a href="#__codelineno-3-24">24</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1"></a>ezpz_setup_alcf<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2"></a><span class="w">    </span><span class="nv">file</span><span class="o">=</span><span class="k">$(</span>mktemp<span class="k">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3"></a><span class="w">    </span>curl<span class="w"> </span>-Ls<span class="w"> </span>https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh<span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">file</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Saving &#39;utils.sh&#39; to </span><span class="si">${</span><span class="nv">file</span><span class="si">}</span><span class="s2"> and sourcing...&quot;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5"></a><span class="w">    </span><span class="nb">source</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">file</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">exit</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6"></a><span class="w">    </span><span class="nv">hn</span><span class="o">=</span><span class="k">$(</span>hostname<span class="k">)</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7"></a><span class="w">    </span>setup_alcf
+<a id="__codelineno-3-8" name="__codelineno-3-8"></a><span class="o">}</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10"></a><span class="nv">hn</span><span class="o">=</span><span class="k">$(</span>hostname<span class="k">)</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11"></a><span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">hn</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>x1<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">hn</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>x<span class="o">]]</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12"></a><span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>x3*<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>polaris*<span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13"></a><span class="w">  </span>
+<a id="__codelineno-3-14" name="__codelineno-3-14"></a><span class="k">elif</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>x4*<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>aurora*<span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15"></a><span class="k">elif</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>x1*<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>uan*<span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16"></a><span class="k">elif</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span>hostname<span class="k">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>bastion*<span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17"></a><span class="k">else</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18"></a><span class="k">fi</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19"></a>
+<a id="__codelineno-3-20" name="__codelineno-3-20"></a><span class="nv">MACHINE</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">machine</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span><span class="s1">&#39;[:upper:]&#39;</span><span class="w"> </span><span class="s1">&#39;[:lower:]&#39;</span><span class="k">)</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">HOME</span><span class="si">}</span><span class="s2">/bin/</span><span class="si">${</span><span class="nv">MACHINE</span><span class="si">}</span><span class="s2">:</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22"></a><span class="nb">export</span><span class="w"> </span><span class="nv">HISTFILE</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.zsh_history-</span><span class="si">${</span><span class="nv">MACHINE</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23"></a><span class="c1"># export CODESTATS_API_KEY=&quot;SFMyNTY.YzJGdFptOXlaVzFoYmc9PSMjTWpBNE1UST0.NQ4Oy3FSJcT4nMaMlVnYcnCtPc2mqImViSGiIxyJFrg&quot;</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24"></a><span class="nb">export</span><span class="w"> </span><span class="nv">ZSH_COMPDUMP</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ZSH</span><span class="si">}</span><span class="s2">/cache/.zcompdump-</span><span class="si">${</span><span class="nv">MACHINE</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div></td></tr></table></div>
+
+1. Clone `ezpz` + navigate into it:
+
+    <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-4-1">1</a></span>
+<span class="normal"><a href="#__codelineno-4-2">2</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/saforem2/ezpz
+<a id="__codelineno-4-2" name="__codelineno-4-2"></a><span class="nb">cd</span><span class="w"> </span>ezpz
+</code></pre></div></td></tr></table></div>
+
+2. Source [`src/ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)
+
+    <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-5-1">1</a></span>
+<span class="normal"><a href="#__codelineno-5-2">2</a></span>
+<span class="normal"><a href="#__codelineno-5-3">3</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1"></a><span class="c1">#[🌌][01:16:07 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">PBS_O_WORKDIR</span><span class="o">=</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>src/ezpz/bin/utils.sh
+<a id="__codelineno-5-3" name="__codelineno-5-3"></a>Using<span class="w"> </span>WORKING_DIR:<span class="w"> </span>/home/foremans/2024-07-10-131541/ezpz
+</code></pre></div></td></tr></table></div>
+
+3. Setup `python`:
+
+    <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-6-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-6-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-6-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-6-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-6-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-6-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-6-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-6-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-6-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-6-10">10</a></span>
+<span class="normal"><a href="#__codelineno-6-11">11</a></span>
+<span class="normal"><a href="#__codelineno-6-12">12</a></span>
+<span class="normal"><a href="#__codelineno-6-13">13</a></span>
+<span class="normal"><a href="#__codelineno-6-14">14</a></span>
+<span class="normal"><a href="#__codelineno-6-15">15</a></span>
+<span class="normal"><a href="#__codelineno-6-16">16</a></span>
+<span class="normal"><a href="#__codelineno-6-17">17</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="c1">#[🌌][01:16:17 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2"></a>$<span class="w"> </span>setup_python
+<a id="__codelineno-6-3" name="__codelineno-6-3"></a>No<span class="w"> </span>conda_prefix<span class="w"> </span>OR<span class="w"> </span>virtual_env<span class="w"> </span>found<span class="w"> </span><span class="k">in</span><span class="w"> </span>environment...
+<a id="__codelineno-6-4" name="__codelineno-6-4"></a>Setting<span class="w"> </span>up<span class="w"> </span>conda...
+<a id="__codelineno-6-5" name="__codelineno-6-5"></a>machine<span class="w"> </span>name:<span class="w"> </span>aurora
+<a id="__codelineno-6-6" name="__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7"></a>The<span class="w"> </span>following<span class="w"> </span>have<span class="w"> </span>been<span class="w"> </span>reloaded<span class="w"> </span>with<span class="w"> </span>a<span class="w"> </span>version<span class="w"> </span>change:
+<a id="__codelineno-6-8" name="__codelineno-6-8"></a><span class="w">  </span><span class="m">1</span><span class="o">)</span><span class="w"> </span>intel_compute_runtime/release/821.36<span class="w"> </span><span class="o">=</span>&gt;<span class="w"> </span>intel_compute_runtime/release/803.29
+<a id="__codelineno-6-9" name="__codelineno-6-9"></a><span class="w">  </span><span class="m">2</span><span class="o">)</span><span class="w"> </span>oneapi/eng-compiler/2024.04.15.002<span class="w"> </span><span class="o">=</span>&gt;<span class="w"> </span>oneapi/release/2024.1
+<a id="__codelineno-6-10" name="__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11"></a>Found<span class="w"> </span>conda<span class="w"> </span>at:<span class="w"> </span>/opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
+<a id="__codelineno-6-12" name="__codelineno-6-12"></a>No<span class="w"> </span>VIRTUAL_ENV<span class="w"> </span>found<span class="w"> </span><span class="k">in</span><span class="w"> </span>environment!
+<a id="__codelineno-6-13" name="__codelineno-6-13"></a><span class="w">    </span>-<span class="w"> </span>Trying<span class="w"> </span>to<span class="w"> </span>setup<span class="w"> </span>from<span class="w"> </span>/opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
+<a id="__codelineno-6-14" name="__codelineno-6-14"></a><span class="w">    </span>-<span class="w"> </span>Using<span class="w"> </span><span class="nv">VENV_DIR</span><span class="o">=</span>/home/foremans/2024-07-10-131541/ezpz/venvs/aurora_nre_models_frameworks-2024.1
+<a id="__codelineno-6-15" name="__codelineno-6-15"></a>
+<a id="__codelineno-6-16" name="__codelineno-6-16"></a><span class="w">    </span>-<span class="w"> </span>Creating<span class="w"> </span>a<span class="w"> </span>new<span class="w"> </span>virtual<span class="w"> </span>env<span class="w"> </span>on<span class="w"> </span>top<span class="w"> </span>of<span class="w"> </span>aurora_nre_models_frameworks-2024.1<span class="w"> </span><span class="k">in</span><span class="w"> </span>/home/foremans/2024-07-10-131541/ezpz/venvs/aurora_nre_models_frameworks-2024.1
+<a id="__codelineno-6-17" name="__codelineno-6-17"></a><span class="o">[</span>python<span class="o">]</span><span class="w"> </span>Using:<span class="w"> </span>/home/foremans/2024-07-10-131541/ezpz/venvs/aurora_nre_models_frameworks-2024.1/bin/python3
+</code></pre></div></td></tr></table></div>
+
+4. Setup ALCF:
+
+    1. via `bash` script:
+
+      <details closed><summary><code>.jobenv</code>:<summary>
+
+        <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-7-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-7-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-7-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-7-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-7-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-7-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-7-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-7-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-7-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-7-10">10</a></span>
+<span class="normal"><a href="#__codelineno-7-11">11</a></span>
+<span class="normal"><a href="#__codelineno-7-12">12</a></span>
+<span class="normal"><a href="#__codelineno-7-13">13</a></span>
+<span class="normal"><a href="#__codelineno-7-14">14</a></span>
+<span class="normal"><a href="#__codelineno-7-15">15</a></span>
+<span class="normal"><a href="#__codelineno-7-16">16</a></span>
+<span class="normal"><a href="#__codelineno-7-17">17</a></span>
+<span class="normal"><a href="#__codelineno-7-18">18</a></span>
+<span class="normal"><a href="#__codelineno-7-19">19</a></span>
+<span class="normal"><a href="#__codelineno-7-20">20</a></span>
+<span class="normal"><a href="#__codelineno-7-21">21</a></span>
+<span class="normal"><a href="#__codelineno-7-22">22</a></span>
+<span class="normal"><a href="#__codelineno-7-23">23</a></span>
+<span class="normal"><a href="#__codelineno-7-24">24</a></span>
+<span class="normal"><a href="#__codelineno-7-25">25</a></span>
+<span class="normal"><a href="#__codelineno-7-26">26</a></span>
+<span class="normal"><a href="#__codelineno-7-27">27</a></span>
+<span class="normal"><a href="#__codelineno-7-28">28</a></span>
+<span class="normal"><a href="#__codelineno-7-29">29</a></span>
+<span class="normal"><a href="#__codelineno-7-30">30</a></span>
+<span class="normal"><a href="#__codelineno-7-31">31</a></span>
+<span class="normal"><a href="#__codelineno-7-32">32</a></span>
+<span class="normal"><a href="#__codelineno-7-33">33</a></span>
+<span class="normal"><a href="#__codelineno-7-34">34</a></span>
+<span class="normal"><a href="#__codelineno-7-35">35</a></span>
+<span class="normal"><a href="#__codelineno-7-36">36</a></span>
+<span class="normal"><a href="#__codelineno-7-37">37</a></span>
+<span class="normal"><a href="#__codelineno-7-38">38</a></span>
+<span class="normal"><a href="#__codelineno-7-39">39</a></span>
+<span class="normal"><a href="#__codelineno-7-40">40</a></span>
+<span class="normal"><a href="#__codelineno-7-41">41</a></span>
+<span class="normal"><a href="#__codelineno-7-42">42</a></span>
+<span class="normal"><a href="#__codelineno-7-43">43</a></span>
+<span class="normal"><a href="#__codelineno-7-44">44</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2"></a><span class="c1">#[🌌][01:16:45 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450 [⏱ 13s]</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3"></a>$<span class="w"> </span>setup_alcf
+<a id="__codelineno-7-4" name="__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5"></a><span class="o">[</span>ezpz/bin/utils.sh<span class="o">]</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7"></a><span class="o">[</span><span class="m">2024</span>-07-10-131719<span class="o">]</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">USER</span><span class="o">=</span>foremans
+<a id="__codelineno-7-9" name="__codelineno-7-9"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">MACHINE</span><span class="o">=</span>aurora
+<a id="__codelineno-7-10" name="__codelineno-7-10"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span>x4017c4s5b0n0
+<a id="__codelineno-7-11" name="__codelineno-7-11"></a>
+<a id="__codelineno-7-12" name="__codelineno-7-12"></a><span class="o">[</span>setupHost<span class="o">]</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13"></a><span class="w">    </span>•<span class="w"> </span>Using<span class="w"> </span>hostfile:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-14" name="__codelineno-7-14"></a><span class="w">    </span>•<span class="w"> </span>Found<span class="w"> </span><span class="k">in</span><span class="w"> </span>environment:
+<a id="__codelineno-7-15" name="__codelineno-7-15"></a><span class="w">        </span>•<span class="w"> </span>HOSTFILE:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-16" name="__codelineno-7-16"></a><span class="w">        </span>•<span class="w"> </span>Writing<span class="w"> </span>PBS<span class="w"> </span>vars<span class="w"> </span>to:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-7-17" name="__codelineno-7-17"></a>
+<a id="__codelineno-7-18" name="__codelineno-7-18"></a><span class="o">[</span>save_pbs_env<span class="o">]</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19"></a><span class="w">    </span>•<span class="w"> </span>Using:
+<a id="__codelineno-7-20" name="__codelineno-7-20"></a><span class="w">        </span>•<span class="w"> </span>hostfile:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-21" name="__codelineno-7-21"></a><span class="w">        </span>•<span class="w"> </span>jobenv_file:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-7-22" name="__codelineno-7-22"></a><span class="w">      </span>to<span class="w"> </span>calculate:
+<a id="__codelineno-7-23" name="__codelineno-7-23"></a><span class="w">        </span>•<span class="w"> </span>num_hosts:<span class="w"> </span><span class="m">2</span>
+<a id="__codelineno-7-24" name="__codelineno-7-24"></a><span class="w">        </span>•<span class="w"> </span>num_gpus_per_host:<span class="w"> </span><span class="m">12</span>
+<a id="__codelineno-7-25" name="__codelineno-7-25"></a><span class="w">        </span>•<span class="w"> </span>num_gpus:<span class="w"> </span><span class="m">24</span>
+<a id="__codelineno-7-26" name="__codelineno-7-26"></a><span class="w">        </span>•<span class="w"> </span>DIST_LAUNCH:<span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-7-27" name="__codelineno-7-27"></a><span class="w">    </span>•<span class="w"> </span>Setting:
+<a id="__codelineno-7-28" name="__codelineno-7-28"></a><span class="w">        </span>•<span class="w"> </span>HOSTFILE:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-29" name="__codelineno-7-29"></a><span class="w">        </span>•<span class="w"> </span>JOBENV_FILE:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-7-30" name="__codelineno-7-30"></a>
+<a id="__codelineno-7-31" name="__codelineno-7-31"></a><span class="o">[</span>HOSTS<span class="o">]</span>
+<a id="__codelineno-7-32" name="__codelineno-7-32"></a><span class="w">    </span>•<span class="w"> </span><span class="o">[</span>host:0<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-33" name="__codelineno-7-33"></a><span class="w">    </span>•<span class="w"> </span><span class="o">[</span>host:1<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>x4017c4s6b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-34" name="__codelineno-7-34"></a>
+<a id="__codelineno-7-35" name="__codelineno-7-35"></a><span class="o">[</span>DIST<span class="w"> </span>INFO<span class="o">]</span>
+<a id="__codelineno-7-36" name="__codelineno-7-36"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOSTFILE</span><span class="o">=</span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-7-37" name="__codelineno-7-37"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NHOSTS</span><span class="o">=</span><span class="m">2</span>
+<a id="__codelineno-7-38" name="__codelineno-7-38"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPU_PER_HOST</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-7-39" name="__codelineno-7-39"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPUS</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-7-40" name="__codelineno-7-40"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">DIST_LAUNCH</span><span class="o">=</span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-7-41" name="__codelineno-7-41"></a>
+<a id="__codelineno-7-42" name="__codelineno-7-42"></a><span class="o">[</span>LAUNCH<span class="o">]</span>:
+<a id="__codelineno-7-43" name="__codelineno-7-43"></a><span class="w">    </span>•<span class="w"> </span>To<span class="w"> </span>launch<span class="w"> </span>across<span class="w"> </span>all<span class="w"> </span>available<span class="w"> </span>GPUs,<span class="w"> </span>use:<span class="w"> </span>launch
+<a id="__codelineno-7-44" name="__codelineno-7-44"></a><span class="w">      </span><span class="nv">launch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+</code></pre></div></td></tr></table></div>
+
+    </details>
+
+    2. via `python`:
+
+      <details closed><summary><code>.jobenv</code>:<summary>
+
+        <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-8-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-8-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-8-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-8-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-8-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-8-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-8-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-8-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-8-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-8-10">10</a></span>
+<span class="normal"><a href="#__codelineno-8-11">11</a></span>
+<span class="normal"><a href="#__codelineno-8-12">12</a></span>
+<span class="normal"><a href="#__codelineno-8-13">13</a></span>
+<span class="normal"><a href="#__codelineno-8-14">14</a></span>
+<span class="normal"><a href="#__codelineno-8-15">15</a></span>
+<span class="normal"><a href="#__codelineno-8-16">16</a></span>
+<span class="normal"><a href="#__codelineno-8-17">17</a></span>
+<span class="normal"><a href="#__codelineno-8-18">18</a></span>
+<span class="normal"><a href="#__codelineno-8-19">19</a></span>
+<span class="normal"><a href="#__codelineno-8-20">20</a></span>
+<span class="normal"><a href="#__codelineno-8-21">21</a></span>
+<span class="normal"><a href="#__codelineno-8-22">22</a></span>
+<span class="normal"><a href="#__codelineno-8-23">23</a></span>
+<span class="normal"><a href="#__codelineno-8-24">24</a></span>
+<span class="normal"><a href="#__codelineno-8-25">25</a></span>
+<span class="normal"><a href="#__codelineno-8-26">26</a></span>
+<span class="normal"><a href="#__codelineno-8-27">27</a></span>
+<span class="normal"><a href="#__codelineno-8-28">28</a></span>
+<span class="normal"><a href="#__codelineno-8-29">29</a></span>
+<span class="normal"><a href="#__codelineno-8-30">30</a></span>
+<span class="normal"><a href="#__codelineno-8-31">31</a></span>
+<span class="normal"><a href="#__codelineno-8-32">32</a></span>
+<span class="normal"><a href="#__codelineno-8-33">33</a></span>
+<span class="normal"><a href="#__codelineno-8-34">34</a></span>
+<span class="normal"><a href="#__codelineno-8-35">35</a></span>
+<span class="normal"><a href="#__codelineno-8-36">36</a></span>
+<span class="normal"><a href="#__codelineno-8-37">37</a></span>
+<span class="normal"><a href="#__codelineno-8-38">38</a></span>
+<span class="normal"><a href="#__codelineno-8-39">39</a></span>
+<span class="normal"><a href="#__codelineno-8-40">40</a></span>
+<span class="normal"><a href="#__codelineno-8-41">41</a></span>
+<span class="normal"><a href="#__codelineno-8-42">42</a></span>
+<span class="normal"><a href="#__codelineno-8-43">43</a></span>
+<span class="normal"><a href="#__codelineno-8-44">44</a></span>
+<span class="normal"><a href="#__codelineno-8-45">45</a></span>
+<span class="normal"><a href="#__codelineno-8-46">46</a></span>
+<span class="normal"><a href="#__codelineno-8-47">47</a></span>
+<span class="normal"><a href="#__codelineno-8-48">48</a></span>
+<span class="normal"><a href="#__codelineno-8-49">49</a></span>
+<span class="normal"><a href="#__codelineno-8-50">50</a></span>
+<span class="normal"><a href="#__codelineno-8-51">51</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2"></a><span class="c1">#[🌌][01:20:20 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3"></a>$<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>ezpz.jobs
+<a id="__codelineno-8-4" name="__codelineno-8-4"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:51,992<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>Note:<span class="w"> </span>detected<span class="w"> </span><span class="m">208</span><span class="w"> </span>virtual<span class="w"> </span>cores<span class="w"> </span>but<span class="w"> </span>NumExpr<span class="w"> </span><span class="nb">set</span><span class="w"> </span>to<span class="w"> </span>maximum<span class="w"> </span>of<span class="w"> </span><span class="m">64</span>,<span class="w"> </span>check<span class="w"> </span><span class="s2">&quot;NUMEXPR_MAX_THREADS&quot;</span><span class="w"> </span>environment<span class="w"> </span>variable.
+<a id="__codelineno-8-5" name="__codelineno-8-5"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:51,992<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>Note:<span class="w"> </span>NumExpr<span class="w"> </span>detected<span class="w"> </span><span class="m">208</span><span class="w"> </span>cores<span class="w"> </span>but<span class="w"> </span><span class="s2">&quot;NUMEXPR_MAX_THREADS&quot;</span><span class="w"> </span>not<span class="w"> </span>set,<span class="w"> </span>so<span class="w"> </span>enforcing<span class="w"> </span>safe<span class="w"> </span>limit<span class="w"> </span>of<span class="w"> </span><span class="m">8</span>.
+<a id="__codelineno-8-6" name="__codelineno-8-6"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:51,992<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>NumExpr<span class="w"> </span>defaulting<span class="w"> </span>to<span class="w"> </span><span class="m">8</span><span class="w"> </span>threads.
+<a id="__codelineno-8-7" name="__codelineno-8-7"></a>/home/foremans/2024-07-10-131541/ezpz/venvs/aurora_nre_models_frameworks-2024.1/lib/python3.9/site-packages/pandas/core/computation/expressions.py:21:<span class="w"> </span>UserWarning:<span class="w"> </span>Pandas<span class="w"> </span>requires<span class="w"> </span>version<span class="w"> </span><span class="s1">&#39;2.8.4&#39;</span><span class="w"> </span>or<span class="w"> </span>newer<span class="w"> </span>of<span class="w"> </span><span class="s1">&#39;numexpr&#39;</span><span class="w"> </span><span class="o">(</span>version<span class="w"> </span><span class="s1">&#39;2.7.3&#39;</span><span class="w"> </span>currently<span class="w"> </span>installed<span class="o">)</span>.
+<a id="__codelineno-8-8" name="__codelineno-8-8"></a><span class="w">  </span>from<span class="w"> </span>pandas.core.computation.check<span class="w"> </span>import<span class="w"> </span>NUMEXPR_INSTALLED
+<a id="__codelineno-8-9" name="__codelineno-8-9"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.534132<span class="o">][</span>INFO<span class="o">][</span>__init__:156<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Setting<span class="w"> </span>logging<span class="w"> </span>level<span class="w"> </span>to<span class="w"> </span><span class="s1">&#39;INFO&#39;</span><span class="w"> </span>on<span class="w"> </span><span class="s1">&#39;RANK == 0&#39;</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.537096<span class="o">][</span>INFO<span class="o">][</span>__init__:157<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Setting<span class="w"> </span>logging<span class="w"> </span>level<span class="w"> </span>to<span class="w"> </span><span class="s1">&#39;CRITICAL&#39;</span><span class="w"> </span>on<span class="w"> </span>all<span class="w"> </span>others<span class="w"> </span><span class="s1">&#39;RANK != 0&#39;</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.537529<span class="o">][</span>INFO<span class="o">][</span>__init__:160<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>To<span class="w"> </span>disable<span class="w"> </span>this<span class="w"> </span>behavior,<span class="w"> </span>and<span class="w"> </span>log<span class="w"> </span>from<span class="w"> </span>ALL<span class="w"> </span>ranks<span class="w"> </span><span class="o">(</span>not<span class="w"> </span>recommended<span class="o">)</span>,<span class="w"> </span>set:<span class="w"> </span><span class="s1">&#39;export LOG_FROM_ALL_RANKS=1&#39;</span><span class="w">  </span><span class="k">in</span><span class="w"> </span>your<span class="w"> </span>environment,<span class="w"> </span>and<span class="w"> </span>re-run.
+<a id="__codelineno-8-12" name="__codelineno-8-12"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.564493<span class="o">][</span>INFO<span class="o">][</span>dist:95<span class="o">]</span><span class="w"> </span>-
+<a id="__codelineno-8-13" name="__codelineno-8-13"></a>
+<a id="__codelineno-8-14" name="__codelineno-8-14"></a><span class="o">[</span>dist_info<span class="o">]</span>:
+<a id="__codelineno-8-15" name="__codelineno-8-15"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">FRAMEWORK</span><span class="o">=</span>pytorch
+<a id="__codelineno-8-16" name="__codelineno-8-16"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DEVICE</span><span class="o">=</span>xpu
+<a id="__codelineno-8-17" name="__codelineno-8-17"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DEVICE_ID</span><span class="o">=</span>xpu:0
+<a id="__codelineno-8-18" name="__codelineno-8-18"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DISTRIBUTED_BACKEND</span><span class="o">=</span>ccl
+<a id="__codelineno-8-19" name="__codelineno-8-19"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTS</span><span class="o">=[</span><span class="s1">&#39;x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov&#39;</span>,<span class="w"> </span><span class="s1">&#39;x4017c4s6b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov&#39;</span><span class="o">]</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTFILE</span><span class="o">=</span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-8-22" name="__codelineno-8-22"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTNAME</span><span class="o">=</span>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-8-23" name="__codelineno-8-23"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">LOCAL_RANK</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-8-24" name="__codelineno-8-24"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">MACHINE</span><span class="o">=</span>Aurora
+<a id="__codelineno-8-25" name="__codelineno-8-25"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NUM_NODES</span><span class="o">=</span><span class="m">2</span>
+<a id="__codelineno-8-26" name="__codelineno-8-26"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NGPUS</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-8-27" name="__codelineno-8-27"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NGPUS_AVAILABLE</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-8-28" name="__codelineno-8-28"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NODE_ID</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-8-29" name="__codelineno-8-29"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">RANK</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-8-30" name="__codelineno-8-30"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">SCHEDULER</span><span class="o">=</span>PBS
+<a id="__codelineno-8-31" name="__codelineno-8-31"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">WORLD_SIZE_TOTAL</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-8-32" name="__codelineno-8-32"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">WORLD_SIZE_IN_USE</span><span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-8-33" name="__codelineno-8-33"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">LAUNCH_CMD</span><span class="o">=</span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-8-34" name="__codelineno-8-34"></a>
+<a id="__codelineno-8-35" name="__codelineno-8-35"></a>
+<a id="__codelineno-8-36" name="__codelineno-8-36"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.591833<span class="o">][</span>INFO<span class="o">][</span>jobs:164<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/PBS-jobs/698077/.jobenv
+<a id="__codelineno-8-37" name="__codelineno-8-37"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.596525<span class="o">][</span>INFO<span class="o">][</span>jobs:164<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/2024-07-10-131541/ezpz/.jobenv
+<a id="__codelineno-8-38" name="__codelineno-8-38"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.613725<span class="o">][</span>INFO<span class="o">][</span>jobs:354<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Caught<span class="w"> </span><span class="nv">pbs_jobid</span><span class="o">=</span><span class="s1">&#39;698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&#39;</span>,<span class="w"> </span><span class="nv">pbs_nodefile</span><span class="o">=</span>PosixPath<span class="o">(</span><span class="s1">&#39;/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&#39;</span><span class="o">)</span><span class="w"> </span>from<span class="w"> </span>env.<span class="w"> </span>Saving<span class="w"> </span>jobenv!
+<a id="__codelineno-8-39" name="__codelineno-8-39"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.655237<span class="o">][</span>WARNING<span class="o">][</span>jobs:144<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>/home/foremans/PBS-jobs/698077<span class="w">  </span>already<span class="w"> </span><span class="k">in</span><span class="w"> </span>/home/foremans/PBS-jobs.log,<span class="w">  </span>not<span class="w"> </span>appending<span class="w"> </span>!!
+<a id="__codelineno-8-40" name="__codelineno-8-40"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.655766<span class="o">][</span>INFO<span class="o">][</span>jobs:369<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Writing<span class="w"> </span>PBS<span class="w"> </span>env<span class="w"> </span>vars<span class="w"> </span>to<span class="w">  </span>/home/foremans/PBS-jobs/698077<span class="w"> </span>/<span class="w"> </span>jobenv<span class="o">{</span>.sh,<span class="w"> </span>.yaml,<span class="w"> </span>.json<span class="o">}</span>
+<a id="__codelineno-8-41" name="__codelineno-8-41"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.666092<span class="o">][</span>INFO<span class="o">][</span>jobs:241<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/PBS-jobs/698077/jobenv.sh
+<a id="__codelineno-8-42" name="__codelineno-8-42"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.682342<span class="o">][</span>INFO<span class="o">][</span>jobs:258<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/PBS-jobs/698077/jobenv.json
+<a id="__codelineno-8-43" name="__codelineno-8-43"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.700122<span class="o">][</span>INFO<span class="o">][</span>jobs:271<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/PBS-jobs/698077/jobenv.yaml
+<a id="__codelineno-8-44" name="__codelineno-8-44"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:21:54.707680<span class="o">][</span>CRITICAL<span class="o">][</span>jobs:381<span class="o">]</span><span class="w"> </span>-
+<a id="__codelineno-8-45" name="__codelineno-8-45"></a>Run:
+<a id="__codelineno-8-46" name="__codelineno-8-46"></a>
+<a id="__codelineno-8-47" name="__codelineno-8-47"></a><span class="w">    </span><span class="nb">source</span><span class="w"> </span>.jobenv
+<a id="__codelineno-8-48" name="__codelineno-8-48"></a>
+<a id="__codelineno-8-49" name="__codelineno-8-49"></a>to<span class="w"> </span><span class="nb">set</span><span class="w"> </span>these<span class="w"> </span>environment<span class="w"> </span>variables.
+<a id="__codelineno-8-50" name="__codelineno-8-50"></a>
+<a id="__codelineno-8-51" name="__codelineno-8-51"></a><span class="m">6</span>.59s<span class="w"> </span>user<span class="w"> </span><span class="m">8</span>.17s<span class="w"> </span>system<span class="w"> </span><span class="m">16</span>%<span class="w"> </span>cpu<span class="w"> </span><span class="m">1</span>:27.78s<span class="w"> </span>total
+</code></pre></div></td></tr></table></div>
+
+    </details>
+
+    <details closed><summary><code>.jobenv</code>:<summary>
+
+    <div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-9-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-9-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-9-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-9-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-9-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-9-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-9-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-9-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-9-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-9-10">10</a></span>
+<span class="normal"><a href="#__codelineno-9-11">11</a></span>
+<span class="normal"><a href="#__codelineno-9-12">12</a></span>
+<span class="normal"><a href="#__codelineno-9-13">13</a></span>
+<span class="normal"><a href="#__codelineno-9-14">14</a></span>
+<span class="normal"><a href="#__codelineno-9-15">15</a></span>
+<span class="normal"><a href="#__codelineno-9-16">16</a></span>
+<span class="normal"><a href="#__codelineno-9-17">17</a></span>
+<span class="normal"><a href="#__codelineno-9-18">18</a></span>
+<span class="normal"><a href="#__codelineno-9-19">19</a></span>
+<span class="normal"><a href="#__codelineno-9-20">20</a></span>
+<span class="normal"><a href="#__codelineno-9-21">21</a></span>
+<span class="normal"><a href="#__codelineno-9-22">22</a></span>
+<span class="normal"><a href="#__codelineno-9-23">23</a></span>
+<span class="normal"><a href="#__codelineno-9-24">24</a></span>
+<span class="normal"><a href="#__codelineno-9-25">25</a></span>
+<span class="normal"><a href="#__codelineno-9-26">26</a></span>
+<span class="normal"><a href="#__codelineno-9-27">27</a></span>
+<span class="normal"><a href="#__codelineno-9-28">28</a></span>
+<span class="normal"><a href="#__codelineno-9-29">29</a></span>
+<span class="normal"><a href="#__codelineno-9-30">30</a></span>
+<span class="normal"><a href="#__codelineno-9-31">31</a></span>
+<span class="normal"><a href="#__codelineno-9-32">32</a></span>
+<span class="normal"><a href="#__codelineno-9-33">33</a></span>
+<span class="normal"><a href="#__codelineno-9-34">34</a></span>
+<span class="normal"><a href="#__codelineno-9-35">35</a></span>
+<span class="normal"><a href="#__codelineno-9-36">36</a></span>
+<span class="normal"><a href="#__codelineno-9-37">37</a></span>
+<span class="normal"><a href="#__codelineno-9-38">38</a></span>
+<span class="normal"><a href="#__codelineno-9-39">39</a></span>
+<span class="normal"><a href="#__codelineno-9-40">40</a></span>
+<span class="normal"><a href="#__codelineno-9-41">41</a></span>
+<span class="normal"><a href="#__codelineno-9-42">42</a></span>
+<span class="normal"><a href="#__codelineno-9-43">43</a></span>
+<span class="normal"><a href="#__codelineno-9-44">44</a></span>
+<span class="normal"><a href="#__codelineno-9-45">45</a></span>
+<span class="normal"><a href="#__codelineno-9-46">46</a></span>
+<span class="normal"><a href="#__codelineno-9-47">47</a></span>
+<span class="normal"><a href="#__codelineno-9-48">48</a></span>
+<span class="normal"><a href="#__codelineno-9-49">49</a></span>
+<span class="normal"><a href="#__codelineno-9-50">50</a></span>
+<span class="normal"><a href="#__codelineno-9-51">51</a></span>
+<span class="normal"><a href="#__codelineno-9-52">52</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2"></a><span class="c1">#[🌌][01:21:58 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450 [⏱ 1m27s]</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3"></a>$<span class="w"> </span>cat<span class="w"> </span>.jobenv
+<a id="__codelineno-9-4" name="__codelineno-9-4"></a><span class="c1">#!/bin/bash --login</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5"></a><span class="nv">FRAMEWORK</span><span class="o">=</span><span class="s2">&quot;pytorch&quot;</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6"></a><span class="nv">DEVICE</span><span class="o">=</span><span class="s2">&quot;xpu&quot;</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7"></a><span class="nv">DEVICE_ID</span><span class="o">=</span><span class="s2">&quot;xpu:0&quot;</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8"></a><span class="nv">DISTRIBUTED_BACKEND</span><span class="o">=</span><span class="s2">&quot;ccl&quot;</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9"></a><span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="s2">&quot;12&quot;</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10"></a><span class="nv">HOSTS</span><span class="o">=</span><span class="s2">&quot;[x4017c4s5b0n0, x4017c4s6b0n0]&quot;</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11"></a><span class="nv">HOSTFILE</span><span class="o">=</span><span class="s2">&quot;/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12"></a><span class="nv">HOSTNAME</span><span class="o">=</span><span class="s2">&quot;x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13"></a><span class="nv">LOCAL_RANK</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14"></a><span class="nv">MACHINE</span><span class="o">=</span><span class="s2">&quot;Aurora&quot;</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15"></a><span class="nv">NUM_NODES</span><span class="o">=</span><span class="s2">&quot;2&quot;</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16"></a><span class="nv">NGPUS</span><span class="o">=</span><span class="s2">&quot;24&quot;</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17"></a><span class="nv">NGPUS_AVAILABLE</span><span class="o">=</span><span class="s2">&quot;24&quot;</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18"></a><span class="nv">NODE_ID</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19"></a><span class="nv">RANK</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20"></a><span class="nv">SCHEDULER</span><span class="o">=</span><span class="s2">&quot;PBS&quot;</span>
+<a id="__codelineno-9-21" name="__codelineno-9-21"></a><span class="nv">WORLD_SIZE_TOTAL</span><span class="o">=</span><span class="s2">&quot;24&quot;</span>
+<a id="__codelineno-9-22" name="__codelineno-9-22"></a><span class="nv">WORLD_SIZE_IN_USE</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-9-23" name="__codelineno-9-23"></a><span class="nv">LAUNCH_CMD</span><span class="o">=</span><span class="s2">&quot;mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16&quot;</span>
+<a id="__codelineno-9-24" name="__codelineno-9-24"></a><span class="nv">PBS_O_HOME</span><span class="o">=</span><span class="s2">&quot;/home/foremans&quot;</span>
+<a id="__codelineno-9-25" name="__codelineno-9-25"></a><span class="nv">PBS_O_LANG</span><span class="o">=</span><span class="s2">&quot;en_US.UTF-8&quot;</span>
+<a id="__codelineno-9-26" name="__codelineno-9-26"></a><span class="nv">PBS_O_LOGNAME</span><span class="o">=</span><span class="s2">&quot;foremans&quot;</span>
+<a id="__codelineno-9-27" name="__codelineno-9-27"></a><span class="nv">PBS_O_PATH</span><span class="o">=</span><span class="s2">&quot;/home/foremans/micromamba/condabin:/home/foremans/homebrew/bin:/home/foremans/homebrew/sbin:/home/foremans/bin/aurora:/opt/cray/pals/1.3.3/bin:/opt/cray/libfabric/1.15.2.0/bin:/opt/aurora/24.086.0/support/tools/gpu_validation:/opt/aurora/24.086.0/intel-gpu-umd/821.36/bin:/opt/aurora/24.086.0/CNDA/mpich/20231026/mpich-ofi-all-icc-default-pmix-gpu-drop20231026/bin:/opt/aurora/24.086.0/support/tools/mpi_wrapper_utils:/opt/aurora/24.086.0/CNDA/oneapi/dpcpp-ct/eng-20240227/bin:/opt/aurora/24.086.0/oneapi/advisor/latest/bin64:/opt/aurora/24.086.0/oneapi/vtune/latest/bin64:/opt/aurora/24.086.0/oneapi/debugger/latest/opt/debugger/bin:/opt/aurora/24.086.0/CNDA/oneapi/mkl/develop_20240229/bin:/opt/aurora/24.086.0/CNDA/oneapi/compiler/eng-20240227/bin:/opt/aurora/24.086.0/spack/gcc/0.7.0/install/linux-sles15-x86_64/gcc-12.2.0/gcc-12.2.0-jf4ov3v3scg7dvd76qhsuugl3jp42gfn/bin:/opt/clmgr/sbin:/opt/clmgr/bin:/opt/sgi/sbin:/opt/sgi/bin:/home/foremans/.local/bin:/home/foremans/bin:/usr/local/bin:/usr/bin:/bin:/opt/c3/bin:/usr/lib/mit/bin:/usr/lib/mit/sbin:/opt/pbs/bin:/sbin:/home/foremans/.local/share/kitty-ssh-kitten/kitty/bin:/home/foremans/.cargo/bin:/home/foremans/.fzf/bin:/home/foremans/.luarocks/bin&quot;</span>
+<a id="__codelineno-9-28" name="__codelineno-9-28"></a><span class="nv">PBS_O_MAIL</span><span class="o">=</span><span class="s2">&quot;/var/spool/mail/foremans&quot;</span>
+<a id="__codelineno-9-29" name="__codelineno-9-29"></a><span class="nv">PBS_O_SHELL</span><span class="o">=</span><span class="s2">&quot;/bin/zsh&quot;</span>
+<a id="__codelineno-9-30" name="__codelineno-9-30"></a><span class="nv">PBS_O_TZ</span><span class="o">=</span><span class="s2">&quot;America/Chicago&quot;</span>
+<a id="__codelineno-9-31" name="__codelineno-9-31"></a><span class="nv">PBS_O_HOST</span><span class="o">=</span><span class="s2">&quot;aurora-uan-0009.hostmgmt1000.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-9-32" name="__codelineno-9-32"></a><span class="nv">PBS_O_WORKDIR</span><span class="o">=</span><span class="s2">&quot;/home/foremans/2024-07-10-131541/ezpz&quot;</span>
+<a id="__codelineno-9-33" name="__codelineno-9-33"></a><span class="nv">PBS_O_SYSTEM</span><span class="o">=</span><span class="s2">&quot;Linux&quot;</span>
+<a id="__codelineno-9-34" name="__codelineno-9-34"></a><span class="nv">PBS_O_QUEUE</span><span class="o">=</span><span class="s2">&quot;lustre_scaling&quot;</span>
+<a id="__codelineno-9-35" name="__codelineno-9-35"></a><span class="nv">PBS_JOBID_SHORT</span><span class="o">=</span><span class="s2">&quot;698077.aurora&quot;</span>
+<a id="__codelineno-9-36" name="__codelineno-9-36"></a><span class="nv">PBS_HOOK_RESOURCES</span><span class="o">=</span><span class="s2">&quot;eJydUNFuwyAM/KFNIixtoyHe9gl9tyhxEhYCzECr/P2cpZO67W0SD9h3vjs7I12RYEQ7RxiyblTeO1Nc8EfjarzrYXAe85oLLlnfKU/fw8p4H29grI01FLAT92EwzldC1tnRgKMp7oqwlZa/MWzYzVAPXOIYadVvLlvCDTO03sGyJvwFXCoFoE1DC2UrEbLtg+7zSyeOx/bQHmQn1JTsAm4xI2obl1QLZ6gUyUDBXEAK2YqTkGcpxaFpoD/JoZOtCjbVrNvmqIIDwhwrWdT7pAqxR1u0VJFPtMXhIMkbJmTOUJBUovjOFEjkIrmyMpfi5n0xduZr+q8L+10lzy7BBYOdFkNzZrESi/GPOwl146q4BbXoXoXgpz4qVoR/7rcP/3H+BG1nxmU=&quot;</span>
+<a id="__codelineno-9-37" name="__codelineno-9-37"></a><span class="nv">PBS_JOBNAME</span><span class="o">=</span><span class="s2">&quot;STDIN&quot;</span>
+<a id="__codelineno-9-38" name="__codelineno-9-38"></a><span class="nv">PBS_JOBID</span><span class="o">=</span><span class="s2">&quot;698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-9-39" name="__codelineno-9-39"></a><span class="nv">PBS_QUEUE</span><span class="o">=</span><span class="s2">&quot;lustre_scaling&quot;</span>
+<a id="__codelineno-9-40" name="__codelineno-9-40"></a><span class="nv">PBS_JOBCOOKIE</span><span class="o">=</span><span class="s2">&quot;5D073B7E1C16CA8D16018CC9224570E3&quot;</span>
+<a id="__codelineno-9-41" name="__codelineno-9-41"></a><span class="nv">PBS_NODENUM</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-9-42" name="__codelineno-9-42"></a><span class="nv">PBS_TASKNUM</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-9-43" name="__codelineno-9-43"></a><span class="nv">PBS_MOMPORT</span><span class="o">=</span><span class="s2">&quot;15003&quot;</span>
+<a id="__codelineno-9-44" name="__codelineno-9-44"></a><span class="nv">PBS_NODEFILE</span><span class="o">=</span><span class="s2">&quot;/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-9-45" name="__codelineno-9-45"></a><span class="nv">PBS_ACCOUNT</span><span class="o">=</span><span class="s2">&quot;Aurora_Deployment&quot;</span>
+<a id="__codelineno-9-46" name="__codelineno-9-46"></a><span class="nv">PBS_JOBDIR</span><span class="o">=</span><span class="s2">&quot;/home/foremans&quot;</span>
+<a id="__codelineno-9-47" name="__codelineno-9-47"></a><span class="nv">PBS_ENVIRONMENT</span><span class="o">=</span><span class="s2">&quot;PBS_INTERACTIVE&quot;</span>
+<a id="__codelineno-9-48" name="__codelineno-9-48"></a><span class="nv">NHOSTS</span><span class="o">=</span><span class="s2">&quot;2&quot;</span>
+<a id="__codelineno-9-49" name="__codelineno-9-49"></a><span class="nv">NGPU_PER_HOST</span><span class="o">=</span><span class="s2">&quot;12&quot;</span>
+<a id="__codelineno-9-50" name="__codelineno-9-50"></a><span class="nv">BACKEND</span><span class="o">=</span><span class="s2">&quot;ccl&quot;</span>
+<a id="__codelineno-9-51" name="__codelineno-9-51"></a><span class="nb">alias</span><span class="w"> </span><span class="nv">launch</span><span class="o">=</span><span class="s2">&quot;mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16&quot;</span>
+<a id="__codelineno-9-52" name="__codelineno-9-52"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>launch<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div></td></tr></table></div>
+
+    </details>
+
+
+## Custom hostfile
+
+### Bash
+
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-10-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-10-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-10-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-10-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-10-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-10-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-10-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-10-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-10-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-10-10">10</a></span>
+<span class="normal"><a href="#__codelineno-10-11">11</a></span>
+<span class="normal"><a href="#__codelineno-10-12">12</a></span>
+<span class="normal"><a href="#__codelineno-10-13">13</a></span>
+<span class="normal"><a href="#__codelineno-10-14">14</a></span>
+<span class="normal"><a href="#__codelineno-10-15">15</a></span>
+<span class="normal"><a href="#__codelineno-10-16">16</a></span>
+<span class="normal"><a href="#__codelineno-10-17">17</a></span>
+<span class="normal"><a href="#__codelineno-10-18">18</a></span>
+<span class="normal"><a href="#__codelineno-10-19">19</a></span>
+<span class="normal"><a href="#__codelineno-10-20">20</a></span>
+<span class="normal"><a href="#__codelineno-10-21">21</a></span>
+<span class="normal"><a href="#__codelineno-10-22">22</a></span>
+<span class="normal"><a href="#__codelineno-10-23">23</a></span>
+<span class="normal"><a href="#__codelineno-10-24">24</a></span>
+<span class="normal"><a href="#__codelineno-10-25">25</a></span>
+<span class="normal"><a href="#__codelineno-10-26">26</a></span>
+<span class="normal"><a href="#__codelineno-10-27">27</a></span>
+<span class="normal"><a href="#__codelineno-10-28">28</a></span>
+<span class="normal"><a href="#__codelineno-10-29">29</a></span>
+<span class="normal"><a href="#__codelineno-10-30">30</a></span>
+<span class="normal"><a href="#__codelineno-10-31">31</a></span>
+<span class="normal"><a href="#__codelineno-10-32">32</a></span>
+<span class="normal"><a href="#__codelineno-10-33">33</a></span>
+<span class="normal"><a href="#__codelineno-10-34">34</a></span>
+<span class="normal"><a href="#__codelineno-10-35">35</a></span>
+<span class="normal"><a href="#__codelineno-10-36">36</a></span>
+<span class="normal"><a href="#__codelineno-10-37">37</a></span>
+<span class="normal"><a href="#__codelineno-10-38">38</a></span>
+<span class="normal"><a href="#__codelineno-10-39">39</a></span>
+<span class="normal"><a href="#__codelineno-10-40">40</a></span>
+<span class="normal"><a href="#__codelineno-10-41">41</a></span>
+<span class="normal"><a href="#__codelineno-10-42">42</a></span>
+<span class="normal"><a href="#__codelineno-10-43">43</a></span>
+<span class="normal"><a href="#__codelineno-10-44">44</a></span>
+<span class="normal"><a href="#__codelineno-10-45">45</a></span>
+<span class="normal"><a href="#__codelineno-10-46">46</a></span>
+<span class="normal"><a href="#__codelineno-10-47">47</a></span>
+<span class="normal"><a href="#__codelineno-10-48">48</a></span>
+<span class="normal"><a href="#__codelineno-10-49">49</a></span>
+<span class="normal"><a href="#__codelineno-10-50">50</a></span>
+<span class="normal"><a href="#__codelineno-10-51">51</a></span>
+<span class="normal"><a href="#__codelineno-10-52">52</a></span>
+<span class="normal"><a href="#__codelineno-10-53">53</a></span>
+<span class="normal"><a href="#__codelineno-10-54">54</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2"></a><span class="c1">#[🌌][01:25:25 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3"></a>$<span class="w"> </span>head<span class="w"> </span>-1<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PBS_NODEFILE</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>nodefile<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cat<span class="w"> </span>nodefile
+<a id="__codelineno-10-4" name="__codelineno-10-4"></a>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-10-5" name="__codelineno-10-5"></a>
+<a id="__codelineno-10-6" name="__codelineno-10-6"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7"></a><span class="c1">#[🌌][01:25:28 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8"></a>$<span class="w"> </span>setup_alcf<span class="w"> </span>nodefile
+<a id="__codelineno-10-9" name="__codelineno-10-9"></a>
+<a id="__codelineno-10-10" name="__codelineno-10-10"></a><span class="o">[</span>ezpz/bin/utils.sh<span class="o">]</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11"></a>
+<a id="__codelineno-10-12" name="__codelineno-10-12"></a><span class="o">[</span><span class="m">2024</span>-07-10-132537<span class="o">]</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">USER</span><span class="o">=</span>foremans
+<a id="__codelineno-10-14" name="__codelineno-10-14"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">MACHINE</span><span class="o">=</span>aurora
+<a id="__codelineno-10-15" name="__codelineno-10-15"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span>x4017c4s5b0n0
+<a id="__codelineno-10-16" name="__codelineno-10-16"></a>
+<a id="__codelineno-10-17" name="__codelineno-10-17"></a><span class="o">[</span>setupHost<span class="o">]</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18"></a><span class="w">    </span>•<span class="w"> </span>Caught<span class="w"> </span><span class="m">1</span><span class="w"> </span>arguments
+<a id="__codelineno-10-19" name="__codelineno-10-19"></a><span class="w">    </span>•<span class="w"> </span>Caught<span class="w"> </span><span class="m">1</span><span class="w"> </span>arguments
+<a id="__codelineno-10-20" name="__codelineno-10-20"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">hostfile</span><span class="o">=</span>nodefile
+<a id="__codelineno-10-21" name="__codelineno-10-21"></a><span class="w">        </span>•<span class="w"> </span>Writing<span class="w"> </span>PBS<span class="w"> </span>vars<span class="w"> </span>to:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-10-22" name="__codelineno-10-22"></a>
+<a id="__codelineno-10-23" name="__codelineno-10-23"></a><span class="o">[</span>save_pbs_env<span class="o">]</span>
+<a id="__codelineno-10-24" name="__codelineno-10-24"></a><span class="w">    </span>•<span class="w"> </span>Caught<span class="w"> </span><span class="m">1</span><span class="w"> </span>arguments
+<a id="__codelineno-10-25" name="__codelineno-10-25"></a>
+<a id="__codelineno-10-26" name="__codelineno-10-26"></a><span class="w">    </span>•<span class="w"> </span>Caught<span class="w"> </span>hostfile<span class="w"> </span>!<span class="o">=</span><span class="w"> </span>PBS_NODEFILE
+<a id="__codelineno-10-27" name="__codelineno-10-27"></a><span class="w">        </span>•<span class="w"> </span>hostfile:<span class="w"> </span>nodefile
+<a id="__codelineno-10-28" name="__codelineno-10-28"></a><span class="w">        </span>•<span class="w"> </span>PBS_NODEFILE:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-10-29" name="__codelineno-10-29"></a>
+<a id="__codelineno-10-30" name="__codelineno-10-30"></a><span class="w">    </span>•<span class="w"> </span>Using:
+<a id="__codelineno-10-31" name="__codelineno-10-31"></a><span class="w">        </span>•<span class="w"> </span>hostfile:<span class="w"> </span>nodefile
+<a id="__codelineno-10-32" name="__codelineno-10-32"></a><span class="w">        </span>•<span class="w"> </span>jobenv_file:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-10-33" name="__codelineno-10-33"></a><span class="w">      </span>to<span class="w"> </span>calculate:
+<a id="__codelineno-10-34" name="__codelineno-10-34"></a><span class="w">        </span>•<span class="w"> </span>num_hosts:<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-10-35" name="__codelineno-10-35"></a><span class="w">        </span>•<span class="w"> </span>num_gpus_per_host:<span class="w"> </span><span class="m">12</span>
+<a id="__codelineno-10-36" name="__codelineno-10-36"></a><span class="w">        </span>•<span class="w"> </span>num_gpus:<span class="w"> </span><span class="m">12</span>
+<a id="__codelineno-10-37" name="__codelineno-10-37"></a><span class="w">        </span>•<span class="w"> </span>DIST_LAUNCH:<span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">12</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>nodefile<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-10-38" name="__codelineno-10-38"></a><span class="w">    </span>•<span class="w"> </span>Setting:
+<a id="__codelineno-10-39" name="__codelineno-10-39"></a><span class="w">        </span>•<span class="w"> </span>HOSTFILE:<span class="w"> </span>nodefile
+<a id="__codelineno-10-40" name="__codelineno-10-40"></a><span class="w">        </span>•<span class="w"> </span>JOBENV_FILE:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-10-41" name="__codelineno-10-41"></a>
+<a id="__codelineno-10-42" name="__codelineno-10-42"></a><span class="o">[</span>HOSTS<span class="o">]</span>
+<a id="__codelineno-10-43" name="__codelineno-10-43"></a><span class="w">    </span>•<span class="w"> </span><span class="o">[</span>host:0<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-10-44" name="__codelineno-10-44"></a>
+<a id="__codelineno-10-45" name="__codelineno-10-45"></a><span class="o">[</span>DIST<span class="w"> </span>INFO<span class="o">]</span>
+<a id="__codelineno-10-46" name="__codelineno-10-46"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOSTFILE</span><span class="o">=</span>nodefile
+<a id="__codelineno-10-47" name="__codelineno-10-47"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NHOSTS</span><span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-10-48" name="__codelineno-10-48"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPU_PER_HOST</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-10-49" name="__codelineno-10-49"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPUS</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-10-50" name="__codelineno-10-50"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">DIST_LAUNCH</span><span class="o">=</span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">12</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>nodefile<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-10-51" name="__codelineno-10-51"></a>
+<a id="__codelineno-10-52" name="__codelineno-10-52"></a><span class="o">[</span>LAUNCH<span class="o">]</span>:
+<a id="__codelineno-10-53" name="__codelineno-10-53"></a><span class="w">    </span>•<span class="w"> </span>To<span class="w"> </span>launch<span class="w"> </span>across<span class="w"> </span>all<span class="w"> </span>available<span class="w"> </span>GPUs,<span class="w"> </span>use:<span class="w"> </span>launch
+<a id="__codelineno-10-54" name="__codelineno-10-54"></a><span class="w">      </span><span class="nv">launch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">12</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>nodefile<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+</code></pre></div></td></tr></table></div>
+
+### Python
+
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-11-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-11-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-11-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-11-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-11-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-11-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-11-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-11-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-11-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-11-10">10</a></span>
+<span class="normal"><a href="#__codelineno-11-11">11</a></span>
+<span class="normal"><a href="#__codelineno-11-12">12</a></span>
+<span class="normal"><a href="#__codelineno-11-13">13</a></span>
+<span class="normal"><a href="#__codelineno-11-14">14</a></span>
+<span class="normal"><a href="#__codelineno-11-15">15</a></span>
+<span class="normal"><a href="#__codelineno-11-16">16</a></span>
+<span class="normal"><a href="#__codelineno-11-17">17</a></span>
+<span class="normal"><a href="#__codelineno-11-18">18</a></span>
+<span class="normal"><a href="#__codelineno-11-19">19</a></span>
+<span class="normal"><a href="#__codelineno-11-20">20</a></span>
+<span class="normal"><a href="#__codelineno-11-21">21</a></span>
+<span class="normal"><a href="#__codelineno-11-22">22</a></span>
+<span class="normal"><a href="#__codelineno-11-23">23</a></span>
+<span class="normal"><a href="#__codelineno-11-24">24</a></span>
+<span class="normal"><a href="#__codelineno-11-25">25</a></span>
+<span class="normal"><a href="#__codelineno-11-26">26</a></span>
+<span class="normal"><a href="#__codelineno-11-27">27</a></span>
+<span class="normal"><a href="#__codelineno-11-28">28</a></span>
+<span class="normal"><a href="#__codelineno-11-29">29</a></span>
+<span class="normal"><a href="#__codelineno-11-30">30</a></span>
+<span class="normal"><a href="#__codelineno-11-31">31</a></span>
+<span class="normal"><a href="#__codelineno-11-32">32</a></span>
+<span class="normal"><a href="#__codelineno-11-33">33</a></span>
+<span class="normal"><a href="#__codelineno-11-34">34</a></span>
+<span class="normal"><a href="#__codelineno-11-35">35</a></span>
+<span class="normal"><a href="#__codelineno-11-36">36</a></span>
+<span class="normal"><a href="#__codelineno-11-37">37</a></span>
+<span class="normal"><a href="#__codelineno-11-38">38</a></span>
+<span class="normal"><a href="#__codelineno-11-39">39</a></span>
+<span class="normal"><a href="#__codelineno-11-40">40</a></span>
+<span class="normal"><a href="#__codelineno-11-41">41</a></span>
+<span class="normal"><a href="#__codelineno-11-42">42</a></span>
+<span class="normal"><a href="#__codelineno-11-43">43</a></span>
+<span class="normal"><a href="#__codelineno-11-44">44</a></span>
+<span class="normal"><a href="#__codelineno-11-45">45</a></span>
+<span class="normal"><a href="#__codelineno-11-46">46</a></span>
+<span class="normal"><a href="#__codelineno-11-47">47</a></span>
+<span class="normal"><a href="#__codelineno-11-48">48</a></span>
+<span class="normal"><a href="#__codelineno-11-49">49</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2"></a><span class="c1">#[🌌][01:26:10 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450 [⏱ 6s]</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3"></a>$<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>ezpz.jobs<span class="w"> </span>--hostfile<span class="w"> </span>nodefile
+<a id="__codelineno-11-4" name="__codelineno-11-4"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41,045<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>Note:<span class="w"> </span>detected<span class="w"> </span><span class="m">208</span><span class="w"> </span>virtual<span class="w"> </span>cores<span class="w"> </span>but<span class="w"> </span>NumExpr<span class="w"> </span><span class="nb">set</span><span class="w"> </span>to<span class="w"> </span>maximum<span class="w"> </span>of<span class="w"> </span><span class="m">64</span>,<span class="w"> </span>check<span class="w"> </span><span class="s2">&quot;NUMEXPR_MAX_THREADS&quot;</span><span class="w"> </span>environment<span class="w"> </span>variable.
+<a id="__codelineno-11-5" name="__codelineno-11-5"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41,045<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>Note:<span class="w"> </span>NumExpr<span class="w"> </span>detected<span class="w"> </span><span class="m">208</span><span class="w"> </span>cores<span class="w"> </span>but<span class="w"> </span><span class="s2">&quot;NUMEXPR_MAX_THREADS&quot;</span><span class="w"> </span>not<span class="w"> </span>set,<span class="w"> </span>so<span class="w"> </span>enforcing<span class="w"> </span>safe<span class="w"> </span>limit<span class="w"> </span>of<span class="w"> </span><span class="m">8</span>.
+<a id="__codelineno-11-6" name="__codelineno-11-6"></a><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41,045<span class="w"> </span>-<span class="w"> </span>numexpr.utils<span class="w"> </span>-<span class="w"> </span>INFO<span class="w"> </span>-<span class="w"> </span>NumExpr<span class="w"> </span>defaulting<span class="w"> </span>to<span class="w"> </span><span class="m">8</span><span class="w"> </span>threads.
+<a id="__codelineno-11-7" name="__codelineno-11-7"></a>/home/foremans/2024-07-10-131541/ezpz/venvs/aurora_nre_models_frameworks-2024.1/lib/python3.9/site-packages/pandas/core/computation/expressions.py:21:<span class="w"> </span>UserWarning:<span class="w"> </span>Pandas<span class="w"> </span>requires<span class="w"> </span>version<span class="w"> </span><span class="s1">&#39;2.8.4&#39;</span><span class="w"> </span>or<span class="w"> </span>newer<span class="w"> </span>of<span class="w"> </span><span class="s1">&#39;numexpr&#39;</span><span class="w"> </span><span class="o">(</span>version<span class="w"> </span><span class="s1">&#39;2.7.3&#39;</span><span class="w"> </span>currently<span class="w"> </span>installed<span class="o">)</span>.
+<a id="__codelineno-11-8" name="__codelineno-11-8"></a><span class="w">  </span>from<span class="w"> </span>pandas.core.computation.check<span class="w"> </span>import<span class="w"> </span>NUMEXPR_INSTALLED
+<a id="__codelineno-11-9" name="__codelineno-11-9"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.973940<span class="o">][</span>INFO<span class="o">][</span>__init__:156<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Setting<span class="w"> </span>logging<span class="w"> </span>level<span class="w"> </span>to<span class="w"> </span><span class="s1">&#39;INFO&#39;</span><span class="w"> </span>on<span class="w"> </span><span class="s1">&#39;RANK == 0&#39;</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.976941<span class="o">][</span>INFO<span class="o">][</span>__init__:157<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Setting<span class="w"> </span>logging<span class="w"> </span>level<span class="w"> </span>to<span class="w"> </span><span class="s1">&#39;CRITICAL&#39;</span><span class="w"> </span>on<span class="w"> </span>all<span class="w"> </span>others<span class="w"> </span><span class="s1">&#39;RANK != 0&#39;</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.977373<span class="o">][</span>INFO<span class="o">][</span>__init__:160<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>To<span class="w"> </span>disable<span class="w"> </span>this<span class="w"> </span>behavior,<span class="w"> </span>and<span class="w"> </span>log<span class="w"> </span>from<span class="w"> </span>ALL<span class="w"> </span>ranks<span class="w"> </span><span class="o">(</span>not<span class="w"> </span>recommended<span class="o">)</span>,<span class="w"> </span>set:<span class="w"> </span><span class="s1">&#39;export LOG_FROM_ALL_RANKS=1&#39;</span><span class="w">  </span><span class="k">in</span><span class="w"> </span>your<span class="w"> </span>environment,<span class="w"> </span>and<span class="w"> </span>re-run.
+<a id="__codelineno-11-12" name="__codelineno-11-12"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.990751<span class="o">][</span>WARNING<span class="o">][</span>dist:1127<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Mismatch<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="sb">`</span>ngpus_in_use<span class="sb">`</span><span class="w"> </span>and<span class="w"> </span><span class="sb">`</span>ngpus_available<span class="sb">`</span><span class="w"> </span><span class="nv">ngpus_in_use</span><span class="o">=</span><span class="m">12</span><span class="w"> </span>vs.<span class="w"> </span><span class="nv">ngpus_available</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.991378<span class="o">][</span>INFO<span class="o">][</span>dist:95<span class="o">]</span><span class="w"> </span>-
+<a id="__codelineno-11-14" name="__codelineno-11-14"></a>
+<a id="__codelineno-11-15" name="__codelineno-11-15"></a><span class="o">[</span>dist_info<span class="o">]</span>:
+<a id="__codelineno-11-16" name="__codelineno-11-16"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">FRAMEWORK</span><span class="o">=</span>pytorch
+<a id="__codelineno-11-17" name="__codelineno-11-17"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DEVICE</span><span class="o">=</span>xpu
+<a id="__codelineno-11-18" name="__codelineno-11-18"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DEVICE_ID</span><span class="o">=</span>xpu:0
+<a id="__codelineno-11-19" name="__codelineno-11-19"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">DISTRIBUTED_BACKEND</span><span class="o">=</span>ccl
+<a id="__codelineno-11-20" name="__codelineno-11-20"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-11-21" name="__codelineno-11-21"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTS</span><span class="o">=[</span><span class="s1">&#39;x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov&#39;</span><span class="o">]</span>
+<a id="__codelineno-11-22" name="__codelineno-11-22"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTFILE</span><span class="o">=</span>/home/foremans/2024-07-10-131541/ezpz/nodefile
+<a id="__codelineno-11-23" name="__codelineno-11-23"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">HOSTNAME</span><span class="o">=</span>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-11-24" name="__codelineno-11-24"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">LOCAL_RANK</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-11-25" name="__codelineno-11-25"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">MACHINE</span><span class="o">=</span>Aurora
+<a id="__codelineno-11-26" name="__codelineno-11-26"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NUM_NODES</span><span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-11-27" name="__codelineno-11-27"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NGPUS</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-11-28" name="__codelineno-11-28"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NGPUS_AVAILABLE</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-29" name="__codelineno-11-29"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">NODE_ID</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-11-30" name="__codelineno-11-30"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">RANK</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-11-31" name="__codelineno-11-31"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">SCHEDULER</span><span class="o">=</span>PBS
+<a id="__codelineno-11-32" name="__codelineno-11-32"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">WORLD_SIZE_TOTAL</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-33" name="__codelineno-11-33"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">WORLD_SIZE_IN_USE</span><span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-11-34" name="__codelineno-11-34"></a><span class="w">  </span>•<span class="w"> </span><span class="nv">LAUNCH_CMD</span><span class="o">=</span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">12</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>nodefile<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-11-35" name="__codelineno-11-35"></a>
+<a id="__codelineno-11-36" name="__codelineno-11-36"></a>
+<a id="__codelineno-11-37" name="__codelineno-11-37"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:41.999545<span class="o">][</span>WARNING<span class="o">][</span>dist:1127<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Mismatch<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="sb">`</span>ngpus_in_use<span class="sb">`</span><span class="w"> </span>and<span class="w"> </span><span class="sb">`</span>ngpus_available<span class="sb">`</span><span class="w"> </span><span class="nv">ngpus_in_use</span><span class="o">=</span><span class="m">12</span><span class="w"> </span>vs.<span class="w"> </span><span class="nv">ngpus_available</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-38" name="__codelineno-11-38"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:42.002941<span class="o">][</span>WARNING<span class="o">][</span>dist:1127<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Mismatch<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="sb">`</span>ngpus_in_use<span class="sb">`</span><span class="w"> </span>and<span class="w"> </span><span class="sb">`</span>ngpus_available<span class="sb">`</span><span class="w"> </span><span class="nv">ngpus_in_use</span><span class="o">=</span><span class="m">12</span><span class="w"> </span>vs.<span class="w"> </span><span class="nv">ngpus_available</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-39" name="__codelineno-11-39"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:42.017104<span class="o">][</span>WARNING<span class="o">][</span>dist:1127<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Mismatch<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="sb">`</span>ngpus_in_use<span class="sb">`</span><span class="w"> </span>and<span class="w"> </span><span class="sb">`</span>ngpus_available<span class="sb">`</span><span class="w"> </span><span class="nv">ngpus_in_use</span><span class="o">=</span><span class="m">12</span><span class="w"> </span>vs.<span class="w"> </span><span class="nv">ngpus_available</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-11-40" name="__codelineno-11-40"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:42.017647<span class="o">][</span>INFO<span class="o">][</span>jobs:164<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/PBS-jobs/698077/.jobenv
+<a id="__codelineno-11-41" name="__codelineno-11-41"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:42.022741<span class="o">][</span>INFO<span class="o">][</span>jobs:164<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>Saving<span class="w"> </span>job<span class="w"> </span>env<span class="w"> </span>to<span class="w"> </span>/home/foremans/2024-07-10-131541/ezpz/.jobenv
+<a id="__codelineno-11-42" name="__codelineno-11-42"></a><span class="o">[</span><span class="m">2024</span>-07-10<span class="w"> </span><span class="m">13</span>:26:42.027785<span class="o">][</span>CRITICAL<span class="o">][</span>jobs:381<span class="o">]</span><span class="w"> </span>-
+<a id="__codelineno-11-43" name="__codelineno-11-43"></a>Run:
+<a id="__codelineno-11-44" name="__codelineno-11-44"></a>
+<a id="__codelineno-11-45" name="__codelineno-11-45"></a><span class="w">    </span><span class="nb">source</span><span class="w"> </span>.jobenv
+<a id="__codelineno-11-46" name="__codelineno-11-46"></a>
+<a id="__codelineno-11-47" name="__codelineno-11-47"></a>to<span class="w"> </span><span class="nb">set</span><span class="w"> </span>these<span class="w"> </span>environment<span class="w"> </span>variables.
+<a id="__codelineno-11-48" name="__codelineno-11-48"></a>
+<a id="__codelineno-11-49" name="__codelineno-11-49"></a><span class="m">6</span>.55s<span class="w"> </span>user<span class="w"> </span><span class="m">7</span>.58s<span class="w"> </span>system<span class="w"> </span><span class="m">218</span>%<span class="w"> </span>cpu<span class="w"> </span><span class="m">6</span>.474s<span class="w"> </span>total
+</code></pre></div></td></tr></table></div>
+
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-12-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-12-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-12-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-12-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-12-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-12-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-12-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-12-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-12-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-12-10">10</a></span>
+<span class="normal"><a href="#__codelineno-12-11">11</a></span>
+<span class="normal"><a href="#__codelineno-12-12">12</a></span>
+<span class="normal"><a href="#__codelineno-12-13">13</a></span>
+<span class="normal"><a href="#__codelineno-12-14">14</a></span>
+<span class="normal"><a href="#__codelineno-12-15">15</a></span>
+<span class="normal"><a href="#__codelineno-12-16">16</a></span>
+<span class="normal"><a href="#__codelineno-12-17">17</a></span>
+<span class="normal"><a href="#__codelineno-12-18">18</a></span>
+<span class="normal"><a href="#__codelineno-12-19">19</a></span>
+<span class="normal"><a href="#__codelineno-12-20">20</a></span>
+<span class="normal"><a href="#__codelineno-12-21">21</a></span>
+<span class="normal"><a href="#__codelineno-12-22">22</a></span>
+<span class="normal"><a href="#__codelineno-12-23">23</a></span>
+<span class="normal"><a href="#__codelineno-12-24">24</a></span>
+<span class="normal"><a href="#__codelineno-12-25">25</a></span>
+<span class="normal"><a href="#__codelineno-12-26">26</a></span>
+<span class="normal"><a href="#__codelineno-12-27">27</a></span>
+<span class="normal"><a href="#__codelineno-12-28">28</a></span>
+<span class="normal"><a href="#__codelineno-12-29">29</a></span>
+<span class="normal"><a href="#__codelineno-12-30">30</a></span>
+<span class="normal"><a href="#__codelineno-12-31">31</a></span>
+<span class="normal"><a href="#__codelineno-12-32">32</a></span>
+<span class="normal"><a href="#__codelineno-12-33">33</a></span>
+<span class="normal"><a href="#__codelineno-12-34">34</a></span>
+<span class="normal"><a href="#__codelineno-12-35">35</a></span>
+<span class="normal"><a href="#__codelineno-12-36">36</a></span>
+<span class="normal"><a href="#__codelineno-12-37">37</a></span>
+<span class="normal"><a href="#__codelineno-12-38">38</a></span>
+<span class="normal"><a href="#__codelineno-12-39">39</a></span>
+<span class="normal"><a href="#__codelineno-12-40">40</a></span>
+<span class="normal"><a href="#__codelineno-12-41">41</a></span>
+<span class="normal"><a href="#__codelineno-12-42">42</a></span>
+<span class="normal"><a href="#__codelineno-12-43">43</a></span>
+<span class="normal"><a href="#__codelineno-12-44">44</a></span>
+<span class="normal"><a href="#__codelineno-12-45">45</a></span>
+<span class="normal"><a href="#__codelineno-12-46">46</a></span>
+<span class="normal"><a href="#__codelineno-12-47">47</a></span>
+<span class="normal"><a href="#__codelineno-12-48">48</a></span>
+<span class="normal"><a href="#__codelineno-12-49">49</a></span>
+<span class="normal"><a href="#__codelineno-12-50">50</a></span>
+<span class="normal"><a href="#__codelineno-12-51">51</a></span>
+<span class="normal"><a href="#__codelineno-12-52">52</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2"></a><span class="c1">#[🌌][01:26:54 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450 [⏱ 6s]</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3"></a>$<span class="w"> </span>cat<span class="w"> </span>.jobenv
+<a id="__codelineno-12-4" name="__codelineno-12-4"></a><span class="c1">#!/bin/bash --login</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5"></a><span class="nv">FRAMEWORK</span><span class="o">=</span><span class="s2">&quot;pytorch&quot;</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6"></a><span class="nv">DEVICE</span><span class="o">=</span><span class="s2">&quot;xpu&quot;</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7"></a><span class="nv">DEVICE_ID</span><span class="o">=</span><span class="s2">&quot;xpu:0&quot;</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8"></a><span class="nv">DISTRIBUTED_BACKEND</span><span class="o">=</span><span class="s2">&quot;ccl&quot;</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9"></a><span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="s2">&quot;12&quot;</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10"></a><span class="nv">HOSTS</span><span class="o">=</span><span class="s2">&quot;[x4017c4s5b0n0]&quot;</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11"></a><span class="nv">HOSTFILE</span><span class="o">=</span><span class="s2">&quot;nodefile&quot;</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12"></a><span class="nv">HOSTNAME</span><span class="o">=</span><span class="s2">&quot;x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-12-13" name="__codelineno-12-13"></a><span class="nv">LOCAL_RANK</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-12-14" name="__codelineno-12-14"></a><span class="nv">MACHINE</span><span class="o">=</span><span class="s2">&quot;Aurora&quot;</span>
+<a id="__codelineno-12-15" name="__codelineno-12-15"></a><span class="nv">NUM_NODES</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-12-16" name="__codelineno-12-16"></a><span class="nv">NGPUS</span><span class="o">=</span><span class="s2">&quot;12&quot;</span>
+<a id="__codelineno-12-17" name="__codelineno-12-17"></a><span class="nv">NGPUS_AVAILABLE</span><span class="o">=</span><span class="s2">&quot;24&quot;</span>
+<a id="__codelineno-12-18" name="__codelineno-12-18"></a><span class="nv">NODE_ID</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-12-19" name="__codelineno-12-19"></a><span class="nv">RANK</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-12-20" name="__codelineno-12-20"></a><span class="nv">SCHEDULER</span><span class="o">=</span><span class="s2">&quot;PBS&quot;</span>
+<a id="__codelineno-12-21" name="__codelineno-12-21"></a><span class="nv">WORLD_SIZE_TOTAL</span><span class="o">=</span><span class="s2">&quot;24&quot;</span>
+<a id="__codelineno-12-22" name="__codelineno-12-22"></a><span class="nv">WORLD_SIZE_IN_USE</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-12-23" name="__codelineno-12-23"></a><span class="nv">LAUNCH_CMD</span><span class="o">=</span><span class="s2">&quot;mpiexec --verbose --envall -n 12 -ppn 12 --hostfile nodefile --cpu-bind depth -d 16&quot;</span>
+<a id="__codelineno-12-24" name="__codelineno-12-24"></a><span class="nv">PBS_O_HOME</span><span class="o">=</span><span class="s2">&quot;/home/foremans&quot;</span>
+<a id="__codelineno-12-25" name="__codelineno-12-25"></a><span class="nv">PBS_O_LANG</span><span class="o">=</span><span class="s2">&quot;en_US.UTF-8&quot;</span>
+<a id="__codelineno-12-26" name="__codelineno-12-26"></a><span class="nv">PBS_O_LOGNAME</span><span class="o">=</span><span class="s2">&quot;foremans&quot;</span>
+<a id="__codelineno-12-27" name="__codelineno-12-27"></a><span class="nv">PBS_O_PATH</span><span class="o">=</span><span class="s2">&quot;/home/foremans/micromamba/condabin:/home/foremans/homebrew/bin:/home/foremans/homebrew/sbin:/home/foremans/bin/aurora:/opt/cray/pals/1.3.3/bin:/opt/cray/libfabric/1.15.2.0/bin:/opt/aurora/24.086.0/support/tools/gpu_validation:/opt/aurora/24.086.0/intel-gpu-umd/821.36/bin:/opt/aurora/24.086.0/CNDA/mpich/20231026/mpich-ofi-all-icc-default-pmix-gpu-drop20231026/bin:/opt/aurora/24.086.0/support/tools/mpi_wrapper_utils:/opt/aurora/24.086.0/CNDA/oneapi/dpcpp-ct/eng-20240227/bin:/opt/aurora/24.086.0/oneapi/advisor/latest/bin64:/opt/aurora/24.086.0/oneapi/vtune/latest/bin64:/opt/aurora/24.086.0/oneapi/debugger/latest/opt/debugger/bin:/opt/aurora/24.086.0/CNDA/oneapi/mkl/develop_20240229/bin:/opt/aurora/24.086.0/CNDA/oneapi/compiler/eng-20240227/bin:/opt/aurora/24.086.0/spack/gcc/0.7.0/install/linux-sles15-x86_64/gcc-12.2.0/gcc-12.2.0-jf4ov3v3scg7dvd76qhsuugl3jp42gfn/bin:/opt/clmgr/sbin:/opt/clmgr/bin:/opt/sgi/sbin:/opt/sgi/bin:/home/foremans/.local/bin:/home/foremans/bin:/usr/local/bin:/usr/bin:/bin:/opt/c3/bin:/usr/lib/mit/bin:/usr/lib/mit/sbin:/opt/pbs/bin:/sbin:/home/foremans/.local/share/kitty-ssh-kitten/kitty/bin:/home/foremans/.cargo/bin:/home/foremans/.fzf/bin:/home/foremans/.luarocks/bin&quot;</span>
+<a id="__codelineno-12-28" name="__codelineno-12-28"></a><span class="nv">PBS_O_MAIL</span><span class="o">=</span><span class="s2">&quot;/var/spool/mail/foremans&quot;</span>
+<a id="__codelineno-12-29" name="__codelineno-12-29"></a><span class="nv">PBS_O_SHELL</span><span class="o">=</span><span class="s2">&quot;/bin/zsh&quot;</span>
+<a id="__codelineno-12-30" name="__codelineno-12-30"></a><span class="nv">PBS_O_TZ</span><span class="o">=</span><span class="s2">&quot;America/Chicago&quot;</span>
+<a id="__codelineno-12-31" name="__codelineno-12-31"></a><span class="nv">PBS_O_HOST</span><span class="o">=</span><span class="s2">&quot;aurora-uan-0009.hostmgmt1000.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-12-32" name="__codelineno-12-32"></a><span class="nv">PBS_O_WORKDIR</span><span class="o">=</span><span class="s2">&quot;/home/foremans/2024-07-10-131541/ezpz&quot;</span>
+<a id="__codelineno-12-33" name="__codelineno-12-33"></a><span class="nv">PBS_O_SYSTEM</span><span class="o">=</span><span class="s2">&quot;Linux&quot;</span>
+<a id="__codelineno-12-34" name="__codelineno-12-34"></a><span class="nv">PBS_O_QUEUE</span><span class="o">=</span><span class="s2">&quot;lustre_scaling&quot;</span>
+<a id="__codelineno-12-35" name="__codelineno-12-35"></a><span class="nv">PBS_JOBID_SHORT</span><span class="o">=</span><span class="s2">&quot;698077.aurora&quot;</span>
+<a id="__codelineno-12-36" name="__codelineno-12-36"></a><span class="nv">PBS_HOOK_RESOURCES</span><span class="o">=</span><span class="s2">&quot;eJydUNFuwyAM/KFNIixtoyHe9gl9tyhxEhYCzECr/P2cpZO67W0SD9h3vjs7I12RYEQ7RxiyblTeO1Nc8EfjarzrYXAe85oLLlnfKU/fw8p4H29grI01FLAT92EwzldC1tnRgKMp7oqwlZa/MWzYzVAPXOIYadVvLlvCDTO03sGyJvwFXCoFoE1DC2UrEbLtg+7zSyeOx/bQHmQn1JTsAm4xI2obl1QLZ6gUyUDBXEAK2YqTkGcpxaFpoD/JoZOtCjbVrNvmqIIDwhwrWdT7pAqxR1u0VJFPtMXhIMkbJmTOUJBUovjOFEjkIrmyMpfi5n0xduZr+q8L+10lzy7BBYOdFkNzZrESi/GPOwl146q4BbXoXoXgpz4qVoR/7rcP/3H+BG1nxmU=&quot;</span>
+<a id="__codelineno-12-37" name="__codelineno-12-37"></a><span class="nv">PBS_JOBNAME</span><span class="o">=</span><span class="s2">&quot;STDIN&quot;</span>
+<a id="__codelineno-12-38" name="__codelineno-12-38"></a><span class="nv">PBS_JOBID</span><span class="o">=</span><span class="s2">&quot;698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-12-39" name="__codelineno-12-39"></a><span class="nv">PBS_QUEUE</span><span class="o">=</span><span class="s2">&quot;lustre_scaling&quot;</span>
+<a id="__codelineno-12-40" name="__codelineno-12-40"></a><span class="nv">PBS_JOBCOOKIE</span><span class="o">=</span><span class="s2">&quot;5D073B7E1C16CA8D16018CC9224570E3&quot;</span>
+<a id="__codelineno-12-41" name="__codelineno-12-41"></a><span class="nv">PBS_NODENUM</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-12-42" name="__codelineno-12-42"></a><span class="nv">PBS_TASKNUM</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-12-43" name="__codelineno-12-43"></a><span class="nv">PBS_MOMPORT</span><span class="o">=</span><span class="s2">&quot;15003&quot;</span>
+<a id="__codelineno-12-44" name="__codelineno-12-44"></a><span class="nv">PBS_NODEFILE</span><span class="o">=</span><span class="s2">&quot;/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov&quot;</span>
+<a id="__codelineno-12-45" name="__codelineno-12-45"></a><span class="nv">PBS_ACCOUNT</span><span class="o">=</span><span class="s2">&quot;Aurora_Deployment&quot;</span>
+<a id="__codelineno-12-46" name="__codelineno-12-46"></a><span class="nv">PBS_JOBDIR</span><span class="o">=</span><span class="s2">&quot;/home/foremans&quot;</span>
+<a id="__codelineno-12-47" name="__codelineno-12-47"></a><span class="nv">PBS_ENVIRONMENT</span><span class="o">=</span><span class="s2">&quot;PBS_INTERACTIVE&quot;</span>
+<a id="__codelineno-12-48" name="__codelineno-12-48"></a><span class="nv">NHOSTS</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-12-49" name="__codelineno-12-49"></a><span class="nv">NGPU_PER_HOST</span><span class="o">=</span><span class="s2">&quot;12&quot;</span>
+<a id="__codelineno-12-50" name="__codelineno-12-50"></a><span class="nv">BACKEND</span><span class="o">=</span><span class="s2">&quot;ccl&quot;</span>
+<a id="__codelineno-12-51" name="__codelineno-12-51"></a><span class="nb">alias</span><span class="w"> </span><span class="nv">launch</span><span class="o">=</span><span class="s2">&quot;mpiexec --verbose --envall -n 12 -ppn 12 --hostfile nodefile --cpu-bind depth -d 16&quot;</span>
+<a id="__codelineno-12-52" name="__codelineno-12-52"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>launch<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div></td></tr></table></div>
+
+
+To reset after using custom hostfile:
+
+<div class="language-bash highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-13-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-13-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-13-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-13-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-13-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-13-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-13-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-13-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-13-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-13-10">10</a></span>
+<span class="normal"><a href="#__codelineno-13-11">11</a></span>
+<span class="normal"><a href="#__codelineno-13-12">12</a></span>
+<span class="normal"><a href="#__codelineno-13-13">13</a></span>
+<span class="normal"><a href="#__codelineno-13-14">14</a></span>
+<span class="normal"><a href="#__codelineno-13-15">15</a></span>
+<span class="normal"><a href="#__codelineno-13-16">16</a></span>
+<span class="normal"><a href="#__codelineno-13-17">17</a></span>
+<span class="normal"><a href="#__codelineno-13-18">18</a></span>
+<span class="normal"><a href="#__codelineno-13-19">19</a></span>
+<span class="normal"><a href="#__codelineno-13-20">20</a></span>
+<span class="normal"><a href="#__codelineno-13-21">21</a></span>
+<span class="normal"><a href="#__codelineno-13-22">22</a></span>
+<span class="normal"><a href="#__codelineno-13-23">23</a></span>
+<span class="normal"><a href="#__codelineno-13-24">24</a></span>
+<span class="normal"><a href="#__codelineno-13-25">25</a></span>
+<span class="normal"><a href="#__codelineno-13-26">26</a></span>
+<span class="normal"><a href="#__codelineno-13-27">27</a></span>
+<span class="normal"><a href="#__codelineno-13-28">28</a></span>
+<span class="normal"><a href="#__codelineno-13-29">29</a></span>
+<span class="normal"><a href="#__codelineno-13-30">30</a></span>
+<span class="normal"><a href="#__codelineno-13-31">31</a></span>
+<span class="normal"><a href="#__codelineno-13-32">32</a></span>
+<span class="normal"><a href="#__codelineno-13-33">33</a></span>
+<span class="normal"><a href="#__codelineno-13-34">34</a></span>
+<span class="normal"><a href="#__codelineno-13-35">35</a></span>
+<span class="normal"><a href="#__codelineno-13-36">36</a></span>
+<span class="normal"><a href="#__codelineno-13-37">37</a></span>
+<span class="normal"><a href="#__codelineno-13-38">38</a></span>
+<span class="normal"><a href="#__codelineno-13-39">39</a></span>
+<span class="normal"><a href="#__codelineno-13-40">40</a></span>
+<span class="normal"><a href="#__codelineno-13-41">41</a></span>
+<span class="normal"><a href="#__codelineno-13-42">42</a></span>
+<span class="normal"><a href="#__codelineno-13-43">43</a></span>
+<span class="normal"><a href="#__codelineno-13-44">44</a></span>
+<span class="normal"><a href="#__codelineno-13-45">45</a></span>
+<span class="normal"><a href="#__codelineno-13-46">46</a></span>
+<span class="normal"><a href="#__codelineno-13-47">47</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2"></a><span class="c1">#[🌌][01:27:39 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3"></a>$<span class="w"> </span><span class="nb">unset</span><span class="w"> </span>hostfile<span class="w"> </span>HOSTFILE
+<a id="__codelineno-13-4" name="__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5"></a><span class="c1">#[aurora_nre_models_frameworks-2024.1](👻 aurora_nre_models_frameworks-2024.1)</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6"></a><span class="c1">#[🌌][01:27:41 PM][foremans@x4017c4s5b0n0][…/ezpz][🌱 jobs-rewrite]via ⨁ v1.3.450</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7"></a>$<span class="w"> </span>setup_alcf
+<a id="__codelineno-13-8" name="__codelineno-13-8"></a>
+<a id="__codelineno-13-9" name="__codelineno-13-9"></a><span class="o">[</span>ezpz/bin/utils.sh<span class="o">]</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10"></a>
+<a id="__codelineno-13-11" name="__codelineno-13-11"></a><span class="o">[</span><span class="m">2024</span>-07-10-132744<span class="o">]</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">USER</span><span class="o">=</span>foremans
+<a id="__codelineno-13-13" name="__codelineno-13-13"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">MACHINE</span><span class="o">=</span>aurora
+<a id="__codelineno-13-14" name="__codelineno-13-14"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span>x4017c4s5b0n0
+<a id="__codelineno-13-15" name="__codelineno-13-15"></a>
+<a id="__codelineno-13-16" name="__codelineno-13-16"></a><span class="o">[</span>setupHost<span class="o">]</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17"></a><span class="w">    </span>•<span class="w"> </span>Using<span class="w"> </span>hostfile:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-18" name="__codelineno-13-18"></a><span class="w">    </span>•<span class="w"> </span>Found<span class="w"> </span><span class="k">in</span><span class="w"> </span>environment:
+<a id="__codelineno-13-19" name="__codelineno-13-19"></a><span class="w">        </span>•<span class="w"> </span>Writing<span class="w"> </span>PBS<span class="w"> </span>vars<span class="w"> </span>to:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-13-20" name="__codelineno-13-20"></a>
+<a id="__codelineno-13-21" name="__codelineno-13-21"></a><span class="o">[</span>save_pbs_env<span class="o">]</span>
+<a id="__codelineno-13-22" name="__codelineno-13-22"></a><span class="w">    </span>•<span class="w"> </span>Using:
+<a id="__codelineno-13-23" name="__codelineno-13-23"></a><span class="w">        </span>•<span class="w"> </span>hostfile:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-24" name="__codelineno-13-24"></a><span class="w">        </span>•<span class="w"> </span>jobenv_file:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-13-25" name="__codelineno-13-25"></a><span class="w">      </span>to<span class="w"> </span>calculate:
+<a id="__codelineno-13-26" name="__codelineno-13-26"></a><span class="w">        </span>•<span class="w"> </span>num_hosts:<span class="w"> </span><span class="m">2</span>
+<a id="__codelineno-13-27" name="__codelineno-13-27"></a><span class="w">        </span>•<span class="w"> </span>num_gpus_per_host:<span class="w"> </span><span class="m">12</span>
+<a id="__codelineno-13-28" name="__codelineno-13-28"></a><span class="w">        </span>•<span class="w"> </span>num_gpus:<span class="w"> </span><span class="m">24</span>
+<a id="__codelineno-13-29" name="__codelineno-13-29"></a><span class="w">        </span>•<span class="w"> </span>DIST_LAUNCH:<span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-13-30" name="__codelineno-13-30"></a><span class="w">    </span>•<span class="w"> </span>Setting:
+<a id="__codelineno-13-31" name="__codelineno-13-31"></a><span class="w">        </span>•<span class="w"> </span>HOSTFILE:<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-32" name="__codelineno-13-32"></a><span class="w">        </span>•<span class="w"> </span>JOBENV_FILE:<span class="w"> </span>/home/foremans/.pbsenv
+<a id="__codelineno-13-33" name="__codelineno-13-33"></a>
+<a id="__codelineno-13-34" name="__codelineno-13-34"></a><span class="o">[</span>HOSTS<span class="o">]</span>
+<a id="__codelineno-13-35" name="__codelineno-13-35"></a><span class="w">    </span>•<span class="w"> </span><span class="o">[</span>host:0<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>x4017c4s5b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-36" name="__codelineno-13-36"></a><span class="w">    </span>•<span class="w"> </span><span class="o">[</span>host:1<span class="o">]</span><span class="w"> </span>-<span class="w"> </span>x4017c4s6b0n0.hostmgmt2017.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-37" name="__codelineno-13-37"></a>
+<a id="__codelineno-13-38" name="__codelineno-13-38"></a><span class="o">[</span>DIST<span class="w"> </span>INFO<span class="o">]</span>
+<a id="__codelineno-13-39" name="__codelineno-13-39"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">HOSTFILE</span><span class="o">=</span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+<a id="__codelineno-13-40" name="__codelineno-13-40"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NHOSTS</span><span class="o">=</span><span class="m">2</span>
+<a id="__codelineno-13-41" name="__codelineno-13-41"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPU_PER_HOST</span><span class="o">=</span><span class="m">12</span>
+<a id="__codelineno-13-42" name="__codelineno-13-42"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">NGPUS</span><span class="o">=</span><span class="m">24</span>
+<a id="__codelineno-13-43" name="__codelineno-13-43"></a><span class="w">    </span>•<span class="w"> </span><span class="nv">DIST_LAUNCH</span><span class="o">=</span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+<a id="__codelineno-13-44" name="__codelineno-13-44"></a>
+<a id="__codelineno-13-45" name="__codelineno-13-45"></a><span class="o">[</span>LAUNCH<span class="o">]</span>:
+<a id="__codelineno-13-46" name="__codelineno-13-46"></a><span class="w">    </span>•<span class="w"> </span>To<span class="w"> </span>launch<span class="w"> </span>across<span class="w"> </span>all<span class="w"> </span>available<span class="w"> </span>GPUs,<span class="w"> </span>use:<span class="w"> </span>launch
+<a id="__codelineno-13-47" name="__codelineno-13-47"></a><span class="w">      </span><span class="nv">launch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>mpiexec<span class="w"> </span>--verbose<span class="w"> </span>--envall<span class="w"> </span>-n<span class="w"> </span><span class="m">24</span><span class="w"> </span>-ppn<span class="w"> </span><span class="m">12</span><span class="w"> </span>--hostfile<span class="w"> </span>/var/spool/pbs/aux/698077.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov<span class="w"> </span>--cpu-bind<span class="w"> </span>depth<span class="w"> </span>-d<span class="w"> </span><span class="m">16</span>
+</code></pre></div></td></tr></table></div>
+
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["content.action.edit", "navigation.indexes", "content.code.select", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js"></script>
+      
+    
+  </body>
+</html>
