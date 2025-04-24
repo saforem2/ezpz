@@ -17,7 +17,6 @@ dependencies = [
     "evaluate",
     # "h5py",
     "hydra-core",
-    "mpi4py",
     "numpy<2",
     "omegaconf",
     "plotext",
@@ -27,7 +26,6 @@ dependencies = [
     "sh",
     "tiktoken",
     "sentencepiece",
-    "torch",
     "transformers>=4.50.1",
     "wandb",
     "xarray",
@@ -61,6 +59,11 @@ dev = [
     # "tqdm",
     # "hydra-colorlog",
     # "tensorboard",
+]
+
+torch = [
+    "mpi4py",
+    "torch",
 ]
 
 docs = [
@@ -116,6 +119,7 @@ exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 [tool.uv]
 override-dependencies = [
   "torch; sys_platform == 'never'",
+  "mpi4py; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]
