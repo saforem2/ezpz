@@ -5,7 +5,8 @@ repo_url: https://github.com/saforem2/ezpz
 edit_uri: edit/main/docs/
 theme:
   font:
-    text: IBM Plex Mono
+    heading: IBM Plex Sans Condensed
+    text: IBM Plex Sans
     code: IBM Plex Mono
 
   # text: "IBM Plex Sans"
@@ -35,6 +36,7 @@ theme:
     # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: "#00CCFF"
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode

@@ -1,12 +1,12 @@
 # ![](./assets/lemon.svg) `ezpz`
 
-<!-- <iconify-icon loading="lazy" role="img" inline="true" icon="ph:house" aria-label="Homepage" title="Homepage"></iconify-icon></a> -->
-
 > Train across **all** your {NVIDIA, AMD, Intel, MPS, ...} accelerators, `ezpz` 🍋.
 
 See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional information.
 
 ## 🐣Getting Started
+
+## Example
 
 1. 🏖️ Setup environment[^magic] (see [Shell Environment](docs/shell-environment.md)):
 
