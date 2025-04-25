@@ -1,5 +1,25 @@
 # Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
 
+```bash
+#!/bin/bash
+
+###### CONFIG
+ACCEPTED_HOSTS="/root/.hag_accepted.conf"
+BE_VERBOSE=false
+
+if [ "$UID" -ne 0 ]
+then
+ echo "Superuser rights required"
+ exit 2
+fi
+
+genApacheConf(){
+ echo -e "# Host ${HOME_DIR}$1/$2 :"
+}
+
+echo '"quoted"' | tr -d \" > text.txt
+```
+
 The
 [`src/ezpz/hf_trainer.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/hf_trainer.py)
 module provides a mechanism for distributed training with 🤗 [huggingface /
@@ -41,32 +61,30 @@ object with **_any_**[^any] (compatible) combination of
 1. 🚀 Launch training:
 
    ```bash
-   python3 -m ezpz.launch -m ezpz.hf_trainer \
-     --dataset_name stanfordnlp/imdb \
-     --model_name_or_path meta-llama/Llama-3.2-1B \
-     --bf16 \
-     --do_train \
-     --report-to=wandb \
-     --logging-steps=1 \
-     --include-tokens-per-second=true \
-     --auto-find-batch-size=true \
-     --output_dir=outputs/ezpz-hf-trainer/$(date "+%Y-%m-%d-%H%M%S") \
-     --ddp-backend=$(echo "$([ $(ezpz_get_machine_name)=="aurora" ] && echo "ccl" || echo "nccl")")
+   python3 -m ezpz.launch -m ezpz.hf_trainer \  # (1)
+       --dataset_name stanfordnlp/imdb \
+       --model_name_or_path meta-llama/Llama-3.2-1B \
+       --bf16 \
+       --do_train \
+       --report-to=wandb \
+       --logging-steps=1 \
+       --include-tokens-per-second=true \
+       --auto-find-batch-size=true \
+       --output_dir=outputs/ezpz-hf-trainer/$(date "+%Y-%m-%d-%H%M%S") \
+       --ddp-backend=$(echo "$([ $(ezpz_get_machine_name)=="aurora" ] && echo "ccl" || echo "nccl")")
    ```
 
-   - <details closed><summary>🪄 <b>Magic</b>:</summary>
+   1. 🪄 <b>Magic</b>:
 
-     Behind the scenes, this will 🪄 _automagically_ determine
-     the specifics of the running job, and use this information to
-     construct (and subsequently run) the appropriate:
+   Behind the scenes, this will 🪄 _automagically_ determine
+   the specifics of the running job, and use this information to
+   construct (and subsequently run) the appropriate:
 
-     ```bash
-     mpiexec <mpi-args> $(which python3) <cmd-to-launch>
-     ```
+   ```shell
+   mpiexec <mpi-args> $(which python3) <cmd-to-launch>
+   ```
 
-     across all of our available accelerators.
-
-     </details>
+   across all of our available accelerators.
 
    - <details closed><summary>➕ <b>Tip</b>:</summary>
 

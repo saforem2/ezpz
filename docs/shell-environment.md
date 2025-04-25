@@ -5,25 +5,27 @@
     - [🛠️ Setup Python](#-setup-python)
     - [🧰 Setup Job](#-setup-job)
 
-
 ## 🐣 Getting Started
 
 > [!WARNING]
 > The documentation below is a work in progress.  
-> *Please* feel free to provide input / suggest changes !
+> _Please_ feel free to provide input / suggest changes !
 
+/// note
 
-> [!NOTE]
-> 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
->
->     ``` bash
->     source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
->     ```
-> 2. Use the `ezpz_setup_env` function to setup your environment:
->
->     ```bash
->     ezpz_setup_env
->     ```
+1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+
+   ```bash
+   source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
+   ```
+
+2. Use the `ezpz_setup_env` function to setup your environment:
+
+   ```bash
+   ezpz_setup_env
+   ```
+
+///
 
 This will 🪄 _automagically_:
 
@@ -53,20 +55,22 @@ that needs to occur.
 
 In particular, we need mechanisms for:
 
-1.  Setting up a python environment
-2.  Determining what system / machine we’re on
-    - \+ what job scheduler we’re using (e.g. `PBS Pro` @ ALCF or
-      `slurm` elsewhere)
-3.  Determining how many nodes have been allocated in the current job
-    (`NHOSTS`)
-    - \+ Determining how many accelerators exist on each of these nodes
-      (`NGPU_PER_HOST`)
+1. Setting up a python environment
+2. Determining what system / machine we’re on
+   - \+ what job scheduler we’re using (e.g. `PBS Pro` @ ALCF or
+     `slurm` elsewhere)
+3. Determining how many nodes have been allocated in the current job
+   (`NHOSTS` $=N_{\mathrm{HOST}}$)
+   - \+ Determining how many accelerators exist on each of these nodes
+     (`NGPU_PER_HOST`)
 
 This allows us to calculate the total number of accelerators (GPUs) as:
-$N_{\mathrm{GPU}} = N_{\mathrm{HOST}} \times n_{\mathrm{GPU}}$
 
-where $n_{\mathrm{GPU}} = N_{\mathrm{GPU}} / N_{\mathrm{HOST}}$ is the
-number of GPUs per host.
+$$
+N_{\mathrm{GPU}} = N_{\mathrm{HOST}} \times n_{\mathrm{GPU}}; \,\, n_{\mathrm{GPU}} = N_{\mathrm{GPU}} / N_{\mathrm{HOST}}
+$$
+
+is the number of GPUs per host.
 
 With this we have everything we need to build the appropriate
 {`mpi`{`run`, `exec`}, `slurm`} command for launching our python
@@ -74,10 +78,8 @@ application across them.
 
 Now, there are a few functions in particular worth elaborating on.
 
-<div id="tbl-shell-fns">
-
 | Function                     | Description                                                                               |
-|------------------------------|-------------------------------------------------------------------------------------------|
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
 | `ezpz_setup_env`             | Wrapper around `ezpz_setup_python` `&&` `ezpz_setup_job`                                  |
 | `ezpz_setup_job`             | Determine {`NGPUS`, `NGPU_PER_HOST`, `NHOSTS`}, build `launch` command alias              |
 | `ezpz_setup_python`          | Wrapper around `ezpz_setup_conda` `&&` `ezpz_setup_venv_from_conda`                       |
@@ -86,91 +88,88 @@ Now, there are a few functions in particular worth elaborating on.
 
 Table 1: Shell Functions
 
-</div>
+/// warning | Where am I?
 
-> [!WARNING]
->
-> ### Where am I?
->
-> *Some* of the `ezpz_*` functions (e.g. `ezpz_setup_python`), will try
-> to create / look for certain directories.
->
-> In an effort to be explicit, these directories will be defined
-> **relative to** a `WORKING_DIR` (e.g. `"${WORKING_DIR}/venvs/"`)
->
-> This `WORKING_DIR` will be assigned to the first non-zero match found
-> below:
->
-> 1.  `PBS_O_WORKDIR`: If found in environment, paths will be relative
->     to this
-> 2.  `SLURM_SUBMIT_DIR`: Next in line. If not @ ALCF, maybe using
->     `slurm`…
-> 3.  `$(pwd)`: Otherwise, no worries. Use your *actual* working
->     directory.
+_Some_ of the `ezpz_*` functions (e.g. `ezpz_setup_python`), will try
+to create / look for certain directories.
+
+In an effort to be explicit, these directories will be defined
+**relative to** a `WORKING_DIR` (e.g. `"${WORKING_DIR}/venvs/"`)
+
+This `WORKING_DIR` will be assigned to the first non-zero match found
+below:
+
+1. `PBS_O_WORKDIR`: If found in environment, paths will be relative
+   to this
+2. `SLURM_SUBMIT_DIR`: Next in line. If not @ ALCF, maybe using
+   `slurm`…
+3. `$(pwd)`: Otherwise, no worries. Use your _actual_ working
+   directory.
+
+///
 
 #### 🛠️ Setup Python
 
-``` bash
+```bash
 ezpz_setup_python
 ```
 
 This will:
 
-1.  Automatically load and activate `conda` using the `ezpz_setup_conda`
-    function.
+1. Automatically load and activate `conda` using the `ezpz_setup_conda`
+   function.
 
-    How this is done, in practice, varies from machine to machine:
+   How this is done, in practice, varies from machine to machine:
 
-    - **ALCF**[^3]: Automatically load the most recent `conda` module
-      and activate the base environment.
+   - **ALCF**[^3]: Automatically load the most recent `conda` module
+     and activate the base environment.
 
-    - **Frontier**: Load the appropriate AMD modules (e.g. `rocm`,
-      `RCCL`, etc.), and activate base `conda`
+   - **Frontier**: Load the appropriate AMD modules (e.g. `rocm`,
+     `RCCL`, etc.), and activate base `conda`
 
-    - **Perlmutter**: Load the appropriate `pytorch` module and activate
-      environment
+   - **Perlmutter**: Load the appropriate `pytorch` module and activate
+     environment
 
-    - **Unknown**: In this case, we will look for a `conda`, `mamba`, or
-      `micromamba` executable, and if found, use that to activate the
-      base environment.
+   - **Unknown**: In this case, we will look for a `conda`, `mamba`, or
+     `micromamba` executable, and if found, use that to activate the
+     base environment.
 
 <!-- -->
 
-> [!TIP]
->
-> **Using your own `conda`**
->
-> If you are already in a conda environment when calling
-> `ezpz_setup_python` then it will try and use this instead.
->
-> For example, if you have a custom `conda` env at
-> `~/conda/envs/custom`, then this would bootstrap the `custom`
-> conda environment and create the virtual env in `venvs/custom/`
+/// tip | Using your own `conda`
 
+If you are already in a conda environment when calling
+`ezpz_setup_python` then it will try and use this instead.
 
-2.  Build (or activate, if found) a virtual environment on top of (the
-    active) base `conda` environment.
+For example, if you have a custom `conda` env at
+`~/conda/envs/custom`, then this would bootstrap the `custom`
+conda environment and create the virtual env in `venvs/custom/`
 
-    By default, it will try looking in:
+2. Build (or activate, if found) a virtual environment on top of (the
+   active) base `conda` environment.
 
-    - `$PBS_O_WORKDIR`, otherwise
-    - `${SLURM_SUBMIT_DIR}`, otherwise
-    - `$(pwd)`
+   By default, it will try looking in:
 
-    for a nested folder named `"venvs/${CONDA_NAME}"`.
+   - `$PBS_O_WORKDIR`, otherwise
+   - `${SLURM_SUBMIT_DIR}`, otherwise
+   - `$(pwd)`
 
-    If this doesn’t exist, it will attempt to create a new virtual
-    environment at this location using:
+   for a nested folder named `"venvs/${CONDA_NAME}"`.
 
-    ``` bash
-    python3 -m venv venvs/${CONDA_NAME} --system-site-packages
-    ```
+   If this doesn’t exist, it will attempt to create a new virtual
+   environment at this location using:
 
-    (where we’ve pulled in the `--system-site-packages` from conda).
+   ```bash
+   python3 -m venv venvs/${CONDA_NAME} --system-site-packages
+   ```
+
+   (where we’ve pulled in the `--system-site-packages` from conda).
+
+///
 
 #### 🧰 Setup Job
 
-``` bash
+```bash
 ezpz_setup_job
 ```
 
@@ -179,11 +178,11 @@ the command that we will use to run python on each of our accelerators.
 
 To do this, we need a few things:
 
-1.  What machine we’re on (and what scheduler is it using i.e. {PBS,
-    SLURM})
-2.  How many nodes are available in our active job
-3.  How many GPUs are on each of those nodes
-4.  What type of GPUs are they
+1. What machine we’re on (and what scheduler is it using i.e. {PBS,
+   SLURM})
+2. How many nodes are available in our active job
+3. How many GPUs are on each of those nodes
+4. What type of GPUs are they
 
 With this information, we can then use `mpi{exec,run}` or `srun` to
 launch python across all of our accelerators.
@@ -215,39 +214,38 @@ running on one of the known machines:
 
   Once we have this, we can:
 
-  1.  Get `PBS_NODEFILE` from `$(hostname)`:
+  1. Get `PBS_NODEFILE` from `$(hostname)`:
 
-      - `ezpz_qsme_running`: For each (running) job owned by `${USER}`,
-        print out both the jobid as well as a list of hosts the job is
-        running on, e.g.:
+     - `ezpz_qsme_running`: For each (running) job owned by `${USER}`,
+       print out both the jobid as well as a list of hosts the job is
+       running on, e.g.:
 
-        ``` bash
-        <jobid0> host00 host01 host02 host03 ...
-        <jobid1> host10 host11 host12 host13 ...
-        ...
-        ```
+       ```bash
+       <jobid0> host00 host01 host02 host03 ...
+       <jobid1> host10 host11 host12 host13 ...
+       ...
+       ```
 
-      - `ezpz_get_pbs_nodefile_from_hostname`: Look for `$(hostname)` in
-        the output from the above command to determine our
-        `${PBS_JOBID}`.
+     - `ezpz_get_pbs_nodefile_from_hostname`: Look for `$(hostname)` in
+       the output from the above command to determine our
+       `${PBS_JOBID}`.
 
-        Once we’ve identified our `${PBS_JOBID}` we then know the
-        location of our `${PBS_NODEFILE}` since they are named according
-        to:
+       Once we’ve identified our `${PBS_JOBID}` we then know the
+       location of our `${PBS_NODEFILE}` since they are named according
+       to:
 
-        ``` bash
-        jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
-        prefix=/var/spool/pbs/aux
-        match=$(/bin/ls "${prefix}" | grep "${jobid}")
-        hostfile="${prefix}/${match}"
-        ```
+       ```bash
+       jobid=$(ezpz_qsme_running | grep "$(hostname)" | awk '{print $1}')
+       prefix=/var/spool/pbs/aux
+       match=$(/bin/ls "${prefix}" | grep "${jobid}")
+       hostfile="${prefix}/${match}"
+       ```
 
-  2.  Identify number of available accelerators:
-
+  2. Identify number of available accelerators:
 
 [^1]: Plus this is useful for tab-completions in your shell, e.g.:
 
-    ``` bash
+    ```bash
     $ ezpz_<TAB>
     ezpz_check_and_kill_if_running
     ezpz_get_dist_launch_cmd
@@ -255,19 +253,19 @@ running on one of the known machines:
     --More--
     ```
 
-[^2]: This is system dependent. See
+[^2]:
+    This is system dependent. See
     [`ezpz_setup_conda`](../../src/ezpz/bin/utils.sh)
 
 [^3]: Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}
 
-[^4]: At ALCF, if our `$(hostname)` starts with `x*`, we’re on a compute
+[^4]:
+    At ALCF, if our `$(hostname)` starts with `x*`, we’re on a compute
     node.
-
 
    <!--
    will build and execute the appropriate {`mpi{exec,run}`, `srun`} command, _launching_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py) (as a module, `-m`).
    -->
-
 
 <!--
 - There are two main, distinct components of `ezpz`:
@@ -278,16 +276,15 @@ running on one of the known machines:
    designed to make life easy.
 -->
 
-
 <!--
->     
-> 
+>
+>
 > - Install 🍋 `ezpz`:
-> 
+>
 >     ```bash
 >     python3 -m pip install "git+https://github.com/saforem2/ezpz"
 >     ```
-> 
+>
 -->
 
 <!--
