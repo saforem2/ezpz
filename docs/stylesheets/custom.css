@@ -1,3 +1,13 @@
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--md-default-heading-color);
+  letter-spacing: -5%;
+}
+
 [data-md-color-scheme="slate"] {
   --md-code-bg-color: #222222;
   --md-header-fg-color: #eeeeee;
@@ -6,11 +16,12 @@
   --md-primary-fg-color: #222222;
   --md-default-bg-color: #1c1c1c;
   --md-default-heading-color: #f5f5f5;
+  --md-accent-fg-color: #ff67ff;
 
-  :root {
-    -webkit-font-smoothing: auto;
-    -moz-osx-font-smoothing: greyscale;
-  }
+  /* :root { */
+  /*   -webkit-font-smoothing: auto; */
+  /*   -moz-osx-font-smoothing: greyscale; */
+  /* } */
 
   .md-typeset a:hover {
     color: #ff67ff;
@@ -27,6 +38,7 @@
 }
 
 [data-md-color-scheme="default"] {
+  --md-code-bg-color: #fcfcfc;
   .md-typeset a:hover {
     color: #ff1a8f;
     transition: color 0.2s ease-in-out;
@@ -35,3 +47,37 @@
     text-decoration-thickness: 2px;
   }
 }
+/**/
+/* /* Symbols in Navigation and ToC. */ */
+/* :root, :host, */
+/* [data-md-color-scheme="default"] { */
+/*   --doc-symbol-parameter-fg-color: #df50af; */
+/*   --doc-symbol-attribute-fg-color: #953800; */
+/*   --doc-symbol-function-fg-color: #8250df; */
+/*   --doc-symbol-method-fg-color: #8250df; */
+/*   --doc-symbol-class-fg-color: #0550ae; */
+/*   --doc-symbol-module-fg-color: #5cad0f; */
+/**/
+/*   --doc-symbol-parameter-bg-color: #df50af1a; */
+/*   --doc-symbol-attribute-bg-color: #9538001a; */
+/*   --doc-symbol-function-bg-color: #8250df1a; */
+/*   --doc-symbol-method-bg-color: #8250df1a; */
+/*   --doc-symbol-class-bg-color: #0550ae1a; */
+/*   --doc-symbol-module-bg-color: #5cad0f1a; */
+/* } */
+/**/
+/* [data-md-color-scheme="slate"] { */
+/*   --doc-symbol-parameter-fg-color: #ffa8cc; */
+/*   --doc-symbol-attribute-fg-color: #ffa657; */
+/*   --doc-symbol-function-fg-color: #d2a8ff; */
+/*   --doc-symbol-method-fg-color: #d2a8ff; */
+/*   --doc-symbol-class-fg-color: #79c0ff; */
+/*   --doc-symbol-module-fg-color: #baff79; */
+/**/
+/*   --doc-symbol-parameter-bg-color: #ffa8cc1a; */
+/*   --doc-symbol-attribute-bg-color: #ffa6571a; */
+/*   --doc-symbol-function-bg-color: #d2a8ff1a; */
+/*   --doc-symbol-method-bg-color: #d2a8ff1a; */
+/*   --doc-symbol-class-bg-color: #79c0ff1a; */
+/*   --doc-symbol-module-bg-color: #baff791a; */
+/* } */

@@ -1,13 +1,19 @@
-site_name: "<code>ezpz</code>"
+site_name: "ezpz"
 site_url: https://saforem2.github.io/ezpz
 repo_name: "saforem2/ezpz"
 repo_url: https://github.com/saforem2/ezpz
 edit_uri: edit/main/docs/
 theme:
   font:
-    heading: IBM Plex Sans Condensed
-    text: IBM Plex Sans
-    code: IBM Plex Mono
+    # heading: IBM Plex Sans Condensed
+    # text: IBM Plex Sans
+    # code: IBM Plex Mono
+
+    # heading: Iosevka
+    heading: Iosevka Web
+    text: Iosevka Web
+    code: Iosevka Fixed Web
+    # code: hack
 
   # text: "IBM Plex Sans"
   # code: "IBM Plex Mono"
@@ -98,16 +104,40 @@ plugins:
 #   #     emoji_generator: !!python/name:material.extensions.emoji.to_svg
 #
 extra_css:
+  - https://drafts.csswg.org/css-color-4/#lab-colors
+  - https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values
+  - https://drafts.csswg.org/css-color-4/#resolving-oklab-oklch-values
+  - https://drafts.csswg.org/css-color-4/#serializing-lab-lch
+  - https://drafts.csswg.org/css-color-4/#serializing-oklab-oklch
+  - https://unpkg.com/katex@0/dist/katex.min.css
+  - stylesheets/oklch.min.css
+  - stylesheets/one-light.css
+  - stylesheets/atom-one-dark-reasonable.css
   - stylesheets/custom.css
   - stylesheets/fonts.css
+  # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css
+  - https://iosevka-webfonts.github.io/iosevka/Iosevka.css
+  - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css
+  # - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-term.css
+  # - overrides/MIosevkaTerm/MiosevkaTerm.css
+  # - overrides/MIosevkaTerm/MiosevkaTerm-Unhinted.css
+  # - overrides/MIosevkaQp/MiosevkaQp.css
+  # - overrides/MIosevkaQp/MiosevkaQp-Unhinted.css
+  # - stylesheets/atom-one-dark.css
+  # - stylesheets/atom-one-light.css
 
 extra_javascript:
+  - javascripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
   # - javascripts/shiki.js
   # - https://unpkg.com/shikijs@3.3.0
   # - https://unpkg.com/shikijs/langs@3.3.0
   # - https://unpkg.com/shikijs/themes@3.3.0
   - https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js
-  - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
+  # - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
+  - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js
+  - javascripts/config.js
 
 markdown_extensions:
   # Python Markdown
@@ -167,7 +197,7 @@ markdown_extensions:
       custom_checkbox: true
 
 nav:
-  - 🏡 Home: index.md
+  - index.md
   - 📝 Example: example.md
   - 🚀 Launch: launch.md
   - 📓 Notes: notes.md

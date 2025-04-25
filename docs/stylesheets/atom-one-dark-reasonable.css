@@ -1,0 +1,110 @@
+[data-md-color-scheme="slate"] {
+  /*
+
+Atom One Dark With support for ReasonML by Gidi Morris, based off work by Daniel Gamage
+
+Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
+
+*/
+  .hljs {
+    color: #abb2bf;
+    background: #222222;
+  }
+  .hljs-keyword,
+  .hljs-operator {
+    color: #f92672;
+  }
+  .hljs-pattern-match {
+    color: #f92672;
+  }
+  .hljs-pattern-match .hljs-constructor {
+    color: #61aeee;
+  }
+  .hljs-function {
+    color: #61aeee;
+  }
+  .hljs-function .hljs-params {
+    color: #a6e22e;
+  }
+  .hljs-function .hljs-params .hljs-typing {
+    color: #fd971f;
+  }
+  .hljs-module-access .hljs-module {
+    color: #7e57c2;
+  }
+  .hljs-constructor {
+    color: #36ce5e;
+  }
+  .hljs-constructor .hljs-string {
+    color: #d3ff3b;
+  }
+  .hljs-comment {
+    color: #666666;
+    font-style: italic;
+  }
+
+  .hljs-quote {
+    color: #e599f7;
+    font-style: italic;
+  }
+  .hljs-tag .hljs-name {
+    color: #69db7c;
+  }
+  .hljs-doctag,
+  .hljs-formula {
+    color: #ff67ff;
+  }
+  .hljs-section,
+  .hljs-name,
+  .hljs-selector-tag,
+  .hljs-deletion,
+  .hljs-subst {
+    color: #ff7eb6;
+  }
+  .hljs-literal {
+    color: #3ddbd9;
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition,
+  .hljs-attribute,
+  .hljs-meta .hljs-string {
+    color: #ffff00;
+    background-color: #282800;
+  }
+  .hljs-built_in,
+  .hljs-title.class_,
+  .hljs-class .hljs-title {
+    color: #69db7c;
+  }
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-type,
+  .hljs-selector-class,
+  .hljs-selector-attr,
+  .hljs-selector-pseudo,
+  .hljs-attr {
+    color: #ae81ff;
+  }
+
+  .hljs-number {
+    color: #0dcdcd;
+  }
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link,
+  .hljs-meta,
+  .hljs-selector-id,
+  .hljs-title {
+    color: #61aeee;
+  }
+  .hljs-emphasis {
+    font-style: italic;
+  }
+  .hljs-strong {
+    font-weight: bold;
+  }
+  .hljs-link {
+    text-decoration: underline;
+  }
+}

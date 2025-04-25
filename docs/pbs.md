@@ -25,15 +25,15 @@
 
 5. ✅ Done!
 
-   Example:
+    Example:
 
-   ```python
-   jobid = ezpz.pbs.get_pbs_jobid_of_active_job()
-   num_nodes = len(jobs[jobid])
-   world_size = num_nodes * ezpz.get_gpus_per_node()
-   ```
+      ```python
+      jobid = ezpz.pbs.get_pbs_jobid_of_active_job()
+      num_nodes = len(jobs[jobid])
+      world_size = num_nodes * ezpz.get_gpus_per_node()
+      ```
 
-[^semantics]: |
+[^semantics]:
     - **Running**: Can have _multiple_ PBS jobs running at the same time
     - **Active**: Can only have _one_ active PBS job at a time
         - This is the job that we are **currently running on**

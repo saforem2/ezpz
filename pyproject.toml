@@ -60,6 +60,10 @@ dev = [
     "ptipython",
     "jupyter",
 ]
+docs = [
+  "mkdocs-material",
+]
+
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
