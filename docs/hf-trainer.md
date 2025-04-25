@@ -1,25 +1,5 @@
 # Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
 
-```bash
-#!/bin/bash
-
-###### CONFIG
-ACCEPTED_HOSTS="/root/.hag_accepted.conf"
-BE_VERBOSE=false
-
-if [ "$UID" -ne 0 ]
-then
- echo "Superuser rights required"
- exit 2
-fi
-
-genApacheConf(){
- echo -e "# Host ${HOME_DIR}$1/$2 :"
-}
-
-echo '"quoted"' | tr -d \" > text.txt
-```
-
 The
 [`src/ezpz/hf_trainer.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/hf_trainer.py)
 module provides a mechanism for distributed training with 🤗 [huggingface /

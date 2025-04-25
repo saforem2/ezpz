@@ -27,24 +27,22 @@ sequenceDiagram
   Distributed Application (ezpz.test_dist)-->>User: Training progress and metrics (via WandB)
 ```
 
-/// details | 🪄 <b>Magic</b>
-    type: attention
-    open: false
+- <details closed><summary>🪄 <b>Magic</b>:</summary>
 
-Explicitly, this will use the default "launcher" depending on availability:
+    Explicitly, this will use the default "launcher" depending on availability:
 
-- ALCF (PBS Pro): `mpiexec`
-- Slurm: `srun`
-- Unknown: `mpirun`
+    - ALCF (PBS Pro): `mpiexec`
+    - Slurm: `srun`
+    - Unknown: `mpirun`
 
-and automatically pull in the specifics about the currently active job when
-building the appropriate `{srun, mpi{exec,run}}` command.
+    and automatically pull in the specifics about the currently active job when
+    building the appropriate `{srun, mpi{exec,run}}` command.
 
-- For example, on any of the ALCF systems, it will automatically:
-  - Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
-  - Use this to calculate: - `NHOSTS` - `NGPUS_PER_HOST` - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
-- With this information, we can construct the full `mpiexec ...`
-  command needed to launch our distributed application, e.g.:
+    - For example, on any of the ALCF systems, it will automatically:
+    - Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
+    - Use this to calculate: - `NHOSTS` - `NGPUS_PER_HOST` - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
+    - With this information, we can construct the full `mpiexec ...`
+        command needed to launch our distributed application, e.g.:
 
     ```bash
     python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
@@ -52,37 +50,17 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     # mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3878985.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16
     ```
 
-///
-
-<!--
-<details closed><summary>🏚️ Deprecated</summary>
-
-## 🐣 Getting Started
-
-- 🏡 Setup environment (load modules, activate base (`conda`) environment):
-
-	```bash
-	source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
-	ezpz_setup_env
-	```
-
-- 📦 Install 🍋 `ezpz`:
-
-	```bash
-	python3 -m pip install "git+https://github.com/saforem2/ezpz"
-	```
-
--->
+  </details>
 
 ### 🌌 Aurora
 
 - Command:
 
-    ```bash
-    python3 -m ezpz.launch -m ezpz.test_dist
-    ```
+  ```bash
+  python3 -m ezpz.launch -m ezpz.test_dist
+  ```
 
-    <details closed><summary>Output (Aurora):</summary>
+  - <details closed><summary>Output:</summary>
 
     ```python
     #[🐍 aurora_nre_models_frameworks-2024.2.1_u1](👻 aurora_nre_models_frameworks-2024.2.1_u1)
@@ -317,20 +295,20 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     took: 0h:04m:01s
     ```
 
-  </details>
+   </details>
 
-### ⭐ Polaris
+### 🌠 Polaris
 
 - Command:
 
-    ```bash
-    python3 -m ezpz.launch -m ezpz.test_dist
-    ```
+  ```bash
+  python3 -m ezpz.launch -m ezpz.test_dist
+  ```
 
-    <details closed><summary>Output (Polaris):</summary>
+  - <details closed><summary>Output:</summary>
 
     ```python
-    (👻 2024-04-29)
+    # (👻 2024-04-29)
     #[09:22:22 AM][x3006c0s19b0n0][/e/d/f/p/s/t/ezpz][🌱 feat/python-launcher][📦✓] [⏱️ 58s]
     $ python3 -m ezpz.launch -m ezpz.test_dist --tp 2 --pp 2
     [2025-04-01 09:22:32,869] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
@@ -358,28 +336,6 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [2025-04-01 09:22:48][I][ezpz/dist:557] Using get_torch_device_type()='cuda' with backend='nccl'
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
     [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
     [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
     [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
@@ -512,7 +468,7 @@ building the appropriate `{srun, mpi{exec,run}}` command.
         │█████                                                 │
     12.5┤███████████                                           │
         │████████████████                                      │
-    0.0┤██████████████████████     ████████████████      █████│
+     0.0┤██████████████████████     ████████████████      █████│
         └┬────────────┬─────────────┬────────────┬────────────┬┘
       0.000306    0.000358      0.000411     0.000464  0.000516
     freq                           dtf
@@ -595,4 +551,4 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     sys    8.41s
     ```
 
-  </details>
+</details>
