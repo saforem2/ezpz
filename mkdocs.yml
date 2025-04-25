@@ -66,6 +66,7 @@ theme:
 
 plugins:
   # - typeset
+  - glightbox
   - search
   - autorefs
   - mkdocstrings:
@@ -142,7 +143,6 @@ extra_javascript:
 markdown_extensions:
   # Python Markdown
   - abbr
-  - pymdownx.blocks.admonition
   - attr_list
   - def_list
   - footnotes
@@ -151,21 +151,23 @@ markdown_extensions:
       permalink: true
   # Python Markdown Extensions
   - pymdownx.betterem
-  - pymdownx.extra
-  - pymdownx.critic
-  # - pymdownx.blocks.caption
-  - pymdownx.caret
+  - pymdownx.blocks.admonition
+  - pymdownx.blocks.caption
   - pymdownx.blocks.details
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.extra
   - pymdownx.inlinehilite
   - pymdownx.keys
   - pymdownx.mark
   - pymdownx.smartsymbols
   - pymdownx.tilde
+  - pymdownx.smartsymbols
   - pymdownx.highlight:
       use_pygments: true
+      linenums: true
       anchor_linenums: true
       pygments_lang_class: true
-      linenums: true
       # auto_title: true
   - pymdownx.superfences:
       preserve_tabs: true
@@ -188,6 +190,7 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
+      clickable_checkbox: true
 
 nav:
   - index.md

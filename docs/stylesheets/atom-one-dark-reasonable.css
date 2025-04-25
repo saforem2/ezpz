@@ -76,11 +76,14 @@ Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
   .hljs-meta .hljs-string {
     color: #e599f7;
     background-color: #290432;
-        /* color: #5eff6c; */
+    /* color: #5eff6c; */
     /* color: #ffff00; */
     /* background-color: #282800; */
   }
-  .hljs-built_in,
+  .hljs-built_in {
+    color: #ff69bf;
+  }
+
   .hljs-title.class_,
   .hljs-class .hljs-title {
     color: #69db7c;
@@ -96,7 +99,7 @@ Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
   }
 
   .hljs-number {
-    color: #29B6F6;
+    color: #29b6f6;
     /* color: #F92672; */
     /* color: #ea76cb; */
     /* color: #0dcdcd; */
