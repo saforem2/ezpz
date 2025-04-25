@@ -1,0 +1,37 @@
+[data-md-color-scheme="slate"] {
+  --md-code-bg-color: #222222;
+  --md-header-fg-color: #eeeeee;
+  --md-typeset-a-color: #00ccff;
+  --md-header-bg-color: #222222;
+  --md-primary-fg-color: #222222;
+  --md-default-bg-color: #1c1c1c;
+  --md-default-heading-color: #f5f5f5;
+
+  :root {
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: greyscale;
+  }
+
+  .md-typeset a:hover {
+    color: #ff67ff;
+    transition: color 0.2s ease-in-out;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 2px;
+  }
+
+  /* .md-typeset a { */
+  /*   color: #00ccff; */
+  /*   word-break: break-word; */
+  /* } */
+}
+
+[data-md-color-scheme="default"] {
+  .md-typeset a:hover {
+    color: #ff1a8f;
+    transition: color 0.2s ease-in-out;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 2px;
+  }
+}

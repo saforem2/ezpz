@@ -1,31 +1,58 @@
-site_name: "ezpz"
+site_name: "<code>ezpz</code>"
 site_url: https://saforem2.github.io/ezpz
 repo_name: "saforem2/ezpz"
 repo_url: https://github.com/saforem2/ezpz
 edit_uri: edit/main/docs/
 theme:
+  font:
+    heading: IBM Plex Sans Condensed
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+
+  # text: "IBM Plex Sans"
+  # code: "IBM Plex Mono"
   custom_dir: docs/overrides
   name: material
-  favicoon: assets/lemon.png
+  favicon: assets/lemon.png
   features:
+    - content.action.view
     - content.action.edit
-    - navigation.indexes
-    - content.code.select
-    - content.code.copy
     - content.code.annotate
+    - content.code.copy
+    - content.code.select
+    - content.tooltips
+    - navigation.indexes
+    - navigation.path
+    - search.highlight
+    - toc.follow
   palette:
     # Palette toggle for light mode
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       toggle:
-        icon: material/weather-sunny
+        icon: material/weather-night
         name: Switch to dark mode
 
     # Palette toggle for dark mode
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: "#00CCFF"
       toggle:
-        icon: material/weather-night
+        icon: material/weather-sunny
         name: Switch to light mode
+
+    # - scheme: default
+    #   toggle:
+    #     icon: material/weather-sunny
+    #     name: Switch to dark mode
+    #
+    # # Palette toggle for dark mode
+    # - scheme: slate
+    #   toggle:
+    #     icon: material/weather-night
+    #     name: Switch to light mode
   icon:
+    # logo: custom/lemon-squeezy-1
     logo: custom/lemon
     repo: custom/github
     # logo: 🍋
@@ -69,6 +96,10 @@ plugins:
 #   # - pymdownx.emoji:
 #   #     emoji_index: !!python/name:material.extensions.emoji.twemoji
 #   #     emoji_generator: !!python/name:material.extensions.emoji.to_svg
+#
+extra_css:
+  - stylesheets/custom.css
+  - stylesheets/fonts.css
 
 extra_javascript:
   # - javascripts/shiki.js
@@ -118,6 +149,8 @@ markdown_extensions:
             # - name: mathjax2
             #   class: mathjax2
             #   format: !!python/name:material.extensions.mathjax.fence_mathjax_custom
+
+
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.betterem:
@@ -125,6 +158,9 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      options:
+        custom_icons:
+          - overrides/.icons
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:
@@ -141,9 +177,7 @@ nav:
   - 🐍 Python Library: python-library.md
   - 🏖️ Shell Environment: shell-environment.md
   - 💾 Code Reference:
-    - Code-Reference/index.md
-    - ezpz: Code-Reference/ezpz-reference.md
-    - ezpz.dist: Code-Reference/dist-reference.md
-    - ezpz.config: Code-Reference/config-reference.md
-
-
+      - Code-Reference/index.md
+      - ezpz: Code-Reference/ezpz-reference.md
+      - ezpz.dist: Code-Reference/dist-reference.md
+      - ezpz.config: Code-Reference/config-reference.md
