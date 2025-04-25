@@ -173,13 +173,6 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:mermaid2.fence_mermaid_custom
-            # - name: mathjax
-            #   class: mathjax
-            #   format: !!python/name:material.extensions.mathjax.fence_mathjax_custom
-            # - name: mathjax2
-            #   class: mathjax2
-            #   format: !!python/name:material.extensions.mathjax.fence_mathjax_custom
-
 
   - pymdownx.arithmatex:
       generic: true

@@ -12,9 +12,9 @@ Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
   }
   .hljs-keyword,
   .hljs-operator {
-    color: #e599f7;
+    /* color: #e599f7; */
     /* color: #ffff7f; */
-    /* color: #f92672; */
+    color: #f92672;
     /* color: #fd971f; */
   }
   .hljs-pattern-match {
@@ -67,12 +67,16 @@ Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
   .hljs-literal {
     color: #3ddbd9;
   }
-  .hljs-string,
+  .hljs-string {
+    color: #5eff6c;
+  }
   .hljs-regexp,
   .hljs-addition,
   .hljs-attribute,
   .hljs-meta .hljs-string {
-        color: #5eff6c;
+    color: #e599f7;
+    background-color: #290432;
+        /* color: #5eff6c; */
     /* color: #ffff00; */
     /* background-color: #282800; */
   }
@@ -92,7 +96,8 @@ Original One Dark Syntax theme from https://github.com/atom/one-dark-syntax
   }
 
   .hljs-number {
-    color: #F92672;
+    color: #29B6F6;
+    /* color: #F92672; */
     /* color: #ea76cb; */
     /* color: #0dcdcd; */
   }

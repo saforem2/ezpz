@@ -47,7 +47,7 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
 
   .hljs {
     color: #383a42;
-    background: #fcfcfc;
+    background: #f8f8f8;
   }
 
   .hljs::selection,
@@ -78,7 +78,8 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-operator {
     /* color: #383a42; */
     /* color: #f92672; */
-    color: #1da912;
+    /* color: #1da912; */
+    color: #ff1a8f;
   }
 
   /* .hljs-operator { */
@@ -103,8 +104,10 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-variable.constant_,
   .hljs-literal {
     /* color: #d75f00; */
-    color: #ff1a8f;
+    /* color: #ff1a8f; */
     /* color: #0184bc; */
+    /* color: #2094F3; */
+    color: #5E85F9;
   }
 
   /* base0A - Classes, Markup Bold, Search Text Background */
@@ -127,10 +130,10 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-title.class_.inherited__,
   .hljs-string {
     /* color: #3e8721; */
-    /* color: #05a551; */
-    color: #fd971f;
+    color: #008A36;
+    /* color: #fd971f; */
     /* background-color: oklch(from("#FD971F") calc()) */
-    background-color: #fff8f0;
+    /* background-color: #fff8f0; */
     /*     .hljs-constructor .hljs-string { */
     /*   color: #d3ff3b; */
     /* } */
@@ -140,9 +143,16 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-built_in,
 .hljs-doctag, /* guessing */
 .hljs-quote,
-.hljs-keyword.hljs-atrule,
+.hljs-keyword.hljs-atrule {
+    color: #009688;
+  }
+
 .hljs-regexp {
-    color: #0184bc;
+    color: #E36F98;
+    background-color: #FBE9EF;
+    /* #14AC3C */
+    /* color: #DA759B; */
+    /* color: #0184bc; */
   }
 
   /* base0D - Functions, Methods, Attribute IDs, Headings */
