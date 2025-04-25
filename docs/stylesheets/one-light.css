@@ -77,12 +77,13 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-punctuation,
   .hljs-operator {
     /* color: #383a42; */
-    color: #f92672;
+    /* color: #f92672; */
+    color: #1da912;
   }
 
-  .hljs-operator {
-    opacity: 0.7;
-  }
+  /* .hljs-operator { */
+  /*   opacity: 0.7; */
+  /* } */
 
   /* base08 - Variables, XML Tags, Markup Link Text, Markup Lists, Diff Deleted */
   .hljs-bullet,
@@ -102,8 +103,8 @@ base0F  #986801  Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php 
   .hljs-variable.constant_,
   .hljs-literal {
     /* color: #d75f00; */
-    /* color: #ff1a8f; */
-    color: #0184bc;
+    color: #ff1a8f;
+    /* color: #0184bc; */
   }
 
   /* base0A - Classes, Markup Bold, Search Text Background */

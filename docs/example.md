@@ -32,7 +32,7 @@
         ; python3 -m ezpz.launch -m ezpz.test_dist --profile | tee ezpz-test-dist-${NGPUS}-$(tstamp).log
         ```
 
-        ```python
+        ```bash
         [2025-04-24 10:47:00][I][ezpz/launch:88:__main__] Job ID: 4294227
         [2025-04-24 10:47:01][I][ezpz/launch:94:__main__] Node file: /var/spool/pbs/aux/4294227.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov
         [2025-04-24 10:47:01][I][ezpz/launch:108:__main__] Building command to execute by piecing together:
