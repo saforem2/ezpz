@@ -181,7 +181,7 @@ class Trainer:
             run_name='ezpz.test_dist',
             dataset_fname='train',
             warmup=self.config.warmup,
-            save=(self.rank == 0),
+            save=False,  # XXX: don't both saving test data
             plot=(self.rank == 0),
             outdir=Path(os.getcwd()).joinpath('outputs', 'ezpz.test_dist'),
         )
