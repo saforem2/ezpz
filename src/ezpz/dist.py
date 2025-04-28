@@ -12,7 +12,7 @@ import socket
 from pathlib import Path
 import time
 from functools import wraps
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union
 
 # from dataclasses import dataclass
 
@@ -174,6 +174,7 @@ def timeit(func: Callable):
         import wandb
     except Exception:
         wandb = None
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
@@ -780,6 +781,61 @@ def setup_torch_distributed(
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
 
+def barrier(
+    device: Optional[torch.device | int | str] = None,
+    group: tdist.ProcessGroup | None = tdist.GroupMember.WORLD,
+    async_op: bool = False,
+    device_ids: str | Iterable | None = None,
+) -> tdist.Work | None:
+    """Barrier for all processes in the group
+    This collective blocks processes until the whole group enters this function,
+    if async_op is False, or if async work handle is called on wait().
+
+    Args:
+    group (ProcessGroup, optional): The process group to work on. If None,
+    the default process group will be used.
+    async_op (bool, optional): Whether this op should be an async op
+    device_ids ([int], optional): List of device/GPU ids.
+
+    Returns:
+    Async work handle, if async_op is set to True.
+    None, if not async_op or if not part of the group
+
+    - `[group: ProcessGroup | None = GroupMember.WORLD]` group (ProcessGroup, optional): The process group to work on. If None,
+    - `[async_op: bool = False]`
+    - `[device_ids: Unknown | None = None]`
+    """
+    if device is None:
+        try:
+            tdist.barrier(group=group, async_op=async_op)
+        except Exception:
+            logger.warning(
+                "Unable to use `torch.distributed.barrier` "
+                "for this process group. "
+                "Falling back to `mpi4py` barrier."
+            )
+            MPI.COMM_WORLD.barrier()
+    else:
+        try:
+            if group is None:
+                tdist.barrier()
+            if device == "cuda":
+                tdist.barrier(group=group)
+            elif device == "xpu" and torch.xpu.is_available():
+                tdist.xpu.barrier(group=group)
+            elif device == "mps":
+                tdist.mps.barrier(group=group)
+            else:
+                raise ValueError(f"Unsupported device: {device}")
+        except Exception:
+            logger.warning(
+                "Unable to use `torch.distributed.barrier` "
+                "for this process group. "
+                "Falling back to `mpi4py` barrier."
+            )
+            MPI.COMM_WORLD.barrier()
+
+
 def setup_torch(
     backend: Optional[str] = None,
     port: Optional[str | int] = None,
@@ -908,22 +964,24 @@ def setup_torch(
             if cpsize > 1:
                 lcp = len(str(cpsize - 1))
                 psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
-                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+                barrier(group=ezpz.tp.get_context_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
                 lpp = len(str(ppsize - 1))
                 psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
-                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+                barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
-                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+                barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
-                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+                barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info("".join(psizes))
-    tdist.barrier()
+    barrier()
+    # tdist.barrier()
     # MPI.COMM_WORLD.Barrier()
     return rank
 
