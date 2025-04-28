@@ -87,15 +87,15 @@ if [[ -v NOOP ]]; then # to use: `NOOP=1 bash train_llama_alcf.sh`
     set -o noexec # same as set -n
 fi
 
-# @description Get name of shell.
-# Strip off `/bin/` substr from "${SHELL}" env var and return this string.
-#
-# @example
-#    $ echo "${SHELL}"
-#    /bin/zsh
-#    $ ezpz_get_shell_name
-#    zsh
 ezpz_get_shell_name() {
+    # @description Get name of shell.
+    # Strip off `/bin/` substr from "${SHELL}" env var and return this string.
+    #
+    # @example
+    #    $ echo "${SHELL}"
+    #    /bin/zsh
+    #    $ ezpz_get_shell_name
+    #    zsh
     echo "${SHELL}" | sed -e "s/\/bin\///g"
 }
 
@@ -103,82 +103,82 @@ ezpz_get_tstamp() {
     printf "%s" "$(date "+%Y-%m-%d-%H%M%S")"
 }
 
-####################
-# ezpz_qsme_running
-#
-# prints 1 line for each running job owned by $USER
-#
-# each line of the form:
-#
-# <jobid> <elapsed_time> <node0> <node1> <node2> ...
-####################
 ezpz_qsme_running() {
+    ####################
+    # ezpz_qsme_running
+    #
+    # prints 1 line for each running job owned by $USER
+    #
+    # each line of the form:
+    #
+    # <jobid> <elapsed_time> <node0> <node1> <node2> ...
+    ####################
     qstat -u "${USER}" -n1rw | sed -e "s/\/0\*208/\ /g" | tr "+|." "\ " | awk '{a = ""; for (i = 13 ; i <= NF ; i++) a = a " " $i; print $1 a}' | grep -vE "aurora-pbs|Req|Job|\-\-"
 }
 
-###############################
-# ezpz_get_jobid_from_hostname
-#
-# Identify jobid containing "$(hostname)" from all active (running) jobs owned
-# by the $USER.
-#
-# Example:
-# --------
-# Look for `$(hostname)` in output from `ezpz_qsme_running`, and print the first
-# column
-#
-#  |   jobid   |   host0  |   host1   |  host2   |
-#  |:---------:|:--------:|:---------:|:--------:|
-#  |  jobid0   |  host00  |  host10   |  host20  |
-#  |  jobid1   |  host01  |  host11   |  host21  |
-#  |  jobid2   |  host02  |  host12   |  host22  |
-#
-###############################
 ezpz_get_jobid_from_hostname() {
+    ###############################
+    # ezpz_get_jobid_from_hostname
+    #
+    # Identify jobid containing "$(hostname)" from all active (running) jobs owned
+    # by the $USER.
+    #
+    # Example:
+    # --------
+    # Look for `$(hostname)` in output from `ezpz_qsme_running`, and print the first
+    # column
+    #
+    #  |   jobid   |   host0  |   host1   |  host2   |
+    #  |:---------:|:--------:|:---------:|:--------:|
+    #  |  jobid0   |  host00  |  host10   |  host20  |
+    #  |  jobid1   |  host01  |  host11   |  host21  |
+    #  |  jobid2   |  host02  |  host12   |  host22  |
+    #
+    ###############################
     # jobid=$(ezpz_qsme_running | sed 's/\/.*\ /\ /g' | sed 's/\/.*//g' | grep "$(hostname | sed 's/\..*//g')" | awk '{print $1}')
     jobid=$(ezpz_qsme_running | grep "^[0-9]" | grep $(hostname) | awk '{print $1}')
     echo "${jobid}"
 }
 
-#######################
-# Unset all:
-#
-# - `PBS_*`
-# - {host,HOST}file
-#
-# environment variables
-#######################
 ezpz_reset_pbs_vars() {
+    #######################
+    # Unset all:
+    #
+    # - `PBS_*`
+    # - {host,HOST}file
+    #
+    # environment variables
+    #######################
     wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
     vars=($(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}'))
     for v in "$vars[@]"; do echo "Unsetting $v" && unset -v "${v}"; done
     export PBS_O_WORKDIR="${wd}"
 }
 
-######################################
-# ezpz_get_pbs_nodefile_from_hostname
-#
-# Return path to PBS_NODEFILE corresponding to the jobid that was identified as
-# containing the (currently active, determined by `$(hostname)`) host.
-#
-# Example:
-# --------
-# Look for $(hostname) in output from `ezpz_qsme_running`
-#
-#  |   jobid   |   host0  |   host1   |  host2   |
-#  |:---------:|:--------:|:---------:|:--------:|
-#  |  jobid0   |  host00  |  host10   |  host20  |
-#  |  jobid1   |  host01  |  host11   |  host21  |
-#  |  jobid2   |  host02  |  host12   |  host22  |
-#
-# then, once we've identified the `jobid` containing `$(hostname)`, we can use
-# that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
-#
-#     ```bash
-#     /var/spool/pbs/aux/${jobid}
-#     ````
-######################################
 ezpz_get_pbs_nodefile_from_hostname() {
+    ######################################
+    # ezpz_get_pbs_nodefile_from_hostname
+    #
+    # Return path to PBS_NODEFILE corresponding to the jobid that was identified as
+    # containing the (currently active, determined by `$(hostname)`) host.
+    #
+    # Example:
+    # --------
+    # Look for $(hostname) in output from `ezpz_qsme_running`
+    #
+    #  |   jobid   |   host0  |   host1   |  host2   |
+    #  |:---------:|:--------:|:---------:|:--------:|
+    #  |  jobid0   |  host00  |  host10   |  host20  |
+    #  |  jobid1   |  host01  |  host11   |  host21  |
+    #  |  jobid2   |  host02  |  host12   |  host22  |
+    #
+    # then, once we've identified the `jobid` containing `$(hostname)`, we can use
+    # that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
+    #
+    #     ```bash
+    #     /var/spool/pbs/aux/${jobid}
+    #     ````
+    ######################################
     jobid=$(ezpz_get_jobid_from_hostname)
     if [[ -n "${jobid}" ]]; then
         match=$(/bin/ls /var/spool/pbs/aux/ | grep "${jobid}")
@@ -208,10 +208,10 @@ ezpz_save_dotenv() {
     fi
 }
 
-######################################################################
-# ezpz_get_machine_name: Return current machine name, as lowercase string
-######################################################################
 ezpz_get_machine_name() {
+    ######################################################################
+    # ezpz_get_machine_name: Return current machine name, as lowercase string
+    ######################################################################
     if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
         machine="aurora"
     elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
@@ -244,11 +244,11 @@ ezpz_check_and_kill_if_running() {
     fi
 }
 
-#################################
-# ezpz_get_slurm_running_jobid
-# Retruns SLURM_JOBID of running slurm jobs
-#################################
 ezpz_get_slurm_running_jobid() {
+    #################################
+    # ezpz_get_slurm_running_jobid
+    # Retruns SLURM_JOBID of running slurm jobs
+    #################################
     if [[ -n $(command -v sacct) ]]; then
         jobid=$(sacct --format=JobID,NodeList%-30,state%20 --user "${USER}" -s R | grep -Ev "\.int|\.ext|^JobID|^---" | awk '{print $1}')
         echo "${jobid}"
@@ -288,12 +288,12 @@ ezpz_setup_srun() {
     # fi
 }
 
-#############################################################################
-# ezpz_set_proxy_alcf
-#
-# Set proxy variables for ALCF
-#
 ezpz_set_proxy_alcf() {
+    #############################################################################
+    # ezpz_set_proxy_alcf
+    #
+    # Set proxy variables for ALCF
+    #
     export HTTP_PROXY="http://proxy.alcf.anl.gov:3128"
     export HTTPS_PROXY="http://proxy.alcf.anl.gov:3128"
     export http_proxy="http://proxy.alcf.anl.gov:3128"
@@ -301,13 +301,13 @@ ezpz_set_proxy_alcf() {
     export ftp_proxy="http://proxy.alcf.anl.gov:3128"
 }
 
-############################################################################
-# ezpz_save_ds_env
-#
-# Save important environment variables to .deepspeed_env, which will be
-# forwarded to ALL ranks with DeepSpeed
-############################################################################
 ezpz_save_ds_env() {
+    ############################################################################
+    # ezpz_save_ds_env
+    #
+    # Save important environment variables to .deepspeed_env, which will be
+    # forwarded to ALL ranks with DeepSpeed
+    ############################################################################
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
         echo "PATH=${PATH}"
@@ -319,10 +319,10 @@ ezpz_save_ds_env() {
     } >.deepspeed_env
 }
 
-###########################
-# Setup conda on Frontier
-###########################
 ezpz_setup_conda_frontier() {
+    ###########################
+    # Setup conda on Frontier
+    ###########################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module load PrgEnv-gnu/8.5.0
         module load craype-accel-amd-gfx90a
@@ -334,10 +334,10 @@ ezpz_setup_conda_frontier() {
     fi
 }
 
-###########################
-# Setup conda on Sunspot
-###########################
 ezpz_setup_conda_sunspot() {
+    ###########################
+    # Setup conda on Sunspot
+    ###########################
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use /opt/aurora/24.180.1/modulefiles
@@ -349,10 +349,10 @@ ezpz_setup_conda_sunspot() {
     fi
 }
 
-###########################
-# Setup conda on Aurora
-###########################
 ezpz_setup_conda_aurora() {
+    ###########################
+    # Setup conda on Aurora
+    ###########################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         # NOTE: Updated 2024-10-08 [@saforem2]
         module load frameworks
@@ -362,10 +362,10 @@ ezpz_setup_conda_aurora() {
     fi
 }
 
-########################
-# Setup conda on Sirius
-########################
 ezpz_setup_conda_sirius() {
+    ########################
+    # Setup conda on Sirius
+    ########################
     if [[ -z "${CONDA_PREFIX:-}" && -z "${VIRTUAL_ENV-}" ]]; then
         export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
@@ -376,10 +376,10 @@ ezpz_setup_conda_sirius() {
     fi
 }
 
-# ########################
-# # Setup conda on Sophia
-# ########################
 ezpz_setup_conda_sophia() {
+    # ########################
+    # # Setup conda on Sophia
+    # ########################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module load conda
         conda activate base
@@ -388,10 +388,10 @@ ezpz_setup_conda_sophia() {
     fi
 }
 
-########################
-# Setup conda on Polaris
-########################
 ezpz_setup_conda_polaris() {
+    ########################
+    # Setup conda on Polaris
+    ########################
     # unset MPICH_GPU_SUPPORT_ENABLED
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
@@ -435,13 +435,13 @@ ezpz_setup_conda() {
     # # ----- [Perlmutter @ NERSC] -------------------------------------
 }
 
-########################
-# ezpz_install_uv
-#
-# Install `uv` package.
-# See: https://docs.astral.sh/uv/#installation
-# #######################
 ezpz_install_uv() {
+    ########################
+    # ezpz_install_uv
+    #
+    # Install `uv` package.
+    # See: https://docs.astral.sh/uv/#installation
+    # #######################
     ezpz_set_proxy_alcf
     curl -LsSf https://astral.sh/uv/install.sh | sh
 }
@@ -458,14 +458,14 @@ ezpz_setup_uv_venv() {
     uv venv --python=$(which python3) --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
 }
 
-########################
-# setup_venv_from_conda
-#
-# Build (if necessary) a virtual environment
-# on top of the active conda and
-# activate it.
-# ######################
 ezpz_setup_venv_from_conda() {
+    ########################
+    # setup_venv_from_conda
+    #
+    # Build (if necessary) a virtual environment
+    # on top of the active conda and
+    # activate it.
+    # ######################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         echo "!! No CONDA_PREFIX var found." #  Exiting."
         # exit 1
@@ -494,28 +494,28 @@ ezpz_setup_venv_from_conda() {
 
 }
 
-##############################################################################
-# `setup_python`:
-#
-# 1. Setup `conda`
-#    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
-#    - if `venv` nonempty, and `conda` empty, what do (???)
-#    - if `venv` nonempty and `conda` nonempty, use these
-#    - if `conda` empty and `venv` empty:
-#       - if `hostname == x4*`, we're on Aurora
-#       - if `hostname == x1*`, we're on Sunspot
-#       - if `hostname == x3*`, we're on Polaris
-#       - if `hostname == nid*`, we're on Perlmutter
-#       - otherwise, you're on you're own
-#
-# 2. Activate (creating, if necessary) a `venv` on top of `base` conda
-#    - use the $CONDA_PREFIX to create a venv in
-#      `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
-#      - activate and use this
-#
-# 3. Print info about which python we're using
-##############################################################################
 ezpz_setup_python() {
+    ##############################################################################
+    # `setup_python`:
+    #
+    # 1. Setup `conda`
+    #    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
+    #    - if `venv` nonempty, and `conda` empty, what do (???)
+    #    - if `venv` nonempty and `conda` nonempty, use these
+    #    - if `conda` empty and `venv` empty:
+    #       - if `hostname == x4*`, we're on Aurora
+    #       - if `hostname == x1*`, we're on Sunspot
+    #       - if `hostname == x3*`, we're on Polaris
+    #       - if `hostname == nid*`, we're on Perlmutter
+    #       - otherwise, you're on you're own
+    #
+    # 2. Activate (creating, if necessary) a `venv` on top of `base` conda
+    #    - use the $CONDA_PREFIX to create a venv in
+    #      `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
+    #      - activate and use this
+    #
+    # 3. Print info about which python we're using
+    ##############################################################################
     virtual_env="${VIRTUAL_ENV:-}"
     conda_prefix="${CONDA_PREFIX:-}"
     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
@@ -850,32 +850,32 @@ ezpz_setup_host() {
     fi
 }
 
-###########################
-# ezpz_setup_host
-#
-# takes 0, 1, or 2 arguments
-#
-# 0.
-#   - hostfile: Look for $HOSTFILE or $PBS_NODEFILE from environment
-#   - jobenv_file: Look for $JOBENV_FILE or $PBS_ENV_FILE from environment
-#
-# 1. hostfile: Specific hostfile to use
-#
-# 2.
-#   - hostfile: Specific hostfile to use
-#   - jobenv_file: Specific `.jobenv` file to use
-#
-#
-# Then, if `hostname` starts with:
-#
-# - `x3*`: We're on Polaris, with 4 Nvidia A100s per node
-# - `x4*` or `x1`: We're on Aurora or Sunspot with 12 Intel PVCs per node
-# - `nid` or `login`: We're on Perlmutter with 4 Nvidia A100s per node
-#
-# if we're on any of the ALCF systems (`x[1-4]*`), we call `ezpz_save_pbs_env`,
-# passing along any received arguments
-###########################
 ezpz_setup_host_old() {
+    ###########################
+    # ezpz_setup_host
+    #
+    # takes 0, 1, or 2 arguments
+    #
+    # 0.
+    #   - hostfile: Look for $HOSTFILE or $PBS_NODEFILE from environment
+    #   - jobenv_file: Look for $JOBENV_FILE or $PBS_ENV_FILE from environment
+    #
+    # 1. hostfile: Specific hostfile to use
+    #
+    # 2.
+    #   - hostfile: Specific hostfile to use
+    #   - jobenv_file: Specific `.jobenv` file to use
+    #
+    #
+    # Then, if `hostname` starts with:
+    #
+    # - `x3*`: We're on Polaris, with 4 Nvidia A100s per node
+    # - `x4*` or `x1`: We're on Aurora or Sunspot with 12 Intel PVCs per node
+    # - `nid` or `login`: We're on Perlmutter with 4 Nvidia A100s per node
+    #
+    # if we're on any of the ALCF systems (`x[1-4]*`), we call `ezpz_save_pbs_env`,
+    # passing along any received arguments
+    ###########################
     printf "[${CYAN}%s${RESET}]\n" "ezpz_setup_host"
     mn=$(ezpz_get_machine_name)
     scheduler_type=$(ezpz_get_scheduler_type)
@@ -1424,26 +1424,26 @@ printCyan() {
     printf "\e[1;36m%s\e[0m\n" "$@"
 }
 
-##################
-# utils_main
-#
-# This will get called automatically when running:
-#
-# ```bash
-# $ cd Megatron-DeepSpeed
-# $ PBS_O_WORKDIR=$(pwd) source ALCF/utils.sh
-# ```
-#
-# - This will set `"${WORKING_DIR}"`, according to:
-#       1. `${PBS_O_WORKDIR}` is nonzero, use this
-#       2. else, if `${SLURM_SUBMIT_DIR}` is nonzero use this
-#       3. else, use `$(pwd)`
-#
-#   this is crucial since many of the functions below use paths
-#   which are defined relative to this "${WORKING_DIR}"
-#   (e.g. virtual environment, location of executables, etc.)
-##################
 utils_main() {
+    ##################
+    # utils_main
+    #
+    # This will get called automatically when running:
+    #
+    # ```bash
+    # $ cd Megatron-DeepSpeed
+    # $ PBS_O_WORKDIR=$(pwd) source ALCF/utils.sh
+    # ```
+    #
+    # - This will set `"${WORKING_DIR}"`, according to:
+    #       1. `${PBS_O_WORKDIR}` is nonzero, use this
+    #       2. else, if `${SLURM_SUBMIT_DIR}` is nonzero use this
+    #       3. else, use `$(pwd)`
+    #
+    #   this is crucial since many of the functions below use paths
+    #   which are defined relative to this "${WORKING_DIR}"
+    #   (e.g. virtual environment, location of executables, etc.)
+    ##################
     # for debug mode, run with `DEBUG=1`
     if [[ -n "${DEBUG:-}" ]]; then
         set -euxo
