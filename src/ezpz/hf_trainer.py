@@ -373,7 +373,11 @@ def parse_args() -> dict:
             )
             wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
         run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
-        wandb.define_metric("step", step_metric="num_input_tokens_seen")
+        wandb.define_metric("num_input_tokens_seen")
+        wandb.define_metric("train/", step_metric="num_input_tokens_seen")
+        # wandb.define_metric("train/epoch")
+        # wandb.define_metric("train/step")
+        wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
         # wandb.define_metric()
         # wandb.define_metric(
         #     name="num_input_tokens_seen",
@@ -460,6 +464,13 @@ def resolve_optimizer(optimizer, deepspeed_config):
         return deepspeed_config["optimizer"]["type"]
     else:
         return "adamw"
+
+
+def decode_predictions(tokenizer, predictions):
+    labels = tokenizer.batch_decode(predictions.label_ids)
+    logits = predictions.predictions.argmax(axis=-1)
+    prediction_text = tokenizer.batch_decode(logits)
+    return {"labels": labels, "predictions": prediction_text}
 
 
 def main():
@@ -847,6 +858,24 @@ def main():
                 batched=True,
             )
 
+    if training_args.eval_on_start and evaluate is not None:
+        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            predictions = decode_predictions(tokenizer, preds)
+            predictions_df = pd.DataFrame(predictions)
+            if wandb is not None and getattr(wandb, "run", None) is not None:
+                records_table = wandb.Table(dataframe=predictions_df)
+                # log the table to wandb
+                assert wandb is not None and wandb.run is not None
+                wandb.log({"sample_predictions": records_table})
+            return metric.compute(predictions=preds, references=labels)
+
     train_dataset = None
     if training_args.do_train:
         if "train" not in tokenized_datasets:
@@ -887,6 +916,16 @@ def main():
                 # by preprocess_logits_for_metrics but we need to shift the labels
                 labels = labels[:, 1:].reshape(-1)
                 preds = preds[:, :-1].reshape(-1)
+                predictions = decode_predictions(tokenizer, preds)
+                predictions_df = pd.DataFrame(predictions)
+                if (
+                    wandb is not None
+                    and getattr(wandb, "run", None) is not None
+                ):
+                    records_table = wandb.Table(dataframe=predictions_df)
+                    # log the table to wandb
+                    assert wandb is not None and wandb.run is not None
+                    wandb.log({"sample_predictions": records_table})
                 return metric.compute(predictions=preds, references=labels)
 
     if rank == 0 and wandb is not None:
@@ -903,31 +942,31 @@ def main():
         data_collator=default_data_collator,
         compute_metrics=(
             compute_metrics  # type:ignore
-            if training_args.do_eval and not is_torch_xla_available()  # type:ignore
+            if training_args.do_eval  # and not is_torch_xla_available()  # type:ignore
             else None
         ),
         preprocess_logits_for_metrics=(
             preprocess_logits_for_metrics  # type:ignore
-            if training_args.do_eval and not is_torch_xla_available()
+            if training_args.do_eval  # and not is_torch_xla_available()
             else None
         ),
     )
 
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        # from transformers.integrations.integration_utils import W
-        # from wandb.integration import WandbEvalCallback
-
-        # evals_callback = WandbEvalCallback(trainer, tokenizer)
-        from ezpz.integrations import WandbPredictionProgressCallback
-
-        callback = WandbPredictionProgressCallback(
-            trainer=trainer,
-            tokenizer=tokenizer,
-            val_dataset=(eval_dataset if training_args.do_eval else None),
-            num_samples=10,
-            freq=2,
-        )
-        trainer.add_callback(callback)
+    # if wandb is not None and getattr(wandb, "run", None) is not None:
+    #     # from transformers.integrations.integration_utils import W
+    #     # from wandb.integration import WandbEvalCallback
+    #
+    #     # evals_callback = WandbEvalCallback(trainer, tokenizer)
+    #     from ezpz.integrations import WandbPredictionProgressCallback
+    #
+    #     callback = WandbPredictionProgressCallback(
+    #         trainer=trainer,
+    #         tokenizer=tokenizer,
+    #         val_dataset=(eval_dataset if training_args.do_eval else None),
+    #         num_samples=10,
+    #         freq=2,
+    #     )
+    #     trainer.add_callback(callback)
 
     assert any([training_args.do_train, training_args.do_eval]), (
         "Nothing to do! Set --do_train or --do_eval."
@@ -959,6 +998,9 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
+        import datasets
+        import pandas as pd
+
         logger.info("*** Evaluate ***")
         assert eval_dataset is not None, (
             "eval_dataset must be defined for evaluation."
@@ -977,9 +1019,24 @@ def main():
         except OverflowError:
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
-
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+        # sample_dataset = eval_dataset.take(10)
+        # assert sample_dataset is not None
+        # # generate predictions
+        # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
+        #     predictions = trainer.predict(sample_dataset)
+        #     # decode predictions and labels
+        #     predictions = decode_predictions(tokenizer, predictions)
+        #     # add predictions to a wandb.Table
+        #     predictions_df = pd.DataFrame(predictions)
+        #     # predictions_df["epoch"] = state.epoch
+        #     if wandb is not None and getattr(wandb, "run", None) is not None:
+        #         records_table = wandb.Table(dataframe=predictions_df)
+        #         # log the table to wandb
+        #         assert wandb is not None and wandb.run is not None
+        #         wandb.log({"sample_predictions": records_table})
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
