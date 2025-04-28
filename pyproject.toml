@@ -17,7 +17,7 @@ dependencies = [
     "evaluate",
     # "h5py",
     "hydra-core",
-    "numpy<2",
+    "numpy",  # <2",
     "omegaconf",
     "plotext",
     "pyinstrument",
