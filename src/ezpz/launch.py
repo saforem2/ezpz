@@ -63,6 +63,17 @@ def parse_args():
 
 
 def run_command(command, filters: Optional[list] = None):
+    """Run a command and print its output line by line.
+
+    Args:
+
+    - command (str): The command to run.
+    - filters (list, optional): A list of strings to filter the output
+      lines.
+    """
+    # XXX: Replace `subprocess.Popen`
+    # with `subprocess.run` for better error handling ??
+    # <https://docs.python.org/3.10/library/subprocess.html#subprocess.run>
     with subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -136,4 +147,19 @@ if __name__ == "__main__":
     import warnings
 
     warnings.filterwarnings("ignore")
+    # try:
     launch()
+    # except KeyboardInterrupt:
+    #     logger.info("Keyboard interrupt received. Exiting...")
+    # finally:
+    #     import ezpz.dist
+    #
+    #     ezpz.dist.cleanup()
+    #     exit(0)
+    # ezpz.dist.cleanup()
+    # except KeyboardInterrupt:
+    #     logger.info("Keyboard interrupt received. Exiting...")
+    # finally:
+    #     import ezpz.dist
+    #     ezpz.dist.cleanup()
+    #     exit(0)
