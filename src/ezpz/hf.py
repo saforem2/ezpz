@@ -785,8 +785,10 @@ def main():
 
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
+    import time
 
     total_loss = 0
+    metrics = {}
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
@@ -803,12 +805,10 @@ def main():
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
+            t0step = time.perf_counter()
             with accelerator.accumulate(model):
                 outputs = model(**batch)
                 loss = outputs.loss
-                # We keep track of the loss at each epoch
-                if args.with_tracking:
-                    total_loss += loss.detach().float()
                 accelerator.backward(loss)
                 optimizer.step()
                 lr_scheduler.step()
@@ -816,6 +816,7 @@ def main():
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
+                t1step = time.perf_counter() - t0step
                 progress_bar.update(1)
                 completed_steps += 1
 
@@ -828,6 +829,23 @@ def main():
                     if args.output_dir is not None:
                         output_dir = os.path.join(args.output_dir, output_dir)
                     accelerator.save_state(output_dir)
+
+            if completed_steps % args.logging_steps == 0:
+                # We keep track of the loss at each epoch
+                if args.with_tracking:
+                    logs = {
+                        "epoch": epoch,
+                        "step": completed_steps,
+                        "loss": loss.detach().float(),
+                        "learning_rate": lr_scheduler.get_last_lr()[0],
+                        "dts": t1step,
+                    }
+                    accelerator.log(logs, step=completed_steps)
+                    if wandb is not None and wandb.run is not None:
+                        wandb.log(logs)
+                # logger.info(
+                #     f"epoch {epoch}: step {completed_steps}: loss: {loss.detach().float()}"
+                # )
             if completed_steps >= args.max_train_steps:
                 break
 
@@ -845,8 +863,8 @@ def main():
             )
 
         losses = torch.cat(losses)
+        eval_loss = torch.mean(losses)
         try:
-            eval_loss = torch.mean(losses)
             perplexity = math.exp(eval_loss)
         except OverflowError:
             perplexity = float("inf")
