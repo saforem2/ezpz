@@ -1,0 +1,292 @@
+/* @charset "UTF-8"; */
+/* @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans+Condensed:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Serif:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap"); */
+/**/
+/* html { */
+/*   -webkit-text-size-adjust: none; */
+/*   -moz-text-size-adjust: none; */
+/*   text-size-adjust: none; */
+/*   box-sizing: border-box; */
+/* } */
+/* *, */
+/* :after, */
+/* :before { */
+/*   box-sizing: inherit; */
+/* } */
+/* @media (prefers-reduced-motion) { */
+/*   *, */
+/*   :after, */
+/*   :before { */
+/*     transition: none !important; */
+/*   } */
+/* } */
+/* body { */
+/*   margin: 0; */
+/* } */
+/* a, */
+/* button, */
+/* input, */
+/* label { */
+/*   -webkit-tap-highlight-color: transparent; */
+/* } */
+/* a { */
+/*   color: inherit; */
+/*   text-decoration: none; */
+/* } */
+/* hr { */
+/*   border: 0; */
+/*   box-sizing: initial; */
+/*   display: block; */
+/*   height: 0.05rem; */
+/*   overflow: visible; */
+/*   padding: 0; */
+/* } */
+/* small { */
+/*   font-size: 80%; */
+/* } */
+/* sub, */
+/* sup { */
+/*   line-height: 1em; */
+/* } */
+/* img { */
+/*   border-style: none; */
+/* } */
+/* table { */
+/*   border-collapse: initial; */
+/*   border-spacing: 0; */
+/* } */
+/* td, */
+/* th { */
+/*   font-weight: 400; */
+/*   vertical-align: top; */
+/* } */
+/* button { */
+/*   background: #0000; */
+/*   border: 0; */
+/*   font-family: inherit; */
+/*   font-size: inherit; */
+/*   margin: 0; */
+/*   padding: 0; */
+/* } */
+/* input { */
+/*   border: 0; */
+/*   outline: none; */
+/* } */
+/* :root { */
+/*   --md-primary-fg-color: #4051b5; */
+/*   --md-primary-fg-color--light: #5d6cc0; */
+/*   --md-primary-fg-color--dark: #303fa1; */
+/*   --md-primary-bg-color: #fff; */
+/*   --md-primary-bg-color--light: #ffffffb3; */
+/*   --md-accent-fg-color: #526cfe; */
+/*   --md-accent-fg-color--transparent: #526cfe1a; */
+/*   --md-accent-bg-color: #fff; */
+/*   --md-accent-bg-color--light: #ffffffb3; */
+/* } */
+/* [data-md-color-scheme="default"] { */
+/*   color-scheme: light; */
+/* } */
+/* [data-md-color-scheme="default"] img[src$="#gh-dark-mode-only"], */
+/* [data-md-color-scheme="default"] img[src$="#only-dark"] { */
+/*   display: none; */
+/* } */
+/* :root, */
+/* [data-md-color-scheme="default"] { */
+/*   --md-hue: 225deg; */
+/*   --md-default-fg-color: #000000de; */
+/*   --md-default-fg-color--light: #0000008a; */
+/*   --md-default-fg-color--lighter: #00000052; */
+/*   --md-default-fg-color--lightest: #00000012; */
+/*   --md-default-bg-color: #fff; */
+/*   --md-default-bg-color--light: #ffffffb3; */
+/*   --md-default-bg-color--lighter: #ffffff4d; */
+/*   --md-default-bg-color--lightest: #ffffff1f; */
+/*   --md-code-fg-color: #36464e; */
+/*   --md-code-bg-color: #f5f5f5; */
+/*   --md-code-hl-color: #4287ff; */
+/*   --md-code-hl-color--light: #4287ff1a; */
+/*   --md-code-hl-number-color: #d52a2a; */
+/*   --md-code-hl-special-color: #db1457; */
+/*   --md-code-hl-function-color: #a846b9; */
+/*   --md-code-hl-constant-color: #6e59d9; */
+/*   --md-code-hl-keyword-color: #3f6ec6; */
+/*   --md-code-hl-string-color: #1c7d4d; */
+/*   --md-code-hl-name-color: var(--md-code-fg-color); */
+/*   --md-code-hl-operator-color: var(--md-default-fg-color--light); */
+/*   --md-code-hl-punctuation-color: var(--md-default-fg-color--light); */
+/*   --md-code-hl-comment-color: var(--md-default-fg-color--light); */
+/*   --md-code-hl-generic-color: var(--md-default-fg-color--light); */
+/*   --md-code-hl-variable-color: var(--md-default-fg-color--light); */
+/*   --md-typeset-color: var(--md-default-fg-color); */
+/*   --md-typeset-a-color: var(--md-primary-fg-color); */
+/*   --md-typeset-del-color: #f5503d26; */
+/*   --md-typeset-ins-color: #0bd57026; */
+/*   --md-typeset-kbd-color: #fafafa; */
+/*   --md-typeset-kbd-accent-color: #fff; */
+/*   --md-typeset-kbd-border-color: #b8b8b8; */
+/*   --md-typeset-mark-color: #ffff0080; */
+/*   --md-typeset-table-color: #0000001f; */
+/*   --md-typeset-table-color--light: rgba(0, 0, 0, 0.035); */
+/*   --md-admonition-fg-color: var(--md-default-fg-color); */
+/*   --md-admonition-bg-color: var(--md-default-bg-color); */
+/*   --md-warning-fg-color: #000000de; */
+/*   --md-warning-bg-color: #ff9; */
+/*   --md-footer-fg-color: #fff; */
+/*   --md-footer-fg-color--light: #ffffffb3; */
+/*   --md-footer-fg-color--lighter: #ffffff73; */
+/*   --md-footer-bg-color: #000000de; */
+/*   --md-footer-bg-color--dark: #00000052; */
+/*   --md-shadow-z1: 0 0.2rem 0.5rem #0000000d, 0 0 0.05rem #0000001a; */
+/*   --md-shadow-z2: 0 0.2rem 0.5rem #0000001a, 0 0 0.05rem #00000040; */
+/*   --md-shadow-z3: 0 0.2rem 0.5rem #0003, 0 0 0.05rem #00000059; */
+/* } */
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #00ccff;
+  --md-default-heading-color: #f5f5f5;
+  --md-primary-fg-color: #222222;
+  --md-default-bg-color: #1c1c1c;
+  --md-header-bg-color: #222222;
+  --md-header-fg-color: #eeeeee;
+  --md-default-fg-color: #d7d7d7;
+  --md-default-fg-color: hsla(var(--md-hue), 15%, 90%, 0.82);
+  --md-accent-fg-color: #ff67ff;
+  --md-code-bg-color: #222222;
+  color-scheme: dark;
+}
+/**/
+/* :root { */
+/*   --md-text-font-family: */
+/*     "IBM Plex Sans", -apple-system, BlinkMacSystemFont, Helvetica, Arial, */
+/*     sans-serif; */
+/* } */
+/* .md-icon svg { */
+/*   fill: currentcolor; */
+/*   display: block; */
+/*   height: 1.2rem; */
+/*   width: 1.2rem; */
+/* } */
+/* body { */
+/*   -webkit-font-smoothing: antialiased; */
+/*   -moz-osx-font-smoothing: grayscale; */
+/*   --md-text-font-family: */
+/*     var(--md-text-font, _), -apple-system, BlinkMacSystemFont, Helvetica, Arial, */
+/*     sans-serif; */
+/*   --md-code-font-family: */
+/*     var(--md-code-font, _), SFMono-Regular, Consolas, Menlo, monospace; */
+/* } */
+/* aside, */
+/* body, */
+/* input { */
+/*   font-feature-settings: "kern", "liga"; */
+/*   color: var(--md-typeset-color); */
+/*   font-family: var(--md-text-font-family); */
+/* } */
+/* code, */
+/* kbd, */
+/* pre { */
+/*   font-feature-settings: "kern"; */
+/*   font-family: var(--md-code-font-family); */
+/* } */
+/* :root { */
+/*   --md-typeset-table-sort-icon: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m18 21-4-4h3V7h-3l4-4 4 4h-3v10h3M2 19v-2h10v2M2 13v-2h7v2M2 7V5h4v2z"/></svg>'); */
+/*   --md-typeset-table-sort-icon--asc: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 17h3l-4 4-4-4h3V3h2M2 17h10v2H2M6 5v2H2V5m0 6h7v2H2z"/></svg>'); */
+/*   --md-typeset-table-sort-icon--desc: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 7h3l-4-4-4 4h3v14h2M2 17h10v2H2M6 5v2H2V5m0 6h7v2H2z"/></svg>'); */
+/* } */
+/* .md-typeset { */
+/*   -webkit-print-color-adjust: exact; */
+/*   color-adjust: exact; */
+/*   font-size: 0.8rem; */
+/*   line-height: 1.6; */
+/* } */
+/* @media print { */
+/*   .md-typeset { */
+/*     font-size: 0.68rem; */
+/*   } */
+/* } */
+/* .md-typeset blockquote, */
+/* .md-typeset dl, */
+/* .md-typeset figure, */
+/* .md-typeset ol, */
+/* .md-typeset pre, */
+/* .md-typeset ul { */
+/*   margin-bottom: 1em; */
+/*   margin-top: 1em; */
+/* } */
+/* .md-typeset h1 { */
+/*   color: var(--md-default-fg-color--light); */
+/*   font-size: 2em; */
+/*   line-height: 1.3; */
+/*   margin: 0 0 1.25em; */
+/* } */
+/* .md-typeset h1, */
+/* .md-typeset h2 { */
+/*   font-weight: 300; */
+/*   letter-spacing: -0.01em; */
+/* } */
+/* .md-typeset h2 { */
+/*   font-size: 1.5625em; */
+/*   line-height: 1.4; */
+/*   margin: 1.6em 0 0.64em; */
+/* } */
+/* .md-typeset h3 { */
+/*   font-size: 1.25em; */
+/*   font-weight: 400; */
+/*   letter-spacing: -0.01em; */
+/*   line-height: 1.5; */
+/*   margin: 1.6em 0 0.8em; */
+/* } */
+/* .md-typeset h2 + h3 { */
+/*   margin-top: 0.8em; */
+/* } */
+/* .md-typeset h4 { */
+/*   font-weight: 700; */
+/*   letter-spacing: -0.01em; */
+/*   margin: 1em 0; */
+/* } */
+/* .md-typeset h5, */
+/* .md-typeset h6 { */
+/*   color: var(--md-default-fg-color--light); */
+/*   font-size: 0.8em; */
+/*   font-weight: 700; */
+/*   letter-spacing: -0.01em; */
+/*   margin: 1.25em 0; */
+/* } */
+/* .md-typeset h5 { */
+/*   text-transform: uppercase; */
+/* } */
+/* .md-typeset hr { */
+/*   border-bottom: 0.05rem solid var(--md-default-fg-color--lightest); */
+/*   display: flow-root; */
+/*   margin: 1.5em 0; */
+/* } */
+/* .md-typeset a { */
+/*   color: var(--md-typeset-a-color); */
+/*   word-break: break-word; */
+/* } */
+/* .md-typeset a, */
+/* .md-typeset a:before { */
+/*   transition: color 125ms; */
+/* } */
+/* .md-typeset a:focus, */
+/* .md-typeset a:hover { */
+/*   color: var(--md-accent-fg-color); */
+/* } */
+/* .md-typeset a:focus code, */
+/* .md-typeset a:hover code { */
+/*   background-color: var(--md-accent-fg-color--transparent); */
+/* } */
+/* .md-typeset a code { */
+/*   color: currentcolor; */
+/*   transition: background-color 125ms; */
+/* } */
+/* .md-typeset a.focus-visible { */
+/*   outline-color: var(--md-accent-fg-color); */
+/*   outline-offset: 0.2rem; */
+/* } */
+/* .md-typeset code, */
+/* .md-typeset kbd, */
+/* .md-typeset pre { */
+/*   color: var(--md-code-fg-color); */
+/*   direction: ltr; */
+/*   font-variant-ligatures: none; */
+/* } */

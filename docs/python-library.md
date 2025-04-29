@@ -15,24 +15,24 @@ backend combo.
 
     - <details closed><summary><code>import ezpz as ez</code></summary>
 
-        - `RANK = `
-          [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
-          [for `backend` $\in$ \{`DDP`, `deepspeed`, `horovod`}]{.dim-text}
+        - `RANK =`
+        [`ez.setup_torch(backend=backend)`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L551)
+        [for `backend` \(\in\) \{`DDP`, `deepspeed`, `horovod`}]{.dim-text}
 
         - `RANK =`
-          [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
+        [`ez.get_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#396)
 
         - `LOCAL_RANK =`
-          [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
+        [`ez.get_local_rank()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#448)
 
         - `WORLD_SIZE =`
-          [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
+        [`ez.get_world_size()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L417)
 
         [(see [`ezpz/dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py) for more details).]{.dim-text}
 
-    </details>
+        </details>
 
-</details>
+  </details>
 
 - <details closed><summary>Using your favorite framework:</summary>
 
@@ -44,52 +44,55 @@ backend combo.
 
     - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
 
-  _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
+    _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
 
-</details>
+  </details>
 
 - <details closed><summary>Writing device agnostic code:</summary>
 
     - <details><summary><a href="https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L332"><code>ezpz.get_torch_device()</code></a></summary>
 
-        ```python
-        >>> import ezpz as ez
-        >>> DEVICE = ez.get_torch_device()
-        >>> model = torch.nn.Linear(10, 10)
-        >>> model.to(DEVICE)
-        >>> x = torch.randn((10, 10), device=DEVICE)
-        >>> y = model(x)
-        >>> y.device
-        device(type='mps', index=0)
-        ```
+            ```pycon
+            >>> import ezpz as ez
+            >>> DEVICE = ez.get_torch_device()
+            >>> model = torch.nn.Linear(10, 10)
+            >>> model.to(DEVICE)
+            >>> x = torch.randn((10, 10), device=DEVICE)
+            >>> y = model(x)
+            >>> y.device
+            device(type='mps', index=0)
+            ```
 
-    </details>
+        </details>
 
-</details>
+  </details>
 
 - <details closed><summary>Using <code>wandb</code>:</summary>
 
     - `ez.setup_wandb(project_name='ezpz')`
 
-</details>
+  </details>
 
 - **Full support** for any {`device` + `framework` + `backend`}:
-    - device: {`GPU`, `XPU`, `MPS`, `CPU`}
-    - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
-    - backend: {`DDP`, `deepspeed`, `horovod`}
- 
+  - device: {`GPU`, `XPU`, `MPS`, `CPU`}
+  - framework: {`torch`, `deepspeed`, `horovod`, `tensorflow`}
+  - backend: {`DDP`, `deepspeed`, `horovod`}
+
 ### Install
 
 To install[^5]:
 
-``` bash
+```bash
 python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --require-virtualenv
 ```
 
-[^5]: Note the `--require-virtualenv` isn’t *strictly* required, but I
+[^5]:
+    Note the `--require-virtualenv` isn’t _strictly_ required, but I
     highly recommend to always try and work within a virtual
     environment, when possible.
 
+
+## 📂 Directory Structure
 
 - 📂 `ezpz` / `src` / [`ezpz/`](https://github.com/saforem2/ezpz)
   - 📂
@@ -146,7 +149,7 @@ python3 -m pip install -e "git+https://github.com/saforem2/ezpz#egg=ezpz" --requ
   - 🐍[`utils.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/utils.py):
     utility module
 
-``` bash
+```bash
 📂 /ezpz/src/ezpz/
 ┣━━ 📂 bin/
 ┃   ┣━━ 📄 affinity.sh

@@ -13,11 +13,6 @@ python3 -m ezpz.launch -m ezpz.test_dist
 This will _launch_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py)
 across all available resources in your {PBS, Slurm} job.
 
-<!-- <details closed><summary>Sequence Diagram</summary> -->
-
-/// details | Sequence Diagram
-    open: false
-
 ```mermaid
 sequenceDiagram
   participant User
@@ -32,54 +27,30 @@ sequenceDiagram
   Distributed Application (ezpz.test_dist)-->>User: Training progress and metrics (via WandB)
 ```
 
-///
+- <details closed><summary>🪄 <b>Magic</b>:</summary>
 
-/// details | 🪄 <b>Magic</b>
-    type: attention
-    open: false
+    Explicitly, this will use the default "launcher" depending on availability:
 
-Explicitly, this will use the default "launcher" depending on availability:
+    - ALCF (PBS Pro): `mpiexec`
+    - Slurm: `srun`
+    - Unknown: `mpirun`
 
-- ALCF (PBS Pro): `mpiexec`
-- Slurm: `srun`
-- Unknown: `mpirun`
+    and automatically pull in the specifics about the currently active job when
+    building the appropriate `{srun, mpi{exec,run}}` command.
 
-and automatically pull in the specifics about the currently active job when
-building the appropriate `{srun, mpi{exec,run}}` command.
+    - For example, on any of the ALCF systems, it will automatically:
+    - Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
+    - Use this to calculate: - `NHOSTS` - `NGPUS_PER_HOST` - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
+    - With this information, we can construct the full `mpiexec ...`
+        command needed to launch our distributed application, e.g.:
 
-- For example, on any of the ALCF systems, it will automatically:
-  - Identify `"${PBS_NODEFILE}"` (by looking at `hostname` of currently active node)
-  - Use this to calculate: - `NHOSTS` - `NGPUS_PER_HOST` - `WORLD_SIZE` `= NGPUS = NHOSTS * NGPUS_PER_HOST`
-- With this information, we can construct the full `mpiexec ...`
-  command needed to launch our distributed application, e.g.:
+    ```bash
+    python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
+    # on 2 nodes of Aurora @ ALCF:
+    # mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3878985.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16
+    ```
 
-  ```bash
-  python3 -c 'import ezpz.pbs; print(ezpz.pbs.build_launch_cmd())'
-  # on 2 nodes of Aurora @ ALCF:
-  # mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/3878985.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --cpu-bind depth -d 16
-  ```
-
-///
-
-<!--
-<details closed><summary>🏚️ Deprecated</summary>
-
-## 🐣 Getting Started
-
-- 🏡 Setup environment (load modules, activate base (`conda`) environment):
-
-	```bash
-	source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
-	ezpz_setup_env
-	```
-
-- 📦 Install 🍋 `ezpz`:
-
-	```bash
-	python3 -m pip install "git+https://github.com/saforem2/ezpz"
-	```
-
--->
+  </details>
 
 ### 🌌 Aurora
 
@@ -92,7 +63,6 @@ building the appropriate `{srun, mpi{exec,run}}` command.
   - <details closed><summary>Output:</summary>
 
     ```python
-
     #[🐍 aurora_nre_models_frameworks-2024.2.1_u1](👻 aurora_nre_models_frameworks-2024.2.1_u1)
     #[08:54:56 AM][x4317c7s7b0n0][/flare/datascience/foremans/projects/saforem2/tmp/2025-04-01-084856]
     $ python3 -m ezpz.launch -m ezpz.test_dist --tp 4 --pp 3
@@ -112,53 +82,6 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     Connected to tcp://x4317c7s6b0n0.hostmgmt2317.cm.aurora.alcf.anl.gov:7919
     Launching application 7ceb32d4-e849-4fc3-ad6d-abcb7bad3494
     [2025-04-01 08:56:13,276] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,310] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,311] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,312] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,313] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,314] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,320] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,328] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,328] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,336] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,497] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,498] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,498] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,848] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,849] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,894] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:56:13,895] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,428] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,447] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,451] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,454] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,455] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,456] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,458] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,458] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,459] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,459] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,459] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:35,459] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,144] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,144] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,149] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,148] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
-    [2025-04-01 08:57:48,149] [INFO] [real_accelerator.py:222:get_accelerator] Setting ds_accelerator to xpu (auto detect)
     [2025-04-01 08:58:40][I][ezpz/dist:557] Using get_torch_device_type()='xpu' with backend='ccl'
     [2025-04-01 08:58:45][I][tp/__init__:148:ezpz.tp] TP: 4, PP: 3, CP: 1, DP: 2
     [2025-04-01 08:58:45][I][ezpz/dist:873] Using device='xpu' with backend='ddp' + 'ccl' for distributed training.
@@ -233,29 +156,6 @@ building the appropriate `{srun, mpi{exec,run}}` command.
       "warmup": 2
     }
     [rank23]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank12]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank13]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank16]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank17]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank19]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank22]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank14]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank15]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank18]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank20]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank21]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank4]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank5]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank10]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank11]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank0]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank1]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank2]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank3]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank6]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank7]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank8]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
-    [rank9]:[W reducer.cpp:69] Warning: measureDifference between two events is not supported on XPU backend! (function operator())
     [2025-04-01 08:59:03][I][ezpz/test_dist:192:__main__] Warmup complete at step 2
     [2025-04-01 08:59:03][I][ezpz/test_dist:170:__main__] iter=10 loss=752.000000 dtf=0.000528 dtb=0.001079
     [2025-04-01 08:59:03][I][ezpz/test_dist:170:__main__] iter=20 loss=652.000000 dtf=0.000482 dtb=0.001007
@@ -397,7 +297,7 @@ building the appropriate `{srun, mpi{exec,run}}` command.
 
    </details>
 
-### ⭐ Polaris
+### 🌠 Polaris
 
 - Command:
 
@@ -408,7 +308,7 @@ building the appropriate `{srun, mpi{exec,run}}` command.
   - <details closed><summary>Output:</summary>
 
     ```python
-    (👻 2024-04-29)
+    # (👻 2024-04-29)
     #[09:22:22 AM][x3006c0s19b0n0][/e/d/f/p/s/t/ezpz][🌱 feat/python-launcher][📦✓] [⏱️ 58s]
     $ python3 -m ezpz.launch -m ezpz.test_dist --tp 2 --pp 2
     [2025-04-01 09:22:32,869] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
@@ -436,28 +336,6 @@ building the appropriate `{srun, mpi{exec,run}}` command.
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
     [2025-04-01 09:22:45,292] [INFO] [real_accelerator.py:203:get_accelerator] Setting ds_accelerator to cuda (auto detect)
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [2025-04-01 09:22:48][I][ezpz/dist:557] Using get_torch_device_type()='cuda' with backend='nccl'
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
-    [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
-    [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
-    [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
     [WARNING]  Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH
     [WARNING]  sparse_attn requires a torch version >= 1.5 and < 2.0 but detected 2.3
     [WARNING]  using untested triton version (2.3.0), only 1.0.0 is known to be compatible
@@ -590,7 +468,7 @@ building the appropriate `{srun, mpi{exec,run}}` command.
         │█████                                                 │
     12.5┤███████████                                           │
         │████████████████                                      │
-    0.0┤██████████████████████     ████████████████      █████│
+     0.0┤██████████████████████     ████████████████      █████│
         └┬────────────┬─────────────┬────────────┬────────────┬┘
       0.000306    0.000358      0.000411     0.000464  0.000516
     freq                           dtf

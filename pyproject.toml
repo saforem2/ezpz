@@ -76,6 +76,10 @@ docs = [
   "pymdown-extensions",
   "mkdocs-mermaid2-plugin"
 ]
+docs = [
+  "mkdocs-material",
+]
+
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
