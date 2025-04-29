@@ -76,9 +76,6 @@ docs = [
   "pymdown-extensions",
   "mkdocs-mermaid2-plugin"
 ]
-docs = [
-  "mkdocs-material",
-]
 
 
 [project.urls]
