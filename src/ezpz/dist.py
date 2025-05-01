@@ -276,6 +276,10 @@ def _get_dist_info(
             else None
         ),
     }
+    # ws = os.environ.get("WORLD_SIZE", None)
+    # if ws is not None:
+    #     logger.info(f'Caught "WORLD_SIZE"={ws} from environment!')
+    #     dist_info |= {"WORLD_SIZE": int(ws)}
     # hostfile = (
     #     Path(get_hostfile_with_fallback(hostfile)).as_posix()
     #     if hostfile is None else hostfile
@@ -895,8 +899,9 @@ def setup_torch(
     os.environ["LOCAL_SIZE"] = str(local_size)
     os.environ["WORLD_SIZE"] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
-    if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
-        torch.xpu.set_device(local_rank)  # type:ignore
+    # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
+    if torch.xpu.is_available():
+        torch.xpu.set_device(local_rank)
         # try:
         #     import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
         # except Exception:
@@ -964,24 +969,24 @@ def setup_torch(
             if cpsize > 1:
                 lcp = len(str(cpsize - 1))
                 psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
-                barrier(group=ezpz.tp.get_context_parallel_group())
+                # barrier(group=ezpz.tp.get_context_parallel_group())
                 # tdist.barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
                 lpp = len(str(ppsize - 1))
                 psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
-                barrier(group=ezpz.tp.get_pipeline_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
-                barrier(group=ezpz.tp.get_tensor_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
-                barrier(group=ezpz.tp.get_data_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info("".join(psizes))
-    barrier()
-    # tdist.barrier()
+    # barrier()
+    tdist.barrier()
     # MPI.COMM_WORLD.Barrier()
     return rank
 
@@ -1476,17 +1481,18 @@ def get_pbs_launch_cmd(
             "Mismatch in `ngpus_in_use` and `ngpus_available` "
             f"{ngpus_in_use=} vs. {ngpus_available=}"
         )
+    ncpus_per_host = get_cpus_per_node()
     return " ".join(
         [
             "mpiexec",
             "--verbose",
             "--envall",
             # f'-n {ngpus}',
-            f"-n {ngpus_in_use}",
-            f"-ppn {ngpu_per_host}",
-            f"--hostfile {hfp.as_posix()}",
-            "--cpu-bind depth",
-            "-d 16",
+            f"--np={ngpus_in_use}",
+            f"--ppn={ngpu_per_host}",
+            f"--hostfile={hfp.as_posix()}",
+            "--cpu-bind=depth",
+            "--depth=8",
         ]
     )
 
