@@ -193,8 +193,10 @@ def get_logger(
         else level
     )
     # level = os.environ.get("LOG_LEVEL", "INFO") if level is None else level
-    if colored_logs and use_colored_logs():
-        logging.config.dictConfig(get_logging_config())
+    # if colored_logs and use_colored_logs():
+    if not colored_logs:
+        os.environ["NO_COLOR"] = "1"
+    logging.config.dictConfig(get_logging_config())
     logger = logging.getLogger(name if name is not None else __name__)
     if rank_zero_only:
         if int(rank) == 0:
