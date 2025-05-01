@@ -49,19 +49,21 @@ class RichHandler(OriginalRichHandler):
     """Enriched handler that does not wrap."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        if 'console' not in kwargs:
+        if "console" not in kwargs:
             console = get_console(
                 redirect=False, width=9999, markup=use_colored_logs()
             )
-            kwargs['console'] = console
+            kwargs["console"] = console
             self.__console = console
+        else:
+            self.__console = kwargs["console"]
         super().__init__(*args, **kwargs)
         # RichHandler constructor does not allow custom renderer
         # https://github.com/willmcgugan/rich/issues/438
         self._log_render = FluidLogRender(
-            show_time=kwargs.get('show_time', True),
-            show_level=kwargs.get('show_level', True),
-            show_path=kwargs.get('show_path', True),
+            show_time=kwargs.get("show_time", True),
+            show_level=kwargs.get("show_level", True),
+            show_path=kwargs.get("show_path", True),
         )  # type: ignore
 
     def render(
@@ -69,8 +71,8 @@ class RichHandler(OriginalRichHandler):
         *,
         record: LogRecord,
         traceback: Optional[Any],
-        message_renderable: 'ConsoleRenderable',
-    ) -> 'ConsoleRenderable':
+        message_renderable: "ConsoleRenderable",
+    ) -> "ConsoleRenderable":
         """Render log for display.
 
         Args:
@@ -82,21 +84,21 @@ class RichHandler(OriginalRichHandler):
             ConsoleRenderable: Renderable to display log.
         """
         fp = Path(record.pathname)
-        parent = fp.parent.as_posix().split('/')[-1]
-        module = getattr(record, 'module', None)
-        name = getattr(record, 'name', None)
+        parent = fp.parent.as_posix().split("/")[-1]
+        module = getattr(record, "module", None)
+        name = getattr(record, "name", None)
 
         parr = [parent]
         if module is not None:
             parr.append(module)
-        if name is not None and f'{parent}.{module}' != name:
+        if name is not None and f"{parent}.{module}" != name:
             parr.append(name)
-        pstr = '/'.join([parr[0], '.'.join(parr[1:])])
+        pstr = "/".join([parr[0], ".".join(parr[1:])])
 
         level = self.get_level_text(record)
         time_format = None if self.formatter is None else self.formatter.datefmt
         # default_time_fmt = '%Y-%m-%d %H:%M:%S.%f'
-        default_time_fmt = '%Y-%m-%d %H:%M:%S'  # .%f'
+        default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
         time_format = time_format if time_format else default_time_fmt
         log_time = datetime.fromtimestamp(record.created)
 
@@ -123,7 +125,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         show_time: bool = True,
         show_level: bool = True,
         show_path: bool = True,
-        time_format: str = '%Y-%m-%d %H:%M:%S.%f',
+        time_format: str = "%Y-%m-%d %H:%M:%S.%f",
         link_path: Optional[bool] = False,
     ) -> None:
         self.show_time = show_time
@@ -140,8 +142,8 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         console: Console,  # type: ignore
         renderables: Iterable[ConsoleRenderable],
         log_time: Optional[datetime] = None,
-        time_format: str = '%Y-%m-%d %H:%M:%S.%f',
-        level: TextType = '',
+        time_format: str = "%Y-%m-%d %H:%M:%S.%f",
+        level: TextType = "",
         path: Optional[str] = None,
         line_no: Optional[int] = None,
         link_path: Optional[str] = None,
@@ -152,61 +154,61 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             log_time_display = log_time.strftime(
                 time_format or self.time_format
             )
-            d, t = log_time_display.split(' ')
-            result += Text('[', style=self.styles.get('log.brace', ''))
-            result += Text(f'{d} ', style=self.styles.get('logging.date', ''))
-            result += Text(t, style=self.styles.get('logging.time', ''))
-            result += Text(']', style=self.styles.get('log.brace', ''))
+            d, t = log_time_display.split(" ")
+            result += Text("[", style=self.styles.get("log.brace", ""))
+            result += Text(f"{d} ", style=self.styles.get("logging.date", ""))
+            result += Text(t, style=self.styles.get("logging.time", ""))
+            result += Text("]", style=self.styles.get("log.brace", ""))
             # result += Text(log_time_display, style=self.styles['logging.time'])
             self._last_time = log_time_display
         if self.show_level:
             if isinstance(level, Text):
-                lstr = level.plain.rstrip(' ')[0]
+                lstr = level.plain.rstrip(" ")[0]
                 if self.colorized:
                     style = level.spans[0].style
                 else:
                     style = Style.null()
                 level.spans = [Span(0, len(lstr), style)]
-                ltext = Text('[', style=self.styles.get('log.brace', ''))
-                ltext.append(Text(f'{lstr}', style=style))
-                ltext.append(Text(']', style=self.styles.get('log.brace', '')))
+                ltext = Text("[", style=self.styles.get("log.brace", ""))
+                ltext.append(Text(f"{lstr}", style=style))
+                ltext.append(Text("]", style=self.styles.get("log.brace", "")))
                 # ltext = Text(f'[{lstr}]', style=style)
             elif isinstance(level, str):
-                lstr = level.rstrip(' ')[0]
+                lstr = level.rstrip(" ")[0]
                 style = (
-                    f'logging.level.{str(lstr)}'
+                    f"logging.level.{str(lstr)}"
                     if self.colorized
                     else Style.null()
                 )
-                ltext = Text('[', style=self.styles.get('log.brace', ''))
+                ltext = Text("[", style=self.styles.get("log.brace", ""))
                 ltext = Text(
-                    f'{lstr}', style=style
+                    f"{lstr}", style=style
                 )  # f"logging.level.{str(lstr)}")
-                ltext.append(Text(']', style=self.styles.get('log.brace', '')))
+                ltext.append(Text("]", style=self.styles.get("log.brace", "")))
             result += ltext
         if self.show_path and path:
-            path_text = Text('[', style=self.styles.get('log.brace', ''))
+            path_text = Text("[", style=self.styles.get("log.brace", ""))
             text_arr = []
-            parent, remainder = path.split('/')
-            if '.' in remainder:
-                module, *fn = remainder.split('.')
-                fn = '.'.join(fn)
+            parent, remainder = path.split("/")
+            if "." in remainder:
+                module, *fn = remainder.split(".")
+                fn = ".".join(fn)
             else:
                 module = remainder
                 fn = None
             text_arr += [
                 Text(
-                    f'{parent}', style='log.parent'
+                    f"{parent}", style="log.parent"
                 ),  # self.styles.get('log.pa', '')),
-                Text('/'),
-                Text(f'{module}', style='log.path'),
+                Text("/"),
+                Text(f"{module}", style="log.path"),
             ]
             if line_no:
                 text_arr += [
-                    Text(':', style=self.styles.get('log.colon', '')),
+                    Text(":", style=self.styles.get("log.colon", "")),
                     Text(
-                        f'{line_no}',
-                        style=self.styles.get('log.linenumber', ''),
+                        f"{line_no}",
+                        style=self.styles.get("log.linenumber", ""),
                     ),
                 ]
                 # text_arr.append(Text(':', style=self.styles.get('log.colon', '')))
@@ -215,13 +217,13 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
                 # )
             if fn is not None:
                 text_arr += [
-                    Text(':', style='log.colon'),
+                    Text(":", style="log.colon"),
                     Text(
-                        f'{fn}',
-                        style='repr.function',  # self.styles.get('repr.inspect.def', 'json.key'),
+                        f"{fn}",
+                        style="repr.function",  # self.styles.get('repr.inspect.def', 'json.key'),
                     ),
                 ]
-            path_text.append(Text.join(Text(''), text_arr))
+            path_text.append(Text.join(Text(""), text_arr))
 
             # for t in text_arr:
             #     path_text.append(t)
@@ -236,9 +238,9 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             # if fn is not None:
             #     path_text += [Text('.'), Text(f'{fn}', style='cyan')]
 
-            path_text.append(']', style=self.styles.get('log.brace', ''))
+            path_text.append("]", style=self.styles.get("log.brace", ""))
             result += path_text
-        result += Text(' ', style=self.styles.get('repr.dash', ''))
+        result += Text(" ", style=self.styles.get("repr.dash", ""))
         for elem in renderables:
             result += elem
         return result

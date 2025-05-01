@@ -13,6 +13,7 @@ https://huggingface.co/models?filter=text-generation
 
 import math
 import os
+from pathlib import Path
 import sys
 from itertools import chain
 from typing import Optional
@@ -42,7 +43,8 @@ try:
     )
     from transformers.testing_utils import CaptureLogger
     from transformers.trainer_utils import get_last_checkpoint
-    from transformers.utils import send_example_telemetry
+
+    # from transformers.utils import send_example_telemetry
     from transformers.utils.versions import require_version
 except (ImportError, ModuleNotFoundError):
     print(
@@ -64,6 +66,15 @@ class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
     """
+
+    wandb_project_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The name of the wandb project to use. If not specified, will use the model name."
+            )
+        },
+    )
 
     model_name_or_path: Optional[str] = field(
         default=None,
@@ -349,21 +360,56 @@ def parse_args() -> dict:
         and rank == 0
         and not os.environ.get("WANDB_DISABLED", False)
     ):
-        run = ezpz.setup_wandb(project_name="ezpz.hf_trainer")
-        assert wandb is not None and run is wandb.run and run is not None
-        wandb.run.config.update(ezpz.get_dist_info())  # type:ignore
-        wandb.run.config.update(training_args.to_dict())
+        if (
+            model_args.wandb_project_name is None
+            and model_args.model_name_or_path is None
+        ):
+            wbproj_name = "ezpz-hf_trainer-default-project"
+        else:
+            wbproj_name = (
+                model_args.wandb_project_name
+                if model_args.wandb_project_name is not None
+                else model_args.model_name_or_path
+            )
+            wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
+        run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
+        wandb.define_metric("num_input_tokens_seen")
+        wandb.define_metric("train/", step_metric="num_input_tokens_seen")
+        # wandb.define_metric("train/epoch")
+        # wandb.define_metric("train/step")
+        wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
+        # wandb.define_metric()
+        # wandb.define_metric(
+        #     name="num_input_tokens_seen",
+        #     step_metric="num_input_tokens_seen",
+        # )  # Allow us to track the number of tokens seen during training
+        if run is not None:
+            run.config.update(ezpz.get_dist_info())
+            run.config.update(training_args.to_dict())
+            # wandb.log({"train_iter": 0}, step=0)
     # NOTE:
     #   Sending telemetry.
     #   Tracking the example usage helps us better allocate resources to
     #   maintain them. The information sent is the one passed as arguments
     #   along with your Python/PyTorch versions.
-    send_example_telemetry("hf_trainer", model_args, data_args)
+    # send_example_telemetry("hf_trainer", model_args, data_args)
 
     if training_args.should_log:
         # The default of training_args.log_level is passive,
         # so we set log level at info here to have that default.
         transformers.utils.logging.set_verbosity_info()
+
+    # Log on each process the small summary:
+    logger.warning(
+        ", ".join(
+            [
+                f"Process rank: {rank}",
+                f"device: {training_args.device}",
+                f"n_gpu: {training_args.n_gpu}",
+                f"distributed training: {training_args.parallel_mode.value == 'distributed'}",
+            ]
+        )
+    )
 
     # log_level = training_args.get_process_log_level()
     # log_level = training_args.get_log_level() if rank == 0 else 50  # "CRITICAL"
@@ -381,26 +427,50 @@ def parse_args() -> dict:
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # Log on each process the small summary:
-    logger.warning(
-        ", ".join(
-            [
-                f"Process rank: {rank}",
-                f"device: {training_args.device}",
-                f"n_gpu: {training_args.n_gpu}",
-                f"distributed training: {training_args.parallel_mode.value == 'distributed'}",
-            ]
-        )
-    )
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, "
-        f"device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
-        + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
-    )
+    # logger.warning(
+    #     f"Process rank: {training_args.local_rank}, "
+    #     f"device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
+    #     + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
+    # )
     if rank == 0:
         logger.info(f"Training/evaluation parameters {training_args}")
 
     return {"model": model_args, "data": data_args, "training": training_args}
+
+
+# Write a function below to resolve possibility of optimizer being defined both as:
+#
+# 1. `--optim=adamw` at the CLI
+#
+# and
+#
+# 2. `"optimizer": { ... }` in a `--deepspeed=config.json` file.
+
+
+def resolve_optimizer(optimizer, deepspeed_config):
+    """
+    Resolve the optimizer to use based on the command line argument and the deepspeed config.
+
+    Args:
+        optimizer (str): The optimizer specified in the command line argument.
+        deepspeed_config (dict): The deepspeed config dictionary.
+
+    Returns:
+        str: The resolved optimizer.
+    """
+    if optimizer is not None:
+        return optimizer
+    elif deepspeed_config is not None and "optimizer" in deepspeed_config:
+        return deepspeed_config["optimizer"]["type"]
+    else:
+        return "adamw"
+
+
+def decode_predictions(tokenizer, predictions):
+    labels = tokenizer.batch_decode(predictions.label_ids)
+    logits = predictions.predictions.argmax(axis=-1)
+    prediction_text = tokenizer.batch_decode(logits)
+    return {"labels": labels, "predictions": prediction_text}
 
 
 def main():
@@ -428,6 +498,17 @@ def main():
     data_args = args["data"]
     model_args = args["model"]
     training_args = args["training"]
+
+    dsconfig_fp = (
+        Path(training_args.deepspeed) if training_args.deepspeed else None
+    )
+    ds_config = ezpz.configs.load_ds_config(dsconfig_fp)
+    if training_args.optim is not None and "optimizer" in ds_config:
+        logger.warning(
+            f"Overriding optimizer in deepspeed config with {training_args.optim}"
+        )
+        _ = ds_config.pop("optimizer")
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if (
@@ -515,15 +596,28 @@ def main():
                     streaming=data_args.streaming,
                     trust_remote_code=model_args.trust_remote_code,
                 )
-                raw_datasets[train_split_name] = load_dataset(  # type:ignore
-                    data_args.dataset_name,
-                    data_args.dataset_config_name,
-                    split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
-                    cache_dir=model_args.cache_dir,
-                    token=model_args.token,
-                    streaming=data_args.streaming,
-                    trust_remote_code=model_args.trust_remote_code,
-                )
+                try:
+                    raw_datasets[train_split_name] = load_dataset(  # type:ignore
+                        data_args.dataset_name,
+                        data_args.dataset_config_name,
+                        split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
+                        cache_dir=model_args.cache_dir,
+                        token=model_args.token,
+                        streaming=data_args.streaming,
+                        trust_remote_code=model_args.trust_remote_code,
+                    )
+                except Exception:
+                    # In some cases, the dataset doesn't support slicing.
+                    # In this case, we just use the full training set as validation set.
+                    raw_datasets[train_split_name] = load_dataset(  # type:ignore
+                        data_args.dataset_name,
+                        data_args.dataset_config_name,
+                        split=train_split_name,
+                        cache_dir=model_args.cache_dir,
+                        token=model_args.token,
+                        streaming=data_args.streaming,
+                        trust_remote_code=model_args.trust_remote_code,
+                    )
 
     else:
         data_files = {}
@@ -648,6 +742,8 @@ def main():
             f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params"
         )
 
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        wandb.watch(model, log="all")
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
     embedding_size = model.get_input_embeddings().weight.shape[0]
@@ -762,6 +858,24 @@ def main():
                 batched=True,
             )
 
+    if training_args.eval_on_start and evaluate is not None:
+        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            predictions = decode_predictions(tokenizer, preds)
+            predictions_df = pd.DataFrame(predictions)
+            if wandb is not None and getattr(wandb, "run", None) is not None:
+                records_table = wandb.Table(dataframe=predictions_df)
+                # log the table to wandb
+                assert wandb is not None and wandb.run is not None
+                wandb.log({"sample_predictions": records_table})
+            return metric.compute(predictions=preds, references=labels)
+
     train_dataset = None
     if training_args.do_train:
         if "train" not in tokenized_datasets:
@@ -802,6 +916,16 @@ def main():
                 # by preprocess_logits_for_metrics but we need to shift the labels
                 labels = labels[:, 1:].reshape(-1)
                 preds = preds[:, :-1].reshape(-1)
+                predictions = decode_predictions(tokenizer, preds)
+                predictions_df = pd.DataFrame(predictions)
+                if (
+                    wandb is not None
+                    and getattr(wandb, "run", None) is not None
+                ):
+                    records_table = wandb.Table(dataframe=predictions_df)
+                    # log the table to wandb
+                    assert wandb is not None and wandb.run is not None
+                    wandb.log({"sample_predictions": records_table})
                 return metric.compute(predictions=preds, references=labels)
 
     if rank == 0 and wandb is not None:
@@ -818,15 +942,31 @@ def main():
         data_collator=default_data_collator,
         compute_metrics=(
             compute_metrics  # type:ignore
-            if training_args.do_eval and not is_torch_xla_available()  # type:ignore
+            if training_args.do_eval  # and not is_torch_xla_available()  # type:ignore
             else None
         ),
         preprocess_logits_for_metrics=(
             preprocess_logits_for_metrics  # type:ignore
-            if training_args.do_eval and not is_torch_xla_available()
+            if training_args.do_eval  # and not is_torch_xla_available()
             else None
         ),
     )
+
+    # if wandb is not None and getattr(wandb, "run", None) is not None:
+    #     # from transformers.integrations.integration_utils import W
+    #     # from wandb.integration import WandbEvalCallback
+    #
+    #     # evals_callback = WandbEvalCallback(trainer, tokenizer)
+    #     from ezpz.integrations import WandbPredictionProgressCallback
+    #
+    #     callback = WandbPredictionProgressCallback(
+    #         trainer=trainer,
+    #         tokenizer=tokenizer,
+    #         val_dataset=(eval_dataset if training_args.do_eval else None),
+    #         num_samples=10,
+    #         freq=2,
+    #     )
+    #     trainer.add_callback(callback)
 
     assert any([training_args.do_train, training_args.do_eval]), (
         "Nothing to do! Set --do_train or --do_eval."
@@ -858,6 +998,9 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
+        import datasets
+        import pandas as pd
+
         logger.info("*** Evaluate ***")
         assert eval_dataset is not None, (
             "eval_dataset must be defined for evaluation."
@@ -876,9 +1019,24 @@ def main():
         except OverflowError:
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
-
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+        # sample_dataset = eval_dataset.take(10)
+        # assert sample_dataset is not None
+        # # generate predictions
+        # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
+        #     predictions = trainer.predict(sample_dataset)
+        #     # decode predictions and labels
+        #     predictions = decode_predictions(tokenizer, predictions)
+        #     # add predictions to a wandb.Table
+        #     predictions_df = pd.DataFrame(predictions)
+        #     # predictions_df["epoch"] = state.epoch
+        #     if wandb is not None and getattr(wandb, "run", None) is not None:
+        #         records_table = wandb.Table(dataframe=predictions_df)
+        #         # log the table to wandb
+        #         assert wandb is not None and wandb.run is not None
+        #         wandb.log({"sample_predictions": records_table})
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
@@ -894,6 +1052,8 @@ def main():
         else:
             kwargs["dataset"] = data_args.dataset_name
 
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        wandb.config.update(**kwargs)
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)
     else:

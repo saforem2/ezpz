@@ -6,7 +6,6 @@ import sys
 import pdb
 import os
 import re
-import h5py
 import logging
 import xarray as xr
 import numpy as np
@@ -17,7 +16,7 @@ from ezpz.configs import ScalarLike, PathLike
 import torch
 import torch.distributed as tdist
 
-from ezpz.dist import get_rank
+from ezpz import get_rank
 from pathlib import Path
 
 
@@ -189,6 +188,13 @@ def save_dataset(
 
 
 def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
+
     logger.info(f"Saving dataset to: {hfile}")
     f = h5py.File(hfile, "a")
     for key, val in dataset.data_vars.items():
@@ -209,6 +215,12 @@ def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
 
 
 def dict_from_h5pyfile(hfile: PathLike) -> dict:
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
     f = h5py.File(hfile, "r")
     data = {key: f[key] for key in list(f.keys())}
     f.close()
@@ -216,8 +228,124 @@ def dict_from_h5pyfile(hfile: PathLike) -> dict:
 
 
 def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
+    try:
+        import h5py
+    except (ImportError, ModuleNotFoundError):
+        raise ImportError(
+            "h5py is not installed. Please install h5py to use this function."
+        )
     f = h5py.File(hfile, "r")
     data = {key: f[key] for key in list(f.keys())}
     f.close()
 
     return xr.Dataset(data)
+
+
+def write_generic_deepspeed_config(
+    gradient_accumulation_steps: int = 1,
+    gradient_clipping: str | float = "auto",
+    steps_per_print: int = 10,
+    train_batch_size: str = "auto",
+    train_micro_batch_size_per_gpu: str = "auto",
+    wall_clock_breakdown: bool = False,
+    wandb: Optional[dict] = None,
+    bf16: Optional[dict] = None,
+    fp16: Optional[dict] = None,
+    flops_profiler: Optional[dict] = None,
+    optimizer: Optional[dict] = None,
+    scheduler: Optional[dict] = None,
+    zero_optimization: Optional[dict] = None,
+):
+    """
+    Write a generic deepspeed config to the output directory.
+    """
+    ds_config = {
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "gradient_clipping": gradient_clipping,
+        "steps_per_print": steps_per_print,
+        "train_batch_size": train_batch_size,
+        "train_micro_batch_size_per_gpu": train_micro_batch_size_per_gpu,
+        "wall_clock_breakdown": wall_clock_breakdown,
+        "wandb": wandb,
+        "bf16": bf16,
+        "fp16": fp16,
+        "flops_profiler": flops_profiler,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+        "zero_optimization": zero_optimization,
+    }
+    return ds_config
+
+
+def write_deepspeed_zero12_auto_config(
+    zero_stage: int = 1, output_dir: Optional[PathLike] = None
+) -> dict:
+    """
+    Write a deepspeed zero1 auto config to the output directory.
+    """
+    import json
+
+    ds_config = {
+        "gradient_accumulation_steps": 1,
+        "gradient_clipping": "auto",
+        "steps_per_print": 1,
+        "train_batch_size": "auto",
+        "train_micro_batch_size_per_gpu": "auto",
+        "wall_clock_breakdown": True,
+        "wandb": {"enabled": True},
+        "bf16": {"enabled": True},
+        "flops_profiler": {
+            "enabled": True,
+            "profile_step": 1,
+            "module_depth": -1,
+            "top_modules": 1,
+            "detailed": True,
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "params": {
+                "lr": "auto",
+                "weight_decay": "auto",
+                "torch_adam": True,
+                "adam_w_mode": True,
+            },
+        },
+        "scheduler": {
+            "type": "WarmupDecayLR",
+            "params": {
+                "warmup_min_lr": "auto",
+                "warmup_max_lr": "auto",
+                "warmup_num_steps": "auto",
+                "total_num_steps": "auto",
+            },
+        },
+        "zero_optimization": {
+            "stage": zero_stage,
+            "allgather_partitions": True,
+            "allgather_bucket_size": 2e8,
+            "overlap_comm": True,
+            "reduce_scatter": True,
+            "reduce_bucket_size": "auto",
+            "contiguous_gradients": True,
+        },
+    }
+    if output_dir is None:
+        output_dir = Path(os.getcwd()).joinpath("ds_configs")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
+    logger.info(
+        f"Saving DeepSpeed ZeRO Stage {zero_stage} "
+        f"auto config to: {outfile.as_posix()}"
+    )
+    with outfile.open("w") as f:
+        json.dump(
+            ds_config,
+            fp=f,
+            indent=4,
+        )
+
+    return ds_config

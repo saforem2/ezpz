@@ -12,7 +12,8 @@ import socket
 from pathlib import Path
 import time
 from functools import wraps
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union
+
 # from dataclasses import dataclass
 
 import ezpz.tp
@@ -24,24 +25,37 @@ import torch.distributed as tdist
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
-try:
-    import wandb
+# try:
+#     import wandb
+#
+#     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+# except Exception:
+#     wandb = None
+#     WANDB_DISABLED = True
+#
+from ezpz.lazy import lazy_import
 
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+try:
+    wandb = lazy_import("wandb")
 except Exception:
     wandb = None
-    WANDB_DISABLED = True
-
 
 try:
-    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+    import intel_extension_for_pytorch
+    # import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+    # ipex = lazy_import("intel_extension_for_pytorch")
 except Exception:
     ipex = None
+# if ipex is not None:
+#     logger.debug(f"Using ipex from: {ipex.__file__}")
 
 try:
     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
 except Exception:
     oneccl_bpt = None
+# if oneccl_bpt is not None:
+#     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
+
 
 if not os.environ.get(
     "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
@@ -56,9 +70,23 @@ logger.setLevel(LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
 
+# def try_import(module_name: str):
+#     try:
+#         return __import__(module_name)
+#     except Exception:
+#         logger.info(f"Unable to import '{module_name}', trying to continue")
+
+
+# ipex = None
+# oneccl_bpt = None
+# if torch.xpu.is_available():
+#     ipex = try_import("intel_extension_for_pytorch")
+#     oneccl_bpt = try_import("oneccl_bindings_for_pytorch")
+
+
 ACCELERATOR_TYPE = (
     "IntelGPU"
-    if ipex is not None
+    if torch.xpu.is_available() and torch.xpu.device_count() > 0
     else (
         "NvidiaGPU"
         if (torch.cuda.is_available() and torch.cuda.device_count() > 0)
@@ -86,6 +114,8 @@ def seed_everything(seed: int):
     _ = torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+    if torch.xpu.is_available():
+        torch.xpu.manual_seed(seed)
 
 
 def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
@@ -102,6 +132,10 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
 
 def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
     rank = get_rank() if rank is None else rank
+    try:
+        import wandb
+    except Exception:
+        wandb = None
 
     def decorator(func: Callable):
         @wraps(func)
@@ -123,10 +157,6 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                     )
                     _ = tstr.append(f" took: {dt=:.4f}s")
                     logger.info("".join(tstr))
-                # try:
-                #     import wandb
-                # except:
-                #     wandb = None
                 if wandb is not None and wandb.run is not None:
                     # logger.info(
                     #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
@@ -140,6 +170,11 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
 
 
 def timeit(func: Callable):
+    try:
+        import wandb
+    except Exception:
+        wandb = None
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
@@ -241,6 +276,10 @@ def _get_dist_info(
             else None
         ),
     }
+    # ws = os.environ.get("WORLD_SIZE", None)
+    # if ws is not None:
+    #     logger.info(f'Caught "WORLD_SIZE"={ws} from environment!')
+    #     dist_info |= {"WORLD_SIZE": int(ws)}
     # hostfile = (
     #     Path(get_hostfile_with_fallback(hostfile)).as_posix()
     #     if hostfile is None else hostfile
@@ -280,26 +319,9 @@ def get_dist_info(
     if verbose:
         import json
 
-        # logger.info(
-        #     '\n'.join(
-        #         ['\n', "[dist_info]:"]
-        #         + [f"  • {k}={v}" for k, v in dist_info.items()]
-        #         + ['\n']
-        #     )
-        # )
-        # log_dict_as_bulleted_list(dist_info, name='dist_info')
         logger.info(
             f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
         )
-    if (
-        wandb is not None
-        and wandb.run is not None
-        and "DIST_INFO" not in wandb.run.config
-    ):
-        logger.info(
-            f'Updating wandb.run: {wandb.run.name} config with "DIST_INFO"'
-        )
-        wandb.run.config.update({"DIST_INFO": dist_info})
     return dist_info
 
 
@@ -359,7 +381,7 @@ def print_dist_setup(
     return dist_str
 
 
-def synchronize(device: torch.device | int | str = "cuda"):
+def synchronize(device: Optional[torch.device | int | str] = None):
     return (
         torch.cuda.synchronize(device)
         if torch.cuda.is_available()
@@ -482,29 +504,6 @@ def get_torch_device(
     return torch.device(device_type) if as_torch_device else device_type
 
 
-# def get_torch_backend() -> str:
-#     tdevice = get_torch_device_type()
-#     if tdevice == 'cuda' and torch.cuda.is_available():
-#         return 'nccl'
-#     if tdevice == 'xpu' and torch.xpu.is_available():
-#         return 'ccl'
-#         # return 'mpi'
-#     return 'gloo'
-#     #
-#     # backend = (
-#     #     'nccl'
-#     #     if torch.cuda.is_available()
-#     #     else (
-#     #         'ccl' if torch.xpu.is_available() else 'gloo'
-#     #         # 'ccl' if (ipex is not None and oneccl_bpt is not None) else 'gloo'
-#     #     )
-#     # )
-#     # if backend is None:
-#     #     logger.critical(f'Using "gloo" backend on {get_torch_device()}')
-#     #     backend = 'gloo'
-#     # return backend
-
-
 def get_torch_version_as_float():
     return float(".".join(torch.__version__.split(".")[:2]))
 
@@ -518,7 +517,7 @@ def get_torch_backend_on_xpu() -> str:
 
         ```python
         >>> torch_version = float('.'join(torch.__version__.split('.')[:2]))
-        >>> if torch_version >= 2.6:
+        >>> if torch_version > 2.5:
         >>>     backend = 'xccl'
         >>> else:
         >>>     backend = 'ccl'
@@ -526,9 +525,7 @@ def get_torch_backend_on_xpu() -> str:
     """
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
-    if torch_version > 2.5:
-        return 'xccl'
-    return 'ccl'
+    return "xccl" if torch_version > 2.5 else "ccl"
 
 
 def get_torch_backend() -> str:
@@ -788,6 +785,61 @@ def setup_torch_distributed(
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
 
+def barrier(
+    device: Optional[torch.device | int | str] = None,
+    group: tdist.ProcessGroup | None = tdist.GroupMember.WORLD,
+    async_op: bool = False,
+    device_ids: str | Iterable | None = None,
+) -> tdist.Work | None:
+    """Barrier for all processes in the group
+    This collective blocks processes until the whole group enters this function,
+    if async_op is False, or if async work handle is called on wait().
+
+    Args:
+    group (ProcessGroup, optional): The process group to work on. If None,
+    the default process group will be used.
+    async_op (bool, optional): Whether this op should be an async op
+    device_ids ([int], optional): List of device/GPU ids.
+
+    Returns:
+    Async work handle, if async_op is set to True.
+    None, if not async_op or if not part of the group
+
+    - `[group: ProcessGroup | None = GroupMember.WORLD]` group (ProcessGroup, optional): The process group to work on. If None,
+    - `[async_op: bool = False]`
+    - `[device_ids: Unknown | None = None]`
+    """
+    if device is None:
+        try:
+            tdist.barrier(group=group, async_op=async_op)
+        except Exception:
+            logger.warning(
+                "Unable to use `torch.distributed.barrier` "
+                "for this process group. "
+                "Falling back to `mpi4py` barrier."
+            )
+            MPI.COMM_WORLD.barrier()
+    else:
+        try:
+            if group is None:
+                tdist.barrier()
+            if device == "cuda":
+                tdist.barrier(group=group)
+            elif device == "xpu" and torch.xpu.is_available():
+                tdist.xpu.barrier(group=group)
+            elif device == "mps":
+                tdist.mps.barrier(group=group)
+            else:
+                raise ValueError(f"Unsupported device: {device}")
+        except Exception:
+            logger.warning(
+                "Unable to use `torch.distributed.barrier` "
+                "for this process group. "
+                "Falling back to `mpi4py` barrier."
+            )
+            MPI.COMM_WORLD.barrier()
+
+
 def setup_torch(
     backend: Optional[str] = None,
     port: Optional[str | int] = None,
@@ -847,11 +899,26 @@ def setup_torch(
     os.environ["LOCAL_SIZE"] = str(local_size)
     os.environ["WORLD_SIZE"] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
-    if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
-        # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
-        # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
-        # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
-        torch.xpu.set_device(local_rank)  # type:ignore
+    # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
+    if torch.xpu.is_available():
+        torch.xpu.set_device(local_rank)
+        # try:
+        #     import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+        # except Exception:
+        #     ipex = None
+        # if ipex is not None:
+        #     logger.debug(f"Using ipex from: {ipex.__file__}")
+        #
+        # try:
+        #     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+        # except Exception:
+        #     oneccl_bpt = None
+        # if oneccl_bpt is not None:
+        #     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
+        #
+        #     # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
+        #     # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
+        #     # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     if rank == 0:
@@ -862,10 +929,6 @@ def setup_torch(
         _ = get_dist_info(verbose=verbose)
         if verbose:
             _ = print_dist_setup()
-    if oneccl_bpt is not None:
-        logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
-    if ipex is not None:
-        logger.debug(f"Using ipex from: {ipex.__file__}")
     # if world_size > 1:
     #     tdist.barrier()
 
@@ -906,21 +969,23 @@ def setup_torch(
             if cpsize > 1:
                 lcp = len(str(cpsize - 1))
                 psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
-                tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+                # barrier(group=ezpz.tp.get_context_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
                 lpp = len(str(ppsize - 1))
                 psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
-                tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
-                tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
-                tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+                # tdist.barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info("".join(psizes))
+    # barrier()
     tdist.barrier()
     # MPI.COMM_WORLD.Barrier()
     return rank
@@ -935,11 +1000,18 @@ def setup_tensorflow(
     ngpus: Optional[int] = None,
 ) -> int:
     """Initialize TensorFlow + Horovod for Distributed Training"""
-    import tensorflow as tf  # type:ignore noqa
+    try:
+        import tensorflow as tf  # type:ignore noqa
 
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    import horovod.tensorflow as hvd  # type:ignore noqa
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        import horovod.tensorflow as hvd  # type:ignore noqa
+    except Exception:
+        logger.warning(
+            "Unable to import `tensorflow` or `horovod.tensorflow`. "
+            "Install with `pip install tensorflow horovod`"
+        )
+        raise
 
     _ = None if hvd.is_initialized() else hvd.init()
     # hvd.init() if not hvd.is_initialized() else None
@@ -1057,7 +1129,20 @@ def setup_wandb(
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
-    if WANDB_DISABLED:
+    # try:
+    #     import wandb
+    # except Exception:
+    #     wandb = None
+    # try:
+    #     import wandb
+    #
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+    # except Exception:
+    #     wandb = None
+    #     WANDB_DISABLED = True
+
+    if WANDB_DISABLED or WANDB_MODE == "disabled":
         logger.warning(
             f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
         )
@@ -1135,7 +1220,6 @@ def setup_wandb(
         wandb.run.config.update({"DIST_INFO": get_dist_info()})
     torch_version = torch.__version__
     torch_file = torch.__file__
-    run.config.update({})
     run.config.update(
         {
             "created_at": dstr,
@@ -1146,6 +1230,8 @@ def setup_wandb(
             "torch_file": torch_file,
             "world_size": get_world_size(),
             "year": ezpz.get_timestamp("%Y"),
+            "ezpz_version": ezpz.__version__,
+            "ezpz_file": ezpz.__file__,
         }
     )
     if config is not None:
@@ -1291,7 +1377,7 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     scheduler = get_scheduler()
     if scheduler.lower() == "unknown":
         logger.debug("Unknown scheduler")
-        hostfile = Path(os.getcwd()).joinpath('hostfile')
+        hostfile = Path(os.getcwd()).joinpath("hostfile")
     if scheduler.lower() == "slurm":
         hostfile = make_hostfile_from_slurm_env()
         assert Path(hostfile).is_file()
@@ -1395,17 +1481,18 @@ def get_pbs_launch_cmd(
             "Mismatch in `ngpus_in_use` and `ngpus_available` "
             f"{ngpus_in_use=} vs. {ngpus_available=}"
         )
+    ncpus_per_host = get_cpus_per_node()
     return " ".join(
         [
             "mpiexec",
             "--verbose",
             "--envall",
             # f'-n {ngpus}',
-            f"-n {ngpus_in_use}",
-            f"-ppn {ngpu_per_host}",
-            f"--hostfile {hfp.as_posix()}",
-            "--cpu-bind depth",
-            "-d 16",
+            f"--np={ngpus_in_use}",
+            f"--ppn={ngpu_per_host}",
+            f"--hostfile={hfp.as_posix()}",
+            "--cpu-bind=depth",
+            "--depth=8",
         ]
     )
 

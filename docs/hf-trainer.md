@@ -1,3 +1,7 @@
+---
+created: 03/28/2025
+---
+
 # Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
 
 The
@@ -32,26 +36,42 @@ object with **_any_**[^any] (compatible) combination of
       python3 -m pip install "git+https://github.com/saforem2/ezpz" --require-virtualenv
       ```
 
-   1. Update {`transformers`, `evaluate`}:
+    1. Update {`tiktoken`, `sentencepiece`, `transformers`, `evaluate`}:
 
-      ```bash
-      python3 -m pip install --upgrade transformers evaluate
-      ```
+        ```bash
+        python3 -m pip install --upgrade tiktoken sentencepiece transformers evaluate
+        ```
+
+1. ⚙️ Build DeepSpeed config:
+
+    ```bash
+    python3 -c 'import ezpz; ezpz.utils.write_deepspeed_zero12_auto_config(zero_stage=1)'
+    ```
 
 1. 🚀 Launch training:
 
     ```bash
+    TSTAMP=$(date +%s)  # For logging purposes
     python3 -m ezpz.launch -m ezpz.hf_trainer \
-        --dataset_name stanfordnlp/imdb \
         --model_name_or_path meta-llama/Llama-3.2-1B \
-        --bf16 \
-        --do_train \
-        --report-to=wandb \
-        --logging-steps=1 \
-        --include-tokens-per-second=true \
+        --dataset_name stanfordnlp/imdb \
+        --deepspeed=ds_configs/deepspeed_zero1_auto_config.json \
         --auto-find-batch-size=true \
-        --output_dir=outputs/ezpz-hf-trainer/$(date "+%Y-%m-%d-%H%M%S") \
-        --ddp-backend=$(echo "$([ $(ezpz_get_machine_name)=="aurora" ] && echo "ccl" || echo "nccl")")
+        --bf16=true \
+        --block-size=4096 \
+        --do-eval=true \
+        --do-predict=true \
+        --do-train=true \
+        --gradient-checkpointing=true \
+        --include-for-metrics=inputs,loss \
+        --include-num-input-tokens-seen=true \
+        --include-tokens-per-second=true \
+        --log-level=info \
+        --logging-steps=1 \
+        --max-steps=10000 \
+        --output_dir="hf-trainer-output/${TSTAMP}" \
+        --report-to=wandb \
+        | tee "hf-trainer-output-${TSTAMP}.log"
     ```
 
     - <details closed><summary>🪄 <b>Magic</b>:</summary>

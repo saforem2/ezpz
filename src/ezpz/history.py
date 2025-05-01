@@ -17,6 +17,8 @@ from ezpz.log import get_logger
 
 # from ezpz.dist import get_rank
 from ezpz import plot as ezplot
+from ezpz.tplot import tplot as eztplot
+# from ezpz import tplot as eztplot
 from ezpz.utils import summarize_dict, get_timestamp
 # import ezpz.plot as ezplot
 
@@ -24,11 +26,16 @@ from ezpz.configs import PathLike
 from ezpz.utils import save_dataset, grab_tensor
 from ezpz.log.console import is_interactive
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import wandb
 import xarray as xr
+
+from ezpz.lazy import lazy_import
+
+ezpz = lazy_import("ezpz")
+
+# xr = lazy_import("xarray")
 
 # from jaxtyping import ScalarLike
 #
@@ -52,7 +59,6 @@ TensorLike = Union[torch.Tensor, np.ndarray, list]
 PT_FLOAT = torch.get_default_dtype()
 
 xplt = xr.plot  # type:ignore
-LW = plt.rcParams.get("axes.linewidth", 1.75)
 
 
 class StopWatch(ContextDecorator):
@@ -89,12 +95,16 @@ class StopWatch(ContextDecorator):
         dt = time.perf_counter() - self.time
         # if self.wbtag is not None and wandb.run is not None:
         # if len(self.data) > 0 and wandb.run is not None:
-        if (
-            len(self.data) > 0
-            and (wbrun := getattr(wandb, "run", None)) is not None
-        ):
-            self.data |= {f"{self.wbtag}/dt": dt}
-            wbrun.log({self.prefix: self.data}, commit=self.commit)
+        try:
+            if (
+                len(self.data) > 0
+                and wandb is not None
+                and (wbrun := getattr(wandb, "run", None)) is not None
+            ):
+                self.data |= {f"{self.wbtag}/dt": dt}
+                wbrun.log({self.prefix: self.data}, commit=self.commit)
+        except Exception as e:
+            logger.error(f"Unable to log to wandb: {e}")
         if self.log_output:
             logger.info(f"{self.msg} took {dt:.3f} seconds")
 
@@ -133,7 +143,7 @@ class History:
         if (
             wandb is not None
             and use_wandb
-            and not WANDB_DISABLED
+            # and not WANDB_DISABLED
             and getattr(wandb, "run", None) is not None
         ):
             wandb.log(metrics, commit=commit)
@@ -159,7 +169,7 @@ class History:
         if len(y) > 1:
             x = x if x is not None else np.arange(len(y))
             assert x is not None
-            ezplot.tplot(
+            eztplot(
                 y=y,
                 x=x,
                 xlabel=xlabel,
@@ -176,7 +186,7 @@ class History:
             of = Path(outfile) if outfile is not None else None
             if of is not None:
                 of = Path(of.parent).joinpath(f"{of.stem}-hist{of.suffix}")
-            ezplot.tplot(
+            eztplot(
                 y=y,
                 xlabel=ylabel,
                 title=title,
@@ -205,6 +215,8 @@ class History:
         iterations (as a percent of the total number of iterations) from the
         plot.
         """
+        import matplotlib.pyplot as plt
+        LW = plt.rcParams.get("axes.linewidth", 1.75)
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get("figsize", ezplot.set_size())
@@ -259,12 +271,12 @@ class History:
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
+                # assert isinstance(ax, plt.Axes)  
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
+                # assert isinstance(ax, plt.Axes)
                 cmap = plt.get_cmap("viridis")
                 nlf = arr.shape[1]
                 for idx in range(nlf):
@@ -354,6 +366,7 @@ class History:
         line_labels: bool = False,
         logfreq: Optional[int] = None,
     ):
+        import matplotlib.pyplot as plt
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         ezplot.set_plot_style()
@@ -404,7 +417,8 @@ class History:
             else:
                 raise ValueError("Unexpected shape encountered")
             ax = plt.gca()
-            assert isinstance(ax, plt.Axes)
+            # assert isinstance(ax, plt.Axes)
+            assert key is not None
             _ = ax.set_ylabel(key)
             _ = ax.set_xlabel("draw")
             # if num_chains > 0 and len(arr.shape) > 1:
@@ -479,8 +493,10 @@ class History:
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
     ):
+        import matplotlib.pyplot as plt
         import seaborn as sns
 
+        LW = plt.rcParams.get("axes.linewidth", 1.75)
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         assert len(xarr.shape) == 2
@@ -567,7 +583,7 @@ class History:
             #             dpi=400, bbox_inches='tight')
             outfile = Path(outdir).joinpath(f"{label}.svg")
             if outfile.is_file():
-                tstamp = ezpz.get_timestamp("%Y-%m-%d-%H%M%S")
+                tstamp = get_timestamp("%Y-%m-%d-%H%M%S")
                 pngdir = Path(outdir).joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{label}-{tstamp}.png")
@@ -633,6 +649,7 @@ class History:
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
     ):
+        import matplotlib.pyplot as plt
         import seaborn as sns
 
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs

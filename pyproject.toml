@@ -5,35 +5,34 @@ build-backend = "hatchling.build"
 [project]
 name = "ezpz"
 dynamic = ["version"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
-keywords = []
+keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
 readme = "README.md"
-description = 'Distributed Training, ezpz.'
+description = 'Distributed training, :lemon: `ezpz`.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 dependencies = [
-    "mpi4py",
-    "torch",
-    "xarray",
+    "accelerate",
+    "ambivalent @ git+https://github.com/saforem2/ambivalent",
+    "evaluate",
+    # "h5py",
+    "hydra-core",
+    "numpy",  # <2",
+    "omegaconf",
     "plotext",
-    "sh",
+    "pyinstrument",
     "rich",
     "seaborn",
-    "omegaconf",
-    "hydra-core",
-    "transformers",
-    "evaluate",
-    "accelerate",
+    "sh",
+    "tiktoken",
+    "sentencepiece",
+    "transformers>=4.50.1",
     "wandb",
-    "ambivalent @ git+https://github.com/saforem2/ambivalent",
-    "pyinstrument",
-    "h5py",
+    "xarray",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -42,26 +41,40 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
+    "black",
+    "bpython",
+    "ipython",
+    "ipython",
+    "isort",
+    "jupyter",
+    "ptipython",
+    "pudb",
+    "pynvim",
+    "pyright",
+    "ruff",
+    "ruff-lsp",
     # "sentencepiece",
     # "joblib",
     # "ml_dtypes",
     # "tqdm",
-    # "tensorboard",
-    "ipython",
     # "hydra-colorlog",
-    "pudb",
-    "pynvim",
-    "ruff",
-    "black",
-    "pyright",
-    "isort",
-    "ruff-lsp",
-    "ipython",
-    "ptipython",
-    "jupyter",
+    # "tensorboard",
 ]
+
+torch = [
+    "mpi4py",
+    "torch",
+]
+
 docs = [
   "mkdocs-material",
+  "mkdocs",
+  "mkdocs-autorefs",
+  "mkdocs-material",
+  "mkdocstrings",
+  "mkdocstrings-python",
+  "pymdown-extensions",
+  "mkdocs-mermaid2-plugin"
 ]
 
 
@@ -87,12 +100,13 @@ allow-direct-references = true
 
 [tool.hatch.envs.default]
 dependencies = ["pytest", "pytest-cov"]
+
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
 no-cov = "cov --no-cov"
 
 [[tool.hatch.envs.test.matrix]]
-python = ["38", "39", "310", "311"]
+python = ["310", "311", "312"]
 
 [tool.coverage.run]
 branch = true
@@ -102,6 +116,12 @@ omit = ["ezpz/__about__.py"]
 [tool.coverage.report]
 
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.uv]
+override-dependencies = [
+  "torch; sys_platform == 'never'",
+  "mpi4py; sys_platform == 'never'",
+]
 
 [tool.uv.sources]
 ezpz = { workspace = true }

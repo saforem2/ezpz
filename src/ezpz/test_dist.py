@@ -16,8 +16,10 @@ import time
 from typing import Optional
 import warnings
 
-import ezpz as ezpz
-import ezpz.tp
+# from ezpz.lazy import lazy_import
+# ezpz = lazy_import('ezpz')
+import ezpz
+# import ezpz.tp
 
 import torch
 import torch.distributed as tdist
@@ -179,7 +181,7 @@ class Trainer:
             run_name='ezpz.test_dist',
             dataset_fname='train',
             warmup=self.config.warmup,
-            save=(self.rank == 0),
+            save=False,  # XXX: don't both saving test data
             plot=(self.rank == 0),
             outdir=Path(os.getcwd()).joinpath('outputs', 'ezpz.test_dist'),
         )
@@ -390,14 +392,20 @@ def build_model_and_optimizer(
     device_type = ezpz.get_torch_device()
     device_id = f'{device_type}:{ezpz.get_local_rank()}'
     world_size = ezpz.get_world_size()
+    local_rank = ezpz.get_local_rank()
     model.to(device_type)
-    model.to(device_id)
+    model.to(local_rank)
     logger.info(f'model=\n{model}')
     optimizer = torch.optim.Adam(model.parameters())
     if backend.lower() == 'ddp':
         if world_size > 1:
-            # model = DDP(model, device_ids=[])
-            model = DDP(model, device_ids=[ezpz.get_local_rank()])
+            try:
+                model = DDP(model, device_ids=[local_rank])
+                # model = DDP(model)  # , device_ids=[ezpz.get_local_rank()])
+            except Exception:
+                from ezpz import breakpoint
+                breakpoint(0)
+
     elif backend.lower() in ('ds', 'deepspeed'):
         parser = argparse.ArgumentParser(
             prog='deepspeed', description='My training script.'

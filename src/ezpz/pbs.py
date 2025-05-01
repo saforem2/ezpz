@@ -9,11 +9,12 @@ for more information.
 """
 
 import os
+from getpass import getuser
 from pathlib import Path
 from typing import Optional
+
 import ezpz
 
-import sys
 import socket
 
 
@@ -29,7 +30,7 @@ def get_pbs_running_jobs_for_user():
         raise e
 
     jobarr = [
-        i for i in qstat(f"-fn1wru {os.getlogin()}").split("\n") if " R " in i
+        i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i
     ]
     jobs = {}
     for row in jobarr:
@@ -108,7 +109,7 @@ def get_pbs_nodefile(jobid: Optional[int | str] = None) -> str | None:
     return get_pbs_nodefile_from_jobid(jobid)
 
 
-def build_launch_cmd():
+def build_launch_cmd() -> str:
     """Build the launch command for the current job.
 
     Returns:
