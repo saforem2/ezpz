@@ -156,6 +156,7 @@ markdown_extensions:
   - pymdownx.blocks.details
   - pymdownx.critic
   - pymdownx.caret
+  - pymdownx.escapeall
   - pymdownx.extra
   - pymdownx.inlinehilite
   - pymdownx.keys

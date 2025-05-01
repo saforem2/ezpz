@@ -51,27 +51,27 @@ object with **_any_**[^any] (compatible) combination of
 1. 🚀 Launch training:
 
     ```bash
-    TSTAMP=$(date +%s)  # For logging purposes
+    TSTAMP=$(date +%s)
     python3 -m ezpz.launch -m ezpz.hf_trainer \
-        --model_name_or_path meta-llama/Llama-3.2-1B \
-        --dataset_name stanfordnlp/imdb \
-        --deepspeed=ds_configs/deepspeed_zero1_auto_config.json \
-        --auto-find-batch-size=true \
-        --bf16=true \
-        --block-size=4096 \
-        --do-eval=true \
-        --do-predict=true \
-        --do-train=true \
-        --gradient-checkpointing=true \
-        --include-for-metrics=inputs,loss \
-        --include-num-input-tokens-seen=true \
-        --include-tokens-per-second=true \
-        --log-level=info \
-        --logging-steps=1 \
-        --max-steps=10000 \
-        --output_dir="hf-trainer-output/${TSTAMP}" \
-        --report-to=wandb \
-        | tee "hf-trainer-output-${TSTAMP}.log"
+      --model_name_or_path meta-llama/Llama-3.2-1B \
+      --dataset_name stanfordnlp/imdb \
+      --deepspeed=ds_configs/deepspeed_zero1_auto_config.json \
+      --auto-find-batch-size=true \
+      --bf16=true \
+      --block-size=4096 \
+      --do-eval=true \
+      --do-predict=true \
+      --do-train=true \
+      --gradient-checkpointing=true \
+      --include-for-metrics=inputs,loss \
+      --include-num-input-tokens-seen=true \
+      --include-tokens-per-second=true \
+      --log-level=info \
+      --logging-steps=1 \
+      --max-steps=10000 \
+      --output_dir="hf-trainer-output/${TSTAMP}" \
+      --report-to=wandb \
+      | tee "hf-trainer-output-${TSTAMP}.log"
     ```
 
     - <details closed><summary>🪄 <b>Magic</b>:</summary>
