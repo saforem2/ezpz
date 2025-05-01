@@ -1,17 +1,25 @@
-from typing import Optional
-from ezpz import setup_torch
+from ezpz.launch import launch
 
 
-def main(backend: Optional[str] = None):
-    backend = 'DDP' if backend is None else backend
-    RANK = setup_torch(backend=backend)
-    print(RANK)
-
-
-if __name__ == '__main__':
+def main():
     import sys
-    backend = None
+
+    test_script = f"{sys.executable} -m ezpz.test_dist"
+    cmd_args = None
     if len(sys.argv) > 1:
-        backend = sys.argv[1]
-        assert isinstance(backend, str) and backend.lower() in ['ddp', 'deepspeed', 'horovod']
-    main(backend)
+        cmd_args = " ".join(sys.argv[1:])
+        if cmd_args.split(" ")[0] in ["python", "python3"]:
+            cmd_args = f"{sys.executable} {cmd_args}"
+    if cmd_args is not None:
+        test_script = f"{test_script} {cmd_args}"
+    return launch(test_script)
+
+
+if __name__ == "__main__":
+    # import sys
+    # backend = None
+    # if len(sys.argv) > 1:
+    #     backend = sys.argv[1]
+    #     assert isinstance(backend, str) and backend.lower() in ['ddp', 'deepspeed', 'horovod']
+    # main(backend)
+    main()
