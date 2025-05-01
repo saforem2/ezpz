@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ezpz"
 dynamic = ["version"]
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
 readme = "README.md"
 description = 'Distributed training, :lemon: `ezpz`.'
@@ -17,7 +17,8 @@ dependencies = [
     "evaluate",
     # "h5py",
     "hydra-core",
-    "numpy",  # <2",
+    "ipython",
+    "numpy",
     "omegaconf",
     "plotext",
     "pyinstrument",
@@ -35,6 +36,8 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
@@ -53,28 +56,22 @@ dev = [
     "pyright",
     "ruff",
     "ruff-lsp",
-    # "sentencepiece",
-    # "joblib",
-    # "ml_dtypes",
-    # "tqdm",
+    # "tensorboard",
     # "hydra-colorlog",
     # "tensorboard",
 ]
 
-torch = [
-    "mpi4py",
-    "torch",
-]
+torch = ["mpi4py", "torch"]
 
 docs = [
-  "mkdocs-material",
-  "mkdocs",
-  "mkdocs-autorefs",
-  "mkdocs-material",
-  "mkdocstrings",
-  "mkdocstrings-python",
-  "pymdown-extensions",
-  "mkdocs-mermaid2-plugin"
+    "mkdocs-material",
+    "mkdocs",
+    "mkdocs-autorefs",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "pymdown-extensions",
+    "mkdocs-mermaid2-plugin",
+    "mkdocs-glightbox",
 ]
 
 
@@ -119,8 +116,8 @@ exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 
 [tool.uv]
 override-dependencies = [
-  "torch; sys_platform == 'never'",
-  "mpi4py; sys_platform == 'never'",
+    "torch; sys_platform == 'never'",
+    "mpi4py; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]
