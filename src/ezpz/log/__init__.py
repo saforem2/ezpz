@@ -7,6 +7,7 @@ import os
 import logging
 import logging.config
 from typing import Optional
+
 # from ezpz.dist import get_rank, get_world_size
 from ezpz.log.config import STYLES, use_colored_logs
 from ezpz.configs import get_logging_config
@@ -78,6 +79,7 @@ def get_file_logger(
     # rich_stdout: bool = True,
 ) -> logging.Logger:
     from ezpz.dist import get_rank
+
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     import logging
 
@@ -175,21 +177,33 @@ def get_logger(
     name: Optional[str] = None,
     level: Optional[str] = None,
     rank_zero_only: bool = True,
+    rank: Optional[int | str] = None,
+    colored_logs: Optional[bool] = True,
 ) -> logging.Logger:
-    from ezpz.dist import get_rank
+    if rank is None and rank_zero_only:
+        from ezpz.dist import get_rank
+
+        rank = get_rank()
+    assert rank is not None
     # if is_interactive():
     #     return get_rich_logger(name=name, level=level)
-    level = os.environ.get("LOG_LEVEL", "INFO") if level is None else level
-    logging.config.dictConfig(get_logging_config())
-    log = logging.getLogger(name if name is not None else __name__)
+    ezpz_log_level = (
+        os.environ.get("EZPZ_LOG_LEVEL", os.environ.get("LOG_LEVEL", "INFO"))
+        if level is None
+        else level
+    )
+    # level = os.environ.get("LOG_LEVEL", "INFO") if level is None else level
+    if colored_logs and use_colored_logs():
+        logging.config.dictConfig(get_logging_config())
+    logger = logging.getLogger(name if name is not None else __name__)
     if rank_zero_only:
-        if get_rank() == 0:
-            log.setLevel(level)
+        if int(rank) == 0:
+            logger.setLevel(ezpz_log_level)
         else:
-            log.setLevel("CRITICAL")
+            logger.setLevel("CRITICAL")
     else:
-        log.setLevel(level)
-    return log
+        logger.setLevel(ezpz_log_level)
+    return logger
 
 
 # def _get_logger(
@@ -350,6 +364,7 @@ def get_logger1(
     **kwargs,
 ) -> logging.Logger:
     from ezpz.dist import get_rank, get_world_size
+
     log = logging.getLogger(name)
     # from ezpz.log.handler import RichHandler
     from ezpz.log.console import get_console
