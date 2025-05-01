@@ -3,35 +3,19 @@ ezpz/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+
 # import importlib.util
 # from importlib import import_module
 import logging
 import logging.config
 import os
+
 # import sys
 import warnings
 import socket
 
-
-
 # sys.flags.lazy_imports = 1
-
-os.environ["PYTHONIOENCODING"] = "utf-8"
-os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
-os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
-os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
-    "ITEX_CPP_MIN_LOG_LEVEL", "5"
-)
-os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
-# noqa: E402
-warnings.filterwarnings("once")
-
-logging.getLogger("deepseed").setLevel(logging.ERROR)
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("datasets").setLevel(logging.ERROR)
-logging.getLogger("sh").setLevel("WARNING")
-
+#
 # NOTE: Need to swap import order on Polaris (hostname: [x3...])
 if socket.gethostname().startswith("x3"):
     from mpi4py import MPI  # type:ignore  # noqa: F401
@@ -177,25 +161,25 @@ from ezpz.jobs import (
 )
 
 from ezpz.log import (
-#     # COLORS,
-#     # Console,
-#     # RichHandler,
-#     # STYLES,
-#     # add_columns,
-#     # build_layout,
-#     flatten_dict,
-#     get_console,
-#     # get_file_logger,
+    #     # COLORS,
+    #     # Console,
+    #     # RichHandler,
+    #     # STYLES,
+    #     # add_columns,
+    #     # build_layout,
+    #     flatten_dict,
+    #     get_console,
+    #     # get_file_logger,
     get_logger,
-#     # get_theme,
-#     # get_width,
-#     is_interactive,
-#     # make_layout,
-#     nested_dict_to_df,
-#     print_config,
-#     printarr,
-#     should_do_markup,
-#     # to_bool,
+    #     # get_theme,
+    #     # get_width,
+    #     is_interactive,
+    #     # make_layout,
+    #     nested_dict_to_df,
+    #     print_config,
+    #     printarr,
+    #     should_do_markup,
+    #     # to_bool,
     use_colored_logs,
 )
 from ezpz import pbs
@@ -237,10 +221,6 @@ from ezpz.utils import (
     save_dataset,
 )
 
-# try:
-#     import deepspeed
-# except Exception:
-#     pass
 
 # def lazy_import(name: str):
 #     spec = importlib.util.find_spec(name)
@@ -271,6 +251,14 @@ else:
 
 logger = logging.getLogger(__name__)
 # logger.setLevel("INFO")
+
+try:
+    import deepspeed  # noqa type:ignore
+except (ImportError, ModuleNotFoundError):
+    logger.warning(
+        "Unable to import deepspeed. Please install it to use DeepSpeed features."
+    )
+    pass
 
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
@@ -447,6 +435,24 @@ __all__ = [
     "tplot",
     "tplot_dict",
 ]
+
+
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
+os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
+os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
+    "ITEX_CPP_MIN_LOG_LEVEL", "5"
+)
+os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
+# noqa: E402
+warnings.filterwarnings("ignore")
+
+logging.getLogger("deepseed").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("datasets").setLevel(logging.ERROR)
+logging.getLogger("sh").setLevel("WARNING")
+logging.getLogger("jax").setLevel(logging.ERROR)
 
 
 if __name__ == "__main__":
