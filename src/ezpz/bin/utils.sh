@@ -356,7 +356,7 @@ ezpz_setup_conda_aurora() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         # NOTE: Updated 2024-10-08 [@saforem2]
         module load frameworks
-        module load mpich/opt/4.3.0rc3
+        # module load mpich/opt/4.3.0rc3
     else
         printf "Caught CONDA_PREFIX=%s from environment, using this!" "${CONDA_PREFIX}"
     fi
@@ -580,15 +580,28 @@ ezpz_get_dist_launch_cmd() {
     num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
     num_cpus_per_host=$((num_cores_per_host / 2))
     depth=$((num_cpus_per_host / num_gpus_per_host))
-    if [[ "${mn}" == "sophia" ]]; then
-        dist_launch_cmd="mpirun -n ${num_gpus} -N ${num_gpus_per_host} --hostfile ${hostfile} -x PATH -x LD_LIBRARY_PATH"
+
+    scheduler_type=$(ezpz_get_scheduler_type)
+    if [[ "${scheduler_type}" == "pbs" ]]; then
+        # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+        if [[ "${mn}" == "sophia" ]]; then
+            dist_launch_cmd="mpirun -n ${num_gpus} -N ${num_gpus_per_host} --hostfile ${hostfile} -x PATH -x LD_LIBRARY_PATH"
+        else
+            dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+        fi
+        if [[ "${mn}" == "aurora" ]]; then
+            dist_launch_cmd="${dist_launch_cmd} --no-vni"
+        fi
+        # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+    elif [[ "${scheduler_type}" == "slurm" ]]; then
+        # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
+        dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$((SLURM_NNODES * SLURM_GPUS_ON_NODE))"
     else
-        dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
-    fi
-    if [[ "${mn}" == "aurora" ]]; then
-        dist_launch_cmd="${dist_launch_cmd} --no-vni"
+        printf "\n[!! %s]: Unable to determine scheduler type. Exiting.\n" "$(printRed "ERROR")"
+        exit 1
     fi
     echo "${dist_launch_cmd}"
+
 }
 
 ezpz_save_pbs_env() {
@@ -1111,18 +1124,6 @@ ezpz_write_job_info() {
         export LAUNCH="${dist_launch_cmd}"
         export DIST_LAUNCH="${dist_launch_cmd}"
         export ezlaunch="${DIST_LAUNCH}"
-        ezpz_launch() {
-            if [[ -v WORLD_SIZE ]]; then
-                dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
-            else
-                dlaunch="${DIST_LAUNCH}"
-            fi
-            _args=("${@}")
-            printf "[yeet]:\n"
-            printf "evaluating:\n\t${GREEN}%s${RESET}\n" "${dlaunch}"
-            printf "with arguments:\n\t${BLUE}%s${RESET}\n" "${_args[*]}"
-            eval "${dlaunch} ${@}"
-        }
         export LAUNCH="${DIST_LAUNCH}"
         export ezlaunch="${DIST_LAUNCH}"
         alias launch="${LAUNCH}"
@@ -1154,6 +1155,19 @@ ezpz_write_job_info() {
         # export NGPU_PER_HOST="${NGPU_PER_HOST}"
         # export NGPUS="${NGPUS}"
     fi
+}
+
+ezpz_launch() {
+    if [[ -v WORLD_SIZE ]]; then
+        dlaunch="$(echo "${DIST_LAUNCH}" | sed "s/-n\ ${NGPUS}/-n\ ${WORLD_SIZE}/g")"
+    else
+        dlaunch="${DIST_LAUNCH}"
+    fi
+    _args=("${@}")
+    printf "[yeet]:\n"
+    printf "evaluating:\n\t${GREEN}%s${RESET}\n" "${dlaunch}"
+    printf "with arguments:\n\t${BLUE}%s${RESET}\n" "${_args[*]}"
+    eval "${dlaunch} ${@}"
 }
 
 ezpz_save_deepspeed_env() {
@@ -1373,6 +1387,13 @@ ezpz_setup_job() {
                 ezpz_getjobenv_main "$@"
             fi
         fi
+    fi
+    if [[ "${mn}" == "aurora" ]]; then
+        export ITEX_VERBOSE="${ITEX_VERBOSE:-0}"
+        export LOG_LEVEL_ALL="${LOG_LEVEL_ALL:-5}"
+        export TF_CPP_MIN_LOG_LEVEL="${TF_CPP_MIN_LOG_LEVEL:-5}"
+        export ITEX_CPP_MIN_LOG_LEVEL="${ITEX_CPP_MIN_LOG_LEVEL:-5}"
+        export CCL_LOG_LEVEL="${CCL_LOG_LEVEL:-ERROR}"
     fi
 }
 
