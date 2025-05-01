@@ -360,6 +360,7 @@ ezpz_setup_conda_aurora() {
     else
         printf "Caught CONDA_PREFIX=%s from environment, using this!" "${CONDA_PREFIX}"
     fi
+    export FI_MR_CACHE_MONITOR="${FI_MR_CACHE_MONITOR:-userfaultfd}"
 }
 
 ezpz_setup_conda_sirius() {
@@ -790,7 +791,7 @@ ezpz_setup_host_slurm() {
 }
 
 ezpz_setup_host_pbs() {
-    printf "[${CYAN}%s${RESET}]\n" "ezpz_setup_host_pbs"
+    printf "\n[${CYAN}%s${RESET}]\n" "ezpz_setup_host_pbs"
     mn=$(ezpz_get_machine_name)
     scheduler_type=$(ezpz_get_scheduler_type)
     if [[ "${scheduler_type}" == "pbs" ]]; then
