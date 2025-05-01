@@ -2,35 +2,15 @@
 ezpz/launch.py
 """
 
+import sys
 import subprocess
+import shlex
 import time
 from typing import Optional
-
-from rich.text import Text
 
 import ezpz
 
 logger = ezpz.get_logger(__name__)
-
-
-# def verbosecmd(command, filters: Optional[list] = None):
-#     with subprocess.Popen(
-#         command,
-#         stdout=subprocess.PIPE,
-#         shell=True,
-#         stderr=subprocess.STDOUT,
-#         bufsize=0,
-#         close_fds=True,
-#     ) as process:
-#         assert process.stdout is not None
-#         for line in iter(process.stdout.readline, b""):
-#             if filters is not None:
-#                 for filter in filters:
-#                     if filter in line.decode("utf-8"):
-#                         break
-#                 else:
-#                     continue
-#             print(line.rstrip().decode("utf-8"))
 
 
 def parse_args():
@@ -62,18 +42,20 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_command(command, filters: Optional[list] = None):
+def run_command(command: list | str, filters: Optional[list] = None) -> int:
     """Run a command and print its output line by line.
 
     Args:
 
-    - command (str): The command to run.
+    - command (str or list): The command to run. If a string, it will be split
+      into a list
     - filters (list, optional): A list of strings to filter the output
       lines.
     """
     # XXX: Replace `subprocess.Popen`
     # with `subprocess.run` for better error handling ??
     # <https://docs.python.org/3.10/library/subprocess.html#subprocess.run>
+    filters = [] if filters is None else filters
     with subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -85,12 +67,26 @@ def run_command(command, filters: Optional[list] = None):
         assert process.stdout is not None
         for line in iter(process.stdout.readline, b""):
             decoded = line.decode("utf-8")
-            if filters and not any(f in decoded for f in filters):
-                continue
-            print(decoded.rstrip())
+            if (
+                filters is None
+                or len(filters) == 0
+                or not any(f in decoded for f in filters)
+            ):
+                print(decoded.rstrip())
+    return process.returncode
 
 
-def launch():
+def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
+    assert len(sys.argv) > 1, "No command to run."
+    # cmd_to_launch = shlex.join(sys.argv[1:])
+    cmd_to_launch = " ".join(sys.argv[1:])
+    if not cmd_to_launch.startswith("python"):
+        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
+
+    return cmd_to_launch
+
+
+def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
     """Launch a command on the current PBS job."""
     start = time.perf_counter()
     import ezpz.pbs
@@ -105,17 +101,18 @@ def launch():
     logger.info(f"Node file: {hostfile}")
 
     launch_cmd = ezpz.pbs.build_launch_cmd()
-    import sys
 
-    assert len(sys.argv) > 1, "No command to run."
-    cmd_to_launch = " ".join(sys.argv[1:])
-    # if "python" not in cmd_to_launch:
-    if not cmd_to_launch.startswith("python"):
-        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
+    if cmd_to_launch is not None:
+        if isinstance(cmd_to_launch, str):
+            cmd_to_launch = shlex.join(shlex.split(cmd_to_launch))
+        elif isinstance(cmd_to_launch, list):
+            cmd_to_launch = shlex.join(cmd_to_launch)
+    else:
+        cmd_to_launch = get_command_to_launch_from_argv()
 
-    # lcmd_str = Text("launch_cmd", style="blue")
-    # pystr = Text("python", style="blue")
-    # cmdstr = Text("cmd_to_launch", style="blue")
+    assert cmd_to_launch is not None
+    if isinstance(cmd_to_launch, list):
+        cmd_to_launch = shlex.join(cmd_to_launch)
     logger.info(
         "\n".join(
             [
@@ -126,40 +123,63 @@ def launch():
                 "",
                 f"2. ['python']:\n\t{sys.executable}",
                 "",
-                f"3. ['cmd_to_launch']:\n\t{cmd_to_launch.replace(sys.executable, '')}",
+                f"3. ['cmd_to_launch']:\n\t{cmd_to_launch.replace(sys.executable, '').replace('python', '')}",
                 "",
             ]
         )
     )
-    cmd = f"{launch_cmd} {cmd_to_launch}"
+    # cmd = shlex.join([f"{launch_cmd}", f"{cmd_to_launch}"])
+    cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
 
     logger.info(
         f"Took: {time.perf_counter() - start:.2f} seconds to build command."
     )
     logger.info(f"Evaluating:\n\t{cmd}")
     t0 = time.perf_counter()
+    mn = ezpz.get_machine()
+    filters = []
+    if mn.lower() == "aurora":
+        filters = [
+            "cuda",
+            "CUDA",
+            "cuDNN",
+            "cuBLAS",
+            "[W501",
+            "  Overriding a previously registered kernel",
+            "operator: aten::_cummax_helper",
+            "    registered at build",
+            "dispatch key: XPU",
+            "previous kernel: registered at",
+            "new kernel: registered at",
+            "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
+            "Setting ds_accelerator to xpu",
+            "Trying to register 2 metrics with the same name",
+            "TF-TRT Warning",
+        ]
+        logger.info(
+            " ".join(
+                [
+                    "Filtering for Aurora-specific messages.",
+                    "To view list of filters, run with `EZPZ_LOG_LEVEL=DEBUG`",
+                ]
+            )
+        )
+        logger.debug(f"Filters: {filters}")
 
-    _ = run_command(cmd)
+    retcode = run_command(cmd, filters=filters)
     logger.info(f"Command took {time.perf_counter() - t0:.2f} seconds to run.")
+    return retcode
 
 
 if __name__ == "__main__":
+    import os
     import warnings
+    import ezpz.dist
 
-    warnings.filterwarnings("ignore")
-    # try:
-    launch()
-    # except KeyboardInterrupt:
-    #     logger.info("Keyboard interrupt received. Exiting...")
-    # finally:
-    #     import ezpz.dist
-    #
-    #     ezpz.dist.cleanup()
-    #     exit(0)
-    # ezpz.dist.cleanup()
-    # except KeyboardInterrupt:
-    #     logger.info("Keyboard interrupt received. Exiting...")
-    # finally:
-    #     import ezpz.dist
-    #     ezpz.dist.cleanup()
-    #     exit(0)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:__main__"
+
+        launch()
+        ezpz.dist.cleanup()
+    exit(0)
