@@ -109,7 +109,7 @@ def get_pbs_nodefile(jobid: Optional[int | str] = None) -> str | None:
     return get_pbs_nodefile_from_jobid(jobid)
 
 
-def build_launch_cmd():
+def build_launch_cmd() -> str:
     """Build the launch command for the current job.
 
     Returns:
