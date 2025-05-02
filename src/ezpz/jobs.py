@@ -423,7 +423,7 @@ def get_jobdirs_from_jobslog() -> list[str]:
     return jobdirs
 
 
-def get_jobdir_from_jobslog(idx: int = -1) -> str:
+def get_jobdir_from_jobslog(idx: Optional[int] = -1) -> str:  # noqa  type:ignore
     # return Path(jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
     # jobdirs = get_jobdirs_from_jobslog()
     # if len(jobdirs) > 0:
@@ -436,8 +436,9 @@ def get_jobdir_from_jobslog(idx: int = -1) -> str:
 
 def loadjobenv_from_yaml(
     jobdir: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
+    idx: Optional[int]= -1,
 ) -> dict[str, str]:
-    jobdir = Path(get_jobdir_from_jobslog(-1) if jobdir is None else jobdir)
+    jobdir = Path(get_jobdir_from_jobslog(idx) if jobdir is None else jobdir)
     assert jobdir.is_dir()
     if len((jobenv_files_yaml := list(jobdir.rglob("*.yaml")))) == 0:
         raise FileNotFoundError(
