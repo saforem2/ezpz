@@ -116,14 +116,16 @@ def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
     logger.info(
         "\n".join(
             [
-                "Building command to execute by piecing together:",
-                "\t(1) ['launch_cmd'] + (2) ['python'] + (3) ['cmd_to_launch']",
+                " ".join([
+                    "Building command to execute by piecing together:",
+                    "(1) ['launch_cmd'] + (2) ['python'] + (3) ['cmd_to_launch']",
+                ]),
                 "",
-                f"1. ['launch_cmd']:\n\t{launch_cmd}",
+                f"  1. ['launch_cmd']:\n   {launch_cmd}",
                 "",
-                f"2. ['python']:\n\t{sys.executable}",
+                f"  2. ['python']:\n   {sys.executable}",
                 "",
-                f"3. ['cmd_to_launch']:\n\t{cmd_to_launch.replace(sys.executable, '').replace('python', '')}",
+                f"  3. ['cmd_to_launch']:\n   {cmd_to_launch.replace(sys.executable, '').replace('python', '')}",
                 "",
             ]
         )
@@ -155,6 +157,19 @@ def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
             "Setting ds_accelerator to xpu",
             "Trying to register 2 metrics with the same name",
             "TF-TRT Warning",
+            "Warning only once",
+            "measureDifference between two events"
+    import os
+    import warnings
+    import ezpz.dist
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:__main__"
+
+        launch()
+        ezpz.dist.cleanup()
+    exit(0)
         ]
         logger.info(
             " ".join(
@@ -171,7 +186,7 @@ def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
     return retcode
 
 
-if __name__ == "__main__":
+def main():
     import os
     import warnings
     import ezpz.dist
@@ -183,3 +198,7 @@ if __name__ == "__main__":
         launch()
         ezpz.dist.cleanup()
     exit(0)
+
+
+if __name__ == "__main__":
+    main()
