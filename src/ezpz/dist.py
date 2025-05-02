@@ -14,6 +14,8 @@ import time
 from functools import wraps
 from typing import Any, Callable, Iterable, Optional, Union
 
+from torch.distributed.distributed_c10d import is_initialized
+
 # from dataclasses import dataclass
 
 import ezpz.tp
@@ -992,7 +994,8 @@ def setup_torch(
 
 
 def cleanup() -> None:
-    tdist.destroy_process_group()
+    if tdist.is_initialized():
+        tdist.destroy_process_group()
 
 
 def setup_tensorflow(
@@ -1481,7 +1484,7 @@ def get_pbs_launch_cmd(
             "Mismatch in `ngpus_in_use` and `ngpus_available` "
             f"{ngpus_in_use=} vs. {ngpus_available=}"
         )
-    ncpus_per_host = get_cpus_per_node()
+    # ncpus_per_host = get_cpus_per_node()
     return " ".join(
         [
             "mpiexec",
