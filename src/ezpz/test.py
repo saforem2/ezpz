@@ -16,10 +16,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # import sys
-    # backend = None
-    # if len(sys.argv) > 1:
-    #     backend = sys.argv[1]
-    #     assert isinstance(backend, str) and backend.lower() in ['ddp', 'deepspeed', 'horovod']
-    # main(backend)
     main()
