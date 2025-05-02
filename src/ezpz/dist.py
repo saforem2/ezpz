@@ -14,10 +14,6 @@ import time
 from functools import wraps
 from typing import Any, Callable, Iterable, Optional, Union
 
-from torch.distributed.distributed_c10d import is_initialized
-
-# from dataclasses import dataclass
-
 import ezpz.tp
 
 from mpi4py import MPI
@@ -43,20 +39,14 @@ except Exception:
     wandb = None
 
 try:
-    import intel_extension_for_pytorch
-    # import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-    # ipex = lazy_import("intel_extension_for_pytorch")
+    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
 except Exception:
     ipex = None
-# if ipex is not None:
-#     logger.debug(f"Using ipex from: {ipex.__file__}")
 
 try:
-    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]  # noqa
 except Exception:
     oneccl_bpt = None
-# if oneccl_bpt is not None:
-#     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
 
 
 if not os.environ.get(
@@ -811,35 +801,15 @@ def barrier(
     - `[async_op: bool = False]`
     - `[device_ids: Unknown | None = None]`
     """
-    if device is None:
-        try:
-            tdist.barrier(group=group, async_op=async_op)
-        except Exception:
-            logger.warning(
-                "Unable to use `torch.distributed.barrier` "
-                "for this process group. "
-                "Falling back to `mpi4py` barrier."
-            )
-            MPI.COMM_WORLD.barrier()
-    else:
-        try:
-            if group is None:
-                tdist.barrier()
-            if device == "cuda":
-                tdist.barrier(group=group)
-            elif device == "xpu" and torch.xpu.is_available():
-                tdist.xpu.barrier(group=group)
-            elif device == "mps":
-                tdist.mps.barrier(group=group)
-            else:
-                raise ValueError(f"Unsupported device: {device}")
-        except Exception:
-            logger.warning(
-                "Unable to use `torch.distributed.barrier` "
-                "for this process group. "
-                "Falling back to `mpi4py` barrier."
-            )
-            MPI.COMM_WORLD.barrier()
+    try:
+        tdist.barrier(group=group, async_op=async_op, device_ids=device_ids)
+    except Exception:
+        logger.warning(
+            "Unable to use `torch.distributed.barrier` "
+            "for this process group. "
+            "Falling back to `mpi4py` barrier."
+        )
+        MPI.COMM_WORLD.barrier()
 
 
 def setup_torch(
@@ -856,7 +826,10 @@ def setup_torch(
     context_parallel_backend: Optional[str] = None,
     data_parallel_backend: Optional[str] = None,
 ) -> int:
-    """Setup torch."""
+    """Setup torch.
+
+    Args:
+    """
     device = get_torch_device()
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
     #     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -951,45 +924,39 @@ def setup_torch(
     ):
         import ezpz.tp
 
-        tprank = ezpz.tp.get_tensor_parallel_rank()
-        # tpranks = ezpz.tp.get_tensor_parallel_ranks()
         tpsize = ezpz.tp.get_tensor_parallel_world_size()
-
-        dprank = ezpz.tp.get_data_parallel_rank()
-        # dpranks = ezpz.tp.get_data_parallel_ranks()
-        dpsize = ezpz.tp.get_data_parallel_world_size()
-
-        pprank = ezpz.tp.get_pipeline_parallel_rank()
-        # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
-        ppsize = ezpz.tp.get_pipeline_parallel_world_size()
-
-        # cpranks = ezpz.tp.get_context_parallel_ranks()
-        cprank = ezpz.tp.get_context_parallel_rank()
         cpsize = ezpz.tp.get_context_parallel_world_size()
-
+        ppsize = ezpz.tp.get_pipeline_parallel_world_size()
+        dpsize = ezpz.tp.get_data_parallel_world_size()
         if cpsize > 1 or ppsize > 1 or tpsize > 1:
             if cpsize > 1:
                 lcp = len(str(cpsize - 1))
+                cprank = ezpz.tp.get_context_parallel_rank()
+                # cpranks = ezpz.tp.get_context_parallel_ranks()
                 psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
-                # barrier(group=ezpz.tp.get_context_parallel_group())
-                # tdist.barrier(group=ezpz.tp.get_context_parallel_group())
+                barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
+                pprank = ezpz.tp.get_pipeline_parallel_rank()
+                # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
                 lpp = len(str(ppsize - 1))
                 psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
+                barrier(group=ezpz.tp.get_pipeline_parallel_group())
                 # tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
+                tprank = ezpz.tp.get_tensor_parallel_rank()
+                # tpranks = ezpz.tp.get_tensor_parallel_ranks()
                 psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
-                # tdist.barrier(group=ezpz.tp.get_tensor_parallel_group())
+                barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
+                dprank = ezpz.tp.get_data_parallel_rank()
+                # dpranks = ezpz.tp.get_data_parallel_ranks()
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
-                # tdist.barrier(group=ezpz.tp.get_data_parallel_group())
+                barrier(group=ezpz.tp.get_data_parallel_group())
     # tdist.all_gather(psizes)
     logger.info("".join(psizes))
-    # barrier()
-    tdist.barrier()
-    # MPI.COMM_WORLD.Barrier()
+    barrier()
     return rank
 
 
@@ -1186,7 +1153,7 @@ def setup_wandb(
         project_name = f"{fp.parent.stem}.{fp.stem}"
 
     logger.info(f"Setting up wandb from {rank=}")
-    logger.info(f"Using=WB PROJECT={project_name}")
+    logger.info(f"Using WB_PROJECT={project_name}")
     tensorboard_dir = (
         os.environ.get("TENSORBOARD_DIR", None)
         if config is None
@@ -1214,7 +1181,7 @@ def setup_wandb(
     )
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
-    logger.info(f"W&B RUN=[{run.name}]({run.url})")
+    logger.info(f"wandb.run=[{run.name}]({run.url})")
     if (
         wandb is not None
         and wandb.run is not None
