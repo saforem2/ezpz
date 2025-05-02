@@ -252,14 +252,6 @@ else:
 logger = logging.getLogger(__name__)
 # logger.setLevel("INFO")
 
-try:
-    import deepspeed  # noqa type:ignore
-except (ImportError, ModuleNotFoundError):
-    logger.warning(
-        "Unable to import deepspeed. Please install it to use DeepSpeed features."
-    )
-    pass
-
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
@@ -453,6 +445,14 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("datasets").setLevel(logging.ERROR)
 logging.getLogger("sh").setLevel("WARNING")
 logging.getLogger("jax").setLevel(logging.ERROR)
+
+try:
+    import deepspeed  # noqa type:ignore
+except (ImportError, ModuleNotFoundError):
+    logger.warning(
+        "Unable to import deepspeed. Please install it to use DeepSpeed features."
+    )
+    pass
 
 
 if __name__ == "__main__":
