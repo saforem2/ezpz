@@ -94,17 +94,18 @@ fi
 
 log_info() {
     args=("$@")
-    printf "[%s][${GREEN}I${RESET}]: %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+    printf "[%s][${GREEN}I${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
 }
 
 log_warn() {
-    printf "[%s][${YELLOW}W${RESET}]: %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+    args=("$@")
+    printf "[%s][${YELLOW}W${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
 }
 
 log_error() {
-    printf "[%s][${RED}E${RESET}]: %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+    args=("$@")
+    printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
 }
-
 
 # @description Get name of shell.
 # Strip off `/bin/` substr from "${SHELL}" env var and return this string.
@@ -510,7 +511,6 @@ ezpz_setup_venv_from_conda() {
             log_info "[venv] Using VENV_DIR=${VENV_DIR}"
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
                 log_info $(echo "[venv] Creating venv (on top of ${CONDA_NAME}) in ${VENV_DIR}")
-                # printf "\n    - Creating a new virtual env on top of %s in %s\n" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
                 mkdir -p "${VENV_DIR}"
                 python3 -m venv "${VENV_DIR}" --system-site-packages
                 source "${VENV_DIR}/bin/activate" || exit
@@ -519,7 +519,7 @@ ezpz_setup_venv_from_conda() {
                 # echo "  - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
                 source "${VENV_DIR}/bin/activate" || exit
             else
-                log_info $(echo "[${RED}ERROR${RESET}]: Unable to locate ${VENV_DIR}/bin/activate")  # \n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+                log_info $(echo "[${RED}ERROR${RESET}]: Unable to locate ${VENV_DIR}/bin/activate") # \n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
             fi
         fi
     fi
@@ -561,19 +561,21 @@ ezpz_setup_python() {
         ezpz_setup_venv_from_conda
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
         log_info "No conda_prefix found."
-        log_info "Using virtual_env from: ${virtual_env}"
+        log_info $(echo "Using virtual_env from: ${virtual_env}")
         # echo "No conda found."
         # echo "Using virtual_env from: ${virtual_env}"
     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
-        log_info $(echo "Using virtual_env={CYAN}${virtual_env}${RESET} on top of conda=${CYAN}${conda_prefix}${RESET}")
+        log_info "Found both conda_prefix and virtual_env in environment."
+        log_info $(echo "Using conda_prefix from: ${CYAN}${conda_prefix}${RESET}")
+        log_info $(echo "Using virtual_env from: ${CYAN}${virtual_env}${RESET}")
     else
-        log_info "Unable to setup python environment. Exiting"
+        log_error $(echo "Unable to setup python environment. ${RED}Exiting${RESET}")
         exit 1
     fi
     if [[ -z "${virtual_env}" ]]; then
         ezpz_setup_venv_from_conda
     fi
-    log_info $(echo "[python] Using ${MAGENTA}$(which python3)${RESET}\n")
+    log_info $(echo "Using ${MAGENTA}$(which python3)${RESET}\n")
     python_exec=$(which python3)
     export PYTHON_EXEC="${python_exec}"
 }
@@ -1188,17 +1190,12 @@ ezpz_write_job_info() {
             printf "\n"
             printf "    ${GREEN}launch${RESET} = ${GREEN}%s${RESET}\n" "${LAUNCH}"
             printf "\n"
-            printf "    Run ${GREEN}'which launch'${RESET} to ensure that the alias is set correctly\n"
-            # printf "    '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n" "${LAUNCH}"
+            printf "    Run ${GREEN}'which launch'${RESET} to ensure that the alias is set correctly\n\n"
         fi
-        # echo "export HOSTFILE=${hostfile}" >> "${JOBENV_FILE}"
         # echo "┌────────────────────────────────────────────────────────────────────────────────"
         # echo "│ YOU ARE HERE: $(whereAmI)"
         # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
         # echo "└────────────────────────────────────────────────────────────────────────────────"
-        # export NHOSTS="${NHOSTS}"
-        # export NGPU_PER_HOST="${NGPU_PER_HOST}"
-        # export NGPUS="${NGPUS}"
     fi
 }
 
@@ -1260,7 +1257,6 @@ ezpz_get_pbs_env() {
 ezpz_get_slurm_env() {
     if [[ -n "${SLURM_JOB_ID}" ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
-        # export jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
         # shellcheck source="${HOME}/.slurmenv"
         [ -f "${JOBENV_FILE}" ] && source "${JOBENV_FILE}"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
@@ -1497,37 +1493,25 @@ ezpz_get_working_dir() {
 
 ezpz_check_working_dir() {
     WORKING_DIR=$(ezpz_get_working_dir)
-    # HERE=$(python3 -c 'import os; print(os.getcwd())') && export HERE
-    # if [[ "${HERE}" != "${WORKING_DIR}" ]]; then
-    #     log_warn "Current working directory (%s) does not match WORKING_DIR (%s)" "${HERE}" "${WORKING_DIR}"
-    #     log_warn "This may cause issues with the job submission."
-    #     log_info "Setting WORKING_DIR to %s and continuing..." "${HERE}"
-    #     # printf "[%s] WARNING: Current working directory (%s) does not match WORKING_DIR (%s)\n" "$(printRed "WARNING")" "${HERE}" "${WORKING_DIR}"
-    #     # printf "[%s] This may cause issues with the job submission.\n" "$(printRed "WARNING")"
-    #     # printf "Setting WORKING_DIR to %s and continuing...\n" "${HERE}"
-    # fi
     if [[ -n "${PBS_O_WORKDIR:-}" ]]; then
-        PBS_O_WORKDIR="${WORKING_DIR}"
+        # PBS_O_WORKDIR="${WORKING_DIR}"
         # WORKING_DIR="${PBS_O_WORKDIR}"
         if [[ "${WORKING_DIR}" != "${PBS_O_WORKDIR}" ]]; then
-            # export PBS_O_WORKDIR="${HERE}"
             log_warn $(echo "Current working directory (${WORKING_DIR}) does not match PBS_O_WORKDIR (${PBS_O_WORKDIR})")
             log_warn "This may cause issues with the job submission."
-            log_info $(echo "Setting PBS_O_WORKDIR to ${WORKING_DIR} and continuing...")
-            # printf "[!! %s] WARNING: Current working directory (%s) does not match PBS_O_WORKDIR (%s)\n" "$(printRed "WARNING")" "${HERE}" "${PBS_O_WORKDIR}"
-            # printf "[!! %s] This may cause issues with the job submission.\n" "$(printRed "WARNING")"
-            # printf "Setting PBS_O_WORKDIR to %s and continuing...\n" "${HERE}"
+            log_info $(echo "Exporting PBS_O_WORKDIR=${RED}${WORKING_DIR}${RESET} and continuing...")
+            export PBS_O_WORKDIR="${WORKING_DIR}"
         fi
     elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+        # TODO: Add similar logic for SLURM environments
         WORKING_DIR="${SLURM_SUBMIT_DIR}"
     else
-        log_info "Unable to detect PBS or SLURM working directory info..."
-        log_info $(echo "Using current working directory (${HERE}) as working directory...")
+        log_warn "Unable to detect PBS or SLURM working directory info..."
+        log_warn $(echo "Using current working directory (${HERE}) as working directory...")
     fi
     export WORKING_DIR="${WORKING_DIR}"
     log_info $(echo "Exporting WORKING_DIR=${WORKING_DIR}\n")
 }
-
 
 utils_main() {
     # GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
@@ -1550,19 +1534,11 @@ utils_main() {
     #   which are defined relative to this "${WORKING_DIR}"
     #   (e.g. virtual environment, location of executables, etc.)
     ##################
-    # for debug mode, run with `DEBUG=1`
-    # if [[ -n "${DEBUG:-}" ]]; then
-    #     set -x
-    #     # set -euxo
-    # fi
     HERE=$(python3 -c 'import os; print(os.getcwd())') && export HERE
     if [[ "${HERE}" != "${WORKING_DIR}" ]]; then
         log_warn "Current working directory (%s) does not match WORKING_DIR (%s)" "${HERE}" "${WORKING_DIR}"
         log_warn "This may cause issues with the job submission."
         log_info "Setting WORKING_DIR to %s and continuing..." "${HERE}"
-        # printf "[%s] WARNING: Current working directory (%s) does not match WORKING_DIR (%s)\n" "$(printRed "WARNING")" "${HERE}" "${WORKING_DIR}"
-        # printf "[%s] This may cause issues with the job submission.\n" "$(printRed "WARNING")"
-        # printf "Setting WORKING_DIR to %s and continuing...\n" "${HERE}"
     fi
 
     if [[ -n "${PBS_O_WORKDIR:-}" ]]; then
@@ -1573,30 +1549,21 @@ utils_main() {
             log_warn "Current working directory (%s) does not match PBS_O_WORKDIR (%s)" "${HERE}" "${PBS_O_WORKDIR}"
             log_warn "This may cause issues with the job submission."
             log_info "Setting PBS_O_WORKDIR to %s and continuing..." "${HERE}"
-            # printf "[!! %s] WARNING: Current working directory (%s) does not match PBS_O_WORKDIR (%s)\n" "$(printRed "WARNING")" "${HERE}" "${PBS_O_WORKDIR}"
-            # printf "[!! %s] This may cause issues with the job submission.\n" "$(printRed "WARNING")"
-            # printf "Setting PBS_O_WORKDIR to %s and continuing...\n" "${HERE}"
         fi
     elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
         WORKING_DIR="${SLURM_SUBMIT_DIR}"
     else
-        log_info "Unable to detect PBS or SLURM working directory info..."
+        log_warn "Unable to detect PBS or SLURM working directory info..."
         WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
-        log_info "Using current working directory (${HERE}) as working directory..."
+        # log_info "Using current working directory (${HERE}) as working directory..."
     fi
     export WORKING_DIR="${WORKING_DIR}"
-    log_info $(echo "Exporting WORKING_DIR=${WORKING_DIR}\n")
-    # printf "[$(ezpz_get_tstamp)][${GREEN}I${RESET}] Exporting WORKING_DIR=%s\n" "${WORKING_DIR}"
+    log_info $(echo "Exporting PBS_O_WORKDIR=WORKING_DIR=${WORKING_DIR}\n")
 }
-
-
-# if [[ -n "${DEBUG:-}" ]]; then set +x; fi
 
 utils_main
 
-
 if [[ -n "${DEBUG:-}" ]]; then
     log_warn $(echo "DEBUG MODE IS ${RED}OFF${RESET}")
-    # log_warn "DEBUG MODE IS OFF"
     set +x
 fi
