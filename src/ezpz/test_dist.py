@@ -201,23 +201,6 @@ class Trainer:
         )
 
 
-def setup(config: TrainConfig) -> int:
-    """Setup torch distributed environment.
-
-    Args:
-        config (TrainConfig): Training configuration.
-    """
-    t0 = time.perf_counter()
-    rank = ezpz.setup_torch(
-        backend=config.backend,
-        tensor_parallel_size=config.tp,
-        pipeline_parallel_size=config.pp,
-        context_parallel_size=config.cp,
-    )
-    logger.info(f"Took: {time.perf_counter() - t0:.2f} seconds to setup torch")
-    return rank
-
-
 def train(config: TrainConfig) -> Trainer:
     # logger.info(f"Setting up torch with {config.backend=}...")
     t0m = time.perf_counter()
@@ -473,7 +456,12 @@ def main() -> Trainer:
     args = parse_args()
     config = get_config_from_args(args)
     with config.ctx:
-        _ = setup(config)
+        _ = ezpz.setup_torch(
+            backend=config.backend,
+            tensor_parallel_size=config.tp,
+            pipeline_parallel_size=config.pp,
+            context_parallel_size=config.cp,
+        )
         logger.info(
             f"Took: {time.perf_counter() - t0:.2f} seconds to setup torch"
         )
@@ -483,9 +471,6 @@ def main() -> Trainer:
         import deepspeed.comm as dscomm  # type:ignore
 
         dscomm.log_summary()
-
-    # if ezpz.get_world_size() > 1:
-    #     tdist.barrier()
 
     logger.info(f"Took: {time.perf_counter() - T0:.2f} seconds")
     return trainer
