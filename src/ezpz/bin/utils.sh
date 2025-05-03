@@ -1565,6 +1565,7 @@ ezpz_check_working_dir() {
 
 # utils_main
 ezpz_check_working_dir
+echo "TESTING"
 
 if [[ -n "${DEBUG:-}" ]]; then
     log_warn $(echo "DEBUG MODE IS ${RED}OFF${RESET}")
