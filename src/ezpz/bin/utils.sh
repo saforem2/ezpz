@@ -67,7 +67,7 @@ SLURM_ENV_FILE="${HOME}/.slurmenv"
 #   them return a nonzero exit status.
 ###############################################################################
 if [[ -n "${DEBUG:-}" ]]; then
-    log_warn $(echo "DEBUG MODE IS ${RED}ON${RESET}")
+    log_warn "$(echo "DEBUG MODE IS ${RED}ON${RESET}")"
     set -x
 fi
 
@@ -164,7 +164,7 @@ ezpz_get_jobid_from_hostname() {
     #
     ###############################
     # jobid=$(ezpz_qsme_running | sed 's/\/.*\ /\ /g' | sed 's/\/.*//g' | grep "$(hostname | sed 's/\..*//g')" | awk '{print $1}')
-    jobid=$(ezpz_qsme_running | grep "^[0-9]" | grep $(hostname) | awk '{print $1}')
+    jobid=$(ezpz_qsme_running | grep "^[0-9]" | grep "$(hostname)" | awk '{print $1}')
     echo "${jobid}"
 }
 
@@ -285,7 +285,7 @@ ezpz_get_slurm_running_jobid() {
 
 ezpz_get_slurm_running_nodelist() {
     if [[ -n $(command -v sacct) ]]; then
-        slurm_nodelist=$(sacct --format=JobID,NodeList%-30,state%20 --user $USER -s R | grep -Ev "\.int|\.ext|^JobID|^---" | awk '{print $2}')
+        slurm_nodelist=$(sacct --format=JobID,NodeList%-30,state%20 --user "${USER}" -s R | grep -Ev "\.int|\.ext|^JobID|^---" | awk '{print $2}')
         echo "${slurm_nodelist}"
     fi
 }
@@ -486,7 +486,7 @@ ezpz_setup_uv_venv() {
     fi
     env_name=$(basename "${CONDA_PREFIX}")
     # env_name=$(echo "${CONDA_PREFIX}" | tr '\/' '' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
-    uv venv --python=$(which python3) --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
+    uv venv --python="$(which python3)" --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
 }
 
 ezpz_setup_venv_from_conda() {
@@ -502,7 +502,7 @@ ezpz_setup_venv_from_conda() {
         # exit 1
     else
         log_info "Found conda at: ${CONDA_PREFIX:-}"
-        export CONDA_NAME=$(basename "${CONDA_PREFIX}")
+        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
         # CONDA_NAME=$(echo "${CONDA_PREFIX}" | tr '\/' '' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
         if [[ -z "${VIRTUAL_ENV:-}" ]]; then
             log_info "[venv] No VIRTUAL_ENV found in environment!"
@@ -1190,10 +1190,10 @@ ezpz_write_job_info() {
             printf "\n"
             printf "    ${GREEN}launch${RESET} = ${GREEN}%s${RESET}\n" "${LAUNCH}"
             printf "\n"
-            printf "    Run ${GREEN}'which launch'${RESET} to ensure that the alias is set correctly\n\n"
+            printf "    Run ${GREEN}'which launch'${RESET} to ensure that the alias is set correctly\n\n" "${GREEN}" "${RESET}"
         fi
         # echo "┌────────────────────────────────────────────────────────────────────────────────"
-        # echo "│ YOU ARE HERE: $(whereAmI)"
+        # echo "│ YOU ARE $(whereAmI)"
         # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
         # echo "└────────────────────────────────────────────────────────────────────────────────"
     fi
@@ -1209,7 +1209,7 @@ ezpz_launch() {
     printf "[yeet]:\n"
     printf "evaluating:\n${GREEN}%s${RESET}\n" "${dlaunch}"
     printf "with arguments:\n${BLUE}%s${RESET}\n" "${_args[*]}"
-    eval "${dlaunch} ${@}"
+    eval "${dlaunch} ${*}"
 }
 
 ezpz_save_deepspeed_env() {
@@ -1493,75 +1493,78 @@ ezpz_get_working_dir() {
 
 ezpz_check_working_dir() {
     WORKING_DIR=$(ezpz_get_working_dir)
+    export WORKING_DIR="${WORKING_DIR}"
     if [[ -n "${PBS_O_WORKDIR:-}" ]]; then
         # PBS_O_WORKDIR="${WORKING_DIR}"
         # WORKING_DIR="${PBS_O_WORKDIR}"
         if [[ "${WORKING_DIR}" != "${PBS_O_WORKDIR}" ]]; then
-            log_warn $(echo "Current working directory (${WORKING_DIR}) does not match PBS_O_WORKDIR (${PBS_O_WORKDIR})")
-            log_warn "This may cause issues with the job submission."
-            log_info $(echo "Exporting PBS_O_WORKDIR=${RED}${WORKING_DIR}${RESET} and continuing...")
+            log_warn "Current working directory does not match PBS_O_WORKDIR! This may cause issues with the job submission."
+            log_warn $(echo "PBS_O_WORKDIR=${RED}${PBS_O_WORKDIR}${RESET}")
+            log_warn $(echo "WORKING_DIR=${GREEN}${WORKING_DIR}${RESET}")
+            log_info $(echo "Exporting PBS_O_WORKDIR=WORKING_DIR=${BLUE}${WORKING_DIR}${RESET} and continuing...")
             export PBS_O_WORKDIR="${WORKING_DIR}"
         fi
     elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
         # TODO: Add similar logic for SLURM environments
-        WORKING_DIR="${SLURM_SUBMIT_DIR}"
-    else
-        log_warn "Unable to detect PBS or SLURM working directory info..."
-        log_warn $(echo "Using current working directory (${HERE}) as working directory...")
-    fi
-    export WORKING_DIR="${WORKING_DIR}"
-    log_info $(echo "Exporting WORKING_DIR=${WORKING_DIR}\n")
-}
-
-utils_main() {
-    # GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
-    ##################
-    # utils_main
-    #
-    # This will get called automatically when running:
-    #
-    # ```bash
-    # $ cd Megatron-DeepSpeed
-    # $ PBS_O_WORKDIR=$(pwd) source ALCF/utils.sh
-    # ```
-    #
-    # - This will set `"${WORKING_DIR}"`, according to:
-    #       1. `${PBS_O_WORKDIR}` is nonzero, use this
-    #       2. else, if `${SLURM_SUBMIT_DIR}` is nonzero use this
-    #       3. else, use `$(pwd)`
-    #
-    #   this is crucial since many of the functions below use paths
-    #   which are defined relative to this "${WORKING_DIR}"
-    #   (e.g. virtual environment, location of executables, etc.)
-    ##################
-    HERE=$(python3 -c 'import os; print(os.getcwd())') && export HERE
-    if [[ "${HERE}" != "${WORKING_DIR}" ]]; then
-        log_warn "Current working directory (%s) does not match WORKING_DIR (%s)" "${HERE}" "${WORKING_DIR}"
-        log_warn "This may cause issues with the job submission."
-        log_info "Setting WORKING_DIR to %s and continuing..." "${HERE}"
-    fi
-
-    if [[ -n "${PBS_O_WORKDIR:-}" ]]; then
-        PBS_O_WORKDIR="${WORKING_DIR}"
-        # WORKING_DIR="${PBS_O_WORKDIR}"
-        if [[ "${HERE}" != "${PBS_O_WORKDIR}" ]]; then
-            # export PBS_O_WORKDIR="${HERE}"
-            log_warn "Current working directory (%s) does not match PBS_O_WORKDIR (%s)" "${HERE}" "${PBS_O_WORKDIR}"
-            log_warn "This may cause issues with the job submission."
-            log_info "Setting PBS_O_WORKDIR to %s and continuing..." "${HERE}"
+        # WORKING_DIR="${SLURM_SUBMIT_DIR}"
+        if [[ "${WORKING_DIR}" != "${SLURM_SUBMIT_DIR}" ]]; then
+            log_warn "Current working directory does not match SLURM_SUBMIT_DIR! This may cause issues with the job submission."
+            log_warn $(echo "SLURM_SUBMIT_DIR=${RED}${SLURM_SUBMIT_DIR}${RESET}")
+            log_warn $(echo "WORKING_DIR=${GREEN}${WORKING_DIR}${RESET}")
+            log_info $(echo "Exporting SLURM_SUBMIT_DIR=WORKING_DIR=${BLUE}${WORKING_DIR}${RESET} and continuing...")
+            export SLURM_SUBMIT_DIR="${WORKING_DIR}"
         fi
-    elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-        WORKING_DIR="${SLURM_SUBMIT_DIR}"
     else
         log_warn "Unable to detect PBS or SLURM working directory info..."
-        WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
-        # log_info "Using current working directory (${HERE}) as working directory..."
+        log_warn $(echo "Using current working directory (${GREEN}${WORKING_DIR}${RESET}) as working directory...")
     fi
-    export WORKING_DIR="${WORKING_DIR}"
-    log_info $(echo "Exporting PBS_O_WORKDIR=WORKING_DIR=${WORKING_DIR}\n")
+    # log_info $(echo "Exporting WORKING_DIR=${GREEN}${WORKING_DIR}${RESET}\n")
 }
 
-utils_main
+# utils_main() {
+#     # GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
+#     ##################
+#     # utils_main
+#     #
+#     # This will get called automatically when running:
+#     #
+#     # ```bash
+#     # $ cd Megatron-DeepSpeed
+#     # $ PBS_O_WORKDIR=$(pwd) source ALCF/utils.sh
+#     # ```
+#     #
+#     # - This will set `"${WORKING_DIR}"`, according to:
+#     #       1. `${PBS_O_WORKDIR}` is nonzero, use this
+#     #       2. else, if `${SLURM_SUBMIT_DIR}` is nonzero use this
+#     #       3. else, use `$(pwd)`
+#     #
+#     #   this is crucial since many of the functions below use paths
+#     #   which are defined relative to this "${WORKING_DIR}"
+#     #   (e.g. virtual environment, location of executables, etc.)
+#     ##################
+#     WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())') && export WORKING_DIR
+#     if [[ -n "${PBS_O_WORKDIR:-}" ]]; then
+#         PBS_O_WORKDIR="${WORKING_DIR}"
+#         # WORKING_DIR="${PBS_O_WORKDIR}"
+#         if [[ "${WORKING_DIR}" != "${PBS_O_WORKDIR}" ]]; then
+#             # export PBS_O_WORKDIR="${HERE}"
+#             log_warn "Current working directory (%s) does not match PBS_O_WORKDIR (%s)" "${WORKING_DIR}" "${PBS_O_WORKDIR}"
+#             log_warn "This may cause issues with the job submission."
+#             log_info "Setting PBS_O_WORKDIR to %s and continuing..." "${WORKING_DIR}"
+#         fi
+#     elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+#         WORKING_DIR="${SLURM_SUBMIT_DIR}"
+#     else
+#         log_warn "Unable to detect PBS or SLURM working directory info..."
+#         WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
+#         # log_info "Using current working directory (${HERE}) as working directory..."
+#     fi
+#     export WORKING_DIR="${WORKING_DIR}"
+#     log_info $(echo "Exporting PBS_O_WORKDIR=WORKING_DIR=${WORKING_DIR}\n")
+# }
+
+# utils_main
+ezpz_check_working_dir
 
 if [[ -n "${DEBUG:-}" ]]; then
     log_warn $(echo "DEBUG MODE IS ${RED}OFF${RESET}")
