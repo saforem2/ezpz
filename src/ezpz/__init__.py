@@ -15,20 +15,32 @@ import warnings
 import socket
 
 # sys.flags.lazy_imports = 1
-#
-# NOTE: Need to swap import order on Polaris (hostname: [x3...])
+
 if socket.gethostname().startswith("x3"):
+    # NOTE: Need to swap import order on Polaris (hostname: [x3...])
     from mpi4py import MPI  # type:ignore  # noqa: F401
     import torch  # type:ignore
 else:
+    if socket.gethostname().startswith("x4"):
+        if os.environ.get("FI_MR_CACHE_MONITOR") != "userfaultfd":
+            os.environ["FI_MR_CACHE_MONITOR"] = "userfaultfd"
+
+        import numpy as np
+        if int(np.__version__.split(".")[0]) >= 2:
+            os.environ["USE_TORCH"] = "1"
+
+        try:
+            import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+        except Exception:
+            ipex = None
+
+        try:
+            import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]  # noqa
+        except Exception:
+            oneccl_bpt = None
+
     import torch  # type: ignore
     from mpi4py import MPI  # type:ignore  # noqa: F401
-
-# try:
-#     import deepspeed  # type:ignore
-# except Exception:
-#     pass
-
 
 from ezpz.__about__ import __version__
 
