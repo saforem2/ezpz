@@ -128,6 +128,23 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
     return filters
 
 
+def kill_existing_processes(
+    filters: Optional[list] = None,
+    additional_filters: Optional[list] = None,
+) -> int:
+    """Kill existing processes that match the filters.
+
+    """
+    # TODO: Run this as preamble to launching
+    filters = [] if filters is None else filters
+    if ezpz.get_machine().lower() == "aurora":
+        filters += get_aurora_filters(additional_filters=additional_filters)
+
+    logger.info(f"Killing existing processes with filters: {filters}")
+    cmd = f"pkill -f {' '.join(filters)}"
+    return run_command(cmd, filters=filters)
+
+
 def launch(
     cmd_to_launch: Optional[str | list[str]] = None,
     filters: Optional[list[str]] = None,
