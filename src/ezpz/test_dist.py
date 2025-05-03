@@ -27,7 +27,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from xarray import Dataset
 
 
-T0 = time.perf_counter()  # start time
+START_TIME = time.perf_counter()  # start time
 
 # noqa: E402
 
@@ -220,7 +220,7 @@ def train(config: TrainConfig) -> Trainer:
     )
     jstr = json.dumps(asdict(config), indent=2, sort_keys=True)
     logger.info(f"config:\n{jstr}")
-    logger.info(f"Took: {time.perf_counter() - T0:.2f} to get here.")
+    logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} to get here.")
     t0t = time.perf_counter()
     _ = trainer.train()
     logger.info(
@@ -472,7 +472,7 @@ def main() -> Trainer:
 
         dscomm.log_summary()
 
-    logger.info(f"Took: {time.perf_counter() - T0:.2f} seconds")
+    logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} seconds")
     return trainer
 
 
