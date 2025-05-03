@@ -23,30 +23,12 @@ import torch.distributed as tdist
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
-# try:
-#     import wandb
-#
-#     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-# except Exception:
-#     wandb = None
-#     WANDB_DISABLED = True
-#
 from ezpz.lazy import lazy_import
 
 try:
     wandb = lazy_import("wandb")
 except Exception:
     wandb = None
-
-try:
-    import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-except Exception:
-    ipex = None
-
-try:
-    import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]  # noqa
-except Exception:
-    oneccl_bpt = None
 
 
 if not os.environ.get(
@@ -69,13 +51,6 @@ logging.getLogger("sh").setLevel("WARNING")
 #         logger.info(f"Unable to import '{module_name}', trying to continue")
 
 
-# ipex = None
-# oneccl_bpt = None
-# if torch.xpu.is_available():
-#     ipex = try_import("intel_extension_for_pytorch")
-#     oneccl_bpt = try_import("oneccl_bindings_for_pytorch")
-
-
 ACCELERATOR_TYPE = (
     "IntelGPU"
     if torch.xpu.is_available() and torch.xpu.device_count() > 0
@@ -95,7 +70,12 @@ ACCELERATOR_TYPE = (
 #     world_size: int
 
 
-def seed_everything(seed: int):
+def seed_everything(seed: int) -> None:
+    """Set random seed for reproducibility.
+
+    Args:
+        seed (int): Random seed to set.
+    """
     import torch
     import numpy as np
     import random
@@ -123,6 +103,12 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
 
 
 def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
+    """Decorator to time a function and log the time taken.
+
+    Args:
+        rank (int, optional): Rank of the process. Defaults to None.
+        verbose (bool, optional): Whether to log the time taken. Defaults to True.
+    """
     rank = get_rank() if rank is None else rank
     try:
         import wandb
@@ -130,6 +116,12 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
         wandb = None
 
     def decorator(func: Callable):
+        """Decorator to time a function and log the time taken.
+
+        Args:
+            func (Callable): Function to be timed.
+        """
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             t0 = time.perf_counter()
@@ -304,6 +296,16 @@ def get_dist_info(
     verbose: Optional[bool] = None,
     hostfile: Optional[PathLike] = None,
 ) -> dict[str, str | int | list]:
+    """Get distributed info.
+
+    Args:
+        framework (str, optional): Framework to use. Defaults to None.
+        verbose (bool, optional): Whether to print the info. Defaults to None.
+        hostfile (PathLike, optional): Path to the hostfile. Defaults to None.
+
+    Returns:
+        dict: Dictionary containing the distributed info.
+    """
     dist_info = _get_dist_info(
         hostfile=hostfile,
         framework=framework,
@@ -321,6 +323,15 @@ def print_dist_setup(
     framework: Optional[str] = None,
     hostfile: Optional[PathLike] = None,
 ) -> str:
+    """Print distributed setup.
+
+    Args:
+        framework (str, optional): Framework to use. Defaults to None.
+        hostfile (PathLike, optional): Path to the hostfile. Defaults to None.
+
+    Returns:
+        str: String containing the distributed setup.
+    """
     rank = get_rank()
     wst = get_world_size(total=True)
     wsa = get_world_size(in_use=True)
@@ -374,6 +385,16 @@ def print_dist_setup(
 
 
 def synchronize(device: Optional[torch.device | int | str] = None):
+    """
+    Synchronize the given device.
+
+    Args:
+        device (torch.device | int | str, optional): The device to synchronize.
+            If None, the default device will be used. Defaults to None.
+
+    Returns:
+        None
+    """
     return (
         torch.cuda.synchronize(device)
         if torch.cuda.is_available()
@@ -829,6 +850,21 @@ def setup_torch(
     """Setup torch.
 
     Args:
+        backend (str, optional): Backend to use. Defaults to None.
+        port (str | int, optional): Port to use. Defaults to None.
+        seed (int, optional): Seed to use. Defaults to None.
+        timeout (str | int, optional): Timeout to use. Defaults to None.
+        verbose (bool, optional): Whether to print the info. Defaults to False.
+        tensor_parallel_size (int, optional): Tensor parallel size. Defaults to 1.
+        pipeline_parallel_size (int, optional): Pipeline parallel size. Defaults to 1.
+        context_parallel_size (int, optional): Context parallel size. Defaults to 1.
+        tensor_parallel_backend (str, optional): Tensor parallel backend. Defaults to None.
+        pipeline_parallel_backend (str, optional): Pipeline parallel backend. Defaults to None.
+        context_parallel_backend (str, optional): Context parallel backend. Defaults to None.
+        data_parallel_backend (str, optional): Data parallel backend. Defaults to None.
+
+    Returns:
+        int: Rank of the process.
     """
     device = get_torch_device()
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
@@ -1059,6 +1095,19 @@ def include_file(f: PathLike):
 
 
 def get_machine(hostname: Optional[str] = None) -> str:
+    """Get the machine name from the hostname.
+
+    Args:
+        hostname (str, optional): The hostname to check. Defaults to None.
+
+    Returns:
+        str: The machine name.
+
+    Example:
+        >>> get_machine("frontier")
+        "Frontier"
+    """
+
     if hostname is None:
         try:
             hostname = socket.gethostbyaddr(socket.gethostname())[0]
@@ -1099,6 +1148,19 @@ def setup_wandb(
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
 ):
+    """Setup wandb for logging.
+
+    Args:
+        project_name (str, optional): The name of the project. Defaults to None.
+        entity (str, optional): The entity name. Defaults to None.
+        config (dict | DictConfig, optional): The configuration dictionary. Defaults to None.
+        start_method (str, optional): The start method for wandb. Defaults to "thread".
+        outdir (str | Path | os.PathLike, optional): The output directory. Defaults to None.
+        init_timeout (int, optional): The timeout for wandb initialization. Defaults to 300.
+
+    Example:
+        >>> setup_wandb(project_name="my_project", entity="my_entity")
+    """
     # try:
     #     import wandb
     # except Exception:
