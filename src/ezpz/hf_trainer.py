@@ -41,7 +41,7 @@ try:
         is_torch_xla_available,
         set_seed,
     )
-    from transformers.testing_utils import CaptureLogger
+    # from transformers.testing_utils import CaptureLogger
     from transformers.trainer_utils import get_last_checkpoint
 
     # from transformers.utils import send_example_telemetry
@@ -764,14 +764,14 @@ def main():
     )
 
     def tokenize_function(examples):
-        with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
+        # with CaptureLogger(tok_logger) as cl:
+        output = tokenizer(examples[text_column_name])
         # clm input could be much much longer than block_size
-        if "Token indices sequence length is longer than the" in cl.out:
-            tok_logger.warning(
-                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
-                " before being passed to the model."
-            )
+        # if "Token indices sequence length is longer than the" in cl.out:
+        #     logger.warning(
+        #         "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
+        #         " before being passed to the model."
+        #     )
         return output
 
     with training_args.main_process_first(desc="dataset map tokenization"):
@@ -822,8 +822,10 @@ def main():
             k: list(chain(*examples[k])) for k in examples.keys()
         }
         total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        # We drop the small remainder, and if the total_length < block_size  we
+        # exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop,
+        # you can customize this part to your needs.
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
@@ -836,11 +838,13 @@ def main():
         result["labels"] = result["input_ids"].copy()
         return result
 
-    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
-    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
-    # to preprocess.
+    # Note that with `batched=True`, this map processes 1,000 texts together,
+    # so group_texts throws away a remainder for each of those groups of 1,000
+    # texts. You can adjust that batch_size here but a higher value might be
+    # slower to preprocess.
     #
-    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # To speed up this part, we use multiprocessing. See the documentation of
+    # the map method for more information:
     # https://huggingface.co/docs/datasets/process#map
 
     with training_args.main_process_first(desc="grouping texts together"):
@@ -858,24 +862,6 @@ def main():
                 batched=True,
             )
 
-    if training_args.eval_on_start and evaluate is not None:
-        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
-
-        def compute_metrics(eval_preds):
-            preds, labels = eval_preds
-            # preds have the same shape as the labels, after the argmax(-1) has been calculated
-            # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, 1:].reshape(-1)
-            preds = preds[:, :-1].reshape(-1)
-            predictions = decode_predictions(tokenizer, preds)
-            predictions_df = pd.DataFrame(predictions)
-            if wandb is not None and getattr(wandb, "run", None) is not None:
-                records_table = wandb.Table(dataframe=predictions_df)
-                # log the table to wandb
-                assert wandb is not None and wandb.run is not None
-                wandb.log({"sample_predictions": records_table})
-            return metric.compute(predictions=preds, references=labels)
-
     train_dataset = None
     if training_args.do_train:
         if "train" not in tokenized_datasets:
@@ -888,6 +874,25 @@ def main():
             train_dataset = train_dataset.select(  # type:ignore
                 range(max_train_samples)
             )  # type:ignore
+
+
+    # if training_args.eval_on_start and evaluate is not None:
+    #     metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+    #
+    #     def compute_metrics(eval_preds):
+    #         preds, labels = eval_preds
+    #         # preds have the same shape as the labels, after the argmax(-1) has been calculated
+    #         # by preprocess_logits_for_metrics but we need to shift the labels
+    #         labels = labels[:, 1:].reshape(-1)
+    #         preds = preds[:, :-1].reshape(-1)
+    #         predictions = decode_predictions(tokenizer, preds)
+    #         predictions_df = pd.DataFrame(predictions)
+    #         if wandb is not None and getattr(wandb, "run", None) is not None:
+    #             records_table = wandb.Table(dataframe=predictions_df)
+    #             # log the table to wandb
+    #             assert wandb is not None and wandb.run is not None
+    #             wandb.log({"sample_predictions": records_table})
+    #         return metric.compute(predictions=preds, references=labels)
 
     eval_dataset = None
     if training_args.do_eval:
@@ -907,26 +912,26 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        if evaluate is not None:
-            metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+        # if evaluate is not None:
+        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
 
-            def compute_metrics(eval_preds):
-                preds, labels = eval_preds
-                # preds have the same shape as the labels, after the argmax(-1) has been calculated
-                # by preprocess_logits_for_metrics but we need to shift the labels
-                labels = labels[:, 1:].reshape(-1)
-                preds = preds[:, :-1].reshape(-1)
-                predictions = decode_predictions(tokenizer, preds)
-                predictions_df = pd.DataFrame(predictions)
-                if (
-                    wandb is not None
-                    and getattr(wandb, "run", None) is not None
-                ):
-                    records_table = wandb.Table(dataframe=predictions_df)
-                    # log the table to wandb
-                    assert wandb is not None and wandb.run is not None
-                    wandb.log({"sample_predictions": records_table})
-                return metric.compute(predictions=preds, references=labels)
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            predictions = decode_predictions(tokenizer, preds)
+            predictions_df = pd.DataFrame(predictions)
+            if (
+                wandb is not None
+                and getattr(wandb, "run", None) is not None
+            ):
+                records_table = wandb.Table(dataframe=predictions_df)
+                # log the table to wandb
+                assert wandb is not None and wandb.run is not None
+                wandb.log({"sample_predictions": records_table})
+            return metric.compute(predictions=preds, references=labels)
 
     if rank == 0 and wandb is not None:
         wandb.run.watch(model, log="all")  # type:ignore
