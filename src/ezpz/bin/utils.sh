@@ -7,6 +7,11 @@
 #      - `ezpz_setup_python`
 #      - ...
 #
+#
+# LOGFILE="ezpz-utils.log"
+# exec 3>&1 1>"$LOGFILE" 2>&1
+# trap "echo 'ERROR: An error occurred during execution, check log $LOGFILE for details.' >&3" ERR
+# trap '{ set +x; } 2>/dev/null; echo -n "[$(date -Is)]  "; set -x' DEBUG
 
 # --- Strict Mode & Options ---
 # Exit immediately if a command exits with a non-zero status.
@@ -38,6 +43,7 @@ PBS_ENV_FILE="${HOME}/.pbsenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
 WORKING_DIR="" # Determined in utils_main
 
+
 # --- Debugging and No-Op ---
 # Check if running in DEBUG=1 mode.
 # Usage: DEBUG=1 source utils_modern.sh
@@ -56,6 +62,38 @@ fi
 
 # --- Helper Functions ---
 
+# # Set the default log level to INFO if the
+# # environment variable isn't already set.
+DEFAULT_LOG_LEVEL="${DEFAULT_LOG_LEVEL:-INFO}"
+export DEFAULT_LOG_LEVEL
+# # Log a message to a file and to standared error.
+# #
+# # XXX: You may want to change the possible values
+# # for log levels (a.k.a. severity) based on your
+# # target logging system. For example, syslog
+# # also accepts `CRIT`, `ALERT`, and `EMERG`.
+# log_message () {
+#     local date filename log_level log_msg
+#     local level="$1"; shift
+#     local string="$*"
+#
+#     filename=$(basename "${BASH_SOURCE[0]}" ".sh")
+#     date=$(date --rfc-3339=seconds | tr -d '\r\n')
+#     log_level="${1:-$DEFAULT_LOG_LEVEL}"
+#     log_level="${log_level^^}"
+#     # string="$(echo -e "${string}" | sed -e "s/[[:space:]]\+/ /g")"
+#     # Remove the first positional parameter if it's a
+#     # defined log severity level.
+#     # if [[ "${log_level}" =~ DEBUG|INFO|WARN|ERROR|FATAL ]]; then
+#     #     shift
+#     # fi
+#     # [[ "${1@U}" =~ DEBUG|INFO|WARN|ERROR|FATAL ]] && shift
+#
+#     log_msg="[${date}] $log_level -- ${filename}: ${string}"
+#     echo "$log_msg" >> "$LOG_FILE"
+#     echo "$log_msg"  > /dev/stderr
+# }
+
 log_info() {
     args=("$@")
     printf "[%s][${GREEN}I${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
@@ -69,6 +107,29 @@ log_warn() {
 log_error() {
     args=("$@")
     printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}" >&2
+}
+
+log_message() {
+    local level="$1"; shift
+    local string="$*"
+    local date
+    date=$(ezpz_get_tstamp)
+    local log_level="${level:-$DEFAULT_LOG_LEVEL}"
+    case "${log_level}" in
+        DEBUG) log_level="${CYAN}D${RESET}" ;;
+        INFO)  log_level="${GREEN}I${RESET}" ;;
+        WARN)  log_level="${YELLOW}W${RESET}" ;;
+        ERROR) log_level="${RED}E${RESET}" ;;
+        FATAL) log_level="${RED}F${RESET}" ;;
+        *)     log_level="${INFO}I${RESET}" ;; # Default to INFO
+    esac
+    # log_level="${log_level^^}"
+    log_msg="[${date}][$log_level] -- ${string}"
+    echo "$log_msg"
+    # string="$(echo -e "${string}" | sed -e "s/[[:space:]]\+/ /g")"
+
+
+
 }
 
 # @description Get name of shell.
@@ -134,7 +195,7 @@ ezpz_qsme_running() {
     if ! command -v qstat &> /dev/null; then
         # printf "${RED}Error: 'qstat' command not found. Cannot list PBS jobs.${RESET}\n" >&2
         # printf "${RED}Error: 'qstat' command not found. Cannot list PBS jobs.${RESET}\n" >&2
-        log_error "Error: 'qstat' command not found. Cannot list PBS jobs."
+        log_message ERROR "'qstat' command not found. Cannot list PBS jobs."
         return 1
     fi
     # -u "${USER}": Filter for the current user.
@@ -285,7 +346,8 @@ ezpz_save_dotenv() {
         mkdir -p "${outdir}"
         module list
         dotenv_file="${outdir}/.env"
-        log_info "Saving environment to ${dotenv_file}"
+        # log_info "Saving environment to ${dotenv_file}"
+        log_message INFO "Saving environment to ${dotenv_file}"
         printenv | grep -v "LS_COLORS" >"${dotenv_file}"
         export DOTENV_FILE="${dotenv_file}"
     fi
@@ -544,45 +606,8 @@ ezpz_setup_uv_venv() {
     uv venv --python="$(which python3)" --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
 }
 
-########################
-# setup_venv_from_conda
-#
-# Build (if necessary) a virtual environment
-# on top of the active conda and
-# activate it.
-# ######################
-ezpz_setup_venv_from_conda() {
-    if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        log_error "CONDA_PREFIX is not set. Cannot create venv."
-        return 1
-    else
-        log_info "Found conda at:" "$(printf "${RED}%s${RESET}" "${CONDA_PREFIX:-}")"
-        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
-        # CONDA_NAME=$(echo "${CONDA_PREFIX}" | tr '\/' '' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
-        if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-            log_info $(echo "[venv] No VIRTUAL_ENV found in environment!")
-            log_info $(echo "[venv] Trying to setup from ${RED}${CONDA_PREFIX}${RESET}")
-            export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
-            log_info $(echo "[venv] Using VENV_DIR=${BLUE}${VENV_DIR}${RESET}")
-            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-                log_info $(echo "[venv] Creating venv (on top of ${RED}${CONDA_NAME}${RESET}) in VENV_DIR...")
-                mkdir -p "${VENV_DIR}"
-                python3 -m venv "${VENV_DIR}" --system-site-packages
-                source "${VENV_DIR}/bin/activate" || exit
-            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
-                log_info $(echo "[venv] Found existing venv, activating from ${BLUE}${VENV_DIR}${RESET}")
-                # echo "  - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
-                source "${VENV_DIR}/bin/activate" || exit
-            else
-                log_info $(echo "[${RED}ERROR${RESET}]: Unable to locate ${VENV_DIR}/bin/activate") # \n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
-            fi
-        fi
-    fi
-
-}
-
 # -----------------------------------------------------------------------------
-# Set up a standard Python `venv` on top of an active Conda environment.
+# @description Set up a standard Python `venv` on top of an active Conda environment.
 # Creates a venv named after the Conda environment in a central 'venvs' directory.
 # Activates the created venv. Inherits system site packages.
 #
@@ -601,6 +626,46 @@ ezpz_setup_venv_from_conda() {
 #   Activates the created virtual environment. Prints status messages.
 #   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 # -----------------------------------------------------------------------------
+ezpz_setup_venv_from_conda() {
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        log_message ERROR "CONDA_PREFIX is not set. Cannot create venv."
+        return 1
+    else
+        log_message INFO "Found conda at ${GREEN}${CONDA_PREFIX}${RESET}"
+        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+        if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+            log_message INFO "[venv] No VIRTUAL_ENV found in environment!"
+            log_message INFO "[venv] Trying to setup from ${RED}${CONDA_NAME}${RESET}"
+            log_message INFO "[venv] Using VENV_DIR=${BLUE}${WORKING_DIR}/venvs/${CONDA_NAME}${RESET}"
+            export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            # make directory if it doesn't exist
+            [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
+            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+                log_message INFO "[venv] Creating venv (on top of ${RED}${CONDA_NAME}${RESET}) in VENV_DIR..."
+                mkdir -p "${VENV_DIR}"
+                python3 -m venv "${VENV_DIR}" --system-site-packages
+                if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                    log_message INFO "[venv] Activating newly created venv..."
+                    source "${VENV_DIR}/bin/activate" || exit
+                else
+                    log_message ERROR "[venv] Failed to create venv at ${VENV_DIR}"
+                    return 1
+                fi
+            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                log_message INFO "[venv] Found existing venv, activating from ${BLUE}${VENV_DIR}${RESET}"
+                # log_info $(echo "[venv] Found existing venv, activating from ${BLUE}${VENV_DIR}${RESET}")
+                # echo "  - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
+                source "${VENV_DIR}/bin/activate" || exit
+            else
+                log_message ERROR "[venv] Unable to locate ${VENV_DIR}/bin/activate"
+                return 1
+                # log_info $(echo "[${RED}ERROR${RESET}]: Unable to locate ${VENV_DIR}/bin/activate") # \n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            fi
+        fi
+    fi
+
+}
+
 # ezpz_setup_venv_from_conda1() {
 #     # Check prerequisites
 #     if [[ -z "${CONDA_PREFIX:-}" ]]; then
