@@ -203,6 +203,7 @@ class Trainer:
 
 def train(config: TrainConfig) -> Trainer:
     # logger.info(f"Setting up torch with {config.backend=}...")
+    timings = {}
     t0m = time.perf_counter()
     model = Network(
         input_dim=config.input_size,
@@ -210,22 +211,37 @@ def train(config: TrainConfig) -> Trainer:
         sizes=config.layer_sizes,
     )
     t1m = time.perf_counter()
-    logger.info(f"Took: {t1m - t0m:.2f} seconds to build model")
+    dt_model = t1m - t0m
+    logger.info(f"Took: {dt_model} seconds to build model")
     model, optimizer = build_model_and_optimizer(model, backend=config.backend)
     t2m = time.perf_counter()
-    logger.info(f"Took: {t2m - t1m:.2f} seconds to build optimizer")
+    dt_optimizer = time.perf_counter() - t1m
+    logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
     trainer = Trainer(config=config, model=model, optimizer=optimizer)
+    t1tr = time.perf_counter()
     logger.info(
-        f"Took: {time.perf_counter() - t2m:.2f} seconds to build trainer"
+        f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer"
     )
     jstr = json.dumps(asdict(config), indent=2, sort_keys=True)
     logger.info(f"config:\n{jstr}")
-    logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} to get here.")
+    t1s = time.perf_counter()
+    logger.info(f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here.")
     t0t = time.perf_counter()
     _ = trainer.train()
+    t1t = time.perf_counter()
     logger.info(
-        f"Took: {time.perf_counter() - t0t:.2f} seconds to finish training"
+        f"Took: {(dt_train_duration := t1t - t0t):.2f} seconds to finish training"
     )
+    timings = {
+        "timings/model": dt_model,
+        "timings/optimizer": dt_optimizer,
+        "timings/trainer": dt_trainer,
+        "timings/training_start": dt_train_start,
+        "timings/train_duration": dt_train_duration,
+    }
+    if wandb is not None and getattr(wandb, 'run', None) is not None:
+        wandb.log(timings)
+
     return trainer
 
 
