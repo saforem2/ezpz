@@ -158,7 +158,7 @@ else:
         "repr.attr": Style(color="blue"),
         "repr.attrib_name": Style(color="bright_blue", bold=False, italic=True),
         "repr.attrib_equal": Style(bold=True, color="yellow"),
-        "repr.attrib_value": Style(color="bright_magenta", italic=False),
+        "repr.attrib_value": Style(color="magenta", italic=False),
         "repr.ellipsis": Style(color="bright_yellow"),
         "repr.indent": Style(color="bright_green", dim=True),
         "repr.error": Style(color="bright_green", bold=True),
