@@ -22,7 +22,6 @@ import ezpz
 
 from dataclasses import dataclass, field
 
-
 import torch
 
 MODEL_FOR_CAUSAL_LM_MAPPING = None
@@ -41,6 +40,7 @@ try:
         is_torch_xla_available,
         set_seed,
     )
+
     # from transformers.testing_utils import CaptureLogger
     from transformers.trainer_utils import get_last_checkpoint
 
@@ -875,7 +875,6 @@ def main():
                 range(max_train_samples)
             )  # type:ignore
 
-
     # if training_args.eval_on_start and evaluate is not None:
     #     metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
     #
@@ -923,10 +922,7 @@ def main():
             preds = preds[:, :-1].reshape(-1)
             predictions = decode_predictions(tokenizer, preds)
             predictions_df = pd.DataFrame(predictions)
-            if (
-                wandb is not None
-                and getattr(wandb, "run", None) is not None
-            ):
+            if wandb is not None and getattr(wandb, "run", None) is not None:
                 records_table = wandb.Table(dataframe=predictions_df)
                 # log the table to wandb
                 assert wandb is not None and wandb.run is not None
@@ -986,6 +982,7 @@ def main():
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
+        trainer.save_state()
 
         metrics = train_result.metrics
 
