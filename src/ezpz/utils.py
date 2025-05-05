@@ -277,6 +277,335 @@ def write_generic_deepspeed_config(
     return ds_config
 
 
+def get_deepspeed_zero_config_json(
+    stage: Optional[int] = 0,
+    allgather_partitions: Optional[bool] = None,
+    allgather_bucket_size: Optional[int] = int(5e8),
+    overlap_comm: Optional[bool] = None,
+    reduce_scatter: Optional[bool] = True,
+    reduce_bucket_size: Optional[int] = int(5e8),
+    contiguous_gradients: Optional[bool] = None,
+    offload_param: Optional[dict] = None,
+    offload_optimizer: Optional[dict] = None,
+    stage3_max_live_parameters: Optional[int] = int(1e9),
+    stage3_max_reuse_distance: Optional[int] = int(1e9),
+    stage3_prefetch_bucket_size: Optional[int] = int(5e8),
+    stage3_param_persistence_threshold: Optional[int] = int(1e6),
+    sub_group_size: Optional[int] = None,
+    elastic_checkpoint: Optional[dict] = None,
+    stage3_gather_16bit_weights_on_model_save: Optional[bool] = None,
+    ignore_unused_parameters: Optional[bool] = None,
+    round_robin_gradients: Optional[bool] = None,
+    zero_hpz_partition_size: Optional[int] = None,
+    zero_quantized_weights: Optional[bool] = None,
+    zero_quantized_gradients: Optional[bool] = None,
+    log_trace_cache_warnings: Optional[bool] = None,
+) -> dict:
+    """
+    Write a deepspeed zero config to the output directory.
+
+    Args:
+
+        stage (int): ZeRO stage. Default: ``1``.
+        allgather_partitions (bool): Whether to use allgather partitions. Default: ``None``.
+        allgather_bucket_size (int): Size of the allgather bucket. Default: ``5e8``.
+        overlap_comm (bool): Whether to overlap communication. Default: ``None``.
+        reduce_scatter (bool): Whether to use reduce scatter. Default: ``True``.
+        reduce_bucket_size (int): Size of the reduce bucket. Default: ``5e8``.
+        contiguous_gradients (bool): Whether to use contiguous gradients. Default: ``None``.
+        offload_param (dict): Offload parameters. Default: ``None``.
+        offload_optimizer (dict): Offload optimizer. Default: ``None``.
+        stage3_max_live_parameters (int): Maximum live parameters for stage 3. Default: ``1e9``.
+        stage3_max_reuse_distance (int): Maximum reuse distance for stage 3. Default: ``1e9``.
+        stage3_prefetch_bucket_size (int): Prefetch bucket size for stage 3. Default: ``5e8``.
+        stage3_param_persistence_threshold (int): Parameter persistence threshold for stage 3. Default: ``1e6``.
+        sub_group_size (int): Sub group size. Default: ``None``.
+        elastic_checkpoint (dict): Elastic checkpoint. Default: ``None``.
+        stage3_gather_16bit_weights_on_model_save (bool): Whether to gather 16-bit weights on model save. Default: ``None``.
+        ignore_unused_parameters (bool): Whether to ignore unused parameters. Default: ``None``.
+        round_robin_gradients (bool): Whether to use round robin gradients. Default: ``None``.
+        zero_hpz_partition_size (int): Partition size for ZeRO HPZ. Default: ``None``.
+        zero_quantized_weights (bool): Whether to use quantized weights. Default: ``None``.
+        zero_quantized_gradients (bool): Whether to use quantized gradients. Default: ``None``.
+        log_trace_cache_warnings (bool): Whether to log trace cache warnings. Default: ``None``.
+
+    Returns:
+        dict: Deepspeed zero config.
+    """
+    return {
+        # "zero_optimization": {
+        "stage": stage,
+        "allgather_partitions": allgather_partitions,
+        "allgather_bucket_size": allgather_bucket_size,
+        "overlap_comm": overlap_comm,
+        "reduce_scatter": reduce_scatter,
+        "reduce_bucket_size": reduce_bucket_size,
+        "contiguous_gradients": contiguous_gradients,
+        "offload_param": offload_param,
+        "offload_optimizer": offload_optimizer,
+        "stage3_max_live_parameters": stage3_max_live_parameters,
+        "stage3_max_reuse_distance": stage3_max_reuse_distance,
+        "stage3_prefetch_bucket_size": stage3_prefetch_bucket_size,
+        "stage3_param_persistence_threshold": stage3_param_persistence_threshold,
+        "sub_group_size": sub_group_size,
+        "elastic_checkpoint": elastic_checkpoint,
+        "stage3_gather_16bit_weights_on_model_save": stage3_gather_16bit_weights_on_model_save,
+        "ignore_unused_parameters": ignore_unused_parameters,
+        "round_robin_gradients": round_robin_gradients,
+        "zero_hpz_partition_size": zero_hpz_partition_size,
+        "zero_quantized_weights": zero_quantized_weights,
+        "zero_quantized_gradients": zero_quantized_gradients,
+        "log_trace_cache_warnings": log_trace_cache_warnings,
+        # }
+    }
+
+
+def get_deepspeed_adamw_optimizer_config_json(
+    auto_config: Optional[bool] = True,
+) -> dict:
+    """
+    Get the deepspeed adamw optimizer config json.
+
+    Args:
+        auto_config (bool): Whether to use the auto config. Default: ``True``.
+
+    Returns:
+        dict: Deepspeed adamw optimizer config.
+    """
+    return (
+        {"type": "AdamW"}
+        if not auto_config
+        else {
+            "type": "AdamW",
+            "params": {
+                "lr": "auto",
+                "weight_decay": "auto",
+                "torch_adam": True,
+                "adam_w_mode": True,
+            },
+        }
+    )
+
+
+def get_deepspeed_warmup_decay_scheduler_config_json(
+    auto_config: Optional[bool] = True,
+) -> dict:
+    """
+    Get the deepspeed warmup decay scheduler config json.
+
+    Args:
+        auto_config (bool): Whether to use the auto config. Default: ``True``.
+
+    Returns:
+        dict: Deepspeed warmup decay scheduler config.
+    """
+    return (
+        {"type": "WarmupDecayLR"}
+        if not auto_config
+        else {
+            "type": "WarmupDecayLR",
+            "params": {
+                "warmup_min_lr": "auto",
+                "warmup_max_lr": "auto",
+                "warmup_num_steps": "auto",
+                "total_num_steps": "auto",
+            },
+        }
+    )
+
+
+def get_flops_profiler_config_json(
+    enabled: bool = True,
+    profile_step: int = 1,
+    module_depth: int = -1,
+    top_modules: int = 1,
+    detailed: bool = True,
+) -> dict:
+    """
+    Get the deepspeed flops profiler config json.
+
+    Args:
+        enabled (bool): Whether to use the flops profiler. Default: ``True``.
+        profile_step (int): The step to profile. Default: ``1``.
+        module_depth (int): The depth of the module. Default: ``-1``.
+        top_modules (int): The number of top modules to show. Default: ``1``.
+        detailed (bool): Whether to show detailed profiling. Default: ``True``.
+
+    Returns:
+        dict: Deepspeed flops profiler config.
+    """
+    return {
+        "enabled": enabled,
+        "profile_step": profile_step,
+        "module_depth": module_depth,
+        "top_modules": top_modules,
+        "detailed": detailed,
+    }
+
+
+def get_bf16_config_json(
+    enabled: bool = True,
+) -> dict:
+    """
+    Get the deepspeed bf16 config json.
+
+    Args:
+        enabled (bool): Whether to use bf16. Default: ``True``.
+
+    Returns:
+        dict: Deepspeed bf16 config.
+    """
+    return {"enabled": enabled}
+
+
+def get_fp16_config_json(
+    enabled: bool = True,
+):
+    """
+    Get the deepspeed fp16 config json.
+
+    Args:
+        enabled (bool): Whether to use fp16. Default: ``True``.
+
+    Returns:
+        dict: Deepspeed fp16 config.
+    """
+    return {"enabled": enabled}
+
+
+def get_deepspeed_config_json(
+    auto_config: Optional[bool] = True,
+    gradient_accumulation_steps: int = 1,
+    gradient_clipping: Optional[str | float] = "auto",
+    steps_per_print: Optional[int] = 10,
+    train_batch_size: str = "auto",
+    train_micro_batch_size_per_gpu: str = "auto",
+    wall_clock_breakdown: bool = False,
+    wandb: bool = True,  # NOTE: Opinionated, W&B is enabled by default
+    bf16: bool = True,  # NOTE: Opinionated, BF16 is enabled by default
+    fp16: Optional[bool] = None,
+    flops_profiler: Optional[dict] = None,
+    optimizer: Optional[dict] = None,
+    scheduler: Optional[dict] = None,
+    zero_optimization: Optional[dict] = None,
+    stage: Optional[int] = 0,
+    allgather_partitions: Optional[bool] = None,
+    allgather_bucket_size: Optional[int] = int(5e8),
+    overlap_comm: Optional[bool] = None,
+    reduce_scatter: Optional[bool] = True,
+    reduce_bucket_size: Optional[int] = int(5e8),
+    contiguous_gradients: Optional[bool] = None,
+    offload_param: Optional[dict] = None,
+    offload_optimizer: Optional[dict] = None,
+    stage3_max_live_parameters: Optional[int] = int(1e9),
+    stage3_max_reuse_distance: Optional[int] = int(1e9),
+    stage3_prefetch_bucket_size: Optional[int] = int(5e8),
+    stage3_param_persistence_threshold: Optional[int] = int(1e6),
+    sub_group_size: Optional[int] = None,
+    elastic_checkpoint: Optional[dict] = None,
+    stage3_gather_16bit_weights_on_model_save: Optional[bool] = None,
+    ignore_unused_parameters: Optional[bool] = None,
+    round_robin_gradients: Optional[bool] = None,
+    zero_hpz_partition_size: Optional[int] = None,
+    zero_quantized_weights: Optional[bool] = None,
+    zero_quantized_gradients: Optional[bool] = None,
+    log_trace_cache_warnings: Optional[bool] = None,
+    save_config: bool = True,
+    output_file: Optional[str] = None,
+    output_dir: Optional[PathLike] = None,
+) -> dict:
+    """
+    Write a deepspeed config to the output directory.
+    """
+    import json
+
+    wandb_config = {"enabled": wandb}
+    bf16_config = {"enabled": bf16}
+    fp16_config = {"enabled": fp16}
+    flops_profiler_config = (
+        get_flops_profiler_config_json()
+        if flops_profiler is None
+        else flops_profiler
+    )
+
+    optimizer = (
+        get_deepspeed_adamw_optimizer_config_json()
+        if optimizer is None
+        else optimizer
+    )
+    scheduler = (
+        get_deepspeed_warmup_decay_scheduler_config_json()
+        if scheduler is None
+        else scheduler
+    )
+
+    if stage is not None and int(stage) > 0:
+        zero_optimization = (
+            get_deepspeed_zero_config_json(
+                stage=stage,
+                allgather_partitions=allgather_partitions,
+                allgather_bucket_size=allgather_bucket_size,
+                overlap_comm=overlap_comm,
+                reduce_scatter=reduce_scatter,
+                reduce_bucket_size=reduce_bucket_size,
+                contiguous_gradients=contiguous_gradients,
+                offload_param=offload_param,
+                offload_optimizer=offload_optimizer,
+                stage3_max_live_parameters=stage3_max_live_parameters,
+                stage3_max_reuse_distance=stage3_max_reuse_distance,
+                stage3_prefetch_bucket_size=stage3_prefetch_bucket_size,
+                stage3_param_persistence_threshold=stage3_param_persistence_threshold,
+                sub_group_size=sub_group_size,
+                elastic_checkpoint=elastic_checkpoint,
+                stage3_gather_16bit_weights_on_model_save=stage3_gather_16bit_weights_on_model_save,
+                ignore_unused_parameters=ignore_unused_parameters,
+                round_robin_gradients=round_robin_gradients,
+                zero_hpz_partition_size=zero_hpz_partition_size,
+                zero_quantized_weights=zero_quantized_weights,
+                zero_quantized_gradients=zero_quantized_gradients,
+                log_trace_cache_warnings=log_trace_cache_warnings,
+            )
+            if zero_optimization is None
+            else zero_optimization
+        )
+    else:
+        zero_optimization = None
+    ds_config = {
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "gradient_clipping": gradient_clipping,
+        "steps_per_print": steps_per_print,
+        "train_batch_size": train_batch_size,
+        "train_micro_batch_size_per_gpu": train_micro_batch_size_per_gpu,
+        "wall_clock_breakdown": wall_clock_breakdown,
+        "wandb": wandb,
+        "bf16": bf16,
+        "fp16": fp16,
+        "flops_profiler": flops_profiler,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+        "zero_optimization": zero_optimization,
+    }
+    if save_config:
+        if output_file is None:
+            if output_dir is None:
+                output_dir = Path(os.getcwd()).joinpath("ds_configs")
+            output_dir = Path(output_dir)
+            output_dir.mkdir(exist_ok=True, parents=True)
+            outfile = output_dir.joinpath("deepspeed_config.json")
+        else:
+            outfile = Path(output_file)
+        logger.info(f"Saving DeepSpeed config to: {outfile.as_posix()}")
+        logger.info(json.dumps(ds_config, indent=4))
+        with outfile.open("w") as f:
+            json.dump(
+                ds_config,
+                fp=f,
+                indent=4,
+            )
+
+    return ds_config
+
+
 def write_deepspeed_zero12_auto_config(
     zero_stage: int = 1, output_dir: Optional[PathLike] = None
 ) -> dict:
