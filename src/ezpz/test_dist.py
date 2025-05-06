@@ -142,7 +142,6 @@ class Trainer:
             device=self.device_type,
             dtype=self.config.get_torch_dtype(),
         )
-        # with torch.autocast(device_type=str(DEVICE_TYPE), dtype=dtype):
         y = self.model(x)
         return {"loss": calc_loss(x, y), "dtf": (time.perf_counter() - t0)}
 
@@ -181,7 +180,7 @@ class Trainer:
             run_name="ezpz.test_dist",
             dataset_fname="train",
             warmup=self.config.warmup,
-            save=False,  # XXX: don't both saving test data
+            save=False,  # XXX: don't bother saving test data
             plot=(self.rank == 0),
             outdir=Path(os.getcwd()).joinpath("outputs", "ezpz.test_dist"),
         )
@@ -225,7 +224,9 @@ def train(config: TrainConfig) -> Trainer:
     jstr = json.dumps(asdict(config), indent=2, sort_keys=True)
     logger.info(f"config:\n{jstr}")
     t1s = time.perf_counter()
-    logger.info(f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here.")
+    logger.info(
+        f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here."
+    )
     t0t = time.perf_counter()
     _ = trainer.train()
     t1t = time.perf_counter()
@@ -239,7 +240,7 @@ def train(config: TrainConfig) -> Trainer:
         "timings/training_start": dt_train_start,
         "timings/train_duration": dt_train_duration,
     }
-    if wandb is not None and getattr(wandb, 'run', None) is not None:
+    if wandb is not None and getattr(wandb, "run", None) is not None:
         wandb.log(timings)
 
     return trainer
