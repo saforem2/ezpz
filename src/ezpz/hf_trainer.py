@@ -19,6 +19,7 @@ from itertools import chain
 from typing import Optional
 
 import ezpz
+import datasets
 
 from dataclasses import dataclass, field
 
@@ -417,12 +418,12 @@ def parse_args() -> dict:
     log_level_info = 20  # "INFO"
     log_level_critical = 50  # "CRITICAL"
     log_level = log_level_info if rank == 0 else log_level_critical
-    try:
-        import datasets
-
-        datasets.utils.logging.set_verbosity(log_level)
-    except Exception:
-        pass
+    # try:
+    #     import datasets
+    #
+    #     datasets.utils.logging.set_verbosity(log_level)
+    # except Exception:
+    #     pass
     transformers.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
@@ -867,9 +868,11 @@ def main():
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]  # type:ignore
+        ntrain_examples = train_dataset.info.splits["train"].num_examples
         if data_args.max_train_samples is not None:
             max_train_samples = min(
-                len(train_dataset), data_args.max_train_samples
+                train_dataset.info.splits["train"].num_examples,
+                data_args.max_train_samples,
             )
             train_dataset = train_dataset.select(  # type:ignore
                 range(max_train_samples)
@@ -895,14 +898,20 @@ def main():
 
     eval_dataset = None
     if training_args.do_eval:
+        assert evaluate is not None
         if validation_split_name not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
         eval_dataset = lm_datasets[validation_split_name]  # type: ignore
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(
-                len(eval_dataset), data_args.max_eval_samples
+                # len(eval_dataset),
+                eval_dataset.info.splits["train"].num_examples,  # type:ignore
+                data_args.max_eval_samples,
             )
-            eval_dataset = eval_dataset.select(range(max_eval_samples))  # type:ignore
+            if isinstance(eval_dataset, datasets.IterableDataset):
+                eval_dataset = eval_dataset.take(max_eval_samples)
+            else:
+                eval_dataset = eval_dataset.select(range(max_eval_samples))
 
         def preprocess_logits_for_metrics(logits, labels):
             if isinstance(logits, tuple):
@@ -920,13 +929,14 @@ def main():
             # by preprocess_logits_for_metrics but we need to shift the labels
             labels = labels[:, 1:].reshape(-1)
             preds = preds[:, :-1].reshape(-1)
-            predictions = decode_predictions(tokenizer, preds)
-            predictions_df = pd.DataFrame(predictions)
-            if wandb is not None and getattr(wandb, "run", None) is not None:
-                records_table = wandb.Table(dataframe=predictions_df)
-                # log the table to wandb
-                assert wandb is not None and wandb.run is not None
-                wandb.log({"sample_predictions": records_table})
+            # predictions = decode_predictions(tokenizer, preds)
+            # predictions_df = pd.DataFrame(predictions)
+            # if wandb is not None and getattr(wandb, "run", None) is not None:
+            #     records_table = wandb.Table(dataframe=predictions_df)
+            #     # log the table to wandb
+            #     assert wandb is not None and wandb.run is not None
+            #     wandb.log({"sample_predictions": records_table})
+            # return metric.compute(predictions=preds, references=labels)
             return metric.compute(predictions=preds, references=labels)
 
     if rank == 0 and wandb is not None:
@@ -943,12 +953,12 @@ def main():
         data_collator=default_data_collator,
         compute_metrics=(
             compute_metrics  # type:ignore
-            if training_args.do_eval  # and not is_torch_xla_available()  # type:ignore
+            if training_args.do_eval and not is_torch_xla_available()  # type:ignore
             else None
         ),
         preprocess_logits_for_metrics=(
             preprocess_logits_for_metrics  # type:ignore
-            if training_args.do_eval  # and not is_torch_xla_available()
+            if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
     )
@@ -989,56 +999,86 @@ def main():
         max_train_samples = (
             data_args.max_train_samples
             if data_args.max_train_samples is not None
-            else len(train_dataset)  # type:ignore
+            else train_dataset.info.splits["train"].num_examples  # type:ignore
         )
         assert train_dataset is not None
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))  # type:ignore
+        metrics["train_samples"] = min(
+            max_train_samples,
+            train_dataset.info.splits["train"].num_examples,  # type:ignore
+        )  # type:ignore
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
-        trainer.save_state()
 
     # Evaluation
     if training_args.do_eval:
-        import datasets
-        import pandas as pd
-
-        logger.info("*** Evaluate ***")
-        assert eval_dataset is not None, (
-            "eval_dataset must be defined for evaluation."
-        )
-
         metrics = trainer.evaluate()
-
         max_eval_samples = (
             data_args.max_eval_samples
             if data_args.max_eval_samples is not None
-            else len(eval_dataset)  # type:ignore
+            else eval_dataset.info.splits["train"].num_examples  # type:ignore
         )
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type:ignore
+        metrics["eval_samples"] = min(
+            max_eval_samples,
+            eval_dataset.info.splits["train"].num_examples,  # type:ignore
+        )  # type:ignore
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
+
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
-
-        # sample_dataset = eval_dataset.take(10)
-        # assert sample_dataset is not None
-        # # generate predictions
-        # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
-        #     predictions = trainer.predict(sample_dataset)
-        #     # decode predictions and labels
-        #     predictions = decode_predictions(tokenizer, predictions)
-        #     # add predictions to a wandb.Table
-        #     predictions_df = pd.DataFrame(predictions)
-        #     # predictions_df["epoch"] = state.epoch
-        #     if wandb is not None and getattr(wandb, "run", None) is not None:
-        #         records_table = wandb.Table(dataframe=predictions_df)
-        #         # log the table to wandb
-        #         assert wandb is not None and wandb.run is not None
-        #         wandb.log({"sample_predictions": records_table})
+        # model.eval()
+        # losses = []
+        # assert eval_dataset is not None
+        # for step, batch in enumerate(eval_dataloader):
+        #     with torch.no_grad():
+        #         outputs = model(**batch)
+        #         loss = outputs.loss
+        #         losses.append(loss.item())
+        # # Evaluation
+        # if training_args.do_eval:
+        #     import datasets
+        #     import pandas as pd
+        #
+        #     logger.info("*** Evaluate ***")
+        #     assert eval_dataset is not None, (
+        #         "eval_dataset must be defined for evaluation."
+        #     )
+        #
+        #     metrics = trainer.evaluate()
+        #
+        #     max_eval_samples = (
+        #         data_args.max_eval_samples
+        #         if data_args.max_eval_samples is not None
+        #         else len(eval_dataset)  # type:ignore
+        #     )
+        #     metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type:ignore
+        #     try:
+        #         perplexity = math.exp(metrics["eval_loss"])
+        #     except OverflowError:
+        #         perplexity = float("inf")
+        #     metrics["perplexity"] = perplexity
+        #     trainer.log_metrics("eval", metrics)
+        #     trainer.save_metrics("eval", metrics)
+        #
+        #     # sample_dataset = eval_dataset.take(10)
+        #     # assert sample_dataset is not None
+        #     # # generate predictions
+        #     # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
+        #     #     predictions = trainer.predict(sample_dataset)
+        #     #     # decode predictions and labels
+        #     #     predictions = decode_predictions(tokenizer, predictions)
+        #     #     # add predictions to a wandb.Table
+        #     #     predictions_df = pd.DataFrame(predictions)
+        #     #     # predictions_df["epoch"] = state.epoch
+        #     #     if wandb is not None and getattr(wandb, "run", None) is not None:
+        #     #         records_table = wandb.Table(dataframe=predictions_df)
+        #     #         # log the table to wandb
+        #     #         assert wandb is not None and wandb.run is not None
+        #     #         wandb.log({"sample_predictions": records_table})
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
@@ -1055,7 +1095,7 @@ def main():
             kwargs["dataset"] = data_args.dataset_name
 
     if wandb is not None and getattr(wandb, "run", None) is not None:
-        wandb.config.update(**kwargs)
+        wandb.config.update(kwargs)
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)
     else:
