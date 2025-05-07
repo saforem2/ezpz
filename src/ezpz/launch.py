@@ -55,7 +55,6 @@ def run_command(command: list | str, filters: Optional[list] = None) -> int:
     # XXX: Replace `subprocess.Popen`
     # with `subprocess.run` for better error handling ??
     # <https://docs.python.org/3.10/library/subprocess.html#subprocess.run>
-    filters = [] if filters is None else filters
     with subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -86,7 +85,70 @@ def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
     return cmd_to_launch
 
 
-def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
+def configure_warnings():
+    import os
+    import warnings
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:__main__"
+
+
+def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
+    mn = ezpz.get_machine()
+    filters = [*additional_filters] if additional_filters else []
+    if mn.lower() == "aurora":
+        filters += [
+            "cuda",
+            "CUDA",
+            "cuDNN",
+            "cuBLAS",
+            "[W501",
+            "  Overriding a previously registered kernel",
+            "operator: aten::_cummax_helper",
+            "    registered at build",
+            "dispatch key: XPU",
+            "previous kernel: registered at",
+            "new kernel: registered at",
+            "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
+            "Setting ds_accelerator to xpu",
+            "Trying to register 2 metrics with the same name",
+            "TF-TRT Warning",
+            "Warning only once",
+            "measureDifference between two events",
+        ]
+        logger.info(
+            " ".join(
+                [
+                    "Filtering for Aurora-specific messages.",
+                    "To view list of filters, run with `EZPZ_LOG_LEVEL=DEBUG`",
+                ]
+            )
+        )
+    logger.debug(f"Filters: {filters}")
+    return filters
+
+
+def kill_existing_processes(
+    filters: Optional[list] = None,
+    additional_filters: Optional[list] = None,
+) -> int:
+    """Kill existing processes that match the filters.
+
+    """
+    # TODO: Run this as preamble to launching
+    filters = [] if filters is None else filters
+    if ezpz.get_machine().lower() == "aurora":
+        filters += get_aurora_filters(additional_filters=additional_filters)
+
+    logger.info(f"Killing existing processes with filters: {filters}")
+    cmd = f"pkill -f {' '.join(filters)}"
+    return run_command(cmd, filters=filters)
+
+
+def launch(
+    cmd_to_launch: Optional[str | list[str]] = None,
+    filters: Optional[list[str]] = None,
+) -> int:
     """Launch a command on the current PBS job."""
     start = time.perf_counter()
     import ezpz.pbs
@@ -114,72 +176,43 @@ def launch(cmd_to_launch: Optional[str | list[str]] = None) -> int:
     if isinstance(cmd_to_launch, list):
         cmd_to_launch = shlex.join(cmd_to_launch)
     logger.info(
-        "\n".join(
-            [
-                "Building command to execute by piecing together:",
-                "\t(1) ['launch_cmd'] + (2) ['python'] + (3) ['cmd_to_launch']",
-                "",
-                f"1. ['launch_cmd']:\n\t{launch_cmd}",
-                "",
-                f"2. ['python']:\n\t{sys.executable}",
-                "",
-                f"3. ['cmd_to_launch']:\n\t{cmd_to_launch.replace(sys.executable, '').replace('python', '')}",
-                "",
-            ]
-        )
+        "Building command to execute by piecing together:"
+        "(1.) ['launch_cmd'] + (2.) ['python'] + (3.) ['cmd_to_launch']"
     )
-    # cmd = shlex.join([f"{launch_cmd}", f"{cmd_to_launch}"])
+    logger.info(f"(1.) ['launch_cmd']: {launch_cmd}")
+    logger.info(f"(2.) ['python']: {sys.executable}")
+    logger.info(
+        f"(3.) ['cmd_to_launch']: {cmd_to_launch.replace(sys.executable, '')}"
+    )
     cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
 
     logger.info(
         f"Took: {time.perf_counter() - start:.2f} seconds to build command."
     )
-    logger.info(f"Evaluating:\n\t{cmd}")
+    logger.info(f"Executing: {cmd}")
     t0 = time.perf_counter()
-    mn = ezpz.get_machine()
-    filters = []
-    if mn.lower() == "aurora":
-        filters = [
-            "cuda",
-            "CUDA",
-            "cuDNN",
-            "cuBLAS",
-            "[W501",
-            "  Overriding a previously registered kernel",
-            "operator: aten::_cummax_helper",
-            "    registered at build",
-            "dispatch key: XPU",
-            "previous kernel: registered at",
-            "new kernel: registered at",
-            "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
-            "Setting ds_accelerator to xpu",
-            "Trying to register 2 metrics with the same name",
-            "TF-TRT Warning",
-        ]
-        logger.info(
-            " ".join(
-                [
-                    "Filtering for Aurora-specific messages.",
-                    "To view list of filters, run with `EZPZ_LOG_LEVEL=DEBUG`",
-                ]
-            )
-        )
-        logger.debug(f"Filters: {filters}")
 
+    filters = [] if filters is None else filters
+    if ezpz.get_machine().lower() == "aurora":
+        filters += get_aurora_filters()
+
+    logger.info(f"Execution started @ {ezpz.get_timestamp()}...\n")
     retcode = run_command(cmd, filters=filters)
-    logger.info(f"Command took {time.perf_counter() - t0:.2f} seconds to run.")
+    logger.info(f"Execution finished @ {ezpz.get_timestamp()}")
+    logger.info(
+        f"Command took {time.perf_counter() - t0:.2f} seconds to run. Exiting."
+    )
     return retcode
 
 
-if __name__ == "__main__":
-    import os
-    import warnings
+def main():
     import ezpz.dist
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning:__main__"
-
-        launch()
-        ezpz.dist.cleanup()
+    configure_warnings()
+    launch()
+    ezpz.dist.cleanup()
     exit(0)
+
+
+if __name__ == "__main__":
+    main()

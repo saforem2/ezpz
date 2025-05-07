@@ -4,31 +4,43 @@ ezpz/__init__.py
 
 from __future__ import absolute_import, annotations, division, print_function
 
-# import importlib.util
-# from importlib import import_module
 import logging
 import logging.config
 import os
 
-# import sys
 import warnings
 import socket
 
-# sys.flags.lazy_imports = 1
-#
-# NOTE: Need to swap import order on Polaris (hostname: [x3...])
 if socket.gethostname().startswith("x3"):
+    # NOTE: Need to swap import order on Polaris (hostname: [x3...])
     from mpi4py import MPI  # type:ignore  # noqa: F401
     import torch  # type:ignore
 else:
+    if socket.gethostname().startswith("x4"):
+        if os.environ.get("FI_MR_CACHE_MONITOR") != "userfaultfd":
+            os.environ["FI_MR_CACHE_MONITOR"] = "userfaultfd"
+
+        import numpy as np
+
+        if int(np.__version__.split(".")[0]) >= 2:
+            os.environ["USE_TORCH"] = "1"
+
+        try:
+            import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+
+            os.environ["IPEX_VERSION"] = ipex.__version__
+        except Exception:
+            ipex = None
+
+        try:
+            import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]  # noqa
+
+            os.environ["ONECCL_BPT_VERSION"] = oneccl_bpt.__version__
+        except Exception:
+            oneccl_bpt = None
+
     import torch  # type: ignore
     from mpi4py import MPI  # type:ignore  # noqa: F401
-
-# try:
-#     import deepspeed  # type:ignore
-# except Exception:
-#     pass
-
 
 from ezpz.__about__ import __version__
 
@@ -221,16 +233,7 @@ from ezpz.utils import (
     save_dataset,
 )
 
-
-# def lazy_import(name: str):
-#     spec = importlib.util.find_spec(name)
-#     loader = importlib.util.LazyLoader(spec.loader)
-#     spec.loader = loader
-#     module = importlib.util.module_from_spec(spec)
-#     sys.modules[name] = module
-#     loader.exec_module(module)
-#     return module
-
+# ---- Use colored logs (default)
 if use_colored_logs():
     from ezpz.log.config import use_colored_logs
 
@@ -252,39 +255,58 @@ else:
 logger = logging.getLogger(__name__)
 # logger.setLevel("INFO")
 
+# ---- MPI
+RANK = int(MPI.COMM_WORLD.Get_rank())
+WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
+
+# ---- Set up logging (only from rank 0 by default)
+EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
+LOG_FROM_ALL_RANKS = os.environ.get(
+    "LOG_FROM_ALL_RANKS", os.environ.get("LOG_FROM_ALL_RANK", False)
+)
+# ---- Toggle with environment variable
+if LOG_FROM_ALL_RANKS:
+    if RANK == 0:
+        logger.warning(
+            "LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!"
+        )
+    logger.setLevel(EZPZ_LOG_LEVEL)
+else:
+    logger.setLevel(EZPZ_LOG_LEVEL) if RANK == 0 else logger.setLevel(
+        "CRITICAL"
+    )
+    logger.info(f"Setting logging level to '{EZPZ_LOG_LEVEL}' on 'RANK == 0'")
+    logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
+
+os.environ["EZPZ_VERSION"] = __version__
+
+os.environ["TORCH_VERSION"] = torch.__version__
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
+os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
+os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
+    "ITEX_CPP_MIN_LOG_LEVEL", "5"
+)
+os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
+# noqa: E402
+warnings.filterwarnings("ignore")
+
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("datasets").setLevel(logging.ERROR)
+logging.getLogger("sh").setLevel("WARNING")
+logging.getLogger("jax").setLevel(logging.ERROR)
+
 try:
     import deepspeed  # noqa type:ignore
+
+    os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
+    logging.getLogger("deepseed").setLevel(logging.ERROR)
 except (ImportError, ModuleNotFoundError):
     logger.warning(
         "Unable to import deepspeed. Please install it to use DeepSpeed features."
     )
     pass
-
-RANK = int(MPI.COMM_WORLD.Get_rank())
-WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
-
-LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
-LOG_FROM_ALL_RANKS = os.environ.get(
-    "LOG_FROM_ALL_RANKS", os.environ.get("LOG_FROM_ALL_RANK", False)
-)
-if LOG_FROM_ALL_RANKS:
-    if RANK == 0:
-        logger.info("LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!")
-    logger.setLevel(LOG_LEVEL)
-else:
-    # logger.info("Setting logging level to 'INFO' on 'RANK == 0'")
-    # logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
-    # logger.info(
-    #     " ".join(
-    #         [
-    #             "To disable this behavior,",
-    #             "and log from ALL ranks (not recommended),",
-    #             "set: 'export LOG_FROM_ALL_RANKS=1' ",
-    #             "in your environment, and re-run.",
-    #         ]
-    #     )
-    # )
-    logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 
 __all__ = [
@@ -435,24 +457,6 @@ __all__ = [
     "tplot",
     "tplot_dict",
 ]
-
-
-os.environ["PYTHONIOENCODING"] = "utf-8"
-os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
-os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
-os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
-    "ITEX_CPP_MIN_LOG_LEVEL", "5"
-)
-os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
-# noqa: E402
-warnings.filterwarnings("ignore")
-
-logging.getLogger("deepseed").setLevel(logging.ERROR)
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("datasets").setLevel(logging.ERROR)
-logging.getLogger("sh").setLevel("WARNING")
-logging.getLogger("jax").setLevel(logging.ERROR)
 
 
 if __name__ == "__main__":

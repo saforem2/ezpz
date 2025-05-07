@@ -58,6 +58,22 @@ fi
 
 # --- Helper Functions ---
 
+
+log_info() {
+    args=("$@")
+    printf "[%s][${GREEN}I${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+}
+
+log_warn() {
+    args=("$@")
+    printf "[%s][${YELLOW}W${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+}
+
+log_error() {
+    args=("$@")
+    printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+}
+
 # -----------------------------------------------------------------------------
 # Get the name of the current shell.
 # Strips off directory prefix from the $SHELL environment variable.
@@ -115,7 +131,9 @@ ezpz_get_tstamp() {
 ezpz_qsme_running() {
     # Check if qstat exists
     if ! command -v qstat &> /dev/null; then
-        printf "${RED}Error: 'qstat' command not found. Cannot list PBS jobs.${RESET}\n" >&2
+        # printf "${RED}Error: 'qstat' command not found. Cannot list PBS jobs.${RESET}\n" >&2
+        # printf "${RED}Error: 'qstat' command not found. Cannot list PBS jobs.${RESET}\n" >&2
+        log_error "Error: 'qstat' command not found. Cannot list PBS jobs."
         return 1
     fi
 
@@ -193,12 +211,13 @@ ezpz_reset_pbs_vars() {
         for var_name in "${!PBS_@}"; do
             if [[ "${var_name}" != "PBS_O_WORKDIR" ]]; then
                  printf "Unsetting %s\n" "${var_name}" >&2 # Log to stderr
+                 # log_info $(echo "Unsetting ${var_name}")
                  unset "${var_name}"
             fi
         done
     else
         # Fallback for older Bash versions using printenv
-        printf "${YELLOW}Warning: Using printenv fallback for unsetting PBS vars (Bash < 4).${RESET}\n" >&2
+        log_warn "Using printenv fallback for unsetting PBS vars (Bash < 4)."
         local vars_to_unset
         # `printenv`: Prints environment variables.
         # `grep -E "^PBS"`: Filters for lines starting with PBS.
@@ -243,7 +262,8 @@ ezpz_get_pbs_nodefile_from_hostname() {
     local pbs_aux_dir="/var/spool/pbs/aux" # Standard location
 
     if ! jobid=$(ezpz_get_jobid_from_hostname); then
-        printf "${YELLOW}Warning: Could not determine PBS Job ID for hostname '%s'. Cannot find nodefile.${RESET}\n" "${HOSTNAME}" >&2
+        # printf "${YELLOW}Warning: Could not determine PBS Job ID for hostname '%s'. Cannot find nodefile.${RESET}\n" "${HOSTNAME}" >&2
+        log_warn $(echo "Warning: Could not determine PBS Job ID for hostname ${HOSTNAME}. Cannot find nodefile.")
         return 1
     fi
      if [[ -z "${jobid}" ]]; then
@@ -279,7 +299,8 @@ ezpz_get_pbs_nodefile_from_hostname() {
         echo "${found_file}"
         return 0
     else
-        printf "${RED}Error: Could not find PBS nodefile for Job ID '%s' (base: '%s') in '%s'.${RESET}\n" "${jobid}" "${base_jobid}" "${pbs_aux_dir}" >&2
+        # printf "${RED}Error: Could not find PBS nodefile for Job ID '%s' (base: '%s') in '%s'.${RESET}\n" "${jobid}" "${base_jobid}" "${pbs_aux_dir}" >&2
+        log_error $(echo "Error: Could not find PBS nodefile for Job ID ${jobid} (base: ${base_jobid}) in ${pbs_aux_dir}.")
         return 1
     fi
 }
@@ -303,7 +324,8 @@ ezpz_get_pbs_nodefile_from_hostname() {
 # -----------------------------------------------------------------------------
 ezpz_get_slurm_running_jobid() {
     if ! command -v sacct &> /dev/null; then
-        printf "${RED}Error: 'sacct' command not found. Cannot list SLURM jobs.${RESET}\n" >&2
+        log_error "Error: 'sacct' command not found. Cannot list SLURM jobs."
+        # printf "${RED}Error: 'sacct' command not found. Cannot list SLURM jobs.${RESET}\n" >&2
         return 1
     fi
 
@@ -337,7 +359,8 @@ ezpz_get_slurm_running_jobid() {
 # -----------------------------------------------------------------------------
 ezpz_get_slurm_running_nodelist() {
      if ! command -v sacct &> /dev/null; then
-        printf "${RED}Error: 'sacct' command not found. Cannot list SLURM jobs.${RESET}\n" >&2
+        # printf "${RED}Error: 'sacct' command not found. Cannot list SLURM jobs.${RESET}\n" >&2
+        log_error "Error: 'sacct' command not found. Cannot list SLURM jobs."
         return 1
     fi
 
@@ -729,15 +752,15 @@ ezpz_setup_conda_sunspot() {
 }
 
 ezpz_setup_conda_aurora() {
-     if [[ -z "${CONDA_PREFIX:-}" ]]; then
+    if [[ "${CONDA_SHLVL}" -gt 0 ]]; then
+        printf "Conda already activated (level %d). Skipping setup.\n" "${CONDA_SHLVL}"
+        return 0
+    else
         printf "Setting up Conda/Level Zero environment on Aurora...\n"
         # !! Adjust module versions as needed for Aurora !!
-        module load frameworks # Load default or specify version
-        module load mpich/opt/4.3.0rc3 # Specify version
+        module load frameworks
         # Activate base conda env if needed after module load
         # if command -v conda &> /dev/null; then conda activate base; fi
-    else
-        printf "CONDA_PREFIX ('%s') already set. Skipping Conda setup.\n" "${CONDA_PREFIX}"
     fi
 }
 
@@ -2056,42 +2079,6 @@ ezpz_write_job_info() {
          save_status=1
     }
 
-    # Define a helper function in the current shell for convenience
-    # This function dynamically adjusts the number of processes if WORLD_SIZE differs
-    ezpz_launch() {
-        local effective_launch_cmd="${DIST_LAUNCH}"
-        local calculated_ngpus="${NGPUS}" # Store original calculation
-        local target_world_size="${WORLD_SIZE:-${calculated_ngpus}}" # Use WORLD_SIZE if set
-
-        # Check if user explicitly set WORLD_SIZE differently from calculated NGPUS
-        if [[ "${target_world_size}" -ne "${calculated_ngpus}" ]]; then
-            printf "${YELLOW}Warning: WORLD_SIZE (%s) differs from calculated NGPUS (%s). Adjusting launch command...${RESET}\n" "${target_world_size}" "${calculated_ngpus}" >&2
-            # Attempt to replace the process count (-n <num>) in the launch command
-            # This is fragile and depends heavily on the command format.
-            # Handle common cases: ' -n <num> ', ' -n<num> ', '--processes <num>' etc.
-            # Using extended regex for flexibility
-            if [[ "${effective_launch_cmd}" =~ (-n[[:space:]]+)[0-9]+ ]]; then
-                 effective_launch_cmd="${effective_launch_cmd/${BASH_REMATCH[0]}/${BASH_REMATCH[1]}${target_world_size}}"
-            elif [[ "${effective_launch_cmd}" =~ (--processes[[:space:]]+)[0-9]+ ]]; then
-                 effective_launch_cmd="${effective_launch_cmd/${BASH_REMATCH[0]}/${BASH_REMATCH[1]}${target_world_size}}"
-            else
-                 printf "${YELLOW}Warning: Could not automatically adjust process count in launch command for WORLD_SIZE override.${RESET}\n" >&2
-            fi
-        fi
-
-        local _args=("${@}") # Capture arguments passed to ezpz_launch
-        printf "${GREEN}[ezpz_launch]${RESET}:\n"
-        printf "  Executing: ${YELLOW}%s${RESET}\n" "${effective_launch_cmd}"
-        printf "  With args: ${BLUE}%s${RESET}\n" "${_args[*]:-<none>}"
-        # Use eval to execute the command string with arguments
-        eval "${effective_launch_cmd}" "${_args[@]}"
-    }
-    # Export the function so it's available in subshells (Bash specific)
-    export -f ezpz_launch
-
-    # Define a simple alias 'launch' pointing to the function
-    # Note: Aliases are not exported to subshells by default. Use the function name.
-    alias launch='ezpz_launch'
 
     # Print summary
     printf "[${MAGENTA}%s${RESET}]\n" "HOSTS"
@@ -2116,6 +2103,45 @@ ezpz_write_job_info() {
     printf "\n"
     return ${save_status}
 }
+
+# Define a helper function in the current shell for convenience
+# This function dynamically adjusts the number of processes if WORLD_SIZE differs
+ezpz_launch() {
+    local effective_launch_cmd="${DIST_LAUNCH}"
+    local calculated_ngpus="${NGPUS}" # Store original calculation
+    local target_world_size="${WORLD_SIZE:-${calculated_ngpus}}" # Use WORLD_SIZE if set
+
+    # Check if user explicitly set WORLD_SIZE differently from calculated NGPUS
+    if [[ "${target_world_size}" -ne "${calculated_ngpus}" ]]; then
+        printf "${YELLOW}Warning: WORLD_SIZE (%s) differs from calculated NGPUS (%s). Adjusting launch command...${RESET}\n" "${target_world_size}" "${calculated_ngpus}" >&2
+        # Attempt to replace the process count (-n <num>) in the launch command
+        # This is fragile and depends heavily on the command format.
+        # Handle common cases: ' -n <num> ', ' -n<num> ', '--processes <num>' etc.
+        # Using extended regex for flexibility
+        if [[ "${effective_launch_cmd}" =~ (-n[[:space:]]+)[0-9]+ ]]; then
+                effective_launch_cmd="${effective_launch_cmd/${BASH_REMATCH[0]}/${BASH_REMATCH[1]}${target_world_size}}"
+        elif [[ "${effective_launch_cmd}" =~ (--processes[[:space:]]+)[0-9]+ ]]; then
+                effective_launch_cmd="${effective_launch_cmd/${BASH_REMATCH[0]}/${BASH_REMATCH[1]}${target_world_size}}"
+        else
+                printf "${YELLOW}Warning: Could not automatically adjust process count in launch command for WORLD_SIZE override.${RESET}\n" >&2
+        fi
+    fi
+
+    local _args=("${@}") # Capture arguments passed to ezpz_launch
+    printf "${GREEN}[ezpz_launch]${RESET}:\n"
+    printf "  Executing: ${YELLOW}%s${RESET}\n" "${effective_launch_cmd}"
+    printf "  With args: ${BLUE}%s${RESET}\n" "${_args[*]:-<none>}"
+    # Use eval to execute the command string with arguments
+    eval "${effective_launch_cmd}" "${_args[@]}"
+}
+
+# Export the function so it's available in subshells (Bash specific)
+export -f ezpz_launch
+
+# # Define a simple alias 'launch' pointing to the function
+# # Note: Aliases are not exported to subshells by default. Use the function name.
+# alias launch='ezpz_launch'
+
 
 # -----------------------------------------------------------------------------
 # Save environment variables specifically needed by DeepSpeed to `.deepspeed_env`.
@@ -2470,5 +2496,4 @@ fi
 if [[ -n "${DEBUG:-}" ]]; then set +x; fi
 
 # Indicate sourcing completion (optional)
-# printf "${GREEN}utils_modern.sh sourced successfully.${RESET}\n"
-
+printf "${GREEN}ezpz2.sh sourced successfully.${RESET}\n"

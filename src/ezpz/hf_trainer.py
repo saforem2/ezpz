@@ -19,9 +19,9 @@ from itertools import chain
 from typing import Optional
 
 import ezpz
+import datasets
 
 from dataclasses import dataclass, field
-
 
 import torch
 
@@ -41,7 +41,8 @@ try:
         is_torch_xla_available,
         set_seed,
     )
-    from transformers.testing_utils import CaptureLogger
+
+    # from transformers.testing_utils import CaptureLogger
     from transformers.trainer_utils import get_last_checkpoint
 
     # from transformers.utils import send_example_telemetry
@@ -417,12 +418,12 @@ def parse_args() -> dict:
     log_level_info = 20  # "INFO"
     log_level_critical = 50  # "CRITICAL"
     log_level = log_level_info if rank == 0 else log_level_critical
-    try:
-        import datasets
-
-        datasets.utils.logging.set_verbosity(log_level)
-    except Exception:
-        pass
+    # try:
+    #     import datasets
+    #
+    #     datasets.utils.logging.set_verbosity(log_level)
+    # except Exception:
+    #     pass
     transformers.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
@@ -764,14 +765,14 @@ def main():
     )
 
     def tokenize_function(examples):
-        with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
+        # with CaptureLogger(tok_logger) as cl:
+        output = tokenizer(examples[text_column_name])
         # clm input could be much much longer than block_size
-        if "Token indices sequence length is longer than the" in cl.out:
-            tok_logger.warning(
-                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
-                " before being passed to the model."
-            )
+        # if "Token indices sequence length is longer than the" in cl.out:
+        #     logger.warning(
+        #         "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
+        #         " before being passed to the model."
+        #     )
         return output
 
     with training_args.main_process_first(desc="dataset map tokenization"):
@@ -822,8 +823,10 @@ def main():
             k: list(chain(*examples[k])) for k in examples.keys()
         }
         total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        # We drop the small remainder, and if the total_length < block_size  we
+        # exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop,
+        # you can customize this part to your needs.
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
@@ -836,11 +839,13 @@ def main():
         result["labels"] = result["input_ids"].copy()
         return result
 
-    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
-    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
-    # to preprocess.
+    # Note that with `batched=True`, this map processes 1,000 texts together,
+    # so group_texts throws away a remainder for each of those groups of 1,000
+    # texts. You can adjust that batch_size here but a higher value might be
+    # slower to preprocess.
     #
-    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # To speed up this part, we use multiprocessing. See the documentation of
+    # the map method for more information:
     # https://huggingface.co/docs/datasets/process#map
 
     with training_args.main_process_first(desc="grouping texts together"):
@@ -858,47 +863,55 @@ def main():
                 batched=True,
             )
 
-    if training_args.eval_on_start and evaluate is not None:
-        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
-
-        def compute_metrics(eval_preds):
-            preds, labels = eval_preds
-            # preds have the same shape as the labels, after the argmax(-1) has been calculated
-            # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, 1:].reshape(-1)
-            preds = preds[:, :-1].reshape(-1)
-            predictions = decode_predictions(tokenizer, preds)
-            predictions_df = pd.DataFrame(predictions)
-            if wandb is not None and getattr(wandb, "run", None) is not None:
-                records_table = wandb.Table(dataframe=predictions_df)
-                # log the table to wandb
-                assert wandb is not None and wandb.run is not None
-                wandb.log({"sample_predictions": records_table})
-            return metric.compute(predictions=preds, references=labels)
-
     train_dataset = None
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]  # type:ignore
+        ntrain_examples = train_dataset.info.splits["train"].num_examples
         if data_args.max_train_samples is not None:
             max_train_samples = min(
-                len(train_dataset), data_args.max_train_samples
+                train_dataset.info.splits["train"].num_examples,
+                data_args.max_train_samples,
             )
             train_dataset = train_dataset.select(  # type:ignore
                 range(max_train_samples)
             )  # type:ignore
 
+    # if training_args.eval_on_start and evaluate is not None:
+    #     metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+    #
+    #     def compute_metrics(eval_preds):
+    #         preds, labels = eval_preds
+    #         # preds have the same shape as the labels, after the argmax(-1) has been calculated
+    #         # by preprocess_logits_for_metrics but we need to shift the labels
+    #         labels = labels[:, 1:].reshape(-1)
+    #         preds = preds[:, :-1].reshape(-1)
+    #         predictions = decode_predictions(tokenizer, preds)
+    #         predictions_df = pd.DataFrame(predictions)
+    #         if wandb is not None and getattr(wandb, "run", None) is not None:
+    #             records_table = wandb.Table(dataframe=predictions_df)
+    #             # log the table to wandb
+    #             assert wandb is not None and wandb.run is not None
+    #             wandb.log({"sample_predictions": records_table})
+    #         return metric.compute(predictions=preds, references=labels)
+
     eval_dataset = None
     if training_args.do_eval:
+        assert evaluate is not None
         if validation_split_name not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
         eval_dataset = lm_datasets[validation_split_name]  # type: ignore
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(
-                len(eval_dataset), data_args.max_eval_samples
+                # len(eval_dataset),
+                eval_dataset.info.splits["train"].num_examples,  # type:ignore
+                data_args.max_eval_samples,
             )
-            eval_dataset = eval_dataset.select(range(max_eval_samples))  # type:ignore
+            if isinstance(eval_dataset, datasets.IterableDataset):
+                eval_dataset = eval_dataset.take(max_eval_samples)
+            else:
+                eval_dataset = eval_dataset.select(range(max_eval_samples))
 
         def preprocess_logits_for_metrics(logits, labels):
             if isinstance(logits, tuple):
@@ -907,26 +920,24 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        if evaluate is not None:
-            metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+        # if evaluate is not None:
+        metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
 
-            def compute_metrics(eval_preds):
-                preds, labels = eval_preds
-                # preds have the same shape as the labels, after the argmax(-1) has been calculated
-                # by preprocess_logits_for_metrics but we need to shift the labels
-                labels = labels[:, 1:].reshape(-1)
-                preds = preds[:, :-1].reshape(-1)
-                predictions = decode_predictions(tokenizer, preds)
-                predictions_df = pd.DataFrame(predictions)
-                if (
-                    wandb is not None
-                    and getattr(wandb, "run", None) is not None
-                ):
-                    records_table = wandb.Table(dataframe=predictions_df)
-                    # log the table to wandb
-                    assert wandb is not None and wandb.run is not None
-                    wandb.log({"sample_predictions": records_table})
-                return metric.compute(predictions=preds, references=labels)
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            # predictions = decode_predictions(tokenizer, preds)
+            # predictions_df = pd.DataFrame(predictions)
+            # if wandb is not None and getattr(wandb, "run", None) is not None:
+            #     records_table = wandb.Table(dataframe=predictions_df)
+            #     # log the table to wandb
+            #     assert wandb is not None and wandb.run is not None
+            #     wandb.log({"sample_predictions": records_table})
+            # return metric.compute(predictions=preds, references=labels)
+            return metric.compute(predictions=preds, references=labels)
 
     if rank == 0 and wandb is not None:
         wandb.run.watch(model, log="all")  # type:ignore
@@ -942,12 +953,12 @@ def main():
         data_collator=default_data_collator,
         compute_metrics=(
             compute_metrics  # type:ignore
-            if training_args.do_eval  # and not is_torch_xla_available()  # type:ignore
+            if training_args.do_eval and not is_torch_xla_available()  # type:ignore
             else None
         ),
         preprocess_logits_for_metrics=(
             preprocess_logits_for_metrics  # type:ignore
-            if training_args.do_eval  # and not is_torch_xla_available()
+            if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
     )
@@ -981,62 +992,93 @@ def main():
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
+        trainer.save_state()
 
         metrics = train_result.metrics
 
         max_train_samples = (
             data_args.max_train_samples
             if data_args.max_train_samples is not None
-            else len(train_dataset)  # type:ignore
+            else train_dataset.info.splits["train"].num_examples  # type:ignore
         )
         assert train_dataset is not None
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))  # type:ignore
+        metrics["train_samples"] = min(
+            max_train_samples,
+            train_dataset.info.splits["train"].num_examples,  # type:ignore
+        )  # type:ignore
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
-        trainer.save_state()
 
     # Evaluation
     if training_args.do_eval:
-        import datasets
-        import pandas as pd
-
-        logger.info("*** Evaluate ***")
-        assert eval_dataset is not None, (
-            "eval_dataset must be defined for evaluation."
-        )
-
         metrics = trainer.evaluate()
-
         max_eval_samples = (
             data_args.max_eval_samples
             if data_args.max_eval_samples is not None
-            else len(eval_dataset)  # type:ignore
+            else eval_dataset.info.splits["train"].num_examples  # type:ignore
         )
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type:ignore
+        metrics["eval_samples"] = min(
+            max_eval_samples,
+            eval_dataset.info.splits["train"].num_examples,  # type:ignore
+        )  # type:ignore
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
+
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
-
-        # sample_dataset = eval_dataset.take(10)
-        # assert sample_dataset is not None
-        # # generate predictions
-        # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
-        #     predictions = trainer.predict(sample_dataset)
-        #     # decode predictions and labels
-        #     predictions = decode_predictions(tokenizer, predictions)
-        #     # add predictions to a wandb.Table
-        #     predictions_df = pd.DataFrame(predictions)
-        #     # predictions_df["epoch"] = state.epoch
-        #     if wandb is not None and getattr(wandb, "run", None) is not None:
-        #         records_table = wandb.Table(dataframe=predictions_df)
-        #         # log the table to wandb
-        #         assert wandb is not None and wandb.run is not None
-        #         wandb.log({"sample_predictions": records_table})
+        # model.eval()
+        # losses = []
+        # assert eval_dataset is not None
+        # for step, batch in enumerate(eval_dataloader):
+        #     with torch.no_grad():
+        #         outputs = model(**batch)
+        #         loss = outputs.loss
+        #         losses.append(loss.item())
+        # # Evaluation
+        # if training_args.do_eval:
+        #     import datasets
+        #     import pandas as pd
+        #
+        #     logger.info("*** Evaluate ***")
+        #     assert eval_dataset is not None, (
+        #         "eval_dataset must be defined for evaluation."
+        #     )
+        #
+        #     metrics = trainer.evaluate()
+        #
+        #     max_eval_samples = (
+        #         data_args.max_eval_samples
+        #         if data_args.max_eval_samples is not None
+        #         else len(eval_dataset)  # type:ignore
+        #     )
+        #     metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type:ignore
+        #     try:
+        #         perplexity = math.exp(metrics["eval_loss"])
+        #     except OverflowError:
+        #         perplexity = float("inf")
+        #     metrics["perplexity"] = perplexity
+        #     trainer.log_metrics("eval", metrics)
+        #     trainer.save_metrics("eval", metrics)
+        #
+        #     # sample_dataset = eval_dataset.take(10)
+        #     # assert sample_dataset is not None
+        #     # # generate predictions
+        #     # if sample_dataset is not None and isinstance(sample_dataset, datasets.Dataset):
+        #     #     predictions = trainer.predict(sample_dataset)
+        #     #     # decode predictions and labels
+        #     #     predictions = decode_predictions(tokenizer, predictions)
+        #     #     # add predictions to a wandb.Table
+        #     #     predictions_df = pd.DataFrame(predictions)
+        #     #     # predictions_df["epoch"] = state.epoch
+        #     #     if wandb is not None and getattr(wandb, "run", None) is not None:
+        #     #         records_table = wandb.Table(dataframe=predictions_df)
+        #     #         # log the table to wandb
+        #     #         assert wandb is not None and wandb.run is not None
+        #     #         wandb.log({"sample_predictions": records_table})
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
@@ -1053,7 +1095,7 @@ def main():
             kwargs["dataset"] = data_args.dataset_name
 
     if wandb is not None and getattr(wandb, "run", None) is not None:
-        wandb.config.update(**kwargs)
+        wandb.config.update(kwargs)
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)
     else:

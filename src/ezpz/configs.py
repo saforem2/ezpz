@@ -379,6 +379,32 @@ class TrainConfig(BaseConfig):
                 )
 
 
+@dataclass
+class ZeroConfig:
+    stage: int = 0
+    allgather_partitions: Optional[bool] = None
+    allgather_bucket_size: int = int(5e8)
+    overlap_comm: Optional[bool] = None
+    reduce_scatter: bool = True
+    reduce_bucket_size: int = int(5e8)
+    contiguous_gradients: Optional[bool] = None
+    offload_param: Optional[dict] = None
+    offload_optimizer: Optional[dict] = None
+    stage3_max_live_parameters: int = int(1e9)
+    stage3_max_reuse_distance: int = int(1e9)
+    stage3_prefetch_bucket_size: int = int(5e8)
+    stage3_param_persistence_threshold: int = int(1e6)
+    sub_group_size: Optional[int] = None
+    elastic_checkpoint: Optional[dict] = None
+    stage3_gather_16bit_weights_on_model_save: Optional[bool] = None
+    ignore_unused_parameters: Optional[bool] = None
+    round_robin_gradients: Optional[bool] = None
+    zero_hpz_partition_size: Optional[int] = None
+    zero_quantized_weights: Optional[bool] = None
+    zero_quantized_gradients: Optional[bool] = None
+    log_trace_cache_warnings: Optional[bool] = None
+
+
 def print_config_tree(
     cfg: DictConfig,
     resolve: bool = True,

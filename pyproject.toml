@@ -42,6 +42,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
+[project.scripts]
+ezpz-test = "ezpz.test:main"
+ezpz-launch = "ezpz.launch:main"
+
 [project.optional-dependencies]
 dev = [
     "black",
