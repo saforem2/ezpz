@@ -11,7 +11,9 @@ import xarray as xr
 import numpy as np
 from typing import Optional, Union, Any
 
-from ezpz.configs import ScalarLike, PathLike
+from dataclasses import asdict
+
+from ezpz.configs import ScalarLike, PathLike, ZeroConfig
 
 import torch
 import torch.distributed as tdist
@@ -241,6 +243,11 @@ def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
     return xr.Dataset(data)
 
 
+def get_deepspeed_zero_config_json(zero_config: ZeroConfig) -> dict:
+    """Return the DeepSpeed zero config as a dict."""
+    return asdict(zero_config)
+
+
 def write_generic_deepspeed_config(
     gradient_accumulation_steps: int = 1,
     gradient_clipping: str | float = "auto",
@@ -275,89 +282,6 @@ def write_generic_deepspeed_config(
         "zero_optimization": zero_optimization,
     }
     return ds_config
-
-
-def get_deepspeed_zero_config_json(
-    stage: Optional[int] = 0,
-    allgather_partitions: Optional[bool] = None,
-    allgather_bucket_size: Optional[int] = int(5e8),
-    overlap_comm: Optional[bool] = None,
-    reduce_scatter: Optional[bool] = True,
-    reduce_bucket_size: Optional[int] = int(5e8),
-    contiguous_gradients: Optional[bool] = None,
-    offload_param: Optional[dict] = None,
-    offload_optimizer: Optional[dict] = None,
-    stage3_max_live_parameters: Optional[int] = int(1e9),
-    stage3_max_reuse_distance: Optional[int] = int(1e9),
-    stage3_prefetch_bucket_size: Optional[int] = int(5e8),
-    stage3_param_persistence_threshold: Optional[int] = int(1e6),
-    sub_group_size: Optional[int] = None,
-    elastic_checkpoint: Optional[dict] = None,
-    stage3_gather_16bit_weights_on_model_save: Optional[bool] = None,
-    ignore_unused_parameters: Optional[bool] = None,
-    round_robin_gradients: Optional[bool] = None,
-    zero_hpz_partition_size: Optional[int] = None,
-    zero_quantized_weights: Optional[bool] = None,
-    zero_quantized_gradients: Optional[bool] = None,
-    log_trace_cache_warnings: Optional[bool] = None,
-) -> dict:
-    """
-    Write a deepspeed zero config to the output directory.
-
-    Args:
-
-        stage (int): ZeRO stage. Default: ``1``.
-        allgather_partitions (bool): Whether to use allgather partitions. Default: ``None``.
-        allgather_bucket_size (int): Size of the allgather bucket. Default: ``5e8``.
-        overlap_comm (bool): Whether to overlap communication. Default: ``None``.
-        reduce_scatter (bool): Whether to use reduce scatter. Default: ``True``.
-        reduce_bucket_size (int): Size of the reduce bucket. Default: ``5e8``.
-        contiguous_gradients (bool): Whether to use contiguous gradients. Default: ``None``.
-        offload_param (dict): Offload parameters. Default: ``None``.
-        offload_optimizer (dict): Offload optimizer. Default: ``None``.
-        stage3_max_live_parameters (int): Maximum live parameters for stage 3. Default: ``1e9``.
-        stage3_max_reuse_distance (int): Maximum reuse distance for stage 3. Default: ``1e9``.
-        stage3_prefetch_bucket_size (int): Prefetch bucket size for stage 3. Default: ``5e8``.
-        stage3_param_persistence_threshold (int): Parameter persistence threshold for stage 3. Default: ``1e6``.
-        sub_group_size (int): Sub group size. Default: ``None``.
-        elastic_checkpoint (dict): Elastic checkpoint. Default: ``None``.
-        stage3_gather_16bit_weights_on_model_save (bool): Whether to gather 16-bit weights on model save. Default: ``None``.
-        ignore_unused_parameters (bool): Whether to ignore unused parameters. Default: ``None``.
-        round_robin_gradients (bool): Whether to use round robin gradients. Default: ``None``.
-        zero_hpz_partition_size (int): Partition size for ZeRO HPZ. Default: ``None``.
-        zero_quantized_weights (bool): Whether to use quantized weights. Default: ``None``.
-        zero_quantized_gradients (bool): Whether to use quantized gradients. Default: ``None``.
-        log_trace_cache_warnings (bool): Whether to log trace cache warnings. Default: ``None``.
-
-    Returns:
-        dict: Deepspeed zero config.
-    """
-    return {
-        # "zero_optimization": {
-        "stage": stage,
-        "allgather_partitions": allgather_partitions,
-        "allgather_bucket_size": allgather_bucket_size,
-        "overlap_comm": overlap_comm,
-        "reduce_scatter": reduce_scatter,
-        "reduce_bucket_size": reduce_bucket_size,
-        "contiguous_gradients": contiguous_gradients,
-        "offload_param": offload_param,
-        "offload_optimizer": offload_optimizer,
-        "stage3_max_live_parameters": stage3_max_live_parameters,
-        "stage3_max_reuse_distance": stage3_max_reuse_distance,
-        "stage3_prefetch_bucket_size": stage3_prefetch_bucket_size,
-        "stage3_param_persistence_threshold": stage3_param_persistence_threshold,
-        "sub_group_size": sub_group_size,
-        "elastic_checkpoint": elastic_checkpoint,
-        "stage3_gather_16bit_weights_on_model_save": stage3_gather_16bit_weights_on_model_save,
-        "ignore_unused_parameters": ignore_unused_parameters,
-        "round_robin_gradients": round_robin_gradients,
-        "zero_hpz_partition_size": zero_hpz_partition_size,
-        "zero_quantized_weights": zero_quantized_weights,
-        "zero_quantized_gradients": zero_quantized_gradients,
-        "log_trace_cache_warnings": log_trace_cache_warnings,
-        # }
-    }
 
 
 def get_deepspeed_adamw_optimizer_config_json(
@@ -678,6 +602,7 @@ def write_deepspeed_zero12_auto_config(
         )
 
     return ds_config
+
 
 def write_deepspeed_zero3_auto_config(
     zero_stage: int = 3, output_dir: Optional[PathLike] = None
