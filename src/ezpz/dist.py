@@ -38,9 +38,9 @@ if not os.environ.get(
 
 PathLike = Union[str, os.PathLike, Path]
 
-LOG_LEVEL = str(os.environ.get("LOG_LEVEL", "INFO")).upper()
+EZPZ_LOG_LEVEL = str(os.environ.get("EZPZ_LOG_LEVEL", "INFO")).upper()
 logger = logging.getLogger(__name__)
-logger.setLevel(LOG_LEVEL)
+logger.setLevel(EZPZ_LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
 
