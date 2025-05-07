@@ -7,15 +7,6 @@ from rich import print
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# count = 0
-# while count < 3:
-#     try:
-#         number = int(input("Enter a number: "))
-#         print("You entered:", number)
-#         count += 1
-#     except ValueError:
-#         print("Invalid input. Please enter a number.")
-
 
 def parse_args():
     """
@@ -40,21 +31,32 @@ def parse_args():
     return parser.parse_args()
 
 
-def prompt_model(model, tokenizer, prompt, max_length: int = 64, **kwargs):
+def prompt_model(
+    model, tokenizer, prompt, max_length: int = 64, **kwargs
+) -> str:
     """
     Generate text using a model and tokenizer.
 
-    ```python
-    In [1]: import ezpz
-          2 from transformers import AutoModelForCausalLM, AutoTokenizer #, Trainer, TrainingArguments
-          3 import torch
-          4 model_name = "argonne-private/AuroraGPT-7B"
-          5 tokenizer = AutoTokenizer.from_pretrained(model_name)
-          6 model = AutoModelForCausalLM.from_pretrained(model_name)
-          7 model.to(ezpz.get_torch_device_type())
-          8 model.to(torch.bfloat16)
-          9 result = tokenizer.batch_decode(model.generate(**tokenizer("Who are you?", return_tensors="pt").to(ezpz.get_torch_device_type()), max_length=128))
-    ```
+    Args:
+        model: The model to use for generation.
+        tokenizer: The tokenizer to use for encoding and decoding.
+        prompt: The input prompt to generate text from.
+        max_length: The maximum length of the generated text.
+        **kwargs: Additional arguments to pass to the model's generate method.
+
+    Example:
+
+        ```python
+        >>> import ezpz
+        >>> from transformers import AutoModelForCausalLM, AutoTokenizer #, Trainer, TrainingArguments
+        >>> import torch
+        >>> model_name = "argonne-private/AuroraGPT-7B"
+        >>> tokenizer = AutoTokenizer.from_pretrained(model_name)
+        >>> model = AutoModelForCausalLM.from_pretrained(model_name)
+        >>> model.to(ezpz.get_torch_device_type())
+        >>> model.to(torch.bfloat16)
+        >>> result = tokenizer.batch_decode(model.generate(**tokenizer("Who are you?", return_tensors="pt").to(ezpz.get_torch_device_type()), max_length=128))
+        ```
     """
     return tokenizer.batch_decode(
         model.generate(
