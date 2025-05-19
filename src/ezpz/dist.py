@@ -437,6 +437,7 @@ def init_deepspeed(
 ):
     rank = get_rank() if rank is None else rank
     world_size = get_world_size() if world_size is None else world_size
+    os.environ["WORLD_SIZE"] = str(world_size)
     try:
         import deepspeed  # type:ignore
 
@@ -728,13 +729,13 @@ def setup_torch_distributed(
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     backend = "DDP" if backend is None else backend
-    assert backend.lower() in {
-        "ddp",
-        "ds",
-        "deepspeed",
-        "horovod",
-        "hvd",
-    }
+    # assert str(backend).lower() in {
+    #     "ddp",
+    #     "ds",
+    #     "deepspeed",
+    #     "horovod",
+    #     "hvd",
+    # }
     timeout = (
         3600
         if timeout is None
@@ -748,8 +749,9 @@ def setup_torch_distributed(
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
-    be = backend.lower()
+    be = str(backend).lower()
     # assert be in BACKENDS['pytorch']
+    logger.info(f'Using {get_torch_device_type()=} with {be=}')
     if be == "ddp":
         dsetup = setup_torch_DDP(port, timeout)
         world_size = dsetup["world_size"]
