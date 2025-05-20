@@ -30,6 +30,11 @@ try:
 except Exception:
     wandb = None
 
+try:
+    ipex = lazy_import("intel_extension_for_pytorch")
+except Exception:
+    ipex = None
+
 
 if not os.environ.get(
     "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
@@ -641,7 +646,9 @@ def get_world_size(
 
 def get_local_rank() -> int:
     """Return `get_rank() % get_gpus_per_node()`"""
-    return int(get_rank() % get_gpus_per_node())
+    if get_world_size() > 1:
+        return int(get_rank() % get_gpus_per_node())
+    return 0
 
 
 def query_environment() -> dict[str, int]:
@@ -902,8 +909,15 @@ def setup_torch(
         rank = dsetup["rank"]
         world_size = dsetup["world_size"]
         local_rank = dsetup["local_rank"]
-        local_size = get_gpus_per_node()
-        num_nodes = get_num_nodes()
+        try:
+            local_size = get_gpus_per_node()
+        except Exception:
+            local_size = 1
+
+        try:
+            num_nodes = get_num_nodes()
+        except Exception:
+            num_nodes = 1
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(local_rank)
     os.environ["NUM_NODES"] = str(num_nodes)
@@ -1170,6 +1184,7 @@ def setup_wandb(
     #
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+
     # except Exception:
     #     wandb = None
     #     WANDB_DISABLED = True
@@ -1489,6 +1504,10 @@ def get_gpus_per_node() -> int:
         return torch.xpu.device_count()
     if ipex is not None:
         return ipex.xpu.device_count()  # type:ignore
+    if torch.backends.mps.is_available():
+        # XXX: Maybe we're running MPI with multiple MPS devices?
+        return get_world_size_in_use()
+    # otherwise, return the number of CPUs
     return get_cpus_per_node()
 
 
