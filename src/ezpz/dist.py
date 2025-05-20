@@ -99,11 +99,7 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
     """Print dictionary as list"""
     tag = name if name is not None else d.__qualname__
     logger.info(
-        "\n".join(
-            ["\n", f"[{tag}]:"]
-            + [f"  • {k}={v}" for k, v in d.items()]
-            + ["\n"]
-        )
+        "\n".join(["\n", f"[{tag}]:"] + [f"  • {k}={v}" for k, v in d.items()] + ["\n"])
     )
 
 
@@ -318,9 +314,7 @@ def get_dist_info(
     if verbose:
         import json
 
-        logger.info(
-            f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
-        )
+        logger.info(f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}")
     return dist_info
 
 
@@ -375,9 +369,7 @@ def print_dist_setup(
     logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
-            logger.warning(
-                f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}"
-            )
+            logger.warning(f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}")
         logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
@@ -406,9 +398,11 @@ def synchronize(device: Optional[torch.device | int | str] = None):
         else (
             torch.xpu.synchronize(device)
             if torch.xpu.is_available()
-            else torch.mps.synchronize()
-            if torch.backends.mps.is_available()
-            else torch.cpu.synchronize(device)
+            else (
+                torch.mps.synchronize()
+                if torch.backends.mps.is_available()
+                else torch.cpu.synchronize(device)
+            )
         )
     )
 
@@ -440,6 +434,19 @@ def init_deepspeed(
     rank: Optional[int] = None,
     world_size: Optional[int] = None,
 ):
+    try:
+        import deepspeed  # noqa type:ignore
+
+        os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
+        logging.getLogger("deepseed").setLevel(logging.ERROR)
+    except (ImportError, ModuleNotFoundError):
+        logger.warning(
+            "Unable to import deepspeed. Please install it to use DeepSpeed features."
+        )
+        raise ImportError(
+            "DeepSpeed is not installed. Install with 'pip install deepspeed'"
+        )
+
     rank = get_rank() if rank is None else rank
     world_size = get_world_size() if world_size is None else world_size
     try:
@@ -484,9 +491,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         return device_type
     if (tdevice := os.environ.get("TORCH_DEVICE")) is not None:
         if get_rank() == 0:
-            logger.warning(
-                f"Caught 'TORCH_DEVICE'={tdevice}' from environment!"
-            )
+            logger.warning(f"Caught 'TORCH_DEVICE'={tdevice}' from environment!")
         tdevice = tdevice.lower()
         assert tdevice is not None and tdevice in (
             "cpu",
@@ -549,16 +554,12 @@ def get_torch_backend_on_xpu() -> str:
 def get_torch_backend() -> str:
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
-        logger.warning(
-            f"Caught `TORCH_BACKEND`={backend_from_env} from environment!"
-        )
+        logger.warning(f"Caught `TORCH_BACKEND`={backend_from_env} from environment!")
         return backend_from_env
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (
-            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
-        )
+        else (get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo")
     )
 
 
@@ -745,13 +746,9 @@ def setup_torch_distributed(
     timeout = (
         3600
         if timeout is None
-        else int(timeout)
-        if isinstance(timeout, str)
-        else timeout
+        else int(timeout) if isinstance(timeout, str) else timeout
     )
-    port = (
-        "1234" if port is None else str(port) if isinstance(port, int) else port
-    )
+    port = "1234" if port is None else str(port) if isinstance(port, int) else port
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
@@ -1043,9 +1040,7 @@ def setup_tensorflow(
         "mixed_float16",
         # 'mixed_bfloat16'
     ]:
-        tf.keras.mixed_precision.set_global_policy(  # pyright:ignore
-            "mixed_float16"
-        )
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # pyright:ignore
     TF_FLOAT = tf.keras.backend.floatx()  # pyright:ignore
     eager_mode = os.environ.get("TF_EAGER", None)
     if eager_mode is not None:
@@ -1066,9 +1061,7 @@ def setup_tensorflow(
                 gpus[hvd.local_rank()],
                 "GPU",
             )
-            _ = (  # pyright:ignore
-                tf.config.experimental.list_logical_devices("GPU")
-            )
+            _ = tf.config.experimental.list_logical_devices("GPU")  # pyright:ignore
         except RuntimeError as e:
             logger.info(e)
     elif cpus:
@@ -1076,8 +1069,7 @@ def setup_tensorflow(
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices("CPU")
             logger.info(
-                f"{len(cpus)}, Physical CPUs and "
-                f"{len(logical_cpus)} Logical CPUs"
+                f"{len(cpus)}, Physical CPUs and " f"{len(logical_cpus)} Logical CPUs"
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -1190,24 +1182,16 @@ def setup_wandb(
     #     WANDB_DISABLED = True
 
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(
-            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
-        )
+        logger.warning(f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}")
         return None
 
     try:
         import wandb
     except (ImportError, ModuleNotFoundError) as e:
-        logger.warning(
-            "Unable to import `wandb`. Install with `pip install wandb`"
-        )
+        logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
         raise e
 
-    outdir = (
-        Path(os.getcwd()).as_posix()
-        if outdir is None
-        else Path(outdir).as_posix()
-    )
+    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
     rank = get_rank()
     project_name = (
         project_name
@@ -1252,9 +1236,7 @@ def setup_wandb(
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-        settings=wandb.Settings(
-            start_method=start_method, init_timeout=init_timeout
-        ),
+        settings=wandb.Settings(start_method=start_method, init_timeout=init_timeout),
     )
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
@@ -1283,16 +1265,12 @@ def setup_wandb(
     )
     if config is not None:
         if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(
-                config, resolve=True, throw_on_missing=True
-            )
+            cfg = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
             run.config.update({"config": cfg})
         else:
             run.config.update({"config": config})
     env = {
-        k: v
-        for k, v in dict(os.environ).items()
-        if not k.startswith("_ModuleTable")
+        k: v for k, v in dict(os.environ).items() if not k.startswith("_ModuleTable")
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
@@ -1335,9 +1313,7 @@ def get_cobalt_nodefile() -> Path:
     cobalt_nodefile = os.environ.get("COBALT_NODEFILE", None)
     if cobalt_nodefile is None:
         logger.warning("COBALT_NODEFILE not in `env`!")
-        logger.info(
-            "Attempting to deduce from `/var/tmp/cobalt-running-job`..."
-        )
+        logger.info("Attempting to deduce from `/var/tmp/cobalt-running-job`...")
         cobalt_info = inspect_cobalt_running_job()
         logger.info(f"Found COBALT info: {cobalt_info}")
         cobalt_nodefile = cobalt_info["COBALT_NODEFILE"]
@@ -1364,8 +1340,7 @@ def write_localhost_to_hostfile(hostfile: PathLike):
     """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
         logger.debug(
-            f"Writing {(hostname := get_hostname())} "
-            f"to {Path(hostfile).as_posix()}"
+            f"Writing {(hostname := get_hostname())} " f"to {Path(hostfile).as_posix()}"
         )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
@@ -1437,7 +1412,8 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             ),
         )
         if (
-            hfp is None or not Path(hfp).is_file()
+            hfp is None
+            or not Path(hfp).is_file()
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
@@ -1519,14 +1495,10 @@ def get_pbs_launch_cmd(
 ) -> str:
     """Get the PBS launch command"""
     nhosts = get_num_nodes(hostfile=hostfile) if nhosts is None else nhosts
-    ngpu_per_host = (
-        get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
-    )
+    ngpu_per_host = get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
     ngpus_available = get_world_size_total() if ngpus is None else ngpus
     ngpus_in_use = nhosts * ngpu_per_host
-    hfp = Path(
-        get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
-    )
+    hfp = Path(get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile)
     if ngpus_available != (ngpus_in_use):
         logger.warning(
             "Mismatch in `ngpus_in_use` and `ngpus_available` "
@@ -1587,9 +1559,7 @@ def get_pbs_nodefile_from_qstat() -> Path:
         return nf
     pbs_jobid = get_pbs_jobid_from_qstat()
     matches = [
-        i
-        for i in Path("/var/spool/pbs/aux/").rglob(f"*{pbs_jobid}*")
-        if i.is_file()
+        i for i in Path("/var/spool/pbs/aux/").rglob(f"*{pbs_jobid}*") if i.is_file()
     ]
     assert len(matches) == 1
     return matches[0]
@@ -1638,9 +1608,7 @@ def get_pbs_launch_info(
     return {
         "HOSTFILE": hfp.as_posix(),
         "HOSTS": (
-            f"[{', '.join(hosts)}]"
-            if nhosts < 1000
-            else "[truncated (>1000 nodes)]"
+            f"[{', '.join(hosts)}]" if nhosts < 1000 else "[truncated (>1000 nodes)]"
         ),
         "NHOSTS": f"{nhosts}",
         "NGPU_PER_HOST": f"{ngpu_per_host}",
@@ -1666,9 +1634,7 @@ def get_pbs_env(
     if hostfile is None:
         hostfile = pbsenv.get("PBS_NODEFILE", get_pbs_nodefile_from_qstat())
     if (hfp := Path(hostfile)).is_file():
-        pbsenv |= {
-            f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()
-        }
+        pbsenv |= {f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()}
         pbsenv |= {"LAUNCH_CMD": get_pbs_launch_cmd(hostfile=hostfile)}
     os.environ |= pbsenv
     if verbose and get_rank() == 0:
