@@ -1,9 +1,8 @@
-:root {
-  -webkit-font-smoothing: subpixel-antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+/* :root { */
+/*   -webkit-font-smoothing: subpixel-antialiased; */
+/*   -moz-osx-font-smoothing: grayscale; */
+/* } */
 
-.md-typeset h1,
 .md-typeset h2,
 .md-typeset h3 {
   margin-block: 0.5lh;
@@ -20,25 +19,24 @@
 }
 
 .md-typeset h1 {
-  letter-spacing: -1pt;
   font-weight: 800;
 }
 
 .md-typeset h2 {
-  letter-spacing: -1pt;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .md-typeset h3 {
-  letter-spacing: -2%;
-  font-weight: 500;
+  font-weight: 600;
 }
 .md-typeset h4 {
-  letter-spacing: -2%;
-  font-weight: 400;
+  font-weight: 500;
 }
 .md-typeset h5 {
-  letter-spacing: -2%;
+  font-weight: 400;
+}
+
+.md-typeset h6 {
   font-weight: 400;
 }
 
@@ -46,42 +44,14 @@
   overflow: visible;
 }
 
-/* .md-nav { */
-/*   font-size: 75%; */
-/*   text-wrap: balance; */
-/* } */
-
-
-/* h1, */
-/* h2, */
-/* h3, */
-/* h4, */
-/* h5, */
-/* h6 { */
-/*   color: var(--md-default-heading-color); */
-/*   letter-spacing: -1pt; */
-/* } */
-
-/* .highlighttable .code, */
-/* .highlighttable .linenos { */
-/*   font-size: 1em; */
-/*   line-height: 1.1em; */
-/* } */
-
-/* .md-typeset pre { */
-/*   line-height: 1.1em; */
-/* } */
-
 .md-typeset code {
 	background-color: var(--md-code-bg-color);
 	border-radius: .1rem;
 	-webkit-box-decoration-break: clone;
 	box-decoration-break: clone;
-    /* font-size: 1em; */
-	/* font-size: 1em; */
+    font-size: 1em;
 	quotes: 0 .2941176471em;
 	word-break: break-word;
-	/* line-height: 1.1em; */
 }
 
 .highlighttable .linenos {
@@ -91,79 +61,37 @@
 	padding: .7720588235em 0 .7720588235em 1.1764705882em;
 	-webkit-user-select: none;
 	user-select: none;
-	/* line-height: 1.1em; */
 }
-
-/* .highlighttable .code { */
-/*     font-size: 1em; */
-/*     line-height: 1.1em; */
-/* } */
 
 [data-md-color-scheme="slate"] {
   --md-code-bg-color: #222222;
   --md-header-fg-color: #eeeeee;
-  --md-typeset-a-color: #82b1ff;
   --md-header-bg-color: #222222;
   --md-primary-fg-color: #222222;
   --md-default-bg-color: #1c1c1c;
   --md-default-heading-color: #f5f5f5;
   --md-accent-fg-color: #ff67ff;
+  --md-typeset-a-color: #82b1ff;
+  --md-typeset-a-color-hover: #ff67ff;
+  --md-default-url-fg-color-hover: #ff1a8f;
+  --md-default-code-bg-color: #f8f8f8;
 
   .md-typeset a:hover {
-    color: #ff67ff;
+    color: var(--md-accent-fg-color);
     transition: color 0.2s ease-in-out;
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 2px;
   }
-
-  /* .md-typeset a { */
-  /*   color: #00ccff; */
-  /*   word-break: break-word; */
-  /* } */
-}
 
 [data-md-color-scheme="default"] {
-  --md-code-bg-color: #f8f8f8;
+  --md-code-bg-color: var(--md-default-code-bg-color);
   .md-typeset a:hover {
-    color: #ff1a8f;
+    color: var(--md-url-fg-color-hover); 
     transition: color 0.2s ease-in-out;
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 2px;
   }
+    }
 }
-/**/
-/* /* Symbols in Navigation and ToC. */ */
-/* :root, :host, */
-/* [data-md-color-scheme="default"] { */
-/*   --doc-symbol-parameter-fg-color: #df50af; */
-/*   --doc-symbol-attribute-fg-color: #953800; */
-/*   --doc-symbol-function-fg-color: #8250df; */
-/*   --doc-symbol-method-fg-color: #8250df; */
-/*   --doc-symbol-class-fg-color: #0550ae; */
-/*   --doc-symbol-module-fg-color: #5cad0f; */
-/**/
-/*   --doc-symbol-parameter-bg-color: #df50af1a; */
-/*   --doc-symbol-attribute-bg-color: #9538001a; */
-/*   --doc-symbol-function-bg-color: #8250df1a; */
-/*   --doc-symbol-method-bg-color: #8250df1a; */
-/*   --doc-symbol-class-bg-color: #0550ae1a; */
-/*   --doc-symbol-module-bg-color: #5cad0f1a; */
-/* } */
-/**/
-/* [data-md-color-scheme="slate"] { */
-/*   --doc-symbol-parameter-fg-color: #ffa8cc; */
-/*   --doc-symbol-attribute-fg-color: #ffa657; */
-/*   --doc-symbol-function-fg-color: #d2a8ff; */
-/*   --doc-symbol-method-fg-color: #d2a8ff; */
-/*   --doc-symbol-class-fg-color: #79c0ff; */
-/*   --doc-symbol-module-fg-color: #baff79; */
-/**/
-/*   --doc-symbol-parameter-bg-color: #ffa8cc1a; */
-/*   --doc-symbol-attribute-bg-color: #ffa6571a; */
-/*   --doc-symbol-function-bg-color: #d2a8ff1a; */
-/*   --doc-symbol-method-bg-color: #d2a8ff1a; */
-/*   --doc-symbol-class-bg-color: #79c0ff1a; */
-/*   --doc-symbol-module-bg-color: #baff791a; */
-/* } */
