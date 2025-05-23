@@ -14,21 +14,23 @@ _Please_ feel free to provide input / suggest changes !
 
 ///
 
-/// note
+<!-- /// note -->
 
-1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+> [!NOTE]
+>
+> 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+>
+>    ```bash
+>    source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
+>    ```
+>
+> 2. Use the `ezpz_setup_env` function to set up your environment:
+>
+>    ```bash
+>    ezpz_setup_env
+>    ```
 
-   ```bash
-   source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
-   ```
-
-2. Use the `ezpz_setup_env` function to setup your environment:
-
-   ```bash
-   ezpz_setup_env
-   ```
-
-///
+<!-- /// -->
 
 This will 🪄 _automagically_:
 

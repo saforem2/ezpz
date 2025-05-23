@@ -42,7 +42,7 @@ theme:
     # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: "#00CCFF"
+      primary: "#82b1ff"
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -137,8 +137,8 @@ extra_javascript:
   # - https://unpkg.com/shikijs/themes@3.3.0
   - https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js
   # - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
-  - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js
-  - javascripts/config.js
+  # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js
+  # - javascripts/config.js
 
 markdown_extensions:
   # Python Markdown
@@ -196,6 +196,7 @@ markdown_extensions:
 nav:
   - index.md
   - 📝 Example: example.md
+  - 🛝 Slides: slides-2025-05-07.md
   - 🚀 Launch: launch.md
   - 📓 Notes: notes.md
   - 🤗 HF Trainer: hf-trainer.md
@@ -208,3 +209,6 @@ nav:
       - ezpz: Code-Reference/ezpz-reference.md
       - ezpz.dist: Code-Reference/dist-reference.md
       - ezpz.config: Code-Reference/config-reference.md
+      - ezpz.generate: Code-Reference/generate-reference.md
+      - ezpz.hf-trainer: Code-Reference/hf-trainer-reference.md
+      - ezpz.history: Code-Reference/history-reference.md
