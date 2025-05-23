@@ -24,7 +24,7 @@ _Please_ feel free to provide input / suggest changes !
 >    source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
 >    ```
 >
-> 2. Use the `ezpz_setup_env` function to setup your environment:
+> 2. Use the `ezpz_setup_env` function to set up your environment:
 >
 >    ```bash
 >    ezpz_setup_env
