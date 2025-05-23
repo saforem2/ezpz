@@ -4,9 +4,7 @@
 
 See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional information.
 
-## 🐣Getting Started
-
-## Example
+## 🐣 Getting Started
 
 1. 🏖️ Setup environment[^magic] (see [Shell Environment](docs/shell-environment.md)):
 
