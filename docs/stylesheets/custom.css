@@ -1,7 +1,7 @@
-/* :root { */
-/*   -webkit-font-smoothing: subpixel-antialiased; */
-/*   -moz-osx-font-smoothing: grayscale; */
-/* } */
+:root {
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 .md-typeset h2,
 .md-typeset h3 {
@@ -10,12 +10,12 @@
 .md-typeset h4,
 .md-typeset h5,
 .md-typeset h6 {
-    margin-block: 0.25lh;
+  margin-block: 0.25lh;
 }
 
 .md-typeset ol li,
 .md-typeset ul li {
-    margin-bottom: unset;
+  margin-bottom: unset;
 }
 
 .md-typeset h1 {
@@ -45,22 +45,22 @@
 }
 
 .md-typeset code {
-	background-color: var(--md-code-bg-color);
-	border-radius: .1rem;
-	-webkit-box-decoration-break: clone;
-	box-decoration-break: clone;
-    font-size: 1em;
-	quotes: 0 .2941176471em;
-	word-break: break-word;
+  background-color: var(--md-code-bg-color);
+  border-radius: 0.1rem;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  font-size: 1em;
+  quotes: 0 0.2941176471em;
+  word-break: break-word;
 }
 
 .highlighttable .linenos {
-	background-color: var(--md-code-bg-color);
-	border-bottom-left-radius: .1rem;
-	border-top-left-radius: .1rem;
-	padding: .7720588235em 0 .7720588235em 1.1764705882em;
-	-webkit-user-select: none;
-	user-select: none;
+  background-color: var(--md-code-bg-color);
+  border-bottom-left-radius: 0.1rem;
+  border-top-left-radius: 0.1rem;
+  padding: 0.7720588235em 0 0.7720588235em 1.1764705882em;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 [data-md-color-scheme="slate"] {
@@ -73,25 +73,23 @@
   --md-accent-fg-color: #ff67ff;
   --md-typeset-a-color: #82b1ff;
   --md-typeset-a-color-hover: #ff67ff;
-  --md-default-url-fg-color-hover: #ff1a8f;
-  --md-default-code-bg-color: #f8f8f8;
 
   .md-typeset a:hover {
-    color: var(--md-accent-fg-color);
+    color: #FF67FF;
     transition: color 0.2s ease-in-out;
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 2px;
   }
+}
 
 [data-md-color-scheme="default"] {
-  --md-code-bg-color: var(--md-default-code-bg-color);
+  --md-code-bg-color: #f8f8f8;
   .md-typeset a:hover {
-    color: var(--md-url-fg-color-hover); 
+    color: #ff1a8f;
     transition: color 0.2s ease-in-out;
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 2px;
   }
-    }
 }
