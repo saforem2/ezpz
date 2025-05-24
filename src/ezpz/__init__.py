@@ -297,16 +297,16 @@ logging.getLogger("datasets").setLevel(logging.ERROR)
 logging.getLogger("sh").setLevel("WARNING")
 logging.getLogger("jax").setLevel(logging.ERROR)
 
-try:
-    import deepspeed  # noqa type:ignore
-
-    os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
-    logging.getLogger("deepseed").setLevel(logging.ERROR)
-except (ImportError, ModuleNotFoundError):
-    logger.warning(
-        "Unable to import deepspeed. Please install it to use DeepSpeed features."
-    )
-    pass
+# try:
+#     import deepspeed  # noqa type:ignore
+#
+#     os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
+#     logging.getLogger("deepseed").setLevel(logging.ERROR)
+# except (ImportError, ModuleNotFoundError):
+#     logger.warning(
+#         "Unable to import deepspeed. Please install it to use DeepSpeed features."
+#     )
+#     pass
 
 
 __all__ = [
