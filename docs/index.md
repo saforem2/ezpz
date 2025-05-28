@@ -6,10 +6,10 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
 ## 🐣 Getting Started
 
-1. 🏖️ Setup environment[^magic] (see [Shell Environment](docs/shell-environment.md)):
+1. 🏖️ Setup environment[^magic] (see [Shell Environment](./shell-environment.md)):
 
     ```bash
-    source <(curl https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh) && ezpz_setup_env
+    source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
     ```
 
    [^magic]:
@@ -18,13 +18,13 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
        and (`&&`) call `ezpz_setup_env` to setup your
        python environment.
 
-1. 🐍 Install `ezpz` (see [Python Library](docs/python-library.md)):
+1. 🐍 Install `ezpz` (see [Python Library](./python-library.md)):
 
     ```bash
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
     ```
 
-1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](docs/launch.md)):
+1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](./launch.md)):
 
     ```bash
     python3 -m ezpz.launch -m ezpz.test_dist
@@ -32,7 +32,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
    [^module]:
        Technically, we're _launching_ (`-m ezpz.launch`) the
-       [`ezpz/test_dist.py`](src/ezpz/test_dist.py) as a module (`-m`),
-       in this example.
+       [`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
+       as a module (`-m`), in this example.
 
 😎 2 ez.
