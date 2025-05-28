@@ -1489,9 +1489,11 @@ def get_gpus_per_node() -> int:
         return torch.cuda.device_count()
     if torch.xpu.is_available():
         return torch.xpu.device_count()
-    if ipex is not None:
-        return ipex.xpu.device_count()  # type:ignore
-    return get_cpus_per_node()
+    try:
+        if ipex is not None:
+            return ipex.xpu.device_count()  # type:ignore
+    except NameError:
+        return get_cpus_per_node()
 
 
 def get_pbs_launch_cmd(
