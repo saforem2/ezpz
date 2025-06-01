@@ -60,6 +60,7 @@ dev = [
     "pyright",
     "ruff",
     "ruff-lsp",
+    "torchinfo",
     # "tensorboard",
     # "hydra-colorlog",
     # "tensorboard",
