@@ -67,12 +67,14 @@ def setup():
     device_type = ezpz.get_torch_device_type()
     from ezpz.models.minimal import SequentialLinearNet
 
-    fallback_layer_sizes = "128,256,512,1024,2048,4096,8192,16384,32768,16384,8192,4096,2048,1024,512,256,128"
     model = SequentialLinearNet(
         input_dim=int((os.environ.get("INPUT_SIZE", 128))),
         output_dim=int(os.environ.get("OUTPUT_SIZE", 128)),
         sizes=[
-            int(x) for x in os.environ.get("LAYER_SIZES", "1024,512,256,128").split(",")
+            int(x)
+            for x in os.environ.get(
+                "LAYER_SIZES", "256,512,1024,2048,1024,512,256,128"
+            ).split(",")
         ],
     )
     model.to(device_type)
@@ -109,15 +111,17 @@ if __name__ == "__main__":
             "\n".join(
                 [
                     "Usage: ",
-                    " ".join([
-                        "PRINT_ITERS=100",
-                        "TRAIN_ITERS=1000",
-                        "INPUT_SIZE=128",
-                        "OUTPUT_SIZE=128",
-                        "LAYER_SIZES=\"'128,256,128'\"",
-                        "ezpz-launch",
-                        "-m ezpz.examples.minimal",
-                    ])
+                    " ".join(
+                        [
+                            "PRINT_ITERS=100",
+                            "TRAIN_ITERS=1000",
+                            "INPUT_SIZE=128",
+                            "OUTPUT_SIZE=128",
+                            "LAYER_SIZES=\"'128,256,128'\"",
+                            "ezpz-launch",
+                            "-m ezpz.examples.minimal",
+                        ]
+                    ),
                 ]
             )
         )
