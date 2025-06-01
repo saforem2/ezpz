@@ -7,9 +7,10 @@ import pdb
 import os
 import re
 import logging
+from torchinfo import ModelStatistics
 import xarray as xr
 import numpy as np
-from typing import Optional, Union, Any
+from typing import Optional, Sequence, Union, Any
 
 from dataclasses import asdict
 
@@ -91,6 +92,29 @@ def summarize_dict(d: dict, precision: int = 6) -> str:
     return " ".join(
         [format_pair(k, v, precision=precision) for k, v in d.items()]
     )
+
+
+def model_summary(
+    model,
+    verbose: bool = False,
+    depth: int = 1,
+    input_size: Optional[Sequence[int]] = None,
+) -> ModelStatistics | None:
+    try:
+        from torchinfo import summary
+
+        return summary(
+            model,
+            input_size=input_size,
+            depth=depth,
+            verbose=verbose,
+        )
+        # logger.info(f'\n{summary_str}')
+
+    except (ImportError, ModuleNotFoundError):
+        logger.warning(
+            'torchinfo not installed, unable to print model summary!'
+        )
 
 
 def normalize(name: str) -> str:
