@@ -97,8 +97,8 @@ class RichHandler(OriginalRichHandler):
 
         level = self.get_level_text(record)
         time_format = None if self.formatter is None else self.formatter.datefmt
-        # default_time_fmt = '%Y-%m-%d %H:%M:%S.%f'
-        default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
+        default_time_fmt = '%Y-%m-%d %H:%M:%S,%f'
+        # default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
         time_format = time_format if time_format else default_time_fmt
         log_time = datetime.fromtimestamp(record.created)
 
