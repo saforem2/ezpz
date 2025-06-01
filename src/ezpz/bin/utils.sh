@@ -22,6 +22,7 @@
 
 # Allow aliases to be expanded (needed for `launch` alias)
 # shopt -s expand_aliases
+#
 
 if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 1 || "${TERM}" == "dumb" ]]; then
     # Enable color support for `ls` and `grep`
@@ -133,7 +134,8 @@ fi
 # @description Kill existing mpi processes
 ezpz_kill_mpi() {
     # pgrep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
-    kill $(ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}')
+    # kill $(ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}')
+    ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
 }
 
 # @description Get name of shell.
@@ -590,7 +592,7 @@ ezpz_install_uv() {
     # Install `uv` package.
     # See: https://docs.astral.sh/uv/#installation
     # #######################
-    ezpz_set_proxy_alcf
+    # ezpz_set_proxy_alcf
     curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
