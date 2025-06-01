@@ -6,32 +6,8 @@ import torch
 logger = ezpz.get_logger(__name__)
 
 
-class Network(torch.nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        sizes: list[int] | None,
-    ):
-        super(Network, self).__init__()
-        nh = output_dim if sizes is None else sizes[0]
-        layers = [torch.nn.Linear(input_dim, nh), torch.nn.ReLU()]
-        if sizes is not None and len(sizes) > 1:
-            for idx, size in enumerate(sizes[1:]):
-                layers.extend(
-                    [torch.nn.Linear(sizes[idx], size), torch.nn.ReLU()]
-                )
-            layers.append(torch.nn.Linear(sizes[-1], output_dim))
-        self.layers = torch.nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layers(x)
-
-
 @ezpz.timeitlogit(rank=ezpz.get_rank())
-def train(
-    model: torch.nn.Module, optimizer: torch.optim.Optimizer
-) -> ezpz.History:
+def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> ezpz.History:
     unwrapped_model = (
         model.module
         if isinstance(model, torch.nn.parallel.DistributedDataParallel)
@@ -78,33 +54,35 @@ def train(
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def setup():
-    rank = ezpz.setup_torch()
+    rank = ezpz.setup_torch(seed=int(os.environ.get("SEED", 0)))
     if os.environ.get("WANDB_DISABLED", False):
         logger.info("WANDB_DISABLED is set, not initializing wandb")
     elif rank == 0:
         try:
             _ = ezpz.setup_wandb(
-                project_name=os.environ.get(
-                    "PROJECT_NAME", "ezpz.examples.minimal"
-                )
+                project_name=os.environ.get("PROJECT_NAME", "ezpz.examples.minimal")
             )
         except Exception:
-            logger.exception(
-                "Failed to initialize wandb, continuing without it"
-            )
+            logger.exception("Failed to initialize wandb, continuing without it")
     device_type = ezpz.get_torch_device_type()
-    model = Network(
+    from ezpz.models.minimal import SequentialLinearNet
+
+    fallback_layer_sizes = "128,256,512,1024,2048,4096,8192,16384,32768,16384,8192,4096,2048,1024,512,256,128"
+    model = SequentialLinearNet(
         input_dim=int((os.environ.get("INPUT_SIZE", 128))),
         output_dim=int(os.environ.get("OUTPUT_SIZE", 128)),
         sizes=[
-            int(x)
-            for x in os.environ.get("LAYER_SIZES", "1024,512,256,128").split(
-                ","
-            )
+            int(x) for x in os.environ.get("LAYER_SIZES", "1024,512,256,128").split(",")
         ],
     )
     model.to(device_type)
     model.to((os.environ.get("DTYPE", torch.bfloat16)))
+    try:
+        from ezpz.utils import model_summary
+
+        model_summary(model)
+    except Exception:
+        logger.exception("Failed to summarize model")
     logger.info(f"{model=}")
     optimizer = torch.optim.Adam(model.parameters())
     if ezpz.get_world_size() > 1:
@@ -124,4 +102,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]:
+        print(
+            "\n".join(
+                [
+                    "Usage: ",
+                    " ".join([
+                        "PRINT_ITERS=100",
+                        "TRAIN_ITERS=1000",
+                        "INPUT_SIZE=128",
+                        "OUTPUT_SIZE=128",
+                        "LAYER_SIZES=\"'128,256,128'\"",
+                        "ezpz-launch",
+                        "-m ezpz.examples.minimal",
+                    ])
+                ]
+            )
+        )
+        exit(0)
+    else:
+        main()
