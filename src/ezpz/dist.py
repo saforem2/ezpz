@@ -32,7 +32,7 @@ except Exception:
 
 try:
     ipex = lazy_import("intel_extension_for_pytorch")
-except Exception:
+except (ImportError, ModuleNotFoundError):
     ipex = None
 
 
