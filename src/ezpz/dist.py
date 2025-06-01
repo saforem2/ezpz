@@ -438,13 +438,13 @@ def init_deepspeed(
         import deepspeed  # noqa type:ignore
 
         os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
-    except (ImportError, ModuleNotFoundError):
+    except (ImportError, ModuleNotFoundError) as e:
         logger.warning(
             "Unable to import deepspeed. Please install it to use DeepSpeed features."
         )
         raise ImportError(
             "DeepSpeed is not installed. Install with 'pip install deepspeed'"
-        )
+        ) from e
 
     rank = get_rank() if rank is None else rank
     world_size = get_world_size() if world_size is None else world_size
