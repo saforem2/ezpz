@@ -1480,13 +1480,15 @@ def get_gpus_per_node() -> int:
         return torch.cuda.device_count()
     if torch.xpu.is_available():
         return torch.xpu.device_count()
-    if ipex is not None:
-        return ipex.xpu.device_count()  # type:ignore
-    if torch.backends.mps.is_available():
-        # XXX: Maybe we're running MPI with multiple MPS devices?
-        return get_world_size_in_use()
-    # otherwise, return the number of CPUs
-    return get_cpus_per_node()
+    try:
+        if ipex is not None:
+            return ipex.xpu.device_count()  # type:ignore
+    except NameError:
+        if torch.backends.mps.is_available():
+            # XXX: Maybe we're running MPI with multiple MPS devices?
+            return get_world_size_in_use()
+        # otherwise, return the number of CPUs
+        return get_cpus_per_node()
 
 
 def get_pbs_launch_cmd(
