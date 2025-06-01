@@ -570,7 +570,7 @@ def init_process_group(
 ) -> None:
     backend = get_torch_backend()
     if get_rank() == 0:
-        logger.info(f"Using {get_torch_device_type()=} with {backend=}")
+        logger.info(f"Initializing process group with {rank=}, {world_size=}, torch_backend={backend}")
     if not isinstance(timeout, timedelta):
         timeout = timedelta(
             seconds=int(timeout),
@@ -647,9 +647,7 @@ def get_world_size(
 
 def get_local_rank() -> int:
     """Return `get_rank() % get_gpus_per_node()`"""
-    if get_world_size() > 1:
-        return int(get_rank() % get_gpus_per_node())
-    return 0
+    return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
 def query_environment() -> dict[str, int]:
@@ -723,7 +721,7 @@ def setup_torch_DDP(
 
 
 def setup_torch_distributed(
-    backend: Optional[str] = None,
+    framework: Optional[str] = None,
     tensor_parallel_size: int = 1,
     pipeline_parallel_size: int = 1,
     context_parallel_size: int = 1,
@@ -735,8 +733,8 @@ def setup_torch_distributed(
     timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
-    backend = "DDP" if backend is None else backend
-    assert str(backend).lower() in {
+    framework = "ddp" if framework is None else framework
+    assert str(framework).lower() in {
         "ddp",
         "ds",
         "deepspeed",
@@ -752,10 +750,14 @@ def setup_torch_distributed(
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
-    be = str(backend).lower()
+    be = str(framework).lower()
+    assert be in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
+        f"Invalid backend: {be=}, expected one of "
+        f"{'ds', 'deepspeed', 'ddp', 'horovod', 'hvd'}"
+    )
     # assert be in BACKENDS['pytorch']
     if rank == 0:
-        logger.info(f'Using {get_torch_device_type()=} with {be=}')
+        logger.info(f"Using {get_torch_device_type()=} with {be=}")
     if be == "ddp":
         dsetup = setup_torch_DDP(port, timeout)
         world_size = dsetup["world_size"]
@@ -894,7 +896,7 @@ def setup_torch(
         num_nodes = 1
     else:
         dsetup = setup_torch_distributed(
-            backend=backend,
+            framework=backend,
             port=port,
             timeout=timeout,
             tensor_parallel_size=int(tensor_parallel_size),
