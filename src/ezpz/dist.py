@@ -954,6 +954,8 @@ def setup_torch(
         _ = get_dist_info(verbose=verbose)
         if verbose:
             _ = print_dist_setup()
+    if world_size > 1:
+        barrier()
     # if world_size > 1:
     #     tdist.barrier()
 
