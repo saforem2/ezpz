@@ -737,13 +737,13 @@ def setup_torch_distributed(
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     backend = "DDP" if backend is None else backend
-    # assert str(backend).lower() in {
-    #     "ddp",
-    #     "ds",
-    #     "deepspeed",
-    #     "horovod",
-    #     "hvd",
-    # }
+    assert str(backend).lower() in {
+        "ddp",
+        "ds",
+        "deepspeed",
+        "horovod",
+        "hvd",
+    }
     timeout = (
         3600
         if timeout is None
@@ -755,7 +755,8 @@ def setup_torch_distributed(
     local_rank = get_local_rank()
     be = str(backend).lower()
     # assert be in BACKENDS['pytorch']
-    logger.info(f'Using {get_torch_device_type()=} with {be=}')
+    if rank == 0:
+        logger.info(f'Using {get_torch_device_type()=} with {be=}')
     if be == "ddp":
         dsetup = setup_torch_DDP(port, timeout)
         world_size = dsetup["world_size"]
