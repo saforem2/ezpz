@@ -46,7 +46,6 @@ def prompt_model(
 
     Example:
 
-        ```python
         >>> import ezpz
         >>> from transformers import AutoModelForCausalLM, AutoTokenizer #, Trainer, TrainingArguments
         >>> import torch
@@ -56,7 +55,6 @@ def prompt_model(
         >>> model.to(ezpz.get_torch_device_type())
         >>> model.to(torch.bfloat16)
         >>> result = tokenizer.batch_decode(model.generate(**tokenizer("Who are you?", return_tensors="pt").to(ezpz.get_torch_device_type()), max_length=128))
-        ```
     """
     return tokenizer.batch_decode(
         model.generate(

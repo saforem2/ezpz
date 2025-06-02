@@ -18,8 +18,10 @@ from ezpz.log import get_logger
 # from ezpz.dist import get_rank
 from ezpz import plot as ezplot
 from ezpz.tplot import tplot as eztplot
+
 # from ezpz import tplot as eztplot
 from ezpz.utils import summarize_dict, get_timestamp
+
 # import ezpz.plot as ezplot
 
 from ezpz.configs import PathLike
@@ -62,6 +64,10 @@ xplt = xr.plot  # type:ignore
 
 
 class StopWatch(ContextDecorator):
+    """
+    A simple stopwatch context manager for measuring time taken by a block of code.
+    """
+
     def __init__(
         self,
         msg: str,
@@ -71,6 +77,17 @@ class StopWatch(ContextDecorator):
         prefix: str = "StopWatch/",
         log_output: bool = True,
     ) -> None:
+        """
+        Initialize the StopWatch.
+
+        Args:
+            msg (str): Message to log when the stopwatch is started.
+            wbtag (Optional[str]): Optional tag for logging to Weights & Biases.
+            iter (Optional[int]): Optional iteration number to log.
+            commit (Optional[bool]): Whether to commit the log to Weights & Biases.
+            prefix (str): Prefix for the log data.
+            log_output (bool): Whether to log the output message.
+        """
         self.msg = msg
         self.data = {}
         self.iter = iter if iter is not None else None
@@ -88,10 +105,12 @@ class StopWatch(ContextDecorator):
                 }
 
     def __enter__(self):
+        """Start the stopwatch."""
         self.time = time.perf_counter()
         return self
 
     def __exit__(self, t, v, traceback):
+        """Stop the stopwatch and log the time taken."""
         dt = time.perf_counter() - self.time
         # if self.wbtag is not None and wandb.run is not None:
         # if len(self.data) > 0 and wandb.run is not None:
@@ -110,7 +129,17 @@ class StopWatch(ContextDecorator):
 
 
 class History:
+    """
+    A class to track and log metrics during training or evaluation.
+    """
     def __init__(self, keys: Optional[list[str]] = None) -> None:
+        """
+        Initialize the History object.
+
+        Args:
+            keys (Optional[list[str]]): List of keys to initialize the history with.
+                If None, initializes with an empty list.
+        """
         self.keys = [] if keys is None else keys
         self.history = {}
 
@@ -119,6 +148,14 @@ class History:
         key: str,
         val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray],
     ):
+        """
+        Update the history with a new key-value pair.
+
+        Args:
+            key (str): The key to update in the history.
+            val (Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]): The value
+                to associate with the key.
+        """
         try:
             self.history[key].append(val)
         except KeyError:
@@ -133,6 +170,16 @@ class History:
         commit: Optional[bool] = True,
         summarize: Optional[bool] = True,
     ) -> str:
+        """
+        Update the history with a dictionary of metrics.
+
+        Args:
+            metrics (dict): Dictionary of metrics to update the history with.
+            precision (int): Precision for summarizing the metrics.
+            use_wandb (Optional[bool]): Whether to log the metrics to Weights & Biases.
+            commit (Optional[bool]): Whether to commit the log to Weights & Biases.
+            summarize (Optional[bool]): Whether to summarize the metrics.
+        """
         for key, val in metrics.items():
             # if isinstance(val, (list, np.ndarray, torch.Tensor)):
             #     val = grab_tensor(val)
@@ -164,6 +211,21 @@ class History:
         logfreq: Optional[int] = None,
         plot_type: Optional[str] = None,
     ):
+        """
+        Create a text plot of the given data.
+
+        Args:
+            y (np.ndarray): The data to plot.
+            x (Optional[np.ndarray]): The x-axis data.
+            xlabel (Optional[str]): The x-axis label.
+            ylabel (Optional[str]): The y-axis label.
+            append (bool): Whether to append to an existing plot.
+            title (Optional[str]): The title of the plot.
+            verbose (bool): Whether to print the plot.
+            outfile (Optional[str]): The path to save the plot to.
+            logfreq (Optional[int]): The log frequency of the plot.
+            plot_type (Optional[str]): The type of plot to create. 
+        """
         if xlabel is not None and ylabel == xlabel:
             return
         if len(y) > 1:
@@ -214,8 +276,21 @@ class History:
         NOTE: The `warmup` argument can be used to drop the first `warmup`
         iterations (as a percent of the total number of iterations) from the
         plot.
+
+        Args:
+            val (np.ndarray): The data to plot.
+            key (Optional[str]): The key for the data.
+            warmup (Optional[float]): The percentage of iterations to drop from the
+                beginning of the plot.
+            num_chains (Optional[int]): The number of chains to plot.
+            title (Optional[str]): The title of the plot.
+            outdir (Optional[os.PathLike]): The directory to save the plot to.
+            subplots_kwargs (Optional[dict[str, Any]]): Additional arguments for
+                subplots.
+            plot_kwargs (Optional[dict[str, Any]]): Additional arguments for plotting.
         """
         import matplotlib.pyplot as plt
+
         LW = plt.rcParams.get("axes.linewidth", 1.75)
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -243,16 +318,12 @@ class History:
             subfigs = fig.subfigures(1, 2)
 
             gs_kw = {"width_ratios": [1.33, 0.33]}
-            (ax, ax1) = subfigs[1].subplots(
-                1, 2, sharey=True, gridspec_kw=gs_kw
-            )
+            (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
             ax.grid(alpha=0.2)
             ax1.grid(False)
             color = plot_kwargs.get("color", None)
             label = r"$\langle$" + f" {key} " + r"$\rangle$"
-            ax.plot(
-                steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs
-            )
+            ax.plot(steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs)
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
@@ -271,7 +342,7 @@ class History:
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                # assert isinstance(ax, plt.Axes)  
+                # assert isinstance(ax, plt.Axes)
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
             elif len(arr.shape) == 3:
@@ -329,9 +400,7 @@ class History:
                 # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(
-                    steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
-                )
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs)
 
         ax.set_xlabel("draw")
         if title is not None:
@@ -366,7 +435,26 @@ class History:
         line_labels: bool = False,
         logfreq: Optional[int] = None,
     ):
+        """
+        Plot a single variable from the history as an xarray DataArray.
+
+        Args:
+            val (xr.DataArray): The data to plot.
+            key (Optional[str]): The key for the data.
+            warmup (Optional[float]): The percentage of iterations to drop from the
+                beginning of the plot.
+            num_chains (Optional[int]): The number of chains to plot.
+            title (Optional[str]): The title of the plot.
+            outdir (Optional[str]): The directory to save the plot to.
+            subplots_kwargs (Optional[dict[str, Any]]): Additional arguments for
+                subplots.
+            plot_kwargs (Optional[dict[str, Any]]): Additional arguments for plotting.
+            verbose (bool): Whether to print the plot.
+            line_labels (bool): Whether to label lines in the plot.
+            logfreq (Optional[int]): The log frequency of the plot.
+        """
         import matplotlib.pyplot as plt
+
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         ezplot.set_plot_style()
@@ -633,9 +721,7 @@ class History:
                     logfreq=logfreq,
                 )
             else:
-                logger.warning(
-                    f"No data found in {key=}: {len(val.values)=} <= 0"
-                )
+                logger.warning(f"No data found in {key=}: {len(val.values)=} <= 0")
 
     def plot_all(
         self,
@@ -691,9 +777,7 @@ class History:
                 subplots_kwargs=subplots_kwargs,
             )
             if fig is not None:
-                _ = sns.despine(
-                    fig, top=True, right=True, bottom=True, left=True
-                )
+                _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
 
             # _ = plt.grid(True, alpha=0.4)
             if subfigs is not None:
@@ -706,17 +790,13 @@ class History:
                 )
                 # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
                 # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
-                sns.despine(
-                    subfigs[0], top=True, right=True, left=True, bottom=True
-                )
+                sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
             if outdir is not None:
                 dirs = {
                     "png": Path(outdir).joinpath("pngs/"),
                     "svg": Path(outdir).joinpath("svgs/"),
                 }
-                _ = [
-                    i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
-                ]
+                _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
                 # if verbose:
                 logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
                 for ext, d in dirs.items():
@@ -725,9 +805,7 @@ class History:
                         outfile = d.joinpath(f"{key}-subfig.{ext}")
                     # logger.info(f"Saving {key}.ext to: {outfile}")
                     if verbose:
-                        logger.info(
-                            f"Saving {key} plot to: {outfile.resolve()}"
-                        )
+                        logger.info(f"Saving {key} plot to: {outfile.resolve()}")
                     plt.savefig(outfile, dpi=400, bbox_inches="tight")
             if is_interactive():
                 plt.show()
@@ -736,10 +814,7 @@ class History:
 
     def history_to_dict(self) -> dict:
         # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
-        return {
-            k: torch.Tensor(v).numpy(force=True)
-            for k, v in self.history.items()
-        }
+        return {k: torch.Tensor(v).numpy(force=True) for k, v in self.history.items()}
 
     def to_DataArray(
         self,
@@ -861,17 +936,15 @@ class History:
                 )
             )
         )
-        run_name = (
-            f"History-{get_timestamp()}" if run_name is None else run_name
-        )
+        run_name = f"History-{get_timestamp()}" if run_name is None else run_name
         fallback_outdir = Path(os.getcwd()).joinpath("outputs")
         if run_name is not None:
-            fallback_outdir = fallback_outdir.joinpath(
-                run_name, get_timestamp()
-            )
+            fallback_outdir = fallback_outdir.joinpath(run_name, get_timestamp())
         outdir = (
             # Path(os.getcwd()).joinpath('outputs')
-            fallback_outdir if outdir is None else Path(outdir)
+            fallback_outdir
+            if outdir is None
+            else Path(outdir)
         )
         outdir = outdir.joinpath(run_name)
         if plot:
