@@ -40,7 +40,7 @@ backend combo.
 
     - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
 
-  _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
+  _2ez_ 😎.
 
 </details>
 

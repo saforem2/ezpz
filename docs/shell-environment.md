@@ -14,21 +14,23 @@ _Please_ feel free to provide input / suggest changes !
 
 ///
 
-/// note
+<!-- /// note -->
 
-1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+> [!NOTE]
+>
+> 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+>
+>    ```bash
+>    source <(curl -L https://bit.ly/ezpz-utils)
+>    ```
+>
+> 2. Use the `ezpz_setup_env` function to set up your environment:
+>
+>    ```bash
+>    ezpz_setup_env
+>    ```
 
-   ```bash
-   source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh)
-   ```
-
-2. Use the `ezpz_setup_env` function to setup your environment:
-
-   ```bash
-   ezpz_setup_env
-   ```
-
-///
+<!-- /// -->
 
 This will 🪄 _automagically_:
 
@@ -43,7 +45,7 @@ easier when working with job schedulers (e.g. `PBS Pro` @ ALCF or
 
 **All** of these functions are:
 
-- located in [`utils.sh`](../../src/ezpz/bin/utils.sh)
+- located in [`utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)
 - prefixed with `ezpz_*` (e.g. `ezpz_setup_python`)[^1]
 
 We would like to write our application in such a way that it is able to
@@ -258,7 +260,7 @@ running on one of the known machines:
 
 [^2]:
     This is system dependent. See
-    [`ezpz_setup_conda`](../../src/ezpz/bin/utils.sh)
+    [`ezpz_setup_conda`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh#L50)
 
 [^3]: Any of {Aurora, Polaris, Sophia, Sunspot, Sirius}
 
