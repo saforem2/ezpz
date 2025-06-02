@@ -205,10 +205,11 @@ nav:
   - 🐍 Python Library: python-library.md
   - 🏖️ Shell Environment: shell-environment.md
   - 💾 Code Reference:
-      - Code-Reference/index.md
-      - ezpz: Code-Reference/ezpz-reference.md
-      - ezpz.dist: Code-Reference/dist-reference.md
-      - ezpz.config: Code-Reference/config-reference.md
-      - ezpz.generate: Code-Reference/generate-reference.md
-      - ezpz.hf-trainer: Code-Reference/hf-trainer-reference.md
-      - ezpz.history: Code-Reference/history-reference.md
+      - "<code>ezpz.__init__</code>": Code-Reference/index.md
+      # - ezpz: Code-Reference/ezpz-reference.md
+      - "<code>ezpz.config</code>": Code-Reference/config-reference.md
+      - "<code>ezpz.dist</code>": Code-Reference/dist-reference.md
+      - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
+      - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
+      - "<code>ezpz.hf-trainer</code>": Code-Reference/hf-trainer-reference.md
+      - "<code>ezpz.history</code>": Code-Reference/history-reference.md

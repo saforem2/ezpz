@@ -1,6 +1,8 @@
-# ![🍋](./assets/lemon.svg) `ezpz`
+# 🍋 `ezpz`
 
-> Train across **all** your {NVIDIA, AMD, Intel, MPS, ...} accelerators, `ezpz` 🍋.
+> Write _once_, run _anywhere_
+
+Train across **all** your {NVIDIA, AMD, Intel, MPS, ...} accelerators, `ezpz` 🍋.
 
 See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional information.
 
@@ -18,7 +20,8 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
        and (`&&`) call `ezpz_setup_env` to setup your
        python environment.
 
-1. 🐍 Install `ezpz` (see [Python Library](./python-library.md)):
+<!-- 1. 🐍 Install `ezpz` (see [Python Library](./python-library.md)): -->
+1. 🐍 Install `ezpz` (see [💾 Code Reference / ezpz](./Code-Reference/ezpz-reference.md)
 
     ```bash
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
@@ -27,7 +30,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](./launch.md)):
 
     ```bash
-    python3 -m ezpz.launch -m ezpz.test_dist
+    ezpz.launch -m ezpz.test_dist
     ```
 
    [^module]:
