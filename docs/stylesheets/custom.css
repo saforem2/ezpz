@@ -17,6 +17,10 @@
   --link-border-radius: 0.05rem;
 }
 
+.md-typeset p {
+  margin-block: 0.5lh;
+}
+
 /* .md-typeset h3 { */
 /*   margin-block: 0.5lh; */
 /* } */

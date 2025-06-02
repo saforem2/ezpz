@@ -2,7 +2,7 @@
 created: 03/28/2025
 ---
 
-# Language Model Training with 🍋 `ezpz` and 🤗 HF Trainer
+# Training LLMs with 🍋 `ezpz` \+ 🤗 `Trainer`
 
 The
 [`src/ezpz/hf_trainer.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/hf_trainer.py)
