@@ -98,7 +98,7 @@
   --h6-bg-color: oklch(from var(--h6-fg-color) calc(l * 1.15) c h / 0.1);
 
   .md-typeset a:hover {
-    color: #ff67ff;
+    color: var(--md-accent-fg-color);
     transition: color 0.2s ease-in-out;
     text-decoration: underline;
     text-underline-offset: 2px;
