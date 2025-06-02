@@ -80,10 +80,19 @@ def initialize_tensor_parallel(
     Let's say we have a total of 8 GPUs denoted by g0 ... g7 and we
     use 2 GPUs to parallelize the model. The present function will
     create 4 tensor parallel groups and 2 data parallel groups as:
-        4 tensor parallel groups:
-            [g0, g1], [g2, g3], [g4, g5], [g6, g7]
-        2 data parallel groups:
-            [g0, g2, g4, g6], [g1, g3, g5, g7]
+
+    - 4 tensor parallel groups:
+
+      ```
+      [g0, g1], [g2, g3], [g4, g5], [g6, g7]
+      ```
+
+    - 2 data parallel groups:
+
+        ```
+        [g0, g2, g4, g6], [g1, g3, g5, g7]
+        ```
+
     Note that for efficiency, the caller should make sure adjacent ranks
     are on the same DGX box. For example if we are using 2 DGX-1 boxes
     with a total of 16 GPUs, rank 0 to 7 belong to the first box and
@@ -97,14 +106,15 @@ def initialize_tensor_parallel(
     create 8 tensor model-parallel groups, 8 context-parallel group, 8 pipeline model-parallel groups
     and 8 data-parallel groups as:
     when alternate_pp_config = False,
-        8 data_parallel groups:
-            [g0, g4], [g1, g5], [g2, g6], [g3, g7], [g8, g12], [g9, g13], [g10, g14], [g11, g15]
-        8 tensor model-parallel groups:
-            [g0, g1], [g2, g3], [g4, g5], [g6, g7], [g8, g9], [g10, g11], [g12, g13], [g14, g15]
-        8 context-parallel groups:
-            [g0, g2], [g1, g3], [g4, g6], [g5, g7], [g8, g10], [g9, g11], [g12, g14], [g13, g15]
-        8 pipeline model-parallel groups:
-            [g0, g8], [g1, g9], [g2, g10], [g3, g11], [g4, g12], [g5, g13], [g6, g16], [g7, g15]
+
+    - 8 data_parallel groups:
+        [g0, g4], [g1, g5], [g2, g6], [g3, g7], [g8, g12], [g9, g13], [g10, g14], [g11, g15]
+    - 8 tensor model-parallel groups:
+        [g0, g1], [g2, g3], [g4, g5], [g6, g7], [g8, g9], [g10, g11], [g12, g13], [g14, g15]
+    - 8 context-parallel groups:
+        [g0, g2], [g1, g3], [g4, g6], [g5, g7], [g8, g10], [g9, g11], [g12, g14], [g13, g15]
+    - 8 pipeline model-parallel groups:
+        [g0, g8], [g1, g9], [g2, g10], [g3, g11], [g4, g12], [g5, g13], [g6, g16], [g7, g15]
     """
     # Get world size and rank. Ensure some consistencies.
     assert tdist.is_initialized()
