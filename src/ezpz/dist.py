@@ -491,7 +491,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         return device_type
     if (tdevice := os.environ.get("TORCH_DEVICE")) is not None:
         if get_rank() == 0:
-            logger.warning(f"Caught 'TORCH_DEVICE'={tdevice}' from environment!")
+            logger.warning(f"Caught TORCH_DEVICE={tdevice} from environment!")
         tdevice = tdevice.lower()
         assert tdevice is not None and tdevice in (
             "cpu",
@@ -574,8 +574,8 @@ def init_process_group(
         logger.info(
             " ".join(
                 [
-                    f"Initializing process group with",
-                    f"{rank=}, {world_size=}, torch_backend={backend}",
+                    "Initializing process group with",
+                    f"{rank:=}, {world_size:=}, torch_backend={backend}",
                 ]
             )
         )
@@ -763,13 +763,19 @@ def setup_torch_distributed(
     fw = str(framework).lower()
     be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
     # be = str(framework).lower()
-    assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
-        f"Invalid backend: {be=}, expected one of "
-        f"{'ds', 'deepspeed', 'ddp', 'horovod', 'hvd'}"
-    )
+    # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
+    #     f"Invalid backend: {framework=}, expected one of "
+    #     f"{'ds', 'deepspeed', 'ddp', 'horovod', 'hvd'}"
+    # )
     # assert be in BACKENDS['pytorch']
     if rank == 0:
-        logger.info(f"Using {get_torch_device_type()=} with {be=}")
+        logger.info(
+            " ".join([
+                f"Using {fw=} with",
+                "torch_{device,backend}=",
+                "{" + f"{get_torch_device_type()}, {be}" + "}"
+            ])
+        )
     if fw == "ddp":
         dsetup = setup_torch_DDP(port, timeout, backend=be)
         world_size = dsetup["world_size"]
