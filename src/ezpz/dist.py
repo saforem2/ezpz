@@ -572,10 +572,12 @@ def init_process_group(
     backend = get_torch_backend() if backend is None else backend
     if get_rank() == 0:
         logger.info(
-            " ".join([
-                f"Initializing process group with",
-                f"{rank=}, {world_size=}, torch_backend={backend}"
-            ])
+            " ".join(
+                [
+                    f"Initializing process group with",
+                    f"{rank=}, {world_size=}, torch_backend={backend}",
+                ]
+            )
         )
     if not isinstance(timeout, timedelta):
         timeout = timedelta(
@@ -743,9 +745,12 @@ def setup_torch_distributed(
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     framework = "ddp" if framework is None else framework
-    # assert str(framework).lower() in {
-    if str(framework).lower() not in {"ddp", "ds", "deepspeed", "horovod", "hvd"}:
-        ezpz.breakpoint(0)
+    # if str(framework).lower() not in {"ddp", "ds", "deepspeed", "horovod", "hvd"}:
+    assert str(framework).lower() in {"ddp", "ds", "deepspeed", "horovod", "hvd"}, (
+        f"Invalid framework: {framework=}, expected one of "
+        f"{'ddp', 'ds', 'deepspeed', 'horovod', 'hvd'}"
+    )
+
     timeout = (
         3600
         if timeout is None
