@@ -131,21 +131,20 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             dt = time.perf_counter() - t0
             if verbose:
                 if rank == 0:
-                    tstr = [f"`{func.__name__}`"]
+                    astr = []
                     if len(args) > 0:
-                        tstr.append(f"({args}")
-                    # _ = tstr.append(f"({args}") if len(args) > 0 else None
+                        astr.append(f"({args}")
                     _ = (
-                        tstr.append(f", {kwargs})")
+                        astr.append(f", {kwargs})")
                         if len(kwargs) > 0
-                        else (tstr.append(")") if len(args) > 0 else "")
+                        else (astr.append(")") if len(args) > 0 else "")
                     )
-                    _ = tstr.append(f" took: {dt=:.4f}s")
-                    logger.info("".join(tstr))
+                    zstr = [f"Called: '{func.__name__}' with arguments:"]
+                    if len(astr) > 0:
+                        zstr.append(f"{''.join(astr)}")
+                    zstr.append(f"'{func.__name__}' took: {dt=:.4f} s")
+                    logger.info("\n".join(zstr))
                 if wandb is not None and wandb.run is not None:
-                    # logger.info(
-                    #     f'Logging timeit/{func.__name__}/{dt=:.4f} to W&B'
-                    # )
                     wandb.run.log({f"timeit/{func.__name__}": dt}, commit=False)
             return result
 
@@ -575,7 +574,7 @@ def init_process_group(
             " ".join(
                 [
                     "Initializing process group with",
-                    f"{rank:=}, {world_size:=}, torch_backend={backend}",
+                    f"{rank:=}, {world_size:=}, {backend}",
                 ]
             )
         )
@@ -770,11 +769,13 @@ def setup_torch_distributed(
     # assert be in BACKENDS['pytorch']
     if rank == 0:
         logger.info(
-            " ".join([
-                f"Using {fw=} with",
-                "torch_{device,backend}=",
-                "{" + f"{get_torch_device_type()}, {be}" + "}"
-            ])
+            " ".join(
+                [
+                    f"Using {fw=} with",
+                    "torch_{device,backend}={",
+                    f"{get_torch_device_type()}, {be}" + "}",
+                ]
+            )
         )
     if fw == "ddp":
         dsetup = setup_torch_DDP(port, timeout, backend=be)
