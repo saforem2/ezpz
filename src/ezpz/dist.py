@@ -567,10 +567,16 @@ def init_process_group(
     rank: int | str,
     world_size: int | str,
     timeout: str | int | timedelta,
+    backend: Optional[str] = None,
 ) -> None:
-    backend = get_torch_backend()
+    backend = get_torch_backend() if backend is None else backend
     if get_rank() == 0:
-        logger.info(f"Initializing process group with {rank=}, {world_size=}, torch_backend={backend}")
+        logger.info(
+            " ".join([
+                f"Initializing process group with",
+                f"{rank=}, {world_size=}, torch_backend={backend}"
+            ])
+        )
     if not isinstance(timeout, timedelta):
         timeout = timedelta(
             seconds=int(timeout),
@@ -670,7 +676,9 @@ def query_environment() -> dict[str, int]:
 
 
 def setup_torch_DDP(
-    port: str = "2345", timeout: int | str | timedelta = 3600
+    port: str = "2345",
+    timeout: int | str | timedelta = 3600,
+    backend: Optional[str] = None,
 ) -> dict[str, int]:
     if not isinstance(timeout, timedelta):
         timeout = timedelta(seconds=int(timeout))
@@ -722,6 +730,7 @@ def setup_torch_DDP(
 
 def setup_torch_distributed(
     framework: Optional[str] = None,
+    backend: Optional[str] = None,
     tensor_parallel_size: int = 1,
     pipeline_parallel_size: int = 1,
     context_parallel_size: int = 1,
@@ -734,13 +743,9 @@ def setup_torch_distributed(
 ) -> dict[str, int]:
     """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
     framework = "ddp" if framework is None else framework
-    assert str(framework).lower() in {
-        "ddp",
-        "ds",
-        "deepspeed",
-        "horovod",
-        "hvd",
-    }
+    # assert str(framework).lower() in {
+    if str(framework).lower() not in {"ddp", "ds", "deepspeed", "horovod", "hvd"}:
+        ezpz.breakpoint(0)
     timeout = (
         3600
         if timeout is None
@@ -750,27 +755,29 @@ def setup_torch_distributed(
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
-    be = str(framework).lower()
-    assert be in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
+    fw = str(framework).lower()
+    be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
+    # be = str(framework).lower()
+    assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
         f"Invalid backend: {be=}, expected one of "
         f"{'ds', 'deepspeed', 'ddp', 'horovod', 'hvd'}"
     )
     # assert be in BACKENDS['pytorch']
     if rank == 0:
         logger.info(f"Using {get_torch_device_type()=} with {be=}")
-    if be == "ddp":
-        dsetup = setup_torch_DDP(port, timeout)
+    if fw == "ddp":
+        dsetup = setup_torch_DDP(port, timeout, backend=be)
         world_size = dsetup["world_size"]
         rank = dsetup["rank"]
         local_rank = dsetup["local_rank"]
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
-    elif be in {"deepspeed", "ds"}:
+    elif fw in {"deepspeed", "ds"}:
         init_deepspeed(timeout=timeout)
         world_size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
-    elif be in {"horovod", "hvd"}:
+    elif fw in {"horovod", "hvd"}:
         import horovod.torch as hvd  # type:ignore noqa
 
         _ = None if hvd.is_initialized() else hvd.init()
@@ -842,6 +849,7 @@ def barrier(
 
 
 def setup_torch(
+    framework: Optional[str] = None,
     backend: Optional[str] = None,
     port: Optional[str | int] = None,
     seed: Optional[int] = None,
@@ -883,8 +891,9 @@ def setup_torch(
     #     torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     # torch.use_deterministic_algorithms(True)
     ws_from_env = os.environ.get("WORLD_SIZE", None)
-    backend = "DDP" if backend is None else backend
-    backend = backend.lower()
+    framework = "DDP" if framework is None else framework
+    framework = framework.lower()
+    backend = str(get_torch_backend()).lower()
     if ws_from_env is not None and ws_from_env == "1":
         logger.info(
             f"Running on a single {device}, not initializing torch.distributed!"
@@ -896,7 +905,8 @@ def setup_torch(
         num_nodes = 1
     else:
         dsetup = setup_torch_distributed(
-            framework=backend,
+            framework=framework,
+            backend=backend,
             port=port,
             timeout=timeout,
             tensor_parallel_size=int(tensor_parallel_size),
