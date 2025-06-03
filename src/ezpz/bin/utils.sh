@@ -24,7 +24,7 @@
 # shopt -s expand_aliases
 #
 
-if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 1 || "${TERM}" == "dumb" ]]; then
+if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
     # Enable color support for `ls` and `grep`
     # shopt -s dircolors
     # shopt -s colorize
