@@ -36,10 +36,9 @@ warnings.filterwarnings("ignore")
 
 try:
     import wandb
-
     WANDB_DISABLED = (
         os.environ.get("WANDB_DISABLED", False)
-        or os.environ.get("WANDB_MODE", "").lower() == "disabled"
+        or os.environ.get("WANDB_MODE", "online").lower() == "disabled"
     )
 
 except Exception:
