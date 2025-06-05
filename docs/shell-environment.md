@@ -108,7 +108,7 @@ below:
 
 ///
 
-#### 🛠️ Setup Python
+### 🛠️ Setup Python
 
 ```bash
 ezpz_setup_python
@@ -167,7 +167,7 @@ conda environment and create the virtual env in `venvs/custom/`
 
 ///
 
-#### 🧰 Setup Job
+### 🧰 Setup Job
 
 ```bash
 ezpz_setup_job
