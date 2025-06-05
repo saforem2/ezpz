@@ -265,7 +265,7 @@
 
 [^module]:
     Technically, we're _launching_ (`-m ezpz.launch`) the
-    [`ezpz/test_dist.py`](https://github.com/samforeman/ezpz/blob/main/ezpz/test_dist.py) a module (`-m`),
+    [`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/ezpz/test_dist.py) a module (`-m`),
     in this example.
 
 [^magic]:
