@@ -1,9 +1,5 @@
 # 🐍 Python Library
 
-- [🐍 Python Library](#-python-library)
-  - [👀 Overview](#-overview)
-  - [Install](#install)
-
 ### 👀 Overview
 
 Launch and train across all your accelerators, using your favorite framework +
@@ -44,7 +40,7 @@ backend combo.
 
     - [`ez.get_torch_backend()`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/dist.py#L348): {`nccl`, `ccl`, `gloo`}
 
-    _2ez_ 😎. (see [frameworks](#frameworks) for additional details)
+    _2ez_ 😎.
 
   </details>
 

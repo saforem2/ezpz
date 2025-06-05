@@ -10,7 +10,7 @@ python3 -m pip install "git+https://github.com/saforem2/ezpz"
 python3 -m ezpz.launch -m ezpz.test_dist
 ```
 
-This will _launch_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py)
+This will _launch_ [`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/ezpz/test_dist.py)
 across all available resources in your {PBS, Slurm} job.
 
 ```mermaid
