@@ -195,10 +195,9 @@ markdown_extensions:
 
 nav:
   - index.md
-  # - 📝 Example: example.md
-  - 🧤 Hands-On: slides-2025-05-07.md
   - 🚀 Launch: launch.md
   - 🤗 HF Trainer: hf-trainer.md
+  - 🧤 Hands-On: slides-2025-05-07.md
   - 🏖️ Shell Environment: shell-environment.md
   - 🐍 Python API:
       - Code-Reference/index.md
@@ -216,4 +215,5 @@ nav:
       - 🕸️ Parallelism: parallelism.md
       - 🗓️ PBS: pbs.md
       - 🐍 Python Library: python-library.md
+      # - 📝 Example: example.md
       # - 📙 Notes (Older): notes.md

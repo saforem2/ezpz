@@ -1,10 +1,5 @@
 # 🏖️ Shell Environment
 
-- [🏖️ Shell Environment](#-shell-environment)
-  - [🐣 Getting Started](#-getting-started)
-    - [🛠️ Setup Python](#-setup-python)
-    - [🧰 Setup Job](#-setup-job)
-
 ## 🐣 Getting Started
 
 /// warning | 🚧 Work in Progress
@@ -18,7 +13,7 @@ _Please_ feel free to provide input / suggest changes !
 
 > [!NOTE]
 >
-> 1. Source the [`src/ezpz/bin/utils.sh`](./src/ezpz/bin/utils.sh) file:
+> 1. Source the [`src/ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh) file:
 >
 >    ```bash
 >    source <(curl -L https://bit.ly/ezpz-utils)
@@ -34,9 +29,9 @@ _Please_ feel free to provide input / suggest changes !
 
 This will 🪄 _automagically_:
 
-1. [🐍 **Setup Python**](#%EF%B8%8F-setup-python): Load the appropriate module(s)
+1. 🐍 **Setup Python**: Load the appropriate module(s)
    and put you inside a suitable python environment
-1. [🧰 **Setup Job**](#-setup-job): Determine the resources available in the
+1. 🧰 **Setup Job**: Determine the resources available in the
    current job and build a `launch` alias for launching executables
 
 We provide a variety of helper functions designed to make your life
@@ -113,7 +108,7 @@ below:
 
 ///
 
-#### 🛠️ Setup Python
+### 🛠️ Setup Python
 
 ```bash
 ezpz_setup_python
@@ -172,7 +167,7 @@ conda environment and create the virtual env in `venvs/custom/`
 
 ///
 
-#### 🧰 Setup Job
+### 🧰 Setup Job
 
 ```bash
 ezpz_setup_job

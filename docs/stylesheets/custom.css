@@ -210,12 +210,21 @@
   overflow: visible;
 }
 
+:root {
+    --h1-padding: 0pt;
+    --h2-padding: 0pt;
+    --h3-padding: 0pt;
+    --h4-padding: 0pt;
+    --h5-padding: 0pt;
+    --h6-padding: 0pt;
+}
+
 .md-typeset h1 {
   margin: unset;
   letter-spacing: -1pt;
   font-weight: 800;
   width: 90%;
-  padding: 5pt;
+  padding: var(--h1-padding);
   opacity: 100%;
   width: auto;
   font-weight: 800;
@@ -243,7 +252,7 @@
 
 .md-typeset h2 {
   margin: unset;
-  padding: 3pt;
+  padding: var(--h2-padding);
   opacity: 100%;
   font-weight: 700;
   margin-block: 0.5lh;
@@ -270,7 +279,7 @@
   margin: unset;
   letter-spacing: -2%;
   font-weight: 500;
-  padding: 2pt;
+  padding: var(--h3-padding);
   opacity: 100%;
   font-weight: 650;
   margin-block: 0.5lh;
@@ -293,7 +302,7 @@
 
 .md-typeset h4 {
   margin: unset;
-  padding: 2pt;
+  padding: var(--h4-padding);
   opacity: 100%;
   font-weight: 600;
   margin-block: 0.5lh;
@@ -318,7 +327,7 @@
 
 .md-typeset h5 {
   margin: unset;
-  padding: 2pt;
+  padding: var(--h5-padding);
   opacity: 100%;
   font-weight: 550;
   letter-spacing: -2%;
@@ -343,7 +352,7 @@
 
 .md-typeset h6 {
   margin: unset;
-  padding: 2pt;
+  padding: var(--h6-padding);
   opacity: 100%;
   font-weight: 500;
   margin-block: 0.5lh;

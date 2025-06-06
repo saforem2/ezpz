@@ -76,7 +76,7 @@ backend combo.
 
 ## 2024-11-06
 
-- [ ] Save `PBS_*` env to `~/pbs_jobenvs/${PBS_JOBID}.env` when dumping vars in [`utils.sh`](/ezpz/src/ezpz/bin/utils.sh)
+- [ ] Save `PBS_*` env to `~/pbs_jobenvs/${PBS_JOBID}.env` when dumping vars in [`utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)
 
 ## Getting Started
 
@@ -87,14 +87,14 @@ There are two main, distinct components of `ezpz`:
 
 ### Shell Interface
 
-- [`bin/utils.sh`](/src/ezpz/bin/utils.sh):
+- [`bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh):
   - Provides various (`bash` / shell) helper functions to make life easy
   - Designed to be `source`-d, e.g.
   
      ```bash
      source ezpz/src/ezpz/bin/utils.sh
      ```
-     
+
   - All functions prefixed with `ezpz_`
 
 To use:

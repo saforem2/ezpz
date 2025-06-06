@@ -5,12 +5,13 @@
 ## 📝 Example
 
 ```bash {#launch-example}
-source <(curl -s https://raw.githubusercontent.com/saforem2/ezpz/refs/heads/main/src/ezpz/bin/utils.sh) && ezpz_setup_env
+source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
 python3 -m pip install "git+https://github.com/saforem2/ezpz"
-python3 -m ezpz.launch -m ezpz.test_dist
+ezpz-launch -m ezpz.test_dist
 ```
 
-This will _launch_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py)
+This will _launch_
+[`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
 across all available resources in your {PBS, Slurm} job.
 
 ```mermaid
