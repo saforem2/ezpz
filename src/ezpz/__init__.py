@@ -71,7 +71,8 @@ from ezpz.configs import (
     load_ds_config,
     print_config_tree,
 )
-# from ezpz import dist
+from ezpz import dist
+
 # dist_imports = [
 #     'check',
 #     'cleanup',
@@ -267,14 +268,10 @@ LOG_FROM_ALL_RANKS = os.environ.get(
 # ---- Toggle with environment variable
 if LOG_FROM_ALL_RANKS:
     if RANK == 0:
-        logger.warning(
-            "LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!"
-        )
+        logger.warning("LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!")
     logger.setLevel(EZPZ_LOG_LEVEL)
 else:
-    logger.setLevel(EZPZ_LOG_LEVEL) if RANK == 0 else logger.setLevel(
-        "CRITICAL"
-    )
+    logger.setLevel(EZPZ_LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
     logger.info(f"Setting logging level to '{EZPZ_LOG_LEVEL}' on 'RANK == 0'")
     logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
 
@@ -285,9 +282,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
 os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
-os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
-    "ITEX_CPP_MIN_LOG_LEVEL", "5"
-)
+os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get("ITEX_CPP_MIN_LOG_LEVEL", "5")
 os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
 # noqa: E402
 warnings.filterwarnings("ignore")
