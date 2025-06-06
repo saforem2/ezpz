@@ -97,7 +97,7 @@ def seed_everything(seed: int) -> None:
 
 def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
     """Print dictionary as list"""
-    tag = name if name is not None else d.__qualname__
+    tag = name if name is not None else getattr(d, "__qualname__", "dict")
     logger.info(
         "\n".join(["\n", f"[{tag}]:"] + [f"  • {k}={v}" for k, v in d.items()] + ["\n"])
     )
@@ -114,7 +114,7 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
     try:
         import wandb
     except Exception:
-        wandb = None
+        wandb = None  # type:ignore
 
     def decorator(func: Callable):
         """Decorator to time a function and log the time taken.
@@ -129,6 +129,7 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             assert isinstance(rank, int)
             result = func(*args, **kwargs)
             dt = time.perf_counter() - t0
+            fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
             if verbose:
                 if rank == 0:
                     astr = []
@@ -139,13 +140,13 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
                         if len(kwargs) > 0
                         else (astr.append(")") if len(args) > 0 else "")
                     )
-                    zstr = [f"Called: '{func.__name__}' with arguments:"]
+                    zstr = [f"Called: '{fname}' with arguments:"]
                     if len(astr) > 0:
                         zstr.append(f"{''.join(astr)}")
-                    zstr.append(f"'{func.__name__}' took: {dt=:.4f} s")
+                    zstr.append(f"'{fname}' took: {dt=:.4f} s")
                     logger.info("\n".join(zstr))
                 if wandb is not None and wandb.run is not None:
-                    wandb.run.log({f"timeit/{func.__name__}": dt}, commit=False)
+                    wandb.log({f"timeit/{fname}": dt}, commit=False)
             return result
 
         return wrapper
@@ -154,19 +155,32 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
 
 
 def timeit(func: Callable):
+    """
+    Decorator to time a function and log the time taken.
+
+    Args:
+        func (Callable): Function to be timed.
+
+    Example:
+        @timeit
+        def my_function(arg1, arg2):
+            # Function implementation
+            pass
+    """
     try:
         import wandb
     except Exception:
-        wandb = None
+        wandb = None  # type:ignore
 
     @wraps(func)
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
         result = func(*args, **kwargs)
         dt = time.perf_counter() - t0
-        logger.info(f"{func.__name__}({args}, {kwargs}) took: {dt=:.4f}s")
+        fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+        logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
         if wandb is not None and wandb.run is not None:
-            wandb.run.log({f"timeit/{func.__name__}": dt})
+            wandb.log({f"timeit/{fname}": dt})
         return result
 
     return wrapper
@@ -175,6 +189,20 @@ def timeit(func: Callable):
 def get_hosts_from_hostfile(
     hostfile: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
 ) -> tuple[str, list[str]]:
+    """
+    Get hosts from the hostfile or environment variables.
+
+    Args:
+        hostfile (str | Path, optional): Path to the hostfile. Defaults to None.
+
+    Returns:
+        tuple[str, list[str]]: Tuple containing the hostfile path and a list of hosts.
+
+    Example:
+        >>> get_hosts_from_hostfile('/path/to/hostfile')
+        ('/path/to/hostfile', ['host1', 'host2', ...])
+    """
+    # hostfile = '' if hostfile is None else hostfile
     hostname = get_hostname()
     hostfile = os.environ.get(
         "HOSTFILE",
@@ -186,7 +214,6 @@ def get_hosts_from_hostfile(
             ),
         ),
     )
-    # hostfile = '' if hostfile is None else hostfile
     hosts: list[str] = []
     assert hostfile is not None
     if Path(hostfile).is_file():
@@ -201,6 +228,11 @@ def get_hosts_from_hostfile(
 
 
 def get_hostname() -> str:
+    """Get the hostname of the current machine.
+
+    Returns:
+        str: The hostname of the current machine.
+    """
     import socket
 
     try:
@@ -255,7 +287,9 @@ def _get_dist_info(
         "WORLD_SIZE_TOTAL": get_world_size_total(),
         "WORLD_SIZE_IN_USE": get_world_size_in_use(),
         "LAUNCH_CMD": (
-            get_pbs_launch_cmd(hostfile=hostfile)
+            ezpz.pbs.get_pbs_launch_cmd(
+                hostfile=hfp,
+            )
             if scheduler.lower() == "pbs"
             else None
         ),
@@ -582,8 +616,9 @@ def init_process_group(
         timeout = timedelta(
             seconds=int(timeout),
         )
-    if not tdist.is_initialized():
-        tdist.init_process_group(
+    # if not tdist.is_initialized():
+    if not torch.distributed.is_initialized():  # type:ignore
+        torch.distributed.init_process_group(  # type:ignore
             backend=backend,
             timeout=timeout,
             rank=int(rank),
@@ -725,6 +760,7 @@ def setup_torch_DDP(
         rank=rank,
         world_size=world_size,
         timeout=timeout,
+        backend=backend,
     )
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
@@ -792,13 +828,13 @@ def setup_torch_distributed(
     elif fw in {"horovod", "hvd"}:
         import horovod.torch as hvd  # type:ignore noqa
 
-        _ = None if hvd.is_initialized() else hvd.init()
+        _ = None if hvd.is_initialized() else hvd.init()  # type:ignore
         # hvd.init() if not hvd.is_initialized() else None
-        rank = hvd.rank()
-        world_size = hvd.size()
-        local_rank = hvd.local_rank()
+        rank = hvd.rank()  # type:ignore
+        world_size = hvd.size()  # type:ignore
+        local_rank = hvd.local_rank()  # type:ignore
         if torch.cuda.is_available():
-            torch.cuda.set_device(hvd.local_rank())
+            torch.cuda.set_device(hvd.local_rank())  # type:ignore
     else:
         raise ValueError(f"Unable to parse backend: {be=}")
 
@@ -827,10 +863,12 @@ def setup_torch_distributed(
 
 def barrier(
     device: Optional[torch.device | int | str] = None,
-    group: tdist.ProcessGroup | None = tdist.GroupMember.WORLD,
+    group: (
+        torch.distributed.ProcessGroup | None  # type:ignore
+    ) = torch.distributed.GroupMember.WORLD,  # type:ignore
     async_op: bool = False,
     device_ids: str | Iterable | None = None,
-) -> tdist.Work | None:
+) -> torch.distributed.Work | None:  # type:ignore
     """Barrier for all processes in the group
     This collective blocks processes until the whole group enters this function,
     if async_op is False, or if async work handle is called on wait().
@@ -850,7 +888,7 @@ def barrier(
     - `[device_ids: Unknown | None = None]`
     """
     try:
-        tdist.barrier(group=group, async_op=async_op, device_ids=device_ids)
+        torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
     except Exception:
         logger.warning(
             "Unable to use `torch.distributed.barrier` "
@@ -1445,7 +1483,12 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
-                hfp = Path(get_pbs_nodefile_from_qstat())
+                # hfp = Path(get_pbs_nodefile_from_qstat())
+                nodefile = ezpz.pbs.get_pbs_nodefile()
+                assert (
+                    nodefile is not None
+                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                hfp = Path(nodefile)
             else:
                 # create makeshift hostfile containing 'localhost'
                 hfp = Path(os.getcwd()).joinpath("hostfile")
@@ -1506,217 +1549,12 @@ def get_gpus_per_node() -> int:
         return torch.cuda.device_count()
     if torch.xpu.is_available():
         return torch.xpu.device_count()
-    try:
-        if ipex is not None:
-            return ipex.xpu.device_count()  # type:ignore
-    except NameError:
-        if torch.backends.mps.is_available():
-            # XXX: Maybe we're running MPI with multiple MPS devices?
-            return get_world_size_in_use()
-        # otherwise, return the number of CPUs
-        return get_cpus_per_node()
-
-
-def get_pbs_launch_cmd(
-    ngpus: Optional[int] = None,
-    nhosts: Optional[int] = None,
-    ngpu_per_host: Optional[int] = None,
-    hostfile: Optional[PathLike] = None,
-) -> str:
-    """Get the PBS launch command"""
-    nhosts = get_num_nodes(hostfile=hostfile) if nhosts is None else nhosts
-    ngpu_per_host = get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
-    ngpus_available = get_world_size_total() if ngpus is None else ngpus
-    ngpus_in_use = nhosts * ngpu_per_host
-    hfp = Path(get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile)
-    if ngpus_available != (ngpus_in_use):
-        logger.warning(
-            "Mismatch in `ngpus_in_use` and `ngpus_available` "
-            f"{ngpus_in_use=} vs. {ngpus_available=}"
-        )
-    # ncpus_per_host = get_cpus_per_node()
-    return " ".join(
-        [
-            "mpiexec",
-            "--verbose",
-            "--envall",
-            # f'-n {ngpus}',
-            f"--np={ngpus_in_use}",
-            f"--ppn={ngpu_per_host}",
-            f"--hostfile={hfp.as_posix()}",
-            "--cpu-bind=depth",
-            "--depth=8",
-        ]
-    )
-
-
-def get_running_jobs_from_qstat() -> list[int]:
-    """Get the running jobs from qstat"""
-    try:
-        from sh import qstat as shqstat  # type: ignore
-    except Exception as e:
-        raise e
-    return [
-        int(i.split(".")[0])
-        for i in shqstat("-u", os.environ.get("USER")).split("\n")[2:-1]
-        if " R " in i
-    ]
-
-
-def get_pbs_jobid_from_qstat() -> int:
-    """Get the PBS job ID from qstat"""
-    from ezpz.configs import get_scheduler
-
-    assert get_scheduler() == "PBS"
-    try:
-        from sh import qstat as sh_qstat  # pyright:ignore
-    except Exception as exc:
-        raise exc
-    qstat_out = sh_qstat("-u", os.environ.get("USER")).split("\n")[2:-1]
-    return int(qstat_out[-1].split(".")[0])
-    # except Exception as exc:
-    #     logger.error('Unable to determine PBS_JOBID from `qstat` command...')
-    #     raise exc
-
-
-def get_pbs_nodefile_from_qstat() -> Path:
-    """Get the PBS nodefile from qstat"""
-    from ezpz.configs import get_scheduler
-
-    assert get_scheduler() == "PBS"
-    nodefile = os.environ.get("PBS_NODEFILE", None)
-    if nodefile is not None and (nf := Path(nodefile)).is_file():
-        return nf
-    pbs_jobid = get_pbs_jobid_from_qstat()
-    matches = [
-        i for i in Path("/var/spool/pbs/aux/").rglob(f"*{pbs_jobid}*") if i.is_file()
-    ]
-    assert len(matches) == 1
-    return matches[0]
-
-
-def get_pbs_launch_info(
-    hostfile: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
-) -> dict[str, str]:
-    """Get the PBS launch info"""
-    from ezpz.configs import get_scheduler
-
-    assert get_scheduler() == "PBS"
-    if hostfile is None:
-        hostfile = os.environ.get("PBS_NODEFILE", get_pbs_nodefile_from_qstat())
-    assert hostfile is not None
-    hfp = Path(hostfile)
-    # hostfile = os.environ.get("PBS_NODEFILE", None)
-    # if hostfile is None:
-    #     hostfile = (
-    #             get_pbs_nodefile_from_qstat() if hostfile is None else
-    #             Path(hostfile)
-    #     )
-    # assert hostfile is not None
-    # hf = Path(hostfile)
-    # assert hostfile is not None and hf.is_file()
-    # hfp = Path(hostfile)
-    hosts = get_nodes_from_hostfile(hfp)
-    hosts = [h.split(".")[0] for h in hosts]
-    nhosts = len(hosts)
-    ngpu_per_host = get_gpus_per_node()
-    # ngpus = nhosts * ngpu_per_host
-    ngpus_available = get_world_size(total=True)
-    ngpus = nhosts * ngpu_per_host
-    world_size_total = get_world_size_total()
-    # if ngpus != world_size_total:
-    #     logger.warning('Disagreement in total world size!!')
-    #     logger.warning(' '.join([
-    #         f'{get_world_size(total=True)=}',
-    #         f' vs. {get_world_size_total()=}'
-    #     ]))
-    #     logger.warning(' '.join([
-    #         'Mismatch in: ',
-    #         f'{ngpus=} vs. {ngpu_per_host=} * {nhosts=}'
-    #     ]))
-    launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
-    return {
-        "HOSTFILE": hfp.as_posix(),
-        "HOSTS": (
-            f"[{', '.join(hosts)}]" if nhosts < 1000 else "[truncated (>1000 nodes)]"
-        ),
-        "NHOSTS": f"{nhosts}",
-        "NGPU_PER_HOST": f"{ngpu_per_host}",
-        "NGPUS": f"{ngpus}",
-        "NGPUS_AVAILABLE": f"{ngpus_available}",
-        "MACHINE": get_machine(),
-        "DEVICE": get_torch_device_type(),
-        "BACKEND": get_torch_backend(),
-        "LAUNCH_CMD": launch_cmd,
-        "world_size_total": f"{world_size_total}",
-    }
-
-
-def get_pbs_env(
-    hostfile: Optional[Union[str, Path]] = None,
-    verbose: Optional[bool] = None,
-) -> dict[str, str]:
-    """Get the PBS environment variables"""
-    from ezpz.configs import get_scheduler
-
-    assert get_scheduler() == "PBS"
-    pbsenv = {k: v for k, v in dict(os.environ).items() if "PBS" in k}
-    if hostfile is None:
-        hostfile = pbsenv.get("PBS_NODEFILE", get_pbs_nodefile_from_qstat())
-    if (hfp := Path(hostfile)).is_file():
-        pbsenv |= {f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()}
-        pbsenv |= {"LAUNCH_CMD": get_pbs_launch_cmd(hostfile=hostfile)}
-    os.environ |= pbsenv
-    if verbose and get_rank() == 0:
-        # logger.debug(f'pbsenv={json.dumps(pbsenv, indent=4, sort_keys=True)}')
-        log_dict_as_bulleted_list(pbsenv, name="pbsenv")
-    return pbsenv
-
-
-# def get_cobalt_resources() -> dict:
-#     cobalt_info = inspect_cobalt_running_job()
-#     # cobalt_nodefile = get_cobalt_nodefile()
-#     nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
-#     gpus_per_node = get_gpus_per_node()
-#     cobalt_info |= {
-#         'nodes': nodes,
-#         'num_nodes': len(nodes),
-#         'gpus_per_node': gpus_per_node,
-#         'num_gpus': len(nodes) * gpus_per_node,
-#         'machine': 'ThetaGPU',
-#     }
-#     return cobalt_info
-
-
-# def build_mpiexec_thetagpu():
-#     jobenv = get_cobalt_resources()
-#     return [
-#         "mpirun",
-#         f"-n {jobenv['num_nodes']}",
-#         f"-npernode {jobenv['gpus_per_node']}",
-#         f"--hostfile {jobenv['COBALT_NODEFILE']}",
-#         "-x PATH",
-#         "-x LD_LIBRARY_PATH",
-#         "-x http_proxy",
-#         "-x https_proxy",
-#     ]
-
-
-# def run_mpiexec(cmd: str):
-#     import subprocess
-#     mpiexec = ' '.join(build_mpiexec_thetagpu())
-#     logger.info(f'Executing: {mpiexec} {cmd}')
-#     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
-
-
-# def mpi_test_framework_backend(
-#     framework: str = 'pytorch',
-#     backend: str = 'DDP',
-# ):
-#     import sys
-#     python3 = sys.executable
-#     py_cmd = f'{python3} -m ezpz.check {framework} {backend}'
-#     run_mpiexec(py_cmd)
+    if ipex is not None and torch.xpu.is_available():
+        return ipex.xpu.device_count()
+    if torch.backends.mps.is_available():
+        # XXX: Maybe we're running MPI with multiple MPS devices?
+        return get_world_size_in_use()
+    return 0
 
 
 def check(
