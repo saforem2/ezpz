@@ -4,6 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ezpz"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
 dynamic = ["version"]
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -26,20 +36,11 @@ dependencies = [
     "seaborn",
     "sh",
     "tiktoken",
-    "sentencepiece",
+    "torchinfo",
+    # "sentencepiece",
     "transformers>=4.50.1",
     "wandb",
     "xarray",
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
 [project.scripts]
@@ -47,6 +48,7 @@ ezpz-test = "ezpz.test:main"
 ezpz-launch = "ezpz.launch:main"
 
 [project.optional-dependencies]
+torch = ["mpi4py", "torch"]
 dev = [
     "black",
     "bpython",
@@ -60,23 +62,19 @@ dev = [
     "pyright",
     "ruff",
     "ruff-lsp",
-    "torchinfo",
     # "tensorboard",
     # "hydra-colorlog",
     # "tensorboard",
 ]
-
-torch = ["mpi4py", "torch"]
-
 docs = [
-    "mkdocs-material",
     "mkdocs",
-    "mkdocs-autorefs",
     "mkdocstrings",
+    "mkdocs-material",
+    "mkdocs-autorefs",
     "mkdocstrings-python",
-    "pymdown-extensions",
     "mkdocs-mermaid2-plugin",
     "mkdocs-glightbox",
+    "pymdown-extensions",
 ]
 
 
@@ -161,11 +159,11 @@ exclude = [
 ]
 
 # Same as Black.
-line-length = 80
+line-length = 79
 indent-width = 4
 
 # Assume Python 3.10
-target-version = "py310"
+# target-version = "py310"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
@@ -180,6 +178,9 @@ unfixable = []
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 79
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
