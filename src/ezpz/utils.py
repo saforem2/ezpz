@@ -7,9 +7,10 @@ import pdb
 import os
 import re
 import logging
+from torchinfo import ModelStatistics
 import xarray as xr
 import numpy as np
-from typing import Optional, Union, Any
+from typing import Optional, Sequence, Union, Any
 
 from dataclasses import asdict
 
@@ -88,9 +89,54 @@ def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
 
 
 def summarize_dict(d: dict, precision: int = 6) -> str:
+    """
+    Summarize a dictionary into a string with formatted key-value pairs.
+
+    Args:
+        d (dict): The dictionary to summarize.
+        precision (int): The precision for floating point values. Default: ``6``.
+
+    Returns:
+        str: A string representation of the dictionary with formatted key-value pairs.
+    """
     return " ".join(
         [format_pair(k, v, precision=precision) for k, v in d.items()]
     )
+
+
+def model_summary(
+    model,
+    verbose: bool = False,
+    depth: int = 1,
+    input_size: Optional[Sequence[int]] = None,
+) -> ModelStatistics | None:
+    """
+    Print a summary of the model using torchinfo.
+
+    Args:
+        model: The model to summarize.
+        verbose (bool): Whether to print the summary. Default: ``False``.
+        depth (int): The depth of the summary. Default: ``1``.
+        input_size (Optional[Sequence[int]]): The input size for the model. Default: ``None``.
+
+    Returns:
+        ModelStatistics | None: The model summary if torchinfo is available, otherwise None.
+    """
+    try:
+        from torchinfo import summary
+
+        return summary(
+            model,
+            input_size=input_size,
+            depth=depth,
+            verbose=verbose,
+        )
+        # logger.info(f'\n{summary_str}')
+
+    except (ImportError, ModuleNotFoundError):
+        logger.warning(
+            'torchinfo not installed, unable to print model summary!'
+        )
 
 
 def normalize(name: str) -> str:
@@ -98,6 +144,12 @@ def normalize(name: str) -> str:
 
 
 def get_max_memory_allocated(device: torch.device) -> float:
+    """
+    Get the maximum memory allocated on the specified device.
+
+    Args:
+        device (torch.device): The device to check memory allocation for.
+    """
     if torch.cuda.is_available():
         return torch.cuda.max_memory_allocated(device)
     elif torch.xpu.is_available():  #  and ipex is not None:

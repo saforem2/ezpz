@@ -9,7 +9,9 @@ def lazy_import(name: str):
         return sys.modules[name]
     except KeyError:
         spec = importlib.util.find_spec(name)
-        assert spec is not None, f"Module {name} not found"
+        if spec is None:
+            return None
+        # assert spec is not None, f"Module {name} not found"
         module = importlib.util.module_from_spec(spec)
         assert module is not None, f"Module {name} not found"
         assert spec.loader is not None, f"Module {name} not found"

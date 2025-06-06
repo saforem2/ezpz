@@ -385,9 +385,13 @@ def parse_args() -> dict:
         #     step_metric="num_input_tokens_seen",
         # )  # Allow us to track the number of tokens seen during training
         if run is not None:
-            run.config.update(ezpz.get_dist_info())
-            run.config.update(training_args.to_dict())
             # wandb.log({"train_iter": 0}, step=0)
+            run.config.update({
+                "model": model_args.__dict__,
+                "data": data_args.__dict__,
+                "training": training_args.to_dict(),
+                "ezpz.dist_info": ezpz.get_dist_info(),
+            })
     # NOTE:
     #   Sending telemetry.
     #   Tracking the example usage helps us better allocate resources to
