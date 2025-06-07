@@ -8,7 +8,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
 ## 🐣 Getting Started
 
-1. 🏖️ **Setup** environment[^magic] (see [Shell Environment](./shell-environment.md)):
+1. 🏖️ **Setup** environment[^magic] (see [**Shell Environment**](https://saforem2.github.io/ezpz/shell-environment/)):
 
     ```bash
     source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
@@ -20,15 +20,20 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
        and (`&&`) call `ezpz_setup_env` to setup your
        python environment.
 
-1. 🐍 **Install** `ezpz` (see [💾 Code Reference / ezpz](./Code-Reference/init-reference.md))
+1. 🐍 **Install** `ezpz` (see [**Python API**](https://saforem2.github.io/ezpz/Code-Reference/)):
 
     ```bash
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
     ```
 
-1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [Launch](./launch.md)).
+1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [**Launch**](https://saforem2.github.io/ezpz/launch/)).
 
-    Examples, launching:
+    ```bash
+    # arbitrary python string, for example
+    ezpz-launch -c "'import ezpz; ezpz.setup_torch()'"
+    ```
+
+    <details closed><summary>Examples, launching:</summary>
 
     - _Any_ `*.py` module ([`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py), in this example):
 
@@ -375,7 +380,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
         </details>
 
     - Minimal example
-      \[[ezpz / examples / `minimal.py`](https://github.com/saforem2/ezpz/blob/main/examples/minimal.py)\]:
+      \[[ezpz / examples / `minimal.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/minimal.py)\]:
 
         ```bash
         ezpz-launch -m ezpz.examples.minimal
@@ -779,6 +784,14 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
     </details>
 
-
     😎 2 ez.
 
+## 🧑‍💻 Hands On
+
+- See my recent talk on:
+  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)  
+  for a detailed walk-through containing examples and use cases.
+
+  - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo)
+  - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/)
+  - [Slides (reveal.js)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/slides)
