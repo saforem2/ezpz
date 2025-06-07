@@ -9,7 +9,14 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 ## 🐣 Getting Started
 
 
-1. 🏖️ **Setup** environment[^magic] (see [Shell Environment](https://saforem2.github.io/ezpz/shell-environment/)):
+> ![NOTE]
+> 🧑‍💻 **Hands-On**: See my recent slides on
+> [**Large Language Models on Aurora**](https://saforem2.github.io/ezpz/slides-2025-05-07/)
+> for a detailed walk-through of some of the various features of `ezpz`.
+
+
+
+1. 🏖️ **Setup** environment[^magic] (see [**Shell Environment**](https://saforem2.github.io/ezpz/shell-environment/)):
 
     ```bash
     source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
@@ -21,13 +28,13 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
        and (`&&`) call `ezpz_setup_env` to setup your
        python environment.
 
-1. 🐍 **Install** `ezpz` (see [💾  / ezpz](https://saforem2.github.io/ezpz/Code-Reference/))
+1. 🐍 **Install** `ezpz` (see [**Python API**](https://saforem2.github.io/ezpz/Code-Reference/)):
 
     ```bash
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
     ```
 
-1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [Launch](https://saforem2.github.io/ezpz/launch/)).
+1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [**Launch**](https://saforem2.github.io/ezpz/launch/)).
 
     Examples, launching:
 
