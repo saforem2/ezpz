@@ -380,7 +380,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
         </details>
 
     - Minimal example
-      \[[ezpz / examples / `minimal.py`](https://github.com/saforem2/ezpz/blob/main/examples/minimal.py)\]:
+      \[[ezpz / examples / `minimal.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/minimal.py)\]:
 
         ```bash
         ezpz-launch -m ezpz.examples.minimal
