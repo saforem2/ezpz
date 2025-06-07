@@ -8,14 +8,6 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
 ## 🐣 Getting Started
 
-
-> ![NOTE]  
-> - 🧑‍💻 **Hands-On** See my recent slides on:
->   [**_Large Language Models on Aurora_**](https://saforem2.github.io/ezpz/slides-2025-05-07/)  \[2025-05-07\]  
->   for a detailed walk-through of some of the various features of `ezpz`.
-
-
-
 1. \[🏖️ **Setup**\] environment[^magic] (see [**Shell Environment**](https://saforem2.github.io/ezpz/shell-environment/)):
 
     ```bash
@@ -792,6 +784,14 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
     </details>
 
-
     😎 2 ez.
 
+## 🧑‍💻 Hands On
+
+- See my recent talk on:
+  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)  
+  for a detailed walk-through containing examples and use cases.
+
+  - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo)
+  - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/)
+  - [Slides (reveal.js)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/slides)
