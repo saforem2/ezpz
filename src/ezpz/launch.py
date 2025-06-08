@@ -120,7 +120,7 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
             " ".join(
                 [
                     "Filtering for Aurora-specific messages.",
-                    "To view list of filters, run with `EZPZ_LOG_LEVEL=DEBUG`",
+                    "To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG",
                 ]
             )
         )
