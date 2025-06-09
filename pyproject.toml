@@ -50,7 +50,7 @@ ezpz-launch = "ezpz.launch:main"
 [project.optional-dependencies]
 torch = ["mpi4py", "torch"]
 dev = [
-    "black",
+    "pyink",
     "bpython",
     "ipython",
     "ipython",
@@ -77,6 +77,10 @@ docs = [
     "pymdown-extensions",
 ]
 
+[dependency-groups]
+dev = [
+    "ty>=0.0.1a8",
+]
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
@@ -120,6 +124,8 @@ exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 [tool.uv]
 override-dependencies = [
     "torch; sys_platform == 'never'",
+    "torchaudio; sys_platform == 'never'",
+    "torchvision; sys_platform == 'never'",
     "mpi4py; sys_platform == 'never'",
 ]
 
