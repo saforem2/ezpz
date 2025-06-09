@@ -4,7 +4,7 @@ ezpz/configs.py
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import yaml
 import logging
@@ -14,6 +14,11 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable, Optional, Sequence, Union
 import numpy as np
+
+
+# import transformers
+from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
+from transformers.utils.versions import require_version
 
 from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
@@ -51,6 +56,12 @@ QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 # QUARTO_OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 # OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 # OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
+
+
+CAUSAL_LM_MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())  # type:ignore
+CAUSAL_LM_MODEL_TYPES = tuple(
+    getattr(conf, "model_type", "") for conf in CAUSAL_LM_MODEL_CONFIG_CLASSES
+)
 
 
 FRAMEWORKS = {
@@ -113,8 +124,6 @@ def get_scheduler() -> str:
 def load_ds_config(
     fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
-    from ezpz.configs import DS_CONFIG_PATH
-
     fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
     cfgpath = Path(fpath)
     if cfgpath.suffix == ".json":
@@ -186,6 +195,22 @@ def print_json(
             Defaults to None.
         sort_keys (bool, optional): Sort dictionary keys. Defaults to False.
     """
+    if json_str is None and data is None:
+        raise ValueError(
+            "Either `json_str` or `data` must be provided. "
+            "Did you mean print_json(data={data!r}) ?"
+        )
+    if json_str is not None and data is not None:
+        raise ValueError(
+            " ".join([
+                "Only one of `json_str` or `data` should be provided.",
+                "Did you mean print_json(json_str={json_str!r}) ?",
+                "Or print_json(data={data!r}) ?",
+                "Received both:",
+                f"json_str={json_str!r}",
+                f"data={data!r}",
+            ])
+        )
     from ezpz.log.console import get_console
     from rich.json import JSON
 
@@ -203,10 +228,6 @@ def print_json(
             sort_keys=sort_keys,
         )
     else:
-        if not isinstance(json_str, str):
-            raise TypeError(
-                f"json must be str. Did you mean print_json(data={json_str!r}) ?"
-            )
         json_renderable = JSON(
             json_str,
             indent=indent,
@@ -403,6 +424,264 @@ class ZeroConfig:
     zero_quantized_weights: Optional[bool] = None
     zero_quantized_gradients: Optional[bool] = None
     log_trace_cache_warnings: Optional[bool] = None
+
+
+@dataclass
+class HFModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
+    """
+
+    wandb_project_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The name of the wandb project to use. If not specified, will use the model name."
+            )
+        },
+    )
+
+    model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The model checkpoint for weights initialization. Don't set if you want to train a model from scratch."
+            )
+        },
+    )
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "If training from scratch, pass a model type from the list: "
+            + ", ".join(CAUSAL_LM_MODEL_TYPES)
+        },
+    )
+    config_overrides: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override some existing default config settings when a model is trained from scratch. Example: "
+                "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
+            )
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+        },
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
+        },
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
+    )
+    token: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The token to use as HTTP bearer authorization for remote files. If not specified, will use the token "
+                "generated when running `huggingface-cli login` (stored in `~/.huggingface`)."
+            )
+        },
+    )
+    trust_remote_code: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to trust the execution of code from datasets/models defined on the Hub."
+                " This option should only be set to `True` for repositories you trust and in which you have read the"
+                " code, as it will execute code present on the Hub on your local machine."
+            )
+        },
+    )
+    torch_dtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
+                "dtype will be automatically derived from the model's weights."
+            ),
+            "choices": ["auto", "bfloat16", "float16", "float32"],
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded. "
+                "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
+
+    def __post_init__(self):
+        if self.config_overrides is not None and (
+            self.config_name is not None or self.model_name_or_path is not None
+        ):
+            raise ValueError(
+                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+            )
+
+
+@dataclass
+class HFDataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    dataset_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+    )
+    dataset_config_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The configuration name of the dataset to use (via the datasets library)."
+        },
+    )
+    train_split_str: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The split string to use for the train split (via the datasets library)."
+        },
+    )
+    train_split_name: Optional[str] = field(
+        default="train",
+        metadata={
+            "help": "The name of the train split to use (via the datasets library)."
+        },
+    )
+    validation_split_name: Optional[str] = field(
+        default="validation",
+        metadata={
+            "help": "The name of the validation split to use (via the datasets library)."
+        },
+    )
+    validation_split_str: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The split string to use for the validation split (via the datasets library)."
+        },
+    )
+    test_split_name: Optional[str] = field(
+        default="test",
+        metadata={
+            "help": "The name of the test split to use (via the datasets library)."
+        },
+    )
+    test_split_str: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The split string to use for the test split (via the datasets library)."
+        },
+    )
+    train_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "The input training data file (a text file)."},
+    )
+    validation_file: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."
+        },
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
+        },
+    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    block_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False,
+        metadata={"help": "Overwrite the cached training and evaluation sets"},
+    )
+    validation_split_percentage: Optional[int] = field(
+        default=5,
+        metadata={
+            "help": "The percentage of the train set used as validation set in case there's no validation split"
+        },
+    )
+    preprocessing_num_workers: Optional[int] = field(
+        default=None,
+        metadata={"help": "The number of processes to use for the preprocessing."},
+    )
+    keep_linebreaks: bool = field(
+        default=True,
+        metadata={"help": "Whether to keep line breaks when using TXT files or not."},
+    )
+
+    def __post_init__(self):
+        if self.streaming:
+            require_version(
+                "datasets>=2.0.0",
+                "The streaming feature requires `datasets>=2.0.0`",
+            )
+
+        if (
+            self.dataset_name is None
+            and self.train_file is None
+            and self.validation_file is None
+        ):
+            raise ValueError(
+                "Need either a dataset name or a training/validation file."
+            )
+        if self.train_file is not None:
+            extension = self.train_file.split(".")[-1]
+            assert extension in [
+                "csv",
+                "json",
+                "txt",
+            ], "`train_file` should be a csv, a json or a txt file."
+        if self.validation_file is not None:
+            extension = self.validation_file.split(".")[-1]
+            assert extension in [
+                "csv",
+                "json",
+                "txt",
+            ], "`validation_file` should be a csv, a json or a txt file."
 
 
 def print_config_tree(
