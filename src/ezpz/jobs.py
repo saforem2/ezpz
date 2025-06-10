@@ -38,14 +38,14 @@ def check_scheduler(scheduler: Optional[str] = None) -> bool:
 
 
 def get_jobdir_from_env() -> Path:
-    from ezpz.dist import get_pbs_env
+    from ezpz.pbs import get_pbs_env
 
     pbs_env = get_pbs_env()
     _ = os.environ.get(
         "HOSTFILE",
         os.environ.get("PBS_NODEFILE", os.environ.get("HOSTFILE", None)),
     )
-    jobid = pbs_env["PBS_JOBID"].split('.')[0]
+    jobid = pbs_env["PBS_JOBID"].split(".")[0]
     jobdir = Path.home() / f"{SCHEDULER}-jobs" / f"{jobid}"
     jobdir.mkdir(exist_ok=True, parents=True)
     return jobdir
@@ -92,9 +92,9 @@ def get_jobenv(
     from ezpz.dist import (
         # get_pbs_launch_info,
         get_dist_info,
-        get_pbs_env,
         # get_pbs_launch_cmd,
     )
+    from ezpz.pbs import get_pbs_env
 
     jobenv: dict[str, str | int | list[Any]] = get_dist_info(
         hostfile=hostfile,
@@ -168,16 +168,12 @@ def save_to_dotenv_file(
     denvf1 = Path(get_jobdir_from_env()).joinpath(".jobenv")
     denvf2 = Path(os.getcwd()).joinpath(".jobenv")
     # launch_cmd = jobenv.get('LAUNCH_CMD', get_pbs_launch_cmd)
-    from ezpz.dist import get_pbs_launch_cmd
+    from ezpz.pbs import get_pbs_launch_cmd
 
     launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
     assert launch_cmd is not None
     for denvf in [denvf1, denvf2]:
-        log.info(
-            " ".join(
-                ["Saving job env to", f"{denvf.parent.as_posix()}/.jobenv"]
-            )
-        )
+        log.info(" ".join(["Saving job env to", f"{denvf.parent.as_posix()}/.jobenv"]))
         # launch_cmd = jobenv.get(
         #         'LAUNCH_CMD',
         #         get_jobenv().get('LAUNCH_CMD', '')
@@ -436,14 +432,12 @@ def get_jobdir_from_jobslog(idx: Optional[int] = -1) -> str:  # noqa  type:ignor
 
 def loadjobenv_from_yaml(
     jobdir: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
-    idx: Optional[int]= -1,
+    idx: Optional[int] = -1,
 ) -> dict[str, str]:
     jobdir = Path(get_jobdir_from_jobslog(idx) if jobdir is None else jobdir)
     assert jobdir.is_dir()
     if len((jobenv_files_yaml := list(jobdir.rglob("*.yaml")))) == 0:
-        raise FileNotFoundError(
-            f"Unable to find `.yaml` file(s) in `{jobdir=}`"
-        )
+        raise FileNotFoundError(f"Unable to find `.yaml` file(s) in `{jobdir=}`")
     jobenv_file = jobenv_files_yaml[0]
     with jobenv_file.open("r") as stream:
         jobenv = dict(yaml.safe_load(stream))
@@ -451,7 +445,8 @@ def loadjobenv_from_yaml(
 
 
 def loadjobenv(jobdir: Optional[str | Path] = None) -> dict[str, str]:
-    from ezpz.dist import get_pbs_launch_info, get_dist_info
+    from ezpz.dist import get_dist_info
+    from ezpz.pbs import get_pbs_launch_info
 
     jobenv = {}
     jobdir = Path(get_jobdir_from_jobslog(-1) if jobdir is None else jobdir)

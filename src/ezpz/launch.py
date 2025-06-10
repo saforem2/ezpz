@@ -120,7 +120,7 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
             " ".join(
                 [
                     "Filtering for Aurora-specific messages.",
-                    "To view list of filters, run with `EZPZ_LOG_LEVEL=DEBUG`",
+                    "To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG",
                 ]
             )
         )
@@ -132,9 +132,7 @@ def kill_existing_processes(
     filters: Optional[list] = None,
     additional_filters: Optional[list] = None,
 ) -> int:
-    """Kill existing processes that match the filters.
-
-    """
+    """Kill existing processes that match the filters."""
     # TODO: Run this as preamble to launching
     filters = [] if filters is None else filters
     if ezpz.get_machine().lower() == "aurora":
@@ -154,6 +152,8 @@ def launch(
     import ezpz.pbs
 
     jobid = ezpz.pbs.get_pbs_jobid_of_active_job()
+    print("\n") if ezpz.get_rank() == 0 else None
+    logger.info("======== [ezpz.launch: START] ========")
     logger.info(f"Job ID: {jobid}")
 
     assert jobid is not None, "No active job found."
@@ -176,32 +176,29 @@ def launch(
     if isinstance(cmd_to_launch, list):
         cmd_to_launch = shlex.join(cmd_to_launch)
     logger.info(
-        "Building command to execute by piecing together:"
-        "(1.) ['launch_cmd'] + (2.) ['python'] + (3.) ['cmd_to_launch']"
+        "Building command to execute by piecing together:\n\n"
+        "\t(1.) ['launch_cmd'] + (2.) ['python'] + (3.) ['cmd_to_launch']\n"
     )
     logger.info(f"(1.) ['launch_cmd']: {launch_cmd}")
     logger.info(f"(2.) ['python']: {sys.executable}")
-    logger.info(
-        f"(3.) ['cmd_to_launch']: {cmd_to_launch.replace(sys.executable, '')}"
-    )
+    logger.info(f"(3.) ['cmd_to_launch']: {cmd_to_launch.replace(sys.executable, '')}")
     cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
 
-    logger.info(
-        f"Took: {time.perf_counter() - start:.2f} seconds to build command."
-    )
-    logger.info(f"Executing: {cmd}")
+    logger.info(f"Took: {time.perf_counter() - start:.2f} seconds to build command.")
+    split_cmd = shlex.split(cmd)
+    logger.info("Executing:\n\t" + "\n\t".join(split_cmd))
+    # logger.info(f"Executing: \n\t{\n - {i}.join(cmd.split())}\n")
     t0 = time.perf_counter()
 
     filters = [] if filters is None else filters
     if ezpz.get_machine().lower() == "aurora":
         filters += get_aurora_filters()
 
-    logger.info(f"Execution started @ {ezpz.get_timestamp()}...\n")
+    logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
+    logger.info("======== [ezpz.launch: STOP] ========\n")
     retcode = run_command(cmd, filters=filters)
     logger.info(f"Execution finished @ {ezpz.get_timestamp()}")
-    logger.info(
-        f"Command took {time.perf_counter() - t0:.2f} seconds to run. Exiting."
-    )
+    logger.info(f"Command took {time.perf_counter() - t0:.2f} seconds to run. Exiting.")
     return retcode
 
 

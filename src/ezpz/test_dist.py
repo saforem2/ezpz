@@ -19,6 +19,7 @@ import warnings
 # from ezpz.lazy import lazy_import
 # ezpz = lazy_import('ezpz')
 import ezpz
+
 # import ezpz.tp
 
 import torch
@@ -35,8 +36,11 @@ warnings.filterwarnings("ignore")
 
 try:
     import wandb
+    WANDB_DISABLED = (
+        os.environ.get("WANDB_DISABLED", False)
+        or os.environ.get("WANDB_MODE", "online").lower() == "disabled"
+    )
 
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
 except Exception:
     wandb = None
     WANDB_DISABLED = True
@@ -124,9 +128,7 @@ class Trainer:
         if wandb is not None and not WANDB_DISABLED and self.rank == 0:
             logger.debug("Setting up wandb")
             run = ezpz.setup_wandb(project_name="ezpz.test_dist")
-            assert (
-                wandb is not None and run is wandb.run and wandb.run is not None
-            )
+            assert wandb is not None and run is wandb.run and wandb.run is not None
             wandb.run.config.update(ezpz.get_dist_info())
             wandb.run.config.update(asdict(self.config))
             wandb.run.watch(self.model, log="all")
@@ -201,14 +203,23 @@ class Trainer:
 
 
 def train(config: TrainConfig) -> Trainer:
+    from ezpz.models.minimal import SequentialLinearNet
+    from ezpz.utils import model_summary
+
     # logger.info(f"Setting up torch with {config.backend=}...")
     timings = {}
     t0m = time.perf_counter()
-    model = Network(
+    model = SequentialLinearNet(
         input_dim=config.input_size,
         output_dim=config.output_size,
         sizes=config.layer_sizes,
     )
+    logger.info(f"Model size: {sum(p.numel() for p in model.parameters())} parameters")
+    try:
+        logger.info(f"\n{model_summary(model)}")
+    except Exception as e:
+        logger.warning(f"Failed to summarize model: {e}, using default summary")
+        logger.info(model)
     t1m = time.perf_counter()
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
@@ -218,15 +229,11 @@ def train(config: TrainConfig) -> Trainer:
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
     trainer = Trainer(config=config, model=model, optimizer=optimizer)
     t1tr = time.perf_counter()
-    logger.info(
-        f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer"
-    )
+    logger.info(f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer")
     jstr = json.dumps(asdict(config), indent=2, sort_keys=True)
     logger.info(f"config:\n{jstr}")
     t1s = time.perf_counter()
-    logger.info(
-        f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here."
-    )
+    logger.info(f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here.")
     t0t = time.perf_counter()
     _ = trainer.train()
     t1t = time.perf_counter()
@@ -247,9 +254,7 @@ def train(config: TrainConfig) -> Trainer:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Training configuration parameters"
-    )
+    parser = argparse.ArgumentParser(description="Training configuration parameters")
     parser.add_argument(
         "--warmup",
         type=int,
@@ -382,27 +387,6 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
     return config
 
 
-class Network(torch.nn.Module):
-    def __init__(
-        self,
-        input_dim: int = 128,
-        output_dim: int = 128,
-        sizes: Optional[list[int]] = None,
-    ):
-        super(Network, self).__init__()
-        if sizes is None:
-            self.layers = torch.nn.Linear(input_dim, output_dim)
-        elif len(sizes) > 0:
-            layers = [torch.nn.Linear(input_dim, sizes[0])]
-            for idx, size in enumerate(sizes[1:]):
-                layers.append(torch.nn.Linear(sizes[idx], size))
-            layers.append(torch.nn.Linear(sizes[-1], output_dim))
-            self.layers = torch.nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layers(x)
-
-
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
@@ -422,6 +406,7 @@ def build_model_and_optimizer(
     optimizer = torch.optim.Adam(model.parameters())
     if backend.lower() == "ddp":
         if world_size > 1:
+            # model = DDP(model)
             model = DDP(model, device_ids=[local_rank])
 
     elif backend.lower() in ("ds", "deepspeed"):
@@ -479,9 +464,7 @@ def main() -> Trainer:
             pipeline_parallel_size=config.pp,
             context_parallel_size=config.cp,
         )
-        logger.info(
-            f"Took: {time.perf_counter() - t0:.2f} seconds to setup torch"
-        )
+        logger.info(f"Took: {time.perf_counter() - t0:.2f} seconds to setup torch")
         trainer = train(config)
 
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
@@ -494,4 +477,7 @@ def main() -> Trainer:
 
 
 if __name__ == "__main__":
+    import sys
     trainer = main()
+    ezpz.cleanup()
+    sys.exit(0)

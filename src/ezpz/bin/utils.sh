@@ -22,40 +22,48 @@
 
 # Allow aliases to be expanded (needed for `launch` alias)
 # shopt -s expand_aliases
+#
 
-# --- Color Codes ---
-# Usage: printf "${RED}This is red text${RESET}\n"
-RESET='\e[0m'
-# BLACK='\e[1;30m' # Avoid black text
-RED='\e[1;31m'
-GREEN='\e[1;32m'
-YELLOW='\e[1;33m'
-BLUE='\e[1;34m'
-MAGENTA='\e[1;35m'
-CYAN='\e[1;36m'
-BRIGHT_BLUE='\e[1;94m' # Added for emphasis
-WHITE='\e[1;37m'       # Avoid white on light terminals
-
-# --- Global Variables ---
-# These are determined dynamically or expected from the environment
-HOSTNAME="$(hostname)"
-PBS_ENV_FILE="${HOME}/.pbsenv"
-SLURM_ENV_FILE="${HOME}/.slurmenv"
-WORKING_DIR="" # Determined in utils_main
-
-# --- Debugging and No-Op ---
-# Check if running in DEBUG=1 mode.
-# Usage: DEBUG=1 source utils_modern.sh
-if [[ -n "${DEBUG:-}" ]]; then
-    printf "${RED}!! RUNNING IN DEBUG MODE !!${RESET}\n"
-    set -x # Print command traces before executing command.
-fi
-
-# Print (but DO NOT EXECUTE !!) each command that would be run.
-# Usage: NOOP=1 source utils_modern.sh
-if [[ -v NOOP ]]; then
-    printf "${YELLOW}!! RUNNING IN NOOP MODE (Dry Run) !!${RESET}\n"
-    set -o noexec # Read commands but do not execute them.
+if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
+    # Enable color support for `ls` and `grep`
+    # shopt -s dircolors
+    # shopt -s colorize
+    # shopt -s colorize_grep
+    export RESET=''
+    export BLACK=''
+    export RED=''
+    export BRIGHT_RED=''
+    export GREEN=''
+    export BRIGHT_GREEN=''
+    export YELLOW=''
+    export BRIGHT_YELLOW=''
+    export BLUE=''
+    export BRIGHT_BLUE=''
+    export MAGENTA=''
+    export BRIGHT_MAGENTA=''
+    export CYAN=''
+    export BRIGHT_CYAN=''
+    export WHITE=''
+    export BRIGHT_WHITE=''
+else
+    # --- Color Codes ---
+    # Usage: printf "${RED}This is red text${RESET}\n"
+    export RESET='\e[0m'
+    # BLACK='\e[1;30m' # Avoid black text
+    export RED='\e[1;31m'
+    export BRIGHT_RED='\e[1;91m' # Added for emphasis
+    export GREEN='\e[1;32m'
+    export BRIGHT_GREEN='\e[1;92m' # Added for emphasis
+    export YELLOW='\e[1;33m'
+    export BRIGHT_YELLOW='\e[1;93m' # Added for emphasis
+    export BLUE='\e[1;34m'
+    export BRIGHT_BLUE='\e[1;94m' # Added for emphasis
+    export MAGENTA='\e[1;35m'
+    export BRIGHT_MAGENTA='\e[1;95m' # Added for emphasis
+    export CYAN='\e[1;36m'
+    export BRIGHT_CYAN='\e[1;96m' # Added for emphasis
+    export WHITE='\e[1;37m'       # Avoid white on light terminals
+    export BRIGHT_WHITE='\e[1;97m' # Added for emphasis
 fi
 
 # --- Helper Functions ---
@@ -66,7 +74,7 @@ DEFAULT_LOG_LEVEL="${DEFAULT_LOG_LEVEL:-INFO}"
 export DEFAULT_LOG_LEVEL
 log_info() {
     args=("$@")
-    printf "[%s][${GREEN}I${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
+    printf "[${GREEN}I${RESET}][%s] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
 }
 
 log_warn() {
@@ -97,6 +105,37 @@ log_message() {
     esac
     log_msg="[${WHITE}${date}${RESET}][$log_level] ${string}"
     echo "$log_msg"
+}
+
+# --- Global Variables ---
+# These are determined dynamically or expected from the environment
+HOSTNAME="$(hostname)"
+PBS_ENV_FILE="${HOME}/.pbsenv"
+SLURM_ENV_FILE="${HOME}/.slurmenv"
+WORKING_DIR="" # Determined in utils_main
+
+# --- Debugging and No-Op ---
+# Check if running in DEBUG=1 mode.
+# Usage: DEBUG=1 source utils_modern.sh
+if [[ -n "${DEBUG:-}" ]]; then
+    printf "${RED}!! RUNNING IN DEBUG MODE !!${RESET}\n"
+    set -x # Print command traces before executing command.
+fi
+
+# Print (but DO NOT EXECUTE !!) each command that would be run.
+# Usage: NOOP=1 source utils_modern.sh
+if [[ -v NOOP ]]; then
+    printf "${YELLOW}!! RUNNING IN NOOP MODE (Dry Run) !!${RESET}\n"
+    set -o noexec # Read commands but do not execute them.
+fi
+
+
+
+# @description Kill existing mpi processes
+ezpz_kill_mpi() {
+    # pgrep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
+    # kill $(ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}')
+    ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
 }
 
 # @description Get name of shell.
@@ -553,7 +592,7 @@ ezpz_install_uv() {
     # Install `uv` package.
     # See: https://docs.astral.sh/uv/#installation
     # #######################
-    ezpz_set_proxy_alcf
+    # ezpz_set_proxy_alcf
     curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
@@ -1597,7 +1636,7 @@ ezpz_setup_job() {
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
-    log_message INFO "${WHITE} ===== Running Full Environment Setup =====${RESET}"
+    log_message INFO "${WHITE}Running [${RESET}${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}..."
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
         return 1
@@ -1606,7 +1645,7 @@ ezpz_setup_env() {
         log_message ERROR "Job setup failed. Aborting."
         return 1
     fi
-    log_message INFO "${WHITE}===== Environment Setup Complete =====${RESET}"
+    log_message INFO "${GREEN}[✓] ${WHITE}Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}"
     return 0
 }
 
