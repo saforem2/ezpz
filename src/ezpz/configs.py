@@ -43,9 +43,7 @@ DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
 # LOGS_DIR = PROJECT_DIR.joinpath("logs")
 WORKING_DIR = Path(
-    os.environ.get(
-        "PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
-    )
+    os.environ.get("PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd()))
 )
 LOGS_DIR = WORKING_DIR.joinpath("logs")
 OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
@@ -122,7 +120,9 @@ def get_scheduler() -> str:
 
 
 def load_ds_config(
-    fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
+    fpath: Optional[
+        Union[str, os.PathLike, Path]
+    ] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
     fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
     cfgpath = Path(fpath)
@@ -202,14 +202,16 @@ def print_json(
         )
     if json_str is not None and data is not None:
         raise ValueError(
-            " ".join([
-                "Only one of `json_str` or `data` should be provided.",
-                "Did you mean print_json(json_str={json_str!r}) ?",
-                "Or print_json(data={data!r}) ?",
-                "Received both:",
-                f"json_str={json_str!r}",
-                f"data={data!r}",
-            ])
+            " ".join(
+                [
+                    "Only one of `json_str` or `data` should be provided.",
+                    "Did you mean print_json(json_str={json_str!r}) ?",
+                    "Or print_json(data={data!r}) ?",
+                    "Received both:",
+                    f"json_str={json_str!r}",
+                    f"data={data!r}",
+                ]
+            )
         )
     from ezpz.log.console import get_console
     from rich.json import JSON
@@ -302,6 +304,7 @@ def git_ds_info():
 
 @dataclass
 class BaseConfig(ABC):
+
     @abstractmethod
     def to_str(self) -> str:
         pass
@@ -432,7 +435,7 @@ class HFModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
     """
 
-    wandb_project_name: Optional[str] = field(
+    wandb_project_name: Optional[str] = field(  # type:ignore
         default=None,
         metadata={
             "help": (
@@ -441,7 +444,7 @@ class HFModelArguments:
         },
     )
 
-    model_name_or_path: Optional[str] = field(
+    model_name_or_path: Optional[str] = field(  # type:ignore
         default=None,
         metadata={
             "help": (
@@ -449,7 +452,7 @@ class HFModelArguments:
             )
         },
     )
-    model_type: Optional[str] = field(
+    model_type: Optional[str | None] = field(
         default=None,
         metadata={
             "help": "If training from scratch, pass a model type from the list: "
@@ -730,9 +733,7 @@ def print_config_tree(
         branch = tree.add(field, highlight=highlight)  # , guide_style=style)
         config_group = cfg[field]
         if isinstance(config_group, DictConfig):
-            branch_content = str(
-                OmegaConf.to_yaml(config_group, resolve=resolve)
-            )
+            branch_content = str(OmegaConf.to_yaml(config_group, resolve=resolve))
             branch.add(Text(branch_content, style="red"))
         else:
             branch_content = str(config_group)
