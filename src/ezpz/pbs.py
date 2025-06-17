@@ -131,6 +131,15 @@ def get_pbs_launch_cmd(
             f"{ngpus_in_use=} vs. {ngpus_available=}"
         )
     # ncpus_per_host = get_cpus_per_node()
+    if ezpz.get_machine().lower() == "sophia":
+        return " ".join([
+            "mpirun",
+            f"-n={ngpus_in_use}",
+            f"-N={ngpu_per_host}",
+            f"--hostfile={hostfile}",
+            "-x PATH",
+            "-x LD_LIBRARY_PATH",
+        ])
     return " ".join(
         [
             "mpiexec",
