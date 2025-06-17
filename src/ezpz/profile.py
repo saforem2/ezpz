@@ -52,6 +52,22 @@ def get_context_manager(
         outdir: Optional[str] = None,
         strict: Optional[bool] = True,
 ) -> AbstractContextManager:
+    """
+    Returns a context manager for profiling code blocks using PyInstrument.
+
+    Args:
+        rank (Optional[int]): The rank of the process (default: None).
+            If provided, the profiler will only run if rank is 0.
+        outdir (Optional[str]): The output directory for saving profiles.
+            Defaults to `ezpz.OUTPUTS_DIR`.
+        strict (Optional[bool]): If True, the profiler will only run if
+            "PYINSTRUMENT_PROFILER" is set in the environment.
+            Defaults to True.
+
+    Returns:
+        AbstractContextManager: A context manager that starts and stops
+            the PyInstrument profiler.
+    """
     d = ezpz.OUTPUTS_DIR if outdir is None else outdir
     fp = Path(d)
     fp = fp.joinpath("ezpz", "pyinstrument_profiles")
@@ -76,7 +92,7 @@ class PyInstrumentProfiler:
         try:
             import pyinstrument  # pyright: ignore
         except (ImportError, ModuleNotFoundError):
-            pyinstrument = None
+            pyinstrument = None  # type:ignore
         if pyinstrument is None:
             self.profiler = None
             log.critical(
@@ -110,7 +126,7 @@ class PyInstrumentProfiler:
         dtpyinstrument = (time.perf_counter_ns() - self._start) / (10 ** 9)
         if self.profiler is not None:
             self.profiler.stop()
-            self.profiler.print(color=True)
+            self.profiler.print(color=True, timeline=True)  # , time='percent_of_total')
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
             html_fp = Path(self.outdir).joinpath(
                     f'pyinstrument-profile-{now}.html'
