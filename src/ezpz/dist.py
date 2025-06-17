@@ -996,10 +996,11 @@ def setup_torch_DDP(
     if (mn := ezpz.get_machine().lower()) in {
         "aurora",
         "polaris",
-        "sophia",
         "sirius",
     }:
         master_addr = f"{master_addr}.hsn.cm.{mn}.alcf.anl.gov"
+    elif mn == "sophia":
+        master_addr = f"{master_addr}.lab.alcf.anl.gov"
     # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
     eport = os.environ.get("MASTER_PORT", str(get_free_port()))
     if eport is not None:
