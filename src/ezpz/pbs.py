@@ -275,52 +275,6 @@ def get_pbs_env(
     return pbsenv
 
 
-# def get_cobalt_resources() -> dict:
-#     cobalt_info = inspect_cobalt_running_job()
-#     # cobalt_nodefile = get_cobalt_nodefile()
-#     nodes = get_nodes_from_hostfile(Path(cobalt_info["COBALT_NODEFILE"]))
-#     gpus_per_node = get_gpus_per_node()
-#     cobalt_info |= {
-#         'nodes': nodes,
-#         'num_nodes': len(nodes),
-#         'gpus_per_node': gpus_per_node,
-#         'num_gpus': len(nodes) * gpus_per_node,
-#         'machine': 'ThetaGPU',
-#     }
-#     return cobalt_info
-
-
-# def build_mpiexec_thetagpu():
-#     jobenv = get_cobalt_resources()
-#     return [
-#         "mpirun",
-#         f"-n {jobenv['num_nodes']}",
-#         f"-npernode {jobenv['gpus_per_node']}",
-#         f"--hostfile {jobenv['COBALT_NODEFILE']}",
-#         "-x PATH",
-#         "-x LD_LIBRARY_PATH",
-#         "-x http_proxy",
-#         "-x https_proxy",
-#     ]
-
-
-# def run_mpiexec(cmd: str):
-#     import subprocess
-#     mpiexec = ' '.join(build_mpiexec_thetagpu())
-#     logger.info(f'Executing: {mpiexec} {cmd}')
-#     return subprocess.Popen(f"{mpiexec} {cmd}", shell=True)
-
-
-# def mpi_test_framework_backend(
-#     framework: str = 'pytorch',
-#     backend: str = 'DDP',
-# ):
-#     import sys
-#     python3 = sys.executable
-#     py_cmd = f'{python3} -m ezpz.check {framework} {backend}'
-#     run_mpiexec(py_cmd)
-
-
 def build_launch_cmd() -> str:
     """Build the launch command for the current job.
 
