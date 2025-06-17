@@ -19,7 +19,7 @@ import ezpz.tp
 from mpi4py import MPI
 
 import torch
-import torch.distributed as tdist
+import torch.distributed
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
 
@@ -96,7 +96,18 @@ def seed_everything(seed: int) -> None:
 
 
 def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
-    """Print dictionary as list"""
+    """Print dictionary as list
+
+    Args:
+        d (dict): Dictionary to print.
+        name (str, optional): Name of the dictionary. Defaults to None.
+
+    Example:
+        >>> log_dict_as_bulleted_list({'key1': 'value1', 'key2': 'value2'}, name='MyDict')
+        [MyDict]:
+          • key1=value1
+          • key2=value2
+    """
     tag = name if name is not None else getattr(d, "__qualname__", "dict")
     logger.info(
         "\n".join(["\n", f"[{tag}]:"] + [f"  • {k}={v}" for k, v in d.items()] + ["\n"])
@@ -109,6 +120,12 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
     Args:
         rank (int, optional): Rank of the process. Defaults to None.
         verbose (bool, optional): Whether to log the time taken. Defaults to True.
+
+    Example:
+        @timeitlogit(rank=0, verbose=True)
+        def my_function(arg1, arg2):
+            # Function implementation
+            pass
     """
     rank = get_rank() if rank is None else rank
     try:
@@ -254,6 +271,19 @@ def _get_dist_info(
     framework: Optional[str] = None,
     # max_hosts_to_print: Optional[int] = None,  # truncate in logs
 ) -> dict:
+    """
+    Get distributed info from the hostfile or environment variables.
+
+    Args:
+        hostfile (PathLike, optional): Path to the hostfile. Defaults to None.
+        framework (str, optional): Framework to use. Defaults to None.
+        max_hosts_to_print (int, optional): Maximum number of hosts to print in logs.
+            Defaults to None.
+
+    Returns:
+        dict: Dictionary containing the distributed info.
+            Includes keys like 'DEVICE', 'DEVICE_ID', 'DISTRIBUTED_BACKEND', etc.
+    """
     from ezpz.configs import get_scheduler
 
     hf = get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
@@ -448,6 +478,23 @@ def setup(
     precision: Optional[str] = None,
     ngpus: Optional[int] = None,
 ):
+    """
+    Setup distributed environment for the specified framework.
+
+    Args:
+        framework (str): The framework to use for distributed training.
+            Defaults to "pytorch".
+        backend (str): The backend to use for distributed training.
+            Defaults to "DDP".
+        port (str): The port to use for distributed communication.
+            Defaults to "5432".
+        seed (int, optional): Random seed for reproducibility. Defaults to None.
+        precision (str, optional): Precision to use for training. Defaults to None.
+        ngpus (int, optional): Number of GPUs to use. Defaults to None.
+
+    Returns:
+        None
+    """
     return (
         setup_tensorflow(precision=precision, ngpus=ngpus)
         if framework in {"tensorflow", "tf", "t"}
@@ -467,6 +514,41 @@ def init_deepspeed(
     rank: Optional[int] = None,
     world_size: Optional[int] = None,
 ):
+    """
+    Initialize DeepSpeed distributed environment.
+
+    Args:
+        dist_backend (str, optional): The distributed backend to use.
+            Defaults to None.
+        auto_mpi_discovery (bool, optional): Whether to automatically discover MPI.
+            Defaults to True.
+        distributed_port (int | str, optional): The port for distributed communication.
+            Defaults to 29500.
+        verbose (bool, optional): Whether to print verbose logs. Defaults to True.
+        timeout (int | None, optional): Timeout in seconds for distributed initialization.
+            Defaults to None.
+        init_method (str, optional): Initialization method for distributed training.
+            Defaults to None.
+        dist_init_required (bool, optional): Whether distributed initialization is required.
+            Defaults to None.
+        config (dict, optional): DeepSpeed configuration dictionary. Defaults to None.
+        rank (int | None, optional): Rank of the current process. Defaults to None.
+        world_size (int | None, optional): Total number of processes. Defaults to None.
+
+    Raises:
+        ImportError: If DeepSpeed is not installed.
+        Exception: If there is an error during DeepSpeed initialization.
+
+    Example:
+        >>> init_deepspeed(
+        ...     dist_backend='nccl',
+        ...     distributed_port=29500,
+        ...     verbose=True,
+        ...     timeout=3600,
+        ...     rank=0,
+        ...     world_size=4
+        ... )
+    """
     try:
         import deepspeed  # noqa type:ignore
 
@@ -506,6 +588,20 @@ def init_deepspeed(
 
 
 def get_torch_device_type(device_type: Optional[str] = None) -> str:
+    """Get the current PyTorch device type.
+
+    Args:
+        device_type (str, optional): The type of device to return.
+            If None, it will be determined automatically.
+            Defaults to None.
+
+    Returns:
+        str: The current PyTorch device type.
+            Possible values are "cpu", "mps", "xpu", or "cuda".
+
+    Example:
+        >>> get_torch_device_type()  # Returns the current device type as a string
+    """
     if device_type is not None:
         assert device_type in (
             "cpu",
@@ -556,11 +652,34 @@ def get_torch_device(
     device_type: Optional[str] = None,
     as_torch_device: Optional[bool] = None,
 ) -> str | torch.device:
+    """Get the current PyTorch device.
+
+    Args:
+        device_type (str, optional): The type of device to return.
+            If None, it will be determined automatically.
+            Defaults to None.
+        as_torch_device (bool, optional): If True, return a torch.device object.
+            If False, return a string representing the device type.
+            Defaults to False.
+
+    Returns:
+        str | torch.device: The current PyTorch device.
+            If as_torch_device is True, returns a torch.device object.
+            If as_torch_device is False, returns a string representing the device type.
+
+    Example:
+        >>> get_torch_device()  # Returns the current device type as a string
+    """
     device_type = get_torch_device_type(device_type)
     return torch.device(device_type) if as_torch_device else device_type
 
 
-def get_torch_version_as_float():
+def get_torch_version_as_float() -> float:
+    """Get the PyTorch version as a float.
+
+    Returns:
+        float: The PyTorch version as a float, e.g., 1.10.0 -> 1.10
+    """
     return float(".".join(torch.__version__.split(".")[:2]))
 
 
@@ -585,9 +704,15 @@ def get_torch_backend_on_xpu() -> str:
 
 
 def get_torch_backend() -> str:
+    """
+    Get the current PyTorch backend.
+
+    Returns:
+        str: The current PyTorch backend.
+    """
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
-        logger.warning(f"Caught `TORCH_BACKEND`={backend_from_env} from environment!")
+        # logger.info(f"Caught TORCH_BACKEND={backend_from_env} from environment!")
         return backend_from_env
     return (
         "nccl"
@@ -602,13 +727,25 @@ def init_process_group(
     timeout: str | int | timedelta,
     backend: Optional[str] = None,
 ) -> None:
+    """
+    Initialize the PyTorch distributed process group.
+
+    Args:
+        rank (int | str): The rank of the current process.
+        world_size (int | str): The total number of processes.
+        timeout (str | int | timedelta): Timeout for the process group initialization.
+        backend (str, optional): The backend to use for distributed training.
+            Defaults to None, which will use the default backend based on the device.
+    """
     backend = get_torch_backend() if backend is None else backend
     if get_rank() == 0:
         logger.info(
             " ".join(
                 [
-                    "Initializing process group with",
-                    f"{rank:=}, {world_size:=}, {backend}",
+                    "Calling torch.distributed.init_process_group_with:",
+                    f"rank={rank}",
+                    f"world_size={world_size}",
+                    f"backend={backend}",
                 ]
             )
         )
@@ -616,7 +753,6 @@ def init_process_group(
         timeout = timedelta(
             seconds=int(timeout),
         )
-    # if not tdist.is_initialized():
     if not torch.distributed.is_initialized():  # type:ignore
         torch.distributed.init_process_group(  # type:ignore
             backend=backend,
@@ -628,6 +764,13 @@ def init_process_group(
 
 
 def run_ddp(fn: Callable, world_size: int) -> None:
+    """
+    Run a function in a distributed data parallel (DDP) setup.
+
+    Args:
+        fn (Callable): The function to run in DDP.
+        world_size (int): The total number of processes to run.
+    """
     import torch.multiprocessing as mp
 
     mp.spawn(  # type:ignore
@@ -636,12 +779,31 @@ def run_ddp(fn: Callable, world_size: int) -> None:
 
 
 def get_rank() -> int:
-    """Get current MPI rank"""
+    """Get current MPI rank.
+
+    Returns:
+        int: The rank of the current process in the MPI world.
+
+    Example:
+        >>> rank = get_rank()
+        >>> print(f"Current MPI rank: {rank}")
+    """
     return int(MPI.COMM_WORLD.Get_rank())
 
 
 def get_world_size_in_use() -> int:
-    """Get number of currently in use MPI ranks"""
+    """Get number of currently in use MPI ranks
+
+    Returns:
+        int: The number of currently in use MPI ranks.
+            This is the size of the MPI communicator.
+            It is the number of processes that are currently running
+            and participating in the distributed computation.
+
+    Example:
+        >>> world_size_in_use = get_world_size_in_use()
+        >>> print(f"Number of currently in use MPI ranks: {world_size_in_use}")
+    """
     return int(MPI.COMM_WORLD.Get_size())
 
 
@@ -649,6 +811,14 @@ def get_world_size_total() -> int:
     """Calculate total AVAILABLE *PUs as:
 
     total = [num_hosts] * [num_*pu_per_host]
+
+    Returns:
+        int: The total number of available *PUs across all nodes.
+            This is the product of the number of nodes and the number of *PUs per node.
+
+    Example:
+        >>> total_pus = get_world_size_total()
+        >>> print(f"Total available *PUs: {total_pus}")
     """
     # nhosts = get_num_nodes()
     # ngpu_per_host = get_gpus_per_node()
@@ -660,6 +830,25 @@ def get_world_size(
     total: Optional[bool] = None,
     in_use: Optional[bool] = None,
 ) -> int:
+    """
+    Get the total number of *PUs available or currently in use.
+    Args:
+        total (bool, optional): If True, return the total number of *PUs available.
+            Defaults to None.
+        in_use (bool, optional): If True, return the number of *PUs currently in use.
+            Defaults to None.
+
+    Returns:
+        int: The total number of *PUs available or currently in use.
+            If both `total` and `in_use` are None, it returns the number of *PUs
+            currently in use by the MPI communicator.
+
+    Example:
+        >>> world_size = get_world_size(total=True)
+        >>> print(f"Total number of *PUs available: {world_size}")
+        >>> world_size_in_use = get_world_size(in_use=True)
+        >>> print(f"Number of *PUs currently in use: {world_size_in_use}")
+    """
     if total:
         return get_world_size_total()
     if in_use:
@@ -688,12 +877,33 @@ def get_world_size(
 
 
 def get_local_rank() -> int:
-    """Return `get_rank() % get_gpus_per_node()`"""
+    """Return `get_rank() % get_gpus_per_node()`
+
+    Returns:
+        int: The local rank of the current process within its node.
+            This is calculated as the current rank modulo the number of GPUs per node.
+
+    Example:
+        >>> local_rank = get_local_rank()
+        >>> print(f"Local rank of the current process: {local_rank}")
+    """
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
 def query_environment() -> dict[str, int]:
-    """Query environment variables for info about distributed setup"""
+    """Query environment variables for info about distributed setup
+
+    Returns:
+        dict[str, int]: A dictionary containing the distributed setup information.
+            Includes keys like 'world_size', 'rank', and 'local_rank'.
+            If the environment variables are not set, it falls back to using
+            `get_world_size()`, `get_rank()`, and `get_local_rank()` functions.
+
+    Example:
+        >>> env_info = query_environment()
+        >>> print(env_info)
+        {'world_size': 4, 'rank': 0, 'local_rank': 0}
+    """
     ws = os.environ.get("WORLD_SIZE", None)
     r = os.environ.get("RANK", None)
     lr = os.environ.get("LOCAL_RANK", None)
@@ -716,6 +926,20 @@ def setup_torch_DDP(
     timeout: int | str | timedelta = 3600,
     backend: Optional[str] = None,
 ) -> dict[str, int]:
+    """
+    Setup PyTorch Distributed Data Parallel (DDP) environment.
+    Args:
+        port (str, optional): The port to use for distributed communication.
+            Defaults to "2345".
+        timeout (int | str | timedelta, optional): Timeout for the process group initialization.
+            Defaults to 3600 seconds.
+        backend (str, optional): The backend to use for distributed training.
+            Defaults to None, which will use the default backend based on the device.
+
+    Returns:
+        dict[str, int]: A dictionary containing the distributed setup information.
+            Includes keys like 'world_size', 'rank', and 'local_rank'.
+    """
     if not isinstance(timeout, timedelta):
         timeout = timedelta(seconds=int(timeout))
     os_rank = os.environ.get("RANK", None)
@@ -778,7 +1002,45 @@ def setup_torch_distributed(
     port: Optional[str | int] = None,
     timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
-    """Returns {'world_size': int, 'rank': int, 'local_rank': int}"""
+    """
+    Setup distributed environment for PyTorch.
+
+    Args:
+        framework (str, optional): The framework to use for distributed training.
+            Defaults to None, which will use "ddp".
+        backend (str, optional): The backend to use for distributed training.
+            Defaults to None, which will use the default backend based on the device.
+        tensor_parallel_size (int, optional): Size of tensor parallelism. Defaults to 1.
+        pipeline_parallel_size (int, optional): Size of pipeline parallelism. Defaults to 1.
+        context_parallel_size (int, optional): Size of context parallelism. Defaults to 1.
+        tensor_parallel_backend (str, optional): Backend for tensor parallelism. Defaults to None.
+        pipeline_parallel_backend (str, optional): Backend for pipeline parallelism. Defaults to None.
+        context_parallel_backend (str, optional): Backend for context parallelism. Defaults to None.
+        data_parallel_backend (str, optional): Backend for data parallelism. Defaults to None.
+        port (str | int, optional): Port for distributed communication. Defaults to "1234".
+        timeout (str | int, optional): Timeout for distributed initialization. Defaults to 3600 seconds.
+
+    Returns:
+        dict[str, int]: A dictionary containing the distributed setup information.
+            Includes keys like 'world_size', 'rank', and 'local_rank'.
+
+    Raises:
+        AssertionError: If the framework is not one of the supported frameworks.
+            Supported frameworks are "ddp", "ds", "deepspeed", "horovod", and "hvd".
+        ValueError: If the backend is not one of the supported backends.
+            Supported backends are "ddp", "ds", "deepspeed", "horovod", and "hvd".
+
+    Example:
+        >>> setup_torch_distributed(
+        ...     framework='ddp',
+        ...     backend='nccl',
+        ...     tensor_parallel_size=2,
+        ...     pipeline_parallel_size=1,
+        ...     context_parallel_size=1,
+        ...     port=1234,
+        ...     timeout=3600
+        ... )
+    """
     framework = "ddp" if framework is None else framework
     # if str(framework).lower() not in {"ddp", "ds", "deepspeed", "horovod", "hvd"}:
     assert str(framework).lower() in {"ddp", "ds", "deepspeed", "horovod", "hvd"}, (
@@ -869,23 +1131,24 @@ def barrier(
     async_op: bool = False,
     device_ids: str | Iterable | None = None,
 ) -> torch.distributed.Work | None:  # type:ignore
-    """Barrier for all processes in the group
+    """
+    Barrier for all processes in the group.
+
     This collective blocks processes until the whole group enters this function,
     if async_op is False, or if async work handle is called on wait().
 
     Args:
-    group (ProcessGroup, optional): The process group to work on. If None,
-    the default process group will be used.
-    async_op (bool, optional): Whether this op should be an async op
-    device_ids ([int], optional): List of device/GPU ids.
+        device (torch.device | int | str, optional): The device to synchronize.
+            If None, the default device will be used. Defaults to None.
+        group (torch.distributed.ProcessGroup | None, optional): The process group to work on.
+            If None, the default process group (WORLD) will be used.
+            Defaults to torch.distributed.GroupMember.WORLD.
+        async_op (bool, optional): If True, the barrier will be asynchronous.
+        device_ids (str | Iterable | None, optional): The device IDs to synchronize.
 
     Returns:
-    Async work handle, if async_op is set to True.
-    None, if not async_op or if not part of the group
-
-    - `[group: ProcessGroup | None = GroupMember.WORLD]` group (ProcessGroup, optional): The process group to work on. If None,
-    - `[async_op: bool = False]`
-    - `[device_ids: Unknown | None = None]`
+        torch.distributed.Work | None: If async_op is True, returns a work handle.
+            If async_op is False, returns None.
     """
     try:
         torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
@@ -1017,8 +1280,6 @@ def setup_torch(
             _ = print_dist_setup()
     if world_size > 1:
         barrier()
-    # if world_size > 1:
-    #     tdist.barrier()
 
     if rank == 0:
         logger.info(
@@ -1054,7 +1315,6 @@ def setup_torch(
                 lpp = len(str(ppsize - 1))
                 psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
                 barrier(group=ezpz.tp.get_pipeline_parallel_group())
-                # tdist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 tprank = ezpz.tp.get_tensor_parallel_rank()
@@ -1067,15 +1327,21 @@ def setup_torch(
                 # dpranks = ezpz.tp.get_data_parallel_ranks()
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
                 barrier(group=ezpz.tp.get_data_parallel_group())
-    # tdist.all_gather(psizes)
     logger.info("".join(psizes))
     barrier()
     return rank
 
 
 def cleanup() -> None:
-    if tdist.is_initialized():
-        tdist.destroy_process_group()
+    """
+    Cleanup the distributed environment.
+    This function destroys the process group if it is initialized.
+
+    Example:
+        >>> cleanup()
+    """
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
 
 
 def setup_tensorflow(
@@ -1154,6 +1420,15 @@ def setup_tensorflow(
 
 
 def include_file(f: PathLike):
+    """
+    Check if a file should be included based on its extension.
+
+    Args:
+        f (PathLike): The file path to check.
+
+    Returns:
+        bool: True if the file should be included, False otherwise.
+    """
     fpath = Path(f)
     return fpath.suffix in {
         ".py",
@@ -1351,6 +1626,14 @@ def setup_wandb(
 
 
 def run_bash_command(cmd: str) -> Any:
+    """
+    Run a bash command and return the output.
+    Args:
+        cmd (str): The command to run.
+
+    Returns:
+        Any: The output of the command.
+    """
     import subprocess
 
     process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
