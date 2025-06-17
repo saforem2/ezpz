@@ -103,14 +103,20 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
         name (str, optional): Name of the dictionary. Defaults to None.
 
     Example:
-        >>> log_dict_as_bulleted_list({'key1': 'value1', 'key2': 'value2'}, name='MyDict')
+        >>> log_dict_as_bulleted_list(
+        ...     {"key1": "value1", "key2": "value2"}, name="MyDict"
+        ... )
         [MyDict]:
           • key1=value1
           • key2=value2
     """
     tag = name if name is not None else getattr(d, "__qualname__", "dict")
     logger.info(
-        "\n".join(["\n", f"[{tag}]:"] + [f"  • {k}={v}" for k, v in d.items()] + ["\n"])
+        "\n".join(
+            ["\n", f"[{tag}]:"]
+            + [f"  • {k}={v}" for k, v in d.items()]
+            + ["\n"]
+        )
     )
 
 
@@ -146,7 +152,9 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             assert isinstance(rank, int)
             result = func(*args, **kwargs)
             dt = time.perf_counter() - t0
-            fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+            fname = getattr(
+                func, "__qualname__", getattr(func, "__name__", "unknown")
+            )
             if verbose:
                 if rank == 0:
                     astr = []
@@ -194,7 +202,9 @@ def timeit(func: Callable):
         t0 = time.perf_counter()
         result = func(*args, **kwargs)
         dt = time.perf_counter() - t0
-        fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+        fname = getattr(
+            func, "__qualname__", getattr(func, "__name__", "unknown")
+        )
         logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
         if wandb is not None and wandb.run is not None:
             wandb.log({f"timeit/{fname}": dt})
@@ -216,7 +226,7 @@ def get_hosts_from_hostfile(
         tuple[str, list[str]]: Tuple containing the hostfile path and a list of hosts.
 
     Example:
-        >>> get_hosts_from_hostfile('/path/to/hostfile')
+        >>> get_hosts_from_hostfile("/path/to/hostfile")
         ('/path/to/hostfile', ['host1', 'host2', ...])
     """
     # hostfile = '' if hostfile is None else hostfile
@@ -377,7 +387,9 @@ def get_dist_info(
     if verbose:
         import json
 
-        logger.info(f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}")
+        logger.info(
+            f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
+        )
     return dist_info
 
 
@@ -432,8 +444,12 @@ def print_dist_setup(
     logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
-            logger.warning(f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}")
-        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+            logger.warning(
+                f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}"
+            )
+        logger.warning(
+            f'Using [{wsa} / {wst}] available "{device}" devices !!'
+        )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
@@ -541,12 +557,12 @@ def init_deepspeed(
 
     Example:
         >>> init_deepspeed(
-        ...     dist_backend='nccl',
+        ...     dist_backend="nccl",
         ...     distributed_port=29500,
         ...     verbose=True,
         ...     timeout=3600,
         ...     rank=0,
-        ...     world_size=4
+        ...     world_size=4,
         ... )
     """
     try:
@@ -717,7 +733,9 @@ def get_torch_backend() -> str:
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo")
+        else (
+            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
+        )
     )
 
 
@@ -890,6 +908,20 @@ def get_local_rank() -> int:
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
+def get_free_port():
+    """
+    Get a free port on the local machine.
+
+    Returns:
+        int: A free port number that can be used for communication.
+    """
+    sock = socket.socket()
+    sock.bind(("", 0))  # Bind to an available port
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
 def query_environment() -> dict[str, int]:
     """Query environment variables for info about distributed setup
 
@@ -961,8 +993,15 @@ def setup_torch_DDP(
     os.environ["WORLD_SIZE"] = str(world_size)
     # get `hostname` ONLY from rank 0
     master_addr = socket.gethostname() if rank == 0 else None
+    if (mn := ezpz.get_machine().lower()) in {
+        "aurora",
+        "polaris",
+        "sophia",
+        "sirius",
+    }:
+        master_addr = f"{master_addr}.hsn.cm.{mn}.alcf.anl.gov"
     # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
-    eport = os.environ.get("MASTER_PORT", None)
+    eport = os.environ.get("MASTER_PORT", str(get_free_port()))
     if eport is not None:
         _ = (
             logger.info(f"Caught MASTER_PORT={eport} from environment!")
@@ -980,6 +1019,21 @@ def setup_torch_DDP(
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = master_port
     # now, torch is ready for us
+    if rank == 0:
+        logger.info(
+            "\n".join(
+                [
+                    "Using torch.distributed.init_process_group with",
+                    f"- {master_addr=}",
+                    f"- {master_port=}",
+                    f"- {world_size=}",
+                    f"- {rank=}",
+                    f"- {local_rank=}",
+                    f"- {timeout=}",
+                    f"- {backend=}",
+                ]
+            )
+        )
     init_process_group(
         rank=rank,
         world_size=world_size,
@@ -1032,18 +1086,24 @@ def setup_torch_distributed(
 
     Example:
         >>> setup_torch_distributed(
-        ...     framework='ddp',
-        ...     backend='nccl',
+        ...     framework="ddp",
+        ...     backend="nccl",
         ...     tensor_parallel_size=2,
         ...     pipeline_parallel_size=1,
         ...     context_parallel_size=1,
         ...     port=1234,
-        ...     timeout=3600
+        ...     timeout=3600,
         ... )
     """
     framework = "ddp" if framework is None else framework
     # if str(framework).lower() not in {"ddp", "ds", "deepspeed", "horovod", "hvd"}:
-    assert str(framework).lower() in {"ddp", "ds", "deepspeed", "horovod", "hvd"}, (
+    assert str(framework).lower() in {
+        "ddp",
+        "ds",
+        "deepspeed",
+        "horovod",
+        "hvd",
+    }, (
         f"Invalid framework: {framework=}, expected one of "
         f"{'ddp', 'ds', 'deepspeed', 'horovod', 'hvd'}"
     )
@@ -1051,14 +1111,26 @@ def setup_torch_distributed(
     timeout = (
         3600
         if timeout is None
-        else int(timeout) if isinstance(timeout, str) else timeout
+        else int(timeout)
+        if isinstance(timeout, str)
+        else timeout
     )
-    port = "1234" if port is None else str(port) if isinstance(port, int) else port
+    port = (
+        "1234"
+        if port is None
+        else str(port)
+        if isinstance(port, int)
+        else port
+    )
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
     fw = str(framework).lower()
-    be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
+    be = (
+        str(get_torch_backend()).lower()
+        if backend is None
+        else str(backend).lower()
+    )
     # be = str(framework).lower()
     # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
     #     f"Invalid backend: {framework=}, expected one of "
@@ -1151,7 +1223,9 @@ def barrier(
             If async_op is False, returns None.
     """
     try:
-        torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
+        torch.distributed.barrier(
+            group=group, async_op=async_op, device_ids=device_ids
+        )
     except Exception:
         logger.warning(
             "Unable to use `torch.distributed.barrier` "
@@ -1401,7 +1475,8 @@ def setup_tensorflow(
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices("CPU")
             logger.info(
-                f"{len(cpus)}, Physical CPUs and " f"{len(logical_cpus)} Logical CPUs"
+                f"{len(cpus)}, Physical CPUs and "
+                f"{len(logical_cpus)} Logical CPUs"
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -1523,16 +1598,24 @@ def setup_wandb(
     #     WANDB_DISABLED = True
 
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}")
+        logger.warning(
+            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+        )
         return None
 
     try:
         import wandb
     except (ImportError, ModuleNotFoundError) as e:
-        logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
+        logger.warning(
+            "Unable to import `wandb`. Install with `pip install wandb`"
+        )
         raise e
 
-    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
+    outdir = (
+        Path(os.getcwd()).as_posix()
+        if outdir is None
+        else Path(outdir).as_posix()
+    )
     rank = get_rank()
     project_name = (
         project_name
@@ -1577,7 +1660,9 @@ def setup_wandb(
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-        settings=wandb.Settings(start_method=start_method, init_timeout=init_timeout),
+        settings=wandb.Settings(
+            start_method=start_method, init_timeout=init_timeout
+        ),
     )
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
@@ -1606,12 +1691,16 @@ def setup_wandb(
     )
     if config is not None:
         if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
+            cfg = OmegaConf.to_container(
+                config, resolve=True, throw_on_missing=True
+            )
             run.config.update({"config": cfg})
         else:
             run.config.update({"config": config})
     env = {
-        k: v for k, v in dict(os.environ).items() if not k.startswith("_ModuleTable")
+        k: v
+        for k, v in dict(os.environ).items()
+        if not k.startswith("_ModuleTable")
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
@@ -1662,7 +1751,9 @@ def get_cobalt_nodefile() -> Path:
     cobalt_nodefile = os.environ.get("COBALT_NODEFILE", None)
     if cobalt_nodefile is None:
         logger.warning("COBALT_NODEFILE not in `env`!")
-        logger.info("Attempting to deduce from `/var/tmp/cobalt-running-job`...")
+        logger.info(
+            "Attempting to deduce from `/var/tmp/cobalt-running-job`..."
+        )
         cobalt_info = inspect_cobalt_running_job()
         logger.info(f"Found COBALT info: {cobalt_info}")
         cobalt_nodefile = cobalt_info["COBALT_NODEFILE"]
@@ -1689,7 +1780,8 @@ def write_localhost_to_hostfile(hostfile: PathLike):
     """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
         logger.debug(
-            f"Writing {(hostname := get_hostname())} " f"to {Path(hostfile).as_posix()}"
+            f"Writing {(hostname := get_hostname())} "
+            f"to {Path(hostfile).as_posix()}"
         )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
@@ -1761,16 +1853,15 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             ),
         )
         if (
-            hfp is None
-            or not Path(hfp).is_file()
+            hfp is None or not Path(hfp).is_file()
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
                 # hfp = Path(get_pbs_nodefile_from_qstat())
                 nodefile = ezpz.pbs.get_pbs_nodefile()
-                assert (
-                    nodefile is not None
-                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                assert nodefile is not None, (
+                    "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                )
                 hfp = Path(nodefile)
             else:
                 # create makeshift hostfile containing 'localhost'

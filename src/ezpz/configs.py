@@ -43,7 +43,9 @@ DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
 # LOGS_DIR = PROJECT_DIR.joinpath("logs")
 WORKING_DIR = Path(
-    os.environ.get("PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd()))
+    os.environ.get(
+        "PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
+    )
 )
 LOGS_DIR = WORKING_DIR.joinpath("logs")
 OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
@@ -108,7 +110,7 @@ def get_scheduler() -> str:
     from ezpz import get_machine, get_hostname
 
     machine = get_machine(get_hostname())
-    if machine.lower() in ["thetagpu", "sunspot", "polaris", "aurora"]:
+    if machine.lower() in ["thetagpu", "sunspot", "polaris", "aurora", "sophia"]:
         return SCHEDULERS["ALCF"]
     elif machine.lower() in ["frontier"]:
         return SCHEDULERS["OLCF"]
@@ -120,9 +122,7 @@ def get_scheduler() -> str:
 
 
 def load_ds_config(
-    fpath: Optional[
-        Union[str, os.PathLike, Path]
-    ] = None,  # type:ignore[reportDeprecated]
+    fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
     fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
     cfgpath = Path(fpath)
@@ -272,7 +272,9 @@ def print_config(cfg: Union[dict, str]) -> None:
 
 
 def command_exists(cmd: str) -> bool:
-    result = subprocess.Popen(f"type {cmd}", stdout=subprocess.PIPE, shell=True)
+    result = subprocess.Popen(
+        f"type {cmd}", stdout=subprocess.PIPE, shell=True
+    )
     return result.wait() == 0
 
 
@@ -304,7 +306,6 @@ def git_ds_info():
 
 @dataclass
 class BaseConfig(ABC):
-
     @abstractmethod
     def to_str(self) -> str:
         pass
@@ -430,7 +431,7 @@ class ZeroConfig:
 
 
 @dataclass
-class HFModelArguments:
+class HfModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
     """
@@ -547,14 +548,20 @@ class HFModelArguments:
 
 
 @dataclass
-class HFDataTrainingArguments:
+class HfDataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
 
+    data_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to the training data."},
+    )
     dataset_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+        metadata={
+            "help": "The name of the dataset to use (via the datasets library)."
+        },
     )
     dataset_config_name: Optional[str] = field(
         default=None,
@@ -626,7 +633,9 @@ class HFDataTrainingArguments:
             )
         },
     )
-    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    streaming: bool = field(
+        default=False, metadata={"help": "Enable streaming mode"}
+    )
     block_size: Optional[int] = field(
         default=None,
         metadata={
@@ -649,11 +658,15 @@ class HFDataTrainingArguments:
     )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
-        metadata={"help": "The number of processes to use for the preprocessing."},
+        metadata={
+            "help": "The number of processes to use for the preprocessing."
+        },
     )
     keep_linebreaks: bool = field(
         default=True,
-        metadata={"help": "Whether to keep line breaks when using TXT files or not."},
+        metadata={
+            "help": "Whether to keep line breaks when using TXT files or not."
+        },
     )
 
     def __post_init__(self):
@@ -665,11 +678,12 @@ class HFDataTrainingArguments:
 
         if (
             self.dataset_name is None
+            and self.data_path is None
             and self.train_file is None
             and self.validation_file is None
         ):
             raise ValueError(
-                "Need either a dataset name or a training/validation file."
+                "Need either a dataset {name,path} or a training/validation file."
             )
         if self.train_file is not None:
             extension = self.train_file.split(".")[-1]
@@ -733,7 +747,9 @@ def print_config_tree(
         branch = tree.add(field, highlight=highlight)  # , guide_style=style)
         config_group = cfg[field]
         if isinstance(config_group, DictConfig):
-            branch_content = str(OmegaConf.to_yaml(config_group, resolve=resolve))
+            branch_content = str(
+                OmegaConf.to_yaml(config_group, resolve=resolve)
+            )
             branch.add(Text(branch_content, style="red"))
         else:
             branch_content = str(config_group)
