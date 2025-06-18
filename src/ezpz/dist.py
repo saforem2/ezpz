@@ -728,7 +728,6 @@ def get_torch_backend() -> str:
     """
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
-        # logger.info(f"Caught TORCH_BACKEND={backend_from_env} from environment!")
         return backend_from_env
     return (
         "nccl"
@@ -916,7 +915,9 @@ def get_free_port():
         int: A free port number that can be used for communication.
     """
     sock = socket.socket()
-    sock.bind(("", 0))  # Bind to an available port
+    sock.bind(
+        ("127.0.0.1", 0)
+    )  # Bind to an available port on the loopback interface
     port = sock.getsockname()[1]
     sock.close()
     return port
@@ -1725,8 +1726,9 @@ def run_bash_command(cmd: str) -> Any:
         Any: The output of the command.
     """
     import subprocess
+    import shlex
 
-    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    process = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
     output, error = process.communicate()
     if error:
         raise Exception(error)
