@@ -95,6 +95,7 @@ def get_jobenv(
         # get_pbs_launch_cmd,
     )
     from ezpz.pbs import get_pbs_env
+    hostfile = os.environ.get("HOSTFILE") if hostfile is None else hostfile
 
     jobenv: dict[str, str | int | list[Any]] = get_dist_info(
         hostfile=hostfile,
