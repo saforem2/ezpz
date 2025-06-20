@@ -110,7 +110,13 @@ def get_scheduler() -> str:
     from ezpz import get_machine, get_hostname
 
     machine = get_machine(get_hostname())
-    if machine.lower() in ["thetagpu", "sunspot", "polaris", "aurora", "sophia"]:
+    if machine.lower() in [
+        "thetagpu",
+        "sunspot",
+        "polaris",
+        "aurora",
+        "sophia",
+    ]:
         return SCHEDULERS["ALCF"]
     elif machine.lower() in ["frontier"]:
         return SCHEDULERS["OLCF"]
@@ -273,10 +279,10 @@ def print_config(cfg: Union[dict, str]) -> None:
 
 def command_exists(cmd: str) -> bool:
     result = subprocess.Popen(
-        f"type {cmd}", 
+        f"type {cmd}",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        shell=True,
+        shell=False,
     )
     return result.wait() == 0
 
@@ -686,8 +692,10 @@ class HfDataTrainingArguments:
             and self.validation_file is None
         ):
             raise ValueError(
-                "Need either a dataset {name,path} or a training/validation file."
+                "You must specify at least one of the following: "
+                "a dataset name, a data path, a training file, or a validation file."
             )
+
         if self.train_file is not None:
             extension = self.train_file.split(".")[-1]
             assert extension in [
