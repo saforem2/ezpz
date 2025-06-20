@@ -273,7 +273,10 @@ def print_config(cfg: Union[dict, str]) -> None:
 
 def command_exists(cmd: str) -> bool:
     result = subprocess.Popen(
-        f"type {cmd}", stdout=subprocess.PIPE, shell=True
+        f"type {cmd}", 
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True,
     )
     return result.wait() == 0
 
