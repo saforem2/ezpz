@@ -96,28 +96,10 @@ def seed_everything(seed: int) -> None:
 
 
 def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
-    """Print dictionary as list
-
-    Args:
-        d (dict): Dictionary to print.
-        name (str, optional): Name of the dictionary. Defaults to None.
-
-    Example:
-        >>> log_dict_as_bulleted_list(
-        ...     {"key1": "value1", "key2": "value2"}, name="MyDict"
-        ... )
-        [MyDict]:
-          • key1=value1
-          • key2=value2
-    """
-    tag = name if name is not None else getattr(d, "__qualname__", "dict")
-    logger.info(
-        "\n".join(
-            ["\n", f"[{tag}]:"]
-            + [f"  • {k}={v}" for k, v in d.items()]
-            + ["\n"]
-        )
-    )
+    """Print a dict as bullets."""
+    tag = name or getattr(d, "__qualname__", "dict")
+    lines = [f"[{tag}]:"] + [f"  • {k}={v}" for k, v in d.items()]
+    logger.info("\n\n" + "\n".join(lines) + "\n")
 
 
 def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
@@ -155,23 +137,28 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             fname = getattr(
                 func, "__qualname__", getattr(func, "__name__", "unknown")
             )
-            if verbose:
-                if rank == 0:
-                    astr = []
-                    if len(args) > 0:
-                        astr.append(f"({args}")
-                    _ = (
-                        astr.append(f", {kwargs})")
-                        if len(kwargs) > 0
-                        else (astr.append(")") if len(args) > 0 else "")
-                    )
-                    zstr = [f"Called: '{fname}' with arguments:"]
-                    if len(astr) > 0:
-                        zstr.append(f"{''.join(astr)}")
-                    zstr.append(f"'{fname}' took: {dt=:.4f} s")
-                    logger.info("\n".join(zstr))
+            if verbose and rank == 0:
+                arg_str = ", ".join(map(str, args))
+                kw_str = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+                inner = ", ".join(filter(None, [arg_str, kw_str]))
+                logger.info(f"{fname}({inner}) took {dt:.4f} s")
                 if wandb is not None and wandb.run is not None:
                     wandb.log({f"timeit/{fname}": dt}, commit=False)
+            # if verbose:
+            #     if rank == 0:
+            #         astr = []
+            #         if len(args) > 0:
+            #             astr.append(f"({args}")
+            #         _ = (
+            #             astr.append(f", {kwargs})")
+            #             if len(kwargs) > 0
+            #             else (astr.append(")") if len(args) > 0 else "")
+            #         )
+            #         zstr = [f"Called: '{fname}' with arguments:"]
+            #         if len(astr) > 0:
+            #             zstr.append(f"{''.join(astr)}")
+            #         zstr.append(f"'{fname}' took: {dt=:.4f} s")
+            #         logger.info("\n".join(zstr))
             return result
 
         return wrapper
@@ -569,7 +556,7 @@ def init_deepspeed(
         import deepspeed  # noqa type:ignore
 
         os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
-    except (ImportError, ModuleNotFoundError) as e:
+    except ImportError as e:
         logger.warning(
             "Unable to import deepspeed. Please install it to use DeepSpeed features."
         )
@@ -1730,47 +1717,34 @@ def run_bash_command(cmd: str) -> Any:
     import shlex
 
     process = subprocess.Popen(
-        shlex.split(cmd),
+        shlex.split(cmd, posix=True),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
     output, error = process.communicate()
+    if process.returncode != 0:
+        raise Exception(
+            f"Command failed with return code {process.returncode}.\n"
+                f"stdout: {output.decode().strip()}\n"
+                f"stderr: {error.decode().strip()}"
+        )
     if error:
-        raise Exception(error)
+        raise Exception(error.decode())
     else:
         return output
-
-
-def inspect_cobalt_running_job() -> dict[str, str | PathLike]:
-    running_job_file = Path("/var/tmp/cobalt-running-job")
-    with running_job_file.open("r") as f:
-        tmp = f.readlines()
-        jobid, uname = tmp[0].rstrip("\n").split(":")
-        cobalt_nodefile = Path(f"/var/tmp/cobalt.{jobid}")
-        os.environ["COBALT_NODEFILE"] = cobalt_nodefile.as_posix()
-    return {
-        "user": uname,
-        "jobid": jobid,
-        "COBALT_NODEFILE": cobalt_nodefile,
-    }
-
-
-def get_cobalt_nodefile() -> Path:
-    cobalt_nodefile = os.environ.get("COBALT_NODEFILE", None)
-    if cobalt_nodefile is None:
-        logger.warning("COBALT_NODEFILE not in `env`!")
-        logger.info(
-            "Attempting to deduce from `/var/tmp/cobalt-running-job`..."
-        )
-        cobalt_info = inspect_cobalt_running_job()
-        logger.info(f"Found COBALT info: {cobalt_info}")
-        cobalt_nodefile = cobalt_info["COBALT_NODEFILE"]
-    return Path(cobalt_nodefile)
 
 
 def get_nodes_from_hostfile(
     hostfile: PathLike,
 ) -> list[str]:
+    """Get the nodes from the hostfile.
+
+    Args:
+        hostfile (PathLike): The path to the hostfile.
+
+    Returns:
+        list[str]: A list of nodes from the hostfile.
+    """
     # cobalt_nodefile = get_cobalt_nodefile()
     fpath = Path(hostfile)
     assert fpath.is_file()
@@ -1801,7 +1775,14 @@ def write_hostfile_from_list_of_hosts(
     hostfile: Optional[PathLike] = None,
     rank_zero_only: bool = True,
 ):
-    """Write a list of hosts to the hostfile"""
+    """Write a list of hosts to the hostfile.
+
+    Args:
+        hosts (list[str]): A list of hostnames to write to the hostfile.
+        hostfile (PathLike, optional): The path to the hostfile. Defaults to None.
+        rank_zero_only (bool, optional): If True, only rank 0 will write the hostfile.
+            Defaults to True.
+    """
     hostfile = (
         Path(hostfile).as_posix()
         if hostfile is not None
