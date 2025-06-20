@@ -91,7 +91,7 @@ class PyInstrumentProfiler:
     ):
         try:
             import pyinstrument  # pyright: ignore
-        except (ImportError, ModuleNotFoundError):
+        except ImportError:
             pyinstrument = None  # type:ignore
         if pyinstrument is None:
             self.profiler = None
