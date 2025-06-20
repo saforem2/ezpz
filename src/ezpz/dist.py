@@ -1003,7 +1003,8 @@ def setup_torch_DDP(
     elif mn == "sophia":
         master_addr = f"{master_addr}.lab.alcf.anl.gov"
     # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
-    eport = os.environ.get("MASTER_PORT", str(get_free_port()))
+    free_port = str(get_free_port()) if rank == 0 else None
+    eport = os.environ.get("MASTER_PORT", free_port)
     if eport is not None:
         _ = (
             logger.info(f"Caught MASTER_PORT={eport} from environment!")
@@ -1728,7 +1729,11 @@ def run_bash_command(cmd: str) -> Any:
     import subprocess
     import shlex
 
-    process = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+    process = subprocess.Popen(
+        shlex.split(cmd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
     output, error = process.communicate()
     if error:
         raise Exception(error)
