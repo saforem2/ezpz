@@ -68,8 +68,8 @@ fi
 
 # --- Helper Functions ---
 
-# # Set the default log level to INFO if the
-# # environment variable isn't already set.
+# Set the default log level to INFO if the
+# environment variable isn't already set.
 DEFAULT_LOG_LEVEL="${DEFAULT_LOG_LEVEL:-INFO}"
 export DEFAULT_LOG_LEVEL
 log_info() {
@@ -103,7 +103,7 @@ log_message() {
     FATAL) log_level="${RED}F${RESET}" ;;
     *) log_level="${INFO}I${RESET}" ;; # Default to INFO
     esac
-    log_msg="[${WHITE}${date}${RESET}][$log_level] ${string}"
+    log_msg="[${date}][$log_level] ${string}"
     echo "$log_msg"
 }
 
@@ -338,7 +338,8 @@ ezpz_save_dotenv() {
     if [[ "$#" -ne 1 ]]; then
         estr="[error]"
         # echo "Expected exactly one argument, specifying outputdir. Received $#"
-        printf "%s Expected one argument (outdir). Received: %s" "$(printRed "${estr}")" "$#"
+        # printf "%s Expected one argument (outdir). Received: %s" "$(printRed "${estr}")" "$#"
+        log_message ERROR "Expected exactly one argument, specifying outputdir. Received: ${RED}${estr}${RESET} $#"  #  >&2
     else
         outdir="$1"
         mkdir -p "${outdir}"
@@ -634,12 +635,12 @@ ezpz_setup_venv_from_conda() {
         log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
         return 1
     else
-        log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
+        log_message INFO "  - Found conda at ${GREEN}${CONDA_PREFIX}${RESET}"
         CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
         if [[ -z "${VIRTUAL_ENV:-}" ]]; then
             log_message INFO "  - No VIRTUAL_ENV found in environment!"
-            # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
-            log_message INFO "  - Looking for venv in VENV_DIR=./venvs/${CYAN}${CONDA_NAME}${RESET}..."
+            # log_message INFO "Trying to setup venv from ${GREEN}${GREEN}${RESET}..."
+            log_message INFO "  - Looking for venv in VENV_DIR=./venvs/${GREEN}${CONDA_NAME}${RESET}..."
             export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
             # make directory if it doesn't exist
             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
@@ -655,7 +656,7 @@ ezpz_setup_venv_from_conda() {
                     return 1
                 fi
             elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
-                log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+                log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${GREEN}${CONDA_NAME}${RESET}"
                 source "${VENV_DIR}/bin/activate" && return 0 # || exit
             else
                 log_message ERROR "  - Unable to locate ${VENV_DIR}/bin/activate"
@@ -770,60 +771,54 @@ ezpz_setup_venv_from_conda() {
 #    3. Print info about which python we're using
 # -----------------------------------------------------------------------------
 ezpz_setup_python() {
-    # virtual_env="${VIRTUAL_ENV:-}"
-    # conda_prefix="${CONDA_PREFIX:-}"
-
     local virtual_env="${VIRTUAL_ENV:-}"
     local conda_prefix="${CONDA_PREFIX:-}"
-    # local setup_status=0
+    # [INFO]
+    log_message INFO "[${GREEN}PYTHON${RESET}]"
 
-    # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
-    log_message INFO "[${CYAN}PYTHON${RESET}]"
-
-    # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
+    ## [Scenario 1]: Neither Conda nor venv active -> Setup Conda then venv
     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
         if ! ezpz_setup_conda; then
-            log_message ERROR "  - ezpz_setup_conda failed."
+            log_message ERROR "    - ezpz_setup_conda failed."
             return 1
         fi
         # Re-check conda_prefix after setup attempt
         conda_prefix="${CONDA_PREFIX:-}"
         if [[ -z "${conda_prefix}" ]]; then
-            log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
+            log_message ERROR "    - CONDA_PREFIX still not set after ezpz_setup_conda."
             return 1
         fi
         # Now attempt to set up venv on top of the activated conda
-
-        # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
         if ! ezpz_setup_venv_from_conda; then
-            log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+            log_message ERROR "    - ezpz_setup_venv_from_conda failed."
             return 1
         fi
 
-    # Scenario 2: Conda active, venv not active -> Setup venv
+    ## [Scenario 2]: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         ezpz_setup_venv_from_conda
 
-    # Scenario 2: Conda active, venv not active -> Setup venv
+    ## [Scenario 3]: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
         # log_message INFO "Setting up venv from"
         if ! ezpz_setup_venv_from_conda; then
+            # log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
             return 1
         fi
 
-    # Scenario 3: Venv active, Conda not active (less common/intended)
+    ## [Scenario 4]: Venv active, Conda not active (less common/intended)
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
         log_message INFO "  - No conda_prefix found."
-        log_message INFO "  - Using virtual_env from: ${CYAN}${virtual_env}${RESET}"
+        log_message INFO "    - venv: ${GREEN}${virtual_env}${RESET}"
 
-    # Scenario 4: Both Conda and venv active
+    ## [Scenario 5]: Both Conda and venv active
     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
-        log_message INFO "  - Found both conda_prefix and virtual_env in environment."
-        log_message INFO "  - Using conda from: ${GREEN}${conda_prefix}${RESET}"
-        log_message INFO "  - Using venv from: ${CYAN}${virtual_env}${RESET}"
+        log_message WARN "  - Found both (!) conda_prefix and virtual_env in environment."
+        log_message INFO "    - conda: ${GREEN}${conda_prefix}${RESET}"
+        log_message INFO "    - venv: ${GREEN}${virtual_env}${RESET}"
     fi
 
     # Verify python3 is available and export path
@@ -832,7 +827,7 @@ ezpz_setup_python() {
         log_message ERROR "  - python3 command not found in PATH."
         return 1
     fi
-    log_message INFO "  - Using python from: ${CYAN}$(which python3)${RESET}"
+    log_message INFO "  - Using python: ${GREEN}$(which python3)${RESET}"
     export PYTHON_EXEC="${python_exec}"
 }
 
@@ -1086,25 +1081,31 @@ ezpz_setup_host_pbs() {
         # - `jobenv_file` assigned to first non-zero variable from:
         #       1. `JOBENV_FILE`
         #       2. `PBS_ENV_FILE`
+        #########################################
+
         # Scenario 1: No arguments passed
-        # log_message INFO "[${BLUE}ezpz_setup_host_pbs${RESET}]"
-        # log_message INFO "  - Caught ${BLUE}${#}${RESET} arguments"
         if [[ "$#" == 0 ]]; then
             hostfile="${HOSTFILE:-$(ezpz_get_pbs_nodefile_from_hostname)}"
             jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
-        # Scenario 2: One argument passed: hostfile
-        elif [[ "$#" == 1 ]]; then
-            hostfile="$1"
-            jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
-            log_message INFO "  - hostfile=${BLUE}${hostfile}${RESET}"
-        # Scenario 3: Two arguments passed: hostfile and jobenv_file
-        elif [[ "$#" == 2 ]]; then
-            hostfile="$1"
-            jobenv_file="$2"
-            log_message INFO "  - hostfile=${BLUE}${hostfile}${RESET}"
-            log_message INFO "  - jobenv_file=${BLUE}${jobenv_file}${RESET}"
+
+        # Scenario 2: >0 arguments passed
         else
-            log_message ERROR "Expected exactly 0, 1, or 2 arguments, received: $#"
+            log_message INFO "[${YELLOW}ezpz_setup_host_pbs${RESET}]"
+            log_message INFO "  - Caught ${YELLOW}${#}${RESET} arguments"
+            # Scenario 2: One argument passed: hostfile
+            if [[ "$#" == 1 ]]; then
+                hostfile="$1"
+                jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
+                log_message INFO "  - hostfile=${YELLOW}${hostfile}${RESET}"
+            # Scenario 3: Two arguments passed: hostfile and jobenv_file
+            elif [[ "$#" == 2 ]]; then
+                hostfile="$1"
+                jobenv_file="$2"
+                log_message INFO "  - hostfile=${YELLOW}${hostfile}${RESET}"
+                log_message INFO "  - jobenv_file=${YELLOW}${jobenv_file}${RESET}"
+            else
+                log_message ERROR "Expected exactly 0, 1, or 2 arguments, received: $#"
+            fi
         fi
         hn=$(hostname)
         if [[ "${hn}" == x* || "${hn}" == "sophia*" ]]; then
@@ -1117,7 +1118,7 @@ ezpz_setup_host_pbs() {
                 export NTILE_PER_HOST=2
                 export NGPU_PER_HOST=$((NGPU_PER_TILE * NTILE_PER_HOST))
             fi
-            ezpz_save_pbs_env "$@"
+            # ezpz_save_pbs_env "$@"
         fi
     fi
 }
@@ -1152,9 +1153,6 @@ ezpz_print_hosts() {
         # hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
     fi
-    log_message INFO "[${MAGENTA}HOSTS${RESET}]"
-    log_message INFO "  - HOSTFILE=${MAGENTA}${hostfile}${RESET}"
-    log_message INFO "  - NHOSTS=${MAGENTA}$(ezpz_get_num_hosts "${hostfile}")${RESET}"
     log_message INFO "  - HOSTS:"
     counter=0
     for f in $(/bin/cat "${hostfile}"); do
@@ -1242,7 +1240,6 @@ ezpz_write_job_info() {
     if [[ "$#" == 0 ]]; then
         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
         jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
-        # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
     elif [[ "$#" == 1 ]]; then
         hostfile="$1"
         jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
@@ -1251,20 +1248,12 @@ ezpz_write_job_info() {
         jobenv_file="$2"
     else
         hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
-        # jobenv_file="${JOBENV_FILE:-${PBS_ENV_FILE}}"
         jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     fi
-    # printf "[ezpz_write_job_info] Caught jobenv_file: %s\n" "${jobenv_file}"
-    # printf "[ezpz_write_job_info] Caught hostfile: %s\n" "${hostfile}"
-    # getNumGPUs
-    # dist_env=$(ezpz_parse_hostfile "${hostfile}")
-    # num_hosts=$(ezpz_get_num_hosts "${hostfile}")
-    # num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
-    # num_gpus="$((num_hosts * num_gpus_per_host))"
-    # num_hosts="${dist_env[1]}"
-    # num_gpus_per_host="${dist_env[2]}"
-    # num_gpus="${dist_env[3]}"
-    # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+    mn=$(ezpz_get_machine_name)
+    hn=$(hostname)
+    local mn="${mn}"
+    local hn="${hn}"
     scheduler_type=$(ezpz_get_scheduler_type)
     num_hosts=$(ezpz_get_num_hosts "${hostfile}")
     num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
@@ -1273,11 +1262,13 @@ ezpz_write_job_info() {
     num_cpus_per_host=$((num_cores_per_host / 2))
     depth=$((num_cpus_per_host / num_gpus_per_host))
     if [[ "${scheduler_type}" == "pbs" ]]; then
-        # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
         dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
+        jobid=$(ezpz_qsme_running | grep $(hostname) | awk '{print $1}')
+        job_section_header="[${MAGENTA}JOB${RESET}: ${MAGENTA}${jobid}${RESET}]"
+        export PBS_JOBID="${jobid}"
     elif [[ "${scheduler_type}" == "slurm" ]]; then
-        # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
         dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$((SLURM_NNODES * SLURM_GPUS_ON_NODE))"
+        job_section_header="[${MAGENTA}JOB${RESET}]"
     else
         echo Unknown scheduler!
     fi
@@ -1298,14 +1289,23 @@ ezpz_write_job_info() {
         export LAUNCH="${DIST_LAUNCH}"
         export ezlaunch="${DIST_LAUNCH}"
         alias launch="${LAUNCH}"
-        # printf "[${MAGENTA}%s${RESET}]\n" "HOSTS"
-        # printf "hostfile: ${MAGENTA}%s${RESET}\n" "${hostfile}"
+
+        # [JOB]
+        # log_message INFO "[${MAGENTA}JOB${RESET}]"
+        log_message INFO "${job_section_header}"
+        log_message INFO "  - user: ${MAGENTA}${USER}${RESET}"
+        log_message INFO "  - machine: ${MAGENTA}${mn}${RESET}"
+        log_message INFO "  - hostname: ${MAGENTA}${hn}${RESET}"
+        # log_message INFO "[${BRIGHT_MAGENTA}DIST_INFO${RESET}]"
+        log_message INFO "  - HOSTFILE=${MAGENTA}${hostfile}${RESET}"
+        log_message INFO "  - NHOSTS=${MAGENTA}${NHOSTS}${RESET}"
+        log_message INFO "  - NGPU_PER_HOST=${MAGENTA}${NGPU_PER_HOST}${RESET}"
+        log_message INFO "  - NGPUS=${MAGENTA}${NGPUS}${RESET}"
+
+        # [HOSTS]
         ezpz_print_hosts "${hostfile}"
-        log_message INFO "[${BRIGHT_BLUE}DIST_INFO${RESET}]"
-        log_message INFO "  - HOSTFILE=${BRIGHT_BLUE}${hostfile}${RESET}"
-        log_message INFO "  - NHOSTS=${BRIGHT_BLUE}${NHOSTS}${RESET}"
-        log_message INFO "  - NGPU_PER_HOST=${BRIGHT_BLUE}${NGPU_PER_HOST}${RESET}"
-        log_message INFO "  - NGPUS=${BRIGHT_BLUE}${NGPUS}${RESET}"
+        # echo -e "\n"
+
         # log_message INFO "  - DIST_LAUNCH=${BRIGHT_BLUE}${DIST_LAUNCH}${RESET}"
         # printf "\n"
         # printf "[${BRIGHT_BLUE}%s${RESET}]\n" "DIST INFO"
@@ -1315,11 +1315,15 @@ ezpz_write_job_info() {
         # printf "  - HOSTFILE=${BRIGHT_BLUE}%s${RESET}\n" "${hostfile}"
         # printf "  - DIST_LAUNCH=${BRIGHT_BLUE}%s${RESET}\n" "${DIST_LAUNCH}"
         # printf "\n"
+
         if [[ -n "$(command -v launch)" ]]; then
-            log_message INFO "[${GREEN}LAUNCH${RESET}]"
-            log_message INFO "  - To launch across all available GPUs, use: '${GREEN}launch${RESET}'"
-            log_message INFO "    ${GREEN}launch${RESET} = ${GREEN}${LAUNCH}${RESET}"
-            log_message INFO "  - Run '${GREEN}which launch${RESET}' to ensure that the alias is set correctly"
+            log_message INFO "[${BLUE}LAUNCH${RESET}]"
+            log_message INFO "  - To launch python across all available GPUs, use '${BLUE}ezpz-launch${RESET}'"
+            # log_message INFO "    '${BLUE}ezpz-launch${RESET}', or, equivalently:"
+            # log_message INFO "    ${BLUE}ezpz-launch${RESET} = ${BLUE}python3 -m ezpz.launch${RESET}"
+            # log_message INFO "  - or, equivalently, ${BLUE}${LAUNCH} $(which python) ${RESET}"
+            log_message INFO "    ${BLUE}ezpz-launch${RESET} = ${BLUE}${LAUNCH}${RESET}\n"
+            # log_message INFO "  - Run '${BLUE}which launch${RESET}' to ensure that the alias is set correctly"
         fi
         # echo "┌────────────────────────────────────────────────────────────────────────────────"
         # echo "│ YOU ARE $(whereAmI)"
@@ -1374,15 +1378,15 @@ ezpz_get_pbs_env() {
         hostfile="${HOSTFILE:-$(ezpz_get_pbs_nodefile_from_hostname)}"
         jobenv_file="${JOBENV_FILE:-$(ezpz_get_jobenv_file)}"
     fi
-    log_message INFO "[${BLUE}ezpz_get_pbs_env${RESET}]"
-    log_message INFO "  - Caught ${BLUE}${#}${RESET} arguments"
-    log_message INFO "  - hostfile=${BLUE}${hostfile}${RESET}"
-    log_message INFO "  - jobenv_file=${BLUE}${jobenv_file}${RESET}"
+    log_message INFO "[${YELLOW}ezpz_get_pbs_env${RESET}]"
+    log_message INFO "  - Caught ${YELLOW}${#}${RESET} arguments"
+    log_message INFO "  - hostfile=${YELLOW}${hostfile}${RESET}"
+    log_message INFO "  - jobenv_file=${YELLOW}${jobenv_file}${RESET}"
     mn=$(ezpz_get_machine_name)
     scheduler_type=$(ezpz_get_scheduler_type)
     if [[ "${scheduler_type}" == "pbs" ]]; then
         if grep -q "$(hostname)" "${hostfile:-}"; then
-            log_message INFO "  - Host ${BLUE}$(hostname)${RESET} found in ${BLUE}${hostfile}${RESET}"
+            log_message INFO "  - Host ${YELLOW}$(hostname)${RESET} found in ${YELLOW}${hostfile}${RESET}"
             num_hosts=$(ezpz_get_num_hosts "${hostfile}")
             num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
             num_gpus="$((num_hosts * num_gpus_per_host))"
@@ -1467,19 +1471,20 @@ ezpz_print_job_env() {
     num_hosts=$(ezpz_get_num_hosts "${hostfile}")
     num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
     num_gpus="$((num_hosts * num_gpus_per_host))"
-    # printf "\n[${MAGENTA}%s${RESET}]:\n" "HOSTS"
+    # [HOSTS]
     ezpz_print_hosts "${hostfile}"
-    printf "\n[${BRIGHT_BLUE}%s${RESET}]:\n" "DIST INFO"
-    printf "  - NGPUS=${BRIGHT_BLUE}%s${RESET}\n" "${num_gpus}"
-    printf "  - NHOSTS=${BRIGHT_BLUE}%s${RESET}\n" "${num_hosts}"
-    printf "  - NGPU_PER_HOST=${BRIGHT_BLUE}%s${RESET}\n" "${num_gpus_per_host}"
-    printf "  - HOSTFILE=${BRIGHT_BLUE}%s${RESET}\n" "${hostfile}"
-    printf "  - LAUNCH=${BRIGHT_BLUE}%s${RESET}\n" "${LAUNCH}"
-    printf "  - DIST_LAUNCH=${BRIGHT_BLUE}%s${RESET}\n" "${DIST_LAUNCH}"
-    printf "\n[${GREEN}%s${RESET}]:\n" "LAUNCH"
-    printf "  - To launch across all available GPUs, use:\n"
-    printf "  '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n\n" "${LAUNCH}"
-    # •
+    # [DIST_INFO]
+    log_message INFO "\n[${BRIGHT_BLUE}%s${RESET}]:\n DIST INFO"
+    log_message INFO "  - NGPUS=${BRIGHT_BLUE}%s${RESET}\n ${num_gpus}"
+    log_message INFO "  - NHOSTS=${BRIGHT_BLUE}%s${RESET}\n ${num_hosts}"
+    log_message INFO "  - NGPU_PER_HOST=${BRIGHT_BLUE}%s${RESET}\n ${num_gpus_per_host}"
+    log_message INFO "  - HOSTFILE=${BRIGHT_BLUE}%s${RESET}\n ${hostfile}"
+    log_message INFO "  - LAUNCH=${BRIGHT_BLUE}%s${RESET}\n ${LAUNCH}"
+    log_message INFO "  - DIST_LAUNCH=${BRIGHT_BLUE}%s${RESET}\n ${DIST_LAUNCH}"
+    # [LAUNCH]
+    log_message INFO "\n[${GREEN}%s${RESET}]:\n LAUNCH"
+    log_message INFO "  - To launch across all available GPUs, use:\n"
+    log_message INFO "  '${GREEN}launch${RESET}' ( = ${GREEN}%s${RESET} )\n\n ${LAUNCH}"
 }
 
 # @description: ezpz_setup_alcf
@@ -1580,16 +1585,11 @@ ezpz_setup_job() {
     hn=$(hostname)
     local mn="${mn}"
     local hn="${hn}"
-    log_message INFO "[${YELLOW}JOB${RESET}]"
-    log_message INFO "  - Setting up job for ${YELLOW}${USER}${RESET}"
-    log_message INFO "  - Machine: ${YELLOW}${mn}${RESET}"
-    log_message INFO "  - Hostname: ${YELLOW}${hn}${RESET}"
-    # log_message INFO "PBS_NODEFILE: ${YELLOW}${PBS_NODEFILE:-<not set>}${RESET}"
-    # printf "\n[%s ${YELLOW}%s${RESET}]\n" "🍋" "ezpz/bin/utils.sh"
-    # printf "  - USER=${YELLOW}%s${RESET}\n" "${USER}"
-    # printf "  - MACHINE=${YELLOW}%s${RESET}\n" "${mn}"
-    # printf "  - HOST=${YELLOW}%s${RESET}\n" "${hn}"
-    # printf "  - TSTAMP=${YELLOW}%s${RESET}\n\n" "$(ezpz_get_tstamp)"
+    # [JOB]
+    # log_message INFO "[${YELLOW}JOB${RESET}]"
+    # log_message INFO "  - user: ${YELLOW}${USER}${RESET}"
+    # log_message INFO "  - machine: ${YELLOW}${mn}${RESET}"
+    # log_message INFO "  - hostname: ${YELLOW}${hn}${RESET}"
     if [[ -n "${PBS_NODEFILE:-}" ]]; then
         ezpz_savejobenv_main "$@"
     elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
@@ -1636,7 +1636,7 @@ ezpz_setup_job() {
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
-    log_message INFO "${WHITE}Running [${RESET}${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}..."
+    # log_message DEBUG "${WHITE}Running [${RESET}${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}..."
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
         return 1
@@ -1645,7 +1645,7 @@ ezpz_setup_env() {
         log_message ERROR "Job setup failed. Aborting."
         return 1
     fi
-    log_message INFO "${GREEN}[✓] ${WHITE}Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}"
+    # log_message DEBUG "${GREEN}[✓] ${WHITE}Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}"
     return 0
 }
 
@@ -1710,27 +1710,27 @@ ezpz_setup_install() {
 ###############################################
 # Helper functions for printing colored text
 ###############################################
-printBlack() {
-    printf "\e[1;30m%s\e[0m\n" "$@"
-}
-printRed() {
-    printf "\e[1;31m%s\e[0m\n" "$@"
-}
-printGreen() {
-    printf "\e[1;32m%s\e[0m\n" "$@"
-}
-printYellow() {
-    printf "\e[1;33m%s\e[0m\n" "$@"
-}
-printBlue() {
-    printf "\e[1;34m%s\e[0m\n" "$@"
-}
-printMagenta() {
-    printf "\e[1;35m%s\e[0m\n" "$@"
-}
-printCyan() {
-    printf "\e[1;36m%s\e[0m\n" "$@"
-}
+# printBlack() {
+#     printf "\e[1;30m%s\e[0m\n" "$@"
+# }
+# printRed() {
+#     printf "\e[1;31m%s\e[0m\n" "$@"
+# }
+# printGreen() {
+#     printf "\e[1;32m%s\e[0m\n" "$@"
+# }
+# printYellow() {
+#     printf "\e[1;33m%s\e[0m\n" "$@"
+# }
+# printBlue() {
+#     printf "\e[1;34m%s\e[0m\n" "$@"
+# }
+# printMagenta() {
+#     printf "\e[1;35m%s\e[0m\n" "$@"
+# }
+# printCyan() {
+#     printf "\e[1;36m%s\e[0m\n" "$@"
+# }
 
 # --- Main Execution Block (when sourced) ---
 
@@ -1754,7 +1754,7 @@ ezpz_check_working_dir() {
     if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
         # Set PBS_O_WORKDIR as WORKING_DIR
         log_message WARN "PBS_O_WORKDIR is not set! Setting it to current working directory"
-        log_message INFO "Exporting PBS_O_WORKDIR=${GREEN}${WORKING_DIR}${RESET}"
+        log_message INFO "Exporting PBS_O_WORKDIR=${RED}${WORKING_DIR}${RESET}"
         export PBS_O_WORKDIR="${WORKING_DIR}"
 
     # NOTE: [Scenario 2]
