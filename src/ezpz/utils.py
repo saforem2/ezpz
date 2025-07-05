@@ -135,7 +135,7 @@ def model_summary(
 
     except (ImportError, ModuleNotFoundError):
         logger.warning(
-            'torchinfo not installed, unable to print model summary!'
+            "torchinfo not installed, unable to print model summary!"
         )
 
 
