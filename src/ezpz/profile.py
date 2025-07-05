@@ -96,11 +96,10 @@ def get_context_manager(
     return nullcontext()
 
 
-def get_pytorch_profiler(
+def get_torch_profiler(
     rank: Optional[int] = None,
     schedule: Optional[Callable[[int], ProfilerAction]] = None,
     on_trace_ready: Optional[Callable] = None,
-    outdir: Optional[str] = None,
     rank_zero_only: bool = True,
     profile_memory: bool = False,
     record_shapes: bool = True,
@@ -110,239 +109,56 @@ def get_pytorch_profiler(
     acc_events: bool = False,
 ):
     """
-    Returns a PyTorch profiler context manager if profiling is enabled.
+    A thin wrapper around `torch.profiler.profile` that:
+
+    1. Supports automatic device detection {CPU, CUDA, XPU}
+    2. Runs on rank 0 only (by default)
+       - To run from _all_ ranks, set `rank_zero_only=False`
+
+    Args:
+        rank (Optional[int]): The rank of the process (default: None).
+            If provided, the profiler will only run if rank is 0.
+        schedule (Optional[Callable[[int], ProfilerAction]]): A callable
+            that returns a `ProfilerAction` for the profiler schedule.
+        on_trace_ready (Optional[Callable]): A callback function that is
+            called when the trace is ready.
+        rank_zero_only (bool): If True, the profiler will only run on rank 0.
+            Defaults to True.
+        profile_memory (bool): If True, memory profiling is enabled.
+            Defaults to False.
+        record_shapes (bool): If True, shapes of tensors are recorded.
+            Defaults to True.
+        with_stack (bool): If True, stack traces are recorded.
+            Defaults to True.
+        with_flops (bool): If True, FLOPs are recorded.
+            Defaults to True.
+        with_modules (bool): If True, module information is recorded.
+            Defaults to True.
+        acc_events (bool): If True, accumulated events are recorded.
+            Defaults to False.
+    Returns:
+        torch.profiler.profile: A profiler context manager that can be used
+            to profile code blocks.
     """
-    # from torch.profiler import profile, record_function, ProfilerActivity
+    if rank_zero_only and (rank is None or rank != 0):
+        return nullcontext()
 
     activities = [ProfilerActivity.CPU]
     if torch.cuda.is_available():
         activities.append(ProfilerActivity.CUDA)
     if torch.xpu.is_available():
         activities.append(ProfilerActivity.XPU)
-    if not rank_zero_only or (rank_zero_only and rank == 0):
-        return profile(
-            schedule=schedule,
-            on_trace_ready=on_trace_ready,
-            activities=activities,
-            profile_memory=profile_memory,
-            record_shapes=record_shapes,
-            with_stack=with_stack,
-            with_flops=with_flops,
-            with_modules=with_modules,
-            acc_events=acc_events,
-        )
-    else:
-        return nullcontext()
-
-
-def get_torch_profiler_context_manager(
-    rank: Optional[int] = None,
-    outdir: Optional[str] = None,
-    rank_zero_only: bool = True,
-    profile_memory: bool = False,
-    record_shapes: bool = True,
-    with_stack: bool = True,
-    with_flops: bool = True,
-    with_modules: bool = True,
-    acc_events: bool = False,
-    # use_cuda: bool = True,
-    # experimental_config: Optional[
-    #     torch.profiler._ExperimentalConfig  # noqa
-    # ] = None,  # noqa
-):
-    """
-    Returns a context manager for profiling code blocks using PyTorch Profiler.
-
-    Args:
-        rank (Optional[int]): The rank of the process (default: None).
-            If provided, the profiler will only run if rank is 0.
-        outdir (Optional[str]): The output directory for saving profiles.
-            Defaults to `ezpz.OUTPUTS_DIR`.
-        rank_zero_only (Optional[bool]): If True, the profiler will only run
-            if rank is 0. Defaults to True.
-        **kwargs: Additional keyword arguments for the PyTorch Profiler.
-
-    Returns:
-        AbstractContextManager: A context manager that starts and stops
-            the PyTorch Profiler.
-    """
-    # if os.environ.get("TORCH_PROFILER", None) is not None:
-    if not rank_zero_only or (rank_zero_only and rank == 0):
-        # self.profiler = self.build_profiler(
-        #     profile_memory=profile_memory,
-        #     record_shapes=record_shapes,
-        #     with_stack=with_stack,
-        #     with_flops=with_flops,
-        #     with_modules=with_modules,
-        #     experimental_config=experimental_config,
-        #     acc_events=acc_events,
-        #     # use_cuda=use_cuda,
-        # )
-        return PyTorchProfiler(
-            rank=ezpz.get_rank(),
-            outdir=outdir,
-            rank_zero_only=rank_zero_only,
-            profile_memory=profile_memory,
-            record_shapes=record_shapes,
-            with_stack=with_stack,
-            with_flops=with_flops,
-            with_modules=with_modules,
-            acc_events=acc_events,
-            # use_cuda=use_cuda,
-            # experimental_config=experimental_config,
-        )
-    return nullcontext()
-    # return PyTorchProfiler(
-    #     rank=rank, outdir=outdir, rank_zero_only=rank_zero_only, **kwargs
-    # )
-
-
-class PyTorchProfiler:
-    def __init__(
-        self,
-        rank: int,
-        outdir: Optional[str] = None,
-        rank_zero_only: bool = True,
-        profile_memory: bool = False,
-        record_shapes: bool = True,
-        with_stack: bool = True,
-        with_flops: bool = True,
-        with_modules: bool = True,
-        acc_events: bool = False,
-        # use_cuda: bool = True,
-        # experimental_config: Optional[
-        #     torch.profiler._ExperimentalConfig  # noqa
-        # ] = None,  # noqa
-    ):
-        """PyTorch Profiler context manager."""
-        self._start = time.perf_counter_ns()
-        self.rank = rank
-        self.rank_zero_only = rank_zero_only
-        self.outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-
-        self.profile_memory = profile_memory
-        self.record_shapes = record_shapes
-        self.with_stack = with_stack
-        self.with_flops = with_flops
-        self.with_modules = with_modules
-        # self.experimental_config = experimental_config
-        self.acc_events = acc_events
-        # self.use_cuda = use_cuda
-        # profile,
-        # record_function,
-        # ProfilerActivity,
-        # if (
-        #     profile is None
-        #     or record_function is None
-        #     or ProfilerActivity is None
-        # ):
-        #     self.profiler = None
-        #     log.critical(
-        #         "Unable to import 'torch.profiler', not running profiles!!"
-        #     )
-        #     log.error(
-        #         "To run with 'torch.profiler',"
-        #         "run: 'python3 -m pip install torch'"
-        #     )
-        # else:
-        self.activities = [
-            ProfilerActivity.CPU,
-        ]
-        if torch.cuda.is_available():
-            self.activities.append(ProfilerActivity.CUDA)
-        if torch.xpu.is_available():
-            self.activities.append(ProfilerActivity.XPU)
-        # if not rank_zero_only or (rank_zero_only and rank == 0):
-        self.profiler = self.build_profiler(
-            profile_memory=profile_memory,
-            record_shapes=record_shapes,
-            with_stack=with_stack,
-            with_flops=with_flops,
-            with_modules=with_modules,
-            acc_events=acc_events,
-            # experimental_config=experimental_config,
-            # use_cuda=use_cuda,
-        )
-        # if rank_zero_only:
-        #     if rank == 0:
-        #         self.profiler = self.build_profiler(
-        #             profile_memory=profile_memory,
-        #             record_shapes=record_shapes,
-        #             with_stack=with_stack,
-        #             with_flops=with_flops,
-        #             with_modules=with_modules,
-        #             experimental_config=experimental_config,
-        #             acc_events=acc_events,
-        #             use_cuda=use_cuda,
-        #         )
-        #     else:
-        #         self.profiler = None
-        # else:
-
-    def build_profiler(
-        self,
-        profile_memory: bool = False,
-        record_shapes: bool = True,
-        with_stack: bool = True,
-        with_flops: bool = True,
-        with_modules: bool = True,
-        acc_events: bool = False,
-        # use_cuda: bool = True,
-        # experimental_config: Optional[
-        #     torch.profiler._ExperimentalConfig  # noqa
-        # ] = None,  # noqa
-    ):
-        return torch.profiler.profile(
-            activities=self.activities,
-            profile_memory=profile_memory,
-            record_shapes=record_shapes,
-            with_stack=with_stack,
-            with_flops=with_flops,
-            with_modules=with_modules,
-            acc_events=acc_events,
-            # use_cuda=use_cuda,
-            # experimental_config=experimental_config,
-        )
-
-    def __enter__(self):
-        self._start = time.perf_counter_ns()
-        if self.profiler is not None:
-            self.profiler.__enter__()
-
-    def __exit__(self, type, value, traceback):  # noqa
-        dt = (time.perf_counter_ns() - self._start) / (10**9)
-        log.info(
-            " ".join(
-                [
-                    "Starting torch profiler...",
-                    f"Rank: {self.rank}",
-                    f"Output directory: {self.outdir.as_posix()}",
-                ]
-            )
-        )
-        if self.profiler is not None:
-            self.profiler.__exit__(type, value, traceback)
-            now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-            fp = Path(self.outdir).joinpath(
-                f"torch-profile-{self.rank}-{now}.json"
-            )
-            log.info(
-                " ".join(
-                    [
-                        f"Saving torch profiler output to: {fp}",
-                    ]
-                )
-            )
-            self.profiler.export_chrome_trace(fp)
-            log.info(
-                " ".join(
-                    [
-                        "Finished with torch profiler.",
-                        f"Trace saved to: {trace_output.as_posix()}",
-                        f"Took: {dt:.5f}s",
-                    ]
-                )
-            )
+    return profile(
+        schedule=schedule,
+        on_trace_ready=on_trace_ready,
+        activities=activities,
+        profile_memory=profile_memory,
+        record_shapes=record_shapes,
+        with_stack=with_stack,
+        with_flops=with_flops,
+        with_modules=with_modules,
+        acc_events=acc_events,
+    )
 
 
 class PyInstrumentProfiler:
