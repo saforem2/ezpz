@@ -941,6 +941,13 @@ def query_environment() -> dict[str, int]:
     }
 
 
+def broadcast(
+    obj: Any,
+    root: int = 0,
+) -> Any:
+    MPI.COMM_WORLD.bcast(obj, root=root)
+
+
 def setup_torch_DDP(
     port: str = "2345",
     timeout: int | str | timedelta = 3600,
@@ -1719,14 +1726,14 @@ def run_bash_command(cmd: str) -> Any:
     process = subprocess.Popen(
         shlex.split(cmd, posix=True),
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
     output, error = process.communicate()
     if process.returncode != 0:
         raise Exception(
             f"Command failed with return code {process.returncode}.\n"
-                f"stdout: {output.decode().strip()}\n"
-                f"stderr: {error.decode().strip()}"
+            f"stdout: {output.decode().strip()}\n"
+            f"stderr: {error.decode().strip()}"
         )
     if error:
         raise Exception(error.decode())
