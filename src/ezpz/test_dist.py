@@ -21,9 +21,10 @@ import warnings
 # ezpz = lazy_import('ezpz')
 import ezpz
 from ezpz.profile import (
-    get_torch_profiler,
+    get_profiling_context,
+    # get_torch_profiler,
     # get_pytorch_profiler,
-    get_context_manager,
+    # get_context_manager,
     # get_torch_profiler_context_manager,
 )
 
@@ -48,8 +49,6 @@ except Exception:
     WANDB_DISABLED = True
 
 
-
-
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
@@ -66,21 +65,22 @@ class TrainConfig:
     output_size: int
     train_iters: int
     log_freq: int
+    backend: str
+    dtype: str
     print_freq: int
+    pyinstrument_profiler: bool
+    pytorch_profiler: bool
     pytorch_profiler_wait: int
     pytorch_profiler_warmup: int
     pytorch_profiler_active: int
     pytorch_profiler_repeat: int
-    backend: str = "DDP"
-    dtype: Optional[str] = None
-    pyinstrument_profiler: Optional[bool] = None
-    pytorch_profiler: Optional[bool] = None
-    profile_memory: bool = True
-    record_shapes: bool = True
-    with_stack: bool = True
-    with_flops: bool = True
-    with_modules: bool = True
-    acc_events: bool = False
+    profile_memory: bool
+    rank_zero_only: bool
+    record_shapes: bool
+    with_stack: bool
+    with_flops: bool
+    with_modules: bool
+    acc_events: bool
     layer_sizes: list = field(default_factory=lambda: [1024, 512, 256, 128])
 
     def __post_init__(self):
@@ -92,7 +92,10 @@ class TrainConfig:
             "outputs", "ezpz.test_dist", f"{self._created_at}"
         )
         self.outdir.mkdir(parents=True, exist_ok=True)
-        self.ctx = self.get_profiling_context(
+        profiler_type = "torch" if self.pytorch_profiler else "pyinstrument"
+        self.ctx = get_profiling_context(
+            profiler_type=profiler_type,
+            rank_zero_only=self.rank_zero_only,
             record_shapes=self.record_shapes,
             with_stack=self.with_stack,
             with_flops=self.with_flops,
@@ -103,86 +106,101 @@ class TrainConfig:
             warmup=self.pytorch_profiler_warmup,
             active=self.pytorch_profiler_active,
             repeat=self.pytorch_profiler_repeat,
+            outdir=self.outdir,
         )
+        # self.ctx = self.get_profiling_context(
+        #     record_shapes=self.record_shapes,
+        #     with_stack=self.with_stack,
+        #     with_flops=self.with_flops,
+        #     with_modules=self.with_modules,
+        #     acc_events=self.acc_events,
+        #     profile_memory=self.profile_memory,
+        #     wait=self.pytorch_profiler_wait,
+        #     warmup=self.pytorch_profiler_warmup,
+        #     active=self.pytorch_profiler_active,
+        #     repeat=self.pytorch_profiler_repeat,
+        # )
         logger.info(f"Outputs will be saved to {self.outdir}")
 
-    def get_profiling_context(
-        self,
-        wait: int,
-        warmup: int,
-        active: int,
-        repeat: int,
-        record_shapes: bool = True,
-        with_stack: bool = True,
-        with_flops: bool = True,
-        with_modules: bool = True,
-        acc_events: bool = False,
-        profile_memory: bool = True,
-    ):
-        """
-        Returns a context manager for profiling based on the configuration.
-        """
-        if self.pytorch_profiler and self.pyinstrument_profiler:
-            raise ValueError(
-                "Cannot use both PyTorch profiler and pyinstrument profiler at the same time."
-            )
-        elif self.pytorch_profiler and not self.pyinstrument_profiler:
-            logger.info("Using PyTorch profiler")
-
-            # Non-default profiler schedule allows user to turn profiler on and off
-            # on different iterations of the training loop;
-            # trace_handler is called every time a new trace becomes available
-            def trace_handler(prof: torch.profiler.profile):
-                logger.info(
-                    "\n"
-                    + prof.key_averages().table(
-                        sort_by=(
-                            f"self_{ezpz.get_torch_device_type()}_time_total"
-                        ),
-                        row_limit=-1,
-                    )
-                )
-                fname: str = "-".join(
-                    [
-                        "torch-profile",
-                        f"{ezpz.get_rank()}",
-                        f"{self._created_at}",
-                        f"{str(prof.step_num)}",
-                    ]
-                )
-                trace_output: Path = Path(self.outdir).joinpath(
-                    f"{fname}.json"
-                )
-                logger.info(
-                    f"Saving trace at step {prof.step_num} to: "
-                    f"{trace_output.as_posix()}"
-                )
-                prof.export_chrome_trace(trace_output.as_posix())
-
-            schedule = torch.profiler.schedule(
-                wait=wait,
-                warmup=warmup,
-                active=active,
-                repeat=repeat,
-            )
-
-            # torch.profiler.profile(,)
-            ctx = get_torch_profiler(
-                rank=ezpz.get_rank(),
-                schedule=schedule,
-                on_trace_ready=trace_handler,
-                profile_memory=profile_memory,
-                record_shapes=record_shapes,
-                with_stack=with_stack,
-                with_flops=with_flops,
-                with_modules=with_modules,
-                acc_events=acc_events,
-            )
-        elif not self.pytorch_profiler and self.pyinstrument_profiler:
-            ctx = get_context_manager(rank=ezpz.get_rank(), strict=False)
-        else:
-            ctx = nullcontext()
-        return ctx
+    # def get_profiling_context(
+    #     self,
+    #     wait: int,
+    #     warmup: int,
+    #     active: int,
+    #     repeat: int,
+    #     rank_zero_only: bool = True,
+    #     record_shapes: bool = True,
+    #     with_stack: bool = True,
+    #     with_flops: bool = True,
+    #     with_modules: bool = True,
+    #     acc_events: bool = False,
+    #     profile_memory: bool = True,
+    # ):
+    #     """
+    #     Returns a context manager for profiling based on the configuration.
+    #     """
+    #     if self.pytorch_profiler and self.pyinstrument_profiler:
+    #         raise ValueError(
+    #             "Cannot use both PyTorch profiler and pyinstrument profiler at the same time."
+    #         )
+    #     elif self.pytorch_profiler and not self.pyinstrument_profiler:
+    #         logger.info("Using PyTorch profiler")
+    #
+    #         # Non-default profiler schedule allows user to turn profiler on and off
+    #         # on different iterations of the training loop;
+    #         # trace_handler is called every time a new trace becomes available
+    #         def trace_handler(prof: torch.profiler.profile):
+    #             logger.info(
+    #                 "\n"
+    #                 + prof.key_averages().table(
+    #                     sort_by=(
+    #                         f"self_{ezpz.get_torch_device_type()}_time_total"
+    #                     ),
+    #                     row_limit=-1,
+    #                 )
+    #             )
+    #             fname: str = "-".join(
+    #                 [
+    #                     "torch-profile",
+    #                     f"{ezpz.get_rank()}",
+    #                     f"{self._created_at}",
+    #                     f"{str(prof.step_num)}",
+    #                 ]
+    #             )
+    #             trace_output: Path = Path(self.outdir).joinpath(
+    #                 f"{fname}.json"
+    #             )
+    #             logger.info(
+    #                 f"Saving trace at step {prof.step_num} to: "
+    #                 f"{trace_output.as_posix()}"
+    #             )
+    #             prof.export_chrome_trace(trace_output.as_posix())
+    #
+    #         schedule = torch.profiler.schedule(
+    #             wait=wait,
+    #             warmup=warmup,
+    #             active=active,
+    #             repeat=repeat,
+    #         )
+    #
+    #         # torch.profiler.profile(,)
+    #         ctx = get_torch_profiler(
+    #             rank=ezpz.get_rank(),
+    #             schedule=schedule,
+    #             rank_zero_only=rank_zero_only,
+    #             on_trace_ready=trace_handler,
+    #             profile_memory=profile_memory,
+    #             record_shapes=record_shapes,
+    #             with_stack=with_stack,
+    #             with_flops=with_flops,
+    #             with_modules=with_modules,
+    #             acc_events=acc_events,
+    #         )
+    #     elif not self.pytorch_profiler and self.pyinstrument_profiler:
+    #         ctx = get_context_manager(rank=ezpz.get_rank(), strict=False)
+    #     else:
+    #         ctx = nullcontext()
+    #     return ctx
 
     def get_torch_dtype(self) -> torch.dtype:
         if self.dtype is None:
@@ -461,6 +479,11 @@ def parse_args() -> argparse.Namespace:
         help="Use PyTorch profiler",
     )
     parser.add_argument(
+        "--rank-zero-only",
+        action="store_true",
+        help="Run profiler only on rank 0",
+    )
+    parser.add_argument(
         "--pytorch-profiler-wait",
         type=int,
         default=1,
@@ -560,7 +583,7 @@ def parse_args() -> argparse.Namespace:
         "--layer-sizes",
         help="Comma-separated list of layer sizes",
         type=lambda s: [int(item) for item in s.split(",")],
-        default=[256, 512, 1024, 2048, 1024, 512, 256, 128]
+        default=[256, 512, 1024, 2048, 1024, 512, 256, 128],
         # default=[1024, 512, 256, 128],
     )
     parser.add_argument(
@@ -586,6 +609,14 @@ def parse_args() -> argparse.Namespace:
 
 def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
     config = TrainConfig(
+        acc_events=args.acc_events,
+        batch_size=args.batch_size,
+        profile_memory=args.profile_memory,
+        record_shapes=args.record_shapes,
+        with_stack=args.with_stack,
+        with_flops=args.with_flops,
+        with_modules=args.with_modules,
+        rank_zero_only=args.rank_zero_only,
         backend=args.backend,
         dtype=args.dtype,
         log_freq=args.log_freq,
@@ -593,7 +624,6 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
         tp=args.tp,
         pp=args.pp,
         cp=args.cp,
-        batch_size=args.batch_size,
         input_size=args.input_size,
         output_size=args.output_size,
         train_iters=args.train_iters,
@@ -691,9 +721,7 @@ def main() -> Trainer:
             context_parallel_size=config.cp,
         )
         t_setup = time.perf_counter()
-        logger.info(
-            f"Took: {(t_setup - t0):.2f} seconds to setup torch"
-        )
+        logger.info(f"Took: {(t_setup - t0):.2f} seconds to setup torch")
         trainer = train(config, profiler=c)
         t_train = time.perf_counter()
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
