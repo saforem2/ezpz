@@ -690,12 +690,12 @@ def main() -> Trainer:
             pipeline_parallel_size=config.pp,
             context_parallel_size=config.cp,
         )
-        t_setup = time.perf_counter() - t0
+        t_setup = time.perf_counter()
         logger.info(
             f"Took: {(t_setup - t0):.2f} seconds to setup torch"
         )
         trainer = train(config, profiler=c)
-        t_train = time.perf_counter() - t_setup
+        t_train = time.perf_counter()
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
         try:
             import deepspeed
