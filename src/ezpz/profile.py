@@ -48,16 +48,132 @@ import torch.profiler
 from torch.profiler import (
     ProfilerAction,
     profile,
-    record_function,
+    # record_function,
     ProfilerActivity,
 )
 
 from pathlib import Path
 from typing import Callable, Optional
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 from contextlib import nullcontext, AbstractContextManager
+
+
+def get_profiling_context(
+    profiler_type: str,
+    wait: int,
+    warmup: int,
+    active: int,
+    repeat: int,
+    rank_zero_only: bool,
+    record_shapes: bool = True,
+    with_stack: bool = True,
+    with_flops: bool = True,
+    with_modules: bool = True,
+    acc_events: bool = False,
+    profile_memory: bool = False,
+    outdir: Optional[str | Path | os.PathLike] = None,
+    strict: Optional[bool] = True,
+) -> AbstractContextManager:
+    """
+    Returns a context manager for profiling code blocks using either
+    PyTorch Profiler or PyInstrument.
+
+    Args:
+        profiler_type (str): The type of profiler to use.
+            Must be one of ['torch', 'pyinstrument'].
+        wait (int): The number of steps to wait before starting profiling.
+        warmup (int): The number of warmup steps before profiling starts.
+        active (int): The number of active profiling steps.
+        repeat (int): The number of times to repeat the profiling schedule.
+        rank_zero_only (bool): If True, the profiler will only run on rank 0.
+            Defaults to True.
+        record_shapes (bool): If True, shapes of tensors are recorded.
+            Defaults to True.
+        with_stack (bool): If True, stack traces are recorded.
+            Defaults to True.
+        with_flops (bool): If True, FLOPs are recorded.
+            Defaults to True.
+        with_modules (bool): If True, module information is recorded.
+            Defaults to True.
+        acc_events (bool): If True, accumulated events are recorded.
+            Defaults to False.
+        profile_memory (bool): If True, memory profiling is enabled.
+            Defaults to False.
+        outdir (Optional[str | Path | os.PathLike]): The output directory
+            for saving profiles. Defaults to `ezpz.OUTPUTS_DIR`.
+        fname (Optional[str]): A filename prefix for the profile output files.
+            Defaults to None.
+        strict (Optional[bool]): If True, the profiler will only run if
+            "PYINSTRUMENT_PROFILER" is set in the environment. Defaults to True.
+    Returns:
+        AbstractContextManager: A context manager that starts and stops
+            the profiler.
+    """
+    assert profiler_type in ["pt", "pytorch", "torch", "pyinstrument"], (
+        f"Invalid profiling type: {profiler_type}. "
+        "Must be one of ['torch', 'pyinstrument']"
+    )
+    outdir_fallback = Path(os.getcwd()).joinpath("ezpz", "torch_profiles")
+    outdir = outdir_fallback if outdir is None else outdir
+    _ = Path(outdir).mkdir(parents=True, exist_ok=True)
+    if profiler_type in {"torch", "pytorch", "pt"}:
+
+        def trace_handler(p: torch.profiler.profile):
+            """
+            Callback function to handle the trace when it is ready.
+            """
+            logger.info(
+                "\n"
+                + p.key_averages().table(
+                    sort_by=(
+                        f"self_{ezpz.get_torch_device_type()}_time_total"
+                    ),
+                    row_limit=-1,
+                )
+            )
+            fname: str = "-".join(
+                [
+                    "torch-profiler",
+                    f"rank{ezpz.get_rank()}",
+                    f"step{p.step_num}",
+                    f"{ezpz.get_timestamp()}",
+                ]
+            )
+            trace_output = Path(outdir).joinpath(f"{fname}.json")
+            logger.info(
+                f"Saving torch profiler trace to: {trace_output.as_posix()}"
+            )
+            p.export_chrome_trace(trace_output.as_posix())
+
+        schedule = torch.profiler.schedule(
+            wait=wait,
+            warmup=warmup,
+            active=active,
+            repeat=repeat,
+        )
+
+        return get_torch_profiler(
+            rank=ezpz.get_rank(),
+            schedule=schedule,
+            on_trace_ready=trace_handler,
+            rank_zero_only=rank_zero_only,
+            profile_memory=profile_memory,
+            record_shapes=record_shapes,
+            with_stack=with_stack,
+            with_flops=with_flops,
+            with_modules=with_modules,
+            acc_events=acc_events,
+        )
+
+    if profiler_type == "pyinstrument":
+        return get_context_manager(rank=ezpz.get_rank(), strict=strict)
+
+    raise ValueError(
+        f"Invalid profiling type: {profiler_type}. "
+        "Must be one of ['torch', 'pyinstrument']"
+    )
 
 
 def get_context_manager(
@@ -173,10 +289,10 @@ class PyInstrumentProfiler:
             pyinstrument = None  # type:ignore
         if pyinstrument is None:
             self.profiler = None
-            log.critical(
+            logger.critical(
                 "Unable to import 'pyinstrument', not running profiles!!"
             )
-            log.error(
+            logger.error(
                 "To run with 'pyinstrument',"
                 "run: 'python3 -m pip install pyinstrument'"
             )
@@ -212,7 +328,7 @@ class PyInstrumentProfiler:
             text_fp = Path(self.outdir).joinpath(
                 f"pyinstrument-profile-{now}.txt"
             )
-            log.info(
+            logger.info(
                 " ".join(
                     [
                         "Saving pyinstrument profile output to:",
@@ -220,7 +336,7 @@ class PyInstrumentProfiler:
                     ]
                 )
             )
-            log.info(
+            logger.info(
                 " ".join(
                     [
                         "PyInstrument profile saved (as html) to: ",
@@ -228,7 +344,7 @@ class PyInstrumentProfiler:
                     ]
                 )
             )
-            log.info(
+            logger.info(
                 " ".join(
                     [
                         "PyInstrument profile saved (as text) to: ",
@@ -240,7 +356,7 @@ class PyInstrumentProfiler:
             ptext = self.profiler.output_text(unicode=True, color=True)
             with text_fp.open("w") as f:
                 f.write(ptext)
-            log.info(
+            logger.info(
                 " ".join(
                     [
                         "Finished with pyinstrument profiler.",
