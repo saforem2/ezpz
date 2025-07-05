@@ -14,14 +14,15 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Optional
+from typing import Any, Optional
 import warnings
 
 # from ezpz.lazy import lazy_import
 # ezpz = lazy_import('ezpz')
 import ezpz
 from ezpz.profile import (
-    get_pytorch_profiler,
+    get_torch_profiler,
+    # get_pytorch_profiler,
     get_context_manager,
     # get_torch_profiler_context_manager,
 )
@@ -43,7 +44,10 @@ try:
     import wandb
 
 except Exception:
+    wandb = None
     WANDB_DISABLED = True
+
+
 
 
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
@@ -163,7 +167,7 @@ class TrainConfig:
             )
 
             # torch.profiler.profile(,)
-            ctx = get_pytorch_profiler(
+            ctx = get_torch_profiler(
                 rank=ezpz.get_rank(),
                 schedule=schedule,
                 on_trace_ready=trace_handler,
@@ -247,6 +251,7 @@ class Trainer:
             logger.debug("Hit torch.distributed.barrier()")
             torch.distributed.barrier()
 
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _forward_step(self) -> dict:
         t0 = time.perf_counter()
         x = torch.rand(
@@ -257,6 +262,7 @@ class Trainer:
         y = self.model(x)
         return {"loss": calc_loss(x, y), "dtf": (time.perf_counter() - t0)}
 
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _backward_step(self, loss: torch.Tensor) -> float:
         t0 = time.perf_counter()
         if self.config.backend == "deepspeed":
@@ -267,6 +273,7 @@ class Trainer:
             self.optimizer.step()
         return time.perf_counter() - t0
 
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
     def train_step(self) -> dict:
         self.train_iter += 1
         metrics = self._forward_step()
@@ -283,6 +290,7 @@ class Trainer:
                 logger.info(f"{summary}")
         return metrics
 
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
     def finalize(
         self, outdir: Optional[str | Path | os.PathLike] = None
     ) -> Dataset:
@@ -302,6 +310,7 @@ class Trainer:
         logger.info(f"{dataset=}")
         return dataset
 
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
     def train(
         self, profiler: Optional[torch.profiler.profile] = None
     ) -> Dataset:
@@ -319,6 +328,7 @@ class Trainer:
         )
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     config: TrainConfig, profiler: Optional[torch.profiler.profile] = None
 ) -> Trainer:
@@ -399,7 +409,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--warmup",
         type=int,
-        default=2,
+        default=10,
         help="Warmup iterations",
     )
     parser.add_argument(
@@ -513,7 +523,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train-iters",
         type=int,
-        default=100,
+        default=1000,
         help="Number of training iterations",
     )
     parser.add_argument(
@@ -550,7 +560,8 @@ def parse_args() -> argparse.Namespace:
         "--layer-sizes",
         help="Comma-separated list of layer sizes",
         type=lambda s: [int(item) for item in s.split(",")],
-        default=[1024, 512, 256, 128],
+        default=[256, 512, 1024, 2048, 1024, 512, 256, 128]
+        # default=[1024, 512, 256, 128],
     )
     parser.add_argument(
         "--dtype",
@@ -598,10 +609,12 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
     return config
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return (y - x).pow(2).sum()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def build_model_and_optimizer(
     model: torch.nn.Module, backend: str = "DDP"
 ) -> ModelOptimizerPair:
@@ -664,10 +677,12 @@ def build_model_and_optimizer(
     return model, optimizer
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> Trainer:
     t0 = time.perf_counter()
     args = parse_args()
     config = get_config_from_args(args)
+    timings = {}
     with config.ctx as c:
         _ = ezpz.setup_torch(
             backend=config.backend,
@@ -675,10 +690,12 @@ def main() -> Trainer:
             pipeline_parallel_size=config.pp,
             context_parallel_size=config.cp,
         )
+        t_setup = time.perf_counter() - t0
         logger.info(
-            f"Took: {time.perf_counter() - t0:.2f} seconds to setup torch"
+            f"Took: {(t_setup - t0):.2f} seconds to setup torch"
         )
         trainer = train(config, profiler=c)
+        t_train = time.perf_counter() - t_setup
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
         try:
             import deepspeed
@@ -686,6 +703,7 @@ def main() -> Trainer:
 
             deepspeed.comm.log_summary()
         except ImportError as e:
+            logger.exception(e)
             logger.exception(
                 "Deepspeed not available. "
                 "Install via `python3 -m pip install deepspeed`"
@@ -693,6 +711,17 @@ def main() -> Trainer:
             logger.info("Continuing without deepspeed summary...")
 
     logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} seconds")
+    t1 = time.perf_counter()
+    timings = {
+        "main/setup_torch": (t_setup - t0),
+        "main/train": (t_train - t_setup),
+        "main/total": (t1 - t0),
+    }
+    if wandb is not None:
+        try:
+            wandb.log(data=timings)
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     return trainer
 
 
