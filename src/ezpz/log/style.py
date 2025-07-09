@@ -597,7 +597,7 @@ class DataFramePrettify:
         ]
 
         for width_range in width_ranges:
-            for width in range(width_range):
+            for width in range(*width_range):
                 with beat(self.delay_time):
                     self.table.width = width
 
