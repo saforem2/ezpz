@@ -220,7 +220,7 @@ def print_config(
         branch.add(rich.syntax.Syntax(branch_content, 'yaml'))
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
     with outfile.open('wt') as f:
-        console = rich.console.Console(file=f)
+        console = rich.Console(file=f)
         console.print(tree)
     with open('config.json', 'w') as f:
         f.write(json.dumps(dconfig))
@@ -597,7 +597,7 @@ class DataFramePrettify:
         ]
 
         for width_range in width_ranges:
-            for width in range(*width_range):
+            for width in range(width_range):
                 with beat(self.delay_time):
                     self.table.width = width
 
