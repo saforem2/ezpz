@@ -273,7 +273,7 @@ def get_torch_profiler(
         with_stack=with_stack,
         with_flops=with_flops,
         with_modules=with_modules,
-        acc_events=acc_events,
+        # acc_events=acc_events,
     )
 
 
