@@ -44,7 +44,8 @@ def use_colored_logs() -> bool:
         os.environ.get(
             "NOCOLOR",
             os.environ.get(
-                "COLOR", os.environ.get("COLORS", os.environ.get("DUMB", False))
+                "COLOR",
+                os.environ.get("COLORS", os.environ.get("DUMB", False)),
             ),
         ),
     )
@@ -114,6 +115,39 @@ if not use_colored_logs():
     # STYLES = {f'{k}': Style.null() for k in STYLES.items()}
 else:
     STYLES: Dict[str, Style] = {
+        "none": Style.null(),
+        "reset": Style(
+            color="default",
+            bgcolor="default",
+            dim=False,
+            bold=False,
+            italic=False,
+            underline=False,
+            blink=False,
+            blink2=False,
+            reverse=False,
+            conceal=False,
+            strike=False,
+        ),
+        "dim": Style(dim=True),
+        "bright": Style(dim=False),
+        "bold": Style(bold=True),
+        "strong": Style(bold=True),
+        "code": Style(reverse=True, bold=True),
+        "italic": Style(italic=True),
+        "emphasize": Style(italic=True),
+        "underline": Style(underline=True),
+        "blink": Style(blink=True),
+        "blink2": Style(blink2=True),
+        "reverse": Style(reverse=True),
+        "strike": Style(strike=True),
+        "black": Style(color="black"),
+        "red": Style(color="red"),
+        "green": Style(color="green"),
+        "yellow": Style(color="yellow"),
+        "magenta": Style(color="magenta"),
+        "cyan": Style(color="cyan"),
+        "white": Style(color="white"),
         "color.black": Style(color="black"),
         "color.red": Style(color="red"),
         "color.green": Style(color="green"),
@@ -152,11 +186,13 @@ else:
         "log.parent": Style(color="cyan", italic=True),
         "log.path": Style(color="blue", bold=False, italic=False),
         "log.time": Style(color="black"),
-        "logging.time": Style(color="bright_white"),
-        "logging.date": Style(color="black", dim=True),  # , italic=False),
+        "logging.time": Style.null(),
+        "logging.date": Style.null(),  # , italic=False),
         "hidden": Style(color="bright_black", dim=True),
         "repr.attr": Style(color="blue"),
-        "repr.attrib_name": Style(color="bright_blue", bold=False, italic=True),
+        "repr.attrib_name": Style(
+            color="bright_blue", bold=False, italic=True
+        ),
         "repr.attrib_equal": Style(bold=True, color="yellow"),
         "repr.attrib_value": Style(color="magenta", italic=False),
         "repr.ellipsis": Style(color="bright_yellow"),

@@ -1,18 +1,15 @@
 """
-src/ezpz/logging/style.py
+src/ezpz/log/style.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
 
-# from typing import Dict
-# from rich.style import Style
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
 
-# import shutil
 import time
 from typing import Optional
 from typing import Any
@@ -20,11 +17,9 @@ from typing import Generator
 
 import logging
 
-# from ezpz.log import get_logger
 from ezpz.log.config import STYLES, DEFAULT_STYLES
 from ezpz.log.console import get_console
 
-# from ezpz.log.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
 import rich
 from rich import print
