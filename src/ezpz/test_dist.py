@@ -8,13 +8,12 @@ test_dist.py
 """
 
 import argparse
-from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Optional
+from typing import Optional
 import warnings
 
 # from ezpz.lazy import lazy_import
@@ -160,7 +159,7 @@ class Trainer:
             wbconfig = {}
             wbconfig.update(asdict(self.config))
             wbconfig.update(ezpz.get_dist_info())
-            run = ezpz.setup_wandb(
+            _ = ezpz.setup_wandb(
                 project_name="ezpz.test_dist",
                 config=wbconfig,
             )
@@ -378,7 +377,11 @@ def parse_args() -> argparse.Namespace:
         help="Profile the training loop",
     )
     parser.add_argument(
-        "--pytorch-profiler",
+        "-p",
+        "--profile",
+        default=False,
+        dest="pytorch_profiler",
+        required=False,
         action="store_true",
         help="Use PyTorch profiler",
     )
@@ -499,15 +502,17 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
+        # import importlib.util
+        # args.deepspeed = (importlib.util.find_spec("deepspeed") is not None)
         try:
             import deepspeed  # type:ignore
+            args.deepspeed = True
         except (ImportError, ModuleNotFoundError) as e:
             logger.error(
                 "Deepspeed not available. "
                 "Install via `python3 -m pip install deepspeed`"
             )
             raise e
-        args.deepspeed = True
     return args
 
 
@@ -630,9 +635,7 @@ def main() -> Trainer:
         t_train = time.perf_counter()
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
         try:
-            import deepspeed
             import deepspeed.comm
-
             deepspeed.comm.log_summary()
         except ImportError as e:
             logger.exception(e)
