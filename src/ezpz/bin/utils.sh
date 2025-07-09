@@ -6,12 +6,6 @@
 #      - `ezpz_setup_job`
 #      - `ezpz_setup_python`
 #      - ...
-#
-#
-# LOGFILE="ezpz-utils.log"
-# exec 3>&1 1>"$LOGFILE" 2>&1
-# trap "echo 'ERROR: An error occurred during execution, check log $LOGFILE for details.' >&3" ERR
-# trap '{ set +x; } 2>/dev/null; echo -n "[$(date -Is)]  "; set -x' DEBUG
 
 # --- Strict Mode & Options ---
 # Exit immediately if a command exits with a non-zero status.
@@ -22,7 +16,6 @@
 
 # Allow aliases to be expanded (needed for `launch` alias)
 # shopt -s expand_aliases
-#
 
 if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
     # Enable color support for `ls` and `grep`
@@ -51,18 +44,18 @@ else
     export RESET='\e[0m'
     # BLACK='\e[1;30m' # Avoid black text
     export RED='\e[1;31m'
-    export BRIGHT_RED='\e[1;91m' # Added for emphasis
+    export BRIGHT_RED='\e[1;91m'
     export GREEN='\e[1;32m'
-    export BRIGHT_GREEN='\e[1;92m' # Added for emphasis
+    export BRIGHT_GREEN='\e[1;92m'
     export YELLOW='\e[1;33m'
-    export BRIGHT_YELLOW='\e[1;93m' # Added for emphasis
+    export BRIGHT_YELLOW='\e[1;93m'
     export BLUE='\e[1;34m'
-    export BRIGHT_BLUE='\e[1;94m' # Added for emphasis
+    export BRIGHT_BLUE='\e[1;94m'
     export MAGENTA='\e[1;35m'
-    export BRIGHT_MAGENTA='\e[1;95m' # Added for emphasis
+    export BRIGHT_MAGENTA='\e[1;95m'
     export CYAN='\e[1;36m'
-    export BRIGHT_CYAN='\e[1;96m' # Added for emphasis
-    export WHITE='\e[1;37m'       # Avoid white on light terminals
+    export BRIGHT_CYAN='\e[1;96m'
+    export WHITE='\e[1;37m'        # Avoid white on light terminals
     export BRIGHT_WHITE='\e[1;97m' # Added for emphasis
 fi
 
@@ -103,13 +96,13 @@ log_message() {
     FATAL) log_level="${RED}F${RESET}" ;;
     *) log_level="${INFO}I${RESET}" ;; # Default to INFO
     esac
-    log_msg="[${WHITE}${date}${RESET}][$log_level] ${string}"
+    log_msg="[${date}][$log_level] ${string}"
     echo "$log_msg"
 }
 
 # --- Global Variables ---
 # These are determined dynamically or expected from the environment
-HOSTNAME="$(hostname)"
+# HOSTNAME="$(hostname)"
 PBS_ENV_FILE="${HOME}/.pbsenv"
 SLURM_ENV_FILE="${HOME}/.slurmenv"
 WORKING_DIR="" # Determined in utils_main
@@ -135,7 +128,9 @@ fi
 ezpz_kill_mpi() {
     # pgrep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
     # kill $(ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}')
-    ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
+    # ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
+    # find any mpi or python or pals processes and kill them
+    ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
 }
 
 # @description Get name of shell.
@@ -485,10 +480,6 @@ ezpz_setup_conda_sunspot() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use /opt/aurora/24.180.1/modulefiles
         module load frameworks/2024.2.1_u1
-        # module use /soft/preview-modulefiles/24.086.0
-        # module load frameworks/2024.04.15.002.lua
-        # module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
-        # source "${WORKING_DIR}/ALCF/sunspot-env-2024-q2.sh"
     fi
 }
 
@@ -503,6 +494,7 @@ ezpz_setup_conda_aurora() {
     else
         printf "Caught CONDA_PREFIX=%s from environment, using this!" "${CONDA_PREFIX}"
     fi
+    log_message INFO "Setting FI_MR_CACHE_MONITOR=userfaultfd"
     export FI_MR_CACHE_MONITOR="${FI_MR_CACHE_MONITOR:-userfaultfd}"
 }
 
@@ -596,7 +588,18 @@ ezpz_install_uv() {
     curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
-# if [[ -n "$(command -v nvidia-smi)" ]]; then
+# Function to set up a Python virtual environment using `uv`.
+# - Relies on:
+#   - `uv` command must be available.
+#   - `CONDA_PREFIX` environment variable must be set.
+#   - `WORKING_DIR` environment variable must be set.
+#   - `python3` command must exist and point to the Conda Python.
+# - Usage:
+#   `ezpz_setup_uv_venv`
+# - Side Effects:
+#   Creates a virtual environment under "${WORKING_DIR}/venvs/".
+#   Activates the created virtual environment. Prints status messages.
+#   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 ezpz_setup_uv_venv() {
     if [[ -n "$(command -v uv)" ]]; then
         echo "uv already installed. Skipping..."
@@ -605,8 +608,7 @@ ezpz_setup_uv_venv() {
         ezpz_install_uv
     fi
     env_name=$(basename "${CONDA_PREFIX}")
-    # env_name=$(echo "${CONDA_PREFIX}" | tr '\/' '' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
-    uv venv --python="$(which python3)" --system-site-packages "${WORKING_DIR}/venvs/${env_name}"
+    uv venv --python="$(which python3)" --system-site-packages "${WORKING_DIR}/venvs/${mn}/${env_name}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1624,6 +1626,33 @@ ezpz_setup_job() {
     fi
 }
 
+# Set up the necessary modules for the new PyTorch 2.{7,8} environments.
+# It unloads existing modules, loads the required ones, and sets environment variables.
+ezpz_load_new_pt_modules() {
+    module restore
+    module unload oneapi mpich
+    module use /soft/compilers/oneapi/2025.1.3/modulefiles
+    module use /soft/compilers/oneapi/nope/modulefiles
+    module add mpich/nope/develop-git.6037a7a
+    module load cmake
+    unset CMAKE_ROOT
+    export A21_SDK_PTIROOT_OVERRIDE=/home/cchannui/debug5/pti-gpu-test/tools/pti-gpu/d5c2e2e
+    module add oneapi/public/2025.1.3
+    export ZE_FLAT_DEVICE_HIERARCHY="FLAT"
+}
+
+# Usage: setup_modules
+ezpz_setup_pt27() {
+    source /opt/aurora/24.347.0/spack/unified/0.9.2/install/linux-sles15-x86_64/gcc-13.3.0/miniforge3-24.3.0-0-gfganax/bin/activate
+    conda activate /lus/flare/projects/datascience/foremans/miniforge/2025-07-pt27
+    ezpz_load_new_pt_modules
+}
+
+ezpz_setup_pt28() {
+    micromamba activate /flare/datascience/foremans/micromamba/envs/2025-07-pt28
+    ezpz_load_new_pt_modules
+}
+
 # -----------------------------------------------------------------------------
 # Comprehensive setup: Python environment AND Job environment.
 # Calls `ezpz_setup_python` then `ezpz_setup_job`. Recommended entry point.
@@ -1636,7 +1665,7 @@ ezpz_setup_job() {
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
-    log_message INFO "${WHITE}Running [${RESET}${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}..."
+    log_message INFO "Running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
         return 1
@@ -1645,7 +1674,7 @@ ezpz_setup_env() {
         log_message ERROR "Job setup failed. Aborting."
         return 1
     fi
-    log_message INFO "${GREEN}[✓] ${WHITE}Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}${WHITE}]${RESET}"
+    log_message INFO "${GREEN}[✓] Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]"
     return 0
 }
 
