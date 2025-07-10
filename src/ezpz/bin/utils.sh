@@ -97,7 +97,7 @@ log_message() {
     *) log_level="${INFO}I${RESET}" ;; # Default to INFO
     esac
     log_msg="[${date}][$log_level] ${string}"
-    echo "$log_msg"
+    echo -e "$log_msg"
 }
 
 # --- Global Variables ---
@@ -1353,6 +1353,13 @@ ezpz_save_deepspeed_env() {
     [ "${https_proxy}" ] && echo "https_proxy=${https_proxy}" >>.deepspeed_env
 }
 
+
+ezpz_get_pbs_jobid() {
+    _pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
+    _pbs_jobid="$(echo "${_pbs_nodefile}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+    echo "${_pbs_jobid}"
+}
+
 # -----------------------------------------------------------------------------
 # @description Get the PBS environment variables.
 #
@@ -1382,6 +1389,8 @@ ezpz_get_pbs_env() {
     log_message INFO "  - jobenv_file=${BLUE}${jobenv_file}${RESET}"
     mn=$(ezpz_get_machine_name)
     scheduler_type=$(ezpz_get_scheduler_type)
+    _pbs_jobid=$(ezpz_get_pbs_jobid)
+    export PBS_JOBID="${_pbs_jobid}"
     if [[ "${scheduler_type}" == "pbs" ]]; then
         if grep -q "$(hostname)" "${hostfile:-}"; then
             log_message INFO "  - Host ${BLUE}$(hostname)${RESET} found in ${BLUE}${hostfile}${RESET}"
@@ -1576,6 +1585,17 @@ ezpz_savejobenv_main() {
 #     printf "${MAGENTA}==== Finished ezpz_savejobenv_main (Status: 0) ====${RESET}\n"
 #     return 0
 # }
+#
+ezpz_get_pbs_jobid_from_nodefile() {
+    if [[ -z "${PBS_NODEFILE:-}" ]]; then
+        echo "No PBS_NODEFILE found"
+        return 1
+    else
+        _pbs_jobid="$(echo "${PBS_NODEFILE//#}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+        export PBS_JOBID="${_pbs_jobid}"
+    fi
+
+}
 
 ezpz_setup_job() {
     mn=$(ezpz_get_machine_name)
@@ -1592,6 +1612,17 @@ ezpz_setup_job() {
     # printf "  - MACHINE=${YELLOW}%s${RESET}\n" "${mn}"
     # printf "  - HOST=${YELLOW}%s${RESET}\n" "${hn}"
     # printf "  - TSTAMP=${YELLOW}%s${RESET}\n\n" "$(ezpz_get_tstamp)"
+    if [[ -n "${PBS_JOBID:-}" ]]; then
+        log_message INFO "  - PBS_JOBID=${YELLOW}${PBS_JOBID}${RESET}"
+    elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        log_message INFO "  - SLURM_JOB_ID=${YELLOW}${SLURM_JOB_ID}${RESET}"
+    else
+        if  [[ "$(ezpz_get_scheduler_type)" == "pbs" ]]; then
+            ezpz_get_pbs_jobid
+            export PBS_JOBID="${_pbs_jobid}"
+            log_message INFO "  - PBS_JOBID=${YELLOW}${PBS_JOBID}${RESET}"
+        fi
+    fi
     if [[ -n "${PBS_NODEFILE:-}" ]]; then
         ezpz_savejobenv_main "$@"
     elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
@@ -1600,6 +1631,8 @@ ezpz_setup_job() {
         scheduler_type=$(ezpz_get_scheduler_type)
         if [[ "${scheduler_type}" == "pbs" ]]; then
             _pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
+            _pbs_jobid="$(echo "${PBS_NODEFILE//#}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+            export PBS_JOBID="${_pbs_jobid}"
             if [[ -f "${_pbs_nodefile}" ]]; then
                 export PBS_NODEFILE="${_pbs_nodefile}"
                 ezpz_getjobenv_main "$@"
