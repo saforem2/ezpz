@@ -4,23 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ezpz"
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
 dynamic = ["version"]
-requires-python = ">=3.10"
-license = { file = "LICENSE" }
-keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
-readme = "README.md"
-description = 'Distributed training, :lemon: `ezpz`.'
-authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 dependencies = [
     "accelerate",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
@@ -41,6 +25,19 @@ dependencies = [
     "transformers>=4.50.1",
     "wandb",
     "xarray",
+]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python"
+]
+license = { file = "LICENSE" }
+keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
+readme = "README.md"
+description = 'Distributed training, :lemon: `ezpz`.'
+authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
+maintainers = [
+    { name = "Sam Foreman", email = "saforem2@gmail.com" }
 ]
 
 [project.scripts]
