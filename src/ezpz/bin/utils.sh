@@ -111,22 +111,19 @@ WORKING_DIR="" # Determined in utils_main
 # Check if running in DEBUG=1 mode.
 # Usage: DEBUG=1 source utils_modern.sh
 if [[ -n "${DEBUG:-}" ]]; then
-    printf "${RED}!! RUNNING IN DEBUG MODE !!${RESET}\n"
+    log_message DEBUG "!! RUNNING IN DEBUG MODE !!"
     set -x # Print command traces before executing command.
 fi
 
 # Print (but DO NOT EXECUTE !!) each command that would be run.
 # Usage: NOOP=1 source utils_modern.sh
 if [[ -v NOOP ]]; then
-    printf "${YELLOW}!! RUNNING IN NOOP MODE (Dry Run) !!${RESET}\n"
+    log_message WARN "!! RUNNING IN NOOP MODE (Dry Run) !!"
     set -o noexec # Read commands but do not execute them.
 fi
 
 # @description Kill existing mpi processes
 ezpz_kill_mpi() {
-    # pgrep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
-    # kill $(ps aux | grep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}')
-    # ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
     # find any mpi or python or pals processes and kill them
     ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
 }
@@ -275,45 +272,45 @@ ezpz_get_jobid_from_hostname() {
     echo "${jobid}"
 }
 
+#######################
+# Unset all:
+#
+# - `PBS_*`
+# - {host,HOST}file
+#
+# environment variables
+#######################
 ezpz_reset_pbs_vars() {
-    #######################
-    # Unset all:
-    #
-    # - `PBS_*`
-    # - {host,HOST}file
-    #
-    # environment variables
-    #######################
     wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
     vars=($(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}'))
     for v in "$vars[@]"; do echo "Unsetting $v" && unset -v "${v}"; done
     export PBS_O_WORKDIR="${wd}"
 }
 
+######################################
+# ezpz_get_pbs_nodefile_from_hostname
+#
+# Return path to PBS_NODEFILE corresponding to the jobid that was identified as
+# containing the (currently active, determined by `$(hostname)`) host.
+#
+# Example:
+# --------
+# Look for $(hostname) in output from `ezpz_qsme_running`
+#
+#  |   jobid   |   host0  |   host1   |  host2   |
+#  |:---------:|:--------:|:---------:|:--------:|
+#  |  jobid0   |  host00  |  host10   |  host20  |
+#  |  jobid1   |  host01  |  host11   |  host21  |
+#  |  jobid2   |  host02  |  host12   |  host22  |
+#
+# then, once we've identified the `jobid` containing `$(hostname)`, we can use
+# that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
+#
+#     ```bash
+#     /var/spool/pbs/aux/${jobid}
+#     ````
+######################################
 ezpz_get_pbs_nodefile_from_hostname() {
-    ######################################
-    # ezpz_get_pbs_nodefile_from_hostname
-    #
-    # Return path to PBS_NODEFILE corresponding to the jobid that was identified as
-    # containing the (currently active, determined by `$(hostname)`) host.
-    #
-    # Example:
-    # --------
-    # Look for $(hostname) in output from `ezpz_qsme_running`
-    #
-    #  |   jobid   |   host0  |   host1   |  host2   |
-    #  |:---------:|:--------:|:---------:|:--------:|
-    #  |  jobid0   |  host00  |  host10   |  host20  |
-    #  |  jobid1   |  host01  |  host11   |  host21  |
-    #  |  jobid2   |  host02  |  host12   |  host22  |
-    #
-    # then, once we've identified the `jobid` containing `$(hostname)`, we can use
-    # that to reconstruct the path to our jobs' `PBS_NODEFILE`, which is located at
-    #
-    #     ```bash
-    #     /var/spool/pbs/aux/${jobid}
-    #     ````
-    ######################################
     jobid=$(ezpz_get_jobid_from_hostname)
     if [[ -n "${jobid}" ]]; then
         match=$(/bin/ls /var/spool/pbs/aux/ | grep "${jobid}")
@@ -381,10 +378,6 @@ ezpz_check_and_kill_if_running() {
 }
 
 ezpz_get_slurm_running_jobid() {
-    #################################
-    # ezpz_get_slurm_running_jobid
-    # Retruns SLURM_JOBID of running slurm jobs
-    #################################
     if [[ -n $(command -v sacct) ]]; then
         jobid=$(sacct --format=JobID,NodeList%-30,state%20 --user "${USER}" -s R | grep -Ev "\.int|\.ext|^JobID|^---" | awk '{print $1}')
         echo "${jobid}"
@@ -612,6 +605,7 @@ ezpz_setup_uv_venv() {
     fpactivate="${VENV_DIR}/bin/activate"
     mn=$(ezpz_get_machine_name)
     uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
+    # shellcheck disable=SC1090
     [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}"
 }
 
@@ -658,6 +652,7 @@ ezpz_setup_venv_from_conda() {
                 python3 -m venv "${VENV_DIR}" --system-site-packages
                 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
                     log_message INFO "  - Activating newly created venv..."
+                    # shellcheck disable=SC1090
                     [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
                 else
                     log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
@@ -665,6 +660,7 @@ ezpz_setup_venv_from_conda() {
                 fi
             elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
                 log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+                # shellcheck disable=SC1090
                 [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
             else
                 log_message ERROR "  - Unable to locate ${VENV_DIR}/bin/activate"
@@ -1423,7 +1419,9 @@ ezpz_get_slurm_env() {
     if [[ -n "${SLURM_JOB_ID}" ]]; then
         export JOBENV_FILE="${SLURM_ENV_FILE}"
         # shellcheck source="${HOME}/.slurmenv"
-        [ -f "${JOBENV_FILE}" ] && source "${JOBENV_FILE}"
+        # shellcheck disable=SC1091
+        [ -f "${HOME}/.slurmenv" ] && source "${HOME}/.slurmenv"
+        # [ -f "${JOBENV_FILE}" ] && source "${JOBENV_FILE}"
         export DIST_LAUNCH="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
         export ezlaunch="${DIST_LAUNCH}"
     else
@@ -1746,22 +1744,22 @@ ezpz_setup_env() {
 ezpz_setup_install() {
     printf "[ezpz] Setting up Python environment\n"
     ezpz_setup_python || {
-        printf "${RED}Python setup failed.${RESET}\n"
-        exit 1
+        log_message ERROR "Python setup failed. Aborting."
+        return 1
     }
 
     printf "[ezpz] Setting up Job environment\n"
     ezpz_setup_job "$@" || {
-        printf "${RED}Job setup failed.${RESET}\n"
-        exit 1
+        log_message ERROR "Job setup failed. Aborting."
+        return 1
     }
 
     local target_env_path="${VIRTUAL_ENV:-${CONDA_PREFIX:-<unknown>}}"
     printf "[ezpz] Installing ezpz from GitHub into %s\n" "${target_env_path}"
 
     if [[ -z "${PYTHON_EXEC:-}" ]]; then
-        printf "${RED}Error: PYTHON_EXEC not set after setup. Cannot install.${RESET}\n" >&2
-        exit 1
+        log_message WARN "PYTHON_EXEC not set. Attempting to set it now..."
+        return 1
     fi
 
     # Install using pip, requiring virtualenv to avoid global installs if VIRTUAL_ENV is set
@@ -1771,8 +1769,9 @@ ezpz_setup_install() {
     fi
 
     if ! "${pip_cmd[@]}"; then
-        printf "[ezpz] ${RED}✘ Failed to install ezpz into %s${RESET}\n" "${target_env_path}"
-        exit 1
+        log_message ERROR "${RED}✘${RESET} Failed to install ezpz into ${target_env_path}"
+        log_message ERROR "Please check the error messages above."
+        return 1
     fi
     printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
 }
@@ -1855,7 +1854,7 @@ ezpz_check_working_dir() {
     # - If neither PBS_O_WORKDIR nor SLURM_SUBMIT_DIR are set, use the current working directory
     else
         log_message INFO "Unable to detect PBS or SLURM working directory info..."
-        log_message INFO $(echo "Using current working directory (${GREEN}${WORKING_DIR}${RESET}) as working directory...")
+        log_message INFO "Using current working directory (${GREEN}${WORKING_DIR}${RESET}) as working directory..."
     fi
 }
 
