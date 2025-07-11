@@ -250,13 +250,9 @@ repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
 
 # 4) assemble in one shot
 if use_colored_logs():
-    STYLES = {
-        **flag_styles,
-        **basic_colors,
-        **prefixed_colors,
-        **log_styles,
-        **repr_styles,
-    }
+    STYLES = (
+        flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    )
 else:
     STYLES = {k: Style.null() for k in DEFAULT_STYLES}
 DEFAULT_STYLES |= STYLES
