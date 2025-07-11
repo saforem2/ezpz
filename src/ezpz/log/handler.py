@@ -22,6 +22,10 @@ from rich.console import ConsoleRenderable
 
 from logging import LogRecord
 
+import re
+
+# Define the regex pattern for ANSI escape codes
+ANSI_ESCAPE_PATTERN = re.compile(r'\x1B\[[0-9;]*m')
 
 def get_styles(colorized: bool = True) -> dict:
     styles = {}
@@ -242,5 +246,9 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             result += path_text
         result += Text(" ", style=self.styles.get("repr.dash", ""))
         for elem in renderables:
-            result += elem
+            if ANSI_ESCAPE_PATTERN.match(str(elem)):
+                # If the element is already ANSI formatted, append it directly
+                result += Text.from_ansi(str(elem))
+            else:
+                result += elem
         return result
