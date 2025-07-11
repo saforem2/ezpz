@@ -954,7 +954,15 @@ def broadcast(
     obj: Any,
     root: int = 0,
 ) -> Any:
-    return MPI.COMM_WORLD.bcast(obj, root=root)
+    try:
+        return MPI.COMM_WORLD.bcast(obj, root=root)
+    except Exception as exc:
+        logger.warning(
+            "Unable to broadcast with MPI, returning original object"
+        )
+        logger.exception(exc)
+        # return obj
+        raise exc
 
 
 def setup_torch_DDP(
