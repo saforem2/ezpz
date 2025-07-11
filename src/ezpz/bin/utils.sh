@@ -598,15 +598,33 @@ ezpz_setup_uv_venv() {
         echo "Installing uv..."
         ezpz_install_uv
     fi
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
+        return 1
+    else
+        log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
+        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+        if [[ -z "${WORKING_DIR:-}" ]]; then
+            log_message ERROR "  - WORKING_DIR is not set. Cannot create venv."
+            return 1
+        else
+            log_message INFO "  - Found WORKING_DIR=${CYAN}${WORKING_DIR}${RESET}"
+        fi
+
+    fi
     local mn
     local env_name
     env_name=$(basename "${CONDA_PREFIX}")
     VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
     fpactivate="${VENV_DIR}/bin/activate"
     mn=$(ezpz_get_machine_name)
-    uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
-    # shellcheck disable=SC1090
-    [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}"
+    if [[ -f "${fpactivate}" ]]; then
+        log_message INFO "  - Found ${fpactivate}"
+        # shellcheck disable=SC1090
+        [ -f "${fpactivate}" ] && source "${fpactivate}"
+    else
+        uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -1359,8 +1377,10 @@ ezpz_save_deepspeed_env() {
 }
 
 ezpz_get_pbs_jobid() {
+    local _pbs_nodefile
     _pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
-    _pbs_jobid="$(echo "${_pbs_nodefile}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+    local _pbs_jobid
+    _pbs_jobid="$(basename "${_pbs_nodefile}")"
     echo "${_pbs_jobid}"
 }
 
