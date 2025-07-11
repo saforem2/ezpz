@@ -103,18 +103,17 @@ def get_profiling_context(
             Defaults to False.
         outdir (Optional[str | Path | os.PathLike]): The output directory
             for saving profiles. Defaults to `ezpz.OUTPUTS_DIR`.
-        fname (Optional[str]): A filename prefix for the profile output files.
-            Defaults to None.
         strict (Optional[bool]): If True, the profiler will only run if
             "PYINSTRUMENT_PROFILER" is set in the environment. Defaults to True.
     Returns:
         AbstractContextManager: A context manager that starts and stops
             the profiler.
     """
-    assert profiler_type in ["pt", "pytorch", "torch", "pyinstrument"], (
-        f"Invalid profiling type: {profiler_type}. "
-        "Must be one of ['torch', 'pyinstrument']"
-    )
+    if profiler_type not in {"pt", "pytorch", "torch", "pyinstrument"}:
+        raise ValueError(
+            f"Invalid profiling type: {profiler_type}. "
+            "Must be one of ['torch', 'pyinstrument']"
+        )
     outdir_fallback = Path(os.getcwd()).joinpath("ezpz", "torch_profiles")
     outdir = outdir_fallback if outdir is None else outdir
     _ = Path(outdir).mkdir(parents=True, exist_ok=True)
@@ -127,9 +126,7 @@ def get_profiling_context(
             logger.info(
                 "\n"
                 + p.key_averages().table(
-                    sort_by=(
-                        f"self_{ezpz.get_torch_device_type()}_time_total"
-                    ),
+                    sort_by=(f"self_{ezpz.get_torch_device_type()}_time_total"),
                     row_limit=-1,
                 )
             )
@@ -142,9 +139,7 @@ def get_profiling_context(
                 ]
             )
             trace_output = Path(outdir).joinpath(f"{fname}.json")
-            logger.info(
-                f"Saving torch profiler trace to: {trace_output.as_posix()}"
-            )
+            logger.info(f"Saving torch profiler trace to: {trace_output.as_posix()}")
             p.export_chrome_trace(trace_output.as_posix())
 
         schedule = torch.profiler.schedule(
@@ -262,7 +257,7 @@ def get_torch_profiler(
     activities = [ProfilerActivity.CPU]
     if torch.cuda.is_available():
         activities.append(ProfilerActivity.CUDA)
-    if torch.xpu.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
         activities.append(ProfilerActivity.XPU)
     return profile(
         schedule=schedule,
@@ -278,6 +273,7 @@ def get_torch_profiler(
 
 
 class PyInstrumentProfiler:
+
     def __init__(
         self,
         rank: Optional[int] = None,
@@ -289,9 +285,7 @@ class PyInstrumentProfiler:
             pyinstrument = None  # type:ignore
         if pyinstrument is None:
             self.profiler = None
-            logger.critical(
-                "Unable to import 'pyinstrument', not running profiles!!"
-            )
+            logger.critical("Unable to import 'pyinstrument', not running profiles!!")
             logger.error(
                 "To run with 'pyinstrument',"
                 "run: 'python3 -m pip install pyinstrument'"
@@ -318,16 +312,10 @@ class PyInstrumentProfiler:
         dtpyinstrument = (time.perf_counter_ns() - self._start) / (10**9)
         if self.profiler is not None:
             self.profiler.stop()
-            self.profiler.print(
-                color=True, timeline=True
-            )  # , time='percent_of_total')
+            self.profiler.print(color=True, timeline=True)  # , time='percent_of_total')
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-            html_fp = Path(self.outdir).joinpath(
-                f"pyinstrument-profile-{now}.html"
-            )
-            text_fp = Path(self.outdir).joinpath(
-                f"pyinstrument-profile-{now}.txt"
-            )
+            html_fp = Path(self.outdir).joinpath(f"pyinstrument-profile-{now}.html")
+            text_fp = Path(self.outdir).joinpath(f"pyinstrument-profile-{now}.txt")
             logger.info(
                 " ".join(
                     [
