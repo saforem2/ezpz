@@ -144,8 +144,8 @@ _logging_defs = {
     "log.colon": {"color": "bright_blue"},
     # "log.colon": Style(color="bright_blue"),
     # …etc…
-    "logging.time": {},  # Style.null()
-    "logging.date": {},
+    "logging.time": {"dim": True},  # Style.null()
+    "logging.date": {"dim": True},
     # "logging.time": Style.null(),
     # "logging.date": Style.null(),  # , italic=False),
     "log.parent": {"color": "cyan", "italic": True},
@@ -165,7 +165,8 @@ _logging_defs = {
         "bold": True,
         "reverse": True,
     },
-    "log.linenumber": {"color": "magenta", "dim": True},
+    "log.linenumber": {"color": "magenta"},
+    "log.brace": {},
     # "logging.keyword": Style(bold=True, color="bright_yellow"),
     # "logging.level.notset": Style(dim=True),
     # "logging.level.debug": Style(color="bright_blue", bold=True),
@@ -192,6 +193,7 @@ _repr_defs = {
     "repr.attrib_value": {"color": "magenta"},
     "repr.ellipsis": {"color": "bright_yellow"},
 }
+
 # "repr.dash": {"color":"#838383""},
 #         "color.black": Style(color="black"),
 #         "color.red": Style(color="red"),
@@ -211,7 +213,6 @@ _repr_defs = {
 #         "color.bright_white": Style(color="bright_white"),
 #         "url": Style(conceal=True, underline=True, color="blue"),
 #         "num": Style(color="blue"),
-# "log.brace": {"color="white", "dim=False"},
 # "repr.comma": {"color="bright_yellow""},
 # "repr.colon": {"color="green""},
 # "repr.dash": {"color="#838383""},
