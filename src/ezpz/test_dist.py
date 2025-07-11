@@ -86,7 +86,7 @@ class TrainConfig:
         self._created_at = (
             ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
         )
-        ezpz.dist.broadcast(self._created_at, root=0)
+        self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
         self.outdir = Path(os.getcwd()).joinpath(
             "outputs", "ezpz.test_dist", f"{self._created_at}"
         )
@@ -147,18 +147,24 @@ class Trainer:
         self.model.to(self.dtype)
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
-            torch.distributed.barrier(group=ezpz.tp.get_tensor_parallel_group())
+            torch.distributed.barrier(
+                group=ezpz.tp.get_tensor_parallel_group()
+            )
             torch.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
-            torch.distributed.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-            torch.distributed.barrier(group=ezpz.tp.get_context_parallel_group())
+            torch.distributed.barrier(
+                group=ezpz.tp.get_pipeline_parallel_group()
+            )
+            torch.distributed.barrier(
+                group=ezpz.tp.get_context_parallel_group()
+            )
 
         if self.rank == 0 and not WANDB_DISABLED:
             import wandb
 
             logger.debug("Setting up wandb")
             wbconfig = {}
-            wbconfig.update(asdict(self.config))
-            wbconfig.update(ezpz.get_dist_info())
+            wbconfig |= asdict(self.config)
+            wbconfig |= ezpz.get_dist_info()
             _ = ezpz.setup_wandb(
                 project_name="ezpz.test_dist",
                 config=wbconfig,
@@ -502,10 +508,9 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
-        # import importlib.util
-        # args.deepspeed = (importlib.util.find_spec("deepspeed") is not None)
         try:
             import deepspeed  # type:ignore
+
             args.deepspeed = True
         except (ImportError, ModuleNotFoundError) as e:
             logger.error(
@@ -636,6 +641,7 @@ def main() -> Trainer:
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
         try:
             import deepspeed.comm
+
             deepspeed.comm.log_summary()
         except ImportError as e:
             logger.exception(e)
