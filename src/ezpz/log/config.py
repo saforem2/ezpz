@@ -44,7 +44,8 @@ def use_colored_logs() -> bool:
         os.environ.get(
             "NOCOLOR",
             os.environ.get(
-                "COLOR", os.environ.get("COLORS", os.environ.get("DUMB", False))
+                "COLOR",
+                os.environ.get("COLORS", os.environ.get("DUMB", False)),
             ),
         ),
     )
@@ -95,6 +96,169 @@ CYAN = Style(color=DARK["cyan"])
 GREY_MED = "#838383"
 
 
+# 1) simple “flag” styles
+_flag_defs = {
+    "none": {},
+    "reset": dict(color="default", bgcolor="default"),
+    "dim": {"dim": True},
+    # "bright": {"bright": True},
+    "bold": {"bold": True},
+    "strong": {"bold": True},
+    "italic": {"italic": True},
+    "emphasize": {"italic": True},
+    "underline": {"underline": True},
+    "blink": {"blink": True},
+    "blink2": {"blink2": True},
+    "reverse": {"reverse": True},
+    "strike": {"strike": True},
+    "code": {"reverse": True, "bold": True},
+}
+flag_styles = {k: Style(**v) for k, v in _flag_defs.items()}
+
+# 2) colors (basic + “color.” prefix)
+_colors = [
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright_black",
+    "bright_red",
+    "bright_green",
+    "bright_yellow",
+    "bright_blue",
+    "bright_magenta",
+    "bright_cyan",
+    "bright_white",
+]
+basic_colors = {c: Style(color=c) for c in _colors}
+prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
+
+# 3) miscellaneous logging + repr overrides
+_logging_defs = {
+    "log.level.warn": {"color": "bright_yellow"},
+    "logging.level.info": {"color": "green"},
+    "log.colon": {"color": "bright_blue"},
+    # "log.colon": Style(color="bright_blue"),
+    # …etc…
+    "logging.time": {"dim": True},  # Style.null()
+    "logging.date": {"dim": True},
+    # "logging.time": Style.null(),
+    # "logging.date": Style.null(),  # , italic=False),
+    "log.parent": {"color": "cyan", "italic": True},
+    "log.path": {"color": "blue", "bold": False, "italic": False},
+    # "log.path": Style(color="blue", bold=False, italic=False),
+    # Convert the following to dicts
+    "logging.keyword": {"bold": True, "color": "bright_yellow"},
+    "logging.level.notset": {"dim": True},
+    "logging.level.debug": {"color": "bright_blue", "bold": True},
+    "logging.level.error": {"color": "bright_red", "bold": True},
+    "log.level.warning": {"color": "bright_yellow"},
+    "logging.level.warn": {"color": "bright_yellow"},
+    "logging.level.warning": {"color": "bright_yellow"},
+    "log.time": {"color": "black", "dim": True},
+    "logging.level.critical": {
+        "color": "bright_red",
+        "bold": True,
+        "reverse": True,
+    },
+    "log.linenumber": {"color": "magenta"},
+    "log.brace": {},
+    # "logging.keyword": Style(bold=True, color="bright_yellow"),
+    # "logging.level.notset": Style(dim=True),
+    # "logging.level.debug": Style(color="bright_blue", bold=True),
+    # "logging.level.error": Style(color="bright_red", bold=True),
+    # "log.level.warning": Style(color="bright_yellow"),
+    # "logging.level.warn": Style(color="bright_yellow"),
+    # "logging.level.warning": Style(color="bright_yellow"),
+    # "log.linenumber": Style(color="magenta", dim=True),
+    # "log.time": Style(color="black"),
+}
+log_styles = {
+    k: Style.null() if not v else Style(**v) for k, v in _logging_defs.items()
+}
+
+_repr_defs = {
+    "repr.attr": {"color": "blue"},
+    "repr.attrib_equal": {"color": "yellow", "bold": True},
+    "repr.function": {"color": "bright_green", "italic": True},
+    "repr.brace": {"color": "black", "dim": True},
+    "repr.comma": {"color": "bright_yellow"},
+    "repr.colon": {"color": "green"},
+    "repr.dash": {"color": "white"},
+    "repr.attrib_name": {"color": "bright_blue"},
+    "repr.attrib_value": {"color": "magenta"},
+    "repr.ellipsis": {"color": "bright_yellow"},
+}
+
+# "repr.dash": {"color":"#838383""},
+#         "color.black": Style(color="black"),
+#         "color.red": Style(color="red"),
+#         "color.green": Style(color="green"),
+#         "color.yellow": Style(color="yellow"),
+#         "color.blue": Style(color="blue"),
+#         "color.magenta": Style(color="magenta"),
+#         "color.cyan": Style(color="cyan"),
+#         "color.white": Style(color="white"),
+#         "color.bright_black": Style(color="bright_black"),
+#         "color.bright_red": Style(color="bright_red"),
+#         "color.bright_green": Style(color="bright_green"),
+#         "color.bright_yellow": Style(color="bright_yellow"),
+#         "color.bright_blue": Style(color="bright_blue"),
+#         "color.bright_magenta": Style(color="bright_magenta"),
+#         "color.bright_cyan": Style(color="bright_cyan"),
+#         "color.bright_white": Style(color="bright_white"),
+#         "url": Style(conceal=True, underline=True, color="blue"),
+#         "num": Style(color="blue"),
+# "repr.comma": {"color="bright_yellow""},
+# "repr.colon": {"color="green""},
+# "repr.dash": {"color="#838383""},
+# "repr.attr": {"color="blue""},
+# "repr.attrib_name": {"
+#     color="bright_blue", "bold=False, italic=True
+# "},
+# "repr.attrib_equal": {"bold=True, color="yellow""},
+# "repr.attrib_value": {"color="magenta", "italic=False"},
+# "repr.ellipsis": {"color="bright_yellow""},
+# "repr.indent": {"color="bright_green", "dim=True"},
+# "repr.error": {"color="bright_green", "bold=True"},
+# "repr.str": {"color="bright_green", "italic=True, bold=False"},
+# "repr.ipv4": {"bold=True, color="bright_green""},
+# "repr.ipv6": {"bold=True, color="bright_green""},
+# "repr.eui48": {"bold=True, color="bright_green""},
+# "repr.eui64": {"bold=True, color="bright_green""},
+# "repr.tag_name": {"color="bright_magenta", "bold=True"},
+# "repr.number": {"color="bright_magenta", "bold=False, italic=False"},
+# "repr.number_complex": {"
+#     color="bright_magenta", "bold=True, italic=False
+# ),  # same
+# "repr.bool_true": {"color="bright_green", "italic=True"},
+# "repr.bool_false": {"color="bright_red", "italic=True"},
+# "repr.none": {"color="bright_magenta", "italic=True"},
+# "repr.null": {"color="bright_magenta", "italic=True"},
+# "repr.url": {"
+#     underline=True, color="bright_blue", "italic=False, bold=False
+# "},
+# "repr.uuid": {"color="yellow", "bold=False"},
+# "repr.call": {"color="magenta", "bold=True"},
+# "repr.path": {"color="green""},
+# "repr.filename": {"color="magenta""},
+# …etc…
+repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
+
+# 4) assemble in one shot
+if use_colored_logs():
+    STYLES = (
+        flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    )
+else:
+    STYLES = {k: Style.null() for k in DEFAULT_STYLES}
+DEFAULT_STYLES |= STYLES
+
+
 # TERM = os.environ.get('TERM', None)
 # NO__COLOR = use_colorized_logs()
 # NO_COLOR = os.environ.get(
@@ -107,92 +271,91 @@ GREY_MED = "#838383"
 #     ),
 # )
 
-
-if not use_colored_logs():
-    STYLES = {f"{k}": Style.null() for k in DEFAULT_STYLES.keys()}
-    DEFAULT_STYLES |= STYLES
-    # STYLES = {f'{k}': Style.null() for k in STYLES.items()}
-else:
-    STYLES: Dict[str, Style] = {
-        "color.black": Style(color="black"),
-        "color.red": Style(color="red"),
-        "color.green": Style(color="green"),
-        "color.yellow": Style(color="yellow"),
-        "color.blue": Style(color="blue"),
-        "color.magenta": Style(color="magenta"),
-        "color.cyan": Style(color="cyan"),
-        "color.white": Style(color="white"),
-        "color.bright_black": Style(color="bright_black"),
-        "color.bright_red": Style(color="bright_red"),
-        "color.bright_green": Style(color="bright_green"),
-        "color.bright_yellow": Style(color="bright_yellow"),
-        "color.bright_blue": Style(color="bright_blue"),
-        "color.bright_magenta": Style(color="bright_magenta"),
-        "color.bright_cyan": Style(color="bright_cyan"),
-        "color.bright_white": Style(color="bright_white"),
-        "url": Style(conceal=True, underline=True, color="blue"),
-        "num": Style(color="blue"),
-        "repr.brace": Style(color="black", dim=True),
-        "log.brace": Style(color="white", dim=False),
-        "repr.comma": Style(color="bright_yellow"),
-        "repr.colon": Style(color="green"),
-        "repr.function": Style(color="bright_green", italic=True),
-        "repr.dash": Style(color="#838383"),
-        "logging.keyword": Style(bold=True, color="bright_yellow"),
-        "logging.level.notset": Style(dim=True),
-        "logging.level.debug": Style(color="bright_blue", bold=True),
-        "logging.level.error": Style(color="bright_red", bold=True),
-        "log.level.warn": Style(color="bright_yellow"),
-        "logging.level.info": Style(color="green"),
-        "log.level.warning": Style(color="bright_yellow"),
-        "logging.level.warn": Style(color="bright_yellow"),
-        "logging.level.warning": Style(color="bright_yellow"),
-        "log.colon": Style(color="bright_blue"),
-        "log.linenumber": Style(color="white", bold=False, dim=True),
-        "log.parent": Style(color="cyan", italic=True),
-        "log.path": Style(color="blue", bold=False, italic=False),
-        "log.time": Style(color="black"),
-        "logging.time": Style(color="bright_white"),
-        "logging.date": Style(color="black", dim=True),  # , italic=False),
-        "hidden": Style(color="bright_black", dim=True),
-        "repr.attr": Style(color="blue"),
-        "repr.attrib_name": Style(color="bright_blue", bold=False, italic=True),
-        "repr.attrib_equal": Style(bold=True, color="yellow"),
-        "repr.attrib_value": Style(color="magenta", italic=False),
-        "repr.ellipsis": Style(color="bright_yellow"),
-        "repr.indent": Style(color="bright_green", dim=True),
-        "repr.error": Style(color="bright_green", bold=True),
-        "repr.str": Style(color="bright_green", italic=True, bold=False),
-        "repr.ipv4": Style(bold=True, color="bright_green"),
-        "repr.ipv6": Style(bold=True, color="bright_green"),
-        "repr.eui48": Style(bold=True, color="bright_green"),
-        "repr.eui64": Style(bold=True, color="bright_green"),
-        "repr.tag_name": Style(color="bright_magenta", bold=True),
-        "repr.number": Style(color="bright_magenta", bold=False, italic=False),
-        "repr.number_complex": Style(
-            color="bright_magenta", bold=True, italic=False
-        ),  # same
-        "repr.bool_true": Style(color="bright_green", italic=True),
-        "repr.bool_false": Style(color="bright_red", italic=True),
-        "repr.none": Style(color="bright_magenta", italic=True),
-        "repr.null": Style(color="bright_magenta", italic=True),
-        "repr.url": Style(
-            underline=True, color="bright_blue", italic=False, bold=False
-        ),
-        "repr.uuid": Style(color="yellow", bold=False),
-        "repr.call": Style(color="magenta", bold=True),
-        "repr.path": Style(color="green"),
-        "repr.filename": Style(color="magenta"),
-        "rule.line": Style(color="bright_green"),
-        "json.brace": Style(bold=True, color="bright_yellow"),
-        "json.bool_true": Style(color="bright_green", italic=True),
-        "json.bool_false": Style(color="bright_red", italic=True),
-        "json.null": Style(color="bright_red", italic=True),
-        "json.number": Style(color="cyan", bold=True, italic=False),
-        "json.str": Style(color="bright_green", italic=False, bold=False),
-        "json.key": Style(color="bright_blue", bold=True),
-    }
-    DEFAULT_STYLES |= STYLES
+#
+# if not use_colored_logs():
+#     STYLES = {f"{k}": Style.null() for k in DEFAULT_STYLES.keys()}
+#     DEFAULT_STYLES |= STYLES
+#     # STYLES = {f'{k}': Style.null() for k in STYLES.items()}
+# else:
+#     STYLES: Dict[str, Style] = {
+#         "none": Style.null(),
+#         "reset": Style(
+#             color="default",
+#             bgcolor="default",
+#             dim=False,
+#             bold=False,
+#             italic=False,
+#             underline=False,
+#             blink=False,
+#             blink2=False,
+#             reverse=False,
+#             conceal=False,
+#             strike=False,
+#         ),
+#         "dim": Style(dim=True),
+#         "bright": Style(dim=False),
+#         "bold": Style(bold=True),
+#         "strong": Style(bold=True),
+#         "code": Style(reverse=True, bold=True),
+#         "italic": Style(italic=True),
+#         "emphasize": Style(italic=True),
+#         "underline": Style(underline=True),
+#         "blink": Style(blink=True),
+#         "blink2": Style(blink2=True),
+#         "reverse": Style(reverse=True),
+#         "strike": Style(strike=True),
+#         "black": Style(color="black"),
+#         "red": Style(color="red"),
+#         "green": Style(color="green"),
+#         "yellow": Style(color="yellow"),
+#         "magenta": Style(color="magenta"),
+#         "cyan": Style(color="cyan"),
+#         "white": Style(color="white"),
+#         "color.black": Style(color="black"),
+#         "color.red": Style(color="red"),
+#         "color.green": Style(color="green"),
+#         "color.yellow": Style(color="yellow"),
+#         "color.blue": Style(color="blue"),
+#         "color.magenta": Style(color="magenta"),
+#         "color.cyan": Style(color="cyan"),
+#         "color.white": Style(color="white"),
+#         "color.bright_black": Style(color="bright_black"),
+#         "color.bright_red": Style(color="bright_red"),
+#         "color.bright_green": Style(color="bright_green"),
+#         "color.bright_yellow": Style(color="bright_yellow"),
+#         "color.bright_blue": Style(color="bright_blue"),
+#         "color.bright_magenta": Style(color="bright_magenta"),
+#         "color.bright_cyan": Style(color="bright_cyan"),
+#         "color.bright_white": Style(color="bright_white"),
+#         "url": Style(conceal=True, underline=True, color="blue"),
+#         "num": Style(color="blue"),
+#         "logging.keyword": Style(bold=True, color="bright_yellow"),
+#         "logging.level.notset": Style(dim=True),
+#         "logging.level.debug": Style(color="bright_blue", bold=True),
+#         "logging.level.error": Style(color="bright_red", bold=True),
+#         "log.level.warn": Style(color="bright_yellow"),
+#         "logging.level.info": Style(color="green"),
+#         "log.level.warning": Style(color="bright_yellow"),
+#         "logging.level.warn": Style(color="bright_yellow"),
+#         "logging.level.warning": Style(color="bright_yellow"),
+#         "log.colon": Style(color="bright_blue"),
+#         "log.linenumber": Style(color="white", bold=False, dim=True),
+#         "log.parent": Style(color="cyan", italic=True),
+#         "log.path": Style(color="blue", bold=False, italic=False),
+#         "log.time": Style(color="black"),
+#         "logging.time": Style.null(),
+#         "logging.date": Style.null(),  # , italic=False),
+#         "hidden": Style(color="bright_black", dim=True),
+#         "rule.line": Style(color="bright_green"),
+#         "json.brace": Style(bold=True, color="bright_yellow"),
+#         "json.bool_true": Style(color="bright_green", italic=True),
+#         "json.bool_false": Style(color="bright_red", italic=True),
+#         "json.null": Style(color="bright_red", italic=True),
+#         "json.number": Style(color="cyan", bold=True, italic=False),
+#         "json.str": Style(color="bright_green", italic=False, bold=False),
+#         "json.key": Style(color="bright_blue", bold=True),
+#     }
+#     DEFAULT_STYLES |= STYLES
 
 
 #     # "num": Style(color='#409CDC', bold=True),

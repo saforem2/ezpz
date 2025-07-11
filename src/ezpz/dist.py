@@ -19,6 +19,7 @@ import ezpz.tp
 from mpi4py import MPI
 
 import torch
+
 import torch.distributed
 from datetime import timedelta
 from omegaconf import DictConfig, OmegaConf
@@ -102,7 +103,12 @@ def log_dict_as_bulleted_list(d: dict, name: Optional[str] = None):
     logger.info("\n\n" + "\n".join(lines) + "\n")
 
 
-def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
+def timeitlogit(
+    rank: Optional[int] = None,
+    record: bool = True,
+    verbose: bool = False,
+    prefix: str | None = None,
+):
     """Decorator to time a function and log the time taken.
 
     Args:
@@ -116,6 +122,7 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             pass
     """
     rank = get_rank() if rank is None else rank
+    prefix = "timeit" if prefix is None else prefix
     try:
         import wandb
     except Exception:
@@ -137,13 +144,15 @@ def timeitlogit(rank: Optional[int] = None, verbose: bool = True):
             fname = getattr(
                 func, "__qualname__", getattr(func, "__name__", "unknown")
             )
+            if record and wandb is not None and wandb.run is not None:
+                wandb.log({f"{prefix}/{fname}": dt}, commit=False)
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
                 kw_str = ", ".join(f"{k}={v}" for k, v in kwargs.items())
                 inner = ", ".join(filter(None, [arg_str, kw_str]))
                 logger.info(f"{fname}({inner}) took {dt:.4f} s")
-                if wandb is not None and wandb.run is not None:
-                    wandb.log({f"timeit/{fname}": dt}, commit=False)
+                # if wandb is not None and wandb.run is not None:
+                #     wandb.log({f"timeit/{fname}": dt}, commit=False)
             # if verbose:
             #     if rank == 0:
             #         astr = []
@@ -941,6 +950,21 @@ def query_environment() -> dict[str, int]:
     }
 
 
+def broadcast(
+    obj: Any,
+    root: int = 0,
+) -> Any:
+    try:
+        return MPI.COMM_WORLD.bcast(obj, root=root)
+    except Exception as exc:
+        logger.warning(
+            "Unable to broadcast with MPI, returning original object"
+        )
+        logger.exception(exc)
+        # return obj
+        raise exc
+
+
 def setup_torch_DDP(
     port: str = "2345",
     timeout: int | str | timedelta = 3600,
@@ -1213,7 +1237,7 @@ def barrier(
             If async_op is False, returns None.
     """
     try:
-        torch.distributed.barrier(
+        torch.distributed.barrier(  # type:ignore
             group=group, async_op=async_op, device_ids=device_ids
         )
     except Exception:
@@ -1404,8 +1428,8 @@ def cleanup() -> None:
     Example:
         >>> cleanup()
     """
-    if torch.distributed.is_initialized():
-        torch.distributed.destroy_process_group()
+    if torch.distributed.is_initialized():  # type:ignore
+        torch.distributed.destroy_process_group()  # type:ignore
 
 
 def setup_tensorflow(
@@ -1436,8 +1460,8 @@ def setup_tensorflow(
         "mixed_float16",
         # 'mixed_bfloat16'
     ]:
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # pyright:ignore
-    TF_FLOAT = tf.keras.backend.floatx()  # pyright:ignore
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # type:ignore
+    TF_FLOAT = tf.keras.backend.floatx()  # type:ignore
     eager_mode = os.environ.get("TF_EAGER", None)
     if eager_mode is not None:
         logger.info("Detected `TF_EAGER` from env. Running eagerly.")
@@ -1573,20 +1597,8 @@ def setup_wandb(
     Example:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
     """
-    # try:
-    #     import wandb
-    # except Exception:
-    #     wandb = None
-    # try:
-    #     import wandb
-    #
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-
-    # except Exception:
-    #     wandb = None
-    #     WANDB_DISABLED = True
-
     if WANDB_DISABLED or WANDB_MODE == "disabled":
         logger.warning(
             f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
@@ -1669,14 +1681,18 @@ def setup_wandb(
         {
             "created_at": dstr,
             "day": ezpz.get_timestamp("%d"),
+            "ezpz_file": ezpz.__file__,
+            "ezpz_version": ezpz.__version__,
+            "hostname": get_hostname(),
             "month": ezpz.get_timestamp("%m"),
             "outdir": os.getcwd(),
+            "pytorch_backend": str(get_torch_backend()).lower(),
             "torch_version": torch_version,
+            "torch_version_as_float": get_torch_version_as_float(),
             "torch_file": torch_file,
             "world_size": get_world_size(),
             "year": ezpz.get_timestamp("%Y"),
-            "ezpz_version": ezpz.__version__,
-            "ezpz_file": ezpz.__file__,
+            "working_directory": os.getcwd(),
         }
     )
     if config is not None:
@@ -1719,14 +1735,14 @@ def run_bash_command(cmd: str) -> Any:
     process = subprocess.Popen(
         shlex.split(cmd, posix=True),
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
     output, error = process.communicate()
     if process.returncode != 0:
         raise Exception(
             f"Command failed with return code {process.returncode}.\n"
-                f"stdout: {output.decode().strip()}\n"
-                f"stderr: {error.decode().strip()}"
+            f"stdout: {output.decode().strip()}\n"
+            f"stderr: {error.decode().strip()}"
         )
     if error:
         raise Exception(error.decode())

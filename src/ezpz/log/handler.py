@@ -22,6 +22,11 @@ from rich.console import ConsoleRenderable
 
 from logging import LogRecord
 
+import re
+
+# Define the regex pattern for ANSI escape codes
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1B\[[0-9;]*m")
+
 
 def get_styles(colorized: bool = True) -> dict:
     styles = {}
@@ -96,8 +101,10 @@ class RichHandler(OriginalRichHandler):
         pstr = "/".join([parr[0], ".".join(parr[1:])])
 
         level = self.get_level_text(record)
-        time_format = None if self.formatter is None else self.formatter.datefmt
-        default_time_fmt = '%Y-%m-%d %H:%M:%S,%f'
+        time_format = (
+            None if self.formatter is None else self.formatter.datefmt
+        )
+        default_time_fmt = "%Y-%m-%d %H:%M:%S,%f"
         # default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
         time_format = time_format if time_format else default_time_fmt
         log_time = datetime.fromtimestamp(record.created)
@@ -242,5 +249,9 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             result += path_text
         result += Text(" ", style=self.styles.get("repr.dash", ""))
         for elem in renderables:
-            result += elem
+            if ANSI_ESCAPE_PATTERN.search(str(elem)):
+                # If the element is already ANSI formatted, append it directly
+                result += Text.from_ansi(str(elem))
+            else:
+                result += elem
         return result
