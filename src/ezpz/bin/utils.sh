@@ -122,8 +122,6 @@ if [[ -v NOOP ]]; then
     set -o noexec # Read commands but do not execute them.
 fi
 
-
-
 # @description Kill existing mpi processes
 ezpz_kill_mpi() {
     # pgrep -E "$USER.+(pals|mpi|.py)" | grep -v grep | awk '{print $2}' | xargs -r kill
@@ -607,8 +605,14 @@ ezpz_setup_uv_venv() {
         echo "Installing uv..."
         ezpz_install_uv
     fi
+    local mn
+    local env_name
     env_name=$(basename "${CONDA_PREFIX}")
-    uv venv --python="$(which python3)" --system-site-packages "${WORKING_DIR}/venvs/${mn}/${env_name}"
+    VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
+    fpactivate="${VENV_DIR}/bin/activate"
+    mn=$(ezpz_get_machine_name)
+    uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
+    [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}"
 }
 
 # -----------------------------------------------------------------------------
@@ -642,7 +646,10 @@ ezpz_setup_venv_from_conda() {
             log_message INFO "  - No VIRTUAL_ENV found in environment!"
             # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
             log_message INFO "  - Looking for venv in VENV_DIR=./venvs/${CYAN}${CONDA_NAME}${RESET}..."
-            export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
+            local fpactivate
+            fpactivate="${VENV_DIR}/bin/activate"
+            export VENV_DIR
             # make directory if it doesn't exist
             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
@@ -651,14 +658,14 @@ ezpz_setup_venv_from_conda() {
                 python3 -m venv "${VENV_DIR}" --system-site-packages
                 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
                     log_message INFO "  - Activating newly created venv..."
-                    source "${VENV_DIR}/bin/activate" && return 0 # || exit
+                    [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
                 else
                     log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
                     return 1
                 fi
             elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
                 log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
-                source "${VENV_DIR}/bin/activate" && return 0 # || exit
+                [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
             else
                 log_message ERROR "  - Unable to locate ${VENV_DIR}/bin/activate"
                 return 1
@@ -745,7 +752,8 @@ ezpz_setup_venv_from_conda() {
 # @description
 #    Relies on:
 #      - `ezpz_setup_conda`
-#      - `ezpz_setup_venv_from_conda` (or `ezpz_setup_uv_venv`)
+#      - ~~`ezpz_setup_venv_from_conda` (or `ezpz_setup_uv_venv`)~~
+#      - `ezpz_setup_uv_venv`
 #      - `CONDA_PREFIX`, `VIRTUAL_ENV` environment variables.
 #      - `which python3`
 #
@@ -798,21 +806,22 @@ ezpz_setup_python() {
         # Now attempt to set up venv on top of the activated conda
 
         # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
-        if ! ezpz_setup_venv_from_conda; then
-            log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+        if ! ezpz_setup_uv_venv; then
+            log_message ERROR "  - ezpz_setup_uv_venv failed."
             return 1
         fi
 
     # Scenario 2: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-        ezpz_setup_venv_from_conda
+        # ezpz_setup_venv_from_conda
+        ezpz_setup_uv_venv
 
     # Scenario 2: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
         # log_message INFO "Setting up venv from"
-        if ! ezpz_setup_venv_from_conda; then
-            log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+        if ! ezpz_setup_uv_venv; then
+            log_message ERROR "  - ezpz_setup_uv_venv failed."
             return 1
         fi
 
@@ -1353,7 +1362,6 @@ ezpz_save_deepspeed_env() {
     [ "${https_proxy}" ] && echo "https_proxy=${https_proxy}" >>.deepspeed_env
 }
 
-
 ezpz_get_pbs_jobid() {
     _pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
     _pbs_jobid="$(echo "${_pbs_nodefile}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
@@ -1591,7 +1599,7 @@ ezpz_get_pbs_jobid_from_nodefile() {
         echo "No PBS_NODEFILE found"
         return 1
     else
-        _pbs_jobid="$(echo "${PBS_NODEFILE//#}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+        _pbs_jobid="$(echo "${PBS_NODEFILE//#/}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
         export PBS_JOBID="${_pbs_jobid}"
     fi
 
@@ -1617,7 +1625,7 @@ ezpz_setup_job() {
     elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
         log_message INFO "  - SLURM_JOB_ID=${YELLOW}${SLURM_JOB_ID}${RESET}"
     else
-        if  [[ "$(ezpz_get_scheduler_type)" == "pbs" ]]; then
+        if [[ "$(ezpz_get_scheduler_type)" == "pbs" ]]; then
             ezpz_get_pbs_jobid
             export PBS_JOBID="${_pbs_jobid}"
             log_message INFO "  - PBS_JOBID=${YELLOW}${PBS_JOBID}${RESET}"
@@ -1631,7 +1639,7 @@ ezpz_setup_job() {
         scheduler_type=$(ezpz_get_scheduler_type)
         if [[ "${scheduler_type}" == "pbs" ]]; then
             _pbs_nodefile=$(ezpz_get_pbs_nodefile_from_hostname)
-            _pbs_jobid="$(echo "${PBS_NODEFILE//#}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
+            _pbs_jobid="$(echo "${PBS_NODEFILE//#/}" | tr "\/" " " | awk '{print $NF}' | tr "." " " | awk '{print $1}')"
             export PBS_JOBID="${_pbs_jobid}"
             if [[ -f "${_pbs_nodefile}" ]]; then
                 export PBS_NODEFILE="${_pbs_nodefile}"
