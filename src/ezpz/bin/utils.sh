@@ -618,13 +618,9 @@ ezpz_setup_uv_venv() {
     VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
     fpactivate="${VENV_DIR}/bin/activate"
     mn=$(ezpz_get_machine_name)
-    if [[ -f "${fpactivate}" ]]; then
-        log_message INFO "  - Found ${fpactivate}"
-        # shellcheck disable=SC1090
-        [ -f "${fpactivate}" ] && source "${fpactivate}"
-    else
-        uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
-    fi
+    [ ! -f "${fpactivate}" ] && log_message INFO "  - Creating venv in ${VENV_DIR} on ${mn}..." && uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
+    # shellcheck disable=SC1090
+    [ -f "${fpactivate}" ] && log_message INFO "  - Activating: ${fpactivate}" && source "${fpactivate}"
 }
 
 # -----------------------------------------------------------------------------
