@@ -289,9 +289,69 @@ ezpz_get_jobid_from_hostname() {
 ezpz_reset_pbs_vars() {
     wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
     vars=($(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}'))
-    for v in "$vars[@]"; do echo "Unsetting $v" && unset -v "${v}"; done
+    for v in $vars[@]; do echo "Unsetting $v" && unset -v "${v}"; done
     export PBS_O_WORKDIR="${wd}"
 }
+
+ezpz_show_env() {
+    log_message INFO "Current environment:"
+    log_message INFO "Loaded modules:"
+    module list
+    vars=(
+        "CONDA_PREFIX"
+        "CONDA_DEFAULT_ENV"
+        "CONDA_NAME"
+        "VENV_DIR"
+        "VIRTUAL_ENV"
+        "PYTHON_EXEC"
+        "PBS_JOBID"
+        "PBS_NODEFILE"
+        "HOSTFILE"
+        "NGPUS"
+        "NHOSTS"
+        "NTILE_PER_HOST"
+        "WORLD_SIZE"
+    )
+    log_message INFO "Showing important environment variables:"
+    printenv | grep -E "($(IFS='|'; echo "${vars[*]}"))"
+}
+
+ezpz_reset() {
+    log_message INFO "Current environment before reset:"
+    log_message INFO "$(ezpz_show_env)"
+    module reset
+    vars=(
+        "CONDA_PREFIX"
+        "CONDA_DEFAULT_ENV"
+        "CONDA_NAME"
+        "VENV_DIR"
+        "VIRTUAL_ENV"
+        "VIRTUAL_ENV_PROMPT"
+        "PYTHON_EXEC"
+        "CONDA_SHLVL"
+        "DIST_LAUNCH"
+        "ezlaunch"
+        "HOSTFILE"
+        "HOSTS"
+        "HOSTS_ARR"
+        "JOBENV_FILE"
+        "LAUNCH"
+        "NGPU_PER_HOST"
+        "NGPU_PER_TILE"
+        "NGPUS"
+        "NHOSTS"
+        "NTILE_PER_HOST"
+        "PYTHONPATH"
+        "VENV_DIR"
+        "WORLD_SIZE"
+    )
+    for v in "${vars[@]}"; do
+        echo "Unsetting ${v}"
+        unset -v "${v}"
+    done
+    log_message INFO "Resetting PBS-related environment variables..."
+}
+
 
 ######################################
 # ezpz_get_pbs_nodefile_from_hostname
@@ -347,10 +407,179 @@ ezpz_save_dotenv() {
     fi
 }
 
+
+
+# Function to activate (or create, if not found) a conda environment using
+# [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)
+#
+# - Usage: `activate_or_create_micromamba_env <envdir> [<python_version>]`
+# - Parameters:
+#   - `<envdir>`: Directory to look for the conda environment.
+#   - `[<python_version>]`: Optional Python version to use for the environment.
+#     If not specified, it defaults to the value of `${DEFAULT_PYTHON_VERSION:-3.11}`.
+ezpz_activate_or_create_micromamba_env() {
+    if ! command -v micromamba &>/dev/null; then
+        log_message INFO "micromamba not found. Installing micromamba..."
+        ezpz_install_micromamba || {
+            log_message INFO "Failed to install micromamba. Please ensure you have curl installed."
+            return 1
+        }
+    fi
+    if [[ "$#" -eq 2 ]]; then
+        log_message INFO "Received two arguments: envdir=$1, python_version=$2"
+        envdir="$(realpath "$1")"
+        python_version="$2"
+    elif [[ "$#" -eq 1 ]]; then
+        log_message INFO "Received one argument: envdir=$1"
+        envdir="$(realpath "$1")"
+        python_version="${DEFAULT_PYTHON_VERSION:-3.11}"
+    else
+        log_message INFO "Usage: $0 <envdir> [<python_version>]"
+        log_message INFO "If no python version is specified, it defaults to ${DEFAULT_PYTHON_VERSION:-3.11}."
+        return 1
+    fi
+
+    # Initialize shell for micromamba
+    shell_type="$(basename "${SHELL}")"
+    eval "$(micromamba shell hook --shell "${shell_type}")"
+    # Check if the environment already exists
+    if [[ -d "${envdir}" ]] && [[ -n "$(ls -A "${envdir}")" ]]; then
+        log_message INFO "Found existing conda environment at ${envdir}. Activating it..."
+        micromamba activate "${envdir}" || {
+            log_message INFO "Failed to activate existing conda environment at ${envdir}."
+            return 1
+        }
+    else
+        log_message INFO "Creating conda environment in: ${envdir}"
+        micromamba create --prefix "${envdir}" \
+            --yes \
+            --verbose \
+            --override-channels \
+            --channel https://software.repos.intel.com/python/conda/linux-64 \
+            --channel conda-forge \
+            --strict-channel-priority \
+            "python=${python_version}" || {
+            log_message INFO "Failed to create conda environment at ${envdir}."
+            return 1
+        }
+        # Activate the newly created environment
+        log_message INFO "Activating the conda environment at ${envdir}..."
+        micromamba activate "${envdir}" || {
+            log_message INFO "Failed to create or activate conda environment at ${envdir}."
+            return 1
+        }
+    fi
+}
+
+# Generic function to clone a GitHub repository and build a wheel from it.
+# NOTE: THIS HASNT BEEN TESTED YET
+# But, something like this should work and could _possibly_ be used as a
+# generic replacement instead of having to manually build each library
+# one-by-one as we're doing now.
+ezpz_build_bdist_wheel_from_github_repo() {
+    if [[ "$#" -ne 1 ]]; then
+        log_message INFO "Usage: $0 <wheel_name>"
+        return 1
+    fi
+    local repo_url="$1"
+    git clone "${repo_url}" && cd "${repo_url##*/}" || return 1
+    git submodule sync
+    git submodule update --init --recursive
+    if [[ -f "requirements.txt" ]]; then
+        uv pip install -r requirements.txt
+    fi
+    if [[ -f "setup.py" ]]; then
+        log_message INFO "Building wheel from setup.py..."
+        uv pip install --upgrade pip setuptools wheel
+        python3 setup.py bdist_wheel
+        uv pip install dist/*.whl
+    elif [[ -f "pyproject.toml" ]]; then
+        log_message INFO "Building wheel from pyproject.toml..."
+        python3 -m build --installer=uv
+    fi
+    uv pip install dist/*.whl || {
+        log_message INFO "Failed to install the built wheel."
+        return 1
+    }
+    log_message INFO "Successfully built and installed the wheel from ${repo_url}."
+    cd - || return 1
+}
+
+# Function to prepare a repository in the specified build directory.
+#
+# - Usage: prepare_repo_in_build_dir `<build_dir>` `<repo_url>`
+#   Where <build_dir> is the directory where the repository will be cloned.
+#
+# - Example:
+#
+#   ```bash
+#   prepare_repo_in_build_dir build-2025-07-05-203137 "https://github.com/pytorch/pytorch"
+#   ```
+ezpz_prepare_repo_in_build_dir() {
+    # build_dir, repo_url
+    if [[ "$#" -ne 2 ]]; then
+        log_message INFO "Usage: $0 <build_dir> <repo_url>"
+        log_message INFO "Where <build_dir> is the directory where the repository will be cloned."
+        return 1
+    fi
+    local bd
+    bd="$(realpath "$1")"
+    local src
+    src="$2"
+    local name
+    name="${src##*/}" # Extract the repository name from the URL
+    local fp
+    fp="${bd}/${name}" # Full path
+    if [[ ! -d "${fp}" ]]; then
+        log_message INFO "Cloning ${name} from ${src} into ${fp}"
+        git clone "${src}" "${fp}" || {
+            log_message INFO "Failed to clone ${src}."
+            return 1
+        }
+    else
+        log_message INFO "${name} already exists in ${bd}. Skipping clone."
+    fi
+    cd "${fp}" || {
+        log_message INFO "Failed to change directory to ${fp}. Please ensure it exists."
+        return 1
+    }
+    git submodule sync
+    git submodule update --init --recursive
+    cd - || return 1
+}
+
+# Function to check if the wheel file already exists in the build directory.
+# - Usage: check_if_already_built `<libdir>`
+ezpz_check_if_already_built() {
+    # Check if the wheel file already exists in the build directory
+    if [[ "$#" -ne 1 ]]; then
+        log_message INFO "Usage: $0 libdir"
+        return 1
+    fi
+
+    local ldir; ldir="$(realpath "$1")"
+    log_message INFO "Checking for existing wheels in ${ldir}/dist..."
+
+    if [[ -d "${ldir}/dist" ]] && [[ -n "$(ls -A "${ldir}/dist")" ]]; then
+        log_message INFO "Found existing wheels in ${ldir}/dist:"
+        ls "${ldir}/dist"/*.whl
+        return 0
+    else
+        return 1
+    fi
+}
+
+# function to get name of machine, as lowercase string, based on hostname
+# Returns one of:
+#  aurora
+#  sunspot
+#  sophia
+#  polaris
+#  sirius
+#  frontier
+#  perlmutter
+#  <other hostname>
 ezpz_get_machine_name() {
-    ######################################################################
-    # ezpz_get_machine_name: Return current machine name, as lowercase string
-    ######################################################################
     if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
         machine="aurora"
     elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
@@ -723,7 +952,7 @@ ezpz_setup_uv_venv() {
 # -----------------------------------------------------------------------------
 ezpz_setup_venv_from_conda() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
+        log_message ERROR "  - ${RED}CONDA_PREFIX${RESET} is not set. Cannot create venv. Returning 1"
         return 1
     else
         log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
@@ -735,7 +964,7 @@ ezpz_setup_venv_from_conda() {
             # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
             VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
             export VENV_DIR
-            log_message INFO "  - Looking for venv in VENV_DIR=${VENV_DIR}..."
+            log_message INFO "  - Looking for venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}..."
             local fpactivate
             fpactivate="${VENV_DIR}/bin/activate"
             # make directory if it doesn't exist
@@ -757,11 +986,11 @@ ezpz_setup_venv_from_conda() {
                         }
                     }
                 else
-                    log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
+                    log_message ERROR "  - Failed to create venv at ${RED}${VENV_DIR}${RESET}"
                     return 1
                 fi
             elif [[ -f "${fpactivate}" ]]; then
-                log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+                log_message INFO "  - Activating existing venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}"
                 # shellcheck disable=SC1090
                 [ -f "${fpactivate}" ] && {
                     log_message INFO "  - Found ${fpactivate}" && {
@@ -771,7 +1000,7 @@ ezpz_setup_venv_from_conda() {
                     }
                 }
             else
-                log_message ERROR "  - Unable to locate ${VENV_DIR}/bin/activate"
+                log_message ERROR "  - Unable to locate ${RED}${fpactivate}${RESET}"
                 return 1
             fi
         fi
@@ -884,16 +1113,9 @@ ezpz_setup_venv_from_conda() {
 #    3. Print info about which python we're using
 # -----------------------------------------------------------------------------
 ezpz_setup_python() {
-    # virtual_env="${VIRTUAL_ENV:-}"
-    # conda_prefix="${CONDA_PREFIX:-}"
-
     local virtual_env="${VIRTUAL_ENV:-}"
     local conda_prefix="${CONDA_PREFIX:-}"
-    # local setup_status=0
-
-    # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
     log_message INFO "[${CYAN}PYTHON${RESET}]"
-
     # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
@@ -1779,7 +2001,7 @@ ezpz_setup_job() {
 
 # Set up the necessary modules for the new PyTorch 2.{7,8} environments.
 # It unloads existing modules, loads the required ones, and sets environment variables.
-ezpz_load_new_pt_modules() {
+ezpz_load_new_pt_modules_aurora() {
     module restore
     module unload oneapi mpich
     module use /soft/compilers/oneapi/2025.1.3/modulefiles
@@ -1792,17 +2014,110 @@ ezpz_load_new_pt_modules() {
     export ZE_FLAT_DEVICE_HIERARCHY="FLAT"
 }
 
-# Usage: setup_modules
-ezpz_setup_pt27() {
-    source /opt/aurora/24.347.0/spack/unified/0.9.2/install/linux-sles15-x86_64/gcc-13.3.0/miniforge3-24.3.0-0-gfganax/bin/activate
-    conda activate /lus/flare/projects/datascience/foremans/miniforge/2025-07-pt27
-    ezpz_load_new_pt_modules
+
+# Set up the Python environment for new PyTorch 2.{7,8} on Aurora.
+# It activates the specified conda environment and loads the necessary modules.
+ezpz_setup_python_pt_new_aurora() {
+    log_message INFO "[${CYAN}PYTHON${RESET}]"
+    if [[ "$#" -ne 1 ]]; then
+        log_message ERROR "Usage: ezpz_setup_python_pt_new <conda_env>"
+        return 1
+    fi
+    local conda_env="$1"
+    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt_new_aurora${RESET}..."
+    log_message INFO "  - Using conda environment: ${CYAN}${conda_env}${RESET}"
+    ezpz_load_new_pt_modules_aurora
+    micromamba activate "${conda_env}" || {
+        log_message ERROR "Failed to micromamba activate ${RED}${conda_env}${RESET}. Returning 1"
+        return 1
+    }
+    ezpz_setup_python || {
+        log_message ERROR "Failed to call ${RED}ezpz_setup_python${RESET}. Returning 1"
+        return 1
+    }
+    log_message INFO "  - ${GREEN}[✓] Finished${RESET} [${CYAN}ezpz_setup_python_pt_new_aurora${RESET}]"
+    return 0
 }
 
-ezpz_setup_pt28() {
-    micromamba activate /flare/datascience/foremans/micromamba/envs/2025-07-pt28
-    ezpz_load_new_pt_modules
+ezpz_setup_python_pt29_aurora() {
+    pt29env="${PT29_ENV:-/flare/datascience_collab/foremans/micromamba/envs/pt29-2025-07}"
+    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt29${RESET}..."
+    log_message INFO "  - Using PT29_ENV=${CYAN}${pt29env}${RESET}"
+    ezpz_setup_python_pt_new_aurora "${pt29env}" || {
+        log_message ERROR "Failed to call ${RED}ezpz_setup_python_pt_new${RESET} ${pt29env}. Returning 1"
+        return 1
+    }
+    return 0
 }
+
+ezpz_setup_python_pt28_aurora() {
+    pt28env="${PT28_ENV:-/flare/datascience_collab/foremans/micromamba/envs/pt28-2025-07}"
+    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt28${RESET}..."
+    log_message INFO "  - Using PT28_ENV=${CYAN}${pt28env}${RESET}"
+    ezpz_setup_python_pt_new_aurora "${pt28env}" || {
+        log_message ERROR "Failed to call ${RED}ezpz_setup_python_pt_new${RESET} ${pt28env}. Returning 1"
+        return 1
+    }
+}
+
+# Helper function 
+ezpz_setup_env_pt29_aurora() {
+    ezpz_setup_python_pt29_aurora || {
+        log_message ERROR "Python setup for pt29 failed. Aborting."
+        return 1
+    }
+    ezpz_setup_job "$@" || {
+        log_message ERROR "Job setup failed @ ${RED}ezpz_setup_job${RESET}. Aborting."
+        return 1
+    }
+    return 0
+}
+
+ezpz_setup_env_pt28_aurora() {
+    ezpz_setup_python_pt28_aurora || {
+        log_message ERROR "Python setup for pt28 failed. Aborting."
+        return 1
+    }
+    ezpz_setup_job "$@" || {
+        log_message ERROR "Job setup failed @ ${RED}ezpz_setup_job${RESET}. Aborting."
+        return 1
+    }
+    return 0
+}
+
+
+_ezpz_install_from_git() {
+    python3 -m pip install "git+https://github.com/saforem2/ezpz" --require-virtualenv
+}
+
+
+# Function to install ezpz into the currently active virtualenv.
+# Checks if a virtualenv or conda env is active, and if PYTHON_EXEC is set.
+# If checks fail, it logs an error and returns 1.
+# If checks pass, it attempts to install ezpz from GitHub using pip.
+ezpz_install() {
+    if [[ -z "${VIRTUAL_ENV:-}" && -z "${CONDA_PREFIX:-}" ]]; then
+        log_message ERROR "No virtual environment or conda environment is active. Please activate one before installing ezpz."
+        return 1
+    fi
+    if [[ -z "${PYTHON_EXEC:-}" ]]; then
+        log_message ERROR "PYTHON_EXEC is not set. Please ensure Python is available in your environment."
+        return 1
+    fi
+    log_message INFO "Installing ezpz into environment at ${VIRTUAL_ENV:-${CONDA_PREFIX}}"
+    if ! _ezpz_install_from_git; then
+        log_message ERROR "${RED}✘${RESET} Failed to install ezpz. Please check the error messages above."
+        log_message ERROR "If you see a 'No module named pip' error, please ensure pip is installed in your environment."
+        return 1
+    fi
+}
+
+# Usage: setup_modules
+# ezpz_setup_env_pt27() {
+#     source /opt/aurora/24.347.0/spack/unified/0.9.2/install/linux-sles15-x86_64/gcc-13.3.0/miniforge3-24.3.0-0-gfganax/bin/activate
+#     conda activate /lus/flare/projects/datascience/foremans/miniforge/2025-07-pt27
+#     ezpz_load_new_pt_modules
+# }
 
 # -----------------------------------------------------------------------------
 # Comprehensive setup: Python environment AND Job environment.
@@ -1816,7 +2131,7 @@ ezpz_setup_pt28() {
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
-    log_message INFO "Running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
+    log_message info "running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
         return 1
