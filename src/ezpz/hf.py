@@ -21,7 +21,12 @@ import ezpz
 
 import datasets
 import torch
-from accelerate import Accelerator, DistributedType
+try:
+    from accelerate import Accelerator # noqa: E402 type:ignore
+except ImportError:
+    raise ImportError(
+        "Please install accelerate to run this script: `pip install accelerate`"
+    )
 
 # from accelerate.logging import get_logger
 from accelerate.utils import set_seed
@@ -41,7 +46,6 @@ from transformers import (
     default_data_collator,
     get_scheduler,
 )
-from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 
