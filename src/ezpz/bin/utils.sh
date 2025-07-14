@@ -989,64 +989,68 @@ ezpz_setup_uv_venv() {
 #   Activates the created virtual environment. Prints status messages.
 #   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 # -----------------------------------------------------------------------------
-ezpz_setup_venv_from_conda() {
-    if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        log_message ERROR "  - ${RED}CONDA_PREFIX${RESET} is not set. Cannot create venv. Returning 1"
-        return 1
-    else
-        log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
-        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
-        local mn
-        mn="$(ezpz_get_machine_name)"
-        if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-            log_message INFO "  - No VIRTUAL_ENV found in environment!"
-            VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
-            export VENV_DIR
-            log_message INFO "  - Looking for venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}..."
-            local fpactivate
-            fpactivate="${VENV_DIR}/bin/activate"
-            # make directory if it doesn't exist
-            [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
-            if [[ ! -f "${fpactivate}" ]]; then
-                log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
-                python3 -m venv "${VENV_DIR}" --system-site-packages
-                # --seed ensures that pip is installed into the venv
-                # uv venv --seed --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
-                #     log_message WARN "  - uv venv failed, falling back to python3 -m venv"
-                #     python3 -m venv "${VENV_DIR}" --system-site-packages
-                # }
-                if [[ -f "${fpactivate}" ]]; then
-                    log_message INFO "  - Activating newly created venv..."
-                    # shellcheck disable=SC1090
-                    [ -f "${fpactivate}" ] && {
-                        log_message INFO "  - Found ${fpactivate}" && {
-                            source "${fpactivate}" && {
-                                return 0
-                            }
-                        }
-                    }
-                else
-                    log_message ERROR "  - Failed to create venv at ${RED}${VENV_DIR}${RESET}"
-                    return 1
-                fi
-            elif [[ -f "${fpactivate}" ]]; then
-                log_message INFO "  - Activating existing venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}"
-                # shellcheck disable=SC1090
-                [ -f "${fpactivate}" ] && {
-                    log_message INFO "  - Found ${fpactivate}" && {
-                        source "${fpactivate}" && {
-                            return 0
-                        }
-                    }
-                }
-            else
-                log_message ERROR "  - Unable to locate ${RED}${fpactivate}${RESET}"
-                return 1
-            fi
-        fi
-    fi
-
-}
+# ezpz_setup_venv_from_conda() {
+#     if [[ -z "${CONDA_PREFIX:-}" ]]; then
+#         log_message ERROR "  - ${RED}CONDA_PREFIX${RESET} is not set. Cannot create venv. Returning 1"
+#         return 1
+#     else
+#         log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
+#         CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+#         local mn
+#         mn="$(ezpz_get_machine_name)"
+#         if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+#             log_message INFO "  - No VIRTUAL_ENV found in environment!"
+#             VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
+#             export VENV_DIR
+#             log_message INFO "  - Looking for venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}..."
+#             local fpactivate
+#             fpactivate="${VENV_DIR}/bin/activate"
+#             # make directory if it doesn't exist
+#             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
+#             if [[ ! -f "${fpactivate}" ]]; then
+#                 log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
+#                 python3 -m venv "${VENV_DIR}" --system-site-packages
+#                 source "${fpactivate}" || {
+#                     log_message ERROR "  - Failed to source ${fpactivate} after creation."
+#                     return 1
+#                 }
+#                 # --seed ensures that pip is installed into the venv
+#                 # uv venv --seed --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
+#                 #     log_message WARN "  - uv venv failed, falling back to python3 -m venv"
+#                 #     python3 -m venv "${VENV_DIR}" --system-site-packages
+#                 # }
+#                 # if [[ -f "${fpactivate}" ]]; then
+#                 #     log_message INFO "  - Activating newly created venv..."
+#                 #     # shellcheck disable=SC1090
+#                 #     [ -f "${fpactivate}" ] && {
+#                 #         log_message INFO "  - Found ${fpactivate}" && {
+#                 #             source "${fpactivate}" && {
+#                 #                 return 0
+#                 #             }
+#                 #         }
+#                 #     }
+#                 # else
+#                 #     log_message ERROR "  - Failed to create venv at ${RED}${VENV_DIR}${RESET}"
+#                 #     return 1
+#                 # fi
+#             elif [[ -f "${fpactivate}" ]]; then
+#                 log_message INFO "  - Activating existing venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}"
+#                 # shellcheck disable=SC1090
+#                 [ -f "${fpactivate}" ] && {
+#                     log_message INFO "  - Found ${fpactivate}" && {
+#                         source "${fpactivate}" && {
+#                             return 0
+#                         }
+#                     }
+#                 }
+#             else
+#                 log_message ERROR "  - Unable to locate ${RED}${fpactivate}${RESET}"
+#                 return 1
+#             fi
+#         fi
+#     fi
+#
+# }
 
 # ezpz_setup_venv_from_conda1() {
 #     # Check prerequisites
@@ -1117,6 +1121,68 @@ ezpz_setup_venv_from_conda() {
 # }
 
 # -----------------------------------------------------------------------------
+# @description Set up a standard Python `venv` on top of an active Conda environment.
+# Creates a venv named after the Conda environment in a central 'venvs' directory.
+# Activates the created venv. Inherits system site packages.
+#
+# Note: Similar purpose to `ezpz_setup_uv_venv` but uses the built-in `venv` module.
+#
+# Relies on:
+#   - `CONDA_PREFIX` environment variable must be set.
+#   - `WORKING_DIR` environment variable must be set.
+#   - `python3` command must exist and point to the Conda Python.
+#
+# Usage:
+#   ezpz_setup_venv_from_conda
+#
+# Side Effects:
+#   Creates a virtual environment under "${WORKING_DIR}/venvs/".
+#   Activates the created virtual environment. Prints status messages.
+#   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
+# -----------------------------------------------------------------------------
+ezpz_setup_venv_from_conda() {
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
+        return 1
+    else
+        log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
+        CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+        if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+            log_message INFO "  - No VIRTUAL_ENV found in environment!"
+            # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
+            log_message INFO "  - Looking for venv in VENV_DIR=./venvs/$(ezpz_get_machine_name)/${CYAN}${CONDA_NAME}${RESET}..."
+            VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
+            local fpactivate
+            fpactivate="${VENV_DIR}/bin/activate"
+            export VENV_DIR
+            # make directory if it doesn't exist
+            [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
+            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+                log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
+                mkdir -p "${VENV_DIR}"
+                python3 -m venv "${VENV_DIR}" --system-site-packages
+                if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                    log_message INFO "  - Activating newly created venv..."
+                    # shellcheck disable=SC1090
+                    [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
+                else
+                    log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
+                    return 1
+                fi
+            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+                # shellcheck disable=SC1090
+                [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
+            else
+                log_message ERROR "  - Unable to locate ${VENV_DIR}/bin/activate"
+                return 1
+            fi
+        fi
+    fi
+
+}
+
+# -----------------------------------------------------------------------------
 # @brief Main Python environment setup function.
 #
 # @example:
@@ -1125,8 +1191,8 @@ ezpz_setup_venv_from_conda() {
 # @description
 #    Relies on:
 #      - `ezpz_setup_conda`
-#      - ~~`ezpz_setup_venv_from_conda` (or `ezpz_setup_venv_from_conda`)~~
-#      - `ezpz_setup_venv_from_conda`
+#      - ~~`ezpz_setup_venv_from_conda` (or `ezpz_setup_uv_venv`)~~
+#      - `ezpz_setup_uv_venv`
 #      - `CONDA_PREFIX`, `VIRTUAL_ENV` environment variables.
 #      - `which python3`
 #
@@ -1153,9 +1219,19 @@ ezpz_setup_venv_from_conda() {
 #    3. Print info about which python we're using
 # -----------------------------------------------------------------------------
 ezpz_setup_python() {
+    # virtual_env="${VIRTUAL_ENV:-}"
+    # conda_prefix="${CONDA_PREFIX:-}"
+
+
     local virtual_env="${VIRTUAL_ENV:-}"
     local conda_prefix="${CONDA_PREFIX:-}"
+    # local setup_status=0
+
+
+    # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
     log_message INFO "[${CYAN}PYTHON${RESET}]"
+
+
     # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
@@ -1171,15 +1247,19 @@ ezpz_setup_python() {
         fi
         # Now attempt to set up venv on top of the activated conda
 
+
         # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
         if ! ezpz_setup_venv_from_conda; then
             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
             return 1
         fi
 
+
     # Scenario 2: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         ezpz_setup_venv_from_conda
+        # ezpz_setup_uv_venv
+
 
     # Scenario 2: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
@@ -1190,10 +1270,12 @@ ezpz_setup_python() {
             return 1
         fi
 
+
     # Scenario 3: Venv active, Conda not active (less common/intended)
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
         log_message INFO "  - No conda_prefix found."
         log_message INFO "  - Using virtual_env from: ${CYAN}${virtual_env}${RESET}"
+
 
     # Scenario 4: Both Conda and venv active
     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
@@ -1201,6 +1283,7 @@ ezpz_setup_python() {
         log_message INFO "  - Using conda from: ${GREEN}${conda_prefix}${RESET}"
         log_message INFO "  - Using venv from: ${CYAN}${virtual_env}${RESET}"
     fi
+
 
     # Verify python3 is available and export path
     local python_exec
@@ -1211,6 +1294,102 @@ ezpz_setup_python() {
     log_message INFO "  - Using python from: ${CYAN}$(which python3)${RESET}"
     export PYTHON_EXEC="${python_exec}"
 }
+
+# # -----------------------------------------------------------------------------
+# # @brief Main Python environment setup function.
+# #
+# # @example:
+# #   ezpz_setup_python
+# #
+# # @description
+# #    Relies on:
+# #      - `ezpz_setup_conda`
+# #      - ~~`ezpz_setup_venv_from_conda` (or `ezpz_setup_venv_from_conda`)~~
+# #      - `ezpz_setup_venv_from_conda`
+# #      - `CONDA_PREFIX`, `VIRTUAL_ENV` environment variables.
+# #      - `which python3`
+# #
+# #    Side Effects:
+# #      Activates Conda and/or venv environments. Exports PYTHON_EXEC.
+# #      Prints status messages. Returns 1 on failure.
+# #
+# #    1. Setup `conda`
+# #       - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
+# #       - if `venv` nonempty, and `conda` empty, what do (???)
+# #       - if `venv` nonempty and `conda` nonempty, use these
+# #       - if `conda` empty and `venv` empty:
+# #          - if `hostname == x4*`, we're on Aurora
+# #          - if `hostname == x1*`, we're on Sunspot
+# #          - if `hostname == x3*`, we're on Polaris
+# #          - if `hostname == nid*`, we're on Perlmutter
+# #          - otherwise, you're on you're own
+# #
+# #    2. Activate (creating, if necessary) a `venv` on top of `base` conda
+# #       - use the $CONDA_PREFIX to create a venv in
+# #         `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
+# #         - activate and use this
+# #
+# #    3. Print info about which python we're using
+# # -----------------------------------------------------------------------------
+# ezpz_setup_python() {
+#     local virtual_env="${VIRTUAL_ENV:-}"
+#     local conda_prefix="${CONDA_PREFIX:-}"
+#     log_message INFO "[${CYAN}PYTHON${RESET}]"
+#     # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
+#     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+#         log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
+#         if ! ezpz_setup_conda; then
+#             log_message ERROR "  - ezpz_setup_conda failed."
+#             return 1
+#         fi
+#         # Re-check conda_prefix after setup attempt
+#         conda_prefix="${CONDA_PREFIX:-}"
+#         if [[ -z "${conda_prefix}" ]]; then
+#             log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
+#             return 1
+#         fi
+#         # Now attempt to set up venv on top of the activated conda
+#
+#         # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
+#         if ! ezpz_setup_venv_from_conda; then
+#             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+#             return 1
+#         fi
+#
+#     # Scenario 2: Conda active, venv not active -> Setup venv
+#     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+#         ezpz_setup_venv_from_conda
+#
+#     # Scenario 2: Conda active, venv not active -> Setup venv
+#     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+#         log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
+#         # log_message INFO "Setting up venv from"
+#         if ! ezpz_setup_venv_from_conda; then
+#             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+#             return 1
+#         fi
+#
+#     # Scenario 3: Venv active, Conda not active (less common/intended)
+#     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+#         log_message INFO "  - No conda_prefix found."
+#         log_message INFO "  - Using virtual_env from: ${CYAN}${virtual_env}${RESET}"
+#
+#     # Scenario 4: Both Conda and venv active
+#     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+#         log_message INFO "  - Found both conda_prefix and virtual_env in environment."
+#         log_message INFO "  - Using conda from: ${GREEN}${conda_prefix}${RESET}"
+#         log_message INFO "  - Using venv from: ${CYAN}${virtual_env}${RESET}"
+#     fi
+#
+#     # Verify python3 is available and export path
+#     local python_exec
+#     if ! python_exec=$(which python3); then
+#         log_message ERROR "  - python3 command not found in PATH."
+#         return 1
+#     fi
+#     log_message INFO "  - Using python from: ${CYAN}$(which python3)${RESET}"
+#     export PYTHON_EXEC="${python_exec}"
+# }
 
 whereAmI() {
     python3 -c 'import os; print(os.getcwd())'
