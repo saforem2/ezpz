@@ -328,7 +328,7 @@ ezpz_get_jobid_from_hostname() {
 ezpz_reset_pbs_vars() {
     wd="${PBS_O_WORKDIR:-${WORKING_DIR:-$(pwd)}}"
     vars=($(printenv | grep -iE "^PBS" | tr "=" " " | awk '{print $1}'))
-    for v in $vars[@]; do echo "Unsetting $v" && unset -v "${v}"; done
+    for v in ${vars[@]}; do echo "Unsetting $v" && unset -v "${v}"; done
     export PBS_O_WORKDIR="${wd}"
 }
 
