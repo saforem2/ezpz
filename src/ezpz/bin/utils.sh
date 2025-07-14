@@ -2057,7 +2057,6 @@ ezpz_load_new_pt_modules_aurora() {
 # Set up the Python environment for new PyTorch 2.{7,8} on Aurora.
 # It activates the specified conda environment and loads the necessary modules.
 ezpz_setup_python_pt_new_aurora() {
-    log_message INFO "[${BRIGHT_GREEN}PYTHON${RESET}]"
     if [[ "$#" -ne 1 ]]; then
         log_message ERROR "${RED}Usage: ezpz_setup_python_pt_new <conda_env>${RESET}"
         return 1
