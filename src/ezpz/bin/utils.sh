@@ -1009,11 +1009,12 @@ ezpz_setup_venv_from_conda() {
             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
             if [[ ! -f "${fpactivate}" ]]; then
                 log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
+                python3 -m venv "${VENV_DIR}" --system-site-packages
                 # --seed ensures that pip is installed into the venv
-                uv venv --seed --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
-                    log_message WARN "  - uv venv failed, falling back to python3 -m venv"
-                    python3 -m venv "${VENV_DIR}" --system-site-packages
-                }
+                # uv venv --seed --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
+                #     log_message WARN "  - uv venv failed, falling back to python3 -m venv"
+                #     python3 -m venv "${VENV_DIR}" --system-site-packages
+                # }
                 if [[ -f "${fpactivate}" ]]; then
                     log_message INFO "  - Activating newly created venv..."
                     # shellcheck disable=SC1090
