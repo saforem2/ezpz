@@ -21,10 +21,6 @@ import ezpz
 
 import datasets
 import torch
-from accelerate import Accelerator, DistributedType
-
-# from accelerate.logging import get_logger
-from accelerate.utils import set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
 from torch.utils.data import DataLoader
@@ -41,14 +37,22 @@ from transformers import (
     default_data_collator,
     get_scheduler,
 )
-from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.51.0.dev0")
 
 logger = ezpz.get_logger(__name__)
+
+try:
+    from accelerate import Accelerator # noqa: E402 type:ignore
+    # from accelerate.logging import get_logger
+    from accelerate.utils import set_seed
+except ImportError as exc:
+    logger.error(
+        "Please install accelerate to run this script: `pip install accelerate`"
+    )
+    raise exc
 
 require_version(
     "datasets>=2.14.0",

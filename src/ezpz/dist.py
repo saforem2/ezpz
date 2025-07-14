@@ -599,6 +599,10 @@ def init_deepspeed(
         raise exc
 
 
+def get_device(type: Optional[str] = None, as_torch_device: Optional[bool] = None) -> str | torch.device:
+    """Alias for `get_torch_device`."""
+    return get_torch_device(device_type=type, as_torch_device=as_torch_device)
+
 def get_torch_device_type(device_type: Optional[str] = None) -> str:
     """Get the current PyTorch device type.
 
@@ -763,8 +767,9 @@ def init_process_group(
             )
         )
     if not isinstance(timeout, timedelta):
+        env_timeout = os.environ.get("TORCH_DDP_TIMEOUT", timeout)
         timeout = timedelta(
-            seconds=int(timeout),
+            seconds=int(env_timeout),
         )
     if not torch.distributed.is_initialized():  # type:ignore
         torch.distributed.init_process_group(  # type:ignore
@@ -1122,12 +1127,11 @@ def setup_torch_distributed(
         f"{'ddp', 'ds', 'deepspeed', 'horovod', 'hvd'}"
     )
 
+    DEFAULT_TIMEOUT = os.environ.get("TORCH_DDP_TIMEOUT", 3600)
     timeout = (
-        3600
-        if timeout is None
-        else int(timeout)
-        if isinstance(timeout, str)
-        else timeout
+        DEFAULT_TIMEOUT if timeout is None else (
+            int(timeout) if isinstance(timeout, str) else timeout
+        )
     )
     port = (
         "1234"
@@ -1156,8 +1160,8 @@ def setup_torch_distributed(
             " ".join(
                 [
                     f"Using {fw=} with",
-                    "torch_{device,backend}={",
-                    f"{get_torch_device_type()}, {be}" + "}",
+                    "torch_{device,backend}=",
+                    "{" + f"{get_torch_device_type()}, {be}" + "}",
                 ]
             )
         )

@@ -13,9 +13,12 @@ import socket
 
 if socket.gethostname().startswith("x3"):
     # NOTE: Need to swap import order on Polaris (hostname: [x3...])
-    from mpi4py import MPI  # type:ignore  # noqa: F401
     import torch  # type:ignore
+    from mpi4py import MPI  # type:ignore  # noqa: F401
 else:
+    import torch
+    from mpi4py import MPI
+
     if socket.gethostname().startswith("x4"):
         if os.environ.get("FI_MR_CACHE_MONITOR") != "userfaultfd":
             os.environ["FI_MR_CACHE_MONITOR"] = "userfaultfd"
@@ -30,17 +33,17 @@ else:
 
             os.environ["IPEX_VERSION"] = ipex.__version__
         except Exception:
-            ipex = None
+            ipex = None  # type:ignore
 
         try:
             import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]  # noqa
 
             os.environ["ONECCL_BPT_VERSION"] = oneccl_bpt.__version__
         except Exception:
-            oneccl_bpt = None
+            oneccl_bpt = None  # type:ignore
 
-    import torch  # type: ignore
-    from mpi4py import MPI  # type:ignore  # noqa: F401
+    # import torch  # type: ignore
+    # from mpi4py import MPI  # type:ignore  # noqa: F401
 
 from ezpz.__about__ import __version__
 
@@ -117,6 +120,7 @@ from ezpz.dist import (
     cleanup,
     get_cpus_per_node,
     get_dist_info,
+    get_device,
     get_gpus_per_node,
     get_hostname,
     get_hosts_from_hostfile,
@@ -174,25 +178,7 @@ from ezpz.jobs import (
 )
 
 from ezpz.log import (
-    #     # COLORS,
-    #     # Console,
-    #     # RichHandler,
-    #     # STYLES,
-    #     # add_columns,
-    #     # build_layout,
-    #     flatten_dict,
-    #     get_console,
-    #     # get_file_logger,
     get_logger,
-    #     # get_theme,
-    #     # get_width,
-    #     is_interactive,
-    #     # make_layout,
-    #     nested_dict_to_df,
-    #     print_config,
-    #     printarr,
-    #     should_do_markup,
-    #     # to_bool,
     use_colored_logs,
 )
 from ezpz import pbs
@@ -268,12 +254,18 @@ LOG_FROM_ALL_RANKS = os.environ.get(
 # ---- Toggle with environment variable
 if LOG_FROM_ALL_RANKS:
     if RANK == 0:
-        logger.warning("LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!")
+        logger.warning(
+            "LOGGING FROM ALL RANKS! BE SURE YOU WANT TO DO THIS !!!"
+        )
     logger.setLevel(EZPZ_LOG_LEVEL)
 else:
-    logger.setLevel(EZPZ_LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
+    logger.setLevel(EZPZ_LOG_LEVEL) if RANK == 0 else logger.setLevel(
+        "CRITICAL"
+    )
     logger.info(f"Setting logging level to '{EZPZ_LOG_LEVEL}' on 'RANK == 0'")
-    logger.info("Setting logging level to 'CRITICAL' on all others 'RANK != 0'")
+    logger.info(
+        "Setting logging level to 'CRITICAL' on all others 'RANK != 0'"
+    )
 
 os.environ["EZPZ_VERSION"] = __version__
 
@@ -281,8 +273,12 @@ os.environ["TORCH_VERSION"] = torch.__version__
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["ITEX_VERBOSE"] = os.environ.get("ITEX_VERBOSE", "0")
 os.environ["LOG_LEVEL_ALL"] = os.environ.get("LOG_LEVEL_ALL", "5")
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get("TF_CPP_MIN_LOG_LEVEL", "5")
-os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get("ITEX_CPP_MIN_LOG_LEVEL", "5")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = os.environ.get(
+    "TF_CPP_MIN_LOG_LEVEL", "5"
+)
+os.environ["ITEX_CPP_MIN_LOG_LEVEL"] = os.environ.get(
+    "ITEX_CPP_MIN_LOG_LEVEL", "5"
+)
 os.environ["CCL_LOG_LEVEL"] = os.environ.get("CCL_LOG_LEVEL", "ERROR")
 # noqa: E402
 warnings.filterwarnings("ignore")
@@ -383,6 +379,7 @@ __all__ = [
     "get_data_parallel_group",
     "get_data_parallel_rank",
     "get_data_parallel_world_size",
+    "get_device",
     "get_dist_info",
     # "get_file_logger",
     "get_gpus_per_node",

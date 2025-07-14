@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ezpz"
 dynamic = ["version"]
 dependencies = [
-    "accelerate",
+    # "accelerate",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
     "evaluate",
     # "h5py",
@@ -28,24 +28,29 @@ dependencies = [
 ]
 requires-python = ">=3.10"
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Programming Language :: Python"
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
 ]
 license = { file = "LICENSE" }
 keywords = ["torch", "distributed", "training", "accelerate", "wandb"]
 readme = "README.md"
 description = 'Distributed training, :lemon: `ezpz`.'
 authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
-maintainers = [
-    { name = "Sam Foreman", email = "saforem2@gmail.com" }
-]
+maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 
 [project.scripts]
 ezpz-test = "ezpz.test:main"
 ezpz-launch = "ezpz.launch:main"
 
 [project.optional-dependencies]
+xpu = [
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
+]
 torch = ["mpi4py", "torch"]
+cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
+cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
 dev = [
     "pyink",
     "bpython",
@@ -75,9 +80,7 @@ docs = [
 ]
 
 [dependency-groups]
-dev = [
-    "ty>=0.0.1a8",
-]
+dev = ["ty>=0.0.1a8"]
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
@@ -125,9 +128,13 @@ override-dependencies = [
     "torchvision; sys_platform == 'never'",
     "mpi4py; sys_platform == 'never'",
 ]
+conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
 
-[tool.uv.sources]
-ezpz = { workspace = true }
+# [tool.uv.sources]
+# ezpz = { workspace = true }
+# torch = [
+# { index = "pytorch-xpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+# { index = 
 
 
 [tool.ruff]
