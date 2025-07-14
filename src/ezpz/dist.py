@@ -767,8 +767,9 @@ def init_process_group(
             )
         )
     if not isinstance(timeout, timedelta):
+        env_timeout = os.environ.get("TORCH_DDP_TIMEOUT", timeout)
         timeout = timedelta(
-            seconds=int(timeout),
+            seconds=int(env_timeout),
         )
     if not torch.distributed.is_initialized():  # type:ignore
         torch.distributed.init_process_group(  # type:ignore
@@ -1126,12 +1127,11 @@ def setup_torch_distributed(
         f"{'ddp', 'ds', 'deepspeed', 'horovod', 'hvd'}"
     )
 
+    DEFAULT_TIMEOUT = os.environ.get("TORCH_DDP_TIMEOUT", 3600)
     timeout = (
-        3600
-        if timeout is None
-        else int(timeout)
-        if isinstance(timeout, str)
-        else timeout
+        DEFAULT_TIMEOUT if timeout is None else (
+            int(timeout) if isinstance(timeout, str) else timeout
+        )
     )
     port = (
         "1234"
