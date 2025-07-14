@@ -599,6 +599,10 @@ def init_deepspeed(
         raise exc
 
 
+def get_device(type: Optional[str] = None, as_torch_device: Optional[bool] = None) -> str | torch.device:
+    """Alias for `get_torch_device`."""
+    return get_torch_device(device_type=type, as_torch_device=as_torch_device)
+
 def get_torch_device_type(device_type: Optional[str] = None) -> str:
     """Get the current PyTorch device type.
 
@@ -1156,8 +1160,8 @@ def setup_torch_distributed(
             " ".join(
                 [
                     f"Using {fw=} with",
-                    "torch_{device,backend}={",
-                    f"{get_torch_device_type()}, {be}" + "}",
+                    "torch_{device,backend}=",
+                    "{" + f"{get_torch_device_type()}, {be}" + "}",
                 ]
             )
         )
