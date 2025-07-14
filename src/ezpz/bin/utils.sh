@@ -1150,8 +1150,8 @@ ezpz_setup_venv_from_conda() {
         if [[ -z "${VIRTUAL_ENV:-}" ]]; then
             log_message INFO "  - No VIRTUAL_ENV found in environment!"
             # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
-            log_message INFO "  - Looking for venv in VENV_DIR=./venvs/$(ezpz_get_machine_name)/${CYAN}${CONDA_NAME}${RESET}..."
             VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
+            log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${CONDA_NAME}${RESET}..."
             local fpactivate
             fpactivate="${VENV_DIR}/bin/activate"
             export VENV_DIR
@@ -1159,16 +1159,19 @@ ezpz_setup_venv_from_conda() {
             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
                 log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
-                mkdir -p "${VENV_DIR}"
                 python3 -m venv "${VENV_DIR}" --system-site-packages
-                if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-                    log_message INFO "  - Activating newly created venv..."
-                    # shellcheck disable=SC1090
-                    [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
-                else
-                    log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
+                source "${VENV_DIR}/bin/activate" || {
+                    log_message ERROR "  - Failed to source ${fpactivate} after creation."
                     return 1
-                fi
+                }
+                # if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                #     log_message INFO "  - Activating newly created venv..."
+                #     # shellcheck disable=SC1090
+                #     [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
+                # else
+                #     log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
+                #     return 1
+                # fi
             elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
                 log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
                 # shellcheck disable=SC1090
