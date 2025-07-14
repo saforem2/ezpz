@@ -1000,7 +1000,6 @@ ezpz_setup_venv_from_conda() {
         mn="$(ezpz_get_machine_name)"
         if [[ -z "${VIRTUAL_ENV:-}" ]]; then
             log_message INFO "  - No VIRTUAL_ENV found in environment!"
-            # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
             VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
             export VENV_DIR
             log_message INFO "  - Looking for venv in VENV_DIR=${CYAN}${VENV_DIR}${RESET}..."
@@ -1010,7 +1009,8 @@ ezpz_setup_venv_from_conda() {
             [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
             if [[ ! -f "${fpactivate}" ]]; then
                 log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
-                uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
+                # --seed ensures that pip is installed into the venv
+                uv venv --seed --python="$(which python3)" --system-site-packages "${VENV_DIR}" || {
                     log_message WARN "  - uv venv failed, falling back to python3 -m venv"
                     python3 -m venv "${VENV_DIR}" --system-site-packages
                 }
