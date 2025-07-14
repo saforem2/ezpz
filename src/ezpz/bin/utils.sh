@@ -1257,16 +1257,10 @@ ezpz_setup_python() {
             return 1
         fi
 
-
-    # Scenario 2: Conda active, venv not active -> Setup venv
-    elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-        ezpz_setup_venv_from_conda
-        # ezpz_setup_uv_venv
-
-
     # Scenario 2: Conda active, venv not active -> Setup venv
     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
+        log_message INFO "  - No virtual_env found in environment"
         # log_message INFO "Setting up venv from"
         if ! ezpz_setup_venv_from_conda; then
             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
