@@ -120,6 +120,7 @@ from ezpz.dist import (
     cleanup,
     get_cpus_per_node,
     get_dist_info,
+    get_device,
     get_gpus_per_node,
     get_hostname,
     get_hosts_from_hostfile,
