@@ -134,6 +134,45 @@ ezpz_kill_mpi() {
     ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
 }
 
+
+# Use the first `n` lines from `PBS_NODEFILE` to create a new hostfile
+ezpz_head_n_from_pbs_nodefile() {
+    if [[ "$#" -ne 1 ]]; then
+        log_message ERROR "Usage: $0 <NHOSTS>"
+        return 1
+    fi
+    local _num_nodes="$1"
+    if  [[ -z "${PBS_NODEFILE}" ]]; then
+        log_message ERROR "${RED}PBS_NODEFILE is not set. Cannot tail nodefile.${RESET}"
+        return 1
+    fi
+    if [[ ! -f "${PBS_NODEFILE}" ]]; then
+        log_message ERROR "${RED}PBS_NODEFILE does not exist: ${PBS_NODEFILE}${RESET}"
+        return 1
+    fi
+    _of="nodefile-0-${_num_nodes}"
+    head -n "${_num_nodes}" "${PBS_NODEFILE}" > "${_of}" && wc -l "${_of}"
+}
+
+# Function to use the last `n` lins from `PBS_NODEFILE` to create a new hostfile.
+ezpz_tail_n_from_pbs_nodefile() {
+    if [[ "$#" -ne 1 ]]; then
+        log_message ERROR "Usage: $0 <NHOSTS>"
+        return 1
+    fi
+    local _num_nodes="$1"
+    if  [[ -z "${PBS_NODEFILE}" ]]; then
+        log_message ERROR "${RED}PBS_NODEFILE is not set. Cannot tail nodefile.${RESET}"
+        return 1
+    fi
+    if [[ ! -f "${PBS_NODEFILE}" ]]; then
+        log_message ERROR "${RED}PBS_NODEFILE does not exist: ${PBS_NODEFILE}${RESET}"
+        return 1
+    fi
+    _of="nodefile-$((NHOSTS - _num_nodes))-${NHOSTS}"
+    tail -n "${_num_nodes}" "${PBS_NODEFILE}" > "${_of}" && wc -l "${_of}"
+}
+
 # @description Get name of shell.
 # Strip off `/bin/` substr from "${SHELL}" env var and return this string.
 #
@@ -2018,14 +2057,14 @@ ezpz_load_new_pt_modules_aurora() {
 # Set up the Python environment for new PyTorch 2.{7,8} on Aurora.
 # It activates the specified conda environment and loads the necessary modules.
 ezpz_setup_python_pt_new_aurora() {
-    log_message INFO "[${CYAN}PYTHON${RESET}]"
+    log_message INFO "[${BRIGHT_GREEN}PYTHON${RESET}]"
     if [[ "$#" -ne 1 ]]; then
-        log_message ERROR "Usage: ezpz_setup_python_pt_new <conda_env>"
+        log_message ERROR "${RED}Usage: ezpz_setup_python_pt_new <conda_env>${RESET}"
         return 1
     fi
     local conda_env="$1"
-    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt_new_aurora${RESET}..."
-    log_message INFO "  - Using conda environment: ${CYAN}${conda_env}${RESET}"
+    log_message INFO "  - Running ${BRIGHT_GREEN}ezpz_setup_python_pt_new_aurora${RESET}..."
+    log_message INFO "  - Using conda environment: ${BRIGHT_GREEN}${conda_env}${RESET}"
     ezpz_load_new_pt_modules_aurora
     micromamba activate "${conda_env}" || {
         log_message ERROR "Failed to micromamba activate ${RED}${conda_env}${RESET}. Returning 1"
@@ -2035,14 +2074,15 @@ ezpz_setup_python_pt_new_aurora() {
         log_message ERROR "Failed to call ${RED}ezpz_setup_python${RESET}. Returning 1"
         return 1
     }
-    log_message INFO "  - ${GREEN}[✓] Finished${RESET} [${CYAN}ezpz_setup_python_pt_new_aurora${RESET}]"
+    log_message INFO "  - ${GREEN}[✓] Finished${RESET} [${BRIGHT_GREEN}ezpz_setup_python_pt_new_aurora${RESET}]"
     return 0
 }
 
 ezpz_setup_python_pt29_aurora() {
     pt29env="${PT29_ENV:-/flare/datascience_collab/foremans/micromamba/envs/pt29-2025-07}"
-    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt29${RESET}..."
-    log_message INFO "  - Using PT29_ENV=${CYAN}${pt29env}${RESET}"
+    # log_message INFO "  - Running ${BRIGHT_GREEN}ezpz_setup_python_pt29${RESET}..."
+    log_message INFO "[${BRIGHT_GREEN}ezpz_setup_python_pt29_aurora${RESET}]"
+    log_message INFO "  - Using PT29_ENV=${BRIGHT_GREEN}${pt29env}${RESET}"
     ezpz_setup_python_pt_new_aurora "${pt29env}" || {
         log_message ERROR "Failed to call ${RED}ezpz_setup_python_pt_new${RESET} ${pt29env}. Returning 1"
         return 1
@@ -2052,8 +2092,9 @@ ezpz_setup_python_pt29_aurora() {
 
 ezpz_setup_python_pt28_aurora() {
     pt28env="${PT28_ENV:-/flare/datascience_collab/foremans/micromamba/envs/pt28-2025-07}"
-    log_message INFO "  - Running ${CYAN}ezpz_setup_python_pt28${RESET}..."
-    log_message INFO "  - Using PT28_ENV=${CYAN}${pt28env}${RESET}"
+    # log_message INFO "  - Running ${BRIGHT_GREEN}ezpz_setup_python_pt28${RESET}..."
+    log_message INFO "[${BRIGHT_GREEN}ezpz_setup_python_pt28_aurora${RESET}]"
+    log_message INFO "  - Using PT28_ENV=${BRIGHT_GREEN}${pt28env}${RESET}"
     ezpz_setup_python_pt_new_aurora "${pt28env}" || {
         log_message ERROR "Failed to call ${RED}ezpz_setup_python_pt_new${RESET} ${pt28env}. Returning 1"
         return 1
@@ -2131,6 +2172,9 @@ ezpz_install() {
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
+    if ! ezpz_check_working_dir; then
+        log_mesasge ERROR "Failed to set WORKING_DIR. Please check your environment."
+    fi
     log_message info "running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
