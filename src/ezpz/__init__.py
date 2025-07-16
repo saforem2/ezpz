@@ -13,8 +13,8 @@ import socket
 
 if socket.gethostname().startswith("x3"):
     # NOTE: Need to swap import order on Polaris (hostname: [x3...])
-    import torch  # type:ignore
     from mpi4py import MPI  # type:ignore  # noqa: F401
+    import torch  # type:ignore
 else:
     import torch
     from mpi4py import MPI
