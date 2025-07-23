@@ -1587,6 +1587,7 @@ def setup_wandb(
     start_method: str = "thread",
     outdir: Optional[str | Path | os.PathLike] = None,
     init_timeout: int = 300,
+    allow_val_change: bool = False,
 ):
     """Setup wandb for logging.
 
@@ -1597,6 +1598,7 @@ def setup_wandb(
         start_method (str, optional): The start method for wandb. Defaults to "thread".
         outdir (str | Path | os.PathLike, optional): The output directory. Defaults to None.
         init_timeout (int, optional): The timeout for wandb initialization. Defaults to 300.
+        allow_val_change (bool, optional): Whether to allow value changes in wandb config. Defaults to False.
 
     Example:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
@@ -1666,9 +1668,10 @@ def setup_wandb(
         sync_tensorboard=(tensorboard_dir is not None),  # True,
         project=(project_name if project_name is not None else None),
         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-        settings=wandb.Settings(
-            start_method=start_method, init_timeout=init_timeout
-        ),
+        # settings=wandb.Settings(
+        #     start_method=start_method, init_timeout=init_timeout
+        # ),
+        allow_val_change=allow_val_change,
     )
     assert run is not None and run is wandb.run
     # run.log_code(HERE.as_posix(), include_fn=include_file)
