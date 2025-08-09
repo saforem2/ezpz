@@ -892,13 +892,14 @@ ezpz_setup_conda_perlmutter() {
 #     fi
 #     # # ----- [Perlmutter @ NERSC] -------------------------------------
 # }
+#
+ezpz_install_and_setup_micromamba() {
+    ezpz_install_micromamba
+}
 
 ezpz_setup_conda() {
   if command -v conda &>/dev/null; then
     log_message INFO "Conda version: $(conda --version)"
-  else
-    log_message WARN "Conda command not found, despite CONDA_PREFIX being set."
-    ezpz_install_micromamba
   fi
   if [[ -z "${CONDA_PREFIX:-}" ]]; then
     case "$(ezpz_get_machine_name)" in
@@ -909,9 +910,10 @@ ezpz_setup_conda() {
     sophia) ezpz_setup_conda_sophia ;;
     frontier) ezpz_setup_conda_frontier ;;
     perlmutter) log_message INFO "Skipping conda setup on Perlmutter" ;;
-    *) log_message ERROR "Unknown machine for conda setup: $(hostname)" && return 1 ;;
+    *) log_message WARN "Unknown machine for conda setup: $(hostname)" && ezpz_install_micromamba ;;
     esac
   else
+    # *) log_message ERROR "Unknown machine for conda setup: $(hostname)" && return 1 ;;
     log_message INFO "Skipping conda setup, CONDA_PREFIX already set to ${CYAN}${CONDA_PREFIX}${RESET}"
   fi
   log_message INFO "List of active modules:"
@@ -2666,7 +2668,7 @@ ezpz_setup_install() {
     log_message ERROR "Please check the error messages above."
     return 1
   fi
-  printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
+  # printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
 }
 
 ###############################################
@@ -2709,6 +2711,7 @@ ezpz_get_working_dir() {
 ezpz_check_working_dir_pbs() {
   # NOTE: [Scenario 1]
   # - If PBS_O_WORKDIR is empty (not set) use $(pwd)
+  local jobdir_name="PBS_O_WORKDIR"
   if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
     # Set PBS_O_WORKDIR as WORKING_DIR
     log_message WARN "${jobdir_name} is not set! Setting it to current working directory"
@@ -2731,6 +2734,7 @@ ezpz_check_working_dir_pbs() {
 ezpz_check_working_dir_slurm() {
   # NOTE: [Scenario 1]
   # - If SLURM_SUBMIT_DIR is empty (not set) use $(pwd)
+  local jobdir_name="SLURM_SUBMIT_DIR"
   if [[ -z "${SLURM_SUBMIT_DIR:-}" ]]; then
     # Set SLURM_SUBMIT_DIR as WORKING_DIR
     log_message WARN "${jobdir_name} is not set! Setting it to current working directory"
