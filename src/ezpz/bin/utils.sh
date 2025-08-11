@@ -2423,26 +2423,6 @@ ezpz_setup_job_slurm() {
       ezpz_getjobenv_main
     fi
   fi
-  # fi
-  # if [[ -n "${slurm_job_id}" ]]; then
-  #   log_message INFO "  - SLURM_JOB_ID=${YELLOW}${slurm_job_id}${RESET}"
-  # fi
-  # local running_nodes
-  # running_nodes=$(ezpz_get_slurm_running_nodelist)
-  # if [[ -n "${running_nodes}" ]]; then
-  #   export SLURM_JOB_ID="${slurm_job_id}"
-  #   HOSTFILE="$(ezpz_make_slurm_nodefile)"
-  #   export HOSTFILE
-  #   # local snodelist
-  #   # snodelist=$(scontrol show hostname "${running_nodes}")
-  #   # local _slurm_job_id
-  #   # export SLURM_JOB_ID="${_slurm_job_id}"
-  #   # export SLURM_NODELIST="${running_nodes}"
-  #   ezpz_getjobenv_main "$@"
-  # fi
-  # if [[ -n "${SLURM_JOB_ID}" ]]; then
-  #   log_message INFO "  - SLURM_JOB_ID=${YELLOW}${slurm_job_id}${RESET}"
-  # fi
 }
 
 ezpz_setup_job() {
