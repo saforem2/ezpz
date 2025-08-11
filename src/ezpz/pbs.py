@@ -299,7 +299,6 @@ def get_pbs_env(
     pbsenv = {k: v for k, v in dict(os.environ).items() if "PBS" in k}
     if hostfile is None:
         hostfile = get_pbs_nodefile(jobid=jobid)
-        # hostfile = pbsenv.get("PBS_NODEFILE", get_pbs_nodefile_from_qstat())
 
     assert hostfile is not None
     if (hfp := Path(hostfile)).is_file():
