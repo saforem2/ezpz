@@ -1579,7 +1579,13 @@ ezpz_get_dist_launch_cmd() {
   num_gpus="$((num_hosts * num_gpus_per_host))"
   num_cores_per_host=$(getconf _NPROCESSORS_ONLN)
   num_cpus_per_host=$((num_cores_per_host / 2))
-  depth=$((num_cpus_per_host / num_gpus_per_host))
+  if [[ "${num_gpus_per_host}" -ge 0 ]]; then
+    depth="$((num_cpus_per_host / num_gpus_per_host))"
+    # depth=$((num_cpus_per_host / num_gpus_per_host))
+  else
+    log_message WARN "  - num_gpus_per_host is zero or negative, setting depth=1"
+    depth=1
+  fi
 
   scheduler_type=$(ezpz_get_scheduler_type)
   if [[ "${scheduler_type}" == "pbs" ]]; then
@@ -1595,7 +1601,7 @@ ezpz_get_dist_launch_cmd() {
     # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
   elif [[ "${scheduler_type}" == "slurm" ]]; then
     # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
-    dist_launch_cmd="srun -l -u --verbose -N${SLURM_NNODES} -n$((SLURM_NNODES * SLURM_GPUS_ON_NODE))"
+    dist_launch_cmd="srun -u --verbose -N${SLURM_NNODES} -n$((SLURM_NNODES * SLURM_GPUS_ON_NODE))"
   else
     printf "\n[!! %s]: Unable to determine scheduler type. Exiting.\n" "$(printRed "ERROR")"
     exit 1
