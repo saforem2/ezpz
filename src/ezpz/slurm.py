@@ -44,22 +44,6 @@ def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
     except Exception as e:
         logger.error("Error importing sh.scontrol: %s", e)
         raise e
-
-    # try:
-    #     output = scontrol("show", "job", str(jobid)).split("\n")
-    #     nodelist = [
-    #         i.replace(" ", "")
-    #         .replace("NodeList=", "")
-    #         .replace("[", "")
-    #         .replace("-", "\nnid")
-    #         .replace("]", "")
-    #         .split("\n")
-    #         for i in output if "   NodeList=" in i
-    #     ][0]
-    #     return nodelist
-    # except Exception as e:
-    #     logger.error(f"Error getting nodelist for job {jobid}: {e}")
-    #     return []
     try:
         output = scontrol("show", "job", str(jobid)).split("\n")
         # Find the line containing NodeList=
@@ -88,12 +72,6 @@ def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
 
 def get_slurm_running_jobs_for_user() -> dict[int, list[str]]:
     """Get all running jobs for the current user."""
-    try:
-        from sh import scontrol  # type:ignore
-    except Exception as e:
-        logger.error("Error trying to 'from sh import sontrol'", e)
-        raise e
-
     running_jobs = get_slurm_running_jobs()
     jobs = {}
     if running_jobs is not None:
