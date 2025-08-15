@@ -765,9 +765,13 @@ ezpz_setup_conda_sunspot() {
   # Setup conda on Sunspot
   ###########################
   ###### check if CONDA_PREFIX non-empty ################
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
-    module use /opt/aurora/24.180.1/modulefiles
-    module load frameworks/2024.2.1_u1
+  # if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  # module use /opt/aurora/24.180.1/modulefiles
+  # module load frameworks/2024.2.1_u1
+  # fi
+  if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+    module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804 
+    export ZE_DEVICE_HIERARCHY=FLAT
   fi
 }
 
@@ -969,7 +973,7 @@ ezpz_setup_uv_venv() {
     echo "Installing uv..."
     ezpz_install_uv
   fi
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  if [[ -z "${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}" ]]; then
     log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
     return 1
   else
@@ -1166,24 +1170,31 @@ ezpz_setup_uv_venv() {
 #   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 # -----------------------------------------------------------------------------
 ezpz_setup_venv_from_conda() {
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  local python_root="${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}"
+  if [[ -z "${python_root}" ]]; then
     log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
     return 1
   else
-    log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
-    CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+    log_message INFO "  - Found conda at ${CYAN}${python_root}${RESET}"
+    local wdname
+    wdname="$(basename "$(ezpz_get_working_dir)")"
+    local pyname
+    pyname="$(basename "${python_root}")"
+    local env_name
+    env_name="${wdname}-${pyname}"
+    # CONDA_NAME=$(basename "${python_root}") && export CONDA_NAME
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
       log_message INFO "  - No VIRTUAL_ENV found in environment!"
       # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
-      VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
-      log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${CONDA_NAME}${RESET}..."
+      VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
+      log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${env_name}${RESET}..."
       local fpactivate
       fpactivate="${VENV_DIR}/bin/activate"
       export VENV_DIR
       # make directory if it doesn't exist
       [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
       if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-        log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
+        log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in VENV_DIR..."
         python3 -m venv "${VENV_DIR}" --system-site-packages
         source "${VENV_DIR}/bin/activate" || {
           log_message ERROR "  - Failed to source ${fpactivate} after creation."
@@ -1198,7 +1209,7 @@ ezpz_setup_venv_from_conda() {
         #     return 1
         # fi
       elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
-        log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+        log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${env_name}${RESET}"
         # shellcheck disable=SC1090
         [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
       else
@@ -1312,6 +1323,8 @@ ezpz_setup_python_alcf() {
   local virtual_env="${VIRTUAL_ENV:-}"
   local pythonuserbase=$(basename "${PYTHONUSERBASE:-}")
   local conda_prefix="${CONDA_PREFIX:-${pythonuserbase}}"
+  conda_prefix="${conda_prefix:-${PYTHON_ROOT}}"
+  # local python_root=
 
   # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
   log_message INFO "[${CYAN}PYTHON${RESET}]"
@@ -1324,7 +1337,7 @@ ezpz_setup_python_alcf() {
       return 1
     fi
     # Re-check conda_prefix after setup attempt
-    conda_prefix="${CONDA_PREFIX:-}"
+    # conda_prefix="${CONDA_PREFIX:-}"
     if [[ -z "${conda_prefix}" ]]; then
       log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
       return 1
