@@ -1596,7 +1596,6 @@ ezpz_get_dist_launch_cmd() {
     fi
     if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
       CPU_BIND="verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-      # dist_launch_cmd="${dist_launch_cmd} --no-vni -d4 $(ezpz_get_cpu_bind_aurora)"
       dist_launch_cmd="${dist_launch_cmd} --no-vni --cpu-bind=${CPU_BIND}"
     else
       dist_launch_cmd="${dist_launch_cmd} --cpu-bind=depth -d ${depth}"
@@ -2665,6 +2664,10 @@ ezpz_generate_cpu_ranges() {
     local cores_logical_start=$2
     local ranks_per_socket=$3
     local cpu_ranges=""
+    if [[ "${ranks_per_socket}" -le 0 ]]; then
+        echo "Error: ranks_per_socket must be greater than 0"
+        return 1
+    fi
     local cores_per_rank=$((cores_per_socket_physical / ranks_per_socket))
 
     if [ "$ranks_per_socket" -gt "$cores_per_socket_physical" ]; then
@@ -2702,10 +2705,10 @@ ezpz_generate_cpu_ranges() {
 
 ezpz_get_cpu_bind_aurora() {
   # Constants
-  cores_per_socket_physical=52
-  cores_per_socket_logical=52
-  sockets=2
-  total_physical_cores=$((cores_per_socket_physical * sockets))
+  local cores_per_socket_physical=52
+  local cores_per_socket_logical=52
+  local sockets=2
+  local total_physical_cores=$((cores_per_socket_physical * sockets))
 
   # Check if number of ranks per node is provided
   if [[ "$#" == 1 ]]; then
@@ -2724,14 +2727,18 @@ ezpz_get_cpu_bind_aurora() {
       return 0
   fi
 
-  # Round up ranks_per_node to the next even number if it's odd
-  was_odd=0
+  # Round up ranks_per_node to the next even number if it's odd.
+  # If adjustment is made, warn the user to prevent confusion about resource allocation.
+  local was_odd=0
   if [ $((ranks_per_node % 2)) -ne 0 ]; then
+      # log_message "Warning: ranks_per_node ($((ranks_per_node))) is odd. Rounding up to $((ranks_per_node + 1)) to ensure even allocation."
       ranks_per_node=$((ranks_per_node + 1))
       was_odd=1
   fi
 
   # Calculate the maximum allowable shift based on the remaining cores
+  local ranks_per_socket
+  local max_shift
   ranks_per_socket=$((ranks_per_node / sockets))
   max_shift=$((cores_per_socket_physical % ranks_per_socket))
 
@@ -2742,10 +2749,13 @@ ezpz_get_cpu_bind_aurora() {
       #exit 1
       shift_amount=0
   fi
+  local cpu_ranges_socket0
+  local cpu_ranges_socket1
   cpu_ranges_socket0=$(ezpz_generate_cpu_ranges 0 104 $ranks_per_socket)
   cpu_ranges_socket1=$(ezpz_generate_cpu_ranges 52 156 $ranks_per_socket)
 
   # Combine the CPU ranges for both sockets in the correct order
+  local cpu_bind_list
   cpu_bind_list="${cpu_ranges_socket0}:${cpu_ranges_socket1}"
 
   # Conditionally trim the last group if ranks_per_node was originally odd
@@ -2758,27 +2768,13 @@ ezpz_get_cpu_bind_aurora() {
 ###############################################
 # Helper functions for printing colored text
 ###############################################
-printBlack() {
-  printf "\e[1;30m%s\e[0m\n" "$@"
-}
-printRed() {
-  printf "\e[1;31m%s\e[0m\n" "$@"
-}
-printGreen() {
-  printf "\e[1;32m%s\e[0m\n" "$@"
-}
-printYellow() {
-  printf "\e[1;33m%s\e[0m\n" "$@"
-}
-printBlue() {
-  printf "\e[1;34m%s\e[0m\n" "$@"
-}
-printMagenta() {
-  printf "\e[1;35m%s\e[0m\n" "$@"
-}
-printCyan() {
-  printf "\e[1;36m%s\e[0m\n" "$@"
-}
+printBlack() { printf "\e[1;30m%s\e[0m\n" "$@" }
+printRed() { printf "\e[1;31m%s\e[0m\n" "$@" }
+printGreen() { printf "\e[1;32m%s\e[0m\n" "$@" }
+printYellow() { printf "\e[1;33m%s\e[0m\n" "$@" }
+printBlue() { printf "\e[1;34m%s\e[0m\n" "$@" }
+printMagenta() { printf "\e[1;35m%s\e[0m\n" "$@" }
+printCyan() { printf "\e[1;36m%s\e[0m\n" "$@" }
 
 # --- Main Execution Block (when sourced) ---
 
@@ -2787,10 +2783,7 @@ printCyan() {
 # Determines the working directory based on PBS_O_WORKDIR, SLURM_SUBMIT_DIR, or pwd.
 # Exports WORKING_DIR.
 # -----------------------------------------------------------------------------
-ezpz_get_working_dir() {
-  python3 -c 'import os; print(os.getcwd())'
-  # echo $(python3 -c 'from pathlib import Path; print(Path().absolute())') | tr "/lus" ""
-}
+ezpz_get_working_dir() { python3 -c 'import os; print(os.getcwd())' }
 
 ezpz_check_working_dir_pbs() {
   # NOTE: [Scenario 1]
