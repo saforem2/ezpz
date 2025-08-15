@@ -765,9 +765,13 @@ ezpz_setup_conda_sunspot() {
   # Setup conda on Sunspot
   ###########################
   ###### check if CONDA_PREFIX non-empty ################
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
-    module use /opt/aurora/24.180.1/modulefiles
-    module load frameworks/2024.2.1_u1
+  # if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  # module use /opt/aurora/24.180.1/modulefiles
+  # module load frameworks/2024.2.1_u1
+  # fi
+  if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+    module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804 
+    export ZE_DEVICE_HIERARCHY=FLAT
   fi
 }
 
@@ -969,7 +973,7 @@ ezpz_setup_uv_venv() {
     echo "Installing uv..."
     ezpz_install_uv
   fi
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  if [[ -z "${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}" ]]; then
     log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
     return 1
   else
@@ -1166,24 +1170,31 @@ ezpz_setup_uv_venv() {
 #   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 # -----------------------------------------------------------------------------
 ezpz_setup_venv_from_conda() {
-  if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  local python_root="${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}"
+  if [[ -z "${python_root}" ]]; then
     log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
     return 1
   else
-    log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
-    CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
+    log_message INFO "  - Found conda at ${CYAN}${python_root}${RESET}"
+    local wdname
+    wdname="$(basename "$(ezpz_get_working_dir)")"
+    local pyname
+    pyname="$(basename "${python_root}")"
+    local env_name
+    env_name="${wdname}-${pyname}"
+    # CONDA_NAME=$(basename "${python_root}") && export CONDA_NAME
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
       log_message INFO "  - No VIRTUAL_ENV found in environment!"
       # log_message INFO "Trying to setup venv from ${GREEN}${CYAN}${RESET}..."
-      VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${CONDA_NAME}"
-      log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${CONDA_NAME}${RESET}..."
+      VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
+      log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${env_name}${RESET}..."
       local fpactivate
       fpactivate="${VENV_DIR}/bin/activate"
       export VENV_DIR
       # make directory if it doesn't exist
       [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
       if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-        log_message INFO "  - Creating venv (on top of ${GREEN}${CONDA_NAME}${RESET}) in VENV_DIR..."
+        log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in VENV_DIR..."
         python3 -m venv "${VENV_DIR}" --system-site-packages
         source "${VENV_DIR}/bin/activate" || {
           log_message ERROR "  - Failed to source ${fpactivate} after creation."
@@ -1198,7 +1209,7 @@ ezpz_setup_venv_from_conda() {
         #     return 1
         # fi
       elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
-        log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${CONDA_NAME}${RESET}"
+        log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${env_name}${RESET}"
         # shellcheck disable=SC1090
         [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
       else
@@ -1312,6 +1323,8 @@ ezpz_setup_python_alcf() {
   local virtual_env="${VIRTUAL_ENV:-}"
   local pythonuserbase=$(basename "${PYTHONUSERBASE:-}")
   local conda_prefix="${CONDA_PREFIX:-${pythonuserbase}}"
+  conda_prefix="${conda_prefix:-${PYTHON_ROOT}}"
+  # local python_root=
 
   # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
   log_message INFO "[${CYAN}PYTHON${RESET}]"
@@ -1324,7 +1337,7 @@ ezpz_setup_python_alcf() {
       return 1
     fi
     # Re-check conda_prefix after setup attempt
-    conda_prefix="${CONDA_PREFIX:-}"
+    # conda_prefix="${CONDA_PREFIX:-}"
     if [[ -z "${conda_prefix}" ]]; then
       log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
       return 1
@@ -1589,14 +1602,16 @@ ezpz_get_dist_launch_cmd() {
 
   scheduler_type=$(ezpz_get_scheduler_type)
   if [[ "${scheduler_type}" == "pbs" ]]; then
-    # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
     if [[ "${mn}" == "sophia" ]]; then
       dist_launch_cmd="mpirun -n ${num_gpus} -N ${num_gpus_per_host} --hostfile ${hostfile} -x PATH -x LD_LIBRARY_PATH"
     else
-      dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+      dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile}"
     fi
-    if [[ "${mn}" == "aurora" ]]; then
-      dist_launch_cmd="${dist_launch_cmd} --no-vni"
+    if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
+      CPU_BIND="verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
+      dist_launch_cmd="${dist_launch_cmd} --no-vni --cpu-bind=${CPU_BIND}"
+    else
+      dist_launch_cmd="${dist_launch_cmd} --cpu-bind=depth -d ${depth}"
     fi
     # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
   elif [[ "${scheduler_type}" == "slurm" ]]; then
@@ -2010,7 +2025,6 @@ ezpz_write_job_info() {
   num_cpus_per_host=$((num_cores_per_host / 2))
   depth=$((num_cpus_per_host / num_gpus_per_host))
   if [[ "${scheduler_type}" == "pbs" ]]; then
-    # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
     dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
   elif [[ "${scheduler_type}" == "slurm" ]]; then
     # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
@@ -2654,33 +2668,126 @@ ezpz_setup_install() {
     log_message ERROR "Please check the error messages above."
     return 1
   fi
-  # printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
+# printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
+}
+
+# Function to generate CPU ranges
+ezpz_generate_cpu_ranges() {
+    local cores_physical_start=$1
+    local cores_logical_start=$2
+    local ranks_per_socket=$3
+    local cpu_ranges=""
+    if [[ "${ranks_per_socket}" -le 0 ]]; then
+        echo "Error: ranks_per_socket must be greater than 0"
+        return 1
+    fi
+    local cores_per_rank=$((cores_per_socket_physical / ranks_per_socket))
+
+    if [ "$ranks_per_socket" -gt "$cores_per_socket_physical" ]; then
+        local remaining_ranks=$((ranks_per_socket - cores_per_socket_physical))
+
+        # Assign ranks to physical cores
+        for (( rank=0; rank<cores_per_socket_physical; rank++ )); do
+            local physical_core=$((cores_physical_start + rank))
+            cpu_ranges+="$physical_core:"
+        done
+
+        # Assign remaining ranks to logical cores
+        for (( rank=0; rank<remaining_ranks; rank++ )); do
+            local logical_core=$((cores_logical_start + rank))
+            cpu_ranges+="$logical_core:"
+        done
+    else
+        for (( rank=0; rank<ranks_per_socket; rank++ )); do
+            local physical_start=$((cores_physical_start + rank * cores_per_rank + shift_amount))
+            local logical_start=$((cores_logical_start + rank * cores_per_rank + shift_amount))
+
+            if [[ $cores_per_rank -gt 1 ]]; then
+                local physical_end=$((physical_start + cores_per_rank - 1))
+                local logical_end=$((logical_start + cores_per_rank - 1))
+                cpu_ranges+="$physical_start-$physical_end,$logical_start-$logical_end:"
+            else
+                cpu_ranges+="$physical_start,$logical_start:"
+            fi
+        done
+    fi
+
+    echo "${cpu_ranges%:}"
+}
+
+
+ezpz_get_cpu_bind_aurora() {
+  # Constants
+  local cores_per_socket_physical=52
+  local cores_per_socket_logical=52
+  local sockets=2
+  local total_physical_cores=$((cores_per_socket_physical * sockets))
+
+  # Check if number of ranks per node is provided
+  if [[ "$#" == 1 ]]; then
+    ranks_per_node=$1
+  elif [ "$#" -lt 1 ]; then
+    ranks_per_node="$(ezpz_get_num_gpus_per_host)"
+      # echo "Usage: $0 <ranks_per_node> [shift_amount]"
+      # return 1
+  fi
+
+  shift_amount=${2:-0} # Default shift amount is 0 if not provided
+
+  if [ "$ranks_per_node" -eq 1 ]; then
+      cpu_bind_list="0-$((cores_per_socket_physical * sockets + cores_per_socket_logical * sockets - 1))"
+      echo "--cpu-bind=verbose,list:$cpu_bind_list"
+      return 0
+  fi
+
+  # Round up ranks_per_node to the next even number if it's odd.
+  # If adjustment is made, warn the user to prevent confusion about resource allocation.
+  local was_odd=0
+  if [ $((ranks_per_node % 2)) -ne 0 ]; then
+      # log_message "Warning: ranks_per_node ($((ranks_per_node))) is odd. Rounding up to $((ranks_per_node + 1)) to ensure even allocation."
+      ranks_per_node=$((ranks_per_node + 1))
+      was_odd=1
+  fi
+
+  # Calculate the maximum allowable shift based on the remaining cores
+  local ranks_per_socket
+  local max_shift
+  ranks_per_socket=$((ranks_per_node / sockets))
+  max_shift=$((cores_per_socket_physical % ranks_per_socket))
+
+  # Check if the shift amount is greater than the max allowable shift
+  if [ "$shift_amount" -gt "$max_shift" ]; then
+      # N.B. Uncomment to throw error, otherwise shift_amount is silently set to zero
+      #echo "Error: Shift amount ($shift_amount) is greater than the maximum allowable shift ($max_shift)."
+      #exit 1
+      shift_amount=0
+  fi
+  local cpu_ranges_socket0
+  local cpu_ranges_socket1
+  cpu_ranges_socket0=$(ezpz_generate_cpu_ranges 0 104 $ranks_per_socket)
+  cpu_ranges_socket1=$(ezpz_generate_cpu_ranges 52 156 $ranks_per_socket)
+
+  # Combine the CPU ranges for both sockets in the correct order
+  local cpu_bind_list
+  cpu_bind_list="${cpu_ranges_socket0}:${cpu_ranges_socket1}"
+
+  # Conditionally trim the last group if ranks_per_node was originally odd
+  if [ "$was_odd" -eq 1 ]; then
+      cpu_bind_list="${cpu_bind_list%:*}"
+  fi
+  echo "--cpu-bind=verbose,list:$cpu_bind_list"
 }
 
 ###############################################
 # Helper functions for printing colored text
 ###############################################
-printBlack() {
-  printf "\e[1;30m%s\e[0m\n" "$@"
-}
-printRed() {
-  printf "\e[1;31m%s\e[0m\n" "$@"
-}
-printGreen() {
-  printf "\e[1;32m%s\e[0m\n" "$@"
-}
-printYellow() {
-  printf "\e[1;33m%s\e[0m\n" "$@"
-}
-printBlue() {
-  printf "\e[1;34m%s\e[0m\n" "$@"
-}
-printMagenta() {
-  printf "\e[1;35m%s\e[0m\n" "$@"
-}
-printCyan() {
-  printf "\e[1;36m%s\e[0m\n" "$@"
-}
+printBlack() { printf "\e[1;30m%s\e[0m\n" "$@" }
+printRed() { printf "\e[1;31m%s\e[0m\n" "$@" }
+printGreen() { printf "\e[1;32m%s\e[0m\n" "$@" }
+printYellow() { printf "\e[1;33m%s\e[0m\n" "$@" }
+printBlue() { printf "\e[1;34m%s\e[0m\n" "$@" }
+printMagenta() { printf "\e[1;35m%s\e[0m\n" "$@" }
+printCyan() { printf "\e[1;36m%s\e[0m\n" "$@" }
 
 # --- Main Execution Block (when sourced) ---
 
@@ -2689,10 +2796,7 @@ printCyan() {
 # Determines the working directory based on PBS_O_WORKDIR, SLURM_SUBMIT_DIR, or pwd.
 # Exports WORKING_DIR.
 # -----------------------------------------------------------------------------
-ezpz_get_working_dir() {
-  python3 -c 'import os; print(os.getcwd())'
-  # echo $(python3 -c 'from pathlib import Path; print(Path().absolute())') | tr "/lus" ""
-}
+ezpz_get_working_dir() { python3 -c 'import os; print(os.getcwd())' }
 
 ezpz_check_working_dir_pbs() {
   # NOTE: [Scenario 1]
