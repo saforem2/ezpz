@@ -1589,14 +1589,17 @@ ezpz_get_dist_launch_cmd() {
 
   scheduler_type=$(ezpz_get_scheduler_type)
   if [[ "${scheduler_type}" == "pbs" ]]; then
-    # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
     if [[ "${mn}" == "sophia" ]]; then
       dist_launch_cmd="mpirun -n ${num_gpus} -N ${num_gpus_per_host} --hostfile ${hostfile} -x PATH -x LD_LIBRARY_PATH"
     else
-      dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
+      dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile}"
     fi
-    if [[ "${mn}" == "aurora" ]]; then
-      dist_launch_cmd="${dist_launch_cmd} --no-vni"
+    if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
+      CPU_BIND="verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
+      # dist_launch_cmd="${dist_launch_cmd} --no-vni -d4 $(ezpz_get_cpu_bind_aurora)"
+      dist_launch_cmd="${dist_launch_cmd} --no-vni --cpu-bind=${CPU_BIND}"
+    else
+      dist_launch_cmd="${dist_launch_cmd} --cpu-bind=depth -d ${depth}"
     fi
     # dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
   elif [[ "${scheduler_type}" == "slurm" ]]; then
@@ -2010,7 +2013,6 @@ ezpz_write_job_info() {
   num_cpus_per_host=$((num_cores_per_host / 2))
   depth=$((num_cpus_per_host / num_gpus_per_host))
   if [[ "${scheduler_type}" == "pbs" ]]; then
-    # dist_launch_cmd="mpiexec --verbose --envall -n ${num_gpus} -ppn ${num_gpus_per_host} --hostfile ${hostfile} --cpu-bind depth -d ${depth}"
     dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
   elif [[ "${scheduler_type}" == "slurm" ]]; then
     # dist_launch_cmd="srun -N ${num_hosts} -n ${num_gpus} -l -u --verbose"
@@ -2654,7 +2656,103 @@ ezpz_setup_install() {
     log_message ERROR "Please check the error messages above."
     return 1
   fi
-  # printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
+# printf "[ezpz] ${GREEN}:check: Done!${RESET}\n"
+}
+
+# Function to generate CPU ranges
+ezpz_generate_cpu_ranges() {
+    local cores_physical_start=$1
+    local cores_logical_start=$2
+    local ranks_per_socket=$3
+    local cpu_ranges=""
+    local cores_per_rank=$((cores_per_socket_physical / ranks_per_socket))
+
+    if [ "$ranks_per_socket" -gt "$cores_per_socket_physical" ]; then
+        local remaining_ranks=$((ranks_per_socket - cores_per_socket_physical))
+
+        # Assign ranks to physical cores
+        for (( rank=0; rank<cores_per_socket_physical; rank++ )); do
+            local physical_core=$((cores_physical_start + rank))
+            cpu_ranges+="$physical_core:"
+        done
+
+        # Assign remaining ranks to logical cores
+        for (( rank=0; rank<remaining_ranks; rank++ )); do
+            local logical_core=$((cores_logical_start + rank))
+            cpu_ranges+="$logical_core:"
+        done
+    else
+        for (( rank=0; rank<ranks_per_socket; rank++ )); do
+            local physical_start=$((cores_physical_start + rank * cores_per_rank + shift_amount))
+            local logical_start=$((cores_logical_start + rank * cores_per_rank + shift_amount))
+
+            if [[ $cores_per_rank -gt 1 ]]; then
+                local physical_end=$((physical_start + cores_per_rank - 1))
+                local logical_end=$((logical_start + cores_per_rank - 1))
+                cpu_ranges+="$physical_start-$physical_end,$logical_start-$logical_end:"
+            else
+                cpu_ranges+="$physical_start,$logical_start:"
+            fi
+        done
+    fi
+
+    echo "${cpu_ranges%:}"
+}
+
+
+ezpz_get_cpu_bind_aurora() {
+  # Constants
+  cores_per_socket_physical=52
+  cores_per_socket_logical=52
+  sockets=2
+  total_physical_cores=$((cores_per_socket_physical * sockets))
+
+  # Check if number of ranks per node is provided
+  if [[ "$#" == 1 ]]; then
+    ranks_per_node=$1
+  elif [ "$#" -lt 1 ]; then
+    ranks_per_node="$(ezpz_get_num_gpus_per_host)"
+      # echo "Usage: $0 <ranks_per_node> [shift_amount]"
+      # return 1
+  fi
+
+  shift_amount=${2:-0} # Default shift amount is 0 if not provided
+
+  if [ "$ranks_per_node" -eq 1 ]; then
+      cpu_bind_list="0-$((cores_per_socket_physical * sockets + cores_per_socket_logical * sockets - 1))"
+      echo "--cpu-bind=verbose,list:$cpu_bind_list"
+      return 0
+  fi
+
+  # Round up ranks_per_node to the next even number if it's odd
+  was_odd=0
+  if [ $((ranks_per_node % 2)) -ne 0 ]; then
+      ranks_per_node=$((ranks_per_node + 1))
+      was_odd=1
+  fi
+
+  # Calculate the maximum allowable shift based on the remaining cores
+  ranks_per_socket=$((ranks_per_node / sockets))
+  max_shift=$((cores_per_socket_physical % ranks_per_socket))
+
+  # Check if the shift amount is greater than the max allowable shift
+  if [ "$shift_amount" -gt "$max_shift" ]; then
+      # N.B. Uncomment to throw error, otherwise shift_amount is silently set to zero
+      #echo "Error: Shift amount ($shift_amount) is greater than the maximum allowable shift ($max_shift)."
+      #exit 1
+      shift_amount=0
+  fi
+  cpu_ranges_socket0=$(ezpz_generate_cpu_ranges 0 104 $ranks_per_socket)
+  cpu_ranges_socket1=$(ezpz_generate_cpu_ranges 52 156 $ranks_per_socket)
+
+  # Combine the CPU ranges for both sockets in the correct order
+  cpu_bind_list="${cpu_ranges_socket0}:${cpu_ranges_socket1}"
+
+  # Conditionally trim the last group if ranks_per_node was originally odd
+  if [ "$was_odd" -eq 1 ]; then
+      cpu_bind_list="${cpu_bind_list%:*}"
+  fi
+  echo "--cpu-bind=verbose,list:$cpu_bind_list"
 }
 
 ###############################################
