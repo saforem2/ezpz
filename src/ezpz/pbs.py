@@ -166,8 +166,8 @@ def get_pbs_launch_cmd(
                 "-x LD_LIBRARY_PATH",
             ]
         )
-    return " ".join(
-        [
+    else:
+        cmd_list =  [
             "mpiexec",
             "--verbose",
             "--envall",
@@ -175,10 +175,20 @@ def get_pbs_launch_cmd(
             f"--np={ngpus_in_use}",
             f"--ppn={ngpu_per_host}",
             f"--hostfile={hfp.as_posix()}",
-            "--cpu-bind=depth",
-            "--depth=8",
         ]
-    )
+        machine_name = ezpz.get_machine()
+        if machine_name.lower() in {"aurora", "sunspot"}:
+            cmd_list.extend([
+                "--no-vni",
+                "--cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96",
+            ])
+        else:
+            cmd_list.extend([
+                "--cpu-bind=depth",
+                "--depth=8",
+            ])
+
+    return " ".join(cmd_list)
 
 
 def get_running_jobs_from_qstat() -> list[int]:
