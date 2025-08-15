@@ -990,6 +990,11 @@ ezpz_setup_uv_venv() {
   local mn
   local env_name
   env_name=$(basename "${CONDA_PREFIX}")
+  local ptmodstr
+  ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
+  if [[ -n "${ptmodstr}" ]]; then
+    env_name="${env_name}-pt$(basename ${ptmodstr})"
+  fi
   VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
   fpactivate="${VENV_DIR}/bin/activate"
   mn=$(ezpz_get_machine_name)
@@ -1182,6 +1187,12 @@ ezpz_setup_venv_from_conda() {
     pyname="$(basename "${python_root}")"
     local env_name
     env_name="${wdname}-${pyname}"
+    local ptmodstr
+    ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
+    if [[ -n "${ptmodstr}" ]]; then
+      env_name="${env_name}-pt$(basename ${ptmodstr})"
+    fi
+    env_name=$(echo "${env_name}" | sed -e "s/python/py/g")
     # CONDA_NAME=$(basename "${python_root}") && export CONDA_NAME
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
       log_message INFO "  - No VIRTUAL_ENV found in environment!"
@@ -1190,7 +1201,7 @@ ezpz_setup_venv_from_conda() {
       log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${env_name}${RESET}..."
       local fpactivate
       fpactivate="${VENV_DIR}/bin/activate"
-      export VENV_DIR
+      # export VENV_DIR
       # make directory if it doesn't exist
       [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
       if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
@@ -1972,12 +1983,21 @@ ezpz_get_jobenv_file() {
 
 ezpz_get_scheduler_type() {
   mn=$(ezpz_get_machine_name)
-  if [[ "${mn}" == "aurora" || "${mn}" == "polaris" || "${mn}" == "sunspot" || "${mn}" == "sirius" || "${mn}" == "sophia" ]]; then
-    echo "pbs"
-  elif [[ "${mn}" == "frontier" || "${mn}" == "perlmutter" || -n "${SLURM_JOB_ID:-}" ]]; then
-    echo "slurm"
-  fi
-
+  case "${mn}" in
+    aurora* | polaris* | sunspot* | sirius* | sophia*)
+      echo "pbs"
+      ;;
+    frontier* | perlmutter* | *)
+      if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        echo "slurm"
+      else
+        echo "unknown"
+      fi
+      ;;
+    *)
+      echo "unknown"
+      ;;
+  esac
 }
 
 ezpz_write_job_info_slurm() {
