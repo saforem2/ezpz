@@ -636,25 +636,23 @@ ezpz_check_if_already_built() {
 #  perlmutter
 #  <other hostname>
 ezpz_get_machine_name() {
-  if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
-    machine="aurora"
-  elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
-    machine="sunspot"
-  elif [[ $(hostname) == sophia* ]]; then
-    machine="sophia"
-  elif [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
+  local mn
+  mn="$(hostname | tr '[:upper:]' '[:lower:]')"
+  case "${mn}" in
+  sophia*) machine="sophia" ;;
+  x1* | uan* | sunspot*) machine="sunspot" ;;
+  x3* | polaris*) 
     if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
       machine="sirius"
     else
       machine="polaris"
     fi
-  elif [[ $(hostname) == frontier* ]]; then
-    machine="frontier"
-  elif [[ $(hostname) == nid* ]] || [[ $(hostname) == login* ]]; then
-    machine="perlmutter"
-  else
-    machine=$(hostname)
-  fi
+    ;;
+  x4* | aurora*) machine="aurora" ;;
+  frontier*) machine="frontier" ;;
+  nid* | login*) machine="perlmutter" ;;
+  *) machine="${mn}" ;;
+  esac
   echo "${machine}"
 }
 
@@ -764,14 +762,12 @@ ezpz_setup_conda_sunspot() {
   ###########################
   # Setup conda on Sunspot
   ###########################
-  ###### check if CONDA_PREFIX non-empty ################
-  # if [[ -z "${CONDA_PREFIX:-}" ]]; then
-  # module use /opt/aurora/24.180.1/modulefiles
-  # module load frameworks/2024.2.1_u1
-  # fi
   if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
-    module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804 
-    export ZE_DEVICE_HIERARCHY=FLAT
+    # module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804 
+    module load oneapi/release/2025.2.0 
+    module load py-torch/2.8
+    module load py-ipex/2.8.10xpu
+    export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   fi
 }
 
@@ -844,59 +840,8 @@ ezpz_setup_conda_polaris() {
 
 ezpz_setup_conda_perlmutter() {
   module load pytorch
-  # if [[ -f "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate" ]]; then
-  #     log_message INFO "Found existing venv at ${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12"
-  # else
-  #     log_message INFO "Creating venv at ${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12"
-  #     mkdir -p "${SLURM_SUBMIT_DIR}/venvs/perlmutter"
-  #     # python3 -m venv "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12" --system-site-packages
-  # fi
-  # source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
 }
 
-# ezpz_setup_conda() {
-#     local machine_name
-#     machine_name=$(ezpz_get_machine_name)
-#     log_message INFO "Setting up conda on ${machine_name}"
-#     if [[ "${machine_name}" == "aurora" ]]; then
-#         ezpz_setup_conda_aurora
-#     elif [[ "${machine_name}" == "sophia" ]]; then
-#         ezpz_setup_conda_sophia
-#     elif [[ "${machine_name}" == "sunspot" ]]; then
-#         ezpz_setup_conda_sunspot
-#     elif [[ "${machine_name}" == "polaris" ]]; then
-#         ezpz_setup_conda_polaris
-#     elif [[ $(hostname) == frontier* ]]; then
-#         ezpz_setup_conda_frontier
-#     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-#         echo "Running on Perlmutter !!"
-#         module load pytorch
-#         source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-#     else # ------------------------------------- [Unknown] -------------------
-#         echo "Unknown hostname $(hostname)"
-#         return 1
-#     fi
-#     # local machine_name
-#     # machine_name=$(ezpz_get_machine_name)
-#     # case "${machine_name}" in
-#     #     aurora) log_message INFO "On Aurora, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sophia) log_message INFO "On Sophia, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sunspot) log_message INFO "On Sunspot, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sirius) log_message INFO "On Sirius, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     polaris) log_message INFO "On Polaris, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     frontier) log_message INFO "On Frontier, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     perlmutter) log_message INFO "On Perlmutter, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #
-#     # esac
-#     log_message INFO "List of active modules:"
-#     if [[ -n $(command -v module) ]]; then
-#         module list
-#     else
-#         echo "Module command not found. Skipping module list."
-#     fi
-#     # # ----- [Perlmutter @ NERSC] -------------------------------------
-# }
-#
 ezpz_install_and_setup_micromamba() {
     ezpz_install_micromamba
 }
@@ -907,17 +852,16 @@ ezpz_setup_conda() {
   fi
   if [[ -z "${CONDA_PREFIX:-}" ]]; then
     case "$(ezpz_get_machine_name)" in
-    aurora) ezpz_setup_conda_aurora ;;
-    sunspot) ezpz_setup_conda_sunspot ;;
-    polaris) ezpz_setup_conda_polaris ;;
-    sirius) ezpz_setup_conda_sirius ;;
-    sophia) ezpz_setup_conda_sophia ;;
-    frontier) ezpz_setup_conda_frontier ;;
-    perlmutter) log_message INFO "Skipping conda setup on Perlmutter" ;;
+    aurora*) ezpz_setup_conda_aurora ;;
+    sunspot*) ezpz_setup_conda_sunspot ;;
+    polaris*) ezpz_setup_conda_polaris ;;
+    sirius*) ezpz_setup_conda_sirius ;;
+    sophia*) ezpz_setup_conda_sophia ;;
+    frontier*) ezpz_setup_conda_frontier ;;
+    perlmutter*) log_message INFO "Skipping conda setup on Perlmutter" ;;
     *) log_message WARN "Unknown machine for conda setup: $(hostname)" && ezpz_install_micromamba ;;
     esac
   else
-    # *) log_message ERROR "Unknown machine for conda setup: $(hostname)" && return 1 ;;
     log_message INFO "Skipping conda setup, CONDA_PREFIX already set to ${CYAN}${CONDA_PREFIX}${RESET}"
   fi
   log_message INFO "List of active modules:"
@@ -1175,12 +1119,13 @@ ezpz_setup_uv_venv() {
 #   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
 # -----------------------------------------------------------------------------
 ezpz_setup_venv_from_conda() {
-  local python_root="${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}"
+  # local python_root="${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}"
+  local python_root=$(ezpz_get_python_root)
   if [[ -z "${python_root}" ]]; then
-    log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
+    log_message ERROR "  - Python root is not set. Cannot create venv."
     return 1
   else
-    log_message INFO "  - Found conda at ${CYAN}${python_root}${RESET}"
+    log_message INFO "  - Found python root at ${CYAN}${python_root}${RESET}"
     local wdname
     wdname="$(basename "$(ezpz_get_working_dir)")"
     local pyname
@@ -1290,6 +1235,13 @@ ezpz_setup_venv_from_pythonuserbase() {
 
 }
 
+
+ezpz_get_python_root() {
+  local python_root
+  python_root="${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE:-${VIRTUAL_ENV:-}}}}"
+  echo "${python_root}"
+}
+
 # -----------------------------------------------------------------------------
 # @brief Main Python environment setup function.
 #
@@ -1327,42 +1279,35 @@ ezpz_setup_venv_from_pythonuserbase() {
 #    3. Print info about which python we're using
 # -----------------------------------------------------------------------------
 ezpz_setup_python_alcf() {
-  # virtual_env="${VIRTUAL_ENV:-}"
-  # conda_prefix="${CONDA_PREFIX:-}"
-
-  local virtual_env="${VIRTUAL_ENV:-}"
-  local pythonuserbase=$(basename "${PYTHONUSERBASE:-}")
-  local conda_prefix="${CONDA_PREFIX:-${pythonuserbase}}"
-  conda_prefix="${conda_prefix:-${PYTHON_ROOT}}"
-  # local python_root=
-
-  # log_message INFO "${CYAN}[ezpz_setup_python]${RESET} Checking Python environment..."
   log_message INFO "[${CYAN}PYTHON${RESET}]"
+  local python_root=$(ezpz_get_python_root)
+  local virtual_env="${VIRTUAL_ENV:-}"
 
   # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
-  if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
-    log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
+  if [[ -z "${python_root}" && -z "${virtual_env}" ]]; then
+    log_message INFO "  - No conda_prefix OR pythonuserbase OR virtual_env found in environment. Setting up conda..."
     if ! ezpz_setup_conda; then
       log_message ERROR "  - ezpz_setup_conda failed."
       return 1
     fi
     # Re-check conda_prefix after setup attempt
     # conda_prefix="${CONDA_PREFIX:-}"
-    if [[ -z "${conda_prefix}" ]]; then
+    python_root=$(ezpz_get_python_root)
+    if [[ -z "${python_root}" ]]; then
       log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
       return 1
-    fi
-    # Now attempt to set up venv on top of the activated conda
-
-    # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
-    if ! ezpz_setup_venv_from_conda; then
-      log_message ERROR "  - ezpz_setup_venv_from_conda failed."
-      return 1
+    else
+      # Now attempt to set up venv on top of the activated conda
+      log_message INFO "  - Found Python at ${CYAN}${python_root}${RESET}"
+      if ! ezpz_setup_venv_from_conda; then
+        log_message ERROR "  - ezpz_setup_venv_from_conda failed."
+        return 1
+      fi
     fi
 
   # Scenario 2: Conda active, venv not active -> Setup venv
-  elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-    log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
+  elif [[ -n "${python_root}" && -z "${virtual_env}" ]]; then
+    log_message INFO "  - Conda active, conda=${GREEN}${python_root}${RESET}..."
     log_message INFO "  - No virtual_env found in environment"
     # log_message INFO "Setting up venv from"
     if ! ezpz_setup_venv_from_conda; then
@@ -1371,14 +1316,14 @@ ezpz_setup_python_alcf() {
     fi
 
   # Scenario 3: Venv active, Conda not active (less common/intended)
-  elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+  elif [[ -n "${virtual_env}" && -z "${python_root}" ]]; then
     log_message INFO "  - No conda_prefix found."
     log_message INFO "  - Using virtual_env from: ${CYAN}${virtual_env}${RESET}"
 
   # Scenario 4: Both Conda and venv active
-  elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+  elif [[ -n "${virtual_env}" && -n "${python_root}" ]]; then
     log_message INFO "  - Found both conda_prefix and virtual_env in environment."
-    log_message INFO "  - Using conda from: ${GREEN}${conda_prefix}${RESET}"
+    log_message INFO "  - Using conda from: ${GREEN}${python_root}${RESET}"
     log_message INFO "  - Using venv from: ${CYAN}${virtual_env}${RESET}"
   fi
 
@@ -1392,104 +1337,6 @@ ezpz_setup_python_alcf() {
   export PYTHON_EXEC="${python_exec}"
 }
 
-# # -----------------------------------------------------------------------------
-# # @brief Main Python environment setup function.
-# #
-# # @example:
-# #   ezpz_setup_python
-# #
-# # @description
-# #    Relies on:
-# #      - `ezpz_setup_conda`
-# #      - ~~`ezpz_setup_venv_from_conda` (or `ezpz_setup_venv_from_conda`)~~
-# #      - `ezpz_setup_venv_from_conda`
-# #      - `CONDA_PREFIX`, `VIRTUAL_ENV` environment variables.
-# #      - `which python3`
-# #
-# #    Side Effects:
-# #      Activates Conda and/or venv environments. Exports PYTHON_EXEC.
-# #      Prints status messages. Returns 1 on failure.
-# #
-# #    1. Setup `conda`
-# #       - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
-# #       - if `venv` nonempty, and `conda` empty, what do (???)
-# #       - if `venv` nonempty and `conda` nonempty, use these
-# #       - if `conda` empty and `venv` empty:
-# #          - if `hostname == x4*`, we're on Aurora
-# #          - if `hostname == x1*`, we're on Sunspot
-# #          - if `hostname == x3*`, we're on Polaris
-# #          - if `hostname == nid*`, we're on Perlmutter
-# #          - otherwise, you're on you're own
-# #
-# #    2. Activate (creating, if necessary) a `venv` on top of `base` conda
-# #       - use the $CONDA_PREFIX to create a venv in
-# #         `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
-# #         - activate and use this
-# #
-# #    3. Print info about which python we're using
-# # -----------------------------------------------------------------------------
-# ezpz_setup_python() {
-#     local virtual_env="${VIRTUAL_ENV:-}"
-#     local conda_prefix="${CONDA_PREFIX:-}"
-#     log_message INFO "[${CYAN}PYTHON${RESET}]"
-#     # Scenario 1: Neither Conda nor venv active -> Setup Conda then venv
-#     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
-#         log_message INFO "  - No conda_prefix OR virtual_env found in environment. Setting up conda..."
-#         if ! ezpz_setup_conda; then
-#             log_message ERROR "  - ezpz_setup_conda failed."
-#             return 1
-#         fi
-#         # Re-check conda_prefix after setup attempt
-#         conda_prefix="${CONDA_PREFIX:-}"
-#         if [[ -z "${conda_prefix}" ]]; then
-#             log_message ERROR "  - CONDA_PREFIX still not set after ezpz_setup_conda."
-#             return 1
-#         fi
-#         # Now attempt to set up venv on top of the activated conda
-#
-#         # log_message INFO "  - Setting up venv from conda=${CYAN}${conda_prefix}${RESET}..."
-#         if ! ezpz_setup_venv_from_conda; then
-#             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
-#             return 1
-#         fi
-#
-#     # Scenario 2: Conda active, venv not active -> Setup venv
-#     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-#         ezpz_setup_venv_from_conda
-#
-#     # Scenario 2: Conda active, venv not active -> Setup venv
-#     elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-#         log_message INFO "  - Conda active, conda=${GREEN}${conda_prefix}${RESET}..."
-#         # log_message INFO "Setting up venv from"
-#         if ! ezpz_setup_venv_from_conda; then
-#             log_message ERROR "  - ezpz_setup_venv_from_conda failed."
-#             return 1
-#         fi
-#
-#     # Scenario 3: Venv active, Conda not active (less common/intended)
-#     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
-#         log_message INFO "  - No conda_prefix found."
-#         log_message INFO "  - Using virtual_env from: ${CYAN}${virtual_env}${RESET}"
-#
-#     # Scenario 4: Both Conda and venv active
-#     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
-#         log_message INFO "  - Found both conda_prefix and virtual_env in environment."
-#         log_message INFO "  - Using conda from: ${GREEN}${conda_prefix}${RESET}"
-#         log_message INFO "  - Using venv from: ${CYAN}${virtual_env}${RESET}"
-#     fi
-#
-#     # Verify python3 is available and export path
-#     local python_exec
-#     if ! python_exec=$(which python3); then
-#         log_message ERROR "  - python3 command not found in PATH."
-#         return 1
-#     fi
-#     log_message INFO "  - Using python from: ${CYAN}$(which python3)${RESET}"
-#     export PYTHON_EXEC="${python_exec}"
-# }
-#
-#
-#
 ezpz_load_python_modules_nersc() {
   module load cudatoolkit gcc-native pytorch cudnn nccl
   module load PrgEnv-nvidia mpich gcc-native cudatoolkit pytorch cudnn nccl
@@ -1887,10 +1734,13 @@ ezpz_print_hosts() {
   local hostfile
   local scheduler_type
   scheduler_type=$(ezpz_get_scheduler_type)
+  log_message INFO "[${MAGENTA}HOSTS${RESET}] - ezpz_print_hosts"
   if [[ "${scheduler_type}" == "pbs" ]]; then
-    log_message INFO "[${MAGENTA}HOSTS${RESET}] - PBS Scheduler"
+    log_message INFO "  - Detected PBS Scheduler"
+    # log_message INFO "[${MAGENTA}HOSTS${RESET}] - PBS Scheduler"
   elif [[ "${scheduler_type}" == "slurm" ]]; then
-    log_message INFO "[${MAGENTA}HOSTS${RESET}] - SLURM Scheduler"
+    log_message INFO "  - Detected SLURM Scheduler"
+    # log_message INFO "[${MAGENTA}HOSTS${RESET}] - SLURM Scheduler"
     HOSTFILE="$(ezpz_make_slurm_nodefile)"
   else
     log_message INFO "[${MAGENTA}HOSTS${RESET}] - Unknown Scheduler"
@@ -2082,10 +1932,6 @@ ezpz_write_job_info() {
       log_message INFO "    ${GREEN}launch${RESET} = ${GREEN}${LAUNCH}${RESET}"
       log_message INFO "  - Run '${GREEN}which launch${RESET}' to ensure that the alias is set correctly"
     fi
-    # echo "┌────────────────────────────────────────────────────────────────────────────────"
-    # echo "│ YOU ARE $(whereAmI)"
-    # echo "│ Run 'source ./bin/getjobenv' in a NEW SHELL to automatically set env vars      "
-    # echo "└────────────────────────────────────────────────────────────────────────────────"
   fi
 }
 
