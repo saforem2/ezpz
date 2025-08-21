@@ -2648,13 +2648,27 @@ ezpz_get_cpu_bind_aurora() {
 ###############################################
 # Helper functions for printing colored text
 ###############################################
-printBlack() { printf "\e[1;30m%s\e[0m\n" "$@" }
-printRed() { printf "\e[1;31m%s\e[0m\n" "$@" }
-printGreen() { printf "\e[1;32m%s\e[0m\n" "$@" }
-printYellow() { printf "\e[1;33m%s\e[0m\n" "$@" }
-printBlue() { printf "\e[1;34m%s\e[0m\n" "$@" }
-printMagenta() { printf "\e[1;35m%s\e[0m\n" "$@" }
-printCyan() { printf "\e[1;36m%s\e[0m\n" "$@" }
+printBlack() {
+  printf "\e[1;30m%s\e[0m\n" "$@"
+}
+printRed() {
+  printf "\e[1;31m%s\e[0m\n" "$@"
+}
+printGreen() {
+  printf "\e[1;32m%s\e[0m\n" "$@"
+}
+printYellow() {
+  printf "\e[1;33m%s\e[0m\n" "$@"
+}
+printBlue() {
+  printf "\e[1;34m%s\e[0m\n" "$@"
+}
+printMagenta() {
+  printf "\e[1;35m%s\e[0m\n" "$@"
+}
+printCyan() {
+  printf "\e[1;36m%s\e[0m\n" "$@"
+}
 
 # --- Main Execution Block (when sourced) ---
 
@@ -2663,7 +2677,9 @@ printCyan() { printf "\e[1;36m%s\e[0m\n" "$@" }
 # Determines the working directory based on PBS_O_WORKDIR, SLURM_SUBMIT_DIR, or pwd.
 # Exports WORKING_DIR.
 # -----------------------------------------------------------------------------
-ezpz_get_working_dir() { python3 -c 'import os; print(os.getcwd())' }
+ezpz_get_working_dir() {
+  python3 -c 'import os; print(os.getcwd())' 
+}
 
 ezpz_check_working_dir_pbs() {
   # NOTE: [Scenario 1]
@@ -2739,7 +2755,7 @@ if ! ezpz_check_working_dir; then
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
-# if [[ -n "${DEBUG:-}" ]]; then
+if [[ -n "${DEBUG:-}" ]]; then
   set -x
   log_message WARN "DEBUG MODE IS ${RED}OFF${RESET}"
   set +x
