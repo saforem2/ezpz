@@ -762,16 +762,11 @@ ezpz_setup_conda_sunspot() {
   ###########################
   # Setup conda on Sunspot
   ###########################
-  ###### check if CONDA_PREFIX non-empty ################
-  # if [[ -z "${CONDA_PREFIX:-}" ]]; then
-  # module use /opt/aurora/24.180.1/modulefiles
-  # module load frameworks/2024.2.1_u1
-  # fi
   if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
     # module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804 
     module load oneapi/release/2025.2.0 
     module load py-torch/2.8
-    module load py-ipex/xpu-main
+    module load py-ipex/2.8.10xpu
     export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   fi
 }
@@ -845,59 +840,8 @@ ezpz_setup_conda_polaris() {
 
 ezpz_setup_conda_perlmutter() {
   module load pytorch
-  # if [[ -f "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate" ]]; then
-  #     log_message INFO "Found existing venv at ${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12"
-  # else
-  #     log_message INFO "Creating venv at ${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12"
-  #     mkdir -p "${SLURM_SUBMIT_DIR}/venvs/perlmutter"
-  #     # python3 -m venv "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12" --system-site-packages
-  # fi
-  # source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
 }
 
-# ezpz_setup_conda() {
-#     local machine_name
-#     machine_name=$(ezpz_get_machine_name)
-#     log_message INFO "Setting up conda on ${machine_name}"
-#     if [[ "${machine_name}" == "aurora" ]]; then
-#         ezpz_setup_conda_aurora
-#     elif [[ "${machine_name}" == "sophia" ]]; then
-#         ezpz_setup_conda_sophia
-#     elif [[ "${machine_name}" == "sunspot" ]]; then
-#         ezpz_setup_conda_sunspot
-#     elif [[ "${machine_name}" == "polaris" ]]; then
-#         ezpz_setup_conda_polaris
-#     elif [[ $(hostname) == frontier* ]]; then
-#         ezpz_setup_conda_frontier
-#     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-#         echo "Running on Perlmutter !!"
-#         module load pytorch
-#         source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-#     else # ------------------------------------- [Unknown] -------------------
-#         echo "Unknown hostname $(hostname)"
-#         return 1
-#     fi
-#     # local machine_name
-#     # machine_name=$(ezpz_get_machine_name)
-#     # case "${machine_name}" in
-#     #     aurora) log_message INFO "On Aurora, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sophia) log_message INFO "On Sophia, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sunspot) log_message INFO "On Sunspot, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     sirius) log_message INFO "On Sirius, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     polaris) log_message INFO "On Polaris, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     frontier) log_message INFO "On Frontier, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #     perlmutter) log_message INFO "On Perlmutter, loaded conda env: ${CYAN}${CONDA_PREFIX:-none}${RESET}" ;;
-#     #
-#     # esac
-#     log_message INFO "List of active modules:"
-#     if [[ -n $(command -v module) ]]; then
-#         module list
-#     else
-#         echo "Module command not found. Skipping module list."
-#     fi
-#     # # ----- [Perlmutter @ NERSC] -------------------------------------
-# }
-#
 ezpz_install_and_setup_micromamba() {
     ezpz_install_micromamba
 }
@@ -908,13 +852,8 @@ ezpz_setup_conda() {
   fi
   if [[ -z "${CONDA_PREFIX:-}" ]]; then
     case "$(ezpz_get_machine_name)" in
-    aurora*) 
-      ezpz_setup_conda_aurora 
-      ;;
-    sunspot*) 
-      ezpz_setup_conda_sunspot 
-      export ZE_
-      ;;
+    aurora*) ezpz_setup_conda_aurora ;;
+    sunspot*) ezpz_setup_conda_sunspot ;;
     polaris*) ezpz_setup_conda_polaris ;;
     sirius*) ezpz_setup_conda_sirius ;;
     sophia*) ezpz_setup_conda_sophia ;;
@@ -923,7 +862,6 @@ ezpz_setup_conda() {
     *) log_message WARN "Unknown machine for conda setup: $(hostname)" && ezpz_install_micromamba ;;
     esac
   else
-    # *) log_message ERROR "Unknown machine for conda setup: $(hostname)" && return 1 ;;
     log_message INFO "Skipping conda setup, CONDA_PREFIX already set to ${CYAN}${CONDA_PREFIX}${RESET}"
   fi
   log_message INFO "List of active modules:"
