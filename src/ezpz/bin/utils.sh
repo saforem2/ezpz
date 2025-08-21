@@ -2671,39 +2671,6 @@ printCyan() {
 }
 
 # --- Main Execution Block (when sourced) ---
-
-# -----------------------------------------------------------------------------
-# Main logic executed when the script is sourced.
-# Determines the working directory based on PBS_O_WORKDIR, SLURM_SUBMIT_DIR, or pwd.
-# Exports WORKING_DIR.
-# -----------------------------------------------------------------------------
-ezpz_get_working_dir() {
-  python3 -c 'import os; print(os.getcwd())' 
-}
-
-ezpz_check_working_dir_pbs() {
-  # NOTE: [Scenario 1]
-  # - If PBS_O_WORKDIR is empty (not set) use $(pwd)
-  local jobdir_name="PBS_O_WORKDIR"
-  if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
-    # Set PBS_O_WORKDIR as WORKING_DIR
-    log_message WARN "${jobdir_name} is not set! Setting it to current working directory"
-    log_message INFO "Exporting ${jobdir_name}=${GREEN}${WORKING_DIR}${RESET}"
-    export PBS_O_WORKDIR="${WORKING_DIR}"
-
-  # NOTE: [Scenario 2]
-  # - If PBS_O_WORKDIR is set, check if it matches the current working directory
-  elif [[ -n "${PBS_O_WORKDIR:-}" ]]; then
-    if [[ "${WORKING_DIR}" != "${PBS_O_WORKDIR:-}" ]]; then
-      log_message WARN "Current working directory does not match PBS_O_WORKDIR! This may cause issues with the job submission."
-      log_message WARN "PBS_O_WORKDIR" "$(printf "${RED}%s${RESET}" "${PBS_O_WORKDIR}")"
-      log_message WARN "WORKING_DIR" "$(printf "${GREEN}%s${RESET}" "${WORKING_DIR}")"
-      log_message WARN "Exporting PBS_O_WORKDIR=WORKING_DIR=$(printf "${BLUE}%s${RESET}" "${WORKING_DIR}") and continuing..."
-      export PBS_O_WORKDIR="${WORKING_DIR}"
-    fi
-  fi
-}
-
 ezpz_check_working_dir_slurm() {
   # NOTE: [Scenario 1]
   # - If SLURM_SUBMIT_DIR is empty (not set) use $(pwd)
@@ -2746,6 +2713,39 @@ ezpz_check_working_dir() {
   fi
 
 }
+
+# -----------------------------------------------------------------------------
+# Main logic executed when the script is sourced.
+# Determines the working directory based on PBS_O_WORKDIR, SLURM_SUBMIT_DIR, or pwd.
+# Exports WORKING_DIR.
+# -----------------------------------------------------------------------------
+ezpz_get_working_dir() {
+  python3 -c 'import os; print(os.getcwd())' 
+}
+
+ezpz_check_working_dir_pbs() {
+  # NOTE: [Scenario 1]
+  # - If PBS_O_WORKDIR is empty (not set) use $(pwd)
+  local jobdir_name="PBS_O_WORKDIR"
+  if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
+    # Set PBS_O_WORKDIR as WORKING_DIR
+    log_message WARN "${jobdir_name} is not set! Setting it to current working directory"
+    log_message INFO "Exporting ${jobdir_name}=${GREEN}${WORKING_DIR}${RESET}"
+    export PBS_O_WORKDIR="${WORKING_DIR}"
+
+  # NOTE: [Scenario 2]
+  # - If PBS_O_WORKDIR is set, check if it matches the current working directory
+  elif [[ -n "${PBS_O_WORKDIR:-}" ]]; then
+    if [[ "${WORKING_DIR}" != "${PBS_O_WORKDIR:-}" ]]; then
+      log_message WARN "Current working directory does not match PBS_O_WORKDIR! This may cause issues with the job submission."
+      log_message WARN "PBS_O_WORKDIR" "$(printf "${RED}%s${RESET}" "${PBS_O_WORKDIR}")"
+      log_message WARN "WORKING_DIR" "$(printf "${GREEN}%s${RESET}" "${WORKING_DIR}")"
+      log_message WARN "Exporting PBS_O_WORKDIR=WORKING_DIR=$(printf "${BLUE}%s${RESET}" "${WORKING_DIR}") and continuing..."
+      export PBS_O_WORKDIR="${WORKING_DIR}"
+    fi
+  fi
+}
+
 
 # --- Script Entry Point ---
 # Call utils_main when the script is sourced to set WORKING_DIR.
