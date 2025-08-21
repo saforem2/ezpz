@@ -2735,7 +2735,7 @@ ezpz_check_working_dir() {
 # Call utils_main when the script is sourced to set WORKING_DIR.
 # If it fails, print an error but allow sourcing to continue (individual functions might still work).
 if ! ezpz_check_working_dir; then
-  log_mesasge ERROR "Failed to set WORKING_DIR. Please check your environment."
+  log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
