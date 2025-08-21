@@ -2464,7 +2464,7 @@ ezpz_install() {
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
   if ! ezpz_check_working_dir; then
-    log_mesasge ERROR "Failed to set WORKING_DIR. Please check your environment."
+    log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
   fi
   log_message info "running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
   if ! ezpz_setup_python; then
@@ -2739,7 +2739,8 @@ if ! ezpz_check_working_dir; then
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
-if [[ -n "${DEBUG:-}" ]]; then
+# if [[ -n "${DEBUG:-}" ]]; then
+  set -x
   log_message WARN "DEBUG MODE IS ${RED}OFF${RESET}"
   set +x
 fi
