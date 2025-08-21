@@ -1192,7 +1192,7 @@ ezpz_setup_venv_from_conda() {
     if [[ -n "${ptmodstr}" ]]; then
       env_name="${env_name}-pt$(basename ${ptmodstr})"
     fi
-    env_name=$(echo "${env_name}" | sed -e "s/python/py/g")
+    env_name=$(echo "${env_name}" | sed -E 's/python([0-9\.]+)/py\1/')
     # CONDA_NAME=$(basename "${python_root}") && export CONDA_NAME
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
       log_message INFO "  - No VIRTUAL_ENV found in environment!"
@@ -1201,7 +1201,6 @@ ezpz_setup_venv_from_conda() {
       log_message INFO "  - Looking for venv in venvs/$(ezpz_get_machine_name)/${CYAN}${env_name}${RESET}..."
       local fpactivate
       fpactivate="${VENV_DIR}/bin/activate"
-      # export VENV_DIR
       # make directory if it doesn't exist
       [[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
       if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
@@ -1987,15 +1986,17 @@ ezpz_get_scheduler_type() {
     aurora* | polaris* | sunspot* | sirius* | sophia*)
       echo "pbs"
       ;;
-    frontier* | perlmutter* | *)
-      if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    frontier* | perlmutter*)
+      echo "slurm"
+      ;;
+    *)
+      if [[ -n "${PBS_JOBID:-}" ]]; then
+        echo "pbs"
+      elif [[ -n "${SLURM_JOB_ID:-}" ]]; then
         echo "slurm"
       else
         echo "unknown"
       fi
-      ;;
-    *)
-      echo "unknown"
       ;;
   esac
 }
