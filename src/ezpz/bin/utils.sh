@@ -69,6 +69,7 @@ fi
 # # environment variable isn't already set.
 DEFAULT_LOG_LEVEL="${DEFAULT_LOG_LEVEL:-INFO}"
 export DEFAULT_LOG_LEVEL
+
 log_info() {
   args=("$@")
   printf "[${GREEN}I${RESET}][%s] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}"
@@ -2755,8 +2756,8 @@ if ! ezpz_check_working_dir; then
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
-if [[ -n "${DEBUG:-}" ]]; then
-  set -x
-  log_message WARN "DEBUG MODE IS ${RED}OFF${RESET}"
-  set +x
-fi
+# if [[ -n "${DEBUG:-}" ]]; then
+#   set -x
+#   log_message WARN "DEBUG MODE IS ${RED}OFF${RESET}"
+#   set +x
+# fi
