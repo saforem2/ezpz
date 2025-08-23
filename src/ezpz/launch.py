@@ -2,6 +2,7 @@
 ezpz/launch.py
 """
 
+import os
 import sys
 import subprocess
 import shlex
@@ -11,6 +12,8 @@ from typing import Optional
 import ezpz
 
 logger = ezpz.get_logger(__name__)
+
+EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
 
 
 def parse_args():
@@ -55,6 +58,8 @@ def run_command(command: list | str, filters: Optional[list] = None) -> int:
     # XXX: Replace `subprocess.Popen`
     # with `subprocess.run` for better error handling ??
     # <https://docs.python.org/3.10/library/subprocess.html#subprocess.run>
+    if filters is not None and len(filters) > 0:
+        logger.info(f"Caught {len(filters)} filters")
     with subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -79,8 +84,6 @@ def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
     assert len(sys.argv) > 1, "No command to run."
     # cmd_to_launch = shlex.join(sys.argv[1:])
     cmd_to_launch = " ".join(sys.argv[1:])
-    if not cmd_to_launch.startswith("python"):
-        cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
 
     return cmd_to_launch
 
@@ -97,25 +100,32 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
     mn = ezpz.get_machine()
     filters = [*additional_filters] if additional_filters else []
     if mn.lower() == "aurora":
-        filters += [
-            "cuda",
-            "CUDA",
-            "cuDNN",
-            "cuBLAS",
-            "[W501",
-            "  Overriding a previously registered kernel",
-            "operator: aten::_cummax_helper",
-            "    registered at build",
-            "dispatch key: XPU",
-            "previous kernel: registered at",
-            "new kernel: registered at",
-            "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
-            "Setting ds_accelerator to xpu",
-            "Trying to register 2 metrics with the same name",
-            "TF-TRT Warning",
-            "Warning only once",
-            "measureDifference between two events",
-        ]
+        if EZPZ_LOG_LEVEL == "DEBUG":
+            filters = []
+        else:
+            filters += [
+                "cuda",
+                "CUDA",
+                "cuDNN",
+                "cuBLAS",
+                "[W501",
+                "  Overriding a previously registered kernel",
+                "operator: aten::_cummax_helper",
+                "    registered at build",
+                "dispatch key: XPU",
+                "previous kernel: registered at",
+                "new kernel: registered at",
+                "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
+                "Setting ds_accelerator to xpu",
+                "Trying to register 2 metrics with the same name",
+                "TF-TRT Warning",
+                "Warning only once",
+                "measureDifference between two events",
+                "AttributeError",
+                "Initialized with serialization",
+                "AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'",
+                # "operator: aten::geometric"
+            ]
         logger.info(
             " ".join(
                 [
@@ -216,8 +226,10 @@ def build_launch_cmd() -> str:
 
 
 def launch(
+    launch_cmd: Optional[str] = None,
     cmd_to_launch: Optional[str | list[str]] = None,
     filters: Optional[list[str]] = None,
+    include_python: bool = True,
 ) -> int:
     """Launch a command on the current {PBS, SLURM} job."""
     start = time.perf_counter()
@@ -230,14 +242,13 @@ def launch(
     logger.info(f"Job ID: {jobid}")
     logger.info(f"nodelist: {nodelist}")
     logger.info(f"hostfile: {hostfile}")
+    launch_cmd = build_launch_cmd() if launch_cmd is None else launch_cmd
     # TODO: Add mechanism for specifying hostfile
     # - Initial experiments using argparse were giving me trouble, WIP
     # hostfile = ezpz.pbs.get_pbs_nodefile_of_active_job()
     # logger.info(f"Node file: {hostfile}")
 
     # launch_cmd = ezpz.pbs.build_launch_cmd()
-    launch_cmd = build_launch_cmd()
-
     if cmd_to_launch is not None:
         if isinstance(cmd_to_launch, str):
             cmd_to_launch = shlex.join(shlex.split(cmd_to_launch))
@@ -255,11 +266,30 @@ def launch(
         "\t(1.) ['launch_cmd'] + (2.) ['python'] + (3.) ['cmd_to_launch']\n"
     )
     logger.info(f"(1.) ['launch_cmd']: {launch_cmd}")
-    logger.info(f"(2.) ['python']: {sys.executable}")
+    # if include_python:
+    #     logger.info(f"(2.) ['python']: {sys.executable}")
+    #     if not cmd_to_launch.startswith("python"):
+    #         cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
+
+    # cmd_to_launch= shlex.join(list({
+    #     f"{i}" for i in shlex.split(str(cmd_to_launch))
+    # }))
+    if include_python:
+        # if "python" in cmd_to_launch.split(" ")[0]:
+        logger.info(f"(2.) ['python']: {sys.executable}")
+        if sys.executable not in cmd_to_launch:
+            cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
     logger.info(
         f"(3.) ['cmd_to_launch']: {cmd_to_launch.replace(sys.executable, '')}"
     )
-    cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
+    cmd = [
+        launch_cmd,
+    ]
+    if include_python and "python" not in cmd_to_launch.split(" ")[0]:
+        cmd.append(sys.executable)
+    cmd.append(cmd_to_launch)
+    cmd = shlex.join(shlex.split(" ".join(cmd)))
+    # cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
 
     logger.info(
         f"Took: {time.perf_counter() - start:.2f} seconds to build command."
@@ -270,7 +300,7 @@ def launch(
     t0 = time.perf_counter()
 
     filters = [] if filters is None else filters
-    if ezpz.get_machine().lower() == "aurora":
+    if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
         filters += get_aurora_filters()
 
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")

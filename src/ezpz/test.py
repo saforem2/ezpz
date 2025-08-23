@@ -12,7 +12,7 @@ def main():
             cmd_args = f"{sys.executable} {cmd_args}"
     if cmd_args is not None:
         test_script = f"{test_script} {cmd_args}"
-    return launch(test_script)
+    return launch(cmd_to_launch=test_script)
 
 
 if __name__ == "__main__":
