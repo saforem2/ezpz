@@ -128,38 +128,78 @@ def get_pbs_launch_cmd(
     hostfile: Optional[str | os.PathLike | Path] = None,
 ) -> str:
     """Get the PBS launch command"""
-    nhosts = (
-        ezpz.get_num_nodes(hostfile=hostfile) if nhosts is None else nhosts
+
+    # ngpus_available = (
+    #     ezpz.get_world_size(total=True) if ngpus is None else ngpus
+    # )
+    ngpus_max = ezpz.get_world_size(total=True)
+    ngpu_per_host_max = ezpz.get_gpus_per_node()
+    hostfile_fallback = get_hostfile_with_fallback(hostfile)
+    hostfile = hostfile or hostfile_fallback
+    nhosts_max = ezpz.get_num_nodes(hostfile=Path(hostfile_fallback))
+    if nhosts is not None:
+        assert 0 < nhosts <= nhosts_max, (
+            f"`nhosts` must be > 0 and <= {nhosts_max}: {nhosts=}"
+        )
+    else:
+        nhosts = nhosts_max
+
+    if ngpus is None and ngpu_per_host is not None:
+        ngpus = ngpu_per_host * ezpz.get_num_nodes(hostfile=Path(hostfile))
+    elif ngpus is None and ngpu_per_host is None:
+        ngpus = ngpus_max
+        ngpu_per_host = ngpu_per_host_max
+    elif ngpus is not None:
+        if ngpu_per_host is None and nhosts is not None:
+            assert ngpus % nhosts == 0, (
+                f"`ngpus` must be divisible by `nhosts`: {ngpus=} vs. {nhosts=}"
+            )
+            ngpu_per_host = ngpus // nhosts
+        elif ngpu_per_host is not None and nhosts is None:
+            assert ngpus % ngpu_per_host == 0, (
+                f"`ngpus` must be divisible by `ngpu_per_host`: "
+                f"{ngpus=} vs. {ngpu_per_host=}"
+            )
+            nhosts = ngpus // ngpu_per_host
+        elif ngpu_per_host is None and nhosts is None:
+            ngpus = ngpus or ngpus_max
+            ngpu_per_host = ngpu_per_host or ngpu_per_host_max
+            nhosts = ngpus // ngpu_per_host
+        else:
+            assert nhosts is not None and ngpu_per_host is not None
+            assert ngpus == (nhosts * ngpu_per_host), (
+                f"Mismatch in `ngpus` and `nhosts * ngpu_per_host`: "
+                f"{ngpus=} vs. {nhosts=} * {ngpu_per_host=}"
+            )
+    else:
+        ngpus = ngpus or ngpus_max
+        ngpu_per_host = ngpu_per_host or ngpu_per_host_max
+
+        _nh = ezpz.get_num_nodes(hostfile=Path(hostfile))
+        assert ngpus is not None and ngpu_per_host is not None
+        _nhosts = nhosts or (ngpus // ngpu_per_host)
+        assert _nh == _nhosts, (
+            f"Mismatch in `nhosts` and number of hosts in `hostfile`: "
+            f"{_nhosts=} vs. {_nh=}"
+        )
+        nhosts = _nhosts
+
+    assert 0 < ngpus <= ngpus_max, (
+        f"`ngpus` must be > 0 and <= {ngpus_max}: {ngpus=}"
     )
-    hfp = Path(
-        ezpz.dist.get_hostfile_with_fallback(hostfile)
-        if hostfile is None
-        else hostfile
+    logger.info(
+        f"Using [{ngpus:>}/{ngpus_max:<}] GPUs [{nhosts} hosts] x [{ngpu_per_host} GPU/host]"
     )
-    ngpu_per_host = (
-        ezpz.get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
-    )
-    # ngpu_per_host = get_gpus_per_node() if ngpu_per_host is None else ngpu_per_host
-    # ngpus_available = get_world_size_total() if ngpus is None else ngpus
-    ngpus_available = (
-        ezpz.get_world_size(total=True) if ngpus is None else ngpus
-    )
-    ngpus_in_use = nhosts * ngpu_per_host
-    hostfile = (
-        get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
-    )
-    hfp = Path(hostfile)
-    if ngpus_available != (ngpus_in_use):
+    if ngpus != ngpus_max:
         logger.warning(
-            "Mismatch in `ngpus_in_use` and `ngpus_available` "
-            f"{ngpus_in_use=} vs. {ngpus_available=}"
+            f"[WARNING] Using only [{ngpus:>}/{ngpus_max:<}] available GPUs!!"
         )
     # ncpus_per_host = get_cpus_per_node()
     if ezpz.get_machine().lower() == "sophia":
         return " ".join(
             [
                 "mpirun",
-                f"-n={ngpus_in_use}",
+                f"-n={ngpus}",
                 f"-N={ngpu_per_host}",
                 f"--hostfile={hostfile}",
                 "-x PATH",
@@ -172,9 +212,9 @@ def get_pbs_launch_cmd(
             "--verbose",
             "--envall",
             # f'-n {ngpus}',
-            f"--np={ngpus_in_use}",
+            f"--np={ngpus}",
             f"--ppn={ngpu_per_host}",
-            f"--hostfile={hfp.as_posix()}",
+            f"--hostfile={hostfile}",
         ]
         machine_name = ezpz.get_machine()
         cpu_bind = os.environ.get("CPU_BIND", None)
@@ -335,13 +375,13 @@ def get_pbs_env(
     return pbsenv
 
 
-def build_launch_cmd() -> str:
+def build_launch_cmd(hostfile: Optional[Union[str, Path, os.PathLike]] = None) -> str:
     """Build the launch command for the current job.
 
     Returns:
         str: The launch command.
     """
-    return f"{ezpz.get_jobenv()['LAUNCH_CMD']}"
+    return get_pbs_launch_cmd(hostfile=hostfile)
 
 
 if __name__ == "__main__":
