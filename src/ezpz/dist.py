@@ -1053,12 +1053,14 @@ def setup_torch_DDP(
                 ]
             )
         )
-    init_process_group(
-        rank=rank,
-        world_size=world_size,
-        timeout=timeout,
-        backend=backend,
-    )
+    import torch.distributed
+    if not torch.distributed.is_initialized():
+        init_process_group(
+            rank=rank,
+            world_size=world_size,
+            timeout=timeout,
+            backend=backend,
+        )
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
 
