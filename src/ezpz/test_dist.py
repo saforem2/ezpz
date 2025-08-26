@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 test_dist.py
 
@@ -336,7 +337,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--warmup",
         type=int,
-        default=10,
+        default=50,
         help="Warmup iterations",
     )
     parser.add_argument(
@@ -471,7 +472,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--print-freq",
         type=int,
-        default=10,
+        default=100,
         help="Printing frequency",
     )
     parser.add_argument(
@@ -483,20 +484,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input-size",
         type=int,
-        default=128,
+        default=2048,
         help="Input size",
     )
     parser.add_argument(
         "--output-size",
         type=int,
-        default=128,
+        default=2048,
         help="Output size",
     )
     parser.add_argument(
         "--layer-sizes",
         help="Comma-separated list of layer sizes",
         type=lambda s: [int(item) for item in s.split(",")],
-        default=[256, 512, 1024, 2048, 1024, 512, 256, 128],
+        default=[4096, 8192, 16384, 8192, 4096],
         # default=[1024, 512, 256, 128],
     )
     parser.add_argument(
