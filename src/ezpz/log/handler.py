@@ -56,7 +56,10 @@ class RichHandler(OriginalRichHandler):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         if "console" not in kwargs:
             console = get_console(
-                redirect=False, width=9999, markup=use_colored_logs()
+                redirect=False,
+                width=9999,
+                markup=use_colored_logs(),
+                soft_wrap=False,
             )
             kwargs["console"] = console
             self.__console = console
@@ -88,18 +91,26 @@ class RichHandler(OriginalRichHandler):
         Returns:
             ConsoleRenderable: Renderable to display log.
         """
-        fp = Path(record.pathname)
-        parent = fp.parent.as_posix().split("/")[-1]
+        fp = getattr(record, "pathname", None)
+        parent = Path(fp).parent.as_posix().split("/")[-1] if fp else None
         module = getattr(record, "module", None)
         name = getattr(record, "name", None)
-
-        parr = [parent]
+        funcName = getattr(record, "funcName", None)
+        parr = []
+        if fp is not None:
+            fp = Path(fp)
+            parent = fp.parent.as_posix().split("/")[-1]
+            parr.append(parent)
         if module is not None:
             parr.append(module)
-        if name is not None and f"{parent}.{module}" != name:
+
+        if (
+            name is not None
+            and parent is not None
+            and f"{parent}.{module}" != name
+        ):
             parr.append(name)
         pstr = "/".join([parr[0], ".".join(parr[1:])])
-
         level = self.get_level_text(record)
         time_format = (
             None if self.formatter is None else self.formatter.datefmt
@@ -111,15 +122,18 @@ class RichHandler(OriginalRichHandler):
 
         log_renderable = self._log_render(
             self.__console,
-            [message_renderable]
-            if not traceback
-            else [message_renderable, traceback],
+            (
+                [message_renderable]
+                if not traceback
+                else [message_renderable, traceback]
+            ),
             log_time=log_time,
             time_format=time_format,
             level=level,
-            path=pstr,
+            path=pstr,  # getattr(record, "pathname", None),
             line_no=record.lineno,
             link_path=record.pathname if self.enable_link_path else None,
+            funcName=record.funcName,
         )
         return log_renderable
 
@@ -154,6 +168,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         path: Optional[str] = None,
         line_no: Optional[int] = None,
         link_path: Optional[str] = None,
+        funcName: Optional[str] = None,
     ) -> Text:
         result = Text()
         if self.show_time:
@@ -196,13 +211,22 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         if self.show_path and path:
             path_text = Text("[", style=self.styles.get("log.brace", ""))
             text_arr = []
+            # try:
+            # fp = Path(path)
+            # parent = fp.parent.as_posix().split("/")[-1]
+            # remainder = fp.stem
             parent, remainder = path.split("/")
+            # except Exception:
+            #     import ezpz
+            #     ezpz.breakpoint(0)
             if "." in remainder:
                 module, *fn = remainder.split(".")
                 fn = ".".join(fn)
             else:
                 module = remainder
                 fn = None
+            if funcName is not None:
+                fn = funcName
             text_arr += [
                 Text(
                     f"{parent}", style="log.parent"
