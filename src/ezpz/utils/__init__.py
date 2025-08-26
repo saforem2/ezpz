@@ -210,6 +210,61 @@ def grab_tensor(
     # raise ValueError
 
 
+def check_for_tarball():
+    # NOTE:
+    # - `sys.executable` looks like:
+    #   `/path/to/some/envs/env_name/bin/python`
+    fpl = sys.executable.split("/")
+    # `env_prefix` looks like `/path/to/some/envs/env_name`
+    env_prefix = "/".join(fpl[:-2])
+    # `env_name` looks like `env_name`
+    env_name = fpl[-3]
+    # tarball will be `env_name.tar.gz`
+    tarball = f"{env_name}.tar.gz"
+    tar_on_tmp = Path("/tmp") / tarball
+
+    if not tar_on_tmp.exists():
+        if not os.path.exists(tarball):
+            logger.info(f"Creating tarball {tarball} from {env_prefix}")
+            make_tarfile(tarball, env_prefix)
+        else:
+            logger.info(
+                f"Tarball {tarball} already exists in current directory"
+            )
+    else:
+        logger.info(f"Tarball {tarball} already exists, skipping creation")
+    return tar_on_tmp if tar_on_tmp.exists() else Path(tarball)
+
+
+def make_tarfile(
+    output_filename: str,
+    source_dir: str | os.PathLike | Path,
+) -> str:
+    output_filename = (
+        output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
+    )
+    srcfp = Path(source_dir).absolute().resolve()
+    dirname = srcfp.name
+    logger.info(f"Creating tarball at {output_filename} from {source_dir}")
+    logger.info(
+        f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
+    )
+    os.system(
+        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
+    )
+
+    return output_filename
+
+
+def create_tarball(src: str | os.PathLike) -> Path:
+    src_dir = Path(src).resolve().absolute()
+    root_dir = Path(src).parent.resolve().absolute()
+    assert root_dir.exists(), f"{root_dir} does not exist"
+    fpname = f"{src_dir.name}"
+    dst_fp = make_tarfile(fpname, src_dir.as_posix())
+    return Path(dst_fp)
+
+
 def save_dataset(
     dataset: xr.Dataset,
     outdir: PathLike,
