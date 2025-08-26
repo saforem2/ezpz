@@ -21,7 +21,6 @@ dependencies = [
     "sh",
     "tiktoken",
     "torchinfo",
-    # "sentencepiece",
     "transformers>=4.50.1",
     "wandb",
     "xarray",
@@ -42,6 +41,7 @@ maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 ezpz-test = "ezpz.test:main"
 ezpz-launch = "ezpz.launch:main"
 ezpz-yeet-env = "ezpz.utils.yeet_env:main"
+ezpz-tar-env = "ezpz.utils.tar_env:main"
 
 [project.optional-dependencies]
 xpu = [
@@ -65,7 +65,7 @@ dev = [
     "pyright",
     "ruff",
     "ruff-lsp",
-    # "tensorboard",
+    "tensorboard",
     # "hydra-colorlog",
     # "tensorboard",
 ]
