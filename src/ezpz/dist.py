@@ -26,8 +26,11 @@ from omegaconf import DictConfig, OmegaConf
 
 from ezpz.lazy import lazy_import
 
+ENABLE_WANDB = False
 try:
     wandb = lazy_import("wandb")
+    if wandb.api.api_key is not None:
+        ENABLE_WANDB = True
 except Exception:
     wandb = None
 
@@ -123,10 +126,10 @@ def timeitlogit(
     """
     rank = get_rank() if rank is None else rank
     prefix = "timeit" if prefix is None else prefix
-    try:
-        import wandb
-    except Exception:
-        wandb = None  # type:ignore
+    # try:
+    #     import wandb
+    # except Exception:
+    #     wandb = None  # type:ignore
 
     def decorator(func: Callable):
         """Decorator to time a function and log the time taken.
@@ -144,15 +147,18 @@ def timeitlogit(
             fname = getattr(
                 func, "__qualname__", getattr(func, "__name__", "unknown")
             )
-            if record and wandb is not None and wandb.run is not None:
+            if (
+                record
+                and ENABLE_WANDB
+                and wandb is not None
+                and wandb.run is not None
+            ):
                 wandb.log({f"{prefix}/{fname}": dt}, commit=False)
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
                 kw_str = ", ".join(f"{k}={v}" for k, v in kwargs.items())
                 inner = ", ".join(filter(None, [arg_str, kw_str]))
                 logger.info(f"{fname}({inner}) took {dt:.4f} s")
-                # if wandb is not None and wandb.run is not None:
-                #     wandb.log({f"timeit/{fname}": dt}, commit=False)
             # if verbose:
             #     if rank == 0:
             #         astr = []
@@ -188,10 +194,10 @@ def timeit(func: Callable):
             # Function implementation
             pass
     """
-    try:
-        import wandb
-    except Exception:
-        wandb = None  # type:ignore
+    # try:
+    #     import wandb
+    # except Exception:
+    #     wandb = None  # type:ignore
 
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -202,7 +208,7 @@ def timeit(func: Callable):
             func, "__qualname__", getattr(func, "__name__", "unknown")
         )
         logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
-        if wandb is not None and wandb.run is not None:
+        if ENABLE_WANDB and wandb is not None and wandb.run is not None:
             wandb.log({f"timeit/{fname}": dt})
         return result
 
@@ -599,9 +605,12 @@ def init_deepspeed(
         raise exc
 
 
-def get_device(type: Optional[str] = None, as_torch_device: Optional[bool] = None) -> str | torch.device:
+def get_device(
+    type: Optional[str] = None, as_torch_device: Optional[bool] = None
+) -> str | torch.device:
     """Alias for `get_torch_device`."""
     return get_torch_device(device_type=type, as_torch_device=as_torch_device)
+
 
 def get_torch_device_type(device_type: Optional[str] = None) -> str:
     """Get the current PyTorch device type.
@@ -1054,6 +1063,7 @@ def setup_torch_DDP(
             )
         )
     import torch.distributed
+
     if not torch.distributed.is_initialized():
         init_process_group(
             rank=rank,
@@ -1131,9 +1141,9 @@ def setup_torch_distributed(
 
     DEFAULT_TIMEOUT = os.environ.get("TORCH_DDP_TIMEOUT", 3600)
     timeout = (
-        DEFAULT_TIMEOUT if timeout is None else (
-            int(timeout) if isinstance(timeout, str) else timeout
-        )
+        DEFAULT_TIMEOUT
+        if timeout is None
+        else (int(timeout) if isinstance(timeout, str) else timeout)
     )
     port = (
         "1234"
@@ -1613,8 +1623,12 @@ def setup_wandb(
         )
         return None
 
+    HAS_WANDB = False
     try:
         import wandb
+
+        if wandb.api.api_key is not None:
+            HAS_WANDB = True
     except (ImportError, ModuleNotFoundError) as e:
         logger.warning(
             "Unable to import `wandb`. Install with `pip install wandb`"
