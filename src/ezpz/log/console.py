@@ -70,6 +70,8 @@ class Console(rich_console.Console):
             kwargs["force_terminal"] = should_do_markup(
                 stream=kwargs.get("file", sys.stdout)
             )
+        if "force_jupyter" not in kwargs:
+            kwargs["force_jupyter"] = is_interactive()
 
         super().__init__(*args, **kwargs)
         self.extended = True
@@ -136,36 +138,42 @@ def should_do_markup(stream: TextIO = sys.stdout) -> bool:
     if term.lower() == "dumb":
         return False
 
-    # Use tty detection logic as last resort because there are numerous
-    # factors that can make isatty return a misleading value, including:
+    # Use tty detection logic as last resort.
+    # Because there are numerous factors that can make isatty return a
+    # misleading value, including:
     # - stdin.isatty() is the only one returning true, even on a real terminal
-    # - stderr returting false if user user uses a error stream coloring solution
+    # - stderr returning false if user uses an error stream coloring solution
     return stream.isatty()
 
 
-def get_console(**kwargs) -> Console:
-    # interactive = is_interactive()
+def get_console(
+        *args: str,
+        redirect: bool = True,
+        **kwargs: Any
+) -> Console:
     from rich.theme import Theme
-
     # theme = Theme(STYLES)
     # if "width" not in kwargs:
     #     kwargs['width'] = 9999
     if "log_path" not in kwargs:
-        kwargs["log_path"] = True
+        kwargs |= {"log_path": True}
     if "soft_wrap" not in kwargs:
-        kwargs["soft_wrap"] = False
+        kwargs |= {"soft_wrap": True}
     if "theme" not in kwargs:
-        kwargs["theme"] = Theme(STYLES)
+        kwargs |= {"theme": Theme(STYLES)}
     # if "force_jupyter" not in kwargs:
     #     kwargs["force_jupyter"] = is_interactive()
-    console = Console(
-        color_system="truecolor",
-        # force_jupyter=interactive,
-        # log_path=False,
-        # theme=theme,
-        # soft_wrap=False,
-        **kwargs,
-    )
+    # if kwargs.get("force_jupyter", None) is not None:
+    #     kwear
+    _ = kwargs.pop("force_jupyter", None)
+    if "color_system" not in kwargs:
+        kwargs["color_system"] = "truecolor"
+    kwargs['force_terminal'] = True
+    console = Console(**kwargs)
+    # XXX: Hack for the time being
+    console.is_jupyter = False
+    # console.is_interactive = is_interactive()
+    # console.is_terminal = True
     return console
 
 
