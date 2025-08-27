@@ -460,7 +460,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train-iters",
         type=int,
-        default=1000,
+        default=500,
         help="Number of training iterations",
     )
     parser.add_argument(
@@ -478,7 +478,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
+        default=256,
         help="Batch size",
     )
     parser.add_argument(
