@@ -13,7 +13,7 @@ import sys
 import subprocess
 import shlex
 import time
-from typing import Optional, Union
+from typing import Optional
 from pathlib import Path
 
 import ezpz
@@ -330,7 +330,7 @@ def build_executable(
 
     cmd_to_launch_str = shlex.join(cmd_to_launch_list)
     logger.info("Building command to execute by piecing together:")
-    logger.info(f"(1.) : {launch_cmd}")
+    logger.info(f"(1.) launch_cmd: {launch_cmd}")
     logger.info(f"(2.) cmd_to_launch: {cmd_to_launch_str}")
     executable = [*shlex.split(launch_cmd), *cmd_to_launch_list]
     # executable = [
