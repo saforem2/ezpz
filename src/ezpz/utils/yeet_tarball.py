@@ -5,11 +5,6 @@ ezpz/utils/yeet_tarball.py
 Utility to transfer and extract a tarball across distributed nodes using ezpz.
 """
 
-#!/usr/bin/env python
-# -----------------------------------------------------------------------
-# This script is to transfer the package to the local drives.
-# Rank 0 will load the data and then do the broadcast and write them back
-# -----------------------------------------------------------------------
 import os
 import time
 import ezpz
@@ -32,7 +27,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--overwrite", action="store_true", help="overwrite existing tarball"
     )
-    args = parser.parse_args()
 
     # src = Path(args.src)
     # if args.dst is None:
@@ -49,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     #     ".tbz",
     # ]:
     #     args.d = True
-    return args
+    return parser.parse_args()
 
 
 def bcast_chunk(A, chunk_size: int = 1024 * 1024 * 128) -> bytearray:
@@ -66,10 +60,7 @@ def bcast_chunk(A, chunk_size: int = 1024 * 1024 * 128) -> bytearray:
     for i in tqdm.trange(nc, disable=(ezpz.get_rank() != 0)):
         if i * chunk_size < size:
             end = min(i * chunk_size + chunk_size, size)
-            if ezpz.get_rank() == 0:
-                data = A[i * chunk_size : end]
-            else:
-                data = None
+            data = A[i * chunk_size : end] if ezpz.get_rank() == 0 else None
             B[i * chunk_size : end] = ezpz.dist.broadcast(data, root=0)
     return B
 
