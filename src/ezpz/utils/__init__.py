@@ -6,7 +6,14 @@ import sys
 import pdb
 import os
 import re
+import ezpz
 import logging
+
+from ezpz.utils.dummies import (
+    DummyMPI,
+    DummyTorch,
+)
+
 from torchinfo import ModelStatistics
 import xarray as xr
 import numpy as np
@@ -17,10 +24,40 @@ from dataclasses import asdict
 from ezpz.configs import ScalarLike, PathLike, ZeroConfig
 
 import torch
-import torch.distributed as tdist
+import torch.distributed
+# import torch.distributed as tdist
 
-from ezpz import get_rank
+# from ezpz import get_rank
 from pathlib import Path
+
+__all__ = [
+    "DistributedPdb",
+    "DummyMPI",
+    "DummyTorch",
+    "breakpoint",
+    "get_timestamp",
+    "format_pair",
+    "summarize_dict",
+    "model_summary",
+    "normalize",
+    "get_max_memory_allocated",
+    "get_max_memory_reserved",
+    "grab_tensor",
+    "check_for_tarball",
+    "make_tarfile",
+    "create_tarball",
+    "save_dataset",
+    "dataset_to_h5pyfile",
+    "dataset_from_h5pyfile",
+    "dict_from_h5pyfile",
+    "get_deepspeed_zero_config_json",
+    "write_generic_deepspeed_config",
+    "get_deepspeed_adamw_optimizer_config_json",
+    "get_deepspeed_warmup_decay_scheduler_config_json",
+    "get_deepspeed_config_json",
+    "write_deepspeed_zero12_auto_config",
+    "write_deepspeed_zero3_auto_config",
+]
 
 
 # try:
@@ -29,10 +66,12 @@ from pathlib import Path
 #     ipex = None
 
 # logger = ezpz.get_logger(__name__)
-RANK = get_rank()
+# RANK = get_rank()
 logger = logging.getLogger(__name__)
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
-_ = logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
+# LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+# _ = logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
+
+# logger = ezpz.get_logger(__name__)
 
 
 class DistributedPdb(pdb.Pdb):
@@ -60,14 +99,14 @@ def breakpoint(rank: int = 0):
     Args:
         rank (int): Which rank to break on.  Default: ``0``
     """
-    if get_rank() == rank:
+    if ezpz.get_rank() == rank:
         pdb = DistributedPdb()
         pdb.message(
             "\n!!! ATTENTION !!!\n\n"
             f"Type 'up' to get to the frame that called dist.breakpoint(rank={rank})\n"
         )
         pdb.set_trace()
-    tdist.barrier()
+    torch.distributed.barrier()
 
 
 def get_timestamp(fstr: Optional[str] = None) -> str:
@@ -210,18 +249,26 @@ def grab_tensor(
     # raise ValueError
 
 
-def check_for_tarball():
-    # NOTE:
-    # - `sys.executable` looks like:
-    #   `/path/to/some/envs/env_name/bin/python`
-    fpl = sys.executable.split("/")
-    # `env_prefix` looks like `/path/to/some/envs/env_name`
-    env_prefix = "/".join(fpl[:-2])
-    # `env_name` looks like `env_name`
-    env_name = fpl[-3]
+def check_for_tarball(
+    env_prefix: Optional[str | os.PathLike | Path] = None,
+    overwrite: Optional[bool] = False,
+):
+    if env_prefix is None:
+        # NOTE:
+        # - `sys.executable` looks like:
+        #   `/path/to/some/envs/env_name/bin/python`
+        fpl = sys.executable.split("/")
+        # `env_prefix` looks like `/path/to/some/envs/env_name`
+        env_prefix = "/".join(fpl[:-2])
+        # `env_name` looks like `env_name`
+        env_name = fpl[-3]
+    else:
+        env_name = Path(env_prefix).name
     # tarball will be `env_name.tar.gz`
     tarball = f"{env_name}.tar.gz"
     tar_on_tmp = Path("/tmp") / tarball
+    if overwrite and tar_on_tmp.exists():
+        logger.info(f"Removing existing tarball at {tar_on_tmp}")
 
     if not tar_on_tmp.exists():
         if not os.path.exists(tarball):
