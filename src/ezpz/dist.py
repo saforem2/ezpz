@@ -1064,7 +1064,13 @@ def setup_torch_DDP(
         )
     import torch.distributed
 
-    if not torch.distributed.is_initialized():
+    if torch.distributed.is_initialized():  # type:ignore
+        if rank == 0:
+            logger.info(
+                "torch.distributed was already initialized, skipping..."
+            )
+    else:
+
         init_process_group(
             rank=rank,
             world_size=world_size,
