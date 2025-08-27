@@ -180,47 +180,6 @@ def get_pbs_launch_cmd(
                 f"{ngpus=} vs. {nhosts=} * {ngpu_per_host=}"
             )
 
-    # if ngpus is None and ngpu_per_host is not None:
-    #     ngpus = ngpu_per_host * ezpz.get_num_nodes(hostfile=Path(hostfile))
-    # elif ngpus is None and ngpu_per_host is None:
-    #     ngpus = ngpus_max
-    #     ngpu_per_host = ngpu_per_host_max
-    # elif ngpus is not None:
-    #     # [Scenario 1]:
-    #     if ngpu_per_host is None and nhosts is not None:
-    #         assert ngpus % nhosts == 0, (
-    #             f"`ngpus` must be divisible by `nhosts`: {ngpus=} vs. {nhosts=}"
-    #         )
-    #         ngpu_per_host = ngpus // nhosts
-    #     elif ngpu_per_host is not None and nhosts is None:
-    #         assert ngpus % ngpu_per_host == 0, (
-    #             f"`ngpus` must be divisible by `ngpu_per_host`: "
-    #             f"{ngpus=} vs. {ngpu_per_host=}"
-    #         )
-    #         nhosts = ngpus // ngpu_per_host
-    #     elif ngpu_per_host is None and nhosts is None:
-    #         ngpus = ngpus or ngpus_max
-    #         ngpu_per_host = ngpu_per_host or ngpu_per_host_max
-    #         nhosts = ngpus // ngpu_per_host
-    #     else:
-    #         assert nhosts is not None and ngpu_per_host is not None
-    #         assert ngpus == (nhosts * ngpu_per_host), (
-    #             f"Mismatch in `ngpus` and `nhosts * ngpu_per_host`: "
-    #             f"{ngpus=} vs. {nhosts=} * {ngpu_per_host=}"
-    #         )
-    # else:
-    #     ngpus = ngpus or ngpus_max
-    #     ngpu_per_host = ngpu_per_host or ngpu_per_host_max
-    #
-    #     _nh = ezpz.get_num_nodes(hostfile=Path(hostfile))
-    #     assert ngpus is not None and ngpu_per_host is not None
-    #     _nhosts = nhosts or (ngpus // ngpu_per_host)
-    #     assert _nh == _nhosts, (
-    #         f"Mismatch in `nhosts` and number of hosts in `hostfile`: "
-    #         f"{_nhosts=} vs. {_nh=}"
-    #     )
-    #     nhosts = _nhosts
-
     assert 0 < ngpus <= ngpus_max, (
         f"`ngpus` must be > 0 and <= {ngpus_max}: {ngpus=}"
     )
