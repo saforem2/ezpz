@@ -1,24 +1,11 @@
 import os
 import sys
 
-from pathlib import Path
-
 
 def main():
     import ezpz.pbs
     import ezpz.launch
 
-    # if overwrite and ezpz.get_rank() == 0:
-    #     fp_bak = src.with_suffix(
-    #         src.suffix + f"{ezpz.get_timestamp()}.bak"
-    #     )
-    #     logger.info(f"Backing up existing tarball to {fp_bak}")
-    #     os.rename(src, fp_bak)
-    # else:
-    #     logger.info("Not overwriting existing tarball, exiting.")
-    #     raise FileExistsError(
-    #         f"Tarball {tarball_fp} already exists. Use --overwrite to overwrite."
-    #     )
     if os.environ.get("MAKE_TARBALL") is not None:
         from ezpz.utils import check_for_tarball
 
