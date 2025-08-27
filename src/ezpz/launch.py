@@ -255,24 +255,6 @@ def get_hostfile_of_active_job():
     return None
 
 
-# def build_launch_cmd(
-#     hostfile: Optional[Union[str, Path, os.PathLike]] = None,
-# ) -> str:
-#     """Build command to launch a job on {PBS, SLURM}."""
-#     from ezpz.configs import get_scheduler
-#
-#     scheduler = get_scheduler().lower()
-#     if scheduler == "pbs":
-#         import ezpz.pbs
-#
-#         return ezpz.pbs.build_launch_cmd(hostfile=hostfile)
-#     elif scheduler == "slurm":
-#         import ezpz.slurm
-#
-#         return ezpz.slurm.build_launch_cmd()
-#     else:
-#         raise ValueError(f"Unsupported scheduler: {scheduler}")
-
 
 def build_executable(
     launch_cmd: Optional[str] = None,
@@ -361,74 +343,6 @@ def launch(
     logger.info(f"Job ID: {jobid}")
     logger.info(f"nodelist: {nodelist}")
     logger.info(f"hostfile: {hostfile}")
-
-    # launch_cmd = build_launch_cmd() if launch_cmd is None else launch_cmd
-    # # TODO: Add mechanism for specifying hostfile
-    # # - Initial experiments using argparse were giving me trouble, WIP
-    # # hostfile = ezpz.pbs.get_pbs_nodefile_of_active_job()
-    # # logger.info(f"Node file: {hostfile}")
-    #
-    # cmd = [launch_cmd]
-    # cmd_to_launch = get_command_to_launch_from_argv() if cmd_to_launch is None else cmd_to_launch
-    # cmd_to_launch_str = shlex.join(cmd_to_launch) if isinstance(cmd_to_launch, list) else cmd_to_launch
-    # cmd_to_launch_list = shlex.split(cmd_to_launch) if isinstance(cmd_to_launch, str) else cmd_to_launch
-    # # assert cmd_to_launch is not None and cmd_to_launch_str != "", "No command to launch found." and cmd_to_launch_list is not None and len(cmd_to_launch_list) > 0, "No command to launch found."
-    # assert cmd_to_launch is not None and cmd_to_launch_str != "", "No command to launch found."
-    # assert cmd_to_launch_list is not None and len(cmd_to_launch_list) > 0, "No command to launch found."
-    # if include_python:
-    #     # want to check if python already in command
-    #     if len(cmd_to_launch_list) > 0 and "python" in str(cmd_to_launch_list[0]):
-    #         include_python = False
-    #         logger.info(
-    #             "Detected 'python' in command to launch, not including python executable again."
-    #         )
-    #     else:
-    #         cmd.append(sys.executable)
-    # if isinstance(cmd_to_launch, str):
-    #     cmd.append(cmd_to_launch)
-    # elif isinstance(cmd_to_launch, list):
-    #     cmd.append(shlex.join(cmd_to_launch))
-    #
-    # # if cmd_to_launch is not None:
-    # #     if isinstance(cmd_to_launch, str):
-    # #         cmd_to_launch = shlex.join(shlex.split(cmd_to_launch))
-    # #     elif isinstance(cmd_to_launch, list):
-    # #         cmd_to_launch = shlex.join(cmd_to_launch)
-    # # else:
-    # #     cmd_to_launch = get_command_to_launch_from_argv()
-    # #
-    # # assert cmd_to_launch is not None
-    # # if isinstance(cmd_to_launch, list):
-    # #     cmd_to_launch = shlex.join(cmd_to_launch)
-    # # assert isinstance(cmd_to_launch, str)
-    # logger.info(
-    #     "Building command to execute by piecing together:\n\n"
-    #     f"{shlex.split(shlex.join(cmd))}\n"
-    #     # "\t(1.) ['launch_cmd'] + (2.) ['python'] + (3.) ['cmd_to_launch']\n"
-    # )
-    # logger.info(f"(1.) ['launch_cmd']: {launch_cmd}")
-    # if include_python:
-    #     logger.info(f"(2.) ['python']: {sys.executable}")
-    # # if include_python:
-    # #     logger.info(f"(2.) ['python']: {sys.executable}")
-    # #     if not cmd_to_launch.startswith("python"):
-    # #         cmd_to_launch = f"{sys.executable} {cmd_to_launch}"
-    #
-    # # cmd_to_launch= shlex.join(list({
-    # #     f"{i}" for i in shlex.split(str(cmd_to_launch))
-    # # }))
-    # logger.info(
-    #     f"(3.) ['cmd_to_launch']: {cmd_to_launch_str}"
-    # )
-    # cmd = [
-    #     launch_cmd,
-    # ]
-    # # if include_python and "python" not in cmd_to_launch.split(" ")[0]:
-    # #     cmd.append(sys.executable)
-    # # cmd.append(cmd_to_launch)
-    # # cmd = shlex.join(shlex.split(" ".join([launch_cmd, cmd_to_launch])))
-    # cmd = shlex.join(shlex.split(" ".join(cmd)))
-    #
     cmd_list = build_executable(
         launch_cmd=launch_cmd,
         cmd_to_launch=cmd_to_launch,
@@ -442,15 +356,6 @@ def launch(
         f"Took: {time.perf_counter() - start:.2f} seconds to build command."
     )
     logger.info("Executing:\n" + "\n  ".join([f"{i}" for i in cmd_list]))
-    # logger.info(80*'=')
-    # logger.info(f"Full command string:\n{cmd_str}")
-    # logger.info(f"Full command list:\n{cmd_list}")
-    # logger.info(f"cmd: {cmd}")
-    # logger.info(80*'=')
-
-    # split_cmd = shlex.split(cmd)
-    # logger.info("Executing:\n\t" + f"\n\t{}")
-    # logger.info(f"Executing: \n\t{\n - {i}.join(cmd.split())}\n")
     t0 = time.perf_counter()
 
     filters = [] if filters is None else filters
@@ -458,7 +363,6 @@ def launch(
         filters += get_aurora_filters()
 
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
-    # logger.info("======== [ezpz.launch: STOP] ========\n")
     stop = ezpz.get_timestamp()
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     cmd_start = time.perf_counter()
@@ -482,8 +386,6 @@ def main():
     # print(f"{args=}")
     configure_warnings()
     launch(cmd_to_launch=" ".join(sys.argv[1:]))
-    # launch(cmd_to_launch=f"{args.command}", filters=args.filter)
-    # launch(launch_cmd=args.command)
     ezpz.dist.cleanup()
     exit(0)
 
