@@ -170,7 +170,7 @@ def main(
     dst_fp = Path("/tmp") / f"{dst_name}.tar.gz" if dst is None else Path(dst)
     logger.info(f"Copying {src_tarball} to {dst_fp}")
     return transfer(
-        src=src_fp.as_posix(),
+        src=src_tarball.as_posix(),
         dst=dst_fp.as_posix(),
         decompress=decompress,
         chunk_size=chunk_size,
