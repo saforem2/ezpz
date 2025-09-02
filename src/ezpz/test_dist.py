@@ -1,11 +1,13 @@
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 """
 test_dist.py
 
 - to launch:
 
+  ```bash
   $ source ezpz/src/ezpz/bin/savejobenv
   $ BACKEND=DDP launch python3 ezpz_ddp.py
+  ```
 """
 
 import argparse
@@ -17,15 +19,9 @@ import time
 from typing import Optional
 import warnings
 
-# from ezpz.lazy import lazy_import
-# ezpz = lazy_import('ezpz')
 import ezpz
 from ezpz.profile import (
     get_profiling_context,
-    # get_torch_profiler,
-    # get_pytorch_profiler,
-    # get_context_manager,
-    # get_torch_profiler_context_manager,
 )
 
 import torch
