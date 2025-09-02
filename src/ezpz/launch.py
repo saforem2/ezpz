@@ -105,7 +105,6 @@ def run_command(command: list | str, filters: Optional[list] = None) -> int:
             ]
         )
     )
-    # ezpz.breakpoint(0)
     with subprocess.Popen(
         shlex.join(command),
         stdout=subprocess.PIPE,
