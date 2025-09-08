@@ -85,10 +85,11 @@ class DataFramePrettify:
     def _add_rows(self):
         for row in self.rows:
             with beat(self.delay_time):
-                if self.first_cols:
-                    row = row[: self.col_limit]
-                else:
-                    row = row[-self.col_limit :]
+                row = (
+                    row[: self.col_limit]
+                    if self.first_cols
+                    else row[-self.col_limit :]
+                )
 
                 row = [str(item) for item in row]
                 self.table.add_row(*list(row))
@@ -147,14 +148,8 @@ class DataFramePrettify:
                 self.table.width = None
 
     def _add_caption(self):
-        if self.first_rows:
-            row_text = "first"
-        else:
-            row_text = "last"
-        if self.first_cols:
-            col_text = "first"
-        else:
-            col_text = "last"
+        row_text = "first" if self.first_rows else "last"
+        col_text = "first" if self.first_cols else "last"
 
         with beat(self.delay_time):
             self.table.caption = (
