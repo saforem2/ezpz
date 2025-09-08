@@ -25,7 +25,7 @@ from ezpz.profile import (
 )
 
 import torch
-import torch.distributed
+# import torch.distributed
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from xarray import Dataset
@@ -144,14 +144,14 @@ class Trainer:
         self.model.to(self.dtype)
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
-            torch.distributed.barrier(
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_tensor_parallel_group()
             )
-            torch.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
-            torch.distributed.barrier(
+            ezpz.dist.barrier(group=ezpz.tp.get_data_parallel_group())
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_pipeline_parallel_group()
             )
-            torch.distributed.barrier(
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_context_parallel_group()
             )
 
@@ -173,7 +173,7 @@ class Trainer:
 
         if self.world_size > 1:
             logger.debug("Hit torch.distributed.barrier()")
-            torch.distributed.barrier()
+            ezpz.dist.barrier()
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _forward_step(self) -> dict:
