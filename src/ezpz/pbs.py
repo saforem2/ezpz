@@ -215,18 +215,32 @@ def get_pbs_launch_cmd(
         cpu_bind = os.environ.get("CPU_BIND", None)
         if cpu_bind is not None:
             logger.warning(f"Detected CPU_BIND from environment: {cpu_bind}")
-            cmd_list.append(
-                f"--cpu-bind=verbose,{cpu_bind.replace('--cpu-bind=', '')}"
-            )
+            if ngpus < 1024:
+                cmd_list.append(
+                    f"--cpu-bind=verbose,{cpu_bind.replace('--cpu-bind=', '')}"
+                )
+            else:
+                cmd_list.append(
+                    f"--cpu-bind={cpu_bind.replace('--cpu-bind=', '')}"
+                )
         else:
             if machine_name.lower() in {"aurora", "sunspot"}:
                 CPU_BIND_INTEL_XPU: str = "list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-                cmd_list.extend(
-                    [
-                        "--no-vni",
-                        f"--cpu-bind=verbose,{CPU_BIND_INTEL_XPU}",
-                    ]
-                )
+                if ngpus < 1024:
+                    cmd_list.extend(
+                        [
+                            "--no-vni",
+                            f"--cpu-bind=verbose,{CPU_BIND_INTEL_XPU}",
+                        ]
+                    )
+                else:
+                    cmd_list.extend(
+                        [
+                            "--no-vni",
+                            f"--cpu-bind={CPU_BIND_INTEL_XPU}",
+                        ]
+                    )
+
             else:
                 cmd_list.extend(
                     [
