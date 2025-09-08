@@ -28,8 +28,6 @@ from rich import print
 # from rich.columns import Columns
 from rich.layout import Layout
 
-# from rich.live import Live
-# from rich.measure import Measurement
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
