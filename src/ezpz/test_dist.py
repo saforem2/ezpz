@@ -1,10 +1,13 @@
+#!/usr/bin/env python3
 """
 test_dist.py
 
 - to launch:
 
+  ```bash
   $ source ezpz/src/ezpz/bin/savejobenv
   $ BACKEND=DDP launch python3 ezpz_ddp.py
+  ```
 """
 
 import argparse
@@ -16,19 +19,13 @@ import time
 from typing import Optional
 import warnings
 
-# from ezpz.lazy import lazy_import
-# ezpz = lazy_import('ezpz')
 import ezpz
 from ezpz.profile import (
     get_profiling_context,
-    # get_torch_profiler,
-    # get_pytorch_profiler,
-    # get_context_manager,
-    # get_torch_profiler_context_manager,
 )
 
 import torch
-import torch.distributed
+# import torch.distributed
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from xarray import Dataset
@@ -147,14 +144,14 @@ class Trainer:
         self.model.to(self.dtype)
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
-            torch.distributed.barrier(
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_tensor_parallel_group()
             )
-            torch.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
-            torch.distributed.barrier(
+            ezpz.dist.barrier(group=ezpz.tp.get_data_parallel_group())
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_pipeline_parallel_group()
             )
-            torch.distributed.barrier(
+            ezpz.dist.barrier(
                 group=ezpz.tp.get_context_parallel_group()
             )
 
@@ -176,7 +173,7 @@ class Trainer:
 
         if self.world_size > 1:
             logger.debug("Hit torch.distributed.barrier()")
-            torch.distributed.barrier()
+            ezpz.dist.barrier()
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _forward_step(self) -> dict:
@@ -336,7 +333,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--warmup",
         type=int,
-        default=10,
+        default=50,
         help="Warmup iterations",
     )
     parser.add_argument(
@@ -458,12 +455,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--train-iters",
+        "--train_iters",
         type=int,
-        default=1000,
+        default=500,
         help="Number of training iterations",
     )
     parser.add_argument(
         "--log-freq",
+        "--log_freq",
         type=int,
         default=1,
         help="Logging frequency",
@@ -471,32 +470,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--print-freq",
         type=int,
-        default=10,
+        default=25,
         help="Printing frequency",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
+        default=256,
         help="Batch size",
     )
     parser.add_argument(
         "--input-size",
         type=int,
-        default=128,
+        default=2048,
         help="Input size",
     )
     parser.add_argument(
         "--output-size",
         type=int,
-        default=128,
+        default=2048,
         help="Output size",
     )
     parser.add_argument(
         "--layer-sizes",
         help="Comma-separated list of layer sizes",
         type=lambda s: [int(item) for item in s.split(",")],
-        default=[256, 512, 1024, 2048, 1024, 512, 256, 128],
+        default=[4096, 8192, 16384, 8192, 4096],
         # default=[1024, 512, 256, 128],
     )
     parser.add_argument(

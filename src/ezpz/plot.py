@@ -16,7 +16,7 @@ import torch
 # import ezpz
 from ezpz.dist import get_rank
 from ezpz.log import get_logger
-from ezpz.utils import get_timestamp
+# from ezpz import get_timestamp
 
 # from ezpz.dist import get_rank
 import numpy as np
@@ -59,6 +59,16 @@ COLORS = {
 #     if fstr is None:
 #         return now.strftime('%Y-%m-%d-%H%M%S')
 #     return now.strftime(fstr)
+
+
+def get_timestamp(fstr: Optional[str] = None) -> str:
+    """Get formatted timestamp."""
+    import datetime
+
+    now = datetime.datetime.now()
+    return (
+        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    )
 
 
 def set_plot_style(**kwargs):
@@ -121,7 +131,9 @@ def set_plot_style(**kwargs):
             # 'savefig.transparent': True,
         }
     )
-    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", list(COLORS.values()))
+    plt.rcParams["axes.prop_cycle"] = plt.cycler(
+        "color", list(COLORS.values())
+    )
     plt.rcParams["axes.labelcolor"] = "#838383"
     plt.rcParams.update(**kwargs)
     # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}

@@ -4,6 +4,39 @@
 
 ## 📝 Example
 
+We provide below multiple (equivalent) commands that can be used to launch
+[`test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
+across _all_ available GPUs.
+
+1. Directly:
+
+   ```bash
+   ezpz-test
+   ```
+
+2. Using `ezpz-launch`:
+
+   ```bash
+   ezpz-launch python3 -m ezpz.test_dist
+   ```
+
+3. As a module using `python3 -m`:
+
+   ```bash
+   python3 -m ezpz.launch python3 -m ezpz.test_dist
+   ```
+
+   ```bash
+   # or, equivalently:
+   python3 -m ezpz.launch -m ezpz.test_dist
+   ```
+
+   (will automatically insert `python3` before the second `-m`, if needed)
+
+## 💀 Deprecated
+
+### 📝 Example
+
 ```bash {#launch-example}
 source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
 python3 -m pip install "git+https://github.com/saforem2/ezpz"
@@ -53,7 +86,7 @@ sequenceDiagram
 
   </details>
 
-### 🌌 Aurora
+#### 🌌 Aurora
 
 - Command:
 
@@ -298,7 +331,7 @@ sequenceDiagram
 
    </details>
 
-### 🌠 Polaris
+#### 🌠 Polaris
 
 - Command:
 

@@ -7,6 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import logging.config
 import os
+from typing import Optional
 
 import warnings
 import socket
@@ -213,9 +214,9 @@ from ezpz.utils import (
     dataset_from_h5pyfile,
     dataset_to_h5pyfile,
     dict_from_h5pyfile,
+    get_timestamp,
     get_max_memory_allocated,
     get_max_memory_reserved,
-    get_timestamp,
     grab_tensor,
     save_dataset,
 )
@@ -341,6 +342,7 @@ __all__ = [
     "command_exists",
     "configs",
     "check_scheduler",
+    "dist",
     "get_jobdir_from_env",
     "get_jobdir_from_jobslog",
     "get_jobdirs_from_jobslog",
@@ -449,7 +451,6 @@ __all__ = [
     "tplot",
     "tplot_dict",
 ]
-
 
 if __name__ == "__main__":
     pass
