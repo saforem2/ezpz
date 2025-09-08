@@ -384,16 +384,14 @@ ezpz_reset() {
 	log_message INFO "$(ezpz_show_env)"
 	module reset
 	vars=(
-		"CONDA_PREFIX"
+		"ezlaunch"
 		"CONDA_DEFAULT_ENV"
 		"CONDA_NAME"
-		"VENV_DIR"
-		"VIRTUAL_ENV"
-		"VIRTUAL_ENV_PROMPT"
-		"PYTHON_EXEC"
+		"CONDA_PREFIX"
 		"CONDA_SHLVL"
+		"DEFAULT_PYTHON_VERSION"
 		"DIST_LAUNCH"
-		"ezlaunch"
+		"GPU_TYPE"
 		"HOSTFILE"
 		"HOSTS"
 		"HOSTS_ARR"
@@ -405,7 +403,11 @@ ezpz_reset() {
 		"NHOSTS"
 		"NTILE_PER_HOST"
 		"PYTHONPATH"
+		"PYTHON_EXEC"
+		"PYTHON_ROOT"
 		"VENV_DIR"
+		"VIRTUAL_ENV"
+		"VIRTUAL_ENV_PROMPT"
 		"WORLD_SIZE"
 	)
 	for v in "${vars[@]}"; do
@@ -942,7 +944,7 @@ ezpz_setup_uv_venv() {
 	local ptmodstr
 	ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
 	if [[ -n "${ptmodstr}" ]]; then
-		env_name="${env_name}-pt$(basename ${ptmodstr})"
+		env_name="${env_name}-pt$(basename "${ptmodstr}")"
 	fi
 	VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
 	fpactivate="${VENV_DIR}/bin/activate"
@@ -1131,7 +1133,7 @@ ezpz_setup_venv_from_conda() {
 		log_message ERROR "  - Python root is not set. Cannot create venv."
 		return 1
 	fi
-  local require_venv="${REQUIRE_VIRTUAL_ENV:-${REQUIRE_VENV:-1}}"
+	local require_venv="${REQUIRE_VIRTUAL_ENV:-${REQUIRE_VENV:-1}}"
 	if [[ "${require_venv}" -ne 1 ]]; then
 		log_message INFO "  - NO_REQUIRE_VIRTUAL_ENV not set, not requiring VIRTUAL_ENV to be set."
 		log_message INFO "  - Detected python root at: ${CYAN}${python_root}${RESET}"
@@ -1147,7 +1149,7 @@ ezpz_setup_venv_from_conda() {
 		local ptmodstr
 		ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
 		if [[ -n "${ptmodstr}" ]]; then
-			env_name="${env_name}-pt$(basename ${ptmodstr})"
+			env_name="${env_name}-pt$(basename "${ptmodstr}")"
 		fi
 		env_name=$(echo "${env_name}" | sed -E 's/python([0-9\.]+)/py\1/')
 		# CONDA_NAME=$(basename "${python_root}") && export CONDA_NAME
@@ -2761,10 +2763,10 @@ ezpz_check_working_dir_pbs() {
 }
 
 # --- Script Entry Point ---
-# Call utils_main when the script is sourced to set WORKING_DIR.
-# If it fails, print an error but allow sourcing to continue (individual functions might still work).
-if ! ezpz_check_working_dir; then
-	log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
+if [[ -n "${EZPZ_CHECK_WORKING_DIR:-}" ]]; then
+	if ! ezpz_check_working_dir; then
+		log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
+	fi
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
