@@ -455,12 +455,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--train-iters",
+        "--train_iters",
         type=int,
         default=500,
         help="Number of training iterations",
     )
     parser.add_argument(
         "--log-freq",
+        "--log_freq",
         type=int,
         default=1,
         help="Logging frequency",
@@ -468,7 +470,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--print-freq",
         type=int,
-        default=100,
+        default=25,
         help="Printing frequency",
     )
     parser.add_argument(
