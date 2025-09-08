@@ -155,11 +155,15 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
                 "cuDNN",
                 "cuBLAS",
                 "[W501",
+                "AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'",
                 "  Overriding a previously registered kernel",
                 "operator: aten::_cummax_helper",
                 "    registered at build",
                 "dispatch key: XPU",
                 "previous kernel: registered at",
+                "pkg_resources is deprecated as an API",
+                "import pkg_resources",
+                "UserWarning: pkg_resources",
                 "new kernel: registered at",
                 "/build/pytorch/build/aten/src/ATen/RegisterSchema.cpp",
                 "Setting ds_accelerator to xpu",
@@ -254,7 +258,6 @@ def get_hostfile_of_active_job():
     return None
 
 
-
 def build_executable(
     launch_cmd: Optional[str] = None,
     cmd_to_launch: Optional[str | list[str]] = None,
@@ -345,6 +348,9 @@ def launch(
     cmd_list = build_executable(
         launch_cmd=launch_cmd,
         cmd_to_launch=cmd_to_launch,
+        ngpus=ngpus,
+        ngpu_per_host=ngpu_per_host,
+        nhosts=nhosts,
         include_python=include_python,
     )
     # cmd_list = shlex.split(cmd)
@@ -362,7 +368,6 @@ def launch(
         filters += get_aurora_filters()
 
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
-    stop = ezpz.get_timestamp()
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     cmd_start = time.perf_counter()
     retcode = run_command(command=cmd, filters=filters)
@@ -380,7 +385,7 @@ def main():
 
     # import shlex
     # argv = shlex.split(" ".join(sys.argv[1:]))
-    # if "python" in 
+    # if "python" in
     # args = parse_args()
     # print(f"{args=}")
     configure_warnings()
