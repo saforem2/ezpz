@@ -126,6 +126,7 @@ def get_pbs_launch_cmd(
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[str | os.PathLike | Path] = None,
+    verbose: Optional[bool] = False,
 ) -> str:
     """Get the PBS launch command"""
 

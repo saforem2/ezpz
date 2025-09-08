@@ -53,6 +53,9 @@ logger.setLevel(EZPZ_LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
 
+ALREADY_PRINTED_DIST_SETUP = os.environ.get("ALREADY_PRINTED_DIST_SETUP", "0")
+ALREADY_PRINTED_HOSTS = os.environ.get("ALREADY_PRINTED_HOSTS", "0")
+
 # def try_import(module_name: str):
 #     try:
 #         return __import__(module_name)
@@ -331,6 +334,7 @@ def _get_dist_info(
         "LAUNCH_CMD": (
             ezpz.pbs.get_pbs_launch_cmd(
                 hostfile=hfp,
+                verbose=(get_rank() == 0),
             )
             if scheduler.lower() == "pbs"
             else None
@@ -1191,7 +1195,7 @@ def setup_torch_distributed(
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
     elif fw in {"deepspeed", "ds"}:
-        init_deepspeed(timeout=timeout)
+        init_deepspeed(timeout=int(timeout))
         world_size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
@@ -1221,7 +1225,7 @@ def setup_torch_distributed(
             pipeline_parallel_backend=pipeline_parallel_backend,
             context_parallel_backend=context_parallel_backend,
             data_parallel_backend=data_parallel_backend,
-            timeout=timedelta(seconds=timeout),
+            timeout=timedelta(seconds=float(timeout)),
         )
 
     os.environ["world_size"] = str(world_size)
@@ -1386,8 +1390,10 @@ def setup_torch(
 
             git_ds_info()
         _ = get_dist_info(verbose=verbose)
-        if verbose:
-            _ = print_dist_setup()
+        # if not os.environ.get("ALREADY_PRINTED_DIST_SETUP", "0"):
+        _ = print_dist_setup()
+        # os.environ["ALREADY_PRINTED_DIST_SETUP"] = "1"
+
     if world_size > 1:
         barrier()
 
@@ -1437,7 +1443,10 @@ def setup_torch(
                 # dpranks = ezpz.tp.get_data_parallel_ranks()
                 psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
                 barrier(group=ezpz.tp.get_data_parallel_group())
+    # if not os.environ.get("ALREADY_PRINTED_HOSTS", "0"):
+    # if rank == 0:
     logger.info("".join(psizes))
+    # os.environ["ALREADY_PRINTED_HOSTS"] = "1"
     barrier()
     return rank
 
