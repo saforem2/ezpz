@@ -2,29 +2,27 @@
 ezpz/configs.py
 """
 
-from abc import ABC, abstractmethod
-from copy import deepcopy
-from dataclasses import asdict, dataclass, field
 import json
-import yaml
 import logging
 import os
 import shutil
-from pathlib import Path
 import subprocess
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from dataclasses import MISSING, asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Union
+
 import numpy as np
-
-
+import rich.repr
+import yaml
+from omegaconf import DictConfig, OmegaConf
+from rich.console import Console
+from rich.text import Text
+from rich.tree import Tree
 # import transformers
 from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 from transformers.utils.versions import require_version
-
-from omegaconf import DictConfig, OmegaConf
-from rich.console import Console
-import rich.repr
-from rich.text import Text
-from rich.tree import Tree
 
 log = logging.getLogger(__name__)
 
@@ -43,9 +41,7 @@ DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
 # LOGS_DIR = PROJECT_DIR.joinpath("logs")
 WORKING_DIR = Path(
-    os.environ.get(
-        "PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
-    )
+    os.environ.get("PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd()))
 )
 LOGS_DIR = WORKING_DIR.joinpath("logs")
 OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
@@ -86,11 +82,13 @@ ScalarLike = Union[int, float, bool, np.floating]
 
 
 def getjobenv_dep():
+    """Return the ``getjobenv`` helper path (for debugging)."""
     print(GETJOBENV)
     return GETJOBENV
 
 
 def savejobenv_dep():
+    """Return the ``savejobenv`` helper path (for debugging)."""
     print(SAVEJOBENV)
     return SAVEJOBENV
 
@@ -107,7 +105,13 @@ def cmd_exists(cmd: str) -> bool:
 
 
 def get_scheduler() -> str:
-    from ezpz import get_machine, get_hostname
+    """Infer the active scheduler from environment variables or hostname."""
+    from ezpz import get_hostname, get_machine
+
+    if os.environ.get("PBS_JOBID"):
+        return "PBS"
+    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID"):
+        return "SLURM"
 
     machine = get_machine(get_hostname())
     if machine.lower() in [
@@ -118,18 +122,20 @@ def get_scheduler() -> str:
         "sophia",
     ]:
         return SCHEDULERS["ALCF"]
-    elif machine.lower() in ["frontier"]:
+    if machine.lower() in ["frontier"]:
         return SCHEDULERS["OLCF"]
-    elif machine.lower() in ["nersc", "perlmutter"]:
+    if machine.lower() in ["nersc", "perlmutter"]:
         return SCHEDULERS["NERSC"]
-    else:
-        return "LOCAL"
+    return "UNKNOWN"
     # raise RuntimeError(f'Unknown {machine=}')
 
 
 def load_ds_config(
-    fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
+    fpath: Optional[
+        Union[str, os.PathLike, Path]
+    ] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
+    """Load a DeepSpeed configuration file (JSON or YAML)."""
     fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
     cfgpath = Path(fpath)
     if cfgpath.suffix == ".json":
@@ -144,12 +150,14 @@ def load_ds_config(
 
 
 def get_logging_config() -> dict:
+    """Return the logging configuration dictionary used by ``logging.config``."""
     # import logging.config
     import yaml
 
     cfp = CONF_DIR.joinpath("hydra", "job_logging", "custom.yaml")
     with cfp.open("r") as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
+    config.setdefault("loggers", {})
     return config
 
 
@@ -219,8 +227,9 @@ def print_json(
                 ]
             )
         )
-    from ezpz.log.console import get_console
     from rich.json import JSON
+
+    from ezpz.log.console import get_console
 
     console = get_console() if console is None else console
     if json_str is None:
@@ -252,6 +261,7 @@ def print_json(
 
 
 def print_config(cfg: Union[dict, str]) -> None:
+    """Render ``cfg`` to the active rich console."""
     # try:
     #     from hydra.utils import instantiate
     #     config = instantiate(cfg)
@@ -262,8 +272,9 @@ def print_config(cfg: Union[dict, str]) -> None:
     #     jstr = json.dumps(cfg, indent=4)
     # else:
     #     jstr = cfg
-    from ezpz.log.handler import RichHandler as EnrichHandler
     from rich.logging import RichHandler
+
+    from ezpz.log.handler import RichHandler as EnrichHandler
 
     console = None
     for handler in log.handlers:
@@ -278,16 +289,12 @@ def print_config(cfg: Union[dict, str]) -> None:
 
 
 def command_exists(cmd: str) -> bool:
-    result = subprocess.Popen(
-        f"type {cmd}",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=False,
-    )
-    return result.wait() == 0
+    """Return ``True`` if ``cmd`` is available on ``PATH``."""
+    return shutil.which(cmd) is not None
 
 
 def git_ds_info():
+    """Log the output of DeepSpeed's environment report plus Git metadata."""
     from deepspeed.env_report import main as ds_report
 
     ds_report()
@@ -315,11 +322,15 @@ def git_ds_info():
 
 @dataclass
 class BaseConfig(ABC):
+    """Common utilities shared by ezpz configuration dataclasses."""
+
     @abstractmethod
     def to_str(self) -> str:
+        """Return a short string that uniquely describes the configuration."""
         pass
 
     def to_json(self) -> str:
+        """Return a JSON string representation of the configuration."""
         # name = (
         #     f'{name=}' if name is not None
         #     else f'{self.__class__.__name__}'
@@ -334,27 +345,33 @@ class BaseConfig(ABC):
         # )
 
     def get_config(self) -> dict:
+        """Return the configuration as a standard dictionary via ``asdict``."""
         return asdict(self)
 
     def to_dict(self) -> dict:
+        """Return a deep copy of the dataclass ``__dict__``."""
         return deepcopy(self.__dict__)
 
     def to_file(self, fpath: os.PathLike) -> None:
+        """Write the configuration to ``fpath`` in JSON format."""
         with Path(fpath).open("w") as f:
             json.dump(self.to_json(), f, indent=4)
 
     def from_file(self, fpath: os.PathLike) -> None:
+        """Populate the configuration from a JSON file."""
         with Path(fpath).open("r") as f:
             config = json.load(f)
         self.__init__(**config)
 
     def __getitem__(self, key):
+        """Provide dictionary-style indexing for convenience."""
         return super().__getattribute__(key)
 
 
-@dataclass
+@dataclass(init=False)
 @rich.repr.auto
 class TrainConfig(BaseConfig):
+    """High-level training options shared by ezpz scripts."""
     gas: int = 1
     # ---- [NOTE]+ Framework + Backend ----------------
     # `framework`: `{'backend'}`
@@ -372,8 +389,31 @@ class TrainConfig(BaseConfig):
     ds_config_path: Optional[str] = None
     wandb_project_name: Optional[str] = None
     ngpus: Optional[int] = None
+    extras: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Populate known fields while capturing any extras in ``self.extras``."""
+        extras: dict[str, Any] = {}
+        for name, field_def in self.__dataclass_fields__.items():
+            if name == "extras":
+                continue
+            if name in kwargs:
+                value = kwargs.pop(name)
+            elif field_def.default is not MISSING:
+                value = field_def.default
+            elif field_def.default_factory is not MISSING:  # type: ignore[attr-defined]
+                value = field_def.default_factory()  # type: ignore[misc]
+            else:
+                value = None
+            setattr(self, name, value)
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            extras[key] = value
+        self.extras = extras
 
     def to_str(self) -> str:
+        """Return a compact identifier combining framework and backend."""
         return "_".join(
             [
                 f"fw-{self.framework}",
@@ -382,6 +422,7 @@ class TrainConfig(BaseConfig):
         )
 
     def __post_init__(self):
+        """Validate framework/backend compatibility after initialisation."""
         # assert self.framework.lower() in FRAMEWORKS.values()
         # if self.seed is None:
         #     self.seed = np.random.randint(0, 2**32 - 1)
@@ -415,6 +456,7 @@ class TrainConfig(BaseConfig):
 
 @dataclass
 class ZeroConfig:
+    """Subset of DeepSpeed ZeRO options exposed via the ezpz CLI."""
     stage: int = 0
     allgather_partitions: Optional[bool] = None
     allgather_bucket_size: int = int(5e8)
@@ -548,6 +590,7 @@ class HfModelArguments:
     )
 
     def __post_init__(self):
+        """Validate mutually exclusive Hugging Face model configuration options."""
         if self.config_overrides is not None and (
             self.config_name is not None or self.model_name_or_path is not None
         ):
@@ -568,9 +611,7 @@ class HfDataTrainingArguments:
     )
     dataset_name: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "The name of the dataset to use (via the datasets library)."
-        },
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
     dataset_config_name: Optional[str] = field(
         default=None,
@@ -642,9 +683,7 @@ class HfDataTrainingArguments:
             )
         },
     )
-    streaming: bool = field(
-        default=False, metadata={"help": "Enable streaming mode"}
-    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
     block_size: Optional[int] = field(
         default=None,
         metadata={
@@ -667,18 +706,15 @@ class HfDataTrainingArguments:
     )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
-        metadata={
-            "help": "The number of processes to use for the preprocessing."
-        },
+        metadata={"help": "The number of processes to use for the preprocessing."},
     )
     keep_linebreaks: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to keep line breaks when using TXT files or not."
-        },
+        metadata={"help": "Whether to keep line breaks when using TXT files or not."},
     )
 
     def __post_init__(self):
+        """Validate dataset arguments and ensure required files are present."""
         if self.streaming:
             require_version(
                 "datasets>=2.0.0",
@@ -731,8 +767,9 @@ def print_config_tree(
     - save_to_file: Whether to export config to the hydra output folder.
     """
     from rich.console import Console
-    from ezpz.log.config import STYLES
     from rich.theme import Theme
+
+    from ezpz.log.config import STYLES
 
     name = cfg.get("_target_", "cfg")
     console = Console(record=True, theme=Theme(STYLES))
@@ -758,9 +795,7 @@ def print_config_tree(
         branch = tree.add(field, highlight=highlight)  # , guide_style=style)
         config_group = cfg[field]
         if isinstance(config_group, DictConfig):
-            branch_content = str(
-                OmegaConf.to_yaml(config_group, resolve=resolve)
-            )
+            branch_content = str(OmegaConf.to_yaml(config_group, resolve=resolve))
             branch.add(Text(branch_content, style="red"))
         else:
             branch_content = str(config_group)

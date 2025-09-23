@@ -2,10 +2,11 @@
 generate.py
 """
 
-import ezpz
-from rich import print
 import torch
+from rich import print
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import ezpz
 
 
 def parse_args():
@@ -31,9 +32,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def prompt_model(
-    model, tokenizer, prompt, max_length: int = 64, **kwargs
-) -> str:
+def prompt_model(model, tokenizer, prompt, max_length: int = 64, **kwargs) -> str:
     """
     Generate text using a model and tokenizer.
 
@@ -58,9 +57,7 @@ def prompt_model(
     """
     return tokenizer.batch_decode(
         model.generate(
-            **tokenizer(prompt, return_tensors="pt").to(
-                ezpz.get_torch_device_type()
-            ),
+            **tokenizer(prompt, return_tensors="pt").to(ezpz.get_torch_device_type()),
             max_length=max_length,
             **kwargs,
         )

@@ -1,4 +1,5 @@
-name: ci
+name: Documentation Deployment
+
 on:
   push:
     branches:
@@ -34,14 +35,9 @@ jobs:
       - run: pip install mkdocs mkdocs-autorefs mkdocs-material mkdocstrings mkdocstrings-python pymdown-extensions mkdocs-mermaid2-plugin mkdocs-glightbox
 
       - name: Build documentation
-        # env:
-        #   GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        #   GOOGLE_ANALYTICS_KEY: ${{ secrets.GOOGLE_ANALYTICS_KEY }}
         run: |
           mkdocs build --clean
           mkdocs --version
-
-      # - run: mkdocs gh-deploy --force
 
       - name: Upload to GitHub Pages
         uses: actions/upload-pages-artifact@v3

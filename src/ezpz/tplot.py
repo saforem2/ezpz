@@ -2,17 +2,30 @@
 tplot.py
 """
 import os
-
-import torch
+from typing import Optional, Union
 
 import numpy as np
-from typing import Optional, Union
-import plotext as pltx
+import torch
+
+try:
+    import plotext as pltx
+except ImportError:  # pragma: no cover - optional dependency
+    pltx = None
 from pathlib import Path
 
 from ezpz.log import get_logger
 
 logger = get_logger(__name__)
+
+
+def _require_plotext():
+    if pltx is None:
+        raise ModuleNotFoundError(
+            "plotext is required for terminal plotting. Install it via "
+            "`pip install plotext` to use ezpz.tplot functions."
+        )
+    return pltx
+
 
 def get_plot_title(
     ylabel: Optional[str], xlabel: Optional[str], label: Optional[str]
@@ -35,24 +48,26 @@ def tplot_dict(
     append: bool = True,
     figsize: Optional[tuple[int, int]] = None,
 ) -> None:
-
     figsize = (75, 25) if figsize is None else figsize
 
-    pltx.clear_figure()
-    pltx.theme("clear")  # pyright[ReportUnknownMemberType]
-    pltx.plot(list(data.values()))
+    plotext = _require_plotext()
+
+    plotext.clear_figure()
+    plotext.theme("clear")  # pyright[ReportUnknownMemberType]
+    plotext.plot(list(data.values()))
     if ylabel is not None:
-        pltx.ylabel(ylabel)
+        plotext.ylabel(ylabel)
     if xlabel is not None:
-        pltx.xlabel(xlabel)
+        plotext.xlabel(xlabel)
     if title is not None:
-        pltx.title(title)
-    pltx.show()
+        plotext.title(title)
+    plotext.show()
     if outfile is not None:
         logger.info(f"Appending plot to: {outfile}")
         if not Path(outfile).parent.exists():
             _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        pltx.save_fig(outfile, append=append)
+        plotext.save_fig(outfile, append=append)
+
 
 def tplot(
     y: Union[list, np.ndarray, torch.Tensor],
@@ -87,45 +102,45 @@ def tplot(
     if isinstance(x, list):
         x = torch.stack(x)
     figsize = (60, 20) if figsize is None else figsize
-    import plotext as pltx
+    plotext = _require_plotext()
 
-    pltx.clear_figure()
-    pltx.theme("clear")
-    pltx.plot_size(*figsize)
+    plotext.clear_figure()
+    plotext.theme("clear")
+    plotext.plot_size(*figsize)
     # marker = "braille" if (marker is None and type == 'scatter') else marker
     y = np.nan_to_num(y, nan=0.0)
     if len(y.shape) == 2:
-        pltx.hist(y.flatten(), bins=bins, label=label)
+        plotext.hist(y.flatten(), bins=bins, label=label)
     elif len(y.shape) == 1:
         # if type is not None:
         #     assert type in ['scatter', 'line']
         if plot_type is not None and plot_type == "scatter":
             marker = "braille" if marker is None else marker
-            pltx.scatter(y, label=label, marker=marker)
+            plotext.scatter(y, label=label, marker=marker)
         elif plot_type is None or plot_type == "line":
             # marker = "braille" if marker is None else marker
-            pltx.plot(y, marker=marker, label=label)
+            plotext.plot(y, marker=marker, label=label)
         elif plot_type is not None and plot_type == "hist":
-            pltx.hist(y, bins=bins, label=label)
+            plotext.hist(y, bins=bins, label=label)
         else:
             logger.warning(f"Unknown plot type: {plot_type}")
-            pltx.plot(y, label=label)
+            plotext.plot(y, label=label)
         # else:
         #     pltx.plot(y, label=label)
     if title is not None:
-        pltx.title(title)
+        plotext.title(title)
     if ylabel is not None:
-        pltx.ylabel(ylabel)
+        plotext.ylabel(ylabel)
     if xlabel is not None:
-        pltx.xlabel(xlabel)
+        plotext.xlabel(xlabel)
     if plot_type != "hist":
         if x is None:
             x = np.arange(len(y))
             x = x * logfreq
         if x is not None:
             assert len(x.shape) == 1
-            pltx.xticks(x.tolist())
-    pltx.show()
+            plotext.xticks(x.tolist())
+    plotext.show()
     if outfile is not None:
         if verbose:
             if append:
@@ -134,6 +149,6 @@ def tplot(
                 logger.info(f"Saving plot to: {outfile}")
         if not Path(outfile).parent.exists():
             _ = Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        pltx.savefig(
+        plotext.savefig(
             Path(outfile).resolve().as_posix(), append=append, keep_colors=True
         )

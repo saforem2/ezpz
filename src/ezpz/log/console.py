@@ -8,11 +8,13 @@ import os
 import sys
 from typing import Any, TextIO
 
-from rich.ansi import AnsiDecoder
 import rich.console as rich_console
+from rich.ansi import AnsiDecoder
 from rich.file_proxy import FileProxy
 from rich.theme import Theme
+
 from ezpz.log.config import STYLES
+
 # from enrich.logging import RichHandler
 
 
@@ -43,9 +45,7 @@ def get_width():
 class Console(rich_console.Console):
     """Extends rich Console class."""
 
-    def __init__(
-        self, *args: str, redirect: bool = True, **kwargs: Any
-    ) -> None:
+    def __init__(self, *args: str, redirect: bool = True, **kwargs: Any) -> None:
         """
         enrich console does soft-wrapping by default and this diverge from
         original rich console which does not, creating hard-wraps instead.
@@ -146,12 +146,9 @@ def should_do_markup(stream: TextIO = sys.stdout) -> bool:
     return stream.isatty()
 
 
-def get_console(
-        *args: str,
-        redirect: bool = True,
-        **kwargs: Any
-) -> Console:
+def get_console(*args: str, redirect: bool = True, **kwargs: Any) -> Console:
     from rich.theme import Theme
+
     # theme = Theme(STYLES)
     # if "width" not in kwargs:
     #     kwargs['width'] = 9999
@@ -168,7 +165,7 @@ def get_console(
     _ = kwargs.pop("force_jupyter", None)
     if "color_system" not in kwargs:
         kwargs["color_system"] = "truecolor"
-    kwargs['force_terminal'] = True
+    kwargs["force_terminal"] = True
     console = Console(**kwargs)
     # XXX: Hack for the time being
     console.is_jupyter = False
@@ -183,9 +180,7 @@ if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser()
     from rich.text import Text
 
-    parser.add_argument(
-        "--html", action="store_true", help="Export as HTML table"
-    )
+    parser.add_argument("--html", action="store_true", help="Export as HTML table")
     args = parser.parse_args()
     html: bool = args.html
     from rich.table import Table

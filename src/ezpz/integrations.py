@@ -1,5 +1,5 @@
-from transformers.integrations import WandbCallback
 import pandas as pd
+from transformers.integrations import WandbCallback
 
 
 def decode_predictions(tokenizer, predictions):
@@ -26,9 +26,7 @@ class WandbPredictionProgressCallback(WandbCallback):
         freq (int, optional): Frequency of logging. Defaults to 2.
     """
 
-    def __init__(
-        self, trainer, tokenizer, val_dataset, num_samples=100, freq=2
-    ):
+    def __init__(self, trainer, tokenizer, val_dataset, num_samples=100, freq=2):
         """Initializes the WandbPredictionProgressCallback instance.
 
         Args:
