@@ -9,16 +9,43 @@ By default, the command to be executed will be launched across _all_ nodes.
 """
 
 import os
-import sys
-import subprocess
 import shlex
+import subprocess
+import sys
 import time
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import ezpz
 
 logger = ezpz.get_logger(__name__)
+
+
+def command_exists(cmd: str) -> bool:
+    """Return True when the command is discoverable on PATH."""
+    from ezpz.configs import command_exists as _command_exists
+
+    return _command_exists(cmd)
+
+
+def get_scheduler() -> str:
+    """Delegate scheduler detection to the configs module."""
+    from ezpz.configs import get_scheduler as _get_scheduler
+
+    return _get_scheduler()
+
+
+def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
+    """Execute a bash command and capture its output."""
+
+    return subprocess.run(
+        command,
+        shell=True,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
 
 EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
 
@@ -127,6 +154,7 @@ def run_command(command: list | str, filters: Optional[list] = None) -> int:
 
 
 def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
+    """Return the command specified on ``sys.argv`` or ``None`` if absent."""
     assert len(sys.argv) > 1, "No command to run."
     # cmd_to_launch = shlex.join(sys.argv[1:])
     cmd_to_launch = " ".join(sys.argv[1:])
@@ -135,6 +163,7 @@ def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
 
 
 def configure_warnings():
+    """Silence noisy deprecation warnings for child processes."""
     import os
     import warnings
 
@@ -143,6 +172,7 @@ def configure_warnings():
 
 
 def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
+    """Return log filtering patterns tailored for Aurora clusters."""
     mn = ezpz.get_machine()
     filters = [*additional_filters] if additional_filters else []
     if mn.lower() == "aurora":
@@ -204,6 +234,7 @@ def kill_existing_processes(
 
 
 def get_active_jobid() -> str | None:
+    """Return the job identifier for the currently running PBS/SLURM job."""
     from ezpz.configs import get_scheduler
 
     scheduler = get_scheduler().lower()
@@ -261,7 +292,7 @@ def get_hostfile_of_active_job():
 def build_executable(
     launch_cmd: Optional[str] = None,
     cmd_to_launch: Optional[str | list[str]] = None,
-    include_python: Optional[bool] = True,
+    include_python: bool = False,
     ngpus: Optional[int] = None,
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
@@ -275,7 +306,7 @@ def build_executable(
         cmd_to_launch (str or list, optional): The command to run on the job.
             If None, will be taken from `sys.argv`.
         include_python (bool, optional): Whether to include the python
-            executable in the command. Default is True.
+            executable in the command. Defaults to False.
 
     Returns:
         str: The full command to launch the job.
@@ -293,9 +324,7 @@ def build_executable(
         else launch_cmd
     )
     cmd_to_launch = (
-        get_command_to_launch_from_argv()
-        if cmd_to_launch is None
-        else cmd_to_launch
+        get_command_to_launch_from_argv() if cmd_to_launch is None else cmd_to_launch
     )
     cmd_to_launch_list: list[str] = (
         shlex.split(cmd_to_launch)
@@ -327,7 +356,7 @@ def build_executable(
 def launch(
     launch_cmd: Optional[str] = None,
     cmd_to_launch: Optional[str | list[str]] = None,
-    include_python: bool = True,
+    include_python: bool = False,
     ngpus: Optional[int] = None,
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
@@ -357,9 +386,7 @@ def launch(
     cmd_str = shlex.join([f"{i}" for i in cmd_list])
     cmd = shlex.split(cmd_str)
 
-    logger.info(
-        f"Took: {time.perf_counter() - start:.2f} seconds to build command."
-    )
+    logger.info(f"Took: {time.perf_counter() - start:.2f} seconds to build command.")
     logger.info("Executing:\n" + "\n  ".join([f"{i}" for i in cmd_list]))
     t0 = time.perf_counter()
 
@@ -374,25 +401,39 @@ def launch(
     cmd_finish = time.perf_counter()
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
-    logger.info(
-        f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting."
-    )
+    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting.")
     return retcode
 
 
-def main():
+def main() -> int:
+    """CLI entry point for ``ezpz-launch`` with local ``mpirun`` fallback."""
     import ezpz.dist
 
-    # import shlex
-    # argv = shlex.split(" ".join(sys.argv[1:]))
-    # if "python" in
-    # args = parse_args()
-    # print(f"{args=}")
     configure_warnings()
-    launch(cmd_to_launch=" ".join(sys.argv[1:]))
+    argv = sys.argv[1:]
+    if not argv:
+        raise SystemExit("No command provided to ezpz-launch")
+
+    scheduler = get_scheduler().lower()
+    cmd_to_launch = " ".join(argv)
+
+    if scheduler in {"pbs", "slurm"}:
+        jobid = get_active_jobid()
+        if jobid is not None:
+            launch(cmd_to_launch=cmd_to_launch, include_python=False)
+            ezpz.dist.cleanup()
+            return 0
+
+    world_size = os.environ.get("WORLD_SIZE", "2")
+    fallback_cmd = ["mpirun", "-np", str(world_size), *argv]
+    logger.info(
+        "No active scheduler detected; falling back to local mpirun: %s",
+        " ".join(shlex.quote(part) for part in fallback_cmd),
+    )
+    result = subprocess.run(fallback_cmd, check=False)
     ezpz.dist.cleanup()
-    exit(0)
+    return result.returncode
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

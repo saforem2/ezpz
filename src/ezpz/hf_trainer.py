@@ -13,46 +13,28 @@ https://huggingface.co/models?filter=text-generation
 
 import math
 import os
-from pathlib import Path
 import sys
+from dataclasses import dataclass, field
 from itertools import chain
+from pathlib import Path
 from typing import Optional
 
-import ezpz
-import ezpz.configs
-from ezpz.configs import (
-    HfModelArguments,
-    HfDataTrainingArguments,
-)
-
-
-import torch
-
 import datasets
-from dataclasses import dataclass, field
-
+import torch
 import transformers
-
-from transformers import (
-    CONFIG_MAPPING,
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-    default_data_collator,
-    is_torch_xla_available,
-    set_seed,
-)
-
 import transformers.utils
-from transformers.trainer_utils import get_last_checkpoint
+from transformers import (CONFIG_MAPPING, AutoConfig, AutoModelForCausalLM,
+                          AutoTokenizer, HfArgumentParser, Trainer,
+                          TrainingArguments, default_data_collator,
+                          is_torch_xla_available, set_seed)
 from transformers.testing_utils import CaptureLogger
-
+from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
 
+import ezpz
+import ezpz.configs
+from ezpz.configs import HfDataTrainingArguments, HfModelArguments
 
 logger = ezpz.get_logger(__name__)
 
@@ -76,20 +58,14 @@ def parse_args() -> dict:
             json_file=os.path.abspath(sys.argv[1])
         )
     else:
-        model_args, data_args, training_args = (
-            parser.parse_args_into_dataclasses()
-        )
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     try:
         import wandb
     except (ImportError, ModuleNotFoundError):
         wandb = None  # type:ignore
 
-    if (
-        wandb is not None
-        and rank == 0
-        and not os.environ.get("WANDB_DISABLED", False)
-    ):
+    if wandb is not None and rank == 0 and not os.environ.get("WANDB_DISABLED", False):
         if (
             model_args.wandb_project_name is None
             and model_args.model_name_or_path is None
@@ -235,9 +211,9 @@ def split_dataset(
     #     "dataset_name must be provided to split the dataset."
     # )
     dataset_name = data_args.dataset_name
-    assert dataset_name is not None, (
-        "dataset_name must be provided to split the dataset."
-    )
+    assert (
+        dataset_name is not None
+    ), "dataset_name must be provided to split the dataset."
     if validation_split_name is not None:
         try:
             dsets[validation_split_name] = datasets.load_dataset(  # type:ignore
@@ -333,9 +309,7 @@ def main():
     model_args = args["model"]
     training_args = args["training"]
 
-    dsconfig_fp = (
-        Path(training_args.deepspeed) if training_args.deepspeed else None
-    )
+    dsconfig_fp = Path(training_args.deepspeed) if training_args.deepspeed else None
     ds_config = ezpz.configs.load_ds_config(dsconfig_fp)
     if training_args.optim is not None and "optimizer" in ds_config:
         logger.warning(
@@ -351,17 +325,13 @@ def main():
         and not training_args.overwrite_output_dir
     ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
-        if (
-            last_checkpoint is None
-            and len(os.listdir(training_args.output_dir)) > 0
-        ):
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
         elif (
-            last_checkpoint is not None
-            and training_args.resume_from_checkpoint is None
+            last_checkpoint is not None and training_args.resume_from_checkpoint is None
         ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
@@ -453,18 +423,14 @@ def main():
         "trust_remote_code": model_args.trust_remote_code,
     }
     if model_args.config_name:
-        config = AutoConfig.from_pretrained(
-            model_args.config_name, **config_kwargs
-        )
+        config = AutoConfig.from_pretrained(model_args.config_name, **config_kwargs)
     elif model_args.model_name_or_path:
         config = AutoConfig.from_pretrained(
             model_args.model_name_or_path, **config_kwargs
         )
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
-        logger.warning(
-            "You are instantiating a new config instance from scratch."
-        )
+        logger.warning("You are instantiating a new config instance from scratch.")
         if model_args.config_overrides is not None:
             logger.info(f"Overriding config: {model_args.config_overrides}")
             config.update_from_string(model_args.config_overrides)
@@ -518,9 +484,7 @@ def main():
         model = AutoModelForCausalLM.from_config(  # type:ignore
             config, trust_remote_code=model_args.trust_remote_code
         )
-        n_params = sum(
-            {p.data_ptr(): p.numel() for p in model.parameters()}.values()
-        )
+        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(
             f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params"
         )
@@ -605,9 +569,7 @@ def main():
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-        concatenated_examples = {
-            k: list(chain(*examples[k])) for k in examples.keys()
-        }
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, and if the total_length < block_size  we
         # exclude this batch and return an empty dict.
@@ -616,10 +578,7 @@ def main():
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
-            k: [
-                t[i : i + block_size]
-                for i in range(0, total_length, block_size)
-            ]
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
             for k, t in concatenated_examples.items()
         }
         result["labels"] = result["input_ids"].copy()
@@ -654,9 +613,7 @@ def main():
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]  # type:ignore
-        assert isinstance(
-            train_dataset, (datasets.Dataset, datasets.IterableDataset)
-        )
+        assert isinstance(train_dataset, (datasets.Dataset, datasets.IterableDataset))
         if data_args.max_train_samples is not None:
             if isinstance(train_dataset, datasets.IterableDataset):
                 train_dataset = train_dataset.take(data_args.max_train_samples)
@@ -786,9 +743,9 @@ def main():
     #     )
     #     trainer.add_callback(callback)
 
-    assert any([training_args.do_train, training_args.do_eval]), (
-        "Nothing to do! Set --do_train or --do_eval."
-    )
+    assert any(
+        [training_args.do_train, training_args.do_eval]
+    ), "Nothing to do! Set --do_train or --do_eval."
 
     # Training
     if training_args.do_train:
@@ -826,9 +783,9 @@ def main():
             "Trainer must be an instance of `transformers.Trainer` "
             "and have an `evaluate` method."
         )
-        assert trainer.evaluate is not None and callable(trainer.evaluate), (
-            "Trainer must have an `evaluate` method."
-        )
+        assert trainer.evaluate is not None and callable(
+            trainer.evaluate
+        ), "Trainer must have an `evaluate` method."
         metrics = trainer.evaluate()
         max_eval_samples = (
             data_args.max_eval_samples
@@ -908,9 +865,9 @@ def main():
         kwargs["dataset_tags"] = data_args.dataset_name
         if data_args.dataset_config_name is not None:
             kwargs["dataset_args"] = data_args.dataset_config_name
-            kwargs["dataset"] = (
-                f"{data_args.dataset_name} {data_args.dataset_config_name}"
-            )
+            kwargs[
+                "dataset"
+            ] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
         else:
             kwargs["dataset"] = data_args.dataset_name
 

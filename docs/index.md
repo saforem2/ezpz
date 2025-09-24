@@ -26,6 +26,12 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
     ```
 
+1. 🧪 **Test** `ezpz` (see [Test Suite Documentation](./tests/index.md))
+
+    ```bash
+    python -m pytest tests/
+    ```
+
 1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [Launch](./launch.md)).
 
     Examples, launching:
@@ -781,3 +787,30 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 
 
     😎 2 ez.
+
+## 🧪 Testing
+
+To ensure the reliability and correctness of the ezpz package, we maintain a comprehensive test suite:
+
+```bash
+# Run all tests
+python -m pytest tests/
+
+# Run tests with coverage
+python -m pytest tests/ --cov=src/ezpz
+
+# Run tests and generate coverage report
+python -m pytest tests/ --cov=src/ezpz --cov-report=html
+```
+
+For more information on testing, see [🧪 Test Suite Documentation](./tests/index.md).
+
+## 🛠️ Development Workflow
+
+For developers contributing to ezpz, see [🛠️ Development Workflow](./development-workflow.md) for detailed instructions on:
+
+- Setting up the development environment
+- Code quality tools and practices
+- Testing guidelines
+- Continuous integration process
+- Release process

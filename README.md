@@ -6,6 +6,8 @@ Train across **all** your {NVIDIA, AMD, Intel, MPS, ...} accelerators, `ezpz` �
 
 See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional information.
 
+Refer to the [Repository Guidelines](AGENTS.md) before contributing.
+
 ## 🐣 Getting Started
 
 1. 🏖️ **Setup** environment[^magic] (see [**Shell Environment**](https://saforem2.github.io/ezpz/shell-environment/)):
@@ -789,7 +791,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
 ## 🧑‍💻 Hands On
 
 - See my recent talk on:
-  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)  
+  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)
   for a detailed walk-through containing examples and use cases.
 
   - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo)

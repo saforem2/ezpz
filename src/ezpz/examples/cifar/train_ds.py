@@ -1,15 +1,17 @@
 import argparse
 import os
-import ezpz
 
 import deepspeed
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torchvision import transforms
 from deepspeed.accelerator import get_accelerator
-from deepspeed.moe.utils import split_params_into_different_moe_groups_for_optimizer
+from deepspeed.moe.utils import \
+    split_params_into_different_moe_groups_for_optimizer
+from torchvision import transforms
+
+import ezpz
 
 logger = ezpz.get_logger(__name__)
 

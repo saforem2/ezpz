@@ -3,15 +3,16 @@ ezpz/log/dataframe.py
 """
 
 from typing import Any
+
 import pandas as pd
-from rich.columns import Columns
-from rich.table import Table
 from rich.box import MINIMAL, SIMPLE, SIMPLE_HEAD, SQUARE
+from rich.columns import Columns
 from rich.live import Live
 from rich.measure import Measurement
+from rich.table import Table
 
-from ezpz.log.style import beat, COLORS
 from ezpz.log.console import get_console
+from ezpz.log.style import COLORS, beat
 
 
 class DataFramePrettify:
@@ -54,9 +55,7 @@ class DataFramePrettify:
     ) -> None:
         self.df = df.reset_index().rename(columns={"index": ""})
         self.table = Table(show_footer=False)
-        self.table_centered = Columns(
-            (self.table,), align="center", expand=True
-        )
+        self.table_centered = Columns((self.table,), align="center", expand=True)
         self.num_colors = len(COLORS)
         self.delay_time = delay_time
         self.row_limit = row_limit
@@ -86,9 +85,7 @@ class DataFramePrettify:
         for row in self.rows:
             with beat(self.delay_time):
                 row = (
-                    row[: self.col_limit]
-                    if self.first_cols
-                    else row[-self.col_limit :]
+                    row[: self.col_limit] if self.first_cols else row[-self.col_limit :]
                 )
 
                 row = [str(item) for item in row]
@@ -102,16 +99,12 @@ class DataFramePrettify:
     def _add_random_color(self):
         for i in range(len(self.table.columns)):
             with beat(self.delay_time):
-                self.table.columns[i].header_style = COLORS[
-                    i % self.num_colors
-                ]
+                self.table.columns[i].header_style = COLORS[i % self.num_colors]
 
     def _add_style(self):
         for i in range(len(self.table.columns)):
             with beat(self.delay_time):
-                self.table.columns[i].style = (
-                    "bold " + COLORS[i % self.num_colors]
-                )
+                self.table.columns[i].style = "bold " + COLORS[i % self.num_colors]
 
     def _adjust_box(self):
         for box in [SIMPLE_HEAD, SIMPLE, MINIMAL, SQUARE]:

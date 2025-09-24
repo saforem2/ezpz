@@ -3,11 +3,12 @@ src/ezpz/logging/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-import shutil
-import os
-from rich.style import Style
-from rich.default_styles import DEFAULT_STYLES
 
+import os
+import shutil
+
+from rich.default_styles import DEFAULT_STYLES
+from rich.style import Style
 
 size = shutil.get_terminal_size()
 WIDTH = size.columns
@@ -182,9 +183,7 @@ repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
 
 # 4) assemble in one shot
 if use_colored_logs():
-    STYLES = (
-        flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
-    )
+    STYLES = flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
 else:
     STYLES = {k: Style.null() for k in DEFAULT_STYLES}
 DEFAULT_STYLES |= STYLES

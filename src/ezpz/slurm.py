@@ -3,9 +3,9 @@ ezpz/slurm.py
 """
 
 import os
-import ezpz
 from pathlib import Path
 
+import ezpz
 
 logger = ezpz.get_logger(__name__)
 

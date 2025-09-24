@@ -37,27 +37,23 @@ if __name__ == "__main__":
 
 """
 
+import datetime
+import logging
 import os
 import time
-import logging
-import datetime
+from pathlib import Path
+from typing import Any, Callable, Optional
 
-import ezpz
 import torch
 import torch.profiler
-from torch.profiler import (
-    ProfilerAction,
-    profile,
-    # record_function,
-    ProfilerActivity,
-)
+from torch.profiler import (ProfilerAction,  # record_function,
+                            ProfilerActivity, profile)
 
-from pathlib import Path
-from typing import Callable, Optional
+import ezpz
 
 logger = logging.getLogger(__name__)
 
-from contextlib import nullcontext, AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 
 
 def get_profiling_context(
@@ -175,6 +171,10 @@ def get_context_manager(
     rank: Optional[int] = None,
     outdir: Optional[str] = None,
     strict: Optional[bool] = True,
+    *,
+    profiler_type: str = "pyinstrument",
+    rank_zero_only: bool = True,
+    **profile_kwargs: Any,
 ) -> AbstractContextManager:
     """
     Returns a context manager for profiling code blocks using PyInstrument.
@@ -192,19 +192,39 @@ def get_context_manager(
         AbstractContextManager: A context manager that starts and stops
             the PyInstrument profiler.
     """
+    if profiler_type != "pyinstrument":
+        return get_profiling_context(
+            profiler_type=profiler_type,
+            wait=profile_kwargs.get("wait", 0),
+            warmup=profile_kwargs.get("warmup", 0),
+            active=profile_kwargs.get("active", 1),
+            repeat=profile_kwargs.get("repeat", 1),
+            rank_zero_only=rank_zero_only,
+            record_shapes=profile_kwargs.get("record_shapes", True),
+            with_stack=profile_kwargs.get("with_stack", True),
+            with_flops=profile_kwargs.get("with_flops", True),
+            with_modules=profile_kwargs.get("with_modules", True),
+            acc_events=profile_kwargs.get("acc_events", False),
+            profile_memory=profile_kwargs.get("profile_memory", False),
+            outdir=outdir,
+            strict=strict,
+        )
+
+    if rank_zero_only and rank not in (None, 0):
+        return nullcontext()
+
     d = ezpz.OUTPUTS_DIR if outdir is None else outdir
     fp = Path(d)
     fp = fp.joinpath("ezpz", "pyinstrument_profiles")
 
-    if strict:
-        if os.environ.get("PYINSTRUMENT_PROFILER", None) is not None:
-            return PyInstrumentProfiler(rank=rank, outdir=fp.as_posix())
+    if strict and os.environ.get("PYINSTRUMENT_PROFILER", None) is None:
         return nullcontext()
-    if rank is None or rank == 0:
-        return PyInstrumentProfiler(rank=rank, outdir=fp.as_posix())
-    # if rank == 0:
-    #     return PyInstrumentProfiler(rank=rank, outdir=outdir)
-    return nullcontext()
+
+    return PyInstrumentProfiler(
+        rank=rank,
+        outdir=fp.as_posix(),
+        rank_zero_only=rank_zero_only,
+    )
 
 
 def get_torch_profiler(
@@ -273,11 +293,12 @@ def get_torch_profiler(
 
 
 class PyInstrumentProfiler:
-
     def __init__(
         self,
         rank: Optional[int] = None,
         outdir: Optional[str] = None,
+        rank_zero_only: bool = False,
+        **_: Any,
     ):
         try:
             import pyinstrument  # pyright: ignore
@@ -291,11 +312,12 @@ class PyInstrumentProfiler:
                 "run: 'python3 -m pip install pyinstrument'"
             )
         else:
-            self.profiler = (
-                pyinstrument.Profiler()
-                if (rank is None or (rank is not None and rank == 0))
-                else None
-            )
+            if rank_zero_only and rank not in (None, 0):
+                self.profiler = None
+            else:
+                self.profiler = (
+                    pyinstrument.Profiler() if (rank is None or rank == 0) else None
+                )
         self._start = time.perf_counter_ns()
         # outdir = os.getcwd() if outdir is None else outdir
         outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir

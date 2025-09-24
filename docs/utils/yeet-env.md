@@ -201,8 +201,8 @@ We provide mechanisms for:
    [2025-08-27 07:06:31,307431][I][ezpz/__init__:267:<module>] Setting logging level to 'CRITICAL' on all others 'RANK != 0'
    [2025-08-27 07:06:31,370862][I][ezpz/pbs:228:get_pbs_launch_cmd] ⚠️ Using [2/24] GPUs [2 hosts] x [1 GPU/host]
    [2025-08-27 07:06:31,371583][W][utils/_logger:68:warning] [🚧 WARNING] Using only [2/24] available GPUs!!
-   
-   
+
+
    [2025-08-27 07:06:31,372710][I][ezpz/launch:356:launch] ----[🍋 ezpz.launch][started][2025-08-27-070631]----
    [2025-08-27 07:06:35,996997][I][ezpz/launch:361:launch] Job ID: 7423085
    [2025-08-27 07:06:35,997889][I][ezpz/launch:362:launch] nodelist: ['x4310c3s2b0n0', 'x4310c3s3b0n0']
@@ -257,7 +257,7 @@ We provide mechanisms for:
    [2025-08-27 07:08:29,850193][I][utils/yeet_tarball:180:main] Copying /lus/flare/projects/datascience/foremans/micromamba/envs/2025-07-pt28.tar.gz to /tmp/2025-07-pt28.tar.gz
    [2025-08-27 07:08:29,850810][I][utils/yeet_tarball:87:transfer] Transfer started at 2025-08-27-070829
    [2025-08-27 07:08:33,558579][I][utils/yeet_tarball:94:transfer]
-   
+
    [2025-08-27 07:08:33,559439][I][utils/yeet_tarball:95:transfer] ==================
    [2025-08-27 07:08:33,559851][I][utils/yeet_tarball:96:transfer] Rank-0 loading library /lus/flare/projects/datascience/foremans/micromamba/envs/2025-07-pt28.tar.gz took 3.7073152649682015 seconds
    [2025-08-27 07:08:33,560291][I][utils/yeet_tarball:58:bcast_chunk] size of data 4373880261
@@ -296,13 +296,13 @@ We provide mechanisms for:
     97%|#########6| 32/33 [00:07<00:00,  4.32it/s]
    100%|##########| 33/33 [00:07<00:00,  4.95it/s]
    100%|##########| 33/33 [00:07<00:00,  4.32it/s]
-   
+
    [2025-08-27 07:08:44,307307][I][utils/yeet_tarball:105:transfer] Broadcast took 8.710064542014152 seconds
    [2025-08-27 07:08:44,307939][I][utils/yeet_tarball:106:transfer] Writing to the disk /tmp/2025-07-pt28.tar.gz took 2.037590510910377
    [2025-08-27 07:09:53,840779][I][utils/yeet_tarball:115:transfer] untar took 69.53 seconds
    [2025-08-27 07:09:53,841559][I][utils/yeet_tarball:116:transfer] Total time: 83.99032527511008 seconds
    [2025-08-27 07:09:53,841947][I][utils/yeet_tarball:117:transfer] ==================
-   
+
    Application 698d8ba4 resources: utime=163s stime=48s maxrss=11959864KB inblock=8917718 oublock=16 minflt=622483 majflt=4481 nvcsw=966457 nivcsw=773
    [2025-08-27 07:09:59,205952][I][ezpz/launch:467:launch] Execution finished with 0.
    [2025-08-27 07:09:59,206883][I][ezpz/launch:468:launch] Executing finished in 203.20 seconds.
@@ -311,4 +311,3 @@ We provide mechanisms for:
    ```
 
    </details>
-

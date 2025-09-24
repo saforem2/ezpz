@@ -4,42 +4,30 @@ src/ezpz/log/style.py
 
 from __future__ import absolute_import, annotations, division, print_function
 
+import json
+import logging
+import os
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-import json
-import os
 from pathlib import Path
+from typing import Any, Generator, Optional
 
-import time
-from typing import Optional
-from typing import Any
-from typing import Generator
-
-import logging
-
-# from ezpz.log.config import STYLES, DEFAULT_STYLES
-# from ezpz.log.console import get_console
-
-from omegaconf import DictConfig, OmegaConf
 import rich
+import rich.syntax
+import rich.tree
+from omegaconf import DictConfig, OmegaConf
 from rich import print
-
 # from rich.box import MINIMAL, SIMPLE, SIMPLE_HEAD, SQUARE
 # from rich.columns import Columns
 from rich.layout import Layout
-
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
-import rich.syntax
+from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
+                           TimeElapsedColumn, TimeRemainingColumn)
 from rich.table import Table
-import rich.tree
+
+# from ezpz.log.config import STYLES, DEFAULT_STYLES
+# from ezpz.log.console import get_console
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
@@ -77,9 +65,7 @@ def build_layout(
         #     "[blue]Era",
         #     total=steps.nera
         # )
-        tasks["epoch"] = job_progress.add_task(
-            "[cyan]Epoch", total=steps.nepoch
-        )
+        tasks["epoch"] = job_progress.add_task("[cyan]Epoch", total=steps.nepoch)
     elif job_type == "eval":
         border_style = "green"
         tasks["step"] = job_progress.add_task(
@@ -251,9 +237,7 @@ class CustomLogging:
     formatters: dict[str, Any] = field(
         default_factory=lambda: {
             "simple": {
-                "format": (
-                    "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-                )
+                "format": ("[%(asctime)s][%(name)s][%(levelname)s] - %(message)s")
             }
         }
     )
@@ -487,15 +471,13 @@ if __name__ == "__main__":  # pragma: no cover
     from rich.text import Text
 
     # from ezpz.log.console import Console
-    parser.add_argument(
-        "--html", action="store_true", help="Export as HTML table"
-    )
+    parser.add_argument("--html", action="store_true", help="Export as HTML table")
     args = parser.parse_args()
     html: bool = args.html
     # from rich.table import Table
     # console = Console(record=True, width=120) if html else Console()
+    from ezpz.log.config import DEFAULT_STYLES, STYLES
     from ezpz.log.console import get_console
-    from ezpz.log.config import STYLES, DEFAULT_STYLES
 
     console = get_console(record=html, width=150)
     table = Table("Name", "Styling")

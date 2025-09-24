@@ -17,27 +17,19 @@ import random
 from itertools import chain
 from pathlib import Path
 
-import ezpz
-
 import datasets
 import torch
+import transformers
 from datasets import load_dataset
 from huggingface_hub import HfApi
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-
-import transformers
-from transformers import (
-    CONFIG_MAPPING,
-    MODEL_MAPPING,
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    SchedulerType,
-    default_data_collator,
-    get_scheduler,
-)
+from transformers import (CONFIG_MAPPING, MODEL_MAPPING, AutoConfig,
+                          AutoModelForCausalLM, AutoTokenizer, SchedulerType,
+                          default_data_collator, get_scheduler)
 from transformers.utils.versions import require_version
+
+import ezpz
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.51.0.dev0")
@@ -45,7 +37,7 @@ from transformers.utils.versions import require_version
 logger = ezpz.get_logger(__name__)
 
 try:
-    from accelerate import Accelerator # noqa: E402 type:ignore
+    from accelerate import Accelerator  # noqa: E402 type:ignore
     # from accelerate.logging import get_logger
     from accelerate.utils import set_seed
 except ImportError as exc:
@@ -297,22 +289,16 @@ def parse_args():
         and args.train_file is None
         and args.validation_file is None
     ):
-        raise ValueError(
-            "Need either a dataset name or a training/validation file."
-        )
+        raise ValueError("Need either a dataset name or a training/validation file.")
     else:
         if args.train_file is not None:
             extension = args.train_file.split(".")[-1]
             if extension not in ["csv", "json", "txt"]:
-                raise ValueError(
-                    "`train_file` should be a csv, json or txt file."
-                )
+                raise ValueError("`train_file` should be a csv, json or txt file.")
         if args.validation_file is not None:
             extension = args.validation_file.split(".")[-1]
             if extension not in ["csv", "json", "txt"]:
-                raise ValueError(
-                    "`validation_file` should be a csv, json or txt file."
-                )
+                raise ValueError("`validation_file` should be a csv, json or txt file.")
 
     if args.push_to_hub:
         if args.output_dir is None:
@@ -376,9 +362,7 @@ def main():
                 repo_name, exist_ok=True, token=args.hub_token
             ).repo_id
 
-            with open(
-                os.path.join(args.output_dir, ".gitignore"), "w+"
-            ) as gitignore:
+            with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
                 if "step_*" not in gitignore:
                     gitignore.write("step_*\n")
                 if "epoch_*" not in gitignore:
@@ -430,9 +414,7 @@ def main():
         if extension == "txt":
             extension = "text"
             dataset_args["keep_linebreaks"] = not args.no_keep_linebreaks
-        raw_datasets = load_dataset(
-            extension, data_files=data_files, **dataset_args
-        )
+        raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)
         # If no validation data is there, validation_split_percentage will be used to divide the dataset.
         if "validation" not in raw_datasets.keys():
             raw_datasets["validation"] = load_dataset(
@@ -469,9 +451,7 @@ def main():
         )
     else:
         config = CONFIG_MAPPING[args.model_type]()
-        logger.warning(
-            "You are instantiating a new config instance from scratch."
-        )
+        logger.warning("You are instantiating a new config instance from scratch.")
 
     if args.tokenizer_name:
         tokenizer = AutoTokenizer.from_pretrained(
@@ -548,19 +528,14 @@ def main():
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-        concatenated_examples = {
-            k: list(chain(*examples[k])) for k in examples.keys()
-        }
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
         # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
-            k: [
-                t[i : i + block_size]
-                for i in range(0, total_length, block_size)
-            ]
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
             for k, t in concatenated_examples.items()
         }
         result["labels"] = result["input_ids"].copy()
@@ -587,9 +562,7 @@ def main():
 
     # Log a few random samples from the training set:
     for index in random.sample(range(len(train_dataset)), 3):
-        logger.debug(
-            f"Sample {index} of the training set: {train_dataset[index]}."
-        )
+        logger.debug(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     train_dataloader = DataLoader(
@@ -625,9 +598,7 @@ def main():
             "weight_decay": 0.0,
         },
     ]
-    optimizer = torch.optim.AdamW(
-        optimizer_grouped_parameters, lr=args.learning_rate
-    )
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -635,9 +606,7 @@ def main():
         len(train_dataloader) / args.gradient_accumulation_steps
     )
     if args.max_train_steps is None:
-        args.max_train_steps = (
-            args.num_train_epochs * num_update_steps_per_epoch
-        )
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
 
     lr_scheduler = get_scheduler(
@@ -650,10 +619,14 @@ def main():
     )
 
     # Prepare everything with our `accelerator`.
-    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = (
-        accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-        )
+    (
+        model,
+        optimizer,
+        train_dataloader,
+        eval_dataloader,
+        lr_scheduler,
+    ) = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
     # On TPU, the tie weights in our model have been disconnected, so we need to restore the ties.
@@ -665,13 +638,9 @@ def main():
         len(train_dataloader) / args.gradient_accumulation_steps
     )
     if overrode_max_train_steps:
-        args.max_train_steps = (
-            args.num_train_epochs * num_update_steps_per_epoch
-        )
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
-    args.num_train_epochs = math.ceil(
-        args.max_train_steps / num_update_steps_per_epoch
-    )
+    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
     # Figure out how many steps we should save the Accelerator states
     checkpointing_steps = args.checkpointing_steps
@@ -736,9 +705,7 @@ def main():
     logger.info(
         f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}"
     )
-    logger.info(
-        f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}"
-    )
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(
@@ -750,10 +717,7 @@ def main():
 
     # Potentially load in the weights and states from a previous save
     if args.resume_from_checkpoint:
-        if (
-            args.resume_from_checkpoint is not None
-            or args.resume_from_checkpoint != ""
-        ):
+        if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
             checkpoint_path = args.resume_from_checkpoint
             path = os.path.basename(args.resume_from_checkpoint)
         else:
@@ -873,9 +837,7 @@ def main():
         except OverflowError:
             perplexity = float("inf")
 
-        logger.info(
-            f"epoch {epoch}: perplexity: {perplexity} eval_loss: {eval_loss}"
-        )
+        logger.info(f"epoch {epoch}: perplexity: {perplexity} eval_loss: {eval_loss}")
 
         if args.with_tracking:
             accelerator.log(
@@ -934,9 +896,7 @@ def main():
                     repo_type="model",
                     token=args.hub_token,
                 )
-            with open(
-                os.path.join(args.output_dir, "all_results.json"), "w"
-            ) as f:
+            with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
                 json.dump({"perplexity": perplexity}, f)
 
 

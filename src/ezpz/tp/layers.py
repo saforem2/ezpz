@@ -32,16 +32,14 @@ import torch.nn.init as init
 from torch.nn.parameter import Parameter
 
 from ezpz.tp import get_tensor_parallel_rank, get_tensor_parallel_world_size
-from ezpz.tp.utils import divide_and_check_no_remainder, VocabUtility
-
 # # from .initialize import get_tensor_parallel_rank, get_tensor_parallel_world_size
 # from .mappings import (
-from ezpz.tp.mappings import (
-    copy_to_tensor_parallel_region,
-    gather_from_tensor_parallel_region,
-    reduce_from_tensor_parallel_region,
-    scatter_to_tensor_parallel_region,
-)
+from ezpz.tp.mappings import (copy_to_tensor_parallel_region,
+                              gather_from_tensor_parallel_region,
+                              reduce_from_tensor_parallel_region,
+                              scatter_to_tensor_parallel_region)
+from ezpz.tp.utils import VocabUtility, divide_and_check_no_remainder
+
 # from .utils import VocabUtility, divide_and_check_no_remainder
 
 
@@ -111,9 +109,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         norm_type: float = 2.0,
         scale_grad_by_freq: bool = False,
         sparse: bool = False,
-        init_method: Callable[
-            [torch.Tensor], torch.Tensor
-        ] = init.xavier_normal_,
+        init_method: Callable[[torch.Tensor], torch.Tensor] = init.xavier_normal_,
     ) -> None:
         super(VocabParallelEmbedding, self).__init__()
         # Keep the input dimensions.
@@ -126,12 +122,13 @@ class VocabParallelEmbedding(torch.nn.Module):
         self.sparse = sparse
         self._weight = None
         # Divide the weight matrix along the vocaburaly dimension.
-        self.vocab_start_index, self.vocab_end_index = (
-            VocabUtility.vocab_range_from_global_vocab_size(
-                self.num_embeddings,
-                get_tensor_parallel_rank(),
-                get_tensor_parallel_world_size(),
-            )
+        (
+            self.vocab_start_index,
+            self.vocab_end_index,
+        ) = VocabUtility.vocab_range_from_global_vocab_size(
+            self.num_embeddings,
+            get_tensor_parallel_rank(),
+            get_tensor_parallel_world_size(),
         )
         self.num_embeddings_per_partition = (
             self.vocab_end_index - self.vocab_start_index
@@ -196,9 +193,7 @@ class ParallelEmbedding(torch.nn.Module):
         norm_type: float = 2.0,
         scale_grad_by_freq: bool = False,
         sparse: bool = False,
-        init_method: Callable[
-            [torch.Tensor], torch.Tensor
-        ] = init.xavier_normal_,
+        init_method: Callable[[torch.Tensor], torch.Tensor] = init.xavier_normal_,
         keep_master_weight_for_test: bool = False,
     ) -> None:
         super(ParallelEmbedding, self).__init__()
@@ -275,9 +270,7 @@ class ColumnParallelLinear(torch.nn.Module):
         out_features: int,
         bias: bool = True,
         gather_output: bool = True,
-        init_method: Callable[
-            [torch.Tensor], torch.Tensor
-        ] = init.xavier_normal_,
+        init_method: Callable[[torch.Tensor], torch.Tensor] = init.xavier_normal_,
         stride: int = 1,
         keep_master_weight_for_test: bool = False,
     ) -> None:
@@ -305,7 +298,7 @@ class ColumnParallelLinear(torch.nn.Module):
             with torch.no_grad():
                 self.bias.zero_()
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
 
         # Initialize weight.
         self.master_weight = _initialize_affine_weight(
@@ -370,9 +363,7 @@ class RowParallelLinear(torch.nn.Module):
         out_features: int,
         bias: bool = True,
         input_is_parallel: bool = False,
-        init_method: Callable[
-            [torch.Tensor], torch.Tensor
-        ] = init.xavier_normal_,
+        init_method: Callable[[torch.Tensor], torch.Tensor] = init.xavier_normal_,
         stride: int = 1,
         keep_master_weight_for_test: bool = False,
     ):
@@ -400,7 +391,7 @@ class RowParallelLinear(torch.nn.Module):
             with torch.no_grad():
                 self.bias.zero_()
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
 
         # Initialize weight.
         self.master_weight = _initialize_affine_weight(

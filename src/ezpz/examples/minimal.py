@@ -1,7 +1,9 @@
 import os
 import time
-import ezpz
+
 import torch
+
+import ezpz
 
 logger = ezpz.get_logger(__name__)
 

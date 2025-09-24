@@ -104,9 +104,16 @@ allow-direct-references = true
 # packages = ["src/ezpz"]
 
 [tool.hatch.envs.default]
-dependencies = ["pytest", "pytest-cov"]
+dependencies = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "numpy",
+    "torch"
+]
 
 [tool.hatch.envs.default.scripts]
+test = "pytest tests/"
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
 no-cov = "cov --no-cov"
 
@@ -135,7 +142,7 @@ conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
 # ezpz = { workspace = true }
 # torch = [
 # { index = "pytorch-xpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
-# { index = 
+# { index =
 
 
 [tool.ruff]

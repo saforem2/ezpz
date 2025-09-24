@@ -5,36 +5,35 @@ Contains implementation of History object for tracking / aggregating metrics.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-from contextlib import ContextDecorator
+
 import os
-from pathlib import Path
 import time
+from contextlib import ContextDecorator
+from pathlib import Path
 from typing import Any, Optional, Union
-
-# import ezpz
-
-from ezpz import timeitlogit, get_rank
-from ezpz.log import get_logger
-
-# from ezpz.dist import get_rank
-from ezpz import plot as ezplot
-from ezpz.tplot import tplot as eztplot
-
-# from ezpz import tplot as eztplot
-from ezpz.utils import summarize_dict, get_timestamp
-
-# import ezpz.plot as ezplot
-
-from ezpz.configs import PathLike
-from ezpz.utils import save_dataset, grab_tensor
-from ezpz.log.console import is_interactive
 
 # import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import xarray as xr
 
+# from ezpz.dist import get_rank
+from ezpz import get_rank
+from ezpz import plot as ezplot
+from ezpz import timeitlogit
+from ezpz.configs import PathLike
 from ezpz.lazy import lazy_import
+from ezpz.log import get_logger
+from ezpz.log.console import is_interactive
+from ezpz.tplot import tplot as eztplot
+# from ezpz import tplot as eztplot
+from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
+
+# import ezpz
+
+
+# import ezpz.plot as ezplot
+
 
 ezpz = lazy_import("ezpz")
 
@@ -143,7 +142,8 @@ class History:
                 If None, initializes with an empty list.
         """
         self.keys = [] if keys is None else keys
-        self.history = {}
+        self.history: dict[str, list[Any]] = {}
+        self.data = self.history
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
     def _update(
@@ -323,16 +323,12 @@ class History:
             subfigs = fig.subfigures(1, 2)
 
             gs_kw = {"width_ratios": [1.33, 0.33]}
-            (ax, ax1) = subfigs[1].subplots(
-                1, 2, sharey=True, gridspec_kw=gs_kw
-            )
+            (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
             ax.grid(alpha=0.2)
             ax1.grid(False)
             color = plot_kwargs.get("color", None)
             label = r"$\langle$" + f" {key} " + r"$\rangle$"
-            ax.plot(
-                steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs
-            )
+            ax.plot(steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs)
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
@@ -409,9 +405,7 @@ class History:
                 # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(
-                    steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
-                )
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs)
 
         ax.set_xlabel("draw")
         if title is not None:
@@ -735,9 +729,7 @@ class History:
                     logfreq=logfreq,
                 )
             else:
-                logger.warning(
-                    f"No data found in {key=}: {len(val.values)=} <= 0"
-                )
+                logger.warning(f"No data found in {key=}: {len(val.values)=} <= 0")
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
     def plot_all(
@@ -794,9 +786,7 @@ class History:
                 subplots_kwargs=subplots_kwargs,
             )
             if fig is not None:
-                _ = sns.despine(
-                    fig, top=True, right=True, bottom=True, left=True
-                )
+                _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
 
             # _ = plt.grid(True, alpha=0.4)
             if subfigs is not None:
@@ -809,17 +799,13 @@ class History:
                 )
                 # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
                 # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
-                sns.despine(
-                    subfigs[0], top=True, right=True, left=True, bottom=True
-                )
+                sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
             if outdir is not None:
                 dirs = {
                     "png": Path(outdir).joinpath("pngs/"),
                     "svg": Path(outdir).joinpath("svgs/"),
                 }
-                _ = [
-                    i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
-                ]
+                _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
                 # if verbose:
                 logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
                 for ext, d in dirs.items():
@@ -828,9 +814,7 @@ class History:
                         outfile = d.joinpath(f"{key}-subfig.{ext}")
                     # logger.info(f"Saving {key}.ext to: {outfile}")
                     if verbose:
-                        logger.info(
-                            f"Saving {key} plot to: {outfile.resolve()}"
-                        )
+                        logger.info(f"Saving {key} plot to: {outfile.resolve()}")
                     plt.savefig(outfile, dpi=400, bbox_inches="tight")
             if is_interactive():
                 plt.show()
@@ -839,10 +823,7 @@ class History:
 
     def history_to_dict(self) -> dict:
         # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
-        return {
-            k: torch.Tensor(v).numpy(force=True)
-            for k, v in self.history.items()
-        }
+        return {k: torch.Tensor(v).numpy(force=True) for k, v in self.history.items()}
 
     def to_DataArray(
         self,
@@ -893,9 +874,7 @@ class History:
 
     def get_dataset(
         self,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
@@ -905,9 +884,7 @@ class History:
             try:
                 data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                logger.error(
-                    f"Unable to create DataArray for {key}! Skipping!"
-                )
+                logger.error(f"Unable to create DataArray for {key}! Skipping!")
                 logger.error(f"{key}.shape= {np.stack(val).shape}")  # type:ignore
         return xr.Dataset(data_vars)
 
@@ -917,9 +894,7 @@ class History:
         outdir: PathLike,
         fname: str = "dataset",
         use_hdf5: bool = True,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
         warmup: Optional[int | float] = None,
         **kwargs,
@@ -955,9 +930,7 @@ class History:
         plot: bool = True,
         append_tplot: bool = True,
         title: Optional[str] = None,
-        data: Optional[
-            dict[str, Union[list, np.ndarray, torch.Tensor]]
-        ] = None,
+        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
         dataset: Optional[xr.Dataset] = None,
         xkey: Optional[str] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
@@ -974,17 +947,15 @@ class History:
                 )
             )
         )
-        run_name = (
-            f"History-{get_timestamp()}" if run_name is None else run_name
-        )
+        run_name = f"History-{get_timestamp()}" if run_name is None else run_name
         fallback_outdir = Path(os.getcwd()).joinpath("outputs")
         if run_name is not None:
-            fallback_outdir = fallback_outdir.joinpath(
-                run_name, get_timestamp()
-            )
+            fallback_outdir = fallback_outdir.joinpath(run_name, get_timestamp())
         outdir = (
             # Path(os.getcwd()).joinpath('outputs')
-            fallback_outdir if outdir is None else Path(outdir)
+            fallback_outdir
+            if outdir is None
+            else Path(outdir)
         )
         outdir = outdir.joinpath(run_name)
         if plot:
@@ -1018,9 +989,7 @@ class History:
 
                 use_hdf5 = True
             except ImportError:
-                logger.warning(
-                    "h5py not found! Saving dataset as netCDF instead."
-                )
+                logger.warning("h5py not found! Saving dataset as netCDF instead.")
                 use_hdf5 = False
 
             fname = "dataset" if dataset_fname is None else dataset_fname

@@ -265,11 +265,11 @@ ezpz_qsme_running() {
 		awk '{
                 a = "";
                 # Fields from 13 onwards are node names in this specific format
-                for (i = 13; i <= NF; i++) { 
-                    a = a " " $i; 
+                for (i = 13; i <= NF; i++) {
+                    a = a " " $i;
                 }
                 # Print the first field (Job ID) and the rest of the line
-                print $1 a 
+                print $1 a
             }' |
 		grep -vE 'aurora-pbs|Req|Job|-----' # Filter out headers / separators
 }

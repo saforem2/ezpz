@@ -3,36 +3,21 @@ ezpz/log/__init__.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-import os
+
 import logging
 import logging.config
+import os
 from typing import Optional
 
+from ezpz.configs import get_logging_config
 # from ezpz.dist import get_rank, get_world_size
 from ezpz.log.config import STYLES, use_colored_logs
-from ezpz.configs import get_logging_config
-from ezpz.log.console import (
-    Console,
-    get_console,
-    get_theme,
-    get_width,
-    is_interactive,
-    should_do_markup,
-    to_bool,
-)
+from ezpz.log.console import (Console, get_console, get_theme, get_width,
+                              is_interactive, should_do_markup, to_bool)
 from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.log.style import (
-    BEAT_TIME,
-    COLORS,
-    CustomLogging,
-    add_columns,
-    build_layout,
-    flatten_dict,
-    make_layout,
-    nested_dict_to_df,
-    print_config,
-    printarr,
-)
+from ezpz.log.style import (BEAT_TIME, COLORS, CustomLogging, add_columns,
+                            build_layout, flatten_dict, make_layout,
+                            nested_dict_to_df, print_config, printarr)
 
 __all__ = [
     "BEAT_TIME",
@@ -78,10 +63,11 @@ def get_file_logger(
     fname: Optional[str] = None,
     # rich_stdout: bool = True,
 ) -> logging.Logger:
-    from ezpz.dist import get_rank
-
+    """Create a file-backed logger, optionally emitting only on rank zero."""
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     import logging
+
+    from ezpz.dist import get_rank
 
     fname = "output" if fname is None else fname
     log = logging.getLogger(name)
@@ -107,6 +93,7 @@ def get_file_logger(
 
 
 def get_active_enrich_handlers(logger: logging.Logger) -> list:
+    """Return ``(index, handler)`` pairs for active ``RichHandler`` instances."""
     from ezpz.log.handler import RichHandler as EnrichHandler
 
     return [
@@ -117,15 +104,15 @@ def get_active_enrich_handlers(logger: logging.Logger) -> list:
 
 
 def print_styles():
+    """Print the configured logging styles (optionally exporting to HTML)."""
     import argparse
 
     parser = argparse.ArgumentParser()
     from rich.text import Text
+
     from ezpz.log.console import Console
 
-    parser.add_argument(
-        "--html", action="store_true", help="Export as HTML table"
-    )
+    parser.add_argument("--html", action="store_true", help="Export as HTML table")
     args = parser.parse_args()
     html: bool = args.html
     from rich.table import Table
@@ -147,11 +134,14 @@ def print_styles_alt(
     html: bool = False,
     txt: bool = False,
 ):
+    """Variant of :func:`print_styles` with HTML and plain-text exports."""
     from pathlib import Path
-    from rich.text import Text
-    from ezpz.log.style import DEFAULT_STYLES
+
     from rich.table import Table
+    from rich.text import Text
+
     from ezpz.log.console import get_console
+    from ezpz.log.style import DEFAULT_STYLES
 
     console = get_console(record=html, width=150)
     table = Table("Name", "Styling")
@@ -180,6 +170,7 @@ def get_logger(
     rank: Optional[int | str] = None,
     colored_logs: Optional[bool] = True,
 ) -> logging.Logger:
+    """Return a logger initialised with the project's logging configuration."""
     if rank is None and rank_zero_only:
         from ezpz.dist import get_rank
 
@@ -267,6 +258,7 @@ def get_logger(
 
 
 def get_console_from_logger(logger: logging.Logger) -> Console:
+    """Return the ``Console`` attached to *logger* or synthesise a new one."""
     from ezpz.log.handler import RichHandler as EnrichHandler
 
     for handler in logger.handlers:
@@ -280,6 +272,7 @@ def get_console_from_logger(logger: logging.Logger) -> Console:
 def get_rich_logger(
     name: Optional[str] = None, level: Optional[str] = None
 ) -> logging.Logger:
+    """Return a logger backed by a single :class:`RichHandler`."""
     from ezpz.dist import get_world_size
     from ezpz.log.handler import RichHandler
 
@@ -324,9 +317,8 @@ def get_rich_logger(
 #     return log
 
 
-def get_enrich_logging_config_as_yaml(
-    name: str = "enrich", level: str = "INFO"
-) -> str:
+def get_enrich_logging_config_as_yaml(name: str = "enrich", level: str = "INFO") -> str:
+    """Render the Enrich logging YAML snippet with the requested name/level."""
     return rf"""
     ---
     # version: 1
@@ -348,6 +340,7 @@ def get_logger_new(
     name: str,
     level: str = "INFO",
 ):
+    """Return a logger configured solely via the Enrich YAML template."""
     import yaml
 
     config = yaml.safe_load(
@@ -365,14 +358,15 @@ def get_logger1(
     rank_zero_only: bool = True,
     **kwargs,
 ) -> logging.Logger:
+    """Legacy helper retained for compatibility; prefer :func:`get_logger`."""
     from ezpz.dist import get_rank, get_world_size
 
     log = logging.getLogger(name)
     # from ezpz.log.handler import RichHandler
-    from ezpz.log.console import get_console
-    from ezpz.log.console import is_interactive
-    from ezpz.log.handler import RichHandler as EnrichHandler
     from rich.logging import RichHandler as OriginalRichHandler
+
+    from ezpz.log.console import get_console, is_interactive
+    from ezpz.log.handler import RichHandler as EnrichHandler
 
     _ = (
         log.setLevel("CRITICAL")
@@ -413,9 +407,7 @@ def get_logger1(
     #         and all([i == log.handlers[0] for i in log.handlers])
     # ):
     #     log.handlers = [log.handlers[0]]
-    if len(log.handlers) > 1 and all(
-        [i == log.handlers[0] for i in log.handlers]
-    ):
+    if len(log.handlers) > 1 and all([i == log.handlers[0] for i in log.handlers]):
         log.handlers = [log.handlers[0]]
     enrich_handlers = get_active_enrich_handlers(log)
     found_handlers = 0
@@ -430,7 +422,5 @@ def get_logger1(
                     log.removeHandler(h)
                 found_handlers += 1
     if len(get_active_enrich_handlers(log)) > 1:
-        log.warning(
-            f"More than one `EnrichHandler` in current logger: {log.handlers}"
-        )
+        log.warning(f"More than one `EnrichHandler` in current logger: {log.handlers}")
     return log

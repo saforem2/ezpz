@@ -5,22 +5,24 @@ Contains helpers for plotting.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+
 import logging
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, Optional, Union
 
+# from ezpz.dist import get_rank
+import numpy as np
 import torch
+import xarray as xr
 
 # import ezpz
 from ezpz.dist import get_rank
 from ezpz.log import get_logger
+
 # from ezpz import get_timestamp
 
-# from ezpz.dist import get_rank
-import numpy as np
-import xarray as xr
 
 RANK = get_rank()
 
@@ -66,9 +68,7 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
     import datetime
 
     now = datetime.datetime.now()
-    return (
-        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
-    )
+    return now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
 
 
 def set_plot_style(**kwargs):
@@ -131,9 +131,7 @@ def set_plot_style(**kwargs):
             # 'savefig.transparent': True,
         }
     )
-    plt.rcParams["axes.prop_cycle"] = plt.cycler(
-        "color", list(COLORS.values())
-    )
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", list(COLORS.values()))
     plt.rcParams["axes.labelcolor"] = "#838383"
     plt.rcParams.update(**kwargs)
     # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
@@ -167,9 +165,7 @@ def savefig(fig: Any, outfile: os.PathLike):
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
     relpath = fout.relative_to(os.getcwd())
-    logger.info(
-        "Saving figure to: " rf"[link={fout.as_posix()}]{relpath}[\link]"
-    )
+    logger.info("Saving figure to: " rf"[link={fout.as_posix()}]{relpath}[\link]")
     with PLOTS_LOG.open("a") as f:
         f.write(f"{fout.as_posix()}\n")
     _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches="tight")
@@ -727,9 +723,7 @@ def plot_metric(
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
                 plot_kwargs.update({"label": None})
-                ax.plot(
-                    steps, arr[:, chain], lw=line_width / 2.0, **plot_kwargs
-                )
+                ax.plot(steps, arr[:, chain], lw=line_width / 2.0, **plot_kwargs)
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, fill=True)
         _ = ax1.set_xticks([])
         _ = ax1.set_xticklabels([])
@@ -779,9 +773,7 @@ def plot_metric(
                         **plot_kwargs,
                     )
                 else:
-                    _ = ax.plot(
-                        steps, y, color=color, label=label, **plot_kwargs
-                    )
+                    _ = ax.plot(steps, y, color=color, label=label, **plot_kwargs)
             axes = ax
         else:
             raise ValueError("Unexpected shape encountered")
@@ -792,9 +784,7 @@ def plot_metric(
         for idx in range(min(num_chains, arr.shape[1])):
             # plot values of invidual chains, arr[:, idx]
             # where arr[:, idx].shape = [ndraws, 1]
-            _ = ax.plot(
-                steps, arr[:, idx], alpha=0.5, lw=lw / 2.0, **plot_kwargs
-            )
+            _ = ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw / 2.0, **plot_kwargs)
 
     _ = ax.set_xlabel("draw")
     if title is not None:
@@ -853,9 +843,9 @@ def make_ridgeplots(
     save_plot: bool = True,
 ):
     """Make ridgeplots."""
+    import matplotlib.pyplot as plt
     import pandas as pd
     import seaborn as sns
-    import matplotlib.pyplot as plt
 
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
@@ -991,16 +981,10 @@ def make_ridgeplots(
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     logger.info(f"Saving figure to: {fsvg.as_posix()}")
-                    _ = plt.savefig(
-                        fsvg.as_posix(), dpi=400, bbox_inches="tight"
-                    )
-                    _ = plt.savefig(
-                        fpng.as_posix(), dpi=400, bbox_inches="tight"
-                    )
+                    _ = plt.savefig(fsvg.as_posix(), dpi=400, bbox_inches="tight")
+                    _ = plt.savefig(fpng.as_posix(), dpi=400, bbox_inches="tight")
 
-                logger.debug(
-                    f"Ridgeplot for {key} took {time.time() - tstart:.3f}s"
-                )
+                logger.debug(f"Ridgeplot for {key} took {time.time() - tstart:.3f}s")
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()

@@ -4,18 +4,15 @@ ezpz/train.py
 
 Simple training smoke test.
 """
-from __future__ import (
-    absolute_import,
-    annotations,
-    division,
-    print_function,
-    unicode_literals,
-)
+from __future__ import (absolute_import, annotations, division, print_function,
+                        unicode_literals)
+
 import logging
 import os
 import time
 
 import torch
+
 try:
     import intel_extension_for_pytorch
     import oneccl_bindings_for_pytorch
@@ -23,24 +20,15 @@ except (ModuleNotFoundError, ImportError):
     pass
 
 import hydra
+import torch.nn as nn
+import torch.optim as optim
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
-import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
-import torch.optim as optim
 
-from ezpz import (
-    TrainConfig,
-    get_gpus_per_node,
-    get_local_rank,
-    get_rank,
-    get_torch_backend,
-    get_torch_device,
-    get_world_size,
-    setup,
-    setup_wandb,
-    timeitlogit,
-)
+from ezpz import (TrainConfig, get_gpus_per_node, get_local_rank, get_rank,
+                  get_torch_backend, get_torch_device, get_world_size, setup,
+                  setup_wandb, timeitlogit)
 from ezpz.dist import get_dist_info, get_node_index
 from ezpz.model import SimpleCNN
 
@@ -66,7 +54,7 @@ def train_model() -> float:
     model = SimpleCNN().to(DEVICE)
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.1)
-    devid = f'{DEVICE}:{get_local_rank()}'
+    devid = f"{DEVICE}:{get_local_rank()}"
     # log.warning(
     #     f'[{RANK} / {WORLD_SIZE}]'
     #     f'Current device: '
@@ -76,14 +64,14 @@ def train_model() -> float:
     # if WORLD_SIZE > 1:
     model.to(devid)
     model = DistributedDataParallel(model, device_ids=[devid])
-    inputs = torch.rand((1, 1, 5, 5), device=f'{devid}')
+    inputs = torch.rand((1, 1, 5, 5), device=f"{devid}")
     outputs = model(inputs)
     if RANK == 0:
-        log.warning(f'{devid=}')
-        log.warning(f'{model=}')
-        log.warning(f'{inputs.shape=}')
-        log.warning(f'{outputs.shape=}')
-    label = torch.full((1,), 1.0, dtype=torch.float, device=f'{devid}')
+        log.warning(f"{devid=}")
+        log.warning(f"{model=}")
+        log.warning(f"{inputs.shape=}")
+        log.warning(f"{outputs.shape=}")
+    label = torch.full((1,), 1.0, dtype=torch.float, device=f"{devid}")
     loss = criterion(outputs, label)
     loss.backward()
     optimizer.step()
@@ -91,17 +79,13 @@ def train_model() -> float:
 
 
 @timeitlogit(verbose=True)
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
+@hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg: DictConfig) -> int:
     config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
-    rank = setup(
-        framework=config.framework,
-        backend=config.backend,
-        seed=config.seed
-    )
+    rank = setup(framework=config.framework, backend=config.backend, seed=config.seed)
     t1 = time.perf_counter()
-    t0 = os.environ.get('START_TIME', None)
+    t0 = os.environ.get("START_TIME", None)
     # if t0 is not None:
     assert t0 is not None
     startup_time = t1 - float(t0)
@@ -115,21 +99,15 @@ def main(cfg: DictConfig) -> int:
                 project_name=config.wandb_project_name,
             )
         log.info(f"{config=}")
-        log.info(f'Output dir: {os.getcwd()}')
-    if (
-            wandb is not None
-            and run is not None
-            and run is wandb.run
-            and config.use_wandb
-    ):
+        log.info(f"Output dir: {os.getcwd()}")
+    if wandb is not None and run is not None and run is wandb.run and config.use_wandb:
         assert run is not None
         from rich.emoji import Emoji
         from rich.text import Text
-        log.warning(f'Startup time: {startup_time}')
-        wandb.log({'startup_time': startup_time})
-        log.warning(
-            Text(f'{Emoji("rocket")} [{run.name}]({run.url})')
-        )
+
+        log.warning(f"Startup time: {startup_time}")
+        wandb.log({"startup_time": startup_time})
+        log.warning(Text(f'{Emoji("rocket")} [{run.name}]({run.url})'))
         _ = get_dist_info(config.framework, verbose=True)
     # ---- TRAIN MODEL ---------------------------------
     _ = train_model()
@@ -137,7 +115,7 @@ def main(cfg: DictConfig) -> int:
     return rank
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     t0 = time.perf_counter()
-    os.environ['START_TIME'] = f'{t0}'
+    os.environ["START_TIME"] = f"{t0}"
     _ = main()

@@ -3,8 +3,8 @@ import sys
 
 
 def main():
-    import ezpz.pbs
     import ezpz.launch
+    import ezpz.pbs
 
     if os.environ.get("MAKE_TARBALL") is not None:
         from ezpz.utils import check_for_tarball

@@ -4,7 +4,7 @@
 
 /// warning | 🚧 Work in Progress
 
-The documentation below is a work in progress.  
+The documentation below is a work in progress.
 _Please_ feel free to provide input / suggest changes !
 
 ///

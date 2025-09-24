@@ -90,7 +90,7 @@ There are two main, distinct components of `ezpz`:
 - [`bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh):
   - Provides various (`bash` / shell) helper functions to make life easy
   - Designed to be `source`-d, e.g.
-  
+
      ```bash
      source ezpz/src/ezpz/bin/utils.sh
      ```
@@ -134,7 +134,7 @@ ezpz_setup_alcf() {
 hn=$(hostname)
 if [[ "${hn}" == x1 || "${hn}" == x]]
 if [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
-  
+
 elif [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
 elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
 elif [[ $(hostname) == bastion* ]]; then

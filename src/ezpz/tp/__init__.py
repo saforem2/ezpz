@@ -7,18 +7,14 @@ https://github.com/facebookresearch/fairscale/blob/5f484b3545f27eddb19d970fbe1d3
 """
 
 import logging
-
+from datetime import timedelta
 from typing import List, Optional
 
 import torch
-
 import torch.distributed as tdist
-from datetime import timedelta
-from ezpz.tp.utils import (
-    ensure_divisibility,
-    divide_and_check_no_remainder,
-    split_tensor_along_last_dim,
-)
+
+from ezpz.tp.utils import (divide_and_check_no_remainder, ensure_divisibility,
+                           split_tensor_along_last_dim)
 
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO")
