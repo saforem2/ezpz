@@ -2,33 +2,28 @@
 ezpz/utils/__init__.py
 """
 
-import sys
-import pdb
-import os
-import re
-import ezpz
 import logging
-
-from ezpz.utils.dummies import (
-    DummyMPI,
-    DummyTorch,
-)
-
-from torchinfo import ModelStatistics
-import xarray as xr
-import numpy as np
-from typing import Optional, Sequence, Union, Any
-
+import os
+import pdb
+import re
+import sys
 from dataclasses import asdict
-
-from ezpz.configs import ScalarLike, PathLike, ZeroConfig
-
-import torch
-import torch.distributed
-# import torch.distributed as tdist
-
 # from ezpz import get_rank
 from pathlib import Path
+from typing import Any, Optional, Sequence, Union
+
+import numpy as np
+import torch
+import torch.distributed
+import xarray as xr
+from torchinfo import ModelStatistics
+
+import ezpz
+from ezpz.configs import PathLike, ScalarLike, ZeroConfig
+from ezpz.utils.dummies import DummyMPI, DummyTorch
+
+# import torch.distributed as tdist
+
 
 __all__ = [
     "DistributedPdb",
@@ -110,16 +105,53 @@ def breakpoint(rank: int = 0):
 
 
 def get_timestamp(fstr: Optional[str] = None) -> str:
-    """Get formatted timestamp."""
+    """Get formatted timestamp.
+
+    Returns the current date and time as a formatted string. By default, returns
+    a timestamp in the format 'YYYY-MM-DD-HHMMSS'. A custom format string can
+    be provided to change the output format.
+
+    Args:
+        fstr (str, optional): Format string for strftime. If None, uses default
+            format '%Y-%m-%d-%H%M%S'. Defaults to None.
+
+    Returns:
+        str: Formatted timestamp string.
+
+    Example:
+        >>> get_timestamp()  # Returns something like '2023-12-01-143022'
+        >>> get_timestamp("%Y-%m-%d")  # Returns something like '2023-12-01'
+    """
     import datetime
 
     now = datetime.datetime.now()
-    return (
-        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
-    )
+    return now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
 
 
 def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
+    """Format a key-value pair as a string.
+
+    Formats a key-value pair where the value can be an integer, boolean, or float.
+    Integers and booleans are formatted without decimal places, while floats are
+    formatted with the specified precision.
+
+    Args:
+        k (str): The key/name of the parameter.
+        v (ScalarLike): The value to format (int, bool, float, or numpy scalar).
+        precision (int, optional): Number of decimal places for float values.
+            Defaults to 6.
+
+    Returns:
+        str: Formatted key-value pair string in the format "key=value".
+
+    Example:
+        >>> format_pair("lr", 0.001)
+        'lr=0.001000'
+        >>> format_pair("epochs", 10)
+        'epochs=10'
+        >>> format_pair("verbose", True)
+        'verbose=True'
+    """
     if isinstance(v, (int, bool, np.integer)):
         # return f'{k}={v:<3}'
         return f"{k}={v}"
@@ -138,9 +170,7 @@ def summarize_dict(d: dict, precision: int = 6) -> str:
     Returns:
         str: A string representation of the dictionary with formatted key-value pairs.
     """
-    return " ".join(
-        [format_pair(k, v, precision=precision) for k, v in d.items()]
-    )
+    return " ".join([format_pair(k, v, precision=precision) for k, v in d.items()])
 
 
 def model_summary(
@@ -173,12 +203,27 @@ def model_summary(
         # logger.info(f'\n{summary_str}')
 
     except (ImportError, ModuleNotFoundError):
-        logger.warning(
-            "torchinfo not installed, unable to print model summary!"
-        )
+        logger.warning("torchinfo not installed, unable to print model summary!")
 
 
 def normalize(name: str) -> str:
+    """Normalize a name by replacing special characters with dashes and converting to lowercase.
+
+    This function replaces hyphens, underscores, and periods with single dashes,
+    then converts the result to lowercase.
+
+    Args:
+        name (str): The name to normalize.
+
+    Returns:
+        str: The normalized name with only lowercase letters, numbers, and dashes.
+
+    Example:
+        >>> normalize("Test_Name.Sub-Name")
+        'test-name-sub-name'
+        >>> normalize("example__file..name")
+        'example-file-name'
+    """
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
@@ -214,9 +259,36 @@ def get_max_memory_reserved(device: torch.device) -> float:
     raise RuntimeError(f"Memory allocation not available for {device=}")
 
 
-def grab_tensor(
-    x: Any, force: bool = False
-) -> Union[np.ndarray, ScalarLike, None]:
+def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, None]:
+    """Convert various tensor/array-like objects to numpy arrays.
+
+    This function converts different types of array-like objects (tensors, lists, etc.)
+    to numpy arrays for consistent handling. Supports PyTorch tensors, numpy arrays,
+    and nested lists.
+
+    Args:
+        x (Any): The object to convert to a numpy array. Can be None, scalar values,
+            lists, numpy arrays, or PyTorch tensors.
+        force (bool, optional): Force conversion even if it requires copying data.
+            Defaults to False.
+
+    Returns:
+        Union[np.ndarray, ScalarLike, None]: Numpy array representation of the input,
+            or the original scalar value, or None if input was None.
+
+    Raises:
+        ValueError: If unable to convert a list to array.
+
+    Example:
+        >>> import torch
+        >>> import numpy as np
+        >>> grab_tensor([1, 2, 3])
+        array([1, 2, 3])
+        >>> grab_tensor(torch.tensor([1, 2, 3]))
+        array([1, 2, 3])
+        >>> grab_tensor(np.array([1, 2, 3]))
+        array([1, 2, 3])
+    """
     if x is None:
         return None
     if isinstance(x, (int, float, bool, np.floating)):
@@ -275,9 +347,7 @@ def check_for_tarball(
             logger.info(f"Creating tarball {tarball} from {env_prefix}")
             make_tarfile(tarball, env_prefix)
         else:
-            logger.info(
-                f"Tarball {tarball} already exists in current directory"
-            )
+            logger.info(f"Tarball {tarball} already exists in current directory")
     else:
         logger.info(f"Tarball {tarball} already exists, skipping creation")
     return tar_on_tmp if tar_on_tmp.exists() else Path(tarball)
@@ -287,18 +357,14 @@ def make_tarfile(
     output_filename: str,
     source_dir: str | os.PathLike | Path,
 ) -> str:
-    output_filename = (
-        output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
-    )
+    output_filename = output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
     srcfp = Path(source_dir).absolute().resolve()
     dirname = srcfp.name
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
     logger.info(
         f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
     )
-    os.system(
-        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
-    )
+    os.system(f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}")
 
     return output_filename
 
@@ -326,12 +392,8 @@ def save_dataset(
         try:
             dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
         except TypeError:
-            logger.warning(
-                "Unable to save as `.h5` file, falling back to `netCDF4`"
-            )
-            save_dataset(
-                dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs
-            )
+            logger.warning("Unable to save as `.h5` file, falling back to `netCDF4`")
+            save_dataset(dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs)
     else:
         fname = "dataset.nc" if fname is None else f"{fname}_dataset.nc"
         outfile = Path(outdir).joinpath(fname)
@@ -601,15 +663,11 @@ def get_deepspeed_config_json(
     bf16_config = {"enabled": bf16}
     fp16_config = {"enabled": fp16}
     flops_profiler_config = (
-        get_flops_profiler_config_json()
-        if flops_profiler is None
-        else flops_profiler
+        get_flops_profiler_config_json() if flops_profiler is None else flops_profiler
     )
 
     optimizer = (
-        get_deepspeed_adamw_optimizer_config_json()
-        if optimizer is None
-        else optimizer
+        get_deepspeed_adamw_optimizer_config_json() if optimizer is None else optimizer
     )
     scheduler = (
         get_deepspeed_warmup_decay_scheduler_config_json()
@@ -741,9 +799,7 @@ def write_deepspeed_zero12_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(
-        f"deepspeed_zero{zero_stage}_auto_config.json"
-    )
+    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
@@ -815,9 +871,7 @@ def write_deepspeed_zero3_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(
-        f"deepspeed_zero{zero_stage}_auto_config.json"
-    )
+    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"

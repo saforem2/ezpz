@@ -8,36 +8,27 @@ Modified from:
 https://github.com/huggingface/transformers/blob/51ed61e2f05176f81fa7c9decba10cc28e138f61/examples/pytorch/language-modeling/run_clm.py
 """
 
+import logging
 import math
 import os
 import sys
-import logging
+from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional, Tuple
-from dataclasses import dataclass, field
 
 # Third-party imports - Grouped together
 try:
-    import torch
     import datasets
-    from datasets import load_dataset
+    import torch
     import transformers
-    from transformers import (
-        CONFIG_MAPPING,
-        MODEL_FOR_CAUSAL_LM_MAPPING,
-        AutoConfig,
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        HfArgumentParser,
-        Trainer,
-        TrainingArguments,
-        default_data_collator,
-        is_torch_xla_available,
-        set_seed,
-        PreTrainedTokenizerBase,
-        PreTrainedModel,
-        PretrainedConfig,
-    )
+    from datasets import load_dataset
+    from transformers import (CONFIG_MAPPING, MODEL_FOR_CAUSAL_LM_MAPPING,
+                              AutoConfig, AutoModelForCausalLM, AutoTokenizer,
+                              HfArgumentParser, PretrainedConfig,
+                              PreTrainedModel, PreTrainedTokenizerBase,
+                              Trainer, TrainingArguments,
+                              default_data_collator, is_torch_xla_available,
+                              set_seed)
     from transformers.testing_utils import CaptureLogger
     from transformers.trainer_utils import get_last_checkpoint
     from transformers.utils import send_example_telemetry
@@ -66,7 +57,7 @@ except (ImportError, ModuleNotFoundError):
 try:
     import evaluate
 except (ImportError, ModuleNotFoundError):
-    evaluate = None # type: ignore # Ignore type checking if evaluate is not installed
+    evaluate = None  # type: ignore # Ignore type checking if evaluate is not installed
     print(
         '"evaluate" library not found. Evaluation metrics will not be computed. '
         'Install with "pip install evaluate"'
@@ -75,11 +66,9 @@ except (ImportError, ModuleNotFoundError):
 
 # Local application/library specific imports
 try:
-    import ezpz # Assuming ezpz is a local library
+    import ezpz  # Assuming ezpz is a local library
 except (ImportError, ModuleNotFoundError):
-    print(
-        '"ezpz" library not found. Please ensure it is installed and accessible.'
-    )
+    print('"ezpz" library not found. Please ensure it is installed and accessible.')
     sys.exit(1)
 
 # --- Constants ---
@@ -89,11 +78,12 @@ VALIDATION_SPLIT_DEFAULT = "validation"
 TEST_SPLIT_DEFAULT = "test"
 
 # Logging configuration
-logger = ezpz.get_logger(__name__) # Use ezpz's logger setup
+logger = ezpz.get_logger(__name__)  # Use ezpz's logger setup
 
 
 # --- Argument Dataclasses ---
 # (Kept mostly as-is, as they integrate with HfArgumentParser)
+
 
 @dataclass
 class ModelArguments:
@@ -211,9 +201,7 @@ class DataTrainingArguments:
 
     dataset_name: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "The name of the dataset to use (via the datasets library)."
-        },
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
     dataset_config_name: Optional[str] = field(
         default=None,
@@ -240,19 +228,21 @@ class DataTrainingArguments:
             "help": "The name of the test split to use (via the datasets library)."
         },
     )
-    train_split_str: Optional[str] = field( # Kept for potential slicing syntax like 'train[:10%]'
+    train_split_str: Optional[
+        str
+    ] = field(  # Kept for potential slicing syntax like 'train[:10%]'
         default=None,
         metadata={
             "help": "The split string to use for the train split (e.g., 'train[:10%]', via the datasets library)."
         },
     )
-    validation_split_str: Optional[str] = field( # Kept for potential slicing syntax
+    validation_split_str: Optional[str] = field(  # Kept for potential slicing syntax
         default=None,
         metadata={
             "help": "The split string to use for the validation split (e.g., 'validation[50%:]', via the datasets library)."
         },
     )
-    test_split_str: Optional[str] = field( # Kept for potential slicing syntax
+    test_split_str: Optional[str] = field(  # Kept for potential slicing syntax
         default=None,
         metadata={
             "help": "The split string to use for the test split (via the datasets library)."
@@ -286,9 +276,7 @@ class DataTrainingArguments:
             )
         },
     )
-    streaming: bool = field(
-        default=False, metadata={"help": "Enable streaming mode"}
-    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
     block_size: Optional[int] = field(
         default=None,
         metadata={
@@ -311,15 +299,11 @@ class DataTrainingArguments:
     )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
-        metadata={
-            "help": "The number of processes to use for the preprocessing."
-        },
+        metadata={"help": "The number of processes to use for the preprocessing."},
     )
     keep_linebreaks: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to keep line breaks when using TXT files or not."
-        },
+        metadata={"help": "Whether to keep line breaks when using TXT files or not."},
     )
 
     def __post_init__(self):
@@ -342,14 +326,19 @@ class DataTrainingArguments:
         if self.train_file is not None:
             extension = self.train_file.split(".")[-1]
             if extension not in supported_extensions:
-                raise ValueError(f"`train_file` should be one of: {supported_extensions}. Got: {extension}")
+                raise ValueError(
+                    f"`train_file` should be one of: {supported_extensions}. Got: {extension}"
+                )
         if self.validation_file is not None:
             extension = self.validation_file.split(".")[-1]
             if extension not in supported_extensions:
-                 raise ValueError(f"`validation_file` should be one of: {supported_extensions}. Got: {extension}")
+                raise ValueError(
+                    f"`validation_file` should be one of: {supported_extensions}. Got: {extension}"
+                )
 
 
 # --- Helper Functions ---
+
 
 def setup_logging(training_args: TrainingArguments, rank: int) -> None:
     """Configures logging for transformers and datasets libraries."""
@@ -359,7 +348,9 @@ def setup_logging(training_args: TrainingArguments, rank: int) -> None:
         transformers.utils.logging.set_verbosity_info()
 
     # Set verbosity based on rank - info for rank 0, warnings/errors otherwise
-    log_level = logging.INFO if rank == 0 else logging.WARNING # Use standard logging levels
+    log_level = (
+        logging.INFO if rank == 0 else logging.WARNING
+    )  # Use standard logging levels
     transformers.utils.logging.set_verbosity(log_level)
     datasets.utils.logging.set_verbosity(log_level)
 
@@ -378,27 +369,45 @@ def setup_logging(training_args: TrainingArguments, rank: int) -> None:
         logger.info(f"Training/evaluation parameters: {training_args}")
 
 
-def setup_wandb(model_args: ModelArguments, data_args: DataTrainingArguments, training_args: TrainingArguments, rank: int) -> None:
+def setup_wandb(
+    model_args: ModelArguments,
+    data_args: DataTrainingArguments,
+    training_args: TrainingArguments,
+    rank: int,
+) -> None:
     """Initializes Weights & Biases if available and enabled."""
     if wandb is not None and rank == 0 and not os.environ.get("WANDB_DISABLED", False):
         try:
-            run_name = training_args.run_name or f"hf_trainer_{model_args.model_name_or_path or model_args.model_type}"
-            run = ezpz.setup_wandb(project_name="ezpz.hf_trainer", name=run_name) # Pass run_name if available
+            run_name = (
+                training_args.run_name
+                or f"hf_trainer_{model_args.model_name_or_path or model_args.model_type}"
+            )
+            run = ezpz.setup_wandb(
+                project_name="ezpz.hf_trainer", name=run_name
+            )  # Pass run_name if available
             if run is not None:
                 # Combine args into a single config dictionary
                 config_dict = {}
                 config_dict.update(ezpz.get_dist_info())
-                config_dict.update(vars(model_args)) # Use vars() for dataclasses
+                config_dict.update(vars(model_args))  # Use vars() for dataclasses
                 config_dict.update(vars(data_args))
-                config_dict.update(training_args.to_dict()) # TrainingArguments has a method
-                run.config.update(config_dict, allow_val_change=True) # Allow changes if re-running
+                config_dict.update(
+                    training_args.to_dict()
+                )  # TrainingArguments has a method
+                run.config.update(
+                    config_dict, allow_val_change=True
+                )  # Allow changes if re-running
             else:
-                logger.warning("ezpz.setup_wandb returned None, W&B initialization might have failed.")
+                logger.warning(
+                    "ezpz.setup_wandb returned None, W&B initialization might have failed."
+                )
         except Exception as e:
             logger.error(f"Failed to initialize W&B: {e}")
 
 
-def parse_arguments() -> Tuple[ModelArguments, DataTrainingArguments, TrainingArguments]:
+def parse_arguments() -> (
+    Tuple[ModelArguments, DataTrainingArguments, TrainingArguments]
+):
     """Parses command line arguments into respective dataclasses."""
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
@@ -429,7 +438,9 @@ def check_output_dir(training_args: TrainingArguments) -> Optional[str]:
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
-        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        elif (
+            last_checkpoint is not None and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -452,10 +463,12 @@ def load_model_and_tokenizer(
     if model_args.config_name:
         config = AutoConfig.from_pretrained(model_args.config_name, **config_kwargs)
     elif model_args.model_name_or_path:
-        config = AutoConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
+        config = AutoConfig.from_pretrained(
+            model_args.model_name_or_path, **config_kwargs
+        )
     else:
         # Training from scratch
-        config = CONFIG_MAPPING[model_args.model_type]() # type: ignore # Assume model_type is valid if no path/name
+        config = CONFIG_MAPPING[model_args.model_type]()  # type: ignore # Assume model_type is valid if no path/name
         logger.warning("You are instantiating a new config instance from scratch.")
         if model_args.config_overrides:
             logger.info(f"Overriding config: {model_args.config_overrides}")
@@ -470,9 +483,13 @@ def load_model_and_tokenizer(
         "trust_remote_code": model_args.trust_remote_code,
     }
     if model_args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name, **tokenizer_kwargs
+        )
     elif model_args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path, **tokenizer_kwargs
+        )
     else:
         raise ValueError(
             "Cannot train from scratch without specifying a base model/tokenizer. "
@@ -493,29 +510,37 @@ def load_model_and_tokenizer(
     # Handle torch_dtype
     if model_args.torch_dtype:
         try:
-            torch_dtype = getattr(torch, model_args.torch_dtype) if model_args.torch_dtype != "auto" else "auto"
+            torch_dtype = (
+                getattr(torch, model_args.torch_dtype)
+                if model_args.torch_dtype != "auto"
+                else "auto"
+            )
             model_kwargs["torch_dtype"] = torch_dtype
         except AttributeError:
-            logger.warning(f"Invalid torch_dtype specified: {model_args.torch_dtype}. Using default.")
-
+            logger.warning(
+                f"Invalid torch_dtype specified: {model_args.torch_dtype}. Using default."
+            )
 
     if model_args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            **model_kwargs
+            **model_kwargs,
         )
     else:
         logger.info("Training new model from scratch")
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
+        model = AutoModelForCausalLM.from_config(
+            config, trust_remote_code=model_args.trust_remote_code
+        )
         n_params = sum(p.numel() for p in model.parameters())
         logger.info(f"Model size: {n_params / 1e6:.2f}M parameters")
-
 
     # Resize embeddings if necessary
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
-        logger.info(f"Resizing token embeddings from {embedding_size} to {len(tokenizer)}")
+        logger.info(
+            f"Resizing token embeddings from {embedding_size} to {len(tokenizer)}"
+        )
         model.resize_token_embeddings(len(tokenizer))
 
     return config, tokenizer, model
@@ -523,8 +548,8 @@ def load_model_and_tokenizer(
 
 def load_and_prepare_datasets(
     data_args: DataTrainingArguments,
-    model_args: ModelArguments, # Needed for cache_dir, token, etc.
-    training_args: TrainingArguments, # Needed for main_process_first
+    model_args: ModelArguments,  # Needed for cache_dir, token, etc.
+    training_args: TrainingArguments,  # Needed for main_process_first
     tokenizer: PreTrainedTokenizerBase,
     config: PretrainedConfig,
 ) -> Tuple[Optional[datasets.Dataset], Optional[datasets.Dataset]]:
@@ -535,7 +560,9 @@ def load_and_prepare_datasets(
 
     train_split_name = data_args.train_split_name or TRAIN_SPLIT_DEFAULT
     validation_split_name = data_args.validation_split_name or VALIDATION_SPLIT_DEFAULT
-    test_split_name = data_args.test_split_name or TEST_SPLIT_DEFAULT # Although test isn't used later, keep consistent
+    test_split_name = (
+        data_args.test_split_name or TEST_SPLIT_DEFAULT
+    )  # Although test isn't used later, keep consistent
 
     if data_args.dataset_name:
         # Load from Hugging Face Hub
@@ -546,33 +573,55 @@ def load_and_prepare_datasets(
             token=model_args.token,
             streaming=data_args.streaming,
             trust_remote_code=model_args.trust_remote_code,
-            split=None # Load all available splits first
+            split=None,  # Load all available splits first
         )
 
         # Handle split creation/selection more robustly
         # Use specified split strings if provided
-        train_split = data_args.train_split_str if data_args.train_split_str else train_split_name
-        val_split = data_args.validation_split_str if data_args.validation_split_str else validation_split_name
+        train_split = (
+            data_args.train_split_str if data_args.train_split_str else train_split_name
+        )
+        val_split = (
+            data_args.validation_split_str
+            if data_args.validation_split_str
+            else validation_split_name
+        )
 
         # Check if required splits exist
         if train_split_name not in raw_datasets and not data_args.train_split_str:
-             raise ValueError(f"Train split '{train_split_name}' not found in dataset '{data_args.dataset_name}'. Available: {list(raw_datasets.keys())}")
+            raise ValueError(
+                f"Train split '{train_split_name}' not found in dataset '{data_args.dataset_name}'. Available: {list(raw_datasets.keys())}"
+            )
 
         # Handle validation split creation if needed and possible
-        if training_args.do_eval and validation_split_name not in raw_datasets and not data_args.validation_split_str:
-            logger.info(f"Validation split '{validation_split_name}' not found. Creating from train split.")
-            if data_args.validation_split_percentage is None or not (0 < data_args.validation_split_percentage < 100):
-                raise ValueError("Cannot create validation split without a valid --validation_split_percentage (1-99).")
+        if (
+            training_args.do_eval
+            and validation_split_name not in raw_datasets
+            and not data_args.validation_split_str
+        ):
+            logger.info(
+                f"Validation split '{validation_split_name}' not found. Creating from train split."
+            )
+            if data_args.validation_split_percentage is None or not (
+                0 < data_args.validation_split_percentage < 100
+            ):
+                raise ValueError(
+                    "Cannot create validation split without a valid --validation_split_percentage (1-99)."
+                )
 
             # Try splitting using datasets built-in method if not streaming
-            if not data_args.streaming and hasattr(raw_datasets[train_split_name], "train_test_split"):
+            if not data_args.streaming and hasattr(
+                raw_datasets[train_split_name], "train_test_split"
+            ):
                 split_percentage = data_args.validation_split_percentage / 100.0
                 split_dataset = raw_datasets[train_split_name].train_test_split(
                     test_size=split_percentage, shuffle=True, seed=training_args.seed
                 )
                 raw_datasets[train_split_name] = split_dataset["train"]
                 raw_datasets[validation_split_name] = split_dataset["test"]
-                logger.info(f"Created validation split ({data_args.validation_split_percentage}%) from '{train_split_name}'.")
+                logger.info(
+                    f"Created validation split ({data_args.validation_split_percentage}%) from '{train_split_name}'."
+                )
             else:
                 # Fallback or handle streaming case (manual slicing or using the full train set might be needed)
                 logger.warning(
@@ -580,8 +629,9 @@ def load_and_prepare_datasets(
                     f"(streaming={data_args.streaming} or split method unavailable). "
                     f"Using full '{train_split_name}' for validation as fallback."
                 )
-                raw_datasets[validation_split_name] = raw_datasets[train_split_name] # Use full train as val
-
+                raw_datasets[validation_split_name] = raw_datasets[
+                    train_split_name
+                ]  # Use full train as val
 
         # Select the desired splits based on names or string specifiers
         final_raw_datasets = datasets.DatasetDict()
@@ -593,8 +643,7 @@ def load_and_prepare_datasets(
         # if training_args.do_predict and test_split_name in raw_datasets:
         #     final_raw_datasets[test_split_name] = raw_datasets[test_split_name]
 
-        raw_datasets = final_raw_datasets # Overwrite with the selected/created splits
-
+        raw_datasets = final_raw_datasets  # Overwrite with the selected/created splits
 
     else:
         # Load from local files
@@ -605,11 +654,13 @@ def load_and_prepare_datasets(
             data_files[validation_split_name] = data_args.validation_file
 
         if not data_files:
-             raise ValueError("No train or validation files provided when not using `dataset_name`.")
+            raise ValueError(
+                "No train or validation files provided when not using `dataset_name`."
+            )
 
         # Determine file extension
         first_file = data_args.train_file or data_args.validation_file
-        extension = first_file.split(".")[-1] # type: ignore
+        extension = first_file.split(".")[-1]  # type: ignore
 
         if extension == "txt":
             extension = "text"
@@ -617,51 +668,68 @@ def load_and_prepare_datasets(
         elif extension in ["csv", "json"]:
             dataset_args = {}
         else:
-             raise ValueError(f"Unsupported file extension: {extension}. Use csv, json, or txt.")
+            raise ValueError(
+                f"Unsupported file extension: {extension}. Use csv, json, or txt."
+            )
 
         raw_datasets = load_dataset(
             extension,
             data_files=data_files,
             cache_dir=model_args.cache_dir,
             token=model_args.token,
-            split=None, # Load all splits defined in data_files
+            split=None,  # Load all splits defined in data_files
             **dataset_args,
         )
 
         # Handle validation split creation if only train_file is provided
         if training_args.do_eval and validation_split_name not in raw_datasets:
-            logger.info(f"Validation file not provided. Creating validation split from '{train_split_name}'.")
+            logger.info(
+                f"Validation file not provided. Creating validation split from '{train_split_name}'."
+            )
             if train_split_name not in raw_datasets:
-                 raise ValueError("Cannot create validation split as train split is missing.")
-            if data_args.validation_split_percentage is None or not (0 < data_args.validation_split_percentage < 100):
-                 raise ValueError("Cannot create validation split without a valid --validation_split_percentage (1-99).")
+                raise ValueError(
+                    "Cannot create validation split as train split is missing."
+                )
+            if data_args.validation_split_percentage is None or not (
+                0 < data_args.validation_split_percentage < 100
+            ):
+                raise ValueError(
+                    "Cannot create validation split without a valid --validation_split_percentage (1-99)."
+                )
 
-            if not data_args.streaming and hasattr(raw_datasets[train_split_name], "train_test_split"):
+            if not data_args.streaming and hasattr(
+                raw_datasets[train_split_name], "train_test_split"
+            ):
                 split_percentage = data_args.validation_split_percentage / 100.0
                 split_dataset = raw_datasets[train_split_name].train_test_split(
                     test_size=split_percentage, shuffle=True, seed=training_args.seed
                 )
                 raw_datasets[train_split_name] = split_dataset["train"]
                 raw_datasets[validation_split_name] = split_dataset["test"]
-                logger.info(f"Created validation split ({data_args.validation_split_percentage}%) from '{train_split_name}'.")
+                logger.info(
+                    f"Created validation split ({data_args.validation_split_percentage}%) from '{train_split_name}'."
+                )
             else:
-                 logger.warning(
-                     f"Cannot automatically create validation split from '{train_split_name}' "
-                     f"(streaming={data_args.streaming} or split method unavailable). "
-                     f"Proceeding without validation data."
-                 )
-                 # Decide how to handle this: maybe skip eval or raise error?
-                 # For now, let it proceed, eval_dataset will be None later if split doesn't exist
-
+                logger.warning(
+                    f"Cannot automatically create validation split from '{train_split_name}' "
+                    f"(streaming={data_args.streaming} or split method unavailable). "
+                    f"Proceeding without validation data."
+                )
+                # Decide how to handle this: maybe skip eval or raise error?
+                # For now, let it proceed, eval_dataset will be None later if split doesn't exist
 
     # --- Preprocessing ---
     logger.info("Preprocessing datasets...")
 
     # Determine text column
     # Use the first split available (train or validation) to get features
-    sample_split = train_split_name if train_split_name in raw_datasets else validation_split_name
+    sample_split = (
+        train_split_name if train_split_name in raw_datasets else validation_split_name
+    )
     if sample_split not in raw_datasets:
-        raise ValueError(f"No usable split ('{train_split_name}' or '{validation_split_name}') found in raw datasets for preprocessing.")
+        raise ValueError(
+            f"No usable split ('{train_split_name}' or '{validation_split_name}') found in raw datasets for preprocessing."
+        )
 
     column_names = list(raw_datasets[sample_split].features)
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -669,11 +737,16 @@ def load_and_prepare_datasets(
 
     # Tokenization function
     # Needs tokenizer and text_column_name from the outer scope
-    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
+    tok_logger = transformers.utils.logging.get_logger(
+        "transformers.tokenization_utils_base"
+    )
+
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
             # Handle potential None values in the text column gracefully
-            texts_to_tokenize = [str(t) if t is not None else "" for t in examples[text_column_name]]
+            texts_to_tokenize = [
+                str(t) if t is not None else "" for t in examples[text_column_name]
+            ]
             output = tokenizer(texts_to_tokenize)
         # Log warning suppression only if the specific warning occurred
         if "Token indices sequence length is longer than the" in cl.out:
@@ -688,7 +761,7 @@ def load_and_prepare_datasets(
             tokenize_function,
             batched=True,
             num_proc=data_args.preprocessing_num_workers,
-            remove_columns=column_names, # Remove original columns after tokenization
+            remove_columns=column_names,  # Remove original columns after tokenization
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Running tokenizer on dataset",
         )
@@ -697,9 +770,14 @@ def load_and_prepare_datasets(
     if data_args.block_size is None:
         block_size = tokenizer.model_max_length
         # Guard against models with very large or undefined max length
-        if block_size > getattr(config, 'max_position_embeddings', 1024) or block_size > 2048: # Added a practical upper limit
-            effective_max_len = getattr(config, 'max_position_embeddings', 1024)
-            chosen_block_size = min(1024, effective_max_len if effective_max_len > 0 else 1024)
+        if (
+            block_size > getattr(config, "max_position_embeddings", 1024)
+            or block_size > 2048
+        ):  # Added a practical upper limit
+            effective_max_len = getattr(config, "max_position_embeddings", 1024)
+            chosen_block_size = min(
+                1024, effective_max_len if effective_max_len > 0 else 1024
+            )
             logger.warning(
                 f"Tokenizer `model_max_length` ({block_size}) is large or potentially problematic. "
                 f"Using block_size={chosen_block_size} based on config or default (1024). "
@@ -715,10 +793,11 @@ def load_and_prepare_datasets(
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     if block_size <= 0:
-        raise ValueError(f"Calculated invalid block_size: {block_size}. Check model config and --block_size.")
+        raise ValueError(
+            f"Calculated invalid block_size: {block_size}. Check model config and --block_size."
+        )
 
     logger.info(f"Using block size: {block_size}")
-
 
     # Grouping function
     # Needs block_size from the outer scope
@@ -728,7 +807,7 @@ def load_and_prepare_datasets(
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, and if the total_length < block_size we exclude this batch and return an empty dict.
         if total_length < block_size:
-            return {k: [] for k in examples.keys()} # Return empty dict correctly
+            return {k: [] for k in examples.keys()}  # Return empty dict correctly
 
         # Drop the remainder to ensure full blocks
         total_length = (total_length // block_size) * block_size
@@ -757,7 +836,9 @@ def load_and_prepare_datasets(
 
     if training_args.do_train:
         if train_split_name not in lm_datasets:
-            raise ValueError(f"--do_train requires a '{train_split_name}' dataset, but it's not available after processing.")
+            raise ValueError(
+                f"--do_train requires a '{train_split_name}' dataset, but it's not available after processing."
+            )
         train_dataset = lm_datasets[train_split_name]
         if data_args.max_train_samples:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
@@ -766,13 +847,17 @@ def load_and_prepare_datasets(
 
     if training_args.do_eval:
         if validation_split_name not in lm_datasets:
-             logger.warning(f"--do_eval requires a '{validation_split_name}' dataset, but it's not available. Skipping evaluation.")
-             # Ensure eval_dataset remains None if split is missing
+            logger.warning(
+                f"--do_eval requires a '{validation_split_name}' dataset, but it's not available. Skipping evaluation."
+            )
+            # Ensure eval_dataset remains None if split is missing
         else:
             eval_dataset = lm_datasets[validation_split_name]
             if data_args.max_eval_samples:
                 max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
-                logger.info(f"Truncating evaluation dataset to {max_eval_samples} samples.")
+                logger.info(
+                    f"Truncating evaluation dataset to {max_eval_samples} samples."
+                )
                 eval_dataset = eval_dataset.select(range(max_eval_samples))
 
     return train_dataset, eval_dataset
@@ -784,7 +869,7 @@ def initialize_trainer(
     training_args: TrainingArguments,
     train_dataset: Optional[datasets.Dataset],
     eval_dataset: Optional[datasets.Dataset],
-    model_args: ModelArguments, # Needed for metric cache_dir
+    model_args: ModelArguments,  # Needed for metric cache_dir
 ) -> Trainer:
     """Initializes the Hugging Face Trainer."""
 
@@ -794,7 +879,9 @@ def initialize_trainer(
         if evaluate is None:
             logger.warning("Evaluate library not found. Cannot compute metrics.")
         elif is_torch_xla_available():
-             logger.warning("Metrics computation is not supported with TPU currently (is_torch_xla_available=True).")
+            logger.warning(
+                "Metrics computation is not supported with TPU currently (is_torch_xla_available=True)."
+            )
         else:
             try:
                 metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
@@ -811,15 +898,19 @@ def initialize_trainer(
 
                     # Shift labels and preds for accuracy calculation in CLM
                     # Labels are typically shifted inside the model, so align predictions
-                    labels = labels[:, 1:].reshape(-1) # Remove first token label (no prediction for it)
-                    preds = preds[:, :-1].reshape(-1) # Remove last token prediction (no label for it)
+                    labels = labels[:, 1:].reshape(
+                        -1
+                    )  # Remove first token label (no prediction for it)
+                    preds = preds[:, :-1].reshape(
+                        -1
+                    )  # Remove last token prediction (no label for it)
 
                     # Filter out padding tokens (-100)
                     valid_indices = labels != -100
                     labels = labels[valid_indices]
                     preds = preds[valid_indices]
 
-                    if len(labels) == 0: # Handle case where all labels might be masked
+                    if len(labels) == 0:  # Handle case where all labels might be masked
                         return {"accuracy": 0.0}
 
                     return metric.compute(predictions=preds, references=labels)
@@ -828,20 +919,23 @@ def initialize_trainer(
                 logger.info("Accuracy metric loaded for evaluation.")
 
             except Exception as e:
-                logger.error(f"Failed to load accuracy metric: {e}. Evaluation will proceed without metrics.")
+                logger.error(
+                    f"Failed to load accuracy metric: {e}. Evaluation will proceed without metrics."
+                )
 
     # Preprocess logits function (only needed if compute_metrics is defined)
     # This helps save memory by only keeping argmax predictions
     preprocess_logits_for_metrics = None
     if compute_metrics:
-         def preprocess_logits_for_metrics_fn(logits, labels):
-             if isinstance(logits, tuple):
-                 # Depending on the model and config, logits may contain extra tensors,
-                 # like past_key_values, but logits always come first
-                 logits = logits[0]
-             return logits.argmax(dim=-1) # Return simple argmax for accuracy
-         preprocess_logits_for_metrics = preprocess_logits_for_metrics_fn
 
+        def preprocess_logits_for_metrics_fn(logits, labels):
+            if isinstance(logits, tuple):
+                # Depending on the model and config, logits may contain extra tensors,
+                # like past_key_values, but logits always come first
+                logits = logits[0]
+            return logits.argmax(dim=-1)  # Return simple argmax for accuracy
+
+        preprocess_logits_for_metrics = preprocess_logits_for_metrics_fn
 
     # --- Initialize Trainer ---
     trainer = Trainer(
@@ -849,26 +943,29 @@ def initialize_trainer(
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
-        tokenizer=tokenizer, # Pass tokenizer for saving purposes
-        data_collator=default_data_collator, # Use default collator which handles labels for CLM
+        tokenizer=tokenizer,  # Pass tokenizer for saving purposes
+        data_collator=default_data_collator,  # Use default collator which handles labels for CLM
         compute_metrics=compute_metrics,
-        preprocess_logits_for_metrics=preprocess_logits_for_metrics
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     )
     return trainer
 
 
 # --- Main Execution ---
 
+
 def main():
     # 1. Setup distributed environment (if applicable) and parse args
-    rank = ezpz.setup_torch() # Assuming this sets up DDP/device placement
+    rank = ezpz.setup_torch()  # Assuming this sets up DDP/device placement
     model_args, data_args, training_args = parse_arguments()
 
     # 2. Setup logging, W&B, telemetry after parsing args
     setup_logging(training_args, rank)
-    setup_wandb(model_args, data_args, training_args, rank) # Needs all args for config
+    setup_wandb(model_args, data_args, training_args, rank)  # Needs all args for config
     # Send telemetry (as in original script)
-    send_example_telemetry("hf_trainer_refactored", model_args, data_args) # Use modified name potentially
+    send_example_telemetry(
+        "hf_trainer_refactored", model_args, data_args
+    )  # Use modified name potentially
 
     # 3. Set seed for reproducibility
     set_seed(training_args.seed)
@@ -892,17 +989,23 @@ def main():
         training_args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        model_args=model_args # Pass for metric cache dir
+        model_args=model_args,  # Pass for metric cache dir
     )
 
     # 8. Optional: Watch model with W&B
-    if wandb is not None and rank == 0 and hasattr(wandb, 'run') and wandb.run is not None:
+    if (
+        wandb is not None
+        and rank == 0
+        and hasattr(wandb, "run")
+        and wandb.run is not None
+    ):
         try:
-            wandb.watch(model, log="all", log_freq=max(100, training_args.logging_steps or 500)) # Log gradients/parameters
+            wandb.watch(
+                model, log="all", log_freq=max(100, training_args.logging_steps or 500)
+            )  # Log gradients/parameters
             logger.info("W&B watching model.")
         except Exception as e:
             logger.error(f"Failed to set up W&B model watch: {e}")
-
 
     # 9. Training
     if training_args.do_train:
@@ -915,13 +1018,13 @@ def main():
         # If you need explicit rank 0 saving, use trainer.save_model() within if rank == 0 block.
         # The trainer handles saving based on training_args.save_strategy etc.
         # Let's ensure the state is saved.
-        trainer.save_state() # Saves optimizer, scheduler, RNG state etc.
+        trainer.save_state()  # Saves optimizer, scheduler, RNG state etc.
 
         metrics = train_result.metrics
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset) # type: ignore # Guarded by do_train
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)  # type: ignore # Guarded by do_train
         )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset)) # type: ignore
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))  # type: ignore
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -929,13 +1032,13 @@ def main():
     # 10. Evaluation
     if training_args.do_eval:
         if eval_dataset is None:
-             logger.warning("Evaluation dataset not available, skipping evaluation.")
+            logger.warning("Evaluation dataset not available, skipping evaluation.")
         else:
             logger.info("*** Starting Evaluation ***")
             metrics = trainer.evaluate()
 
-            max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset) # type: ignore # Guarded by do_eval
-            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset)) # type: ignore
+            max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)  # type: ignore # Guarded by do_eval
+            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type: ignore
 
             try:
                 perplexity = math.exp(metrics["eval_loss"])
@@ -947,7 +1050,7 @@ def main():
             trainer.save_metrics("eval", metrics)
 
     # 11. Write final arguments to a file (optional but good practice)
-    if rank == 0: # Only save args on main process
+    if rank == 0:  # Only save args on main process
         output_dir = training_args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         all_args = {
@@ -956,14 +1059,14 @@ def main():
             "training_args": training_args.to_dict(),
         }
         import json
+
         args_save_path = os.path.join(output_dir, "run_args.json")
         try:
             with open(args_save_path, "w") as f:
                 json.dump(all_args, f, indent=4)
             logger.info(f"Run arguments saved to {args_save_path}")
         except Exception as e:
-             logger.error(f"Failed to save run arguments to {args_save_path}: {e}")
-
+            logger.error(f"Failed to save run arguments to {args_save_path}: {e}")
 
     logger.info("Script finished successfully.")
 

@@ -5,25 +5,23 @@ Contains methods for initializing distributed communication.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+
 import datetime
 import logging
 import os
 import socket
-from pathlib import Path
 import time
+from datetime import timedelta
 from functools import wraps
+from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Union
 
-import ezpz.tp
-
-from mpi4py import MPI
-
 import torch
-
 import torch.distributed
-from datetime import timedelta
+from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
 
+import ezpz.tp
 from ezpz.lazy import lazy_import
 
 ENABLE_WANDB = False
@@ -63,15 +61,60 @@ ALREADY_PRINTED_HOSTS = os.environ.get("ALREADY_PRINTED_HOSTS", "0")
 #         logger.info(f"Unable to import '{module_name}', trying to continue")
 
 
-ACCELERATOR_TYPE = (
-    "IntelGPU"
-    if torch.xpu.is_available() and torch.xpu.device_count() > 0
-    else (
-        "NvidiaGPU"
-        if (torch.cuda.is_available() and torch.cuda.device_count() > 0)
-        else ("MPS" if torch.backends.mps.is_available() else "CPU")
+_SUPPORTED_DEVICE_TYPES = {"cpu", "cuda", "xpu", "mps"}
+_ENV_TORCH_DEVICE_LOGGED = False
+
+
+def _parse_torch_device(value: str | None) -> tuple[str, str, str] | None:
+    """Normalize the ``TORCH_DEVICE`` environment value.
+
+    Returns a tuple ``(normalized, base, original)`` when the value is valid,
+    otherwise ``None``.  ``normalized`` preserves any device index (e.g.
+    ``"cuda:1"``), ``base`` is the bare device type, and ``original`` keeps the
+    caller-facing string for logging.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    normalized = trimmed.lower()
+    base = normalized.split(":", 1)[0]
+    if base not in _SUPPORTED_DEVICE_TYPES:
+        logger.warning(
+            "Ignoring unsupported TORCH_DEVICE=%s; expected one of %s",
+            trimmed,
+            sorted(_SUPPORTED_DEVICE_TYPES),
+        )
+        return None
+    return normalized, base, trimmed
+
+
+def _get_env_torch_device() -> tuple[str, str, str] | None:
+    """Return parsed ``TORCH_DEVICE`` information if the variable is set."""
+
+    return _parse_torch_device(os.environ.get("TORCH_DEVICE"))
+
+
+_env_device_info = _get_env_torch_device()
+if _env_device_info is not None:
+    _env_device_base = _env_device_info[1]
+    ACCELERATOR_TYPE = {
+        "xpu": "IntelGPU",
+        "cuda": "NvidiaGPU",
+        "mps": "MPS",
+        "cpu": "CPU",
+    }[_env_device_base]
+else:
+    ACCELERATOR_TYPE = (
+        "IntelGPU"
+        if torch.xpu.is_available() and torch.xpu.device_count() > 0
+        else (
+            "NvidiaGPU"
+            if (torch.cuda.is_available() and torch.cuda.device_count() > 0)
+            else ("MPS" if torch.backends.mps.is_available() else "CPU")
+        )
     )
-)
 
 
 # @dataclass
@@ -88,9 +131,10 @@ def seed_everything(seed: int) -> None:
     Args:
         seed (int): Random seed to set.
     """
-    import torch
-    import numpy as np
     import random
+
+    import numpy as np
+    import torch
 
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -147,15 +191,8 @@ def timeitlogit(
             assert isinstance(rank, int)
             result = func(*args, **kwargs)
             dt = time.perf_counter() - t0
-            fname = getattr(
-                func, "__qualname__", getattr(func, "__name__", "unknown")
-            )
-            if (
-                record
-                and ENABLE_WANDB
-                and wandb is not None
-                and wandb.run is not None
-            ):
+            fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+            if record and ENABLE_WANDB and wandb is not None and wandb.run is not None:
                 wandb.log({f"{prefix}/{fname}": dt}, commit=False)
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
@@ -207,9 +244,7 @@ def timeit(func: Callable):
         t0 = time.perf_counter()
         result = func(*args, **kwargs)
         dt = time.perf_counter() - t0
-        fname = getattr(
-            func, "__qualname__", getattr(func, "__name__", "unknown")
-        )
+        fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
         logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
         if ENABLE_WANDB and wandb is not None and wandb.run is not None:
             wandb.log({f"timeit/{fname}": dt})
@@ -265,20 +300,34 @@ def get_hostname() -> str:
     Returns:
         str: The hostname of the current machine.
     """
+    import platform
     import socket
 
-    try:
-        hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
-    # except socket.herror as exc:
-    except Exception:
-        from sh import hostname as sh_hostname  # type:ignore[missingTypeStubs]
+    def _normalize(name: str | None) -> str:
+        if not name:
+            return "localhost"
+        return name.strip().lower()
 
-        hostname = sh_hostname()
-        # if get_rank() == 0:
-        #     logger.debug('Unable to determine hostname with `socket`.')
-        #     logger.debug(f'hostname from`sh`: {hostname}')
-        #     # logger.exception(exc)
-    return hostname.rstrip("\n")
+    try:
+        socket_hostname = socket.gethostname()
+        if socket_hostname:
+            try:
+                resolved = socket.gethostbyaddr(socket_hostname)[0]
+            except OSError:
+                resolved = socket_hostname
+            return _normalize(resolved)
+    except Exception:
+        pass
+
+    env_hostname = os.environ.get("HOSTNAME") or os.environ.get("HOST")
+    if env_hostname:
+        return _normalize(env_hostname)
+
+    platform_hostname = platform.node()
+    if platform_hostname:
+        return _normalize(platform_hostname)
+
+    return "localhost"
 
 
 def _get_dist_info(
@@ -320,6 +369,7 @@ def _get_dist_info(
         "HOSTFILE": hfp.absolute().resolve().as_posix(),
         "HOSTNAME": get_hostname(),
         "LOCAL_RANK": get_local_rank(),
+        "local_rank": get_local_rank(),
         "MACHINE": get_machine(),
         "NUM_NODES": num_nodes,
         "NGPUS": num_gpus,
@@ -327,10 +377,12 @@ def _get_dist_info(
         # 'NGPUS': get_world_size_total(),
         "NODE_ID": get_node_index(),
         "RANK": get_rank(),
+        "rank": get_rank(),
         "SCHEDULER": (scheduler := get_scheduler()),
         # 'WORLD_SIZE': get_world_size(),
         "WORLD_SIZE_TOTAL": get_world_size_total(),
         "WORLD_SIZE_IN_USE": get_world_size_in_use(),
+        "world_size": get_world_size(),
         "LAUNCH_CMD": (
             ezpz.pbs.get_pbs_launch_cmd(
                 hostfile=hfp,
@@ -393,9 +445,7 @@ def get_dist_info(
     if verbose:
         import json
 
-        logger.info(
-            f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
-        )
+        logger.info(f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}")
     return dist_info
 
 
@@ -450,12 +500,8 @@ def print_dist_setup(
     logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
-            logger.warning(
-                f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}"
-            )
-        logger.warning(
-            f'Using [{wsa} / {wst}] available "{device}" devices !!'
-        )
+            logger.warning(f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}")
+        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
@@ -632,12 +678,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         >>> get_torch_device_type()  # Returns the current device type as a string
     """
     if device_type is not None:
-        assert device_type in (
-            "cpu",
-            "mps",
-            "xpu",
-            "cuda",
-        )
+        assert device_type in _SUPPORTED_DEVICE_TYPES
         logger.warning(
             " ".join(
                 [
@@ -647,17 +688,13 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
             )
         )
         return device_type
-    if (tdevice := os.environ.get("TORCH_DEVICE")) is not None:
-        if get_rank() == 0:
-            logger.warning(f"Caught TORCH_DEVICE={tdevice} from environment!")
-        tdevice = tdevice.lower()
-        assert tdevice is not None and tdevice in (
-            "cpu",
-            "mps",
-            "xpu",
-            "cuda",
-        )
-        return tdevice.lower()
+    env_info = _get_env_torch_device()
+    if env_info is not None:
+        global _ENV_TORCH_DEVICE_LOGGED
+        if not _ENV_TORCH_DEVICE_LOGGED and get_rank() == 0:
+            logger.info("Using TORCH_DEVICE=%s from environment", env_info[2])
+            _ENV_TORCH_DEVICE_LOGGED = True
+        return env_info[1]
     return (
         "xpu"
         if torch.xpu.is_available()
@@ -699,6 +736,11 @@ def get_torch_device(
     Example:
         >>> get_torch_device()  # Returns the current device type as a string
     """
+    if device_type is None:
+        env_info = _get_env_torch_device()
+        if env_info is not None:
+            device_str = env_info[0]
+            return torch.device(device_str) if as_torch_device else device_str
     device_type = get_torch_device_type(device_type)
     return torch.device(device_type) if as_torch_device else device_type
 
@@ -745,9 +787,7 @@ def get_torch_backend() -> str:
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (
-            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
-        )
+        else (get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo")
     )
 
 
@@ -929,9 +969,7 @@ def get_free_port():
         int: A free port number that can be used for communication.
     """
     sock = socket.socket()
-    sock.bind(
-        ("127.0.0.1", 0)
-    )  # Bind to an available port on the loopback interface
+    sock.bind(("127.0.0.1", 0))  # Bind to an available port on the loopback interface
     port = sock.getsockname()[1]
     sock.close()
     return port
@@ -972,12 +1010,25 @@ def broadcast(
     obj: Any,
     root: int = 0,
 ) -> Any:
+    """Broadcast ``obj`` from ``root`` to all ranks using MPI.
+
+    Parameters
+    ----------
+    obj:
+        The picklable payload to share.
+    root:
+        Rank that originates the value.
+
+    Returns
+    -------
+    Any
+        The distributed payload.  If broadcasting fails we re-raise the
+        underlying exception after logging for easier debugging.
+    """
     try:
         return MPI.COMM_WORLD.bcast(obj, root=root)
     except Exception as exc:
-        logger.warning(
-            "Unable to broadcast with MPI, returning original object"
-        )
+        logger.warning("Unable to broadcast with MPI, returning original object")
         logger.exception(exc)
         # return obj
         raise exc
@@ -1070,11 +1121,8 @@ def setup_torch_DDP(
 
     if torch.distributed.is_initialized():  # type:ignore
         if rank == 0:
-            logger.info(
-                "torch.distributed was already initialized, skipping..."
-            )
+            logger.info("torch.distributed was already initialized, skipping...")
     else:
-
         init_process_group(
             rank=rank,
             world_size=world_size,
@@ -1155,22 +1203,12 @@ def setup_torch_distributed(
         if timeout is None
         else (int(timeout) if isinstance(timeout, str) else timeout)
     )
-    port = (
-        "1234"
-        if port is None
-        else str(port)
-        if isinstance(port, int)
-        else port
-    )
+    port = "1234" if port is None else str(port) if isinstance(port, int) else port
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
     fw = str(framework).lower()
-    be = (
-        str(get_torch_backend()).lower()
-        if backend is None
-        else str(backend).lower()
-    )
+    be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
     # be = str(framework).lower()
     # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
     #     f"Invalid backend: {framework=}, expected one of "
@@ -1520,8 +1558,7 @@ def setup_tensorflow(
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices("CPU")
             logger.info(
-                f"{len(cpus)}, Physical CPUs and "
-                f"{len(logical_cpus)} Logical CPUs"
+                f"{len(cpus)}, Physical CPUs and " f"{len(logical_cpus)} Logical CPUs"
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -1633,9 +1670,7 @@ def setup_wandb(
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(
-            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
-        )
+        logger.warning(f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}")
         return None
 
     HAS_WANDB = False
@@ -1645,16 +1680,10 @@ def setup_wandb(
         if wandb.api.api_key is not None:
             HAS_WANDB = True
     except (ImportError, ModuleNotFoundError) as e:
-        logger.warning(
-            "Unable to import `wandb`. Install with `pip install wandb`"
-        )
+        logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
         raise e
 
-    outdir = (
-        Path(os.getcwd()).as_posix()
-        if outdir is None
-        else Path(outdir).as_posix()
-    )
+    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
     rank = get_rank()
     project_name = (
         project_name
@@ -1735,16 +1764,12 @@ def setup_wandb(
     )
     if config is not None:
         if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(
-                config, resolve=True, throw_on_missing=True
-            )
+            cfg = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
             run.config.update({"config": cfg})
         else:
             run.config.update({"config": config})
     env = {
-        k: v
-        for k, v in dict(os.environ).items()
-        if not k.startswith("_ModuleTable")
+        k: v for k, v in dict(os.environ).items() if not k.startswith("_ModuleTable")
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
@@ -1767,8 +1792,8 @@ def run_bash_command(cmd: str) -> Any:
     Returns:
         Any: The output of the command.
     """
-    import subprocess
     import shlex
+    import subprocess
 
     process = subprocess.Popen(
         shlex.split(cmd, posix=True),
@@ -1816,8 +1841,7 @@ def write_localhost_to_hostfile(hostfile: PathLike):
     """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
         logger.debug(
-            f"Writing {(hostname := get_hostname())} "
-            f"to {Path(hostfile).as_posix()}"
+            f"Writing {(hostname := get_hostname())} " f"to {Path(hostfile).as_posix()}"
         )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
@@ -1896,15 +1920,16 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             ),
         )
         if (
-            hfp is None or not Path(hfp).is_file()
+            hfp is None
+            or not Path(hfp).is_file()
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
                 # hfp = Path(get_pbs_nodefile_from_qstat())
                 nodefile = ezpz.pbs.get_pbs_nodefile()
-                assert nodefile is not None, (
-                    "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
-                )
+                assert (
+                    nodefile is not None
+                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
                 hfp = Path(nodefile)
             else:
                 # create makeshift hostfile containing 'localhost'

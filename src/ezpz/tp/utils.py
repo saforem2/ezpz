@@ -3,7 +3,7 @@ import torch
 
 def ensure_divisibility(numerator: int, denominator: int) -> None:
     """Ensure that numerator is divisible by the denominator."""
-    assert numerator % denominator == 0, '{} is not divisible by {}'.format(
+    assert numerator % denominator == 0, "{} is not divisible by {}".format(
         numerator, denominator
     )
 

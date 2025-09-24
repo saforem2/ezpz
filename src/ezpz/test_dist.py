@@ -11,24 +11,22 @@ test_dist.py
 """
 
 import argparse
-from dataclasses import asdict, dataclass, field
 import json
 import os
-from pathlib import Path
 import time
-from typing import Optional
 import warnings
-
-import ezpz
-from ezpz.profile import (
-    get_profiling_context,
-)
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Optional
 
 import torch
-# import torch.distributed
-
 from torch.nn.parallel import DistributedDataParallel as DDP
 from xarray import Dataset
+
+import ezpz
+from ezpz.profile import get_profiling_context
+
+# import torch.distributed
 
 
 START_TIME = time.perf_counter()  # start time
@@ -52,6 +50,7 @@ logger = ezpz.get_logger(__name__)
 
 @dataclass
 class TrainConfig:
+    """Runtime configuration for the ``ezpz.test_dist`` distributed smoke test."""
     warmup: int
     tp: int
     pp: int
@@ -80,9 +79,8 @@ class TrainConfig:
     layer_sizes: list = field(default_factory=lambda: [1024, 512, 256, 128])
 
     def __post_init__(self):
-        self._created_at = (
-            ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-        )
+        """Initialise output paths and configure profiling context managers."""
+        self._created_at = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
         self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
         self.outdir = Path(os.getcwd()).joinpath(
             "outputs", "ezpz.test_dist", f"{self._created_at}"
@@ -107,6 +105,7 @@ class TrainConfig:
         logger.info(f"Outputs will be saved to {self.outdir}")
 
     def get_torch_dtype(self) -> torch.dtype:
+        """Return the torch dtype requested by this configuration."""
         if self.dtype is None:
             return torch.get_default_dtype()
         if self.dtype in {
@@ -126,34 +125,31 @@ class TrainConfig:
 
 @dataclass
 class Trainer:
+    """Co-ordinate training loops, logging, and profiling for the test model."""
     config: TrainConfig
     model: torch.nn.Module
     optimizer: torch.optim.Optimizer
     history: ezpz.History = field(default_factory=ezpz.History)
     train_iter: int = 0
     rank: int = ezpz.get_rank()
-    device_type: str = ezpz.get_torch_device_type()
+    # device_type: str = ezpz.get_torch_device_type()
+    device_type = os.environ.get("TORCH_DEVICE", ezpz.get_torch_device())
     world_size = ezpz.get_world_size()
     local_rank = ezpz.get_local_rank()
     device_id = f"{device_type}:{local_rank}"
 
     def __post_init__(self):
+        """Move the model to the target device and register logging hooks."""
         self.device_id = f"{self.device_type}:{self.local_rank}"
         self.dtype = self.config.get_torch_dtype()
         self.model.to(self.device_id)
         self.model.to(self.dtype)
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
-            ezpz.dist.barrier(
-                group=ezpz.tp.get_tensor_parallel_group()
-            )
+            ezpz.dist.barrier(group=ezpz.tp.get_tensor_parallel_group())
             ezpz.dist.barrier(group=ezpz.tp.get_data_parallel_group())
-            ezpz.dist.barrier(
-                group=ezpz.tp.get_pipeline_parallel_group()
-            )
-            ezpz.dist.barrier(
-                group=ezpz.tp.get_context_parallel_group()
-            )
+            ezpz.dist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+            ezpz.dist.barrier(group=ezpz.tp.get_context_parallel_group())
 
         if self.rank == 0 and not WANDB_DISABLED:
             import wandb
@@ -177,6 +173,7 @@ class Trainer:
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _forward_step(self) -> dict:
+        """Execute a forward pass returning loss and timing metrics."""
         t0 = time.perf_counter()
         x = torch.rand(
             *(self.config.batch_size, self.config.input_size),
@@ -188,6 +185,7 @@ class Trainer:
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def _backward_step(self, loss: torch.Tensor) -> float:
+        """Perform the backwards/optimiser step and return elapsed seconds."""
         t0 = time.perf_counter()
         if self.config.backend == "deepspeed":
             self.model.backward(loss)  # type:ignore
@@ -199,6 +197,7 @@ class Trainer:
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def train_step(self) -> dict:
+        """Run one optimiser step, emitting periodic logs/metrics."""
         self.train_iter += 1
         metrics = self._forward_step()
         metrics["dtb"] = self._backward_step(metrics["loss"])
@@ -215,11 +214,10 @@ class Trainer:
         return metrics
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def finalize(
-        self, outdir: Optional[str | Path | os.PathLike] = None
-    ) -> Dataset:
-        import matplotlib.pyplot as plt
+    def finalize(self, outdir: Optional[str | Path | os.PathLike] = None) -> Dataset:
+        """Flush profilers and return the aggregated training dataset."""
         import ambivalent
+        import matplotlib.pyplot as plt
 
         plt.style.use(ambivalent.STYLES["ambivalent"])
         outdir = Path(outdir) if outdir is not None else self.config.outdir
@@ -235,9 +233,8 @@ class Trainer:
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def train(
-        self, profiler: Optional[torch.profiler.profile] = None
-    ) -> Dataset:
+    def train(self, profiler: Optional[torch.profiler.profile] = None) -> Dataset:
+        """Loop over all training iterations and return the final dataset."""
         for step in range(self.config.train_iters):
             if step == self.config.warmup:
                 logger.info(f"Warmup complete at step {step}")
@@ -256,6 +253,7 @@ class Trainer:
 def train(
     config: TrainConfig, profiler: Optional[torch.profiler.profile] = None
 ) -> Trainer:
+    """Instantiate the model/optimiser and run the training loop."""
     from ezpz.models.minimal import SequentialLinearNet
     from ezpz.utils import model_summary
 
@@ -267,15 +265,11 @@ def train(
         output_dim=config.output_size,
         sizes=config.layer_sizes,
     )
-    logger.info(
-        f"Model size: {sum(p.numel() for p in model.parameters())} parameters"
-    )
+    logger.info(f"Model size: {sum(p.numel() for p in model.parameters())} parameters")
     try:
         logger.info(f"\n{model_summary(model)}")
     except Exception as e:
-        logger.warning(
-            f"Failed to summarize model: {e}, using default summary"
-        )
+        logger.warning(f"Failed to summarize model: {e}, using default summary")
         logger.info(model)
     t1m = time.perf_counter()
     dt_model = t1m - t0m
@@ -286,15 +280,11 @@ def train(
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
     trainer = Trainer(config=config, model=model, optimizer=optimizer)
     t1tr = time.perf_counter()
-    logger.info(
-        f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer"
-    )
+    logger.info(f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer")
     jstr = json.dumps(asdict(config), indent=2, sort_keys=True)
     logger.info(f"config:\n{jstr}")
     t1s = time.perf_counter()
-    logger.info(
-        f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here."
-    )
+    logger.info(f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here.")
 
     # -------------------------------------------
     # Main training loop
@@ -327,9 +317,8 @@ def train(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Training configuration parameters"
-    )
+    """Parse CLI arguments for ``ezpz.test_dist``."""
+    parser = argparse.ArgumentParser(description="Training configuration parameters")
     parser.add_argument(
         "--warmup",
         type=int,
@@ -521,6 +510,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
+    """Translate CLI arguments into a :class:`TrainConfig`."""
     config = TrainConfig(
         acc_events=args.acc_events,
         batch_size=args.batch_size,
@@ -554,6 +544,7 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Return the squared error loss used by the smoke test."""
     return (y - x).pow(2).sum()
 
 
@@ -561,20 +552,36 @@ def calc_loss(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 def build_model_and_optimizer(
     model: torch.nn.Module, backend: str = "DDP"
 ) -> ModelOptimizerPair:
+    """Prepare the model and optimiser for the requested backend."""
     if backend is not None:
         assert backend.lower() in {"ddp", "deepspeed", "ds"}
-    device_type = ezpz.get_torch_device()
-    # device_id = f"{device_type}:{ezpz.get_local_rank()}"
+    device_override = os.environ.get("TORCH_DEVICE")
+    device_type = device_override or ezpz.get_torch_device()
+    if isinstance(device_type, str) and device_type.startswith("mps"):
+        logger.warning(
+            "MPS does not support torch.distributed collectives; falling back to CPU"
+        )
+        device_type = "cpu"
     world_size = ezpz.get_world_size()
     local_rank = ezpz.get_local_rank()
+    if isinstance(device_type, str) and device_type in {"cuda", "xpu"}:
+        device_type = f"{device_type}:{local_rank}"
     model.to(device_type)
-    model.to(local_rank)
+    if isinstance(device_type, str) and device_type.startswith("cuda"):
+        model.to(local_rank)
     logger.info(f"model=\n{model}")
     optimizer = torch.optim.Adam(model.parameters())
     if backend.lower() == "ddp":
         if world_size > 1:
+            model.to(device_type)
             # model = DDP(model)
-            model = DDP(model, device_ids=[local_rank])
+            try:
+                if isinstance(device_type, str) and device_type.startswith("cuda"):
+                    model = DDP(model, device_ids=[local_rank])
+                else:
+                    model = DDP(model)
+            except Exception:
+                model = DDP(model)
 
     elif backend.lower() in ("ds", "deepspeed"):
         parser = argparse.ArgumentParser(
@@ -622,6 +629,7 @@ def build_model_and_optimizer(
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> Trainer:
+    """Entry point used by ``python -m ezpz.test_dist``."""
     t0 = time.perf_counter()
     args = parse_args()
     config = get_config_from_args(args)

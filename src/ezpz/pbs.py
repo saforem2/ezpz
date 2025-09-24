@@ -9,16 +9,13 @@ for more information.
 """
 
 import os
+import socket
 from getpass import getuser
 from pathlib import Path
 from typing import Optional, Union
 
 import ezpz
-
-import socket
-
 from ezpz.dist import get_hostfile_with_fallback
-
 
 logger = ezpz.get_logger(__name__)
 
@@ -31,9 +28,7 @@ def get_pbs_running_jobs_for_user():
         print("Error importing sh.qstat:", e)
         raise e
 
-    jobarr = [
-        i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i
-    ]
+    jobarr = [i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i]
     jobs = {}
     for row in jobarr:
         jstr = [i for i in row.split(" ") if len(i) > 0]
@@ -48,9 +43,9 @@ def get_pbs_nodelist_from_jobid(jobid: int | str) -> list[str]:
     """Get the nodelist for a given jobid."""
     assert jobid is not None, "No jobid provided and no active job found."
     jobs = get_pbs_running_jobs_for_user()
-    assert str(jobid) in jobs, (
-        f"Job ID {jobid} not found in running jobs for user {getuser()}"
-    )
+    assert (
+        str(jobid) in jobs
+    ), f"Job ID {jobid} not found in running jobs for user {getuser()}"
     return jobs[str(jobid)]
 
 
@@ -86,13 +81,11 @@ def get_pbs_nodefile_from_jobid(jobid: int | str) -> str:
 
     pbs_parent = Path("/var/spool/pbs/aux")
     pfiles = [
-        Path(pbs_parent).joinpath(f)
-        for f in os.listdir(pbs_parent)
-        if str(jobid) in f
+        Path(pbs_parent).joinpath(f) for f in os.listdir(pbs_parent) if str(jobid) in f
     ]
-    assert len(pfiles) == 1, (
-        f"Found {len(pfiles)} files matching {jobid} in {pbs_parent}"
-    )
+    assert (
+        len(pfiles) == 1
+    ), f"Found {len(pfiles)} files matching {jobid} in {pbs_parent}"
     pbs_nodefile = pfiles[0]
     assert pbs_nodefile.is_file(), f"Nodefile {pbs_nodefile} does not exist."
     return pbs_nodefile.absolute().resolve().as_posix()
@@ -139,9 +132,9 @@ def get_pbs_launch_cmd(
     hostfile = hostfile or hostfile_fallback
     nhosts_max = ezpz.get_num_nodes(hostfile=Path(hostfile_fallback))
     if nhosts is not None:
-        assert 0 < nhosts <= nhosts_max, (
-            f"`nhosts` must be > 0 and <= {nhosts_max}: {nhosts=}"
-        )
+        assert (
+            0 < nhosts <= nhosts_max
+        ), f"`nhosts` must be > 0 and <= {nhosts_max}: {nhosts=}"
     else:
         nhosts = nhosts_max
 
@@ -169,9 +162,9 @@ def get_pbs_launch_cmd(
     else:
         if nhosts is not None and ngpu_per_host is None:
             # [7.] [ ✅, ✅, ❌ ]
-            assert ngpus % nhosts == 0, (
-                f"`ngpus` must be divisible by `nhosts`: {ngpus=} vs. {nhosts=}"
-            )
+            assert (
+                ngpus % nhosts == 0
+            ), f"`ngpus` must be divisible by `nhosts`: {ngpus=} vs. {nhosts=}"
             ngpu_per_host = ngpus // nhosts
         else:
             # [8.] [ ✅, ✅, ✅ ]
@@ -181,9 +174,7 @@ def get_pbs_launch_cmd(
                 f"{ngpus=} vs. {nhosts=} * {ngpu_per_host=}"
             )
 
-    assert 0 < ngpus <= ngpus_max, (
-        f"`ngpus` must be > 0 and <= {ngpus_max}: {ngpus=}"
-    )
+    assert 0 < ngpus <= ngpus_max, f"`ngpus` must be > 0 and <= {ngpus_max}: {ngpus=}"
     emoji = "✅" if ngpus == ngpus_max else "⚠️"
     logger.info(
         f"{emoji} Using [{ngpus:>}/{ngpus_max:<}] GPUs [{nhosts} hosts] x [{ngpu_per_host} GPU/host]"
@@ -221,9 +212,7 @@ def get_pbs_launch_cmd(
                     f"--cpu-bind=verbose,{cpu_bind.replace('--cpu-bind=', '')}"
                 )
             else:
-                cmd_list.append(
-                    f"--cpu-bind={cpu_bind.replace('--cpu-bind=', '')}"
-                )
+                cmd_list.append(f"--cpu-bind={cpu_bind.replace('--cpu-bind=', '')}")
         else:
             if machine_name.lower() in {"aurora", "sunspot"}:
                 CPU_BIND_INTEL_XPU: str = "list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
@@ -289,9 +278,7 @@ def get_pbs_launch_info(
     return {
         "HOSTFILE": hfp.as_posix(),
         "HOSTS": (
-            f"[{', '.join(hosts)}]"
-            if nhosts < 1000
-            else "[truncated (>1000 nodes)]"
+            f"[{', '.join(hosts)}]" if nhosts < 1000 else "[truncated (>1000 nodes)]"
         ),
         "NHOSTS": f"{nhosts}",
         "NGPU_PER_HOST": f"{ngpu_per_host}",
@@ -316,13 +303,13 @@ def get_pbs_env(
     assert get_scheduler() == "PBS"
     pbsenv = {k: v for k, v in dict(os.environ).items() if "PBS" in k}
     if hostfile is None:
+        hostfile = os.environ.get("PBS_NODEFILE")
+    if hostfile is None:
         hostfile = get_pbs_nodefile(jobid=jobid)
 
     assert hostfile is not None
     if (hfp := Path(hostfile)).is_file():
-        pbsenv |= {
-            f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()
-        }
+        pbsenv |= {f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()}
         pbsenv |= {"LAUNCH_CMD": get_pbs_launch_cmd(hostfile=hostfile)}
     os.environ |= pbsenv
     if verbose and ezpz.dist.get_rank() == 0:
