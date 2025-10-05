@@ -24,6 +24,16 @@ from omegaconf import DictConfig, OmegaConf
 import ezpz.tp
 from ezpz.lazy import lazy_import
 
+TORCH_DTYPES_MAP = {
+    'bf16': torch.bfloat16,
+    'bfloat16': torch.bfloat16,
+    'fp16': torch.float16,
+    'float16': torch.float16,
+    'half': torch.float16,
+    'fp32': torch.float32,
+    'float32': torch.float32,
+}
+
 ENABLE_WANDB = False
 try:
     wandb = lazy_import("wandb")
@@ -1072,6 +1082,19 @@ def setup_torch_DDP(
     os.environ["LOCAL_RANK"] = str(local_rank)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    # -- Exit early if already initialized --
+    import torch.distributed
+
+    if torch.distributed.is_initialized():  # type:ignore
+        if int(get_rank()) == 0:
+            logger.info(
+                "torch.distributed was already initialized, skipping..."
+            )
+            return {
+                "world_size": world_size,
+                "rank": rank,
+                "local_rank": local_rank,
+            }
     # get `hostname` ONLY from rank 0
     master_addr = socket.gethostname() if rank == 0 else None
     if (mn := ezpz.get_machine().lower()) in {
@@ -1117,18 +1140,18 @@ def setup_torch_DDP(
                 ]
             )
         )
-    import torch.distributed
-
-    if torch.distributed.is_initialized():  # type:ignore
-        if rank == 0:
-            logger.info("torch.distributed was already initialized, skipping...")
-    else:
-        init_process_group(
-            rank=rank,
-            world_size=world_size,
-            timeout=timeout,
-            backend=backend,
-        )
+    # import torch.distributed
+    #
+    # if torch.distributed.is_initialized():  # type:ignore
+    #     if rank == 0:
+    #         logger.info("torch.distributed was already initialized, skipping...")
+    # else:
+    init_process_group(
+        rank=rank,
+        world_size=world_size,
+        timeout=timeout,
+        backend=backend,
+    )
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
 
