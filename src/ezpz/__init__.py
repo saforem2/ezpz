@@ -13,6 +13,11 @@ from typing import Any, Dict
 
 from .__about__ import __version__  # re-exported symbol
 
+import socket
+if socket.getfqdn().startswith("x3"):
+    from mpi4py import MPI  # noqa
+    import torch  # noqa
+
 # ---------------------------------------------------------------------------
 # Public re-exports
 # ---------------------------------------------------------------------------
