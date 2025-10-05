@@ -15,7 +15,7 @@ import torch
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import datasets, transforms
 
-from ezpz import TORCH_DTYPES_MAP
+from ezpz.dist import TORCH_DTYPES_MAP
 from torch.utils.data import Dataset
 
 
