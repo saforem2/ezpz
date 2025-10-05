@@ -810,3 +810,54 @@ def print_config_tree(
             )
             console.save_text(outfpath.as_posix())
     return tree
+
+
+@dataclass
+class ViTConfig:
+    img_size: int = 224
+    patch_size: int = 16
+    depth: int = 12
+    num_heads: int = 12
+    hidden_dim: int = 768
+    mlp_dim: int = 3072
+    dropout: float = 0.0
+    attention_dropout: float = 0.0
+    num_classes: int = 10
+
+    def __post_init__(self):
+        self.seq_len = (self.img_size // self.patch_size) ** 2  # 196, default
+
+
+@dataclass
+class timmViTConfig:
+    img_size: int = 224
+    batch_size: int = 128
+    num_heads: int = 16
+    head_dim: int = 64
+    depth: int = 24
+    patch_size: int = 16
+    hidden_dim: int = 1024
+    mlp_dim: int = 4096
+    dropout: float = 0.0
+    attention_dropout: float = 0.0
+    num_classes: int = 1000
+
+    def __post_init__(self):
+        self.seq_len = (self.img_size // self.patch_size) ** 2  # 196, default
+
+
+@dataclass
+class TrainArgs:
+    img_size: int
+    batch_size: int
+    num_heads: int
+    head_dim: int
+    depth: int
+    patch_size: int
+    dtype: str
+    compile: bool
+    attn_type: str
+    num_workers: int
+    max_iters: int
+    format: Optional[str] = field(default_factory=str)
+    cuda_sdpa_backend: Optional[str] = field(default_factory=str)
