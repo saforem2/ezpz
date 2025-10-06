@@ -38,7 +38,7 @@ jobs:
 
       - name: Commit version bump and changelog
         run: |
-          if git status --porcelain | grep -qE '^(M|A)'; then
+          if ! git diff --quiet --exit-code; then
             git add CHANGELOG.md src/ezpz/__about__.py
             git commit -m "Release v${{ steps.prepare.outputs.version }}"
             git push origin HEAD:${{ github.event.pull_request.base.ref }}
