@@ -1,0 +1,64 @@
+name: Release on Merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Set up Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Prepare release artifacts
+        id: prepare
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python .github/scripts/prepare_release.py
+
+      - name: Commit version bump and changelog
+        run: |
+          if git status --porcelain | grep -qE '^(M|A)'; then
+            git add CHANGELOG.md src/ezpz/__about__.py
+            git commit -m "Release v${{ steps.prepare.outputs.version }}"
+            git push origin HEAD:${{ github.event.pull_request.base.ref }}
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Create tag
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.prepare.outputs.tag }}" >/dev/null; then
+            echo "Tag ${{ steps.prepare.outputs.tag }} already exists"
+          else
+            git tag ${{ steps.prepare.outputs.tag }}
+            git push origin ${{ steps.prepare.outputs.tag }}
+          fi
+
+      - name: Publish GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.prepare.outputs.tag }}
+          name: ${{ steps.prepare.outputs.tag }}
+          body: ${{ steps.prepare.outputs.release_notes }}
+          allowUpdates: true
