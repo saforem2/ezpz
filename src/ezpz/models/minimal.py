@@ -16,14 +16,13 @@ class SequentialLinearNet(torch.nn.Module):
         layers = [torch.nn.Linear(input_dim, nh), torch.nn.ReLU()]
         if sizes is not None and len(sizes) > 1:
             for idx, size in enumerate(sizes[1:]):
-                layers.extend(
-                    [torch.nn.Linear(sizes[idx], size), torch.nn.ReLU()]
-                )
+                layers.extend([torch.nn.Linear(sizes[idx], size), torch.nn.ReLU()])
             layers.append(torch.nn.Linear(sizes[-1], output_dim))
         self.layers = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layers(x)
+
 
 # class Network(torch.nn.Module):
 #     def __init__(

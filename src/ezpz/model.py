@@ -7,13 +7,13 @@ import logging
 import os
 
 import hydra
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
-
-import torch
-import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
+
 # import torch.distributed as dist
 try:
     import intel_extension_for_pytorch
@@ -21,18 +21,9 @@ try:
 except (ImportError, ModuleNotFoundError):
     pass
 
-from ezpz import (
-    TrainConfig,
-    setup,
-    setup_wandb,
-    timeitlogit,
-    get_rank,
-    get_torch_device,
-    get_torch_backend,
-    get_world_size,
-    get_local_rank,
-    get_gpus_per_node,
-)
+from ezpz import (TrainConfig, get_gpus_per_node, get_local_rank, get_rank,
+                  get_torch_backend, get_torch_device, get_world_size, setup,
+                  setup_wandb, timeitlogit)
 
 try:
     import wandb
@@ -96,11 +87,7 @@ class Model(nn.Module):
 def setup_training(cfg: DictConfig) -> TrainConfig:
     config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
-    rank = setup(
-        framework=config.framework,
-        backend=config.backend,
-        seed=config.seed
-    )
+    rank = setup(framework=config.framework, backend=config.backend, seed=config.seed)
     run = None
     # if rank != 0:
     #     # log.setLevel("CRITICAL")
@@ -115,19 +102,13 @@ def setup_training(cfg: DictConfig) -> TrainConfig:
                 project_name=config.wandb_project_name,
             )
         log.info(f"{config=}")
-        log.info(f'Output dir: {os.getcwd()}')
-    if (
-            wandb is not None
-            and run is not None
-            and run is wandb.run
-            and config.use_wandb
-    ):
+        log.info(f"Output dir: {os.getcwd()}")
+    if wandb is not None and run is not None and run is wandb.run and config.use_wandb:
         assert run is not None
         from rich.emoji import Emoji
         from rich.text import Text
-        log.warning(
-            Text(f'{Emoji("rocket")} [{run.name}]({run.url})')
-        )
+
+        log.warning(Text(f'{Emoji("rocket")} [{run.name}]({run.url})'))
     return config
 
 
@@ -156,11 +137,11 @@ def train(device: str):
 
 
 @timeitlogit(verbose=True)
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
+@hydra.main(version_base=None, config_path="./conf", config_name="config")
 def test_ddp(cfg: DictConfig) -> None:
     torch.xpu.manual_seed(123)
     config = setup_training(cfg)
-    device = f'xpu:{LOCAL_RANK}'
+    device = f"xpu:{LOCAL_RANK}"
     train(device=device)
 
     # os.environ['RANK'] = RANK
@@ -168,5 +149,5 @@ def test_ddp(cfg: DictConfig) -> None:
     # device = f"xpu:{LOCAL_RANK}"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_ddp()

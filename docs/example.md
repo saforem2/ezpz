@@ -270,7 +270,7 @@
 
 [^magic]:
     This will 🪄 _automagically_ source
-    [`ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh), 
+    [`ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh),
     and (`&&`) call `ezpz_setup_env` to setup your
     python environment.
 

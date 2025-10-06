@@ -33,6 +33,55 @@ across _all_ available GPUs.
 
    (will automatically insert `python3` before the second `-m`, if needed)
 
+## ⚙️ Execution Flow
+
+Two primary control paths drive `ezpz-launch`: a scheduler-aware path used when
+running inside PBS/SLURM allocations, and a local fallback that shells out to
+`mpirun` when no scheduler metadata is available.
+
+### Scheduler Detected
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant CLI as ezpz-launch
+    participant Scheduler
+    participant Launch as ezpz.launch.launch
+    participant Nodes as Compute Nodes
+
+    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    CLI->>Scheduler: get_scheduler()
+    Scheduler-->>CLI: "pbs" / "slurm"
+    CLI->>Scheduler: get_active_jobid()
+    Scheduler-->>CLI: job id
+    CLI->>Launch: launch(cmd_to_launch, include_python=False)
+    Launch->>Nodes: run_command(mpi/srun ...)
+    Nodes-->>Launch: return code
+    Launch-->>CLI: status
+    CLI-->>User: exit code (0 on success)
+```
+
+### Local `mpirun` Fallback
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant CLI as ezpz-launch
+    participant Scheduler
+    participant MPI as mpirun
+
+    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    CLI->>Scheduler: get_scheduler()
+    Scheduler-->>CLI: "unknown"
+    CLI->>Scheduler: get_active_jobid()
+    Scheduler-->>CLI: null
+    CLI->>MPI: mpirun -np ${WORLD_SIZE:-2} python3 -m ezpz.test_dist
+    MPI-->>CLI: return code
+    CLI-->>User: exit code
+```
+
 ## 💀 Deprecated
 
 ### 📝 Example

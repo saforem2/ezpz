@@ -194,23 +194,55 @@ markdown_extensions:
       clickable_checkbox: true
 
 nav:
-  - index.md
-  - 🚀 Launch: launch.md
-  - 🤗 HF Trainer: hf-trainer.md
-  - 🧤 Hands-On: slides-2025-05-07.md
-  - 🏖️ Shell Environment: shell-environment.md
+  - Home: index.md
+  - FAQ: faq.md
+  - Guides:
+      - 🚀 Launch: launch.md
+      - 🤗 HF Trainer: hf-trainer.md
+      - 🧤 Hands-On Slides: slides-2025-05-07.md
+      - 🏖️ Shell Environment: shell-environment.md
+      - 🛠️ Development Workflow: development-workflow.md
+      - 🧪 Example Walkthrough: example.md
+      - 🧵 Style Guide: style-guide.md
+      - 📦 Yeet Environment: utils/yeet-env.md
+  - 🧪 Tests:
+      - tests/index.md
+      - Simple Harness: tests/simple-test.md
+      - Comprehensive Harness: tests/comprehensive-test.md
+      - Simple Runner: tests/simple-test-runner.md
+      - Configs: tests/test-configs.md
+      - Configs (Improved): tests/test-configs-improved.md
+      - Dist: tests/test-dist.md
+      - ezpz Package: tests/test-ezpz.md
+      - History: tests/test-history.md
+      - Jobs: tests/test-jobs.md
+      - Launch: tests/test-launch.md
+      - Lazy Imports: tests/test-lazy.md
+      - Logging: tests/test-log.md
+      - Modules Directly: tests/test-modules-directly.md
+      - Property-Based Utils: tests/test-property-based.md
+      - Profile: tests/test-profile.md
+      - Simple ezpz: tests/test-simple-ezpz.md
+      - Tensor Parallel: tests/test-tp.md
+      - Terminal Plotting: tests/test-tplot.md
+      - Utils: tests/test-utils.md
+      - Utils (Improved): tests/test-utils-improved.md
   - 🐍 Python API:
       - Code-Reference/index.md
       - "<code>ezpz.__init__</code>": Code-Reference/init-reference.md
-      - "<code>ezpz.config</code>": Code-Reference/config-reference.md
+      - "<code>ezpz.configs</code>": Code-Reference/config-reference.md
       - "<code>ezpz.dist</code>": Code-Reference/dist-reference.md
+      - "<code>ezpz.jobs</code>": Code-Reference/jobs-reference.md
+      - "<code>ezpz.launch</code>": Code-Reference/launch-reference.md
+      - "<code>ezpz.log</code>": Code-Reference/log-reference.md
       - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
       - "<code>ezpz.hf_trainer</code>": Code-Reference/hf-trainer-reference.md
       - "<code>ezpz.history</code>": Code-Reference/history-reference.md
       - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
+      - "<code>ezpz.test</code>": Code-Reference/test-reference.md
       - "<code>ezpz.tp.__init__</code>": Code-Reference/tp-init-reference.md
       - "<code>ezpz.utils</code>": Code-Reference/utils-reference.md
-  - 📓 Older Notes:
+  - 📓 Notes & References:
       - notes.md
       - 🕸️ Parallelism: parallelism.md
       - 🗓️ PBS: pbs.md

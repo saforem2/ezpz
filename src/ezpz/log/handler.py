@@ -6,23 +6,20 @@ Based on:
 https://github.com/willmcgugan/rich/blob/master/rich/_log_render.py
 """
 
+import re
 from datetime import datetime
+from logging import LogRecord
+from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from pathlib import Path
-from rich.style import Style
-
+from rich.console import ConsoleRenderable
 from rich.logging import RichHandler as OriginalRichHandler
-from rich.text import Text, TextType, Span
+from rich.style import Style
+from rich.text import Span, Text, TextType
 
 # from ezpz.log.config import NO_COLOR
 from ezpz.log.config import use_colored_logs
-from ezpz.log.console import get_console, Console
-from rich.console import ConsoleRenderable
-
-from logging import LogRecord
-
-import re
+from ezpz.log.console import Console, get_console
 
 # Define the regex pattern for ANSI escape codes
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B\[[0-9;]*m")
@@ -104,17 +101,11 @@ class RichHandler(OriginalRichHandler):
         if module is not None:
             parr.append(module)
 
-        if (
-            name is not None
-            and parent is not None
-            and f"{parent}.{module}" != name
-        ):
+        if name is not None and parent is not None and f"{parent}.{module}" != name:
             parr.append(name)
         pstr = "/".join([parr[0], ".".join(parr[1:])])
         level = self.get_level_text(record)
-        time_format = (
-            None if self.formatter is None else self.formatter.datefmt
-        )
+        time_format = None if self.formatter is None else self.formatter.datefmt
         default_time_fmt = "%Y-%m-%d %H:%M:%S,%f"
         # default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
         time_format = time_format if time_format else default_time_fmt
@@ -173,9 +164,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         result = Text()
         if self.show_time:
             log_time = datetime.now() if log_time is None else log_time
-            log_time_display = log_time.strftime(
-                time_format or self.time_format
-            )
+            log_time_display = log_time.strftime(time_format or self.time_format)
             d, t = log_time_display.split(" ")
             result += Text("[", style=self.styles.get("log.brace", ""))
             result += Text(f"{d} ", style=self.styles.get("logging.date", ""))
@@ -197,15 +186,9 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
                 # ltext = Text(f'[{lstr}]', style=style)
             elif isinstance(level, str):
                 lstr = level.rstrip(" ")[0]
-                style = (
-                    f"logging.level.{str(lstr)}"
-                    if self.colorized
-                    else Style.null()
-                )
+                style = f"logging.level.{str(lstr)}" if self.colorized else Style.null()
                 ltext = Text("[", style=self.styles.get("log.brace", ""))
-                ltext = Text(
-                    f"{lstr}", style=style
-                )  # f"logging.level.{str(lstr)}")
+                ltext = Text(f"{lstr}", style=style)  # f"logging.level.{str(lstr)}")
                 ltext.append(Text("]", style=self.styles.get("log.brace", "")))
             result += ltext
         if self.show_path and path:

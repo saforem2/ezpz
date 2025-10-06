@@ -3,16 +3,17 @@ jobs.py
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+
+import json
 import logging
 import os
-import json
-import yaml
 from pathlib import Path
-from typing import Optional, Any, Union
+from typing import Any, Optional, Union
+
+import yaml
+
+from ezpz.configs import get_scheduler
 from ezpz.dist import get_rank
-from ezpz.configs import (
-    get_scheduler,
-)
 
 RANK = get_rank()
 SCHEDULER = get_scheduler()
@@ -27,9 +28,23 @@ else:
 
 
 def check_scheduler(scheduler: Optional[str] = None) -> bool:
+    """Ensure the detected scheduler is supported.
+
+    Parameters
+    ----------
+    scheduler:
+        Optional override.  When ``None`` the value from
+        :func:`ezpz.configs.get_scheduler` is used.
+
+    Returns
+    -------
+    bool
+        ``True`` when the scheduler is recognised, otherwise a ``TypeError`` is
+        raised.
+    """
     from ezpz.configs import SCHEDULERS
 
-    scheduler = SCHEDULER if scheduler is None else scheduler
+    scheduler = get_scheduler() if scheduler is None else scheduler
     if scheduler is not None and len(scheduler) > 0:
         assert scheduler.upper() in SCHEDULERS.values()
     if scheduler.lower() != "pbs":
@@ -38,25 +53,31 @@ def check_scheduler(scheduler: Optional[str] = None) -> bool:
 
 
 def get_jobdir_from_env() -> Path:
+    """Return the directory used to persist job metadata on the login node."""
     from ezpz.pbs import get_pbs_env
 
     pbs_env = get_pbs_env()
+    scheduler = get_scheduler()
+    if scheduler.lower() != "pbs" and os.environ.get("PBS_JOBID"):
+        scheduler = "PBS"
     _ = os.environ.get(
         "HOSTFILE",
         os.environ.get("PBS_NODEFILE", os.environ.get("HOSTFILE", None)),
     )
     jobid = pbs_env["PBS_JOBID"].split(".")[0]
-    jobdir = Path.home() / f"{SCHEDULER}-jobs" / f"{jobid}"
+    jobdir = Path.home() / f"{scheduler}-jobs" / f"{jobid}"
     jobdir.mkdir(exist_ok=True, parents=True)
     return jobdir
 
 
 def get_jobid() -> str:
+    """Return the job identifier (without scheduler suffix)."""
     jobenv = get_jobenv()
     return jobenv["PBS_JOBID"].split(".")[0]
 
 
 def get_jobfile_ext(ext: str) -> Path:
+    """Return the path to the stored job metadata with a given extension."""
     # jobid = get_jobid()
     jobdir = get_jobdir_from_env()
     # return jobdir.joinpath(f'{SCHEDULER}-{jobid}.{ext}')
@@ -64,18 +85,21 @@ def get_jobfile_ext(ext: str) -> Path:
 
 
 def get_jobfile_sh() -> Path:
+    """Return ``jobenv.sh`` creating parent directories as needed."""
     jobfile_sh = get_jobfile_ext("sh")
     jobfile_sh.parent.mkdir(exist_ok=True, parents=True)
     return jobfile_sh
 
 
 def get_jobfile_yaml() -> Path:
+    """Return ``jobenv.yaml`` creating parent directories as needed."""
     jobfile_ext = get_jobfile_ext("yaml")
     jobfile_ext.parent.mkdir(exist_ok=True, parents=True)
     return jobfile_ext
 
 
 def get_jobfile_json() -> Path:
+    """Return ``jobenv.json`` creating parent directories as needed."""
     jobfile_ext = get_jobfile_ext("json")
     jobfile_ext.parent.mkdir(exist_ok=True, parents=True)
     return jobfile_ext
@@ -89,20 +113,29 @@ def get_jobenv(
     verbose_dist_info: Optional[bool] = None,
     verbose_pbs_env: Optional[bool] = None,
 ) -> dict:
-    from ezpz.dist import (
-        # get_pbs_launch_info,
-        get_dist_info,
-        # get_pbs_launch_cmd,
-    )
+    """Collect runtime information describing the active batch job."""
+    from ezpz.dist import \
+        get_dist_info  # get_pbs_launch_info,; get_pbs_launch_cmd,
     from ezpz.pbs import get_pbs_env
-    hostfile = os.environ.get("HOSTFILE") if hostfile is None else hostfile
 
-    jobenv: dict[str, str | int | list[Any]] = get_dist_info(
-        hostfile=hostfile,
-        framework=framework,
-        verbose=verbose_dist_info,
-    )
-    if SCHEDULER.lower() == "pbs":
+    hostfile = os.environ.get("HOSTFILE") if hostfile is None else hostfile
+    if hostfile is None:
+        hostfile = os.environ.get("PBS_NODEFILE")
+
+    jobenv: dict[str, str | int | list[Any]] = {}
+    try:
+        jobenv |= get_dist_info(
+            hostfile=hostfile,
+            framework=framework,
+            verbose=verbose_dist_info,
+        )
+    except Exception as exc:
+        if verbose:
+            log.debug(f"Falling back to minimal jobenv: {exc}")
+    scheduler = get_scheduler()
+    if scheduler.lower() != "pbs" and os.environ.get("PBS_JOBID"):
+        scheduler = "PBS"
+    if scheduler.lower() == "pbs":
         # from ezpz.dist import get_pbs_launch_cmd
         # if (dlaunch := os.environ.get("DIST_LAUNCH", None)) is not None:
         #     dinfo |= {"DIST_LAUNCH": dlaunch}
@@ -125,16 +158,19 @@ def get_jobenv(
         # )
         return jobenv
     # TODO: Add Slurm support to Python API
-    raise ValueError(f"{SCHEDULER} not yet implemented!")
+    raise ValueError(f"{scheduler} not yet implemented!")
 
 
 def get_jobslog_file() -> Path:
-    jobslog_file = Path.home().joinpath(f"{SCHEDULER}-jobs.log")
+    """Return the path to the rolling job history log in ``$HOME``."""
+    scheduler = get_scheduler()
+    jobslog_file = Path.home().joinpath(f"{scheduler}-jobs.log")
     jobslog_file.parent.mkdir(exist_ok=True, parents=True)
     return jobslog_file
 
 
 def add_to_jobslog(hostfile: Optional[Union[str, Path]] = None):
+    """Append the current job directory to the jobs log if it is new."""
     jobenv = get_jobenv(hostfile=hostfile)
     assert len(jobenv.keys()) > 0
     jobdir = get_jobdir_from_env()
@@ -165,6 +201,7 @@ def save_to_dotenv_file(
     hostfile: Optional[Union[str, Path]] = None,
     verbose: Optional[bool] = None,
 ) -> Path:
+    """Write a ``.jobenv`` file capturing scheduler environment variables."""
     jobenv = get_jobenv(hostfile=hostfile) if jobenv is None else jobenv
     denvf1 = Path(get_jobdir_from_env()).joinpath(".jobenv")
     denvf2 = Path(os.getcwd()).joinpath(".jobenv")
@@ -222,6 +259,7 @@ def save_to_dotenv_file(
 
 
 def write_launch_shell_script():
+    """Create ``~/.local/bin/launch.sh`` exporting the launch alias."""
     contents = """
     #!/bin/bash --login\n
     \n
@@ -248,6 +286,7 @@ def write_launch_shell_script():
 def savejobenv_sh(
     jobenv: Optional[dict[str, str]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, str]:
+    """Write ``jobenv.sh`` exporting scheduler environment variables."""
     jobenv = get_jobenv() if jobenv is None else jobenv
     jobfile_sh = get_jobfile_sh()
     jobenv |= {"jobfile_sh": jobfile_sh.as_posix()}
@@ -265,6 +304,7 @@ def savejobenv_sh(
 def savejobenv_json(
     jobenv: Optional[dict[str, str]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, str]:
+    """Write ``jobenv.json`` containing the captured job metadata."""
     jobenv = get_jobenv() if jobenv is None else jobenv
     assert len(jobenv.keys()) > 0
     jobfile_json = get_jobfile_json()
@@ -278,6 +318,7 @@ def savejobenv_json(
 def savejobenv_yaml(
     jobenv: Optional[dict[str, str]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, str]:
+    """Write ``jobenv.yaml`` containing the captured job metadata."""
     jobenv = get_jobenv() if jobenv is None else jobenv
     assert len(jobenv.keys()) > 0
     jobfile_yaml = get_jobfile_yaml()
@@ -344,6 +385,7 @@ def savejobenv(
     verbose_dist_info: Optional[bool] = None,
     verbose_pbs_env: Optional[bool] = None,
 ):
+    """Persist job metadata to disk and optionally echo the environment."""
     jobenv: dict[str, Any] = get_jobenv(
         verbose=verbose_get_jobenv,
         hostfile=hostfile,
@@ -412,6 +454,7 @@ def savejobenv(
 
 
 def get_jobdirs_from_jobslog() -> list[str]:
+    """Return all previously recorded job directories from the jobs log."""
     jobslog_file = get_jobslog_file()
     jobdirs: list[str] = []
     if jobslog_file.is_file():
@@ -421,6 +464,7 @@ def get_jobdirs_from_jobslog() -> list[str]:
 
 
 def get_jobdir_from_jobslog(idx: Optional[int] = -1) -> str:  # noqa  type:ignore
+    """Return the most recent job directory (or the ``idx`` entry)."""
     # return Path(jobdirs[0] if len(jobdirs) == 1 else jobdirs[-idx]
     # jobdirs = get_jobdirs_from_jobslog()
     # if len(jobdirs) > 0:
@@ -435,6 +479,7 @@ def loadjobenv_from_yaml(
     jobdir: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
     idx: Optional[int] = -1,
 ) -> dict[str, str]:
+    """Load a job environment dictionary from YAML stored in ``jobdir``."""
     jobdir = Path(get_jobdir_from_jobslog(idx) if jobdir is None else jobdir)
     assert jobdir.is_dir()
     if len((jobenv_files_yaml := list(jobdir.rglob("*.yaml")))) == 0:
@@ -446,6 +491,7 @@ def loadjobenv_from_yaml(
 
 
 def loadjobenv(jobdir: Optional[str | Path] = None) -> dict[str, str]:
+    """Load job environment metadata from the cache under ``jobdir``."""
     from ezpz.dist import get_dist_info
     from ezpz.pbs import get_pbs_launch_info
 
@@ -483,6 +529,7 @@ def main(
     hostfile: Optional[str] = None,
     # max_hosts_to_print: Optional[int] = None,
 ):
+    """Entry point that captures the current job environment and saves it."""
     # scheduler = get_scheduler()
     # from ezpz.dist import get_dist_info
     # dinfo = get_dist_info(
@@ -534,8 +581,8 @@ def main(
 if __name__ == "__main__":
     # import sys
     # import rich
-    import json
     import argparse
+    import json
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

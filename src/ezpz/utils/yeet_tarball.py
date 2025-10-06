@@ -5,12 +5,12 @@ ezpz/utils/yeet_tarball.py
 Utility to transfer and extract a tarball across distributed nodes using ezpz.
 """
 
+import argparse
 import os
 import time
-import ezpz
-import argparse
-
 from pathlib import Path
+
+import ezpz
 
 logger = ezpz.get_logger(__name__)
 
@@ -19,9 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--src", type=str)
     parser.add_argument("--dst", type=str, required=False)
-    parser.add_argument(
-        "--d", default=True, action="store_true", help="decompress"
-    )
+    parser.add_argument("--d", default=True, action="store_true", help="decompress")
     parser.add_argument("--flags", type=str, default="xf")
     parser.add_argument("--chunk_size", type=int, default=1024 * 1024 * 128)
     parser.add_argument(
@@ -94,9 +92,7 @@ def transfer(
         f.write(data)
     if ezpz.get_rank() == 0:
         logger.info(f"Broadcast took {end - start} seconds")
-        logger.info(
-            f"Writing to the disk {dst} took {time.perf_counter() - end}"
-        )
+        logger.info(f"Writing to the disk {dst} took {time.perf_counter() - end}")
     start = time.perf_counter()
     dirname = os.path.dirname(dst)
     assert os.path.isfile(dst)
@@ -108,24 +104,18 @@ def transfer(
     logger.info("==================\n")
 
 
-def _create_tarball_if_needed(
-    src: str | os.PathLike, overwrite: bool = False
-) -> Path:
+def _create_tarball_if_needed(src: str | os.PathLike, overwrite: bool = False) -> Path:
     # Create a tarball
     # src_fp = src_fp.parent / f"{src_fp.name}.tar.gz"
     src = Path(src).absolute().resolve()
     tarball_name = f"{src.name}.tar.gz"
     tarball_fp = Path(tarball_name).absolute().resolve()
     # tarball_fp = fp.parent / tarball_name
-    logger.warning(
-        f"{src} is a directory! creating a tarball at {src.as_posix()}"
-    )
+    logger.warning(f"{src} is a directory! creating a tarball at {src.as_posix()}")
     if tarball_fp.exists():
         logger.info(f"Tarball {tarball_fp} already exists")
         if overwrite and ezpz.get_rank() == 0:
-            fp_bak = src.with_suffix(
-                src.suffix + f"{ezpz.get_timestamp()}.bak"
-            )
+            fp_bak = src.with_suffix(src.suffix + f"{ezpz.get_timestamp()}.bak")
             logger.info(f"Backing up existing tarball to {fp_bak}")
             os.rename(src, fp_bak)
         else:
