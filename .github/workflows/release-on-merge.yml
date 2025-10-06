@@ -56,7 +56,7 @@ jobs:
           fi
 
       - name: Publish GitHub release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1
         with:
           tag: ${{ steps.prepare.outputs.tag }}
           name: ${{ steps.prepare.outputs.tag }}
