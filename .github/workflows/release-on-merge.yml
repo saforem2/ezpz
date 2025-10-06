@@ -28,6 +28,7 @@ jobs:
     env:
       TARGET_REF: ${{ (github.event_name == 'pull_request' && github.event.pull_request.base.ref) || github.ref_name }}
       BUMP_SELECTION: ${{ (github.event_name == 'workflow_dispatch' && inputs.bump_type) || 'auto' }}
+      PUSH_TOKEN: ${{ (secrets.RELEASE_PAT != '' && secrets.RELEASE_PAT) || github.token }}
 
     steps:
       - name: Checkout repository
@@ -36,11 +37,26 @@ jobs:
           ref: ${{ env.TARGET_REF }}
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: .github/scripts/requirements.txt
+
       - name: Fetch tags
         run: git fetch --tags --force
 
       - name: Install release tooling
-        run: python -m pip install --upgrade filelock gitpython semver
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r .github/scripts/requirements.txt
+
+      - name: Configure authenticated git remote
+        env:
+          PUSH_TOKEN: ${{ env.PUSH_TOKEN }}
+        run: |
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}"
 
       - name: Set up Git user
         run: |
@@ -59,6 +75,11 @@ jobs:
         run: |
           set -euo pipefail
           if ! git diff --quiet --exit-code; then
+            git fetch origin "${{ env.TARGET_REF }}"
+            if ! git rebase "origin/${{ env.TARGET_REF }}"; then
+              echo "ERROR: Rebase failed. Please resolve conflicts manually."
+              exit 1
+            fi
             git add CHANGELOG.md src/ezpz/__about__.py
             tag="${{ steps.prepare.outputs.tag }}"
             if ! git commit -m "Release ${tag}"; then
@@ -73,14 +94,38 @@ jobs:
             echo "No changes to commit"
           fi
 
-      - name: Create tag
+      - name: Create tag with retry
+        env:
+          PUSH_TOKEN: ${{ env.PUSH_TOKEN }}
         run: |
-          if git rev-parse -q --verify "refs/tags/${{ steps.prepare.outputs.tag }}" >/dev/null; then
-            echo "Tag ${{ steps.prepare.outputs.tag }} already exists"
-          else
-            git tag ${{ steps.prepare.outputs.tag }}
-            git push origin ${{ steps.prepare.outputs.tag }}
-          fi
+          set -euo pipefail
+          MAX_RETRIES=5
+          RETRY_DELAY=5
+          TAG="${{ steps.prepare.outputs.tag }}"
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              echo "Tag ${TAG} already exists"
+              exit 0
+            fi
+            if git tag "${TAG}"; then
+              if git push origin "${TAG}"; then
+                echo "Tag ${TAG} created and pushed successfully"
+                exit 0
+              else
+                echo "Failed to push tag ${TAG} (attempt ${attempt}/${MAX_RETRIES})"
+                git tag -d "${TAG}" || true
+              fi
+            else
+              echo "Failed to create tag ${TAG} (attempt ${attempt}/${MAX_RETRIES})"
+            fi
+            if [ "${attempt}" -lt "${MAX_RETRIES}" ]; then
+              echo "Retrying in ${RETRY_DELAY} seconds..."
+              sleep "${RETRY_DELAY}"
+            else
+              echo "Max retries reached. Could not create/push tag ${TAG}."
+              exit 1
+            fi
+          done
 
       - name: Publish GitHub release
         uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1

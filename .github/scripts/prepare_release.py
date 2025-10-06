@@ -103,7 +103,7 @@ def _collect_commits(since_tag: str | None) -> list[tuple[str, str]]:
     except GitCommandError:
         return []
 
-    return [(commit.hexsha, commit.message.splitlines()[0]) for commit in commits]
+    return [(commit.hexsha, commit.message.rstrip()) for commit in commits]
 
 
 _ALLOWED_BUMPS = {"major", "minor", "patch"}
@@ -114,7 +114,7 @@ def _infer_bump(commits: Iterable[tuple[str, str]], override: str | None = None)
     bump = (override or bump_env).lower()
     if bump in _ALLOWED_BUMPS:
         return bump
-    if bump_env and bump not in _ALLOWED_BUMPS:
+    if bump_env:
         print(
             f"Warning: Environment variable BUMP_TYPE='{bump_env}' is not recognized. "
             "Falling back to auto-infer bump type.",
@@ -123,10 +123,12 @@ def _infer_bump(commits: Iterable[tuple[str, str]], override: str | None = None)
 
     inferred = "patch"
     for _sha, message in commits:
-        lower_msg = message.lower()
-        if "breaking change" in lower_msg:
-            return "major"
-        match = _CONVENTIONAL_RE.match(message)
+        lines = message.splitlines()
+        for line in lines:
+            if "breaking change" in line.lower():
+                return "major"
+        first_line = lines[0] if lines else ""
+        match = _CONVENTIONAL_RE.match(first_line)
         if match and match.group("breaking"):
             return "major"
         if match and match.group("type") == "feat" and inferred != "major":
@@ -140,6 +142,7 @@ def _calculate_version_update(bump: str) -> tuple[str, str, str, str]:
     if not match:
         raise ReleaseError("Unable to locate __version__ assignment in __about__.py")
 
+    prefix = match.group("prefix") or ""
     current_version = match.group("version")
     try:
         parsed = semver.VersionInfo.parse(current_version)
@@ -161,11 +164,12 @@ def _calculate_version_update(bump: str) -> tuple[str, str, str, str]:
 
     new_version_info = bump_map[bump]()
     plain_version = str(new_version_info)
-    version_with_prefix = f"v{plain_version}"
+    version_with_prefix = f"{prefix}{plain_version}"
+    tag = f"{prefix}{plain_version}"
     new_literal = f'__version__ = "{version_with_prefix}"'
     updated = _VERSION_RE.sub(new_literal, text, count=1)
 
-    return plain_version, version_with_prefix, version_with_prefix, updated
+    return plain_version, version_with_prefix, tag, updated
 
 
 def _build_release_plan(override: str | None) -> ReleasePlan:
@@ -206,7 +210,7 @@ def _format_release_notes(commits: list[tuple[str, str]], tag: str) -> str:
     ]
     if commits:
         lines.extend(
-            f"- {message} ([`{sha[:7]}`](https://github.com/{REPO}/commit/{sha}))"
+            f"- {(message.splitlines() or [''])[0]} ([`{sha[:7]}`](https://github.com/{REPO}/commit/{sha}))"
             for sha, message in commits
         )
     else:
