@@ -35,7 +35,7 @@ jobs:
         run: git fetch --tags --force
 
       - name: Install release tooling
-        run: python -m pip install --upgrade filelock gitpython jinja2 semver
+        run: python -m pip install --upgrade filelock gitpython semver
 
       - name: Set up Git user
         run: |

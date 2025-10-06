@@ -14,7 +14,6 @@ import semver
 from filelock import FileLock, Timeout
 from git import GitCommandError, Repo
 from git.exc import InvalidGitRepositoryError
-from jinja2 import Template
 
 
 class ReleaseError(RuntimeError):
@@ -31,15 +30,6 @@ _VERSION_RE = re.compile(
     r'__version__\s*=\s*"(?P<prefix>v?)(?P<version>\d+\.\d+\.\d+)"'
 )
 _CONVENTIONAL_RE = re.compile(r"^(?P<type>\w+)(?P<breaking>!?)(?:\([^)]+\))?:")
-_RELEASE_TEMPLATE = Template(
-    """#### [{{ tag }}](https://github.com/{{ repo }}/releases/tag/{{ tag }}) - {{ date }}
-
-{% if commits %}{% for sha, message in commits %}- {{ message }} ([`{{ sha[:7] }}`](https://github.com/{{ repo }}/commit/{{ sha }}))
-{% endfor %}{% else %}- No changes recorded
-{% endif %}
-"""
-)
-
 _REPOSITORY: Repo | None = None
 
 
@@ -145,7 +135,19 @@ def _format_release_notes(commits: list[tuple[str, str]], tag: str) -> str:
         raise ReleaseError("GITHUB_REPOSITORY environment variable is required")
 
     date = _dt.datetime.now(_dt.timezone.utc).date().isoformat()
-    return _RELEASE_TEMPLATE.render(repo=REPO, tag=tag, date=date, commits=commits)
+    lines = [
+        f"#### [{tag}](https://github.com/{REPO}/releases/tag/{tag}) - {date}",
+        "",
+    ]
+    if commits:
+        for sha, message in commits:
+            lines.append(
+                f"- {message} ([`{sha[:7]}`](https://github.com/{REPO}/commit/{sha}))"
+            )
+    else:
+        lines.append("- No changes recorded")
+
+    return "\n".join(lines) + "\n"
 
 
 def _update_changelog(entry: str) -> None:
