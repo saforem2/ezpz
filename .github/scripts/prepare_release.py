@@ -7,6 +7,7 @@ import datetime as _dt
 import os
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -30,7 +31,19 @@ _VERSION_RE = re.compile(
     r'__version__\s*=\s*"(?P<prefix>v?)(?P<version>\d+\.\d+\.\d+)"'
 )
 _CONVENTIONAL_RE = re.compile(r"^(?P<type>\w+)(?P<breaking>!?)(?:\([^)]+\))?:")
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _REPOSITORY: Repo | None = None
+
+
+@dataclass
+class ReleasePlan:
+    bump_type: str
+    version: str
+    plain_version: str
+    tag: str
+    release_notes: str
+    commits: list[tuple[str, str]]
+    version_file_contents: str
 
 
 def _parse_args() -> argparse.Namespace:
@@ -40,6 +53,11 @@ def _parse_args() -> argparse.Namespace:
         choices=["auto", "major", "minor", "patch"],
         default=None,
         help="Semantic version bump to apply. Defaults to env BUMP_TYPE or auto-infer.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the release without modifying files or writing GitHub outputs.",
     )
     return parser.parse_args()
 
@@ -106,33 +124,67 @@ def _infer_bump(commits: Iterable[tuple[str, str]], override: str | None = None)
     return inferred
 
 
-def _bump_version_file(bump: str) -> tuple[str, str]:
+def _calculate_version_update(bump: str) -> tuple[str, str, str, str]:
     text = VERSION_FILE.read_text(encoding="utf-8")
     match = _VERSION_RE.search(text)
     if not match:
         raise ReleaseError("Unable to locate __version__ assignment in __about__.py")
 
-    prefix = match.group("prefix") or ""
     current_version = match.group("version")
-    parsed = semver.VersionInfo.parse(current_version)
+    try:
+        parsed = semver.VersionInfo.parse(current_version)
+    except ValueError as exc:
+        raise ReleaseError(
+            f"Invalid version string '{current_version}' in __about__.py"
+        ) from exc
+
     bump_map = {
         "major": parsed.bump_major,
         "minor": parsed.bump_minor,
         "patch": parsed.bump_patch,
     }
-    new_version = str(bump_map[bump]())
+    if bump not in bump_map:
+        raise ReleaseError(f"Unsupported bump type '{bump}'")
 
-    new_literal = f'__version__ = "{prefix}{new_version}"'
+    new_version_info = bump_map[bump]()
+    plain_version = str(new_version_info)
+    version_with_prefix = f"v{plain_version}"
+    new_literal = f'__version__ = "{version_with_prefix}"'
     updated = _VERSION_RE.sub(new_literal, text, count=1)
-    VERSION_FILE.write_text(updated, encoding="utf-8")
 
-    tag = f"{prefix}{new_version}" if prefix else f"v{new_version}"
-    return new_version, tag
+    return plain_version, version_with_prefix, version_with_prefix, updated
+
+
+def _build_release_plan(override: str | None) -> ReleasePlan:
+    last_tag = _get_last_tag()
+    commits = _collect_commits(last_tag)
+    bump_type = _infer_bump(commits, override)
+    plain_version, version_with_prefix, tag, updated_text = _calculate_version_update(
+        bump_type
+    )
+    release_notes = _format_release_notes(commits, tag)
+    return ReleasePlan(
+        bump_type=bump_type,
+        version=version_with_prefix,
+        plain_version=plain_version,
+        tag=tag,
+        release_notes=release_notes,
+        commits=commits,
+        version_file_contents=updated_text,
+    )
+
+
+def _validate_github_repository(repo: str) -> None:
+    if not isinstance(repo, str) or not _REPO_RE.match(repo):
+        raise ReleaseError(
+            f"GITHUB_REPOSITORY must be in the format 'owner/repo', got: {repo!r}"
+        )
 
 
 def _format_release_notes(commits: list[tuple[str, str]], tag: str) -> str:
     if not REPO:
         raise ReleaseError("GITHUB_REPOSITORY environment variable is required")
+    _validate_github_repository(REPO)
 
     date = _dt.datetime.now(_dt.timezone.utc).date().isoformat()
     lines = [
@@ -140,10 +192,10 @@ def _format_release_notes(commits: list[tuple[str, str]], tag: str) -> str:
         "",
     ]
     if commits:
-        for sha, message in commits:
-            lines.append(
-                f"- {message} ([`{sha[:7]}`](https://github.com/{REPO}/commit/{sha}))"
-            )
+        lines.extend(
+            f"- {message} ([`{sha[:7]}`](https://github.com/{REPO}/commit/{sha}))"
+            for sha, message in commits
+        )
     else:
         lines.append("- No changes recorded")
 
@@ -162,14 +214,15 @@ def _update_changelog(entry: str) -> None:
     CHANGELOG_FILE.write_text(new_text.rstrip("\n") + "\n", encoding="utf-8")
 
 
-def _write_outputs(new_version: str, tag: str, release_entry: str) -> None:
+def _write_outputs(plan: ReleasePlan) -> None:
     if output_path := os.environ.get("GITHUB_OUTPUT"):
         try:
             with open(output_path, "a", encoding="utf-8") as fh:
-                fh.write(f"version={new_version}\n")
-                fh.write(f"tag={tag}\n")
+                fh.write(f"version={plan.version}\n")
+                fh.write(f"plain_version={plan.plain_version}\n")
+                fh.write(f"tag={plan.tag}\n")
                 fh.write("release_notes<<EOF\n")
-                fh.write(release_entry)
+                fh.write(plan.release_notes)
                 fh.write("EOF\n")
         except OSError as exc:
             print(f"Warning: unable to write GitHub outputs: {exc}", file=sys.stderr)
@@ -179,17 +232,22 @@ def main() -> None:
     args = _parse_args()
     lock_handle = _acquire_lock()
     try:
-        last_tag = _get_last_tag()
-        commits = _collect_commits(last_tag)
-        bump_type = _infer_bump(commits, args.bump)
-        new_version, tag = _bump_version_file(bump_type)
-        release_entry = _format_release_notes(commits, tag)
-        _update_changelog(release_entry)
-        _write_outputs(new_version, tag, release_entry)
-        print(
-            f"Prepared {tag} (bump: {bump_type}) with {len(commits)} commit(s).",
-            flush=True,
-        )
+        plan = _build_release_plan(args.bump)
+        if args.dry_run:
+            print(plan.release_notes, end="")
+            print(
+                f"Dry run: prepared {plan.tag} (bump: {plan.bump_type}) with {len(plan.commits)} commit(s).",
+                flush=True,
+            )
+            print("Dry run: skipping file updates and GitHub outputs.", flush=True)
+        else:
+            VERSION_FILE.write_text(plan.version_file_contents, encoding="utf-8")
+            _update_changelog(plan.release_notes)
+            _write_outputs(plan)
+            print(
+                f"Prepared {plan.tag} (bump: {plan.bump_type}) with {len(plan.commits)} commit(s).",
+                flush=True,
+            )
     finally:
         _release_lock(lock_handle)
 

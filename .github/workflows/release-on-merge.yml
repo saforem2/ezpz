@@ -12,7 +12,7 @@ on:
         default: auto
 
 concurrency:
-  group: release-${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+  group: release-${{ (github.event_name == 'pull_request' && github.event.pull_request.base.ref) || (github.event_name == 'workflow_dispatch' && github.ref_name) || 'default' }}
   cancel-in-progress: false
 
 permissions:
@@ -23,14 +23,17 @@ jobs:
   release:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main')
+      (github.event_name == 'pull_request' && github.event.pull_request.merged && github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
+    env:
+      TARGET_REF: ${{ (github.event_name == 'pull_request' && github.event.pull_request.base.ref) || github.ref_name }}
+      BUMP_SELECTION: ${{ (github.event_name == 'workflow_dispatch' && inputs.bump_type) || 'auto' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+          ref: ${{ env.TARGET_REF }}
           fetch-depth: 0
 
       - name: Fetch tags
@@ -48,16 +51,24 @@ jobs:
         id: prepare
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          BUMP_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.bump_type || 'auto' }}
+          BUMP_TYPE: ${{ env.BUMP_SELECTION }}
         run: |
           python .github/scripts/prepare_release.py --bump "$BUMP_TYPE"
 
       - name: Commit version bump and changelog
         run: |
+          set -euo pipefail
           if ! git diff --quiet --exit-code; then
             git add CHANGELOG.md src/ezpz/__about__.py
-            git commit -m "Release v${{ steps.prepare.outputs.version }}"
-            git push origin HEAD:${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+            tag="${{ steps.prepare.outputs.tag }}"
+            if ! git commit -m "Release ${tag}"; then
+              echo "ERROR: Merge conflict or commit failure detected. Please resolve conflicts manually."
+              exit 1
+            fi
+            if ! git push origin HEAD:${{ env.TARGET_REF }}; then
+              echo "ERROR: Push failed. This may be due to a rejected push, network issue, or out-of-date branch."
+              exit 1
+            fi
           else
             echo "No changes to commit"
           fi
