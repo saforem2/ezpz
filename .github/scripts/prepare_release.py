@@ -106,10 +106,20 @@ def _collect_commits(since_tag: str | None) -> list[tuple[str, str]]:
     return [(commit.hexsha, commit.message.splitlines()[0]) for commit in commits]
 
 
+_ALLOWED_BUMPS = {"major", "minor", "patch"}
+
+
 def _infer_bump(commits: Iterable[tuple[str, str]], override: str | None = None) -> str:
-    bump = (override or os.environ.get("BUMP_TYPE", "")).lower()
-    if bump in {"major", "minor", "patch"}:
+    bump_env = os.environ.get("BUMP_TYPE", "")
+    bump = (override or bump_env).lower()
+    if bump in _ALLOWED_BUMPS:
         return bump
+    if bump_env and bump not in _ALLOWED_BUMPS:
+        print(
+            f"Warning: Environment variable BUMP_TYPE='{bump_env}' is not recognized. "
+            "Falling back to auto-infer bump type.",
+            file=sys.stderr,
+        )
 
     inferred = "patch"
     for _sha, message in commits:
@@ -144,7 +154,10 @@ def _calculate_version_update(bump: str) -> tuple[str, str, str, str]:
         "patch": parsed.bump_patch,
     }
     if bump not in bump_map:
-        raise ReleaseError(f"Unsupported bump type '{bump}'")
+        allowed_bumps = ", ".join(sorted(bump_map.keys()))
+        raise ReleaseError(
+            f"Unsupported bump type '{bump}'. Allowed types are: {allowed_bumps}"
+        )
 
     new_version_info = bump_map[bump]()
     plain_version = str(new_version_info)
@@ -214,18 +227,26 @@ def _update_changelog(entry: str) -> None:
     CHANGELOG_FILE.write_text(new_text.rstrip("\n") + "\n", encoding="utf-8")
 
 
+def _append_outputs(path: str, plan: ReleasePlan) -> None:
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(f"version={plan.version}\n")
+        fh.write(f"plain_version={plan.plain_version}\n")
+        fh.write(f"tag={plan.tag}\n")
+        fh.write("release_notes<<EOF\n")
+        fh.write(plan.release_notes)
+        fh.write("EOF\n")
+
+
 def _write_outputs(plan: ReleasePlan) -> None:
-    if output_path := os.environ.get("GITHUB_OUTPUT"):
-        try:
-            with open(output_path, "a", encoding="utf-8") as fh:
-                fh.write(f"version={plan.version}\n")
-                fh.write(f"plain_version={plan.plain_version}\n")
-                fh.write(f"tag={plan.tag}\n")
-                fh.write("release_notes<<EOF\n")
-                fh.write(plan.release_notes)
-                fh.write("EOF\n")
-        except OSError as exc:
-            print(f"Warning: unable to write GitHub outputs: {exc}", file=sys.stderr)
+    output_path = os.environ.get("GITHUB_OUTPUT")
+    if not output_path:
+        return
+    try:
+        _append_outputs(output_path, plan)
+    except OSError as exc:
+        message = f"Unable to write GitHub outputs: {exc}"
+        print(f"Error: {message}", file=sys.stderr)
+        raise ReleaseError(message) from exc
 
 
 def main() -> None:
