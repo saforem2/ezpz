@@ -2,15 +2,19 @@
 """Prepare release artifacts: bump version and update changelog."""
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
-import fcntl
 import os
 import re
-import subprocess
 import sys
-import time
 from pathlib import Path
-from typing import TextIO
+from typing import Iterable
+
+import semver
+from filelock import FileLock, Timeout
+from git import GitCommandError, Repo
+from git.exc import InvalidGitRepositoryError
+from jinja2 import Template
 
 
 class ReleaseError(RuntimeError):
@@ -22,75 +26,80 @@ ROOT = Path(__file__).resolve().parents[2]
 VERSION_FILE = ROOT / "src" / "ezpz" / "__about__.py"
 CHANGELOG_FILE = ROOT / "CHANGELOG.md"
 LOCK_FILE = ROOT / ".release.lock"
-DELIMITER = "\x01"
 
 _VERSION_RE = re.compile(
-    r'__version__\s*=\s*"(?P<prefix>v?)(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"'
+    r'__version__\s*=\s*"(?P<prefix>v?)(?P<version>\d+\.\d+\.\d+)"'
 )
 _CONVENTIONAL_RE = re.compile(r"^(?P<type>\w+)(?P<breaking>!?)(?:\([^)]+\))?:")
+_RELEASE_TEMPLATE = Template(
+    """#### [{{ tag }}](https://github.com/{{ repo }}/releases/tag/{{ tag }}) - {{ date }}
+
+{% if commits %}{% for sha, message in commits %}- {{ message }} ([`{{ sha[:7] }}`](https://github.com/{{ repo }}/commit/{{ sha }}))
+{% endfor %}{% else %}- No changes recorded
+{% endif %}
+"""
+)
+
+_REPOSITORY: Repo | None = None
 
 
-def _run_git(*args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args], cwd=ROOT, text=True, stderr=subprocess.STDOUT
-    ).strip()
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--bump",
+        choices=["auto", "major", "minor", "patch"],
+        default=None,
+        help="Semantic version bump to apply. Defaults to env BUMP_TYPE or auto-infer.",
+    )
+    return parser.parse_args()
 
 
-def _acquire_lock(timeout: int = 30) -> TextIO:
+def _acquire_lock(timeout: int = 30) -> FileLock:
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(LOCK_FILE, "w", encoding="utf-8")
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return handle
-        except BlockingIOError:
-            if time.monotonic() >= deadline:
-                handle.close()
-                raise ReleaseError(
-                    "Timed out acquiring release lock; another release may be running."
-                )
-            time.sleep(0.5)
-
-
-def _release_lock(handle: TextIO) -> None:
+    lock = FileLock(str(LOCK_FILE))
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    finally:
-        handle.close()
+        lock.acquire(timeout=timeout)
+    except Timeout as exc:
+        raise ReleaseError(
+            "Timed out acquiring release lock; another release may be running."
+        ) from exc
+    return lock
+
+
+def _release_lock(lock: FileLock) -> None:
+    if lock.is_locked:
+        lock.release()
+
+
+def _get_repository() -> Repo:
+    global _REPOSITORY
+    if _REPOSITORY is None:
+        try:
+            _REPOSITORY = Repo(ROOT)
+        except InvalidGitRepositoryError as exc:
+            raise ReleaseError("Unable to locate Git repository root") from exc
+    return _REPOSITORY
 
 
 def _get_last_tag() -> str | None:
     try:
-        return _run_git("describe", "--tags", "--abbrev=0")
-    except subprocess.CalledProcessError:
+        return _get_repository().git.describe("--tags", "--abbrev=0")
+    except GitCommandError:
         return None
 
 
 def _collect_commits(since_tag: str | None) -> list[tuple[str, str]]:
     rev = f"{since_tag}..HEAD" if since_tag else "HEAD"
     try:
-        log_output = _run_git("log", rev, "--pretty=format:%H%x01%s")
-    except subprocess.CalledProcessError:
+        commits = list(_get_repository().iter_commits(rev))
+    except GitCommandError:
         return []
 
-    commits: list[tuple[str, str]] = []
-    if not log_output:
-        return commits
-
-    for line in log_output.splitlines():
-        if DELIMITER not in line:
-            continue
-        try:
-            sha, message = line.split(DELIMITER, 1)
-        except ValueError:
-            continue
-        commits.append((sha, message))
-    return commits
+    return [(commit.hexsha, commit.message.splitlines()[0]) for commit in commits]
 
 
-def _infer_bump(commits: list[tuple[str, str]]) -> str:
-    bump = os.environ.get("BUMP_TYPE", "").lower()
+def _infer_bump(commits: Iterable[tuple[str, str]], override: str | None = None) -> str:
+    bump = (override or os.environ.get("BUMP_TYPE", "")).lower()
     if bump in {"major", "minor", "patch"}:
         return bump
 
@@ -114,21 +123,15 @@ def _bump_version_file(bump: str) -> tuple[str, str]:
         raise ReleaseError("Unable to locate __version__ assignment in __about__.py")
 
     prefix = match.group("prefix") or ""
-    major = int(match.group("major"))
-    minor = int(match.group("minor"))
-    patch = int(match.group("patch"))
+    current_version = match.group("version")
+    parsed = semver.VersionInfo.parse(current_version)
+    bump_map = {
+        "major": parsed.bump_major,
+        "minor": parsed.bump_minor,
+        "patch": parsed.bump_patch,
+    }
+    new_version = str(bump_map[bump]())
 
-    if bump == "major":
-        major += 1
-        minor = 0
-        patch = 0
-    elif bump == "minor":
-        minor += 1
-        patch = 0
-    else:
-        patch += 1
-
-    new_version = f"{major}.{minor}.{patch}"
     new_literal = f'__version__ = "{prefix}{new_version}"'
     updated = _VERSION_RE.sub(new_literal, text, count=1)
     VERSION_FILE.write_text(updated, encoding="utf-8")
@@ -141,18 +144,8 @@ def _format_release_notes(commits: list[tuple[str, str]], tag: str) -> str:
     if not REPO:
         raise ReleaseError("GITHUB_REPOSITORY environment variable is required")
 
-    lines: list[str] = []
-    for sha, message in commits:
-        url = f"https://github.com/{REPO}/commit/{sha}"
-        lines.append(f"- {message} ([`{sha[:7]}`]({url}))")
-
-    if not lines:
-        lines.append("- No changes recorded")
-
     date = _dt.datetime.now(_dt.timezone.utc).date().isoformat()
-    header = f"#### [{tag}](https://github.com/{REPO}/releases/tag/{tag}) - {date}"
-    body = "\n".join(lines)
-    return f"{header}\n\n{body}\n"
+    return _RELEASE_TEMPLATE.render(repo=REPO, tag=tag, date=date, commits=commits)
 
 
 def _update_changelog(entry: str) -> None:
@@ -181,11 +174,12 @@ def _write_outputs(new_version: str, tag: str, release_entry: str) -> None:
 
 
 def main() -> None:
+    args = _parse_args()
     lock_handle = _acquire_lock()
     try:
         last_tag = _get_last_tag()
         commits = _collect_commits(last_tag)
-        bump_type = _infer_bump(commits)
+        bump_type = _infer_bump(commits, args.bump)
         new_version, tag = _bump_version_file(bump_type)
         release_entry = _format_release_notes(commits, tag)
         _update_changelog(release_entry)
