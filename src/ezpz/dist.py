@@ -25,13 +25,13 @@ import ezpz.tp
 from ezpz.lazy import lazy_import
 
 TORCH_DTYPES_MAP = {
-    'bf16': torch.bfloat16,
-    'bfloat16': torch.bfloat16,
-    'fp16': torch.float16,
-    'float16': torch.float16,
-    'half': torch.float16,
-    'fp32': torch.float32,
-    'float32': torch.float32,
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+    "fp16": torch.float16,
+    "float16": torch.float16,
+    "half": torch.float16,
+    "fp32": torch.float32,
+    "float32": torch.float32,
 }
 
 ENABLE_WANDB = False
@@ -91,12 +91,13 @@ def _parse_torch_device(value: str | None) -> tuple[str, str, str] | None:
     normalized = trimmed.lower()
     base = normalized.split(":", 1)[0]
     if base not in _SUPPORTED_DEVICE_TYPES:
-        logger.warning(
-            "Ignoring unsupported TORCH_DEVICE=%s; expected one of %s",
-            trimmed,
-            sorted(_SUPPORTED_DEVICE_TYPES),
-        )
-        return None
+        if get_rank() == 0:
+            logger.warning(
+                "Ignoring unsupported TORCH_DEVICE=%s; expected one of %s",
+                trimmed,
+                sorted(_SUPPORTED_DEVICE_TYPES),
+            )
+            return None
     return normalized, base, trimmed
 
 
@@ -201,8 +202,15 @@ def timeitlogit(
             assert isinstance(rank, int)
             result = func(*args, **kwargs)
             dt = time.perf_counter() - t0
-            fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
-            if record and ENABLE_WANDB and wandb is not None and wandb.run is not None:
+            fname = getattr(
+                func, "__qualname__", getattr(func, "__name__", "unknown")
+            )
+            if (
+                record
+                and ENABLE_WANDB
+                and wandb is not None
+                and wandb.run is not None
+            ):
                 wandb.log({f"{prefix}/{fname}": dt}, commit=False)
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
@@ -254,7 +262,9 @@ def timeit(func: Callable):
         t0 = time.perf_counter()
         result = func(*args, **kwargs)
         dt = time.perf_counter() - t0
-        fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+        fname = getattr(
+            func, "__qualname__", getattr(func, "__name__", "unknown")
+        )
         logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
         if ENABLE_WANDB and wandb is not None and wandb.run is not None:
             wandb.log({f"timeit/{fname}": dt})
@@ -455,7 +465,9 @@ def get_dist_info(
     if verbose:
         import json
 
-        logger.info(f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}")
+        logger.info(
+            f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
+        )
     return dist_info
 
 
@@ -510,8 +522,12 @@ def print_dist_setup(
     logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
-            logger.warning(f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}")
-        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+            logger.warning(
+                f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}"
+            )
+        logger.warning(
+            f'Using [{wsa} / {wst}] available "{device}" devices !!'
+        )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
@@ -632,9 +648,10 @@ def init_deepspeed(
 
         os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
     except ImportError as e:
-        logger.warning(
-            "Unable to import deepspeed. Please install it to use DeepSpeed features."
-        )
+        if get_rank() == 0:
+            logger.warning(
+                "Unable to import deepspeed. Please install it to use DeepSpeed features."
+            )
         raise ImportError(
             "DeepSpeed is not installed. Install with 'pip install deepspeed'"
         ) from e
@@ -660,8 +677,9 @@ def init_deepspeed(
             world_size=world_size,
         )
     except Exception as exc:
-        logger.warning("Unable to `import deepspeed`. Exiting!")
-        logger.exception(exc)
+        if rank == 0:
+            logger.warning("Unable to `import deepspeed`. Exiting!")
+            logger.exception(exc)
         raise exc
 
 
@@ -689,14 +707,15 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
     """
     if device_type is not None:
         assert device_type in _SUPPORTED_DEVICE_TYPES
-        logger.warning(
-            " ".join(
-                [
-                    f"device_type: {device_type} passed to",
-                    "ezpz.dist.get_torch_device_type",
-                ]
+        if get_rank() == 0:
+            logger.warning(
+                " ".join(
+                    [
+                        f"device_type: {device_type} passed to",
+                        "ezpz.dist.get_torch_device_type",
+                    ]
+                )
             )
-        )
         return device_type
     env_info = _get_env_torch_device()
     if env_info is not None:
@@ -784,20 +803,28 @@ def get_torch_backend_on_xpu() -> str:
     return "xccl" if torch_version > 2.5 else "ccl"
 
 
-def get_torch_backend() -> str:
+def get_torch_backend() -> None | str:
     """
     Get the current PyTorch backend.
 
     Returns:
         str: The current PyTorch backend.
     """
-    backend_from_env = os.environ.get("TORCH_BACKEND", None)
+    backend_from_env = os.environ.get(
+        "TORCH_BACKEND", os.environ.get("PYTORCH_BACKEND", None)
+    )
+    # if backend_from_env is not None and  backend_from_env.upper() in {"NONE", "AUTO", ""}:
+    #     return None
     if backend_from_env is not None:
+        if backend_from_env.lower() in {"none", "auto", ""}:
+            return None
         return backend_from_env
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo")
+        else (
+            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
+        )
     )
 
 
@@ -835,13 +862,31 @@ def init_process_group(
             seconds=int(env_timeout),
         )
     if not torch.distributed.is_initialized():  # type:ignore
-        torch.distributed.init_process_group(  # type:ignore
-            backend=backend,
-            timeout=timeout,
-            rank=int(rank),
-            world_size=int(world_size),
-            init_method="env://",
-        )
+        try:
+            torch.distributed.init_process_group(  # type:ignore
+                backend=backend,
+                timeout=timeout,
+                rank=int(rank),
+                world_size=int(world_size),
+                init_method="env://",
+            )
+        except Exception:
+            if get_rank() == 0:
+                logger.exception("Unable to init torch.distributed !!")
+                logger.warning(
+                    " ".join(
+                        [
+                            "Unable to init_process_group_with:",
+                            f"rank={rank}",
+                            f"world_size={world_size}",
+                            f"backend={backend}",
+                        ]
+                    )
+                )
+                logger.info("Trying without specifying `backend`...")
+            torch.distributed.init_process_group()  # type:ignore
+            # ezpz.breakpoint(0)
+            # raise
 
 
 def run_ddp(fn: Callable, world_size: int) -> None:
@@ -979,7 +1024,9 @@ def get_free_port():
         int: A free port number that can be used for communication.
     """
     sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))  # Bind to an available port on the loopback interface
+    sock.bind(
+        ("127.0.0.1", 0)
+    )  # Bind to an available port on the loopback interface
     port = sock.getsockname()[1]
     sock.close()
     return port
@@ -1038,7 +1085,9 @@ def broadcast(
     try:
         return MPI.COMM_WORLD.bcast(obj, root=root)
     except Exception as exc:
-        logger.warning("Unable to broadcast with MPI, returning original object")
+        logger.warning(
+            "Unable to broadcast with MPI, returning original object"
+        )
         logger.exception(exc)
         # return obj
         raise exc
@@ -1226,12 +1275,22 @@ def setup_torch_distributed(
         if timeout is None
         else (int(timeout) if isinstance(timeout, str) else timeout)
     )
-    port = "1234" if port is None else str(port) if isinstance(port, int) else port
+    port = (
+        "1234"
+        if port is None
+        else str(port)
+        if isinstance(port, int)
+        else port
+    )
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
     fw = str(framework).lower()
-    be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
+    be = (
+        str(get_torch_backend()).lower()
+        if backend is None
+        else str(backend).lower()
+    )
     # be = str(framework).lower()
     # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
     #     f"Invalid backend: {framework=}, expected one of "
@@ -1426,19 +1485,19 @@ def setup_torch(
     # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
     if torch.xpu.is_available():
         torch.xpu.set_device(local_rank)
-        # try:
-        #     import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-        # except Exception:
-        #     ipex = None
-        # if ipex is not None:
-        #     logger.debug(f"Using ipex from: {ipex.__file__}")
-        #
-        # try:
-        #     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
-        # except Exception:
-        #     oneccl_bpt = None
-        # if oneccl_bpt is not None:
-        #     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
+        try:
+            import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
+        except Exception:
+            ipex = None
+        if ipex is not None:
+            logger.debug(f"Using ipex from: {ipex.__file__}")
+
+        try:
+            import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
+        except Exception:
+            oneccl_bpt = None
+        if oneccl_bpt is not None:
+            logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
         #
         #     # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
         #     # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
@@ -1581,7 +1640,8 @@ def setup_tensorflow(
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices("CPU")
             logger.info(
-                f"{len(cpus)}, Physical CPUs and " f"{len(logical_cpus)} Logical CPUs"
+                f"{len(cpus)}, Physical CPUs and "
+                f"{len(logical_cpus)} Logical CPUs"
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -1653,7 +1713,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith("x1"):
         return "SunSpot"
     if hostname.startswith("x3"):
-        if 'sirius' in hostname:
+        if "sirius" in hostname:
             return "Sirius"
         return "Polaris"
     if hostname.startswith("x4"):
@@ -1691,7 +1751,9 @@ def setup_wandb(
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}")
+        logger.warning(
+            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+        )
         return None
 
     HAS_WANDB = False
@@ -1701,10 +1763,16 @@ def setup_wandb(
         if wandb.api.api_key is not None:
             HAS_WANDB = True
     except (ImportError, ModuleNotFoundError) as e:
-        logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
+        logger.warning(
+            "Unable to import `wandb`. Install with `pip install wandb`"
+        )
         raise e
 
-    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
+    outdir = (
+        Path(os.getcwd()).as_posix()
+        if outdir is None
+        else Path(outdir).as_posix()
+    )
     rank = get_rank()
     project_name = (
         project_name
@@ -1785,12 +1853,16 @@ def setup_wandb(
     )
     if config is not None:
         if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
+            cfg = OmegaConf.to_container(
+                config, resolve=True, throw_on_missing=True
+            )
             run.config.update({"config": cfg})
         else:
             run.config.update({"config": config})
     env = {
-        k: v for k, v in dict(os.environ).items() if not k.startswith("_ModuleTable")
+        k: v
+        for k, v in dict(os.environ).items()
+        if not k.startswith("_ModuleTable")
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
@@ -1862,7 +1934,8 @@ def write_localhost_to_hostfile(hostfile: PathLike):
     """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
         logger.debug(
-            f"Writing {(hostname := get_hostname())} " f"to {Path(hostfile).as_posix()}"
+            f"Writing {(hostname := get_hostname())} "
+            f"to {Path(hostfile).as_posix()}"
         )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
@@ -1941,16 +2014,15 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             ),
         )
         if (
-            hfp is None
-            or not Path(hfp).is_file()
+            hfp is None or not Path(hfp).is_file()
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
                 # hfp = Path(get_pbs_nodefile_from_qstat())
                 nodefile = ezpz.pbs.get_pbs_nodefile()
-                assert (
-                    nodefile is not None
-                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                assert nodefile is not None, (
+                    "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                )
                 hfp = Path(nodefile)
             else:
                 # create makeshift hostfile containing 'localhost'
