@@ -42,10 +42,19 @@ try:
 except Exception:
     wandb = None
 
+import torch
+
 try:
-    ipex = lazy_import("intel_extension_for_pytorch")
+    import intel_extension_for_pytorch as ipex
+    # ipex = lazy_import("intel_extension_for_pytorch")
 except (ImportError, ModuleNotFoundError):
     ipex = None
+
+try:
+    import oneccl_bindings_for_pytorch as oneccl_bpt
+    # oneccl_bpt = lazy_import("oneccl_bindings_for_pytorch")
+except (ImportError, ModuleNotFoundError):
+    oneccl_bpt = None
 
 
 if not os.environ.get(
@@ -884,7 +893,13 @@ def init_process_group(
                     )
                 )
                 logger.info("Trying without specifying `backend`...")
-            torch.distributed.init_process_group()  # type:ignore
+            torch.distributed.init_process_group(
+                backend=None,
+                timeout=timeout,
+                rank=int(rank),
+                world_size=int(world_size),
+                init_method="env://",
+            )  # type:ignore
             # ezpz.breakpoint(0)
             # raise
 
