@@ -6,6 +6,7 @@ import logging
 import os
 import pdb
 import re
+import subprocess
 import sys
 from dataclasses import asdict
 # from ezpz import get_rank
@@ -317,8 +318,7 @@ def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, No
     elif callable(getattr(x, "numpy", None)):
         assert callable(getattr(x, "numpy"))
         return x.numpy(force=force)
-    breakpoint(0)
-    # raise ValueError
+    raise ValueError(f"Unable to convert value of type {type(x)!r} to numpy.")
 
 
 def check_for_tarball(
@@ -341,6 +341,7 @@ def check_for_tarball(
     tar_on_tmp = Path("/tmp") / tarball
     if overwrite and tar_on_tmp.exists():
         logger.info(f"Removing existing tarball at {tar_on_tmp}")
+        tar_on_tmp.unlink()
 
     if not tar_on_tmp.exists():
         if not os.path.exists(tarball):
@@ -362,9 +363,15 @@ def make_tarfile(
     dirname = srcfp.name
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
     logger.info(
-        f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
+        "Executing: 'tar -czf %s -C %s %s'",
+        output_filename,
+        srcfp.parent,
+        dirname,
     )
-    os.system(f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}")
+    subprocess.run(
+        ["tar", "-czf", output_filename, "-C", srcfp.parent.as_posix(), dirname],
+        check=True,
+    )
 
     return output_filename
 
