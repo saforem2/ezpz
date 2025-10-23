@@ -15,7 +15,7 @@ ezpz_save_dotenv() {
 ezpz_activate_or_create_micromamba_env() {
     local env_name="${1:-base}"
     local root_prefix="${MAMBA_ROOT_PREFIX:-/usr/local/micromamba}"
-    
+
     if [[ -d "${root_prefix}" ]]; then
         local shell_name=$(ezpz_get_shell_name)
         eval "$("${root_prefix}/bin/micromamba" shell hook --shell "${shell_name}")"
@@ -43,18 +43,18 @@ ezpz_check_if_already_built() {
 ezpz_prepare_repo_in_build_dir() {
     local repo_url="${1:-}"
     local build_dir="${2:-${WORKING_DIR}/build}"
-    
+
     if [[ -z "${repo_url}" ]]; then
         log_message ERROR "Repository URL is required"
         return 1
     fi
-    
+
     mkdir -p "${build_dir}"
     cd "${build_dir}"
-    
+
     if [[ ! -d ".git" ]]; then
         git clone "${repo_url}" .
     fi
-    
+
     log_message INFO "Repository prepared in ${build_dir}"
 }

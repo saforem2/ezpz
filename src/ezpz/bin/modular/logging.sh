@@ -14,7 +14,7 @@ log_message() {
     local level="${1:-INFO}"
     local message="${2:-}"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case "${level}" in
         "ERROR"|"error")
             printf "${RED}[${timestamp}] [ERROR] ${message}${RESET}\n" >&2

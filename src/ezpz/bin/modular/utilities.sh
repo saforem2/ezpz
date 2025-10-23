@@ -8,7 +8,7 @@
 ezpz_head_n_from_pbs_nodefile() {
     local n="${1:-1}"
     local nodefile="${2:-${PBS_NODEFILE:-}}"
-    
+
     if [[ -n "${nodefile}" && -f "${nodefile}" ]]; then
         head -n "${n}" "${nodefile}"
     fi
@@ -18,7 +18,7 @@ ezpz_head_n_from_pbs_nodefile() {
 ezpz_tail_n_from_pbs_nodefile() {
     local n="${1:-1}"
     local nodefile="${2:-${PBS_NODEFILE:-}}"
-    
+
     if [[ -n "${nodefile}" && -f "${nodefile}" ]]; then
         tail -n "${n}" "${nodefile}"
     fi
@@ -44,13 +44,13 @@ ezpz_parse_hostfile() {
         echo "Received: $#"
         return 1
     fi
-    
+
     local hf="$1"
     if [[ ! -f "${hf}" ]]; then
         log_message ERROR "Hostfile ${hf} does not exist"
         return 1
     fi
-    
+
     # Return the hostfile content
     cat "${hf}"
 }
@@ -59,20 +59,20 @@ ezpz_parse_hostfile() {
 ezpz_build_bdist_wheel_from_github_repo() {
     local repo_url="${1:-}"
     local build_dir="${2:-${WORKING_DIR}/build}"
-    
+
     if [[ -z "${repo_url}" ]]; then
         log_message ERROR "Repository URL is required"
         return 1
     fi
-    
+
     ezpz_prepare_repo_in_build_dir "${repo_url}" "${build_dir}"
     cd "${build_dir}"
-    
+
     if [[ ! -f "setup.py" && ! -f "pyproject.toml" ]]; then
         log_message ERROR "No setup.py or pyproject.toml found in repository"
         return 1
     fi
-    
+
     python3 -m pip wheel . --wheel-dir dist/
     log_message INFO "Wheel built successfully in ${build_dir}/dist/"
 }

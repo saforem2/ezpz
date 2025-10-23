@@ -7,7 +7,7 @@
 # Function to get machine name
 ezpz_get_machine_name() {
     local hostname="${1:-$(hostname)}"
-    
+
     case "${hostname}" in
         x3*)
             echo "aurora"
@@ -122,7 +122,7 @@ ezpz_setup_conda_sophia() {
 # Main function to setup conda based on machine
 ezpz_setup_conda() {
     local machine=$(ezpz_get_machine_name)
-    
+
     case "${machine}" in
         "aurora")
             ezpz_setup_conda_aurora

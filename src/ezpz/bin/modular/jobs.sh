@@ -17,7 +17,7 @@ ezpz_save_ds_env() {
     local outfile="${1:-${WORKING_DIR}/ds_env.json}"
     local jobid=$(ezpz_get_jobid_from_hostname)
     local machine=$(ezpz_get_machine_name)
-    
+
     cat > "${outfile}" << EOF
 {
     "job_id": "${jobid}",
@@ -35,7 +35,7 @@ EOF
 ezpz_check_and_kill_if_running() {
     local job_name="${1:-ezpz_job}"
     local pid_file="${WORKING_DIR}/${job_name}.pid"
-    
+
     if [[ -f "${pid_file}" ]]; then
         local pid=$(cat "${pid_file}")
         if kill -0 "${pid}" 2>/dev/null; then
