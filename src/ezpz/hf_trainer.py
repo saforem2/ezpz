@@ -14,7 +14,6 @@ https://huggingface.co/models?filter=text-generation
 import math
 import os
 import sys
-from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
 from typing import Optional
@@ -27,10 +26,8 @@ from transformers import (CONFIG_MAPPING, AutoConfig, AutoModelForCausalLM,
                           AutoTokenizer, HfArgumentParser, Trainer,
                           TrainingArguments, default_data_collator,
                           is_torch_xla_available, set_seed)
-from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import send_example_telemetry
-from transformers.utils.versions import require_version
 
 import ezpz
 import ezpz.configs
@@ -58,7 +55,11 @@ def parse_args() -> dict:
             json_file=os.path.abspath(sys.argv[1])
         )
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        (
+            model_args,
+            data_args,
+            training_args,
+        ) = parser.parse_args_into_dataclasses()
 
     try:
         import wandb
