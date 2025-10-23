@@ -11,14 +11,12 @@ from typing import Callable, ClassVar
 
 import torch
 import torch.nn.functional as F
-from torch.distributed.tensor.experimental._attention import create_cp_block_mask
-from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch.nn.attention.flex_attention import (
-    _mask_mod_signature,
-    BlockMask,
-    create_block_mask,
-    flex_attention,
-)
+from torch.distributed.tensor.experimental._attention import \
+    create_cp_block_mask
+from torch.nn.attention import SDPBackend, sdpa_kernel
+from torch.nn.attention.flex_attention import (BlockMask, _mask_mod_signature,
+                                               create_block_mask,
+                                               flex_attention)
 
 # from torchtitan.tools.utils import has_cuda_capability
 from ezpz.utils.tools import has_cuda_capability
@@ -92,7 +90,10 @@ class FlexAttention(torch.nn.Module):
     @staticmethod
     def _get_causal_mask_mod() -> _mask_mod_signature:
         def causal_mask(
-            b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor
+            b: torch.Tensor,
+            h: torch.Tensor,
+            q_idx: torch.Tensor,
+            kv_idx: torch.Tensor,
         ):
             return q_idx >= kv_idx
 
@@ -110,7 +111,10 @@ class FlexAttention(torch.nn.Module):
         seq_idx[:, 1:] = acc_mask[:, :-1]
 
         def block_causal_mask(
-            b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor
+            b: torch.Tensor,
+            h: torch.Tensor,
+            q_idx: torch.Tensor,
+            kv_idx: torch.Tensor,
         ):
             return (seq_idx[b, q_idx] == seq_idx[b, kv_idx]) & (q_idx >= kv_idx)
 
@@ -131,7 +135,10 @@ class FlexAttention(torch.nn.Module):
 
         # Credit to @drisspg.
         def blocked_mask_mod(
-            b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor
+            b: torch.Tensor,
+            h: torch.Tensor,
+            q_idx: torch.Tensor,
+            kv_idx: torch.Tensor,
         ):
             # Get the block index of the query and key
             q_block = q_idx // fixed_block_size
@@ -226,7 +233,9 @@ class ScaledDotProductAttention(torch.nn.Module):
 
 
 def build_attention(
-    use_flex_attn: bool, attn_mask_type: str, fixed_block_size: int | None = None
+    use_flex_attn: bool,
+    attn_mask_type: str,
+    fixed_block_size: int | None = None,
 ):
     if use_flex_attn:
         return FlexAttention(attn_mask_type, fixed_block_size)
@@ -247,7 +256,6 @@ def init_attention_mask(
     eos_id: int | None,
     cp_mesh: torch.distributed.device_mesh.DeviceMesh | None = None,
 ) -> None:
-
     # This is not functional yet because we currently gate the use of Flex + CP
     # while we continue debugging accuracy issues. However, we want to evaluate
     # the user experience with CP enabled.

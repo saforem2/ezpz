@@ -13,10 +13,10 @@ from torch import nn
 
 from ezpz.models.attention import build_attention
 
+from .args import TransformerModelArgs
+
 # from torchtitan.models.attention import build_attention
 # from torchtitan.protocols.train_spec import ModelProtocol
-
-from .args import TransformerModelArgs
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:

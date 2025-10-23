@@ -5,8 +5,6 @@ from __future__ import annotations
 import tarfile
 from pathlib import Path
 
-import pytest
-
 import ezpz.utils as utils
 from ezpz.utils import check_for_tarball, make_tarfile
 

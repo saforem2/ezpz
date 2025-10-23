@@ -26,19 +26,19 @@ ezpz_setup_env() {
         log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
         return 1
     fi
-    
+
     log_message INFO "Running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
-    
+
     if ! ezpz_setup_python; then
         log_message ERROR "Python setup failed. Aborting."
         return 1
     fi
-    
+
     if ! ezpz_setup_job "$@"; then
         log_message ERROR "Job setup failed. Aborting."
         return 1
     fi
-    
+
     log_message INFO "${GREEN}[✓] Finished${RESET} [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]"
     return 0
 }
@@ -46,15 +46,15 @@ ezpz_setup_env() {
 # Function to setup job - this needs to be implemented based on the original
 ezpz_setup_job() {
     log_message INFO "Setting up job environment..."
-    
+
     local scheduler_type=$(ezpz_get_scheduler_type)
     local machine=$(ezpz_get_machine_name)
-    
+
     log_message INFO "Detected scheduler: ${scheduler_type}, machine: ${machine}"
-    
+
     # Save environment
     ezpz_save_dotenv
-    
+
     # Additional job-specific setup can go here
     case "${scheduler_type}" in
         "pbs")
@@ -68,6 +68,6 @@ ezpz_setup_job() {
             fi
             ;;
     esac
-    
+
     log_message INFO "Job setup completed"
 }

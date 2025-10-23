@@ -5,22 +5,21 @@ ezpz/examples/fsdp.py
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
 import argparse
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
-import ezpz
-from ezpz.history import WANDB_DISABLED
 import torch
 import torch.distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import MixedPrecision
 from torch.optim.lr_scheduler import StepLR
 
+import ezpz
+from ezpz.history import WANDB_DISABLED
 from ezpz.models import summarize_model
-
 
 logger = ezpz.get_logger(__name__)
 
@@ -176,9 +175,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
 
     # data = prepare_data()
 
-    data_prefix_fallback = Path(os.getcwd()).joinpath(
-        ".cache", "ezpz", "data", "MNIST"
-    )
+    data_prefix_fallback = Path(os.getcwd()).joinpath(".cache", "ezpz", "data", "MNIST")
     data_prefix = args.data_prefix or data_prefix_fallback
     data = get_mnist(
         outdir=Path(data_prefix),
@@ -232,9 +229,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="PyTorch MNIST Example using FSDP"
-    )
+    parser = argparse.ArgumentParser(description="PyTorch MNIST Example using FSDP")
     parser.add_argument(
         "--batch-size",
         type=int,

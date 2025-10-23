@@ -9,7 +9,6 @@ From Wikipedia:
 import shlex
 import subprocess
 
-import torch
 from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
 
 mname_from = "meta-llama/Llama-2-7b-hf"

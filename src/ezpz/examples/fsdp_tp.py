@@ -34,46 +34,38 @@ FSDP:
 [0, 8, ..., 8N-8], [1, 9, ..., 8N-7], ..., [7, 15, ..., 8N-1]
 """
 
-import os
 import argparse
 import logging
+import os
 from pathlib import Path
 from time import perf_counter
 
-import ezpz
-
 import torch
-
+import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributed._tensor import Replicate, Shard
+from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import MixedPrecision
+from torch.distributed.tensor.parallel import (ColwiseParallel,
+                                               PrepareModuleInput,
+                                               RowwiseParallel,
+                                               SequenceParallel,
+                                               parallelize_module)
 
-
+import ezpz
+from ezpz.data.text import get_hf_data, get_random_dataset
 from ezpz.models import summarize_model
+from ezpz.models.llama2 import ModelArgs, Transformer
 
-from ezpz.models.llama2 import Transformer, ModelArgs
 # from ezpz.models.llama import Transformer, ModelArgs
 
-from ezpz.data.text import get_random_dataset, get_hf_data
 
 # from ezpz.data.llama import LlamaDataLoader
 #
 # import torch.distributed
 
-import torch.distributed
-from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
-from torch.distributed.fsdp import (
-    FullyShardedDataParallel as FSDP,
-    MixedPrecision,
-)
-from torch.distributed._tensor import Shard, Replicate
-
-from torch.distributed.tensor.parallel import (
-    parallelize_module,
-    ColwiseParallel,
-    RowwiseParallel,
-    PrepareModuleInput,
-    SequenceParallel,
-)
 
 logging.getLogger("datasets").setLevel(logging.ERROR)
 

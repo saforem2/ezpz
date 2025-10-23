@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 import shutil
 import sys
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Callable, Final, Literal, Optional
 
 import ezpz
@@ -38,7 +38,9 @@ STATUS_PRIORITY: Final[dict[Status, int]] = {"ok": 0, "warning": 1, "error": 2}
 logger = ezpz.get_logger(__name__)
 
 
-def _command_exists(command: str, *, which: Callable[[str], Optional[str]] = shutil.which) -> bool:
+def _command_exists(
+    command: str, *, which: Callable[[str], Optional[str]] = shutil.which
+) -> bool:
     return which(command) is not None
 
 
@@ -46,11 +48,14 @@ def check_mpi(which: Callable[[str], Optional[str]] = shutil.which) -> CheckResu
     """Verify mpi4py importability and presence of a launcher command."""
     try:
         from mpi4py import MPI  # noqa: F401
+
         mpi_available = True
     except Exception:  # pragma: no cover - exercised via negative paths
         mpi_available = False
 
-    has_launcher = any(_command_exists(cmd, which=which) for cmd in ("mpiexec", "mpirun"))
+    has_launcher = any(
+        _command_exists(cmd, which=which) for cmd in ("mpiexec", "mpirun")
+    )
     if mpi_available and has_launcher:
         return CheckResult(
             name="mpi",
@@ -93,7 +98,9 @@ def check_scheduler(
             status="ok",
             message=f"Detected active scheduler: {scheduler}.",
         )
-    suspect_vars = [key for key in ("PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID") if env.get(key)]
+    suspect_vars = [
+        key for key in ("PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID") if env.get(key)
+    ]
     if suspect_vars:
         return CheckResult(
             name="scheduler",
@@ -178,8 +185,13 @@ def check_torch_device() -> CheckResult:
         )
     device_ok = (
         (torch.cuda.is_available() and torch.cuda.device_count() > 0)
-        or (hasattr(torch, "xpu") and torch.xpu.is_available() and torch.xpu.device_count() > 0)
-        or torch.backends.mps.is_built() and torch.backends.mps.is_available()
+        or (
+            hasattr(torch, "xpu")
+            and torch.xpu.is_available()
+            and torch.xpu.device_count() > 0
+        )
+        or torch.backends.mps.is_built()
+        and torch.backends.mps.is_available()
     )
     if device_ok:
         return CheckResult(

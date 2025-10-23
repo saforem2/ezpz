@@ -8,7 +8,7 @@
 ezpz_setup_python_alcf() {
     log_message INFO "Setting up Python for ALCF systems"
     local machine=$(ezpz_get_machine_name)
-    
+
     case "${machine}" in
         "aurora")
             ezpz_setup_conda_aurora
@@ -26,7 +26,7 @@ ezpz_setup_python_alcf() {
 ezpz_setup_python_nersc() {
     log_message INFO "Setting up Python for NERSC systems"
     local machine=$(ezpz_get_machine_name)
-    
+
     case "${machine}" in
         "perlmutter")
             ezpz_setup_conda_perlmutter
@@ -40,7 +40,7 @@ ezpz_setup_python_nersc() {
 # Main Python setup function
 ezpz_setup_python() {
     local scheduler_type=$(ezpz_get_scheduler_type)
-    
+
     case "${scheduler_type}" in
         "pbs")
             ezpz_setup_python_alcf
@@ -59,12 +59,12 @@ ezpz_setup_python() {
 # Function to setup Python with specific PyTorch version for Aurora
 ezpz_setup_python_pt_new_aurora() {
     local conda_env="${1:-}"
-    
+
     if [[ -z "${conda_env}" ]]; then
         log_message ERROR "Usage: ezpz_setup_python_pt_new_aurora <conda_env>"
         return 1
     fi
-    
+
     log_message INFO "Setting up Python with PyTorch environment: ${conda_env}"
     ezpz_setup_python
 }

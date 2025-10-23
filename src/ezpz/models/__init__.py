@@ -7,8 +7,9 @@
 mmm/data/__init__.py
 """
 
-import ezpz
 from typing import Optional, Sequence
+
+import ezpz
 
 logger = ezpz.get_logger(__name__)
 
@@ -32,6 +33,4 @@ def summarize_model(
         return summary_str
 
     except (ImportError, ModuleNotFoundError):
-        logger.warning(
-            'torchinfo not installed, unable to print model summary!'
-        )
+        logger.warning("torchinfo not installed, unable to print model summary!")

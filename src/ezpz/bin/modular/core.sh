@@ -67,11 +67,11 @@ ezpz_check_working_dir() {
     else
         export WORKING_DIR="$(pwd)"
     fi
-    
+
     if [[ ! -d "${WORKING_DIR}" ]]; then
         return 1
     fi
-    
+
     return 0
 }
 

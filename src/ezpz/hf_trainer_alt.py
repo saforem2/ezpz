@@ -419,7 +419,11 @@ def parse_arguments() -> (
         )
     else:
         # Parse from command line arguments
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        (
+            model_args,
+            data_args,
+            training_args,
+        ) = parser.parse_args_into_dataclasses()
 
     return model_args, data_args, training_args
 
@@ -615,7 +619,9 @@ def load_and_prepare_datasets(
             ):
                 split_percentage = data_args.validation_split_percentage / 100.0
                 split_dataset = raw_datasets[train_split_name].train_test_split(
-                    test_size=split_percentage, shuffle=True, seed=training_args.seed
+                    test_size=split_percentage,
+                    shuffle=True,
+                    seed=training_args.seed,
                 )
                 raw_datasets[train_split_name] = split_dataset["train"]
                 raw_datasets[validation_split_name] = split_dataset["test"]
@@ -702,7 +708,9 @@ def load_and_prepare_datasets(
             ):
                 split_percentage = data_args.validation_split_percentage / 100.0
                 split_dataset = raw_datasets[train_split_name].train_test_split(
-                    test_size=split_percentage, shuffle=True, seed=training_args.seed
+                    test_size=split_percentage,
+                    shuffle=True,
+                    seed=training_args.seed,
                 )
                 raw_datasets[train_split_name] = split_dataset["train"]
                 raw_datasets[validation_split_name] = split_dataset["test"]
@@ -1001,7 +1009,9 @@ def main():
     ):
         try:
             wandb.watch(
-                model, log="all", log_freq=max(100, training_args.logging_steps or 500)
+                model,
+                log="all",
+                log_freq=max(100, training_args.logging_steps or 500),
             )  # Log gradients/parameters
             logger.info("W&B watching model.")
         except Exception as e:
@@ -1022,7 +1032,9 @@ def main():
 
         metrics = train_result.metrics
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)  # type: ignore # Guarded by do_train
+            data_args.max_train_samples
+            if data_args.max_train_samples is not None
+            else len(train_dataset)  # type: ignore # Guarded by do_train
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))  # type: ignore
 
@@ -1037,7 +1049,11 @@ def main():
             logger.info("*** Starting Evaluation ***")
             metrics = trainer.evaluate()
 
-            max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)  # type: ignore # Guarded by do_eval
+            max_eval_samples = (
+                data_args.max_eval_samples
+                if data_args.max_eval_samples is not None
+                else len(eval_dataset)
+            )  # type: ignore # Guarded by do_eval
             metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))  # type: ignore
 
             try:

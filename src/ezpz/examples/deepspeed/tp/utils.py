@@ -1,17 +1,17 @@
+# from openai import openai_object
+import copy
 import dataclasses
+import io
+import json
 import logging
 import math
 import os
-import io
 import sys
 import time
-import json
 from typing import Any, Optional, Sequence, Union
 
 import openai
 import tqdm
-# from openai import openai_object
-import copy
 
 # StrOrOpenAIObject = Union[str, openai_object.OpenAIObject]
 StrOrOpenAIObject = Union[str, Any]  # Using Any as a placeholder for OpenAIObject

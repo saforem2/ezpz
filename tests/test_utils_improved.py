@@ -1,10 +1,8 @@
 """Tests for the ezpz.utils module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import numpy as np
 import pytest
-import torch
 
 
 class TestUtils:

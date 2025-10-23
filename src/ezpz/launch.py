@@ -385,9 +385,7 @@ def launch(
         selected_hostfile = Path(hostfile).expanduser()
     else:
         selected_hostfile = (
-            Path(active_hostfile).expanduser()
-            if active_hostfile is not None
-            else None
+            Path(active_hostfile).expanduser() if active_hostfile is not None else None
         )
     if selected_hostfile is not None and not selected_hostfile.exists():
         logger.warning(

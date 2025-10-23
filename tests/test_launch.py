@@ -1,9 +1,6 @@
 """Tests for the ezpz.launch module."""
 
 import os
-import sys
-import tempfile
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

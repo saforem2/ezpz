@@ -174,7 +174,8 @@ class SupervisedDataset(Dataset):
         ]
 
         # this is only for fast test.
-        import os, pickle
+        import os
+        import pickle
 
         dataset_cache_name = "dataset_dict" + str(tokenizer.model_max_length) + ".pkl"
         if os.path.exists(dataset_cache_name):
@@ -210,7 +211,9 @@ class DataCollatorForSupervisedDataset(object):
             [instance[key] for instance in instances] for key in ("input_ids", "labels")
         )
         input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+            input_ids,
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id,
         )
         labels = torch.nn.utils.rnn.pad_sequence(
             labels, batch_first=True, padding_value=IGNORE_INDEX
@@ -231,7 +234,9 @@ def make_supervised_data_module(
     )
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(
-        train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator
+        train_dataset=train_dataset,
+        eval_dataset=None,
+        data_collator=data_collator,
     )
 
 
@@ -271,9 +276,10 @@ def train():
     from transformers import TrainerCallback
 
     def see_memory_usage(message, force=False):
-        import deepspeed.comm as dist
-        import gc, psutil
+        import gc
 
+        import deepspeed.comm as dist
+        import psutil
         from deepspeed import get_accelerator
 
         if dist.is_initialized() and not dist.get_rank() == 0:
@@ -301,7 +307,6 @@ def train():
         get_accelerator().reset_peak_memory_stats()
 
     class MemoryCallback(TrainerCallback):
-
         def on_step_end(self, args, state, control, **kwargs):
             see_memory_usage("After step end", force=True)
 

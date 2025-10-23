@@ -1,6 +1,5 @@
 """Tests for the ezpz.dist module."""
 
-import os
 
 import pytest
 

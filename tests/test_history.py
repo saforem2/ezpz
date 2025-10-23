@@ -1,6 +1,7 @@
 """Tests for the ezpz.history module."""
 
 import json
+from enum import Enum
 
 import numpy as np
 import pytest
@@ -140,6 +141,73 @@ class TestHistory:
         hist.update({"loss": 1.0})
         assert "loss/mean" in hist.history
         assert hist.history["loss/mean"][-1] == pytest.approx(0.5)
+
+    def test_distributed_metrics_use_cpu_for_mps_backend(self, monkeypatch):
+        """Distributed metric aggregation should not allocate tensors on MPS."""
+
+        class FakeBackend(Enum):
+            GLOO = "gloo"
+
+        class FakeReduceOp(Enum):
+            SUM = "sum"
+            MAX = "max"
+            MIN = "min"
+
+        class FakeDist:
+            Backend = FakeBackend
+            ReduceOp = FakeReduceOp
+
+            def __init__(self, world_size: int = 2) -> None:
+                self._world_size = world_size
+                self.devices_seen: list[str] = []
+
+            def is_available(self) -> bool:
+                return True
+
+            def is_initialized(self) -> bool:
+                return True
+
+            def get_backend(self):
+                return self.Backend.GLOO
+
+            def get_world_size(self) -> int:
+                return self._world_size
+
+            def all_reduce(self, tensor: torch.Tensor, op: FakeReduceOp) -> None:
+                self.devices_seen.append(tensor.device.type)
+                if op == self.ReduceOp.SUM:
+                    tensor.mul_(self._world_size)
+                elif op in (self.ReduceOp.MAX, self.ReduceOp.MIN):
+                    return
+                else:  # pragma: no cover - defensive
+                    raise AssertionError(f"Unexpected ReduceOp: {op}")
+
+        hist = history.History(aggregate_metrics=True)
+        fake_dist = FakeDist()
+        hist._dist = fake_dist
+        monkeypatch.setattr(
+            history.ezpz,
+            "get_torch_device",
+            lambda **kwargs: torch.device("mps"),
+        )
+        captured: dict[str, torch.device] = {}
+        orig_tensor = torch.tensor
+
+        def capture_tensor(*args, **kwargs):
+            device = kwargs.get("device")
+            captured["device"] = device
+            if isinstance(device, torch.device) and device.type == "mps":
+                kwargs["device"] = torch.device("cpu")
+            return orig_tensor(*args, **kwargs)
+
+        monkeypatch.setattr(history.torch, "tensor", capture_tensor)
+        stats = hist._compute_distributed_metrics({"loss": 1.0})
+        assert captured["device"] is not None
+        assert isinstance(captured["device"], torch.device)
+        assert captured["device"].type == "cpu"
+        assert stats["loss/mean"] == pytest.approx(1.0)
+        assert stats["loss/std"] == pytest.approx(0.0)
+        assert all(device == "cpu" for device in fake_dist.devices_seen)
 
     def test_history_finalize_report_contains_environment(self, tmp_path):
         """Finalized report lives alongside outputs with environment context."""

@@ -52,7 +52,7 @@ ezpz_reset_pbs_vars() {
 ezpz_get_pbs_nodefile_from_hostname() {
     local hostname="${1:-$(hostname)}"
     local jobid=$(ezpz_get_jobid_from_hostname "${hostname}")
-    
+
     if [[ -n "${jobid}" ]]; then
         echo "/var/spool/pbs/aux/${jobid}.${hostname}"
     fi

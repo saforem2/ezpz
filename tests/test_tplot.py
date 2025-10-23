@@ -42,7 +42,10 @@ class TestTPlot:
     def test_tplot_dict_with_simple_data(self):
         """Test tplot_dict with simple data."""
         # Create some simple test data
-        data = {"x": np.linspace(0, 10, 100), "y": np.sin(np.linspace(0, 10, 100))}
+        data = {
+            "x": np.linspace(0, 10, 100),
+            "y": np.sin(np.linspace(0, 10, 100)),
+        }
 
         # This should not raise an exception
         try:
