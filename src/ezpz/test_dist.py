@@ -55,6 +55,7 @@ logger = ezpz.get_logger(__name__)
 @dataclass
 class TrainConfig:
     """Runtime configuration for the ``ezpz.test_dist`` distributed smoke test."""
+
     warmup: int
     tp: int
     pp: int
@@ -147,6 +148,7 @@ class TrainConfig:
 @dataclass
 class Trainer:
     """Co-ordinate training loops, logging, and profiling for the test model."""
+
     config: TrainConfig
     model: torch.nn.Module
     optimizer: torch.optim.Optimizer
@@ -207,7 +209,9 @@ class Trainer:
         self._feature_dim = self.config.input_size
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def _build_dataloader(self) -> tuple[DataLoader, Iterator[tuple[torch.Tensor, torch.Tensor]]]:
+    def _build_dataloader(
+        self,
+    ) -> tuple[DataLoader, Iterator[tuple[torch.Tensor, torch.Tensor]]]:
         """Construct a training dataloader for the requested dataset."""
         dataset_name = self.config.dataset.lower()
         if dataset_name == "mnist":
@@ -362,7 +366,11 @@ class Trainer:
             ),
         }
 
-        host_name = platform.uname().node if hasattr(platform, "uname") else os.environ.get("HOSTNAME", "unknown")
+        host_name = (
+            platform.uname().node
+            if hasattr(platform, "uname")
+            else os.environ.get("HOSTNAME", "unknown")
+        )
         path_details = {
             "Working directory": str(Path.cwd()),
             "Output directory": str(self.config.outdir),
