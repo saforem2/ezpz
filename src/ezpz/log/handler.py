@@ -25,8 +25,8 @@ from ezpz.log.console import Console, get_console
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B\[[0-9;]*m")
 
 
-def get_styles(colorized: bool = True) -> dict:
-    styles = {}
+def get_styles(colorized: bool = True) -> dict[str, Style | str]:
+    styles: dict[str, Style | str] = {}
     if colorized and use_colored_logs():
         from rich.default_styles import DEFAULT_STYLES
 
@@ -93,7 +93,7 @@ class RichHandler(OriginalRichHandler):
         module = getattr(record, "module", None)
         name = getattr(record, "name", None)
         funcName = getattr(record, "funcName", None)
-        parr = []
+        parr: list[str] = []
         if fp is not None:
             fp = Path(fp)
             parent = fp.parent.as_posix().split("/")[-1]
@@ -103,7 +103,13 @@ class RichHandler(OriginalRichHandler):
 
         if name is not None and parent is not None and f"{parent}.{module}" != name:
             parr.append(name)
-        pstr = "/".join([parr[0], ".".join(parr[1:])])
+        if not parr:
+            pstr = ""
+        elif len(parr) == 1:
+            pstr = parr[0]
+        else:
+            remainder = ".".join(parr[1:]).strip(".")
+            pstr = "/".join([parr[0], remainder]) if remainder else parr[0]
         level = self.get_level_text(record)
         time_format = None if self.formatter is None else self.formatter.datefmt
         default_time_fmt = "%Y-%m-%d %H:%M:%S,%f"
@@ -147,7 +153,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         self.link_path = link_path
         self._last_time: Optional[str] = None
         self.colorized = use_colored_logs()
-        self.styles = get_styles()
+        self.styles: dict[str, Style | str] = get_styles()
 
     def __call__(  # pylint: disable=too-many-arguments
         self,
@@ -193,23 +199,23 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             result += ltext
         if self.show_path and path:
             path_text = Text("[", style=self.styles.get("log.brace", ""))
-            text_arr = []
+            text_arr: list[Text] = []
             # try:
             # fp = Path(path)
             # parent = fp.parent.as_posix().split("/")[-1]
             # remainder = fp.stem
-            parent, remainder = path.split("/")
+            parent, remainder = (path.split("/", 1) + [""])[:2]
             # except Exception:
             #     import ezpz
             #     ezpz.breakpoint(0)
             if "." in remainder:
-                module, *fn = remainder.split(".")
-                fn = ".".join(fn)
+                module, *fn_parts = remainder.split(".")
+                fn_name = ".".join(fn_parts) if fn_parts else None
             else:
                 module = remainder
-                fn = None
+                fn_name = None
             if funcName is not None:
-                fn = funcName
+                fn_name = funcName
             text_arr += [
                 Text(
                     f"{parent}", style="log.parent"
@@ -229,11 +235,11 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
                 # text_arr.append(
                 #     Text(f'{line_no}', style=self.styles.get('log.linenumber', '')),
                 # )
-            if fn is not None:
+            if fn_name is not None:
                 text_arr += [
                     Text(":", style="log.colon"),
                     Text(
-                        f"{fn}",
+                        f"{fn_name}",
                         style="repr.function",  # self.styles.get('repr.inspect.def', 'json.key'),
                     ),
                 ]
