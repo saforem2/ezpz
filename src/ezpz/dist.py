@@ -14,7 +14,7 @@ import time
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union, cast
 
 import torch
 import torch.distributed
@@ -25,25 +25,26 @@ import ezpz.tp
 from ezpz.lazy import lazy_import
 
 TORCH_DTYPES_MAP = {
-    'bf16': torch.bfloat16,
-    'bfloat16': torch.bfloat16,
-    'fp16': torch.float16,
-    'float16': torch.float16,
-    'half': torch.float16,
-    'fp32': torch.float32,
-    'float32': torch.float32,
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+    "fp16": torch.float16,
+    "float16": torch.float16,
+    "half": torch.float16,
+    "fp32": torch.float32,
+    "float32": torch.float32,
 }
 
 ENABLE_WANDB = False
+wandb: Any
 try:
     wandb = lazy_import("wandb")
-    if wandb.api.api_key is not None:
+    if getattr(getattr(wandb, "api", None), "api_key", None) is not None:
         ENABLE_WANDB = True
 except Exception:
     wandb = None
 
 try:
-    ipex = lazy_import("intel_extension_for_pytorch")
+    ipex: Any = lazy_import("intel_extension_for_pytorch")
 except (ImportError, ModuleNotFoundError):
     ipex = None
 
@@ -264,7 +265,7 @@ def timeit(func: Callable):
 
 
 def get_hosts_from_hostfile(
-    hostfile: Optional[str | Path] = None,  # type:ignore[reportDeprecated]
+    hostfile: Optional[str | Path] = None,
 ) -> tuple[str, list[str]]:
     """
     Get hosts from the hostfile or environment variables.
@@ -367,7 +368,7 @@ def _get_dist_info(
     num_nodes = len(hosts)
     num_gpus_per_node = get_gpus_per_node()
     num_gpus = num_nodes * num_gpus_per_node
-    dist_info = {}
+    dist_info: dict[str, Any] = {}
     if framework is not None:
         dist_info |= {"FRAMEWORK": framework}
     dist_info |= {
@@ -628,7 +629,7 @@ def init_deepspeed(
         ... )
     """
     try:
-        import deepspeed  # noqa type:ignore
+        import deepspeed  # type: ignore[import-not-found]  # noqa: F401
 
         os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
     except ImportError as e:
@@ -643,7 +644,7 @@ def init_deepspeed(
     world_size = get_world_size() if world_size is None else world_size
     os.environ["WORLD_SIZE"] = str(world_size)
     try:
-        import deepspeed  # type:ignore
+        import deepspeed  # type: ignore[import-not-found]
 
         # logger.warning(f'Setting {timeout=}')
         dt = 3600 if timeout is None else timeout
@@ -834,8 +835,8 @@ def init_process_group(
         timeout = timedelta(
             seconds=int(env_timeout),
         )
-    if not torch.distributed.is_initialized():  # type:ignore
-        torch.distributed.init_process_group(  # type:ignore
+    if not torch.distributed.is_initialized():
+        torch.distributed.init_process_group(
             backend=backend,
             timeout=timeout,
             rank=int(rank),
@@ -854,9 +855,7 @@ def run_ddp(fn: Callable, world_size: int) -> None:
     """
     import torch.multiprocessing as mp
 
-    mp.spawn(  # type:ignore
-        fn, args=(world_size,), nprocs=world_size, join=True
-    )
+    mp.spawn(fn, args=(world_size,), nprocs=world_size, join=True)
 
 
 def get_rank() -> int:
@@ -1085,11 +1084,9 @@ def setup_torch_DDP(
     # -- Exit early if already initialized --
     import torch.distributed
 
-    if torch.distributed.is_initialized():  # type:ignore
+    if torch.distributed.is_initialized():
         if int(get_rank()) == 0:
-            logger.info(
-                "torch.distributed was already initialized, skipping..."
-            )
+            logger.info("torch.distributed was already initialized, skipping...")
             return {
                 "world_size": world_size,
                 "rank": rank,
@@ -1108,19 +1105,17 @@ def setup_torch_DDP(
     # check if we have specified a 'MASTER_PORT' explicitly, if so, use this
     free_port = str(get_free_port()) if rank == 0 else None
     eport = os.environ.get("MASTER_PORT", free_port)
-    if eport is not None:
-        _ = (
-            logger.info(f"Caught MASTER_PORT={eport} from environment!")
-            if rank == 0
-            else None
-        )
-    else:
+    if eport is not None and rank == 0:
+        logger.info(f"Caught MASTER_PORT={eport} from environment!")
+    elif eport is None:
         eport = port
     # grab it from rank 0
-    master_port = eport if rank == 0 else None
-    # broadcast it to make sure everyones tapped in
-    master_port = MPI.COMM_WORLD.bcast(master_port, root=0)
-    master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    master_port_seed = eport if rank == 0 else None
+    # broadcast it to make sure everyone is tapped in
+    master_port_value = MPI.COMM_WORLD.bcast(master_port_seed, root=0)
+    master_addr_value = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    master_port = cast(str, master_port_value)
+    master_addr = cast(str, master_addr_value)
     # set it explicitly in each process' environment
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = master_port
@@ -1261,15 +1256,18 @@ def setup_torch_distributed(
         rank = get_rank()
         local_rank = get_local_rank()
     elif fw in {"horovod", "hvd"}:
-        import horovod.torch as hvd  # type:ignore noqa
+        try:
+            import horovod.torch as hvd  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ImportError("Horovod is required but not installed") from exc
 
-        _ = None if hvd.is_initialized() else hvd.init()  # type:ignore
-        # hvd.init() if not hvd.is_initialized() else None
-        rank = hvd.rank()  # type:ignore
-        world_size = hvd.size()  # type:ignore
-        local_rank = hvd.local_rank()  # type:ignore
+        if not hvd.is_initialized():
+            hvd.init()
+        rank = int(hvd.rank())
+        world_size = int(hvd.size())
+        local_rank = int(hvd.local_rank())
         if torch.cuda.is_available():
-            torch.cuda.set_device(hvd.local_rank())  # type:ignore
+            torch.cuda.set_device(local_rank)
     else:
         raise ValueError(f"Unable to parse backend: {be=}")
 
@@ -1298,12 +1296,10 @@ def setup_torch_distributed(
 
 def barrier(
     device: Optional[torch.device | int | str] = None,
-    group: (
-        torch.distributed.ProcessGroup | None  # type:ignore
-    ) = torch.distributed.GroupMember.WORLD,  # type:ignore
+    group: Any = torch.distributed.GroupMember.WORLD,
     async_op: bool = False,
-    device_ids: str | Iterable | None = None,
-) -> torch.distributed.Work | None:  # type:ignore
+    device_ids: str | Iterable[Any] | None = None,
+) -> Optional[torch.distributed.Work]:
     """
     Barrier for all processes in the group.
 
@@ -1324,7 +1320,7 @@ def barrier(
             If async_op is False, returns None.
     """
     try:
-        torch.distributed.barrier(  # type:ignore
+        return torch.distributed.barrier(
             group=group, async_op=async_op, device_ids=device_ids
         )
     except Exception:
@@ -1334,6 +1330,7 @@ def barrier(
             "Falling back to `mpi4py` barrier."
         )
         MPI.COMM_WORLD.barrier()
+        return None
 
 
 def setup_torch(
@@ -1520,8 +1517,8 @@ def cleanup() -> None:
     Example:
         >>> cleanup()
     """
-    if torch.distributed.is_initialized():  # type:ignore
-        torch.distributed.destroy_process_group()  # type:ignore
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
 
 
 def setup_tensorflow(
@@ -1530,11 +1527,11 @@ def setup_tensorflow(
 ) -> int:
     """Initialize TensorFlow + Horovod for Distributed Training"""
     try:
-        import tensorflow as tf  # type:ignore noqa
+        import tensorflow as tf  # type: ignore[import-not-found]  # noqa: F401
 
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-        import horovod.tensorflow as hvd  # type:ignore noqa
+        import horovod.tensorflow as hvd  # type: ignore[import-not-found]  # noqa: F401
     except Exception:
         logger.warning(
             "Unable to import `tensorflow` or `horovod.tensorflow`. "
@@ -1552,8 +1549,8 @@ def setup_tensorflow(
         "mixed_float16",
         # 'mixed_bfloat16'
     ]:
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # type:ignore
-    TF_FLOAT = tf.keras.backend.floatx()  # type:ignore
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get("TF_EAGER", None)
     if eager_mode is not None:
         logger.info("Detected `TF_EAGER` from env. Running eagerly.")
@@ -1653,7 +1650,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith("x1"):
         return "SunSpot"
     if hostname.startswith("x3"):
-        if 'sirius' in hostname:
+        if "sirius" in hostname:
             return "Sirius"
         return "Polaris"
     if hostname.startswith("x4"):
@@ -1695,28 +1692,21 @@ def setup_wandb(
         return None
 
     HAS_WANDB = False
-    try:
-        import wandb
-
-        if wandb.api.api_key is not None:
-            HAS_WANDB = True
-    except (ImportError, ModuleNotFoundError) as e:
+    if wandb is None:
         logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
-        raise e
+        raise ImportError("wandb is required for profiling")
+
+    if getattr(getattr(wandb, "api", None), "api_key", None) is not None:
+        HAS_WANDB = True
 
     outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
     rank = get_rank()
-    project_name = (
-        project_name
-        if project_name is not None
-        else os.environ.get(
-            "WB_PROJECT",
-            os.environ.get(
-                "WANDB_PROJECT",
-                os.environ.get("WB_PROJECT_NAME", None),
-            ),
+    if project_name is None:
+        project_name = (
+            os.environ.get("WB_PROJECT")
+            or os.environ.get("WANDB_PROJECT")
+            or os.environ.get("WB_PROJECT_NAME")
         )
-    )
     if project_name is None:
         import sys
 
@@ -1728,15 +1718,15 @@ def setup_wandb(
 
     logger.info(f"Setting up wandb from {rank=}")
     logger.info(f"Using WB_PROJECT={project_name}")
-    tensorboard_dir = (
-        os.environ.get("TENSORBOARD_DIR", None)
-        if config is None
-        else config.get("tensorboard_dir", None)
-    )
+    tensorboard_dir: Optional[str]
+    if config is None:
+        tensorboard_dir = os.environ.get("TENSORBOARD_DIR")
+    else:
+        tensorboard_dir = cast(Optional[str], config.get("tensorboard_dir", None))
     if tensorboard_dir is not None:
         logger.info(f"Patching tensorboard from {tensorboard_dir}")
         try:
-            wandb.tensorboard.patch(root_logdir=tensorboard_dir)  # type:ignore
+            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         except Exception as exc:
             logger.exception(exc)
     # wbrun_id = wandb.util.generate_id()
@@ -1896,14 +1886,13 @@ def write_hostfile_from_list_of_hosts(
 
 def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
     """Make a hostfile from the SLURM_NODELIST environment variable"""
-    nodes = os.environ.get("SLURM_NODELIST", None)
-    # if nodes is not None:
-    assert nodes is not None
-    # machine = get_machine()
-    prefix, idxs = nodes.split("[")
-    idxs = idxs.rstrip("]")
-    idxs = "-".join(idxs.split(",")).split("-")
-    nodelist = [f"{prefix}{i}" for i in idxs]
+    nodes = os.environ.get("SLURM_NODELIST")
+    if nodes is None:
+        raise RuntimeError("SLURM_NODELIST environment variable is not set")
+    prefix, raw_indices = nodes.split("[", 1)
+    index_tokens = raw_indices.rstrip("]")
+    expanded = "-".join(index_tokens.split(",")).split("-")
+    nodelist = [f"{prefix}{token}" for token in expanded if token]
     # idxs = (
     #     nodes.split
     # )
@@ -1911,14 +1900,13 @@ def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
     #     nodes.lstrip('frontier').replace('[', '').replace(']', '').split('-')
     # )
     # nodelist = [f'frontier{i}' for i in idxs]
-    if outfile is None:
-        outfile = Path(os.getcwd()).joinpath("hostfile")
-    else:
-        outfile = Path(outfile)
-    with outfile.open("w") as f:
+    output_path = (
+        Path(os.getcwd()).joinpath("hostfile") if outfile is None else Path(outfile)
+    )
+    with output_path.open("w") as f:
         for node in nodelist:
             f.write(f"{node}\n")
-    return outfile
+    return output_path
 
 
 def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
@@ -1926,42 +1914,35 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     from ezpz.configs import get_scheduler
 
     scheduler = get_scheduler()
-    if scheduler.lower() == "unknown":
-        logger.debug("Unknown scheduler")
-        hostfile = Path(os.getcwd()).joinpath("hostfile")
+    hostfile_path = Path(hostfile) if hostfile is not None else None
+
     if scheduler.lower() == "slurm":
-        hostfile = make_hostfile_from_slurm_env()
-        assert Path(hostfile).is_file()
-    if hostfile is None:
-        hfp = os.environ.get(
-            "PBS_NODEFILE",
-            os.environ.get(
-                "HOSTFILE",
-                None,  # fallback_hostfile.as_posix()
-            ),
-        )
-        if (
-            hfp is None
-            or not Path(hfp).is_file()
-            # and scheduler == 'PBS'
-        ):
-            if scheduler == "PBS":
-                # hfp = Path(get_pbs_nodefile_from_qstat())
-                nodefile = ezpz.pbs.get_pbs_nodefile()
-                assert (
-                    nodefile is not None
-                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
-                hfp = Path(nodefile)
-            else:
-                # create makeshift hostfile containing 'localhost'
-                hfp = Path(os.getcwd()).joinpath("hostfile")
-                hfp.touch(exist_ok=True)
-                write_localhost_to_hostfile(hfp)
-    else:
-        hfp = Path(hostfile)
-    assert hfp is not None and Path(hfp).is_file()
-    assert Path(hfp).is_file()
-    hostfile = Path(hfp).as_posix()
+        hostfile_path = make_hostfile_from_slurm_env()
+    elif hostfile_path is None:
+        env_hostfile = os.environ.get("PBS_NODEFILE") or os.environ.get("HOSTFILE")
+        if env_hostfile:
+            candidate = Path(env_hostfile)
+            if candidate.is_file():
+                hostfile_path = candidate
+
+    if hostfile_path is None:
+        if scheduler.upper() == "PBS":
+            nodefile = ezpz.pbs.get_pbs_nodefile()
+            if nodefile is None:
+                raise RuntimeError(
+                    "Unable to determine PBS nodefile from environment or ezpz.pbs"
+                )
+            hostfile_path = Path(nodefile)
+        else:
+            logger.debug("Falling back to localhost hostfile")
+            hostfile_path = Path(os.getcwd()).joinpath("hostfile")
+            hostfile_path.touch(exist_ok=True)
+            write_localhost_to_hostfile(hostfile_path)
+
+    if not hostfile_path.is_file():
+        raise FileNotFoundError(f"Hostfile not found at {hostfile_path}")
+
+    hostfile_str = hostfile_path.as_posix()
     # if hfp is not None:
     # hostfile, hosts = get_hosts_from_hostfile(hostfile)
     # hosts = [h.split('.')[0] for h in hosts]
@@ -1969,9 +1950,9 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     #     os.environ['PBS_NODEFILE'] = hostfile  # hfp.as_posix()
     hfname = f"{scheduler.upper()}_NODEFILE"
     if hfname not in os.environ:
-        os.environ |= {hfname: hostfile}
+        os.environ[hfname] = hostfile_str
     # os.environ[f'{scheduler.upper()}_NODEFILE'] = hostfile
-    return Path(hfp)
+    return hostfile_path
 
 
 def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
@@ -1986,7 +1967,8 @@ def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
 
 def get_cpus_per_node() -> int:
     """Get the number of CPUs per node"""
-    from sh import getconf as sh_getconf  # type:ignore noqa
+    from sh import \
+        getconf as sh_getconf  # type: ignore[import-not-found]  # noqa: F401
 
     return int(sh_getconf("_NPROCESSORS_ONLN").rstrip("\n"))
 
