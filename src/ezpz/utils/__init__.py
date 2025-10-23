@@ -8,7 +8,7 @@ import pdb
 import re
 import subprocess
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 # from ezpz import get_rank
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
@@ -205,6 +205,7 @@ def model_summary(
 
     except (ImportError, ModuleNotFoundError):
         logger.warning("torchinfo not installed, unable to print model summary!")
+        return None
 
 
 def normalize(name: str) -> str:
@@ -369,7 +370,14 @@ def make_tarfile(
         dirname,
     )
     subprocess.run(
-        ["tar", "-czf", output_filename, "-C", srcfp.parent.as_posix(), dirname],
+        [
+            "tar",
+            "-czf",
+            output_filename,
+            "-C",
+            srcfp.parent.as_posix(),
+            dirname,
+        ],
         check=True,
     )
 
@@ -431,7 +439,7 @@ def dataset_to_h5pyfile(hfile: PathLike, dataset: xr.Dataset, **kwargs):
             f[key].resize(shape, axis=0)  # type: ignore
             f[key][-arr.shape[0] :] = arr  # type: ignore
         else:
-            maxshape = (None,)
+            maxshape: tuple[Any | None, ...] = (None,)
             if len(arr.shape) > 1:
                 maxshape = (None, *arr.shape[1:])
             f.create_dataset(key, data=arr, maxshape=maxshape, **kwargs)
@@ -466,9 +474,26 @@ def dataset_from_h5pyfile(hfile: PathLike) -> xr.Dataset:
     return xr.Dataset(data)
 
 
-def get_deepspeed_zero_config_json(zero_config: ZeroConfig) -> dict:
-    """Return the DeepSpeed zero config as a dict."""
-    return asdict(zero_config)
+def get_deepspeed_zero_config_json(
+    zero_config: Optional[ZeroConfig] = None,
+    **overrides: Any,
+) -> dict:
+    """Return the DeepSpeed ZeRO configuration as a dictionary.
+
+    Args:
+        zero_config (Optional[ZeroConfig]): Base configuration to serialize. If
+            omitted, a default ``ZeroConfig`` instance is created.
+        **overrides: Additional keyword arguments used to update the base
+            configuration prior to serialization.
+
+    Returns:
+        dict: A dictionary representation of the ZeRO configuration.
+    """
+
+    base = zero_config or ZeroConfig()
+    if overrides:
+        base = replace(base, **overrides)
+    return asdict(base)
 
 
 def write_generic_deepspeed_config(

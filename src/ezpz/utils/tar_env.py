@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+
 import ezpz
 
 logger = ezpz.get_logger(__name__)
