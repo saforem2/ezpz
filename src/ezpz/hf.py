@@ -10,7 +10,6 @@ https://huggingface.co/models?filter=text-generation
 
 import argparse
 import json
-import logging
 import math
 import os
 import random
