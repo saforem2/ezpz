@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional
 
@@ -50,17 +51,12 @@ def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
 EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
 
 
-def parse_args():
+def parse_args(argv: Optional[Sequence[str]] = None):
     """Parse command line arguments."""
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Launch a command on the current PBS job."
-    )
-    parser.add_argument(
-        "command",
-        type=str,
-        help="The command to run on the current PBS job.",
+        description="Launch a command on the current PBS/SLURM job."
     )
     parser.add_argument(
         "--filter",
@@ -99,17 +95,25 @@ def parse_args():
         default=None,
         help="Hostfile to use for launching.",
     )
-    # parser.add_argument(
-    #     "--world_size",
-    #     required=False,
-    #     type=int,
-    #     default=-1,
-    #     help="Number of processes to launch.",
-    # )
-    return parser.parse_args()
+    parser.add_argument(
+        "command",
+        nargs=argparse.REMAINDER,
+        help="Command (and arguments) to execute. Use '--' to separate options when needed.",
+    )
+    return parser.parse_args(argv)
 
 
-def run_command(command: list | str, filters: Optional[list] = None) -> int:
+def _normalize_command(command: Sequence[str] | str) -> list[str]:
+    """Return a list suitable for ``subprocess`` from *command*."""
+
+    if isinstance(command, str):
+        return shlex.split(command)
+    return list(command)
+
+
+def run_command(
+    command: Sequence[str] | str, filters: Optional[Sequence[str]] = None
+) -> int:
     """Run a command and print its output line by line.
 
     Args:
@@ -122,35 +126,35 @@ def run_command(command: list | str, filters: Optional[list] = None) -> int:
     # XXX: Replace `subprocess.Popen`
     # with `subprocess.run` for better error handling ??
     # <https://docs.python.org/3.10/library/subprocess.html#subprocess.run>
+    cmd_list = _normalize_command(command)
+
     if filters is not None and len(filters) > 0:
         logger.info(f"Caught {len(filters)} filters")
     logger.info(
         " ".join(
             [
                 "Running command:\n",
-                shlex.join(command) if isinstance(command, list) else command,
+                shlex.join(cmd_list),
             ]
         )
     )
     with subprocess.Popen(
-        shlex.join(command),
+        cmd_list,
         stdout=subprocess.PIPE,
-        shell=True,
         stderr=subprocess.STDOUT,
-        bufsize=0,
+        text=True,
+        bufsize=1,
         close_fds=True,
-        # executable="/bin/bash" if isinstance(command, str) else None,
     ) as process:
         assert process.stdout is not None
-        for line in iter(process.stdout.readline, b""):
-            decoded = line.decode("utf-8")
+        for line in process.stdout:
             if (
                 filters is None
                 or len(filters) == 0
-                or not any(f in decoded for f in filters)
+                or not any(f in line for f in filters)
             ):
-                print(decoded.rstrip())
-    return process.returncode
+                print(line.rstrip())
+    return process.returncode or 0
 
 
 def get_command_to_launch_from_argv() -> Optional[str | list[str]]:
@@ -228,8 +232,13 @@ def kill_existing_processes(
     if ezpz.get_machine().lower() == "aurora":
         filters += get_aurora_filters(additional_filters=additional_filters)
 
+    if len(filters) == 0:
+        logger.info("No filters provided; skipping process cleanup.")
+        return 0
+
     logger.info(f"Killing existing processes with filters: {filters}")
-    cmd = f"pkill -f {' '.join(filters)}"
+    filter_pattern = " ".join(filters)
+    cmd = ["pkill", "-f", filter_pattern]
     return run_command(cmd, filters=filters)
 
 
@@ -370,10 +379,25 @@ def launch(
     jobid = get_active_jobid()
     assert jobid is not None, "No active job found."
     nodelist = get_nodelist_of_active_job()
-    hostfile = get_hostfile_of_active_job()
+    active_hostfile = get_hostfile_of_active_job()
+    selected_hostfile: Optional[Path]
+    if hostfile is not None:
+        selected_hostfile = Path(hostfile).expanduser()
+    else:
+        selected_hostfile = (
+            Path(active_hostfile).expanduser()
+            if active_hostfile is not None
+            else None
+        )
+    if selected_hostfile is not None and not selected_hostfile.exists():
+        logger.warning(
+            "Hostfile %s does not exist; continuing without explicit hostfile.",
+            selected_hostfile,
+        )
+        selected_hostfile = None
     logger.info(f"Job ID: {jobid}")
     logger.info(f"nodelist: {nodelist}")
-    logger.info(f"hostfile: {hostfile}")
+    logger.info(f"hostfile: {selected_hostfile}")
     cmd_list = build_executable(
         launch_cmd=launch_cmd,
         cmd_to_launch=cmd_to_launch,
@@ -381,6 +405,7 @@ def launch(
         ngpu_per_host=ngpu_per_host,
         nhosts=nhosts,
         include_python=include_python,
+        hostfile=selected_hostfile,
     )
     # cmd_list = shlex.split(cmd)
     cmd_str = shlex.join([f"{i}" for i in cmd_list])
@@ -405,27 +430,51 @@ def launch(
     return retcode
 
 
-def main() -> int:
-    """CLI entry point for ``ezpz-launch`` with local ``mpirun`` fallback."""
+def run(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point for launching commands with scheduler fallback."""
     import ezpz.dist
 
     configure_warnings()
-    argv = sys.argv[1:]
-    if not argv:
-        raise SystemExit("No command provided to ezpz-launch")
+    argv = [] if argv is None else list(argv)
+    args = parse_args(argv)
+    command_parts = [part for part in args.command if part]
+    if not command_parts:
+        raise SystemExit("No command provided to ezpz launch")
 
     scheduler = get_scheduler().lower()
-    cmd_to_launch = " ".join(argv)
 
     if scheduler in {"pbs", "slurm"}:
         jobid = get_active_jobid()
         if jobid is not None:
-            launch(cmd_to_launch=cmd_to_launch, include_python=False)
+            launch(
+                cmd_to_launch=command_parts,
+                include_python=False,
+                ngpus=args.nproc if args.nproc > -1 else None,
+                nhosts=args.nnode if args.nnode > -1 else None,
+                ngpu_per_host=args.nproc_per_node if args.nproc_per_node > -1 else None,
+                hostfile=args.hostfile,
+                filters=args.filter,
+            )
             ezpz.dist.cleanup()
             return 0
 
-    world_size = os.environ.get("WORLD_SIZE", "2")
-    fallback_cmd = ["mpirun", "-np", str(world_size), *argv]
+    requested_nproc = args.nproc if args.nproc > -1 else None
+    requested_ppn = args.nproc_per_node if args.nproc_per_node > -1 else None
+    requested_nhosts = args.nnode if args.nnode > -1 else None
+    if (
+        requested_nproc is None
+        and requested_ppn is not None
+        and requested_nhosts is not None
+    ):
+        requested_nproc = requested_ppn * requested_nhosts
+    if requested_nproc is None:
+        requested_nproc = int(os.environ.get("WORLD_SIZE", "2"))
+    fallback_cmd = ["mpirun", "-np", str(requested_nproc)]
+    if args.hostfile:
+        fallback_cmd.extend(["--hostfile", args.hostfile])
+    if requested_ppn is not None and requested_nhosts is not None:
+        fallback_cmd.extend(["--map-by", f"ppr:{requested_ppn}:node"])
+    fallback_cmd.extend(command_parts)
     logger.info(
         "No active scheduler detected; falling back to local mpirun: %s",
         " ".join(shlex.quote(part) for part in fallback_cmd),
@@ -433,6 +482,11 @@ def main() -> int:
     result = subprocess.run(fallback_cmd, check=False)
     ezpz.dist.cleanup()
     return result.returncode
+
+
+def main() -> int:
+    """Backward-compatible console script entry point."""
+    return run(sys.argv[1:])
 
 
 if __name__ == "__main__":
