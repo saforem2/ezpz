@@ -8,16 +8,20 @@ We provide below multiple (equivalent) commands that can be used to launch
 [`test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
 across _all_ available GPUs.
 
+!!! tip
+    Run `ezpz doctor` first to verify MPI, scheduler, `wandb`, and accelerator
+    prerequisites before submitting long-running jobs.
+
 1. Directly:
 
    ```bash
-   ezpz-test
+   ezpz test
    ```
 
-2. Using `ezpz-launch`:
+2. Using `ezpz launch`:
 
    ```bash
-   ezpz-launch python3 -m ezpz.test_dist
+   ezpz launch python3 -m ezpz.test_dist
    ```
 
 3. As a module using `python3 -m`:
@@ -35,7 +39,7 @@ across _all_ available GPUs.
 
 ## ⚙️ Execution Flow
 
-Two primary control paths drive `ezpz-launch`: a scheduler-aware path used when
+Two primary control paths drive `ezpz launch`: a scheduler-aware path used when
 running inside PBS/SLURM allocations, and a local fallback that shells out to
 `mpirun` when no scheduler metadata is available.
 
@@ -45,12 +49,12 @@ running inside PBS/SLURM allocations, and a local fallback that shells out to
 sequenceDiagram
     autonumber
     participant User
-    participant CLI as ezpz-launch
+    participant CLI as ezpz launch
     participant Scheduler
     participant Launch as ezpz.launch.launch
     participant Nodes as Compute Nodes
 
-    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    User->>CLI: ezpz launch python3 -m ezpz.test_dist
     CLI->>Scheduler: get_scheduler()
     Scheduler-->>CLI: "pbs" / "slurm"
     CLI->>Scheduler: get_active_jobid()
@@ -68,11 +72,11 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant User
-    participant CLI as ezpz-launch
+    participant CLI as ezpz launch
     participant Scheduler
     participant MPI as mpirun
 
-    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    User->>CLI: ezpz launch python3 -m ezpz.test_dist
     CLI->>Scheduler: get_scheduler()
     Scheduler-->>CLI: "unknown"
     CLI->>Scheduler: get_active_jobid()
@@ -89,12 +93,18 @@ sequenceDiagram
 ```bash {#launch-example}
 source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
 python3 -m pip install "git+https://github.com/saforem2/ezpz"
-ezpz-launch -m ezpz.test_dist
+ezpz launch -m ezpz.test_dist
 ```
 
 This will _launch_
 [`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
 across all available resources in your {PBS, Slurm} job.
+
+??? tip "Manual overrides"
+    Supply `-n/--nproc`, `--nproc-per-node`, or `--hostfile <path>` to
+    override the scheduler-provided launch parameters. These values are
+    forwarded to `mpiexec`/`srun`, and they are also honoured when ezpz falls
+    back to `mpirun` on a local workstation.
 
 ```mermaid
 sequenceDiagram

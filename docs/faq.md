@@ -22,9 +22,9 @@
    #[🐍 2025-08-pt29]
    #[~/d/f/p/s/ezpz][🌱 saforem2/yeet-env][📦📝🤷✓]
    #[08/26/25 @ 07:44:31][x4204c4s2b0n0]
-   ; ezpz-test
+   ; ezpz test
    Traceback (most recent call last):
-     File "/tmp/2025-08-pt29/bin/ezpz-test", line 4, in <module>
+     File "/tmp/2025-08-pt29/bin/ezpz test", line 4, in <module>
        from ezpz.test import main
      File "/lus/flare/projects/datascience/foremans/projects/saforem2/ezpz/src/ezpz/__init__.py", line 19, in <module>
        import torch
@@ -32,7 +32,7 @@
        from torch._C import *  # noqa: F403
        ^^^^^^^^^^^^^^^^^^^^^^
    ImportError: /lus/flare/projects/datascience/foremans/micromamba/envs/2025-08-pt29/lib/python3.11/site-packages/torch/lib/libtorch-xpu-ops-sycl-ZetaKernel.so: undefined symbol: _ZN4sycl3_V17handler28extractArgsAndReqsFromLambdaEPcRKSt6vectorINS0_6detail19kernel_param_desc_tESaIS5_EEb
-   [1]    24429 exit 1     ezpz-test
+   [1]    24429 exit 1     ezpz test
    took: 0h:00m:16s
    ```
 
@@ -43,7 +43,7 @@
      #[🐍 2025-08-pt29]
      #[~/d/f/p/s/ezpz][🌱 saforem2/yeet-env][📦📝🤷✓] [⏱️ 8m43s]
      #[08/26/25 @ 07:57:03][x4204c4s2b0n0]
-     ; ezpz-test
+     ; ezpz test
      [W826 07:57:09.062669769 OperatorEntry.cpp:218] Warning: Warning only once for all operators,  other operators may also be overridden.
        Overriding a previously registered kernel for the same operator and the same dispatch key
        operator: aten::geometric_(Tensor(a!) self, float p, *, Generator? generator=None) -> Tensor(a!)

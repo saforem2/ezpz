@@ -80,6 +80,22 @@ hatch run typecheck
 hatch run security
 ```
 
+## Extending Scheduler Detection
+
+Clusters that rely on custom environment variables can integrate with `ezpz`
+without carrying local patches by registering scheduler plug-ins.
+
+- **In-process registration**: call
+  `ezpz.configs.register_scheduler_plugin(detector)` where `detector` accepts a
+  dictionary of environment variables (plus optional `hostname`/`machine`
+  keywords) and returns the scheduler string or `None`.
+- **Entry points**: distribute a Python package that exposes a callable under the
+  `ezpz.schedulers` entry-point group. The callable contract matches the runtime
+  registration described above.
+
+Plug-ins run before the built-in heuristics and can therefore override the
+default PBS/SLURM detection logic.
+
 ### Pre-commit Hooks
 
 Pre-commit hooks automatically run code quality tools before each commit:

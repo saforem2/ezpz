@@ -26,20 +26,40 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
     python3 -m pip install "git+https://github.com/saforem2/ezpz"
     ```
 
+    <details closed><summary>Optional Extras</summary>
+
+    - `pip install ezpz[monitoring]` for Weights & Biases integration
+    - `pip install ezpz[profiling]` to use pyinstrument
+    - `pip install ezpz[terminal]` for `plotext`-powered terminal plots
+
+    </details>
+
+1. 🩺 **Diagnose** the environment (see [Doctor](./doctor.md))
+
+    ```bash
+    ezpz doctor
+    ```
+
+    <details closed><summary>JSON Output</summary>
+
+    Supply `--json` to integrate the diagnostic into CI pipelines.
+
+    </details>
+
 1. 🧪 **Test** `ezpz` (see [Test Suite Documentation](./tests/index.md))
 
     ```bash
     python -m pytest tests/
     ```
 
-1. 🚀 **Launch** python  **_from_** python using `ezpz-launch` (see [Launch](./launch.md)).
+1. 🚀 **Launch** python  **_from_** python using `ezpz launch` (see [Launch](./launch.md)).
 
     Examples, launching:
 
     - _Any_ `*.py` module ([`ezpz/test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py), in this example):
 
         ```bash
-        ezpz-launch -m ezpz.test_dist
+        ezpz launch -m ezpz.test_dist
         ```
 
         <details closed><summary>Output:</summary>
@@ -48,7 +68,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
         #[🐍 aurora_nre_models_frameworks-2025.0.0](👻 aurora_nre_models_frameworks-2025.0.0)
         #[/f/d/f/p/s/ezpz][🌱 saforem2/dev][📦🤷✓] [⏱️ 49s]
         #[06/02/25 @ 08:34:27][x4404c4s4b0n0]
-        ; WANDB_MODE=offline ezpz-launch -m ezpz.test_dist --warmup=10 --layer-sizes='256,512,1024,2048,4096,2048,1024,512,256' --dtype=bf16 --train-iters=5000 --print-freq=100 --log-freq=10
+        ; WANDB_MODE=offline ezpz launch -m ezpz.test_dist --warmup=10 --layer-sizes='256,512,1024,2048,4096,2048,1024,512,256' --dtype=bf16 --train-iters=5000 --print-freq=100 --log-freq=10
         [W602 08:39:04.786863061 OperatorEntry.cpp:155] Warning: Warning only once for all operators,  other operators may also be overridden.
         Overriding a previously registered kernel for the same operator and the same dispatch key
         operator: aten::_cummax_helper(Tensor self, Tensor(a!) values, Tensor(b!) indices, int dim) -> ()
@@ -308,7 +328,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
     - Arbitrary python string:
 
         ```bash
-        ezpz-launch -c "'import ezpz; ezpz.setup_torch()'"
+        ezpz launch -c "'import ezpz; ezpz.setup_torch()'"
         ```
 
         <details closed><summary>Output:</summary>
@@ -317,7 +337,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
         #[🐍 aurora_nre_models_frameworks-2025.0.0](👻 aurora_nre_models_frameworks-2025.0.0)
         #[/f/d/f/p/s/ezpz][🌱 saforem2/dev][📦🤷✓]
         #[06/02/25 @ 08:06:17][x4404c4s4b0n0]
-        ; ezpz-launch -c "'import ezpz; ezpz.setup_torch()'"
+        ; ezpz launch -c "'import ezpz; ezpz.setup_torch()'"
 
         [W602 08:06:24.384316779 OperatorEntry.cpp:155] Warning: Warning only once for all operators,  other operators may also be overridden.
         Overriding a previously registered kernel for the same operator and the same dispatch key
@@ -384,7 +404,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
       \[[ezpz / examples / `minimal.py`](https://github.com/saforem2/ezpz/blob/main/examples/minimal.py)\]:
 
         ```bash
-        ezpz-launch -m ezpz.examples.minimal
+        ezpz launch -m ezpz.examples.minimal
         ```
 
         <details closed><summary>Output:</summary>
@@ -393,7 +413,7 @@ See [🍋 `ezpz` docs](https://saforem2.github.io/ezpz) for additional informati
         #[🐍 aurora_nre_models_frameworks-2025.0.0](👻 aurora_nre_models_frameworks-2025.0.0)
         #[/f/d/f/p/s/ezpz][🌱 saforem2/dev][📦🤷✓] [⏱️ 58s]
         #[06/02/25 @ 08:24:30][x4404c4s4b0n0]
-        ; WANDB_MODE=offline PRINT_ITERS=100 TRAIN_ITERS=1000 ezpz-launch -m ezpz.examples.minimal
+        ; WANDB_MODE=offline PRINT_ITERS=100 TRAIN_ITERS=1000 ezpz launch -m ezpz.examples.minimal
         [W602 08:24:33.632744487 OperatorEntry.cpp:155] Warning: Warning only once for all operators,  other operators may also be overridden.
         Overriding a previously registered kernel for the same operator and the same dispatch key
         operator: aten::_cummax_helper(Tensor self, Tensor(a!) values, Tensor(b!) indices, int dim) -> ()
