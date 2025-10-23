@@ -46,8 +46,8 @@ from typing import Any, Callable, Optional
 
 import torch
 import torch.profiler
-from torch.profiler import (ProfilerAction,  # record_function,
-                            ProfilerActivity, profile)
+from torch.profiler import ProfilerAction  # record_function,
+from torch.profiler import ProfilerActivity, profile
 
 import ezpz
 
@@ -119,10 +119,15 @@ def get_profiling_context(
             """
             Callback function to handle the trace when it is ready.
             """
+            key_averages = p.key_averages()
+            device_type = ezpz.get_torch_device_type()
+            sort_key = f"self_{device_type}_time_total"
+            if not any(hasattr(evt, sort_key) for evt in key_averages):
+                sort_key = "self_cpu_time_total"
             logger.info(
                 "\n"
-                + p.key_averages().table(
-                    sort_by=(f"self_{ezpz.get_torch_device_type()}_time_total"),
+                + key_averages.table(
+                    sort_by=sort_key,
                     row_limit=-1,
                 )
             )
