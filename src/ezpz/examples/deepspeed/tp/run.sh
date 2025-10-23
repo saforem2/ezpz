@@ -10,7 +10,7 @@ ezpzdir=$(python3 -c 'import ezpz; print(ezpz.PROJECT_DIR)' | grep -E "^\/.+ezpz
 num_gpus="${NGPUS:-12}"
 epoch=3
 mbs=2
-MODE=${1:-zero1tp} 
+MODE=${1:-zero1tp}
 if [ "$MODE" == "zero1tp" ]; then
   ZERO_STAGE=1
   AUTOTP_SIZE=4

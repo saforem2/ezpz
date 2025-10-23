@@ -12,24 +12,19 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import ezpz
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Sequence
 
 import torch
 import transformers
-from transformers import HfArgumentParser, TrainingArguments
-
-from ezpz.examples.deepspeed.tp.utils import jload
 from torch.utils.data import Dataset
-from transformers import Trainer
-from ezpz.configs import (
-    HfModelArguments,
-    HfDataTrainingArguments,
-)
+from transformers import HfArgumentParser, Trainer, TrainingArguments
 
+import ezpz
+from ezpz.configs import HfDataTrainingArguments, HfModelArguments
+from ezpz.examples.deepspeed.tp.utils import jload
 
 logger = ezpz.get_logger(__name__)
 
@@ -118,9 +113,7 @@ def _tokenize_fn(
         )
         for text in strings
     ]
-    input_ids = labels = [
-        tokenized.input_ids[0] for tokenized in tokenized_list
-    ]
+    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
     input_ids_lens = labels_lens = [
         tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item()
         for tokenized in tokenized_list
@@ -153,9 +146,7 @@ def preprocess(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(
-        self, data_path: str, tokenizer: transformers.PreTrainedTokenizer
-    ):
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
         list_data_dict = jload(data_path)
@@ -172,8 +163,7 @@ class SupervisedDataset(Dataset):
             for example in list_data_dict
         ]
         targets = [
-            f"{example['output']}{tokenizer.eos_token}"
-            for example in list_data_dict
+            f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict
         ]
 
         # this is only for fast test.
@@ -211,8 +201,7 @@ class DataCollatorForSupervisedDataset(object):
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels = tuple(
-            [instance[key] for instance in instances]
-            for key in ("input_ids", "labels")
+            [instance[key] for instance in instances] for key in ("input_ids", "labels")
         )
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
@@ -286,9 +275,10 @@ def train():
     from transformers import TrainerCallback
 
     def see_memory_usage(message, force=False):
-        import deepspeed.comm as dist
-        import gc, psutil
+        import gc
 
+        import deepspeed.comm as dist
+        import psutil
         from deepspeed import get_accelerator
 
         if dist.is_initialized() and not dist.get_rank() == 0:
@@ -319,9 +309,7 @@ def train():
         def on_step_end(self, args, state, control, **kwargs):
             see_memory_usage("After step end", force=True)
 
-    data_module = make_supervised_data_module(
-        tokenizer=tokenizer, data_args=data_args
-    )
+    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = Trainer(
         model=model,
         tokenizer=tokenizer,
