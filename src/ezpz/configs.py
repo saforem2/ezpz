@@ -13,6 +13,11 @@ from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Union
 
+try:  # Python 3.10+
+    from importlib.metadata import EntryPoint, entry_points
+except ImportError:  # pragma: no cover - fallback for older runtimes
+    from importlib_metadata import EntryPoint, entry_points  # type: ignore
+
 import numpy as np
 import rich.repr
 import yaml
@@ -80,6 +85,13 @@ SCHEDULERS = {
 PathLike = Union[str, os.PathLike, Path]
 ScalarLike = Union[int, float, bool, np.floating]
 
+SCHEDULER_ENTRYPOINT_GROUP = "ezpz.schedulers"
+
+SchedulerDetector = Callable[[dict[str, str]], Optional[str]]
+
+_ENTRY_POINT_PLUGINS: Optional[list[SchedulerDetector]] = None
+_RUNTIME_PLUGINS: list[SchedulerDetector] = []
+
 
 def getjobenv_dep():
     """Return the ``getjobenv`` helper path (for debugging)."""
@@ -104,16 +116,130 @@ def cmd_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def register_scheduler_plugin(detector: SchedulerDetector) -> None:
+    """Register an in-process scheduler detector callable.
+
+    The detector should accept a dictionary of environment variables and may
+    optionally accept keyword arguments ``hostname`` and ``machine``.  It must
+    return a scheduler identifier (e.g. ``"PBS"``) or ``None``.
+    """
+
+    _RUNTIME_PLUGINS.append(detector)
+
+
+def _clear_scheduler_plugins() -> None:
+    """Reset cached plug-ins (intended for testing)."""
+
+    _RUNTIME_PLUGINS.clear()
+    global _ENTRY_POINT_PLUGINS
+    _ENTRY_POINT_PLUGINS = None
+
+
+def _load_entry_point_plugins() -> list[SchedulerDetector]:
+    """Return plug-ins discovered via importlib entry points."""
+
+    global _ENTRY_POINT_PLUGINS
+    if _ENTRY_POINT_PLUGINS is not None:
+        return _ENTRY_POINT_PLUGINS
+
+    plugins: list[SchedulerDetector] = []
+    try:
+        discovered = entry_points()
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("Unable to inspect scheduler entry points: %s", exc)
+        discovered = ()
+    if hasattr(discovered, "select"):
+        selected = discovered.select(group=SCHEDULER_ENTRYPOINT_GROUP)  # type: ignore[attr-defined]
+    elif isinstance(discovered, dict):
+        selected = discovered.get(SCHEDULER_ENTRYPOINT_GROUP, [])
+    else:  # pragma: no cover - defensive
+        selected = []
+
+    for ep in selected:
+        try:
+            plugin = ep.load()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("Failed to load scheduler plug-in %s: %s", getattr(ep, "name", ep), exc)
+            continue
+        if callable(plugin):
+            plugins.append(plugin)  # type: ignore[arg-type]
+        else:
+            log.warning(
+                "Scheduler plug-in %s is not callable; ignoring",
+                getattr(ep, "name", ep),
+            )
+    _ENTRY_POINT_PLUGINS = plugins
+    return plugins
+
+
+def _iter_scheduler_plugins() -> list[SchedulerDetector]:
+    """Return all configured scheduler detector callables."""
+
+    plugins: list[SchedulerDetector] = []
+    plugins.extend(_load_entry_point_plugins())
+    plugins.extend(_RUNTIME_PLUGINS)
+    return plugins
+
+
+def _call_scheduler_plugin(
+    detector: SchedulerDetector,
+    env: dict[str, str],
+    *,
+    hostname: Optional[str] = None,
+    machine: Optional[str] = None,
+) -> Optional[str]:
+    """Invoke a scheduler detector with best-effort argument matching."""
+
+    try:
+        return detector(env, hostname=hostname, machine=machine)  # type: ignore[arg-type]
+    except TypeError:
+        try:
+            return detector(env, hostname=hostname)  # type: ignore[arg-type]
+        except TypeError:
+            try:
+                return detector(env)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.warning("Scheduler plug-in %r failed: %s", detector, exc)
+                return None
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning("Scheduler plug-in %r failed: %s", detector, exc)
+        return None
+
+
+def _detect_scheduler_via_plugins(
+    env: dict[str, str],
+    hostname: str,
+    machine: str,
+) -> Optional[str]:
+    """Run plug-ins until one returns a scheduler string."""
+
+    for detector in _iter_scheduler_plugins():
+        candidate = _call_scheduler_plugin(detector, env, hostname=hostname, machine=machine)
+        if candidate is None:
+            continue
+        normalized = candidate.strip()
+        if normalized:
+            return normalized.upper()
+    return None
+
+
 def get_scheduler() -> str:
     """Infer the active scheduler from environment variables or hostname."""
     from ezpz import get_hostname, get_machine
 
-    if os.environ.get("PBS_JOBID"):
+    env = dict(os.environ)
+    hostname = get_hostname()
+    machine = get_machine(hostname)
+
+    plugin_result = _detect_scheduler_via_plugins(env, hostname, machine)
+    if plugin_result is not None:
+        return plugin_result
+
+    if env.get("PBS_JOBID"):
         return "PBS"
-    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID"):
+    if env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID"):
         return "SLURM"
 
-    machine = get_machine(get_hostname())
     if machine.lower() in [
         "thetagpu",
         "sunspot",
