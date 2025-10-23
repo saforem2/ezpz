@@ -4,14 +4,12 @@ ezpz/datasets/hf.py
 HuggingFace Datasets loading and tokenization.
 """
 from typing import Optional
-import ezpz
+
 import datasets
 from transformers import AutoTokenizer
 
-from ezpz.configs import (
-    HfModelArguments,
-    HfDataTrainingArguments,
-)
+import ezpz
+from ezpz.configs import HfDataTrainingArguments, HfModelArguments
 
 logger = ezpz.get_logger(__name__)
 
