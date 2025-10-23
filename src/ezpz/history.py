@@ -6,11 +6,16 @@ Contains implementation of History object for tracking / aggregating metrics.
 
 from __future__ import absolute_import, annotations, division, print_function
 
+import json
 import os
+import platform
+import shutil
+import sys
 import time
 from contextlib import ContextDecorator
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Iterable, Optional, Union
 
 # import matplotlib.pyplot as plt
 import numpy as np
@@ -21,10 +26,9 @@ import xarray as xr
 from ezpz import get_rank
 from ezpz import plot as ezplot
 from ezpz import timeitlogit
-from ezpz.configs import PathLike
+from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.lazy import lazy_import
 from ezpz.log import get_logger
-from ezpz.log.console import is_interactive
 from ezpz.tplot import tplot as eztplot
 # from ezpz import tplot as eztplot
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
@@ -55,6 +59,11 @@ try:
 except Exception:
     wandb = None
     WANDB_DISABLED = True
+
+try:
+    import torch.distributed as dist
+except Exception:  # pragma: no cover - optional dependency
+    dist = None
 
 TensorLike = Union[torch.Tensor, np.ndarray, list]
 
@@ -133,17 +142,675 @@ class History:
     A class to track and log metrics during training or evaluation.
     """
 
-    def __init__(self, keys: Optional[list[str]] = None) -> None:
+    def __init__(
+        self,
+        keys: Optional[list[str]] = None,
+        *,
+        report_dir: Optional[PathLike] = None,
+        report_enabled: bool = True,
+        jsonl_path: Optional[PathLike] = None,
+        jsonl_overwrite: bool = False,
+        aggregate_metrics: bool = True,
+    ) -> None:
         """
         Initialize the History object.
 
         Args:
             keys (Optional[list[str]]): List of keys to initialize the history with.
                 If None, initializes with an empty list.
+            report_dir (Optional[PathLike]): Directory for markdown reports. Defaults
+                to ``OUTPUTS_DIR/history``.
+            report_enabled (bool): Toggle automatic markdown generation.
+            jsonl_path (Optional[PathLike]): Destination for JSONL metric logging.
+            jsonl_overwrite (bool): Whether to truncate an existing JSONL log.
+            aggregate_metrics (bool): Enable distributed reductions (mean/max/min/std).
         """
         self.keys = [] if keys is None else keys
         self.history: dict[str, list[Any]] = {}
         self.data = self.history
+        self._aggregate_metrics = aggregate_metrics
+        self._rank = get_rank()
+        now = datetime.now(timezone.utc)
+        self._run_id = now.strftime("%Y%m%d-%H%M%S")
+        self.report_enabled = report_enabled
+        base_report_root = (
+            Path(report_dir)
+            if report_dir is not None
+            else Path(OUTPUTS_DIR).joinpath("history")
+        )
+        self._report_root = Path(base_report_root).expanduser().resolve()
+        self._report_dir = self._report_root.joinpath(self._run_id)
+        self._report_path: Optional[Path] = None
+        self._asset_dir: Optional[Path] = None
+        self._report_filename = "report.md"
+        self._report_initialized = False
+        if jsonl_path is None:
+            default_jsonl_dir = (
+                self._report_dir if report_enabled else Path(OUTPUTS_DIR)
+            )
+            self._jsonl_path = (
+                Path(default_jsonl_dir)
+                .expanduser()
+                .resolve()
+                .joinpath(f"{self._run_id}.jsonl")
+            )
+        else:
+            self._jsonl_path = Path(jsonl_path).expanduser().resolve()
+        if jsonl_overwrite and self._jsonl_path.exists():
+            try:
+                self._jsonl_path.unlink()
+            except OSError:
+                logger.warning(
+                    "Unable to remove existing JSONL log at %s",
+                    self._jsonl_path,
+                )
+        self._jsonl_enabled = True
+        self._dist = dist
+        self._environment_written = False
+        self._metric_summary_written = False
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _utc_iso() -> str:
+        """Return the current UTC timestamp in ISO-8601 format with trailing Z."""
+
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _configure_report_destination(self, base_dir: Path) -> None:
+        """Configure the report directory to live under *base_dir*."""
+
+        base_dir = base_dir.expanduser().resolve()
+        self._report_root = base_dir
+        self._report_dir = base_dir
+        self._report_path = base_dir.joinpath(self._report_filename)
+        self._asset_dir = base_dir.joinpath("assets")
+        self._report_initialized = False
+        if self._jsonl_enabled:
+            self._jsonl_path = base_dir.joinpath(f"{self._run_id}.jsonl")
+        self._environment_written = False
+        self._metric_summary_written = False
+
+    def _ensure_report_file(self) -> Optional[Path]:
+        """Ensure the markdown report and asset directories exist."""
+
+        if not self.report_enabled:
+            return None
+        if not self._report_initialized:
+            self._report_dir.mkdir(parents=True, exist_ok=True)
+            self._asset_dir = self._report_dir.joinpath("assets")
+            self._asset_dir.mkdir(parents=True, exist_ok=True)
+            self._report_path = self._report_dir.joinpath(self._report_filename)
+            header = (
+                f"# History Report ({self._run_id})\n\n"
+                f"_Generated at {self._utc_iso()}_\n\n"
+            )
+            self._report_path.write_text(header, encoding="utf-8")
+            self._report_initialized = True
+        return self._report_path
+
+    def _prepare_report_asset(self, source: Path) -> Optional[Path]:
+        """Copy plot artifacts into the report asset directory."""
+
+        report_file = self._ensure_report_file()
+        if report_file is None:
+            return None
+        assert self._asset_dir is not None
+        source = source.resolve()
+        try:
+            if source.is_relative_to(self._asset_dir):
+                return source
+        except AttributeError:  # Python < 3.9 fallback (not expected)
+            pass
+        destination = self._asset_dir.joinpath(source.name)
+        if destination != source:
+            try:
+                shutil.copy2(source, destination)
+            except OSError:
+                logger.warning("Unable to copy asset %s into report directory.", source)
+                return source
+        return destination
+
+    def _write_plot_report(
+        self,
+        key: Optional[str],
+        asset_path: Path,
+        *,
+        kind: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Append a markdown section describing the generated plot."""
+
+        report_file = self._ensure_report_file()
+        if report_file is None:
+            return
+        asset_path = asset_path.resolve()
+        if not asset_path.exists():
+            return
+        asset_path = self._prepare_report_asset(asset_path) or asset_path
+        try:
+            rel_path = asset_path.relative_to(report_file.parent)
+        except ValueError:
+            rel_path = asset_path
+        title = key or asset_path.stem
+        timestamp = self._utc_iso()
+        lines = [
+            f"## {title}",
+            "",
+            f"_Kind_: `{kind}`  ",
+            f"_Generated_: {timestamp}",
+            "",
+        ]
+        if asset_path.suffix.lower() in {".txt", ".log"}:
+            try:
+                text = asset_path.read_text(encoding="utf-8")
+            except OSError:
+                text = ""
+            snippet = "\n".join(text.splitlines()[:40]).strip()
+            lines.extend(["```", snippet, "```", ""])
+        else:
+            lines.append(f"![{title}]({rel_path.as_posix()})")
+            lines.append("")
+        if metadata:
+            for meta_key, meta_val in metadata.items():
+                lines.append(f"- **{meta_key}**: {meta_val}")
+            lines.append("")
+        with report_file.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+            if not lines[-1].endswith("\n"):
+                handle.write("\n")
+
+    def _write_environment_section(self, env_info: Optional[dict[str, Any]]) -> None:
+        """Write environment details into the report."""
+
+        if not self.report_enabled or env_info is None or self._environment_written:
+            return
+        report_file = self._ensure_report_file()
+        if report_file is None:
+            return
+        lines: list[str] = ["## Environment", ""]
+        for section, details in env_info.items():
+            if isinstance(details, dict):
+                lines.append(f"### {section}")
+                lines.append("")
+                for key, value in details.items():
+                    lines.append(f"- **{key}**: {value}")
+                lines.append("")
+            else:
+                lines.append(f"- **{section}**: {details}")
+        with report_file.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+            if not lines[-1].endswith("\n"):
+                handle.write("\n")
+        self._environment_written = True
+
+    def _default_environment_info(self) -> dict[str, dict[str, str]]:
+        """Return a minimal environment summary."""
+
+        python_info = {
+            "Version": (
+                f"{sys.version_info.major}."
+                f"{sys.version_info.minor}."
+                f"{sys.version_info.micro}"
+            ),
+            "Implementation": sys.implementation.name,
+            "Executable": sys.executable,
+            "Platform": platform.platform(),
+        }
+
+        try:
+            torch_version = torch.__version__
+        except Exception:  # pragma: no cover - torch should be importable
+            torch_version = "unknown"
+
+        torch_info = {
+            "Version": torch_version,
+        }
+
+        path_info = {
+            "Working directory": str(Path.cwd()),
+        }
+
+        env_vars: dict[str, str] = {}
+        for key in (
+            "MASTER_ADDR",
+            "MASTER_PORT",
+            "WORLD_SIZE",
+            "RANK",
+            "LOCAL_RANK",
+        ):
+            value = os.environ.get(key)
+            if value is not None:
+                env_vars[key] = value
+
+        summary: dict[str, dict[str, str]] = {
+            "Paths": path_info,
+            "Python": python_info,
+            "Torch": torch_info,
+        }
+        if env_vars:
+            summary["Environment Variables"] = env_vars
+        return summary
+
+    def _collect_metric_groups(
+        self, dataset: xr.Dataset
+    ) -> dict[str, dict[str, float]]:
+        """Return metric statistics grouped by base metric name."""
+
+        groups: dict[str, dict[str, float]] = {}
+        for name in sorted(dataset.data_vars):
+            arr = dataset[name]
+            if arr.size == 0:
+                continue
+            try:
+                latest = arr.isel({arr.dims[0]: -1})
+            except Exception:
+                latest = arr
+            data = np.asarray(latest)
+            if data.size == 0:
+                continue
+            value = float(data.mean()) if data.ndim > 0 else float(data.item())
+            base, _, suffix = name.partition("_")
+            if suffix in {"mean", "max", "min", "std"}:
+                groups.setdefault(base, {})[suffix] = value
+            else:
+                groups.setdefault(name, {})["latest"] = value
+        return groups
+
+    def _write_metric_summary(self, dataset: xr.Dataset) -> None:
+        """Append a metric overview table grouped by metric."""
+
+        if not self.report_enabled or self._metric_summary_written:
+            return
+        groups = self._collect_metric_groups(dataset)
+        if not groups:
+            return
+        report_file = self._ensure_report_file()
+        if report_file is None:
+            return
+        with report_file.open("a", encoding="utf-8") as handle:
+            handle.write("## Metric Overview\n\n")
+            for metric_name, stats in groups.items():
+                handle.write(f"### {metric_name}\n\n")
+                handle.write("| Statistic | Value |\n")
+                handle.write("| --- | --- |\n")
+                for label in ("latest", "mean", "max", "min", "std"):
+                    if label in stats:
+                        value = stats[label]
+                        handle.write(f"| {label.capitalize()} | {value:.6f} |\n")
+                handle.write("\n")
+        self._metric_summary_written = True
+
+    def _series_from_dataarray(self, data: xr.DataArray) -> np.ndarray:
+        """Convert an xarray DataArray into a 1-D numerical series."""
+
+        arr = np.asarray(data.values)
+        if arr.ndim == 1:
+            return arr
+        if arr.ndim == 0:
+            return np.array([float(arr)])
+        axes = tuple(range(arr.ndim - 1))
+        return arr.mean(axis=axes)
+
+    def _group_metric_variables(
+        self, dataset: xr.Dataset
+    ) -> dict[str, dict[str, xr.DataArray]]:
+        """Group metric variables by base name and associated aggregates."""
+
+        groups: dict[str, dict[str, xr.DataArray]] = {}
+        for name, data_array in dataset.data_vars.items():
+            base, sep, suffix = name.rpartition("_")
+            if sep and base and suffix in {"mean", "max", "min", "std"}:
+                groups.setdefault(base, {})[suffix] = data_array
+            else:
+                groups.setdefault(name, {})["raw"] = data_array
+        return groups
+
+    def _plot_metric_group(
+        self,
+        name: str,
+        metric_vars: dict[str, xr.DataArray],
+        *,
+        warmup: Optional[float | int] = 0.0,
+        title: Optional[str] = None,
+        outdir: Optional[Path] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        verbose: bool = False,
+    ) -> Optional[Path]:
+        """Render a single matplotlib figure combining metric aggregates."""
+
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        subplots_kwargs = {} if subplots_kwargs is None else dict(subplots_kwargs)
+        plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
+
+        series_candidates = [
+            metric_vars.get("raw"),
+            metric_vars.get("mean"),
+            metric_vars.get("min"),
+            metric_vars.get("max"),
+        ]
+        base_series = None
+        for candidate in series_candidates:
+            if candidate is not None:
+                base_series = self._series_from_dataarray(candidate)
+                break
+        if base_series is None or len(base_series) == 0:
+            return None
+
+        x = np.arange(base_series.shape[-1])
+        fig, ax = plt.subplots(**subplots_kwargs)
+        color = plot_kwargs.get("color", None)
+
+        raw_da = metric_vars.get("raw")
+        if raw_da is not None:
+            raw_series = self._series_from_dataarray(raw_da)
+            ax.plot(
+                x,
+                raw_series,
+                label=name,
+                color=color,
+                alpha=0.35,
+                linewidth=1.25,
+            )
+        mean_da = metric_vars.get("mean")
+        std_da = metric_vars.get("std")
+        min_da = metric_vars.get("min")
+        max_da = metric_vars.get("max")
+
+        mean_series = None
+        if mean_da is not None:
+            mean_series = self._series_from_dataarray(mean_da)
+            ax.plot(
+                x,
+                mean_series,
+                label=f"{name} mean",
+                color=color,
+                linewidth=2.0,
+            )
+
+        if mean_series is not None and std_da is not None:
+            std_series = self._series_from_dataarray(std_da)
+            upper = mean_series + std_series
+            lower = mean_series - std_series
+            ax.fill_between(
+                x,
+                lower,
+                upper,
+                color=color,
+                alpha=0.2,
+                label=f"{name} ± std",
+            )
+        elif min_da is not None and max_da is not None:
+            min_series = self._series_from_dataarray(min_da)
+            max_series = self._series_from_dataarray(max_da)
+            ax.fill_between(
+                x,
+                min_series,
+                max_series,
+                color=color,
+                alpha=0.15,
+                label=f"{name} range",
+            )
+
+        if mean_da is None and raw_da is None and min_da is None and max_da is None:
+            # fall back to plotting whichever aggregate is available
+            for label, array in metric_vars.items():
+                series = self._series_from_dataarray(array)
+                ax.plot(x, series, label=f"{name} {label}", linewidth=1.75)
+
+        ax.set_xlabel("draw")
+        ax.set_ylabel(name)
+        if title is not None:
+            ax.set_title(title)
+        sns.despine(ax=ax, top=True, right=True)
+        ax.legend(loc="best", frameon=False)
+
+        if outdir is None and self.report_enabled:
+            save_dir = self._report_dir.joinpath("mplot")
+        elif outdir is not None:
+            save_dir = Path(outdir)
+        else:
+            save_dir = None
+
+        primary_asset: Optional[Path] = None
+        if save_dir is not None:
+            save_dir = save_dir.expanduser().resolve()
+            save_dir.mkdir(parents=True, exist_ok=True)
+            asset_name = name.replace("/", "_")
+            dirs = {
+                "png": save_dir.joinpath("pngs"),
+                "svg": save_dir.joinpath("svgs"),
+            }
+            for directory in dirs.values():
+                directory.mkdir(parents=True, exist_ok=True)
+            if verbose:
+                logger.info("Saving %s plot to: %s", name, save_dir)
+            for ext, directory in dirs.items():
+                outfile = directory.joinpath(f"{asset_name}.{ext}")
+                if outfile.exists():
+                    outfile = directory.joinpath(
+                        f"{asset_name}-{get_timestamp()}.{ext}"
+                    )
+                fig.savefig(outfile, dpi=400, bbox_inches="tight")
+                if primary_asset is None and ext == "png":
+                    primary_asset = outfile
+        plt.close(fig)
+        return primary_asset
+
+    def _tplot_metric_group(
+        self,
+        name: str,
+        metric_vars: dict[str, xr.DataArray],
+        *,
+        warmup: Optional[float | int] = 0.0,
+        outdir: Optional[Path] = None,
+        plot_type: Optional[str] = None,
+        verbose: bool = False,
+        logfreq: Optional[int] = None,
+    ) -> Optional[Path]:
+        """Render grouped metrics into a single text-based plot asset."""
+
+        outdir = Path(outdir) if outdir is not None else None
+        if outdir is None and self.report_enabled:
+            outdir = self._report_dir.joinpath("tplot")
+        if outdir is None:
+            return None
+        outdir = outdir.expanduser().resolve()
+        outdir.mkdir(parents=True, exist_ok=True)
+        asset_path = outdir.joinpath(f"{name.replace('/', '_')}.txt")
+
+        order = [
+            ("raw", name),
+            ("mean", f"{name} mean"),
+            ("max", f"{name} max"),
+            ("min", f"{name} min"),
+            ("std", f"{name} std"),
+        ]
+        wrote_any = False
+        points = 0
+        append_flag = False
+        for key, label in order:
+            data_array = metric_vars.get(key)
+            if data_array is None:
+                continue
+            series = self._series_from_dataarray(data_array)
+            points = max(points, len(series))
+            self._tplot(
+                y=series,
+                xlabel="iter",
+                ylabel=label,
+                append=append_flag,
+                outfile=asset_path.as_posix(),
+                verbose=verbose,
+                plot_type=plot_type,
+                logfreq=(1 if logfreq is None else logfreq),
+                record_report=False,
+            )
+            append_flag = True
+            wrote_any = True
+        if wrote_any and self.report_enabled:
+            self._write_plot_report(
+                name,
+                asset_path,
+                kind="tplot",
+                metadata={
+                    "components": ", ".join(
+                        key for key, _ in order if key in metric_vars
+                    ),
+                    "points": points,
+                },
+            )
+        return asset_path
+
+    def _write_jsonl_entry(
+        self,
+        metrics: dict[str, Any],
+        aggregated: Optional[dict[str, float]] = None,
+    ) -> None:
+        """Append metrics to the configured JSONL log."""
+
+        if not self._jsonl_enabled:
+            return
+        if self._jsonl_path is None:
+            return
+        payload: dict[str, Any] = {
+            "timestamp": time.time(),
+            "rank": self._rank,
+            "metrics": metrics,
+        }
+        if aggregated and self._rank == 0:
+            payload["aggregated"] = aggregated
+        try:
+            self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._jsonl_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, default=self._to_serializable))
+                handle.write("\n")
+        except OSError:
+            logger.warning("Unable to write JSONL metrics to %s", self._jsonl_path)
+
+    @classmethod
+    def _to_serializable(cls, value: Any) -> Any:
+        """Convert values to JSON-serializable structures."""
+
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (np.floating, np.integer, np.bool_)):
+            return value.item()
+        if isinstance(value, Path):
+            return value.as_posix()
+        if torch.is_tensor(value):
+            tensor = value.detach()
+            if tensor.numel() == 1:
+                return tensor.item()
+            return tensor.cpu().tolist()
+        if isinstance(value, np.ndarray):
+            if value.shape == ():
+                return value.item()
+            return value.tolist()
+        if isinstance(value, dict):
+            return {
+                key: cls._to_serializable(sub_value) for key, sub_value in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._to_serializable(item) for item in value]
+        if hasattr(value, "item"):
+            try:
+                return value.item()
+            except Exception:
+                pass
+        return str(value)
+
+    @classmethod
+    def _sanitize_metrics(cls, metrics: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of metrics with values converted to JSON-safe types."""
+
+        return {key: cls._to_serializable(value) for key, value in metrics.items()}
+
+    def _iter_scalar_metrics(
+        self, metrics: dict[str, Any]
+    ) -> Iterable[tuple[str, float]]:
+        """Yield scalar metrics suitable for distributed reductions."""
+
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)):
+                yield key, float(value)
+            elif isinstance(value, np.ndarray) and value.shape == ():
+                yield key, float(value.item())
+            elif torch.is_tensor(value) and value.numel() == 1:
+                yield key, float(value.item())
+
+    def _select_metric_device(self) -> torch.device:
+        """Return the device to use for distributed metric aggregation."""
+
+        candidate = ezpz.get_torch_device(as_torch_device=True)
+        device = (
+            candidate
+            if isinstance(candidate, torch.device)
+            else torch.device(str(candidate))
+        )
+        device_type = device.type
+        if device_type == "mps":
+            return torch.device("cpu")
+        if device_type == "cuda" and not torch.cuda.is_available():
+            return torch.device("cpu")
+        xpu_backend = getattr(torch, "xpu", None)
+        if device_type == "xpu" and not (xpu_backend and xpu_backend.is_available()):
+            return torch.device("cpu")
+        return device
+
+    def _compute_distributed_metrics(self, metrics: dict[str, Any]) -> dict[str, float]:
+        """Compute distributed reductions for scalar metrics."""
+
+        if not self._aggregate_metrics or self._dist is None:
+            return {}
+        try:
+            if not self._dist.is_available() or not self._dist.is_initialized():
+                return {}
+        except AttributeError:
+            return {}
+        scalars = dict(self._iter_scalar_metrics(metrics))
+        if not scalars:
+            return {}
+        metric_device = self._select_metric_device()
+        dtype = torch.get_default_dtype()
+        values = torch.tensor(
+            list(scalars.values()),
+            dtype=dtype,
+            device=metric_device,
+        )
+        sum_vals = values.clone()
+        sq_vals = values.square()
+        max_vals = values.clone()
+        min_vals = values.clone()
+        world_size = self._dist.get_world_size()
+        if world_size <= 1:
+            return {
+                f"{key}/{suffix}": (
+                    value if suffix != "std" else 0.0
+                )
+                for key, value in scalars.items()
+                for suffix in ("mean", "max", "min", "std")
+            }
+        ops = self._dist.ReduceOp  # type: ignore[attr-defined]
+        self._dist.all_reduce(sum_vals, op=ops.SUM)
+        self._dist.all_reduce(sq_vals, op=ops.SUM)
+        self._dist.all_reduce(max_vals, op=ops.MAX)
+        self._dist.all_reduce(min_vals, op=ops.MIN)
+        mean_vals = sum_vals.div(world_size)
+        var_vals = sq_vals.div(world_size).sub(mean_vals.square())
+        std_vals = var_vals.clamp_min_(0.0).sqrt_()
+        stats: dict[str, float] = {}
+        for idx, key in enumerate(scalars):
+            stats[f"{key}/mean"] = float(mean_vals[idx].item())
+            stats[f"{key}/max"] = float(max_vals[idx].item())
+            stats[f"{key}/min"] = float(min_vals[idx].item())
+            stats[f"{key}/std"] = float(std_vals[idx].item())
+        return stats
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
     def _update(
@@ -191,15 +858,36 @@ class History:
                 self.history[key].append(val)
             except KeyError:
                 self.history[key] = [val]
+        aggregated_metrics = self._compute_distributed_metrics(metrics)
+        if aggregated_metrics and self._rank == 0:
+            for agg_key, agg_val in aggregated_metrics.items():
+                self._update(agg_key, agg_val)
+        metrics_for_logging = dict(metrics)
+        if aggregated_metrics and self._rank == 0:
+            metrics_for_logging.update(aggregated_metrics)
+        sanitized_metrics = self._sanitize_metrics(metrics_for_logging)
+        summary_source = (
+            sanitized_metrics
+            if aggregated_metrics and self._rank == 0
+            else self._sanitize_metrics(metrics)
+        )
         if (
             wandb is not None
             and use_wandb
             # and not WANDB_DISABLED
             and getattr(wandb, "run", None) is not None
         ):
-            wandb.log(metrics, commit=commit)
+            wandb.log(sanitized_metrics, commit=commit)
+        self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
-            return summarize_dict(metrics, precision=precision)
+            scalar_summary = {
+                key: value
+                for key, value in summary_source.items()
+                if isinstance(value, (int, float, bool))
+            }
+            if scalar_summary:
+                return summarize_dict(scalar_summary, precision=precision)
+            return ""
         return ""
 
     def _tplot(
@@ -214,6 +902,7 @@ class History:
         outfile: Optional[str] = None,
         logfreq: Optional[int] = None,
         plot_type: Optional[str] = None,
+        record_report: bool = True,
     ):
         """
         Create a text plot of the given data.
@@ -230,6 +919,15 @@ class History:
             logfreq (Optional[int]): The log frequency of the plot.
             plot_type (Optional[str]): The type of plot to create.
         """
+        outfile_path: Optional[Path] = None
+        if outfile is None and self.report_enabled:
+            label = (ylabel or xlabel or "metric").replace("/", "_")
+            default_dir = self._report_dir.joinpath("tplot")
+            default_dir.mkdir(parents=True, exist_ok=True)
+            outfile_path = default_dir.joinpath(f"{label}-{get_timestamp()}.txt")
+            outfile = outfile_path.as_posix()
+        elif outfile is not None:
+            outfile_path = Path(outfile)
         if xlabel is not None and ylabel == xlabel:
             return
         if len(y) > 1:
@@ -248,6 +946,13 @@ class History:
                 title=title,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
+            if record_report and self.report_enabled and outfile_path is not None:
+                self._write_plot_report(
+                    ylabel,
+                    outfile_path,
+                    kind="tplot",
+                    metadata={"points": len(y)},
+                )
         if ylabel is not None and "dt" in ylabel:
             of = Path(outfile) if outfile is not None else None
             if of is not None:
@@ -262,6 +967,13 @@ class History:
                 outfile=(of if of is not None else None),
                 plot_type="hist",
             )
+            if record_report and self.report_enabled and of is not None:
+                self._write_plot_report(
+                    f"{ylabel}-hist",
+                    of,
+                    kind="tplot-hist",
+                    metadata={"points": len(y)},
+                )
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
     def plot(
@@ -274,6 +986,7 @@ class History:
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
+        verbose: bool = False,
     ):
         """
         Plot a single variable from the history.
@@ -293,6 +1006,7 @@ class History:
             subplots_kwargs (Optional[dict[str, Any]]): Additional arguments for
                 subplots.
             plot_kwargs (Optional[dict[str, Any]]): Additional arguments for plotting.
+            verbose (bool): Emit additional logging when saving plots.
         """
         import matplotlib.pyplot as plt
 
@@ -308,10 +1022,16 @@ class History:
 
         subfigs = None
         steps = np.arange(arr.shape[0])
-        if warmup is not None and warmup > 0:
-            drop = int(warmup * arr.shape[0])
-            arr = arr[drop:]
-            steps = steps[drop:]
+        if warmup is not None and warmup > 0 and arr.size > 0:
+            if isinstance(warmup, int) or warmup >= 1:
+                warmup_frac = float(warmup) / float(arr.shape[0])
+            else:
+                warmup_frac = float(warmup)
+            warmup_frac = min(max(warmup_frac, 0.0), 1.0)
+            drop = min(int(round(warmup_frac * arr.shape[0])), arr.shape[0])
+            if drop > 0:
+                arr = arr[drop:]
+                steps = steps[drop:]
 
         if len(arr.shape) == 2:
             import seaborn as sns
@@ -411,18 +1131,54 @@ class History:
         if title is not None:
             fig.suptitle(title)
 
+        save_dir: Optional[Path]
         if outdir is not None:
+            save_dir = Path(outdir).expanduser().resolve()
+        elif self.report_enabled:
+            save_dir = self._report_dir.joinpath("mplot")
+        else:
+            save_dir = None
+
+        if save_dir is not None:
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
-            outfile = Path(outdir).joinpath(f"{key}.svg")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            outfile = save_dir.joinpath(f"{key}.svg")
             if outfile.is_file():
                 tstamp = ezpz.get_timestamp()
-                pngdir = Path(outdir).joinpath("pngs")
+                pngdir = save_dir.joinpath("pngs")
                 pngdir.mkdir(exist_ok=True, parents=True)
                 pngfile = pngdir.joinpath(f"{key}-{tstamp}.png")
-                svgfile = Path(outdir).joinpath(f"{key}-{tstamp}.svg")
+                svgfile = save_dir.joinpath(f"{key}-{tstamp}.svg")
                 plt.savefig(pngfile, dpi=400, bbox_inches="tight")
                 plt.savefig(svgfile, dpi=400, bbox_inches="tight")
+        primary_asset: Optional[Path] = None
+        if save_dir is not None:
+            dirs = {
+                "png": Path(save_dir).joinpath("pngs/"),
+                "svg": Path(save_dir).joinpath("svgs/"),
+            }
+            _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
+            for ext, d in dirs.items():
+                outfile = d.joinpath(f"{key}.{ext}")
+                if outfile.is_file():
+                    outfile = d.joinpath(f"{key}-subfig.{ext}")
+                if verbose:
+                    logger.info(f"Saving {key} plot to: {outfile.resolve()}")
+                plt.savefig(outfile, dpi=400, bbox_inches="tight")
+                if primary_asset is None and ext == "png":
+                    primary_asset = outfile
+        if (
+            self.report_enabled
+            and primary_asset is not None
+            and Path(primary_asset).exists()
+        ):
+            self._write_plot_report(
+                key,
+                primary_asset,
+                kind="matplotlib",
+                metadata={"shape": list(arr.shape)},
+            )
 
         return fig, subfigs, axes
 
@@ -473,9 +1229,15 @@ class History:
         arr = val.values  # shape: [nchains, ndraws]
         # steps = np.arange(len(val.coords['draw']))
         steps = val.coords["draw"]
-        if warmup is not None and warmup > 0.0:
-            drop = int(warmup * arr.shape[0])
-            arr = arr[drop:]
+        if warmup is not None and warmup > 0.0 and arr.size > 0:
+            if isinstance(warmup, int) or warmup >= 1:
+                warmup_frac = float(warmup) / float(arr.shape[0])
+            else:
+                warmup_frac = float(warmup)
+            warmup_frac = min(max(warmup_frac, 0.0), 1.0)
+            drop = min(int(round(warmup_frac * arr.shape[0])), arr.shape[0])
+            if drop > 0:
+                arr = arr[drop:]
             steps = steps[drop:]
         if len(arr.shape) == 2:
             fig, axes = ezplot.plot_combined(
@@ -534,19 +1296,39 @@ class History:
             _ = ax.set_xticklabels(  # type: ignore
                 [f"{logfreq * int(i)}" for i in xticks]  # type: ignore
             )
+        save_dir: Optional[Path]
         if outdir is not None:
+            save_dir = Path(outdir).expanduser().resolve()
+        elif self.report_enabled:
+            save_dir = self._report_dir.joinpath("dataarray")
+        else:
+            save_dir = None
+        primary_asset: Optional[Path] = None
+        if save_dir is not None:
             dirs = {
-                "png": Path(outdir).joinpath("pngs/"),
-                "svg": Path(outdir).joinpath("svgs/"),
+                "png": Path(save_dir).joinpath("pngs/"),
+                "svg": Path(save_dir).joinpath("svgs/"),
             }
             _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
-            # from l2hmc.configs import PROJECT_DIR
-            # from ezpz
             if verbose:
-                logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
+                logger.info(f"Saving {key} plot to: {Path(save_dir).resolve()}")
             for ext, d in dirs.items():
                 outfile = d.joinpath(f"{key}.{ext}")
                 plt.savefig(outfile, dpi=400, bbox_inches="tight")
+                if primary_asset is None and ext == "png":
+                    primary_asset = outfile
+        if (
+            self.report_enabled
+            and primary_asset is not None
+            and Path(primary_asset).exists()
+        ):
+            metadata = {"dims": list(val.dims)}
+            self._write_plot_report(
+                key,
+                primary_asset,
+                kind="dataarray",
+                metadata=metadata,
+            )
         return (fig, subfigs, axes)
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
@@ -710,26 +1492,23 @@ class History:
             )
         )
 
-        outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
-        logger.info(f"Saving tplots to {outdir.as_posix()}")
-        for _, (key, val) in enumerate(dataset.items()):
-            if (xkey is not None and key == xkey) or xkey in ["iter", "draw"]:
+        outdir_path = Path(os.getcwd()) if outdir is None else Path(outdir)
+        groups = self._group_metric_variables(dataset)
+        for metric_name, metric_vars in sorted(groups.items()):
+            if (xkey is not None and metric_name == xkey) or xkey in [
+                "iter",
+                "draw",
+            ]:
                 continue
-            if len(val.values) > 0:
-                self._tplot(
-                    y=val.values,
-                    x=None,
-                    xlabel="iter",
-                    plot_type=plot_type,
-                    ylabel=str(key),
-                    append=append,
-                    title=f"{key} [{get_timestamp()}]",
-                    verbose=verbose,
-                    outfile=outdir.joinpath(f"{key}.txt").as_posix(),
-                    logfreq=logfreq,
-                )
-            else:
-                logger.warning(f"No data found in {key=}: {len(val.values)=} <= 0")
+            self._tplot_metric_group(
+                metric_name,
+                metric_vars,
+                warmup=warmup,
+                outdir=outdir_path,
+                plot_type=plot_type,
+                verbose=verbose,
+                logfreq=logfreq,
+            )
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
     def plot_all(
@@ -744,11 +1523,8 @@ class History:
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
     ):
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-
-        plot_kwargs = {} if plot_kwargs is None else plot_kwargs
-        subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+        plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
+        subplots_kwargs = {} if subplots_kwargs is None else dict(subplots_kwargs)
 
         dataset = (
             dataset
@@ -771,54 +1547,31 @@ class History:
             save_plot=(outdir is not None),
         )
 
-        for idx, (key, val) in enumerate(dataset.data_vars.items()):
-            color = f"C{idx % 9}"
-            plot_kwargs["color"] = color
-
-            fig, subfigs, ax = self.plot(
-                val=val.values.T.real,
-                key=str(key),
-                title=title,
-                outdir=outdir,
+        groups = self._group_metric_variables(dataset)
+        for idx, (metric_name, metric_vars) in enumerate(sorted(groups.items())):
+            plot_kwargs["color"] = f"C{idx % 9}"
+            asset = self._plot_metric_group(
+                metric_name,
+                metric_vars,
                 warmup=warmup,
-                num_chains=num_chains,
-                plot_kwargs=plot_kwargs,
+                title=title,
+                outdir=Path(outdir) if outdir is not None else None,
                 subplots_kwargs=subplots_kwargs,
+                plot_kwargs=plot_kwargs,
+                verbose=verbose,
             )
-            if fig is not None:
-                _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
-
-            # _ = plt.grid(True, alpha=0.4)
-            if subfigs is not None:
-                # edgecolor = plt.rcParams['axes.edgecolor']
-                plt.rcParams["axes.edgecolor"] = plt.rcParams["axes.facecolor"]
-                ax = subfigs[0].subplots(1, 1)
-                # ax = fig[1].subplots(constrained_layout=True)
-                _ = xplt.pcolormesh(
-                    val, "draw", "chain", ax=ax, robust=True, add_colorbar=True
+            if asset is not None and self.report_enabled and asset.exists():
+                components = sorted(metric_vars.keys())
+                sample_series = self._series_from_dataarray(metric_vars[components[0]])
+                self._write_plot_report(
+                    metric_name,
+                    asset,
+                    kind="matplotlib",
+                    metadata={
+                        "components": ", ".join(components),
+                        "points": len(sample_series),
+                    },
                 )
-                # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
-                # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
-                sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
-            if outdir is not None:
-                dirs = {
-                    "png": Path(outdir).joinpath("pngs/"),
-                    "svg": Path(outdir).joinpath("svgs/"),
-                }
-                _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
-                # if verbose:
-                logger.info(f"Saving {key} plot to: {Path(outdir).resolve()}")
-                for ext, d in dirs.items():
-                    outfile = d.joinpath(f"{key}.{ext}")
-                    if outfile.is_file():
-                        outfile = d.joinpath(f"{key}-subfig.{ext}")
-                    # logger.info(f"Saving {key}.ext to: {outfile}")
-                    if verbose:
-                        logger.info(f"Saving {key} plot to: {outfile.resolve()}")
-                    plt.savefig(outfile, dpi=400, bbox_inches="tight")
-            if is_interactive():
-                plt.show()
-
         return dataset
 
     def history_to_dict(self) -> dict:
@@ -936,6 +1689,7 @@ class History:
         plot_kwargs: Optional[dict[str, Any]] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         tplot_type: Optional[str] = None,
+        env_info: Optional[dict[str, Any]] = None,
     ) -> xr.Dataset:
         dataset = (
             dataset
@@ -948,18 +1702,29 @@ class History:
             )
         )
         run_name = f"History-{get_timestamp()}" if run_name is None else run_name
-        fallback_outdir = Path(os.getcwd()).joinpath("outputs")
-        if run_name is not None:
-            fallback_outdir = fallback_outdir.joinpath(run_name, get_timestamp())
-        outdir = (
-            # Path(os.getcwd()).joinpath('outputs')
-            fallback_outdir
-            if outdir is None
-            else Path(outdir)
+        if outdir is None:
+            base_dir = (
+                Path(os.getcwd())
+                .joinpath("outputs", run_name, get_timestamp())
+                .expanduser()
+                .resolve()
+            )
+        else:
+            base_dir = Path(outdir).expanduser().resolve()
+        base_dir.mkdir(parents=True, exist_ok=True)
+        self._configure_report_destination(base_dir)
+        env_details = (
+            env_info if env_info is not None else self._default_environment_info()
         )
-        outdir = outdir.joinpath(run_name)
+        self._write_environment_section(env_details)
+        self._write_metric_summary(dataset)
         if plot:
-            plotdir = outdir.joinpath("plots")
+            logger.info(
+                "Saving plots to %s (matplotlib) and %s (tplot)",
+                base_dir.joinpath("plots", "mplot"),
+                base_dir.joinpath("plots", "tplot"),
+            )
+            plotdir = base_dir.joinpath("plots")
             tplotdir = plotdir.joinpath("tplot")
             mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
@@ -994,6 +1759,14 @@ class History:
 
             fname = "dataset" if dataset_fname is None else dataset_fname
             _ = self.save_dataset(
-                dataset=dataset, outdir=outdir, fname=fname, use_hdf5=use_hdf5
+                dataset=dataset,
+                outdir=base_dir,
+                fname=fname,
+                use_hdf5=use_hdf5,
+            )
+        if self.report_enabled:
+            logger.info(
+                "Saving history report to %s",
+                base_dir.joinpath(self._report_filename),
             )
         return dataset
