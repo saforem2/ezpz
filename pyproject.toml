@@ -8,21 +8,19 @@ dynamic = ["version"]
 dependencies = [
     # "accelerate",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
+    "click>=8.0",
     "evaluate",
     # "h5py",
     "hydra-core",
     "ipython",
     "numpy",
     "omegaconf",
-    "plotext",
-    "pyinstrument",
     "rich",
     "seaborn",
     "sh",
     "tiktoken",
     "torchinfo",
     "transformers>=4.50.1",
-    "wandb",
     "xarray",
 ]
 requires-python = ">=3.10"
@@ -38,24 +36,47 @@ authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 
 [project.scripts]
-ezpz-test = "ezpz.test:main"
-ezpz-launch = "ezpz.launch:main"
-ezpz-yeet-env = "ezpz.utils.yeet_env:main"
-ezpz-tar-env = "ezpz.utils.tar_env:main"
+ezpz = "ezpz.cli:main"
 
 [project.optional-dependencies]
+torch = [
+    "mpi4py",
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.4.0",
+]
+cpu = [
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.4.0",
+]
+cu128 = [
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.4.0",
+]
 xpu = [
-    "torch>=2.7.0",
-    "torchvision>=0.22.0",
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.4.0",
     "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
 ]
-torch = ["mpi4py", "torch"]
-cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
-cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
+monitoring = ["wandb>=0.16.0"]
+profiling = ["pyinstrument>=4.5.0"]
+terminal = ["plotext>=5.2.8"]
+docs = [
+    "mkdocs",
+    "mkdocstrings",
+    "mkdocs-material",
+    "mkdocs-autorefs",
+    "mkdocstrings-python",
+    "mkdocs-mermaid2-plugin",
+    "mkdocs-glightbox",
+    "pymdown-extensions",
+]
 dev = [
     "pyink",
     "bpython",
-    "ipython",
     "ipython",
     "isort",
     "jupyter",
@@ -66,8 +87,69 @@ dev = [
     "ruff",
     "ruff-lsp",
     "tensorboard",
-    # "hydra-colorlog",
-    # "tensorboard",
+    "ty>=0.0.1a8",
+    "pyinstrument>=4.5.0",
+    "plotext>=5.2.8",
+]
+all = [
+    "mpi4py",
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.4.0",
+    "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
+    "wandb>=0.16.0",
+    "pyinstrument>=4.5.0",
+    "plotext>=5.2.8",
+    "mkdocs",
+    "mkdocstrings",
+    "mkdocs-material",
+    "mkdocs-autorefs",
+    "mkdocstrings-python",
+    "mkdocs-mermaid2-plugin",
+    "mkdocs-glightbox",
+    "pymdown-extensions",
+    "pyink",
+    "bpython",
+    "ipython",
+    "isort",
+    "jupyter",
+    "ptipython",
+    "pudb",
+    "pynvim",
+    "pyright",
+    "ruff",
+    "ruff-lsp",
+    "tensorboard",
+    "ty>=0.0.1a8",
+]
+
+[dependency-groups]
+torch-core = [
+    "torch>=2.4.0",
+    "torchvision>=0.18.0",
+]
+torch = [
+    { include-group = "torch-core" },
+    "mpi4py",
+]
+cpu = [
+    { include-group = "torch-core" },
+]
+cu128 = [
+    { include-group = "torch-core" },
+]
+xpu = [
+    { include-group = "torch-core" },
+    "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
+]
+monitoring = [
+    "wandb>=0.16.0",
+]
+profiling = [
+    "pyinstrument>=4.5.0",
+]
+terminal = [
+    "plotext>=5.2.8",
 ]
 docs = [
     "mkdocs",
@@ -79,9 +161,40 @@ docs = [
     "mkdocs-glightbox",
     "pymdown-extensions",
 ]
-
-[dependency-groups]
-dev = ["ty>=0.0.1a8"]
+dev-tools = [
+    "pyink",
+    "bpython",
+    "ipython",
+    "isort",
+    "jupyter",
+    "ptipython",
+    "pudb",
+    "pynvim",
+    "pyright",
+    "ruff",
+    "ruff-lsp",
+    "tensorboard",
+    "ty>=0.0.1a8",
+]
+dev = [
+    { include-group = "dev-tools" },
+    { include-group = "profiling" },
+    { include-group = "terminal" },
+]
+tests = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+]
+all = [
+    { include-group = "torch" },
+    { include-group = "xpu" },
+    { include-group = "monitoring" },
+    { include-group = "profiling" },
+    { include-group = "terminal" },
+    { include-group = "docs" },
+    { include-group = "dev-tools" },
+]
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
@@ -109,7 +222,7 @@ dependencies = [
     "pytest-cov",
     "pytest-mock",
     "numpy",
-    "torch"
+    "torch",
 ]
 
 [tool.hatch.envs.default.scripts]
@@ -130,12 +243,6 @@ omit = ["ezpz/__about__.py"]
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 
 [tool.uv]
-override-dependencies = [
-    "torch; sys_platform == 'never'",
-    "torchaudio; sys_platform == 'never'",
-    "torchvision; sys_platform == 'never'",
-    "mpi4py; sys_platform == 'never'",
-]
 conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
 
 # [tool.uv.sources]
