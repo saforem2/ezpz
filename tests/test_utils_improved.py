@@ -1,31 +1,32 @@
 """Tests for the ezpz.utils module."""
 
-import pytest
+from unittest.mock import MagicMock, patch
+
 import numpy as np
+import pytest
 import torch
-from unittest.mock import patch, MagicMock
 
 
 class TestUtils:
     """Test the utils module functions."""
-    
+
     @pytest.fixture(autouse=True)
     def setup_mocks(self):
         """Setup mocks for all tests in this class."""
         # Mock the problematic functions at the module level
-        with patch('ezpz.dist.get_hostname', return_value='test-host'), \
-             patch('ezpz.configs.get_scheduler', return_value='UNKNOWN'), \
-             patch('ezpz.jobs.SCHEDULER', 'UNKNOWN'):
+        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+            "ezpz.configs.get_scheduler", return_value="UNKNOWN"
+        ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             yield
-    
+
     def test_get_timestamp(self):
         """Test get_timestamp function."""
         # Import inside the test to ensure mocks are in place
-        with patch('ezpz.dist.get_hostname', return_value='test-host'), \
-             patch('ezpz.configs.get_scheduler', return_value='UNKNOWN'), \
-             patch('ezpz.jobs.SCHEDULER', 'UNKNOWN'):
+        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+            "ezpz.configs.get_scheduler", return_value="UNKNOWN"
+        ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils
-            
+
             timestamp = utils.get_timestamp()
             assert isinstance(timestamp, str)
             assert len(timestamp) > 0
@@ -38,11 +39,11 @@ class TestUtils:
     def test_normalize(self):
         """Test normalize function."""
         # Import inside the test to ensure mocks are in place
-        with patch('ezpz.dist.get_hostname', return_value='test-host'), \
-             patch('ezpz.configs.get_scheduler', return_value='UNKNOWN'), \
-             patch('ezpz.jobs.SCHEDULER', 'UNKNOWN'):
+        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+            "ezpz.configs.get_scheduler", return_value="UNKNOWN"
+        ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils
-            
+
             # Test with dashes
             result = utils.normalize("test-name")
             assert result == "test-name"
@@ -66,11 +67,11 @@ class TestUtils:
     def test_format_pair(self):
         """Test format_pair function."""
         # Import inside the test to ensure mocks are in place
-        with patch('ezpz.dist.get_hostname', return_value='test-host'), \
-             patch('ezpz.configs.get_scheduler', return_value='UNKNOWN'), \
-             patch('ezpz.jobs.SCHEDULER', 'UNKNOWN'):
+        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+            "ezpz.configs.get_scheduler", return_value="UNKNOWN"
+        ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils
-            
+
             # Test with integer
             result = utils.format_pair("test", 5)
             assert result == "test=5"

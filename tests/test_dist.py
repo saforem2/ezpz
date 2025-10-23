@@ -1,10 +1,12 @@
 """Tests for the ezpz.dist module."""
 
-import pytest
 import os
+
+import pytest
 
 try:
     import ezpz.dist as dist
+
     DIST_AVAILABLE = True
 except ImportError:
     DIST_AVAILABLE = False

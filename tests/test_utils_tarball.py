@@ -13,7 +13,9 @@ from ezpz.utils import check_for_tarball, make_tarfile
 
 def _create_fake_env(env_dir: Path) -> None:
     (env_dir / "bin").mkdir(parents=True, exist_ok=True)
-    (env_dir / "bin" / "python").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    (env_dir / "bin" / "python").write_text(
+        "#!/usr/bin/env python3\n", encoding="utf-8"
+    )
 
 
 def test_make_tarfile_creates_archive(tmp_path, monkeypatch):

@@ -4,6 +4,7 @@ import pytest
 
 try:
     import ezpz.tp as tp
+
     TP_AVAILABLE = True
 except ImportError:
     TP_AVAILABLE = False
@@ -43,7 +44,7 @@ class TestTP:
         """Test ensure_divisibility function."""
         # This should not raise an exception
         tp.ensure_divisibility(10, 2)
-        
+
         # This should raise an exception
         with pytest.raises(AssertionError):
             tp.ensure_divisibility(10, 3)

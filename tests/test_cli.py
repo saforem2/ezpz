@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from click.testing import CliRunner
 
-from ezpz.cli import main as cli_main
 import ezpz.launch
 import ezpz.test
+from ezpz.cli import main as cli_main
 from ezpz.utils import tar_env, yeet_env
 
 

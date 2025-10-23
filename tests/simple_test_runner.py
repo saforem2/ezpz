@@ -17,5 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 if __name__ == "__main__":
     import pytest
+
     # Run tests with minimal configuration
     sys.exit(pytest.main(["-v", str(Path(__file__).parent / "test_ezpz.py")]))

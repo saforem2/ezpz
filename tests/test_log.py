@@ -1,12 +1,14 @@
 """Tests for the ezpz.log module."""
 
-import pytest
 import logging
 import tempfile
 from pathlib import Path
 
+import pytest
+
 try:
     import ezpz.log as log
+
     LOG_AVAILABLE = True
 except ImportError:
     LOG_AVAILABLE = False
@@ -30,14 +32,13 @@ class TestLog:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "test.log"
             logger = log.get_file_logger(
-                name="test_file_logger",
-                fname=str(log_file.with_suffix(""))
+                name="test_file_logger", fname=str(log_file.with_suffix(""))
             )
             assert isinstance(logger, logging.Logger)
             assert logger.name == "test_file_logger"
 
             # Test that we can log something
             logger.info("Test message")
-            
+
             # Check that the file was created
             assert log_file.exists()

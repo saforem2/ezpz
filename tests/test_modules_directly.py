@@ -6,6 +6,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+
 def _run_configs_module_checks() -> bool:
     """Run smoke checks for the configs module; return True on success."""
     import ezpz.configs as configs
@@ -20,9 +21,11 @@ def test_configs_module():
     """Test configs module directly."""
     assert _run_configs_module_checks()
 
+
 def _run_utils_module_checks() -> bool:
-    import ezpz.utils as utils
     import numpy as np
+
+    import ezpz.utils as utils
 
     assert isinstance(utils.get_timestamp(), str)
     assert utils.format_pair("test", 5) == "test=5"
@@ -36,6 +39,7 @@ def test_utils_module():
     """Test utils module directly."""
     assert _run_utils_module_checks()
 
+
 def _run_lazy_module_checks() -> bool:
     import ezpz.lazy as lazy
 
@@ -48,6 +52,7 @@ def _run_lazy_module_checks() -> bool:
 def test_lazy_module():
     """Test lazy module directly."""
     assert _run_lazy_module_checks()
+
 
 if __name__ == "__main__":
     print("Running individual module tests...")

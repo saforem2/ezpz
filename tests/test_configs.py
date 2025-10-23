@@ -1,9 +1,10 @@
 """Tests for the ezpz.configs module."""
 
-import pytest
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 try:
     import ezpz.configs as configs

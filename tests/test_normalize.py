@@ -1,11 +1,13 @@
 """Test the normalize function from utils module."""
 
+
 def normalize(name: str) -> str:
     """Normalize a name by replacing special characters with dashes and converting to lowercase.
-    
+
     This is a copy of the function from ezpz.utils to avoid import issues.
     """
     import re
+
     return re.sub(r"[-_.]+", "-", name).lower()
 
 

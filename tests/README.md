@@ -114,14 +114,14 @@ import pytest
 def test_example_function():
     """Test example_function with valid input."""
     from ezpz.module import example_function
-    
+
     result = example_function("test")
     assert result == "expected_output"
-    
+
 def test_example_function_with_invalid_input():
     """Test example_function with invalid input."""
     from ezpz.module import example_function
-    
+
     with pytest.raises(ValueError):
         example_function(None)
 ```
@@ -151,7 +151,7 @@ def test_with_mocking():
     """Test with mocked external dependency."""
     with patch('ezpz.module.external_function', return_value='mocked'):
         from ezpz.module import function_that_uses_external
-        
+
         result = function_that_uses_external()
         assert result == 'mocked'
 ```
@@ -209,7 +209,7 @@ Some tests may fail due to environment-specific initialization in ezpz. In such 
 Tests are automatically run in the CI pipeline on every push to the repository. The pipeline includes:
 
 - Unit tests
-- Integration tests  
+- Integration tests
 - Code coverage analysis
 - Security scanning
 

@@ -23,7 +23,9 @@ def test_runtime_plugin_overrides_fallback(monkeypatch):
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     monkeypatch.delenv("SLURM_JOBID", raising=False)
 
-    def plugin(env: dict[str, str], *, hostname: str | None = None, machine: str | None = None) -> str | None:
+    def plugin(
+        env: dict[str, str], *, hostname: str | None = None, machine: str | None = None
+    ) -> str | None:
         return "custom" if env.get("EZPZ_TEST_SCHED") else None
 
     configs.register_scheduler_plugin(plugin)
@@ -56,7 +58,12 @@ def test_entry_point_plugin_invoked(monkeypatch):
     monkeypatch.setenv("EZPZ_TEST_SCHED_PLUGIN", "1")
 
     def loader():
-        def plugin(env: dict[str, str], *, hostname: str | None = None, machine: str | None = None) -> str | None:
+        def plugin(
+            env: dict[str, str],
+            *,
+            hostname: str | None = None,
+            machine: str | None = None,
+        ) -> str | None:
             if env.get("EZPZ_TEST_SCHED_PLUGIN") == "1":
                 return "plugin-pbs"
             return None

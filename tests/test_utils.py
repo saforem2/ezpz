@@ -1,13 +1,15 @@
 """Tests for the ezpz.utils module."""
 
-import pytest
-import numpy as np
-import torch
 import tempfile
 from pathlib import Path
 
+import numpy as np
+import pytest
+import torch
+
 try:
     import ezpz.utils as utils
+
     UTILS_AVAILABLE = True
 except ImportError:
     UTILS_AVAILABLE = False

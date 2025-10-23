@@ -10,18 +10,20 @@ def run_tests():
     """Run all tests."""
     # Get the project root directory
     project_root = Path(__file__).parent
-    
+
     # Run pytest
     try:
         result = subprocess.run(
             [
-                sys.executable, "-m", "pytest", 
+                sys.executable,
+                "-m",
+                "pytest",
                 str(project_root / "tests"),
                 "-v",
-                "--tb=short"
+                "--tb=short",
             ],
             cwd=project_root,
-            check=False
+            check=False,
         )
         return result.returncode
     except Exception as e:

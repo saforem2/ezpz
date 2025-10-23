@@ -1,12 +1,14 @@
 """Tests for the ezpz.jobs module."""
 
-import pytest
 import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 try:
     import ezpz.jobs as jobs
+
     JOBS_AVAILABLE = True
 except ImportError:
     JOBS_AVAILABLE = False

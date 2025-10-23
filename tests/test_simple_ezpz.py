@@ -1,8 +1,9 @@
 """Simple tests for ezpz functionality."""
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 
 def test_import_ezpz():
@@ -10,8 +11,9 @@ def test_import_ezpz():
     # This is a basic smoke test
     try:
         import ezpz
+
         assert ezpz is not None
-        assert hasattr(ezpz, '__version__')
+        assert hasattr(ezpz, "__version__")
     except Exception as e:
         # If there are import errors, they're likely due to environment issues
         # which is expected in some test environments
@@ -22,6 +24,7 @@ def test_version_accessible():
     """Test that version information is accessible."""
     try:
         import ezpz
+
         version = ezpz.__version__
         assert isinstance(version, str)
         assert len(version) > 0
@@ -33,6 +36,7 @@ def test_logger_creation():
     """Test that logger creation works."""
     try:
         import ezpz
+
         logger = ezpz.get_logger("test")
         assert logger is not None
         assert hasattr(logger, "info")

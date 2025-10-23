@@ -4,13 +4,13 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-
 from types import SimpleNamespace
 
 import pytest
 
 try:
     import ezpz.launch as launch
+
     LAUNCH_AVAILABLE = True
 except ImportError:
     LAUNCH_AVAILABLE = False
@@ -22,7 +22,7 @@ class TestLaunch:
         """Test command_exists function."""
         # Test with a command that should exist
         assert launch.command_exists("python") is True
-        
+
         # Test with a command that should not exist
         assert launch.command_exists("nonexistent_command_xyz") is False
 
@@ -50,12 +50,12 @@ class TestLaunch:
         """Test get_scheduler function with SLURM environment."""
         # Save original environment
         original_env = os.environ.copy()
-        
+
         # Set SLURM environment variables
         os.environ["SLURM_JOB_ID"] = "test.job"
         scheduler = launch.get_scheduler()
         assert scheduler == "SLURM"
-        
+
         # Restore original environment
         os.environ.clear()
         os.environ.update(original_env)

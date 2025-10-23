@@ -71,7 +71,9 @@ def test_run_returns_error_on_failed_check(monkeypatch):
 def test_cli_doctor_json(monkeypatch):
     outcomes = [
         doctor.CheckResult(name="mpi", status="ok", message="ok"),
-        doctor.CheckResult(name="torch", status="warning", message="warn", remedy="fix"),
+        doctor.CheckResult(
+            name="torch", status="warning", message="warn", remedy="fix"
+        ),
     ]
     monkeypatch.setattr(doctor, "run_checks", lambda: outcomes)
     runner = CliRunner()

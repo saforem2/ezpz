@@ -1,11 +1,12 @@
 """Tests for the ezpz.tplot module."""
 
-import pytest
 import numpy as np
+import pytest
 import xarray as xr
 
 try:
     import ezpz.tplot as tplot
+
     TPLOT_AVAILABLE = True
 except ImportError:
     TPLOT_AVAILABLE = False
@@ -28,7 +29,7 @@ class TestTPlot:
         # Create some simple test data
         x = np.linspace(0, 10, 100)
         y = np.sin(x)
-        
+
         # This should not raise an exception
         # Note: We're not checking the output since it's a plotting function
         try:
@@ -42,7 +43,7 @@ class TestTPlot:
         """Test tplot_dict with simple data."""
         # Create some simple test data
         data = {"x": np.linspace(0, 10, 100), "y": np.sin(np.linspace(0, 10, 100))}
-        
+
         # This should not raise an exception
         try:
             tplot.tplot_dict(data)
@@ -57,7 +58,7 @@ class TestTPlot:
         x = np.linspace(0, 10, 100)
         y = np.sin(x)
         data = xr.DataArray(y, coords=[x], dims=["x"])
-        
+
         # This should not raise an exception
         try:
             tplot.tplot(data)

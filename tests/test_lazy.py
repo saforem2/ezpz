@@ -4,6 +4,7 @@ import pytest
 
 try:
     import ezpz.lazy as lazy
+
     LAZY_AVAILABLE = True
 except ImportError:
     LAZY_AVAILABLE = False

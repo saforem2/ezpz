@@ -2,12 +2,13 @@
 
 import json
 
-import pytest
 import numpy as np
+import pytest
 import torch
 
 try:
     import ezpz.history as history
+
     HISTORY_AVAILABLE = True
 except ImportError:
     HISTORY_AVAILABLE = False

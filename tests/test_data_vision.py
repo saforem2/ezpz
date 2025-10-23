@@ -1,6 +1,7 @@
 """Tests for the ``ezpz.data.vision`` helpers."""
 
 from __future__ import annotations
+
 import pytest
 import torch
 
