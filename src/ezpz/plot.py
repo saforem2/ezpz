@@ -6,15 +6,13 @@ Contains helpers for plotting.
 
 from __future__ import absolute_import, annotations, division, print_function
 
-import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 # from ezpz.dist import get_rank
 import numpy as np
-import torch
 import xarray as xr
 
 # import ezpz
