@@ -11,7 +11,8 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import (Any, Callable, Iterable, Optional, Protocol, Sequence,
+                    Union, cast)
 
 try:  # Python 3.10+
     from importlib.metadata import EntryPoint, entry_points
@@ -87,7 +88,18 @@ ScalarLike = Union[int, float, bool, np.floating]
 
 SCHEDULER_ENTRYPOINT_GROUP = "ezpz.schedulers"
 
-SchedulerDetector = Callable[[dict[str, str]], Optional[str]]
+
+class SchedulerDetector(Protocol):
+    """Callable signature expected for scheduler detector plug-ins."""
+
+    def __call__(
+        self,
+        env: dict[str, str],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Optional[str]:
+        ...
+
 
 _ENTRY_POINT_PLUGINS: Optional[list[SchedulerDetector]] = None
 _RUNTIME_PLUGINS: list[SchedulerDetector] = []
@@ -144,25 +156,34 @@ def _load_entry_point_plugins() -> list[SchedulerDetector]:
 
     plugins: list[SchedulerDetector] = []
     try:
-        discovered = entry_points()
+        discovered: Any = entry_points()
     except Exception as exc:  # pragma: no cover - defensive
         log.debug("Unable to inspect scheduler entry points: %s", exc)
         discovered = ()
     if hasattr(discovered, "select"):
-        selected = discovered.select(group=SCHEDULER_ENTRYPOINT_GROUP)  # type: ignore[attr-defined]
+        selector = getattr(discovered, "select")
+        selected_iter = selector(group=SCHEDULER_ENTRYPOINT_GROUP)
+        selected: Iterable[EntryPoint] = cast(Iterable[EntryPoint], selected_iter)
     elif isinstance(discovered, dict):
-        selected = discovered.get(SCHEDULER_ENTRYPOINT_GROUP, [])
+        selected = cast(
+            Iterable[EntryPoint],
+            discovered.get(SCHEDULER_ENTRYPOINT_GROUP, ()),
+        )
     else:  # pragma: no cover - defensive
-        selected = []
+        selected = cast(Iterable[EntryPoint], discovered)
 
     for ep in selected:
         try:
             plugin = ep.load()
         except Exception as exc:  # pragma: no cover - defensive
-            log.warning("Failed to load scheduler plug-in %s: %s", getattr(ep, "name", ep), exc)
+            log.warning(
+                "Failed to load scheduler plug-in %s: %s",
+                getattr(ep, "name", ep),
+                exc,
+            )
             continue
         if callable(plugin):
-            plugins.append(plugin)  # type: ignore[arg-type]
+            plugins.append(cast(SchedulerDetector, plugin))
         else:
             log.warning(
                 "Scheduler plug-in %s is not callable; ignoring",
@@ -191,10 +212,10 @@ def _call_scheduler_plugin(
     """Invoke a scheduler detector with best-effort argument matching."""
 
     try:
-        return detector(env, hostname=hostname, machine=machine)  # type: ignore[arg-type]
+        return detector(env, hostname=hostname, machine=machine)
     except TypeError:
         try:
-            return detector(env, hostname=hostname)  # type: ignore[arg-type]
+            return detector(env, hostname=hostname)
         except TypeError:
             try:
                 return detector(env)
@@ -214,7 +235,9 @@ def _detect_scheduler_via_plugins(
     """Run plug-ins until one returns a scheduler string."""
 
     for detector in _iter_scheduler_plugins():
-        candidate = _call_scheduler_plugin(detector, env, hostname=hostname, machine=machine)
+        candidate = _call_scheduler_plugin(
+            detector, env, hostname=hostname, machine=machine
+        )
         if candidate is None:
             continue
         normalized = candidate.strip()
@@ -498,6 +521,7 @@ class BaseConfig(ABC):
 @rich.repr.auto
 class TrainConfig(BaseConfig):
     """High-level training options shared by ezpz scripts."""
+
     gas: int = 1
     # ---- [NOTE]+ Framework + Backend ----------------
     # `framework`: `{'backend'}`
@@ -583,6 +607,7 @@ class TrainConfig(BaseConfig):
 @dataclass
 class ZeroConfig:
     """Subset of DeepSpeed ZeRO options exposed via the ezpz CLI."""
+
     stage: int = 0
     allgather_partitions: Optional[bool] = None
     allgather_bucket_size: int = int(5e8)
