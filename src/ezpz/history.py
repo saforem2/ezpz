@@ -13,10 +13,9 @@ import shutil
 import sys
 import time
 from contextlib import ContextDecorator
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
-
-from datetime import datetime, timezone
 
 # import matplotlib.pyplot as plt
 import numpy as np
@@ -30,7 +29,6 @@ from ezpz import timeitlogit
 from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.lazy import lazy_import
 from ezpz.log import get_logger
-from ezpz.log.console import is_interactive
 from ezpz.tplot import tplot as eztplot
 # from ezpz import tplot as eztplot
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
@@ -203,8 +201,9 @@ class History:
                 self._jsonl_path.unlink()
             except OSError:
                 logger.warning(
-                    "Unable to remove existing JSONL log at %s", self._jsonl_path
-        )
+                    "Unable to remove existing JSONL log at %s",
+                    self._jsonl_path,
+                )
         self._jsonl_enabled = True
         self._dist = dist
         self._environment_written = False
@@ -323,9 +322,7 @@ class History:
             if not lines[-1].endswith("\n"):
                 handle.write("\n")
 
-    def _write_environment_section(
-        self, env_info: Optional[dict[str, Any]]
-    ) -> None:
+    def _write_environment_section(self, env_info: Optional[dict[str, Any]]) -> None:
         """Write environment details into the report."""
 
         if not self.report_enabled or env_info is None or self._environment_written:
@@ -457,7 +454,9 @@ class History:
         axes = tuple(range(arr.ndim - 1))
         return arr.mean(axis=axes)
 
-    def _group_metric_variables(self, dataset: xr.Dataset) -> dict[str, dict[str, xr.DataArray]]:
+    def _group_metric_variables(
+        self, dataset: xr.Dataset
+    ) -> dict[str, dict[str, xr.DataArray]]:
         """Group metric variables by base name and associated aggregates."""
 
         groups: dict[str, dict[str, xr.DataArray]] = {}
@@ -594,7 +593,9 @@ class History:
             for ext, directory in dirs.items():
                 outfile = directory.joinpath(f"{asset_name}.{ext}")
                 if outfile.exists():
-                    outfile = directory.joinpath(f"{asset_name}-{get_timestamp()}.{ext}")
+                    outfile = directory.joinpath(
+                        f"{asset_name}-{get_timestamp()}.{ext}"
+                    )
                 fig.savefig(outfile, dpi=400, bbox_inches="tight")
                 if primary_asset is None and ext == "png":
                     primary_asset = outfile
@@ -713,8 +714,7 @@ class History:
             return value.tolist()
         if isinstance(value, dict):
             return {
-                key: cls._to_serializable(sub_value)
-                for key, sub_value in value.items()
+                key: cls._to_serializable(sub_value) for key, sub_value in value.items()
             }
         if isinstance(value, (list, tuple)):
             return [cls._to_serializable(item) for item in value]
@@ -729,12 +729,11 @@ class History:
     def _sanitize_metrics(cls, metrics: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of metrics with values converted to JSON-safe types."""
 
-        return {
-            key: cls._to_serializable(value)
-            for key, value in metrics.items()
-        }
+        return {key: cls._to_serializable(value) for key, value in metrics.items()}
 
-    def _iter_scalar_metrics(self, metrics: dict[str, Any]) -> Iterable[tuple[str, float]]:
+    def _iter_scalar_metrics(
+        self, metrics: dict[str, Any]
+    ) -> Iterable[tuple[str, float]]:
         """Yield scalar metrics suitable for distributed reductions."""
 
         for key, value in metrics.items():
@@ -745,9 +744,7 @@ class History:
             elif torch.is_tensor(value) and value.numel() == 1:
                 yield key, float(value.item())
 
-    def _compute_distributed_metrics(
-        self, metrics: dict[str, Any]
-    ) -> dict[str, float]:
+    def _compute_distributed_metrics(self, metrics: dict[str, Any]) -> dict[str, float]:
         """Compute distributed reductions for scalar metrics."""
 
         if not self._aggregate_metrics or self._dist is None:
@@ -761,17 +758,28 @@ class History:
         if not scalars:
             return {}
         device = ezpz.get_torch_device(as_torch_device=True)
-        # device = torch.device("cpu")
-        # try:
-        #     backend = self._dist.get_backend()
-        # except Exception:
-        #     backend = None
-        # if backend == "nccl" and torch.cuda.is_available():
-        #     device = torch.device("cuda", torch.cuda.current_device())
+        backend_name: Optional[str] = None
+        try:
+            raw_backend = self._dist.get_backend()
+        except Exception:
+            raw_backend = None
+        if raw_backend is not None:
+            backend_value = getattr(raw_backend, "value", raw_backend)
+            backend_name = str(backend_value).lower()
+        metric_device = device
+        device_type = getattr(device, "type", str(device))
+        if device_type == "mps":
+            # MPS currently lacks float64 + collective support; aggregate metrics on CPU.
+            metric_device = torch.device("cpu")
+        elif backend_name == "gloo" and isinstance(metric_device, torch.device):
+            # torch.device string comparison fallback for older PyTorch versions.
+            if metric_device.type == "mps":
+                metric_device = torch.device("cpu")
+        dtype = torch.get_default_dtype()
         values = torch.tensor(
             list(scalars.values()),
-            dtype=torch.float64,
-            device=device,
+            dtype=dtype,
+            device=metric_device,
         )
         sum_vals = values.clone()
         sq_vals = values.square()
@@ -791,7 +799,7 @@ class History:
         self._dist.all_reduce(sq_vals, op=ops.SUM)
         self._dist.all_reduce(max_vals, op=ops.MAX)
         self._dist.all_reduce(min_vals, op=ops.MIN)
-        mean_vals = (sum_vals / world_size)
+        mean_vals = sum_vals / world_size
         var_vals = (sq_vals / world_size) - mean_vals.square()
         std_vals = torch.sqrt(torch.clamp(var_vals, min=0.0))
         # max_vals = max_vals
@@ -1487,7 +1495,10 @@ class History:
         outdir_path = Path(os.getcwd()) if outdir is None else Path(outdir)
         groups = self._group_metric_variables(dataset)
         for metric_name, metric_vars in sorted(groups.items()):
-            if (xkey is not None and metric_name == xkey) or xkey in ["iter", "draw"]:
+            if (xkey is not None and metric_name == xkey) or xkey in [
+                "iter",
+                "draw",
+            ]:
                 continue
             self._tplot_metric_group(
                 metric_name,
@@ -1549,15 +1560,9 @@ class History:
                 plot_kwargs=plot_kwargs,
                 verbose=verbose,
             )
-            if (
-                asset is not None
-                and self.report_enabled
-                and asset.exists()
-            ):
+            if asset is not None and self.report_enabled and asset.exists():
                 components = sorted(metric_vars.keys())
-                sample_series = self._series_from_dataarray(
-                    metric_vars[components[0]]
-                )
+                sample_series = self._series_from_dataarray(metric_vars[components[0]])
                 self._write_plot_report(
                     metric_name,
                     asset,
@@ -1708,7 +1713,9 @@ class History:
             base_dir = Path(outdir).expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
         self._configure_report_destination(base_dir)
-        env_details = env_info if env_info is not None else self._default_environment_info()
+        env_details = (
+            env_info if env_info is not None else self._default_environment_info()
+        )
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
         if plot:
@@ -1752,7 +1759,10 @@ class History:
 
             fname = "dataset" if dataset_fname is None else dataset_fname
             _ = self.save_dataset(
-                dataset=dataset, outdir=base_dir, fname=fname, use_hdf5=use_hdf5
+                dataset=dataset,
+                outdir=base_dir,
+                fname=fname,
+                use_hdf5=use_hdf5,
             )
         if self.report_enabled:
             logger.info(
