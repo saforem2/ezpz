@@ -120,7 +120,7 @@ if __name__ == "__main__":
                             "INPUT_SIZE=128",
                             "OUTPUT_SIZE=128",
                             "LAYER_SIZES=\"'128,256,128'\"",
-                            "ezpz-launch",
+                            "ezpz launch",
                             "-m ezpz.examples.minimal",
                         ]
                     ),
