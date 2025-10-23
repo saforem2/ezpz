@@ -7,23 +7,21 @@ Train a simple Vision Transformer (ViT) model using PyTorch and FSDP.
 import argparse
 import functools
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any
 
-import ezpz
 import torch
-
 # import torch._dynamo
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
+import ezpz
 from ezpz import TORCH_DTYPES_MAP
-from ezpz.configs import TrainArgs, timmViTConfig, ViTConfig
-from ezpz.models import summarize_model
+from ezpz.configs import TrainArgs, timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
+from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock, timmAttentionBlock
-
 
 logger = ezpz.get_logger(__name__)
 
@@ -37,15 +35,9 @@ def parse_args() -> argparse.Namespace:
         description="Train a simple ViT",
     )
     parser.add_argument("--img_size", type=int, default=224, help="Image size")
-    parser.add_argument(
-        "--batch_size", type=int, default=128, help="Batch size"
-    )
-    parser.add_argument(
-        "--num_heads", type=int, default=16, help="Number of heads"
-    )
-    parser.add_argument(
-        "--head_dim", type=int, default=64, help="Hidden Dimension"
-    )
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
+    parser.add_argument("--num_heads", type=int, default=16, help="Number of heads")
+    parser.add_argument("--head_dim", type=int, default=64, help="Hidden Dimension")
     parser.add_argument(
         "--dataset",
         default="fake",
@@ -59,9 +51,7 @@ def parse_args() -> argparse.Namespace:
         default=24,
         help="Depth of the model (number of layers)",
     )
-    parser.add_argument(
-        "--patch_size", type=int, default=16, help="Patch size"
-    )
+    parser.add_argument("--patch_size", type=int, default=16, help="Patch size")
     parser.add_argument("--dtype", default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
     parser.add_argument("--num_workers", default=0, help="Number of workers")
@@ -146,9 +136,7 @@ def train_fn(
             shuffle=True,
         )
     else:
-        raise ValueError(
-            f"Unknown dataset: {dataset}. Expected 'fake' or 'mnist'."
-        )
+        raise ValueError(f"Unknown dataset: {dataset}. Expected 'fake' or 'mnist'.")
 
     # data = get
 
@@ -164,7 +152,8 @@ def train_fn(
 
     #
     if use_timm:
-        from timm.models.vision_transformer import VisionTransformer  # type:ignore
+        from timm.models.vision_transformer import \
+            VisionTransformer  # type:ignore
 
         model = VisionTransformer(
             img_size=config.img_size,
@@ -209,9 +198,7 @@ def train_fn(
         [
             sum(
                 [
-                    getattr(p, "ds_numel", 0)
-                    if hasattr(p, "ds_id")
-                    else p.nelement()
+                    getattr(p, "ds_numel", 0) if hasattr(p, "ds_id") else p.nelement()
                     for p in model_module.parameters()
                 ]
             )
@@ -244,9 +231,7 @@ def train_fn(
     model.train()  # type:ignore
 
     history = ezpz.History()
-    logger.info(
-        f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
-    )
+    logger.info(f"Training with {world_size} x {device_type} (s), using {torch_dtype=}")
     for step, data in enumerate(data["train"]["loader"]):
         if args.max_iters is not None and step > int(args.max_iters):
             break
@@ -323,9 +308,7 @@ def main():
         patch_size=args.patch_size,
     )
 
-    def attn_fn(
-        q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-    ) -> torch.Tensor:
+    def attn_fn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         """
         Custom attention function that applies scaled dot-product attention.
 
@@ -380,9 +363,7 @@ def main():
     else:
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
-    train_fn(
-        block_fn, train_args, dataset=args.dataset, use_timm=args.use_timm
-    )
+    train_fn(block_fn, train_args, dataset=args.dataset, use_timm=args.use_timm)
 
 
 if __name__ == "__main__":
