@@ -6,18 +6,16 @@ Sam Foreman
 """
 
 import os
-
 from pathlib import Path
 from typing import Optional
 
-import ezpz
 import torch
+from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import datasets, transforms
 
+import ezpz
 from ezpz.dist import TORCH_DTYPES_MAP
-from torch.utils.data import Dataset
-
 
 RANK = ezpz.get_rank()
 WORLD_SIZE = ezpz.get_world_size()
@@ -96,9 +94,7 @@ def get_mnist(
         sampler1 = DistributedSampler(
             dataset1, rank=RANK, num_replicas=WORLD_SIZE, shuffle=True
         )
-        sampler2 = DistributedSampler(
-            dataset2, rank=RANK, num_replicas=WORLD_SIZE
-        )
+        sampler2 = DistributedSampler(dataset2, rank=RANK, num_replicas=WORLD_SIZE)
         train_kwargs["sampler"] = sampler1
         test_kwargs["sampler"] = sampler2
     else:
