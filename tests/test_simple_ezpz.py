@@ -1,7 +1,6 @@
 """Simple tests for ezpz functionality."""
 
 import os
-import sys
 
 import pytest
 

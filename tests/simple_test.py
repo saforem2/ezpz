@@ -1,6 +1,5 @@
 """Simple test for the main ezpz module."""
 
-import os
 import sys
 from pathlib import Path
 

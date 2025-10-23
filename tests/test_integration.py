@@ -1,11 +1,6 @@
 """Integration tests for ezpz core functionality."""
 
 import os
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 def test_import_structure():

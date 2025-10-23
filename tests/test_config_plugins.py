@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -24,7 +23,10 @@ def test_runtime_plugin_overrides_fallback(monkeypatch):
     monkeypatch.delenv("SLURM_JOBID", raising=False)
 
     def plugin(
-        env: dict[str, str], *, hostname: str | None = None, machine: str | None = None
+        env: dict[str, str],
+        *,
+        hostname: str | None = None,
+        machine: str | None = None,
     ) -> str | None:
         return "custom" if env.get("EZPZ_TEST_SCHED") else None
 

@@ -1,7 +1,5 @@
 """Tests for the ezpz.jobs module."""
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest

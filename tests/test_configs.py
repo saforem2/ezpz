@@ -1,8 +1,5 @@
 """Tests for the ezpz.configs module."""
 
-import os
-import tempfile
-from pathlib import Path
 
 import pytest
 

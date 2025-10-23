@@ -1,6 +1,5 @@
 """Test the main ezpz module imports and basic functionality."""
 
-import pytest
 
 import ezpz
 
