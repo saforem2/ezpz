@@ -70,6 +70,7 @@ plugins:
   - search
   - autorefs
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
           paths: [src]
@@ -141,6 +142,7 @@ extra_javascript:
   # - javascripts/config.js
 
 markdown_extensions:
+  - admonition
   # Python Markdown
   - abbr
   - attr_list
@@ -198,6 +200,7 @@ nav:
   - FAQ: faq.md
   - Guides:
       - 🚀 Launch: launch.md
+      - 🩺 Doctor: doctor.md
       - 🤗 HF Trainer: hf-trainer.md
       - 🧤 Hands-On Slides: slides-2025-05-07.md
       - 🏖️ Shell Environment: shell-environment.md
@@ -236,6 +239,7 @@ nav:
       - "<code>ezpz.launch</code>": Code-Reference/launch-reference.md
       - "<code>ezpz.log</code>": Code-Reference/log-reference.md
       - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
+      - "<code>ezpz.doctor</code>": Code-Reference/doctor-reference.md
       - "<code>ezpz.hf_trainer</code>": Code-Reference/hf-trainer-reference.md
       - "<code>ezpz.history</code>": Code-Reference/history-reference.md
       - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
