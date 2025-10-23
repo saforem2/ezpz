@@ -760,13 +760,14 @@ class History:
         scalars = dict(self._iter_scalar_metrics(metrics))
         if not scalars:
             return {}
-        device = torch.device("cpu")
-        try:
-            backend = self._dist.get_backend()
-        except Exception:
-            backend = None
-        if backend == "nccl" and torch.cuda.is_available():
-            device = torch.device("cuda", torch.cuda.current_device())
+        device = ezpz.get_torch_device(as_torch_device=True)
+        # device = torch.device("cpu")
+        # try:
+        #     backend = self._dist.get_backend()
+        # except Exception:
+        #     backend = None
+        # if backend == "nccl" and torch.cuda.is_available():
+        #     device = torch.device("cuda", torch.cuda.current_device())
         values = torch.tensor(
             list(scalars.values()),
             dtype=torch.float64,
@@ -790,11 +791,11 @@ class History:
         self._dist.all_reduce(sq_vals, op=ops.SUM)
         self._dist.all_reduce(max_vals, op=ops.MAX)
         self._dist.all_reduce(min_vals, op=ops.MIN)
-        mean_vals = (sum_vals / world_size).cpu()
+        mean_vals = (sum_vals / world_size)
         var_vals = (sq_vals / world_size) - mean_vals.square()
-        std_vals = torch.sqrt(torch.clamp(var_vals, min=0.0)).cpu()
-        max_vals = max_vals.cpu()
-        min_vals = min_vals.cpu()
+        std_vals = torch.sqrt(torch.clamp(var_vals, min=0.0))
+        # max_vals = max_vals
+        # min_vals = min_vals
         stats: dict[str, float] = {}
         for idx, key in enumerate(scalars.keys()):
             stats[f"{key}/mean"] = float(mean_vals[idx].item())
