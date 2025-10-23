@@ -66,7 +66,10 @@ def add_argument():
         help="use deepspeed mixture of experts (moe)",
     )
     parser.add_argument(
-        "--ep-world-size", default=1, type=int, help="(moe) expert parallel world size"
+        "--ep-world-size",
+        default=1,
+        type=int,
+        help="(moe) expert parallel world size",
     )
     parser.add_argument(
         "--num-experts",
@@ -84,7 +87,10 @@ def add_argument():
         help="Only applicable when num-experts > 1, accepts [standard, residual]",
     )
     parser.add_argument(
-        "--top-k", default=1, type=int, help="(moe) gating top 1 and 2 supported"
+        "--top-k",
+        default=1,
+        type=int,
+        help="(moe) gating top 1 and 2 supported",
     )
     parser.add_argument(
         "--min-capacity",
@@ -115,7 +121,10 @@ def add_argument():
 
 def create_moe_param_groups(model):
     """Create separate parameter groups for each expert."""
-    parameters = {"params": [p for p in model.parameters()], "name": "parameters"}
+    parameters = {
+        "params": [p for p in model.parameters()],
+        "name": "parameters",
+    }
     return split_params_into_different_moe_groups_for_optimizer(parameters)
 
 
@@ -303,7 +312,10 @@ def main(args):
     #     the num_worker of torch.utils.data.DataLoader() to 0.
     ########################################################################
     transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]
     )
 
     if torch.distributed.get_rank() != 0:
