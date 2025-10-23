@@ -5,27 +5,28 @@ ezpz/examples/vit.py
 import argparse
 import functools
 import os
-from pathlib import Path
 import time
-from typing import Any, Optional, Sequence
+from pathlib import Path
+from typing import Any
 
-import ezpz
-from timm.models.vision_transformer import VisionTransformer
 import torch
 import torch._dynamo
+# from mmm.data.vision import get_fake_data  # , get_mnist
+from mmm.models.vit.attention import AttentionBlock
+from timm.models.vision_transformer import VisionTransformer
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
+import ezpz
 from ezpz import TORCH_DTYPES_MAP
 from ezpz.configs import TrainArgs, ViTConfig
+from ezpz.data.vision import get_fake_data
 from ezpz.models import summarize_model
-from ezpz.data.vision import get_mnist, get_fake_data
+
 # from mmm.models.vit
 # from mmm.configs import TORCH_DTYPES_MAP, TrainArgs, ViTConfig
 # from mmm.models import summarize_model
 
-# from mmm.data.vision import get_fake_data  # , get_mnist
-from mmm.models.vit.attention import AttentionBlock
 
 logger = ezpz.get_logger(__name__)
 
@@ -130,9 +131,7 @@ def train_fn(block_fn: Any, args: TrainArgs) -> ezpz.History:
         [
             sum(
                 [
-                    getattr(p, "ds_numel", 0)
-                    if hasattr(p, "ds_id")
-                    else p.nelement()
+                    getattr(p, "ds_numel", 0) if hasattr(p, "ds_id") else p.nelement()
                     for p in model_module.parameters()
                 ]
             )
@@ -165,9 +164,7 @@ def train_fn(block_fn: Any, args: TrainArgs) -> ezpz.History:
     model.train()  # type:ignore
 
     history = ezpz.History()
-    logger.info(
-        f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
-    )
+    logger.info(f"Training with {world_size} x {device_type} (s), using {torch_dtype=}")
     for step, data in enumerate(data["train"]["loader"]):
         if args.max_iters is not None and step > int(args.max_iters):
             break
@@ -232,9 +229,7 @@ def main():
         patch_size=args.patch_size,
     )
 
-    def attn_fn(
-        q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-    ) -> torch.Tensor:
+    def attn_fn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         scale = config.head_dim ** (-0.5)
         q = q * scale
         attn = q @ k.transpose(-2, -1)
