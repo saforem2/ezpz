@@ -15,8 +15,17 @@ from .__about__ import __version__  # re-exported symbol
 
 import socket
 if socket.getfqdn().startswith("x3"):
-    from mpi4py import MPI  # noqa
-    import torch  # noqa
+    try:
+        from mpi4py import MPI  # noqa
+        import torch  # noqa
+    except Exception:  # pragma: no cover - best effort
+        import warnings
+
+        warnings.warn(
+            "Optional MPI/Torch imports unavailable on host 'x3*'; proceeding without them.",
+            ImportWarning,
+            stacklevel=2,
+        )
 
 # ---------------------------------------------------------------------------
 # Public re-exports
@@ -24,6 +33,7 @@ if socket.getfqdn().startswith("x3"):
 
 _LAZY_MODULES: Dict[str, str] = {
     "configs": "ezpz.configs",
+    "doctor": "ezpz.doctor",
     "dist": "ezpz.dist",
     "history": "ezpz.history",
     "jobs": "ezpz.jobs",
@@ -39,6 +49,7 @@ _LAZY_MODULES: Dict[str, str] = {
 _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.log",
     "ezpz.configs",
+    "ezpz.doctor",
     "ezpz.utils",
     "ezpz.history",
     "ezpz.profile",
