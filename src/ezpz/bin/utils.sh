@@ -766,12 +766,12 @@ ezpz_setup_conda_frontier() {
 }
 
 ezpz_setup_conda_sunspot() {
-	###########################
-	# Setup conda on Sunspot
-	###########################
-	if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
-      module load frameworks
-	fi
+    ###########################
+    # Setup conda on Sunspot
+    ###########################
+    if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+        module load frameworks
+    fi
 }
 
 ezpz_setup_conda_aurora() {
