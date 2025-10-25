@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 
 import ezpz
-from ezpz.history import WANDB_DISABLED
+# from ezpz.history import WANDB_DISABLED
 import torch
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
