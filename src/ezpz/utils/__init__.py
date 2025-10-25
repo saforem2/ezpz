@@ -101,7 +101,8 @@ def breakpoint(rank: int = 0):
             f"Type 'up' to get to the frame that called dist.breakpoint(rank={rank})\n"
         )
         pdb.set_trace()
-    torch.distributed.barrier()
+    # torch.distributed.barrier()
+    ezpz.dist.barrier()
 
 
 def get_timestamp(fstr: Optional[str] = None) -> str:
