@@ -19,8 +19,8 @@ from ezpz.dist import TORCH_DTYPES_MAP
 from torch.utils.data import Dataset
 
 
-RANK = ezpz.get_rank()
-WORLD_SIZE = ezpz.get_world_size()
+# RANK = ezpz.get_rank()
+# WORLD_SIZE = ezpz.get_world_size()
 OUTPUT_DIR = Path(os.getcwd()).joinpath(".cache", "ezpz", "data", "vision")
 
 
@@ -65,14 +65,16 @@ def get_mnist(
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    if RANK == 0:
+    if ezpz.get_rank() == 0:
         _ = datasets.MNIST(
             datadir.as_posix(),
             train=True,
             download=download,
             transform=transform,
         )
-    torch.distributed.barrier()  # type:ignore
+    if ezpz.get_world_size() > 1:
+        ezpz.barrier()
+    # torch.distributed.barrier()  # type:ignore
 
     dataset1 = datasets.MNIST(
         datadir.as_posix(),
@@ -92,12 +94,14 @@ def get_mnist(
         "num_workers": num_workers,
     }
     sampler1, sampler2 = None, None
-    if WORLD_SIZE > 1:
+    rank = ezpz.get_rank()
+    world_size = ezpz.get_world_size()
+    if world_size > 1:
         sampler1 = DistributedSampler(
-            dataset1, rank=RANK, num_replicas=WORLD_SIZE, shuffle=True
+            dataset1, rank=rank, num_replicas=world_size, shuffle=True
         )
         sampler2 = DistributedSampler(
-            dataset2, rank=RANK, num_replicas=WORLD_SIZE
+            dataset2, rank=rank, num_replicas=world_size
         )
         train_kwargs["sampler"] = sampler1
         test_kwargs["sampler"] = sampler2
@@ -140,6 +144,8 @@ def get_fake_data(
     # loader = torch.utils.data.DataLoader(  # type:ignore
     #     dataset, batch_size=batch_size, shuffle=shuffle
     # )
+    rank = ezpz.get_rank()
+    world_size = ezpz.get_world_size()
     kwargs = {
         "batch_size": batch_size,
         "pin_memory": pin_memory,
@@ -147,9 +153,9 @@ def get_fake_data(
         "drop_last": drop_last,
     }
     sampler = None
-    if WORLD_SIZE > 1:  # use DistributedSampler when > 1 device
+    if world_size > 1:  # use DistributedSampler when > 1 device
         sampler = DistributedSampler(
-            dataset, rank=RANK, num_replicas=WORLD_SIZE, shuffle=shuffle
+            dataset, rank=rank, num_replicas=world_size, shuffle=shuffle
         )
         kwargs |= {"sampler": sampler}
     train_loader = torch.utils.data.DataLoader(  # type:ignore
