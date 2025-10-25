@@ -14,7 +14,7 @@ from dataclasses import asdict
 import ezpz
 from timm.models.vision_transformer import VisionTransformer
 import torch
-import torch._dynamo
+# import torch._dynamo
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
@@ -80,8 +80,8 @@ def train_fn(
         args: TrainArgs,
         dataset: Optional[str]='fake',
 ) -> ezpz.History:
-    seed = int(os.environ.get('SEED', '0'))
-    rank = ezpz.setup(backend='DDP', seed=seed)
+    # seed = int(os.environ.get('SEED', '0'))
+    # rank = ezpz.setup(backend='DDP', seed=seed)
     world_size = ezpz.get_world_size()
 
     local_rank = ezpz.get_local_rank()
@@ -158,6 +158,11 @@ def train_fn(
             config.img_size,
         ),
     )
+    if ezpz.get_rank() == 0:
+        try:
+            wandb.watch(model, log='all')  # type:ignore
+        except Exception:
+            pass
     logger.info(f'\n{mstr}')
     model.to(device)
     num_params = sum(
@@ -229,7 +234,7 @@ def train_fn(
             ).replace('train/', '')
         )
 
-    if rank == 0:
+    if ezpz.get_rank() == 0:
         dataset = history.finalize(
             run_name='ezpz-vit', dataset_fname='train', verbose=False
         )
@@ -240,9 +245,9 @@ def train_fn(
 
 def main():
     # torch._dynamo.config.suppress_errors = True  # type:ignore
-    rank = ezpz.setup_torch(
-        backend=os.environ.get('BACKEND', 'DDP'),
-    )
+    rank = ezpz.setup_torch()
+    #     backend=os.environ.get('BACKEND', 'DDP'),
+    # )
     # return TrainArgs(**vars(parser.parse_args()))
     args = parse_args()
     if ezpz.get_rank() == 0 and not os.environ.get('WANDB_DISABLED', False):
