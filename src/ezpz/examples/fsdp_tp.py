@@ -257,7 +257,7 @@ def train(args: argparse.Namespace):
     #     dataloader = DataLoader(
     #         hfdset, batch_size=args.batch_size, shuffle=True
     #     )
-    # # Iterate through the DataLoader and inspect a batch
+    # Iterate through the DataLoader and inspect a batch
     # for batch in dataloader:
     #     print("Batch input_ids shape:", batch["input_ids"].shape)
     #     print("Batch attention_mask shape:", batch["attention_mask"].shape)
