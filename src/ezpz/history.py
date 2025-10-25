@@ -335,8 +335,8 @@ class History:
             if isinstance(details, dict):
                 lines.append(f"### {section}")
                 lines.append("")
-                for key, value in details.items():
-                    lines.append(f"- **{key}**: {value}")
+                lines.extend((f"### {section}", ""))
+                lines.extend(f"- **{key}**: {value}" for key, value in details.items())
                 lines.append("")
             else:
                 lines.append(f"- **{section}**: {details}")
@@ -494,17 +494,25 @@ class History:
             metric_vars.get("min"),
             metric_vars.get("max"),
         ]
-        base_series = None
-        for candidate in series_candidates:
-            if candidate is not None:
-                base_series = self._series_from_dataarray(candidate)
-                break
+        # base_series = None
+        # for candidate in series_candidates:
+        #     if candidate is not None:
+        #         base_series = self._series_from_dataarray(candidate)
+        #         break
+        base_series = next(
+            (
+                self._series_from_dataarray(candidate)
+                for candidate in series_candidates
+                if candidate is not None
+            ),
+            None,
+        )
         if base_series is None or len(base_series) == 0:
             return None
 
         x = np.arange(base_series.shape[-1])
         fig, ax = plt.subplots(**subplots_kwargs)
-        color = plot_kwargs.get("color", None)
+        color = plot_kwargs.get("color")
 
         raw_da = metric_vars.get("raw")
         if raw_da is not None:
@@ -806,6 +814,8 @@ class History:
         std_vals = var_vals.clamp_min_(0.0).sqrt_()
         stats: dict[str, float] = {}
         for idx, key in enumerate(scalars):
+            if key == "iter":
+                continue
             stats[f"{key}/mean"] = float(mean_vals[idx].item())
             stats[f"{key}/max"] = float(max_vals[idx].item())
             stats[f"{key}/min"] = float(min_vals[idx].item())
