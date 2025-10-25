@@ -107,7 +107,6 @@ def get_mnist(
         test_kwargs["sampler"] = sampler2
     else:
         train_kwargs["shuffle"] = shuffle
-        test_kwargs["shuffle"] = shuffle
 
     train_loader = torch.utils.data.DataLoader(
         dataset=dataset1,
