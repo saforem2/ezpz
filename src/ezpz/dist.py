@@ -818,11 +818,16 @@ def init_process_group(
             Defaults to None, which will use the default backend based on the device.
     """
     backend = get_torch_backend() if backend is None else backend
+    device_id = torch.device(
+        type=get_torch_device_type(),
+        index=get_local_rank()
+    )
     if get_rank() == 0:
         logger.info(
             " ".join(
                 [
                     "Calling torch.distributed.init_process_group_with:",
+                    f"{device_id=}",
                     f"rank={rank}",
                     f"world_size={world_size}",
                     f"backend={backend}",
@@ -841,6 +846,7 @@ def init_process_group(
             rank=int(rank),
             world_size=int(world_size),
             init_method="env://",
+            device_id=device_id,
         )
 
 
@@ -1508,7 +1514,8 @@ def setup_torch(
     # if rank == 0:
     logger.info("".join(psizes))
     # os.environ["ALREADY_PRINTED_HOSTS"] = "1"
-    barrier()
+    if world_size > 1:
+        barrier()
     return rank
 
 

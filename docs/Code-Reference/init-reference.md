@@ -75,10 +75,22 @@ logger.error("Error message")
 import ezpz
 
 # Create a history tracker
-history = ezpz.History()
+history = ezpz.History(
+    report_dir="outputs/history",
+    report_enabled=True,
+    jsonl_path="outputs/history/metrics.jsonl",
+)
 
 # Add metrics
 metrics = {"loss": 0.5, "accuracy": 0.8}
 summary = history.update(metrics)
 print(summary)  # Formatted summary string
+
+# When running with multiple ranks, ezpz records loss/mean, loss/max, etc.
+# A markdown report and JSONL stream are emitted with the saved figures.
 ```
+
+- `report_dir` controls where markdown reports and plot assets are stored.
+- `jsonl_path` enables append-only machine readable logging for downstream analysis.
+- Distributed runs automatically record `{metric}/mean`, `{metric}/max`,
+  `{metric}/min`, and `{metric}/std` using torch.distributed reductions.

@@ -52,7 +52,7 @@ cfgfile="${ezpzdir}/src/ezpz/examples/tensor_parallel/configs/ds_config.json"
 # deepspeed --num_gpus $num_gpus  \
 #     --master_port 51336  train.py  \
 # deepspeed --num_gpus $num_gpus  \
-ezpz-launch "${ezpzdir}/src/ezpz/examples/tensor_parallel/train.py"  \
+ezpz launch "${ezpzdir}/src/ezpz/examples/tensor_parallel/train.py"  \
     --model_name_or_path=$weight_path \
     --data_path="${datafile}" \
     --bf16=True \

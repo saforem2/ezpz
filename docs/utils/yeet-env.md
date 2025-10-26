@@ -8,7 +8,7 @@
 
   ```bash
   TARBALL=/flare/datascience/foremans/micromamba/envs/2025-07-pt28.tar.gz
-  ezpz-yeet-env --src "${TARBALL}" --dst "/tmp/$(basename ${TARBALL})" --d
+  ezpz yeet-env --src "${TARBALL}" --dst "/tmp/$(basename ${TARBALL})" --d
   conda deactivate
   conda activate "/tmp/$(basename ${TARBALL})"
   ```
@@ -29,7 +29,7 @@ sequenceDiagram
     participant YeetEnv
     participant YeetTarball
     participant ezpz
-    User->>YeetEnv: Run ezpz-yeet-env CLI
+    User->>YeetEnv: Run ezpz yeet-env CLI
     YeetEnv->>ezpz: setup_torch()
     YeetEnv->>ezpz.pbs: get_pbs_launch_cmd(ngpu_per_host=1)
     YeetEnv->>ezpz.launch: launch(cmd_to_launch=python3 -m ezpz.utils.yeet_tarball ...)
@@ -94,7 +94,7 @@ classDiagram
 
 | Change | Details | Files |
 | ------ | ------- | ----- |
-| Add distributed tarball transfer utilities and CLI entry | <ul><li>Introduce yeet_tarball.py with chunked broadcast and extraction logic</li><li>Add yeet_env.py as a CLI entrypoint for launching distributed transfers</li><li>Register ezpz-yeet-env in pyproject.toml</li><li>Restructure utils package by renaming utils.py to utils/__init__.py</li></ul> | `src/ezpz/utils/yeet_tarball.py`<br/>`src/ezpz/utils/yeet_env.py`<br/>`pyproject.toml`<br/>`src/ezpz/utils/__init__.py` |
+| Add distributed tarball transfer utilities and CLI entry | <ul><li>Introduce yeet_tarball.py with chunked broadcast and extraction logic</li><li>Add yeet_env.py as a CLI entrypoint for launching distributed transfers</li><li>Register ezpz yeet-env in pyproject.toml</li><li>Restructure utils package by renaming utils.py to utils/__init__.py</li></ul> | `src/ezpz/utils/yeet_tarball.py`<br/>`src/ezpz/utils/yeet_env.py`<br/>`pyproject.toml`<br/>`src/ezpz/utils/__init__.py` |
 | Refactor PBS launch command computation with robust parameters and logging | <ul><li>Compute ngpus, nhosts, and ngpu_per_host with validation assertions and fallbacks</li><li>Unify hostfile fallback resolution</li><li>Add info/warning logs about GPU usage and mismatches</li><li>Update build_launch_cmd to accept a hostfile argument and delegate to get_pbs_launch_cmd</li></ul> | `src/ezpz/pbs.py` |
 | Enhance launch command construction, filtering, and logging | <ul><li>Introduce EZPZ_LOG_LEVEL and adapt filtering logic in get_aurora_filters</li><li>Log number of filters in run_command</li><li>Extend filtering to include Sunspot and conditional debug behavior</li><li>Update launch() signature to accept launch_cmd and include_python flag</li><li>Dynamically prepend Python executable only when necessary</li></ul> | `src/ezpz/launch.py` |
 | Protect torch Distributed initialization | <ul><li>Import torch.distributed and guard init_process_group with is_initialized() check</li></ul> | `src/ezpz/dist.py` |
@@ -156,25 +156,32 @@ Access your [dashboard](https://app.sourcery.ai) to:
 
 We provide mechanisms for:
 
-1. `ezpz-tar-env`: Creating tarball from {conda, virtual} environment
-2. `ezpz-yeet-env`: Copying an environment tarball to `/tmp/` on _all worker nodes_
+1. `ezpz tar-env`: Creating tarball from {conda, virtual} environment
+2. `ezpz yeet-env`: Copying an environment tarball to `/tmp/` on _all worker nodes_
 
 ## 🔍 Details
 
-1. `ezpz-tar-env`: Creating tarball from {conda, virtual} environment
+1. `ezpz tar-env`: Creating tarball from {conda, virtual} environment
 
    By default, this will try and create a tarball from the environment which it
    was invoked and place it in the working directory.
+
+   ??? info "Safer tarball creation"
+       The helper now shells out via `subprocess.run(..., check=True)` which
+       surfaces non-zero exit codes immediately and guarantees the archive is
+       compressed (`tar -czf`). Programmatic callers can set
+       `check_for_tarball(overwrite=True)` to force regeneration and the helper
+       cleans up stale `/tmp/<env>.tar.gz` artifacts before writing a fresh copy.
 
    ```bash
    source <(curl -L https://bit.ly/ezpz-utils)
    ezpz_load_new_pt_modules_aurora
    conda activate /flare/datascience/foremans/micromamba/envs/2025-08-pt29
    uv pip install --link-mode=copy --no-cache "git+https://github.com/saforem2/ezpz"
-   ezpz-tar-env
+   ezpz tar-env
    ```
 
-2. `ezpz-yeet-env`: Copying an environment tarball to `/tmp/` on _all worker nodes_
+2. `ezpz yeet-env`: Copying an environment tarball to `/tmp/` on _all worker nodes_
 
    Following from (1.):
 
@@ -184,7 +191,7 @@ We provide mechanisms for:
    #[🐍 aurora_nre_models_frameworks-2025.0.0](👻 Megatron-DeepSpeed-aurora_nre_models_frameworks-2025.0.0)
    #[/f/A/A/E/A/l/t/Megatron-DeepSpeed][🌱 saforem2/fix-formatting][📝✓] [⏱️ 39s]
    #[08/27/25 @ 07:05:40][x4310c3s2b0n0]
-   ; ezpz-yeet-env --src /flare/datascience/foremans/micromamba/envs/2025-07-pt28.tar.gz
+   ; ezpz yeet-env --src /flare/datascience/foremans/micromamba/envs/2025-07-pt28.tar.gz
    [W827 07:06:16.417068005 OperatorEntry.cpp:155] Warning: Warning only once for all operators,  other operators may also be overridden.
      Overriding a previously registered kernel for the same operator and the same dispatch key
      operator: aten::_cummax_helper(Tensor self, Tensor(a!) values, Tensor(b!) indices, int dim) -> ()

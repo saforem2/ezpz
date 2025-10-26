@@ -22,7 +22,7 @@ def _require_plotext():
     if pltx is None:
         raise ModuleNotFoundError(
             "plotext is required for terminal plotting. Install it via "
-            "`pip install plotext` to use ezpz.tplot functions."
+            "`pip install ezpz[terminal]` to use ezpz.tplot functions."
         )
     return pltx
 

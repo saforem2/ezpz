@@ -20,9 +20,9 @@ launch.launch(cmd_to_launch="python3 -m ezpz.test_dist", include_python=False)
 ```python
 import subprocess
 
-# When no scheduler is detected ezpz-launch falls back to mpirun
+# When no scheduler is detected ezpz launch falls back to mpirun
 subprocess.run([
-    "ezpz-launch",
+    "ezpz launch",
     "python3",
     "-m",
     "ezpz.test_dist",

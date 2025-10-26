@@ -79,13 +79,13 @@ def set_plot_style(**kwargs):
     plt.style.use("default")
     # plt.style.use('default')
     try:
-        # import ambivalent
+        import ambivalent
 
         # STYLES = ambivalent.STYLES
         # from toolbox import set_plot_style
-        from ambivalent import STYLES
+        # from ambivalent import STYLES
 
-        plt.style.use(STYLES["opinionated_min"])
+        plt.style.use(ambivalent.STYLES["ambivalent"])
     except (ImportError, ModuleNotFoundError):
         STYLES = {}
 
@@ -122,7 +122,7 @@ def set_plot_style(**kwargs):
             "text.color": "#838383",
             "grid.linestyle": "--",
             "grid.linewidth": 0.5,
-            "grid.alpha": 0.33,
+            "grid.alpha": 0.66,
             "xtick.color": "none",
             "ytick.color": "none",
             "xtick.labelcolor": "#838383",

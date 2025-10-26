@@ -1,15 +1,17 @@
 """CLI entry point for running the distributed smoke test locally."""
 
+from __future__ import annotations
+
 import shlex
 import subprocess
 import sys
-from typing import List
+from collections.abc import Sequence
 
 from ezpz.configs import get_scheduler
 from ezpz.launch import launch
 
 
-def _build_test_command(argv: List[str]) -> List[str]:
+def _build_test_command(argv: Sequence[str]) -> list[str]:
     """Normalize user-provided arguments into a test command list."""
 
     if not argv:
@@ -32,9 +34,10 @@ def _build_test_command(argv: List[str]) -> List[str]:
     return [sys.executable, "-m", "ezpz.test_dist", *extra]
 
 
-def main() -> int:
+def run(argv: Sequence[str] | None = None) -> int:
     """Run the distributed smoke test via the scheduler or ``mpirun`` fallback."""
-    command = _build_test_command(sys.argv[1:])
+    argv = [] if argv is None else list(argv)
+    command = _build_test_command(argv)
     scheduler = get_scheduler().lower()
 
     if scheduler in {"pbs", "slurm"}:
@@ -44,6 +47,11 @@ def main() -> int:
     fallback_cmd = ["mpirun", "-np", "2", *command]
     result = subprocess.run(fallback_cmd, check=False)
     return result.returncode
+
+
+def main() -> int:
+    """Backward-compatible console script entry point."""
+    return run(sys.argv[1:])
 
 
 if __name__ == "__main__":

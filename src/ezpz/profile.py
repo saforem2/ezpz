@@ -308,8 +308,8 @@ class PyInstrumentProfiler:
             self.profiler = None
             logger.critical("Unable to import 'pyinstrument', not running profiles!!")
             logger.error(
-                "To run with 'pyinstrument',"
-                "run: 'python3 -m pip install pyinstrument'"
+                "To enable pyinstrument, install the profiling extras via "
+                "`pip install ezpz[profiling]`."
             )
         else:
             if rank_zero_only and rank not in (None, 0):

@@ -81,8 +81,16 @@ def get_mnist(
         transform=transform,
     )
     dataset2 = datasets.MNIST(datadir, train=False, transform=transform)
-    train_kwargs = {"batch_size": train_batch_size}
-    test_kwargs = {"batch_size": test_batch_size}
+    train_kwargs = {
+        "batch_size": train_batch_size,
+        "pin_memory": pin_memory,
+        "num_workers": num_workers,
+    }
+    test_kwargs = {
+        "batch_size": test_batch_size,
+        "pin_memory": pin_memory,
+        "num_workers": num_workers,
+    }
     sampler1, sampler2 = None, None
     if WORLD_SIZE > 1:
         sampler1 = DistributedSampler(
@@ -91,30 +99,19 @@ def get_mnist(
         sampler2 = DistributedSampler(
             dataset2, rank=RANK, num_replicas=WORLD_SIZE
         )
-        train_kwargs |= {"sampler": sampler1}
-        test_kwargs |= {"sampler": sampler2}
-    kwargs = {
-        "pin_memory": pin_memory,
-        "shuffle": shuffle,
-        "num_workers": num_workers,
-    }
-    train_kwargs.update(kwargs)
-    test_kwargs.update(kwargs)
+        train_kwargs["sampler"] = sampler1
+        test_kwargs["sampler"] = sampler2
+    else:
+        train_kwargs["shuffle"] = shuffle
+        test_kwargs["shuffle"] = shuffle
+
     train_loader = torch.utils.data.DataLoader(
         dataset=dataset1,
-        batch_size=train_batch_size,
-        sampler=sampler1,
-        pin_memory=pin_memory,
-        shuffle=shuffle,
-        num_workers=num_workers,
+        **train_kwargs,
     )
     test_loader = torch.utils.data.DataLoader(
         dataset=dataset2,
-        batch_size=test_batch_size,
-        sampler=sampler2,
-        pin_memory=pin_memory,
-        shuffle=shuffle,
-        num_workers=num_workers,
+        **test_kwargs,
     )
     return {
         "train": {

@@ -81,6 +81,37 @@ def test_grab_tensor(self):
     assert np.array_equal(result, np.array(test_list))
 ```
 
+### test_history_jsonl_logging
+
+Confirms that enabling JSONL output persists metrics to disk for downstream
+analysis.
+
+```python
+hist = history.History(jsonl_path=tmp_path / "metrics.jsonl", jsonl_overwrite=True)
+hist._rank = 0
+hist.update({"loss": 1.23})
+```
+
+### test_history_markdown_report_on_plot
+
+Ensures each Matplotlib render produces a Markdown entry with embedded assets.
+
+```python
+hist = history.History(report_dir=tmp_path, report_enabled=True)
+hist.plot(np.linspace(0.0, 1.0, 8), key="loss", outdir=tmp_path / "figures")
+```
+
+### test_history_distributed_metrics_logged
+
+Validates that distributed reductions record `{metric}/{stat}` keys when enabled.
+
+```python
+hist = history.History()
+hist._rank = 0
+hist._compute_distributed_metrics = lambda _: {"loss/mean": 0.5}
+hist.update({"loss": 1.0})
+```
+
 ## Running Tests
 
 ```bash

@@ -72,3 +72,7 @@ list_data = [1, 2, 3]
 array_data = utils.grab_tensor(list_data)
 print(array_data)  # Output: [1 2 3]
 ```
+
+!!! note
+    `grab_tensor` now raises a `ValueError` when it cannot coerce the provided
+    object into a NumPy array, replacing the previous debugger breakpoint.
