@@ -766,16 +766,12 @@ ezpz_setup_conda_frontier() {
 }
 
 ezpz_setup_conda_sunspot() {
-	###########################
-	# Setup conda on Sunspot
-	###########################
-	if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
-		# module load oneapi/release/2025.2.0 py-torch/2.9.0.dev20250804
-		module load oneapi/release/2025.2.0
-		module load py-torch/2.8
-		module load py-ipex/2.8.10xpu
-		export ZE_FLAT_DEVICE_HIERARCHY=FLAT
-	fi
+    ###########################
+    # Setup conda on Sunspot
+    ###########################
+    if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+        module load frameworks
+    fi
 }
 
 ezpz_setup_conda_aurora() {
