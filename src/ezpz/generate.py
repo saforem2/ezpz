@@ -73,7 +73,7 @@ def main():
     # model.resize_token_embeddings(len(tokenizer))
     model.to(ezpz.get_torch_device_type())
     if args.dtype in {"bfloat16", "bf16", "b16"}:
-        model.to(torch.bfloat16)
+        model.to('bfloat16')
     elif args.dtype in {"float16", "fp16", "f16"}:
         model.to(torch.float16)
     elif args.dtype in {"float32", "fp32", "f32"}:
