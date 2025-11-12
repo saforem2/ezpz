@@ -68,6 +68,7 @@ from torch.distributed.fsdp import (
 from torch.distributed._tensor import Shard, Replicate
 
 from torch.distributed.tensor.parallel import (
+    loss_parallel,
     parallelize_module,
     ColwiseParallel,
     RowwiseParallel,
@@ -78,6 +79,59 @@ from torch.distributed.tensor.parallel import (
 logging.getLogger("datasets").setLevel(logging.ERROR)
 
 logger = ezpz.get_logger(__name__)
+
+
+def _slice_for_sequence_parallel(labels: torch.Tensor, local_seq_len: int) -> torch.Tensor:
+    """
+    Align the label tensor with the local sequence shard used by tensor/sequence parallelism.
+
+    When SequenceParallel is enabled we only own a slice of the time dimension on each
+    tensor-parallel rank. The logits coming from the model already reflect that slice, so
+    we narrow the label tensor to the same range before computing the loss.
+    """
+    if local_seq_len <= 0 or labels.shape[1] == local_seq_len:
+        return labels
+
+    try:
+        from ezpz import tp as tp_utils  # type: ignore
+    except Exception:
+        return labels[:, :local_seq_len].contiguous()
+
+    if not hasattr(tp_utils, "tensor_parallel_is_initialized") or not tp_utils.tensor_parallel_is_initialized():
+        return labels[:, :local_seq_len].contiguous()
+
+    tp_world = tp_utils.get_tensor_parallel_world_size()
+    if tp_world <= 1:
+        return labels[:, :local_seq_len].contiguous()
+
+    tp_rank = tp_utils.get_tensor_parallel_rank()
+    total_seq = labels.shape[1]
+    base = total_seq // tp_world
+    remainder = total_seq % tp_world
+    start = base * tp_rank + min(tp_rank, remainder)
+
+    # SequenceParallel hands out an extra token to the first `remainder` ranks.
+    expected_local = base + (1 if tp_rank < remainder else 0)
+    if expected_local != local_seq_len:
+        logger.debug(
+            "SequenceParallel shard mismatch: expected %s tokens but received %s. Adjusting to local output.",
+            expected_local,
+            local_seq_len,
+        )
+
+    end = min(start + local_seq_len, total_seq)
+    shard = labels.new_full(
+        (labels.shape[0], local_seq_len),
+        fill_value=-100,
+        device=labels.device,
+        dtype=labels.dtype,
+    )
+
+    copy_len = end - start
+    copy_len = max(0, min(copy_len, local_seq_len))
+    if copy_len > 0:
+        shard[:, :copy_len] = labels.narrow(1, start, copy_len)
+    return shard
 
 
 def parse_args():
@@ -126,6 +180,8 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
             "output": ColwiseParallel(
                 input_layouts=Shard(1),
                 output_layouts=Replicate(),
+                # use DTensor as the output
+                # use_local_output=False,
             ),
         },
     )
@@ -230,13 +286,25 @@ def train(args: argparse.Namespace):
     device = ezpz.get_torch_device(as_torch_device=False)
 
     if args.dataset == "random":
-        data = get_random_dataset(
+        from ezpz.data.distributed import get_random_dataset_fsdp_tp
+        data = get_random_dataset_fsdp_tp(
             batch_size=args.batch_size,
             vocab_size=args.vocab_size,
             seq_length=args.seq_length,
+            dp_group=device_mesh.get_group("dp"),
+            tp_group=device_mesh.get_group("tp"),
+            broadcast_within_tp=True,
+            drop_last=True,
         )
         dataset = data["dataset"]
         dataloader = data["dataloader"]
+        # data = get_random_dataset(
+        #     batch_size=args.batch_size,
+        #     vocab_size=args.vocab_size,
+        #     seq_length=args.seq_length,
+        # )
+        # dataset = data["dataset"]
+        # dataloader = data["dataloader"]
     else:
         data = get_hf_data(args.dataset)
         dataloader = data.get_data_loader()
@@ -278,6 +346,7 @@ def train(args: argparse.Namespace):
     # to mimic the behavior of the dataloader
     for epoch in range(args.epochs):
         for idx, batch in enumerate(dataloader):
+
             t0 = perf_counter()
             if isinstance(batch, dict) and "input_ids" in batch:
                 x = batch["input_ids"]
@@ -293,14 +362,16 @@ def train(args: argparse.Namespace):
             x.to(torch.long)
             inp = x[:, :-1].to(device)
             labels = x[:, 1:].to(device)
-            # try:
             output = model(inp)
-            # except Exception:
-            #     breakpoint(0)
-            # tdist.barrier()
+            # with loss_parallel():
+            local_seq_len = output.shape[1]
+            if labels.shape[1] != local_seq_len:
+                labels = _slice_for_sequence_parallel(labels, local_seq_len)
             t1 = perf_counter()
             loss = F.cross_entropy(
-                output.reshape(-1, output.size(-1)), labels.reshape(-1)
+                output.reshape(-1, output.size(-1)),
+                labels.reshape(-1),
+                ignore_index=-100,
             )
             loss.backward()
             optimizer.step()
