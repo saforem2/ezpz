@@ -14,7 +14,6 @@ https://huggingface.co/models?filter=text-generation
 import math
 import os
 import sys
-from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
 from typing import Optional
@@ -22,15 +21,11 @@ from typing import Optional
 import datasets
 import torch
 import transformers
-import transformers.utils
 from transformers import (CONFIG_MAPPING, AutoConfig, AutoModelForCausalLM,
                           AutoTokenizer, HfArgumentParser, Trainer,
                           TrainingArguments, default_data_collator,
                           is_torch_xla_available, set_seed)
-from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import send_example_telemetry
-from transformers.utils.versions import require_version
 
 import ezpz
 import ezpz.configs
@@ -99,12 +94,6 @@ def parse_args() -> dict:
                     "ezpz.dist_info": ezpz.get_dist_info(),
                 }
             )
-    # NOTE:
-    #   Sending telemetry.
-    #   Tracking the example usage helps us better allocate resources to
-    #   maintain them. The information sent is the one passed as arguments
-    #   along with your Python/PyTorch versions.
-    send_example_telemetry("hf_trainer", model_args, data_args)
 
     if training_args.should_log:
         # The default of training_args.log_level is passive,
@@ -339,7 +328,7 @@ def main():
             )
 
     # Set seed before initializing model.
-    set_seed(training_args.seed)
+    # set_seed(training_args.seed)
 
     # from datasets import datasets.load_dataset
 

@@ -806,6 +806,7 @@ def init_process_group(
     world_size: int | str,
     timeout: str | int | timedelta,
     backend: Optional[str] = None,
+    device_id: torch.device | int | None = None,
 ) -> None:
     """
     Initialize the PyTorch distributed process group.
@@ -840,6 +841,7 @@ def init_process_group(
             timeout=timeout,
             rank=int(rank),
             world_size=int(world_size),
+            device_id=device_id,
             init_method="env://",
         )
 
@@ -1048,6 +1050,7 @@ def setup_torch_DDP(
     port: str = "2345",
     timeout: int | str | timedelta = 3600,
     backend: Optional[str] = None,
+    device_id: torch.device | int | None = None,
 ) -> dict[str, int]:
     """
     Setup PyTorch Distributed Data Parallel (DDP) environment.
@@ -1151,6 +1154,7 @@ def setup_torch_DDP(
         world_size=world_size,
         timeout=timeout,
         backend=backend,
+        device_id=device_id,
     )
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
@@ -1165,6 +1169,7 @@ def setup_torch_distributed(
     pipeline_parallel_backend: Optional[str] = None,
     context_parallel_backend: Optional[str] = None,
     data_parallel_backend: Optional[str] = None,
+    device_id: torch.device | int | None = None,
     port: Optional[str | int] = None,
     timeout: Optional[str | int] = None,
 ) -> dict[str, int]:
@@ -1249,7 +1254,7 @@ def setup_torch_distributed(
             )
         )
     if fw == "ddp":
-        dsetup = setup_torch_DDP(port, timeout, backend=be)
+        dsetup = setup_torch_DDP(port, timeout, backend=be, device_id=device_id)
         world_size = dsetup["world_size"]
         rank = dsetup["rank"]
         local_rank = dsetup["local_rank"]
@@ -1324,16 +1329,21 @@ def barrier(
             If async_op is False, returns None.
     """
     try:
+        # logger.warning(
+        #     "Unable to use `torch.distributed.barrier` "
+        #     "for this process group. "
+        #     "Falling back to `mpi4py` barrier."
+        # )
+        MPI.COMM_WORLD.barrier()
+    except Exception:
+        logger.warning(
+            "Unable to use `MPI.COMM_WORLD.barrier` "
+            "for this process group. "
+            "Falling back to `torch.distributed` barrier."
+        )
         torch.distributed.barrier(  # type:ignore
             group=group, async_op=async_op, device_ids=device_ids
         )
-    except Exception:
-        logger.warning(
-            "Unable to use `torch.distributed.barrier` "
-            "for this process group. "
-            "Falling back to `mpi4py` barrier."
-        )
-        MPI.COMM_WORLD.barrier()
 
 
 def setup_torch(
@@ -1350,6 +1360,7 @@ def setup_torch(
     pipeline_parallel_backend: Optional[str] = None,
     context_parallel_backend: Optional[str] = None,
     data_parallel_backend: Optional[str] = None,
+    device_id: torch.device | int | None = None,
 ) -> int:
     """Setup torch.
 

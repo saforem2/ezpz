@@ -204,6 +204,10 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
                 "AttributeError",
                 "Initialized with serialization",
                 "AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'",
+                "UnsupportedFieldAttributeWarning",
+                "operator: aten::geometric",
+                "registered at /lus/tegu",
+                "warnings.warn(",
                 # "operator: aten::geometric"
             ]
         logger.info(
