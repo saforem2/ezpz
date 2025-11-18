@@ -96,7 +96,7 @@ def split_dataset(
         return datasets.IterableDatasetDict(dsets)
     return datasets.DatasetDict(dsets)
 
-
+def get_raw_dataset(data_args)
 
 def get_hf_datasets(
     data_args,
@@ -244,8 +244,8 @@ def get_hf_datasets(
                 batched=True,
                 remove_columns=column_names,
             )
-    # if hasattr(config, "max_position_embeddings"):
-    #     max_pos_embeddings = config.max_position_embeddings
+    if hasattr(config, "max_position_embeddings"):
+        max_pos_embeddings = config.max_position_embeddings
     else:
         # Define a default value if the attribute is missing in the config.
         max_pos_embeddings = 1024
