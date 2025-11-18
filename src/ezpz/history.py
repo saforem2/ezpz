@@ -30,6 +30,7 @@ from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.lazy import lazy_import
 from ezpz.log import get_logger
 from ezpz.tplot import tplot as eztplot
+
 # from ezpz import tplot as eztplot
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
 
@@ -168,6 +169,13 @@ class History:
         self.keys = [] if keys is None else keys
         self.history: dict[str, list[Any]] = {}
         self.data = self.history
+        if os.environ.get(
+            "EZPZ_NO_DISTRIBUTED_METRICS", None
+        ) or os.environ.get("EZPZ_LOCAL_METRICS", False):
+            logger.info(
+                "Not using distributed metrics! Will only be tracked from a single rank..."
+            )
+            aggregate_metrics = False
         self._aggregate_metrics = aggregate_metrics
         self._rank = get_rank()
         now = datetime.now(timezone.utc)
@@ -242,7 +250,9 @@ class History:
             self._report_dir.mkdir(parents=True, exist_ok=True)
             self._asset_dir = self._report_dir.joinpath("assets")
             self._asset_dir.mkdir(parents=True, exist_ok=True)
-            self._report_path = self._report_dir.joinpath(self._report_filename)
+            self._report_path = self._report_dir.joinpath(
+                self._report_filename
+            )
             header = (
                 f"# History Report ({self._run_id})\n\n"
                 f"_Generated at {self._utc_iso()}_\n\n"
@@ -269,7 +279,9 @@ class History:
             try:
                 shutil.copy2(source, destination)
             except OSError:
-                logger.warning("Unable to copy asset %s into report directory.", source)
+                logger.warning(
+                    "Unable to copy asset %s into report directory.", source
+                )
                 return source
         return destination
 
@@ -322,10 +334,16 @@ class History:
             if not lines[-1].endswith("\n"):
                 handle.write("\n")
 
-    def _write_environment_section(self, env_info: Optional[dict[str, Any]]) -> None:
+    def _write_environment_section(
+        self, env_info: Optional[dict[str, Any]]
+    ) -> None:
         """Write environment details into the report."""
 
-        if not self.report_enabled or env_info is None or self._environment_written:
+        if (
+            not self.report_enabled
+            or env_info is None
+            or self._environment_written
+        ):
             return
         report_file = self._ensure_report_file()
         if report_file is None:
@@ -336,7 +354,9 @@ class History:
                 lines.append(f"### {section}")
                 lines.append("")
                 lines.extend((f"### {section}", ""))
-                lines.extend(f"- **{key}**: {value}" for key, value in details.items())
+                lines.extend(
+                    f"- **{key}**: {value}" for key, value in details.items()
+                )
                 lines.append("")
             else:
                 lines.append(f"- **{section}**: {details}")
@@ -439,7 +459,9 @@ class History:
                 for label in ("latest", "mean", "max", "min", "std"):
                     if label in stats:
                         value = stats[label]
-                        handle.write(f"| {label.capitalize()} | {value:.6f} |\n")
+                        handle.write(
+                            f"| {label.capitalize()} | {value:.6f} |\n"
+                        )
                 handle.write("\n")
         self._metric_summary_written = True
 
@@ -485,7 +507,9 @@ class History:
         import matplotlib.pyplot as plt
         import seaborn as sns
 
-        subplots_kwargs = {} if subplots_kwargs is None else dict(subplots_kwargs)
+        subplots_kwargs = (
+            {} if subplots_kwargs is None else dict(subplots_kwargs)
+        )
         plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
 
         series_candidates = [
@@ -565,7 +589,12 @@ class History:
                 label=f"{name} range",
             )
 
-        if mean_da is None and raw_da is None and min_da is None and max_da is None:
+        if (
+            mean_da is None
+            and raw_da is None
+            and min_da is None
+            and max_da is None
+        ):
             # fall back to plotting whichever aggregate is available
             for label, array in metric_vars.items():
                 series = self._series_from_dataarray(array)
@@ -696,10 +725,14 @@ class History:
         try:
             self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
             with self._jsonl_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(payload, default=self._to_serializable))
+                handle.write(
+                    json.dumps(payload, default=self._to_serializable)
+                )
                 handle.write("\n")
         except OSError:
-            logger.warning("Unable to write JSONL metrics to %s", self._jsonl_path)
+            logger.warning(
+                "Unable to write JSONL metrics to %s", self._jsonl_path
+            )
 
     @classmethod
     def _to_serializable(cls, value: Any) -> Any:
@@ -722,7 +755,8 @@ class History:
             return value.tolist()
         if isinstance(value, dict):
             return {
-                key: cls._to_serializable(sub_value) for key, sub_value in value.items()
+                key: cls._to_serializable(sub_value)
+                for key, sub_value in value.items()
             }
         if isinstance(value, (list, tuple)):
             return [cls._to_serializable(item) for item in value]
@@ -737,7 +771,9 @@ class History:
     def _sanitize_metrics(cls, metrics: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of metrics with values converted to JSON-safe types."""
 
-        return {key: cls._to_serializable(value) for key, value in metrics.items()}
+        return {
+            key: cls._to_serializable(value) for key, value in metrics.items()
+        }
 
     def _iter_scalar_metrics(
         self, metrics: dict[str, Any]
@@ -767,17 +803,24 @@ class History:
         if device_type == "cuda" and not torch.cuda.is_available():
             return torch.device("cpu")
         xpu_backend = getattr(torch, "xpu", None)
-        if device_type == "xpu" and not (xpu_backend and xpu_backend.is_available()):
+        if device_type == "xpu" and not (
+            xpu_backend and xpu_backend.is_available()
+        ):
             return torch.device("cpu")
         return device
 
-    def _compute_distributed_metrics(self, metrics: dict[str, Any]) -> dict[str, float]:
+    def _compute_distributed_metrics(
+        self, metrics: dict[str, Any]
+    ) -> dict[str, float]:
         """Compute distributed reductions for scalar metrics."""
 
         if not self._aggregate_metrics or self._dist is None:
             return {}
         try:
-            if not self._dist.is_available() or not self._dist.is_initialized():
+            if (
+                not self._dist.is_available()
+                or not self._dist.is_initialized()
+            ):
                 return {}
         except AttributeError:
             return {}
@@ -798,9 +841,7 @@ class History:
         world_size = self._dist.get_world_size()
         if world_size <= 1:
             return {
-                f"{key}/{suffix}": (
-                    value if suffix != "std" else 0.0
-                )
+                f"{key}/{suffix}": (value if suffix != "std" else 0.0)
                 for key, value in scalars.items()
                 for suffix in ("mean", "max", "min", "std")
             }
@@ -814,8 +855,8 @@ class History:
         std_vals = var_vals.clamp_min_(0.0).sqrt_()
         stats: dict[str, float] = {}
         for idx, key in enumerate(scalars):
-            if key == "iter":
-                continue
+            # if any([s in key] for s in ["iter", "epoch", "step", "batch"]):
+            #     continue
             stats[f"{key}/mean"] = float(mean_vals[idx].item())
             stats[f"{key}/max"] = float(max_vals[idx].item())
             stats[f"{key}/min"] = float(min_vals[idx].item())
@@ -893,8 +934,17 @@ class History:
             scalar_summary = {
                 key: value
                 for key, value in summary_source.items()
-                if isinstance(value, (int, float, bool))
+                # skip keys like "train/iter/min", "eval/step/std", etc.,
+                if not any(
+                    count_str in key
+                    for count_str in ["iter", "step", "epoch", "batch", "idx"]
+                )
             }
+            # _ss = {"max", "min", "std"}
+            # _sk = {"iter", "step", "epoch", "batch", "idx"}
+            # keys_to_skip = [
+            #     f"{i}/{s}" for s in _ss for i in _sk
+            # ]
             if scalar_summary:
                 return summarize_dict(scalar_summary, precision=precision)
             return ""
@@ -934,7 +984,9 @@ class History:
             label = (ylabel or xlabel or "metric").replace("/", "_")
             default_dir = self._report_dir.joinpath("tplot")
             default_dir.mkdir(parents=True, exist_ok=True)
-            outfile_path = default_dir.joinpath(f"{label}-{get_timestamp()}.txt")
+            outfile_path = default_dir.joinpath(
+                f"{label}-{get_timestamp()}.txt"
+            )
             outfile = outfile_path.as_posix()
         elif outfile is not None:
             outfile_path = Path(outfile)
@@ -956,7 +1008,11 @@ class History:
                 title=title,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
-            if record_report and self.report_enabled and outfile_path is not None:
+            if (
+                record_report
+                and self.report_enabled
+                and outfile_path is not None
+            ):
                 self._write_plot_report(
                     ylabel,
                     outfile_path,
@@ -1053,12 +1109,16 @@ class History:
             subfigs = fig.subfigures(1, 2)
 
             gs_kw = {"width_ratios": [1.33, 0.33]}
-            (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
+            (ax, ax1) = subfigs[1].subplots(
+                1, 2, sharey=True, gridspec_kw=gs_kw
+            )
             ax.grid(alpha=0.2)
             ax1.grid(False)
             color = plot_kwargs.get("color", None)
             label = r"$\langle$" + f" {key} " + r"$\rangle$"
-            ax.plot(steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs)
+            ax.plot(
+                steps, arr.mean(-1), lw=1.5 * LW, label=label, **plot_kwargs
+            )
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
@@ -1135,7 +1195,9 @@ class History:
                 # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs)
+                ax.plot(
+                    steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
+                )
 
         ax.set_xlabel("draw")
         if title is not None:
@@ -1321,7 +1383,9 @@ class History:
             }
             _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
             if verbose:
-                logger.info(f"Saving {key} plot to: {Path(save_dir).resolve()}")
+                logger.info(
+                    f"Saving {key} plot to: {Path(save_dir).resolve()}"
+                )
             for ext, d in dirs.items():
                 outfile = d.joinpath(f"{key}.{ext}")
                 plt.savefig(outfile, dpi=400, bbox_inches="tight")
@@ -1534,7 +1598,9 @@ class History:
         data: Optional[dict] = None,
     ):
         plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
-        subplots_kwargs = {} if subplots_kwargs is None else dict(subplots_kwargs)
+        subplots_kwargs = (
+            {} if subplots_kwargs is None else dict(subplots_kwargs)
+        )
 
         dataset = (
             dataset
@@ -1558,7 +1624,9 @@ class History:
         )
 
         groups = self._group_metric_variables(dataset)
-        for idx, (metric_name, metric_vars) in enumerate(sorted(groups.items())):
+        for idx, (metric_name, metric_vars) in enumerate(
+            sorted(groups.items())
+        ):
             plot_kwargs["color"] = f"C{idx % 9}"
             asset = self._plot_metric_group(
                 metric_name,
@@ -1572,7 +1640,9 @@ class History:
             )
             if asset is not None and self.report_enabled and asset.exists():
                 components = sorted(metric_vars.keys())
-                sample_series = self._series_from_dataarray(metric_vars[components[0]])
+                sample_series = self._series_from_dataarray(
+                    metric_vars[components[0]]
+                )
                 self._write_plot_report(
                     metric_name,
                     asset,
@@ -1586,7 +1656,10 @@ class History:
 
     def history_to_dict(self) -> dict:
         # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
-        return {k: torch.Tensor(v).numpy(force=True) for k, v in self.history.items()}
+        return {
+            k: torch.Tensor(v).numpy(force=True)
+            for k, v in self.history.items()
+        }
 
     def to_DataArray(
         self,
@@ -1637,7 +1710,9 @@ class History:
 
     def get_dataset(
         self,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         warmup: Optional[float] = 0.0,
     ):
         data = self.history_to_dict() if data is None else data
@@ -1647,7 +1722,9 @@ class History:
             try:
                 data_vars[name] = self.to_DataArray(val, warmup)
             except ValueError:
-                logger.error(f"Unable to create DataArray for {key}! Skipping!")
+                logger.error(
+                    f"Unable to create DataArray for {key}! Skipping!"
+                )
                 logger.error(f"{key}.shape= {np.stack(val).shape}")  # type:ignore
         return xr.Dataset(data_vars)
 
@@ -1657,7 +1734,9 @@ class History:
         outdir: PathLike,
         fname: str = "dataset",
         use_hdf5: bool = True,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         dataset: Optional[xr.Dataset] = None,
         warmup: Optional[int | float] = None,
         **kwargs,
@@ -1693,7 +1772,9 @@ class History:
         plot: bool = True,
         append_tplot: bool = True,
         title: Optional[str] = None,
-        data: Optional[dict[str, Union[list, np.ndarray, torch.Tensor]]] = None,
+        data: Optional[
+            dict[str, Union[list, np.ndarray, torch.Tensor]]
+        ] = None,
         dataset: Optional[xr.Dataset] = None,
         xkey: Optional[str] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
@@ -1711,7 +1792,9 @@ class History:
                 )
             )
         )
-        run_name = f"History-{get_timestamp()}" if run_name is None else run_name
+        run_name = (
+            f"History-{get_timestamp()}" if run_name is None else run_name
+        )
         if outdir is None:
             base_dir = (
                 Path(os.getcwd())
@@ -1724,7 +1807,9 @@ class History:
         base_dir.mkdir(parents=True, exist_ok=True)
         self._configure_report_destination(base_dir)
         env_details = (
-            env_info if env_info is not None else self._default_environment_info()
+            env_info
+            if env_info is not None
+            else self._default_environment_info()
         )
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
@@ -1764,7 +1849,9 @@ class History:
 
                 use_hdf5 = True
             except ImportError:
-                logger.warning("h5py not found! Saving dataset as netCDF instead.")
+                logger.warning(
+                    "h5py not found! Saving dataset as netCDF instead."
+                )
                 use_hdf5 = False
 
             fname = "dataset" if dataset_fname is None else dataset_fname
