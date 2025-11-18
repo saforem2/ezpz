@@ -20,6 +20,21 @@ separate parallel dimensions:
 
  We use a simple diagram to illustrate below:
 
+
+
++-----.-----+-----+-----.
+|  0  |  1  |  2  |  3  |
+|     |     |     |     |
++-----+-----+-----+-----+
+|  4  |  5  |  6  |  7  |
+|     |     |     |     |
++-----+-----+-----+-----+
+|  8  |  9  | 10  | 11  |
+|     |     |     |     |
+'-----+-----+-----+-----'
+
+
+
 ┌──────────┐       ┌──────────┐       ┌──────────┐       ┌──────────┐
 │ Host 1   │       │ Host 2   │       │          │       │ Host N   │
 │ 8 GPUs   │       │ 8 GPUs   │       │          │       │ 8 GPUs   │
@@ -53,7 +68,7 @@ from ezpz.models import summarize_model
 from ezpz.models.llama2 import Transformer, ModelArgs
 # from ezpz.models.llama import Transformer, ModelArgs
 
-from ezpz.data.text import get_random_dataset, get_hf_data
+# from ezpz.data.text import get_random_dataset, get_hf_data
 
 # from ezpz.data.llama import LlamaDataLoader
 #
@@ -81,7 +96,9 @@ logging.getLogger("datasets").setLevel(logging.ERROR)
 logger = ezpz.get_logger(__name__)
 
 
-def _slice_for_sequence_parallel(labels: torch.Tensor, local_seq_len: int) -> torch.Tensor:
+def _slice_for_sequence_parallel(
+    labels: torch.Tensor, local_seq_len: int
+) -> torch.Tensor:
     """
     Align the label tensor with the local sequence shard used by tensor/sequence parallelism.
 
@@ -97,7 +114,10 @@ def _slice_for_sequence_parallel(labels: torch.Tensor, local_seq_len: int) -> to
     except Exception:
         return labels[:, :local_seq_len].contiguous()
 
-    if not hasattr(tp_utils, "tensor_parallel_is_initialized") or not tp_utils.tensor_parallel_is_initialized():
+    if (
+        not hasattr(tp_utils, "tensor_parallel_is_initialized")
+        or not tp_utils.tensor_parallel_is_initialized()
+    ):
         return labels[:, :local_seq_len].contiguous()
 
     tp_world = tp_utils.get_tensor_parallel_world_size()
@@ -287,6 +307,7 @@ def train(args: argparse.Namespace):
 
     if args.dataset == "random":
         from ezpz.data.distributed import get_random_dataset_fsdp_tp
+
         data = get_random_dataset_fsdp_tp(
             batch_size=args.batch_size,
             vocab_size=args.vocab_size,
@@ -306,6 +327,8 @@ def train(args: argparse.Namespace):
         # dataset = data["dataset"]
         # dataloader = data["dataloader"]
     else:
+        from ezpz.data.hf import get_hf_datasets
+
         data = get_hf_data(args.dataset)
         dataloader = data.get_data_loader()
 
@@ -344,9 +367,10 @@ def train(args: argparse.Namespace):
     # while for SP, input can be different across all ranks
     # We will use dp_rank for setting the random seed
     # to mimic the behavior of the dataloader
+    # x = torch.tensor((args.batch_size, args.seq_len))
+    x = torch.tensor(0)
     for epoch in range(args.epochs):
         for idx, batch in enumerate(dataloader):
-
             t0 = perf_counter()
             if isinstance(batch, dict) and "input_ids" in batch:
                 x = batch["input_ids"]
@@ -360,19 +384,27 @@ def train(args: argparse.Namespace):
             #     breakpoint(0)
             # tdist.barrier()
             x.to(torch.long)
-            inp = x[:, :-1].to(device)
-            labels = x[:, 1:].to(device)
-            output = model(inp)
-            # with loss_parallel():
-            local_seq_len = output.shape[1]
-            if labels.shape[1] != local_seq_len:
-                labels = _slice_for_sequence_parallel(labels, local_seq_len)
-            t1 = perf_counter()
-            loss = F.cross_entropy(
-                output.reshape(-1, output.size(-1)),
-                labels.reshape(-1),
-                ignore_index=-100,
-            )
+            if args.dataset == "random":
+                inp = x[:, :-1].to(device)
+                labels = x[:, 1:].to(device)
+                output = model(inp)
+                # with loss_parallel():
+                local_seq_len = output.shape[1]
+                if labels.shape[1] != local_seq_len:
+                    labels = _slice_for_sequence_parallel(
+                        labels, local_seq_len
+                    )
+                t1 = perf_counter()
+                loss = F.cross_entropy(
+                    output.reshape(-1, output.size(-1)),
+                    labels.reshape(-1),
+                    ignore_index=-100,
+                )
+            else:
+                batch.to(device)
+                output = model(batch)
+                t1 = perf_counter()
+                loss = output.loss
             loss.backward()
             optimizer.step()
             t2 = perf_counter()
@@ -389,7 +421,7 @@ def train(args: argparse.Namespace):
                 ).replace("train/", "")
             )
             if epoch == 0 and idx == 0:
-                logger.info(f"{inp.shape=}")
+                logger.info(f"{x.shape}")
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
