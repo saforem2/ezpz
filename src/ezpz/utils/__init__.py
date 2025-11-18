@@ -8,9 +8,10 @@ import pdb
 import re
 import sys
 from dataclasses import asdict
+
 # from ezpz import get_rank
 from pathlib import Path
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -126,7 +127,9 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
     import datetime
 
     now = datetime.datetime.now()
-    return now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    return (
+        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    )
 
 
 def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
@@ -160,7 +163,11 @@ def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
     return f"{k}={v:<.{precision}f}"
 
 
-def summarize_dict(d: dict, precision: int = 6) -> str:
+def summarize_dict(
+    d: dict,
+    precision: int = 6,
+    keys_to_skip: Iterable | None = None,
+) -> str:
     """
     Summarize a dictionary into a string with formatted key-value pairs.
 
@@ -171,7 +178,14 @@ def summarize_dict(d: dict, precision: int = 6) -> str:
     Returns:
         str: A string representation of the dictionary with formatted key-value pairs.
     """
-    return " ".join([format_pair(k, v, precision=precision) for k, v in d.items()])
+    keys_to_skip = [] if keys_to_skip is None else keys_to_skip
+    return " ".join(
+        [
+            format_pair(k, v, precision=precision)
+            for k, v in d.items()
+            if k not in keys_to_skip
+        ]
+    )
 
 
 def model_summary(
@@ -204,7 +218,9 @@ def model_summary(
         # logger.info(f'\n{summary_str}')
 
     except (ImportError, ModuleNotFoundError):
-        logger.warning("torchinfo not installed, unable to print model summary!")
+        logger.warning(
+            "torchinfo not installed, unable to print model summary!"
+        )
 
 
 def normalize(name: str) -> str:
@@ -260,7 +276,9 @@ def get_max_memory_reserved(device: torch.device) -> float:
     raise RuntimeError(f"Memory allocation not available for {device=}")
 
 
-def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, None]:
+def grab_tensor(
+    x: Any, force: bool = False
+) -> Union[np.ndarray, ScalarLike, None]:
     """Convert various tensor/array-like objects to numpy arrays.
 
     This function converts different types of array-like objects (tensors, lists, etc.)
@@ -348,7 +366,9 @@ def check_for_tarball(
             logger.info(f"Creating tarball {tarball} from {env_prefix}")
             make_tarfile(tarball, env_prefix)
         else:
-            logger.info(f"Tarball {tarball} already exists in current directory")
+            logger.info(
+                f"Tarball {tarball} already exists in current directory"
+            )
     else:
         logger.info(f"Tarball {tarball} already exists, skipping creation")
     return tar_on_tmp if tar_on_tmp.exists() else Path(tarball)
@@ -358,14 +378,18 @@ def make_tarfile(
     output_filename: str,
     source_dir: str | os.PathLike | Path,
 ) -> str:
-    output_filename = output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
+    output_filename = (
+        output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
+    )
     srcfp = Path(source_dir).absolute().resolve()
     dirname = srcfp.name
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
     logger.info(
         f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
     )
-    os.system(f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}")
+    os.system(
+        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
+    )
 
     return output_filename
 
@@ -393,8 +417,12 @@ def save_dataset(
         try:
             dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
         except TypeError:
-            logger.warning("Unable to save as `.h5` file, falling back to `netCDF4`")
-            save_dataset(dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs)
+            logger.warning(
+                "Unable to save as `.h5` file, falling back to `netCDF4`"
+            )
+            save_dataset(
+                dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs
+            )
     else:
         fname = "dataset.nc" if fname is None else f"{fname}_dataset.nc"
         outfile = Path(outdir).joinpath(fname)
@@ -664,11 +692,15 @@ def get_deepspeed_config_json(
     bf16_config = {"enabled": bf16}
     fp16_config = {"enabled": fp16}
     flops_profiler_config = (
-        get_flops_profiler_config_json() if flops_profiler is None else flops_profiler
+        get_flops_profiler_config_json()
+        if flops_profiler is None
+        else flops_profiler
     )
 
     optimizer = (
-        get_deepspeed_adamw_optimizer_config_json() if optimizer is None else optimizer
+        get_deepspeed_adamw_optimizer_config_json()
+        if optimizer is None
+        else optimizer
     )
     scheduler = (
         get_deepspeed_warmup_decay_scheduler_config_json()
@@ -800,7 +832,9 @@ def write_deepspeed_zero12_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
@@ -872,7 +906,9 @@ def write_deepspeed_zero3_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
