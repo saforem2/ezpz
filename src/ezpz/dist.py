@@ -25,13 +25,13 @@ import ezpz.tp
 from ezpz.lazy import lazy_import
 
 TORCH_DTYPES_MAP = {
-    'bf16': torch.bfloat16,
-    'bfloat16': torch.bfloat16,
-    'fp16': torch.float16,
-    'float16': torch.float16,
-    'half': torch.float16,
-    'fp32': torch.float32,
-    'float32': torch.float32,
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+    "fp16": torch.float16,
+    "float16": torch.float16,
+    "half": torch.float16,
+    "fp32": torch.float32,
+    "float32": torch.float32,
 }
 
 ENABLE_WANDB = False
@@ -201,8 +201,15 @@ def timeitlogit(
             assert isinstance(rank, int)
             result = func(*args, **kwargs)
             dt = time.perf_counter() - t0
-            fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
-            if record and ENABLE_WANDB and wandb is not None and wandb.run is not None:
+            fname = getattr(
+                func, "__qualname__", getattr(func, "__name__", "unknown")
+            )
+            if (
+                record
+                and ENABLE_WANDB
+                and wandb is not None
+                and wandb.run is not None
+            ):
                 wandb.log({f"{prefix}/{fname}": dt}, commit=False)
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
@@ -254,7 +261,9 @@ def timeit(func: Callable):
         t0 = time.perf_counter()
         result = func(*args, **kwargs)
         dt = time.perf_counter() - t0
-        fname = getattr(func, "__qualname__", getattr(func, "__name__", "unknown"))
+        fname = getattr(
+            func, "__qualname__", getattr(func, "__name__", "unknown")
+        )
         logger.info(f"{fname}({args}, {kwargs}) took: {dt=:.4f}s")
         if ENABLE_WANDB and wandb is not None and wandb.run is not None:
             wandb.log({f"timeit/{fname}": dt})
@@ -455,7 +464,9 @@ def get_dist_info(
     if verbose:
         import json
 
-        logger.info(f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}")
+        logger.info(
+            f"DistInfo={json.dumps(dist_info, indent=4, sort_keys=True)}"
+        )
     return dist_info
 
 
@@ -510,8 +521,12 @@ def print_dist_setup(
     logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
-            logger.warning(f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}")
-        logger.warning(f'Using [{wsa} / {wst}] available "{device}" devices !!')
+            logger.warning(
+                f"WORLD_SIZE={wsa} > 1000, only printing on RANK={rank}"
+            )
+        logger.warning(
+            f'Using [{wsa} / {wst}] available "{device}" devices !!'
+        )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
@@ -797,7 +812,9 @@ def get_torch_backend() -> str:
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo")
+        else (
+            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
+        )
     )
 
 
@@ -981,7 +998,9 @@ def get_free_port():
         int: A free port number that can be used for communication.
     """
     sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))  # Bind to an available port on the loopback interface
+    sock.bind(
+        ("127.0.0.1", 0)
+    )  # Bind to an available port on the loopback interface
     port = sock.getsockname()[1]
     sock.close()
     return port
@@ -1040,7 +1059,9 @@ def broadcast(
     try:
         return MPI.COMM_WORLD.bcast(obj, root=root)
     except Exception as exc:
-        logger.warning("Unable to broadcast with MPI, returning original object")
+        logger.warning(
+            "Unable to broadcast with MPI, returning original object"
+        )
         logger.exception(exc)
         # return obj
         raise exc
@@ -1231,12 +1252,22 @@ def setup_torch_distributed(
         if timeout is None
         else (int(timeout) if isinstance(timeout, str) else timeout)
     )
-    port = "1234" if port is None else str(port) if isinstance(port, int) else port
+    port = (
+        "1234"
+        if port is None
+        else str(port)
+        if isinstance(port, int)
+        else port
+    )
     rank = get_rank()
     world_size = get_world_size()
     local_rank = get_local_rank()
     fw = str(framework).lower()
-    be = str(get_torch_backend()).lower() if backend is None else str(backend).lower()
+    be = (
+        str(get_torch_backend()).lower()
+        if backend is None
+        else str(backend).lower()
+    )
     # be = str(framework).lower()
     # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
     #     f"Invalid backend: {framework=}, expected one of "
@@ -1254,7 +1285,9 @@ def setup_torch_distributed(
             )
         )
     if fw == "ddp":
-        dsetup = setup_torch_DDP(port, timeout, backend=be, device_id=device_id)
+        dsetup = setup_torch_DDP(
+            port, timeout, backend=be, device_id=device_id
+        )
         world_size = dsetup["world_size"]
         rank = dsetup["rank"]
         local_rank = dsetup["local_rank"]
@@ -1592,7 +1625,8 @@ def setup_tensorflow(
             # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices("CPU")
             logger.info(
-                f"{len(cpus)}, Physical CPUs and " f"{len(logical_cpus)} Logical CPUs"
+                f"{len(cpus)}, Physical CPUs and "
+                f"{len(logical_cpus)} Logical CPUs"
             )
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -1664,7 +1698,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     if hostname.startswith("x1"):
         return "SunSpot"
     if hostname.startswith("x3"):
-        if 'sirius' in hostname:
+        if "sirius" in hostname:
             return "Sirius"
         return "Polaris"
     if hostname.startswith("x4"):
@@ -1702,7 +1736,9 @@ def setup_wandb(
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}")
+        logger.warning(
+            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+        )
         return None
 
     HAS_WANDB = False
@@ -1712,10 +1748,16 @@ def setup_wandb(
         if wandb.api.api_key is not None:
             HAS_WANDB = True
     except (ImportError, ModuleNotFoundError) as e:
-        logger.warning("Unable to import `wandb`. Install with `pip install wandb`")
+        logger.warning(
+            "Unable to import `wandb`. Install with `pip install wandb`"
+        )
         raise e
 
-    outdir = Path(os.getcwd()).as_posix() if outdir is None else Path(outdir).as_posix()
+    outdir = (
+        Path(os.getcwd()).as_posix()
+        if outdir is None
+        else Path(outdir).as_posix()
+    )
     rank = get_rank()
     project_name = (
         project_name
@@ -1796,12 +1838,16 @@ def setup_wandb(
     )
     if config is not None:
         if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
+            cfg = OmegaConf.to_container(
+                config, resolve=True, throw_on_missing=True
+            )
             run.config.update({"config": cfg})
         else:
             run.config.update({"config": config})
     env = {
-        k: v for k, v in dict(os.environ).items() if not k.startswith("_ModuleTable")
+        k: v
+        for k, v in dict(os.environ).items()
+        if not k.startswith("_ModuleTable")
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
@@ -1873,7 +1919,8 @@ def write_localhost_to_hostfile(hostfile: PathLike):
     """Write 'localhost' to the hostfile"""
     if get_rank() == 0:
         logger.debug(
-            f"Writing {(hostname := get_hostname())} " f"to {Path(hostfile).as_posix()}"
+            f"Writing {(hostname := get_hostname())} "
+            f"to {Path(hostfile).as_posix()}"
         )
         hostname = get_hostname()
         with Path(hostfile).open("w") as f:
@@ -1952,16 +1999,15 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
             ),
         )
         if (
-            hfp is None
-            or not Path(hfp).is_file()
+            hfp is None or not Path(hfp).is_file()
             # and scheduler == 'PBS'
         ):
             if scheduler == "PBS":
                 # hfp = Path(get_pbs_nodefile_from_qstat())
                 nodefile = ezpz.pbs.get_pbs_nodefile()
-                assert (
-                    nodefile is not None
-                ), "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                assert nodefile is not None, (
+                    "Unable to get PBS_NODEFILE from `qstat` or `ezpz.pbs`!"
+                )
                 hfp = Path(nodefile)
             else:
                 # create makeshift hostfile containing 'localhost'
@@ -2000,6 +2046,69 @@ def get_cpus_per_node() -> int:
     from sh import getconf as sh_getconf  # type:ignore noqa
 
     return int(sh_getconf("_NPROCESSORS_ONLN").rstrip("\n"))
+
+
+def get_device_properties(
+    device: Optional[str | torch.device | int] = None,
+) -> dict | None:
+    """Get the properties of the specified device.
+
+    Args:
+        device (str | torch.Device | int, optional): The device to get properties for.
+            If None, the current device will be used. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the device properties.
+    """
+    # if device is None:
+    #     device = get_torch_device()
+    # if isinstance(device, str):
+    #     device = torch.device(device)
+    # if isinstance(device, int):
+    #     device = torch.device(f"cuda:{device}")
+    device_type: str = ezpz.get_torch_device_type()
+    if device is None:
+        device = torch.device(device_type)
+    if isinstance(device, str):
+        device = torch.device(device)
+    if isinstance(device, int):
+        device = torch.device(f"{device_type}:{device}")
+    # else:
+    #     raise ValueError(f"Unsupported device type: {device.type}")
+
+    # return {
+    #     "name": props.name,
+    #     "total_memory": props.total_memory,
+    #     "multi_processor_count": props.multi_processor_count,
+    #     "major": props.major,
+    #     "minor": props.minor,
+    #     "device_id": device.index,
+    # }
+    # elif device.type == "xpu":
+    #     props = torch.xpu.get_device_properties(device)
+    #     for key, value in props.__dict__.items():
+    #         logger.debug(f"xpu prop: {key} => {value}")
+    #     return {
+    #         "name": props.name,
+    #         "total_memory": props.total_memory,
+    #         "multi_processor_count": props.multi_processor_count,
+    #         "major": props.major,
+    #         "minor": props.minor,
+    #         "device_id": device.index,
+    #     }
+
+    props = None
+    if device_type == "cuda":
+        props = torch.cuda.get_device_properties(device)
+    if device_type == "xpu":
+        props = torch.xpu.get_device_properties(device)
+
+    if props is not None:
+        return {
+            k: getattr(props, k, None)
+            for k in [i for i in props.__dir__() if not i.startswith("_")]
+        }
+    return {}
 
 
 def get_gpus_per_node() -> int:
