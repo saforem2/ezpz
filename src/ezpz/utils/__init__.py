@@ -336,7 +336,7 @@ def grab_tensor(
     elif callable(getattr(x, "numpy", None)):
         assert callable(getattr(x, "numpy"))
         return x.numpy(force=force)
-    breakpoint(0)
+    # breakpoint(0)
     # raise ValueError
 
 
