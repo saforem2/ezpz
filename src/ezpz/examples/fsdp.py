@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 
 import ezpz
+
 # from ezpz.history import WANDB_DISABLED
 import torch
 import torch.distributed as dist
@@ -76,6 +77,7 @@ def train(model, train_loader, optimizer, epoch, sampler=None):
     ddp_loss = torch.zeros(2).to(DEVICE_ID)
     if sampler:
         sampler.set_epoch(epoch)
+    ezpz.dist.synchronize()
     t0 = time.perf_counter()
     for _, (batch, target) in enumerate(train_loader):
         batch, target = batch.to(DEVICE_ID), target.to(DEVICE_ID)
@@ -86,6 +88,7 @@ def train(model, train_loader, optimizer, epoch, sampler=None):
         optimizer.step()
         ddp_loss[0] += loss.item()
         ddp_loss[1] += len(batch)
+    ezpz.dist.synchronize()
     t1 = time.perf_counter()
 
     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
@@ -170,9 +173,11 @@ def fsdp_main(args: argparse.Namespace) -> None:
         except Exception as e:
             logger.exception("Failed to import wandb")
             raise e
-        run = ezpz.setup_wandb(project_name="ezpz")
+        fp = Path(__file__)
+        run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
         assert run is not None and run is wandb.run
-        wandb.run.config.update({**vars(args)})
+        wandb.config.update({**vars(args)})
+        wandb.config.update(ezpz.get_dist_info())
 
     # data = prepare_data()
 

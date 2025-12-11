@@ -74,7 +74,7 @@ from ezpz.models.llama2 import Transformer, ModelArgs
 #
 # import torch.distributed
 
-import torch.distributed
+# import torch.distributed
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
@@ -153,7 +153,6 @@ def _slice_for_sequence_parallel(
         shard[:, :copy_len] = labels.narrow(1, start, copy_len)
     return shard
 
-
 def parse_args():
     parser = argparse.ArgumentParser(description="2D Parallel Training")
     parser.add_argument("--dim", type=int, default=256)
@@ -170,6 +169,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=24)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--tp", type=int, default=2)
+    parser.add_argument("--outdir", type=str, default="outputs/fsdp_tp")
     # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
         "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
@@ -181,6 +181,7 @@ def parse_args():
     # max_seq_len: int = 32768
     # depth_init: bool = True
     return parser.parse_args()
+
 
 
 def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
@@ -249,9 +250,13 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
 
 
 def train(args: argparse.Namespace):
-    _ = ezpz.setup_torch("DDP", tensor_parallel_size=args.tp, seed=args.seed)
+    _ = ezpz.setup_torch(
+        "DDP", tensor_parallel_size=args.tp, seed=args.seed
+    )
     world_size = ezpz.get_world_size()
-    assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
+    assert world_size % args.tp == 0, (
+        "WORLD_SIZE must be divisible by TP"
+    )
     dpsize = world_size // args.tp
     device_mesh = init_device_mesh(
         str(ezpz.get_torch_device()),
@@ -281,11 +286,13 @@ def train(args: argparse.Namespace):
         assert run is not None and run is wandb.run
         from dataclasses import asdict
 
-        wandb.run.config.update(asdict(config))  # type:ignore
+        wandb.config.update(ezpz.get_dist_info())
+        wandb.config.update(asdict(config))  # type:ignore
 
     device_type = str(ezpz.get_torch_device(as_torch_device=False))
     device_id = f"{device_type}:{ezpz.get_local_rank()}"
     model = Transformer.from_model_args(config)
+    # logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
     mstr = summarize_model(
         model,
         verbose=False,
@@ -329,7 +336,7 @@ def train(args: argparse.Namespace):
     else:
         from ezpz.data.hf import get_hf_datasets
 
-        data = get_hf_data(args.dataset)
+        data = get_hf_datasets(data_args=args.dataset)
         dataloader = data.get_data_loader()
 
     # else:
@@ -362,15 +369,33 @@ def train(args: argparse.Namespace):
 
     logger.info("Starting 2D training...")
     model.train()
-    history = ezpz.History()
+    # history = ezpz.History()
+
+    metrics_path = config.outdir.joinpath("metrics.jsonl")
+    outdir = (
+            Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+    history = ezpz.history.History(
+        report_dir=args.outdir,
+        report_enabled=True,
+        jsonl_path=metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(
+            1 < world_size <= 384 and not config.pytorch_profiler
+        ),
+    )
+
     # For TP, input needs to be the same across all TP ranks.
     # while for SP, input can be different across all ranks
     # We will use dp_rank for setting the random seed
     # to mimic the behavior of the dataloader
     # x = torch.tensor((args.batch_size, args.seq_len))
     x = torch.tensor(0)
+    global_step = 0
     for epoch in range(args.epochs):
         for idx, batch in enumerate(dataloader):
+            ezpz.dist.synchronize()
             t0 = perf_counter()
             if isinstance(batch, dict) and "input_ids" in batch:
                 x = batch["input_ids"]
@@ -394,6 +419,7 @@ def train(args: argparse.Namespace):
                     labels = _slice_for_sequence_parallel(
                         labels, local_seq_len
                     )
+                ezpz.dist.synchronize()
                 t1 = perf_counter()
                 loss = F.cross_entropy(
                     output.reshape(-1, output.size(-1)),
@@ -403,16 +429,20 @@ def train(args: argparse.Namespace):
             else:
                 batch.to(device)
                 output = model(batch)
+                ezpz.dist.synchronize()
                 t1 = perf_counter()
                 loss = output.loss
             loss.backward()
             optimizer.step()
+            ezpz.dist.synchronize()
             t2 = perf_counter()
+            global_step += 1
             logger.info(
                 history.update(
                     {
+                        "train/iter": global_step,
                         "train/epoch": epoch,
-                        "train/iter": idx,
+                        "train/bidx": idx,
                         "train/loss": loss.item(),
                         "train/dt": t2 - t0,
                         "train/dtf": t1 - t0,
