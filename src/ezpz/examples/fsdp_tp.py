@@ -20,9 +20,7 @@ separate parallel dimensions:
 
  We use a simple diagram to illustrate below:
 
-
-
-+-----.-----+-----+-----.
++-----.-----+-----+-----+
 |  0  |  1  |  2  |  3  |
 |     |     |     |     |
 +-----+-----+-----+-----+
@@ -31,22 +29,26 @@ separate parallel dimensions:
 +-----+-----+-----+-----+
 |  8  |  9  | 10  | 11  |
 |     |     |     |     |
-'-----+-----+-----+-----'
++-----+-----+-----+-----+
 
 
++----------+        +------------+       +----------+       +------------+
+| Host 1   |        | Host 2     |       |          |       |  Host N    |
+| 8 GPUs   |        | 8 GPUs     |       |          |       |  8 GPUs    |
+|          |        |            |       |    ...   |       |            |
+| (TP)     |        | (TP)       |       |          |       |  (TP)      |
+|[0,1,..,7]|        | [8,9..,15] |       |          |       | [8N-8,8N-7 |
+|          |        |            |       |          |       |  .., 8N-1] |
+|          |        |            |       |          |       |            |
++----------+        +------------+       +----------+       +------------+
 
-┌──────────┐       ┌──────────┐       ┌──────────┐       ┌──────────┐
-│ Host 1   │       │ Host 2   │       │          │       │ Host N   │
-│ 8 GPUs   │       │ 8 GPUs   │       │          │       │ 8 GPUs   │
-│          │       │          │       │    ...   │       │          │
-│ (TP)     │       │ (TP)     │       │          │       │ (TP)     │
-│[0,1,..,7]│       │[8,9..,15]│       │          │       │[8N-8,8N-7│
-│          │       │          │       │          │       │ .., 8N-1]│
-│          │       │          │       │          │       │          │
-└──────────┘       └──────────┘       └──────────┘       └──────────┘
+- FSDP:
 
-FSDP:
-[0, 8, ..., 8N-8], [1, 9, ..., 8N-7], ..., [7, 15, ..., 8N-1]
+  [0, 8, ..., 8N-8],
+  [1, 9, ..., 8N-7],
+  ...,
+  [7, 15, ..., 8N-1]
+
 """
 
 import os
@@ -54,6 +56,7 @@ import argparse
 import logging
 from pathlib import Path
 from time import perf_counter
+from typing import Iterable
 
 import ezpz
 
@@ -66,24 +69,14 @@ import torch.nn.functional as F
 from ezpz.models import summarize_model
 
 from ezpz.models.llama2 import Transformer, ModelArgs
-# from ezpz.models.llama import Transformer, ModelArgs
-
-# from ezpz.data.text import get_random_dataset, get_hf_data
-
-# from ezpz.data.llama import LlamaDataLoader
-#
-# import torch.distributed
-
-# import torch.distributed
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
 )
-from torch.distributed._tensor import Shard, Replicate
+from torch.distributed._tensor import Shard, Replicate  # type: ignore
 
 from torch.distributed.tensor.parallel import (
-    loss_parallel,
     parallelize_module,
     ColwiseParallel,
     RowwiseParallel,
@@ -188,7 +181,7 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
     tp_mesh = device_mesh["tp"]
     dp_mesh = device_mesh["dp"]
 
-    model.init_weights()
+    model.init_weights()  # type: ignore
     model = parallelize_module(
         model,
         tp_mesh,
@@ -207,6 +200,7 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
         },
     )
 
+    assert isinstance(model.layers, Iterable)
     for _, transformer_block in enumerate(model.layers):
         layer_tp_plan = {
             "attention_norm": SequenceParallel(),
@@ -228,11 +222,11 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
             "feed_forward.w3": ColwiseParallel(),
         }
 
-        attn_layer = transformer_block.attention
+        attn_layer = transformer_block.attention  # type: ignore
         attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
         attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
         parallelize_module(
-            module=transformer_block,
+            module=transformer_block,  # type: ignore
             device_mesh=tp_mesh,
             parallelize_plan=layer_tp_plan,
         )
@@ -326,55 +320,49 @@ def train(args: argparse.Namespace):
         )
         dataset = data["dataset"]
         dataloader = data["dataloader"]
-        # data = get_random_dataset(
-        #     batch_size=args.batch_size,
-        #     vocab_size=args.vocab_size,
-        #     seq_length=args.seq_length,
-        # )
-        # dataset = data["dataset"]
-        # dataloader = data["dataloader"]
     else:
         from ezpz.data.hf import get_hf_datasets
 
-        data = get_hf_datasets(data_args=args.dataset)
+        data = get_hf_datasets(data_args=args.dataset)  # XXX
         dataloader = data.get_data_loader()
 
-    # else:
-    #
-    #     # # Load a subset of FineWeb (replace with the actual dataset name if different)
-    #     dataset_name = 'eliplutchok/fineweb-small-sample'  # Replace with the correct dataset name
-    #     # split = "train[:1000]"  # Load the first 1000 samples for testing
-    #     tokenizer_name = 'meta-llama/llama-2-7b-hf'
-    #     # Get the PyTorch-compatible dataset
-    #     dataset = get_torch_dataset(
-    #         dataset_name,
-    #         tokenizer_name=tokenizer_name,
-    #         max_length=args.seq_length,
-    #     )
-    #     # # Create a DataLoader for batching
-    #     dataloader = DataLoader(
-    #         hfdset, batch_size=args.batch_size, shuffle=True
-    #     )
-    # Iterate through the DataLoader and inspect a batch
-    # for batch in dataloader:
-    #     print("Batch input_ids shape:", batch["input_ids"].shape)
-    #     print("Batch attention_mask shape:", batch["attention_mask"].shape)
-    #     print("Sample input_ids:", batch["input_ids"][0])
-    #     break  # Stop after the first batch for testing
-    # # model.init_weights()
-    # tdist.barrier()
-    # import torch.distributed as tdist
-    # from ezpz.utils import breakpoint
-    # breakpoint(0)
+        # TODO: FIX !! ------------------------------------------------------
+        # else:
+        #
+        #     # # Load a subset of FineWeb (replace with the actual dataset name if different)
+        #     dataset_name = 'eliplutchok/fineweb-small-sample'  # Replace with the correct dataset name
+        #     # split = "train[:1000]"  # Load the first 1000 samples for testing
+        #     tokenizer_name = 'meta-llama/llama-2-7b-hf'
+        #     # Get the PyTorch-compatible dataset
+        #     dataset = get_torch_dataset(
+        #         dataset_name,
+        #         tokenizer_name=tokenizer_name,
+        #         max_length=args.seq_length,
+        #     )
+        #     # # Create a DataLoader for batching
+        #     dataloader = DataLoader(
+        #         hfdset, batch_size=args.batch_size, shuffle=True
+        #     )
+        # Iterate through the DataLoader and inspect a batch
+        # for batch in dataloader:
+        #     print("Batch input_ids shape:", batch["input_ids"].shape)
+        #     print("Batch attention_mask shape:", batch["attention_mask"].shape)
+        #     print("Sample input_ids:", batch["input_ids"][0])
+        #     break  # Stop after the first batch for testing
+        # # model.init_weights()
+        # tdist.barrier()
+        # import torch.distributed as tdist
+        # from ezpz.utils import breakpoint
+        # breakpoint(0)
+        # -------------------------------------------------------------------
 
     logger.info("Starting 2D training...")
     model.train()
-    # history = ezpz.History()
 
-    metrics_path = config.outdir.joinpath("metrics.jsonl")
     outdir = (
             Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
     )
+    metrics_path = outdir.joinpath("metrics.jsonl")
     outdir.mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
         report_dir=args.outdir,
@@ -382,7 +370,7 @@ def train(args: argparse.Namespace):
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
         distributed_history=(
-            1 < world_size <= 384 and not config.pytorch_profiler
+            1 < world_size <= 384   # and not config.pytorch_profiler
         ),
     )
 
@@ -403,11 +391,6 @@ def train(args: argparse.Namespace):
                 x = batch
             assert isinstance(x, torch.Tensor)
             x.to(device)
-            # try:
-            #     batch = batch['input_ids'].to(device)
-            # except Exception:
-            #     breakpoint(0)
-            # tdist.barrier()
             x.to(torch.long)
             if args.dataset == "random":
                 inp = x[:, :-1].to(device)
@@ -427,6 +410,7 @@ def train(args: argparse.Namespace):
                     ignore_index=-100,
                 )
             else:
+                assert isinstance(batch, torch.Tensor)
                 batch.to(device)
                 output = model(batch)
                 ezpz.dist.synchronize()
