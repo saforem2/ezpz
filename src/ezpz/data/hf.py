@@ -3,9 +3,20 @@ ezpz/datasets/hf.py
 
 HuggingFace Datasets loading and tokenization.
 """
+
+import os
 from typing import Optional
 import ezpz
+
+from torch.utils.data import (
+    IterableDataset,
+    DistributedSampler,
+    DataLoader,
+    Dataset,
+)
+
 import datasets
+from pathlib import Path
 from transformers import AutoTokenizer
 
 from ezpz.configs import (
@@ -15,11 +26,61 @@ from ezpz.configs import (
 
 logger = ezpz.get_logger(__name__)
 
+
+from torch.utils.data import get_worker_info
+
+
+def get_data_parallel_map_dataset(
+    dataset: Dataset,
+    rank: int,
+    batch_size: int,
+    num_workers: int = 0,
+):
+    sampler = DistributedSampler(
+        dataset=dataset,
+        num_replicas=ezpz.get_world_size(),
+        rank=rank,
+        shuffle=False,
+    )
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=num_workers,
+    )
+
+
+class DataParallelIterableDataset(IterableDataset):
+    # def __init__(self, dataset: datasets.IterableDataset):
+    #     self.dataset = dataset
+
+    def __len__(self):
+        return len(self)
+
+    def __iter__(self):
+        worker_info = get_worker_info()
+        num_workers = worker_info.num_workers if worker_info else 1
+        worker_id = worker_info.id if worker_info else 0
+        world_size = ezpz.get_world_size()
+        rank = ezpz.get_rank()
+        sampler = DistributedSampler(
+            dataset=self,
+            num_replicas=(num_workers * world_size),
+            rank=(rank * num_workers + worker_id),
+            shuffle=False,
+        )
+        for i in iter(sampler):
+            yield i
+
+
 def split_dataset(
-    model_args: HfModelArguments,
     data_args: HfDataTrainingArguments,
     train_split_name: str = "train",
     validation_split_name: Optional[str] = None,
+    cache_dir: Optional[str | os.PathLike | Path] = None,
+    token: Optional[str] = None,
+    trust_remote_code: bool = False,
+    # model_args: HfModelArguments,
 ) -> datasets.IterableDatasetDict | datasets.DatasetDict:
     """
     Splits the dataset into training and validation sets based on the provided split names.
@@ -37,25 +98,30 @@ def split_dataset(
     assert dataset_name is not None, (
         "dataset_name must be provided to split the dataset."
     )
+    cache_dir = (
+        Path("./.cache/hf/datasets") if cache_dir is None else cache_dir
+    )
+    assert cache_dir is not None and isinstance(cache_dir, (str, os.PathLike))
+    cache_dir = Path(cache_dir).as_posix()
     if validation_split_name is not None:
         try:
             dsets[validation_split_name] = datasets.load_dataset(  # type:ignore
                 dataset_name,
                 data_args.dataset_config_name,
                 split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
+                cache_dir=cache_dir,
+                token=token,
                 streaming=data_args.streaming,
-                trust_remote_code=model_args.trust_remote_code,
+                trust_remote_code=trust_remote_code,
             )
             dsets[train_split_name] = datasets.load_dataset(  # type: ignore
                 dataset_name,
                 data_args.dataset_config_name,
                 split=f"{train_split_name}[{data_args.validation_split_percentage}%:]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
+                cache_dir=cache_dir,
+                token=token,
                 streaming=data_args.streaming,
-                trust_remote_code=model_args.trust_remote_code,
+                trust_remote_code=trust_remote_code,
             )
         except ValueError:
             # In some cases, the dataset doesn't support slicing.
@@ -64,20 +130,20 @@ def split_dataset(
                 dataset_name,
                 data_args.dataset_config_name,
                 split=train_split_name,
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
+                cache_dir=cache_dir,
+                token=token,
                 streaming=data_args.streaming,
-                trust_remote_code=model_args.trust_remote_code,
+                trust_remote_code=trust_remote_code,
             )
             try:
                 dsets[train_split_name] = datasets.load_dataset(  # type:ignore
                     dataset_name,
                     data_args.dataset_config_name,
                     split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
-                    cache_dir=model_args.cache_dir,
-                    token=model_args.token,
+                    cache_dir=cache_dir,
+                    token=token,
                     streaming=data_args.streaming,
-                    trust_remote_code=model_args.trust_remote_code,
+                    trust_remote_code=trust_remote_code,
                 )
             except Exception:
                 # In some cases, the dataset doesn't support slicing.
@@ -86,22 +152,27 @@ def split_dataset(
                     dataset_name,
                     data_args.dataset_config_name,
                     split=train_split_name,
-                    cache_dir=model_args.cache_dir,
-                    token=model_args.token,
+                    cache_dir=cache_dir,
+                    token=token,
                     streaming=data_args.streaming,
-                    trust_remote_code=model_args.trust_remote_code,
+                    trust_remote_code=trust_remote_code,
                 )
 
     if data_args.streaming:
         return datasets.IterableDatasetDict(dsets)
     return datasets.DatasetDict(dsets)
 
-def get_raw_dataset(data_args)
 
 def get_hf_datasets(
     data_args,
-    model_args,
-    training_args,
+    tokenizer_name: Optional[str],
+    model_name_or_path: Optional[str],
+    cache_dir: Optional[str | os.PathLike | Path] = None,
+    token: Optional[str] = None,
+    trust_remote_code: bool = False,
+    do_train: bool = False,
+    use_fast_tokenizer: bool = True,
+    revision: str = "main",
 ):
     # from datasets import datasets.load_dataset
 
@@ -117,19 +188,26 @@ def get_hf_datasets(
     train_split_name = data_args.train_split_name
     validation_split_name = data_args.validation_split_name
     test_split_name = data_args.test_split_name
+    cache_dir = (
+        Path("./.cache/hf/datasets") if cache_dir is None else cache_dir
+    )
+    assert cache_dir is not None and isinstance(cache_dir, (str, os.PathLike))
+    cache_dir = Path(cache_dir).as_posix()
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         # dataset = datasets.load_dataset(
         #     data_args.dataset_name,
         #     data_args.dataset_config_name,
-        #     cache_dir=model_args.cache_dir,
+        #     cache_dir=cache_dir,
         #     token=model_args.token,
         #     streaming=data_args.streaming,
         #     trust_remote_code=model_args.trust_remote_code,
         # )
         raw_datasets = split_dataset(
-            model_args,
             data_args,
+            cache_dir=cache_dir,
+            token=token,
+            trust_remote_code=trust_remote_code,
             train_split_name=train_split_name,
             validation_split_name=validation_split_name,
         )
@@ -152,8 +230,8 @@ def get_hf_datasets(
         raw_datasets = datasets.load_dataset(
             extension,
             data_files=data_files,
-            cache_dir=model_args.cache_dir,
-            token=model_args.token,
+            cache_dir=cache_dir,
+            token=token,
             **dataset_args,
         )
         # If no validation data is there, validation_split_percentage will be used to divide the dataset.
@@ -162,33 +240,33 @@ def get_hf_datasets(
                 extension,
                 data_files=data_files,
                 split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
+                cache_dir=cache_dir,
+                token=token,
                 **dataset_args,
             )
             raw_datasets[train_split_name] = datasets.load_dataset(  # type:ignore
                 extension,
                 data_files=data_files,
                 split=f"{train_split_name}[{data_args.validation_split_percentage}%:]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
+                cache_dir=cache_dir,
+                token=token,
                 **dataset_args,
             )
 
     tokenizer_kwargs = {
-        "cache_dir": model_args.cache_dir,
-        "use_fast": model_args.use_fast_tokenizer,
-        "revision": model_args.model_revision,
-        "token": model_args.token,
-        "trust_remote_code": model_args.trust_remote_code,
+        "cache_dir": cache_dir,
+        "use_fast": use_fast_tokenizer,
+        "revision": revision,
+        "token": token,
+        "trust_remote_code": trust_remote_code,
     }
-    if model_args.tokenizer_name:
+    if tokenizer_name:
         tokenizer = AutoTokenizer.from_pretrained(
-            model_args.tokenizer_name, **tokenizer_kwargs
+            tokenizer_name, **tokenizer_kwargs
         )
-    elif model_args.model_name_or_path:
+    elif model_name_or_path:
         tokenizer = AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path, **tokenizer_kwargs
+            model_name_or_path, **tokenizer_kwargs
         )
     else:
         raise ValueError(
@@ -206,7 +284,7 @@ def get_hf_datasets(
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.
-    if training_args.do_train:
+    if do_train:
         column_names = list(raw_datasets[train_split_name].features)  # type:ignore
     else:
         column_names = list(raw_datasets[validation_split_name].features)  # type:ignore
@@ -353,7 +431,7 @@ def get_hf_datasets(
         #         eval_dataset = eval_dataset.select(range(max_eval_samples))
 
     # if training_args.eval_on_start and evaluate is not None:
-    #     metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+    #     metric = evaluate.load("accuracy", cache_dir=cache_dir)
     #
     #     def compute_metrics(eval_preds):
     #         preds, labels = eval_preds
