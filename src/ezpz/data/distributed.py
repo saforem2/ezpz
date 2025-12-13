@@ -1,7 +1,9 @@
-from __future__ import annotations
+from __future__ import absolute_import, division, print_function, annotations
 from typing import Any, Dict, Iterable, Iterator, Optional
 import torch
-import torch.distributed as dist
+import torch.distributed
+
+# import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 
 # --- usage notes -----------------------------------------------------------
@@ -19,58 +21,79 @@ from torch.utils.data import DataLoader, DistributedSampler
 #    TP rank load the same samples (indices are identical within a DP group).
 
 # --- helpers ---------------------------------------------------------------
+#
+assert hasattr(torch.distributed, "ProcessGroup")
+assert hasattr(torch.distributed, "get_global_rank")
+assert hasattr(torch.distributed, "broadcast_object_list")
 
-def _rank_ws(pg: Optional[dist.ProcessGroup] = None) -> tuple[int, int]:
+
+def _rank_ws(
+    pg: Optional[torch.distributed.ProcessGroup] = None,
+) -> tuple[int, int]:
     """Return (rank, world_size) for a process group (or global default)."""
     if pg is None:
-        return dist.get_rank(), dist.get_world_size()
-    return dist.get_rank(pg), dist.get_world_size(pg)
+        return torch.distributed.get_rank(), torch.distributed.get_world_size()
+    return torch.distributed.get_rank(pg), torch.distributed.get_world_size(pg)
+
 
 def _is_dist() -> bool:
-    return dist.is_available() and dist.is_initialized()
+    return (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
 
-def _tp_is_leader(tp_group: Optional[dist.ProcessGroup]) -> bool:
+
+def _tp_is_leader(tp_group: Optional[torch.distributed.ProcessGroup]) -> bool:
     if not _is_dist() or tp_group is None:
         return True
     tp_rank, _ = _rank_ws(tp_group)
     return tp_rank == 0
 
-# def _broadcast_batch(batch: Any, tp_group: dist.ProcessGroup) -> Any:
+
+# def _broadcast_batch(batch: Any, tp_group: torch.distributed.ProcessGroup) -> Any:
 #     """
 #     Broadcast an arbitrary (nested) batch from TP leader to other TP ranks.
 #     Uses torch.distributed.broadcast_object_list for generality.
 #     For maximal perf, replace with a tensor-only path in your codebase.
 #     """
 #     obj_list = [batch]
-#     dist.broadcast_object_list(obj_list, src=dist.get_rank(tp_group) - _rank_ws(tp_group)[0] if False else 0, group=tp_group)
+#     torch.distributed.broadcast_object_list(obj_list, src=torch.distributed.get_rank(tp_group) - _rank_ws(tp_group)[0] if False else 0, group=tp_group)
 #     # The line above is intentionally simple: src is TP leader (rank 0 within tp_group).
 #     return obj_list[0]
 
 
-def _broadcast_batch(batch: Any, tp_group: dist.ProcessGroup) -> Any:
+def _broadcast_batch(
+    batch: Any, tp_group: torch.distributed.ProcessGroup
+) -> Any:
     """
     Broadcast an arbitrary (nested) batch from TP leader to other TP ranks.
     Uses torch.distributed.broadcast_object_list for generality.
     For maximal perf, replace with a tensor-only path in your codebase.
     """
     # -    obj_list = [batch]
-    # -    dist.broadcast_object_list(obj_list, src=dist.get_rank(tp_group) - _rank_ws(tp_group)[0] if False else 0, group=tp_group)
+    # -    torch.distributed.broadcast_object_list(obj_list, src=torch.distributed.get_rank(tp_group) - _rank_ws(tp_group)[0] if False else 0, group=tp_group)
     # -    # The line above is intentionally simple: src is TP leader (rank 0 within tp_group).
     # -    return obj_list[0]
     obj_list = [batch]
     # Pick TP-leader as group-rank 0, then map to its GLOBAL rank for src
     tp_leader_global = torch.distributed.get_global_rank(tp_group, 0)
-    torch.distributed.broadcast_object_list(obj_list, src=tp_leader_global, group=tp_group)
+    torch.distributed.broadcast_object_list(
+        obj_list, src=tp_leader_global, group=tp_group
+    )
     return obj_list[0]
 
-# - def _broadcast_batch(batch: Any, tp_group: dist.ProcessGroup) -> Any:
+
+# - def _broadcast_batch(batch: Any, tp_group: torch.distributed.ProcessGroup) -> Any:
+
 
 class TPBroadcastDataLoader:
     """
     Wrapper that ensures only TP leader samples/loads, then broadcasts
     each batch to other TP ranks.
     """
-    def __init__(self, dl: DataLoader, tp_group: dist.ProcessGroup):
+
+    def __init__(
+        self, dl: DataLoader, tp_group: torch.distributed.ProcessGroup
+    ):
         self.dl = dl
         self.tp_group = tp_group
         self.leader = _tp_is_leader(tp_group)
@@ -86,7 +109,9 @@ class TPBroadcastDataLoader:
     def __len__(self) -> int:
         return len(self.dl)
 
+
 # --- main factory ----------------------------------------------------------
+
 
 def get_random_dataset_fsdp_tp(
     batch_size: int,
@@ -95,8 +120,8 @@ def get_random_dataset_fsdp_tp(
     *,
     num_workers: int = 0,
     pin_memory: bool = True,
-    dp_group: Optional[dist.ProcessGroup] = None,
-    tp_group: Optional[dist.ProcessGroup] = None,
+    dp_group: Optional[torch.distributed.ProcessGroup] = None,
+    tp_group: Optional[torch.distributed.ProcessGroup] = None,
     broadcast_within_tp: bool = False,
     drop_last: bool = True,
     seed: int = 1337,
@@ -142,7 +167,7 @@ def get_random_dataset_fsdp_tp(
         dset,
         batch_size=batch_size,
         sampler=sampler,
-        shuffle=(sampler is None),   # never shuffle when a sampler is provided
+        shuffle=(sampler is None),  # never shuffle when a sampler is provided
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
