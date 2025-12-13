@@ -1,5 +1,5 @@
 # `ezpz.hf_trainer`
 
-- See [ezpz/`hf_trainer.py`](https://github.com/ezpz/ezpz/blob/main/ezpz/hf_trainer.py)
+- See [ezpz/examples/`hf_trainer.py`](https://github.com/ezpz/ezpz/blob/main/ezpz/examples/hf_trainer.py)
 
-::: ezpz.hf_trainer
+::: ezpz.examples.hf_trainer

@@ -766,12 +766,12 @@ ezpz_setup_conda_frontier() {
 }
 
 ezpz_setup_conda_sunspot() {
-    ###########################
-    # Setup conda on Sunspot
-    ###########################
-    if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
-        module load frameworks
-    fi
+	###########################
+	# Setup conda on Sunspot
+	###########################
+	if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+		module load frameworks
+	fi
 }
 
 ezpz_setup_conda_aurora() {
@@ -822,7 +822,7 @@ _ezpz_setup_conda_polaris() {
 		# if so, load the default conda/2024-04-29
 		# module and activate base environment
 		module use /soft/modulefiles
-		module load conda
+		module load conda/2025-09-25
 		conda activate base
 	else
 		echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
@@ -1159,21 +1159,19 @@ ezpz_setup_venv_from_conda() {
 			# make directory if it doesn't exist
 			[[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
 			if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-				log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in VENV_DIR..."
-				python3 -m venv "${VENV_DIR}" --system-site-packages
+				log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in ${VENV_DIR}..."
+				if command -v uv >/dev/null 2>&1; then
+					log_message INFO "  - Using uv for venv creation"
+					uv venv --python=$(which python3) --system-site-packages "${VENV_DIR}"
+				else
+					log_message INFO "  - Using python for venv creation"
+					python3 -m venv "${VENV_DIR}" --system-site-packages
+				fi
 				# shellcheck disable=SC1090,SC1091
 				source "${VENV_DIR}/bin/activate" || {
 					log_message ERROR "  - Failed to source ${fpactivate} after creation."
 					return 1
 				}
-				# if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-				#     log_message INFO "  - Activating newly created venv..."
-				#     # shellcheck disable=SC1090
-				#     [ -f "${fpactivate}" ] && log_message INFO "  - Found ${fpactivate}" && source "${fpactivate}" && return 0
-				# else
-				#     log_message ERROR "  - Failed to create venv at ${VENV_DIR}"
-				#     return 1
-				# fi
 			elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
 				log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${env_name}${RESET}"
 				# shellcheck disable=SC1090

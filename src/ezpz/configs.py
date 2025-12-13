@@ -857,6 +857,7 @@ class TrainArgs:
     dtype: str
     compile: bool
     attn_type: str
+    warmup: int | float
     num_workers: int
     max_iters: int
     format: Optional[str] = field(default_factory=str)
