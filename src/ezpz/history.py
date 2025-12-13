@@ -17,30 +17,38 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
+import ezpz
+import ezpz.dist
+
+from ezpz.lazy import lazy_import
+#
+# ezpz = lazy_import("ezpz")
+# assert ezpz is not None
+
 # import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+# import torch.distributed
 import xarray as xr
 
 # from ezpz.dist import get_rank
+
+# import ezpz
+
+# import ezpz.plot as ezplot
+
+# import ezpz.dist
+
 from ezpz import get_rank
 from ezpz import plot as ezplot
 from ezpz import timeitlogit
 from ezpz.configs import OUTPUTS_DIR, PathLike
-from ezpz.lazy import lazy_import
 from ezpz.log import get_logger
 from ezpz.tplot import tplot as eztplot
 
 # from ezpz import tplot as eztplot
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
-
-# import ezpz
-
-
-# import ezpz.plot as ezplot
-
-
-ezpz = lazy_import("ezpz")
 
 # xr = lazy_import("xarray")
 
@@ -53,24 +61,35 @@ ScalarLike = Union[float, int, bool]
 
 logger = get_logger(__name__)
 
+# try:
+#     import wandb
+#
+#     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+# except Exception:
+#     wandb = None
+#     WANDB_DISABLED = True
+ENABLE_WANDB = False
 try:
-    import wandb
-
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    wandb = lazy_import("wandb")
+    if wandb.api.api_key is not None and not os.environ.get(
+        "WANDB_DISABLED", False
+    ):
+        ENABLE_WANDB = True
 except Exception:
     wandb = None
-    WANDB_DISABLED = True
 
-try:
-    import torch.distributed as dist
-except Exception:  # pragma: no cover - optional dependency
-    dist = None
+# try:
+#     import torch.distributed as dist
+# except Exception:  # pragma: no cover - optional dependency
+#     dist = None
 
 TensorLike = Union[torch.Tensor, np.ndarray, list]
 
 PT_FLOAT = torch.get_default_dtype()
 
 xplt = xr.plot  # type:ignore
+
+AUTO_USE_DISTRIBUTED_HISTORY = True if ezpz.get_world_size() <= 384 else False
 
 
 class StopWatch(ContextDecorator):
@@ -151,7 +170,7 @@ class History:
         report_enabled: bool = True,
         jsonl_path: Optional[PathLike] = None,
         jsonl_overwrite: bool = False,
-        aggregate_metrics: bool = True,
+        distributed_history: bool = AUTO_USE_DISTRIBUTED_HISTORY,
     ) -> None:
         """
         Initialize the History object.
@@ -164,19 +183,26 @@ class History:
             report_enabled (bool): Toggle automatic markdown generation.
             jsonl_path (Optional[PathLike]): Destination for JSONL metric logging.
             jsonl_overwrite (bool): Whether to truncate an existing JSONL log.
-            aggregate_metrics (bool): Enable distributed reductions (mean/max/min/std).
+            distributed_history (bool): Enable distributed history tracking.
         """
         self.keys = [] if keys is None else keys
         self.history: dict[str, list[Any]] = {}
         self.data = self.history
-        if os.environ.get(
-            "EZPZ_NO_DISTRIBUTED_METRICS", None
-        ) or os.environ.get("EZPZ_LOCAL_METRICS", False):
+        if (
+            os.environ.get("EZPZ_NO_DISTRIBUTED_HISTORY", None)
+            or os.environ.get("EZPZ_LOCAL_HISTORY", False)
+            or ezpz.dist.get_world_size() <= 1
+        ):
             logger.info(
                 "Not using distributed metrics! Will only be tracked from a single rank..."
             )
-            aggregate_metrics = False
-        self._aggregate_metrics = aggregate_metrics
+            distributed_history = False
+            # aggregate_metrics = False
+        self.distributed_history = distributed_history
+        logger.info(
+            f"Using {self.__class__.__name__} with distributed_history={self.distributed_history}"
+        )
+        # self._aggregate_metrics = aggregate_metrics
         self._rank = get_rank()
         now = datetime.now(timezone.utc)
         self._run_id = now.strftime("%Y%m%d-%H%M%S")
@@ -213,7 +239,7 @@ class History:
                     self._jsonl_path,
                 )
         self._jsonl_enabled = True
-        self._dist = dist
+        self._dist = torch.distributed
         self._environment_written = False
         self._metric_summary_written = False
 
@@ -814,12 +840,12 @@ class History:
     ) -> dict[str, float]:
         """Compute distributed reductions for scalar metrics."""
 
-        if not self._aggregate_metrics or self._dist is None:
+        if not self.distributed_history or self._dist is None:
             return {}
         try:
             if (
                 not self._dist.is_available()
-                or not self._dist.is_initialized()
+                or not torch.distributed.is_initialized()  # type: ignore[attr-defined]
             ):
                 return {}
         except AttributeError:
@@ -838,18 +864,25 @@ class History:
         sq_vals = values.square()
         max_vals = values.clone()
         min_vals = values.clone()
-        world_size = self._dist.get_world_size()
-        if world_size <= 1:
+        # world_size = ezpz.dist.get_world_size()
+        # world_size = self._dist.get_world_size()
+        if (world_size := ezpz.dist.get_world_size()) <= 1:
             return {
                 f"{key}/{suffix}": (value if suffix != "std" else 0.0)
                 for key, value in scalars.items()
                 for suffix in ("mean", "max", "min", "std")
             }
-        ops = self._dist.ReduceOp  # type: ignore[attr-defined]
-        self._dist.all_reduce(sum_vals, op=ops.SUM)
-        self._dist.all_reduce(sq_vals, op=ops.SUM)
-        self._dist.all_reduce(max_vals, op=ops.MAX)
-        self._dist.all_reduce(min_vals, op=ops.MIN)
+
+        # ezpz.dist.all_reduce(sum_vals, op=ops.SUM, implementation="torch")
+        # ezpz.dist.all_reduce(sq_vals, op=ops.SUM, implementation="torch")
+        # ezpz.dist.all_reduce(max_vals, op=ops.MAX, implementation="torch")
+        # ezpz.dist.all_reduce(min_vals, op=ops.MIN, implementation="torch")
+        # ops = self._dist.ReduceOp  # type: ignore[attr-defined]
+        ops = torch.distributed.ReduceOp  # type: ignore[attr-defined]
+        torch.distributed.all_reduce(sum_vals, op=ops.SUM)
+        torch.distributed.all_reduce(sq_vals, op=ops.SUM)
+        torch.distributed.all_reduce(max_vals, op=ops.MAX)
+        torch.distributed.all_reduce(min_vals, op=ops.MIN)
         mean_vals = sum_vals.div(world_size)
         var_vals = sq_vals.div(world_size).sub(mean_vals.square())
         std_vals = var_vals.clamp_min_(0.0).sqrt_()
@@ -937,7 +970,33 @@ class History:
                 # skip keys like "train/iter/min", "eval/step/std", etc.,
                 if not any(
                     count_str in key
-                    for count_str in ["iter", "step", "epoch", "batch", "idx"]
+                    for count_str in [
+                        "iter/min",
+                        "iter/max",
+                        "iter/std",
+                        "iter/avg",
+                        "iter/mean",
+                        "step/min",
+                        "step/max",
+                        "step/std",
+                        "step/avg",
+                        "step/mean",
+                        "epoch/min",
+                        "epoch/max",
+                        "epoch/std",
+                        "epoch/avg",
+                        "epoch/mean",
+                        "batch/min",
+                        "batch/max",
+                        "batch/std",
+                        "batch/avg",
+                        "batch/mean",
+                        "idx/min",
+                        "idx/max",
+                        "idx/std",
+                        "idx/avg",
+                        "idx/mean",
+                    ]
                 )
             }
             # _ss = {"max", "min", "std"}
@@ -946,7 +1005,9 @@ class History:
             #     f"{i}/{s}" for s in _ss for i in _sk
             # ]
             if scalar_summary:
-                return summarize_dict(scalar_summary, precision=precision)
+                return summarize_dict(
+                    scalar_summary, precision=precision
+                ).replace("/", "/")
             return ""
         return ""
 
