@@ -37,7 +37,9 @@ TORCH_DTYPES_MAP = {
 ENABLE_WANDB = False
 try:
     wandb = lazy_import("wandb")
-    if wandb.api.api_key is not None:
+    if wandb.api.api_key is not None and not os.environ.get(
+        "WANDB_DISABLED", False
+    ):
         ENABLE_WANDB = True
 except Exception:
     wandb = None
@@ -1067,6 +1069,47 @@ def broadcast(
         raise exc
 
 
+def all_reduce(
+    obj: Any,
+    op: Optional[MPI.Op, torch.distributed.reduce_op] = None,
+    implementation: Optional[str] = None,
+) -> Any:
+    """All-reduce ``obj`` across all ranks using MPI.
+
+    Parameters
+    ----------
+    obj:
+        The picklable payload to reduce.
+    op:
+        The MPI operation to use for reduction. Defaults to MPI.SUM.
+    implementation:
+    """
+    if implementation is None or implementation.lower() == "mpi":
+        op = MPI.SUM if op is None else op
+        assert op is not None
+        try:
+            return MPI.COMM_WORLD.allreduce(obj, op=op)
+        except Exception as exc:
+            logger.warning(
+                "Unable to all-reduce with MPI, returning original object"
+            )
+            logger.exception(exc)
+            # return obj
+            raise exc
+    elif implementation.lower() in {"torch", "pytorch", "pt"}:
+        import torch.distributed as dist
+
+        op = dist.ReduceOp.SUM if op is None else op
+        assert op is not None
+        tensor = torch.tensor(obj)
+        dist.all_reduce(tensor, op=op)
+        return tensor.item()
+    else:
+        raise ValueError(
+            f"Unsupported all-reduce implementation: {implementation}"
+        )
+
+
 def setup_torch_DDP(
     port: str = "2345",
     timeout: int | str | timedelta = 3600,
@@ -1733,6 +1776,7 @@ def setup_wandb(
     Example:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
     """
+    wandb = ezpz.lazy.lazy_import("wandb")
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
     if WANDB_DISABLED or WANDB_MODE == "disabled":
@@ -1741,17 +1785,24 @@ def setup_wandb(
         )
         return None
 
-    HAS_WANDB = False
-    try:
-        import wandb
-
-        if wandb.api.api_key is not None:
-            HAS_WANDB = True
-    except (ImportError, ModuleNotFoundError) as e:
-        logger.warning(
-            "Unable to import `wandb`. Install with `pip install wandb`"
+    if wandb.api.api_key is None:
+        logger.warning("W&B API key not found, skipping wandb setup!")
+        logger.info(
+            "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
         )
-        raise e
+        return None
+
+    # HAS_WANDB = False
+    # try:
+    #     import wandb
+    #
+    #     if wandb.api.api_key is not None:
+    #         HAS_WANDB = True
+    # except (ImportError, ModuleNotFoundError) as e:
+    #     logger.warning(
+    #         "Unable to import `wandb`. Install with `pip install wandb`"
+    #     )
+    #     raise e
 
     outdir = (
         Path(os.getcwd()).as_posix()
