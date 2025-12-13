@@ -68,7 +68,7 @@ import torch.nn.functional as F
 
 from ezpz.models import summarize_model
 
-from ezpz.models.llama2 import Transformer, ModelArgs
+from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
@@ -87,6 +87,11 @@ from torch.distributed.tensor.parallel import (
 logging.getLogger("datasets").setLevel(logging.ERROR)
 
 logger = ezpz.get_logger(__name__)
+
+try:
+    import wandb
+except ImportError:
+    wandb = None  # type: ignore
 
 
 def _slice_for_sequence_parallel(
@@ -146,6 +151,7 @@ def _slice_for_sequence_parallel(
         shard[:, :copy_len] = labels.narrow(1, start, copy_len)
     return shard
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="2D Parallel Training")
     parser.add_argument("--dim", type=int, default=256)
@@ -174,7 +180,6 @@ def parse_args():
     # max_seq_len: int = 32768
     # depth_init: bool = True
     return parser.parse_args()
-
 
 
 def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
@@ -244,13 +249,9 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
 
 
 def train(args: argparse.Namespace):
-    _ = ezpz.setup_torch(
-        "DDP", tensor_parallel_size=args.tp, seed=args.seed
-    )
+    rank = ezpz.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     world_size = ezpz.get_world_size()
-    assert world_size % args.tp == 0, (
-        "WORLD_SIZE must be divisible by TP"
-    )
+    assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
     device_mesh = init_device_mesh(
         str(ezpz.get_torch_device()),
@@ -270,23 +271,18 @@ def train(args: argparse.Namespace):
     )
     logger.info(f"config:\n{config}")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
-        try:
-            import wandb
-        except Exception as e:
-            logger.exception("Failed to import wandb")
-            raise e
         fp = Path(__file__)
         run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
-        assert run is not None and run is wandb.run
-        from dataclasses import asdict
+        if wandb is not None:
+            assert run is not None and run is wandb.run
+            from dataclasses import asdict
 
-        wandb.config.update(ezpz.get_dist_info())
-        wandb.config.update(asdict(config))  # type:ignore
+            wandb.config.update(ezpz.get_dist_info())
+            wandb.config.update(asdict(config))  # type:ignore
 
     device_type = str(ezpz.get_torch_device(as_torch_device=False))
     device_id = f"{device_type}:{ezpz.get_local_rank()}"
     model = Transformer.from_model_args(config)
-    # logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
     mstr = summarize_model(
         model,
         verbose=False,
@@ -321,12 +317,14 @@ def train(args: argparse.Namespace):
         dataset = data["dataset"]
         dataloader = data["dataloader"]
     else:
+        # TODO: FIX !! ------------------------------------------------------
         from ezpz.data.hf import get_hf_datasets
 
-        data = get_hf_datasets(data_args=args.dataset)  # XXX
+        data = get_hf_datasets(data_args=args.dataset)
         dataloader = data.get_data_loader()
+        # -------------------------------------------------------------------
 
-        # TODO: FIX !! ------------------------------------------------------
+        # XXX ------------------------------------------------------
         # else:
         #
         #     # # Load a subset of FineWeb (replace with the actual dataset name if different)
@@ -359,10 +357,8 @@ def train(args: argparse.Namespace):
     logger.info("Starting 2D training...")
     model.train()
 
-    outdir = (
-            Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
-    )
-    metrics_path = outdir.joinpath("metrics.jsonl")
+    outdir = Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
+    metrics_path = outdir.joinpath(f"metrics-{rank}.jsonl")
     outdir.mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
         report_dir=args.outdir,
@@ -370,7 +366,7 @@ def train(args: argparse.Namespace):
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
         distributed_history=(
-            1 < world_size <= 384   # and not config.pytorch_profiler
+            1 < world_size <= 384  # and not config.pytorch_profiler
         ),
     )
 
