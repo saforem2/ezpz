@@ -4,7 +4,6 @@ ezpz/examples/vit.py
 
 import argparse
 import functools
-import os
 from pathlib import Path
 import time
 from typing import Any, Optional
@@ -12,24 +11,33 @@ from typing import Any, Optional
 from dataclasses import asdict
 
 import ezpz
-from timm.models.vision_transformer import VisionTransformer
 import torch
 
-# import torch._dynamo
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
 from ezpz import TORCH_DTYPES_MAP
-from ezpz.configs import TrainArgs, ViTConfig, timmViTConfig
+from ezpz.configs import TrainArgs, timmViTConfig
 from ezpz.models import summarize_model
 
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.models.vit.attention import AttentionBlock
 
-# from mmm.data.vision import get_fake_data  # , get_mnist
-# from mmm.models.vit.attention import AttentionBlock
-
 logger = ezpz.get_logger(__name__)
+
+try:
+    import wandb
+except Exception:
+    wandb = None
+    logger.warning("Failed to import wandb")
+
+try:
+    from timm.models.vision_transformer import VisionTransformer  # type:ignore
+except (ImportError, ModuleNotFoundError) as e:
+    logger.exception(
+        "Please install timm to use VisionTransformer: uv pip install timm (`--no-deps` on Aurora)"
+    )
+    raise e
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,7 +61,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compile", action="store_true", help="Compile model")
     parser.add_argument("--num_workers", default=0, help="Number of workers")
     parser.add_argument("--max_iters", default=None, help="Maximum iterations")
-    parser.add_argument("--warmup", default=0.1, help="Warmup iterations (or fraction) before starting to collect metrics.")
+    parser.add_argument(
+        "--warmup",
+        default=0.1,
+        help="Warmup iterations (or fraction) before starting to collect metrics.",
+    )
     parser.add_argument(
         "--attn_type",
         default="native",
@@ -110,7 +122,6 @@ def train_fn(
             train_batch_size=args.batch_size,
             test_batch_size=args.batch_size,
             download=(ezpz.get_rank() == 0),
-            shuffle=True,
         )
         # data = get_mnist(
         #     img_size=args.img_size,
@@ -159,12 +170,6 @@ def train_fn(
             config.img_size,
         ),
     )
-    if ezpz.get_rank() == 0:
-        try:
-            wandb.watch(model, log="all")  # type:ignore
-        except Exception:
-            pass
-    logger.info(f"\n{mstr}")
     model.to(device)
     num_params = sum(
         [
@@ -180,7 +185,11 @@ def train_fn(
         ]
     )
     model_size_in_billions = num_params / 1e9
+    logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
+    if wandb is not None:
+        if wandb.run is not None:
+            wandb.run.watch(model, log="all")
 
     if world_size > 1:
         if args.dtype in {"fp16", "bf16", "fp32"}:
@@ -208,13 +217,17 @@ def train_fn(
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
-    # warmup_iters = (
-    #     int(args.warmup)
-    #     if args.warmup >= 1.0
-    #     else int(args.warmup * (len(data["train"]["loader"])))
-    # )
     warmup_iters = (
-        int(args.warmup) if args.warmup >= 1.0 else int(args.warmup * (args.max_iters if args.max_iters is not None else len(data["train"]["loader"])))
+        int(args.warmup)
+        if args.warmup >= 1.0
+        else int(
+            args.warmup
+            * (
+                args.max_iters
+                if args.max_iters is not None
+                else len(data["train"]["loader"])
+            )
+        )
     )
     for step, data in enumerate(data["train"]["loader"]):
         if args.max_iters is not None and step > int(args.max_iters):
@@ -247,16 +260,6 @@ def train_fn(
                         "train/dtf": t2 - t1,
                         "train/dto": t3 - t2,
                         "train/dtb": t4 - t3,
-                        # "train/dt": t4 - t0,
-                        # "train/dtd": t1 - t0,
-                        # "train/dtf": t2 - t1,
-                        # "train/dto": t4 - t3,
-                        # "train/dtb": t4 - t2,
-                        # "train/dt": t4 - t0,
-                        # "train/dtd": t1 - t0,
-                        # "train/dtf": t2 - t1,
-                        # "train/dto": t3 - t2,
-                        # "train/dtb": t4 - t3,
                     }
                 ).replace("train/", "")
             )
@@ -271,23 +274,20 @@ def train_fn(
 
 
 def main():
-    # torch._dynamo.config.suppress_errors = True  # type:ignore
     rank = ezpz.setup_torch()
-    #     backend=os.environ.get('BACKEND', 'DDP'),
-    # )
-    # return TrainArgs(**vars(parser.parse_args()))
     args = parse_args()
-    if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
+    if rank == 0:
         try:
-            import wandb
-        except Exception as e:
-            logger.exception("Failed to import wandb")
-            raise e
-        fp = Path(__file__).resolve()
-        run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.name}.{fp.stem}")
-        assert run is not None and run is wandb.run
-        wandb.config.update(ezpz.get_dist_info())
-        wandb.config.update({**vars(args)})  # type:ignore
+            fp = Path(__file__).resolve()
+            run = ezpz.setup_wandb(
+                project_name=f"ezpz.{fp.parent.name}.{fp.stem}"
+            )
+            if wandb is not None:
+                assert run is not None and run is wandb.run
+                wandb.config.update(ezpz.get_dist_info())
+                wandb.config.update({**vars(args)})  # type:ignore
+        except Exception:
+            logger.warning("Failed to setup wandb, continuing without!")
 
     targs = dict(**vars(args))
     targs.pop("dataset", None)
