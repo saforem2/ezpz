@@ -65,7 +65,10 @@ def _infer_seq_start_idx(freq_len: int, seqlen: int) -> int:
     try:
         from ezpz import tp as _tp  # type: ignore
 
-        if hasattr(_tp, "tensor_parallel_is_initialized") and _tp.tensor_parallel_is_initialized():
+        if (
+            hasattr(_tp, "tensor_parallel_is_initialized")
+            and _tp.tensor_parallel_is_initialized()
+        ):
             try:
                 cp_world = _tp.get_context_parallel_world_size()
                 if cp_world and cp_world > 1:
@@ -309,14 +312,9 @@ class Attention(nn.Module):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
-        try:
-            xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
-            xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-            xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-        except Exception:
-            from ezpz.utils import breakpoint
-
-            breakpoint(0)
+        xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
@@ -487,7 +485,7 @@ class Transformer(nn.Module):
             model_args.vocab_size, model_args.dim
         )
         self.register_buffer(
-            'freqs_cis',
+            "freqs_cis",
             precompute_freqs_cis(
                 model_args.dim // model_args.n_heads,
                 # Need to compute until at least the max token limit for generation
@@ -562,7 +560,7 @@ class Transformer(nn.Module):
         return output
 
     @classmethod
-    def from_model_args(cls, model_args: ModelArgs) -> 'Transformer':
+    def from_model_args(cls, model_args: ModelArgs) -> "Transformer":
         """
         Initialize a Transformer model from a ModelArgs object.
 
