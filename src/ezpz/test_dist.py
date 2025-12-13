@@ -268,7 +268,6 @@ class Trainer:
                 outdir=dset_root,
                 num_workers=self.config.num_workers,
                 download=self.rank == 0,
-                shuffle=True,
                 pin_memory=str(self.device_type).startswith(("cuda", "mps")),
             )
             train_loader = bundle["train"]["loader"]
