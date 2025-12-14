@@ -15,7 +15,6 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
-from textual.message import Message
 import torch
 from rich.text import Text
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -35,9 +34,7 @@ from textual.widgets import (
     Label,
     Select,
     Static,
-    TextArea,
     RichLog,
-    Log,
 )
 
 DTYPE_CHOICES = [
