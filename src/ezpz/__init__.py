@@ -25,6 +25,8 @@ if socket.getfqdn().startswith("x3"):
 _LAZY_MODULES: Dict[str, str] = {
     "configs": "ezpz.configs",
     "dist": "ezpz.dist",
+    "doctor": "ezpz.doctor",
+    "examples": "ezpz.examples",
     "history": "ezpz.history",
     "jobs": "ezpz.jobs",
     "launch": "ezpz.launch",
@@ -40,6 +42,8 @@ _LAZY_MODULES: Dict[str, str] = {
 _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.log",
     "ezpz.configs",
+    "ezpz.doctor",
+    "ezpz.examples",
     "ezpz.utils",
     "ezpz.history",
     "ezpz.profile",
@@ -52,7 +56,7 @@ _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.tplot",
 )
 
-__all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]
+__all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]  # type:ignore
 
 _IMPORT_CACHE: Dict[str, ModuleType] = {}
 
