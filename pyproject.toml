@@ -42,6 +42,9 @@ ezpz-test = "ezpz.test:main"
 ezpz-launch = "ezpz.launch:main"
 ezpz-yeet-env = "ezpz.utils.yeet_env:main"
 ezpz-tar-env = "ezpz.utils.tar_env:main"
+ezpz-doctor = "ezpz.doctor:main"
+ezpz-generate = "ezpz.examples.generate:main"
+ezpz-generate-tui = "ezpz.examples.generate_tui:main"
 
 [project.optional-dependencies]
 xpu = [
