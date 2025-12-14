@@ -32,7 +32,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def prompt_model(model, tokenizer, prompt, max_length: int = 64, **kwargs) -> str:
+def prompt_model(
+    model: AutoModelForCausalLM,
+    tokenizer: AutoTokenizer,
+    prompt: str,
+    max_length: int = 64,
+    **kwargs: object,
+) -> str:
     """
     Generate text using a model and tokenizer.
 

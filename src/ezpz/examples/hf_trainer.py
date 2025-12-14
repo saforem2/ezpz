@@ -145,7 +145,7 @@ def parse_args() -> dict:
 # 2. `"optimizer": { ... }` in a `--deepspeed=config.json` file.
 
 
-def resolve_optimizer(optimizer, deepspeed_config):
+def resolve_optimizer(optimizer: Optional[str], deepspeed_config: Optional[dict]) -> str:
     """
     Resolve the optimizer to use based on the command line argument and the deepspeed config.
 
@@ -167,7 +167,7 @@ def resolve_optimizer(optimizer, deepspeed_config):
 def decode_predictions(
     tokenizer: transformers.PreTrainedTokenizer,
     predictions: transformers.EvalPrediction,  # | list[int] | list[list[int]] | torch.Tensor,
-):
+) -> dict[str, list[str]]:
     """
     Decode the predictions from the model into text labels.
 
