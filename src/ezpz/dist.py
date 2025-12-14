@@ -177,7 +177,7 @@ def timeitlogit(
         rank (int, optional): Rank of the process. Defaults to None.
         verbose (bool, optional): Whether to log the time taken. Defaults to True.
 
-    Example:
+    Examples:
         @timeitlogit(rank=0, verbose=True)
         def my_function(arg1, arg2):
             # Function implementation
@@ -247,7 +247,7 @@ def timeit(func: Callable):
     Args:
         func (Callable): Function to be timed.
 
-    Example:
+    Examples:
         @timeit
         def my_function(arg1, arg2):
             # Function implementation
@@ -286,7 +286,7 @@ def get_hosts_from_hostfile(
     Returns:
         tuple[str, list[str]]: Tuple containing the hostfile path and a list of hosts.
 
-    Example:
+    Examples:
         >>> get_hosts_from_hostfile("/path/to/hostfile")
         ('/path/to/hostfile', ['host1', 'host2', ...])
     """
@@ -539,7 +539,7 @@ def print_dist_setup(
     return dist_str
 
 
-def synchronize(device: Optional[torch.device | int | str] = None):
+def synchronize(device: Optional[torch.device | int | str] = None) -> None:
     """
     Synchronize the given device.
 
@@ -572,7 +572,7 @@ def setup(
     seed: Optional[int] = None,
     precision: Optional[str] = None,
     ngpus: Optional[int] = None,
-):
+) -> int:
     """
     Setup distributed environment for the specified framework.
 
@@ -588,7 +588,7 @@ def setup(
         ngpus (int, optional): Number of GPUs to use. Defaults to None.
 
     Returns:
-        None
+        int: The rank returned by the selected setup routine.
     """
     return (
         setup_tensorflow(precision=precision, ngpus=ngpus)
@@ -634,7 +634,7 @@ def init_deepspeed(
         ImportError: If DeepSpeed is not installed.
         Exception: If there is an error during DeepSpeed initialization.
 
-    Example:
+    Examples:
         >>> init_deepspeed(
         ...     dist_backend="nccl",
         ...     distributed_port=29500,
@@ -701,7 +701,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         str: The current PyTorch device type.
             Possible values are "cpu", "mps", "xpu", or "cuda".
 
-    Example:
+    Examples:
         >>> get_torch_device_type()  # Returns the current device type as a string
     """
     if device_type is not None:
@@ -760,7 +760,7 @@ def get_torch_device(
             If as_torch_device is True, returns a torch.device object.
             If as_torch_device is False, returns a string representing the device type.
 
-    Example:
+    Examples:
         >>> get_torch_device()  # Returns the current device type as a string
     """
     if device_type is None:
@@ -786,7 +786,7 @@ def get_torch_backend_on_xpu() -> str:
 
     See: https://github.com/pytorch/pytorch/pull/141856
 
-    Example:
+    Examples:
 
         ```python
         >>> torch_version = float('.'join(torch.__version__.split('.')[:2]))
@@ -886,7 +886,7 @@ def get_rank() -> int:
     Returns:
         int: The rank of the current process in the MPI world.
 
-    Example:
+    Examples:
         >>> rank = get_rank()
         >>> print(f"Current MPI rank: {rank}")
     """
@@ -902,7 +902,7 @@ def get_world_size_in_use() -> int:
             It is the number of processes that are currently running
             and participating in the distributed computation.
 
-    Example:
+    Examples:
         >>> world_size_in_use = get_world_size_in_use()
         >>> print(f"Number of currently in use MPI ranks: {world_size_in_use}")
     """
@@ -918,7 +918,7 @@ def get_world_size_total() -> int:
         int: The total number of available *PUs across all nodes.
             This is the product of the number of nodes and the number of *PUs per node.
 
-    Example:
+    Examples:
         >>> total_pus = get_world_size_total()
         >>> print(f"Total available *PUs: {total_pus}")
     """
@@ -945,7 +945,7 @@ def get_world_size(
             If both `total` and `in_use` are None, it returns the number of *PUs
             currently in use by the MPI communicator.
 
-    Example:
+    Examples:
         >>> world_size = get_world_size(total=True)
         >>> print(f"Total number of *PUs available: {world_size}")
         >>> world_size_in_use = get_world_size(in_use=True)
@@ -985,14 +985,14 @@ def get_local_rank() -> int:
         int: The local rank of the current process within its node.
             This is calculated as the current rank modulo the number of GPUs per node.
 
-    Example:
+    Examples:
         >>> local_rank = get_local_rank()
         >>> print(f"Local rank of the current process: {local_rank}")
     """
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
-def get_free_port():
+def get_free_port() -> int:
     """
     Get a free port on the local machine.
 
@@ -1017,7 +1017,7 @@ def query_environment() -> dict[str, int]:
             If the environment variables are not set, it falls back to using
             `get_world_size()`, `get_rank()`, and `get_local_rank()` functions.
 
-    Example:
+    Examples:
         >>> env_info = query_environment()
         >>> print(env_info)
         {'world_size': 4, 'rank': 0, 'local_rank': 0}
@@ -1265,7 +1265,7 @@ def setup_torch_distributed(
         ValueError: If the backend is not one of the supported backends.
             Supported backends are "ddp", "ds", "deepspeed", "horovod", and "hvd".
 
-    Example:
+    Examples:
         >>> setup_torch_distributed(
         ...     framework="ddp",
         ...     backend="nccl",
@@ -1604,7 +1604,7 @@ def cleanup() -> None:
     Cleanup the distributed environment.
     This function destroys the process group if it is initialized.
 
-    Example:
+    Examples:
         >>> cleanup()
     """
     if torch.distributed.is_initialized():  # type:ignore
@@ -1687,7 +1687,7 @@ def setup_tensorflow(
     return RANK
 
 
-def include_file(f: PathLike):
+def include_file(f: PathLike[str] | str) -> bool:
     """
     Check if a file should be included based on its extension.
 
@@ -1718,7 +1718,7 @@ def get_machine(hostname: Optional[str] = None) -> str:
     Returns:
         str: The machine name.
 
-    Example:
+    Examples:
         >>> get_machine("frontier")
         "Frontier"
     """
@@ -1773,7 +1773,7 @@ def setup_wandb(
         init_timeout (int, optional): The timeout for wandb initialization. Defaults to 300.
         allow_val_change (bool, optional): Whether to allow value changes in wandb config. Defaults to False.
 
-    Example:
+    Examples:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
     """
     wandb = ezpz.lazy.lazy_import("wandb")

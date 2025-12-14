@@ -29,7 +29,7 @@ class ModelArgs:
     depth_init: bool = True
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
     """
     Precompute the frequency tensor for complex exponentials (cis) with given dimensions.
 
@@ -111,7 +111,9 @@ def _infer_seq_start_idx(freq_len: int, seqlen: int) -> int:
     return start_idx
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+def reshape_for_broadcast(
+    freqs_cis: torch.Tensor, x: torch.Tensor
+) -> torch.Tensor:
     """
     Reshape frequency tensor for broadcasting it with another tensor.
 
@@ -297,7 +299,7 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Forward pass of the attention module.
 
@@ -432,7 +434,7 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Perform a forward pass through the TransformerBlock.
 
@@ -537,7 +539,7 @@ class Transformer(nn.Module):
             b=cutoff_factor * final_out_std,
         )
 
-    def forward(self, tokens: torch.Tensor):
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         """
         Perform a forward pass through the Transformer model.
 

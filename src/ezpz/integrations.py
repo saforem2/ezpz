@@ -1,3 +1,5 @@
+from typing import Any
+
 import pandas as pd
 from transformers.integrations import WandbCallback
 
@@ -13,31 +15,34 @@ class WandbPredictionProgressCallback(WandbCallback):
     """Custom WandbCallback to log model predictions during training.
 
     This callback logs model predictions and labels to a wandb.Table at each
-    logging step during training. It allows to visualize the
-    model predictions as the training progresses.
+    logging step during training. It allows visualization of the
+    model predictions as training progresses.
 
     Attributes:
-        trainer (Trainer): The Hugging Face Trainer instance.
-        tokenizer (AutoTokenizer): The tokenizer associated with the model.
-        sample_dataset (Dataset): A subset of the validation dataset
-          for generating predictions.
-        num_samples (int, optional): Number of samples to select from
-          the validation dataset for generating predictions. Defaults to 100.
-        freq (int, optional): Frequency of logging. Defaults to 2.
+        trainer: Hugging Face Trainer instance.
+        tokenizer: Tokenizer associated with the model.
+        sample_dataset: Subset of the validation dataset for predictions.
+        num_samples: Number of samples to select from validation for predictions.
+        freq: Frequency of logging (epochs).
     """
 
-    def __init__(self, trainer, tokenizer, val_dataset, num_samples=100, freq=2):
+    def __init__(
+        self,
+        trainer: Any,
+        tokenizer: Any,
+        val_dataset: Any,
+        num_samples: int = 100,
+        freq: int = 2,
+    ):
         """Initializes the WandbPredictionProgressCallback instance.
 
         Args:
-            trainer (Trainer): The Hugging Face Trainer instance.
-            tokenizer (AutoTokenizer): The tokenizer associated
-              with the model.
-            val_dataset (Dataset): The validation dataset.
-            num_samples (int, optional): Number of samples to select from
-              the validation dataset for generating predictions.
-              Defaults to 100.
-            freq (int, optional): Frequency of logging. Defaults to 2.
+            trainer: Hugging Face Trainer instance.
+            tokenizer: Tokenizer associated with the model.
+            val_dataset: Validation dataset.
+            num_samples: Number of samples to select from validation
+                for generating predictions. Defaults to 100.
+            freq: Frequency of logging. Defaults to 2.
         """
         super().__init__()
         self.trainer = trainer
