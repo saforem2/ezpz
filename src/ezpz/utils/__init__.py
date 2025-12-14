@@ -1,11 +1,13 @@
 """
 ezpz/utils/__init__.py
 """
+from __future__ import annotations
 
 import logging
 import os
 import pdb
 import re
+from typing import Any
 import sys
 from dataclasses import asdict
 
@@ -22,6 +24,14 @@ from torchinfo import ModelStatistics
 import ezpz
 from ezpz.configs import PathLike, ScalarLike, ZeroConfig
 from ezpz.utils.dummies import DummyMPI, DummyTorch
+
+import math
+
+import numpy as np
+
+ScalarLike = Any  # keep your existing alias if you already have one
+
+
 
 # import torch.distributed as tdist
 
@@ -131,36 +141,105 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
         now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
     )
 
+def format_pair(k: str, v: Any, precision: int = 6) -> str:
+    """Format a key-value pair (supports nested dict/list/tuple/set).
 
-def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
-    """Format a key-value pair as a string.
+    Nested dicts become dotted keys:  key.subkey=value
+    Sequences become indexed keys:    key[0]=value
 
-    Formats a key-value pair where the value can be an integer, boolean, or float.
-    Integers and booleans are formatted without decimal places, while floats are
-    formatted with the specified precision.
-
-    Args:
-        k (str): The key/name of the parameter.
-        v (ScalarLike): The value to format (int, bool, float, or numpy scalar).
-        precision (int, optional): Number of decimal places for float values.
-            Defaults to 6.
-
-    Returns:
-        str: Formatted key-value pair string in the format "key=value".
-
-    Example:
-        >>> format_pair("lr", 0.001)
-        'lr=0.001000'
-        >>> format_pair("epochs", 10)
-        'epochs=10'
-        >>> format_pair("verbose", True)
-        'verbose=True'
+    Returns a newline-joined string if multiple leaf pairs are produced.
     """
-    if isinstance(v, (int, bool, np.integer)):
-        # return f'{k}={v:<3}'
-        return f"{k}={v}"
-    # return f'{k}={v:<3.4f}'
-    return f"{k}={v:<.{precision}f}"
+
+    def _is_int_like(x: Any) -> bool:
+        return isinstance(x, (bool, int, np.integer)) and not isinstance(x, (bool,)) is False  # keep bool distinct below
+
+    def _is_bool_like(x: Any) -> bool:
+        return isinstance(x, (bool, np.bool_))
+
+    def _is_float_like(x: Any) -> bool:
+        return isinstance(x, (float, np.floating))
+
+    def _scalar_str(key: str, val: Any) -> str:
+        # numpy scalar -> python scalar (helps consistent isinstance checks)
+        if isinstance(val, np.generic):
+            val = val.item()
+
+        if _is_bool_like(val):
+            return f"{key}={bool(val)}"
+
+        if isinstance(val, (int, np.integer)):
+            return f"{key}={int(val)}"
+
+        if isinstance(val, float):
+            # be explicit for non-finite floats (avoids ValueError with format spec)
+            if not math.isfinite(val):
+                return f"{key}={val}"
+            return f"{key}={val:.{precision}f}"
+
+        # fallback: strings, None, objects, etc.
+        return f"{key}={val}"
+
+    def _flatten(key: str, val: Any) -> list[str]:
+        # numpy scalar -> python scalar early
+        if isinstance(val, np.generic):
+            val = val.item()
+
+        if isinstance(val, dict):
+            out: list[str] = []
+            for kk, vv in val.items():
+                out.extend(_flatten(f"{key}.{kk}", vv))
+            return out
+
+        if isinstance(val, (list, tuple)):
+            out: list[str] = []
+            for i, vv in enumerate(val):
+                out.extend(_flatten(f"{key}[{i}]", vv))
+            return out
+
+        if isinstance(val, set):
+            # sets are unordered; make deterministic
+            out: list[str] = []
+            for i, vv in enumerate(sorted(val, key=lambda x: repr(x))):
+                out.extend(_flatten(f"{key}[{i}]", vv))
+            return out
+
+        return [_scalar_str(key, val)]
+
+    return "\n".join(_flatten(k, v))
+
+# def format_pair1(k: str, v: ScalarLike, precision: int = 6) -> str:
+#     """Format a key-value pair as a string.
+#
+#     Formats a key-value pair where the value can be an integer, boolean, or float.
+#     Integers and booleans are formatted without decimal places, while floats are
+#     formatted with the specified precision.
+#
+#     Args:
+#         k (str): The key/name of the parameter.
+#         v (ScalarLike): The value to format (int, bool, float, or numpy scalar).
+#         precision (int, optional): Number of decimal places for float values.
+#             Defaults to 6.
+#
+#     Returns:
+#         str: Formatted key-value pair string in the format "key=value".
+#
+#     Example:
+#         >>> format_pair("lr", 0.001)
+#         'lr=0.001000'
+#         >>> format_pair("epochs", 10)
+#         'epochs=10'
+#         >>> format_pair("verbose", True)
+#         'verbose=True'
+#     """
+#     # handle the case when v is a (potentially nested) {list, dict, ...}
+#     if isinstance(v, (list, dict)):
+#
+#
+#     if isinstance(v, (int, bool, np.integer)):
+#         # return f'{k}={v:<3}'
+#         return f"{k}={v}"
+#     # return f'{k}={v:<3.4f}'
+#     return f"{k}={v:<.{precision}f}"
 
 
 def summarize_dict(
