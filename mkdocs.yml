@@ -115,7 +115,7 @@ extra_css:
   - stylesheets/one-light.css
   - stylesheets/atom-one-dark-reasonable.css
   - stylesheets/custom.css
-  - stylesheets/fonts.css
+  - overrides/fonts.css
   # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css
   - https://iosevka-webfonts.github.io/iosevka/Iosevka.css
   - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css
@@ -139,6 +139,7 @@ extra_javascript:
   # - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
   # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js
   # - javascripts/config.js
+  - WIP/javascripts/mermaid-init.js
 
 markdown_extensions:
   # Python Markdown
@@ -175,7 +176,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:mermaid2.fence_mermaid_custom
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
   - pymdownx.arithmatex:
       generic: true
@@ -196,6 +197,77 @@ markdown_extensions:
 nav:
   - Home: index.md
   - FAQ: faq.md
+  - WIP Docs:
+      - Overview: WIP/index.md
+      - Quickstart: WIP/quickstart.md
+      - README (Draft): WIP/readme-draft.md
+      - Architecture: WIP/architecture.md
+      - CLI: WIP/launch.md
+      - Systems: WIP/systems.md
+      - FAQ (WIP): WIP/faq.md
+      - Tests: WIP/tests/index.md
+      - Release: WIP/release.md
+      - 🐍 Python API:
+          - ezpz: WIP/Code-Reference/ezpz.md
+          - Runtime: WIP/Code-Reference/runtime.md
+          - Train: WIP/Code-Reference/train.md
+          - History: WIP/Code-Reference/history.md
+          - Profile: WIP/Code-Reference/profile.md
+          - Plot: WIP/Code-Reference/plot.md
+          - TPlot: WIP/Code-Reference/tplot.md
+          - Examples:
+              - WIP/Code-Reference/examples/index.md
+              - generate: WIP/Code-Reference/examples/generate.md
+              - hf_trainer: WIP/Code-Reference/examples/hf_trainer.md
+              - vit: WIP/Code-Reference/examples/vit.md
+              - fsdp: WIP/Code-Reference/examples/fsdp.md
+              - fsdp_tp: WIP/Code-Reference/examples/fsdp_tp.md
+              - diffusion: WIP/Code-Reference/examples/diffusion.md
+              - generate_tui: WIP/Code-Reference/examples/generate_tui.md
+              - minimal: WIP/Code-Reference/examples/minimal.md
+          - Data:
+              - WIP/Code-Reference/data/index.md
+              - distributed: WIP/Code-Reference/data/distributed.md
+              - hf: WIP/Code-Reference/data/hf.md
+              - llama: WIP/Code-Reference/data/llama.md
+              - text: WIP/Code-Reference/data/text.md
+              - vision: WIP/Code-Reference/data/vision.md
+          - Log:
+              - WIP/Code-Reference/log/index.md
+              - config: WIP/Code-Reference/log/config.md
+              - console: WIP/Code-Reference/log/console.md
+              - dataframe: WIP/Code-Reference/log/dataframe.md
+              - handler: WIP/Code-Reference/log/handler.md
+              - style: WIP/Code-Reference/log/style.md
+              - test: WIP/Code-Reference/log/test.md
+              - test_log: WIP/Code-Reference/log/test_log.md
+          - Models:
+              - WIP/Code-Reference/models/index.md
+              - attention: WIP/Code-Reference/models/attention.md
+              - llama: WIP/Code-Reference/models/llama.md
+              - minimal: WIP/Code-Reference/models/minimal.md
+          - TP:
+              - WIP/Code-Reference/tp/index.md
+              - layers: WIP/Code-Reference/tp/layers.md
+              - mappings: WIP/Code-Reference/tp/mappings.md
+              - utils: WIP/Code-Reference/tp/utils.md
+          - Utils:
+              - WIP/Code-Reference/utils.md
+              - dummies: WIP/Code-Reference/utils/dummies.md
+              - tar_env: WIP/Code-Reference/utils/tar_env.md
+              - yeet_env: WIP/Code-Reference/utils/yeet_env.md
+              - yeet_tarball: WIP/Code-Reference/utils/yeet_tarball.md
+          - Configs: WIP/Code-Reference/configs.md
+          - Dist: WIP/Code-Reference/dist.md
+          - Jobs: WIP/Code-Reference/jobs.md
+          - Launch: WIP/Code-Reference/launch.md
+          - Test Dist: WIP/Code-Reference/test_dist.md
+          - Test: WIP/Code-Reference/test.md
+          - PBS: WIP/Code-Reference/pbs.md
+          - SLURM: WIP/Code-Reference/slurm.md
+          - Integrations: WIP/Code-Reference/integrations.md
+          - Lazy: WIP/Code-Reference/lazy.md
+          - Model: WIP/Code-Reference/model.md
   - Guides:
       - 🚀 Launch: launch.md
       - 🤗 HF Trainer: hf-trainer.md
