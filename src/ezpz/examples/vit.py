@@ -28,7 +28,7 @@ logger = ezpz.get_logger(__name__)
 try:
     import wandb
 except Exception:
-    wandb = None
+    wandb = None  # type:ignore
     logger.warning("Failed to import wandb")
 
 try:
