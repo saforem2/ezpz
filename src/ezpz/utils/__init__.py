@@ -189,7 +189,7 @@ def summarize_dict(
 
 
 def model_summary(
-    model,
+    model: Any,
     verbose: bool = False,
     depth: int = 1,
     input_size: Optional[Sequence[int]] = None,
@@ -629,7 +629,7 @@ def get_bf16_config_json(
 
 def get_fp16_config_json(
     enabled: bool = True,
-):
+) -> dict[str, bool]:
     """
     Get the deepspeed fp16 config json.
 
@@ -682,7 +682,7 @@ def get_deepspeed_config_json(
     save_config: bool = True,
     output_file: Optional[str] = None,
     output_dir: Optional[PathLike] = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Write a deepspeed config to the output directory.
     """
