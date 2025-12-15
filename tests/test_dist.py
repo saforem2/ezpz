@@ -1,18 +1,8 @@
 """Tests for the ezpz.dist module."""
 
-import os
-
-import pytest
-
-try:
-    import ezpz.dist as dist
-
-    DIST_AVAILABLE = True
-except ImportError:
-    DIST_AVAILABLE = False
+import ezpz.dist as dist
 
 
-@pytest.mark.skipif(not DIST_AVAILABLE, reason="ezpz.dist not available")
 class TestDist:
     def test_get_rank(self):
         """Test get_rank function."""
