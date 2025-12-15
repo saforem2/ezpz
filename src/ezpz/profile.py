@@ -288,7 +288,7 @@ def get_torch_profiler(
         with_stack=with_stack,
         with_flops=with_flops,
         with_modules=with_modules,
-        use_cuda=(torch.cuda.is_available()),
+        # use_cuda=(torch.cuda.is_available()),
         # acc_events=acc_events,
     )
 
