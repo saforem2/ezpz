@@ -8,15 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 
-try:
-    import ezpz.launch as launch
+import ezpz.launch as launch
+# try:
+#     import ezpz.launch as launch
+#
+#     LAUNCH_AVAILABLE = True
+# except ImportError:
+#     LAUNCH_AVAILABLE = False
 
-    LAUNCH_AVAILABLE = True
-except ImportError:
-    LAUNCH_AVAILABLE = False
 
-
-@pytest.mark.skipif(not LAUNCH_AVAILABLE, reason="ezpz.launch not available")
 class TestLaunch:
     def test_command_exists(self):
         """Test command_exists function."""
@@ -28,7 +28,7 @@ class TestLaunch:
 
     def test_get_scheduler(self):
         """Test get_scheduler function."""
-        scheduler = launch.get_scheduler()
+        scheduler = launch.get_scheduler("SLURM")
         assert isinstance(scheduler, str)
         # Should be one of the known schedulers or "UNKNOWN"
         assert scheduler in ["PBS", "SLURM", "UNKNOWN"]
@@ -43,7 +43,7 @@ class TestLaunch:
         """Test get_scheduler function with PBS environment."""
         # Set PBS environment variables
         os.environ["PBS_JOBID"] = "test.job"
-        scheduler = launch.get_scheduler()
+        scheduler = launch.get_scheduler("PBS")
         assert scheduler == "PBS"
 
     def test_get_scheduler_from_slurm(self):
@@ -53,7 +53,7 @@ class TestLaunch:
 
         # Set SLURM environment variables
         os.environ["SLURM_JOB_ID"] = "test.job"
-        scheduler = launch.get_scheduler()
+        scheduler = launch.get_scheduler("SLURM")
         assert scheduler == "SLURM"
 
         # Restore original environment
