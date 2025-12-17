@@ -1,6 +1,7 @@
 """
 ezpz/utils/__init__.py
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,6 @@ import math
 import numpy as np
 
 ScalarLike = Any  # keep your existing alias if you already have one
-
 
 
 # import torch.distributed as tdist
@@ -141,6 +141,7 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
         now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
     )
 
+
 def format_pair(k: str, v: Any, precision: int = 6) -> str:
     """Format a key-value pair (supports nested dict/list/tuple/set).
 
@@ -151,7 +152,10 @@ def format_pair(k: str, v: Any, precision: int = 6) -> str:
     """
 
     def _is_int_like(x: Any) -> bool:
-        return isinstance(x, (bool, int, np.integer)) and not isinstance(x, (bool,)) is False  # keep bool distinct below
+        return (
+            isinstance(x, (bool, int, np.integer))
+            and not isinstance(x, (bool,)) is False
+        )  # keep bool distinct below
 
     def _is_bool_like(x: Any) -> bool:
         return isinstance(x, (bool, np.bool_))
@@ -206,6 +210,7 @@ def format_pair(k: str, v: Any, precision: int = 6) -> str:
         return [_scalar_str(key, val)]
 
     return "\n".join(_flatten(k, v))
+
 
 # def format_pair1(k: str, v: ScalarLike, precision: int = 6) -> str:
 #     """Format a key-value pair as a string.
@@ -303,24 +308,9 @@ def model_summary(
 
 
 def normalize(name: str) -> str:
-    """Normalize a name by replacing special characters with dashes and converting to lowercase.
-
-    This function replaces hyphens, underscores, and periods with single dashes,
-    then converts the result to lowercase.
-
-    Args:
-        name (str): The name to normalize.
-
-    Returns:
-        str: The normalized name with only lowercase letters, numbers, and dashes.
-
-    Example:
-        >>> normalize("Test_Name.Sub-Name")
-        'test-name-sub-name'
-        >>> normalize("example__file..name")
-        'example-file-name'
-    """
-    return re.sub(r"[-_.]+", "-", name).lower()
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name)
+    return name.strip("-")
 
 
 def get_max_memory_allocated(device: torch.device) -> float:
