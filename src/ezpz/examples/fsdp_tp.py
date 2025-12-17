@@ -18,7 +18,7 @@ separate parallel dimensions:
     Data Parallel ("dp") across hosts
     Tensor Parallel ("tp") within each host
 
- We use a simple diagram to illustrate below:
+We use a simple diagram to illustrate below:
 
 +-----.-----+-----+-----+
 |  0  |  1  |  2  |  3  |
