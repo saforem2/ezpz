@@ -21,54 +21,12 @@ if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
 	shopt -s expand_aliases
 fi
 
-if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
-	# Enable color support for `ls` and `grep`
-	# shopt -s dircolors
-	# shopt -s colorize
-	# shopt -s colorize_grep
-	export RESET=''
-	export BLACK=''
-	export RED=''
-	export BRIGHT_RED=''
-	export GREEN=''
-	export BRIGHT_GREEN=''
-	export YELLOW=''
-	export BRIGHT_YELLOW=''
-	export BLUE=''
-	export BRIGHT_BLUE=''
-	export MAGENTA=''
-	export BRIGHT_MAGENTA=''
-	export CYAN=''
-	export BRIGHT_CYAN=''
-	export WHITE=''
-	export BRIGHT_WHITE=''
-else
-	# --- Color Codes ---
-	# Usage: printf "${RED}This is red text${RESET}\n"
-	export RESET='\e[0m'
-	# BLACK='\e[1;30m' # Avoid black text
-	export RED='\e[1;31m'
-	export BRIGHT_RED='\e[1;91m'
-	export GREEN='\e[1;32m'
-	export BRIGHT_GREEN='\e[1;92m'
-	export YELLOW='\e[1;33m'
-	export BRIGHT_YELLOW='\e[1;93m'
-	export BLUE='\e[1;34m'
-	export BRIGHT_BLUE='\e[1;94m'
-	export MAGENTA='\e[1;35m'
-	export BRIGHT_MAGENTA='\e[1;95m'
-	export CYAN='\e[1;36m'
-	export BRIGHT_CYAN='\e[1;96m'
-	export WHITE='\e[1;37m'        # Avoid white on light terminals
-	export BRIGHT_WHITE='\e[1;97m' # Added for emphasis
-fi
-
 # --- Helper Functions ---
 
 # # Set the default log level to INFO if the
 # # environment variable isn't already set.
-DEFAULT_LOG_LEVEL="${DEFAULT_LOG_LEVEL:-INFO}"
-export DEFAULT_LOG_LEVEL
+EZPZ_LOG_LEVEL="${EZPZ_LOG_LEVEL:-INFO}"
+export EZPZ_LOG_LEVEL
 
 log_info() {
 	args=("$@")
@@ -97,7 +55,7 @@ log_message() {
 	local string="$*"
 	local date
 	date=$(ezpz_get_tstamp)
-	local log_level="${level:-$DEFAULT_LOG_LEVEL}"
+	local log_level="${level:-$EZPZ_LOG_LEVEL}"
 	case "${log_level}" in
 	D) log_level="${CYAN}D${RESET}" ;;
 	DEBUG) log_level="${CYAN}D${RESET}" ;;
@@ -391,6 +349,7 @@ ezpz_reset() {
 		"CONDA_SHLVL"
 		"DEFAULT_PYTHON_VERSION"
 		"DIST_LAUNCH"
+		"EZPZ_LOG_LEVEL"
 		"GPU_TYPE"
 		"HOSTFILE"
 		"HOSTS"
@@ -409,12 +368,28 @@ ezpz_reset() {
 		"VIRTUAL_ENV"
 		"VIRTUAL_ENV_PROMPT"
 		"WORLD_SIZE"
+		"WORKING_DIR"
+		# "RESET"
+		# "RED"
+		# "BRIGHT_RED"
+		# "GREEN"
+		# "BRIGHT_GREEN"
+		# "YELLOW"
+		# "BRIGHT_YELLOW"
+		# "BLUE"
+		# "BRIGHT_BLUE"
+		# "MAGENTA"
+		# "BRIGHT_MAGENTA"
+		# "CYAN"
+		# "BRIGHT_CYAN"
+		# "WHITE"
+		# "BRIGHT_WHITE"
 	)
 	for v in "${vars[@]}"; do
 		echo "Unsetting ${v}"
 		unset -v "${v}"
 	done
-	log_message INFO "Resetting PBS-related environment variables..."
+	log_message INFO "ezpz_reset completed!"
 }
 
 ######################################
@@ -901,28 +876,99 @@ ezpz_install_micromamba() {
 	fi
 }
 
+# Function to setup (build + activate) a new `uv` virtual environment.
+#
+# - Usage:
+#
+#  `ezpz_build_new_uv_venv [<venv_dir>] [<python_version>]`
+#
+#   - Parameters:
+#     - `<python_version>`: Optional Python version to use for the environment.
+#       - If not specified, it defaults to the value of `${DEFAULT_PYTHON_VERSION:-3.12}`.
+#     - `<venv_dir>`: Directory to create the virtual environment in.
+#       - If not specified, it will be placed in the working directory.
+#
+# - Side Effects:
+#  - Installs `uv` if not already installed.
+#  - Prints status messages.
+#  - Example:
+#
+#    ```bash
+#    ezpz_build_new_uv_venv 3.10 ~/.venv
+#    ```
+#
+#  - Relies on:
+#    - `uv` command must be available or will be installed.
+ezpz_setup_new_uv_venv() {
+	if ! command -v uv &>/dev/null; then
+		log_message INFO "uv already installed. Skipping..."
+	else
+		log_message INFO "Installing uv..."
+		ezpz_install_uv
+	fi
+	if [[ "$#" -eq 2 ]]; then
+		py_version="$1"
+		venv_dir="$2"
+		log_message INFO "  - Using python version: ${CYAN}${py_version}${RESET}"
+		log_message INFO "  - Using venv directory: ${CYAN}${venv_dir}${RESET}"
+	elif [[ "$#" -eq 1 ]]; then
+		py_version="$1"
+		venv_dir="${WORKING_DIR:-$(pwd)}/venvs/$(ezpz_get_machine_name)/py${py_version:-${DEFAULT_PYTHON_VERSION:-3.12}}"
+		log_message INFO "  - Using python version: ${CYAN}${py_version}${RESET}"
+	else
+		py_version="${DEFAULT_PYTHON_VERSION:-3.12}"
+		venv_dir="${WORKING_DIR:-$(pwd)}/venvs/$(ezpz_get_machine_name)/py${py_version:-${DEFAULT_PYTHON_VERSION:-3.12}}"
+		log_message INFO "  - Using default python version: ${CYAN}python${DEFAULT_PYTHON_VERSION:-3.12}${RESET}"
+	fi
+	fpactivate="${venv_dir}/bin/activate"
+	if [[ -f "${fpactivate}" ]]; then
+		log_message INFO "  - Venv already exists at: ${CYAN}${venv_dir}${RESET}."
+		log_message INFO "  - Activating existing venv..."
+		source "${fpactivate}" && return 0
+	else
+		log_message INFO "  - Creating (new) venv in ${venv_dir}..."
+		uv venv --python="python${py_version}" --system-site-packages "${venv_dir}"
+		source "${fpactivate}" && return 0
+	fi
+}
+
 # Function to set up a Python virtual environment using `uv`.
+#
 # - Relies on:
 #   - `uv` command must be available.
 #   - `CONDA_PREFIX` environment variable must be set.
 #   - `WORKING_DIR` environment variable must be set.
 #   - `python3` command must exist and point to the Conda Python.
+#
 # - Usage:
+#
 #   `ezpz_setup_uv_venv`
+#
 # - Side Effects:
-#   Creates a virtual environment under "${WORKING_DIR}/venvs/".
-#   Activates the created virtual environment. Prints status messages.
-#   Returns 1 on failure. Exports CONDA_NAME, VENV_DIR.
+#   - Creates a virtual environment under "${WORKING_DIR}/venvs/".
+#   - Activates the created virtual environment. Prints status messages.
+#   - Returns 1 on failure.
+#   - Exports CONDA_NAME, VENV_DIR.
 ezpz_setup_uv_venv() {
-	if [[ -n "$(command -v uv)" ]]; then
+	if ! command -v uv &>/dev/null; then
 		echo "uv already installed. Skipping..."
 	else
 		echo "Installing uv..."
 		ezpz_install_uv
 	fi
 	if [[ -z "${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE}}}" ]]; then
-		log_message ERROR "  - CONDA_PREFIX is not set. Cannot create venv."
-		return 1
+		WORKING_DIR="${WORKING_DIR:-$(pwd)}"
+		log_message ERROR "  - None of {CONDA_PREFIX, PYTHON_ROOT, PYTHONUSERBASE} are set."
+		log_message WARN " - Creating (NEW!) venv without conda base. This may lead to unexpected behavior."
+		if [[ "$#" -eq 1 ]]; then
+			py_version="$1"
+			log_message INFO "  - Using python version: ${CYAN}${py_version}${RESET}"
+			CONDA_PREFIX="python${py_version}"
+		else
+			log_message INFO "  - Using default python version: ${CYAN}python${DEFAULT_PYTHON_VERSION:-3.12}${RESET}"
+			CONDA_PREFIX="python${DEFAULT_PYTHON_VERSION:-3.12}"
+		fi
+		# return 1
 	else
 		log_message INFO "  - Found conda at ${CYAN}${CONDA_PREFIX}${RESET}"
 		CONDA_NAME=$(basename "${CONDA_PREFIX}") && export CONDA_NAME
@@ -936,15 +982,17 @@ ezpz_setup_uv_venv() {
 	fi
 	local mn
 	local env_name
-	env_name=$(basename "${CONDA_PREFIX}")
 	local ptmodstr
+	mn=$(ezpz_get_machine_name)
+	env_name=$(basename "${CONDA_PREFIX}")
+
 	ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
 	if [[ -n "${ptmodstr}" ]]; then
 		env_name="${env_name}-pt$(basename "${ptmodstr}")"
 	fi
-	VENV_DIR="${WORKING_DIR}/venvs/$(ezpz_get_machine_name)/${env_name}"
+
+	VENV_DIR="${WORKING_DIR:-$(pwd)}/venvs/$(ezpz_get_machine_name)/${env_name}"
 	fpactivate="${VENV_DIR}/bin/activate"
-	mn=$(ezpz_get_machine_name)
 	[ ! -f "${fpactivate}" ] && log_message INFO "  - Creating venv in ${VENV_DIR} on ${mn}..." && uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
 	# shellcheck disable=SC1090
 	[ -f "${fpactivate}" ] && log_message INFO "  - Activating: ${fpactivate}" && source "${fpactivate}"
@@ -1100,6 +1148,7 @@ ezpz_setup_uv_venv() {
 #          return 0
 #     fi
 # }
+#
 
 # -----------------------------------------------------------------------------
 # @description Set up a standard Python `venv` on top of an active Conda environment.
@@ -1162,11 +1211,14 @@ ezpz_setup_venv_from_conda() {
 				log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in ${VENV_DIR}..."
 				if command -v uv >/dev/null 2>&1; then
 					log_message INFO "  - Using uv for venv creation"
-					uv venv --python=$(which python3) --system-site-packages "${VENV_DIR}"
 				else
-					log_message INFO "  - Using python for venv creation"
-					python3 -m venv "${VENV_DIR}" --system-site-packages
+					log_message INFO "  - uv not found, installing..."
+					ezpz_install_uv
+					# else
+					# log_message INFO "  - Using python for venv creation"
+					# python3 -m venv "${VENV_DIR}" --system-site-packages
 				fi
+				uv venv --python=$(which python3) --system-site-packages "${VENV_DIR}"
 				# shellcheck disable=SC1090,SC1091
 				source "${VENV_DIR}/bin/activate" || {
 					log_message ERROR "  - Failed to source ${fpactivate} after creation."
@@ -1420,8 +1472,20 @@ ezpz_setup_python() {
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		ezpz_setup_python_alcf
+		return 0
 	elif [[ "${scheduler_type}" == "slurm" ]]; then
 		ezpz_setup_python_nersc
+		return 0
+	else
+		# if [[ "${scheduler_type}" == "unknown" ]]; then
+		log_message WARN "  - Unable to determine scheduler type."
+		log_message INFO "  - Using uv to create a virtual environment with PYTHON_VERSION=${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"
+		if ! ezpz_setup_new_uv_venv >"${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"; then
+			log_message ERROR "  - ezpz_setup_new_uv_venv failed."
+			return 1
+		else
+			return 0
+		fi
 	fi
 }
 
@@ -2658,6 +2722,44 @@ ezpz_get_cpu_bind_aurora() {
 ###############################################
 # Helper functions for printing colored text
 ###############################################
+if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
+	RESET=''
+	BLACK=''
+	RED=''
+	BRIGHT_RED=''
+	GREEN=''
+	BRIGHT_GREEN=''
+	YELLOW=''
+	BRIGHT_YELLOW=''
+	BLUE=''
+	BRIGHT_BLUE=''
+	MAGENTA=''
+	BRIGHT_MAGENTA=''
+	CYAN=''
+	BRIGHT_CYAN=''
+	WHITE=''
+	BRIGHT_WHITE=''
+else
+	# --- Color Codes ---
+	# Usage: printf "${RED}This is red text${RESET}\n"
+	RESET='\e[0m'
+	# BLACK='\e[1;30m' # Avoid black text
+	RED='\e[1;31m'
+	BRIGHT_RED='\e[1;91m'
+	GREEN='\e[1;32m'
+	BRIGHT_GREEN='\e[1;92m'
+	YELLOW='\e[1;33m'
+	BRIGHT_YELLOW='\e[1;93m'
+	BLUE='\e[1;34m'
+	BRIGHT_BLUE='\e[1;94m'
+	MAGENTA='\e[1;35m'
+	BRIGHT_MAGENTA='\e[1;95m'
+	CYAN='\e[1;36m'
+	BRIGHT_CYAN='\e[1;96m'
+	WHITE='\e[1;37m'        # Avoid white on light terminals
+	BRIGHT_WHITE='\e[1;97m' # Added for emphasis
+fi
+
 printBlack() {
 	printf "\e[1;30m%s\e[0m\n" "$@"
 }
@@ -2705,9 +2807,15 @@ ezpz_check_working_dir_slurm() {
 }
 
 ezpz_check_working_dir() {
-	GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
 	WORKING_DIR=$(ezpz_get_working_dir)
 	export WORKING_DIR="${WORKING_DIR}"
+
+	if [[ -d .git ]]; then
+		GIT_COMMIT_HASH=$(git rev-parse HEAD) && export GIT_COMMIT_HASH
+		GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
+	else
+		log_message WARN "No .git directory found in WORKING_DIR (${GREEN}${WORKING_DIR}${RESET}). Skipping Git info export."
+	fi
 
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
