@@ -30,9 +30,6 @@ import ezpz
 from ezpz.configs import PathLike
 from ezpz.profile import get_profiling_context
 
-# import torch.distributed
-
-
 START_TIME = time.perf_counter()  # start time
 
 # noqa: E402
