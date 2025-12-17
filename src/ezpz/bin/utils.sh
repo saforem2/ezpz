@@ -72,7 +72,9 @@ ezpz_has() { command -v "$1" >/dev/null 2>&1; }
 
 ezpz_realpath() {
   # realpath isn't always there (mac, minimal images)
-  if ezpz_has realpath; then realpath "$1"; else python3 -c 'import os,sys;print(os.path.abspath(sys.argv[1]))' "$1"; fi
+  # if ezpz_has realpath; then realpath "$1"; else python3 -c 'import os,sys;print(os.path.abspath(sys.argv[1]))' "$1"; fi
+  # p
+  python3 -c 'import os,sys;print(os.path.abspath(sys.argv[1]))' "$1"
 }
 
 ezpz_require_file() {
@@ -1011,10 +1013,10 @@ ezpz_install_micromamba() {
 ezpz_ensure_uv() {
   if command -v uv &>/dev/null; then
     log_message INFO "uv already installed at: $(command -v uv)"
-    return 0
+  else
+    log_message INFO "Installing uv..."
+    ezpz_install_uv
   fi
-  log_message INFO "Installing uv..."
-  ezpz_install_uv
 }
 
 # Function to setup (build + activate) a new `uv` virtual environment.
@@ -1057,7 +1059,6 @@ ezpz_setup_new_uv_venv() {
     venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
   fi
 
-  venv_dir="$(ezpz_realpath "${venv_dir}")"
   fpactivate="${venv_dir}/bin/activate"
 
   if [[ -f "${fpactivate}" ]]; then
@@ -2975,6 +2976,10 @@ if [[ -n "${EZPZ_CHECK_WORKING_DIR:-}" ]]; then
 	if ! ezpz_check_working_dir; then
 		log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
 	fi
+fi
+
+if [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+  unsetopt KSH_ARRAYS
 fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
