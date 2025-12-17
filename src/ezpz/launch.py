@@ -29,11 +29,11 @@ def command_exists(cmd: str) -> bool:
     return _command_exists(cmd)
 
 
-def get_scheduler() -> str:
+def get_scheduler(_scheduler: Optional[str] = None) -> str:
     """Delegate scheduler detection to the configs module."""
     from ezpz.configs import get_scheduler as _get_scheduler
 
-    return _get_scheduler()
+    return _get_scheduler(_scheduler=_scheduler)
 
 
 def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
