@@ -104,9 +104,12 @@ def cmd_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def get_scheduler() -> str:
+def get_scheduler(_scheduler: Optional[str] = None) -> str:
     """Infer the active scheduler from environment variables or hostname."""
     from ezpz import get_hostname, get_machine
+    if _scheduler is not None:
+        log.info(f"Using user-specified scheduler: {_scheduler}")
+        return _scheduler.upper()
 
     if os.environ.get("PBS_JOBID"):
         return "PBS"
