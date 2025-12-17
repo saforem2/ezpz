@@ -1513,23 +1513,6 @@ def setup_torch(
     # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
     if torch.xpu.is_available():
         torch.xpu.set_device(local_rank)
-        # try:
-        #     import intel_extension_for_pytorch as ipex  # type:ignore[missingTypeStubs]
-        # except Exception:
-        #     ipex = None
-        # if ipex is not None:
-        #     logger.debug(f"Using ipex from: {ipex.__file__}")
-        #
-        # try:
-        #     import oneccl_bindings_for_pytorch as oneccl_bpt  # type:ignore[missingTypeStubs]
-        # except Exception:
-        #     oneccl_bpt = None
-        # if oneccl_bpt is not None:
-        #     logger.debug(f"Using oneccl_bindings from: {oneccl_bpt.__file__}")
-        #
-        #     # logger.warning(f'Using {get_torch_device()}:{get_local_rank()}')
-        #     # os.environ['CCL_LOCAL_RANK'] = str(local_rank)
-        #     # os.environ['CCL_LOCAL_SIZE'] = str(local_size)
     if seed is not None:
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     if rank == 0:
@@ -2037,7 +2020,7 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
     scheduler = get_scheduler()
     if scheduler.lower() == "unknown":
         logger.debug("Unknown scheduler")
-        hostfile  = Path(os.getcwd()).joinpath("hostfile")
+        hostfile = Path(os.getcwd()).joinpath("hostfile")
         hostfile.touch(exist_ok=True)
         write_localhost_to_hostfile(hostfile=hostfile)
     if scheduler.lower() == "slurm":
