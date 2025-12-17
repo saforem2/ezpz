@@ -3,17 +3,18 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import ezpz.utils as utils
 
 # Mock the problematic imports at the module level
-with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
-    "ezpz.configs.get_scheduler", return_value="UNKNOWN"
-), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
-    try:
-        import ezpz.utils as utils
-
-        UTILS_AVAILABLE = True
-    except ImportError:
-        UTILS_AVAILABLE = False
+# with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+#     "ezpz.configs.get_scheduler", return_value="UNKNOWN"
+# ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
+#     try:
+#         import ezpz.utils as utils
+#
+#         UTILS_AVAILABLE = True
+#     except ImportError:
+#         UTILS_AVAILABLE = False
 
 # Only run property-based tests if hypothesis is available
 try:
@@ -24,11 +25,42 @@ try:
 except ImportError:
     HYPOTHESIS_AVAILABLE = False
 
-if not UTILS_AVAILABLE or not HYPOTHESIS_AVAILABLE:  # pragma: no cover - test guard
+
+    class given:
+        """Dummy given decorator."""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, func):
+            return func
+
+
+    class st:
+        """Dummy strategies."""
+
+        @staticmethod
+        def text(min_size=0):
+            """Dummy text strategy."""
+            return str
+
+        @staticmethod
+        def floats(allow_nan=False, allow_infinity=False):
+            """Dummy floats strategy."""
+            return float
+
+
+if not HYPOTHESIS_AVAILABLE:  # pragma: no cover - test guard
     pytest.skip(
-        "ezpz.utils or hypothesis not available",
+        "hypothesis not available",
         allow_module_level=True,
     )
+
+# if not UTILS_AVAILABLE or not HYPOTHESIS_AVAILABLE:  # pragma: no cover - test guard
+#     pytest.skip(
+#         "ezpz.utils or hypothesis not available",
+#         allow_module_level=True,
+#     )
 
 
 class TestPropertyBased:
