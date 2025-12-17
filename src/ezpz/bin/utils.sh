@@ -20,6 +20,7 @@ if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
 	# Allow aliases to be expanded (needed for `launch` alias)
 	shopt -s expand_aliases
 elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+  setopt LOCAL_OPTIONS # make sure options are local to this script
   setopt KSH_ARRAYS  # arrays are 0-indexed
 fi
 
