@@ -19,7 +19,80 @@ EZPZ_SHELL_TYPE="$(basename "${SHELL}")"
 if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
 	# Allow aliases to be expanded (needed for `launch` alias)
 	shopt -s expand_aliases
+elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+  setopt KSH_ARRAYS  # arrays are 0-indexed
 fi
+
+###############################################
+# Helper functions for printing colored text
+###############################################
+if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
+	RESET=''
+	BLACK=''
+	RED=''
+	BRIGHT_RED=''
+	GREEN=''
+	BRIGHT_GREEN=''
+	YELLOW=''
+	BRIGHT_YELLOW=''
+	BLUE=''
+	BRIGHT_BLUE=''
+	MAGENTA=''
+	BRIGHT_MAGENTA=''
+	CYAN=''
+	BRIGHT_CYAN=''
+	WHITE=''
+	BRIGHT_WHITE=''
+else
+	# --- Color Codes ---
+	# Usage: printf "${RED}This is red text${RESET}\n"
+	RESET='\e[0m'
+	# BLACK='\e[1;30m' # Avoid black text
+	RED='\e[1;31m'
+	BRIGHT_RED='\e[1;91m'
+	GREEN='\e[1;32m'
+	BRIGHT_GREEN='\e[1;92m'
+	YELLOW='\e[1;33m'
+	BRIGHT_YELLOW='\e[1;93m'
+	BLUE='\e[1;34m'
+	BRIGHT_BLUE='\e[1;94m'
+	MAGENTA='\e[1;35m'
+	BRIGHT_MAGENTA='\e[1;95m'
+	CYAN='\e[1;36m'
+	BRIGHT_CYAN='\e[1;96m'
+	WHITE='\e[1;37m'        # Avoid white on light terminals
+	BRIGHT_WHITE='\e[1;97m' # Added for emphasis
+fi
+
+# --- tiny helpers (safe in bash + zsh) ---------------------------------------
+ezpz_is_sourced() { [[ "${BASH_SOURCE[0]:-}" != "${0}" ]]; }
+
+ezpz_has() { command -v "$1" >/dev/null 2>&1; }
+
+ezpz_realpath() {
+  # realpath isn't always there (mac, minimal images)
+  if ezpz_has realpath; then realpath "$1"; else python3 -c 'import os,sys;print(os.path.abspath(sys.argv[1]))' "$1"; fi
+}
+
+ezpz_require_file() {
+  local fp="$1" what="${2:-file}"
+  [[ -n "${fp}" && -f "${fp}" ]] || { log_message ERROR "${what} not found: ${fp}"; return 1; }
+}
+
+ezpz_ensure_uv() {
+  if ezpz_has uv; then
+    log_message INFO "uv already installed at: $(command -v uv)"
+    return 0
+  fi
+  log_message INFO "Installing uv..."
+  ezpz_install_uv
+}
+
+ezpz_ensure_micromamba_hook() {
+  local shell_type
+  shell_type="$(basename "${SHELL:-bash}")"
+  eval "$(micromamba shell hook --shell "${shell_type}")"
+}
 
 # --- Helper Functions ---
 
@@ -44,47 +117,86 @@ log_error() {
 }
 
 # alias log_message='log_message_stdout ${FUNCNAME} ${LINENO}'
-
-# @description Log a message to a file and to standared error.
+#
 log_message() {
-	# local funcname="$1"
-	# local lineno="$2"
-	# local level="$3"
-	local level="$1"
-	shift
-	local string="$*"
-	local date
-	date=$(ezpz_get_tstamp)
-	local log_level="${level:-$EZPZ_LOG_LEVEL}"
-	case "${log_level}" in
-	D) log_level="${CYAN}D${RESET}" ;;
-	DEBUG) log_level="${CYAN}D${RESET}" ;;
-	I) log_level="${GREEN}I${RESET}" ;;
-	INFO) log_level="${GREEN}I${RESET}" ;;
-	W) log_level="${YELLOW}W${RESET}" ;;
-	WARN) log_level="${YELLOW}W${RESET}" ;;
-	WARNING) log_level="${YELLOW}W${RESET}" ;;
-	E) log_level="${RED}E${RESET}" ;;
-	ERROR) log_level="${RED}E${RESET}" ;;
-	F) log_level="${RED}F${RESET}" ;;
-	FATAL) log_level="${RED}F${RESET}" ;;
-	*) log_level="${INFO}I${RESET}" ;; # Default to INFO
-	esac
-	if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
-		log_msg="[${date}][$log_level][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
-	elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
-		local fft
-		if [[ -n "${ZSH_VERSION:-}" ]]; then
-			fft=("${funcfiletrace[@]}")
-		else
-			fft=("${funcfiletrace[@]}")
-		fi
-		log_msg="[${date}][$log_level][${fft[1]}] ${string}"
-	else
-		log_msg="[${date}][$log_level] ${string}"
-	fi
-	echo -e "$log_msg"
+  local level="$1"; shift || true
+  local string="$*"
+  local date log_level log_msg
+  date="$(ezpz_get_tstamp)"
+  log_level="${level:-$EZPZ_LOG_LEVEL}"
+
+  case "${log_level}" in
+    D|DEBUG)   log_level="${CYAN}D${RESET}" ;;
+    I|INFO)    log_level="${GREEN}I${RESET}" ;;
+    W|WARN|WARNING) log_level="${YELLOW}W${RESET}" ;;
+    E|ERROR)   log_level="${RED}E${RESET}" ;;
+    F|FATAL)   log_level="${RED}F${RESET}" ;;
+    *)         log_level="${GREEN}I${RESET}" ;;
+  esac
+
+  if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
+    log_msg="[${date}][${log_level}][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
+  elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+    local fft=("${funcfiletrace[@]}")
+    log_msg="[${date}][${log_level}][${fft[1]}] ${string}"
+  else
+    log_msg="[${date}][${log_level}] ${string}"
+  fi
+
+  # printf is predictable; preserves backslashes unless you add %b intentionally
+  printf "%b\n" "${log_msg}"
 }
+
+# # @description Log a message to a file and to standared error.
+# log_message() {
+# 	# local funcname="$1"
+# 	# local lineno="$2"
+# 	# local level="$3"
+# 	local level="$1"
+# 	shift
+# 	local string="$*"
+# 	local date
+# 	date=$(ezpz_get_tstamp)
+# 	local log_level="${level:-$EZPZ_LOG_LEVEL}"
+# 	case "${log_level}" in
+#   d) log_level="${CYAN}D${RESET}" ;;
+# 	D) log_level="${CYAN}D${RESET}" ;;
+#   debug) log_level="${CYAN}D${RESET}" ;;
+# 	DEBUG) log_level="${CYAN}D${RESET}" ;;
+#   i) log_level="${GREEN}I${RESET}" ;;
+# 	I) log_level="${GREEN}I${RESET}" ;;
+#   info) log_level="${GREEN}I${RESET}" ;;
+# 	INFO) log_level="${GREEN}I${RESET}" ;;
+#   w) log_level="${YELLOW}W${RESET}" ;;
+# 	W) log_level="${YELLOW}W${RESET}" ;;
+#   warn) log_level="${YELLOW}W${RESET}" ;;
+# 	WARN) log_level="${YELLOW}W${RESET}" ;;
+# 	WARNING) log_level="${YELLOW}W${RESET}" ;;
+#   e) log_level="${RED}E${RESET}" ;;
+# 	E) log_level="${RED}E${RESET}" ;;
+#   error) log_level="${RED}E${RESET}" ;;
+# 	ERROR) log_level="${RED}E${RESET}" ;;
+#   f) log_level="${RED}F${RESET}" ;;
+# 	F) log_level="${RED}F${RESET}" ;;
+#   fatal) log_level="${RED}F${RESET}" ;;
+# 	FATAL) log_level="${RED}F${RESET}" ;;
+# 	*) log_level="${GREEN}I${RESET}" ;; # Default to INFO
+# 	esac
+# 	if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
+# 		log_msg="[${date}][$log_level][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
+# 	elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+# 		local fft
+# 		if [[ -n "${ZSH_VERSION:-}" ]]; then
+# 			fft=("${funcfiletrace[@]}")
+# 		else
+# 			fft=("${funcfiletrace[@]}")
+# 		fi
+# 		log_msg="[${date}][$log_level][${fft[1]}] ${string}"
+# 	else
+# 		log_msg="[${date}][$log_level] ${string}"
+# 	fi
+# 	echo -e "$log_msg"
+# }
 
 # --- Global Variables ---
 # These are determined dynamically or expected from the environment
@@ -108,10 +220,11 @@ if [[ -v NOOP ]]; then
 	set -o noexec # Read commands but do not execute them.
 fi
 
-# @description Kill existing mpi processes
 ezpz_kill_mpi() {
-	# find any mpi or python or pals processes and kill them
-	ps aux | grep -E "$USER.+(pals|mpi|python)" | grep -v grep | awk '{print $2}' | xargs -r kill
+  # Kill matching processes owned by $USER (pals|mpi|python), excluding grep itself
+  local pids
+  pids="$(ps -u "${USER}" -o pid=,comm=,args= | awk '/(pals|mpi|python)/ && !/awk/ {print $1}')"
+  [[ -n "${pids}" ]] && echo "${pids}" | xargs -r kill
 }
 
 # Use the first `n` lines from `PBS_NODEFILE` to create a new hostfile
@@ -133,24 +246,42 @@ ezpz_head_n_from_pbs_nodefile() {
 	head -n "${_num_nodes}" "${PBS_NODEFILE}" >"${_of}" && wc -l "${_of}"
 }
 
+
 # Function to use the last `n` lins from `PBS_NODEFILE` to create a new hostfile.
 ezpz_tail_n_from_pbs_nodefile() {
-	if [[ "$#" -ne 1 ]]; then
-		log_message ERROR "Usage: $0 <NHOSTS>"
-		return 1
-	fi
-	local _num_nodes="$1"
-	if [[ -z "${PBS_NODEFILE}" ]]; then
-		log_message ERROR "${RED}PBS_NODEFILE is not set. Cannot tail nodefile.${RESET}"
-		return 1
-	fi
-	if [[ ! -f "${PBS_NODEFILE}" ]]; then
-		log_message ERROR "${RED}PBS_NODEFILE does not exist: ${PBS_NODEFILE}${RESET}"
-		return 1
-	fi
-	_of="nodefile-$((NHOSTS - _num_nodes))-${NHOSTS}"
-	tail -n "${_num_nodes}" "${PBS_NODEFILE}" >"${_of}" && wc -l "${_of}"
+  if [[ "$#" -ne 1 ]]; then
+    log_message ERROR "Usage: $0 <NHOSTS>"
+    return 1
+  fi
+  local _num_nodes="$1"
+  [[ -n "${PBS_NODEFILE:-}" ]] || { log_message ERROR "${RED}PBS_NODEFILE is not set. Cannot tail nodefile.${RESET}"; return 1; }
+  ezpz_require_file "${PBS_NODEFILE}" "PBS_NODEFILE" || return 1
+
+  local total _of
+  total="$(wc -l < "${PBS_NODEFILE}")"
+  _of="nodefile-$((total - _num_nodes))-${total}"
+  tail -n "${_num_nodes}" "${PBS_NODEFILE}" > "${_of}" && wc -l "${_of}"
 }
+
+# ezpz_tail_n_from_pbs_nodefile() {
+# 	if [[ "$#" -ne 1 ]]; then
+# 		log_message ERROR "Usage: $0 <NHOSTS>"
+# 		return 1
+# 	fi
+# 	local _num_nodes="$1"
+# 	if [[ -z "${PBS_NODEFILE}" ]]; then
+# 		log_message ERROR "${RED}PBS_NODEFILE is not set. Cannot tail nodefile.${RESET}"
+# 		return 1
+# 	fi
+# 	if [[ ! -f "${PBS_NODEFILE}" ]]; then
+# 		log_message ERROR "${RED}PBS_NODEFILE does not exist: ${PBS_NODEFILE}${RESET}"
+# 		return 1
+# 	fi
+#   local total
+#   total="$(wc -l < "${PBS_NODEFILE}")"
+#   _of="nodefile-$((total - _num_nodes))-${total}"
+#   tail -n "${_num_nodes}" "${PBS_NODEFILE}" >"${_of}" && wc -l "${_of}"
+# }
 
 # @description Get name of shell.
 # Strip off `/bin/` substr from "${SHELL}" env var and return this string.
@@ -744,7 +875,7 @@ ezpz_setup_conda_sunspot() {
 	###########################
 	# Setup conda on Sunspot
 	###########################
-	if [[ -z "${CONDA_PREEFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
+	if [[ -z "${CONDA_PREFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
 		module load frameworks
 	fi
 }
@@ -876,6 +1007,15 @@ ezpz_install_micromamba() {
 	fi
 }
 
+ezpz_ensure_uv() {
+  if command -v uv &>/dev/null; then
+    log_message INFO "uv already installed at: $(command -v uv)"
+    return 0
+  fi
+  log_message INFO "Installing uv..."
+  ezpz_install_uv
+}
+
 # Function to setup (build + activate) a new `uv` virtual environment.
 #
 # - Usage:
@@ -900,37 +1040,40 @@ ezpz_install_micromamba() {
 #  - Relies on:
 #    - `uv` command must be available or will be installed.
 ezpz_setup_new_uv_venv() {
-	if ! command -v uv &>/dev/null; then
-		log_message INFO "uv already installed. Skipping..."
-	else
-		log_message INFO "Installing uv..."
-		ezpz_install_uv
-	fi
-	if [[ "$#" -eq 2 ]]; then
-		py_version="$1"
-		venv_dir="$2"
-		log_message INFO "  - Using python version: ${CYAN}${py_version}${RESET}"
-		log_message INFO "  - Using venv directory: ${CYAN}${venv_dir}${RESET}"
-	elif [[ "$#" -eq 1 ]]; then
-		py_version="$1"
-		venv_dir="${WORKING_DIR:-$(pwd)}/venvs/$(ezpz_get_machine_name)/py${py_version:-${DEFAULT_PYTHON_VERSION:-3.12}}"
-		log_message INFO "  - Using python version: ${CYAN}${py_version}${RESET}"
-	else
-		py_version="${DEFAULT_PYTHON_VERSION:-3.12}"
-		venv_dir="${WORKING_DIR:-$(pwd)}/venvs/$(ezpz_get_machine_name)/py${py_version:-${DEFAULT_PYTHON_VERSION:-3.12}}"
-		log_message INFO "  - Using default python version: ${CYAN}python${DEFAULT_PYTHON_VERSION:-3.12}${RESET}"
-	fi
-	fpactivate="${venv_dir}/bin/activate"
-	if [[ -f "${fpactivate}" ]]; then
-		log_message INFO "  - Venv already exists at: ${CYAN}${venv_dir}${RESET}."
-		log_message INFO "  - Activating existing venv..."
-		source "${fpactivate}" && return 0
-	else
-		log_message INFO "  - Creating (new) venv in ${venv_dir}..."
-		uv venv --python="python${py_version}" --system-site-packages "${venv_dir}"
-		source "${fpactivate}" && return 0
-	fi
+  ezpz_ensure_uv || return 1
+
+  local py_version venv_dir fpactivate mn
+  mn="$(ezpz_get_machine_name)"
+
+  if [[ "$#" -eq 2 ]]; then
+    py_version="$1"
+    venv_dir="$2"
+  elif [[ "$#" -eq 1 ]]; then
+    py_version="$1"
+    venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
+  else
+    py_version="${DEFAULT_PYTHON_VERSION:-3.12}"
+    venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
+  fi
+
+  venv_dir="$(ezpz_realpath "${venv_dir}")"
+  fpactivate="${venv_dir}/bin/activate"
+
+  if [[ -f "${fpactivate}" ]]; then
+    log_message INFO "  - Venv already exists at: ${CYAN}${venv_dir}${RESET}"
+    log_message INFO "  - Activating existing venv..."
+    # shellcheck disable=SC1090
+    source "${fpactivate}"
+    return $?
+  fi
+
+  log_message INFO "  - Creating (new) venv in ${CYAN}${venv_dir}${RESET}..."
+  mkdir -p "${venv_dir%/*}" 2>/dev/null || true
+  uv venv --python="python${py_version}" --system-site-packages "${venv_dir}" || return 1
+  # shellcheck disable=SC1090
+  source "${fpactivate}"
 }
+
 
 # Function to set up a Python virtual environment using `uv`.
 #
@@ -1480,7 +1623,7 @@ ezpz_setup_python() {
 		# if [[ "${scheduler_type}" == "unknown" ]]; then
 		log_message WARN "  - Unable to determine scheduler type."
 		log_message INFO "  - Using uv to create a virtual environment with PYTHON_VERSION=${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"
-		if ! ezpz_setup_new_uv_venv >"${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"; then
+    if ! ezpz_setup_new_uv_venv "${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"; then
 			log_message ERROR "  - ezpz_setup_new_uv_venv failed."
 			return 1
 		else
@@ -1715,6 +1858,7 @@ ezpz_setup_host_slurm() {
 			log_message INFO "      - jobenv_file=${CYAN}${jobenv_file}${RESET}"
 		else
 			echo "Expected exactly 0, 1, or 2 arguments, received: $#"
+      return 1
 		fi
 		log_message INFO "      - Writing SLURM vars to: ${CYAN}${jobenv_file}${RESET}"
 		if [[ "${mn}" == "frontier" ]]; then
@@ -1794,11 +1938,12 @@ ezpz_setup_host_pbs() {
 # @output:
 #  - Sets up the host environment for the current machine.
 ezpz_setup_host() {
+  local mn scheduler_type
 	mn=$(ezpz_get_machine_name)
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		ezpz_setup_host_pbs "$@"
-	elif [[ "${scheduler_type}" ]]; then
+	elif [[ "${scheduler_type}" == "slurm" ]]; then
 		ezpz_setup_host_slurm "$@"
 	else
 		log_message ERROR "Unknown scheduler: ${scheduler_type} on ${mn}"
@@ -2541,7 +2686,7 @@ ezpz_setup_env() {
 	if ! ezpz_check_working_dir; then
 		log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
 	fi
-	log_message info "running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
+	log_message INFO "running [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
 	if ! ezpz_setup_python; then
 		log_message ERROR "Python setup failed. Aborting."
 		return 1
@@ -2719,46 +2864,6 @@ ezpz_get_cpu_bind_aurora() {
 	echo "--cpu-bind=verbose,list:$cpu_bind_list"
 }
 
-###############################################
-# Helper functions for printing colored text
-###############################################
-if [[ -n "${NO_COLOR:-}" || -n "${NOCOLOR:-}" || "${COLOR:-}" == 0 || "${TERM}" == "dumb" ]]; then
-	RESET=''
-	BLACK=''
-	RED=''
-	BRIGHT_RED=''
-	GREEN=''
-	BRIGHT_GREEN=''
-	YELLOW=''
-	BRIGHT_YELLOW=''
-	BLUE=''
-	BRIGHT_BLUE=''
-	MAGENTA=''
-	BRIGHT_MAGENTA=''
-	CYAN=''
-	BRIGHT_CYAN=''
-	WHITE=''
-	BRIGHT_WHITE=''
-else
-	# --- Color Codes ---
-	# Usage: printf "${RED}This is red text${RESET}\n"
-	RESET='\e[0m'
-	# BLACK='\e[1;30m' # Avoid black text
-	RED='\e[1;31m'
-	BRIGHT_RED='\e[1;91m'
-	GREEN='\e[1;32m'
-	BRIGHT_GREEN='\e[1;92m'
-	YELLOW='\e[1;33m'
-	BRIGHT_YELLOW='\e[1;93m'
-	BLUE='\e[1;34m'
-	BRIGHT_BLUE='\e[1;94m'
-	MAGENTA='\e[1;35m'
-	BRIGHT_MAGENTA='\e[1;95m'
-	CYAN='\e[1;36m'
-	BRIGHT_CYAN='\e[1;96m'
-	WHITE='\e[1;37m'        # Avoid white on light terminals
-	BRIGHT_WHITE='\e[1;97m' # Added for emphasis
-fi
 
 printBlack() {
 	printf "\e[1;30m%s\e[0m\n" "$@"
