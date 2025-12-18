@@ -51,10 +51,17 @@ def parse_args() -> argparse.Namespace:
         "--num_heads", type=int, default=16, help="Number of heads"
     )
     parser.add_argument(
-        "--head_dim", type=int, default=64, help="Hidden Dimension",
+        "--head_dim",
+        type=int,
+        default=64,
+        help="Hidden Dimension",
     )
     parser.add_argument(
-        "--hidden-dim", "--hidden_dim", type=int, default=1024, help="Hidden Dimension"
+        "--hidden-dim",
+        "--hidden_dim",
+        type=int,
+        default=1024,
+        help="Hidden Dimension",
     )
     parser.add_argument(
         "--mlp-dim", "--mlp_dim", type=int, default=2048, help="MLP Dimension"
@@ -111,9 +118,7 @@ def parse_args() -> argparse.Namespace:
         ],
         help="CUDA SDPA backend to use.",
     )
-    #     parser.add_argument(
-    #         "--fsdp", action="store_true", help="Use FSDP"
-    # )
+    parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
     # return TrainArgs(**parser.parse_args())
     # return TrainArgs(**vars(parser.parse_args()))
     return parser.parse_args()
@@ -145,10 +150,9 @@ class VitTrainArgs:
     cuda_sdpa_backend: Optional[str] = "all"
 
 
-
-
 def get_device_type():
     import os
+
     device_override = os.environ.get("TORCH_DEVICE")
     device_type = device_override or ezpz.get_torch_device()
     if isinstance(device_type, str) and device_type.startswith("mps"):
@@ -157,7 +161,6 @@ def get_device_type():
         )
         return "cpu"
     return ezpz.get_torch_device_type()
-
 
 
 def train_fn(
@@ -173,7 +176,7 @@ def train_fn(
     # device_type = str(ezpz.get_torch_device(as_torch_device=False))
     device_type = ezpz.dist.get_torch_device_type()
     device = torch.device(f"{device_type}:{local_rank}")
-    torch.set_default_device(device)
+    # torch.set_default_device(device)
     config = timmViTConfig(
         img_size=args.img_size,
         batch_size=args.batch_size,
@@ -256,8 +259,14 @@ def train_fn(
         if wandb.run is not None:
             wandb.run.watch(model, log="all")
 
+    model = ezpz.dist.wrap_model(
+        model=model,
+        use_fsdp=args.fsdp,
+        dtype=args.dtype,
+    )
     if world_size > 1:
         if args.fsdp:
+            logger.info("Using FSDP for distributed training")
             if args.dtype in {"fp16", "bf16", "fp32"}:
                 try:
                     model = FSDP(
@@ -268,34 +277,20 @@ def train_fn(
                             cast_forward_inputs=True,
                         ),
                     )
-                except Exception:
-                    model = ezpz.dist.prepare_model_for_ddp(model)
+                except Exception as exc:
+                    logger.warning(f"Encountered exception: {exc}")
+                    logger.warning(
+                        "Unable to wrap model with FSDP. Falling back to DDP..."
+                    )
+                    model = ezpz.dist.wrap_model(model=model, f)
             else:
                 try:
                     model = FSDP(model)
                 except Exception:
-                    model = ezpz.dist.prepare_model_for_ddp(model)
+                    model = ezpz.dist.wrap_model(args=args, model=model)
         else:
             logger.info("Using DDP for distributed training")
-            # model = ezpz.dist.prepare_model_for_ddp(model)
-            from torch.nn.parallel import DistributedDataParallel as DDP
-
-            device_type = ezpz.dist.get_torch_device_type()
-            local_rank = ezpz.dist.get_local_rank()
-            devids = (
-                f"{device_type}:{local_rank}"
-                if device_type == "cuda"
-                else local_rank
-                if device_type == "xpu"
-                else None
-            )
-            model = DDP(
-                model,
-                device_ids=[devids] if devids is not None else None,
-                # device_ids=[device_type.local_rank]
-                # if device_type == "cuda"
-                # else None,
-            )
+            model = ezpz.dist.prepare_model_for_ddp(model)
 
     if args.compile:
         logger.info("Compiling model")
@@ -322,12 +317,13 @@ def train_fn(
             )
         )
     )
+    # data["train"].to(ezpz.dist.get_torch_device_type())
     for step, data in enumerate(data["train"]["loader"]):
         if args.max_iters is not None and step > int(args.max_iters):
             break
         t0 = time.perf_counter()
-        inputs = data[0].to(device=device) # , non_blocking=True)
-        label = data[1].to(device=device)  # , non_blocking=True)
+        inputs = data[0].to(device=device, non_blocking=True)
+        label = data[1].to(device=device, non_blocking=True)
         ezpz.dist.synchronize()
         with torch.autocast(device_type=device_type, dtype=torch_dtype):
             t1 = time.perf_counter()
