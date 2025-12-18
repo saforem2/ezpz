@@ -3,24 +3,22 @@ ezpz/examples/vit.py
 """
 
 import argparse
+from dataclasses import asdict
+from dataclasses import dataclass, field
 import functools
 from pathlib import Path
 import time
 from typing import Any, Optional
 
-from dataclasses import asdict
-
-import ezpz
 import torch
-
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
+import ezpz
 from ezpz import TORCH_DTYPES_MAP
-from ezpz.configs import TrainArgs, timmViTConfig
-from ezpz.models import summarize_model
-
+from ezpz.configs import timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
+from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
 logger = ezpz.get_logger(__name__)
@@ -46,20 +44,49 @@ def parse_args() -> argparse.Namespace:
         description="Train a simple ViT",
     )
     parser.add_argument("--img_size", default=224, help="Image size")
-    parser.add_argument("--batch_size", default=128, help="Batch size")
-    parser.add_argument("--num_heads", default=16, help="Number of heads")
-    parser.add_argument("--head_dim", default=64, help="Hidden Dimension")
+    parser.add_argument(
+        "--batch_size", type=int, default=128, help="Batch size"
+    )
+    parser.add_argument(
+        "--num_heads", type=int, default=16, help="Number of heads"
+    )
+    parser.add_argument(
+        "--head_dim", type=int, default=64, help="Hidden Dimension",
+    )
+    parser.add_argument(
+        "--hidden-dim", "--hidden_dim", type=int, default=1024, help="Hidden Dimension"
+    )
+    parser.add_argument(
+        "--mlp-dim", "--mlp_dim", type=int, default=2048, help="MLP Dimension"
+    )
+    parser.add_argument(
+        "--dropout", type=float, default=0.1, help="Dropout rate"
+    )
+    parser.add_argument(
+        "--attention-dropout",
+        "--attention_dropout",
+        type=float,
+        default=0.0,
+        help="Attention Dropout rate",
+    )
+    parser.add_argument(
+        "--num_classes", type=int, default=1000, help="Number of classes"
+    )
     parser.add_argument(
         "--dataset",
         default="fake",
         choices=["fake", "mnist"],
         help="Dataset to use",
     )
-    parser.add_argument("--depth", default=24, help="Depth")
-    parser.add_argument("--patch_size", default=16, help="Patch size")
+    parser.add_argument("--depth", type=int, default=24, help="Depth")
+    parser.add_argument(
+        "--patch_size", type=int, default=16, help="Patch size"
+    )
     parser.add_argument("--dtype", default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
-    parser.add_argument("--num_workers", default=0, help="Number of workers")
+    parser.add_argument(
+        "--num_workers", type=int, default=0, help="Number of workers"
+    )
     parser.add_argument("--max_iters", default=None, help="Maximum iterations")
     parser.add_argument(
         "--warmup",
@@ -84,23 +111,69 @@ def parse_args() -> argparse.Namespace:
         ],
         help="CUDA SDPA backend to use.",
     )
+    #     parser.add_argument(
+    #         "--fsdp", action="store_true", help="Use FSDP"
+    # )
     # return TrainArgs(**parser.parse_args())
     # return TrainArgs(**vars(parser.parse_args()))
     return parser.parse_args()
 
 
+@dataclass
+class VitTrainArgs:
+    img_size: int = 224
+    batch_size: int = 128
+    num_heads: int = 16
+    compile: bool = False
+    depth: int = 8
+    dtype: str = "bf16"
+    head_dim: int = 64
+    hidden_dim: int = 1024
+    mlp_dim: int = 2048
+    max_iters: int = 1000
+    dropout: float = 0.1
+    attention_dropout: float = 0.0
+    num_classes: int = 1000
+    dataset: str = "fake"
+    depth: int = 24
+    patch_size: int = 16
+    num_workers: int = 0
+    warmup: float = 0.1
+    attn_type: str = "native"
+    fsdp: Optional[bool] = None
+    format: Optional[str] = field(default_factory=str)
+    cuda_sdpa_backend: Optional[str] = "all"
+
+
+
+
+def get_device_type():
+    import os
+    device_override = os.environ.get("TORCH_DEVICE")
+    device_type = device_override or ezpz.get_torch_device()
+    if isinstance(device_type, str) and device_type.startswith("mps"):
+        logger.warning(
+            "MPS does not support torch.distributed collectives; falling back to CPU"
+        )
+        return "cpu"
+    return ezpz.get_torch_device_type()
+
+
+
 def train_fn(
     block_fn: Any,
-    args: TrainArgs,
+    args: VitTrainArgs,
     dataset: Optional[str] = "fake",
 ) -> ezpz.History:
     # seed = int(os.environ.get('SEED', '0'))
     # rank = ezpz.setup(backend='DDP', seed=seed)
-    world_size = ezpz.get_world_size()
+    world_size = ezpz.dist.get_world_size()
 
-    local_rank = ezpz.get_local_rank()
-    device_type = str(ezpz.get_torch_device(as_torch_device=False))
+    local_rank = ezpz.dist.get_local_rank()
+    # device_type = str(ezpz.get_torch_device(as_torch_device=False))
+    device_type = ezpz.dist.get_torch_device_type()
     device = torch.device(f"{device_type}:{local_rank}")
+    torch.set_default_device(device)
     config = timmViTConfig(
         img_size=args.img_size,
         batch_size=args.batch_size,
@@ -121,16 +194,8 @@ def train_fn(
         data = get_mnist(
             train_batch_size=args.batch_size,
             test_batch_size=args.batch_size,
-            download=(ezpz.get_rank() == 0),
+            download=(ezpz.dist.get_rank() == 0),
         )
-        # data = get_mnist(
-        #     img_size=args.img_size,
-        #     batch_size=args.batch_size,
-        #     num_workers=args.num_workers,
-        #     pin_memory=True,
-        #     drop_last=True,
-        #     shuffle=True,
-        # )
     else:
         raise ValueError(
             f"Unknown dataset: {dataset}. Expected 'fake' or 'mnist'."
@@ -192,17 +257,45 @@ def train_fn(
             wandb.run.watch(model, log="all")
 
     if world_size > 1:
-        if args.dtype in {"fp16", "bf16", "fp32"}:
-            model = FSDP(
-                model,
-                mixed_precision=MixedPrecision(
-                    param_dtype=TORCH_DTYPES_MAP[args.dtype],
-                    reduce_dtype=torch.float32,
-                    cast_forward_inputs=True,
-                ),
-            )
+        if args.fsdp:
+            if args.dtype in {"fp16", "bf16", "fp32"}:
+                try:
+                    model = FSDP(
+                        model,
+                        mixed_precision=MixedPrecision(
+                            param_dtype=TORCH_DTYPES_MAP[args.dtype],
+                            reduce_dtype=torch.float32,
+                            cast_forward_inputs=True,
+                        ),
+                    )
+                except Exception:
+                    model = ezpz.dist.prepare_model_for_ddp(model)
+            else:
+                try:
+                    model = FSDP(model)
+                except Exception:
+                    model = ezpz.dist.prepare_model_for_ddp(model)
         else:
-            model = FSDP(model)
+            logger.info("Using DDP for distributed training")
+            # model = ezpz.dist.prepare_model_for_ddp(model)
+            from torch.nn.parallel import DistributedDataParallel as DDP
+
+            device_type = ezpz.dist.get_torch_device_type()
+            local_rank = ezpz.dist.get_local_rank()
+            devids = (
+                f"{device_type}:{local_rank}"
+                if device_type == "cuda"
+                else local_rank
+                if device_type == "xpu"
+                else None
+            )
+            model = DDP(
+                model,
+                device_ids=[devids] if devids is not None else None,
+                # device_ids=[device_type.local_rank]
+                # if device_type == "cuda"
+                # else None,
+            )
 
     if args.compile:
         logger.info("Compiling model")
@@ -213,7 +306,7 @@ def train_fn(
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
 
-    history = ezpz.History()
+    history = ezpz.history.History()
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -233,15 +326,15 @@ def train_fn(
         if args.max_iters is not None and step > int(args.max_iters):
             break
         t0 = time.perf_counter()
-        inputs = data[0].to(device=device, non_blocking=True)
-        label = data[1].to(device=device, non_blocking=True)
+        inputs = data[0].to(device=device) # , non_blocking=True)
+        label = data[1].to(device=device)  # , non_blocking=True)
         ezpz.dist.synchronize()
         with torch.autocast(device_type=device_type, dtype=torch_dtype):
             t1 = time.perf_counter()
             outputs = model(inputs)
             loss = criterion(outputs, label)
-            ezpz.dist.synchronize()
             t2 = time.perf_counter()
+        ezpz.dist.synchronize()
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         ezpz.dist.synchronize()
@@ -264,7 +357,7 @@ def train_fn(
                 ).replace("train/", "")
             )
 
-    if ezpz.get_rank() == 0:
+    if ezpz.dist.get_rank() == 0:
         dataset = history.finalize(
             run_name="ezpz-vit", dataset_fname="train", verbose=False
         )
@@ -274,7 +367,7 @@ def train_fn(
 
 
 def main():
-    rank = ezpz.setup_torch()
+    rank = ezpz.dist.setup_torch()
     args = parse_args()
     if rank == 0:
         try:
@@ -292,14 +385,15 @@ def main():
     targs = dict(**vars(args))
     targs.pop("dataset", None)
     targs.pop("use_timm", None)
-    train_args: TrainArgs = TrainArgs(**targs)
+    train_args = VitTrainArgs(**targs)
+    # train_args:  = (**targs)
     config = timmViTConfig(
         img_size=args.img_size,
         batch_size=args.batch_size,
         num_heads=args.num_heads,
         head_dim=args.head_dim,
         depth=args.depth,
-        patch_size=args.patch_size,
+        patch_size=int(args.patch_size),
     )
 
     def attn_fn(
