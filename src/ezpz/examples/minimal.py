@@ -90,9 +90,10 @@ def setup():
     logger.info(f"{model=}")
     optimizer = torch.optim.Adam(model.parameters())
     if ezpz.get_world_size() > 1:
-        from torch.nn.parallel import DistributedDataParallel as DDP
-
-        model = DDP(model, device_ids=[ezpz.get_local_rank()])
+        model = ezpz.dist.wrap_model_for_ddp(model)
+        # from torch.nn.parallel import DistributedDataParallel as DDP
+        #
+        # model = DDP(model, device_ids=[ezpz.get_local_rank()])
 
     return model, optimizer
 
