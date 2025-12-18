@@ -15,7 +15,8 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
 import ezpz
-from ezpz import TORCH_DTYPES_MAP
+import ezpz.dist
+# from TORCH_DTYPES_MAP
 from ezpz.configs import timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.models import summarize_model
@@ -265,38 +266,43 @@ def train_fn(
         dtype=args.dtype,
     )
     if world_size > 1:
-        if args.fsdp:
-            logger.info("Using FSDP for distributed training")
-            if args.dtype in {"fp16", "bf16", "fp32"}:
-                try:
-                    model = FSDP(
-                        model,
-                        mixed_precision=MixedPrecision(
-                            param_dtype=TORCH_DTYPES_MAP[args.dtype],
-                            reduce_dtype=torch.float32,
-                            cast_forward_inputs=True,
-                        ),
-                    )
-                except Exception as exc:
-                    logger.warning(f"Encountered exception: {exc}")
-                    logger.warning(
-                        "Unable to wrap model with FSDP. Falling back to DDP..."
-                    )
-                    model = ezpz.dist.wrap_model(model=model, f)
-            else:
-                try:
-                    model = FSDP(model)
-                except Exception:
-                    model = ezpz.dist.wrap_model(args=args, model=model)
-        else:
-            logger.info("Using DDP for distributed training")
-            model = ezpz.dist.prepare_model_for_ddp(model)
+        model = ezpz.dist.wrap_model(
+            model=model,
+            use_fsdp=args.fsdp,
+            dtype=args.dtype,
+        )
+        # if args.fsdp:
+        #     logger.info("Using FSDP for distributed training")
+        #     if args.dtype in {"fp16", "bf16", "fp32"}:
+        #         try:
+        #             model = FSDP(
+        #                 model,
+        #                 mixed_precision=MixedPrecision(
+        #                     param_dtype=TORCH_DTYPES_MAP[args.dtype],
+        #                     reduce_dtype=torch.float32,
+        #                     cast_forward_inputs=True,
+        #                 ),
+        #             )
+        #         except Exception as exc:
+        #             logger.warning(f"Encountered exception: {exc}")
+        #             logger.warning(
+        #                 "Unable to wrap model with FSDP. Falling back to DDP..."
+        #             )
+        #             model = ezpz.dist.wrap_model(model=model, f)
+        #     else:
+        #         try:
+        #             model = FSDP(model)
+        #         except Exception:
+        #             model = ezpz.dist.wrap_model(args=args, model=model)
+        # else:
+        #     logger.info("Using DDP for distributed training")
+        #     model = ezpz.dist.prepare_model_for_ddp(model)
 
     if args.compile:
         logger.info("Compiling model")
         model = torch.compile(model)
 
-    torch_dtype = TORCH_DTYPES_MAP[args.dtype]
+    torch_dtype = ezpz.dist.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
