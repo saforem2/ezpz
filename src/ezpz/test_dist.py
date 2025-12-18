@@ -785,6 +785,24 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
+def prepare_model_for_ddp(
+    model: torch.nn.Module,
+):
+    if ezpz.world_size > 1:
+        # model = DDP(model)
+        device_type = model.device.type
+        try:
+            if isinstance(device_type, str) and device_type.startswith(
+                "cuda"
+            ):
+                model = DDP(model, device_ids=[ezpz.get_local_rank()])
+            else:
+                model = DDP(model)
+        except Exception:
+            model = DDP(model)
+    return model
+
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def build_model_and_optimizer(
     model: torch.nn.Module, backend: str = "DDP"
 ) -> ModelOptimizerPair:
@@ -872,7 +890,7 @@ def main() -> Trainer:
     args = parse_args()
     config = get_config_from_args(args)
     timings = {}
-    _ = ezpz.setup_torch(
+    rank = ezpz.setup_torch(
         backend=config.backend,
         tensor_parallel_size=config.tp,
         pipeline_parallel_size=config.pp,
