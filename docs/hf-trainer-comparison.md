@@ -1,32 +1,37 @@
 # HF Trainer Comparison
 
-## Comparison
+## 📊 Data
 
-| Metric                  |         Polaris | Aurora              |
-| ----------------------- | --------------: | :------------------ |
-| Epoch                   |             1.0 | 2.24                |
-| Perplexity              |         16.6743 | 12.7268             |
-| W&B run                 | glad-moon-1[^1] | cosmic-sunset-5[^2] |
-| Input tokens seen       |       6,553,600 | 19,660,800          |
-| Total FLOPs             |    6,691,434 GF | 6,691,434 GF        |
-| &nbsp;                  |                 |                     |
-| Steps   / sec           |           0.245 | 0.334               |
-| Samples / sec           |           1.958 | 8.021               |
-| Tokens  / sec           |        2,004.87 | 2,737.98            |
-| Tokens  / sample        |      ~ 1024[^3] | ~ 341[^4]           |
-| Tokens  / step          |      ~ 8183[^5] | ~ 8197[^6]          |
-| **Tokens  / sec / GPU** |      **250.61** | **114.08**          |
-| &nbsp;                  |                 |                     |
-| Train loss              |          3.0482 | 2.8478              |
-| Train runtime           |      0:06:48.60 | 0:04:59.19          |
-| Train samples           |          25,000 | 25,000              |
-| &nbsp;                  |                 |                     |
-| Eval accuracy           |          0.4328 | 0.4701              |
-| Eval loss               |          2.8139 | 2.5437              |
-| Eval runtime            |      0:00:06.26 | 0:00:09.12          |
-| Eval samples            |              50 | 50                  |
-| Samples / sec (eval)    |           1.118 | 0.329               |
-| Steps / sec (eval)      |            0.16 | 0.11                |
+| Metric            |     Polaris     |       Aurora        |
+| ----------------- | :-------------: | :-----------------: |
+| Local Batch Size  |        1        |          1          |
+| World Size        |        8        |         24          |
+| Global Batch Size |        8        |         24          |
+| Sequence Length   |      8192       |        8192         |
+| Epoch             |       1.0       |        2.24         |
+| Perplexity        |     16.6743     |       12.7268       |
+| Input tokens seen |    6,553,600    |     19,660,800      |
+| Total FLOPs       |  6,691,434 GF   |    6,691,434 GF     |
+| `steps/sec`       |      0.245      |        0.334        |
+| `samples/sec`     |      1.958      |        8.021        |
+| `tokens/sec`      |    2,004.87     |      2,737.98       |
+| `tokens/sample`   |   ~ 1024[^3]    |      ~ 341[^4]      |
+| `toknes/step`     |   ~ 8183[^5]    |     ~ 8197[^6]      |
+| `tokens/sec/gpu`  |     250.61      |       114.08        |
+| &nbsp;            |                 |                     |
+| **Train/**        |                 |                     |
+| loss              |     3.0482      |       2.8478        |
+| runtime           |   0:06:48.60    |     0:04:59.19      |
+| samples           |     25,000      |       25,000        |
+| &nbsp;            |                 |                     |
+| **Eval/**         |                 |                     |
+| accuracy          |     0.4328      |       0.4701        |
+| loss              |     2.8139      |       2.5437        |
+| runtime           |   0:00:06.26    |     0:00:09.12      |
+| samples           |       50        |         50          |
+| `samples/sec`     |      1.118      |        0.329        |
+| `steps/sec`       |      0.16       |        0.11         |
+| W&B run           | glad-moon-1[^1] | cosmic-sunset-5[^2] |
 
 
 [^1]: W&B Run: [glad-moon-1](https://wandb.ai/aurora_gpt/ezpz-hf_trainer--eagle-auroragpt-foremans-downloads-global_step138650/runs/k1rvbdmc)
@@ -38,82 +43,137 @@
 [^6]: Tokens per optimizer step on Aurora:
       - ~ **8197** = (2737.984 / 0.334) \[`tokens_per_second` / `steps_per_second`\]
 
-## Details
+## Model Config
+
+<details><summary>AuroraGPT-2B:</summary>
+
+```json
+{
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 128000,
+  "dtype": "bfloat16",
+  "eos_token_id": 128001,
+  "head_dim": 64,
+  "hidden_act": "silu",
+  "hidden_size": 2048,
+  "initializer_range": 0.02,
+  "intermediate_size": 8192,
+  "max_position_embeddings": 131072,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 16,
+  "num_key_value_heads": 8,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_scaling": {
+    "factor": 32.0,
+    "high_freq_factor": 4.0,
+    "low_freq_factor": 1.0,
+    "original_max_position_embeddings": 8192,
+    "rope_type": "llama3"
+  },
+  "rope_theta": 500000.0,
+  "tie_word_embeddings": true,
+  "transformers_version": "4.57.3",
+  "use_cache": true,
+  "vocab_size": 128256
+}
+```
+
+</details>
+
+
+## 🔍 Details
 
 > [!NOTE]
-> - **Samples per optimizer step**:
->   - Polaris: train_samples_per_second / train_steps_per_second = 1.958 / 0.245 ≈ 8.0 samples/step ✅ matches global batch 8
->   - Aurora: 8.021 / 0.334 ≈ 24.0 samples/step ✅ matches global batch 24
+> - `[samples/step] = [samples/sec] / [steps/sec]`
+>   - Polaris: `1.958 / 0.245 ≈  8.0` samples/step (✅ matches global batch 8)
+>   - Aurora:  `8.021 / 0.334 ≈ 24.0` samples/step (✅ matches global batch 24)
 >
-> - **Tokens per optimizer step**:
->   - Polaris: train_tokens_per_second / train_steps_per_second = 2004.87 / 0.245 ≈ 8183 tokens/step
->   - Aurora: 2737.984 / 0.334 ≈ 8197 tokens/step
+> - `[tokens/step] = [tokens/sec]/[steps/sec]`
+>   - Polaris: `2004.87 / 0.245 ≈ 8183` tokens/step
+>   - Aurora:  `2737.98 / 0.334 ≈ 8197` tokens/step
+> 
+> So both runs are doing ~8192 `tokens/step` (close enough).
+>
 
-So both runs are doing ~8192 tokens per optimizer step (close enough to “same”), which means:
+Since we know that
+$\text{tokens/sec} = (\text{tokens/step}) \times (\text{steps/sec})$,
+then:
 
-Your tokens/sec difference is almost entirely explained by steps/sec.
+> The difference in `tokens/sec` is almost
+> entirely explained by the difference in `steps/sec`.
 
-Because:
+### Fair Comparison
 
-$$
-\text{tokens/sec} = (\text{tokens/step}) \times (\text{steps/sec})
-$$
+Since `tokens/step` is ~ equal, compare `steps/sec` (or step time):
 
-The fair comparison (given your setup)
-
-Since tokens/step is basically equal, compare steps/sec (or step time):
-
-- Polaris: 0.245 steps/sec → step time ≈ 4.08 s/step
-- Aurora: 0.334 steps/sec → step time ≈ 2.99 s/step
+- Polaris: `0.245 steps/sec`
+  - → step time ≈ **4.08 s/step**
+- Aurora:  `0.334 steps/sec`
+  - → step time ≈ **2.99 s/step**
 
 Aurora is ~1.36× faster per optimizer step (0.334 / 0.245), and therefore
-~1.36× faster in tokens/sec, for this exact training configuration.
+~1.36× faster in `tokens/sec`, for this _exact training configuration_.
 
-If your real question is “which system is more efficient per device?”
+We can normalize by device count
+(though this penalizes Aurora with 3× more devices):
 
-Then normalize by device count (this will penalize Aurora because you’re using
-3× more devices):
+- `steps/sec/device`:
+  - Polaris: `0.245 /  8 = 0.0306`
+  - Aurora:  `0.334 / 24 = 0.0139`
 
-- **Steps/sec/device**:
-  - Polaris: 0.245 / 8 = 0.0306
-  - Aurora: 0.334 / 24 = 0.0139
+  So per device, Polaris is ~2.2× "better" on this metric.
 
-  So per device, Polaris is ~2.2× “better” on this metric.
+But this is to be somewhat expected since they're operating at
+different scales, i.e.:
 
-But that’s not a hardware truth statement; it’s mostly a scaling regime
-statement: 24-way data parallel will usually lose per-device efficiency to
-comms/overheads vs 8-way, unless you increase work per device (bigger
-microbatch, longer seq, etc.).
+> 24-way data parallel will usually lose per-device efficiency to
+> comms/overheads vs 8-way, unless you increase work per device
+> (bigger microbatch, longer seq, etc.).
 
-What you should report (so nobody can nitpick you)
+So, 
 
-- Use these two simultaneously:
+1. **Time-to-train / throughput at chosen scale**:
+   - Aurora: 1.36× higher `steps/sec` _and_ `tokens/sec`.
+   
+   this is what we'd care about, operationally.
+1. **Scaling efficiency**
+   - Per-device efficiency ratio:
+     - (0.334/24) / (0.245/8) ≈ 0.45
+     
+     i.e. Aurora with 24 devices is delivering ~45% of the
+     _per-device_ step throughput on Polaris with 8 devices.
 
-  1. Time-to-train / throughput at chosen scale (what you actually care about operationally)
-     - Aurora: 1.36× higher steps/sec and tokens/sec here.
-  1. Scaling efficiency (how hard you’re paying for using more devices)
-     - Per-device efficiency ratio: (0.334/24) / (0.245/8) ≈ 0.45
-     - Meaning: Aurora at 24 devices is delivering ~45% of the per-device step throughput you got on Polaris at 8 devices.
+     (how much we're paying for using more devices)
 
-- One more blunt point:
+### 🫸 Packing in our Sequences
 
-  Even though tokens/step match, your tokens/sample differ a lot:
+Note that the `tokens/sample` are different:
 
-  - **Polaris**: ~ `8183 /  8 ≈ 1024` \[tokens/sample\]
-  - **Aurora**:  ~ `8197 / 24 ≈  341` \[tokens/sample\]
+- **Polaris**: ~ `8183 /  8 ≈ 1024` \[tokens/sample\]
+- **Aurora**:  ~ `8197 / 24 ≈  341` \[tokens/sample\]
 
-  So you are not feeding the same “sample” definition (sequence length /
-  packing / truncation).
+This means that we're not feeding the same "sample" definition
+(sequence length / packing / truncation).
 
-  That’s fine as long as you compare per-step or per-token, not per-sample.
+This is OK, as long as we're comparing per-step or per-token,
+but _not_ per-sample!
 
-  If you want an airtight apples-to-apples hardware bakeoff: 
+In order to truly do a fair comparison, we'd need to:
 
-  - **fix seq_len and packing*** so tokens/sample matches, then sweep DP size
-    (8 vs 24) on each system and plot step time vs devices.
+1. **fix seq_len and packing** so tokens/sample matches, then
+1. sweep DP size (8 vs 24) on each system and plot step time vs devices
 
-    That will tell you whether Aurora is “worse per device” because of comms,
-    kernel maturity, input pipeline, or just the scaling point you chose.
+This would tell us whether Aurora is "less efficient per device" because of comms,
+kernel maturity, input pipeline, or just the scaling point we chose.
+
+[^operational]: This is what we care about, operationally
 
 ## Running on Aurora
 
@@ -231,7 +291,7 @@ What you should report (so nobody can nitpick you)
 
 
 ```bash
-(2025-09-25/base) (ezpz-distributed-metrics-mconda3)
+# (2025-09-25/base) (ezpz-distributed-metrics-mconda3)
 #[/e/A/f/p/s/ezpz-distributed-metrics][🌱 distributed-metrics][🤷✓] [⏱️ 1m28s]
 #[12/18/25 @ 13:32:34][x3006c0s1b0n0]
 ; ckpt=/eagle/AuroraGPT/foremans/Downloads/global_step138650 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=stanfordnlp/imdb --model_name_or_path "${ckpt}" --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=50 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=$(tstamp)
