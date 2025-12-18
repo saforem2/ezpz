@@ -863,5 +863,6 @@ class TrainArgs:
     warmup: int | float
     num_workers: int
     max_iters: int
+    fsdp: Optional[bool] = False
     format: Optional[str] = field(default_factory=str)
     cuda_sdpa_backend: Optional[str] = field(default_factory=str)
