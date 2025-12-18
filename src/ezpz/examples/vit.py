@@ -38,6 +38,9 @@ except (ImportError, ModuleNotFoundError) as e:
     )
     raise e
 
+fp = Path(__file__)
+WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -349,7 +352,7 @@ def train_fn(
                 history.update(
                     {
                         "train/iter": step,
-                        "train/loss": loss.item(),
+                        "train/loss": loss,
                         "train/dt": t4 - t0,
                         "train/dtd": t1 - t0,
                         "train/dtf": t2 - t1,
@@ -361,7 +364,7 @@ def train_fn(
 
     if ezpz.dist.get_rank() == 0:
         dataset = history.finalize(
-            run_name="ezpz-vit", dataset_fname="train", verbose=False
+            run_name=WBRUN_NAME, dataset_fname="train", verbose=False
         )
         logger.info(f"{dataset=}")
 
