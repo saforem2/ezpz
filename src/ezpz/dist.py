@@ -603,13 +603,12 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
 
 def wrap_model(
     model: torch.nn.Module,
-    use_fsdp: bool = True,
+    use_fsdp: Optional[bool] = True,
     dtype: str = "bfloat16",
 ) -> torch.nn.parallel.DistributedDataParallel | FSDP | torch.nn.Module:
-    distributed_backend = "FSDP" if use_fsdp else "DDP"
     if (ws := ezpz.get_world_size()) <= 1:
         logger.warning(
-            f"{distributed_backend} requested but world_size={ws} <= 1;"
+            f"{'FSDP' if use_fsdp else 'DDP'} requested but world_size={ws} <= 1;"
         )
         logger.warning(
             rich.text.Text(
@@ -618,10 +617,12 @@ def wrap_model(
             )
         )
         return model
+    rank = get_rank()
     if use_fsdp:
         if dtype in {"fp16", "bf16", "fp32"}:
             try:
-                logger.info(f"Wrapping model model with FSDP + {dtype}")
+                if rank == 0:
+                    logger.info(f"Wrapping model model with FSDP + {dtype}")
                 return FSDP(
                     model,
                     mixed_precision=MixedPrecision(
@@ -631,10 +632,11 @@ def wrap_model(
                     ),
                 )
             except Exception as exc:
-                logger.warning(f"Encountered exception: {exc}")
-                logger.warning(
-                    "Unable to wrap model with FSDP. Falling back to DDP..."
-                )
+                if rank == 0:
+                    logger.warning(f"Encountered exception: {exc}")
+                    logger.warning(
+                        "Unable to wrap model with FSDP. Falling back to DDP..."
+                    )
                 model = ezpz.dist.wrap_model_for_ddp(
                     model=model,
                 )
@@ -737,9 +739,10 @@ def init_deepspeed(
 
         os.environ["DEEPSPEED_VERSION"] = deepspeed.__version__
     except ImportError as e:
-        logger.warning(
-            "Unable to import deepspeed. Please install it to use DeepSpeed features."
-        )
+        if rank == 0:
+            logger.warning(
+                "Unable to import deepspeed. Please install it to use DeepSpeed features."
+            )
         raise ImportError(
             "DeepSpeed is not installed. Install with 'pip install deepspeed'"
         ) from e
@@ -765,8 +768,9 @@ def init_deepspeed(
             world_size=world_size,
         )
     except Exception as exc:
-        logger.warning("Unable to `import deepspeed`. Exiting!")
-        logger.exception(exc)
+        if rank == 0:
+            logger.warning("Unable to `import deepspeed`. Exiting!")
+            logger.exception(exc)
         raise exc
 
 
@@ -794,14 +798,15 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
     """
     if device_type is not None:
         assert device_type in _SUPPORTED_DEVICE_TYPES
-        logger.warning(
-            " ".join(
-                [
-                    f"device_type: {device_type} passed to",
-                    "ezpz.dist.get_torch_device_type",
-                ]
+        if get_rank() == 0:
+            logger.warning(
+                " ".join(
+                    [
+                        f"device_type: {device_type} passed to",
+                        "ezpz.dist.get_torch_device_type",
+                    ]
+                )
             )
-        )
         return device_type
     env_info = _get_env_torch_device()
     if env_info is not None:
@@ -1062,12 +1067,13 @@ def get_world_size(
         num_nodes = get_num_nodes()
         gpus_per_node = get_gpus_per_node()
         world_size = num_nodes * gpus_per_node
-        logger.warning(
-            "MPI not initialized !!"
-            "Calculating (and using!! ??) "
-            "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
-            f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
-        )
+        if get_rank() == 0:
+            logger.warning(
+                "MPI not initialized !!"
+                "Calculating (and using!! ??) "
+                "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
+                f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
+            )
     # if world_size == 1:
     #     gpus_per_node = get_gpus_per_node()
     #     num_nodes = get_num_nodes()
@@ -1158,10 +1164,11 @@ def broadcast(
     try:
         return MPI.COMM_WORLD.bcast(obj, root=root)
     except Exception as exc:
-        logger.warning(
-            "Unable to broadcast with MPI, returning original object"
-        )
-        logger.exception(exc)
+        if get_rank() == 0:
+            logger.warning(
+                "Unable to broadcast with MPI, returning original object"
+            )
+            logger.exception(exc)
         # return obj
         raise exc
 
@@ -1187,10 +1194,11 @@ def all_reduce(
         try:
             return MPI.COMM_WORLD.allreduce(obj, op=op)
         except Exception as exc:
-            logger.warning(
-                "Unable to all-reduce with MPI, returning original object"
-            )
-            logger.exception(exc)
+            if get_rank() == 0:
+                logger.warning(
+                    "Unable to all-reduce with MPI, returning original object"
+                )
+                logger.exception(exc)
             # return obj
             raise exc
     elif implementation.lower() in {"torch", "pytorch", "pt"}:
@@ -1254,11 +1262,11 @@ def setup_torch_DDP(
             logger.info(
                 "torch.distributed was already initialized, skipping..."
             )
-            return {
-                "world_size": world_size,
-                "rank": rank,
-                "local_rank": local_rank,
-            }
+        return {
+            "world_size": world_size,
+            "rank": rank,
+            "local_rank": local_rank,
+        }
     # get `hostname` ONLY from rank 0
     master_addr = socket.gethostname() if rank == 0 else None
     if (mn := ezpz.get_machine().lower()) in {
@@ -1509,11 +1517,12 @@ def barrier(
         # )
         MPI.COMM_WORLD.barrier()
     except Exception:
-        logger.warning(
-            "Unable to use `MPI.COMM_WORLD.barrier` "
-            "for this process group. "
-            "Falling back to `torch.distributed` barrier."
-        )
+        if get_rank() == 0:
+            logger.warning(
+                "Unable to use `MPI.COMM_WORLD.barrier` "
+                "for this process group. "
+                "Falling back to `torch.distributed` barrier."
+            )
         torch.distributed.barrier(  # type:ignore
             group=group, async_op=async_op, device_ids=device_ids
         )
@@ -1567,9 +1576,10 @@ def setup_torch(
     framework = framework.lower()
     backend = str(get_torch_backend()).lower()
     if ws_from_env is not None and ws_from_env == "1":
-        logger.info(
-            f"Running on a single {device}, not initializing torch.distributed!"
-        )
+        if get_rank() == 0:
+            logger.info(
+                f"Running on a single {device}, not initializing torch.distributed!"
+            )
         rank = 0
         world_size = 1
         local_rank = 0
@@ -1860,16 +1870,18 @@ def setup_wandb(
     WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
     WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
     if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(
-            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
-        )
+        if get_rank() == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+            )
         return None
 
     if wandb.api.api_key is None:
-        logger.warning("W&B API key not found, skipping wandb setup!")
-        logger.info(
-            "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-        )
+        if get_rank() == 0:
+            logger.warning("W&B API key not found, skipping wandb setup!")
+            logger.info(
+                "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
+            )
         return None
 
     # HAS_WANDB = False
@@ -2116,7 +2128,8 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
 
     scheduler = get_scheduler()
     if scheduler.lower() == "unknown":
-        logger.debug("Unknown scheduler")
+        if get_rank() == 0:
+            logger.debug("Unknown scheduler")
         hostfile = Path(os.getcwd()).joinpath("hostfile")
         hostfile.touch(exist_ok=True)
         write_localhost_to_hostfile(hostfile=hostfile)

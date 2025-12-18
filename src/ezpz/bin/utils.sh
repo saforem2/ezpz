@@ -1809,7 +1809,7 @@ ezpz_print_hosts() {
 	local hostfile
 	local scheduler_type
 	scheduler_type=$(ezpz_get_scheduler_type)
-	log_message INFO "[${MAGENTA}HOSTS${RESET}] - ezpz_print_hosts"
+	log_message INFO "[${MAGENTA}HOSTS${RESET}]"
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		log_message INFO "  - Detected PBS Scheduler"
 		# log_message INFO "[${MAGENTA}HOSTS${RESET}] - PBS Scheduler"
@@ -1829,7 +1829,6 @@ ezpz_print_hosts() {
 		# hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE}}}"
 		hostfile="${HOSTFILE:-${PBS_NODEFILE:-${NODEFILE:-$(ezpz_make_slurm_nodefile)}}}"
 	fi
-	log_message INFO "[${MAGENTA}HOSTS${RESET}]"
 	log_message INFO "  - HOSTFILE=${MAGENTA}${hostfile}${RESET}"
 	log_message INFO "  - NHOSTS=${MAGENTA}$(ezpz_get_num_hosts "${hostfile}")${RESET}"
 	log_message INFO "  - HOSTS:"

@@ -3,7 +3,7 @@
 import shlex
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 
 from ezpz.configs import get_scheduler
 from ezpz.launch import launch
@@ -32,9 +32,19 @@ def _build_test_command(argv: List[str]) -> List[str]:
     return [sys.executable, "-m", "ezpz.test_dist", *extra]
 
 
-def main() -> int:
+# def run_test(args: Optional[Any] = None) -> None:
+#     args = sys.argv[1:] if args is None else args
+#     command = _build_test_command(args)
+#     scheduler = get_scheduler().lower()
+#     if scheduler in {"pbs", "slurm"}:
+#         cmd_str = " ".join(shlex.quote(part) for part in command)
+#         return launch(cmd_to_launch=cmd_str)
+
+
+def main(args: Optional[List[str]] = None) -> int:
     """Run the distributed smoke test via the scheduler or ``mpirun`` fallback."""
-    command = _build_test_command(sys.argv[1:])
+    args = sys.argv[1:] if args is None else args
+    command = _build_test_command(args)
     scheduler = get_scheduler().lower()
 
     if scheduler in {"pbs", "slurm"}:

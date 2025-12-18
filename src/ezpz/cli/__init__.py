@@ -33,9 +33,11 @@ def main() -> None:
 def test_cmd(args: tuple[str, ...]) -> None:
     """Run the distributed smoke test."""
     from ezpz import test as test_module
+    from ezpz.test import main
 
     try:
-        rc = test_module.run(_ensure_sequence(args))
+        rc = main(_ensure_sequence(args))
+        # rc = test_module.main(_ensure_sequence(args))
     except SystemExit as exc:
         raise click.UsageError(str(exc)) from exc
     _handle_exit_code(rc)

@@ -478,7 +478,9 @@ def train(
     t1m = time.perf_counter()
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
-    model, optimizer = build_model_and_optimizer(model, backend=config.backend)
+    model, optimizer = build_model_and_optimizer(
+        model, backend=config.backend, dtype=config.dtype
+    )
     t2m = time.perf_counter()
     dt_optimizer = time.perf_counter() - t1m
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
@@ -730,7 +732,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
         try:
-            import deepspeed  # type:ignore
+            import deepspeed  # type:ignore  # noqa: F401
 
             args.deepspeed = True
         except (ImportError, ModuleNotFoundError) as e:
@@ -786,7 +788,9 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def build_model_and_optimizer(
-    model: torch.nn.Module, backend: str = "DDP"
+    model: torch.nn.Module,
+    dtype: Optional[str] = None,
+    backend: str = "DDP",
 ) -> ModelOptimizerPair:
     """Prepare the model and optimiser for the requested backend."""
     if backend is not None:
@@ -811,9 +815,7 @@ def build_model_and_optimizer(
         if world_size > 1:
             model.to(device_type)
             model = ezpz.dist.wrap_model(
-                model=model,
-                use_fsdp=False,
-                dtype=
+                model=model, use_fsdp=False, dtype=dtype
             )
             # model = DDP(model)
             try:
@@ -877,7 +879,7 @@ def main() -> Trainer:
     args = parse_args()
     config = get_config_from_args(args)
     timings = {}
-    rank = ezpz.setup_torch(
+    rank = ezpz.setup_torch(  # noqa
         backend=config.backend,
         tensor_parallel_size=config.tp,
         pipeline_parallel_size=config.pp,

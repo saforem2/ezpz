@@ -145,7 +145,7 @@ _logging_defs = {
     # …etc…
     "logging.time": {"dim": True},
     "logging.date": {"dim": True},
-    "log.parent": {"color": "cyan", "italic": True},
+    "log.parent": {"color": "cyan", "italic": False, "bold": False},
     "log.path": {"color": "blue", "bold": False, "italic": False},
     "logging.keyword": {"bold": True, "color": "bright_yellow"},
     "logging.level.notset": {"dim": True},
@@ -171,13 +171,14 @@ _repr_defs = {
     "repr.attr": {"color": "blue"},
     "repr.attrib_equal": {"color": "yellow", "bold": True},
     "repr.function": {"color": "bright_green", "italic": True},
-    "repr.brace": {"color": "bright_magenta"},
+    "repr.brace": {"bold": False},
     "repr.comma": {"color": "bright_yellow"},
     "repr.colon": {"color": "green"},
     "repr.dash": {"color": "white"},
-    "repr.attrib_name": {"color": "bright_blue"},
+    "repr.attrib_name": {"color": "bright_magenta"},
     "repr.attrib_value": {"color": "magenta"},
     "repr.ellipsis": {"color": "bright_yellow"},
+    "repr.number": {"color": "cyan", "bold": False, "italic": False}
 }
 repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
 

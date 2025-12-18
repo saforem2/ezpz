@@ -15,7 +15,8 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 
 import ezpz
-from ezpz import TORCH_DTYPES_MAP
+import ezpz.dist
+# from TORCH_DTYPES_MAP
 from ezpz.configs import timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.models import summarize_model
@@ -37,6 +38,9 @@ except (ImportError, ModuleNotFoundError) as e:
     )
     raise e
 
+fp = Path(__file__)
+WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -265,38 +269,43 @@ def train_fn(
         dtype=args.dtype,
     )
     if world_size > 1:
-        if args.fsdp:
-            logger.info("Using FSDP for distributed training")
-            if args.dtype in {"fp16", "bf16", "fp32"}:
-                try:
-                    model = FSDP(
-                        model,
-                        mixed_precision=MixedPrecision(
-                            param_dtype=TORCH_DTYPES_MAP[args.dtype],
-                            reduce_dtype=torch.float32,
-                            cast_forward_inputs=True,
-                        ),
-                    )
-                except Exception as exc:
-                    logger.warning(f"Encountered exception: {exc}")
-                    logger.warning(
-                        "Unable to wrap model with FSDP. Falling back to DDP..."
-                    )
-                    model = ezpz.dist.wrap_model(model=model, f)
-            else:
-                try:
-                    model = FSDP(model)
-                except Exception:
-                    model = ezpz.dist.wrap_model(args=args, model=model)
-        else:
-            logger.info("Using DDP for distributed training")
-            model = ezpz.dist.prepare_model_for_ddp(model)
+        model = ezpz.dist.wrap_model(
+            model=model,
+            use_fsdp=args.fsdp,
+            dtype=args.dtype,
+        )
+        # if args.fsdp:
+        #     logger.info("Using FSDP for distributed training")
+        #     if args.dtype in {"fp16", "bf16", "fp32"}:
+        #         try:
+        #             model = FSDP(
+        #                 model,
+        #                 mixed_precision=MixedPrecision(
+        #                     param_dtype=TORCH_DTYPES_MAP[args.dtype],
+        #                     reduce_dtype=torch.float32,
+        #                     cast_forward_inputs=True,
+        #                 ),
+        #             )
+        #         except Exception as exc:
+        #             logger.warning(f"Encountered exception: {exc}")
+        #             logger.warning(
+        #                 "Unable to wrap model with FSDP. Falling back to DDP..."
+        #             )
+        #             model = ezpz.dist.wrap_model(model=model, f)
+        #     else:
+        #         try:
+        #             model = FSDP(model)
+        #         except Exception:
+        #             model = ezpz.dist.wrap_model(args=args, model=model)
+        # else:
+        #     logger.info("Using DDP for distributed training")
+        #     model = ezpz.dist.prepare_model_for_ddp(model)
 
     if args.compile:
         logger.info("Compiling model")
         model = torch.compile(model)
 
-    torch_dtype = TORCH_DTYPES_MAP[args.dtype]
+    torch_dtype = ezpz.dist.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
@@ -343,7 +352,7 @@ def train_fn(
                 history.update(
                     {
                         "train/iter": step,
-                        "train/loss": loss.item(),
+                        "train/loss": loss,
                         "train/dt": t4 - t0,
                         "train/dtd": t1 - t0,
                         "train/dtf": t2 - t1,
@@ -355,7 +364,7 @@ def train_fn(
 
     if ezpz.dist.get_rank() == 0:
         dataset = history.finalize(
-            run_name="ezpz-vit", dataset_fname="train", verbose=False
+            run_name=WBRUN_NAME, dataset_fname="train", verbose=False
         )
         logger.info(f"{dataset=}")
 
