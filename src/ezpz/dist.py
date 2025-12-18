@@ -15,6 +15,16 @@ from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Union
+# import argparse
+
+import rich
+import rich.text
+import torch.nn
+import torch.nn.parallel
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import MixedPrecision
+
 
 import torch
 import torch.distributed
@@ -576,8 +586,58 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
         model (torch.nn.Module): The model to wrap.
     """
 
-    from torch.nn.parallel import DistributedDataParallel as DDP
+    device_type = get_torch_device_type()
+    local_rank = get_local_rank()
+    devids = (
+        f"{device_type}:{local_rank}"
+        if device_type == "cuda"
+        else local_rank
+        if device_type == "xpu"
+        else None
+    )
+    return DDP(
+        model,
+        device_ids=[devids] if devids is not None else None,
+    )
 
+
+def wrap_model(
+    model: torch.nn.Module,
+    use_fsdp: bool = True,
+    dtype: str = "bfloat16",
+) -> torch.nn.parallel.DistributedDataParallel | FSDP | torch.nn.Module:
+    distributed_backend = "FSDP" if use_fsdp else "DDP"
+    if (ws := ezpz.get_world_size()) <= 1:
+        logger.warning(
+            f"{distributed_backend} requested but world_size={ws} <= 1;"
+        )
+        logger.warning(
+            rich.text.Text(
+                "Returning un-wrapped model!",
+                style=ezpz.log.handler.get_styles().get("red"),
+            )
+        )
+        return model
+    if use_fsdp:
+        if dtype in {"fp16", "bf16", "fp32"}:
+            try:
+                logger.info(f"Wrapping model model with FSDP + {dtype}")
+                return FSDP(
+                    model,
+                    mixed_precision=MixedPrecision(
+                        param_dtype=TORCH_DTYPES_MAP[dtype],
+                        reduce_dtype=torch.float32,
+                        cast_forward_inputs=True,
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(f"Encountered exception: {exc}")
+                logger.warning(
+                    "Unable to wrap model with FSDP. Falling back to DDP..."
+                )
+                model = ezpz.dist.wrap_model_for_ddp(
+                    model=model,
+                )
     device_type = ezpz.dist.get_torch_device_type()
     local_rank = ezpz.dist.get_local_rank()
     devids = (
@@ -1108,7 +1168,7 @@ def broadcast(
 
 def all_reduce(
     obj: Any,
-    op: Optional[MPI.Op, torch.distributed.reduce_op] = None,
+    op: Optional[MPI.Op | torch.distributed.reduce_op] = None,  # type:ignore
     implementation: Optional[str] = None,
 ) -> Any:
     """All-reduce ``obj`` across all ranks using MPI.
@@ -1139,7 +1199,7 @@ def all_reduce(
         op = dist.ReduceOp.SUM if op is None else op
         assert op is not None
         tensor = torch.tensor(obj)
-        dist.all_reduce(tensor, op=op)
+        dist.all_reduce(tensor, op=op)  # type:ignore
         return tensor.item()
     else:
         raise ValueError(
@@ -1707,7 +1767,7 @@ def setup_tensorflow(
     return RANK
 
 
-def include_file(f: PathLike[str] | str) -> bool:
+def include_file(f: PathLike | str) -> bool:
     """
     Check if a file should be included based on its extension.
 
