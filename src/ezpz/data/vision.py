@@ -60,8 +60,8 @@ def get_mnist(
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
-    rank = ezpz.get_rank()
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.get_rank()
+    world_size = ezpz.dist.get_world_size()
 
     if rank == 0:
         _ = datasets.MNIST(
@@ -71,7 +71,7 @@ def get_mnist(
             transform=transform,
         )
     if world_size > 1:
-        ezpz.barrier()
+        ezpz.dist.barrier()
 
     dset_train = datasets.MNIST(
         datadir.as_posix(),
@@ -173,7 +173,7 @@ def get_imagenet(
     )
 
     # Basic sanity check only on rank 0 (no auto-download for ImageNet)
-    if ezpz.get_rank() == 0:
+    if ezpz.dist.get_rank() == 0:
         train_dir = datadir / "train"
         val_dir = datadir / "val"
         if not train_dir.is_dir() or not val_dir.is_dir():
@@ -184,8 +184,8 @@ def get_imagenet(
                 "with standard ImageFolder layout."
             )
 
-    if ezpz.get_world_size() > 1:
-        ezpz.barrier()
+    if ezpz.dist.get_world_size() > 1:
+        ezpz.dist.barrier()
 
     dataset1 = datasets.ImageFolder(
         root=datadir / "train", transform=train_transform
@@ -206,8 +206,8 @@ def get_imagenet(
     }
 
     sampler1, sampler2 = None, None
-    rank = ezpz.get_rank()
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.get_rank()
+    world_size = ezpz.dist.get_world_size()
 
     if world_size > 1:
         sampler1 = DistributedSampler(
@@ -294,8 +294,8 @@ def get_imagenet1k(
             f"No cached imagenet-1k dataset found in {datadir} and download=False."
         )
 
-    rank = ezpz.get_rank()
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.get_rank()
+    world_size = ezpz.dist.get_world_size()
 
     # Only rank 0 triggers the initial download into cache_dir
     if rank == 0 and download:
@@ -311,7 +311,7 @@ def get_imagenet1k(
         )
 
     if world_size > 1:
-        ezpz.barrier()
+        ezpz.dist.barrier()
 
     # Now every rank loads from the shared cache_dir
     hf_train = load_dataset(
@@ -437,7 +437,7 @@ def get_openimages(
     val_dir = datadir / "val"
 
     # Sanity check (only on rank 0)
-    if ezpz.get_rank() == 0:
+    if ezpz.dist.get_rank() == 0:
         if not train_dir.is_dir() or not val_dir.is_dir():
             from ezpz.data.utils import download_openimages_subset
 
@@ -453,8 +453,8 @@ def get_openimages(
             #     f"  {val_dir}\n"
             #     "with standard ImageFolder layout."
             # )
-    if ezpz.get_world_size() > 1:
-        ezpz.barrier()
+    if ezpz.dist.get_world_size() > 1:
+        ezpz.dist.barrier()
 
     # Use standard ImageNet/OpenImages-like normalization
     normalize = transforms.Normalize(
@@ -502,8 +502,8 @@ def get_openimages(
     }
 
     sampler1, sampler2 = None, None
-    rank = ezpz.get_rank()
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.get_rank()
+    world_size = ezpz.dist.get_world_size()
 
     if world_size > 1:
         sampler1 = DistributedSampler(
@@ -559,8 +559,8 @@ def get_fake_data(
     # loader = torch.utils.data.DataLoader(  # type:ignore
     #     dataset, batch_size=batch_size, shuffle=shuffle
     # )
-    rank = ezpz.get_rank()
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.get_rank()
+    world_size = ezpz.dist.get_world_size()
     kwargs = {
         "batch_size": batch_size,
         "pin_memory": pin_memory,
