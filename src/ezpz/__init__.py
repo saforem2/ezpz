@@ -42,6 +42,7 @@ _LAZY_MODULES: Dict[str, str] = {
 _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.log",
     "ezpz.configs",
+    "ezpz.dist",
     "ezpz.doctor",
     "ezpz.examples",
     "ezpz.utils",
