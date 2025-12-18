@@ -550,6 +550,9 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
     Returns:
         None
     """
+    if device is None:
+        device = get_torch_device(as_torch_device=True)
+
     return (
         torch.cuda.synchronize(device)
         if torch.cuda.is_available()
@@ -562,6 +565,31 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
                 else torch.cpu.synchronize(device)
             )
         )
+    )
+
+
+def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
+    """
+    Wrap the model for distributed data parallel (DDP) training.
+
+    Args:
+        model (torch.nn.Module): The model to wrap.
+    """
+
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    device_type = ezpz.dist.get_torch_device_type()
+    local_rank = ezpz.dist.get_local_rank()
+    devids = (
+        f"{device_type}:{local_rank}"
+        if device_type == "cuda"
+        else local_rank
+        if device_type == "xpu"
+        else None
+    )
+    return DDP(
+        model,
+        device_ids=[devids] if devids is not None else None,
     )
 
 
@@ -763,12 +791,21 @@ def get_torch_device(
     Examples:
         >>> get_torch_device()  # Returns the current device type as a string
     """
+    # env_info = _get_env_torch_device()
+    # if env_info is not None:
+    #     device_str = env_info[0]
+    #     return torch.device(device_str) if as_torch_device else device_str
+    env_info = _get_env_torch_device()
+    if env_info is not None:
+        global _ENV_TORCH_DEVICE_LOGGED
+        if not _ENV_TORCH_DEVICE_LOGGED and get_rank() == 0:
+            logger.info("Using TORCH_DEVICE=%s from environment", env_info[2])
+            torch.set_default_device(f"{env_info[0]}")
+            _ENV_TORCH_DEVICE_LOGGED = True
+        return env_info[1]
     if device_type is None:
-        env_info = _get_env_torch_device()
-        if env_info is not None:
-            device_str = env_info[0]
-            return torch.device(device_str) if as_torch_device else device_str
-    device_type = get_torch_device_type(device_type)
+        device_type = get_torch_device_type(device_type)
+        return torch.device(device_type) if as_torch_device else device_type
     return torch.device(device_type) if as_torch_device else device_type
 
 
