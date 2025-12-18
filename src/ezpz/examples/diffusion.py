@@ -30,8 +30,9 @@ import torch
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
+import torch.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
+# from torch.distributed.fsdp import MixedPrecision
 
 import wandb
 
@@ -258,7 +259,9 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
-    wrapped_model = wrap_model(args, model)
+    wrapped_model = ezpz.dist.wrap_model(
+        args, use_fsdp=args.fsdp, dtype=args.dtype
+    )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
         wrapped_model,
@@ -488,70 +491,6 @@ def parse_args() -> argparse.Namespace:
         help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
     )
     return parser.parse_args()
-
-
-def wrap_model(
-    args: argparse.Namespace,
-    model: nn.Module,
-) -> [torch.nn.parallel.DistributedDataParallel | FSDP | nn.Module]:
-    if args.fsdp:
-        if ezpz.get_world_size() <= 1:
-            logger.warning(
-                "FSDP requested but WORLD_SIZE<=1; continuing without FSDP."
-            )
-        else:
-            mp = (
-                MixedPrecision(
-                    param_dtype=torch.bfloat16,
-                    reduce_dtype=torch.float32,
-                    buffer_dtype=torch.bfloat16,
-                )
-                if args.fsdp_mixed_precision
-                else None
-            )
-            logger.info(
-                "Wrapped model with FSDP%s", " (mixed precision)" if mp else ""
-            )
-            return FSDP(
-                model,
-                mixed_precision=mp,
-                use_orig_params=True,
-                # flatten_params=False,
-            )
-    else:
-        if ezpz.get_world_size() <= 1:
-            logger.warning(
-                "DDP requested but WORLD_SIZE<=1; continuing without DDP."
-            )
-            return model
-        else:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-
-            device_type = ezpz.dist.get_torch_device_type()
-            local_rank = ezpz.dist.get_local_rank()
-            devids = (
-                f"{device_type}:{local_rank}"
-                if device_type == "cuda"
-                else local_rank
-                if device_type == "xpu"
-                else None
-            )
-            return DDP(
-                model,
-                device_ids=[devids] if devids is not None else None,
-                # device_ids=[device_type.local_rank]
-                # if device_type == "cuda"
-                # else None,
-            )
-            # try:
-            #     if isinstance(device_type, str) and device_type.startswith(
-            #         "cuda"
-            #     ):
-            #         model = DDP(model, device_ids=[local_rank])
-            #     else:
-            #         model = DDP(model)
-            # except Exception:
-            #     model = DDP(model)
 
 
 def main() -> None:
