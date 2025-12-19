@@ -260,7 +260,7 @@ def train(
     model.to(device)
     model.train()
     wrapped_model = ezpz.dist.wrap_model(
-        args, use_fsdp=args.fsdp, dtype=args.dtype
+        model, use_fsdp=args.fsdp, dtype=args.dtype
     )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
