@@ -416,33 +416,10 @@ def parse_args() -> argparse.Namespace:
         description="Tiny diffusion example for text generation."
     )
     parser.add_argument(
-        "--log_freq", type=int, default=int(os.environ.get("LOG_FREQ", 1))
-    )
-    parser.add_argument(
-        "--seq-len", type=int, default=int(os.environ.get("SEQ_LEN", 12))
-    )
-    parser.add_argument(
-        "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))
-    )
-    parser.add_argument(
-        "--timesteps", type=int, default=int(os.environ.get("TIMESTEPS", 64))
-    )
-    parser.add_argument(
         "--batch-size", type=int, default=int(os.environ.get("BATCH_SIZE", 8))
     )
     parser.add_argument(
-        "--train-steps",
-        type=int,
-        default=int(os.environ.get("TRAIN_STEPS", 400)),
-    )
-    parser.add_argument(
-        "--lr", type=float, default=float(os.environ.get("LR", 3e-3))
-    )
-    parser.add_argument(
-        "--samples", type=int, default=int(os.environ.get("SAMPLES", 3))
-    )
-    parser.add_argument(
-        "--seed", type=int, default=int(os.environ.get("SEED", 0))
+        "--dtype", type=str, default=os.environ.get("DTYPE", "float32")
     )
     parser.add_argument(
         "--extra-text",
@@ -450,6 +427,19 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=None,
         help="Additional sentences to add to the tiny corpus.",
+    )
+    parser.add_argument(
+        "--fsdp",
+        action="store_true",
+        help="Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
+    )
+    parser.add_argument(
+        "--fsdp-mixed-precision",
+        action="store_true",
+        help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
+    )
+    parser.add_argument(
+        "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))
     )
     parser.add_argument(
         "--hf-dataset",
@@ -475,21 +465,34 @@ def parse_args() -> argparse.Namespace:
         default=512,
         help="Number of rows to sample from the HF dataset for quick experiments.",
     )
+    parser.add_argument(
+        "--log_freq", type=int, default=int(os.environ.get("LOG_FREQ", 1))
+    )
+    parser.add_argument(
+        "--samples", type=int, default=int(os.environ.get("SAMPLES", 3))
+    )
+    parser.add_argument(
+        "--seed", type=int, default=int(os.environ.get("SEED", 0))
+    )
+    parser.add_argument(
+        "--seq-len", type=int, default=int(os.environ.get("SEQ_LEN", 12))
+    )
+    parser.add_argument(
+        "--timesteps", type=int, default=int(os.environ.get("TIMESTEPS", 64))
+    )
+    parser.add_argument(
+        "--train-steps",
+        type=int,
+        default=int(os.environ.get("TRAIN_STEPS", 400)),
+    )
+    parser.add_argument(
+        "--lr", type=float, default=float(os.environ.get("LR", 3e-3))
+    )
     # parser.add_argument(
     #     "--ddp",
     #     action="store_true",
     #     help="Enable DDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
     # )
-    parser.add_argument(
-        "--fsdp",
-        action="store_true",
-        help="Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
-    )
-    parser.add_argument(
-        "--fsdp-mixed-precision",
-        action="store_true",
-        help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
-    )
     return parser.parse_args()
 
 
