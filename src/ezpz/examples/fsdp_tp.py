@@ -99,6 +99,7 @@ fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
+
 def _slice_for_sequence_parallel(
     labels: torch.Tensor, local_seq_len: int
 ) -> torch.Tensor:
@@ -155,6 +156,135 @@ def _slice_for_sequence_parallel(
     if copy_len > 0:
         shard[:, :copy_len] = labels.narrow(1, start, copy_len)
     return shard
+
+
+def _sample_tensor_values(
+    tensor: Optional[torch.Tensor], max_samples: int
+) -> Optional[torch.Tensor]:
+    if tensor is None or tensor.numel() == 0 or max_samples <= 0:
+        return None
+    flat = tensor.detach().flatten()
+    if flat.numel() > max_samples:
+        idx = torch.randperm(flat.numel(), device=flat.device)[:max_samples]
+        flat = flat.index_select(0, idx)
+    return flat.float()
+
+
+def _histogram_dict(
+    tensor: Optional[torch.Tensor], bins: int
+) -> Optional[dict[str, object]]:
+    if tensor is None or tensor.numel() == 0 or bins <= 0:
+        return None
+    t = tensor.float()
+    finite = t[torch.isfinite(t)]
+    if finite.numel() == 0:
+        return None
+    tmin = float(finite.min().item())
+    tmax = float(finite.max().item())
+    if tmin == tmax:
+        tmax = tmin + 1e-6
+    counts = torch.histc(finite, bins=bins, min=tmin, max=tmax)
+    bin_edges = torch.linspace(tmin, tmax, bins + 1)
+    return {
+        "bins": int(bins),
+        "min": float(tmin),
+        "max": float(tmax),
+        "counts": counts.cpu().tolist(),
+        "bin_edges": bin_edges.cpu().tolist(),
+    }
+
+
+def _parse_hist_layers(spec: str, max_layers: int) -> list[int]:
+    if spec.strip().lower() in {"all", "*"}:
+        return list(range(max_layers))
+    layers: list[int] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            lo_str, hi_str = part.split("-", 1)
+            try:
+                lo = int(lo_str)
+                hi = int(hi_str)
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid EZPZ_HIST_LAYERS range entry: %s",
+                    part,
+                )
+                continue
+            layers.extend(range(lo, hi + 1))
+        else:
+            try:
+                layers.append(int(part))
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid EZPZ_HIST_LAYERS entry: %s",
+                    part,
+                )
+                continue
+    return [i for i in layers if 0 <= i < max_layers]
+
+
+def _register_activation_hooks(
+    model: nn.Module, layer_ids: list[int]
+) -> tuple[dict[str, torch.Tensor], list[torch.utils.hooks.RemovableHandle]]:
+    activations: dict[str, torch.Tensor] = {}
+    handles: list[torch.utils.hooks.RemovableHandle] = []
+
+    for layer_id in layer_ids:
+        try:
+            block = model.layers[layer_id]  # type: ignore[index]
+        except Exception:
+            continue
+
+        def _make_hook(tag: str):
+            def _hook(_module, _inp, out):
+                if isinstance(out, tuple):
+                    out = out[0]
+                if torch.is_tensor(out):
+                    activations[tag] = out.detach()
+            return _hook
+
+        handles.append(
+            block.attention.register_forward_hook(
+                _make_hook(f"layer{layer_id}/attn_out")
+            )
+        )
+        handles.append(
+            block.feed_forward.register_forward_hook(
+                _make_hook(f"layer{layer_id}/ffn_out")
+            )
+        )
+        handles.append(
+            block.register_forward_hook(
+                _make_hook(f"layer{layer_id}/block_out")
+            )
+        )
+
+    return activations, handles
+
+
+def _wandb_log_histograms(
+    metrics: dict[str, object],
+    *,
+    step: int,
+    enabled: bool,
+) -> None:
+    if not enabled or wandb is None or getattr(wandb, "run", None) is None:
+        return
+    hist_payload: dict[str, object] = {}
+    for key, value in metrics.items():
+        if key.startswith("hist/") and isinstance(value, dict):
+            counts = value.get("counts")
+            bin_edges = value.get("bin_edges")
+            if isinstance(counts, list) and isinstance(bin_edges, list):
+                hist_payload[key] = wandb.Histogram(
+                    np_histogram=(counts, bin_edges)
+                )
+    if hist_payload:
+        wandb.log(hist_payload, step=step)
+
 
 
 def parse_args():
@@ -296,6 +426,77 @@ def parallelize(
     return sharded_model
 
 
+def _accumulate_stats(
+    tensor: Optional[torch.Tensor],
+    sumsq: torch.Tensor,
+    max_abs: torch.Tensor,
+    nonfinite: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if tensor is None or tensor.numel() == 0:
+        return sumsq, max_abs, nonfinite
+    t = tensor.float()
+    nonfinite = nonfinite + (~torch.isfinite(t)).sum()
+    max_abs = torch.maximum(max_abs, t.abs().max())
+    sumsq = sumsq + (t * t).sum()
+    return sumsq, max_abs, nonfinite
+
+
+def _collect_param_grad_stats(
+    model: nn.Module, device: torch.device | str
+) -> dict[str, float]:
+    param_sumsq = torch.zeros((), device=device)
+    param_max = torch.zeros((), device=device)
+    param_nonfinite = torch.zeros((), device=device, dtype=torch.int64)
+
+    grad_sumsq = torch.zeros((), device=device)
+    grad_max = torch.zeros((), device=device)
+    grad_nonfinite = torch.zeros((), device=device, dtype=torch.int64)
+
+    with torch.no_grad():
+        for param in model.parameters():
+            param_sumsq, param_max, param_nonfinite = _accumulate_stats(
+                param, param_sumsq, param_max, param_nonfinite
+            )
+            if param.grad is not None:
+                grad_sumsq, grad_max, grad_nonfinite = _accumulate_stats(
+                    param.grad, grad_sumsq, grad_max, grad_nonfinite
+                )
+
+    return {
+        "param/norm": float(torch.sqrt(param_sumsq).item()),
+        "param/max_abs": float(param_max.item()),
+        "param/nonfinite": float(param_nonfinite.item()),
+        "grad/norm": float(torch.sqrt(grad_sumsq).item()),
+        "grad/max_abs": float(grad_max.item()),
+        "grad/nonfinite": float(grad_nonfinite.item()),
+    }
+
+
+def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
+    layer_sumsq: dict[int, float] = {}
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if param.grad is None:
+                continue
+            if ".layers." not in name:
+                continue
+            try:
+                layer_str = name.split(".layers.", 1)[1].split(".", 1)[0]
+                layer_id = int(layer_str)
+            except Exception:
+                continue
+            grad = param.grad.float()
+            layer_sumsq[layer_id] = layer_sumsq.get(layer_id, 0.0) + float(
+                (grad * grad).sum().item()
+            )
+    if not layer_sumsq:
+        return []
+    max_layer = max(layer_sumsq)
+    return [
+        (layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)
+    ]
+
+
 def train(args: argparse.Namespace):
     rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     world_size = ezpz.dist.get_world_size()
@@ -308,6 +509,29 @@ def train(args: argparse.Namespace):
     )
     logger.info(f"Device mesh created:\n{device_mesh=}")
 
+    hf_dataset = None
+    hf_tokenizer = None
+    if args.dataset.lower() not in {"mnist", "random"}:
+        from ezpz.data.hf import get_hf_text_dataset
+
+        seed = int(os.environ.get("EZPZ_HF_SAMPLE_SEED", "1337"))
+        hf_dataset, hf_tokenizer = get_hf_text_dataset(
+            dataset_name=args.dataset,
+            split=args.hf_split,
+            text_column=args.hf_text_column,
+            tokenizer_name=args.tokenizer_name,
+            seq_len=args.seq_len,
+            limit=args.hf_limit,
+            seed=seed,
+        )
+        if hf_tokenizer.vocab_size != args.vocab_size:
+            logger.warning(
+                "Overriding vocab_size from %s to tokenizer vocab_size=%s",
+                args.vocab_size,
+                hf_tokenizer.vocab_size,
+            )
+            args.vocab_size = hf_tokenizer.vocab_size
+
     config = ModelArgs(
         dim=args.dim,
         n_layers=args.n_layers,
@@ -318,6 +542,13 @@ def train(args: argparse.Namespace):
         multiple_of=args.multiple_of,
     )
     logger.info(f"config:\n{config}")
+    metrics_every = int(os.environ.get("EZPZ_METRICS_EVERY", "1"))
+    track_logits = os.environ.get("EZPZ_TRACK_LOGITS", "0") == "1"
+    track_hist = os.environ.get("EZPZ_TRACK_HIST", "0") == "1"
+    track_act_hist = os.environ.get("EZPZ_TRACK_ACT_HIST", "1") == "1"
+    hist_bins = int(os.environ.get("EZPZ_HIST_BINS", "64"))
+    hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
+    dataset_tag = args.dataset.lower().replace("/", "_")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
         fp = Path(__file__)
         run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
@@ -351,6 +582,19 @@ def train(args: argparse.Namespace):
             reduce_dtype=torch.float32,
         )
     model = parallelize(model, device_mesh, mp_config)
+    base_model = model
+    if not hasattr(base_model, "layers"):
+        base_model = getattr(model, "_fsdp_wrapped_module", model)
+    act_activations: dict[str, torch.Tensor] = {}
+    act_handles: list[torch.utils.hooks.RemovableHandle] = []
+    if track_hist and track_act_hist and ezpz.get_rank() == 0:
+        hist_layers_spec = os.environ.get(
+            "EZPZ_HIST_LAYERS", f"0,{config.n_layers - 1}"
+        )
+        layer_ids = _parse_hist_layers(hist_layers_spec, config.n_layers)
+        act_activations, act_handles = _register_activation_hooks(
+            base_model, layer_ids
+        )
     logger.info(f"Creating optimizer=AdamW with lr={args.lr}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, foreach=True)
@@ -396,30 +640,10 @@ def train(args: argparse.Namespace):
         dataloader = data["dataloader"]
     # if args.dataset.lower() != "random":
     else:
-        from ezpz.data.hf import load_hf_texts
         from ezpz.data.distributed import TPBroadcastDataLoader
 
-        base_texts = load_hf_texts(
-            dataset_name=args.dataset,
-            split=args.hf_split,
-            text_column=args.hf_text_column,
-            limit=args.hf_limit,
-        )
-        vocab, _ = ezpz.data.hf.build_vocab(base_texts)
-        if len(vocab) > args.vocab_size:
-            specials = ["<pad>", "<unk>"]
-            words = sorted(
-                {word for text in base_texts for word in text.lower().split()}
-            )
-            keep = max(0, args.vocab_size - len(specials))
-            vocab = {tok: idx for idx, tok in enumerate(specials + words[:keep])}
-            logger.warning(
-                "Truncated vocab to %s tokens for model size.",
-                args.vocab_size,
-            )
-        dataset = ezpz.data.hf.ToyTextDataset(
-            base_texts, vocab, seq_len=args.seq_len
-        )
+        assert hf_dataset is not None
+        dataset = hf_dataset
         sampler = (
             DistributedSampler(
                 dataset=dataset,
@@ -469,8 +693,10 @@ def train(args: argparse.Namespace):
         for idx, batch in enumerate(dataloader):
             ezpz.dist.synchronize()
             t0 = perf_counter()
+            attn_mask = None
             if isinstance(batch, dict) and "input_ids" in batch:
                 x = batch["input_ids"]
+                attn_mask = batch.get("attention_mask")
             else:
                 x = batch
             assert isinstance(x, torch.Tensor)
@@ -480,15 +706,31 @@ def train(args: argparse.Namespace):
                 inp = x[:, :-1]
                 labels = x[:, 1:]
             else:
-                assert isinstance(batch, torch.Tensor)
                 inp = x[:, :-1]
                 labels = x[:, 1:]
             inp = inp.to(device_id)
             labels = labels.to(device_id)
+            if attn_mask is not None:
+                attn_mask = attn_mask.to(device_id)
             pred = model(inp)
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
                 labels = _slice_for_sequence_parallel(labels, local_seq_len)
+            if attn_mask is not None:
+                if attn_mask.shape[1] > 1:
+                    attn_labels = attn_mask[:, 1:]
+                else:
+                    attn_labels = attn_mask
+                if attn_labels.shape[1] != local_seq_len:
+                    attn_labels = _slice_for_sequence_parallel(
+                        attn_labels, local_seq_len
+                    )
+                labels = labels.clone()
+                labels[attn_labels == 0] = -100
+            pad_id = getattr(dataset, "pad_id", None)
+            if pad_id is not None:
+                labels = labels.clone()
+                labels[labels == int(pad_id)] = -100
             ezpz.dist.synchronize()
             t1 = perf_counter()
             tp_mod = getattr(ezpz, "tp", None)
@@ -531,29 +773,87 @@ def train(args: argparse.Namespace):
                 # loss = output.loss
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            grad_norm_preclip = None
             if args.max_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(
+                grad_norm_preclip = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), args.max_grad_norm
                 )
             optimizer.step()
             ezpz.dist.synchronize()
             t2 = perf_counter()
             global_step += 1
-            logger.info(
-                history.update(
-                    {
-                        "train/iter": global_step,
-                        "train/epoch": epoch,
-                        "train/bidx": idx,
-                        "train/loss": loss.item(),
-                        "train/dt": t2 - t0,
-                        "train/dtf": t1 - t0,
-                        "train/dtb": t2 - t1,
-                    }
-                ).replace("train/", "")
+            metrics: dict[str, object] = {
+                "train/iter": global_step,
+                "train/epoch": epoch,
+                "train/bidx": idx,
+                "train/loss": loss.item(),
+                "train/dt": t2 - t0,
+                "train/dtf": t1 - t0,
+                "train/dtb": t2 - t1,
+            }
+            if grad_norm_preclip is not None:
+                metrics["grad/norm_preclip"] = float(grad_norm_preclip)
+            if global_step % max(metrics_every, 1) == 0:
+                metrics.update(_collect_param_grad_stats(model, device_id))
+                metrics["opt/lr"] = float(optimizer.param_groups[0]["lr"])
+                metrics["input/max"] = float(x.max().item())
+                metrics["input/min"] = float(x.min().item())
+                metrics["labels/valid"] = float(
+                    (labels != -100).sum().item()
+                )
+                if track_logits:
+                    pred_finite = torch.isfinite(pred)
+                    metrics["logits/nonfinite"] = float(
+                        (~pred_finite).sum().item()
+                    )
+                    metrics["logits/max_abs"] = float(pred.abs().max().item())
+                if track_hist and ezpz.get_rank() == 0:
+                    logits_sample = _sample_tensor_values(pred, hist_samples)
+                    if logits_sample is not None:
+                        logits_hist = _histogram_dict(
+                            logits_sample, hist_bins
+                        )
+                        if logits_hist is not None:
+                            metrics[
+                                f"hist/{dataset_tag}/logits"
+                            ] = logits_hist
+                    layer_grad_norms = _collect_layer_grad_norms(base_model)
+                    if layer_grad_norms:
+                        layer_grad_hist = _histogram_dict(
+                            torch.tensor(layer_grad_norms), hist_bins
+                        )
+                        if layer_grad_hist is not None:
+                            metrics[
+                                f"hist/{dataset_tag}/grad_norm_per_layer"
+                            ] = layer_grad_hist
+                    if track_act_hist and act_activations:
+                        for act_key, act_tensor in act_activations.items():
+                            act_sample = _sample_tensor_values(
+                                act_tensor, hist_samples
+                            )
+                            act_hist = _histogram_dict(
+                                act_sample, hist_bins
+                            )
+                            if act_hist is not None:
+                                metrics[
+                                    f"hist/{dataset_tag}/activations/{act_key}"
+                                ] = act_hist
+                    _wandb_log_histograms(
+                        metrics, step=global_step, enabled=track_hist
+                    )
+            history.update(metrics, summarize=False)
+            history.log_metrics(
+                metrics,
+                logger=logger,
+                debug_prefixes=("hist/",),
+                include_summary=True,
+                rank0_only_summary=True,
             )
             if epoch == 0 and idx == 0:
                 logger.info(f"{x.shape}")
+    if act_handles:
+        for handle in act_handles:
+            handle.remove()
     ezpz.dist.barrier()
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
