@@ -39,8 +39,8 @@ maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 
 [project.scripts]
 ezpz = "ezpz.cli:main"
-ezpz-test = "ezpz.test:main"
-ezpz-launch = "ezpz.launch:main"
+ezpz-test = "ezpz.cli.test_cmd:main"
+ezpz-launch = "ezpz.cli.launch_cmd:main"
 ezpz-yeet-env = "ezpz.utils.yeet_env:main"
 ezpz-tar-env = "ezpz.utils.tar_env:main"
 ezpz-doctor = "ezpz.doctor:main"
