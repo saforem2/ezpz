@@ -110,10 +110,93 @@ def load_hf_texts(
         )
     else:
         assert callable(getattr(dataset, "select"))
-        texts = [str(row[text_column]) for row in dataset.select(range(limit))]
+        total = len(dataset)
+        if limit <= 0:
+            raise ValueError("limit must be > 0 for HF dataset sampling.")
+        if limit >= total:
+            indices = list(range(total))
+        else:
+            seed = int(os.environ.get("EZPZ_HF_SAMPLE_SEED", "1337"))
+            try:
+                dataset = dataset.shuffle(seed=seed)
+                indices = list(range(limit))
+            except Exception:
+                rng = torch.Generator().manual_seed(seed)
+                indices = torch.randperm(total, generator=rng)[:limit].tolist()
+        texts = [
+            str(row[text_column]) for row in dataset.select(indices)
+            if str(row.get(text_column, "")).strip()
+        ]
         if not texts:
             raise ValueError("No text rows found from HF dataset.")
     return texts
+
+
+def get_hf_text_dataset(
+    *,
+    dataset_name: str,
+    split: str,
+    text_column: str,
+    tokenizer_name: str,
+    seq_len: int,
+    limit: int,
+    seed: int,
+) -> tuple[datasets.Dataset, AutoTokenizer]:
+    """
+    Build a tokenized HF dataset with input_ids + attention_mask.
+
+    Returns:
+        tokenized dataset (torch formatted) and tokenizer.
+    """
+    if seq_len <= 0:
+        raise ValueError("seq_len must be > 0 for HF dataset tokenization.")
+    logger.info(
+        "Tokenizing HF dataset %s split=%s column=%s limit=%s seq_len=%s",
+        dataset_name,
+        split,
+        text_column,
+        limit,
+        seq_len,
+    )
+    dataset = datasets.load_dataset(dataset_name, split=split)
+    if (
+        cnames := getattr(dataset, "column_names")
+    ) and text_column not in list(cnames):
+        raise ValueError(
+            f"text_column '{text_column}' not in dataset columns {dataset.column_names}"
+        )
+
+    if limit > 0 and limit < len(dataset):
+        dataset = dataset.shuffle(seed=seed)
+        dataset = dataset.select(range(limit))
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    max_length = seq_len + 1
+
+    def tokenize_function(examples):
+        return tokenizer(
+            examples[text_column],
+            padding="max_length",
+            truncation=True,
+            max_length=max_length,
+            return_attention_mask=True,
+        )
+
+    tokenized = dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=dataset.column_names,
+        desc="Tokenizing HF dataset",
+    )
+    tokenized.set_format(
+        type="torch", columns=["input_ids", "attention_mask"]
+    )
+    tokenized.pad_id = tokenizer.pad_token_id  # type: ignore[attr-defined]
+    tokenized.vocab_size = tokenizer.vocab_size  # type: ignore[attr-defined]
+    return tokenized, tokenizer
 
 
 def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
