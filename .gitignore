@@ -1,4 +1,6 @@
 # user added
+trainer_output/*
+*.bin
 .deepspeed_env
 .jobenv
 **ezpz_pyinstrument_profiles**
@@ -184,3 +186,4 @@ cython_debug/
 #.idea/
 
 /.quarto/
+core\.
