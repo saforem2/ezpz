@@ -50,6 +50,8 @@ class FakeImageDataset(Dataset):
 def get_mnist(
     train_batch_size: int = 128,
     test_batch_size: int = 128,
+    num_replicas: int | None = None,
+    rank: int | None = None,
     outdir: Optional[str | Path] = None,
     num_workers: int = 1,
     download: bool = True,

@@ -5,7 +5,9 @@ Contains methods for initializing distributed communication.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+from torch.nn.parallel.distributed import DistributedDataParallel
 
+import sys
 import datetime
 import logging
 import os
@@ -222,7 +224,11 @@ def timeitlogit(
                 and wandb is not None
                 and wandb.run is not None
             ):
-                wandb.log({f"{prefix}/{fname}": dt}, commit=False)
+                try:
+                    wandb.log({f"{prefix}/{fname}": dt}, commit=False)
+                except Exception as exc:
+                    logger.exception(exc)
+                    raise exc
             if verbose and rank == 0:
                 arg_str = ", ".join(map(str, args))
                 kw_str = ", ".join(f"{k}={v}" for k, v in kwargs.items())
@@ -409,19 +415,21 @@ def _get_dist_info(
         "NODE_ID": get_node_index(),
         "RANK": get_rank(),
         "rank": get_rank(),
-        "SCHEDULER": (scheduler := get_scheduler()),
+        "SCHEDULER": get_scheduler(),
         # 'WORLD_SIZE': get_world_size(),
         "WORLD_SIZE_TOTAL": get_world_size_total(),
         "WORLD_SIZE_IN_USE": get_world_size_in_use(),
         "world_size": get_world_size(),
-        "LAUNCH_CMD": (
-            ezpz.pbs.get_pbs_launch_cmd(
-                hostfile=hfp,
-                verbose=(get_rank() == 0),
-            )
-            if scheduler.lower() == "pbs"
-            else None
-        ),
+        "EZPZ_RUN_COMMAND": (os.environ.get("EZPZ_RUN_COMMAND", sys.argv[0])),
+        # "LAUNCH_CMD":
+        # "LAUNCH_CMD": (
+        #     ezpz.pbs.get_pbs_launch_cmd(
+        #         hostfile=hfp,
+        #         verbose=(get_rank() == 0),
+        #     )
+        #     if scheduler.lower() == "pbs"
+        #     else None
+        # ),
     }
     # ws = os.environ.get("WORLD_SIZE", None)
     # if ws is not None:
@@ -543,7 +551,7 @@ def print_dist_setup(
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
                 f"vs."
-                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}"
+                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}\n"
                 r"¯\_(ツ)_/¯ ??"
             )
     return dist_str
@@ -578,7 +586,7 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
     )
 
 
-def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
+def wrap_model_for_ddp(model: torch.nn.Module) -> DistributedDataParallel:
     """
     Wrap the model for distributed data parallel (DDP) training.
 
@@ -601,11 +609,28 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
     )
 
 
+def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
+    return wrap_model_for_ddp(model)
+
+
+def wrap_with_fsdp(model, dtype: str = "bfloat16") -> FSDP:
+    if get_rank() == 0:
+        logger.info(f"Wrapping model model with FSDP + {dtype}")
+    return FSDP(
+        model,
+        mixed_precision=MixedPrecision(
+            param_dtype=TORCH_DTYPES_MAP[dtype],
+            reduce_dtype=torch.float32,
+            cast_forward_inputs=True,
+        ),
+    )
+
+
 def wrap_model(
     model: torch.nn.Module,
     use_fsdp: Optional[bool] = True,
     dtype: str = "bfloat16",
-) -> torch.nn.parallel.DistributedDataParallel | FSDP | torch.nn.Module:
+) -> DistributedDataParallel | FSDP | torch.nn.Module:
     if (ws := ezpz.get_world_size()) <= 1:
         logger.warning(
             f"{'FSDP' if use_fsdp else 'DDP'} requested but world_size={ws} <= 1;"
@@ -618,41 +643,50 @@ def wrap_model(
         )
         return model
     rank = get_rank()
+    if rank == 0:
+        logger.info(f"Wrapping model with: {'fsdp' if use_fsdp else 'ddp'}")
     if use_fsdp:
-        if dtype in {"fp16", "bf16", "fp32"}:
-            try:
-                if rank == 0:
-                    logger.info(f"Wrapping model model with FSDP + {dtype}")
-                return FSDP(
-                    model,
-                    mixed_precision=MixedPrecision(
-                        param_dtype=TORCH_DTYPES_MAP[dtype],
-                        reduce_dtype=torch.float32,
-                        cast_forward_inputs=True,
-                    ),
-                )
-            except Exception as exc:
-                if rank == 0:
-                    logger.warning(f"Encountered exception: {exc}")
-                    logger.warning(
-                        "Unable to wrap model with FSDP. Falling back to DDP..."
-                    )
-                model = ezpz.dist.wrap_model_for_ddp(
-                    model=model,
-                )
-    device_type = ezpz.dist.get_torch_device_type()
-    local_rank = ezpz.dist.get_local_rank()
-    devids = (
-        f"{device_type}:{local_rank}"
-        if device_type == "cuda"
-        else local_rank
-        if device_type == "xpu"
-        else None
-    )
-    return DDP(
-        model,
-        device_ids=[devids] if devids is not None else None,
-    )
+        model = wrap_with_fsdp(model, dtype=dtype)
+    else:
+        model = wrap_with_ddp(model)
+
+    return model
+
+    # if use_fsdp:
+    #     if dtype in {"fp16", "bf16", "fp32"}:
+    #         try:
+    #             if rank == 0:
+    #                 logger.info(f"Wrapping model model with FSDP + {dtype}")
+    #             return FSDP(
+    #                 model,
+    #                 mixed_precision=MixedPrecision(
+    #                     param_dtype=TORCH_DTYPES_MAP[dtype],
+    #                     reduce_dtype=torch.float32,
+    #                     cast_forward_inputs=True,
+    #                 ),
+    #             )
+    #         except Exception as exc:
+    #             if rank == 0:
+    #                 logger.warning(f"Encountered exception: {exc}")
+    #                 logger.warning(
+    #                     "Unable to wrap model with FSDP. Falling back to DDP..."
+    #                 )
+    #             model = ezpz.dist.wrap_model_for_ddp(
+    #                 model=model,
+    #             )
+    # device_type = ezpz.dist.get_torch_device_type()
+    # local_rank = ezpz.dist.get_local_rank()
+    # devids = (
+    #     f"{device_type}:{local_rank}"
+    #     if device_type == "cuda"
+    #     else local_rank
+    #     if device_type == "xpu"
+    #     else None
+    # )
+    # return DDP(
+    #     model,
+    #     device_ids=[devids] if devids is not None else None,
+    # )
 
 
 def setup(
@@ -1204,7 +1238,7 @@ def all_reduce(
     elif implementation.lower() in {"torch", "pytorch", "pt"}:
         import torch.distributed as dist
 
-        op = dist.ReduceOp.SUM if op is None else op
+        op = dist.ReduceOp.SUM if op is None else op  # type:ignore
         assert op is not None
         tensor = torch.tensor(obj)
         dist.all_reduce(tensor, op=op)  # type:ignore
@@ -1416,12 +1450,6 @@ def setup_torch_distributed(
         if backend is None
         else str(backend).lower()
     )
-    # be = str(framework).lower()
-    # assert fw in {"ds", "deepspeed", "ddp", "horovod", "hvd"}, (
-    #     f"Invalid backend: {framework=}, expected one of "
-    #     f"{'ds', 'deepspeed', 'ddp', 'horovod', 'hvd'}"
-    # )
-    # assert be in BACKENDS['pytorch']
     if rank == 0:
         logger.info(
             " ".join(
@@ -1591,6 +1619,7 @@ def setup_torch(
             backend=backend,
             port=port,
             timeout=timeout,
+            device_id=device_id,
             tensor_parallel_size=int(tensor_parallel_size),
             pipeline_parallel_size=int(pipeline_parallel_size),
             context_parallel_size=int(context_parallel_size),
@@ -1621,6 +1650,8 @@ def setup_torch(
     if torch.xpu.is_available():
         torch.xpu.set_device(local_rank)
     if seed is not None:
+        if rank == 0:
+            logger.warning(f"Manually specifying {seed=}")
         seed_everything(seed * (rank + 1) * (local_rank + 1))
     if rank == 0:
         if backend in {"ds", "deepspeed", "dspeed"}:
