@@ -1,3 +1,7 @@
+"""
+ezpz/data/distributed.py
+"""
+
 from __future__ import absolute_import, division, print_function, annotations
 from typing import Any, Dict, Iterable, Iterator, Optional
 import torch
