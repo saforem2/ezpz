@@ -371,9 +371,8 @@ def train_fn(
     return history
 
 
-def main():
+def main(args: argparse.Namespace):
     rank = ezpz.dist.setup_torch()
-    args = parse_args()
     if rank == 0:
         try:
             fp = Path(__file__).resolve()
@@ -442,6 +441,7 @@ def main():
 
 
 if __name__ == "__main__":
+    args = parse_args()
     t0 = time.perf_counter()
-    main()
+    main(args)
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
