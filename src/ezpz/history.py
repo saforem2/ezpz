@@ -1090,19 +1090,45 @@ class History:
         include_summary: bool = True,
         rank0_only_summary: bool = True,
         precision: int = 6,
+        omit_counter_metrics: bool = True,
+        counter_tokens: tuple[str, ...] = (
+            "iter",
+            "epoch",
+            "step",
+            "batch",
+            "idx",
+            "bidx",
+        ),
     ) -> None:
         log = logger if logger is not None else get_logger(__name__)
         info_metrics, debug_metrics = self.split_metrics_for_logging(
             metrics, debug_prefixes=debug_prefixes
         )
-        info_msg = summarize_dict(
-            info_metrics, precision=precision
-        ).replace("train/", "")
+        def _is_counter_key(key: str) -> bool:
+            parts = key.replace("\\", "/").split("/")
+            if not parts:
+                return False
+            last = parts[-1]
+            for token in counter_tokens:
+                if last == token or last.endswith(f"_{token}"):
+                    return True
+            return False
+
+        info_msg = summarize_dict(info_metrics, precision=precision).replace(
+            "train/", ""
+        )
         if info_msg:
             log.info(info_msg)
         if include_summary:
+            summary_input = info_metrics
+            if omit_counter_metrics:
+                summary_input = {
+                    k: v
+                    for k, v in info_metrics.items()
+                    if not _is_counter_key(k)
+                }
             summary_stats = self.summarize_distributed_min_max_std(
-                info_metrics
+                summary_input
             )
             if summary_stats and (
                 not rank0_only_summary or self._rank == 0
