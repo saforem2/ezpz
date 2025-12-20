@@ -167,9 +167,11 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             log_time_display = log_time.strftime(time_format or self.time_format)
             d, t = log_time_display.split(" ")
             result += Text("[", style=self.styles.get("log.brace", ""))
-            result += Text(f"{d} ", style=self.styles.get("logging.date", ""))
-            result += Text(t, style=self.styles.get("logging.time", ""))
+            result += Text(f"{d} ")
+            result += Text(t)
             result += Text("]", style=self.styles.get("log.brace", ""))
+            # result += Text(f"{d} ", style=self.styles.get("logging.date", ""))
+            # result += Text(t, style=self.styles.get("logging.time", ""))
             # result += Text(log_time_display, style=self.styles['logging.time'])
             self._last_time = log_time_display
         if self.show_level:
