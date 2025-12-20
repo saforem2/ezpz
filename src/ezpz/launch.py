@@ -66,33 +66,46 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     )
     parser.add_argument(
         "-n",
+        "-np",
+        "--n",
+        "--np",
         "--nproc",
         "--world_size",
         "--nprocs",
         type=int,
+        dest="nproc",
         default=-1,
         help="Number of processes.",
     )
     parser.add_argument(
-        "-np",
+        "-ppn",
+        "--ppn",
         "--nproc_per_node",
         type=int,
         default=-1,
+        dest="nproc_per_node",
         help="Processes per node.",
     )
     parser.add_argument(
         "-nh",
-        "--nnode",
+        "--nh",
         "--nhost",
+        "--nnode",
+        "--nnodes",
+        "--nhosts",
         "--nhosts",
         type=int,
         default=-1,
+        dest="nhosts",
         help="Number of nodes to use.",
     )
     parser.add_argument(
+        # "-h",
+        # "--h",
         "--hostfile",
         type=str,
         default=None,
+        dest="hostfile",
         help="Hostfile to use for launching.",
     )
     parser.add_argument(
@@ -138,6 +151,7 @@ def run_command(
             ]
         )
     )
+    os.environ["EZPZ_RUN_COMMAND"] = str(cmd_list)
     with subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
@@ -418,10 +432,10 @@ def launch(
         filters += get_aurora_filters()
 
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
-    logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     cmd_start = time.perf_counter()
     retcode = run_command(command=cmd, filters=filters)
     cmd_finish = time.perf_counter()
+    logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting.")
@@ -448,7 +462,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 cmd_to_launch=command_parts,
                 include_python=False,
                 ngpus=args.nproc if args.nproc > -1 else None,
-                nhosts=args.nnode if args.nnode > -1 else None,
+                nhosts=args.nhosts if args.nhosts > -1 else None,
                 ngpu_per_host=args.nproc_per_node if args.nproc_per_node > -1 else None,
                 hostfile=args.hostfile,
                 filters=args.filter,
@@ -458,7 +472,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     requested_nproc = args.nproc if args.nproc > -1 else None
     requested_ppn = args.nproc_per_node if args.nproc_per_node > -1 else None
-    requested_nhosts = args.nnode if args.nnode > -1 else None
+    requested_nhosts = args.nhosts if args.nhosts > -1 else None
     if (
         requested_nproc is None
         and requested_ppn is not None
