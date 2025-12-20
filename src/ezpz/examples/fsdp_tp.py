@@ -56,7 +56,9 @@ import argparse
 import logging
 from pathlib import Path
 from time import perf_counter
-from typing import Iterable
+from typing import Iterable, Optional
+
+from torch.utils.data import DataLoader, DistributedSampler
 
 import ezpz
 
@@ -93,6 +95,9 @@ try:
 except ImportError:
     wandb = None  # type: ignore
 
+fp = Path(__file__)
+WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 def _slice_for_sequence_parallel(
     labels: torch.Tensor, local_seq_len: int
@@ -165,24 +170,68 @@ def parse_args():
     parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=24)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--test-batch-size", type=int, default=1000)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--tp", type=int, default=2)
+    parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--outdir", type=str, default="outputs/fsdp_tp")
     # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
         "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
     )
+    parser.add_argument(
+        "--tokenizer_name", type=str, default="meta-llama/llama-2-7b-hf"
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--hf-split",
+        "--hf_split",
+        type=str,
+        default="train",
+        help="Dataset split to load.",
+    )
+    parser.add_argument(
+        "--hf-text-column",
+        "--hf_text_column",
+        type=str,
+        default="text",
+        help="Column containing raw text in the dataset.",
+    )
+    parser.add_argument(
+        "--hf-limit",
+        "--hf_limit",
+        type=int,
+        default=512,
+        help="Number of rows to sample from the HF dataset for quick experiments.",
+    )
     # parser.add_argument('--max_batch_size', type=int, default=None)
+    parser.add_argument(
+        "--seq-len", type=int, default=int(os.environ.get("SEQ_LEN", 1024))
+    )
     parser.add_argument("--max-seq-len", type=int, default=32768)
     parser.add_argument("--depth-init", type=bool, default=True)
+    parser.add_argument(
+        "--fp32",
+        action="store_true",
+        help="Disable mixed precision (use fp32) for debugging NaNs.",
+    )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
     # depth_init: bool = True
     return parser.parse_args()
 
 
-def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
+def parallelize(
+    model: nn.Module,
+    device_mesh: DeviceMesh,
+    mixed_precision: Optional[MixedPrecision],
+) -> nn.Module:
     tp_mesh = device_mesh["tp"]
     dp_mesh = device_mesh["dp"]
 
@@ -235,13 +284,12 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
             device_mesh=tp_mesh,
             parallelize_plan=layer_tp_plan,
         )
+
+    # from torch.distributed.fsdp import fully_shard
+
     sharded_model = FSDP(
         model,
-        mixed_precision=MixedPrecision(
-            param_dtype=torch.bfloat16,
-            cast_forward_inputs=True,
-            reduce_dtype=torch.float32,
-        ),
+        mixed_precision=mixed_precision,
         device_mesh=dp_mesh,
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
@@ -249,8 +297,8 @@ def parallelize(model: nn.Module, device_mesh: DeviceMesh) -> nn.Module:
 
 
 def train(args: argparse.Namespace):
-    rank = ezpz.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
-    world_size = ezpz.get_world_size()
+    rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+    world_size = ezpz.dist.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
     device_mesh = init_device_mesh(
@@ -272,7 +320,7 @@ def train(args: argparse.Namespace):
     logger.info(f"config:\n{config}")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
         fp = Path(__file__)
-        run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
+        run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
         if wandb is not None:
             assert run is not None and run is wandb.run
             from dataclasses import asdict
@@ -295,14 +343,43 @@ def train(args: argparse.Namespace):
     )
     logger.info(f"\n{mstr}")
     model.to(device_id)
-    model = parallelize(model, device_mesh)
+    mp_config: Optional[MixedPrecision] = None
+    if not args.fp32:
+        mp_config = MixedPrecision(
+            param_dtype=torch.bfloat16,
+            cast_forward_inputs=True,
+            reduce_dtype=torch.float32,
+        )
+    model = parallelize(model, device_mesh, mp_config)
     logger.info(f"Creating optimizer=AdamW with lr={args.lr}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, foreach=True)
 
     device = ezpz.get_torch_device(as_torch_device=False)
 
-    if args.dataset == "random":
+    tp_group = device_mesh.get_group("tp")
+    if args.dataset.lower() == "mnist":
+        data_prefix = Path(os.getcwd()).joinpath(
+            ".cache", "ezpz", "data", f"{args.dataset.lower()}"
+        )
+        from ezpz.data.vision import get_mnist
+        from ezpz.data.distributed import TPBroadcastDataLoader
+
+        data = get_mnist(
+            outdir=Path(data_prefix),
+            train_batch_size=args.batch_size,
+            test_batch_size=args.test_batch_size,
+            num_replicas=dpsize,
+            rank=device_mesh.get_local_rank("dp"),
+            pin_memory=True,
+            num_workers=args.num_workers,
+        )
+        dataset = data["dataset"]
+        sampler = data["sampler"]
+        dataloader = data["dataloader"]
+        if args.tp > 1:
+            dataloader = TPBroadcastDataLoader(dataloader, tp_group)
+    elif args.dataset.lower() == "random":
         from ezpz.data.distributed import get_random_dataset_fsdp_tp
 
         data = get_random_dataset_fsdp_tp(
@@ -310,50 +387,59 @@ def train(args: argparse.Namespace):
             vocab_size=args.vocab_size,
             seq_length=args.seq_length,
             dp_group=device_mesh.get_group("dp"),
-            tp_group=device_mesh.get_group("tp"),
+            tp_group=tp_group,
             broadcast_within_tp=True,
             drop_last=True,
         )
         dataset = data["dataset"]
+        sampler = data["sampler"]
         dataloader = data["dataloader"]
+    # if args.dataset.lower() != "random":
     else:
-        # TODO: FIX !! ------------------------------------------------------
-        from ezpz.data.hf import get_hf_datasets
+        from ezpz.data.hf import load_hf_texts
+        from ezpz.data.distributed import TPBroadcastDataLoader
 
-        data = get_hf_datasets(data_args=args.dataset)
-        dataloader = data.get_data_loader()
-        # -------------------------------------------------------------------
+        base_texts = load_hf_texts(
+            dataset_name=args.dataset,
+            split=args.hf_split,
+            text_column=args.hf_text_column,
+            limit=args.hf_limit,
+        )
+        vocab, _ = ezpz.data.hf.build_vocab(base_texts)
+        if len(vocab) > args.vocab_size:
+            specials = ["<pad>", "<unk>"]
+            words = sorted(
+                {word for text in base_texts for word in text.lower().split()}
+            )
+            keep = max(0, args.vocab_size - len(specials))
+            vocab = {tok: idx for idx, tok in enumerate(specials + words[:keep])}
+            logger.warning(
+                "Truncated vocab to %s tokens for model size.",
+                args.vocab_size,
+            )
+        dataset = ezpz.data.hf.ToyTextDataset(
+            base_texts, vocab, seq_len=args.seq_len
+        )
+        sampler = (
+            DistributedSampler(
+                dataset=dataset,
+                num_replicas=dpsize,
+                rank=device_mesh.get_local_rank("dp"),
+            )
+            if ezpz.get_world_size() > 1
+            else None
+        )
+        dataloader = DataLoader(
+            dataset,
+            sampler=sampler,
+            batch_size=args.batch_size,
+            shuffle=(sampler is None),
+            drop_last=False,
+        )
+        if args.tp > 1:
+            dataloader = TPBroadcastDataLoader(dataloader, tp_group)
 
-        # XXX ------------------------------------------------------
-        # else:
-        #
-        #     # # Load a subset of FineWeb (replace with the actual dataset name if different)
-        #     dataset_name = 'eliplutchok/fineweb-small-sample'  # Replace with the correct dataset name
-        #     # split = "train[:1000]"  # Load the first 1000 samples for testing
-        #     tokenizer_name = 'meta-llama/llama-2-7b-hf'
-        #     # Get the PyTorch-compatible dataset
-        #     dataset = get_torch_dataset(
-        #         dataset_name,
-        #         tokenizer_name=tokenizer_name,
-        #         max_length=args.seq_length,
-        #     )
-        #     # # Create a DataLoader for batching
-        #     dataloader = DataLoader(
-        #         hfdset, batch_size=args.batch_size, shuffle=True
-        #     )
-        # Iterate through the DataLoader and inspect a batch
-        # for batch in dataloader:
-        #     print("Batch input_ids shape:", batch["input_ids"].shape)
-        #     print("Batch attention_mask shape:", batch["attention_mask"].shape)
-        #     print("Sample input_ids:", batch["input_ids"][0])
-        #     break  # Stop after the first batch for testing
-        # # model.init_weights()
-        # tdist.barrier()
-        # import torch.distributed as tdist
-        # from ezpz.utils import breakpoint
-        # breakpoint(0)
-        # -------------------------------------------------------------------
-
+    # ezpz.breakpoint(0)
     logger.info("Starting 2D training...")
     model.train()
 
@@ -378,6 +464,8 @@ def train(args: argparse.Namespace):
     x = torch.tensor(0)
     global_step = 0
     for epoch in range(args.epochs):
+        if sampler is not None:
+            sampler.set_epoch(epoch)
         for idx, batch in enumerate(dataloader):
             ezpz.dist.synchronize()
             t0 = perf_counter()
@@ -386,33 +474,67 @@ def train(args: argparse.Namespace):
             else:
                 x = batch
             assert isinstance(x, torch.Tensor)
-            x.to(device)
-            x.to(torch.long)
+            x = x.to(device_id)
+            x = x.to(torch.long)
             if args.dataset == "random":
-                inp = x[:, :-1].to(device)
-                labels = x[:, 1:].to(device)
-                output = model(inp)
-                # with loss_parallel():
-                local_seq_len = output.shape[1]
-                if labels.shape[1] != local_seq_len:
-                    labels = _slice_for_sequence_parallel(
-                        labels, local_seq_len
-                    )
-                ezpz.dist.synchronize()
-                t1 = perf_counter()
-                loss = F.cross_entropy(
-                    output.reshape(-1, output.size(-1)),
-                    labels.reshape(-1),
-                    ignore_index=-100,
-                )
+                inp = x[:, :-1]
+                labels = x[:, 1:]
             else:
                 assert isinstance(batch, torch.Tensor)
-                batch.to(device)
-                output = model(batch)
-                ezpz.dist.synchronize()
-                t1 = perf_counter()
-                loss = output.loss
+                inp = x[:, :-1]
+                labels = x[:, 1:]
+            inp = inp.to(device_id)
+            labels = labels.to(device_id)
+            pred = model(inp)
+            local_seq_len = pred.shape[1]
+            if labels.shape[1] != local_seq_len:
+                labels = _slice_for_sequence_parallel(labels, local_seq_len)
+            ezpz.dist.synchronize()
+            t1 = perf_counter()
+            tp_mod = getattr(ezpz, "tp", None)
+            tp_rank = (
+                getattr(tp_mod, "get_tensor_parallel_rank", lambda: 0)()
+                if tp_mod is not None
+                else 0
+            )
+            if epoch == 0 and idx == 0:
+                pred_finite = torch.isfinite(pred)
+                pred_nonfinite = int((~pred_finite).sum().item())
+                pred_max = float(pred.abs().max().item())
+                logger.info(
+                    "pred_stats rank=%s tp=%s shape=%s nonfinite=%s max_abs=%s",
+                    ezpz.get_rank(),
+                    tp_rank,
+                    tuple(pred.shape),
+                    pred_nonfinite,
+                    f"{pred_max:.6f}",
+                )
+            loss = F.cross_entropy(
+                pred.reshape(-1, pred.size(-1)),
+                labels.reshape(-1),
+                ignore_index=-100,
+            )
+            if epoch == 0 and idx == 0:
+                valid_labels = int((labels != -100).sum().item())
+                logger.info(
+                    "loss_inputs rank=%s tp=%s local_seq_len=%s labels=%s valid_labels=%s",
+                    ezpz.get_rank(),
+                    tp_rank,
+                    local_seq_len,
+                    tuple(labels.shape),
+                    valid_labels,
+                )
+                # loss = F.cross_entropy(
+                #     pred.flatten(0, 1),
+                #     labels.flatten(0, 1),
+                # )
+                # loss = output.loss
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            if args.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), args.max_grad_norm
+                )
             optimizer.step()
             ezpz.dist.synchronize()
             t2 = perf_counter()
@@ -432,10 +554,11 @@ def train(args: argparse.Namespace):
             )
             if epoch == 0 and idx == 0:
                 logger.info(f"{x.shape}")
+    ezpz.dist.barrier()
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
-            run_name="ezpz-fsdp-tp",
+            run_name=WBRUN_NAME,
             dataset_fname="train",
             warmup=0.1,
         )
