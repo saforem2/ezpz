@@ -53,6 +53,7 @@ xpu = [
   "torchvision>=0.22.0",
   "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
 ]
+vit = ["timm"]
 torch = ["mpi4py", "torch", "torchvision"]
 cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
 cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
