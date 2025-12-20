@@ -125,7 +125,6 @@ class DiffusionTextModel(nn.Module):
 
     def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         # Clone avoids autograd complaints about views when using sharded params.
-        # return self.token_emb(tokens).clone() * math.sqrt(self.hidden_size)
         return self.token_emb(tokens).clone() * math.sqrt(self.hidden_size)
 
     def forward(
@@ -187,8 +186,9 @@ def generate_text(
 ) -> List[str]:
     model.eval()
     samples: List[str] = []
+    do_sample = ezpz.get_rank() == 0
     is_fsdp = isinstance(model, FSDP)
-    # base_model = model.module if is_fsdp else model
+    base_model = model.module if hasattr(model, "module") else model
     full_param_ctx = (
         FSDP.summon_full_params(model)  # , recursive=True)
         if is_fsdp
@@ -197,14 +197,16 @@ def generate_text(
 
     with torch.no_grad():
         with full_param_ctx:
-            token_emb_weight = model.token_emb.weight
+            if not do_sample:
+                return samples
+            token_emb_weight = base_model.token_emb.weight  # type:ignore
             for _ in range(num_samples):
                 xt = torch.randn(
-                    (1, seq_len, model.hidden_size),
+                    (1, seq_len, base_model.hidden_size),
                     device=token_emb_weight.device,
                 )
                 for t in reversed(range(schedule.timesteps)):
-                    xt = p_sample(model, xt, t, schedule)
+                    xt = p_sample(base_model, xt, t, schedule)
                 logits = torch.einsum("bld,vd->blv", xt, token_emb_weight)
                 token_ids = logits.argmax(dim=-1)[0].tolist()
                 words = [
@@ -254,7 +256,7 @@ def train(
     steps: int,
     lr: float = 1e-3,
     outdir: Optional[str | Path | os.PathLike] = None,
-) -> ezpz.History:
+) -> tuple[ezpz.History, torch.nn.Module]:
     device = ezpz.get_torch_device(as_torch_device=True)
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
@@ -293,12 +295,13 @@ def train(
     assert isinstance(
         wrapped_model, (nn.Module, FSDP, DistributedDataParallel)
     ), "Model should be wrapped for training."
-    # assert hasattr(wrapped_model, "module"), (
-    #     "Model should be wrapped for training."
-    # )
-    # assert callable(getattr(wrapped_model.module, "embed_tokens", None)), (
-    #     "Model should have embed_tokens method."
-    # )
+    base_model = (
+        wrapped_model.module if hasattr(wrapped_model, "module") else wrapped_model
+    )
+    assert callable(getattr(base_model, "embed_tokens", None)), (
+        "Model should have embed_tokens method."
+    )
+    is_fsdp = isinstance(wrapped_model, FSDP)
     loader_iter = iter(loader)
     for step in range(steps):
         t0 = time.perf_counter()
@@ -310,10 +313,16 @@ def train(
         tokens = tokens.to(device)
         t1 = time.perf_counter()
         ezpz.dist.synchronize()
-        x0 = model.embed_tokens(tokens)
+        full_param_ctx = (
+            FSDP.summon_full_params(wrapped_model)
+            if is_fsdp
+            else nullcontext()
+        )
+        with full_param_ctx:
+            x0 = base_model.embed_tokens(tokens)
         t = sample_timesteps(tokens.size(0), schedule, device=device)
         xt, noise = add_noise(x0, t, schedule)
-        pred_noise = model(xt, t)
+        pred_noise = wrapped_model(xt, t)
         loss = torch.mean((pred_noise - noise) ** 2)
         t2 = time.perf_counter()
         ezpz.dist.synchronize()
@@ -359,7 +368,7 @@ def train(
     #     if step % log_freq == 0 or step == steps - 1:
     #         summary = history.update({"step": step, "loss": loss.item()})
     #         logger.info(summary)
-    return history
+    return history, wrapped_model
 
 
 def get_default_texts() -> List[str]:
@@ -541,7 +550,7 @@ def main() -> None:
     device = ezpz.get_torch_device(as_torch_device=True)
     model.to(device)
 
-    history = train(
+    history, wrapped_model = train(
         model=model,
         loader=loader,
         schedule=schedule,
@@ -556,13 +565,14 @@ def main() -> None:
             dataset_fname="train",
             warmup=0.1,
         )
-        samples = generate_text(
-            model,
-            schedule,
-            inv_vocab,
-            seq_len=args.seq_len,
-            num_samples=args.samples,
-        )
+    samples = generate_text(
+        wrapped_model,
+        schedule,
+        inv_vocab,
+        seq_len=args.seq_len,
+        num_samples=args.samples,
+    )
+    if ezpz.get_rank() == 0:
         for idx, text in enumerate(samples):
             logger.info("sample %s: %s", idx, text)
 
