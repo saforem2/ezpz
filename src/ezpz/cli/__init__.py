@@ -7,6 +7,8 @@ from typing import Iterable, Sequence
 import click
 
 from ezpz.__about__ import __version__
+from ezpz.cli.launch_cmd import launch_cmd
+from ezpz.cli.test_cmd import test_cmd
 
 CONTEXT_SETTINGS = {
     "help_option_names": ["-h", "--help"],
@@ -28,32 +30,10 @@ def main() -> None:
     """ezpz distributed utilities."""
 
 
-@main.command(name="test", context_settings={"ignore_unknown_options": True})
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def test_cmd(args: tuple[str, ...]) -> None:
-    """Run the distributed smoke test."""
-    from ezpz import test as test_module
-    from ezpz.test import main
-
-    try:
-        rc = main(_ensure_sequence(args))
-        # rc = test_module.main(_ensure_sequence(args))
-    except SystemExit as exc:
-        raise click.UsageError(str(exc)) from exc
-    _handle_exit_code(rc)
+main.add_command(test_cmd, name="test")
 
 
-@main.command(name="launch", context_settings={"ignore_unknown_options": True})
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def launch_cmd(args: tuple[str, ...]) -> None:
-    """Launch a command across the active scheduler."""
-    from ezpz import launch as launch_module
-
-    try:
-        rc = launch_module.run(_ensure_sequence(args))
-    except SystemExit as exc:
-        raise click.UsageError(str(exc)) from exc
-    _handle_exit_code(rc)
+main.add_command(launch_cmd, name="launch")
 
 
 @main.command(name="tar-env", context_settings={"ignore_unknown_options": True})
