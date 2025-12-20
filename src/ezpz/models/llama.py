@@ -2,11 +2,26 @@
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
 from dataclasses import dataclass
+import logging
+import os
 from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+
+logger = logging.getLogger(__name__)
+_DEBUG_NAN = os.environ.get("EZPZ_DEBUG_NAN") == "1"
+_DEBUG_NAN_ONCE = False
+
+
+def _tensor_stats(label: str, tensor: torch.Tensor) -> tuple[int, float]:
+    if tensor.numel() == 0:
+        return 0, 0.0
+    nonfinite = int((~torch.isfinite(tensor)).sum().item())
+    max_abs = float(tensor.abs().max().item())
+    return nonfinite, max_abs
 
 
 @dataclass
@@ -29,7 +44,9 @@ class ModelArgs:
     depth_init: bool = True
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0
+) -> torch.Tensor:
     """
     Precompute the frequency tensor for complex exponentials (cis) with given dimensions.
 
@@ -337,6 +354,29 @@ class Attention(nn.Module):
             1, 2
         ).contiguous()  # (bs, seqlen, n_local_heads, head_dim)
         output = output.view(bsz, seqlen, -1)
+        if _DEBUG_NAN:
+            global _DEBUG_NAN_ONCE
+            if not _DEBUG_NAN_ONCE:
+                with torch.no_grad():
+                    q_nf, q_max = _tensor_stats("xq", xq)
+                    k_nf, k_max = _tensor_stats("xk", xk)
+                    v_nf, v_max = _tensor_stats("xv", xv)
+                    o_nf, o_max = _tensor_stats("out", output)
+                logger.info(
+                    "attn_stats xq(nonfinite=%s max_abs=%.6f) "
+                    "xk(nonfinite=%s max_abs=%.6f) "
+                    "xv(nonfinite=%s max_abs=%.6f) "
+                    "out(nonfinite=%s max_abs=%.6f)",
+                    q_nf,
+                    q_max,
+                    k_nf,
+                    k_max,
+                    v_nf,
+                    v_max,
+                    o_nf,
+                    o_max,
+                )
+                _DEBUG_NAN_ONCE = True
         return self.wo(output)
 
 
