@@ -1011,6 +1011,113 @@ class History:
             return ""
         return ""
 
+    @staticmethod
+    def split_metrics_for_logging(
+        metrics: dict[str, Any],
+        debug_prefixes: tuple[str, ...] = ("hist/",),
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        info_metrics: dict[str, Any] = {}
+        debug_metrics: dict[str, Any] = {}
+        for key, value in metrics.items():
+            if key.startswith(debug_prefixes):
+                debug_metrics[key] = value
+            else:
+                info_metrics[key] = value
+        return info_metrics, debug_metrics
+
+    @staticmethod
+    def summarize_min_max_std(
+        metrics: dict[str, Any],
+    ) -> dict[str, float]:
+        numeric: dict[str, list[float]] = {}
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)):
+                numeric[key] = [float(value)]
+            elif torch.is_tensor(value) and value.numel() == 1:
+                numeric[key] = [float(value.item())]
+        summary: dict[str, float] = {}
+        for key, values in numeric.items():
+            if not values:
+                continue
+            t = torch.tensor(values)
+            summary[f"{key}/mean"] = float(t.mean().item())
+            summary[f"{key}/min"] = float(t.min().item())
+            summary[f"{key}/max"] = float(t.max().item())
+            summary[f"{key}/std"] = float(t.std(unbiased=False).item())
+        return summary
+
+    def summarize_distributed_min_max_std(
+        self, metrics: dict[str, Any]
+    ) -> dict[str, float]:
+        summary_stats = self._compute_distributed_metrics(metrics)
+        if not summary_stats:
+            summary_stats = self.summarize_min_max_std(metrics)
+        filtered: dict[str, float] = {
+            k: v
+            for k, v in summary_stats.items()
+            if k.endswith(("/mean", "/min", "/max", "/std"))
+        }
+        keys = {k.rsplit("/", 1)[0] for k in filtered}
+        pruned: dict[str, float] = {}
+        for base in keys:
+            mean_v = filtered.get(f"{base}/mean")
+            min_v = filtered.get(f"{base}/min")
+            max_v = filtered.get(f"{base}/max")
+            std_v = filtered.get(f"{base}/std")
+            if (
+                mean_v == 0.0
+                and min_v == 0.0
+                and max_v == 0.0
+                and std_v == 0.0
+            ):
+                continue
+            if mean_v is not None:
+                pruned[f"{base}/mean"] = mean_v
+            if min_v is not None:
+                pruned[f"{base}/min"] = min_v
+            if max_v is not None:
+                pruned[f"{base}/max"] = max_v
+            if std_v is not None:
+                pruned[f"{base}/std"] = std_v
+        return pruned
+
+    def log_metrics(
+        self,
+        metrics: dict[str, Any],
+        *,
+        logger: Optional[Any] = None,
+        debug_prefixes: tuple[str, ...] = ("hist/",),
+        include_summary: bool = True,
+        rank0_only_summary: bool = True,
+        precision: int = 6,
+    ) -> None:
+        log = logger if logger is not None else get_logger(__name__)
+        info_metrics, debug_metrics = self.split_metrics_for_logging(
+            metrics, debug_prefixes=debug_prefixes
+        )
+        info_msg = summarize_dict(
+            info_metrics, precision=precision
+        ).replace("train/", "")
+        if info_msg:
+            log.info(info_msg)
+        if include_summary:
+            summary_stats = self.summarize_distributed_min_max_std(
+                info_metrics
+            )
+            if summary_stats and (
+                not rank0_only_summary or self._rank == 0
+            ):
+                summary_msg = summarize_dict(
+                    summary_stats, precision=precision
+                ).replace("train/", "")
+                if summary_msg:
+                    log.info(summary_msg)
+        debug_msg = summarize_dict(
+            debug_metrics, precision=precision
+        ).replace("train/", "")
+        if debug_msg:
+            log.debug(debug_msg)
+
     def _tplot(
         self,
         y: np.ndarray,
