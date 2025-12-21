@@ -251,9 +251,15 @@ def _format_text(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
-def run_checks(checks: list[Callable]) -> list[CheckResult]:
+def run_checks(
+    checks: list[Callable] | None = None,
+) -> list[CheckResult]:
     """Execute all diagnostic checks, returning structured results."""
-    # checks = [check_mpi, check_scheduler, check_wandb, check_torch_device]
+    checks = (
+        [check_mpi, check_scheduler, check_wandb, check_torch_device]
+        if checks is None
+        else checks
+    )
     results: list[CheckResult] = []
     for check in checks:
         try:
@@ -281,21 +287,14 @@ def parse_args(argv: Optional[Sequence[str]] = None):
 def run(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point used by the CLI glue."""
     args = parse_args(argv)
-    checks = [
-        check_mpi,
-        check_torch_device,
-        check_wandb,
-        check_scheduler,
-    ]
-
-    results = [c() for c in checks]
+    results = run_checks()
     worst_status = max(results, key=lambda r: STATUS_PRIORITY[r.status]).status
     if args.json:
-        logger.info(json.dumps([r.to_dict() for r in results], indent=2))
+        print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
         rstrs = [r.get_status() for r in results]
         for r in rstrs:
-            logger.info(f"{r}")
+            print(r)
     return 0 if STATUS_PRIORITY[worst_status] < STATUS_PRIORITY["error"] else 1
 
 
