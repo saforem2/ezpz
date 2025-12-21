@@ -1,14 +1,27 @@
-"""Lightweight argparse builder for ezpz.test_dist."""
+"""Shared argparse builders for ezpz CLI entrypoints."""
 
 from __future__ import annotations
 
 import argparse
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser for ``ezpz.test_dist``."""
+def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+    """Build the CLI argument parser for ``ezpz test`` (ezpz.test_dist)."""
     parser = argparse.ArgumentParser(
-        description="Training configuration parameters"
+        prog=prog,
+        description=(
+            """
+            ezpz test: A simple PyTorch distributed smoke test
+
+            Trains a simple MLP on MNIST dataset using DDP.
+
+            NOTE: `ezpz test` is a lightweight wrapper around:
+
+            ```bash
+            ezpz launch python3 -m ezpz.test_dist
+            ```
+            """
+        ),
     )
     parser.add_argument(
         "--warmup",
@@ -199,5 +212,103 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--no-distributed-history",
         action="store_true",
         help="Disable distributed history aggregation",
+    )
+    return parser
+
+
+def build_launch_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+    """Build the CLI argument parser for ``ezpz launch``."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Launch a command on the current PBS/SLURM job.",
+    )
+    parser.add_argument(
+        "--filter",
+        type=str,
+        nargs="+",
+        help="Filter output lines by these strings.",
+    )
+    parser.add_argument(
+        "-n",
+        "-np",
+        "--n",
+        "--np",
+        "--nproc",
+        "--world_size",
+        "--nprocs",
+        type=int,
+        dest="nproc",
+        default=-1,
+        help="Number of processes.",
+    )
+    parser.add_argument(
+        "-ppn",
+        "--ppn",
+        "--nproc_per_node",
+        type=int,
+        default=-1,
+        dest="nproc_per_node",
+        help="Processes per node.",
+    )
+    parser.add_argument(
+        "-nh",
+        "--nh",
+        "--nhost",
+        "--nnode",
+        "--nnodes",
+        "--nhosts",
+        "--nhosts",
+        type=int,
+        default=-1,
+        dest="nhosts",
+        help="Number of nodes to use.",
+    )
+    parser.add_argument(
+        "--hostfile",
+        type=str,
+        default=None,
+        dest="hostfile",
+        help="Hostfile to use for launching.",
+    )
+    parser.add_argument(
+        "command",
+        nargs=argparse.REMAINDER,
+        help="Command (and arguments) to execute. Use '--' to separate options when needed.",
+    )
+    return parser
+
+
+def build_doctor_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+    """Build the CLI argument parser for ``ezpz doctor``."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Inspect the current environment for ezpz launch readiness.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of human-friendly text.",
+    )
+    return parser
+
+
+def build_generate_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+    """Build the CLI argument parser for ``ezpz generate``."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Generate text using a model.",
+    )
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="meta-llama/Llama-3.2-1B",
+        help="Name of the model to use.",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float16", "bfloat16", "float32"],
+        help="Data type to use for the model.",
     )
     return parser

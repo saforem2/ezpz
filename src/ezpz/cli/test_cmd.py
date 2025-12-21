@@ -14,24 +14,12 @@ def _ensure_sequence(args: Iterable[str]) -> Sequence[str]:
 def _print_help(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
     if not value or ctx.resilient_parsing:
         return
-    from ezpz.test_dist_args import build_arg_parser
+    from ezpz.cli.flags import build_launch_parser, build_test_parser
 
-    test_parser = build_arg_parser()
+    test_parser = build_test_parser(prog="ezpz test")
     test_help = test_parser.format_help().rstrip()
-    launch_help = "\n".join(
-        [
-            "Launcher options (ezpz test wraps ezpz launch):",
-            "  --filter FILTER [FILTER ...]",
-            "                        Filter output lines by these strings.",
-            "  -n NPROC, -np NPROC, --n NPROC, --np NPROC, --nproc NPROC, --world_size NPROC, --nprocs NPROC",
-            "                        Number of processes.",
-            "  -ppn NPROC_PER_NODE, --ppn NPROC_PER_NODE, --nproc_per_node NPROC_PER_NODE",
-            "                        Processes per node.",
-            "  -nh NHOSTS, --nh NHOSTS, --nhost NHOSTS, --nnode NHOSTS, --nnodes NHOSTS, --nhosts NHOSTS, --nhosts NHOSTS",
-            "                        Number of nodes to use.",
-            "  --hostfile HOSTFILE   Hostfile to use for launching.",
-        ]
-    )
+    launch_parser = build_launch_parser(prog="ezpz launch")
+    launch_help = launch_parser.format_help().rstrip()
     click.echo(f"{test_help}\n\n{launch_help}\n")
     ctx.exit()
 

@@ -28,8 +28,8 @@ from xarray import Dataset
 
 import ezpz
 from ezpz.configs import PathLike
+from ezpz.cli.flags import build_test_parser
 from ezpz.profile import get_profiling_context
-from ezpz.test_dist_args import build_arg_parser
 
 START_TIME = time.perf_counter()  # start time
 
@@ -529,7 +529,7 @@ def train(
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for ``ezpz.test_dist``."""
-    parser = build_arg_parser()
+    parser = build_test_parser()
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
         try:

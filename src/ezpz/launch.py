@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import ezpz
+from ezpz.cli.flags import build_launch_parser
 
 logger = ezpz.get_logger(__name__)
 
@@ -53,66 +54,7 @@ EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
 
 def parse_args(argv: Optional[Sequence[str]] = None):
     """Parse command line arguments."""
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Launch a command on the current PBS/SLURM job."
-    )
-    parser.add_argument(
-        "--filter",
-        type=str,
-        nargs="+",
-        help="Filter output lines by these strings.",
-    )
-    parser.add_argument(
-        "-n",
-        "-np",
-        "--n",
-        "--np",
-        "--nproc",
-        "--world_size",
-        "--nprocs",
-        type=int,
-        dest="nproc",
-        default=-1,
-        help="Number of processes.",
-    )
-    parser.add_argument(
-        "-ppn",
-        "--ppn",
-        "--nproc_per_node",
-        type=int,
-        default=-1,
-        dest="nproc_per_node",
-        help="Processes per node.",
-    )
-    parser.add_argument(
-        "-nh",
-        "--nh",
-        "--nhost",
-        "--nnode",
-        "--nnodes",
-        "--nhosts",
-        "--nhosts",
-        type=int,
-        default=-1,
-        dest="nhosts",
-        help="Number of nodes to use.",
-    )
-    parser.add_argument(
-        # "-h",
-        # "--h",
-        "--hostfile",
-        type=str,
-        default=None,
-        dest="hostfile",
-        help="Hostfile to use for launching.",
-    )
-    parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="Command (and arguments) to execute. Use '--' to separate options when needed.",
-    )
+    parser = build_launch_parser()
     return parser.parse_args(argv)
 
 

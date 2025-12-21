@@ -11,6 +11,7 @@ from collections.abc import Iterable, Sequence
 from typing import Callable, Final, Literal, Optional
 
 import ezpz
+from ezpz.cli.flags import build_doctor_parser
 
 Status = Literal["ok", "warning", "error"]
 
@@ -227,16 +228,7 @@ def run_checks() -> list[CheckResult]:
 
 def parse_args(argv: Optional[Sequence[str]] = None):
     """Parse CLI arguments for the doctor command."""
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Inspect the current environment for ezpz launch readiness."
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit machine-readable JSON instead of human-friendly text.",
-    )
+    parser = build_doctor_parser()
     return parser.parse_args(argv)
 
 

@@ -7,28 +7,14 @@ from rich import print
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import ezpz
+from ezpz.cli.flags import build_generate_parser
 
 
 def parse_args():
     """
     Parse command line arguments.
     """
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Generate text using a model.")
-    parser.add_argument(
-        "--model_name",
-        type=str,
-        default="meta-llama/Llama-3.2-1B",
-        help="Name of the model to use.",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default="bfloat16",
-        choices=["float16", "bfloat16", "float32"],
-        help="Data type to use for the model.",
-    )
+    parser = build_generate_parser()
     return parser.parse_args()
 
 
