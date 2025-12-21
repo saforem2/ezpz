@@ -63,6 +63,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 import ezpz
 import ezpz.dist
+import ezpz.history
 
 import torch
 
@@ -77,6 +78,7 @@ from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
+    ShardingStrategy,
 )
 from torch.distributed._tensor import Shard, Replicate  # type: ignore
 
@@ -100,6 +102,15 @@ except ImportError:
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
+
+
+SHARDING_STRATEGIES = {
+    "no_shard": ShardingStrategy.NO_SHARD,
+    "full_shard": ShardingStrategy.FULL_SHARD,
+    "shard_grad_op": ShardingStrategy.SHARD_GRAD_OP,
+    "hybrid_shard": ShardingStrategy.HYBRID_SHARD,
+    "hybrid_shard_zero2": ShardingStrategy._HYBRID_SHARD_ZERO2,
+}
 
 
 def _slice_for_sequence_parallel(
@@ -301,12 +312,13 @@ def parse_args():
     parser.add_argument("--vocab-size", type=int, default=32_000)
     parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-3)
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--test-batch-size", type=int, default=1000)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--tp", type=int, default=2)
+    parser.add_argument("--sharding-strategy", type=str, default="full_shard")
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--outdir", type=str, default="outputs/fsdp_tp")
     # parser.add_argument('--dataset', type=str, default='random')
@@ -363,9 +375,13 @@ def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
     mixed_precision: Optional[MixedPrecision],
+    sharding_strategy: Optional[ShardingStrategy | str] = None,
 ) -> nn.Module:
     tp_mesh = device_mesh["tp"]
     dp_mesh = device_mesh["dp"]
+
+    if isinstance(sharding_strategy, str):
+        sharding_strategy = SHARDING_STRATEGIES.get(sharding_strategy, None)
 
     model.init_weights()  # type: ignore
     model = parallelize_module(
@@ -419,10 +435,16 @@ def parallelize(
 
     # from torch.distributed.fsdp import fully_shard
 
+    # ShardingStrategy.NO_SHARD: HandleShardingStrategy.NO_SHARD,
+    # ShardingStrategy.FULL_SHARD: HandleShardingStrategy.FULL_SHARD,
+    # ShardingStrategy.SHARD_GRAD_OP: HandleShardingStrategy.SHARD_GRAD_OP,
+    # ShardingStrategy.HYBRID_SHARD: HandleShardingStrategy.HYBRID_SHARD,
+    # ShardingStrategy._HYBRID_SHARD_ZERO2: HandleShardingStrategy._HYBRID_SHARD_ZERO2,
     sharded_model = FSDP(
         model,
         mixed_precision=mixed_precision,
         device_mesh=dp_mesh,
+        sharding_strategy=sharding_strategy,
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
     return sharded_model
@@ -552,7 +574,6 @@ def train(args: argparse.Namespace):
     hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
     dataset_tag = args.dataset.lower().replace("/", "_")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
-        fp = Path(__file__)
         run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
         if wandb is not None:
             assert run is not None and run is wandb.run
@@ -583,7 +604,12 @@ def train(args: argparse.Namespace):
             cast_forward_inputs=True,
             reduce_dtype=torch.float32,
         )
-    model = parallelize(model, device_mesh, mp_config)
+    model = parallelize(
+        model,
+        device_mesh,
+        mp_config,
+        sharding_strategy=args.sharding_strategy,
+    )
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
@@ -797,7 +823,9 @@ def train(args: argparse.Namespace):
                 metrics["grad/norm_preclip"] = float(grad_norm_preclip)
             if global_step % max(metrics_every, 1) == 0:
                 metrics.update(_collect_param_grad_stats(model, device_id))
+                metrics["opt/iter"] = global_step,
                 metrics["opt/lr"] = float(optimizer.param_groups[0]["lr"])
+                metrics["input/iter"] = global_step,
                 metrics["input/max"] = float(x.max().item())
                 metrics["input/min"] = float(x.min().item())
                 metrics["labels/valid"] = float(
