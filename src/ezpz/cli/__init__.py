@@ -36,7 +36,9 @@ main.add_command(test_cmd, name="test")
 main.add_command(launch_cmd, name="launch")
 
 
-@main.command(name="tar-env", context_settings={"ignore_unknown_options": True})
+@main.command(
+    name="tar-env", context_settings={"ignore_unknown_options": True}
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def tar_env_cmd(args: tuple[str, ...]) -> None:
     """Create (or locate) a tarball for the current environment."""
@@ -46,7 +48,9 @@ def tar_env_cmd(args: tuple[str, ...]) -> None:
     _handle_exit_code(rc)
 
 
-@main.command(name="yeet-env", context_settings={"ignore_unknown_options": True})
+@main.command(
+    name="yeet-env", context_settings={"ignore_unknown_options": True}
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def yeet_env_cmd(args: tuple[str, ...]) -> None:
     """Distribute an environment tarball across worker nodes."""
