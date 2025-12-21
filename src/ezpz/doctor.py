@@ -11,9 +11,12 @@ from collections.abc import Iterable, Sequence
 from typing import Callable, Final, Literal, Optional
 
 import ezpz
+import ezpz.utils
 from ezpz.cli.flags import build_doctor_parser
 
 Status = Literal["ok", "warning", "error"]
+
+colors = ezpz.utils.Color()
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +27,29 @@ class CheckResult:
     status: Status
     message: str
     remedy: Optional[str] = None
+
+    def _get_status(self) -> str:
+        if self.status == "ok":
+            return f"✅ {colors.green}OKAY{colors.reset}"
+        if self.status == "warning":
+            return f"⚠️ {colors.yellow}WARN{colors.reset}"
+        if self.status == "error":
+            return f"🚨 {colors.red}ERROR{colors.reset}"
+        raise ValueError(f"Unexpected value for {self.status=}")
+
+    def get_status(self) -> str:
+        lines: list[str] = []
+        summary = " ".join(
+            [
+                f"[{colors.reset}{self._get_status():>7}{colors.reset}]",
+                f"[{colors.blue}{self.name:<9}{colors.reset}]: {self.message}",
+            ]
+        )
+        lines.append(summary)
+        if self.remedy:
+            lines.append(f"          ↳ {self.remedy}")
+
+        return "\n".join(lines)
 
     def to_dict(self) -> dict[str, str | None]:
         return {
@@ -39,19 +65,26 @@ STATUS_PRIORITY: Final[dict[Status, int]] = {"ok": 0, "warning": 1, "error": 2}
 logger = ezpz.get_logger(__name__)
 
 
-def _command_exists(command: str, *, which: Callable[[str], Optional[str]] = shutil.which) -> bool:
+def _command_exists(
+    command: str, *, which: Callable[[str], Optional[str]] = shutil.which
+) -> bool:
     return which(command) is not None
 
 
-def check_mpi(which: Callable[[str], Optional[str]] = shutil.which) -> CheckResult:
+def check_mpi(
+    which: Callable[[str], Optional[str]] = shutil.which,
+) -> CheckResult:
     """Verify mpi4py importability and presence of a launcher command."""
     try:
         from mpi4py import MPI  # noqa: F401
+
         mpi_available = True
     except Exception:  # pragma: no cover - exercised via negative paths
         mpi_available = False
 
-    has_launcher = any(_command_exists(cmd, which=which) for cmd in ("mpiexec", "mpirun"))
+    has_launcher = any(
+        _command_exists(cmd, which=which) for cmd in ("mpiexec", "mpirun")
+    )
     if mpi_available and has_launcher:
         return CheckResult(
             name="mpi",
@@ -94,7 +127,11 @@ def check_scheduler(
             status="ok",
             message=f"Detected active scheduler: {scheduler}.",
         )
-    suspect_vars = [key for key in ("PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID") if env.get(key)]
+    suspect_vars = [
+        key
+        for key in ("PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID")
+        if env.get(key)
+    ]
     if suspect_vars:
         return CheckResult(
             name="scheduler",
@@ -150,6 +187,12 @@ def check_wandb(environ: Optional[dict[str, str]] = None) -> CheckResult:
             status="ok",
             message="wandb is available and WANDB_API_KEY is set for cloud logging.",
         )
+    if ezpz.dist._verify_wandb_from_netrc_config():
+        return CheckResult(
+            name="wandb",
+            status="ok",
+            message="wandb authentication provided in '~/.netrc' Should be all set.",
+        )
     return CheckResult(
         name="wandb",
         status="warning",
@@ -179,8 +222,13 @@ def check_torch_device() -> CheckResult:
         )
     device_ok = (
         (torch.cuda.is_available() and torch.cuda.device_count() > 0)
-        or (hasattr(torch, "xpu") and torch.xpu.is_available() and torch.xpu.device_count() > 0)
-        or torch.backends.mps.is_built() and torch.backends.mps.is_available()
+        or (
+            hasattr(torch, "xpu")
+            and torch.xpu.is_available()
+            and torch.xpu.device_count() > 0
+        )
+        or torch.backends.mps.is_built()
+        and torch.backends.mps.is_available()
     )
     if device_ok:
         return CheckResult(
@@ -199,25 +247,23 @@ def check_torch_device() -> CheckResult:
 def _format_text(results: Iterable[CheckResult]) -> str:
     lines: list[str] = []
     for result in results:
-        summary = f"[{result.status.upper():7}] {result.name}: {result.message}"
-        lines.append(summary)
-        if result.remedy:
-            lines.append(f"          ↳ {result.remedy}")
+        lines.append(result.get_status())
     return "\n".join(lines)
 
 
-def run_checks() -> list[CheckResult]:
+def run_checks(checks: list[Callable]) -> list[CheckResult]:
     """Execute all diagnostic checks, returning structured results."""
-    checks = [check_mpi, check_scheduler, check_wandb, check_torch_device]
+    # checks = [check_mpi, check_scheduler, check_wandb, check_torch_device]
     results: list[CheckResult] = []
     for check in checks:
         try:
             results.append(check())
         except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Diagnostic check %s crashed.", check.__name__)
+            name = getattr(check, "__name__", "")
+            logger.exception(f"Diagnostic check {name} crashed.")
             results.append(
                 CheckResult(
-                    name=check.__name__,
+                    name=name,
                     status="error",
                     message=f"Check raised {exc!r}",
                     remedy="Inspect the full stack trace above and report the failure.",
@@ -235,12 +281,21 @@ def parse_args(argv: Optional[Sequence[str]] = None):
 def run(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point used by the CLI glue."""
     args = parse_args(argv)
-    results = run_checks()
+    checks = [
+        check_mpi,
+        check_torch_device,
+        check_wandb,
+        check_scheduler,
+    ]
+
+    results = [c() for c in checks]
     worst_status = max(results, key=lambda r: STATUS_PRIORITY[r.status]).status
     if args.json:
-        print(json.dumps([result.to_dict() for result in results], indent=2))
+        logger.info(json.dumps([r.to_dict() for r in results], indent=2))
     else:
-        print(_format_text(results))
+        rstrs = [r.get_status() for r in results]
+        for r in rstrs:
+            logger.info(f"{r}")
     return 0 if STATUS_PRIORITY[worst_status] < STATUS_PRIORITY["error"] else 1
 
 
