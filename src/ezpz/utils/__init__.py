@@ -10,33 +10,34 @@ import pdb
 import re
 from typing import Any
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
+import ezpz
 # from ezpz import get_rank
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch
-import torch.distributed
+# import torch.distributed
 import xarray as xr
 from torchinfo import ModelStatistics
 
-import ezpz
 from ezpz.configs import PathLike, ScalarLike, ZeroConfig
 from ezpz.utils.dummies import DummyMPI, DummyTorch
 
 import math
 
-import numpy as np
+# import numpy as np
 
-ScalarLike = Any  # keep your existing alias if you already have one
-
+# ScalarLike = Any  # keep your existing alias if you already have one
 
 # import torch.distributed as tdist
 
 
 __all__ = [
+    "Color",
+    "NoColor",
     "DistributedPdb",
     "DummyMPI",
     "DummyTorch",
@@ -78,6 +79,39 @@ logger = logging.getLogger(__name__)
 # _ = logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 # logger = ezpz.get_logger(__name__)
+#
+#
+
+@dataclass(frozen=True)
+class Color:
+    black = "\033[30m"
+    red = "\033[31m"
+    green = "\033[32m"
+    yellow = "\033[33m"
+    blue = "\033[34m"
+    magenta = "\033[35m"
+    cyan = "\033[36m"
+    white = "\033[37m"
+    reset = "\033[39m"
+    orange = "\033[38;2,180;60,0m"
+    turquoise = "\033[38;2,54,234;195m"
+
+
+@dataclass(frozen=True)
+class NoColor:
+    black = ""
+    red = ""
+    green = ""
+    yellow = ""
+    blue = ""
+    magenta = ""
+    cyan = ""
+    white = ""
+    reset = ""
+    orange = ""
+    turquoise = ""
+
+
 
 
 class DistributedPdb(pdb.Pdb):
@@ -343,6 +377,68 @@ def get_max_memory_reserved(device: torch.device) -> float:
         except ImportError:
             return -1.0
     raise RuntimeError(f"Memory allocation not available for {device=}")
+
+
+# hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC
+def get_peak_flops(device_name: str) -> float:
+    try:
+        # Run the lspci command and capture the output
+        result = subprocess.run(["lspci"], stdout=subprocess.PIPE, text=True)
+        # Filter the output for lines containing both "NVIDIA" and "H100"
+        filtered_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if "NVIDIA" in line and "H100" in line
+        ]
+        # Join all filtered lines into a single string
+        device_name = " ".join(filtered_lines) or device_name
+    except FileNotFoundError as e:
+        logger.warning(f"Error running lspci: {e}, fallback to use device_name")
+    if "A100" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/a100/
+        return 312e12
+    elif "H100" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/h100/
+        # NOTE: Specifications are one-half lower without sparsity.
+        if "NVL" in device_name:
+            return 835e12
+        elif "PCIe" in device_name:
+            return 756e12
+        else:  # for H100 SXM and other variants
+            return 989e12
+    elif "H200" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/h200/
+        return 989e12
+    elif "B200" in device_name:
+        # data from https://nvdam.widen.net/s/wwnsxrhm2w/blackwell-datasheet-3384703
+        return 2.25e15
+    elif "MI355X" in device_name:
+        # MI355X data from https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html
+        return 2500e12
+    elif "MI300X" in device_name or "MI325X" in device_name:
+        # MI300X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html
+        # MI325X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi325x.html
+        return 1300e12
+    elif "MI250X" in device_name:
+        # data from https://www.amd.com/en/products/accelerators/instinct/mi200/mi250x.html (per GCD)
+        return 191.5e12
+    elif "Data Center GPU Max 1550" in device_name:
+        # Also known as Ponte Vecchio (PVC).
+        # data from https://www.intel.com/content/www/us/en/docs/oneapi/optimization-guide-gpu/2025-0/intel-xe-gpu-architecture.html
+        # Dot Product Accumulate Systolic (DPAS):
+        # - Freq: 1300MHz
+        # - #ops: 512
+        # Full EU mode (i.e. 512 max compute units): 340.8 TFLOPS (BF16)
+        # Standard EU mode (i.e. 448 max compute units): 298.2 TFLOPS (BF16)
+        max_comp_units = torch.xpu.get_device_properties("xpu").max_compute_units
+        return 512 * max_comp_units * 1300 * 10**6
+    elif "l40s" in device_name:
+        # data from: "https://resources.nvidia.com/en-us-l40s/l40s-datasheet-28413"
+        return 362e12
+
+    else:  # for other GPU types, assume A100
+        logger.warning(f"Peak flops undefined for: {device_name}, fallback to A100")
+        return 312e12
 
 
 def grab_tensor(
