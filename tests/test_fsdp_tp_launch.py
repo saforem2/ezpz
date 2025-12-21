@@ -1,4 +1,8 @@
+import ezpz
+
+import ezpz.dist
 import os
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -11,15 +15,17 @@ def _tail(text: str, lines: int = 20) -> str:
 def test_fsdp_tp_launch_tp_random_smoke():
     if os.environ.get("EZPZ_LAUNCH_TEST") != "1":
         pytest.skip("Set EZPZ_LAUNCH_TEST=1 to enable ezpz launch smoke test.")
-    hostfile = os.environ.get("EZPZ_HOSTFILE") or os.environ.get("HOSTFILE")
-    if not hostfile:
-        pytest.skip("Set EZPZ_HOSTFILE or HOSTFILE for ezpz launch test.")
+    # hostfile = os.environ.get("EZPZ_HOSTFILE") or os.environ.get("HOSTFILE")
+    # if not hostfile:
+    #     pytest.skip("Set EZPZ_HOSTFILE or HOSTFILE for ezpz launch test.")
+    hostfile = Path(os.getcwd()).joinpath('hostfile-localhost')
+    ezpz.dist.write_localhost_to_hostfile(hostfile)
 
     cmd = [
         "ezpz",
         "launch",
         "-n",
-        "1",
+        "2",
         "-ppn",
         "2",
         "--hostfile",
@@ -51,7 +57,6 @@ def test_fsdp_tp_launch_tp_random_smoke():
         "256",
         "--max-seq-len",
         "256",
-        "--fp32",
     ]
     env = os.environ.copy()
     env["EZPZ_DEBUG_NAN"] = "1"
