@@ -360,6 +360,41 @@ class History:
             if not lines[-1].endswith("\n"):
                 handle.write("\n")
 
+    def _wandb_log_matplotlib_asset(
+        self,
+        key: Optional[str],
+        asset_path: Optional[Path],
+        *,
+        kind: str = "matplotlib",
+        commit: bool = False,
+    ) -> None:
+        if (
+            not ENABLE_WANDB
+            or wandb is None
+            or getattr(wandb, "run", None) is None
+            or self._rank != 0
+        ):
+            return
+        if asset_path is None:
+            return
+        asset_path = Path(asset_path)
+        if not asset_path.exists():
+            return
+        if asset_path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+            return
+        try:
+            title = key or asset_path.stem
+            wandb.log(
+                {
+                    f"plots/{title}": wandb.Image(
+                        str(asset_path), caption=f"{kind}:{title}"
+                    )
+                },
+                commit=commit,
+            )
+        except Exception as exc:
+            logger.debug("W&B image logging failed: %s", exc)
+
     def _write_environment_section(
         self, env_info: Optional[dict[str, Any]]
     ) -> None:
@@ -1445,6 +1480,9 @@ class History:
                 kind="matplotlib",
                 metadata={"shape": list(arr.shape)},
             )
+        self._wandb_log_matplotlib_asset(
+            key, primary_asset, kind="matplotlib"
+        )
 
         return fig, subfigs, axes
 
@@ -1597,6 +1635,9 @@ class History:
                 kind="dataarray",
                 metadata=metadata,
             )
+        self._wandb_log_matplotlib_asset(
+            key, primary_asset, kind="dataarray"
+        )
         return (fig, subfigs, axes)
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
@@ -1831,6 +1872,9 @@ class History:
                 subplots_kwargs=subplots_kwargs,
                 plot_kwargs=plot_kwargs,
                 verbose=verbose,
+            )
+            self._wandb_log_matplotlib_asset(
+                metric_name, asset, kind="matplotlib"
             )
             if asset is not None and self.report_enabled and asset.exists():
                 components = sorted(metric_vars.keys())
