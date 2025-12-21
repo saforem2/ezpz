@@ -1,4 +1,8 @@
 # user added
+*broken*
+*WIP*
+*.bak
+*202[0-9]-*
 trainer_output/*
 *.bin
 .deepspeed_env
