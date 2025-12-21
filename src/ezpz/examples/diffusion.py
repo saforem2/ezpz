@@ -505,8 +505,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+def main(args: argparse.Namespace) -> None:
     _ = ezpz.setup_torch(seed=args.seed)
     if ezpz.get_rank() == 0:
         run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
@@ -578,4 +577,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    t0 = time.perf_counter()
+    main(args)
+    ezpz.dist.cleanup()
+    logger.info(f"Took: {time.perf_counter() - t0:.2f} seconds")

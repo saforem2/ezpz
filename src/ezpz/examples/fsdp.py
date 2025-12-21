@@ -231,7 +231,7 @@ def get_data(args: argparse.Namespace) -> dict:
 
 
 def fsdp_main(args: argparse.Namespace) -> None:
-    rank = ezpz.setup_torch()
+    rank = ezpz.setup_torch(seed=args.seed)
     START_TIME = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
     START_TIME = ezpz.dist.broadcast(START_TIME, root=0)
     if rank == 0:
@@ -362,7 +362,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=1,
+        default=None,
         metavar="S",
         help="random seed (default: 1)",
     )
@@ -384,5 +384,7 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    torch.manual_seed(args.seed)
+    t0 = time.perf_counter()
     fsdp_main(args=args)
+    ezpz.cleanup()
+    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

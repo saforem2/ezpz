@@ -444,4 +444,5 @@ if __name__ == "__main__":
     args = parse_args()
     t0 = time.perf_counter()
     main(args)
+    ezpz.dist.cleanup()
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

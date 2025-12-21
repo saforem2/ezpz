@@ -54,6 +54,7 @@ We use a simple diagram to illustrate below:
 import os
 import argparse
 import logging
+import time
 from pathlib import Path
 from time import perf_counter
 from typing import Iterable, Optional
@@ -61,6 +62,7 @@ from typing import Iterable, Optional
 from torch.utils.data import DataLoader, DistributedSampler
 
 import ezpz
+import ezpz.dist
 
 import torch
 
@@ -867,5 +869,7 @@ def train(args: argparse.Namespace):
 
 if __name__ == "__main__":
     args = parse_args()
-    logger.info(f"args:\n{args}")
+    t0 = time.perf_counter()
     train(args)
+    ezpz.dist.cleanup()
+    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
