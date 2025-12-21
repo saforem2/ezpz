@@ -1728,6 +1728,8 @@ def cleanup() -> None:
     Examples:
         >>> cleanup()
     """
+    if wandb is not None and (run := getattr(wandb, "run")) is not None:
+        logger.info(f"wandb.run=[{run.name}]({run.url})")
     if torch.distributed.is_initialized():  # type:ignore
         torch.distributed.destroy_process_group()  # type:ignore
 
@@ -1874,6 +1876,51 @@ def get_machine(hostname: Optional[str] = None) -> str:
     return f"{hostname}"
 
 
+def _verify_wandb_from_netrc_config() -> bool:
+    import netrc
+
+    netrc_path = Path(os.path.expanduser("~/.netrc"))
+    if not netrc_path.is_file():
+        return False
+    auth = netrc.netrc(netrc_path).authenticators("api.wandb.ai")
+    return bool(auth)
+
+
+def verify_wandb() -> bool:
+    import wandb
+
+    rank = get_rank()
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+    if WANDB_DISABLED or WANDB_MODE == "disabled":
+        if get_rank() == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+            )
+        return False
+    else:
+        try:
+            import wandb
+
+            if wandb.api.api_key is not None:
+                return True
+        except (ImportError, ModuleNotFoundError):
+            if rank == 0:
+                logger.warning(
+                    "Unable to import `wandb`. Install with `pip install wandb`"
+                )
+            return False
+        if (
+            wandb.api.api_key is None
+            or os.environ.get("WANDB_API_KEY", None) is None
+        ):
+            if rank == 0:
+                logger.warning("'WANDB_API_KEY' not found in environment!")
+                logger.info("Attempting to verify login from '~/.netrc':")
+            return _verify_wandb_from_netrc_config()
+        return False
+
+
 def setup_wandb(
     project_name: Optional[str] = None,
     entity: Optional[str] = None,
@@ -1898,34 +1945,9 @@ def setup_wandb(
         >>> setup_wandb(project_name="my_project", entity="my_entity")
     """
     wandb = ezpz.lazy.lazy_import("wandb")
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-    if WANDB_DISABLED or WANDB_MODE == "disabled":
-        if get_rank() == 0:
-            logger.warning(
-                f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
-            )
-        return None
 
-    if wandb.api.api_key is None:
-        if get_rank() == 0:
-            logger.warning("W&B API key not found, skipping wandb setup!")
-            logger.info(
-                "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-            )
+    if not verify_wandb():
         return None
-
-    # HAS_WANDB = False
-    # try:
-    #     import wandb
-    #
-    #     if wandb.api.api_key is not None:
-    #         HAS_WANDB = True
-    # except (ImportError, ModuleNotFoundError) as e:
-    #     logger.warning(
-    #         "Unable to import `wandb`. Install with `pip install wandb`"
-    #     )
-    #     raise e
 
     outdir = (
         Path(os.getcwd()).as_posix()
