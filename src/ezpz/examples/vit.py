@@ -16,6 +16,7 @@ from torch.distributed.fsdp import MixedPrecision
 
 import ezpz
 import ezpz.dist
+
 # from TORCH_DTYPES_MAP
 from ezpz.configs import timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
@@ -42,20 +43,32 @@ fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.vit",
         description="Train a simple ViT",
     )
-    parser.add_argument("--img_size", default=224, help="Image size")
     parser.add_argument(
-        "--batch_size", type=int, default=128, help="Batch size"
+        "--img_size", "--img-size", default=224, help="Image size"
     )
     parser.add_argument(
-        "--num_heads", type=int, default=16, help="Number of heads"
+        "--batch_size",
+        "--batch-size",
+        type=int,
+        default=128,
+        help="Batch size",
+    )
+    parser.add_argument(
+        "--num_heads",
+        "--num-heads",
+        type=int,
+        default=16,
+        help="Number of heads",
     )
     parser.add_argument(
         "--head_dim",
+        "--head-dim",
         type=int,
         default=64,
         help="Hidden Dimension",
@@ -81,7 +94,11 @@ def parse_args() -> argparse.Namespace:
         help="Attention Dropout rate",
     )
     parser.add_argument(
-        "--num_classes", type=int, default=1000, help="Number of classes"
+        "--num_classes",
+        "--num-classes",
+        type=int,
+        default=1000,
+        help="Number of classes",
     )
     parser.add_argument(
         "--dataset",
@@ -91,14 +108,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--depth", type=int, default=24, help="Depth")
     parser.add_argument(
-        "--patch_size", type=int, default=16, help="Patch size"
+        "--patch_size", "--patch-size", type=int, default=16, help="Patch size"
     )
     parser.add_argument("--dtype", default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
     parser.add_argument(
-        "--num_workers", type=int, default=0, help="Number of workers"
+        "--num_workers",
+        "--num-workers",
+        type=int,
+        default=0,
+        help="Number of workers",
     )
-    parser.add_argument("--max_iters", default=None, help="Maximum iterations")
+    parser.add_argument(
+        "--max_iters", "--max-iters", default=100, help="Maximum iterations"
+    )
     parser.add_argument(
         "--warmup",
         default=0.1,
@@ -106,12 +129,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--attn_type",
+        "--attn-type",
         default="native",
         choices=["native", "sdpa"],
         help="Attention function to use.",
     )
     parser.add_argument(
         "--cuda_sdpa_backend",
+        "--cuda-sdpa-backend",
         default="all",
         choices=[
             "flash_sdp",
@@ -123,8 +148,6 @@ def parse_args() -> argparse.Namespace:
         help="CUDA SDPA backend to use.",
     )
     parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
-    # return TrainArgs(**parser.parse_args())
-    # return TrainArgs(**vars(parser.parse_args()))
     return parser.parse_args()
 
 
