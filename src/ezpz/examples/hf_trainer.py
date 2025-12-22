@@ -280,7 +280,7 @@ def split_dataset(
     return datasets.DatasetDict(dsets)
 
 
-def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
+def main() -> int:
     """
     Main function to run the training and evaluation of a causal language model.
 
@@ -300,6 +300,8 @@ def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArgu
     # )
 
 
+    args = parse_args()
+    # args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]
     # def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
     assert "data" in args and "model" in args and "training" in args
     data_args: HfDataTrainingArguments = args["data"]
@@ -930,8 +932,7 @@ if __name__ == "__main__":
     #             )
     #     )
     # )
-    args = parse_args()
     t0 = time.perf_counter()
-    main(args=args)
+    main()
     ezpz.dist.cleanup()
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
