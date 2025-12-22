@@ -1,5 +1,7 @@
 """Tests for the ezpz.dist module."""
 
+import torch
+
 import ezpz.dist as dist
 
 
@@ -35,6 +37,22 @@ class TestDist:
         assert device is not None
         # Should contain the device type
         assert dist.get_torch_device_type() in str(device)
+
+    def test_torch_device_env_sets_default_device(self, monkeypatch):
+        """Ensure TORCH_DEVICE applies to torch default device."""
+        previous_device = torch.get_default_device()
+        monkeypatch.setenv("TORCH_DEVICE", "cpu")
+        dist._ENV_TORCH_DEVICE_LOGGED = False
+        dist._ENV_TORCH_DEVICE_APPLIED = False
+        try:
+            assert dist.get_torch_device_type() == "cpu"
+            assert dist.get_torch_device() == "cpu"
+            assert str(torch.get_default_device()) == "cpu"
+        finally:
+            try:
+                torch.set_default_device(previous_device)
+            except Exception:
+                torch.set_default_device("cpu")
 
     def test_seed_everything(self):
         """Test seed_everything function."""
