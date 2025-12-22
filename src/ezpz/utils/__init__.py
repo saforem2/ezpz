@@ -478,11 +478,15 @@ def grab_tensor(
     if isinstance(x, (int, float, bool, np.floating)):
         return x
     if isinstance(x, list):
+        if len(x) == 0:
+            return np.array([])
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
         if isinstance(x[0], np.ndarray):
             return np.stack(x)
         if isinstance(x[0], (int, float, bool, np.floating)):
+            return np.array(x)
+        if isinstance(x[0], (tuple, list)):
             return np.array(x)
         else:
             raise ValueError(f"Unable to convert list: \n {x=}\n to array")
