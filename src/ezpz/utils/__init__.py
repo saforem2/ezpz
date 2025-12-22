@@ -477,6 +477,8 @@ def grab_tensor(
         return None
     if isinstance(x, (int, float, bool, np.floating)):
         return x
+    if isinstance(x, tuple):
+        x = list(x)
     if isinstance(x, list):
         if len(x) == 0:
             return np.array([])

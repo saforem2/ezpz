@@ -2153,7 +2153,11 @@ class History:
         x: Union[list, np.ndarray, torch.Tensor],
         warmup: Optional[float] = 0.0,
     ) -> xr.DataArray:
-        if isinstance(x, list) and isinstance(x[0], torch.Tensor):
+        if isinstance(x, tuple):
+            x = list(x)
+        if isinstance(x, list) and len(x) > 0 and isinstance(
+            x[0], torch.Tensor
+        ):
             x = torch.Tensor(x).numpy(force=True)
         try:
             arr = grab_tensor(x)
