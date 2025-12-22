@@ -154,14 +154,22 @@ prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
 
 # 3) miscellaneous logging + repr overrides
 log_styles = {
-    "log.colon": Style(color="bright_blue"),
+    "log.colon": Style(dim=True),
     "logging.date": Style(dim=True),
     "logging.time": Style(dim=True),
     "log.time": Style(color="black", dim=True),
-    "log.linenumber": Style(color="magenta"),
+    "log.linenumber": Style(
+        color="red",
+        bold=False,
+        # bold=True,
+    ),
     "log.brace": Style(),
     "log.path": Style(color="magenta", bold=False, italic=False),
-    "log.parent": Style(color="bright_magenta", italic=False, bold=False),
+    "log.parent": Style(
+        color="bright_magenta",
+        italic=False,
+        bold=False,  # , dim=True
+    ),
     "logging.keyword": Style(bold=True, color="bright_yellow"),
     "logging.level.notset": Style(dim=True),
     "logging.level.debug": Style(color="bright_blue", bold=True),
@@ -169,13 +177,15 @@ log_styles = {
     "log.level.info": Style(color="green"),
     "logging.level.info": Style(color="green"),
     # ----------------- WARN ---------------------------------------
-    "log.level.warn": Style(color="bright_yellow"),
+    "log.level.warn": Style(
+        color="bright_yellow",
+    ),
     "log.level.warning": Style(color="bright_yellow"),
     "logging.level.warn": Style(color="bright_yellow"),
     "logging.level.warning": Style(color="bright_yellow"),
     # ----------------- ERROR --------------------------------------
-    "logging.level.error": Style(color="bright_red", bold=True),
     "log.level.error": Style(color="bright_red", bold=True),
+    "logging.level.error": Style(color="bright_red", bold=True),
     # ----------------- CRITICAL ------------------------------------
     "log.level.critical": Style(
         color="bright_red",
