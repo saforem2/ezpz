@@ -141,6 +141,20 @@ class TestHistory:
         assert "loss/mean" in hist.history
         assert hist.history["loss/mean"][-1] == pytest.approx(0.5)
 
+    def test_history_to_dataarray_handles_tuples_and_empty(self):
+        """Tuple lists and empty lists are handled safely."""
+        hist = history.History()
+        tuple_values = [(1,), (2,), (3,)]
+        arr = hist.to_DataArray(tuple_values)
+        assert arr.shape == (1, 3)
+        np.testing.assert_allclose(arr.values, np.array([[1, 2, 3]]))
+
+        empty_arr = hist.to_DataArray([])
+        assert empty_arr.shape == (0,)
+
+        warmed = hist.to_DataArray([1, 2, 3], warmup=1.0)
+        assert warmed.shape == (0,)
+
     def test_history_finalize_report_contains_environment(self, tmp_path):
         """Finalized report lives alongside outputs with environment context."""
 
