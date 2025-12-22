@@ -138,53 +138,97 @@ basic_colors = {c: Style(color=c) for c in _colors}
 prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
 
 # 3) miscellaneous logging + repr overrides
-_logging_defs = {
-    "log.level.warn": {"color": "bright_yellow"},
-    "logging.level.info": {"color": "green"},
-    "log.colon": {"color": "bright_blue"},
-    # …etc…
-    "logging.time": {"dim": True},
-    "logging.date": {"dim": True},
-    "log.parent": {"color": "cyan", "italic": False, "bold": False},
-    "log.path": {"color": "blue", "bold": False, "italic": False},
-    "logging.keyword": {"bold": True, "color": "bright_yellow"},
-    "logging.level.notset": {"dim": True},
-    "logging.level.debug": {"color": "bright_blue", "bold": True},
-    "logging.level.error": {"color": "bright_red", "bold": True},
-    "log.level.warning": {"color": "bright_yellow"},
-    "logging.level.warn": {"color": "bright_yellow"},
-    "logging.level.warning": {"color": "bright_yellow"},
-    "log.time": {"color": "black", "dim": True},
-    "logging.level.critical": {
-        "color": "bright_red",
-        "bold": True,
-        "reverse": True,
-    },
-    "log.linenumber": {"color": "magenta"},
-    "log.brace": {},
+_logging_styles = {
+    "log.level.warn": Style(color="bright_yellow"),
+    "log.level.info": Style(color="green"),
+    "log.colon": Style(color="bright_blue"),
+    "logging.time": Style(dim=True),
+    "logging.date": Style(dim=True),
+    "log.parent": Style(color="cyan", italic=False, bold=False),
+    "log.path": Style(color="blue", bold=False, italic=False),
+    "logging.keyword": Style(bold=True, color="bright_yellow"),
+    "logging.level.notset": Style(dim=True),
+    "logging.level.debug": Style(color="bright_blue", bold=True),
+    "logging.level.error": Style(color="bright_red", bold=True),
+    "log.level.warning": Style(color="bright_yellow"),
+    "logging.level.warn": Style(color="bright_yellow"),
+    "logging.level.warning": Style(color="bright_yellow"),
+    "log.time": Style(color="black", dim=True),
+    "logging.level.critical": Style(
+        color="bright_red",
+        bold=True,
+        reverse=True,
+    ),
+    "log.linenumber": Style(color="magenta"),
+    "log.brace": Style(),
 }
-log_styles = {
-    k: Style.null() if not v else Style(**v) for k, v in _logging_defs.items()
-}
+log_styles = {k: v for k, v in _logging_styles.items()}
+# _logging_defs = {
+#     "log.level.warn": {"color": "bright_yellow"},
+#     "logging.level.info": {"color": "green"},
+#     "log.colon": {"color": "bright_blue"},
+#     # …etc…
+#     "logging.time": {"dim": True},
+#     "logging.date": {"dim": True},
+#     "log.parent": {"color": "cyan", "italic": False, "bold": False},
+#     "log.path": {"color": "blue", "bold": False, "italic": False},
+#     "logging.keyword": {"bold": True, "color": "bright_yellow"},
+#     "logging.level.notset": {"dim": True},
+#     "logging.level.debug": {"color": "bright_blue", "bold": True},
+#     "logging.level.error": {"color": "bright_red", "bold": True},
+#     "log.level.warning": {"color": "bright_yellow"},
+#     "logging.level.warn": {"color": "bright_yellow"},
+#     "logging.level.warning": {"color": "bright_yellow"},
+#     "log.time": {"color": "black", "dim": True},
+#     "logging.level.critical": {
+#         "color": "bright_red",
+#         "bold": True,
+#         "reverse": True,
+#     },
+#     "log.linenumber": {"color": "magenta"},
+#     "log.brace": {},
+# }
+# log_styles = {
+#     k: Style.null() if not v else Style(**v) for k, v in _logging_styles.items()
+# }
 
-_repr_defs = {
-    "repr.attr": {"color": "blue"},
-    "repr.attrib_equal": {"color": "yellow", "bold": True},
-    "repr.function": {"color": "bright_green", "italic": True},
-    "repr.brace": {"bold": False},
-    "repr.comma": {"color": "bright_yellow"},
-    "repr.colon": {"color": "green"},
-    "repr.dash": {"color": "white"},
-    "repr.attrib_name": {"color": "bright_magenta"},
-    "repr.attrib_value": {"color": "magenta"},
-    "repr.ellipsis": {"color": "bright_yellow"},
-    "repr.number": {"color": "cyan", "bold": False, "italic": False}
+# _repr_defs = {
+#     "repr.attr": {"color": "blue"},
+#     "repr.attrib_equal": {"color": "yellow", "bold": True},
+#     "repr.function": {"color": "bright_green", "italic": True},
+#     "repr.brace": {"bold": False},
+#     "repr.comma": {"color": "bright_yellow"},
+#     "repr.colon": {"color": "green"},
+#     "repr.dash": {"color": "white"},
+#     "repr.attrib_name": {
+#         "color": "bright_blue",
+#         "bold": False,
+#         "italic": False,
+#     },
+#     # "repr.attrib_value": {"color": "magenta"},
+#     "repr.ellipsis": {"color": "bright_yellow"},
+#     # "repr.number": {"color": "cyan", "bold": False, "italic": False}
+# }
+_repr_styles = {
+    "repr.attr": Style(color="blue"),
+    "repr.attrib_equal": Style(color="yellow", bold=True),
+    "repr.function": Style(color="bright_green", italic=True),
+    "repr.brace": Style(),
+    "repr.comma": Style(color="bright_yellow"),
+    "repr.colon": Style(color="green"),
+    "repr.dash": Style(color="white"),
+    "repr.attrib_name": Style(color="bright_blue", bold=False, italic=False),
+    # "repr.attrib_value": Style(color="magenta"),
+    "repr.ellipsis": Style(color="bright_yellow"),
 }
-repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
+# repr_styles = {k: Style(v) for k, v in _repr_defs.items()}
+repr_styles = {k: v for k, v in _repr_styles.items()}
 
 # 4) assemble in one shot
 if use_colored_logs():
-    STYLES = flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    STYLES = (
+        flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    )
 else:
     STYLES = {k: Style.null() for k in DEFAULT_STYLES}
 DEFAULT_STYLES |= STYLES
