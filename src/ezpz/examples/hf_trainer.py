@@ -14,6 +14,7 @@ https://huggingface.co/models?filter=text-generation
 import math
 import os
 import sys
+import time
 from itertools import chain
 from pathlib import Path
 from typing import Optional
@@ -279,7 +280,7 @@ def split_dataset(
     return datasets.DatasetDict(dsets)
 
 
-def main():
+def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
     """
     Main function to run the training and evaluation of a causal language model.
 
@@ -291,8 +292,19 @@ def main():
     """
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
+    import ezpz.dist
+    rank = ezpz.dist.setup_torch()
+    # rank = ezpz.dist.setup_torch(
+    #     # seed=training_args.seed,
+    #     # device_id=int(devid) if devid is not None else devid,
+    # )
 
-    rank = ezpz.setup_torch()
+
+    # def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
+    assert "data" in args and "model" in args and "training" in args
+    data_args: HfDataTrainingArguments = args["data"]
+    model_args: HfModelArguments = args["model"]
+    training_args : TrainingArguments = args["training"]
 
     try:
         import wandb
@@ -309,10 +321,6 @@ def main():
             'Please install it using "pip install evaluate" to run evaluations'
         )
 
-    args = parse_args()
-    data_args = args["data"]
-    model_args = args["model"]
-    training_args = args["training"]
 
     dsconfig_fp = (
         Path(training_args.deepspeed) if training_args.deepspeed else None
@@ -905,7 +913,25 @@ def main():
     else:
         trainer.create_model_card(**kwargs)
 
+    return 0
+
 
 if __name__ == "__main__":
     # import patdb; patdb.debug()
-    main()
+    # devid = (
+    #         os.environ.get(
+    #             "PALS_LOCAL_RANKID",
+    #             os.environ.get(
+    #                 "OMPI_COMM_WORLD_LOCAL_RANK",
+    #                 os.environ.get(
+    #                     "LOCAL_RANK",
+    #                     None
+    #                 )
+    #             )
+    #     )
+    # )
+    args = parse_args()
+    t0 = time.perf_counter()
+    main(args=args)
+    ezpz.dist.cleanup()
+    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
