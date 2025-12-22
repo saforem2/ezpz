@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 import shutil
 import sys
+from dataclasses import dataclass
 from collections.abc import Iterable, Sequence
 from typing import Callable, Final, Literal, Optional
+import getpass
+import platform
+import socket
+import subprocess
 
 import ezpz
 import ezpz.utils
@@ -251,6 +255,96 @@ def _format_text(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def _get_module_list() -> str:
+    try:
+        proc = subprocess.run(
+            ["bash", "-lc", "module -t list 2>&1"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return "module command not available"
+    output = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0 and not output:
+        return "module command not available"
+    return output or "no modules loaded"
+
+
+def _get_base_env_info(env: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    conda_default = env.get("CONDA_DEFAULT_ENV")
+    conda_prefix = env.get("CONDA_PREFIX")
+    conda_root = env.get("CONDA_ROOT")
+    if conda_default == "base" and conda_prefix:
+        lines.append(f"Conda base: {conda_prefix}")
+    elif conda_root:
+        lines.append(f"Conda root: {conda_root}")
+    mamba_root = env.get("MAMBA_ROOT_PREFIX")
+    if mamba_root:
+        lines.append(f"Mamba root: {mamba_root}")
+    pixi_home = env.get("PIXI_HOME")
+    if pixi_home:
+        lines.append(f"Pixi home: {pixi_home}")
+    if not lines:
+        lines.append("Base env: not detected")
+    return lines
+
+
+def _get_active_env_info(env: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    venv = env.get("VIRTUAL_ENV")
+    if venv:
+        lines.append(f"Virtual env: {venv}")
+    conda_default = env.get("CONDA_DEFAULT_ENV")
+    conda_prefix = env.get("CONDA_PREFIX")
+    if conda_default and conda_default != "base" and conda_prefix:
+        lines.append(f"Conda env: {conda_default} ({conda_prefix})")
+    pixi_env = env.get("PIXI_ENVIRONMENT")
+    if pixi_env:
+        lines.append(f"Pixi env: {pixi_env}")
+    if not lines:
+        lines.append("Active env: not detected")
+    return lines
+
+
+def _print_runtime_context() -> None:
+    env = os.environ
+    print("== Runtime Context ==")
+    print(f"User: {getpass.getuser()}")
+    print(f"Machine: {platform.machine()}")
+    print(f"Hostname: {socket.gethostname()}")
+    print(f"PBS_JOBID: {env.get('PBS_JOBID', 'N/A')}")
+    print(f"PBS_NODEFILE: {env.get('PBS_NODEFILE', 'N/A')}")
+    print("")
+    print("Module list:")
+    module_list = _get_module_list()
+    for line in module_list.splitlines() if module_list else ["(empty)"]:
+        print(f"  {line}")
+    print("")
+    print("Base environment:")
+    for line in _get_base_env_info(env):
+        print(f"  {line}")
+    print("")
+    print("Active environment:")
+    for line in _get_active_env_info(env):
+        print(f"  {line}")
+    print("")
+    print(
+        f"Python: {sys.executable} ({sys.version.split()[0]})"
+    )
+    try:
+        import torch
+
+        torch_location = getattr(torch, "__file__", "unknown")
+        print(
+            f"PyTorch: {torch.__version__} ({torch_location})"
+        )
+    except Exception as exc:
+        print(f"PyTorch: not importable ({exc!r})")
+    print("")
+
+
 def run_checks(
     checks: list[Callable] | None = None,
 ) -> list[CheckResult]:
@@ -292,6 +386,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     if args.json:
         print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
+        _print_runtime_context()
         rstrs = [r.get_status() for r in results]
         for r in rstrs:
             print(r)
