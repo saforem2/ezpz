@@ -13,6 +13,7 @@ import getpass
 import platform
 import socket
 import subprocess
+import re
 
 import ezpz
 import ezpz.utils
@@ -271,6 +272,266 @@ def _get_module_list() -> str:
     return output or "no modules loaded"
 
 
+def _extract_int(value: str | None) -> Optional[int]:
+    if not value:
+        return None
+    match = re.search(r"\d+", value)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return None
+
+
+def _split_nodespecs(value: str) -> list[str]:
+    specs: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in value:
+        if ch == "," and depth == 0:
+            spec = "".join(buf).strip()
+            if spec:
+                specs.append(spec)
+            buf = []
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]" and depth > 0:
+            depth -= 1
+        buf.append(ch)
+    final = "".join(buf).strip()
+    if final:
+        specs.append(final)
+    return specs
+
+
+def _expand_slurm_nodespec(value: str) -> list[str]:
+    if "[" not in value or "]" not in value:
+        return [value]
+    prefix = value.split("[", 1)[0]
+    tail = value.split("]", 1)[1]
+    inside = value.split("[", 1)[1].rsplit("]", 1)[0]
+    hosts: list[str] = []
+    for part in inside.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start, end = part.split("-", 1)
+            width = max(len(start), len(end))
+            try:
+                start_i = int(start)
+                end_i = int(end)
+            except ValueError:
+                continue
+            for idx in range(start_i, end_i + 1):
+                hosts.append(f"{prefix}{idx:0{width}d}{tail}")
+        else:
+            hosts.append(f"{prefix}{part}{tail}")
+    return hosts
+
+
+def _expand_slurm_nodelist(value: str | None) -> list[str]:
+    if not value:
+        return []
+    hosts: list[str] = []
+    for spec in _split_nodespecs(value):
+        hosts.extend(_expand_slurm_nodespec(spec))
+    return hosts
+
+
+def _get_nhosts(env: dict[str, str]) -> Optional[int]:
+    nodefile = env.get("PBS_NODEFILE")
+    if nodefile and os.path.exists(nodefile):
+        try:
+            with open(nodefile, "r", encoding="utf-8") as handle:
+                hosts = {line.strip() for line in handle if line.strip()}
+            if hosts:
+                return len(hosts)
+        except OSError:
+            pass
+    return _extract_int(env.get("SLURM_NNODES")) or _extract_int(
+        env.get("SLURM_JOB_NUM_NODES")
+    )
+
+
+def _get_ngpu_per_host(env: dict[str, str]) -> Optional[int]:
+    for key in (
+        "NGPU_PER_HOST",
+        "SLURM_GPUS_ON_NODE",
+        "SLURM_GPUS_PER_NODE",
+        "SLURM_JOB_GPUS",
+    ):
+        value = _extract_int(env.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _read_hosts_from_file(path: str) -> set[str]:
+    hosts: set[str] = set()
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            host = line.strip()
+            if host:
+                hosts.add(host)
+    return hosts
+
+
+def _get_hostfile_info(
+    path: str | None,
+) -> tuple[str | None, Optional[int], set[str]]:
+    if not path:
+        return None, None, set()
+    if not os.path.exists(path):
+        return path, None, set()
+    try:
+        hosts = _read_hosts_from_file(path)
+    except OSError:
+        return path, None, set()
+    return path, len(hosts), hosts
+
+
+def _get_slurm_hosts(env: dict[str, str]) -> list[str]:
+    nodelist = env.get("SLURM_NODELIST") or env.get("SLURM_JOB_NODELIST")
+    if not nodelist:
+        return []
+    if shutil.which("scontrol"):
+        try:
+            proc = subprocess.run(
+                ["scontrol", "show", "hostnames", nodelist],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            output = (proc.stdout or "").strip()
+            if proc.returncode == 0 and output:
+                return [
+                    line.strip()
+                    for line in output.splitlines()
+                    if line.strip()
+                ]
+        except Exception:
+            pass
+    return _expand_slurm_nodelist(nodelist)
+
+
+def check_hostfile(environ: Optional[dict[str, str]] = None) -> CheckResult:
+    env = os.environ if environ is None else environ
+    is_pbs = bool(env.get("PBS_JOBID"))
+    is_slurm = bool(env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID"))
+    hostfile = env.get("HOSTFILE")
+
+    if not is_pbs and not is_slurm:
+        return CheckResult(
+            name="hostfile",
+            status="ok",
+            message="No scheduler detected; HOSTFILE not required.",
+        )
+
+    if hostfile:
+        hostfile_path, hostfile_count, hostfile_hosts = _get_hostfile_info(
+            hostfile
+        )
+        if is_pbs:
+            pbs_nodefile = env.get("PBS_NODEFILE")
+            if pbs_nodefile and hostfile_path != pbs_nodefile:
+                pbs_path, pbs_count, pbs_hosts = _get_hostfile_info(
+                    pbs_nodefile
+                )
+                only_hostfile = sorted(hostfile_hosts - pbs_hosts)
+                only_pbs = sorted(pbs_hosts - hostfile_hosts)
+                message = (
+                    "HOSTFILE differs from PBS_NODEFILE. "
+                    f"HOSTFILE={hostfile_path} ({hostfile_count or 'N/A'} hosts), "
+                    f"PBS_NODEFILE={pbs_path} ({pbs_count or 'N/A'} hosts). "
+                    f"Only HOSTFILE: {len(only_hostfile)}; "
+                    f"only PBS_NODEFILE: {len(only_pbs)}."
+                )
+                return CheckResult(
+                    name="hostfile",
+                    status="warning",
+                    message=message,
+                    remedy="Verify hostfile alignment before launch.",
+                )
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    f"HOSTFILE={hostfile_path} "
+                    f"({hostfile_count or 'N/A'} hosts)."
+                ),
+            )
+        if is_slurm:
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    f"HOSTFILE={hostfile_path} "
+                    f"({hostfile_count or 'N/A'} hosts)."
+                ),
+            )
+
+    if is_pbs:
+        pbs_nodefile = env.get("PBS_NODEFILE")
+        if pbs_nodefile:
+            env["HOSTFILE"] = pbs_nodefile
+            pbs_path, pbs_count, _ = _get_hostfile_info(pbs_nodefile)
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    "HOSTFILE not set; using PBS_NODEFILE. "
+                    f"HOSTFILE={pbs_path} ({pbs_count or 'N/A'} hosts). "
+                    "Exported to child processes."
+                ),
+            )
+        return CheckResult(
+            name="hostfile",
+            status="warning",
+            message="PBS job detected but PBS_NODEFILE is not set.",
+            remedy="Set PBS_NODEFILE or HOSTFILE before launching.",
+        )
+
+    if is_slurm:
+        nhosts = _get_nhosts(env) or 0
+        jobid = env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID") or "unknown"
+        filename = f"slurm-{nhosts}hosts-{jobid}"
+        path = os.path.join(os.getcwd(), filename)
+        hosts = _get_slurm_hosts(env)
+        if not hosts and nhosts:
+            hosts = [socket.gethostname()]
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(hosts))
+                if hosts:
+                    handle.write("\n")
+            env["HOSTFILE"] = path
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    "HOSTFILE not set; created from Slurm allocation. "
+                    f"HOSTFILE={path} ({len(hosts) or 'N/A'} hosts). "
+                    "Exported to child processes."
+                ),
+            )
+        except OSError as exc:
+            return CheckResult(
+                name="hostfile",
+                status="warning",
+                message=f"Failed to create HOSTFILE at {path}: {exc!r}.",
+                remedy="Set HOSTFILE explicitly or check write permissions.",
+            )
+
+    return CheckResult(
+        name="hostfile",
+        status="ok",
+        message="HOSTFILE check skipped.",
+    )
+
+
 def _get_base_env_info(env: dict[str, str]) -> list[str]:
     lines: list[str] = []
     conda_default = env.get("CONDA_DEFAULT_ENV")
@@ -316,6 +577,7 @@ def _print_runtime_context() -> None:
     print(f"Hostname: {socket.gethostname()}")
     print(f"PBS_JOBID: {env.get('PBS_JOBID', 'N/A')}")
     print(f"PBS_NODEFILE: {env.get('PBS_NODEFILE', 'N/A')}")
+    print(f"ezpz: {getattr(ezpz, '__version__', 'unknown')} ({ezpz.__file__})")
     print("")
     print("Module list:")
     module_list = _get_module_list()
@@ -330,18 +592,34 @@ def _print_runtime_context() -> None:
     for line in _get_active_env_info(env):
         print(f"  {line}")
     print("")
-    print(
-        f"Python: {sys.executable} ({sys.version.split()[0]})"
-    )
+    print(f"Python: {sys.executable} ({sys.version.split()[0]})")
     try:
         import torch
 
         torch_location = getattr(torch, "__file__", "unknown")
-        print(
-            f"PyTorch: {torch.__version__} ({torch_location})"
-        )
+        print(f"PyTorch: {torch.__version__} ({torch_location})")
     except Exception as exc:
         print(f"PyTorch: not importable ({exc!r})")
+    if (
+        env.get("PBS_JOBID")
+        or env.get("SLURM_JOB_ID")
+        or env.get("SLURM_JOBID")
+    ):
+        nhosts = _get_nhosts(env)
+        ngpu_per_host = _get_ngpu_per_host(env)
+        ngpus = (
+            nhosts * ngpu_per_host
+            if nhosts is not None and ngpu_per_host is not None
+            else None
+        )
+        print("")
+        print("Scheduler resources:")
+        print(f"  NHOSTS: {nhosts if nhosts is not None else 'N/A'}")
+        print(
+            "  NGPU_PER_HOST: "
+            f"{ngpu_per_host if ngpu_per_host is not None else 'N/A'}"
+        )
+        print(f"  NGPUS: {ngpus if ngpus is not None else 'N/A'}")
     print("")
 
 
@@ -350,7 +628,13 @@ def run_checks(
 ) -> list[CheckResult]:
     """Execute all diagnostic checks, returning structured results."""
     checks = (
-        [check_mpi, check_scheduler, check_wandb, check_torch_device]
+        [
+            check_mpi,
+            check_wandb,
+            check_torch_device,
+            check_hostfile,
+            check_scheduler,
+        ]
         if checks is None
         else checks
     )
