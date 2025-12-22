@@ -45,7 +45,14 @@ from ezpz import plot as ezplot
 from ezpz import timeitlogit
 from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.log import get_logger
-from ezpz.tplot import tplot as eztplot
+from ezpz.tplot import (
+    plotext_hist_series,
+    plotext_plot_series,
+    plotext_prepare_figure,
+    plotext_set_size,
+    plotext_subplots,
+    tplot as eztplot,
+)
 
 # from ezpz import tplot as eztplot
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
@@ -346,7 +353,7 @@ class History:
                 text = asset_path.read_text(encoding="utf-8")
             except OSError:
                 text = ""
-            snippet = "\n".join(text.splitlines()[:40]).strip()
+            snippet = "\n".join(text.splitlines()[:40]).rstrip("\n")
             lines.extend(["```", snippet, "```", ""])
         else:
             lines.append(f"![{title}]({rel_path.as_posix()})")
@@ -515,13 +522,24 @@ class History:
             handle.write("## Metric Overview\n\n")
             for metric_name, stats in groups.items():
                 handle.write(f"### {metric_name}\n\n")
-                handle.write("| Statistic | Value |\n")
-                handle.write("| --- | --- |\n")
+                rows: list[tuple[str, str]] = []
                 for label in ("latest", "mean", "max", "min", "std"):
                     if label in stats:
                         value = stats[label]
+                        rows.append((label.capitalize(), f"{value:.6f}"))
+                if rows:
+                    header = ("Statistic", "Value")
+                    col1 = max(len(header[0]), *(len(r[0]) for r in rows))
+                    col2 = max(len(header[1]), *(len(r[1]) for r in rows))
+                    handle.write(
+                        f"| {header[0]:<{col1}} | {header[1]:>{col2}} |\n"
+                    )
+                    handle.write(
+                        f"|:{'-' * (col1 - 1)} | {'-' * (col2 - 1)}:|\n"
+                    )
+                    for stat_label, stat_value in rows:
                         handle.write(
-                            f"| {label.capitalize()} | {value:.6f} |\n"
+                            f"| {stat_label:<{col1}} | {stat_value:>{col2}} |\n"
                         )
                 handle.write("\n")
         self._metric_summary_written = True
@@ -721,6 +739,8 @@ class History:
         outdir = outdir.expanduser().resolve()
         outdir.mkdir(parents=True, exist_ok=True)
         asset_path = outdir.joinpath(f"{name.replace('/', '_')}.txt")
+        summary_path = outdir.joinpath(f"{name.replace('/', '_')}_summary.txt")
+        hist_path = outdir.joinpath(f"{name.replace('/', '_')}_hist.txt")
 
         order = [
             ("raw", name),
@@ -729,28 +749,253 @@ class History:
             ("min", f"{name} min"),
             ("std", f"{name} std"),
         ]
+
+        stats_keys = ("mean", "max", "min", "std")
+        stats_present = any(key in metric_vars for key in stats_keys)
+        stats_nonzero = False
+        if stats_present:
+            nonzero_keys = [
+                key for key in ("mean", "max", "min") if key in metric_vars
+            ]
+            if nonzero_keys:
+                stats_nonzero = any(
+                    np.any(
+                        np.nan_to_num(
+                            self._series_from_dataarray(metric_vars[key])
+                        )
+                        != 0
+                    )
+                    for key in nonzero_keys
+                )
+
+        try:
+            _ = plotext_prepare_figure(theme="clear")
+        except ModuleNotFoundError:  # pragma: no cover - optional dependency
+            logger.error(
+                "Unable to import `plotext` which is needed for text-based plotting."
+            )
+            return None
+
+        use_subplots = stats_present and stats_nonzero
+        if use_subplots:
+            try:
+                plt, left, right = plotext_subplots(
+                    left_layout=(2, 1),
+                    right_layout=(3, 1),
+                    height_scale=8.0,
+                )
+            except ModuleNotFoundError:  # pragma: no cover - optional dependency
+                use_subplots = False
         wrote_any = False
         points = 0
-        append_flag = False
-        for key, label in order:
-            data_array = metric_vars.get(key)
-            if data_array is None:
-                continue
-            series = self._series_from_dataarray(data_array)
-            points = max(points, len(series))
-            self._tplot(
-                y=series,
-                xlabel="iter",
-                ylabel=label,
-                append=append_flag,
-                outfile=asset_path.as_posix(),
-                verbose=verbose,
-                plot_type=plot_type,
-                logfreq=(1 if logfreq is None else logfreq),
-                record_report=False,
-            )
-            append_flag = True
-            wrote_any = True
+
+        if use_subplots:
+            left_slots = [
+                (1, "raw", name, "black"),
+                (2, "mean", f"{name}/mean", "green"),
+            ]
+            right_slots = [
+                (1, "min", f"{name}/min", "blue"),
+                (2, "std", f"{name}/std", "magenta"),
+                (3, "max", f"{name}/max", "red"),
+            ]
+
+            for row, key, label, color in left_slots:
+                data_array = metric_vars.get(key)
+                if data_array is None:
+                    continue
+                series = self._series_from_dataarray(data_array)
+                points = max(points, len(series))
+                if hasattr(left, "subplot"):
+                    left.subplot(row, 1)
+                plotext_plot_series(plt, series, label=None, color=color)
+                if hasattr(plt, "title"):
+                    plt.title(label)
+                if hasattr(plt, "xlabel"):
+                    plt.xlabel("iter")
+                if hasattr(plt, "ylabel"):
+                    plt.ylabel(label)
+                wrote_any = True
+
+            for row, key, label, color in right_slots:
+                data_array = metric_vars.get(key)
+                if data_array is None:
+                    continue
+                series = self._series_from_dataarray(data_array)
+                points = max(points, len(series))
+                if hasattr(right, "subplot"):
+                    right.subplot(row, 1)
+                plotext_plot_series(plt, series, label=None, color=color)
+                if hasattr(plt, "title"):
+                    plt.title(label)
+                if hasattr(plt, "xlabel"):
+                    plt.xlabel("iter")
+                if hasattr(plt, "ylabel"):
+                    plt.ylabel(label)
+                wrote_any = True
+
+            if wrote_any:
+                plt.show()
+                plt.savefig(
+                    asset_path.as_posix(), append=False, keep_colors=True
+                )
+
+            if stats_present:
+                plt = plotext_prepare_figure(theme="clear")
+                plotext_set_size(plt, height_scale=8.0)
+
+                overlay_order = [
+                    ("raw", name, "black"),
+                    ("mean", f"{name}/mean", "green"),
+                    ("max", f"{name}/max", "red"),
+                    ("min", f"{name}/min", "blue"),
+                ]
+                overlay_points = 0
+                for key, label, color in overlay_order:
+                    data_array = metric_vars.get(key)
+                    if data_array is None:
+                        continue
+                    series = self._series_from_dataarray(data_array)
+                    overlay_points = max(overlay_points, len(series))
+                    plotext_plot_series(
+                        plt,
+                        series,
+                        label=label,
+                        color=color,
+                    )
+                if overlay_points > 0:
+                    plt.show()
+                    plt.savefig(
+                        summary_path.as_posix(),
+                        append=False,
+                        keep_colors=True,
+                    )
+                    if self.report_enabled:
+                        self._write_plot_report(
+                            f"{name} summary",
+                            summary_path,
+                            kind="tplot",
+                            metadata={
+                                "components": ", ".join(
+                                    key
+                                    for key, _, _ in overlay_order
+                                    if key in metric_vars
+                                ),
+                                "points": overlay_points,
+                            },
+                        )
+                hist_order = [
+                    ("mean", f"{name}/mean"),
+                    ("max", f"{name}/max"),
+                    ("min", f"{name}/min"),
+                    ("std", f"{name}/std"),
+                ]
+                plt = plotext_prepare_figure(theme="clear")
+                plotext_set_size(plt, height_scale=8.0)
+                plt.subplots(2, 2)
+                hist_points = 0
+                for idx, (key, label) in enumerate(hist_order, start=1):
+                    data_array = metric_vars.get(key)
+                    if data_array is None:
+                        continue
+                    series = self._series_from_dataarray(data_array)
+                    hist_points = max(hist_points, len(series))
+                    row = ((idx - 1) // 2) + 1
+                    col = ((idx - 1) % 2) + 1
+                    if hasattr(plt, "subplot"):
+                        plt.subplot(row, col)
+                    plotext_hist_series(plt, series, label=None)
+                    if hasattr(plt, "title"):
+                        plt.title(f"{label} hist")
+                if hist_points > 0:
+                    plt.show()
+                    plt.savefig(
+                        hist_path.as_posix(),
+                        append=False,
+                        keep_colors=True,
+                    )
+                    if self.report_enabled:
+                        self._write_plot_report(
+                            f"{name} hist",
+                            hist_path,
+                            kind="tplot-hist",
+                            metadata={
+                                "components": ", ".join(
+                                    key
+                                    for key, _ in hist_order
+                                    if key in metric_vars
+                                ),
+                                "points": hist_points,
+                            },
+                        )
+        if not use_subplots:
+            append_flag = False
+            for key, label in order:
+                data_array = metric_vars.get(key)
+                if data_array is None:
+                    continue
+                series = self._series_from_dataarray(data_array)
+                points = max(points, len(series))
+                self._tplot(
+                    y=series,
+                    xlabel="iter",
+                    ylabel=label,
+                    append=append_flag,
+                    outfile=asset_path.as_posix(),
+                    verbose=verbose,
+                    plot_type=plot_type,
+                    logfreq=(1 if logfreq is None else logfreq),
+                    record_report=False,
+                )
+                append_flag = True
+                wrote_any = True
+
+            if stats_present:
+                overlay_order = [
+                    ("raw", name),
+                    ("mean", f"{name}/mean"),
+                    ("max", f"{name}/max"),
+                    ("min", f"{name}/min"),
+                ]
+                overlay_points = 0
+                overlay_append = False
+                for key, label in overlay_order:
+                    data_array = metric_vars.get(key)
+                    if data_array is None:
+                        continue
+                    series = self._series_from_dataarray(data_array)
+                    overlay_points = max(overlay_points, len(series))
+                    self._tplot(
+                        y=series,
+                        xlabel="iter",
+                        ylabel=label,
+                        append=overlay_append,
+                        outfile=summary_path.as_posix(),
+                        verbose=verbose,
+                        plot_type=plot_type,
+                        logfreq=(1 if logfreq is None else logfreq),
+                        record_report=False,
+                    )
+                    overlay_append = True
+                if (
+                    overlay_points > 0
+                    and self.report_enabled
+                    and summary_path.exists()
+                ):
+                    self._write_plot_report(
+                        f"{name} summary",
+                        summary_path,
+                        kind="tplot",
+                        metadata={
+                            "components": ", ".join(
+                                key
+                                for key, _ in overlay_order
+                                if key in metric_vars
+                            ),
+                            "points": overlay_points,
+                        },
+                    )
+
         if wrote_any and self.report_enabled:
             self._write_plot_report(
                 name,
@@ -1139,6 +1384,7 @@ class History:
         info_metrics, debug_metrics = self.split_metrics_for_logging(
             metrics, debug_prefixes=debug_prefixes
         )
+
         def _is_counter_key(key: str) -> bool:
             parts = key.replace("\\", "/").split("/")
             if not parts:
@@ -1165,17 +1411,15 @@ class History:
             summary_stats = self.summarize_distributed_min_max_std(
                 summary_input
             )
-            if summary_stats and (
-                not rank0_only_summary or self._rank == 0
-            ):
+            if summary_stats and (not rank0_only_summary or self._rank == 0):
                 summary_msg = summarize_dict(
                     summary_stats, precision=precision
                 ).replace("train/", "")
                 if summary_msg:
                     log.info(summary_msg)
-        debug_msg = summarize_dict(
-            debug_metrics, precision=precision
-        ).replace("train/", "")
+        debug_msg = summarize_dict(debug_metrics, precision=precision).replace(
+            "train/", ""
+        )
         if debug_msg:
             log.debug(debug_msg)
 
@@ -1480,9 +1724,7 @@ class History:
                 kind="matplotlib",
                 metadata={"shape": list(arr.shape)},
             )
-        self._wandb_log_matplotlib_asset(
-            key, primary_asset, kind="matplotlib"
-        )
+        self._wandb_log_matplotlib_asset(key, primary_asset, kind="matplotlib")
 
         return fig, subfigs, axes
 
@@ -1635,9 +1877,7 @@ class History:
                 kind="dataarray",
                 metadata=metadata,
             )
-        self._wandb_log_matplotlib_asset(
-            key, primary_asset, kind="dataarray"
-        )
+        self._wandb_log_matplotlib_asset(key, primary_asset, kind="dataarray")
         return (fig, subfigs, axes)
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
@@ -1804,6 +2044,15 @@ class History:
         outdir_path = Path(os.getcwd()) if outdir is None else Path(outdir)
         groups = self._group_metric_variables(dataset)
         for metric_name, metric_vars in sorted(groups.items()):
+            parts = metric_name.replace("\\", "/").split("/")
+            last = parts[-1] if parts else metric_name
+            if last in {"iter", "epoch", "step", "batch", "idx", "bidx"}:
+                continue
+            if any(
+                last.endswith(f"_{token}")
+                for token in ("iter", "epoch", "step", "batch", "idx", "bidx")
+            ):
+                continue
             if (xkey is not None and metric_name == xkey) or xkey in [
                 "iter",
                 "draw",
