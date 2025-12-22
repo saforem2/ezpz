@@ -1912,7 +1912,8 @@ class History:
             arr = np.array(x).real
             # arr = np.array(x)
             logger.info(f"len(x): {len(x)}")
-            logger.info(f"x[0].shape: {x[0].shape}")
+            x0_shape = getattr(x[0], "shape", None) if len(x) > 0 else None
+            logger.info(f"x[0].shape: {x0_shape}")
             logger.info(f"arr.shape: {arr.shape}")
         assert isinstance(arr, np.ndarray)
         if warmup is not None and warmup > 0 and len(arr) > 0:
