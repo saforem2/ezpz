@@ -54,6 +54,7 @@ def tar_env_cmd(args: tuple[str, ...]) -> None:
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def yeet_env_cmd(args: tuple[str, ...]) -> None:
     """Distribute an environment tarball across worker nodes."""
+    # from ezpz.utils import yeet_env as yeet_env_module
     from ezpz.utils import yeet_env as yeet_env_module
 
     rc = yeet_env_module.run(_ensure_sequence(args))
