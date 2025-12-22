@@ -87,6 +87,7 @@ ALREADY_PRINTED_HOSTS = os.environ.get("ALREADY_PRINTED_HOSTS", "0")
 
 _SUPPORTED_DEVICE_TYPES = {"cpu", "cuda", "xpu", "mps"}
 _ENV_TORCH_DEVICE_LOGGED = False
+_ENV_TORCH_DEVICE_APPLIED = False
 
 
 def _parse_torch_device(value: str | None) -> tuple[str, str, str] | None:
@@ -118,6 +119,17 @@ def _get_env_torch_device() -> tuple[str, str, str] | None:
     """Return parsed ``TORCH_DEVICE`` information if the variable is set."""
 
     return _parse_torch_device(os.environ.get("TORCH_DEVICE"))
+
+
+def _apply_env_torch_device(env_info: tuple[str, str, str]) -> None:
+    """Set torch's default device based on TORCH_DEVICE, only once."""
+    global _ENV_TORCH_DEVICE_APPLIED, _ENV_TORCH_DEVICE_LOGGED
+    if not _ENV_TORCH_DEVICE_APPLIED:
+        torch.set_default_device(env_info[0])
+        _ENV_TORCH_DEVICE_APPLIED = True
+    if not _ENV_TORCH_DEVICE_LOGGED and get_rank() == 0:
+        logger.info("Using TORCH_DEVICE=%s from environment", env_info[2])
+        _ENV_TORCH_DEVICE_LOGGED = True
 
 
 _env_device_info = _get_env_torch_device()
@@ -844,10 +856,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         return device_type
     env_info = _get_env_torch_device()
     if env_info is not None:
-        global _ENV_TORCH_DEVICE_LOGGED
-        if not _ENV_TORCH_DEVICE_LOGGED and get_rank() == 0:
-            logger.info("Using TORCH_DEVICE=%s from environment", env_info[2])
-            _ENV_TORCH_DEVICE_LOGGED = True
+        _apply_env_torch_device(env_info)
         return env_info[1]
     return (
         "xpu"
@@ -896,11 +905,7 @@ def get_torch_device(
     #     return torch.device(device_str) if as_torch_device else device_str
     env_info = _get_env_torch_device()
     if env_info is not None:
-        global _ENV_TORCH_DEVICE_LOGGED
-        if not _ENV_TORCH_DEVICE_LOGGED and get_rank() == 0:
-            logger.info("Using TORCH_DEVICE=%s from environment", env_info[2])
-            torch.set_default_device(f"{env_info[0]}")
-            _ENV_TORCH_DEVICE_LOGGED = True
+        _apply_env_torch_device(env_info)
         return env_info[1]
     if device_type is None:
         device_type = get_torch_device_type(device_type)
