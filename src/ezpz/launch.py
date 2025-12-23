@@ -66,6 +66,36 @@ def _normalize_command(command: Sequence[str] | str) -> list[str]:
     return list(command)
 
 
+def _mpirun_supports_flag(flag: str) -> bool:
+    try:
+        proc = subprocess.run(
+            ["mpirun", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+    output = f"{proc.stdout}\n{proc.stderr}"
+    return flag in output
+
+
+def _get_mpirun_env_flags() -> list[str]:
+    if _mpirun_supports_flag("--envall"):
+        return ["--envall"]
+    if _mpirun_supports_flag("-envall"):
+        return ["-envall"]
+    env_keys = []
+    if os.environ.get("TORCH_DEVICE"):
+        env_keys.append("TORCH_DEVICE")
+    if _mpirun_supports_flag("-x") and env_keys:
+        flags: list[str] = []
+        for key in env_keys:
+            flags.extend(["-x", key])
+        return flags
+    return []
+
+
 def run_command(
     command: Sequence[str] | str, filters: Optional[Sequence[str]] = None
 ) -> int:
@@ -423,7 +453,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         requested_nproc = requested_ppn * requested_nhosts
     if requested_nproc is None:
         requested_nproc = int(os.environ.get("WORLD_SIZE", "2"))
-    fallback_cmd = ["mpirun", "-np", str(requested_nproc)]
+    env_flags = _get_mpirun_env_flags()
+    fallback_cmd = ["mpirun", *env_flags, "-np", str(requested_nproc)]
     if args.hostfile:
         fallback_cmd.extend(["--hostfile", args.hostfile])
     if requested_ppn is not None and requested_nhosts is not None:
