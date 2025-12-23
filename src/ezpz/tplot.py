@@ -64,8 +64,9 @@ def plotext_plot_series(
     *,
     label: Optional[str],
     color: Optional[str] = None,
-    marker: Optional[str] = "braille",
+    marker: Optional[str] = None,
 ) -> None:
+    # marker: Optional[str] = "braille",
     try:
         if label:
             if color is not None:
@@ -220,6 +221,12 @@ def tplot(
     plotext.theme("clear")
     plotext.plot_size(*figsize)
     # marker = "braille" if (marker is None and type == 'scatter') else marker
+    plot_type = (
+        os.environ.get("EZPZ_TPLOT_TYPE", None)
+        if plot_type is None
+        else plot_type
+    )
+    marker = os.environ.get("EZPZ_TPLOT_MARKER", None)
     y = np.nan_to_num(y, nan=0.0)
     if len(y.shape) == 2:
         plotext.hist(y.flatten(), bins=bins, label=label)
