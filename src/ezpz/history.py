@@ -726,6 +726,7 @@ class History:
         warmup: Optional[float | int] = 0.0,
         outdir: Optional[Path] = None,
         plot_type: Optional[str] = None,
+        marker: Optional[str] = None,
         verbose: bool = False,
         logfreq: Optional[int] = None,
     ) -> Optional[Path]:
@@ -777,6 +778,9 @@ class History:
             return None
 
         use_subplots = stats_present and stats_nonzero
+        plt = None
+        left = None
+        right = None
         if use_subplots:
             try:
                 plt, left, right = plotext_subplots(
@@ -784,12 +788,15 @@ class History:
                     right_layout=(3, 1),
                     height_scale=8.0,
                 )
-            except ModuleNotFoundError:  # pragma: no cover - optional dependency
+            except (
+                ModuleNotFoundError
+            ):  # pragma: no cover - optional dependency
                 use_subplots = False
         wrote_any = False
         points = 0
 
         if use_subplots:
+            assert plt is not None and left is not None and right is not None
             left_slots = [
                 (1, "raw", name, "black"),
                 (2, "mean", f"{name}/mean", "green"),
@@ -806,14 +813,21 @@ class History:
                     continue
                 series = self._series_from_dataarray(data_array)
                 points = max(points, len(series))
-                if hasattr(left, "subplot"):
+                if left is not None and hasattr(left, "subplot"):
                     left.subplot(row, 1)
-                plotext_plot_series(plt, series, label=None, color=color)
-                if hasattr(plt, "title"):
+                plotext_plot_series(
+                    plt,
+                    series,
+                    label=None,
+                    color=color,
+                    plot_type=plot_type,
+                    marker=marker,
+                )
+                if plt is not None and hasattr(plt, "title"):
                     plt.title(label)
-                if hasattr(plt, "xlabel"):
+                if plt is not None and hasattr(plt, "xlabel"):
                     plt.xlabel("iter")
-                if hasattr(plt, "ylabel"):
+                if plt is not None and hasattr(plt, "ylabel"):
                     plt.ylabel(label)
                 wrote_any = True
 
@@ -825,7 +839,14 @@ class History:
                 points = max(points, len(series))
                 if hasattr(right, "subplot"):
                     right.subplot(row, 1)
-                plotext_plot_series(plt, series, label=None, color=color)
+                plotext_plot_series(
+                    plt,
+                    series,
+                    label=None,
+                    color=color,
+                    plot_type=plot_type,
+                    marker=marker,
+                )
                 if hasattr(plt, "title"):
                     plt.title(label)
                 if hasattr(plt, "xlabel"):
@@ -842,7 +863,7 @@ class History:
 
             if stats_present:
                 plt = plotext_prepare_figure(theme="clear")
-                plotext_set_size(plt, height_scale=8.0)
+                plotext_set_size(plt, min_height=40)
 
                 overlay_order = [
                     ("raw", name, "black"),
@@ -891,7 +912,7 @@ class History:
                     ("std", f"{name}/std"),
                 ]
                 plt = plotext_prepare_figure(theme="clear")
-                plotext_set_size(plt, height_scale=8.0)
+                plotext_set_size(plt, min_height=40)
                 plt.subplots(2, 2)
                 hist_points = 0
                 for idx, (key, label) in enumerate(hist_order, start=1):
@@ -2155,8 +2176,10 @@ class History:
     ) -> xr.DataArray:
         if isinstance(x, tuple):
             x = list(x)
-        if isinstance(x, list) and len(x) > 0 and isinstance(
-            x[0], torch.Tensor
+        if (
+            isinstance(x, list)
+            and len(x) > 0
+            and isinstance(x[0], torch.Tensor)
         ):
             x = torch.Tensor(x).numpy(force=True)
         try:
