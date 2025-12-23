@@ -505,6 +505,7 @@ def get_dist_info(
 def print_dist_setup(
     framework: Optional[str] = None,
     hostfile: Optional[PathLike] = None,
+    display: Optional[bool] = True,
 ) -> str:
     """Print distributed setup.
 
@@ -541,16 +542,20 @@ def print_dist_setup(
     gpn_len = len(str(gpus_per_node))
     node_len = len(str(node))
     num_nodes_len = len(str(num_nodes))
+    # psizes = [f"['{hn}']" + f"[{rank:>{lrank}}/{world_size - 1:<{lrank}}] "]
+    hn = socket.gethostname()
     dist_list = [
+        f"['{hn}']",
         f"[{device=}]",
+        f"[{node=:>{node_len}}/{(num_nodes - 1):<{num_nodes_len}}]",
         f"[{rank=:>{rank_len}}/{(wsa - 1):<{ws_len}}]",
         f"[{local_rank=:>{lr_len}}/{gpus_per_node - 1:<{gpn_len}}]",
-        f"[{node=:>{node_len}}/{(num_nodes - 1):<{num_nodes_len}}]",
     ]
     if framework is not None:
         dist_list.append(f"[{framework=}]")
     dist_str = "".join(dist_list)
-    logger.info(f"{dist_str}")
+    if display:
+        logger.info(f"{dist_str}")
     if rank == 0:
         if wsa > 1000:
             logger.warning(
@@ -1665,7 +1670,6 @@ def setup_torch(
             git_ds_info()
         _ = get_dist_info(verbose=verbose)
         # if not os.environ.get("ALREADY_PRINTED_DIST_SETUP", "0"):
-        _ = print_dist_setup()
         # os.environ["ALREADY_PRINTED_DIST_SETUP"] = "1"
 
     if world_size > 1:
@@ -1680,7 +1684,9 @@ def setup_torch(
     lrank = len(str(world_size - 1))
     # nz = lrank - len(str(rank))
     hn = socket.gethostname()
-    psizes = [f"['{hn}']" + f"[{rank:>{lrank}}/{world_size - 1:<{lrank}}] "]
+    # psizes = [f"['{hn}']" + f"[{rank:>{lrank}}/{world_size - 1:<{lrank}}] "]
+    # _ = print_dist_setup()
+    psizes = [print_dist_setup(display=False)]
     if (
         tensor_parallel_size > 1
         or context_parallel_size > 1
@@ -1720,6 +1726,7 @@ def setup_torch(
     # if not os.environ.get("ALREADY_PRINTED_HOSTS", "0"):
     # if rank == 0:
     logger.info("".join(psizes))
+    # _ = print_dist_setup()
     # os.environ["ALREADY_PRINTED_HOSTS"] = "1"
     barrier()
     return rank
