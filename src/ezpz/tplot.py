@@ -54,7 +54,7 @@ def plotext_set_size(
     if hasattr(plotext, "th"):
         height = max(min_height, int(plotext.th() * height_scale))
     if width is None:
-        width = 75
+        width = 80
     plotext.plot_size(width, height)
 
 
@@ -65,24 +65,54 @@ def plotext_plot_series(
     label: Optional[str],
     color: Optional[str] = None,
     marker: Optional[str] = None,
+    plot_type: Optional[str] = None,
 ) -> None:
     # marker: Optional[str] = "braille",
-    try:
-        if label:
-            if color is not None:
-                plotext.plot(series, label=label, color=color, marker=marker)
+    plot_type = (
+        os.environ.get("EZPZ_TPLOT_TYPE", None)
+        if plot_type is None
+        else plot_type
+    )
+    marker = (
+        os.environ.get("EZPZ_TPLOT_MARKER", None) if marker is None else marker
+    )
+    if plot_type is not None:
+        logger.info(f"Using plot type: {plot_type}")
+    if marker is not None:
+        logger.info(f"Using plot marker: {marker}")
+    if plot_type is None:
+        # plotext.plot(y, label=label, marker=marker)
+        try:
+            if label:
+                if color is not None:
+                    plotext.plot(
+                        series, label=label, color=color, marker=marker
+                    )
+                else:
+                    plotext.plot(series, label=label, marker=marker)
             else:
+                if color is not None:
+                    plotext.plot(series, color=color, marker=marker)
+                else:
+                    plotext.plot(series, marker=marker)
+        except TypeError:
+            if label:
                 plotext.plot(series, label=label, marker=marker)
-        else:
-            if color is not None:
-                plotext.plot(series, color=color, marker=marker)
             else:
                 plotext.plot(series, marker=marker)
-    except TypeError:
-        if label:
-            plotext.plot(series, label=label, marker=marker)
+    else:
+        if plot_type == "scatter":
+            # marker = env_marker if env_marker is not None else "braille"
+            plotext.scatter(series, label=label, marker=marker, color=color)
+        elif plot_type == "line":
+            # marker = env_marker if env_marker is not None else "braille"
+            plotext.plot(series, marker=marker, label=label, color=color)
         else:
-            plotext.plot(series, marker=marker)
+            logger.warning(f"Unknown plot type: {plot_type}")
+            plotext.plot(series, label=label, color=color)
+
+    # if len(y.shape) == 2:
+    # else:
 
 
 def plotext_hist_series(
@@ -211,9 +241,12 @@ def tplot(
         else title
     )
     if isinstance(y, list):
-        y = torch.stack(y)
+        y = torch.stack(y).numpy()
     if isinstance(x, list):
-        x = torch.stack(x)
+        x = torch.stack(x).numpy()
+    assert isinstance(y, (np.ndarray, torch.Tensor))
+    y = np.nan_to_num(y, nan=0.0)
+
     figsize = (60, 20) if figsize is None else figsize
     plotext = _require_plotext()
 
@@ -227,25 +260,47 @@ def tplot(
         else plot_type
     )
     marker = os.environ.get("EZPZ_TPLOT_MARKER", None)
-    y = np.nan_to_num(y, nan=0.0)
-    if len(y.shape) == 2:
+    if plot_type is not None:
+        logger.info(f"Using plot type: {plot_type}")
+    if marker is not None:
+        logger.info(f"Using plot marker: {marker}")
+    # if len(y.shape) == 2:
+    if (yshape := getattr(y, "shape")) and yshape and len(yshape) == 2:
         plotext.hist(y.flatten(), bins=bins, label=label)
-    elif len(y.shape) == 1:
-        # if type is not None:
-        #     assert type in ['scatter', 'line']
-        if plot_type is not None and plot_type == "scatter":
-            marker = "braille" if marker is None else marker
-            plotext.scatter(y, label=label, marker=marker)
-        elif plot_type is None or plot_type == "line":
-            marker = "braille" if marker is None else marker
-            plotext.plot(y, marker=marker, label=label)
-        elif plot_type is not None and plot_type == "hist":
-            plotext.hist(y, bins=bins, label=label)
+    else:
+        if plot_type is None:
+            plotext.plot(y, label=label, marker=marker)
         else:
-            logger.warning(f"Unknown plot type: {plot_type}")
-            plotext.plot(y, label=label)
-        # else:
-        #     pltx.plot(y, label=label)
+            env_marker = os.environ.get("EZPZ_TPLOT_MARKER", None)
+            if plot_type == "scatter":
+                marker = env_marker if env_marker is not None else "braille"
+                plotext.scatter(y, label=label, marker=marker)
+            elif plot_type == "line":
+                marker = env_marker if env_marker is not None else "braille"
+                plotext.plot(y, marker=marker, label=label)
+            elif plot_type == "hist":
+                marker = None
+                plotext.hist(y, bins=bins, label=label)
+            else:
+                logger.warning(f"Unknown plot type: {plot_type}")
+                plotext.plot(y, label=label)
+
+    # elif len(y.shape) == 1:
+    #     # if type is not None:
+    #     #     assert type in ['scatter', 'line']
+    #     if plot_type is not None and plot_type == "scatter":
+    #         marker = "braille" if marker is None else marker
+    #         plotext.scatter(y, label=label, marker=marker)
+    #     elif plot_type is None or plot_type == "line":
+    #         marker = "braille" if marker is None else marker
+    #         plotext.plot(y, marker=marker, label=label)
+    #     elif plot_type is not None and plot_type == "hist":
+    #         plotext.hist(y, bins=bins, label=label)
+    #     else:
+    #         logger.warning(f"Unknown plot type: {plot_type}")
+    #         plotext.plot(y, label=label)
+    #     # else:
+    #     #     pltx.plot(y, label=label)
     if title is not None:
         plotext.title(title)
     if ylabel is not None:
