@@ -1037,7 +1037,7 @@ ezpz_setup_new_uv_venv() {
 	fpactivate="${venv_dir}/bin/activate"
 
 	if [[ -f "${fpactivate}" ]]; then
-		log_message INFO "  - Venv already exists at: ${CYAN}${venv_dir}${RESET}"
+		log_message INFO "  - venv already exists at: ${CYAN}${venv_dir}${RESET}"
 		log_message INFO "  - Activating existing venv..."
 		# shellcheck disable=SC1090
 		source "${fpactivate}"
@@ -1047,6 +1047,10 @@ ezpz_setup_new_uv_venv() {
 	log_message INFO "  - Creating (new) venv in ${CYAN}${venv_dir}${RESET}..."
 	mkdir -p "${venv_dir%/*}" 2>/dev/null || true
 	uv venv --python="python${py_version}" --system-site-packages "${venv_dir}" || return 1
+    if [[ ! -d "${WORKING_DIR}/.venv}" ]]; then
+        log_message INFO "  - Creating symlink: ${WORKING_DIR}/.venv -> ${venv_dir}"
+        ln -s "${venv_dir}" "${WORKING_DIR}/.venv"
+    fi
 	# shellcheck disable=SC1090
 	source "${fpactivate}"
 }
@@ -1117,6 +1121,9 @@ ezpz_setup_uv_venv() {
 	[ ! -f "${fpactivate}" ] && log_message INFO "  - Creating venv in ${VENV_DIR} on ${mn}..." && uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
 	# shellcheck disable=SC1090
 	[ -f "${fpactivate}" ] && log_message INFO "  - Activating: ${fpactivate}" && source "${fpactivate}"
+    if [[ ! -d "${WORKING_DIR}/.venv" ]]; then
+        ln -s "${VENV_DIR}" "${WORKING_DIR}/.venv"
+    fi
 }
 
 ezpz_get_venv_dir() {
