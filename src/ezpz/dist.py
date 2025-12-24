@@ -507,49 +507,31 @@ def print_dist_setup(
     hostfile: Optional[PathLike] = None,
     display: Optional[bool] = True,
 ) -> str:
-    """Print distributed setup.
-
-    Args:
-        framework (str, optional): Framework to use. Defaults to None.
-        hostfile (PathLike, optional): Path to the hostfile. Defaults to None.
-
-    Returns:
-        str: String containing the distributed setup.
-    """
+    """Print distributed setup."""
     rank = get_rank()
     wst = get_world_size(total=True)
     wsa = get_world_size(in_use=True)
-    # world_size = get_world_size()
     local_rank = get_local_rank()
-    gpus_per_node = get_gpus_per_node()
+    gpus_per_node = max(get_gpus_per_node(), 1)
     hostfile = get_hostfile_with_fallback(hostfile)
-    # NOTE:
-    # We ensure that num_nodes is AT LEAST 1
-    # since if gpus_per_node > wsa, wsa // gpus_per_node = 0
-    # if gpus_per_node > wsa, wsa // gpus_per_node = 0
     num_nodes = max((wsa // gpus_per_node, 1))
     num_nodes_from_hostfile = get_num_nodes()
-    # assert num_nodes_from_hostfile == num_nodes
-    # if num_nodes != num_nodes_from_hostfile:
-    #     logger.critical(f'{num_nodes=} vs. {num_nodes_from_hostfile=} ??')
     node = get_node_index()
-    device = None
-    # if framework.lower() in {'pt', 'torch', 'pytorch'}:
     device = get_torch_device_type()
-    rank_len = len(str(rank))
-    ws_len = len(str(wsa))
-    lr_len = len(str(local_rank))
-    gpn_len = len(str(gpus_per_node))
+    hn = socket.gethostname()
+
+    # Widths for alignment; pad with zeros for rank/local_rank to keep bracket contents aligned.
+    rank_width = len(str(max(0, wsa - 1)))
+    local_rank_width = len(str(max(0, gpus_per_node - 1)))
     node_len = len(str(node))
     num_nodes_len = len(str(num_nodes))
-    # psizes = [f"['{hn}']" + f"[{rank:>{lrank}}/{world_size - 1:<{lrank}}] "]
-    hn = socket.gethostname()
+
     dist_list = [
         f"['{hn}']",
         f"[{device=}]",
-        f"[{node=:>{node_len}}/{(num_nodes - 1):<{num_nodes_len}}]",
-        f"[{rank=:>{rank_len}}/{(wsa - 1):<{ws_len}}]",
-        f"[{local_rank=:>{lr_len}}/{gpus_per_node - 1:<{gpn_len}}]",
+        f"[node={node:>0{node_len}d}/{(num_nodes - 1):<0{num_nodes_len}d}]",
+        f"[rank={rank:>0{rank_width}d}/{wsa - 1:<0{rank_width}d}]",
+        f"[local_rank={local_rank:>0{local_rank_width}d}/{gpus_per_node - 1:<0{local_rank_width}d}]",
     ]
     if framework is not None:
         dist_list.append(f"[{framework=}]")
@@ -568,8 +550,8 @@ def print_dist_setup(
             logger.critical(
                 f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
                 f"vs."
-                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}\n"
-                r"¯\_(ツ)_/¯ ??"
+                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}\\n"
+                r"¯\\_(ツ)_/¯ ??"
             )
     return dist_str
 
@@ -1684,8 +1666,6 @@ def setup_torch(
     lrank = len(str(world_size - 1))
     # nz = lrank - len(str(rank))
     hn = socket.gethostname()
-    # psizes = [f"['{hn}']" + f"[{rank:>{lrank}}/{world_size - 1:<{lrank}}] "]
-    # _ = print_dist_setup()
     psizes = [print_dist_setup(display=False)]
     if (
         tensor_parallel_size > 1
