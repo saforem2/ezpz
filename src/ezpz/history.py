@@ -46,11 +46,15 @@ from ezpz import timeitlogit
 from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.log import get_logger
 from ezpz.tplot import (
+    DEFAULT_MARKER,
+    MAX_PLOT_HEIGHT,
+    MAX_PLOT_WIDTH,
     plotext_hist_series,
     plotext_plot_series,
     plotext_prepare_figure,
     plotext_set_size,
     plotext_subplots,
+    _resolve_marker,
     tplot as eztplot,
 )
 
@@ -97,6 +101,13 @@ PT_FLOAT = torch.get_default_dtype()
 xplt = xr.plot  # type:ignore
 
 AUTO_USE_DISTRIBUTED_HISTORY = True if ezpz.get_world_size() <= 384 else False
+MARKER_MAP = {
+    "raw": _resolve_marker(os.environ.get("EZPZ_TPLOT_RAW_MARKER", None)),
+    "mean": "·",
+    "min": "-",
+    "max": "+",
+    "std": "*",
+}
 
 
 class StopWatch(ContextDecorator):
@@ -487,6 +498,7 @@ class History:
     ) -> dict[str, dict[str, float]]:
         """Return metric statistics grouped by base metric name."""
 
+        assert dataset is not None and hasattr(dataset, "data_vars")
         groups: dict[str, dict[str, float]] = {}
         for name in sorted(dataset.data_vars):
             arr = dataset[name]
@@ -776,6 +788,27 @@ class History:
                 "Unable to import `plotext` which is needed for text-based plotting."
             )
             return None
+        resolved_plot_type = (
+            plot_type
+            if plot_type is not None
+            else os.environ.get("EZPZ_TPLOT_TYPE")
+        )
+        resolved_marker = (
+            marker
+            if marker is not None
+            else os.environ.get("EZPZ_TPLOT_MARKER")
+        )
+        if resolved_marker is None and resolved_plot_type != "hist":
+            resolved_marker = DEFAULT_MARKER
+
+        def _metric_marker(metric_key: str) -> Optional[str]:
+            key = metric_key.split("/")[-1]
+            mapped = MARKER_MAP.get(key)
+            if mapped == "line":
+                return None
+            if mapped is not None:
+                return mapped
+            return resolved_marker
 
         use_subplots = stats_present and stats_nonzero
         plt = None
@@ -786,7 +819,7 @@ class History:
                 plt, left, right = plotext_subplots(
                     left_layout=(2, 1),
                     right_layout=(3, 1),
-                    height_scale=8.0,
+                    # height_scale=8.0,
                 )
             except (
                 ModuleNotFoundError
@@ -798,7 +831,7 @@ class History:
         if use_subplots:
             assert plt is not None and left is not None and right is not None
             left_slots = [
-                (1, "raw", name, "black"),
+                (1, "raw", name, None),
                 (2, "mean", f"{name}/mean", "green"),
             ]
             right_slots = [
@@ -820,8 +853,8 @@ class History:
                     series,
                     label=None,
                     color=color,
-                    plot_type=plot_type,
-                    marker=marker,
+                    plot_type=resolved_plot_type,
+                    marker=_metric_marker(key),
                 )
                 if plt is not None and hasattr(plt, "title"):
                     plt.title(label)
@@ -844,8 +877,8 @@ class History:
                     series,
                     label=None,
                     color=color,
-                    plot_type=plot_type,
-                    marker=marker,
+                    plot_type=resolved_plot_type,
+                    marker=_metric_marker(key),
                 )
                 if hasattr(plt, "title"):
                     plt.title(label)
@@ -866,10 +899,10 @@ class History:
                 plotext_set_size(plt, min_height=40)
 
                 overlay_order = [
-                    ("raw", name, "black"),
+                    ("min", f"{name}/min", "blue"),
                     ("mean", f"{name}/mean", "green"),
                     ("max", f"{name}/max", "red"),
-                    ("min", f"{name}/min", "blue"),
+                    ("raw", name, None),
                 ]
                 overlay_points = 0
                 for key, label, color in overlay_order:
@@ -883,6 +916,7 @@ class History:
                         series,
                         label=label,
                         color=color,
+                        marker=_metric_marker(key),
                     )
                 if overlay_points > 0:
                     plt.show()
@@ -912,7 +946,7 @@ class History:
                     ("std", f"{name}/std"),
                 ]
                 plt = plotext_prepare_figure(theme="clear")
-                plotext_set_size(plt, min_height=40)
+                plotext_set_size(plt)
                 plt.subplots(2, 2)
                 hist_points = 0
                 for idx, (key, label) in enumerate(hist_order, start=1):
@@ -964,7 +998,8 @@ class History:
                     append=append_flag,
                     outfile=asset_path.as_posix(),
                     verbose=verbose,
-                    plot_type=plot_type,
+                    plot_type=resolved_plot_type,
+                    marker=_metric_marker(key),
                     logfreq=(1 if logfreq is None else logfreq),
                     record_report=False,
                 )
@@ -993,7 +1028,8 @@ class History:
                         append=overlay_append,
                         outfile=summary_path.as_posix(),
                         verbose=verbose,
-                        plot_type=plot_type,
+                        plot_type=resolved_plot_type,
+                        marker=_metric_marker(key),
                         logfreq=(1 if logfreq is None else logfreq),
                         record_report=False,
                     )
@@ -1456,6 +1492,7 @@ class History:
         outfile: Optional[str] = None,
         logfreq: Optional[int] = None,
         plot_type: Optional[str] = None,
+        marker: Optional[str] = None,
         record_report: bool = True,
     ):
         """
@@ -1499,6 +1536,7 @@ class History:
                 verbose=verbose,
                 outfile=outfile,
                 plot_type=plot_type,
+                marker=marker,
                 title=title,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
@@ -1526,6 +1564,7 @@ class History:
                 verbose=verbose,
                 outfile=(of if of is not None else None),
                 plot_type="hist",
+                marker=marker,
             )
             if record_report and self.report_enabled and of is not None:
                 self._write_plot_report(
