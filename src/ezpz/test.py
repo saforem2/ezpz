@@ -3,8 +3,10 @@
 import shlex
 import subprocess
 import sys
+import time
 from typing import List, Optional
 
+import ezpz
 from ezpz.configs import get_scheduler
 from ezpz.launch import launch
 
@@ -57,4 +59,7 @@ def main(args: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    t0 = time.perf_counter()
+    main()
+    ezpz.cleanup()
+    print(f"Took {time.perf_counter() - t0:.2f} seconds")
