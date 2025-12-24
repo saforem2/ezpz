@@ -216,11 +216,18 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     return parser
 
 
-def build_launch_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+def build_launch_parser(
+    *, prog: str | None = None, include_command: bool = True
+) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz launch``."""
     parser = argparse.ArgumentParser(
         prog=prog,
         description="Launch a command on the current PBS/SLURM job.",
+    )
+    parser.add_argument(
+        "--print-source",
+        action="store_true",
+        help="Print the location of the launch CLI source and exit.",
     )
     parser.add_argument(
         "--filter",
@@ -270,11 +277,12 @@ def build_launch_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         dest="hostfile",
         help="Hostfile to use for launching.",
     )
-    parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="Command (and arguments) to execute. Use '--' to separate options when needed.",
-    )
+    if include_command:
+        parser.add_argument(
+            "command",
+            nargs=argparse.REMAINDER,
+            help="Command (and arguments) to execute. Use '--' to separate options when needed.",
+        )
     return parser
 
 
