@@ -2055,7 +2055,7 @@ def setup_wandb(
     env = {
         k: v
         for k, v in dict(os.environ).items()
-        if not k.startswith("_ModuleTable")
+        if not k.startswith("_ModuleTable") and "API" not in k
     }
     _ = env.pop("LS_COLORS", None)
     _ = env.pop("PS1", None)
