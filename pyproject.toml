@@ -51,6 +51,8 @@ ezpz-generate-tui = "ezpz.examples.generate_tui:main"
 [project.optional-dependencies]
 vit = ["timm"]
 mpi = ["mpi4py"]
+# xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
+xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchvision"]
 docs = [
     "mkdocs",
@@ -120,14 +122,14 @@ omit = ["src/ezpz/__about__.py"]
 
 exclude_lines = ["no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:"]
 
-# [tool.uv]
-# override-dependencies = [
-#     "torch; sys_platform == 'never'",
-#     "torchaudio; sys_platform == 'never'",
-#     "torchvision; sys_platform == 'never'",
-#     "mpi4py; sys_platform == 'never'",
-# ]
-# conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
+[tool.uv]
+override-dependencies = [
+    "torch; sys_platform == 'never'",
+    "torchaudio; sys_platform == 'never'",
+    "torchvision; sys_platform == 'never'",
+    "mpi4py; sys_platform == 'never'",
+]
+conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
 
 # [tool.uv.sources]
 # ezpz = { workspace = true }
