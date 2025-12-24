@@ -34,7 +34,7 @@ jobs:
         id: bump_level
         run: |
           set -euo pipefail
-          # bump="${VERSION_BUMP:-patch}"
+          bump="${VERSION_BUMP:-patch}"
           # jstr=$(cat "${GITHUB_EVENT_PATH}" | jq '.pull_request.labels | join(",")')
           # labels=$(cat "${GITHUB_EVENT_PATH}" | jq '.pull_request.labels')
           # if [[ labels == null ]]; then
@@ -79,6 +79,7 @@ jobs:
           hatch version "${vnew}"
           new_version=$(hatch version)
           export NEW_VERSION="${new_version}"
+          echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog entry
         id: changelog
