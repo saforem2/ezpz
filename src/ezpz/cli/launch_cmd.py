@@ -2,94 +2,47 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+import sys
+from pathlib import Path
 
 import click
 
+from ezpz.cli.flags import build_launch_parser
 
-def _ensure_sequence(args: Iterable[str]) -> Sequence[str]:
-    return tuple(args)
+
+DEPRECATION_NOTICE = "ezpz-launch is deprecated! use `ezpz launch` as a drop in replacement"
+
+def _invoked_as_ezpz_launch() -> bool:
+    return Path(sys.argv[0]).name == "ezpz-launch"
+
+
+def _maybe_warn_deprecated() -> None:
+    if _invoked_as_ezpz_launch():
+        click.secho(f"\n{DEPRECATION_NOTICE}\n", fg="red", err=True)
 
 
 @click.command(
     context_settings={
         "ignore_unknown_options": True,
-        "help_option_names": ["-h", "--help"],
+        "allow_extra_args": True,
+        "help_option_names": [],
     }
 )
-@click.option(
-    "--filter",
-    "filters",
-    multiple=True,
-    help="Filter output lines by these strings.",
-)
-@click.option(
-    "-n",
-    "-np",
-    "--n",
-    "--np",
-    "--nproc",
-    "--world_size",
-    "--nprocs",
-    "nproc",
-    type=int,
-    default=-1,
-    help="Number of processes.",
-)
-@click.option(
-    "-ppn",
-    "--ppn",
-    "--nproc_per_node",
-    "nproc_per_node",
-    type=int,
-    default=-1,
-    help="Processes per node.",
-)
-@click.option(
-    "-nh",
-    "--nh",
-    "--nhost",
-    "--nnode",
-    "--nnodes",
-    "--nhosts",
-    "nhosts",
-    type=int,
-    default=-1,
-    help="Number of nodes to use.",
-)
-@click.option(
-    "--hostfile",
-    type=str,
-    default=None,
-    help="Hostfile to use for launching.",
-)
-@click.argument("command", nargs=-1, type=click.UNPROCESSED)
-def launch_cmd(
-    command: tuple[str, ...],
-    *,
-    filters: tuple[str, ...],
-    nproc: int,
-    nproc_per_node: int,
-    nhosts: int,
-    hostfile: str | None,
-) -> None:
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def launch_cmd(ctx: click.Context, args: tuple[str, ...]) -> None:
     """Launch a command across the active scheduler."""
-    argv: list[str] = []
-    if filters:
-        argv.extend(["--filter", *filters])
-    if nproc > -1:
-        argv.extend(["--nproc", str(nproc)])
-    if nproc_per_node > -1:
-        argv.extend(["--nproc_per_node", str(nproc_per_node)])
-    if nhosts > -1:
-        argv.extend(["--nhosts", str(nhosts)])
-    if hostfile:
-        argv.extend(["--hostfile", hostfile])
-    argv.extend(command)
-
+    _maybe_warn_deprecated()
+    argv = list(args)
+    if any(arg in ("-h", "--help") for arg in argv):
+        parser = build_launch_parser(
+            prog="ezpz-launch" if _invoked_as_ezpz_launch() else "ezpz launch"
+        )
+        click.echo(parser.format_help().rstrip())
+        ctx.exit(0)
     from ezpz import launch as launch_module
 
-    rc = launch_module.run(_ensure_sequence(argv))
+    rc = launch_module.run(argv)
     if rc:
         raise click.exceptions.Exit(rc)
 
