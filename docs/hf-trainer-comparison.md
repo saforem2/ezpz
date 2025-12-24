@@ -16,7 +16,7 @@
 | `samples/sec`     |      1.958      |        8.021        |
 | `tokens/sec`      |    2,004.87     |      2,737.98       |
 | `tokens/sample`   |   ~ 1024[^3]    |      ~ 341[^4]      |
-| `toknes/step`     |   ~ 8183[^5]    |     ~ 8197[^6]      |
+| `tokens/step`     |   ~ 8183[^5]    |     ~ 8197[^6]      |
 | `tokens/sec/gpu`  |     250.61      |       114.08        |
 | &nbsp;            |                 |                     |
 | **Train/**        |                 |                     |
