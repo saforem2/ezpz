@@ -23,6 +23,16 @@ from ezpz.cli.flags import build_launch_parser
 logger = ezpz.get_logger(__name__)
 
 
+def _split_launch_and_command(
+    argv: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    """Split ezpz launch args from the command to execute at the first ``--``."""
+    if "--" in argv:
+        idx = list(argv).index("--")
+        return list(argv[:idx]), list(argv[idx + 1 :])
+    return list(argv), []
+
+
 def command_exists(cmd: str) -> bool:
     """Return True when the command is discoverable on PATH."""
     from ezpz.configs import command_exists as _command_exists
@@ -54,8 +64,15 @@ EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
 
 def parse_args(argv: Optional[Sequence[str]] = None):
     """Parse command line arguments."""
-    parser = build_launch_parser()
-    return parser.parse_args(argv)
+    argv = [] if argv is None else list(argv)
+    launch_argv, command_from_sep = _split_launch_and_command(argv)
+    parser = build_launch_parser(include_command=False)
+    args, unknown = parser.parse_known_args(launch_argv)
+    args.command = command_from_sep if command_from_sep else unknown
+    # Unknown flags that precede the ``--`` separator are forwarded to the
+    # underlying launcher (e.g., mpirun -x FOO=bar -- python ...).
+    args.launcher_args = unknown if command_from_sep else []
+    return args
 
 
 def _normalize_command(command: Sequence[str] | str) -> list[str]:
@@ -292,6 +309,7 @@ def build_executable(
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[str | os.PathLike | Path] = None,
+    extra_launch_args: Optional[Sequence[str]] = None,
 ) -> list:
     """Build the full executable command to launch.
 
@@ -302,10 +320,13 @@ def build_executable(
             If None, will be taken from `sys.argv`.
         include_python (bool, optional): Whether to include the python
             executable in the command. Defaults to False.
+        extra_launch_args (Sequence[str], optional): Additional arguments to
+            append to the scheduler/launcher invocation (e.g., mpirun flags).
 
     Returns:
-        str: The full command to launch the job.
+        list[str]: The full command to launch the job.
     """
+    extra_launch_args = list(extra_launch_args) if extra_launch_args else []
     from ezpz.pbs import build_launch_cmd
 
     launch_cmd = (
@@ -340,7 +361,11 @@ def build_executable(
     logger.info("Building command to execute by piecing together:")
     logger.info(f"(1.) launch_cmd: {launch_cmd}")
     logger.info(f"(2.) cmd_to_launch: {cmd_to_launch_str}")
-    executable = [*shlex.split(launch_cmd), *cmd_to_launch_list]
+    executable = [
+        *shlex.split(launch_cmd),
+        *extra_launch_args,
+        *cmd_to_launch_list,
+    ]
     # executable = [
     #     shlex.join(launch_cmd.split(' ')), *cmd_to_launch_list
     # ]
@@ -357,6 +382,7 @@ def launch(
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[str | os.PathLike | Path] = None,
     filters: Optional[list[str]] = None,
+    launcher_args: Optional[Sequence[str]] = None,
 ) -> int:
     """Launch a command on the current {PBS, SLURM} job."""
     start = time.perf_counter()
@@ -390,6 +416,7 @@ def launch(
         nhosts=nhosts,
         include_python=include_python,
         hostfile=selected_hostfile,
+        extra_launch_args=launcher_args,
     )
     # cmd_list = shlex.split(cmd)
     cmd_str = shlex.join([f"{i}" for i in cmd_list])
@@ -423,6 +450,13 @@ def run(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     command_parts = [part for part in args.command if part]
     if not command_parts:
+        if getattr(args, "print_source", False):
+            from importlib import import_module
+
+            launch_cli_mod = import_module("ezpz.cli.launch_cmd")
+            source_path = Path(getattr(launch_cli_mod, "__file__", "")).resolve()
+            print(source_path)
+            return 0
         raise SystemExit("No command provided to ezpz launch")
 
     scheduler = get_scheduler().lower()
@@ -438,6 +472,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 ngpu_per_host=args.nproc_per_node if args.nproc_per_node > -1 else None,
                 hostfile=args.hostfile,
                 filters=args.filter,
+                launcher_args=getattr(args, "launcher_args", []),
             )
             ezpz.dist.cleanup()
             return 0
@@ -459,6 +494,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         fallback_cmd.extend(["--hostfile", args.hostfile])
     if requested_ppn is not None and requested_nhosts is not None:
         fallback_cmd.extend(["--map-by", f"ppr:{requested_ppn}:node"])
+    fallback_cmd.extend(getattr(args, "launcher_args", []))
     fallback_cmd.extend(command_parts)
     logger.info(
         "No active scheduler detected; falling back to local mpirun: %s",
