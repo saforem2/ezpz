@@ -374,11 +374,11 @@ ezpz_reset_pbs_vars() {
 ezpz_show_env() {
 	log_message INFO "Current environment:"
 	log_message INFO "Loaded modules:"
-    if command -v module &>/dev/null; then
-        module list
-    else
-        log_message WARN "lmod 'module' not found. Skipping module list."
-    fi
+	if command -v module &>/dev/null; then
+		module list
+	else
+		log_message WARN "lmod 'module' not found. Skipping module list."
+	fi
 	vars=(
 		"CONDA_PREFIX"
 		"CONDA_DEFAULT_ENV"
@@ -405,35 +405,35 @@ ezpz_reset() {
 	log_message INFO "Current environment before reset:"
 	log_message INFO "$(ezpz_show_env)"
 
-    if command -v module &>/dev/null; then
-        log_message INFO "Unloading all loaded modules..."
-        module reset
-    else
-        log_message WARN "lmod 'module' not found. Skipping module purge."
-    fi
+	if command -v module &>/dev/null; then
+		log_message INFO "Unloading all loaded modules..."
+		module reset
+	else
+		log_message WARN "lmod 'module' not found. Skipping module purge."
+	fi
 
-    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-        log_message INFO "Deactivating virtual environment at: ${VIRTUAL_ENV}"
-        deactivate
-    else
-        log_message WARN "No virtual environment is active."
-        log_message INFO "Skipping virtual environment deactivation step."
-    fi
+	if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+		log_message INFO "Deactivating virtual environment at: ${VIRTUAL_ENV}"
+		deactivate
+	else
+		log_message WARN "No virtual environment is active."
+		log_message INFO "Skipping virtual environment deactivation step."
+	fi
 
-    if [[ -n "${CONDA_PREFIX:-}" ]]; then
-        log_message INFO "Deactivating conda environment at: ${CONDA_PREFIX}"
-        if command -v conda &>/dev/null; then
-            conda deactivate
-        fi
-    else
-        log_message WARN "No conda environment is active."
-        log_message INFO "Skipping conda environment deactivation step."
-    fi
+	if [[ -n "${CONDA_PREFIX:-}" ]]; then
+		log_message INFO "Deactivating conda environment at: ${CONDA_PREFIX}"
+		if command -v conda &>/dev/null; then
+			conda deactivate
+		fi
+	else
+		log_message WARN "No conda environment is active."
+		log_message INFO "Skipping conda environment deactivation step."
+	fi
 
-    # if [[ -z "${VIRTUAL_ENV:-}" && -z "${CONDA_PREFIX:-}" ]]; then
-    #     log_message ERROR "No virtual environment or conda environment is active. Please activate one before installing ezpz."
-    #     return 1
-    # fi
+	# if [[ -z "${VIRTUAL_ENV:-}" && -z "${CONDA_PREFIX:-}" ]]; then
+	#     log_message ERROR "No virtual environment or conda environment is active. Please activate one before installing ezpz."
+	#     return 1
+	# fi
 	vars=(
 		"ezlaunch"
 		"CONDA_DEFAULT_ENV"
@@ -530,10 +530,10 @@ ezpz_save_dotenv() {
 	else
 		outdir="$1"
 		mkdir -p "${outdir}"
-        if ! command -v module &>/dev/null; then
-            log_message WARN "lmod 'module' not found. Skipping module list save."
-            return 0
-        fi
+		if ! command -v module &>/dev/null; then
+			log_message WARN "lmod 'module' not found. Skipping module list save."
+			return 0
+		fi
 		module list
 		dotenv_file="${outdir}/.env"
 		# log_info "Saving environment to ${dotenv_file}"
@@ -1020,6 +1020,10 @@ ezpz_link_dotvenv() {
 	if [[ -z "${target:-}" ]]; then
 		return
 	fi
+	# If the caller explicitly points to ".venv", there's nothing to link.
+	if [[ "$(basename "${target}")" == ".venv" ]]; then
+		return
+	fi
 	local wd="${WORKING_DIR:-$(pwd)}"
 	local link="${wd}/.venv"
 	log_message INFO "  - Linking ${CYAN}${link}${RESET} -> ${CYAN}${target}${RESET}"
@@ -1037,11 +1041,11 @@ ezpz_setup_new_uv_venv() {
 		venv_dir="$2"
 	elif [[ "$#" -eq 1 ]]; then
 		py_version="$1"
-        venv_dir=$(ezpz_get_venv_dir)
+		venv_dir=$(ezpz_get_venv_dir)
 		# venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
 	else
 		py_version="${DEFAULT_PYTHON_VERSION:-3.12}"
-        venv_dir=$(ezpz_get_venv_dir)
+		venv_dir=$(ezpz_get_venv_dir)
 		# venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
 	fi
 
@@ -1136,32 +1140,32 @@ ezpz_setup_uv_venv() {
 }
 
 ezpz_get_venv_dir() {
-    local python_root
-    python_root=$(ezpz_get_python_root)
-    local wd
-    wd=$(ezpz_get_working_dir)
-    local wdname
-    wdname="$(basename "$(ezpz_get_working_dir)")"
-    local pyname
-    local env_name
-    env_name="${wdname}"
-    if [[ -n "${python_root}" ]]; then
-        log_message INFO "  - Found python root at: ${CYAN}${python_root}${RESET}"
-        pyname="$(basename "${python_root}")"
-        env_name="${env_name}-${pyname}"
-    fi
-    # else
-    #     log_message WARN "  - Python root is not set. Using only working dir name for venv."
-    # fi
-    local ptmodstr
-    if command -v module &>/dev/null; then
-        ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
-        if [[ -n "${ptmodstr}" ]]; then
-            env_name="${env_name}-pt$(basename "${ptmodstr}")"
-        fi
-    fi
-    # env_name=$(echo "${env_name}" | sed -E 's/python([0-9\.]+)/py\1/')
-    echo "${wd}/venvs/$(ezpz_get_machine_name)/${env_name}"
+	local python_root
+	python_root=$(ezpz_get_python_root)
+	local wd
+	wd=$(ezpz_get_working_dir)
+	local wdname
+	wdname="$(basename "$(ezpz_get_working_dir)")"
+	local pyname
+	local env_name
+	env_name="${wdname}"
+	if [[ -n "${python_root}" ]]; then
+		log_message INFO "  - Found python root at: ${CYAN}${python_root}${RESET}"
+		pyname="$(basename "${python_root}")"
+		env_name="${env_name}-${pyname}"
+	fi
+	# else
+	#     log_message WARN "  - Python root is not set. Using only working dir name for venv."
+	# fi
+	local ptmodstr
+	if command -v module &>/dev/null; then
+		ptmodstr="$(module list 2>&1 | grep -E "py-torch" | awk '{print $NF}')"
+		if [[ -n "${ptmodstr}" ]]; then
+			env_name="${env_name}-pt$(basename "${ptmodstr}")"
+		fi
+	fi
+	# env_name=$(echo "${env_name}" | sed -E 's/python([0-9\.]+)/py\1/')
+	echo "${wd}/venvs/$(ezpz_get_machine_name)/${env_name}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1220,25 +1224,25 @@ ezpz_setup_venv_from_conda() {
 			local fpactivate
 			fpactivate="${VENV_DIR}/bin/activate"
 			# make directory if it doesn't exist
-				[[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
-				if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-					log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in ${VENV_DIR}..."
-					if command -v uv >/dev/null 2>&1; then
-						log_message INFO "  - Using uv for venv creation"
+			[[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
+			if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+				log_message INFO "  - Creating venv (on top of ${GREEN}${env_name}${RESET}) in ${VENV_DIR}..."
+				if command -v uv >/dev/null 2>&1; then
+					log_message INFO "  - Using uv for venv creation"
 				else
 					log_message INFO "  - uv not found, installing..."
 					ezpz_install_uv
 					# else
 					# log_message INFO "  - Using python for venv creation"
-						# python3 -m venv "${VENV_DIR}" --system-site-packages
-					fi
-					uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
-					ezpz_link_dotvenv "${VENV_DIR}"
-					# shellcheck disable=SC1090,SC1091
-					source "${VENV_DIR}/bin/activate" || {
-						log_message ERROR "  - Failed to source ${fpactivate} after creation."
-						return 1
-					}
+					# python3 -m venv "${VENV_DIR}" --system-site-packages
+				fi
+				uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
+				ezpz_link_dotvenv "${VENV_DIR}"
+				# shellcheck disable=SC1090,SC1091
+				source "${VENV_DIR}/bin/activate" || {
+					log_message ERROR "  - Failed to source ${fpactivate} after creation."
+					return 1
+				}
 			elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
 				log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${env_name}${RESET}"
 				# shellcheck disable=SC1090
@@ -1292,15 +1296,15 @@ ezpz_setup_venv_from_pythonuserbase() {
 			export VENV_DIR
 			# make directory if it doesn't exist
 			[[ ! -d "${VENV_DIR}" ]] && mkdir -p "${VENV_DIR}"
-				if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-					log_message INFO "  - Creating venv (on top of ${GREEN}${PYTHON_NAME}${RESET}) in VENV_DIR..."
-					python3 -m venv "${VENV_DIR}" --system-site-packages
-					ezpz_link_dotvenv "${VENV_DIR}"
-					# shellcheck disable=SC1090,SC1091
-					source "${VENV_DIR}/bin/activate" || {
-						log_message ERROR "  - Failed to source ${fpactivate} after creation."
-						return 1
-					}
+			if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+				log_message INFO "  - Creating venv (on top of ${GREEN}${PYTHON_NAME}${RESET}) in VENV_DIR..."
+				python3 -m venv "${VENV_DIR}" --system-site-packages
+				ezpz_link_dotvenv "${VENV_DIR}"
+				# shellcheck disable=SC1090,SC1091
+				source "${VENV_DIR}/bin/activate" || {
+					log_message ERROR "  - Failed to source ${fpactivate} after creation."
+					return 1
+				}
 			elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
 				log_message INFO "  - Activating existing venv in VENV_DIR=venvs/${CYAN}${PYTHON_NAME}${RESET}"
 				# shellcheck disable=SC1090
@@ -1485,6 +1489,8 @@ ezpz_setup_python_nersc() {
 }
 
 ezpz_setup_python() {
+	local venv_override="${1:-}"
+	local scheduler_type
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		ezpz_setup_python_alcf
@@ -1496,6 +1502,15 @@ ezpz_setup_python() {
 		# if [[ "${scheduler_type}" == "unknown" ]]; then
 		log_message WARN "  - Unable to determine scheduler type."
 		log_message INFO "  - Using uv to create a virtual environment with PYTHON_VERSION=${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"
+		if [[ -n "${venv_override}" ]]; then
+			log_message INFO "  - Using venv override: ${CYAN}${venv_override}${RESET}"
+			if ! ezpz_setup_new_uv_venv "${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}" "${venv_override}"; then
+				log_message ERROR "  - ezpz_setup_new_uv_venv failed."
+				return 1
+			else
+				return 0
+			fi
+		fi
 		if ! ezpz_setup_new_uv_venv "${PYTHON_VERSION:-${DEFAULT_PYTHON_VERSION:-3.12}}"; then
 			log_message ERROR "  - ezpz_setup_new_uv_venv failed."
 			return 1
@@ -2550,22 +2565,48 @@ ezpz_install() {
 # Usage:
 #   source utils_modern.sh && ezpz_setup_env
 #
-# Args:
-#   $@: Arguments passed to `ezpz_setup_job` (hostfile, jobenv_file).
+# Args (optional):
+#   $1: Path to virtual env (default: auto-chosen by ezpz_setup_python)
+#   $2: Path to hostfile (default: auto-chosen by ezpz_setup_job)
 # Outputs: Sets up Python & Job envs. Prints summaries. Returns 1 on failure.
 # -----------------------------------------------------------------------------
 ezpz_setup_env() {
+	# Positional args:
+	#   $1 (optional): venv path override (defaults to auto selection)
+	#   $2 (optional): hostfile override (defaults to auto selection)
+	local venv_override hostfile_override
+	venv_override="${1:-}"
+	hostfile_override="${2:-}"
+	if [[ "$#" -gt 2 ]]; then
+		log_message WARN "Ignoring extra arguments to ezpz_setup_env (expected at most 2)"
+	fi
+
 	if ! ezpz_check_working_dir; then
 		log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
 	fi
 	log_message INFO "[${BRIGHT_YELLOW}ezpz_setup_env${RESET}]..."
-	if ! ezpz_setup_python; then
-		log_message ERROR "Python setup failed. Aborting."
-		return 1
+	if [[ -n "${venv_override}" ]]; then
+		if ! ezpz_setup_python "${venv_override}"; then
+			log_message ERROR "Python setup failed. Aborting."
+			return 1
+		fi
+	else
+		if ! ezpz_setup_python; then
+			log_message ERROR "Python setup failed. Aborting."
+			return 1
+		fi
 	fi
-	if ! ezpz_setup_job "$@"; then
-		log_message ERROR "Job setup failed. Aborting."
-		return 1
+
+	if [[ -n "${hostfile_override}" ]]; then
+		if ! ezpz_setup_job "${hostfile_override}"; then
+			log_message ERROR "Job setup failed. Aborting."
+			return 1
+		fi
+	else
+		if ! ezpz_setup_job; then
+			log_message ERROR "Job setup failed. Aborting."
+			return 1
+		fi
 	fi
 	log_message INFO "${GREEN}[✓]${RESET} Finished [${BRIGHT_YELLOW}ezpz_setup_env${RESET}]"
 	return 0
