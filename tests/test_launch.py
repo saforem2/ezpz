@@ -163,3 +163,43 @@ class TestLaunch:
             "-m",
             "ezpz.test_dist",
         ]
+
+    def test_parse_args_supports_separator_passthrough(self):
+        """Unknown launch flags before -- are forwarded to the launcher."""
+        args = launch.parse_args(
+            [
+                "-n",
+                "2",
+                "-x",
+                "PYTHONPATH=/tmp/.venv/bin",
+                "-x",
+                "EZPZ_LOG_LEVEL=DEBUG",
+                "--",
+                "python3",
+                "-m",
+                "ezpz.examples.vit",
+                "--fsdp",
+            ]
+        )
+
+        assert args.nproc == 2
+        assert args.launcher_args == [
+            "-x",
+            "PYTHONPATH=/tmp/.venv/bin",
+            "-x",
+            "EZPZ_LOG_LEVEL=DEBUG",
+        ]
+        assert args.command == [
+            "python3",
+            "-m",
+            "ezpz.examples.vit",
+            "--fsdp",
+        ]
+
+    def test_parse_args_without_separator_treats_unknown_as_command(self):
+        """Legacy form without -- still captures the command to run."""
+        args = launch.parse_args(["--nproc", "2", "python", "-m", "demo", "--flag"])
+
+        assert args.nproc == 2
+        assert args.launcher_args == []
+        assert args.command == ["python", "-m", "demo", "--flag"]
