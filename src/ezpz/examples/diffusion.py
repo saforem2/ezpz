@@ -22,9 +22,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Tuple
 from contextlib import nullcontext
 import ezpz
+import ezpz.dist
 
 import torch
 from torch import nn
@@ -41,6 +42,7 @@ logger = ezpz.get_logger(__name__)
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
+OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 
 def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
@@ -254,8 +256,8 @@ def train(
     schedule: DiffusionSchedule,
     args: argparse.Namespace,
     steps: int,
+    outdir: Path | os.PathLike | str,
     lr: float = 1e-3,
-    outdir: Optional[str | Path | os.PathLike] = None,
 ) -> tuple[ezpz.History, torch.nn.Module]:
     device = ezpz.get_torch_device(as_torch_device=True)
     # if not isinstance(model, (DistributeFSDP):
@@ -277,10 +279,10 @@ def train(
     )
     logger.info("Model summary:\n%s", mstr)
 
-    outdir_parent = Path(os.getcwd()) if outdir is None else outdir
-    outdir = Path(outdir_parent).joinpath(ezpz.history.get_timestamp())
-    metrics_path = outdir.joinpath("metrics.jsonl")
-    outdir.mkdir(parents=True, exist_ok=True)
+    # outdir = Path(os.getcwd()) if outdir is None else outdir
+    # outdir_parent = Path(outdir).joinpath(ezpz.utils.get_timestamp())
+    # outdir = Path(outdir).as_posix()
+    metrics_path = Path(outdir).joinpath(f"metrics-{ezpz.get_rank()}.jsonl")
     history = ezpz.history.History(
         report_dir=outdir,
         report_enabled=True,
@@ -296,7 +298,9 @@ def train(
         wrapped_model, (nn.Module, FSDP, DistributedDataParallel)
     ), "Model should be wrapped for training."
     base_model = (
-        wrapped_model.module if hasattr(wrapped_model, "module") else wrapped_model
+        wrapped_model.module
+        if hasattr(wrapped_model, "module")
+        else wrapped_model
     )
     assert callable(getattr(base_model, "embed_tokens", None)), (
         "Model should have embed_tokens method."
@@ -477,6 +481,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log_freq", type=int, default=int(os.environ.get("LOG_FREQ", 1))
     )
+    parser.add_argument("--outdir", type=str, default=None)
     parser.add_argument(
         "--samples", type=int, default=int(os.environ.get("SAMPLES", 3))
     )
@@ -506,12 +511,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
-    _ = ezpz.setup_torch(seed=args.seed)
+    rank = ezpz.setup_torch(seed=args.seed)
+    if rank == 0:
+        outdir = args.outdir if args.outdir is not None else OUTDIR
+    else:
+        outdir = None
+    outdir = ezpz.dist.broadcast(outdir, root=0)
+    logger.info(f"Using {outdir=}")
+    # self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
     if ezpz.get_rank() == 0:
-        run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
+        run = ezpz.dist.setup_wandb(
+            project_name=WBPROJ_NAME,
+            # outdir=outdir,
+        )
         assert run is not None and run is wandb.run
-        wandb.config.update({**vars(args)})
-        wandb.config.update(ezpz.get_dist_info())
+        # wandb.config.update(ezpz.dist.get_dist_info())
+        wandb.config.update({"outdir": outdir, "args": {**vars(args)}})
+        # wandb.config.update({"args": {**vars(args)}})
 
     base_texts: List[str]
     if args.hf_dataset:
@@ -556,6 +572,7 @@ def main(args: argparse.Namespace) -> None:
         args=args,
         steps=args.train_steps,
         lr=args.lr,
+        outdir=outdir,
     )
 
     if ezpz.get_rank() == 0:
