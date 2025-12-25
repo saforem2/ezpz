@@ -10,14 +10,31 @@ import os
 from typing import Optional
 
 from ezpz.configs import get_logging_config
+
 # from ezpz.dist import get_rank, get_world_size
 from ezpz.log.config import STYLES, use_colored_logs
-from ezpz.log.console import (Console, get_console, get_theme, get_width,
-                              is_interactive, should_do_markup, to_bool)
+from ezpz.log.console import (
+    Console,
+    get_console,
+    get_theme,
+    get_width,
+    is_interactive,
+    should_do_markup,
+    to_bool,
+)
 from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.log.style import (BEAT_TIME, COLORS, CustomLogging, add_columns,
-                            build_layout, flatten_dict, make_layout,
-                            nested_dict_to_df, print_config, printarr)
+from ezpz.log.style import (
+    BEAT_TIME,
+    COLORS,
+    CustomLogging,
+    add_columns,
+    build_layout,
+    flatten_dict,
+    make_layout,
+    nested_dict_to_df,
+    print_config,
+    printarr,
+)
 
 __all__ = [
     "BEAT_TIME",
@@ -112,7 +129,9 @@ def print_styles():
 
     from ezpz.log.console import Console
 
-    parser.add_argument("--html", action="store_true", help="Export as HTML table")
+    parser.add_argument(
+        "--html", action="store_true", help="Export as HTML table"
+    )
     args = parser.parse_args()
     html: bool = args.html
     from rich.table import Table
@@ -257,6 +276,22 @@ def get_logger(
 #     return log
 
 
+def getLogger(
+    name: Optional[str] = None,
+    level: Optional[str] = None,
+    rank_zero_only: bool = True,
+    rank: Optional[int | str] = None,
+    colored_logs: Optional[bool] = True,
+) -> logging.Logger:
+    return get_logger(
+        name=name,
+        level=level,
+        rank_zero_only=rank_zero_only,
+        rank=rank,
+        colored_logs=colored_logs,
+    )
+
+
 def get_console_from_logger(logger: logging.Logger) -> Console:
     """Return the ``Console`` attached to *logger* or synthesise a new one."""
     from ezpz.log.handler import RichHandler as EnrichHandler
@@ -317,7 +352,9 @@ def get_rich_logger(
 #     return log
 
 
-def get_enrich_logging_config_as_yaml(name: str = "enrich", level: str = "INFO") -> str:
+def get_enrich_logging_config_as_yaml(
+    name: str = "enrich", level: str = "INFO"
+) -> str:
     """Render the Enrich logging YAML snippet with the requested name/level."""
     return rf"""
     ---
@@ -407,7 +444,9 @@ def get_logger1(
     #         and all([i == log.handlers[0] for i in log.handlers])
     # ):
     #     log.handlers = [log.handlers[0]]
-    if len(log.handlers) > 1 and all([i == log.handlers[0] for i in log.handlers]):
+    if len(log.handlers) > 1 and all(
+        [i == log.handlers[0] for i in log.handlers]
+    ):
         log.handlers = [log.handlers[0]]
     enrich_handlers = get_active_enrich_handlers(log)
     found_handlers = 0
@@ -422,5 +461,7 @@ def get_logger1(
                     log.removeHandler(h)
                 found_handlers += 1
     if len(get_active_enrich_handlers(log)) > 1:
-        log.warning(f"More than one `EnrichHandler` in current logger: {log.handlers}")
+        log.warning(
+            f"More than one `EnrichHandler` in current logger: {log.handlers}"
+        )
     return log
