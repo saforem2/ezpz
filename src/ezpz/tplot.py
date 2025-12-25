@@ -20,7 +20,7 @@ logger = ezpz.get_logger(__name__)
 
 DEFAULT_MARKER = "hd"  # fixed-width block characters for consistent text plots
 MAX_PLOT_WIDTH = 120
-MAX_PLOT_HEIGHT = 30
+MAX_PLOT_HEIGHT = 40
 
 
 def _clamp_width(width: Optional[int]) -> int | None:
