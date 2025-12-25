@@ -52,6 +52,7 @@ We use a simple diagram to illustrate below:
 """
 
 import os
+import sys
 import argparse
 import logging
 import time
@@ -102,6 +103,7 @@ except ImportError:
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
+OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 
 SHARDING_STRATEGIES = {
@@ -257,6 +259,7 @@ def _register_activation_hooks(
                     out = out[0]
                 if torch.is_tensor(out):
                     activations[tag] = out.detach()
+
             return _hook
 
         handles.append(
@@ -297,7 +300,6 @@ def _wandb_log_histograms(
                 )
     if hist_payload:
         wandb.log(hist_payload, step=step)
-
 
 
 def parse_args():
@@ -516,13 +518,13 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
     if not layer_sumsq:
         return []
     max_layer = max(layer_sumsq)
-    return [
-        (layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)
-    ]
+    return [(layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)]
 
 
-def train(args: argparse.Namespace):
-    rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+def train(
+    args: argparse.Namespace,
+    outdir: Path | str | os.PathLike,
+) -> int:
     world_size = ezpz.dist.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
@@ -695,11 +697,13 @@ def train(args: argparse.Namespace):
     logger.info("Starting 2D training...")
     model.train()
 
-    outdir = Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
-    metrics_path = outdir.joinpath(f"metrics-{rank}.jsonl")
-    outdir.mkdir(parents=True, exist_ok=True)
+    # outdir = Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
+    metrics_path = Path(outdir).joinpath(
+        f"metrics-{ezpz.dist.get_rank()}.jsonl"
+    )
+    Path(outdir).mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
-        report_dir=args.outdir,
+        report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
@@ -823,14 +827,12 @@ def train(args: argparse.Namespace):
                 metrics["grad/norm_preclip"] = float(grad_norm_preclip)
             if global_step % max(metrics_every, 1) == 0:
                 metrics.update(_collect_param_grad_stats(model, device_id))
-                metrics["opt/iter"] = global_step,
+                metrics["opt/iter"] = (global_step,)
                 metrics["opt/lr"] = float(optimizer.param_groups[0]["lr"])
-                metrics["input/iter"] = global_step,
+                metrics["input/iter"] = (global_step,)
                 metrics["input/max"] = float(x.max().item())
                 metrics["input/min"] = float(x.min().item())
-                metrics["labels/valid"] = float(
-                    (labels != -100).sum().item()
-                )
+                metrics["labels/valid"] = float((labels != -100).sum().item())
                 if track_logits:
                     pred_finite = torch.isfinite(pred)
                     metrics["logits/nonfinite"] = float(
@@ -840,13 +842,9 @@ def train(args: argparse.Namespace):
                 if track_hist and ezpz.get_rank() == 0:
                     logits_sample = _sample_tensor_values(pred, hist_samples)
                     if logits_sample is not None:
-                        logits_hist = _histogram_dict(
-                            logits_sample, hist_bins
-                        )
+                        logits_hist = _histogram_dict(logits_sample, hist_bins)
                         if logits_hist is not None:
-                            metrics[
-                                f"hist/{dataset_tag}/logits"
-                            ] = logits_hist
+                            metrics[f"hist/{dataset_tag}/logits"] = logits_hist
                     layer_grad_norms = _collect_layer_grad_norms(base_model)
                     if layer_grad_norms:
                         layer_grad_hist = _histogram_dict(
@@ -861,9 +859,7 @@ def train(args: argparse.Namespace):
                             act_sample = _sample_tensor_values(
                                 act_tensor, hist_samples
                             )
-                            act_hist = _histogram_dict(
-                                act_sample, hist_bins
-                            )
+                            act_hist = _histogram_dict(act_sample, hist_bins)
                             if act_hist is not None:
                                 metrics[
                                     f"hist/{dataset_tag}/activations/{act_key}"
@@ -894,10 +890,25 @@ def train(args: argparse.Namespace):
         )
         logger.info(f"{dataset=}")
 
+    return 0
+
+
+def main(args: argparse.Namespace) -> int:
+    rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+    if rank == 0:
+        outdir = args.outdir if args.outdir is not None else OUTDIR
+    else:
+        outdir = None
+    outdir = ezpz.dist.broadcast(outdir, root=0)
+    logger.info(f"Using {outdir=}")
+    train(args=args, outdir=outdir)
+    return 0
+
 
 if __name__ == "__main__":
     args = parse_args()
     t0 = time.perf_counter()
-    train(args)
+    main(args)
     ezpz.dist.cleanup()
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
+    sys.exit(0)
