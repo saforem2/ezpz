@@ -27,7 +27,6 @@ import xarray as xr
 from torchinfo import ModelStatistics
 
 from ezpz.configs import PathLike, ScalarLike, ZeroConfig
-from ezpz.utils.dummies import DummyMPI, DummyTorch
 
 import math
 
@@ -42,8 +41,6 @@ __all__ = [
     "Color",
     "NoColor",
     "DistributedPdb",
-    "DummyMPI",
-    "DummyTorch",
     "breakpoint",
     "get_timestamp",
     "format_pair",
