@@ -899,9 +899,9 @@ class History:
                 plotext_set_size(plt, min_height=40)
 
                 overlay_order = [
-                    ("mean", f"{name}/mean", "green"),
                     ("max", f"{name}/max", "red"),
                     ("min", f"{name}/min", "cyan"),
+                    ("mean", f"{name}/mean", "green"),
                     ("raw", name, None),
                 ]
                 overlay_points = 0
