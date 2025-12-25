@@ -2014,7 +2014,6 @@ def setup_wandb(
             "ezpz_version": ezpz.__version__,
             "hostname": get_hostname(),
             "month": ezpz.get_timestamp("%m"),
-            "outdir": os.getcwd(),
             "pytorch_backend": str(get_torch_backend()).lower(),
             "torch_version": torch_version,
             "torch_version_as_float": get_torch_version_as_float(),
