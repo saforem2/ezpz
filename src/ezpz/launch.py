@@ -66,6 +66,10 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     """Parse command line arguments."""
     argv = [] if argv is None else list(argv)
     launch_argv, command_from_sep = _split_launch_and_command(argv)
+    if any(flag in launch_argv for flag in ("-h", "--help")):
+        # Show help with the positional command documented.
+        parser = build_launch_parser(include_command=True)
+        parser.parse_args(launch_argv)
     parser = build_launch_parser(include_command=False)
     args, unknown = parser.parse_known_args(launch_argv)
     args.command = command_from_sep if command_from_sep else unknown
