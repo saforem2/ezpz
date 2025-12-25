@@ -8,8 +8,9 @@ import logging
 import os
 import pdb
 import re
-from typing import Any
 import sys
+import tqdm
+from typing import Any
 from dataclasses import asdict, dataclass
 
 import ezpz
@@ -64,6 +65,8 @@ __all__ = [
     "get_deepspeed_config_json",
     "write_deepspeed_zero12_auto_config",
     "write_deepspeed_zero3_auto_config",
+    "ForkedPdb",
+    "DummyTqdmFile",
 ]
 
 
@@ -148,6 +151,34 @@ def breakpoint(rank: int = 0):
         pdb.set_trace()
     # torch.distributed.barrier()
     ezpz.dist.barrier()
+
+
+class ForkedPdb(pdb.Pdb):
+    """PDB subclass for debugging multi-processed code."""
+
+    def interaction(self, *args, **kwargs):  # pragma: no cover - interactive
+        _stdin = sys.stdin
+        try:
+            sys.stdin = open("/dev/stdin")
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
+
+
+class DummyTqdmFile:
+    """Dummy file-like wrapper that forwards writes to tqdm."""
+
+    file = None
+
+    def __init__(self, file):
+        self.file = file
+
+    def write(self, text):
+        if len(text.rstrip()) > 0:
+            tqdm.tqdm.write(text, file=self.file, end="\n")
+
+    def flush(self):
+        return getattr(self.file, "flush", lambda: None)()
 
 
 def get_timestamp(fstr: Optional[str] = None) -> str:
