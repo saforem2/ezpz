@@ -1017,6 +1017,7 @@ ezpz_ensure_uv() {
 #    - `uv` command must be available or will be installed.
 ezpz_link_dotvenv() {
 	local target="$1"
+	local force="${EZPZ_FORCE_DOTVENV:-0}"
 	if [[ -z "${target:-}" ]]; then
 		return
 	fi
@@ -1026,6 +1027,10 @@ ezpz_link_dotvenv() {
 	fi
 	local wd="${WORKING_DIR:-$(pwd)}"
 	local link="${wd}/.venv"
+	if [[ -e "${link}" && "${force}" != "1" ]]; then
+		log_message INFO "  - Skipping .venv link (already exists: ${CYAN}${link}${RESET}); set EZPZ_FORCE_DOTVENV=1 to repoint."
+		return
+	fi
 	log_message INFO "  - Linking ${CYAN}${link}${RESET} -> ${CYAN}${target}${RESET}"
 	ln -sfn "${target}" "${link}"
 }
