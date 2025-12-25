@@ -1,8 +1,12 @@
-"""
-generate.py — Textual TUI for prompt->generate
+"""Textual TUI for interactive prompt-based text generation.
 
-Requires:
-  pip install textual rich transformers torch
+Launch with:
+
+    ezpz launch -m ezpz.examples.generate_tui
+
+Help output (``python3 -m ezpz.examples.generate_tui --help``):
+
+    (No CLI flags; run the module directly to start the UI.)
 
 Notes:
   - Load a model, then enter a prompt and hit Generate (Ctrl+Enter works too).
@@ -64,6 +68,8 @@ def prompt_model(
 
 @dataclass
 class LoadedModel:
+    """Container for a loaded causal LM and tokenizer."""
+
     model_name: str
     dtype: str
     model: AutoModelForCausalLM
@@ -71,6 +77,8 @@ class LoadedModel:
 
 
 class GenerateApp(App):
+    """Textual application to load a model and generate text via a TUI."""
+
     CSS = """
     Screen {
         layout: vertical;
@@ -142,6 +150,7 @@ class GenerateApp(App):
     lm: Optional[LoadedModel] = None
 
     def compose(self) -> ComposeResult:
+        """Build the Textual layout."""
         yield Header(show_clock=True)
         with Container(id="body"):
             # Left panel: settings
@@ -190,11 +199,13 @@ class GenerateApp(App):
     # --- helpers ---
 
     def _set_status(self, msg: str) -> None:
+        """Update the status bar and reactive state."""
         self.status = msg
         status_bar = self.query_one("#status_bar", Static)
         status_bar.update(Text(f"Status: {msg}"))
 
     def _validate_maxlen(self) -> int:
+        """Parse and validate the max length field."""
         try:
             ml = int(self.maxlen_input.value.strip())
             if ml <= 0:
@@ -204,6 +215,7 @@ class GenerateApp(App):
             raise ValueError("max_length must be a positive integer")
 
     def _dtype_to_torch(self, dtype: str):
+        """Map string dtype choices to torch dtypes."""
         d = dtype.lower()
         if d in {"bfloat16", "bf16", "b16"}:
             return torch.bfloat16
@@ -216,6 +228,7 @@ class GenerateApp(App):
     # --- events ---
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses for load/generate/stop/clear."""
         bid = event.button.id
         if bid == "load_btn":
             await self._handle_load()
@@ -229,11 +242,13 @@ class GenerateApp(App):
             self._set_status("Cleared.")
 
     async def action_generate(self) -> None:
+        """Keyboard binding for generate (Ctrl+Enter)."""
         await self._handle_generate()
 
     # --- actions ---
 
     async def _handle_load(self) -> None:
+        """Load a HF model/tokenizer asynchronously."""
         if self.is_loading:
             return
         model_name = self.model_name.value.strip() or DEFAULT_MODEL
@@ -259,6 +274,7 @@ class GenerateApp(App):
             self.load_btn.disabled = False
 
     def _load_model_blocking(self, model_name: str, dtype: str) -> LoadedModel:
+        """Load model/tokenizer on a worker thread."""
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -267,6 +283,7 @@ class GenerateApp(App):
         return LoadedModel(model_name=model_name, dtype=dtype, model=model, tokenizer=tokenizer)
 
     async def _handle_generate(self) -> None:
+        """Generate text for the current prompt asynchronously."""
         if self.is_generating:
             return
         if not self.lm:
@@ -314,16 +331,19 @@ class GenerateApp(App):
             self._current_task = None
 
     def _generate_blocking(self, prompt: str, maxlen: int) -> str:
+        """Run generation on a worker thread to keep UI responsive."""
         assert self.lm is not None
         return prompt_model(self.lm.model, self.lm.tokenizer, prompt, max_length=maxlen)
 
     async def _handle_stop(self) -> None:
+        """Cancel an in-flight generation task if present."""
         task = getattr(self, "_current_task", None)
         if task and not task.done():
             task.cancel()
 
     # graceful exit on Ctrl+C
     async def on_shutdown_request(self) -> None:
+        """Attempt to free model resources on exit."""
         try:
             # free GPU memory
             if self.lm is not None:

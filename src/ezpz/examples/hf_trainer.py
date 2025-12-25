@@ -541,6 +541,7 @@ def main() -> int:
     # )
 
     def tokenize_function(examples):
+        """Tokenize raw text using the configured tokenizer."""
         # with CaptureLogger(tok_logger) as cl:
         output = tokenizer(examples[text_column_name])
         # clm input could be much much longer than block_size
@@ -598,6 +599,7 @@ def main() -> int:
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
+        """Concatenate and chunk tokenized text into fixed-size blocks."""
         # Concatenate all texts.
         concatenated_examples = {
             k: list(chain(*examples[k])) for k in examples.keys()
@@ -713,6 +715,7 @@ def main() -> int:
                 )  # type:ignore
 
         def preprocess_logits_for_metrics(logits, labels):
+            """Prepare logits for metric computation by argmax over vocabulary."""
             if isinstance(logits, tuple):
                 # Depending on the model and config, logits may contain extra tensors,
                 # like past_key_values, but logits always come first
@@ -725,6 +728,7 @@ def main() -> int:
         def compute_metrics(
             eval_preds: tuple[torch.Tensor, torch.Tensor],
         ) -> dict | None:
+            """Compute accuracy on shifted language modeling labels."""
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels

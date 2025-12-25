@@ -1,6 +1,8 @@
 """
 ezpz/examples/fsdp_tp.py
 
+2D tensor/sequence parallel + FSDP training demo on a Llama-style model.
+
 Sam Foreman
 2025-09-08
 
@@ -49,6 +51,68 @@ We use a simple diagram to illustrate below:
   ...,
   [7, 15, ..., 8N-1]
 
+Launch with:
+
+    ezpz launch -m ezpz.examples.fsdp_tp --tp 2 --batch-size 8
+
+Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
+
+    usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
+                      [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
+                      [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
+                      [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
+                      [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
+                      [--batch-size BATCH_SIZE]
+                      [--test-batch-size TEST_BATCH_SIZE]
+                      [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
+                      [--sharding-strategy SHARDING_STRATEGY]
+                      [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
+                      [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
+                      [--model_name_or_path MODEL_NAME_OR_PATH]
+                      [--hf-split HF_SPLIT] [--hf-text-column HF_TEXT_COLUMN]
+                      [--hf-limit HF_LIMIT] [--seq-len SEQ_LEN]
+                      [--max-seq-len MAX_SEQ_LEN] [--depth-init DEPTH_INIT]
+                      [--fp32]
+
+    2D Parallel Training
+
+    options:
+      -h, --help            show this help message and exit
+      --dim DIM
+      --n-layers N_LAYERS
+      --n-heads N_HEADS
+      --n-kv-heads N_KV_HEADS
+      --multiple-of MULTIPLE_OF
+      --ffn-dim-multiplier FFN_DIM_MULTIPLIER
+      --norm-eps NORM_EPS
+      --vocab-size VOCAB_SIZE
+      --seq-length SEQ_LENGTH
+      --lr LR
+      --epochs EPOCHS
+      --batch-size BATCH_SIZE
+      --test-batch-size TEST_BATCH_SIZE
+      --num-workers NUM_WORKERS
+      --seed SEED
+      --tp TP
+      --sharding-strategy SHARDING_STRATEGY
+      --max-grad-norm MAX_GRAD_NORM
+      --outdir OUTDIR
+      --dataset DATASET
+      --tokenizer_name TOKENIZER_NAME
+      --model_name_or_path MODEL_NAME_OR_PATH
+      --hf-split HF_SPLIT, --hf_split HF_SPLIT
+                            Dataset split to load.
+      --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
+                            Column containing raw text in the dataset.
+      --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
+                            Number of rows to sample from the HF dataset for quick
+                            experiments.
+      --seq-len SEQ_LEN
+      --max-seq-len MAX_SEQ_LEN
+      --depth-init DEPTH_INIT
+      --fp32                Disable mixed precision (use fp32) for debugging NaNs.
+
+The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
 """
 
 import os
@@ -176,6 +240,7 @@ def _slice_for_sequence_parallel(
 def _sample_tensor_values(
     tensor: Optional[torch.Tensor], max_samples: int
 ) -> Optional[torch.Tensor]:
+    """Downsample a tensor to at most ``max_samples`` elements for logging."""
     if tensor is None or tensor.numel() == 0 or max_samples <= 0:
         return None
     flat = tensor.detach().flatten()
@@ -188,6 +253,7 @@ def _sample_tensor_values(
 def _histogram_dict(
     tensor: Optional[torch.Tensor], bins: int
 ) -> Optional[dict[str, object]]:
+    """Return histogram metadata for tensor values for logging/visualization."""
     if tensor is None or tensor.numel() == 0 or bins <= 0:
         return None
     t = tensor.float()
@@ -210,6 +276,7 @@ def _histogram_dict(
 
 
 def _parse_hist_layers(spec: str, max_layers: int) -> list[int]:
+    """Parse layer id/ranges (e.g., '0-3,7') into a bounded list of indices."""
     if spec.strip().lower() in {"all", "*"}:
         return list(range(max_layers))
     layers: list[int] = []
@@ -244,6 +311,7 @@ def _parse_hist_layers(spec: str, max_layers: int) -> list[int]:
 def _register_activation_hooks(
     model: nn.Module, layer_ids: list[int]
 ) -> tuple[dict[str, torch.Tensor], list[torch.utils.hooks.RemovableHandle]]:
+    """Attach forward hooks to capture activations for selected layers."""
     activations: dict[str, torch.Tensor] = {}
     handles: list[torch.utils.hooks.RemovableHandle] = []
 
@@ -254,7 +322,10 @@ def _register_activation_hooks(
             continue
 
         def _make_hook(tag: str):
+            """Factory to capture activations under a given tag."""
+
             def _hook(_module, _inp, out):
+                """Store detached activation outputs for histogram logging."""
                 if isinstance(out, tuple):
                     out = out[0]
                 if torch.is_tensor(out):
@@ -287,6 +358,7 @@ def _wandb_log_histograms(
     step: int,
     enabled: bool,
 ) -> None:
+    """Convert histogram dict entries into wandb.Histogram logs."""
     if not enabled or wandb is None or getattr(wandb, "run", None) is None:
         return
     hist_payload: dict[str, object] = {}
@@ -303,6 +375,7 @@ def _wandb_log_histograms(
 
 
 def parse_args():
+    """CLI parser for 2D parallel (TP/SP + FSDP) training."""
     parser = argparse.ArgumentParser(description="2D Parallel Training")
     parser.add_argument("--dim", type=int, default=256)
     parser.add_argument("--n-layers", type=int, default=32)
@@ -379,6 +452,7 @@ def parallelize(
     mixed_precision: Optional[MixedPrecision],
     sharding_strategy: Optional[ShardingStrategy | str] = None,
 ) -> nn.Module:
+    """Wrap the model with tensor-parallel and FSDP sharding strategies."""
     tp_mesh = device_mesh["tp"]
     dp_mesh = device_mesh["dp"]
 
@@ -458,6 +532,7 @@ def _accumulate_stats(
     max_abs: torch.Tensor,
     nonfinite: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Accumulate norm and non-finite counts into running stats."""
     if tensor is None or tensor.numel() == 0:
         return sumsq, max_abs, nonfinite
     t = tensor.float()
@@ -470,6 +545,7 @@ def _accumulate_stats(
 def _collect_param_grad_stats(
     model: nn.Module, device: torch.device | str
 ) -> dict[str, float]:
+    """Aggregate parameter/gradient norms and non-finite counts."""
     param_sumsq = torch.zeros((), device=device)
     param_max = torch.zeros((), device=device)
     param_nonfinite = torch.zeros((), device=device, dtype=torch.int64)
@@ -499,6 +575,7 @@ def _collect_param_grad_stats(
 
 
 def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
+    """Return per-layer gradient L2 norms for logging/debugging."""
     layer_sumsq: dict[int, float] = {}
     with torch.no_grad():
         for name, param in model.named_parameters():
@@ -525,6 +602,7 @@ def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
 ) -> int:
+    """Run TP/SP + FSDP training and optionally log metrics."""
     world_size = ezpz.dist.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
@@ -894,6 +972,7 @@ def train(
 
 
 def main(args: argparse.Namespace) -> int:
+    """Entrypoint to set up distributed context and dispatch training."""
     rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     if rank == 0:
         outdir = args.outdir if args.outdir is not None else OUTDIR

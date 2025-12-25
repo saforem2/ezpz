@@ -1,3 +1,8 @@
+"""Utility helpers for DeepSpeed tensor-parallel scripts (OpenAI completions, IO).
+
+This module is imported by other examples; it is not a standalone CLI.
+"""
+
 import dataclasses
 import logging
 import math
@@ -24,6 +29,8 @@ if openai_org is not None:
 
 @dataclasses.dataclass
 class OpenAIDecodingArguments:
+    """Configurable decoding parameters for OpenAI API completions."""
+
     max_tokens: int = 1800
     temperature: float = 0.2
     top_p: float = 1.0
@@ -145,6 +152,7 @@ def openai_completion(
 
 
 def _make_w_io_base(f, mode: str):
+    """Ensure a writable IOBase handle, creating parent dirs if needed."""
     if not isinstance(f, io.IOBase):
         f_dirname = os.path.dirname(f)
         if f_dirname != "":
@@ -154,6 +162,7 @@ def _make_w_io_base(f, mode: str):
 
 
 def _make_r_io_base(f, mode: str):
+    """Return a readable IOBase handle for the given path or handle."""
     if not isinstance(f, io.IOBase):
         f = open(f, mode=mode)
     return f

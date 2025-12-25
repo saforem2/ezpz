@@ -1,3 +1,14 @@
+"""CIFAR10 training example using DeepSpeed (optionally MoE).
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.cifar.train_ds --epochs 5 --dtype fp16
+
+Help output (requires deepspeed installed; ``python3 -m ezpz.examples.cifar.train_ds --help`` may fail without it):
+
+    Provided by argparse in ``add_argument`` when dependencies are available.
+"""
+
 import argparse
 import os
 
@@ -17,6 +28,7 @@ logger = ezpz.get_logger(__name__)
 
 
 def add_argument():
+    """Build and parse command-line arguments for the CIFAR DeepSpeed demo."""
     parser = argparse.ArgumentParser(description="CIFAR")
 
     # For train.
@@ -172,7 +184,10 @@ def get_ds_config(args):
 
 
 class Net(nn.Module):
+    """Convolutional network for CIFAR10 with optional MoE layers."""
+
     def __init__(self, args):
+        """Simple CNN for CIFAR10; optionally wraps MoE layers."""
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
@@ -203,6 +218,7 @@ class Net(nn.Module):
             self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
+        """Forward pass through the CNN (with optional MoE blocks)."""
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         x = x.view(-1, 16 * 5 * 5)
@@ -286,6 +302,7 @@ def test(model_engine, testset, local_device, target_dtype, test_batch_size=4):
 
 
 def main(args):
+    """Entrypoint: initialize DeepSpeed, load CIFAR10, train and evaluate."""
     rank = ezpz.setup_torch(backend="deepspeed")
     # Initialize DeepSpeed distributed backend.
     deepspeed.init_distributed()

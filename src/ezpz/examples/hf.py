@@ -56,6 +56,7 @@ MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 
 def parse_args():
+    """Parse CLI arguments for Hugging Face causal LM training."""
     parser = argparse.ArgumentParser(
         description="Finetune a transformers model on a causal language modeling task"
     )
@@ -310,6 +311,7 @@ def parse_args():
 
 
 def main():
+    """Entrypoint for standalone HF causal LM fine-tuning without Trainer."""
     rank = ezpz.setup_torch()
     args = parse_args()
 
@@ -497,6 +499,7 @@ def main():
     text_column_name = "text" if "text" in column_names else column_names[0]
 
     def tokenize_function(examples):
+        """Tokenize raw text from the selected column."""
         return tokenizer(examples[text_column_name])
 
     with accelerator.main_process_first():
@@ -527,6 +530,7 @@ def main():
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
+        """Concatenate and chunk tokenized text into fixed-size blocks."""
         # Concatenate all texts.
         concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
         total_length = len(concatenated_examples[list(examples.keys())[0]])

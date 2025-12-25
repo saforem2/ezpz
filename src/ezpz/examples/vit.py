@@ -1,5 +1,62 @@
-"""
-ezpz/examples/vit.py
+"""Train a lightweight Vision Transformer on fake or MNIST data.
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.vit --dataset mnist --batch_size 256
+
+Help output (``python3 -m ezpz.examples.vit --help``):
+
+    usage: ezpz.examples.vit [-h] [--img_size IMG_SIZE] [--batch_size BATCH_SIZE]
+                             [--num_heads NUM_HEADS] [--head_dim HEAD_DIM]
+                             [--hidden-dim HIDDEN_DIM] [--mlp-dim MLP_DIM]
+                             [--dropout DROPOUT]
+                             [--attention-dropout ATTENTION_DROPOUT]
+                             [--num_classes NUM_CLASSES] [--dataset {fake,mnist}]
+                             [--depth DEPTH] [--patch_size PATCH_SIZE]
+                             [--dtype DTYPE] [--compile]
+                             [--num_workers NUM_WORKERS] [--max_iters MAX_ITERS]
+                             [--warmup WARMUP] [--attn_type {native,sdpa}]
+                             [--cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}]
+                             [--fsdp]
+
+    Train a simple ViT
+
+    options:
+      -h, --help            show this help message and exit
+      --img_size IMG_SIZE, --img-size IMG_SIZE
+                            Image size
+      --batch_size BATCH_SIZE, --batch-size BATCH_SIZE
+                            Batch size
+      --num_heads NUM_HEADS, --num-heads NUM_HEADS
+                            Number of heads
+      --head_dim HEAD_DIM, --head-dim HEAD_DIM
+                            Hidden Dimension
+      --hidden-dim HIDDEN_DIM, --hidden_dim HIDDEN_DIM
+                            Hidden Dimension
+      --mlp-dim MLP_DIM, --mlp_dim MLP_DIM
+                            MLP Dimension
+      --dropout DROPOUT     Dropout rate
+      --attention-dropout ATTENTION_DROPOUT, --attention_dropout ATTENTION_DROPOUT
+                            Attention Dropout rate
+      --num_classes NUM_CLASSES, --num-classes NUM_CLASSES
+                            Number of classes
+      --dataset {fake,mnist}
+                            Dataset to use
+      --depth DEPTH         Depth
+      --patch_size PATCH_SIZE, --patch-size PATCH_SIZE
+                            Patch size
+      --dtype DTYPE         Data type
+      --compile             Compile model
+      --num_workers NUM_WORKERS, --num-workers NUM_WORKERS
+                            Number of workers
+      --max_iters MAX_ITERS, --max-iters MAX_ITERS
+                            Maximum iterations
+      --warmup WARMUP       Warmup iterations (or fraction) before starting to collect metrics.
+      --attn_type {native,sdpa}, --attn-type {native,sdpa}
+                            Attention function to use.
+      --cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}, --cuda-sdpa-backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}
+                            CUDA SDPA backend to use.
+      --fsdp                Use FSDP
 """
 
 import argparse
@@ -45,6 +102,7 @@ WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for ViT training."""
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.vit",
         description="Train a simple ViT",
@@ -153,6 +211,8 @@ def parse_args() -> argparse.Namespace:
 
 @dataclass
 class VitTrainArgs:
+    """Structured configuration for Vision Transformer training."""
+
     img_size: int = 224
     batch_size: int = 128
     num_heads: int = 16
@@ -178,6 +238,7 @@ class VitTrainArgs:
 
 
 def get_device_type():
+    """Resolve the torch device type, falling back if MPS lacks collectives."""
     import os
 
     device_override = os.environ.get("TORCH_DEVICE")
@@ -195,6 +256,16 @@ def train_fn(
     args: VitTrainArgs,
     dataset: Optional[str] = "fake",
 ) -> ezpz.History:
+    """Train the Vision Transformer on fake or MNIST data.
+
+    Args:
+        block_fn: Attention block constructor with attn_fn injected.
+        args: Training hyperparameters.
+        dataset: Dataset choice, either ``fake`` or ``mnist``.
+
+    Returns:
+        History of training metrics.
+    """
     # seed = int(os.environ.get('SEED', '0'))
     # rank = ezpz.setup(backend='DDP', seed=seed)
     world_size = ezpz.dist.get_world_size()
@@ -395,6 +466,7 @@ def train_fn(
 
 
 def main(args: argparse.Namespace):
+    """CLI entrypoint to configure logging and launch ViT training."""
     rank = ezpz.dist.setup_torch()
     if rank == 0:
         try:
@@ -426,6 +498,7 @@ def main(args: argparse.Namespace):
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
     ) -> torch.Tensor:
+        """Scaled dot-product attention with configurable backend."""
         scale = config.head_dim ** (-0.5)
         q = q * scale
         attn = q @ k.transpose(-2, -1)

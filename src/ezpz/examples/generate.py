@@ -1,5 +1,22 @@
-"""
-generate.py
+"""Interactive text generation loop for Hugging Face causal language models.
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.generate --model_name <repo/model>
+
+Help output (``python3 -m ezpz.examples.generate --help``):
+
+    usage: generate.py [-h] [--model_name MODEL_NAME]
+                       [--dtype {float16,bfloat16,float32}]
+
+    Generate text using a model.
+
+    options:
+      -h, --help            show this help message and exit
+      --model_name MODEL_NAME
+                            Name of the model to use.
+      --dtype {float16,bfloat16,float32}
+                            Data type to use for the model.
 """
 
 import torch
@@ -11,9 +28,7 @@ from ezpz.cli.flags import build_generate_parser
 
 
 def parse_args():
-    """
-    Parse command line arguments.
-    """
+    """Parse CLI arguments for interactive generation."""
     parser = build_generate_parser()
     return parser.parse_args()
 
@@ -25,27 +40,23 @@ def prompt_model(
     max_length: int = 64,
     **kwargs: object,
 ) -> str:
-    """
-    Generate text using a model and tokenizer.
+    """Generate text using a model and tokenizer.
 
     Args:
-        model: The model to use for generation.
-        tokenizer: The tokenizer to use for encoding and decoding.
-        prompt: The input prompt to generate text from.
-        max_length: The maximum length of the generated text.
-        **kwargs: Additional arguments to pass to the model's generate method.
+        model: Causal LM used for generation.
+        tokenizer: Tokenizer that encodes/decodes text.
+        prompt: Input prompt to seed generation.
+        max_length: Maximum number of tokens to generate.
+        **kwargs: Extra parameters forwarded to ``model.generate``.
 
-    Example:
+    Returns:
+        Decoded text returned by the model.
 
-        >>> import ezpz
-        >>> from transformers import AutoModelForCausalLM, AutoTokenizer #, Trainer, TrainingArguments
-        >>> import torch
-        >>> model_name = "argonne-private/AuroraGPT-7B"
+    Examples:
+        >>> model_name = \"argonne-private/AuroraGPT-7B\"
         >>> tokenizer = AutoTokenizer.from_pretrained(model_name)
         >>> model = AutoModelForCausalLM.from_pretrained(model_name)
-        >>> model.to(ezpz.get_torch_device_type())
-        >>> model.to(torch.bfloat16)
-        >>> result = tokenizer.batch_decode(model.generate(**tokenizer("Who are you?", return_tensors="pt").to(ezpz.get_torch_device_type()), max_length=128))
+        >>> _ = prompt_model(model, tokenizer, \"Who are you?\", max_length=32)
     """
     return tokenizer.batch_decode(
         model.generate(
@@ -57,6 +68,7 @@ def prompt_model(
 
 
 def main():
+    """Load a model and enter an interactive text generation REPL."""
     args = parse_args()
     model_name = args.model_name
     model = AutoModelForCausalLM.from_pretrained(model_name)

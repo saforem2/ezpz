@@ -1,5 +1,4 @@
-"""
-Toy diffusion example for short text generation.
+"""Tiny diffusion example for short text generation.
 
 This script trains a tiny denoising diffusion model on a handful of toy
 sentences and then samples new sentences by running the reverse process.
@@ -14,6 +13,49 @@ Typical usage (customize with args as needed):
     ezpz-launch -m ezpz.examples.diffusion --timesteps 64 --train-steps 500 --batch-size 16
     # with FSDP and a HF dataset slice:
     WORLD_SIZE=2 ezpz-launch -m ezpz.examples.diffusion --hf-dataset ag_news --fsdp
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.diffusion --timesteps 64 --train-steps 500
+
+Help output (``python3 -m ezpz.examples.diffusion --help``):
+
+    usage: diffusion.py [-h] [--batch-size BATCH_SIZE] [--dtype DTYPE]
+                        [--extra-text [EXTRA_TEXT ...]] [--fsdp]
+                        [--fsdp-mixed-precision] [--hidden HIDDEN]
+                        [--hf-dataset HF_DATASET] [--hf-split HF_SPLIT]
+                        [--hf-text-column HF_TEXT_COLUMN] [--hf-limit HF_LIMIT]
+                        [--log_freq LOG_FREQ] [--outdir OUTDIR]
+                        [--samples SAMPLES] [--seed SEED] [--seq-len SEQ_LEN]
+                        [--timesteps TIMESTEPS] [--train-steps TRAIN_STEPS]
+                        [--lr LR]
+
+    Tiny diffusion example for text generation.
+
+    options:
+      -h, --help            show this help message and exit
+      --batch-size BATCH_SIZE
+      --dtype DTYPE
+      --extra-text [EXTRA_TEXT ...]
+                            Additional sentences to add to the tiny corpus.
+      --fsdp                Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).
+      --fsdp-mixed-precision
+                            Use bfloat16 parameters with FSDP for speed (defaults to float32).
+      --hidden HIDDEN
+      --hf-dataset HF_DATASET
+                            Optional Hugging Face dataset name (e.g., 'ag_news'). When set, replaces the toy corpus.
+      --hf-split HF_SPLIT   Dataset split to load.
+      --hf-text-column HF_TEXT_COLUMN
+                            Column containing raw text in the dataset.
+      --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick experiments.
+      --log_freq LOG_FREQ
+      --outdir OUTDIR
+      --samples SAMPLES
+      --seed SEED
+      --seq-len SEQ_LEN
+      --timesteps TIMESTEPS
+      --train-steps TRAIN_STEPS
+      --lr LR
 """
 
 import argparse
@@ -60,6 +102,13 @@ class ToyTextDataset(Dataset):
     def __init__(
         self, texts: List[str], vocab: Dict[str, int], seq_len: int = 12
     ):
+        """Store corpus and vocabulary for encoding.
+
+        Args:
+            texts: Raw sentences.
+            vocab: Token-to-id mapping.
+            seq_len: Target sequence length for padding/truncation.
+        """
         self.texts = texts
         self.vocab = vocab
         self.seq_len = seq_len
@@ -67,9 +116,11 @@ class ToyTextDataset(Dataset):
         self.unk_id = vocab["<unk>"]
 
     def __len__(self) -> int:
+        """Return number of sentences in the corpus."""
         return len(self.texts)
 
     def _encode(self, text: str) -> torch.Tensor:
+        """Convert a sentence to a fixed-length tensor of token ids."""
         tokens = [
             self.vocab.get(tok, self.unk_id) for tok in text.lower().split()
         ]
@@ -78,6 +129,7 @@ class ToyTextDataset(Dataset):
         return torch.tensor(tokens, dtype=torch.long)
 
     def __getitem__(self, idx: int) -> torch.Tensor:  # type:ignore
+        """Return encoded tokens for the indexed sentence."""
         return self._encode(self.texts[idx])
 
 
@@ -90,6 +142,7 @@ class DiffusionSchedule:
     beta_end: float = 0.02
 
     def __post_init__(self) -> None:
+        """Precompute alpha and alpha_bar schedules for diffusion steps."""
         self.betas = torch.linspace(
             self.beta_start, self.beta_end, self.timesteps
         )
@@ -109,6 +162,16 @@ class DiffusionTextModel(nn.Module):
         n_layers: int = 2,
         n_heads: int = 4,
     ) -> None:
+        """Initialize embeddings and transformer encoder.
+
+        Args:
+            vocab_size: Size of the token vocabulary.
+            hidden_size: Dimensionality of embeddings and model width.
+            max_seq_len: Maximum sequence length.
+            timesteps: Number of diffusion steps.
+            n_layers: Number of transformer encoder layers.
+            n_heads: Attention heads per layer.
+        """
         super().__init__()
         self.hidden_size = hidden_size  # type:ignore
         self.token_emb = nn.Embedding(vocab_size, hidden_size)
@@ -126,12 +189,14 @@ class DiffusionTextModel(nn.Module):
         self.proj = nn.Linear(hidden_size, hidden_size)
 
     def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Embed token ids and scale them for transformer input."""
         # Clone avoids autograd complaints about views when using sharded params.
         return self.token_emb(tokens).clone() * math.sqrt(self.hidden_size)
 
     def forward(
         self, noisy_embs: torch.Tensor, t: torch.Tensor
     ) -> torch.Tensor:
+        """Predict noise residuals given noisy embeddings and timestep."""
         _, seq_len, _ = noisy_embs.shape
         pos = self.pos_emb(torch.arange(seq_len, device=noisy_embs.device))
         temb = self.time_emb(t).unsqueeze(1)
@@ -140,6 +205,7 @@ class DiffusionTextModel(nn.Module):
         return self.proj(h)
 
     def decode_tokens(self, embs: torch.Tensor) -> torch.Tensor:
+        """Project embeddings back to token ids via tied embeddings."""
         weights = self.token_emb.weight  # (vocab, hidden)
         logits = torch.einsum("bld,vd->blv", embs, weights)
         return logits.argmax(dim=-1)
@@ -148,12 +214,14 @@ class DiffusionTextModel(nn.Module):
 def sample_timesteps(
     batch_size: int, schedule: DiffusionSchedule, device: torch.device
 ) -> torch.Tensor:
+    """Uniformly sample diffusion steps for a batch."""
     return torch.randint(0, schedule.timesteps, (batch_size,), device=device)
 
 
 def add_noise(
     x0: torch.Tensor, t: torch.Tensor, schedule: DiffusionSchedule
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Apply forward diffusion noise to clean embeddings."""
     noise = torch.randn_like(x0)
     alpha_bar = schedule.alpha_bars.to(x0.device)[t].view(-1, 1, 1)
     noisy = torch.sqrt(alpha_bar) * x0 + torch.sqrt(1 - alpha_bar) * noise
@@ -166,6 +234,7 @@ def p_sample(
     t: int,
     schedule: DiffusionSchedule,
 ) -> torch.Tensor:
+    """Predict one reverse-diffusion step at timestep ``t``."""
     t_batch = torch.full((xt.size(0),), t, device=xt.device, dtype=torch.long)
     beta = schedule.betas.to(xt.device)[t]
     alpha = schedule.alphas.to(xt.device)[t]
@@ -186,6 +255,19 @@ def generate_text(
     num_samples: int,
     skip_tokens: Tuple[str, ...] = ("<pad>", "<unk>"),
 ) -> List[str]:
+    """Sample sequences from the trained diffusion model.
+
+    Args:
+        model: Trained diffusion network (possibly FSDP wrapped).
+        schedule: Noise schedule with precomputed alphas.
+        inv_vocab: Mapping from token ids back to string tokens.
+        seq_len: Maximum sequence length.
+        num_samples: Number of sentences to generate.
+        skip_tokens: Tokens to drop from decoded outputs.
+
+    Returns:
+        List of generated text strings.
+    """
     model.eval()
     samples: List[str] = []
     do_sample = ezpz.get_rank() == 0
@@ -221,6 +303,7 @@ def generate_text(
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def test(model, test_loader):
+    """Evaluate the classifier outputs on a held-out loader."""
     DEVICE = ezpz.get_torch_device()
     DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
     model.eval()
@@ -259,6 +342,7 @@ def train(
     outdir: Path | os.PathLike | str,
     lr: float = 1e-3,
 ) -> tuple[ezpz.History, torch.nn.Module]:
+    """Train the diffusion text model for a fixed number of steps."""
     device = ezpz.get_torch_device(as_torch_device=True)
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
@@ -376,6 +460,7 @@ def train(
 
 
 def get_default_texts() -> List[str]:
+    """Return a small corpus of seed sentences for toy training."""
     return [
         "the product team ships updates every week",
         "customers ask for faster onboarding",
@@ -425,6 +510,7 @@ def load_hf_texts(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for the diffusion text example."""
     parser = argparse.ArgumentParser(
         description="Tiny diffusion example for text generation."
     )
@@ -511,6 +597,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
+    """Set up distributed training, fit the model, and log samples."""
     rank = ezpz.setup_torch(seed=args.seed)
     if rank == 0:
         outdir = args.outdir if args.outdir is not None else OUTDIR

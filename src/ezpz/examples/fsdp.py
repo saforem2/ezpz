@@ -1,5 +1,34 @@
-"""
-ezpz/examples/fsdp.py
+"""FSDP training example on MNIST/OpenImages/ImageNet-style datasets.
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.fsdp --dataset MNIST --batch-size 128
+
+Help output (``python3 -m ezpz.examples.fsdp --help``):
+
+    usage: fsdp.py [-h] [--num-workers N]
+                   [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
+                   [--batch-size N] [--dtype D] [--test-batch-size N] [--epochs N]
+                   [--lr LR] [--gamma M] [--seed S] [--save-model]
+                   [--data-prefix DATA_PREFIX]
+
+    PyTorch MNIST Example using FSDP
+
+    options:
+      -h, --help            show this help message and exit
+      --num-workers N       number of data loading workers (default: 4)
+      --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
+                            Dataset to use (default: MNIST)
+      --batch-size N        input batch size for training (default: 64)
+      --dtype D             Datatype for training (default=bf16).
+      --test-batch-size N   input batch size for testing (default: 1000)
+      --epochs N            number of epochs to train (default: 10)
+      --lr LR               learning rate (default: 1e-3)
+      --gamma M             Learning rate step gamma (default: 0.7)
+      --seed S              random seed (default: 1)
+      --save-model          For Saving the current Model
+      --data-prefix DATA_PREFIX
+                            data directory prefix
 """
 
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
@@ -37,7 +66,14 @@ OUTPUT_DIR = Path(os.getcwd()).joinpath("outputs", fname)
 
 
 class Net(nn.Module):
+    """Simple CNN classifier used in the FSDP example."""
+
     def __init__(self, num_classes: int = 10):
+        """Initialize convolutional and fully connected layers.
+
+        Args:
+            num_classes: Number of output classes for the classifier.
+        """
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
@@ -47,6 +83,7 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(128, num_classes)
 
     def forward(self, x):
+        """Compute logits for input images."""
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -63,6 +100,18 @@ class Net(nn.Module):
 
 
 def train(model, train_loader, optimizer, epoch, sampler=None):
+    """One epoch of training and loss aggregation across ranks.
+
+    Args:
+        model: Wrapped model (DDP/FSDP).
+        train_loader: Dataloader for training set.
+        optimizer: Optimizer instance.
+        epoch: Current epoch index.
+        sampler: Optional distributed sampler to set epoch.
+
+    Returns:
+        Dict with epoch, wall-clock duration, and averaged train loss.
+    """
     DEVICE = ezpz.get_torch_device()
     DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
     model.train()
@@ -92,6 +141,7 @@ def train(model, train_loader, optimizer, epoch, sampler=None):
 
 
 def test(model, test_loader):
+    """Evaluate model on validation data and gather metrics."""
     DEVICE = ezpz.get_torch_device()
     DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
     model.eval()
@@ -121,6 +171,7 @@ def test(model, test_loader):
 
 
 def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
+    """Create the FSDP-wrapped model, optimizer, and LR scheduler."""
     DEVICE = ezpz.get_torch_device()
     DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
     if args.dataset == "MNIST":
@@ -160,6 +211,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
 
 
 def get_data(args: argparse.Namespace) -> dict:
+    """Load train/test datasets according to args.dataset."""
     # data_prefix_fallback = Path(os.getcwd()).joinpath(
     #     ".cache", "ezpz", "data", f"{args.dataset.lower()}"
     # )
@@ -231,6 +283,7 @@ def get_data(args: argparse.Namespace) -> dict:
 
 
 def fsdp_main(args: argparse.Namespace) -> None:
+    """Main training loop orchestrating data, model, and logging."""
     rank = ezpz.setup_torch(seed=args.seed)
     START_TIME = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
     START_TIME = ezpz.dist.broadcast(START_TIME, root=0)
@@ -300,6 +353,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """CLI parser for the FSDP example."""
     parser = argparse.ArgumentParser(
         description="PyTorch MNIST Example using FSDP"
     )

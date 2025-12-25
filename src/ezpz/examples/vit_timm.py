@@ -1,5 +1,12 @@
-"""
-ezpz/examples/vit.py
+"""Train a Vision Transformer using timm (dependency: mmm attention blocks).
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.vit_timm --dataset fake --batch_size 128
+
+Help output (requires `mmm` dependency; ``python3 -m ezpz.examples.vit_timm --help`` will fail if missing):
+
+    (Install `mmm` to view argparse help; defaults mirror ``parse_args`` below.)
 """
 
 import argparse
@@ -31,6 +38,7 @@ logger = ezpz.get_logger(__name__)
 
 
 def parse_args() -> TrainArgs:
+    """Parse CLI arguments for the timm ViT example."""
     parser = argparse.ArgumentParser(
         prog="mmm.train.vit",
         description="Train a simple ViT",
@@ -69,6 +77,7 @@ def parse_args() -> TrainArgs:
 
 
 def train_fn(block_fn: Any, args: TrainArgs) -> ezpz.History:
+    """Train the timm Vision Transformer with the provided attention block."""
     seed = int(os.environ.get("SEED", "0"))
     rank = ezpz.setup(backend="DDP", seed=seed)
     world_size = ezpz.get_world_size()
@@ -205,6 +214,7 @@ def train_fn(block_fn: Any, args: TrainArgs) -> ezpz.History:
 
 
 def main():
+    """Entry point: parse args, configure wandb, and launch training."""
     # torch._dynamo.config.suppress_errors = True  # type:ignore
     rank = ezpz.setup_torch(
         backend=os.environ.get("BACKEND", "DDP"),
@@ -235,6 +245,7 @@ def main():
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
     ) -> torch.Tensor:
+        """Scaled dot-product attention for the custom AttentionBlock."""
         scale = config.head_dim ** (-0.5)
         q = q * scale
         attn = q @ k.transpose(-2, -1)
