@@ -14,12 +14,14 @@ from typing import Any
 from dataclasses import asdict, dataclass
 
 import ezpz
+
 # from ezpz import get_rank
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch
+
 # import torch.distributed
 import xarray as xr
 from torchinfo import ModelStatistics
@@ -85,6 +87,7 @@ logger = logging.getLogger(__name__)
 #
 #
 
+
 @dataclass(frozen=True)
 class Color:
     black = "\033[30m"
@@ -113,8 +116,6 @@ class NoColor:
     reset = ""
     orange = ""
     turquoise = ""
-
-
 
 
 class DistributedPdb(pdb.Pdb):
@@ -195,7 +196,7 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
     Returns:
         str: Formatted timestamp string.
 
-    Example:
+    Examples:
         >>> get_timestamp()  # Returns something like '2023-12-01-143022'
         >>> get_timestamp("%Y-%m-%d")  # Returns something like '2023-12-01'
     """
@@ -424,7 +425,9 @@ def get_peak_flops(device_name: str) -> float:
         # Join all filtered lines into a single string
         device_name = " ".join(filtered_lines) or device_name
     except FileNotFoundError as e:
-        logger.warning(f"Error running lspci: {e}, fallback to use device_name")
+        logger.warning(
+            f"Error running lspci: {e}, fallback to use device_name"
+        )
     if "A100" in device_name:
         # data from https://www.nvidia.com/en-us/data-center/a100/
         return 312e12
@@ -461,14 +464,18 @@ def get_peak_flops(device_name: str) -> float:
         # - #ops: 512
         # Full EU mode (i.e. 512 max compute units): 340.8 TFLOPS (BF16)
         # Standard EU mode (i.e. 448 max compute units): 298.2 TFLOPS (BF16)
-        max_comp_units = torch.xpu.get_device_properties("xpu").max_compute_units
+        max_comp_units = torch.xpu.get_device_properties(
+            "xpu"
+        ).max_compute_units
         return 512 * max_comp_units * 1300 * 10**6
     elif "l40s" in device_name:
         # data from: "https://resources.nvidia.com/en-us-l40s/l40s-datasheet-28413"
         return 362e12
 
     else:  # for other GPU types, assume A100
-        logger.warning(f"Peak flops undefined for: {device_name}, fallback to A100")
+        logger.warning(
+            f"Peak flops undefined for: {device_name}, fallback to A100"
+        )
         return 312e12
 
 
@@ -494,7 +501,7 @@ def grab_tensor(
     Raises:
         ValueError: If unable to convert a list to array.
 
-    Example:
+    Examples:
         >>> import torch
         >>> import numpy as np
         >>> grab_tensor([1, 2, 3])
