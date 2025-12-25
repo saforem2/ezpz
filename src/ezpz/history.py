@@ -15,7 +15,7 @@ import time
 from contextlib import ContextDecorator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable, Optional, Union, Sequence
 
 import ezpz
 import ezpz.dist
@@ -835,7 +835,7 @@ class History:
                 (2, "mean", f"{name}/mean", "green"),
             ]
             right_slots = [
-                (1, "min", f"{name}/min", "blue"),
+                (1, "min", f"{name}/min", "cyan"),
                 (2, "std", f"{name}/std", "magenta"),
                 (3, "max", f"{name}/max", "red"),
             ]
@@ -899,9 +899,9 @@ class History:
                 plotext_set_size(plt, min_height=40)
 
                 overlay_order = [
-                    ("min", f"{name}/min", "blue"),
                     ("mean", f"{name}/mean", "green"),
                     ("max", f"{name}/max", "red"),
+                    ("min", f"{name}/min", "cyan"),
                     ("raw", name, None),
                 ]
                 overlay_points = 0
