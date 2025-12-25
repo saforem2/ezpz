@@ -625,7 +625,7 @@ def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
     return wrap_model_for_ddp(model)
 
 
-def wrap_with_fsdp(model, dtype: str = "bfloat16") -> FSDP:
+def wrap_with_fsdp(model: torch.nn.Module, dtype: str = "bfloat16") -> FSDP:
     """Wrap a model with FSDP using the given parameter dtype.
 
     Args:
@@ -633,7 +633,9 @@ def wrap_with_fsdp(model, dtype: str = "bfloat16") -> FSDP:
         dtype: Parameter dtype for mixed precision (e.g., ``\"bf16\"``).
 
     Examples:
-        >>> fsdp_model = wrap_with_fsdp(MyNet().to(get_torch_device_type()), dtype="bf16")
+        >>> fsdp_model = wrap_with_fsdp(
+        ...     MyNet().to(get_torch_device_type()), dtype="bf16"
+        ... )
     """
     if get_rank() == 0:
         logger.info(f"Wrapping model model with FSDP + {dtype}")
@@ -1265,7 +1267,9 @@ def all_reduce(
     Examples:
         >>> loss = 1.0 + get_rank()
         >>> total_loss = all_reduce(loss)  # sum across ranks
-        >>> mean_loss = all_reduce(loss, implementation="torch") / get_world_size()
+        >>> mean_loss = (
+        ...     all_reduce(loss, implementation="torch") / get_world_size()
+        ... )
     """
     if implementation is None or implementation.lower() == "mpi":
         op = MPI.SUM if op is None else op
@@ -2252,7 +2256,9 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
         Path to a usable hostfile.
 
     Examples:
-        >>> hostfile = get_hostfile_with_fallback()  # uses scheduler env or writes localhost
+        >>> hostfile = (
+        ...     get_hostfile_with_fallback()
+        ... )  # uses scheduler env or writes localhost
         >>> Path(hostfile).exists()
         True
     """
