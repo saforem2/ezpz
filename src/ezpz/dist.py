@@ -195,17 +195,18 @@ def timeitlogit(
     verbose: bool = False,
     prefix: str | None = None,
 ):
-    """Decorator to time a function and log the time taken.
+    """Decorator to time a function and optionally log to wandb and stdout.
 
     Args:
-        rank (int, optional): Rank of the process. Defaults to None.
-        verbose (bool, optional): Whether to log the time taken. Defaults to True.
+        rank: Rank whose logger should emit messages. Defaults to ``get_rank()``.
+        record: Whether to log timing to wandb if available.
+        verbose: Whether to log timing to stdout on the selected rank.
+        prefix: Optional prefix for wandb metrics (defaults to ``\"timeit\"``).
 
     Examples:
-        @timeitlogit(rank=0, verbose=True)
-        def my_function(arg1, arg2):
-            # Function implementation
-            pass
+        >>> @timeitlogit(rank=0, verbose=True)
+        ... def my_function(x, y):
+        ...     return x + y
     """
     rank = get_rank() if rank is None else rank
     prefix = "timeit" if prefix is None else prefix
@@ -215,11 +216,7 @@ def timeitlogit(
     #     wandb = None  # type:ignore
 
     def decorator(func: Callable):
-        """Decorator to time a function and log the time taken.
-
-        Args:
-            func (Callable): Function to be timed.
-        """
+        """Wrap ``func`` to measure wall-clock duration."""
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -269,17 +266,15 @@ def timeitlogit(
 
 
 def timeit(func: Callable):
-    """
-    Decorator to time a function and log the time taken.
+    """Decorator to time a function and log the duration.
 
     Args:
-        func (Callable): Function to be timed.
+        func: Callable to wrap.
 
     Examples:
-        @timeit
-        def my_function(arg1, arg2):
-            # Function implementation
-            pass
+        >>> @timeit
+        ... def my_function(x, y):
+        ...     return x * y
     """
     # try:
     #     import wandb
@@ -566,6 +561,12 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
 
     Returns:
         None
+
+    Examples:
+        >>> # wait for all CUDA work to finish on the current device
+        >>> synchronize()
+        >>> # or explicitly
+        >>> synchronize(device="cuda:0")
     """
     if device is None:
         device = get_torch_device(as_torch_device=True)
@@ -591,6 +592,10 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> DistributedDataParallel:
 
     Args:
         model (torch.nn.Module): The model to wrap.
+
+    Examples:
+        >>> model = MyNet().to(get_torch_device_type())
+        >>> ddp_model = wrap_model_for_ddp(model)
     """
 
     device_type = get_torch_device_type()
@@ -609,10 +614,27 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> DistributedDataParallel:
 
 
 def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
+    """Alias for ``wrap_model_for_ddp`` for backward compatibility.
+
+    Args:
+        model: Model to wrap with DDP.
+
+    Examples:
+        >>> model = wrap_with_ddp(MyNet().to(get_torch_device_type()))
+    """
     return wrap_model_for_ddp(model)
 
 
 def wrap_with_fsdp(model, dtype: str = "bfloat16") -> FSDP:
+    """Wrap a model with FSDP using the given parameter dtype.
+
+    Args:
+        model: Model to wrap with FSDP.
+        dtype: Parameter dtype for mixed precision (e.g., ``\"bf16\"``).
+
+    Examples:
+        >>> fsdp_model = wrap_with_fsdp(MyNet().to(get_torch_device_type()), dtype="bf16")
+    """
     if get_rank() == 0:
         logger.info(f"Wrapping model model with FSDP + {dtype}")
     return FSDP(
@@ -630,6 +652,18 @@ def wrap_model(
     use_fsdp: Optional[bool] = True,
     dtype: str = "bfloat16",
 ) -> DistributedDataParallel | FSDP | torch.nn.Module:
+    """Wrap a model with DDP or FSDP depending on ``use_fsdp`` and world size.
+
+    Args:
+        model: Model to wrap.
+        use_fsdp: If True, prefer FSDP; otherwise use DDP.
+        dtype: Parameter dtype when using FSDP.
+
+    Examples:
+        >>> model = MyNet().to(get_torch_device_type())
+        >>> wrapped = wrap_model(model, use_fsdp=False)  # DDP
+        >>> wrapped_fsdp = wrap_model(model, use_fsdp=True, dtype="bf16")
+    """
     if (ws := ezpz.get_world_size()) <= 1:
         logger.warning(
             f"{'FSDP' if use_fsdp else 'DDP'} requested but world_size={ws} <= 1;"
@@ -810,7 +844,14 @@ def init_deepspeed(
 def get_device(
     type: Optional[str] = None, as_torch_device: Optional[bool] = None
 ) -> str | torch.device:
-    """Alias for `get_torch_device`."""
+    """Alias for `get_torch_device`.
+
+    Examples:
+        >>> get_device()
+        'cuda'
+        >>> get_device(as_torch_device=True)
+        device(type='cuda', index=0)
+    """
     return get_torch_device(device_type=type, as_torch_device=as_torch_device)
 
 
@@ -827,7 +868,10 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
             Possible values are "cpu", "mps", "xpu", or "cuda".
 
     Examples:
-        >>> get_torch_device_type()  # Returns the current device type as a string
+        >>> get_torch_device_type()  # returns 'cuda' if available
+        >>> os.environ["TORCH_DEVICE"] = "cpu"
+        >>> get_torch_device_type()
+        'cpu'
     """
     if device_type is not None:
         assert device_type in _SUPPORTED_DEVICE_TYPES
@@ -1000,6 +1044,11 @@ def run_ddp(fn: Callable, world_size: int) -> None:
     Args:
         fn (Callable): The function to run in DDP.
         world_size (int): The total number of processes to run.
+
+    Examples:
+        >>> def demo(rank, world_size):
+        ...     print(f\"hello from {rank}/{world_size}\")
+        >>> run_ddp(demo, world_size=2)
     """
     import torch.multiprocessing as mp
 
@@ -1174,18 +1223,17 @@ def broadcast(
 ) -> Any:
     """Broadcast ``obj`` from ``root`` to all ranks using MPI.
 
-    Parameters
-    ----------
-    obj:
-        The picklable payload to share.
-    root:
-        Rank that originates the value.
+    Args:
+        obj: Picklable payload to share.
+        root: Rank that originates the value.
 
-    Returns
-    -------
-    Any
-        The distributed payload.  If broadcasting fails we re-raise the
-        underlying exception after logging for easier debugging.
+    Returns:
+        The broadcast payload.
+
+    Examples:
+        >>> value = 42 if get_rank() == 0 else None
+        >>> shared = broadcast(value, root=0)
+        >>> assert shared == 42
     """
     try:
         return MPI.COMM_WORLD.bcast(obj, root=root)
@@ -1206,13 +1254,18 @@ def all_reduce(
 ) -> Any:
     """All-reduce ``obj`` across all ranks using MPI.
 
-    Parameters
-    ----------
-    obj:
-        The picklable payload to reduce.
-    op:
-        The MPI operation to use for reduction. Defaults to MPI.SUM.
-    implementation:
+    Args:
+        obj: Picklable payload to reduce.
+        op: Reduction operation; defaults to ``MPI.SUM``.
+        implementation: Override to ``\"torch\"`` to use torch.distributed.
+
+    Returns:
+        The reduced value.
+
+    Examples:
+        >>> loss = 1.0 + get_rank()
+        >>> total_loss = all_reduce(loss)  # sum across ranks
+        >>> mean_loss = all_reduce(loss, implementation="torch") / get_world_size()
     """
     if implementation is None or implementation.lower() == "mpi":
         op = MPI.SUM if op is None else op
@@ -1528,6 +1581,12 @@ def barrier(
     Returns:
         torch.distributed.Work | None: If async_op is True, returns a work handle.
             If async_op is False, returns None.
+
+    Examples:
+        >>> barrier()  # wait for all ranks
+        >>> handle = barrier(async_op=True)  # launch async and wait later
+        >>> if handle is not None:
+        ...     handle.wait()
     """
     try:
         # logger.warning(
@@ -1582,6 +1641,11 @@ def setup_torch(
 
     Returns:
         int: Rank of the process.
+
+    Examples:
+        >>> rank = setup_torch(backend="nccl", seed=123)
+        >>> if rank == 0:
+        ...     print("initialized")
     """
     device = get_torch_device()
     # if ACCELERATOR_TYPE == 'NvidiaGPU' and device == 'cuda':
@@ -2140,7 +2204,19 @@ def write_hostfile_from_list_of_hosts(
 
 
 def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
-    """Make a hostfile from the SLURM_NODELIST environment variable"""
+    """Make a hostfile from the SLURM_NODELIST environment variable.
+
+    Args:
+        outfile: Optional destination path for the generated hostfile.
+
+    Returns:
+        Path to the created hostfile.
+
+    Examples:
+        >>> # inside a SLURM allocation
+        >>> hostfile = make_hostfile_from_slurm_env()
+        >>> print(hostfile.read_text().splitlines())  # doctest: +SKIP
+    """
     nodes = os.environ.get("SLURM_NODELIST", None)
     # if nodes is not None:
     assert nodes is not None
@@ -2167,7 +2243,19 @@ def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
 
 
 def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
-    """Get the hostfile from the environment or create one if it doesn't exist"""
+    """Get the hostfile from the environment or create one if it doesn't exist.
+
+    Args:
+        hostfile: Optional explicit hostfile path.
+
+    Returns:
+        Path to a usable hostfile.
+
+    Examples:
+        >>> hostfile = get_hostfile_with_fallback()  # uses scheduler env or writes localhost
+        >>> Path(hostfile).exists()
+        True
+    """
     from ezpz.configs import get_scheduler
 
     scheduler = get_scheduler()
@@ -2222,7 +2310,15 @@ def get_hostfile_with_fallback(hostfile: Optional[PathLike] = None) -> Path:
 
 
 def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
-    """Get the number of nodes from the hostfile"""
+    """Get the number of nodes from the hostfile.
+
+    Args:
+        hostfile: Optional hostfile path to count nodes from.
+
+    Examples:
+        >>> get_num_nodes()  # counts lines in hostfile or SLURM env
+        1
+    """
     num_nodes = os.environ.get("SLURM_NNODES", None)
     if num_nodes is not None:
         return int(num_nodes)
@@ -2232,7 +2328,15 @@ def get_num_nodes(hostfile: Optional[PathLike] = None) -> int:
 
 
 def get_cpus_per_node() -> int:
-    """Get the number of CPUs per node"""
+    """Get the number of CPUs per node.
+
+    Returns:
+        Number of logical CPUs on the local node.
+
+    Examples:
+        >>> get_cpus_per_node() > 0
+        True
+    """
     from sh import getconf as sh_getconf  # type:ignore noqa
 
     return int(sh_getconf("_NPROCESSORS_ONLN").rstrip("\n"))
@@ -2302,7 +2406,15 @@ def get_device_properties(
 
 
 def get_gpus_per_node() -> int:
-    """Get the number of GPUs per node"""
+    """Get the number of GPUs per node.
+
+    Returns:
+        Number of visible GPU devices on the local node.
+
+    Examples:
+        >>> get_gpus_per_node()  # returns 0 on CPU-only machines
+        0
+    """
     # return torch.cuda.device_count() if torch.cuda.is_available() else (
     #     (
     #         ipex.xpu.device_count() if ipex is not None else (
