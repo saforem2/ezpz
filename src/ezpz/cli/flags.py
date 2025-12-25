@@ -222,7 +222,35 @@ def build_launch_parser(
     """Build the CLI argument parser for ``ezpz launch``."""
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Launch a command on the current PBS/SLURM job.",
+        description="Launch a command on the current PBS/SLURM job.\n"
+        "\n"
+        "Additional `<launcher flags>` can be passed through directly\n"
+        "to the launcher by including '--' as a separator before\n"
+        "the command.\n"
+        "\n"
+        "Examples:\n"
+        "\n"
+        "    ezpz launch <launcher flags> -- <command> <args>\n"
+        "\n"
+        "    ezpz launch -n 8 -ppn 4 --verbose --tag-output -- python3 -m ezpz.examples.fsdp_tp\n"
+        "\n"
+        "    ezpz launch --nproc 8 -x EZPZ_LOG_LEVEL=DEBUG -- python3 my_script.py --my-arg val\n"
+        if include_command
+        else "Launch a command on the current PBS/SLURM job.",
+        # ),
+        # description="\n".join(
+        #     [
+        #         "Launch a command on the current PBS/SLURM job.",
+        #         "",
+        #         "Additional `<launcher flags>` can be passed through directly",
+        #         "to the launcher by including '--' as a separator before ",
+        #         "the command.",
+        #         "Examples:",
+        #         "\t$ # ezpz launch <launcher flags> -- <command> <args>"
+        #         "\t$ ezpz launch --nproc 8 -x EZPZ_LOG_LEVEL=DEBUG -- python3 my_script.py --my-arg val",
+        #     ]
+        # )
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--print-source",
@@ -300,7 +328,9 @@ def build_doctor_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     return parser
 
 
-def build_generate_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
+def build_generate_parser(
+    *, prog: str | None = None
+) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz generate``."""
     parser = argparse.ArgumentParser(
         prog=prog,
