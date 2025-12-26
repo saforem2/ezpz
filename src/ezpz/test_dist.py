@@ -36,46 +36,29 @@ START_TIME = time.perf_counter()  # start time
 # noqa: E402
 warnings.filterwarnings("ignore")
 
-# WANDB_DISABLED = False
-# try:
-#     import wandb
-#
-# except Exception:
-#     wandb = None
-#     WANDB_DISABLED = True
-# ENABLE_WANDB = False
-# try:
-#     wandb = ezpz.lazy.lazy_import("wandb")
-#     if wandb.api.api_key is not None and not os.environ.get(
-#         "WANDB_DISABLED", False
-#     ):
-#         ENABLE_WANDB = True
-# except Exception:
-#     wandb = None
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
 
-try:
-    wandb = ezpz.lazy.lazy_import("wandb")
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-    if WANDB_DISABLED or WANDB_MODE == "disabled":
-        logger.warning(
-            f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
-        )
-
-    if wandb.api.api_key is None:
-        logger.warning("W&B API key not found, skipping wandb setup!")
-        logger.info(
-            "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-        )
-except Exception as e:
+WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+if not WANDB_DISABLED and WANDB_MODE != "disabled":
+    try:
+        wandb = ezpz.lazy.lazy_import("wandb")
+        if not ezpz.dist.verify_wandb():
+                logger.warning("W&B API key not found, skipping wandb setup!")
+                logger.info(
+                    "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
+                )
+    except Exception as e:
+        wandb = None
+        WANDB_DISABLED = True
+        logger.exception(e)
+        logger.warning("W&B not available, skipping wandb setup!")
+        logger.info("Continue without W&B logging...")
+else:
     wandb = None
     WANDB_DISABLED = True
-    logger.exception(e)
-    logger.warning("W&B not available, skipping wandb setup!")
-    logger.info("Continue without W&B logging...")
 
 
 @dataclass
@@ -219,8 +202,6 @@ class Trainer:
             ezpz.dist.barrier(group=ezpz.tp.get_context_parallel_group())
 
         if self.rank == 0 and not WANDB_DISABLED:
-            import wandb
-
             logger.debug("Setting up wandb")
             wbconfig = {}
             wbconfig |= asdict(self.config)
@@ -519,10 +500,6 @@ def train(
         wandb.log(timings)  # type:ignore
     except Exception:
         pass
-    # if not WANDB_DISABLED:
-    #     try:
-    # if wandb is not None and getattr(wandb, "run", None) is not None:
-    #     wandb.log(timings)
 
     return trainer
 
@@ -682,7 +659,7 @@ def main() -> Trainer:
     args = parse_args()
     config = get_config_from_args(args)
     timings = {}
-    rank = ezpz.setup_torch(  # noqa
+    _ = ezpz.setup_torch(  # noqa
         backend=config.backend,
         tensor_parallel_size=config.tp,
         pipeline_parallel_size=config.pp,
