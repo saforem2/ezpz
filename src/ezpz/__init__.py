@@ -14,6 +14,7 @@ from typing import Any, Dict
 from .__about__ import __version__  # re-exported symbol
 
 import socket
+
 if socket.getfqdn().startswith("x3"):
     from mpi4py import MPI  # noqa
     import torch  # noqa
@@ -81,7 +82,9 @@ def __getattr__(name: str) -> Any:  # pragma: no cover - exercised via tests
     if name in _LAZY_MODULES:
         module = _load_module(_LAZY_MODULES[name])
         if module is None:
-            raise AttributeError(f"Module {_LAZY_MODULES[name]!r} cannot be imported")
+            raise AttributeError(
+                f"Module {_LAZY_MODULES[name]!r} cannot be imported"
+            )
         globals()[name] = module
         return module
 
@@ -100,6 +103,22 @@ def __dir__() -> list[str]:  # pragma: no cover - trivial
     visible = set(__all__)
     visible.update(globals().keys())
     return sorted(visible)
+
+
+def try_import_wandb() -> object | None:
+    import os
+
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+    if not WANDB_DISABLED and WANDB_MODE != "disabled":
+        try:
+            import wandb
+        except Exception as e:
+            wandb = None
+    else:
+        wandb = None
+        WANDB_DISABLED = True
+    return wandb
 
 
 # Record the package version in the environment for compatibility with callers
