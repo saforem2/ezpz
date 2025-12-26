@@ -49,10 +49,12 @@ TORCH_DTYPES_MAP = {
 ENABLE_WANDB = False
 try:
     wandb = lazy_import("wandb")
-    if wandb.api.api_key is not None and not os.environ.get(
-        "WANDB_DISABLED", False
-    ):
-        ENABLE_WANDB = True
+    ENABLE_WANDB = verify_wandb()
+    # if verify_wandb():
+    # if wandb.api.api_key is not None and not os.environ.get(
+    #     "WANDB_DISABLED", False
+    # ):
+    #     ENABLE_WANDB = True
 except Exception:
     wandb = None
 
