@@ -1,37 +1,85 @@
-# 🚀 Launch
+# 🚀 `ezpz launch`
 
-> Launch python _from_ python.
+Single entry point for distributed jobs.
 
-## 📝 Example
+`ezpz` detects PBS/Slurm automatically and falls back to `mpirun`, forwarding
+useful environment variables so your script behaves the same on laptops and
+clusters.
 
-We provide below multiple (equivalent) commands that can be used to launch
-[`test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
-across _all_ available GPUs.
+Add your own args to any command (`--config`, `--batch-size`, etc.) and `ezpz`
+will propagate them through the detected launcher.
 
-1. Directly:
+Use the provided
 
-   ```bash
-   ezpz test
-   ```
+```bash
+ezpz launch <launch flags> -- <cmd> <cmd flags>
+```
 
-2. Using `ezpz launch` (preferred; `ezpz-launch` is a deprecated shim):
+to automatically launch `<cmd>` across all available[^schedulers]
+accelerators.
 
-   ```bash
-   ezpz launch -- python3 -m ezpz.test_dist
-   ```
+Use it to launch:
 
-3. As a module using `python3 -m`:
+- Arbitrary command(s):
 
-   ```bash
-   python3 -m ezpz.launch -- python3 -m ezpz.test_dist
-   ```
+    ```bash
+    ezpz launch hostname
+    ```
 
-   ```bash
-   # or, equivalently:
-   python3 -m ezpz.launch -- -m ezpz.test_dist
-   ```
+- Arbitrary Python string:
 
-   (will automatically insert `python3` before the second `-m`, if needed)
+    ```bash
+    ezpz launch python3 -c 'import ezpz; ezpz.setup_torch()'
+    ```
+
+- One of the ready-to-go examples:
+
+    ```bash
+    ezpz launch python3 -m ezpz.test_dist --profile
+    ezpz launch -n 8 -- python3 -m ezpz.examples.fsdp_tp --tp 4
+    ```
+
+- Your own distributed training script:
+
+    ```bash
+    ezpz launch -n 16 -ppn 8 -- python3 -m your_app.train --config configs/your_config.yaml
+    ```
+
+    to launch `your_app.train` across 16 processes, 8 per node.
+
+[^schedulers]: By default, this will detect if we're running behind a job
+    scheduler (e.g. PBS or Slurm).<br>
+    If so, we automatically determine the specifics of the currently active
+    job; explicitly, this will determine:
+
+    1. The number of available nodes
+    2. How many GPUs are present on each of these nodes
+    3. How many GPUs we have _total_
+
+    It will then use this information to automatically construct the
+    appropriate {`mpiexec`, `srun`} command to launch, and finally, execute the
+    launch cmd.
+
+## 📝 Ready-to-go Examples
+
+See [📝 Examples](../examples/index.md) for complete example scripts covering:
+
+1. [Use DDP + MNIST to train a MLP](../python/Code-Reference/test_dist.md)
+1. [Use FSDP + MNIST to train a CNN](../examples/index.md#train-mlp-with-ddp-on-mnist)
+1. [Use FSDP + MNIST to train a Vision Transformer](../examples/index.md#train-vit-with-fsdp-on-mnist)
+1. [Use FSDP + HF Datasets to train a Diffusion Language Model](../examples/index.md#train-diffusion-llm-with-fsdp-on-hf-datasets)
+1. [Use FSDP + HF Datasets + Tensor Parallelism to train a Llama style model](../examples/index.md#train-transformer-with-fsdp-and-tp-on-hf-datasets)
+1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](../examples/index.md#train-or-fine-tune-an-llm-with-fsdp-and-hf-trainer-on-hf-datasets)
+    - [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
+
+<!--
+[\[docs\]](../python/Code-Reference/examples/fsdp.md),
+[\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
+- [\[docs\]](../python/Code-Reference/examples/vit.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)
+- [\[docs\]](../python/Code-Reference/examples/diffusion.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
+- [\[docs\]](../python/Code-Reference/examples/fsdp_tp.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
+- [\[docs\]](../python/Code-Reference/examples/hf_trainer.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
+-->
 
 ## ⚙️ Execution Flow
 
@@ -62,7 +110,7 @@ sequenceDiagram
     CLI-->>User: exit code (0 on success)
 ```
 
-### Local `mpirun` Fallback
+<details closed><summary>Local `mpirun` Fallback</summary>
 
 ```mermaid
 sequenceDiagram
@@ -82,9 +130,46 @@ sequenceDiagram
     CLI-->>User: exit code
 ```
 
-## 💀 Deprecated (legacy shim)
+</details>
+
+
+<details closed><summary><h2>💀 Deprecated</h2></summary>
+
+> Launch python _from_ python.
 
 ### 📝 Example
+
+We provide below multiple (equivalent) commands that can be used to launch
+[`test_dist.py`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
+across _all_ available GPUs.
+
+1. Directly:
+
+   ```bash
+   ezpz test
+   ```
+
+2. Using `ezpz launch` (preferred; `ezpz-launch` is a deprecated shim):
+
+   ```bash
+   ezpz launch -- python3 -m ezpz.test_dist
+   ```
+
+3. As a module using `python3 -m`:
+
+   ```bash
+   python3 -m ezpz.launch -- python3 -m ezpz.test_dist
+   ```
+
+   ```bash
+   # or, equivalently:
+   python3 -m ezpz.launch -- -m ezpz.test_dist
+   ```
+
+   (will automatically insert `python3` before the second `-m`, if needed)
+
+
+#### 📝 Example
 
 ```bash {#launch-example}
 source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
@@ -135,7 +220,7 @@ sequenceDiagram
 
   </details>
 
-#### 🌌 Aurora
+##### 🌌 Aurora
 
 - Command:
 
@@ -380,7 +465,7 @@ sequenceDiagram
 
    </details>
 
-#### 🌠 Polaris
+###### 🌠 Polaris
 
 - Command:
 
@@ -633,5 +718,9 @@ sequenceDiagram
     user   11.50s
     sys    8.41s
     ```
+
+</details>
+
+</details>
 
 </details>

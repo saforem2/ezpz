@@ -232,7 +232,8 @@
   padding-inline-start: 5pt;
   color: var(--h1-fg-color);
   font-size: var(--h1-font-size);
-  background-color: var(--h1-bg-color);
+  background: linear-gradient(0.25turn, var(--h1-bg-color), rgba(0, 0, 0, 0));
+  /* background-color: var(--h1-bg-color); */
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   code {
@@ -244,9 +245,6 @@
   }
   &:hover {
     border: 1px solid var(--h1-fg-color);
-    /* ::before { */
-    /*     content: "# "; */
-    /* } */
   }
 }
 
@@ -259,7 +257,7 @@
   color: var(--h2-fg-color);
   font-size: var(--h2-font-size);
   padding-inline-start: 5pt;
-  background-color: var(--h2-bg-color);
+  background: linear-gradient(0.25turn, var(--h2-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   letter-spacing: -1pt;
@@ -269,9 +267,6 @@
   }
   &:hover {
     border: 1px solid var(--h2-fg-color);
-    /* ::before { */
-    /*     content: "## "; */
-    /* } */
   }
 }
 
@@ -286,7 +281,8 @@
   color: var(--h3-fg-color);
   font-size: var(--h3-font-size);
   padding-inline-start: 5pt;
-  background-color: var(--h3-bg-color);
+  /* background-color: var(--h3-bg-color); */
+  background: linear-gradient(0.25turn, var(--h3-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   code {
@@ -311,7 +307,8 @@
   padding-inline-start: 5pt;
   letter-spacing: -2%;
   font-weight: 400;
-  background-color: var(--h4-bg-color);
+  /* background-color: var(--h4-bg-color); */
+  background: linear-gradient(0.25turn, var(--h4-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   code {
@@ -336,7 +333,8 @@
   padding-inline-start: 5pt;
   color: var(--h5-fg-color);
   font-size: var(--h5-font-size);
-  background-color: var(--h5-bg-color);
+  /* background-color: var(--h5-bg-color); */
+  background: linear-gradient(0.25turn, var(--h5-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   code {
@@ -359,7 +357,8 @@
   padding-inline-start: 5pt;
   color: var(--h6-fg-color);
   font-size: var(--h6-font-size);
-  background-color: var(--h6-bg-color);
+  /* background-color: var(--h6-bg-color); */
+  background: linear-gradient(0.25turn, var(--h6-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
   border-radius: var(--link-border-radius);
   code {

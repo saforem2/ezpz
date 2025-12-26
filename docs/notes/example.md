@@ -12,7 +12,7 @@
      python3 -m pip install "git+https://github.com/saforem2/ezpz"
      ```
 
-1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](launch.md)):
+1. 🚀 Launch _any_ `*.py`[^module] **_from_** python (see [Launch](../cli/launch.md)):
 
      ```bash
      python3 -m ezpz.test
