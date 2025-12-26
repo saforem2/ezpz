@@ -46,10 +46,10 @@ if not WANDB_DISABLED and WANDB_MODE != "disabled":
     try:
         wandb = ezpz.lazy.lazy_import("wandb")
         if not ezpz.dist.verify_wandb():
-                logger.warning("W&B API key not found, skipping wandb setup!")
-                logger.info(
-                    "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-                )
+            logger.warning("W&B API key not found, skipping wandb setup!")
+            logger.info(
+                "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
+            )
     except Exception as e:
         wandb = None
         WANDB_DISABLED = True
@@ -346,6 +346,17 @@ class Trainer:
             env_info=env_info,
         )
         logger.info(f"{dataset=}")
+        if wandb is not None and not WANDB_DISABLED:
+            try:
+                wandb.log(
+                    {
+                        "train_metrics": wandb.Table(
+                            dataframe=dataset.to_dataframe()
+                        )
+                    }
+                )
+            except Exception:
+                pass
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -520,8 +531,6 @@ def parse_args() -> argparse.Namespace:
             )
             raise e
     return args
-
-
 
 
 def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
