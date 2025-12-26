@@ -32,6 +32,8 @@ Help output (``python3 -m ezpz.examples.fsdp --help``):
 """
 
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DistributedSampler, DataLoader
 import argparse
 import os
 from pathlib import Path
@@ -99,7 +101,13 @@ class Net(nn.Module):
         return output
 
 
-def train(model, train_loader, optimizer, epoch, sampler=None):
+def train(
+    model: nn.Module | DistributedDataParallel | FSDP,
+    train_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    sampler: DistributedSampler | None = None,
+) -> dict:
     """One epoch of training and loss aggregation across ranks.
 
     Args:
