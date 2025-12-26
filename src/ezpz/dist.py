@@ -17,7 +17,6 @@ from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Union
-# import argparse
 
 import rich
 import rich.text
@@ -47,14 +46,16 @@ TORCH_DTYPES_MAP = {
 }
 
 ENABLE_WANDB = False
+WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+WANDB_MODE = os.environ.get("WANDB_MODE", "online")
 try:
     wandb = lazy_import("wandb")
-    ENABLE_WANDB = verify_wandb()
-    # if verify_wandb():
-    # if wandb.api.api_key is not None and not os.environ.get(
-    #     "WANDB_DISABLED", False
-    # ):
-    #     ENABLE_WANDB = True
+    if (
+        wandb.api.api_key is not None
+        and not WANDB_DISABLED
+        and WANDB_MODE != "disabled"
+    ):
+        ENABLE_WANDB = True
 except Exception:
     wandb = None
 
@@ -65,7 +66,14 @@ except (ImportError, ModuleNotFoundError):
 
 
 if not os.environ.get(
-    "DUMB", os.environ.get("NOCOLOR", os.environ.get("NO_COLOR", False))
+    "DUMB",
+    os.environ.get(
+        "NOCOLOR",
+        os.environ.get(
+            "NO_COLOR",
+            False,
+        ),
+    ),
 ):
     os.environ["COLORTERM"] = "truecolor"
 
@@ -79,13 +87,6 @@ logging.getLogger("sh").setLevel("WARNING")
 
 ALREADY_PRINTED_DIST_SETUP = os.environ.get("ALREADY_PRINTED_DIST_SETUP", "0")
 ALREADY_PRINTED_HOSTS = os.environ.get("ALREADY_PRINTED_HOSTS", "0")
-
-# def try_import(module_name: str):
-#     try:
-#         return __import__(module_name)
-#     except Exception:
-#         logger.info(f"Unable to import '{module_name}', trying to continue")
-
 
 _SUPPORTED_DEVICE_TYPES = {"cpu", "cuda", "xpu", "mps"}
 _ENV_TORCH_DEVICE_LOGGED = False
@@ -2009,6 +2010,9 @@ def setup_wandb(
     wandb = ezpz.lazy.lazy_import("wandb")
 
     if not verify_wandb():
+        logging.warning(
+            "Unable to 'ezpz.dist.verify_wandb()', not initializing run"
+        )
         return None
 
     outdir = (
