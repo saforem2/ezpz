@@ -55,11 +55,11 @@ def main(args: Optional[List[str]] = None) -> int:
 
     fallback_cmd = ["mpirun", "-np", "2", *command]
     result = subprocess.run(fallback_cmd, check=False)
+    ezpz.cleanup()
     return result.returncode
 
 
 if __name__ == "__main__":
     t0 = time.perf_counter()
     main()
-    ezpz.cleanup()
     print(f"Took {time.perf_counter() - t0:.2f} seconds")
