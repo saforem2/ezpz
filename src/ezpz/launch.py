@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Optional
 
 import ezpz
-import ezpz.dist
 from ezpz.cli.flags import build_launch_parser
 
 logger = ezpz.get_logger(__name__)
@@ -162,7 +161,6 @@ def run_command(
                 or not any(f in line for f in filters)
             ):
                 print(line.rstrip())
-        ezpz.dist.cleanup()
     return process.returncode or 0
 
 
@@ -449,7 +447,6 @@ def launch(
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
-    # ezpz.dist.cleanup()
     logger.info(
         f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting."
     )
@@ -458,6 +455,7 @@ def launch(
 
 def run(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for launching commands with scheduler fallback."""
+    import ezpz.dist
 
     configure_warnings()
     argv = [] if argv is None else list(argv)
@@ -492,6 +490,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 filters=args.filter,
                 launcher_args=getattr(args, "launcher_args", []),
             )
+            ezpz.dist.cleanup()
             return 0
 
     requested_nproc = args.nproc if args.nproc > -1 else None
@@ -518,7 +517,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         " ".join(shlex.quote(part) for part in fallback_cmd),
     )
     result = subprocess.run(fallback_cmd, check=False)
-    # ezpz.dist.cleanup()
+    ezpz.dist.cleanup()
     return result.returncode
 
 
