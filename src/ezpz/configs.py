@@ -21,8 +21,7 @@ from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
 # import transformers
-from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
-from transformers.utils.versions import require_version
+# from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 
 log = logging.getLogger(__name__)
 
@@ -54,10 +53,10 @@ QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 # OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
-CAUSAL_LM_MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())  # type:ignore
-CAUSAL_LM_MODEL_TYPES = tuple(
-    getattr(conf, "model_type", "") for conf in CAUSAL_LM_MODEL_CONFIG_CLASSES
-)
+# CAUSAL_LM_MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())  # type:ignore
+# CAUSAL_LM_MODEL_TYPES = tuple(
+#     getattr(conf, "model_type", "") for conf in CAUSAL_LM_MODEL_CONFIG_CLASSES
+# )
 
 
 FRAMEWORKS = {
@@ -511,7 +510,7 @@ class HfModelArguments:
         default=None,
         metadata={
             "help": "If training from scratch, pass a model type from the list: "
-            + ", ".join(CAUSAL_LM_MODEL_TYPES)
+            + ", ".join("https://huggingface.co/docs/transformers/en/models")
         },
     )
     config_overrides: Optional[str] = field(
@@ -718,6 +717,7 @@ class HfDataTrainingArguments:
 
     def __post_init__(self):
         """Validate dataset arguments and ensure required files are present."""
+        from transformers.utils.versions import require_version
         if self.streaming:
             require_version(
                 "datasets>=2.0.0",
