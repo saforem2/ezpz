@@ -94,8 +94,6 @@ class TestUtilsFunctions(unittest.TestCase):
         utils.os = MagicMock()
         utils.re = MagicMock()
         utils.logging = MagicMock()
-        utils.DummyMPI = MagicMock()
-        utils.DummyTorch = MagicMock()
         utils.ModelStatistics = MagicMock()
         utils.xr = MagicMock()
         utils.np = MagicMock()
