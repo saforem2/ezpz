@@ -21,3 +21,6 @@
 - Use `ty` for type checking
 - Use `pytest` for testing
 
+## Documentation style
+
+- Use Google-style docstrings consistently across the codebase.
