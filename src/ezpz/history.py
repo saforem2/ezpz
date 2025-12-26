@@ -2305,6 +2305,20 @@ class History:
                 )
             )
         )
+        if (
+            ENABLE_WANDB
+            and dataset is not None
+            and wandb is not None
+            and wandb.run is not None
+        ):
+            dset_name = f"{fname}_dataset" if fname != "dataset" else fname
+            try:
+                wandb.log(
+                    {f"{dset_name}": wandb.Table(dataset.to_dataframe())}
+                )
+            except Exception:
+                logger.warning("Unable to save dataset to W&B, skipping!")
+
         return save_dataset(
             dataset,
             outdir=outdir,
