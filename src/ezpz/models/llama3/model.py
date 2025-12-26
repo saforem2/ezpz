@@ -250,7 +250,7 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Forward pass of the attention module.
 
@@ -379,7 +379,7 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Perform a forward pass through the TransformerBlock.
 
@@ -490,7 +490,7 @@ class Transformer(nn.Module, ModelProtocol):
         self,
         tokens: torch.Tensor,
         input_batch: torch.Tensor | None = None,
-    ):
+    ) -> torch.Tensor:
         """
         Perform a forward pass through the Transformer model.
 
