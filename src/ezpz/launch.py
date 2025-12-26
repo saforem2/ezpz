@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import ezpz
+import ezpz.dist
 from ezpz.cli.flags import build_launch_parser
 
 logger = ezpz.get_logger(__name__)
@@ -161,6 +162,7 @@ def run_command(
                 or not any(f in line for f in filters)
             ):
                 print(line.rstrip())
+        ezpz.dist.cleanup()
     return process.returncode or 0
 
 
@@ -344,7 +346,9 @@ def build_executable(
         else launch_cmd
     )
     cmd_to_launch = (
-        get_command_to_launch_from_argv() if cmd_to_launch is None else cmd_to_launch
+        get_command_to_launch_from_argv()
+        if cmd_to_launch is None
+        else cmd_to_launch
     )
     cmd_to_launch_list: list[str] = (
         shlex.split(cmd_to_launch)
@@ -401,7 +405,9 @@ def launch(
         selected_hostfile = Path(hostfile).expanduser()
     else:
         selected_hostfile = (
-            Path(active_hostfile).expanduser() if active_hostfile is not None else None
+            Path(active_hostfile).expanduser()
+            if active_hostfile is not None
+            else None
         )
     if selected_hostfile is not None and not selected_hostfile.exists():
         logger.warning(
@@ -426,7 +432,9 @@ def launch(
     cmd_str = shlex.join([f"{i}" for i in cmd_list])
     cmd = shlex.split(cmd_str)
 
-    logger.info(f"Took: {time.perf_counter() - start:.2f} seconds to build command.")
+    logger.info(
+        f"Took: {time.perf_counter() - start:.2f} seconds to build command."
+    )
     logger.info("Executing:\n" + "\n  ".join([f"{i}" for i in cmd_list]))
     t0 = time.perf_counter()
 
@@ -441,13 +449,15 @@ def launch(
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting.")
+    # ezpz.dist.cleanup()
+    logger.info(
+        f"Took {time.perf_counter() - t0:.2f} seconds to run. Exiting."
+    )
     return retcode
 
 
 def run(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for launching commands with scheduler fallback."""
-    import ezpz.dist
 
     configure_warnings()
     argv = [] if argv is None else list(argv)
@@ -458,7 +468,9 @@ def run(argv: Sequence[str] | None = None) -> int:
             from importlib import import_module
 
             launch_cli_mod = import_module("ezpz.cli.launch_cmd")
-            source_path = Path(getattr(launch_cli_mod, "__file__", "")).resolve()
+            source_path = Path(
+                getattr(launch_cli_mod, "__file__", "")
+            ).resolve()
             print(source_path)
             return 0
         raise SystemExit("No command provided to ezpz launch")
@@ -473,12 +485,13 @@ def run(argv: Sequence[str] | None = None) -> int:
                 include_python=False,
                 ngpus=args.nproc if args.nproc > -1 else None,
                 nhosts=args.nhosts if args.nhosts > -1 else None,
-                ngpu_per_host=args.nproc_per_node if args.nproc_per_node > -1 else None,
+                ngpu_per_host=args.nproc_per_node
+                if args.nproc_per_node > -1
+                else None,
                 hostfile=args.hostfile,
                 filters=args.filter,
                 launcher_args=getattr(args, "launcher_args", []),
             )
-            ezpz.dist.cleanup()
             return 0
 
     requested_nproc = args.nproc if args.nproc > -1 else None
@@ -505,7 +518,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         " ".join(shlex.quote(part) for part in fallback_cmd),
     )
     result = subprocess.run(fallback_cmd, check=False)
-    ezpz.dist.cleanup()
+    # ezpz.dist.cleanup()
     return result.returncode
 
 
