@@ -11,31 +11,31 @@ across _all_ available GPUs.
 1. Directly:
 
    ```bash
-   ezpz-test
+   ezpz test
    ```
 
-2. Using `ezpz-launch`:
+2. Using `ezpz launch` (preferred; `ezpz-launch` is a deprecated shim):
 
    ```bash
-   ezpz-launch python3 -m ezpz.test_dist
+   ezpz launch -- python3 -m ezpz.test_dist
    ```
 
 3. As a module using `python3 -m`:
 
    ```bash
-   python3 -m ezpz.launch python3 -m ezpz.test_dist
+   python3 -m ezpz.launch -- python3 -m ezpz.test_dist
    ```
 
    ```bash
    # or, equivalently:
-   python3 -m ezpz.launch -m ezpz.test_dist
+   python3 -m ezpz.launch -- -m ezpz.test_dist
    ```
 
    (will automatically insert `python3` before the second `-m`, if needed)
 
 ## ⚙️ Execution Flow
 
-Two primary control paths drive `ezpz-launch`: a scheduler-aware path used when
+Two primary control paths drive `ezpz launch`: a scheduler-aware path used when
 running inside PBS/SLURM allocations, and a local fallback that shells out to
 `mpirun` when no scheduler metadata is available.
 
@@ -45,12 +45,12 @@ running inside PBS/SLURM allocations, and a local fallback that shells out to
 sequenceDiagram
     autonumber
     participant User
-    participant CLI as ezpz-launch
+    participant CLI as ezpz launch
     participant Scheduler
     participant Launch as ezpz.launch.launch
     participant Nodes as Compute Nodes
 
-    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    User->>CLI: ezpz launch -- python3 -m ezpz.test_dist
     CLI->>Scheduler: get_scheduler()
     Scheduler-->>CLI: "pbs" / "slurm"
     CLI->>Scheduler: get_active_jobid()
@@ -68,11 +68,11 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant User
-    participant CLI as ezpz-launch
+    participant CLI as ezpz launch
     participant Scheduler
     participant MPI as mpirun
 
-    User->>CLI: ezpz-launch python3 -m ezpz.test_dist
+    User->>CLI: ezpz launch -- python3 -m ezpz.test_dist
     CLI->>Scheduler: get_scheduler()
     Scheduler-->>CLI: "unknown"
     CLI->>Scheduler: get_active_jobid()
@@ -82,14 +82,14 @@ sequenceDiagram
     CLI-->>User: exit code
 ```
 
-## 💀 Deprecated
+## 💀 Deprecated (legacy shim)
 
 ### 📝 Example
 
 ```bash {#launch-example}
 source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
 python3 -m pip install "git+https://github.com/saforem2/ezpz"
-ezpz-launch -m ezpz.test_dist
+ezpz launch -- -m ezpz.test_dist
 ```
 
 This will _launch_

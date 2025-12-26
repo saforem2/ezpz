@@ -27,7 +27,7 @@ object with **_any_**[^any] (compatible) combination of
 > uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
 >
 > # launch ezpz.examples.hf_trainer
-> ezpz-launch python3 -m ezpz.examples.hf_trainer \
+> ezpz launch -- python3 -m ezpz.examples.hf_trainer \
 >    --streaming \
 >    --dataset_name=stanfordnlp/imdb \
 >    --tokenizer_name meta-llama/Llama-3.2-1B \

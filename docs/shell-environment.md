@@ -1,5 +1,184 @@
 # 🏖️ Shell Environment
 
+## Using an existing python environment
+
+> [!TIP]
+> If you already have a python environment with {`torch`, and `mpi4py`} then
+> you're all set!
+>
+> Try a simple example without installing anything:
+>
+> ```bash
+> uv run --with "git+https://github.com/saforem2/ezpz" ezpz test
+> ```
+
+In this case, the following section is _technically_ optional
+but may still be useful.
+
+## Using `ezpz/bin/utils.sh`
+
+The
+[`ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)
+script provides a collection of bash functions, all prefixed with `ezpz_`.
+
+To source it in the current shell session (requires network access):
+
+```bash
+source <(curl -fsSL https://bit.ly/ezpz-utils)
+ezpz_setup_env
+```
+
+<details><summary>List of provided functions:</summary>
+
+To see the complete list of provided functions, you can:
+
+```bash
+$ functions | egrep "ezpz.+\(" | awk '{print $1}' | pbc
+_ezpz_install_from_git
+_ezpz_setup_conda_polaris
+ezpz_activate_or_create_micromamba_env
+ezpz_build_bdist_wheel_from_github_repo
+ezpz_check_and_kill_if_running
+ezpz_check_if_already_built
+ezpz_check_working_dir
+ezpz_check_working_dir_pbs
+ezpz_check_working_dir_slurm
+ezpz_ensure_micromamba_hook
+ezpz_ensure_uv
+ezpz_generate_cpu_ranges
+ezpz_get_cpu_bind_aurora
+ezpz_get_dist_launch_cmd
+ezpz_get_job_env
+ezpz_get_jobenv_file
+ezpz_get_jobid_from_hostname
+ezpz_get_machine_name
+ezpz_get_num_gpus_nvidia
+ezpz_get_num_gpus_per_host
+ezpz_get_num_gpus_total
+ezpz_get_num_hosts
+ezpz_get_num_xpus
+ezpz_get_pbs_env
+log_message
+ezpz_get_pbs_jobid
+ezpz_get_pbs_jobid_from_nodefile
+ezpz_get_pbs_nodefile_from_hostname
+ezpz_get_python_prefix_nersc
+ezpz_get_python_root
+ezpz_get_scheduler_type
+ezpz_get_shell_name
+ezpz_get_slurm_env
+ezpz_get_slurm_running_jobid
+ezpz_get_slurm_running_nodelist
+ezpz_get_tstamp
+ezpz_get_venv_dir
+ezpz_get_working_dir
+ezpz_getjobenv_main
+ezpz_has
+ezpz_head_n_from_pbs_nodefile
+ezpz_install
+ezpz_install_and_setup_micromamba
+ezpz_install_micromamba
+ezpz_install_uv
+ezpz_is_sourced
+ezpz_kill_mpi
+ezpz_launch
+ezpz_load_new_pt_modules_aurora
+ezpz_load_python_modules_nersc
+ezpz_make_slurm_nodefile
+ezpz_parse_hostfile
+ezpz_prepare_repo_in_build_dir
+ezpz_print_hosts
+ezpz_print_job_env
+ezpz_qsme_running
+ezpz_realpath
+ezpz_require_file
+ezpz_reset
+ezpz_reset_pbs_vars
+ezpz_save_deepspeed_env
+ezpz_save_dotenv
+ezpz_save_ds_env
+ezpz_save_pbs_env
+ezpz_save_slurm_env
+ezpz_savejobenv_main
+ezpz_set_proxy_alcf
+ezpz_setup_alcf
+ezpz_setup_conda
+ezpz_setup_conda_aurora
+ezpz_setup_conda_frontier
+ezpz_setup_conda_perlmutter
+ezpz_setup_conda_polaris
+ezpz_setup_conda_sirius
+ezpz_setup_conda_sophia
+ezpz_setup_conda_sunspot
+ezpz_setup_env
+ezpz_setup_env_pt28_aurora
+ezpz_setup_env_pt29_aurora
+ezpz_setup_host
+ezpz_setup_host_pbs
+ezpz_setup_host_slurm
+ezpz_setup_install
+ezpz_setup_job
+ezpz_setup_job_alcf
+ezpz_setup_job_slurm
+ezpz_setup_new_uv_venv
+ezpz_setup_python
+ezpz_setup_python_alcf
+ezpz_setup_python_nersc
+ezpz_setup_python_pt28_aurora
+ezpz_setup_python_pt29_aurora
+ezpz_setup_python_pt_new_aurora
+ezpz_setup_srun
+ezpz_setup_uv_venv
+ezpz_setup_venv_from_conda
+ezpz_setup_venv_from_pythonuserbase
+ezpz_show_env
+ezpz_tail_n_from_pbs_nodefile
+ezpz_timeit
+ezpz_write_job_info
+ezpz_write_job_info_slurm
+```
+
+</details>
+
+These are useful if you're running at one of the DOE leadership computing
+facilities (e.g. ALCF, OLCF, NERSC, ...) and can be used to:
+
+1. Load appropriate modules for setting up Python
+   (e.g. `module load frameworks` on Aurora or
+    `module load pytorch` on Perlmutter)
+1. Creating and activating virtual environments. Explicitly, it will:
+   - Activate existing environment if found
+   - Automagically create a new environment (inheriting system libraries if
+     found) if needed
+
+   ```bash
+   ezpz_setup_python
+   ```
+
+
+1. Identify the machine we're running on
+   - e.g. are we at one of: ALCF, OLCF, NERSC, ...?  
+     If so, we:
+       - Load appropriate modules which provide a base python environment
+       - Build and activate a virtual environment _on top of_ this base
+         environment in your working directory
+
+Especially if any of the following applies to you:
+
+1. You use virtual environments (or _conda_ or _pixi_ environments)
+2. You work on multiple different projects, each with unique dependencies.
+3. You are working on a system behind a job scheduler, such as {Slurm, PBS}.
+
+However, there are some convenient bash functions that can be used to make life
+a bit simpler, especially if you're:
+
+1. [src/ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)
+
+   ```bash
+   source <(curl -fsSL https://bit.ly/ezpz-utils)
+   ```
+
+
 ## 🐣 Getting Started
 
 /// warning | 🚧 Work in Progress
@@ -9,23 +188,21 @@ _Please_ feel free to provide input / suggest changes !
 
 ///
 
-<!-- /// note -->
+/// note
 
-> [!NOTE]
->
-> 1. Source the [`src/ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh) file:
->
->    ```bash
->    source <(curl -L https://bit.ly/ezpz-utils)
->    ```
->
-> 2. Use the `ezpz_setup_env` function to set up your environment:
->
->    ```bash
->    ezpz_setup_env
->    ```
+1. Source the [`src/ezpz/bin/utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh) file:
 
-<!-- /// -->
+   ```bash
+   source <(curl -L https://bit.ly/ezpz-utils)
+   ```
+
+2. Use the `ezpz_setup_env` function to set up your environment:
+
+   ```bash
+    ezpz_setup_env
+   ```
+
+///
 
 This will 🪄 _automagically_:
 
