@@ -704,6 +704,7 @@ def main() -> Trainer:
             wandb.log(data=timings)
         except Exception:
             logger.warning("Failed to log timings to wandb")
+        logger.info(f"{wandb.run.url=}")
     return trainer
 
 
