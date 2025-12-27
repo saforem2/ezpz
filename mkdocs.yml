@@ -203,6 +203,8 @@ nav:
       - 🩺 Doctor: cli/doctor.md
       - ✅ Test: cli/test.md
       - 🚀 Launch: cli/launch.md
+      - ✍️ Generate: cli/generate.md
+      - 🖥️ Generate TUI: cli/generate-tui.md
   - 📓 Notes:
       - notes/index.md
       - 🏗️ Architecture: notes/architecture.md

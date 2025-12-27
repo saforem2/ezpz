@@ -9,6 +9,8 @@ Explicitly, these are:
 ezpz doctor  # environment validation and health-check
 ezpz test    # distributed smoke test
 ezpz launch  # general purpose, scheduler-aware launching
+ezpz-generate      # interactive text generation (experimental)
+ezpz-generate-tui  # Textual UI for generation (experimental)
 ```
 
 To see the list of available commands, run:
@@ -16,4 +18,3 @@ To see the list of available commands, run:
 ```bash
 ezpz --help
 ```
-
