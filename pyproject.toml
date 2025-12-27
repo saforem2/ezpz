@@ -6,10 +6,9 @@ build-backend = "hatchling.build"
 name = "ezpz"
 dynamic = ["version"]
 dependencies = [
-    # "accelerate",
     "ambivalent @ git+https://github.com/saforem2/ambivalent",
+    "click",
     "evaluate",
-    # "h5py",
     "hydra-core",
     "ipython",
     "numpy",
@@ -19,11 +18,13 @@ dependencies = [
     "rich",
     "seaborn",
     "sh",
-    "tiktoken",
     "torchinfo",
     "transformers>=4.50.1",
     "wandb",
     "xarray",
+    # "accelerate",
+    # "h5py",
+    # "tiktoken",
 ]
 requires-python = ">=3.10"
 classifiers = [
@@ -38,37 +39,21 @@ authors = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 
 [project.scripts]
-ezpz-test = "ezpz.test:main"
-ezpz-launch = "ezpz.launch:main"
+ezpz = "ezpz.cli:main"
+ezpz-test = "ezpz.cli.test_cmd:main"
+ezpz-launch = "ezpz.cli.launch_cmd:main"
 ezpz-yeet-env = "ezpz.utils.yeet_env:main"
 ezpz-tar-env = "ezpz.utils.tar_env:main"
+ezpz-doctor = "ezpz.doctor:main"
+ezpz-generate = "ezpz.examples.generate:main"
+ezpz-generate-tui = "ezpz.examples.generate_tui:main"
 
 [project.optional-dependencies]
-xpu = [
-    "torch>=2.7.0",
-    "torchvision>=0.22.0",
-    "pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'",
-]
-torch = ["mpi4py", "torch"]
-cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
-cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
-dev = [
-    "pyink",
-    "bpython",
-    "ipython",
-    "ipython",
-    "isort",
-    "jupyter",
-    "ptipython",
-    "pudb",
-    "pynvim",
-    "pyright",
-    "ruff",
-    "ruff-lsp",
-    "tensorboard",
-    # "hydra-colorlog",
-    # "tensorboard",
-]
+vit = ["timm"]
+mpi = ["mpi4py"]
+# xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
+xpu = ["pytorch-triton-xpu"]
+torch = ["torch", "torchvision"]
 docs = [
     "mkdocs",
     "mkdocstrings",
@@ -79,9 +64,23 @@ docs = [
     "mkdocs-glightbox",
     "pymdown-extensions",
 ]
-
-[dependency-groups]
-dev = ["ty>=0.0.1a8"]
+dev = [
+    "ty>=0.0.1a8",
+    "pyink",
+    "bpython",
+    "ipython",
+    "isort",
+    "jupyter",
+    "ptipython",
+    "pudb",
+    "pynvim",
+    "pyright",
+    "ruff",
+    "tensorboard",
+    # "hydra-colorlog",
+    # "tensorboard",
+    "pytest>=9.0.2",
+]
 
 [project.urls]
 Documentation = "https://saforem2.github.io/ezpz"
@@ -104,18 +103,12 @@ allow-direct-references = true
 # packages = ["src/ezpz"]
 
 [tool.hatch.envs.default]
-dependencies = [
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "numpy",
-    "torch"
-]
+dependencies = ["pytest", "pytest-cov", "pytest-mock", "numpy"]
 
 [tool.hatch.envs.default.scripts]
 test = "pytest tests/"
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/ezpz --cov=tests"
-no-cov = "cov --no-cov"
+no-cov = "pytest tests/"
 
 [[tool.hatch.envs.test.matrix]]
 python = ["310", "311", "312"]
@@ -123,7 +116,7 @@ python = ["310", "311", "312"]
 [tool.coverage.run]
 branch = true
 parallel = true
-omit = ["ezpz/__about__.py"]
+omit = ["src/ezpz/__about__.py"]
 
 [tool.coverage.report]
 

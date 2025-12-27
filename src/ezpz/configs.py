@@ -21,8 +21,7 @@ from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
 # import transformers
-from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
-from transformers.utils.versions import require_version
+# from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 
 log = logging.getLogger(__name__)
 
@@ -54,10 +53,10 @@ QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 # OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
-CAUSAL_LM_MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())  # type:ignore
-CAUSAL_LM_MODEL_TYPES = tuple(
-    getattr(conf, "model_type", "") for conf in CAUSAL_LM_MODEL_CONFIG_CLASSES
-)
+# CAUSAL_LM_MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())  # type:ignore
+# CAUSAL_LM_MODEL_TYPES = tuple(
+#     getattr(conf, "model_type", "") for conf in CAUSAL_LM_MODEL_CONFIG_CLASSES
+# )
 
 
 FRAMEWORKS = {
@@ -104,9 +103,12 @@ def cmd_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def get_scheduler() -> str:
+def get_scheduler(_scheduler: Optional[str] = None) -> str:
     """Infer the active scheduler from environment variables or hostname."""
     from ezpz import get_hostname, get_machine
+    if _scheduler is not None:
+        log.info(f"Using user-specified scheduler: {_scheduler}")
+        return _scheduler.upper()
 
     if os.environ.get("PBS_JOBID"):
         return "PBS"
@@ -508,7 +510,7 @@ class HfModelArguments:
         default=None,
         metadata={
             "help": "If training from scratch, pass a model type from the list: "
-            + ", ".join(CAUSAL_LM_MODEL_TYPES)
+            + ", ".join("https://huggingface.co/docs/transformers/en/models")
         },
     )
     config_overrides: Optional[str] = field(
@@ -715,6 +717,7 @@ class HfDataTrainingArguments:
 
     def __post_init__(self):
         """Validate dataset arguments and ensure required files are present."""
+        from transformers.utils.versions import require_version
         if self.streaming:
             require_version(
                 "datasets>=2.0.0",
@@ -857,7 +860,9 @@ class TrainArgs:
     dtype: str
     compile: bool
     attn_type: str
+    warmup: int | float
     num_workers: int
     max_iters: int
+    fsdp: Optional[bool] = False
     format: Optional[str] = field(default_factory=str)
     cuda_sdpa_backend: Optional[str] = field(default_factory=str)

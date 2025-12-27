@@ -1,3 +1,14 @@
+"""DeepSpeed TP training script for instruction tuning (Hugging Face Trainer).
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.deepspeed.tp.train --model_name_or_path facebook/opt-125m
+
+Argparse help is available once optional dependencies (transformers/deepspeed/openai) are installed:
+
+    python3 -m ezpz.examples.deepspeed.tp.train --help
+"""
+
 #    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,6 +78,8 @@ PROMPT_DICT = {
 
 @dataclass
 class HfTrainingArguments(TrainingArguments):
+    """Training arguments with model max length and optimizer choice."""
+
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=512,
@@ -156,6 +169,7 @@ class SupervisedDataset(Dataset):
     def __init__(
         self, data_path: str, tokenizer: transformers.PreTrainedTokenizer
     ):
+        """Load JSON data and tokenize prompts/targets."""
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
         list_data_dict = jload(data_path)
@@ -197,9 +211,11 @@ class SupervisedDataset(Dataset):
         self.labels = data_dict["labels"]
 
     def __len__(self):
+        """Return dataset size."""
         return len(self.input_ids)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        """Return one tokenized example."""
         return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 
@@ -210,6 +226,7 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        """Pad and batch token/label tensors."""
         input_ids, labels = tuple(
             [instance[key] for instance in instances]
             for key in ("input_ids", "labels")
@@ -245,6 +262,7 @@ def make_supervised_data_module(
 
 
 def train():
+    """Run supervised HF Trainer fine-tuning with DeepSpeed tensor parallel."""
     parser = HfArgumentParser(
         (HfModelArguments, HfDataTrainingArguments, HfTrainingArguments)  # type:ignore
     )
@@ -286,6 +304,7 @@ def train():
     from transformers import TrainerCallback
 
     def see_memory_usage(message, force=False):
+        """Log GPU/CPU memory usage for debugging."""
         import deepspeed.comm as dist
         import gc, psutil
 
@@ -316,7 +335,9 @@ def train():
         get_accelerator().reset_peak_memory_stats()
 
     class MemoryCallback(TrainerCallback):
+        """Callback to log memory usage after each training step."""
         def on_step_end(self, args, state, control, **kwargs):
+            """Emit memory metrics after each training step."""
             see_memory_usage("After step end", force=True)
 
     data_module = make_supervised_data_module(

@@ -1,3 +1,14 @@
+"""DeepSpeed TP training script that pads sequences to max_length for benchmarking.
+
+Launch with:
+
+    ezpz launch -m ezpz.examples.deepspeed.tp.train_batch_length --model_name_or_path facebook/opt-125m
+
+Argparse help is available once optional dependencies (transformers/deepspeed) are installed:
+
+    python3 -m ezpz.examples.deepspeed.tp.train_batch_length --help
+"""
+
 #    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,11 +57,15 @@ PROMPT_DICT = {
 
 @dataclass
 class ModelArguments:
+    """Model loading arguments for HF/DeepSpeed training."""
+
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
 
 
 @dataclass
 class DataArguments:
+    """Data path configuration for supervised training."""
+
     data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}
     )
@@ -58,6 +73,8 @@ class DataArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    """Extended training arguments with padding/max length controls."""
+
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
@@ -154,6 +171,7 @@ class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
+        """Load, tokenize, and cache dataset for instruction tuning."""
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
         list_data_dict = utils.jload(data_path)
@@ -193,9 +211,11 @@ class SupervisedDataset(Dataset):
         self.labels = data_dict["labels"]
 
     def __len__(self):
+        """Return dataset size."""
         return len(self.input_ids)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        """Return one tokenized example."""
         return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 
@@ -206,6 +226,7 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        """Pad and batch token/label tensors."""
         input_ids, labels = tuple(
             [instance[key] for instance in instances] for key in ("input_ids", "labels")
         )
@@ -236,6 +257,7 @@ def make_supervised_data_module(
 
 
 def train():
+    """Run supervised causal LM fine-tuning with DeepSpeed/transformers."""
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
@@ -271,6 +293,7 @@ def train():
     from transformers import TrainerCallback
 
     def see_memory_usage(message, force=False):
+        """Log GPU/CPU memory usage for debugging."""
         import deepspeed.comm as dist
         import gc, psutil
 
@@ -301,8 +324,10 @@ def train():
         get_accelerator().reset_peak_memory_stats()
 
     class MemoryCallback(TrainerCallback):
+        """Callback to log memory usage after each training step."""
 
         def on_step_end(self, args, state, control, **kwargs):
+            """Emit memory metrics after each training step."""
             see_memory_usage("After step end", force=True)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)

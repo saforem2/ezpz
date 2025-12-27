@@ -30,6 +30,7 @@ theme:
     - navigation.indexes
     - navigation.path
     - search.highlight
+    - navigation.prune
     - toc.follow
   palette:
     # Palette toggle for light mode
@@ -115,7 +116,7 @@ extra_css:
   - stylesheets/one-light.css
   - stylesheets/atom-one-dark-reasonable.css
   - stylesheets/custom.css
-  - stylesheets/fonts.css
+  - overrides/fonts.css
   # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css
   - https://iosevka-webfonts.github.io/iosevka/Iosevka.css
   - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css
@@ -139,6 +140,7 @@ extra_javascript:
   # - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0/katex.min.js
   # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js
   # - javascripts/config.js
+  - javascripts/mermaid-init.js
 
 markdown_extensions:
   # Python Markdown
@@ -175,7 +177,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:mermaid2.fence_mermaid_custom
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
   - pymdownx.arithmatex:
       generic: true
@@ -192,60 +194,161 @@ markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
       clickable_checkbox: true
-
 nav:
-  - Home: index.md
-  - FAQ: faq.md
-  - Guides:
-      - 🚀 Launch: launch.md
-      - 🤗 HF Trainer: hf-trainer.md
-      - 🧤 Hands-On Slides: slides-2025-05-07.md
-      - 🏖️ Shell Environment: shell-environment.md
-      - 🛠️ Development Workflow: development-workflow.md
-      - 🧪 Example Walkthrough: example.md
-      - 🧵 Style Guide: style-guide.md
-      - 📦 Yeet Environment: utils/yeet-env.md
-  - 🧪 Tests:
-      - tests/index.md
-      - Simple Harness: tests/simple-test.md
-      - Comprehensive Harness: tests/comprehensive-test.md
-      - Simple Runner: tests/simple-test-runner.md
-      - Configs: tests/test-configs.md
-      - Configs (Improved): tests/test-configs-improved.md
-      - Dist: tests/test-dist.md
-      - ezpz Package: tests/test-ezpz.md
-      - History: tests/test-history.md
-      - Jobs: tests/test-jobs.md
-      - Launch: tests/test-launch.md
-      - Lazy Imports: tests/test-lazy.md
-      - Logging: tests/test-log.md
-      - Modules Directly: tests/test-modules-directly.md
-      - Property-Based Utils: tests/test-property-based.md
-      - Profile: tests/test-profile.md
-      - Simple ezpz: tests/test-simple-ezpz.md
-      - Tensor Parallel: tests/test-tp.md
-      - Terminal Plotting: tests/test-tplot.md
-      - Utils: tests/test-utils.md
-      - Utils (Improved): tests/test-utils-improved.md
-  - 🐍 Python API:
-      - Code-Reference/index.md
-      - "<code>ezpz.__init__</code>": Code-Reference/init-reference.md
-      - "<code>ezpz.configs</code>": Code-Reference/config-reference.md
-      - "<code>ezpz.dist</code>": Code-Reference/dist-reference.md
-      - "<code>ezpz.jobs</code>": Code-Reference/jobs-reference.md
-      - "<code>ezpz.launch</code>": Code-Reference/launch-reference.md
-      - "<code>ezpz.log</code>": Code-Reference/log-reference.md
-      - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
-      - "<code>ezpz.hf_trainer</code>": Code-Reference/hf-trainer-reference.md
-      - "<code>ezpz.history</code>": Code-Reference/history-reference.md
-      - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
-      - "<code>ezpz.test</code>": Code-Reference/test-reference.md
-      - "<code>ezpz.tp.__init__</code>": Code-Reference/tp-init-reference.md
-      - "<code>ezpz.utils</code>": Code-Reference/utils-reference.md
-  - 📓 Notes & References:
-      - notes.md
-      - 🕸️ Parallelism: parallelism.md
-      - 🗓️ PBS: pbs.md
-      - 🐍 Python Library: python-library.md
-      # - 📝 Example: example.md
-      # - 📙 Notes (Older): notes.md
+  - 🍋 ezpz: index.md
+  - 🏃‍♂️ Quickstart: quickstart.md
+  - 📝 Examples: examples/index.md
+  - 🧰 CLI:
+      - cli/index.md
+      - 🩺 Doctor: cli/doctor.md
+      - ✅ Test: cli/test.md
+      - 🚀 Launch: cli/launch.md
+      - ✍️ Generate: cli/generate.md
+      - 🖥️ Generate TUI: cli/generate-tui.md
+  - 📓 Notes:
+      - notes/index.md
+      - 🏗️ Architecture: notes/architecture.md
+      - 🛠️ Development Workflow: notes/development-workflow.md
+      # - 🧪 Example Walkthrough: notes/example.md
+      - ❓ FAQ: notes/faq.md
+      - 🧤 Hands-On Slides: notes/slides-2025-05-07.md
+      - 🤗 HF Trainer: notes/hf-trainer.md
+      - ⚖️ HF Trainer Comparison: notes/hf-trainer-comparison.md
+      - 🕸️ Parallelism: notes/parallelism.md
+      - 🗓️ PBS: notes/pbs.md
+      # - 🐍 Python Library: notes/python-library.md
+      # - 📦 Release: notes/release.md
+      - 🏖️ Shell Environment: notes/shell-environment.md
+      - 🧵 Style Guide: notes/style-guide.md
+      - 🤖 Systems: notes/systems.md
+      - 📦 Yeet Environment: notes/yeet-env.md
+  - 🐍 Python Library:
+    - python/index.md
+    - 🍋 <code>src/ezpz</code>:
+        - python/Code-Reference/index.md
+        - __init__: python/Code-Reference/__init__.md
+        - __about__: python/Code-Reference/__about__.md
+        - configs: python/Code-Reference/configs.md
+        - dist: python/Code-Reference/dist.md
+        - doctor: python/Code-Reference/doctor.md
+        - history: python/Code-Reference/history.md
+        - integrations: python/Code-Reference/integrations.md
+        - jobs: python/Code-Reference/jobs.md
+        - launch: python/Code-Reference/launch.md
+        - lazy: python/Code-Reference/lazy.md
+        - model: python/Code-Reference/model.md
+        - pbs: python/Code-Reference/pbs.md
+        - plot: python/Code-Reference/plot.md
+        - profile: python/Code-Reference/profile.md
+        - slurm: python/Code-Reference/slurm.md
+        - test: python/Code-Reference/test.md
+        - test dist: python/Code-Reference/test_dist.md
+        - tplot: python/Code-Reference/tplot.md
+        # - Train: python/Code-Reference/train.md
+        - cli:
+            - python/Code-Reference/cli/index.md
+            - flags: python/Code-Reference/cli/flags.md
+            - launch_cmd: python/Code-Reference/cli/launch_cmd.md
+            - test_cmd: python/Code-Reference/cli/test_cmd.md
+        - data:
+            - python/Code-Reference/data/index.md
+            - distributed: python/Code-Reference/data/distributed.md
+            - hf: python/Code-Reference/data/hf.md
+            - llama: python/Code-Reference/data/llama.md
+            - text: python/Code-Reference/data/text.md
+            - vision: python/Code-Reference/data/vision.md
+            - utils: python/Code-Reference/data/utils.md
+        - examples:
+            - python/Code-Reference/examples/index.md
+            - cifar/train_ds: python/Code-Reference/examples/cifar/train_ds.md
+            - cria: python/Code-Reference/examples/cria.md
+            - diffusion: python/Code-Reference/examples/diffusion.md
+            - fsdp: python/Code-Reference/examples/fsdp.md
+            - fsdp_tp: python/Code-Reference/examples/fsdp_tp.md
+            - generate: python/Code-Reference/examples/generate.md
+            - generate_tui: python/Code-Reference/examples/generate_tui.md
+            - hf: python/Code-Reference/examples/hf.md
+            - hf_trainer: python/Code-Reference/examples/hf_trainer.md
+            - hf_trainer_alt: python/Code-Reference/examples/hf_trainer_alt.md
+            - minimal: python/Code-Reference/examples/minimal.md
+            - vit: python/Code-Reference/examples/vit.md
+            - vit_timm: python/Code-Reference/examples/vit_timm.md
+            - deepspeed tp:
+                - train: python/Code-Reference/examples/deepspeed/tp/train.md
+                - train_batch_length: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
+                - utils: python/Code-Reference/examples/deepspeed/tp/utils.md
+        - log:
+            - python/Code-Reference/log/index.md
+            - config: python/Code-Reference/log/config.md
+            - console: python/Code-Reference/log/console.md
+            - __main__: python/Code-Reference/log/__main__.md
+            - dataframe: python/Code-Reference/log/dataframe.md
+            - handler: python/Code-Reference/log/handler.md
+            - style: python/Code-Reference/log/style.md
+            - test: python/Code-Reference/log/test.md
+        - models:
+            - python/Code-Reference/models/index.md
+            - attention: python/Code-Reference/models/attention.md
+            - llama: python/Code-Reference/models/llama.md
+            - minimal: python/Code-Reference/models/minimal.md
+            - llama3/model: python/Code-Reference/models/llama3/model.md
+            - vit/attention: python/Code-Reference/models/vit/attention.md
+        - tp:
+            - python/Code-Reference/tp/index.md
+            - layers: python/Code-Reference/tp/layers.md
+            - mappings: python/Code-Reference/tp/mappings.md
+            - utils: python/Code-Reference/tp/utils.md
+        - utils:
+            - python/Code-Reference/utils.md
+            - tar_env: python/Code-Reference/utils/tar_env.md
+            - yeet_env: python/Code-Reference/utils/yeet_env.md
+    - 🧪 tests:
+        - python/tests/index.md
+        - configs: python/tests/test-configs.md
+        - configs-improved: python/tests/test-configs-improved.md
+        - comprehensive harness: python/tests/comprehensive-test.md
+        - dist: python/tests/test-dist.md
+        - ezpz: python/tests/test-ezpz.md
+        - jobs: python/tests/test-jobs.md
+        - launch: python/tests/test-launch.md
+        - lazy: python/tests/test-lazy.md
+        - logging: python/tests/test-log.md
+        - modules: python/tests/test-modules-directly.md
+        - property based: python/tests/test-property-based.md
+        - profile: python/tests/test-profile.md
+        - history: python/tests/test-history.md
+        - simple: python/tests/simple-test.md
+        - simple-runner: python/tests/simple-test-runner.md
+        - simple-ezpz : python/tests/test-simple-ezpz.md
+        - tp: python/tests/test-tp.md
+        - tplot: python/tests/test-tplot.md
+        - utils: python/tests/test-utils.md
+        - utils-improved: python/tests/test-utils-improved.md
+
+# - WIP Docs:
+# - 👀 Overview: ./docs/overview.md
+# - README (Draft): WIP/readme-draft.md
+# - CLI: launch.md
+# - FAQ (WIP): faq.md
+# - Tests: tests/index.md
+    # - hf_trainer: python/Code-Reference/examples/hf_trainer.md
+    # - vit: python/Code-Reference/examples/vit.md
+    # - fsdp: python/Code-Reference/examples/fsdp.md
+    # - fsdp_tp: python/Code-Reference/examples/fsdp_tp.md
+    # - diffusion: python/Code-Reference/examples/diffusion.md
+    # - generate_tui: python/Code-Reference/examples/generate_tui.md
+    # - minimal: python/Code-Reference/examples/minimal.md
+      # - Code-Reference/index.md
+      # - "<code>ezpz.__init__</code>": Code-Reference/init-reference.md
+      # - "<code>ezpz.configs</code>": Code-Reference/config-reference.md
+      # - "<code>ezpz.dist</code>": Code-Reference/dist-reference.md
+      # - "<code>ezpz.jobs</code>": Code-Reference/jobs-reference.md
+      # - "<code>ezpz.launch</code>": Code-Reference/launch-reference.md
+      # - "<code>ezpz.log</code>": Code-Reference/log-reference.md
+      # - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
+      # - "<code>ezpz.hf_trainer</code>": Code-Reference/hf-trainer-reference.md
+      # - "<code>ezpz.history</code>": Code-Reference/history-reference.md
+      # - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
+      # - "<code>ezpz.test</code>": Code-Reference/test-reference.md
+      # - "<code>ezpz.tp.__init__</code>": Code-Reference/tp-init-reference.md
+      # - "<code>ezpz.utils</code>": Code-Reference/utils-reference.md

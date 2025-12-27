@@ -1,0 +1,685 @@
+"""Runtime diagnostics for cluster readiness and local environment health."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from typing import Callable, Final, Literal, Optional
+import getpass
+import platform
+import socket
+import subprocess
+import re
+
+import ezpz
+import ezpz.utils
+from ezpz.cli.flags import build_doctor_parser
+
+Status = Literal["ok", "warning", "error"]
+
+colors = ezpz.utils.Color()
+
+
+@dataclass(frozen=True, slots=True)
+class CheckResult:
+    """Structured outcome for individual diagnostic checks."""
+
+    name: str
+    status: Status
+    message: str
+    remedy: Optional[str] = None
+
+    def _get_status(self) -> str:
+        if self.status == "ok":
+            return f"✅ {colors.green}OKAY{colors.reset}"
+        if self.status == "warning":
+            return f"⚠️ {colors.yellow}WARN{colors.reset}"
+        if self.status == "error":
+            return f"🚨 {colors.red}ERROR{colors.reset}"
+        raise ValueError(f"Unexpected value for {self.status=}")
+
+    def get_status(self) -> str:
+        lines: list[str] = []
+        summary = " ".join(
+            [
+                f"[{colors.reset}{self._get_status():>7}{colors.reset}]",
+                f"[{colors.blue}{self.name:<9}{colors.reset}]: {self.message}",
+            ]
+        )
+        lines.append(summary)
+        if self.remedy:
+            lines.append(f"          ↳ {self.remedy}")
+
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "message": self.message,
+            "remedy": self.remedy,
+        }
+
+
+STATUS_PRIORITY: Final[dict[Status, int]] = {"ok": 0, "warning": 1, "error": 2}
+
+logger = ezpz.get_logger(__name__)
+
+
+def _command_exists(
+    command: str, *, which: Callable[[str], Optional[str]] = shutil.which
+) -> bool:
+    return which(command) is not None
+
+
+def check_mpi(
+    which: Callable[[str], Optional[str]] = shutil.which,
+) -> CheckResult:
+    """Verify mpi4py importability and presence of a launcher command."""
+    try:
+        from mpi4py import MPI  # noqa: F401
+
+        mpi_available = True
+    except Exception:  # pragma: no cover - exercised via negative paths
+        mpi_available = False
+
+    has_launcher = any(
+        _command_exists(cmd, which=which) for cmd in ("mpiexec", "mpirun")
+    )
+    if mpi_available and has_launcher:
+        return CheckResult(
+            name="mpi",
+            status="ok",
+            message="mpi4py import succeeded and an MPI launcher was found.",
+        )
+    if mpi_available:
+        return CheckResult(
+            name="mpi",
+            status="warning",
+            message="mpi4py is importable, but no MPI launcher was detected on PATH.",
+            remedy="Install mpiexec/mpirun or load the appropriate module before launching distributed jobs.",
+        )
+    if has_launcher:
+        return CheckResult(
+            name="mpi",
+            status="warning",
+            message="An MPI launcher is available, but mpi4py could not be imported.",
+            remedy="Install mpi4py into the active environment so Python workers can join the MPI communicator.",
+        )
+    return CheckResult(
+        name="mpi",
+        status="error",
+        message="Neither mpi4py nor a launcher (mpiexec/mpirun) is available.",
+        remedy="Install mpi4py and ensure an MPI runtime is accessible on PATH.",
+    )
+
+
+def check_scheduler(
+    *,
+    get_scheduler: Callable[[], str] = ezpz.configs.get_scheduler,
+    environ: Optional[dict[str, str]] = None,
+) -> CheckResult:
+    """Determine scheduler visibility from environment variables."""
+    env = os.environ if environ is None else environ
+    scheduler = get_scheduler()
+    if scheduler in {"PBS", "SLURM"}:
+        return CheckResult(
+            name="scheduler",
+            status="ok",
+            message=f"Detected active scheduler: {scheduler}.",
+        )
+    suspect_vars = [
+        key
+        for key in ("PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID")
+        if env.get(key)
+    ]
+    if suspect_vars:
+        return CheckResult(
+            name="scheduler",
+            status="warning",
+            message="Scheduler variables detected but mapping returned UNKNOWN.",
+            remedy="Confirm ezpz.configs.get_scheduler recognises this host or provide a plug-in adapter.",
+        )
+    return CheckResult(
+        name="scheduler",
+        status="warning",
+        message="No scheduler detected – assuming local launch mode.",
+        remedy="Set scheduler environment variables or configure a custom adapter if running under a job queue.",
+    )
+
+
+def check_wandb(environ: Optional[dict[str, str]] = None) -> CheckResult:
+    """Advise on Weights & Biases connectivity expectations."""
+    env = os.environ if environ is None else environ
+    try:
+        import wandb  # type: ignore # pragma: no cover - optional dependency
+
+        _ = wandb.__version__
+        wandb_importable = True
+    except Exception:
+        wandb_importable = False
+
+    api_key = env.get("WANDB_API_KEY")
+    offline_mode = env.get("WANDB_MODE", "").lower() == "offline"
+
+    if not wandb_importable:
+        if api_key or not offline_mode:
+            return CheckResult(
+                name="wandb",
+                status="warning",
+                message="WANDB credentials present but the library could not be imported.",
+                remedy="Install `ezpz[monitoring]` or set WANDB_MODE=offline to suppress remote logging.",
+            )
+        return CheckResult(
+            name="wandb",
+            status="ok",
+            message="wandb not installed and no cloud logging requested.",
+        )
+
+    if offline_mode:
+        return CheckResult(
+            name="wandb",
+            status="ok",
+            message="wandb is available and offline logging is configured.",
+        )
+    if api_key:
+        return CheckResult(
+            name="wandb",
+            status="ok",
+            message="wandb is available and WANDB_API_KEY is set for cloud logging.",
+        )
+    if ezpz.dist._verify_wandb_from_netrc_config():
+        return CheckResult(
+            name="wandb",
+            status="ok",
+            message="wandb authentication provided in '~/.netrc' Should be all set.",
+        )
+    return CheckResult(
+        name="wandb",
+        status="warning",
+        message="wandb installed but WANDB_API_KEY is not configured.",
+        remedy="Set WANDB_MODE=offline for air-gapped runs or export WANDB_API_KEY for remote tracking.",
+    )
+
+
+def check_torch_device() -> CheckResult:
+    """Check torch availability and configured accelerator."""
+    try:
+        import torch
+    except Exception:  # pragma: no cover - optional dependency
+        return CheckResult(
+            name="torch",
+            status="error",
+            message="PyTorch is not importable in the current environment.",
+            remedy="Install torch (matching your accelerator) or activate the environment that provides it.",
+        )
+
+    env_device = os.environ.get("TORCH_DEVICE")
+    if env_device:
+        return CheckResult(
+            name="torch",
+            status="ok",
+            message=f"TORCH_DEVICE={env_device} (PyTorch {torch.__version__}).",
+        )
+    device_ok = (
+        (torch.cuda.is_available() and torch.cuda.device_count() > 0)
+        or (
+            hasattr(torch, "xpu")
+            and torch.xpu.is_available()
+            and torch.xpu.device_count() > 0
+        )
+        or torch.backends.mps.is_built()
+        and torch.backends.mps.is_available()
+    )
+    if device_ok:
+        return CheckResult(
+            name="torch",
+            status="ok",
+            message="PyTorch detected at least one accelerator.",
+        )
+    return CheckResult(
+        name="torch",
+        status="warning",
+        message="PyTorch import succeeded but no accelerators were detected.",
+        remedy="Confirm drivers are available or set TORCH_DEVICE=cpu for CPU-only execution.",
+    )
+
+
+def _format_text(results: Iterable[CheckResult]) -> str:
+    lines: list[str] = []
+    for result in results:
+        lines.append(result.get_status())
+    return "\n".join(lines)
+
+
+def _get_module_list() -> str:
+    try:
+        proc = subprocess.run(
+            ["bash", "-lc", "module -t list 2>&1"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return "module command not available"
+    output = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0 and not output:
+        return "module command not available"
+    return output or "no modules loaded"
+
+
+def _extract_int(value: str | None) -> Optional[int]:
+    if not value:
+        return None
+    match = re.search(r"\d+", value)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return None
+
+
+def _split_nodespecs(value: str) -> list[str]:
+    specs: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in value:
+        if ch == "," and depth == 0:
+            spec = "".join(buf).strip()
+            if spec:
+                specs.append(spec)
+            buf = []
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]" and depth > 0:
+            depth -= 1
+        buf.append(ch)
+    final = "".join(buf).strip()
+    if final:
+        specs.append(final)
+    return specs
+
+
+def _expand_slurm_nodespec(value: str) -> list[str]:
+    if "[" not in value or "]" not in value:
+        return [value]
+    prefix = value.split("[", 1)[0]
+    tail = value.split("]", 1)[1]
+    inside = value.split("[", 1)[1].rsplit("]", 1)[0]
+    hosts: list[str] = []
+    for part in inside.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start, end = part.split("-", 1)
+            width = max(len(start), len(end))
+            try:
+                start_i = int(start)
+                end_i = int(end)
+            except ValueError:
+                continue
+            for idx in range(start_i, end_i + 1):
+                hosts.append(f"{prefix}{idx:0{width}d}{tail}")
+        else:
+            hosts.append(f"{prefix}{part}{tail}")
+    return hosts
+
+
+def _expand_slurm_nodelist(value: str | None) -> list[str]:
+    if not value:
+        return []
+    hosts: list[str] = []
+    for spec in _split_nodespecs(value):
+        hosts.extend(_expand_slurm_nodespec(spec))
+    return hosts
+
+
+def _get_nhosts(env: dict[str, str]) -> Optional[int]:
+    nodefile = env.get("PBS_NODEFILE")
+    if nodefile and os.path.exists(nodefile):
+        try:
+            with open(nodefile, "r", encoding="utf-8") as handle:
+                hosts = {line.strip() for line in handle if line.strip()}
+            if hosts:
+                return len(hosts)
+        except OSError:
+            pass
+    return _extract_int(env.get("SLURM_NNODES")) or _extract_int(
+        env.get("SLURM_JOB_NUM_NODES")
+    )
+
+
+def _get_ngpu_per_host(env: dict[str, str]) -> Optional[int]:
+    for key in (
+        "NGPU_PER_HOST",
+        "SLURM_GPUS_ON_NODE",
+        "SLURM_GPUS_PER_NODE",
+        "SLURM_JOB_GPUS",
+    ):
+        value = _extract_int(env.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _read_hosts_from_file(path: str) -> set[str]:
+    hosts: set[str] = set()
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            host = line.strip()
+            if host:
+                hosts.add(host)
+    return hosts
+
+
+def _get_hostfile_info(
+    path: str | None,
+) -> tuple[str | None, Optional[int], set[str]]:
+    if not path:
+        return None, None, set()
+    if not os.path.exists(path):
+        return path, None, set()
+    try:
+        hosts = _read_hosts_from_file(path)
+    except OSError:
+        return path, None, set()
+    return path, len(hosts), hosts
+
+
+def _get_slurm_hosts(env: dict[str, str]) -> list[str]:
+    nodelist = env.get("SLURM_NODELIST") or env.get("SLURM_JOB_NODELIST")
+    if not nodelist:
+        return []
+    if shutil.which("scontrol"):
+        try:
+            proc = subprocess.run(
+                ["scontrol", "show", "hostnames", nodelist],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            output = (proc.stdout or "").strip()
+            if proc.returncode == 0 and output:
+                return [
+                    line.strip()
+                    for line in output.splitlines()
+                    if line.strip()
+                ]
+        except Exception:
+            pass
+    return _expand_slurm_nodelist(nodelist)
+
+
+def check_hostfile(environ: Optional[dict[str, str]] = None) -> CheckResult:
+    env = os.environ if environ is None else environ
+    is_pbs = bool(env.get("PBS_JOBID"))
+    is_slurm = bool(env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID"))
+    hostfile = env.get("HOSTFILE")
+
+    if not is_pbs and not is_slurm:
+        return CheckResult(
+            name="hostfile",
+            status="ok",
+            message="No scheduler detected; HOSTFILE not required.",
+        )
+
+    if hostfile:
+        hostfile_path, hostfile_count, hostfile_hosts = _get_hostfile_info(
+            hostfile
+        )
+        if is_pbs:
+            pbs_nodefile = env.get("PBS_NODEFILE")
+            if pbs_nodefile and hostfile_path != pbs_nodefile:
+                pbs_path, pbs_count, pbs_hosts = _get_hostfile_info(
+                    pbs_nodefile
+                )
+                only_hostfile = sorted(hostfile_hosts - pbs_hosts)
+                only_pbs = sorted(pbs_hosts - hostfile_hosts)
+                message = (
+                    "HOSTFILE differs from PBS_NODEFILE. "
+                    f"HOSTFILE={hostfile_path} ({hostfile_count or 'N/A'} hosts), "
+                    f"PBS_NODEFILE={pbs_path} ({pbs_count or 'N/A'} hosts). "
+                    f"Only HOSTFILE: {len(only_hostfile)}; "
+                    f"only PBS_NODEFILE: {len(only_pbs)}."
+                )
+                return CheckResult(
+                    name="hostfile",
+                    status="warning",
+                    message=message,
+                    remedy="Verify hostfile alignment before launch.",
+                )
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    f"HOSTFILE={hostfile_path} "
+                    f"({hostfile_count or 'N/A'} hosts)."
+                ),
+            )
+        if is_slurm:
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    f"HOSTFILE={hostfile_path} "
+                    f"({hostfile_count or 'N/A'} hosts)."
+                ),
+            )
+
+    if is_pbs:
+        pbs_nodefile = env.get("PBS_NODEFILE")
+        if pbs_nodefile:
+            env["HOSTFILE"] = pbs_nodefile
+            pbs_path, pbs_count, _ = _get_hostfile_info(pbs_nodefile)
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    "HOSTFILE not set; using PBS_NODEFILE. "
+                    f"HOSTFILE={pbs_path} ({pbs_count or 'N/A'} hosts). "
+                    "Exported to child processes."
+                ),
+            )
+        return CheckResult(
+            name="hostfile",
+            status="warning",
+            message="PBS job detected but PBS_NODEFILE is not set.",
+            remedy="Set PBS_NODEFILE or HOSTFILE before launching.",
+        )
+
+    if is_slurm:
+        nhosts = _get_nhosts(env) or 0
+        jobid = env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID") or "unknown"
+        filename = f"slurm-{nhosts}hosts-{jobid}"
+        path = os.path.join(os.getcwd(), filename)
+        hosts = _get_slurm_hosts(env)
+        if not hosts and nhosts:
+            hosts = [socket.gethostname()]
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(hosts))
+                if hosts:
+                    handle.write("\n")
+            env["HOSTFILE"] = path
+            return CheckResult(
+                name="hostfile",
+                status="ok",
+                message=(
+                    "HOSTFILE not set; created from Slurm allocation. "
+                    f"HOSTFILE={path} ({len(hosts) or 'N/A'} hosts). "
+                    "Exported to child processes."
+                ),
+            )
+        except OSError as exc:
+            return CheckResult(
+                name="hostfile",
+                status="warning",
+                message=f"Failed to create HOSTFILE at {path}: {exc!r}.",
+                remedy="Set HOSTFILE explicitly or check write permissions.",
+            )
+
+    return CheckResult(
+        name="hostfile",
+        status="ok",
+        message="HOSTFILE check skipped.",
+    )
+
+
+def _get_base_env_info(env: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    conda_default = env.get("CONDA_DEFAULT_ENV")
+    conda_prefix = env.get("CONDA_PREFIX")
+    conda_root = env.get("CONDA_ROOT")
+    if conda_default == "base" and conda_prefix:
+        lines.append(f"Conda base: {conda_prefix}")
+    elif conda_root:
+        lines.append(f"Conda root: {conda_root}")
+    mamba_root = env.get("MAMBA_ROOT_PREFIX")
+    if mamba_root:
+        lines.append(f"Mamba root: {mamba_root}")
+    pixi_home = env.get("PIXI_HOME")
+    if pixi_home:
+        lines.append(f"Pixi home: {pixi_home}")
+    if not lines:
+        lines.append("Base env: not detected")
+    return lines
+
+
+def _get_active_env_info(env: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    venv = env.get("VIRTUAL_ENV")
+    if venv:
+        lines.append(f"Virtual env: {venv}")
+    conda_default = env.get("CONDA_DEFAULT_ENV")
+    conda_prefix = env.get("CONDA_PREFIX")
+    if conda_default and conda_default != "base" and conda_prefix:
+        lines.append(f"Conda env: {conda_default} ({conda_prefix})")
+    pixi_env = env.get("PIXI_ENVIRONMENT")
+    if pixi_env:
+        lines.append(f"Pixi env: {pixi_env}")
+    if not lines:
+        lines.append("Active env: not detected")
+    return lines
+
+
+def _print_runtime_context() -> None:
+    env = os.environ
+    print("== Runtime Context ==")
+    print(f"User: {getpass.getuser()}")
+    print(f"Machine: {platform.machine()}")
+    print(f"Hostname: {socket.gethostname()}")
+    print(f"PBS_JOBID: {env.get('PBS_JOBID', 'N/A')}")
+    print(f"PBS_NODEFILE: {env.get('PBS_NODEFILE', 'N/A')}")
+    print(f"ezpz: {getattr(ezpz, '__version__', 'unknown')} ({ezpz.__file__})")
+    print("")
+    print("Module list:")
+    module_list = _get_module_list()
+    for line in module_list.splitlines() if module_list else ["(empty)"]:
+        print(f"  {line}")
+    print("")
+    print("Base environment:")
+    for line in _get_base_env_info(env):
+        print(f"  {line}")
+    print("")
+    print("Active environment:")
+    for line in _get_active_env_info(env):
+        print(f"  {line}")
+    print("")
+    print(f"Python: {sys.executable} ({sys.version.split()[0]})")
+    try:
+        import torch
+
+        torch_location = getattr(torch, "__file__", "unknown")
+        print(f"PyTorch: {torch.__version__} ({torch_location})")
+    except Exception as exc:
+        print(f"PyTorch: not importable ({exc!r})")
+    if (
+        env.get("PBS_JOBID")
+        or env.get("SLURM_JOB_ID")
+        or env.get("SLURM_JOBID")
+    ):
+        nhosts = _get_nhosts(env)
+        ngpu_per_host = _get_ngpu_per_host(env)
+        ngpus = (
+            nhosts * ngpu_per_host
+            if nhosts is not None and ngpu_per_host is not None
+            else None
+        )
+        print("")
+        print("Scheduler resources:")
+        print(f"  NHOSTS: {nhosts if nhosts is not None else 'N/A'}")
+        print(
+            "  NGPU_PER_HOST: "
+            f"{ngpu_per_host if ngpu_per_host is not None else 'N/A'}"
+        )
+        print(f"  NGPUS: {ngpus if ngpus is not None else 'N/A'}")
+    print("")
+
+
+def run_checks(
+    checks: list[Callable] | None = None,
+) -> list[CheckResult]:
+    """Execute all diagnostic checks, returning structured results."""
+    checks = (
+        [
+            check_mpi,
+            check_wandb,
+            check_torch_device,
+            check_hostfile,
+            check_scheduler,
+        ]
+        if checks is None
+        else checks
+    )
+    results: list[CheckResult] = []
+    for check in checks:
+        try:
+            results.append(check())
+        except Exception as exc:  # pragma: no cover - defensive
+            name = getattr(check, "__name__", "")
+            logger.exception(f"Diagnostic check {name} crashed.")
+            results.append(
+                CheckResult(
+                    name=name,
+                    status="error",
+                    message=f"Check raised {exc!r}",
+                    remedy="Inspect the full stack trace above and report the failure.",
+                )
+            )
+    return results
+
+
+def parse_args(argv: Optional[Sequence[str]] = None):
+    """Parse CLI arguments for the doctor command."""
+    parser = build_doctor_parser()
+    return parser.parse_args(argv)
+
+
+def run(argv: Optional[Sequence[str]] = None) -> int:
+    """Entry point used by the CLI glue."""
+    args = parse_args(argv)
+    results = run_checks()
+    worst_status = max(results, key=lambda r: STATUS_PRIORITY[r.status]).status
+    if args.json:
+        print(json.dumps([r.to_dict() for r in results], indent=2))
+    else:
+        _print_runtime_context()
+        rstrs = [r.get_status() for r in results]
+        for r in rstrs:
+            print(r)
+    return 0 if STATUS_PRIORITY[worst_status] < STATUS_PRIORITY["error"] else 1
+
+
+def main() -> int:  # pragma: no cover - thin wrapper
+    return run(sys.argv[1:])
+
+
+if __name__ == "__main__":  # pragma: no cover - script execution
+    raise SystemExit(main())

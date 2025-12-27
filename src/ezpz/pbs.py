@@ -8,14 +8,22 @@ See:
 for more information.
 """
 
+from __future__ import annotations
+
 import os
-import socket
-from getpass import getuser
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
+
+import socket
+
+# LCMD1: 1.43 ms +- 8.66 us per loop (mean +- std. dev. of 7 runs, 1,000 loops each)
+# LCMD2: 1.35 ms +- 7.27 us per loop (mean +- std. dev. of 7 runs, 1,000 loops each)
+from getpass import getuser
 
 import ezpz
 from ezpz.dist import get_hostfile_with_fallback
+
+Pathish = Union[str, os.PathLike, Path]
 
 logger = ezpz.get_logger(__name__)
 
@@ -28,7 +36,9 @@ def get_pbs_running_jobs_for_user():
         print("Error importing sh.qstat:", e)
         raise e
 
-    jobarr = [i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i]
+    jobarr = [
+        i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i
+    ]
     jobs = {}
     for row in jobarr:
         jstr = [i for i in row.split(" ") if len(i) > 0]
@@ -43,9 +53,9 @@ def get_pbs_nodelist_from_jobid(jobid: int | str) -> list[str]:
     """Get the nodelist for a given jobid."""
     assert jobid is not None, "No jobid provided and no active job found."
     jobs = get_pbs_running_jobs_for_user()
-    assert (
-        str(jobid) in jobs
-    ), f"Job ID {jobid} not found in running jobs for user {getuser()}"
+    assert str(jobid) in jobs, (
+        f"Job ID {jobid} not found in running jobs for user {getuser()}"
+    )
     return jobs[str(jobid)]
 
 
@@ -81,11 +91,13 @@ def get_pbs_nodefile_from_jobid(jobid: int | str) -> str:
 
     pbs_parent = Path("/var/spool/pbs/aux")
     pfiles = [
-        Path(pbs_parent).joinpath(f) for f in os.listdir(pbs_parent) if str(jobid) in f
+        Path(pbs_parent).joinpath(f)
+        for f in os.listdir(pbs_parent)
+        if str(jobid) in f
     ]
-    assert (
-        len(pfiles) == 1
-    ), f"Found {len(pfiles)} files matching {jobid} in {pbs_parent}"
+    assert len(pfiles) == 1, (
+        f"Found {len(pfiles)} files matching {jobid} in {pbs_parent}"
+    )
     pbs_nodefile = pfiles[0]
     assert pbs_nodefile.is_file(), f"Nodefile {pbs_nodefile} does not exist."
     return pbs_nodefile.absolute().resolve().as_posix()
@@ -114,130 +126,205 @@ def get_pbs_nodefile(jobid: Optional[int | str] = None) -> str | None:
     return get_pbs_nodefile_from_jobid(jobid)
 
 
+def _infer_topology(
+    *,
+    ngpus: Optional[int],
+    nhosts: Optional[int],
+    ngpu_per_host: Optional[int],
+    hostfile: Path,
+) -> Tuple[int, int, int]:
+    """
+    Infer (ngpus, nhosts, ngpu_per_host) from user inputs and machine limits.
+
+    Rules:
+      - If nothing is specified, use all resources.
+      - If combinations are inconsistent (e.g. ngpus not divisible by nhosts),
+        raise ValueError instead of relying on `assert`.
+    """
+    ngpus_max = ezpz.get_world_size(total=True)
+    ngpu_per_host_max = ezpz.get_gpus_per_node()
+    nhosts_max = ezpz.get_num_nodes(hostfile=hostfile)
+
+    if nhosts is not None and not (0 < nhosts <= nhosts_max):
+        raise ValueError(
+            f"`nhosts` must be > 0 and <= {nhosts_max}, got {nhosts}."
+        )
+
+    if nhosts is None:
+        nhosts = nhosts_max
+
+    # Case A: ngpus not provided -> infer from nhosts / ngpu_per_host.
+    if ngpus is None:
+        assert nhosts is not None
+        if ngpu_per_host is None:
+            # Use all GPUs on all hosts
+            ngpu_per_host = ngpu_per_host_max
+            assert ngpu_per_host is not None
+            ngpus = nhosts * ngpu_per_host
+        else:
+            # ngpu_per_host given, nhosts known (we just set it)
+            ngpus = nhosts * ngpu_per_host
+    else:
+        assert ngpus is not None
+        # Case B: ngpus provided
+        if ngpu_per_host is None:
+            # Deduce ngpu_per_host from ngpus and nhosts
+            assert nhosts is not None
+            if ngpus % nhosts != 0:
+                raise ValueError(
+                    f"`ngpus` must be divisible by `nhosts`: ngpus={ngpus}, nhosts={nhosts}"
+                )
+            ngpu_per_host = ngpus // nhosts
+        else:
+            # All three specified: check consistency
+            assert nhosts is not None
+            if ngpus != nhosts * ngpu_per_host:
+                raise ValueError(
+                    "Mismatch in `ngpus` and `nhosts * ngpu_per_host`: "
+                    f"ngpus={ngpus}, nhosts={nhosts}, ngpu_per_host={ngpu_per_host}"
+                )
+
+    if not (0 < ngpus <= ngpus_max):
+        raise ValueError(
+            f"`ngpus` must be > 0 and <= {ngpus_max}, got {ngpus}."
+        )
+
+    return ngpus, nhosts, ngpu_per_host
+
+
+def _maybe_add_cpu_bind(
+    cmd: list[str], ngpus: int, machine_name: str
+) -> list[str]:
+    """Add CPU binding flags to cmd in-place based on env and machine."""
+    cpu_bind = os.environ.get("CPU_BIND")
+    if cpu_bind:
+        logger.warning(f"Detected CPU_BIND from environment: {cpu_bind}")
+        cpu_bind_val = cpu_bind.replace("--cpu-bind=", "")
+        if ngpus < 1024:
+            cmd.append(f"--cpu-bind=verbose,{cpu_bind_val}")
+        else:
+            cmd.append(f"--cpu-bind={cpu_bind_val}")
+        return cmd
+
+    # No explicit CPU_BIND -> set sensible defaults by machine
+    machine_name_l = machine_name.lower()
+    if machine_name_l in {"aurora", "sunspot"}:
+        cpu_bind_intel_xpu = (
+            "list:2-4:10-12:18-20:26-28:"
+            "34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
+        )
+        if ngpus < 1024:
+            cmd.extend(
+                ["--no-vni", f"--cpu-bind=verbose,{cpu_bind_intel_xpu}"]
+            )
+        else:
+            cmd.extend(["--no-vni", f"--cpu-bind={cpu_bind_intel_xpu}"])
+    else:
+        cmd.extend(["--cpu-bind=depth", "--depth=8"])
+
+    return cmd
+
+
 def get_pbs_launch_cmd(
     ngpus: Optional[int] = None,
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
-    hostfile: Optional[str | os.PathLike | Path] = None,
-    verbose: Optional[bool] = False,
+    hostfile: Optional[Pathish] = None,
+    *,
+    verbose: bool = False,
 ) -> str:
-    """Get the PBS launch command"""
+    """Get the PBS launch command.
 
-    # ngpus_available = (
-    #     ezpz.get_world_size(total=True) if ngpus is None else ngpus
-    # )
+    Parameters
+    ----------
+    ngpus : int, optional
+        Total number of GPUs to use. If None, inferred from other args or max.
+    nhosts : int, optional
+        Number of hosts (nodes). If None, defaults to max available.
+    ngpu_per_host : int, optional
+        GPUs per host. If None, inferred when possible.
+    hostfile : path-like, optional
+        Hostfile to use. If None, uses a fallback from `get_hostfile_with_fallback`.
+    verbose : bool, keyword-only
+        If True, log more and pass `--verbose` (where applicable).
+    """
+
+    hostfile = hostfile or get_hostfile_with_fallback(hostfile)
+    hostfile_path = Path(hostfile)
+
+    ngpus, nhosts, ngpu_per_host = _infer_topology(
+        ngpus=ngpus,
+        nhosts=nhosts,
+        ngpu_per_host=ngpu_per_host,
+        hostfile=hostfile_path,
+    )
+
     ngpus_max = ezpz.get_world_size(total=True)
-    ngpu_per_host_max = ezpz.get_gpus_per_node()
-    hostfile_fallback = get_hostfile_with_fallback(hostfile)
-    hostfile = hostfile or hostfile_fallback
-    nhosts_max = ezpz.get_num_nodes(hostfile=Path(hostfile_fallback))
-    if nhosts is not None:
-        assert (
-            0 < nhosts <= nhosts_max
-        ), f"`nhosts` must be > 0 and <= {nhosts_max}: {nhosts=}"
-    else:
-        nhosts = nhosts_max
-
-    #  ---- [`ngpus`, `nhosts`, `ngpu_per_host` logic] -------------------------
-    #  ```bash
-    # 1. [ ❌, ✅, ❌ ] -> [ ngpus_max, nhosts_max, ngpu_per_host_max ]
-    # 2. [ ❌, ✅, ✅ ] -> [ ngpu_per_host * nhosts_max, nhosts_max, ngpu_per_host ]
-    # 3. [ ❌, ✅, ❌ ] -> [ ngpus_max, nhosts, ngpus_max // nhosts ]
-    # 4. [ ✅, ✅, ❌ ] -> [ ngpus, ngpus // ngpu_per_host_max, ngpu_per_host_max ]
-    # 5. [ ❌, ✅, ✅ ] -> [ ngpu_per_host * nhosts, nhosts, ngpu_per_host ]
-    # 6. [ ✅, ✅, ✅ ] -> [ ngpus, ngpus // ngpu_per_host, ngpu_per_host ]
-    # 7. [ ✅, ✅, ❌ ] -> [ ngpus, nhosts, ngpus // nhosts ]
-    # 8. [ ✅, ✅, ✅ ] -> [ ngpus, nhosts, ngpu_per_host ]
-    # ```
-    #
-    if ngpus is None:
-        if ngpu_per_host is None and nhosts is not None:
-            # [3.] [ ❌, ✅, ❌ ]
-            ngpus = nhosts * ngpu_per_host_max
-            ngpu_per_host = ngpus // nhosts
-        else:
-            # [5.] [ ❌, ✅, ✅ ]
-            assert nhosts is not None and ngpu_per_host is not None
-            ngpus = nhosts * ngpu_per_host
-    else:
-        if nhosts is not None and ngpu_per_host is None:
-            # [7.] [ ✅, ✅, ❌ ]
-            assert (
-                ngpus % nhosts == 0
-            ), f"`ngpus` must be divisible by `nhosts`: {ngpus=} vs. {nhosts=}"
-            ngpu_per_host = ngpus // nhosts
-        else:
-            # [8.] [ ✅, ✅, ✅ ]
-            assert nhosts is not None and ngpu_per_host is not None
-            assert ngpus == (nhosts * ngpu_per_host), (
-                f"Mismatch in `ngpus` and `nhosts * ngpu_per_host`: "
-                f"{ngpus=} vs. {nhosts=} * {ngpu_per_host=}"
-            )
-
-    assert 0 < ngpus <= ngpus_max, f"`ngpus` must be > 0 and <= {ngpus_max}: {ngpus=}"
     emoji = "✅" if ngpus == ngpus_max else "⚠️"
     logger.info(
-        f"{emoji} Using [{ngpus:>}/{ngpus_max:<}] GPUs [{nhosts} hosts] x [{ngpu_per_host} GPU/host]"
+        f"{emoji} Using [{ngpus}/{ngpus_max}] GPUs "
+        f"[{nhosts} hosts] x [{ngpu_per_host} GPU/host]"
     )
+
     if ngpus != ngpus_max:
         logger.warning(
-            f"[🚧 WARNING] Using only [{ngpus:>}/{ngpus_max:<}] available GPUs!!"
+            f"[🚧 WARNING] Using only [{ngpus}/{ngpus_max}] available GPUs!!"
         )
-    if ezpz.get_machine().lower() == "sophia":
-        return " ".join(
-            [
-                "mpirun",
-                f"-n={ngpus}",
-                f"-N={ngpu_per_host}",
-                f"--hostfile={hostfile}",
-                "-x PATH",
-                "-x LD_LIBRARY_PATH",
-            ]
-        )
-    else:
-        cmd_list = [
-            "mpiexec",
-            "--verbose",
-            "--envall",
-            f"--np={ngpus}",
-            f"--ppn={ngpu_per_host}",
-            f"--hostfile={hostfile}",
-        ]
-        machine_name = ezpz.get_machine()
-        cpu_bind = os.environ.get("CPU_BIND", None)
-        if cpu_bind is not None:
-            logger.warning(f"Detected CPU_BIND from environment: {cpu_bind}")
-            if ngpus < 1024:
-                cmd_list.append(
-                    f"--cpu-bind=verbose,{cpu_bind.replace('--cpu-bind=', '')}"
-                )
-            else:
-                cmd_list.append(f"--cpu-bind={cpu_bind.replace('--cpu-bind=', '')}")
-        else:
-            if machine_name.lower() in {"aurora", "sunspot"}:
-                CPU_BIND_INTEL_XPU: str = "list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-                if ngpus < 1024:
-                    cmd_list.extend(
-                        [
-                            "--no-vni",
-                            f"--cpu-bind=verbose,{CPU_BIND_INTEL_XPU}",
-                        ]
-                    )
-                else:
-                    cmd_list.extend(
-                        [
-                            "--no-vni",
-                            f"--cpu-bind={CPU_BIND_INTEL_XPU}",
-                        ]
-                    )
 
-            else:
-                cmd_list.extend(
-                    [
-                        "--cpu-bind=depth",
-                        "--depth=8",
-                    ]
-                )
+    machine_name = ezpz.get_machine().lower()
+    hostfile_str = str(hostfile_path)
+
+    if machine_name == "sophia":
+        # mpirun style
+        cmd_list = [
+            "mpirun",
+            f"-n={ngpus}",
+            f"-N={ngpu_per_host}",
+            f"--hostfile={hostfile_str}",
+            "-x PATH",
+            "-x LD_LIBRARY_PATH",
+        ]
+        if verbose:
+            cmd_list.append("--verbose")
+        return " ".join(cmd_list)
+
+    # Default: mpiexec
+    cmd_list = [
+        "mpiexec",
+        "--envall",
+        f"--np={ngpus}",
+        f"--ppn={ngpu_per_host}",
+        f"--hostfile={hostfile_str}",
+    ]
+    if verbose:
+        cmd_list.append("--verbose")
+
+    cpu_bind_env = os.environ.get("CPU_BIND")
+    use_verbose_cpu_bind = ngpus < 1024
+    cpu_bind_prefix = (
+        "--cpu-bind=verbose," if use_verbose_cpu_bind else "--cpu-bind="
+    )
+
+    if cpu_bind_env:
+        logger.warning(f"Detected CPU_BIND from environment: {cpu_bind_env}")
+        bind_value = cpu_bind_env.replace("--cpu-bind=", "")
+        cmd_list.append(f"{cpu_bind_prefix}{bind_value}")
+    else:
+        is_intel_xpu_machine = machine_name in {"aurora", "sunspot"}
+        if is_intel_xpu_machine:
+            CPU_BIND_INTEL_XPU = (
+                "list:2-4:10-12:18-20:26-28:34-36:42-44:"
+                "54-56:62-64:70-72:78-80:86-88:94-96"
+            )
+            cmd_list.extend(
+                [
+                    "--no-vni",
+                    f"{cpu_bind_prefix}{CPU_BIND_INTEL_XPU}",
+                ]
+            )
+        else:
+            # generic CPU binding
+            cmd_list.extend(["--cpu-bind=depth", "--depth=8"])
 
     return " ".join(cmd_list)
 
@@ -278,7 +365,9 @@ def get_pbs_launch_info(
     return {
         "HOSTFILE": hfp.as_posix(),
         "HOSTS": (
-            f"[{', '.join(hosts)}]" if nhosts < 1000 else "[truncated (>1000 nodes)]"
+            f"[{', '.join(hosts)}]"
+            if nhosts < 1000
+            else "[truncated (>1000 nodes)]"
         ),
         "NHOSTS": f"{nhosts}",
         "NGPU_PER_HOST": f"{ngpu_per_host}",
@@ -309,7 +398,9 @@ def get_pbs_env(
 
     assert hostfile is not None
     if (hfp := Path(hostfile)).is_file():
-        pbsenv |= {f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()}
+        pbsenv |= {
+            f"{k.upper()}": f"{v}" for k, v in get_pbs_launch_info(hfp).items()
+        }
         pbsenv |= {"LAUNCH_CMD": get_pbs_launch_cmd(hostfile=hostfile)}
     os.environ |= pbsenv
     if verbose and ezpz.dist.get_rank() == 0:

@@ -175,6 +175,7 @@ def nested_dict_to_df(d):
 def print_config(
     config: DictConfig | dict | Any,
     resolve: bool = True,
+    print_order: Sequence[str] | None = None,
 ) -> None:
     """Prints content of DictConfig using Rich library and its tree structure.
 
@@ -189,6 +190,8 @@ def print_config(
 
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
     quee = []
+    if print_order:
+        quee.extend([f for f in print_order if f not in quee])
     for f in config:
         if f not in quee:
             quee.append(f)

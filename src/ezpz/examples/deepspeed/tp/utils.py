@@ -1,3 +1,8 @@
+"""Utility helpers for DeepSpeed tensor-parallel scripts (OpenAI completions, IO).
+
+This module is imported by other examples; it is not a standalone CLI.
+"""
+
 import dataclasses
 import logging
 import math
@@ -10,20 +15,27 @@ from typing import Any, Optional, Sequence, Union
 
 import openai
 import tqdm
+
 # from openai import openai_object
 import copy
 
 # StrOrOpenAIObject = Union[str, openai_object.OpenAIObject]
-StrOrOpenAIObject = Union[str, Any]  # Using Any as a placeholder for OpenAIObject
+StrOrOpenAIObject = Union[
+    str, Any
+]  # Using Any as a placeholder for OpenAIObject
 
 openai_org = os.getenv("OPENAI_ORG")
 if openai_org is not None:
     openai.organization = openai_org
-    logging.warning(f"Switching to organization: {openai_org} for OAI API key.")
+    logging.warning(
+        f"Switching to organization: {openai_org} for OAI API key."
+    )
 
 
 @dataclasses.dataclass
 class OpenAIDecodingArguments:
+    """Configurable decoding parameters for OpenAI API completions."""
+
     max_tokens: int = 1800
     temperature: float = 0.2
     top_p: float = 1.0
@@ -46,7 +58,7 @@ def openai_completion(
     max_instances: int = sys.maxsize,
     max_batches: int = sys.maxsize,
     return_text: bool = False,
-    **decoding_kwargs,
+    **decoding_kwargs: dict[Any, Any],
 ) -> Union[
     Union[str, Any],
     Sequence[StrOrOpenAIObject],
@@ -77,8 +89,9 @@ def openai_completion(
     """
     is_single_prompt = isinstance(prompts, (str, dict))
     if is_single_prompt:
-        prompts = [prompts]
+        prompts = [prompts]  # type:ignore
 
+    assert isinstance(prompts, list)
     if max_batches < sys.maxsize:
         logging.warning(
             "`max_batches` will be deprecated in the future, please use `max_instances` instead."
@@ -99,7 +112,9 @@ def openai_completion(
         desc="prompt_batches",
         total=len(prompt_batches),
     ):
-        batch_decoding_args = copy.deepcopy(decoding_args)  # cloning the decoding_args
+        batch_decoding_args = copy.deepcopy(
+            decoding_args
+        )  # cloning the decoding_args
 
         while True:
             try:
@@ -114,7 +129,9 @@ def openai_completion(
                 choices = completion_batch.choices
 
                 for choice in choices:
-                    choice["total_tokens"] = completion_batch.usage.total_tokens
+                    choice["total_tokens"] = (
+                        completion_batch.usage.total_tokens
+                    )
                 completions.extend(choices)
                 break
             except openai.error.OpenAIError as e:
@@ -145,6 +162,7 @@ def openai_completion(
 
 
 def _make_w_io_base(f, mode: str):
+    """Ensure a writable IOBase handle, creating parent dirs if needed."""
     if not isinstance(f, io.IOBase):
         f_dirname = os.path.dirname(f)
         if f_dirname != "":
@@ -154,12 +172,19 @@ def _make_w_io_base(f, mode: str):
 
 
 def _make_r_io_base(f, mode: str):
+    """Return a readable IOBase handle for the given path or handle."""
     if not isinstance(f, io.IOBase):
         f = open(f, mode=mode)
     return f
 
 
-def jdump(obj, f, mode="w", indent=4, default=str):
+def jdump(
+    obj: Any,
+    f: str | os.PathLike,
+    mode: str = "w",
+    indent: int = 4,
+    default: Any | None = None,
+):
     """Dump a str or dictionary to a file in json format.
 
     Args:
@@ -169,14 +194,14 @@ def jdump(obj, f, mode="w", indent=4, default=str):
         indent: Indent for storing json dictionaries.
         default: A function to handle non-serializable entries; defaults to `str`.
     """
-    f = _make_w_io_base(f, mode)
+    fout = _make_w_io_base(f, mode)
     if isinstance(obj, (dict, list)):
-        json.dump(obj, f, indent=indent, default=default)
+        json.dump(obj, fout, indent=indent, default=default)
     elif isinstance(obj, str):
-        f.write(obj)
+        fout.write(obj)
     else:
         raise ValueError(f"Unexpected type: {type(obj)}")
-    f.close()
+    fout.close()
 
 
 def jload(f, mode="r"):

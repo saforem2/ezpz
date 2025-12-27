@@ -3,6 +3,8 @@ ezpz/data/text.py
 """
 
 from itertools import chain
+
+import ezpz
 import torch
 
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -18,11 +20,13 @@ class RandomTokenDataset(Dataset):
             # Set a seed to make this toy dataset the same on each rank
             # Fabric will add a `DistributedSampler` to shard the data
             # correctly
-            generator=torch.Generator().manual_seed(42),
+            generator=torch.Generator().manual_seed(
+                (ezpz.get_rank() + 1) * 1234
+            ),
         )
 
     def __len__(self) -> int:
-        return 128
+        return self.vocab_size
 
     def __getitem__(self, item: int):
         return self.tokens[item]
@@ -72,7 +76,10 @@ class ConstantLengthDataset(IterableDataset):
                     yield torch.tensor(input_ids)
 
 
-def get_hf_dataset():
+def get_hf_dataset(
+    dataset: str = "eliplutchok/fineweb-small-sample",
+    tokenizer_name: str = "meta-llama/llama-2-7b-hf",
+):
     def tokenize_function(examples):
         return tokenizer(
             examples["text"], padding="max_length", truncation=True
@@ -81,10 +88,8 @@ def get_hf_dataset():
     from transformers import AutoTokenizer
     from datasets import load_dataset
 
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7B-hf")
-    dataset = load_dataset(
-        "eliplutchok/fineweb-small-sample"
-    )  # , streaming=True)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    dataset = load_dataset(dataset)  # , streaming=True)
     dataset = dataset.with_format("torch")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
@@ -112,8 +117,6 @@ def get_hf_dataset():
 def get_random_dataset(
     batch_size: int, vocab_size: int, seq_length: int
 ) -> dict:
-    from ezpz.data.text import RandomTokenDataset
-
     return {
         "dataset": (
             dset := RandomTokenDataset(

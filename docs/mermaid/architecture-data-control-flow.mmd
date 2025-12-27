@@ -1,0 +1,11 @@
+flowchart LR
+    A["CLI: ezpz-launch"] --> B{"Scheduler?"}
+    B -->|pbs or slurm| C["Job discovery (jobs.py)"]
+    B -->|unknown| D["Local fallback (mpirun)"]
+    C --> E["Hostfile + counts (pbs.py or slurm.py)"]
+    E --> F["Launch cmd build (launch.py)"]
+    D --> F
+    F --> G["torch dist init (dist.py)"]
+    G --> H["Training/runtime (runtime.py/train.py/test_dist.py)"]
+    H --> I["Metrics/logging (history.py/log/ + wandb)"]
+    I --> J["Outputs: ezpz outputs + wandb"]

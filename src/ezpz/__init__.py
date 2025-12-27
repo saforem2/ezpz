@@ -14,6 +14,7 @@ from typing import Any, Dict
 from .__about__ import __version__  # re-exported symbol
 
 import socket
+
 if socket.getfqdn().startswith("x3"):
     from mpi4py import MPI  # noqa
     import torch  # noqa
@@ -25,10 +26,13 @@ if socket.getfqdn().startswith("x3"):
 _LAZY_MODULES: Dict[str, str] = {
     "configs": "ezpz.configs",
     "dist": "ezpz.dist",
+    "doctor": "ezpz.doctor",
+    "examples": "ezpz.examples",
     "history": "ezpz.history",
     "jobs": "ezpz.jobs",
     "launch": "ezpz.launch",
     "log": "ezpz.log",
+    "models": "ezpz.models",
     "pbs": "ezpz.pbs",
     "profile": "ezpz.profile",
     "tp": "ezpz.tp",
@@ -39,18 +43,22 @@ _LAZY_MODULES: Dict[str, str] = {
 _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.log",
     "ezpz.configs",
+    "ezpz.dist",
+    "ezpz.doctor",
+    "ezpz.examples",
     "ezpz.utils",
     "ezpz.history",
     "ezpz.profile",
     "ezpz.tp",
     "ezpz.dist",
+    "ezpz.models",
     "ezpz.pbs",
     "ezpz.jobs",
     "ezpz.launch",
     "ezpz.tplot",
 )
 
-__all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]
+__all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]  # type:ignore
 
 _IMPORT_CACHE: Dict[str, ModuleType] = {}
 
@@ -74,7 +82,9 @@ def __getattr__(name: str) -> Any:  # pragma: no cover - exercised via tests
     if name in _LAZY_MODULES:
         module = _load_module(_LAZY_MODULES[name])
         if module is None:
-            raise AttributeError(f"Module {_LAZY_MODULES[name]!r} cannot be imported")
+            raise AttributeError(
+                f"Module {_LAZY_MODULES[name]!r} cannot be imported"
+            )
         globals()[name] = module
         return module
 
@@ -93,6 +103,22 @@ def __dir__() -> list[str]:  # pragma: no cover - trivial
     visible = set(__all__)
     visible.update(globals().keys())
     return sorted(visible)
+
+
+def try_import_wandb() -> object | None:
+    import os
+
+    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+    if not WANDB_DISABLED and WANDB_MODE != "disabled":
+        try:
+            import wandb
+        except Exception as e:
+            wandb = None
+    else:
+        wandb = None
+        WANDB_DISABLED = True
+    return wandb
 
 
 # Record the package version in the environment for compatibility with callers

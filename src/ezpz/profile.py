@@ -280,14 +280,15 @@ def get_torch_profiler(
     if hasattr(torch, "xpu") and torch.xpu.is_available():
         activities.append(ProfilerActivity.XPU)
     return profile(
+        activities=activities,
         schedule=schedule,
         on_trace_ready=on_trace_ready,
-        activities=activities,
-        profile_memory=profile_memory,
         record_shapes=record_shapes,
+        profile_memory=profile_memory,
         with_stack=with_stack,
         with_flops=with_flops,
         with_modules=with_modules,
+        # use_cuda=(torch.cuda.is_available()),
         # acc_events=acc_events,
     )
 
@@ -320,8 +321,8 @@ class PyInstrumentProfiler:
                 )
         self._start = time.perf_counter_ns()
         # outdir = os.getcwd() if outdir is None else outdir
-        outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir
-        self.outdir = Path(outdir).joinpath("ezpz_pyinstrument_profiles")
+        # outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir
+        self.outdir = Path(os.getcwd()).joinpath("ezpz_pyinstrument_profiles")
         # self.outdir = Path(outdir) if outdir is None else Path(outdir)
         self.outdir.mkdir(exist_ok=True, parents=True)
 

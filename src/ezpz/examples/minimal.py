@@ -1,3 +1,17 @@
+"""Minimal synthetic training loop for testing distributed setup and logging.
+
+This example builds a tiny MLP that learns to reconstruct random inputs.
+Launch it with:
+
+    ezpz launch -m ezpz.examples.minimal
+
+Running ``python3 -m ezpz.examples.minimal --help`` prints:
+
+    usage: ezpz.examples.minimal --help
+    (Set env vars such as PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES=\"128,256,128\" before calling ezpz launch)
+
+"""
+
 import os
 import time
 
@@ -10,6 +24,15 @@ logger = ezpz.get_logger(__name__)
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> ezpz.History:
+    """Run a synthetic training loop on random data.
+
+    Args:
+        model: Model to train (wrapped or unwrapped).
+        optimizer: Optimizer configured for the model.
+
+    Returns:
+        Training history with timing and loss metrics.
+    """
     unwrapped_model = (
         model.module
         if isinstance(model, torch.nn.parallel.DistributedDataParallel)
@@ -56,6 +79,7 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> ezpz.Hist
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def setup():
+    """Initialize distributed runtime, model, and optimizer."""
     rank = ezpz.setup_torch(seed=int(os.environ.get("SEED", 0)))
     if os.environ.get("WANDB_DISABLED", False):
         logger.info("WANDB_DISABLED is set, not initializing wandb")
@@ -90,14 +114,16 @@ def setup():
     logger.info(f"{model=}")
     optimizer = torch.optim.Adam(model.parameters())
     if ezpz.get_world_size() > 1:
-        from torch.nn.parallel import DistributedDataParallel as DDP
-
-        model = DDP(model, device_ids=[ezpz.get_local_rank()])
+        model = ezpz.dist.wrap_model_for_ddp(model)
+        # from torch.nn.parallel import DistributedDataParallel as DDP
+        #
+        # model = DDP(model, device_ids=[ezpz.get_local_rank()])
 
     return model, optimizer
 
 
 def main():
+    """Entrypoint for launching the minimal synthetic training example."""
     model, optimizer = setup()
     history = train(model, optimizer)
     if ezpz.get_rank() == 0:

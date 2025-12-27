@@ -2,11 +2,26 @@
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
 from dataclasses import dataclass
+import logging
+import os
 from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+
+logger = logging.getLogger(__name__)
+_DEBUG_NAN = os.environ.get("EZPZ_DEBUG_NAN") == "1"
+_DEBUG_NAN_ONCE = False
+
+
+def _tensor_stats(label: str, tensor: torch.Tensor) -> tuple[int, float]:
+    if tensor.numel() == 0:
+        return 0, 0.0
+    nonfinite = int((~torch.isfinite(tensor)).sum().item())
+    max_abs = float(tensor.abs().max().item())
+    return nonfinite, max_abs
 
 
 @dataclass
@@ -29,7 +44,9 @@ class ModelArgs:
     depth_init: bool = True
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0
+) -> torch.Tensor:
     """
     Precompute the frequency tensor for complex exponentials (cis) with given dimensions.
 
@@ -54,7 +71,66 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     return freqs_cis
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+def _infer_seq_start_idx(freq_len: int, seqlen: int) -> int:
+    """Best-effort guess for the local sequence offset when TP/CP shards tokens."""
+    if seqlen <= 0 or freq_len <= 0:
+        return 0
+
+    chunk_count = None
+    chunk_rank = 0
+
+    try:
+        from ezpz import tp as _tp  # type: ignore
+
+        if (
+            hasattr(_tp, "tensor_parallel_is_initialized")
+            and _tp.tensor_parallel_is_initialized()
+        ):
+            try:
+                cp_world = _tp.get_context_parallel_world_size()
+                if cp_world and cp_world > 1:
+                    chunk_count = cp_world
+                    chunk_rank = _tp.get_context_parallel_rank()
+            except Exception:
+                pass
+
+            if chunk_count is None:
+                try:
+                    tp_world = _tp.get_tensor_parallel_world_size()
+                    if tp_world and tp_world > 1:
+                        chunk_count = tp_world
+                        chunk_rank = _tp.get_tensor_parallel_rank()
+                except Exception:
+                    pass
+    except Exception:
+        chunk_count = None
+
+    if chunk_count is None or chunk_count <= 1:
+        if seqlen > 0 and freq_len % seqlen == 0:
+            chunk_count = freq_len // seqlen
+            if chunk_count <= 1:
+                return 0
+            try:
+                import torch.distributed as dist
+
+                if dist.is_initialized():
+                    chunk_rank = dist.get_rank() % chunk_count
+            except Exception:
+                chunk_rank = 0
+        else:
+            return 0
+
+    chunk_rank = int(chunk_rank) % int(chunk_count)
+    chunk_count = int(chunk_count)
+    base = freq_len // chunk_count
+    remainder = freq_len % chunk_count
+    start_idx = base * chunk_rank + min(chunk_rank, remainder)
+    return start_idx
+
+
+def reshape_for_broadcast(
+    freqs_cis: torch.Tensor, x: torch.Tensor
+) -> torch.Tensor:
     """
     Reshape frequency tensor for broadcasting it with another tensor.
 
@@ -69,8 +145,47 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
         torch.Tensor: Reshaped frequency tensor.
     """
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+    if ndim <= 1:
+        raise ValueError(
+            "Expected tensor with at least two dimensions for rotary embedding"
+        )
+
+    seqlen = int(x.shape[1])
+    rotary_dim = int(x.shape[-1])
+
+    if freqs_cis.ndim > 2:
+        if freqs_cis.shape[-1] != rotary_dim:
+            raise ValueError(
+                "Rotary dimension mismatch: got "
+                f"{freqs_cis.shape[-1]} for freqs_cis and {rotary_dim} for tensor"
+            )
+        freqs_cis = freqs_cis.reshape(-1, rotary_dim)
+
+    if freqs_cis.shape[-1] != rotary_dim:
+        raise ValueError(
+            "Rotary dimension mismatch: got "
+            f"{freqs_cis.shape[-1]} for freqs_cis and {rotary_dim} for tensor"
+        )
+
+    freq_seqlen = int(freqs_cis.shape[0])
+    if freq_seqlen < seqlen:
+        freqs_cis = precompute_freqs_cis(rotary_dim * 2, seqlen).to(
+            device=freqs_cis.device, dtype=freqs_cis.dtype
+        )
+        freq_seqlen = seqlen
+
+    if freq_seqlen != seqlen:
+        start_idx = _infer_seq_start_idx(freq_seqlen, seqlen)
+        if freq_seqlen > seqlen:
+            max_start = max(freq_seqlen - seqlen, 0)
+            start_idx = int(max(0, min(start_idx, max_start)))
+            freqs_cis = freqs_cis.narrow(0, start_idx, seqlen)
+
+        if freqs_cis.shape[0] != seqlen:
+            freqs_cis = freqs_cis[-seqlen:]
+
+        freqs_cis = freqs_cis.contiguous()
+
     shape = [
         d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)
     ]
@@ -201,7 +316,7 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Forward pass of the attention module.
 
@@ -216,14 +331,9 @@ class Attention(nn.Module):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
-        try:
-            xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
-            xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-            xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-        except Exception:
-            from ezpz.utils import breakpoint
-
-            breakpoint(0)
+        xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
@@ -239,11 +349,41 @@ class Attention(nn.Module):
         xv = values.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
 
         # we use casual mask for training
-        output = F.scaled_dot_product_attention(xq, xk, xv, is_causal=True)
+        if os.environ.get("EZPZ_ATTENTION_FP32") == "1":
+            output = F.scaled_dot_product_attention(
+                xq.float(), xk.float(), xv.float(), is_causal=True
+            ).to(xq.dtype)
+        else:
+            output = F.scaled_dot_product_attention(
+                xq, xk, xv, is_causal=True
+            )
         output = output.transpose(
             1, 2
         ).contiguous()  # (bs, seqlen, n_local_heads, head_dim)
         output = output.view(bsz, seqlen, -1)
+        if _DEBUG_NAN:
+            global _DEBUG_NAN_ONCE
+            if not _DEBUG_NAN_ONCE:
+                with torch.no_grad():
+                    q_nf, q_max = _tensor_stats("xq", xq)
+                    k_nf, k_max = _tensor_stats("xk", xk)
+                    v_nf, v_max = _tensor_stats("xv", xv)
+                    o_nf, o_max = _tensor_stats("out", output)
+                logger.info(
+                    "attn_stats xq(nonfinite=%s max_abs=%.6f) "
+                    "xk(nonfinite=%s max_abs=%.6f) "
+                    "xv(nonfinite=%s max_abs=%.6f) "
+                    "out(nonfinite=%s max_abs=%.6f)",
+                    q_nf,
+                    q_max,
+                    k_nf,
+                    k_max,
+                    v_nf,
+                    v_max,
+                    o_nf,
+                    o_max,
+                )
+                _DEBUG_NAN_ONCE = True
         return self.wo(output)
 
 
@@ -341,7 +481,7 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-    ):
+    ) -> torch.Tensor:
         """
         Perform a forward pass through the TransformerBlock.
 
@@ -394,7 +534,7 @@ class Transformer(nn.Module):
             model_args.vocab_size, model_args.dim
         )
         self.register_buffer(
-            'freqs_cis',
+            "freqs_cis",
             precompute_freqs_cis(
                 model_args.dim // model_args.n_heads,
                 # Need to compute until at least the max token limit for generation
@@ -446,7 +586,7 @@ class Transformer(nn.Module):
             b=cutoff_factor * final_out_std,
         )
 
-    def forward(self, tokens: torch.Tensor):
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         """
         Perform a forward pass through the Transformer model.
 
@@ -469,7 +609,7 @@ class Transformer(nn.Module):
         return output
 
     @classmethod
-    def from_model_args(cls, model_args: ModelArgs) -> 'Transformer':
+    def from_model_args(cls, model_args: ModelArgs) -> "Transformer":
         """
         Initialize a Transformer model from a ModelArgs object.
 

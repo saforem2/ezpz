@@ -1,4 +1,11 @@
 # user added
+*core\.*
+*broken*
+*WIP*
+*.bak
+*202[0-9]-*
+trainer_output/*
+*.bin
 .deepspeed_env
 .jobenv
 **ezpz_pyinstrument_profiles**
@@ -184,3 +191,4 @@ cython_debug/
 #.idea/
 
 /.quarto/
+core\.

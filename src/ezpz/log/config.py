@@ -95,25 +95,40 @@ MAGENTA = Style(color=MAGENTA_)
 CYAN = Style(color=DARK["cyan"])
 GREY_MED = "#838383"
 
+flag_styles = {
+    "none": Style(),
+    "reset": Style(),
+    "dim": Style(dim=True),
+    "bold": Style(bold=True),
+    "strong": Style(bold=True),
+    "italic": Style(italic=True),
+    "emphasize": Style(italic=True),
+    "underline": Style(underline=True),
+    "blink": Style(blink=True),
+    "blink2": Style(blink2=True),
+    "reverse": Style(reverse=True),
+    "strike": Style(strike=True),
+    "code": Style(reverse=True),
+}
 
 # 1) simple “flag” styles
-_flag_defs = {
-    "none": {},
-    "reset": dict(color="default", bgcolor="default"),
-    "dim": {"dim": True},
-    # "bright": {"bright": True},
-    "bold": {"bold": True},
-    "strong": {"bold": True},
-    "italic": {"italic": True},
-    "emphasize": {"italic": True},
-    "underline": {"underline": True},
-    "blink": {"blink": True},
-    "blink2": {"blink2": True},
-    "reverse": {"reverse": True},
-    "strike": {"strike": True},
-    "code": {"reverse": True, "bold": True},
-}
-flag_styles = {k: Style(**v) for k, v in _flag_defs.items()}
+# _flag_defs = {
+#     "none": {},
+#     "reset": dict(color="default", bgcolor="default"),
+#     "dim": {"dim": True},
+#     # "bright": {"bright": True},
+#     "bold": {"bold": True},
+#     "strong": {"bold": True},
+#     "italic": {"italic": True},
+#     "emphasize": {"italic": True},
+#     "underline": {"underline": True},
+#     "blink": {"blink": True},
+#     "blink2": {"blink2": True},
+#     "reverse": {"reverse": True},
+#     "strike": {"strike": True},
+#     "code": {"reverse": True, "bold": True},
+# }
+# flag_styles = {k: Style(**v) for k, v in _flag_defs.items()}
 
 # 2) colors (basic + “color.” prefix)
 _colors = [
@@ -138,52 +153,69 @@ basic_colors = {c: Style(color=c) for c in _colors}
 prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
 
 # 3) miscellaneous logging + repr overrides
-_logging_defs = {
-    "log.level.warn": {"color": "bright_yellow"},
-    "logging.level.info": {"color": "green"},
-    "log.colon": {"color": "bright_blue"},
-    # …etc…
-    "logging.time": {"dim": True},
-    "logging.date": {"dim": True},
-    "log.parent": {"color": "cyan", "italic": True},
-    "log.path": {"color": "blue", "bold": False, "italic": False},
-    "logging.keyword": {"bold": True, "color": "bright_yellow"},
-    "logging.level.notset": {"dim": True},
-    "logging.level.debug": {"color": "bright_blue", "bold": True},
-    "logging.level.error": {"color": "bright_red", "bold": True},
-    "log.level.warning": {"color": "bright_yellow"},
-    "logging.level.warn": {"color": "bright_yellow"},
-    "logging.level.warning": {"color": "bright_yellow"},
-    "log.time": {"color": "black", "dim": True},
-    "logging.level.critical": {
-        "color": "bright_red",
-        "bold": True,
-        "reverse": True,
-    },
-    "log.linenumber": {"color": "magenta"},
-    "log.brace": {},
-}
 log_styles = {
-    k: Style.null() if not v else Style(**v) for k, v in _logging_defs.items()
+    "log.colon": Style(dim=True),
+    "logging.date": Style(dim=True),
+    "logging.time": Style(dim=True),
+    "log.time": Style(color="black", dim=True),
+    "log.linenumber": Style(
+        color="red",
+        bold=False,
+        # bold=True,
+    ),
+    "log.brace": Style(),
+    "log.path": Style(color="magenta", bold=False, italic=False),
+    "log.parent": Style(
+        color="bright_magenta",
+        italic=False,
+        bold=False,  # , dim=True
+    ),
+    "logging.keyword": Style(bold=True, color="bright_yellow"),
+    "logging.level.notset": Style(dim=True),
+    "logging.level.debug": Style(color="bright_blue", bold=True),
+    # ----------------- INFO ---------------------------------------
+    "log.level.info": Style(color="green"),
+    "logging.level.info": Style(color="green"),
+    # ----------------- WARN ---------------------------------------
+    "log.level.warn": Style(
+        color="bright_yellow",
+    ),
+    "log.level.warning": Style(color="bright_yellow"),
+    "logging.level.warn": Style(color="bright_yellow"),
+    "logging.level.warning": Style(color="bright_yellow"),
+    # ----------------- ERROR --------------------------------------
+    "log.level.error": Style(color="bright_red", bold=True),
+    "logging.level.error": Style(color="bright_red", bold=True),
+    # ----------------- CRITICAL ------------------------------------
+    "log.level.critical": Style(
+        color="bright_red",
+        bold=True,
+        reverse=True,
+    ),
+    "logging.level.critical": Style(
+        color="bright_red",
+        bold=True,
+        reverse=True,
+    ),
 }
-
-_repr_defs = {
-    "repr.attr": {"color": "blue"},
-    "repr.attrib_equal": {"color": "yellow", "bold": True},
-    "repr.function": {"color": "bright_green", "italic": True},
-    "repr.brace": {"color": "bright_magenta"},
-    "repr.comma": {"color": "bright_yellow"},
-    "repr.colon": {"color": "green"},
-    "repr.dash": {"color": "white"},
-    "repr.attrib_name": {"color": "bright_blue"},
-    "repr.attrib_value": {"color": "magenta"},
-    "repr.ellipsis": {"color": "bright_yellow"},
+repr_styles = {
+    "repr.attr": Style(color="blue"),
+    "repr.attrib_equal": Style(color="yellow", bold=True),
+    "repr.function": Style(color="bright_green", italic=True),
+    "repr.brace": Style(),
+    "repr.comma": Style(color="bright_yellow"),
+    "repr.colon": Style(color="green"),
+    "repr.dash": Style(color="white"),
+    "repr.attrib_name": Style(color="bright_blue", bold=False, italic=False),
+    # "repr.attrib_value": Style(color="magenta"),
+    "repr.ellipsis": Style(color="bright_yellow"),
 }
-repr_styles = {k: Style(**v) for k, v in _repr_defs.items()}
 
 # 4) assemble in one shot
 if use_colored_logs():
-    STYLES = flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    STYLES = (
+        flag_styles | basic_colors | prefixed_colors | log_styles | repr_styles
+    )
 else:
     STYLES = {k: Style.null() for k in DEFAULT_STYLES}
 DEFAULT_STYLES |= STYLES

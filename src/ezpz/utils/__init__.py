@@ -2,33 +2,45 @@
 ezpz/utils/__init__.py
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import pdb
 import re
 import sys
-from dataclasses import asdict
+import tqdm
+from typing import Any
+from dataclasses import asdict, dataclass
+
+import ezpz
+
 # from ezpz import get_rank
 from pathlib import Path
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import torch
-import torch.distributed
+
+# import torch.distributed
 import xarray as xr
 from torchinfo import ModelStatistics
 
-import ezpz
 from ezpz.configs import PathLike, ScalarLike, ZeroConfig
-from ezpz.utils.dummies import DummyMPI, DummyTorch
+
+import math
+
+# import numpy as np
+
+# ScalarLike = Any  # keep your existing alias if you already have one
 
 # import torch.distributed as tdist
 
 
 __all__ = [
+    "Color",
+    "NoColor",
     "DistributedPdb",
-    "DummyMPI",
-    "DummyTorch",
     "breakpoint",
     "get_timestamp",
     "format_pair",
@@ -52,6 +64,8 @@ __all__ = [
     "get_deepspeed_config_json",
     "write_deepspeed_zero12_auto_config",
     "write_deepspeed_zero3_auto_config",
+    "ForkedPdb",
+    "DummyTqdmFile",
 ]
 
 
@@ -67,6 +81,38 @@ logger = logging.getLogger(__name__)
 # _ = logger.setLevel(LOG_LEVEL) if RANK == 0 else logger.setLevel("CRITICAL")
 
 # logger = ezpz.get_logger(__name__)
+#
+#
+
+
+@dataclass(frozen=True)
+class Color:
+    black = "\033[30m"
+    red = "\033[31m"
+    green = "\033[32m"
+    yellow = "\033[33m"
+    blue = "\033[34m"
+    magenta = "\033[35m"
+    cyan = "\033[36m"
+    white = "\033[37m"
+    reset = "\033[39m"
+    orange = "\033[38;2,180;60,0m"
+    turquoise = "\033[38;2,54,234;195m"
+
+
+@dataclass(frozen=True)
+class NoColor:
+    black = ""
+    red = ""
+    green = ""
+    yellow = ""
+    blue = ""
+    magenta = ""
+    cyan = ""
+    white = ""
+    reset = ""
+    orange = ""
+    turquoise = ""
 
 
 class DistributedPdb(pdb.Pdb):
@@ -101,7 +147,36 @@ def breakpoint(rank: int = 0):
             f"Type 'up' to get to the frame that called dist.breakpoint(rank={rank})\n"
         )
         pdb.set_trace()
-    torch.distributed.barrier()
+    # torch.distributed.barrier()
+    ezpz.dist.barrier()
+
+
+class ForkedPdb(pdb.Pdb):
+    """PDB subclass for debugging multi-processed code."""
+
+    def interaction(self, *args, **kwargs):  # pragma: no cover - interactive
+        _stdin = sys.stdin
+        try:
+            sys.stdin = open("/dev/stdin")
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
+
+
+class DummyTqdmFile:
+    """Dummy file-like wrapper that forwards writes to tqdm."""
+
+    file = None
+
+    def __init__(self, file):
+        self.file = file
+
+    def write(self, text):
+        if len(text.rstrip()) > 0:
+            tqdm.tqdm.write(text, file=self.file, end="\n")
+
+    def flush(self):
+        return getattr(self.file, "flush", lambda: None)()
 
 
 def get_timestamp(fstr: Optional[str] = None) -> str:
@@ -118,48 +193,128 @@ def get_timestamp(fstr: Optional[str] = None) -> str:
     Returns:
         str: Formatted timestamp string.
 
-    Example:
+    Examples:
         >>> get_timestamp()  # Returns something like '2023-12-01-143022'
         >>> get_timestamp("%Y-%m-%d")  # Returns something like '2023-12-01'
     """
     import datetime
 
     now = datetime.datetime.now()
-    return now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    return (
+        now.strftime("%Y-%m-%d-%H%M%S") if fstr is None else now.strftime(fstr)
+    )
 
 
-def format_pair(k: str, v: ScalarLike, precision: int = 6) -> str:
-    """Format a key-value pair as a string.
+def format_pair(k: str, v: Any, precision: int = 6) -> str:
+    """Format a key-value pair (supports nested dict/list/tuple/set).
 
-    Formats a key-value pair where the value can be an integer, boolean, or float.
-    Integers and booleans are formatted without decimal places, while floats are
-    formatted with the specified precision.
+    Nested dicts become dotted keys:  key.subkey=value
+    Sequences become indexed keys:    key[0]=value
 
-    Args:
-        k (str): The key/name of the parameter.
-        v (ScalarLike): The value to format (int, bool, float, or numpy scalar).
-        precision (int, optional): Number of decimal places for float values.
-            Defaults to 6.
-
-    Returns:
-        str: Formatted key-value pair string in the format "key=value".
-
-    Example:
-        >>> format_pair("lr", 0.001)
-        'lr=0.001000'
-        >>> format_pair("epochs", 10)
-        'epochs=10'
-        >>> format_pair("verbose", True)
-        'verbose=True'
+    Returns a newline-joined string if multiple leaf pairs are produced.
     """
-    if isinstance(v, (int, bool, np.integer)):
-        # return f'{k}={v:<3}'
-        return f"{k}={v}"
-    # return f'{k}={v:<3.4f}'
-    return f"{k}={v:<.{precision}f}"
+
+    def _is_int_like(x: Any) -> bool:
+        return (
+            isinstance(x, (bool, int, np.integer))
+            and not isinstance(x, (bool,)) is False
+        )  # keep bool distinct below
+
+    def _is_bool_like(x: Any) -> bool:
+        return isinstance(x, (bool, np.bool_))
+
+    def _is_float_like(x: Any) -> bool:
+        return isinstance(x, (float, np.floating))
+
+    def _scalar_str(key: str, val: Any) -> str:
+        # numpy scalar -> python scalar (helps consistent isinstance checks)
+        if isinstance(val, np.generic):
+            val = val.item()
+
+        if _is_bool_like(val):
+            return f"{key}={bool(val)}"
+
+        if isinstance(val, (int, np.integer)):
+            return f"{key}={int(val)}"
+
+        if isinstance(val, float):
+            # be explicit for non-finite floats (avoids ValueError with format spec)
+            if not math.isfinite(val):
+                return f"{key}={val}"
+            return f"{key}={val:.{precision}f}"
+
+        # fallback: strings, None, objects, etc.
+        return f"{key}={val}"
+
+    def _flatten(key: str, val: Any) -> list[str]:
+        # numpy scalar -> python scalar early
+        if isinstance(val, np.generic):
+            val = val.item()
+
+        if isinstance(val, dict):
+            out: list[str] = []
+            for kk, vv in val.items():
+                out.extend(_flatten(f"{key}.{kk}", vv))
+            return out
+
+        if isinstance(val, (list, tuple)):
+            out: list[str] = []
+            for i, vv in enumerate(val):
+                out.extend(_flatten(f"{key}[{i}]", vv))
+            return out
+
+        if isinstance(val, set):
+            # sets are unordered; make deterministic
+            out: list[str] = []
+            for i, vv in enumerate(sorted(val, key=lambda x: repr(x))):
+                out.extend(_flatten(f"{key}[{i}]", vv))
+            return out
+
+        return [_scalar_str(key, val)]
+
+    return "\n".join(_flatten(k, v))
 
 
-def summarize_dict(d: dict, precision: int = 6) -> str:
+# def format_pair1(k: str, v: ScalarLike, precision: int = 6) -> str:
+#     """Format a key-value pair as a string.
+#
+#     Formats a key-value pair where the value can be an integer, boolean, or float.
+#     Integers and booleans are formatted without decimal places, while floats are
+#     formatted with the specified precision.
+#
+#     Args:
+#         k (str): The key/name of the parameter.
+#         v (ScalarLike): The value to format (int, bool, float, or numpy scalar).
+#         precision (int, optional): Number of decimal places for float values.
+#             Defaults to 6.
+#
+#     Returns:
+#         str: Formatted key-value pair string in the format "key=value".
+#
+#     Example:
+#         >>> format_pair("lr", 0.001)
+#         'lr=0.001000'
+#         >>> format_pair("epochs", 10)
+#         'epochs=10'
+#         >>> format_pair("verbose", True)
+#         'verbose=True'
+#     """
+#     # handle the case when v is a (potentially nested) {list, dict, ...}
+#     if isinstance(v, (list, dict)):
+#
+#
+#     if isinstance(v, (int, bool, np.integer)):
+#         # return f'{k}={v:<3}'
+#         return f"{k}={v}"
+#     # return f'{k}={v:<3.4f}'
+#     return f"{k}={v:<.{precision}f}"
+
+
+def summarize_dict(
+    d: dict,
+    precision: int = 6,
+    keys_to_skip: Iterable | None = None,
+) -> str:
     """
     Summarize a dictionary into a string with formatted key-value pairs.
 
@@ -170,11 +325,18 @@ def summarize_dict(d: dict, precision: int = 6) -> str:
     Returns:
         str: A string representation of the dictionary with formatted key-value pairs.
     """
-    return " ".join([format_pair(k, v, precision=precision) for k, v in d.items()])
+    keys_to_skip = [] if keys_to_skip is None else keys_to_skip
+    return " ".join(
+        [
+            format_pair(k, v, precision=precision)
+            for k, v in d.items()
+            if k not in keys_to_skip
+        ]
+    )
 
 
 def model_summary(
-    model,
+    model: Any,
     verbose: bool = False,
     depth: int = 1,
     input_size: Optional[Sequence[int]] = None,
@@ -203,28 +365,15 @@ def model_summary(
         # logger.info(f'\n{summary_str}')
 
     except (ImportError, ModuleNotFoundError):
-        logger.warning("torchinfo not installed, unable to print model summary!")
+        logger.warning(
+            "torchinfo not installed, unable to print model summary!"
+        )
 
 
 def normalize(name: str) -> str:
-    """Normalize a name by replacing special characters with dashes and converting to lowercase.
-
-    This function replaces hyphens, underscores, and periods with single dashes,
-    then converts the result to lowercase.
-
-    Args:
-        name (str): The name to normalize.
-
-    Returns:
-        str: The normalized name with only lowercase letters, numbers, and dashes.
-
-    Example:
-        >>> normalize("Test_Name.Sub-Name")
-        'test-name-sub-name'
-        >>> normalize("example__file..name")
-        'example-file-name'
-    """
-    return re.sub(r"[-_.]+", "-", name).lower()
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name)
+    return name.strip("-")
 
 
 def get_max_memory_allocated(device: torch.device) -> float:
@@ -259,7 +408,77 @@ def get_max_memory_reserved(device: torch.device) -> float:
     raise RuntimeError(f"Memory allocation not available for {device=}")
 
 
-def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, None]:
+# hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC
+def get_peak_flops(device_name: str) -> float:
+    try:
+        # Run the lspci command and capture the output
+        result = subprocess.run(["lspci"], stdout=subprocess.PIPE, text=True)
+        # Filter the output for lines containing both "NVIDIA" and "H100"
+        filtered_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if "NVIDIA" in line and "H100" in line
+        ]
+        # Join all filtered lines into a single string
+        device_name = " ".join(filtered_lines) or device_name
+    except FileNotFoundError as e:
+        logger.warning(
+            f"Error running lspci: {e}, fallback to use device_name"
+        )
+    if "A100" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/a100/
+        return 312e12
+    elif "H100" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/h100/
+        # NOTE: Specifications are one-half lower without sparsity.
+        if "NVL" in device_name:
+            return 835e12
+        elif "PCIe" in device_name:
+            return 756e12
+        else:  # for H100 SXM and other variants
+            return 989e12
+    elif "H200" in device_name:
+        # data from https://www.nvidia.com/en-us/data-center/h200/
+        return 989e12
+    elif "B200" in device_name:
+        # data from https://nvdam.widen.net/s/wwnsxrhm2w/blackwell-datasheet-3384703
+        return 2.25e15
+    elif "MI355X" in device_name:
+        # MI355X data from https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html
+        return 2500e12
+    elif "MI300X" in device_name or "MI325X" in device_name:
+        # MI300X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html
+        # MI325X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi325x.html
+        return 1300e12
+    elif "MI250X" in device_name:
+        # data from https://www.amd.com/en/products/accelerators/instinct/mi200/mi250x.html (per GCD)
+        return 191.5e12
+    elif "Data Center GPU Max 1550" in device_name:
+        # Also known as Ponte Vecchio (PVC).
+        # data from https://www.intel.com/content/www/us/en/docs/oneapi/optimization-guide-gpu/2025-0/intel-xe-gpu-architecture.html
+        # Dot Product Accumulate Systolic (DPAS):
+        # - Freq: 1300MHz
+        # - #ops: 512
+        # Full EU mode (i.e. 512 max compute units): 340.8 TFLOPS (BF16)
+        # Standard EU mode (i.e. 448 max compute units): 298.2 TFLOPS (BF16)
+        max_comp_units = torch.xpu.get_device_properties(
+            "xpu"
+        ).max_compute_units
+        return 512 * max_comp_units * 1300 * 10**6
+    elif "l40s" in device_name:
+        # data from: "https://resources.nvidia.com/en-us-l40s/l40s-datasheet-28413"
+        return 362e12
+
+    else:  # for other GPU types, assume A100
+        logger.warning(
+            f"Peak flops undefined for: {device_name}, fallback to A100"
+        )
+        return 312e12
+
+
+def grab_tensor(
+    x: Any, force: bool = False
+) -> Union[np.ndarray, ScalarLike, None]:
     """Convert various tensor/array-like objects to numpy arrays.
 
     This function converts different types of array-like objects (tensors, lists, etc.)
@@ -279,7 +498,7 @@ def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, No
     Raises:
         ValueError: If unable to convert a list to array.
 
-    Example:
+    Examples:
         >>> import torch
         >>> import numpy as np
         >>> grab_tensor([1, 2, 3])
@@ -293,12 +512,18 @@ def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, No
         return None
     if isinstance(x, (int, float, bool, np.floating)):
         return x
+    if isinstance(x, tuple):
+        x = list(x)
     if isinstance(x, list):
+        if len(x) == 0:
+            return np.array([])
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
         if isinstance(x[0], np.ndarray):
             return np.stack(x)
         if isinstance(x[0], (int, float, bool, np.floating)):
+            return np.array(x)
+        if isinstance(x[0], (tuple, list)):
             return np.array(x)
         else:
             raise ValueError(f"Unable to convert list: \n {x=}\n to array")
@@ -317,7 +542,7 @@ def grab_tensor(x: Any, force: bool = False) -> Union[np.ndarray, ScalarLike, No
     elif callable(getattr(x, "numpy", None)):
         assert callable(getattr(x, "numpy"))
         return x.numpy(force=force)
-    breakpoint(0)
+    # breakpoint(0)
     # raise ValueError
 
 
@@ -347,7 +572,9 @@ def check_for_tarball(
             logger.info(f"Creating tarball {tarball} from {env_prefix}")
             make_tarfile(tarball, env_prefix)
         else:
-            logger.info(f"Tarball {tarball} already exists in current directory")
+            logger.info(
+                f"Tarball {tarball} already exists in current directory"
+            )
     else:
         logger.info(f"Tarball {tarball} already exists, skipping creation")
     return tar_on_tmp if tar_on_tmp.exists() else Path(tarball)
@@ -357,14 +584,18 @@ def make_tarfile(
     output_filename: str,
     source_dir: str | os.PathLike | Path,
 ) -> str:
-    output_filename = output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
+    output_filename = (
+        output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
+    )
     srcfp = Path(source_dir).absolute().resolve()
     dirname = srcfp.name
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
     logger.info(
         f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
     )
-    os.system(f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}")
+    os.system(
+        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
+    )
 
     return output_filename
 
@@ -392,8 +623,12 @@ def save_dataset(
         try:
             dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
         except TypeError:
-            logger.warning("Unable to save as `.h5` file, falling back to `netCDF4`")
-            save_dataset(dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs)
+            logger.warning(
+                "Unable to save as `.h5` file, falling back to `netCDF4`"
+            )
+            save_dataset(
+                dataset, outdir=outdir, use_hdf5=False, fname=fname, **kwargs
+            )
     else:
         fname = "dataset.nc" if fname is None else f"{fname}_dataset.nc"
         outfile = Path(outdir).joinpath(fname)
@@ -600,7 +835,7 @@ def get_bf16_config_json(
 
 def get_fp16_config_json(
     enabled: bool = True,
-):
+) -> dict[str, bool]:
     """
     Get the deepspeed fp16 config json.
 
@@ -653,7 +888,7 @@ def get_deepspeed_config_json(
     save_config: bool = True,
     output_file: Optional[str] = None,
     output_dir: Optional[PathLike] = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Write a deepspeed config to the output directory.
     """
@@ -663,11 +898,15 @@ def get_deepspeed_config_json(
     bf16_config = {"enabled": bf16}
     fp16_config = {"enabled": fp16}
     flops_profiler_config = (
-        get_flops_profiler_config_json() if flops_profiler is None else flops_profiler
+        get_flops_profiler_config_json()
+        if flops_profiler is None
+        else flops_profiler
     )
 
     optimizer = (
-        get_deepspeed_adamw_optimizer_config_json() if optimizer is None else optimizer
+        get_deepspeed_adamw_optimizer_config_json()
+        if optimizer is None
+        else optimizer
     )
     scheduler = (
         get_deepspeed_warmup_decay_scheduler_config_json()
@@ -799,7 +1038,9 @@ def write_deepspeed_zero12_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
@@ -871,7 +1112,9 @@ def write_deepspeed_zero3_auto_config(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    outfile = output_dir.joinpath(f"deepspeed_zero{zero_stage}_auto_config.json")
+    outfile = output_dir.joinpath(
+        f"deepspeed_zero{zero_stage}_auto_config.json"
+    )
     logger.info(
         f"Saving DeepSpeed ZeRO Stage {zero_stage} "
         f"auto config to: {outfile.as_posix()}"
