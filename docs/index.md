@@ -17,7 +17,7 @@ Checkout the [📘 docs](https://saforem2.github.io/ezpz) for more information!
     - Metric handling and utilities for {tracking, recording, plotting}:
         `ezpz.History()` with Weights \& Biases support
     - Integration with native job scheduler(s) (PBS, Slurm)
-        - with _safe fall-backs to_ when no scheduler is detected
+        - with _safe fall-backs_ when no scheduler is detected
     - Single-process logging with filtering for distributed runs
 - 📝 *Ready-to-go Examples* that can be bootstrapped
     for general use cases:
@@ -266,6 +266,11 @@ Additional configuration can be done through environment variables, including:
     EZPZ_TPLOT_MARKER="braille" ezpz launch python3 -m your_app.train
     # next-best resolution, more widely supported
     EZPZ_TPLOT_MARKER="fhd" ezpz launch python3 -m your_app.train
+    ```
+3. Forcing a specific torch device (useful on GPU hosts when you want CPU-only):
+
+    ```bash
+    TORCH_DEVICE=cpu ezpz test
     ```
 
 ## ➕ More Information

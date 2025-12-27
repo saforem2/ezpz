@@ -5,98 +5,134 @@
 `ezpz` makes distributed PyTorch launches portable across NVIDIA, AMD, Intel,
 MPS, and CPU—with zero-code changes and guardrails for HPC schedulers.
 
-- Automatic accelerator detection + `ezpz.setup_torch()` to pick the right
-  backend.
-- PBS/Slurm-aware launcher with automatic fallback to `mpirun` when no
-  scheduler is present.
-- Batteries-included examples 
-  (ViT, FSDP, tensor-parallel, diffusion, HF Trainer).
-- Metrics that just work, with utilities for {tracking, recording, plotting},
-  and support for syncing via Weights \&  Biases via `ezpz.History`.
+Checkout the [📘 docs](https://saforem2.github.io/ezpz) for more information!
 
-See the [docs](https://saforem2.github.io/ezpz) and the
-[Repository Guidelines](AGENTS.md) for more detail.
+## ✨ Features
 
-> [!NOTE]
-> **Quickstart:**
->
-> If you already have a Python environment with
-> {`torch`, `mpi4py`} installed, you can:
->
-> ```bash
-> # pip install uv first, if needed
-> uv run --active \
->     --no-build-isolation \
->     --python=$(which python3) \
->     --with="git+https://github.com/saforem2/ezpz" \
->     ezpz test
-> ```
+- 🪄 _Automatic_:
+  - Accelerator detection: `ezpz.get_device()`,  
+     across {`cuda`, `xpu`, `mps`, `cpu`}
+  - Distributed initialization: `ezpz.setup_torch()`  
+     to pick the right device + backend combo
+  - Metric handling and utilities for {tracking, recording, plotting}:
+    `ezpz.History()` with Weights \& Biases support
+  - Integration with native job scheduler(s) (PBS, Slurm)
+    - with _safe fall-backs_ when no scheduler is detected
+  - Single-process logging with filtering for distributed runs
+- 📝 _Ready-to-go Examples_ that can be bootstrapped
+  for general use cases:
+  (ViT, FSDP, tensor-parallel, diffusion, HF Trainer).  
+  👀 See [Examples](#ready-to-go-examples) for more information.
 
 ## 🐣 Getting Started
 
-1. Setup Python environment:
+1. **Setup Python environment**:<br>
+   To use `ezpz`, we first need a Python environment
+   (preferably _virtual_) that has `torch` and `mpi4py` installed.
+   - Already have one? Skip to (2.) below!
+       <details closed><summary><b>[Optional]</b></summary>
+       **Note**: This is _technically_ optional, but recommended.<br>
+       Especially if you happen to be running behind a job scheduler (e.g.
+       PBS/Slurm) at any of {ALCF, OLCF, NERSC}, this will automatically 
+       load the appropriate modules and use these to bootstrap a virtual
+       environment.<br>
+       However, if you already have a Python environment with
+       {`torch`, `mpi4py`} installed and would prefer to use that, skip
+       directly to (2.) installing `ezpz` below
+       </details>
+   - _Otherwise_, we can use the provided
+     [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
+     to setup our environment:
 
-   \[**Optional**\] Note: this is _technically_ optional (but recommended).
+     ```bash
+     source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+     ```
 
-   If you already have a
-   Python environment with {`torch`, `mpi4py`} installed and would prefer to use that, skip directly to (2.)
-
-   Otherwise, we can use the provided 
-   [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
-   to setup our environment:
+1. **Install `ezpz`[^uvi]**:
 
    ```bash
-   # 1) Load appropriate modules (@ LCFs*) and setup virtual environment
-   source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+   uv pip install "git+https://github.com/saforem2/ezpz"
    ```
 
-   - <details closed><summary><b>[Details]</b></summary>
-     NOTE: This is optional but strongly recommended.  
-     If running behind a job scheduler (e.g. PBS/Slurm) at any of {ALCF, OLCF,
-     NERSC}, this will automatically load the appropriate modules and use these
-     to bootstrap a virtual environment.
-   </details>
+   - <details closed><summary>Need PyTorch or <code>mpi4py</code>?</summary>
 
-2. Install `ezpz`:
-
-   ```bash
-   # 2) Install the latest ezpz
-   uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
-   ```
-
-   - If you don't already have PyTorch or `mpi4py` installed,
+     If you don't already have PyTorch or `mpi4py` installed,
      you can specify these as additional dependencies:
 
      ```bash
      uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[torch,mpi]"
      ```
 
-   - ... _or try without installing_!
+     </details>
+
+   - <details closed><summary>... _or try without installing_!</summary>
+
+     If you already have a Python environment with
+     {`torch`, `mpi4py`} installed, you can try `ezpz` without installing
+     it:
 
      ```bash
-     # ...or try without installing into your env:
+     # pip install uv first, if needed
      uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
+
+     TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
+         ezpz test
+
+     TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
+         --python=$(which python3) \
+         ezpz launch \
+             python3 -m ezpz.examples.fsdp_tp
      ```
 
-3. Run distributed smoke test:
+   </details>
+
+1. **Distributed Smoke Test**:
+
+   Train simple MLP on MNIST with PyTorch + DDP:
 
    ```bash
    ezpz test
    ```
 
-   Which will train a simple model on the MNIST dataset using PyTorch + DDP.
-
-   > See
-   > \[[ezpz test | W\&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)\]
+   > See:
+   > \[[📑 ezpz test | W\&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)\]
    > for sample output and details of metric tracking.
 
-[^bitly]: The <https://bit.ly/ezpz-utils> URL is just a short link for
+[^uvi]: If you don't have `uv` installed, you can install it via:
+
+    ```bash
+    pip install uv
+    ```
+
+    See the [uv documentation](https://uv.readthedocs.io/en/latest/) for more details.
+
+[^bitly]:
+    The <https://bit.ly/ezpz-utils> URL is just a short link for
     convenience that actually points to
     <https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh>
 
-## 🏃‍♂️‍➡️ CLI Entry Points
+## 🧰 `ezpz`: CLI Toolbox
 
-### 🩺 Health check with `ezpz doctor`
+Once installed, `ezpz` provides a CLI with a few useful utilities
+to help with distributed launches and environment validation.
+
+Explicitly, these are:
+
+```bash
+ezpz doctor  # environment validation and health-check
+ezpz test    # distributed smoke test
+ezpz launch  # general purpose, scheduler-aware launching
+```
+
+To see the list of available commands, run:
+
+```bash
+ezpz --help
+```
+
+or checkout [docs/CLI](https://saforem2.github.io/ezpz/cli/) for additional information.
+
+### 🩺 `ezpz doctor`
 
 Health-check your environment and ensure that `ezpz` is installed correctly
 
@@ -108,69 +144,28 @@ ezpz doctor --json   # machine-friendly output for CI
 Checks MPI, scheduler detection, Torch import + accelerators, and wandb
 readiness, returning non-zero on errors.
 
-<details closed><summary>Output:</summary>
+See [docs/CLI/Doctor](https://saforem2.github.io/ezpz/cli/doctor/) for more information.
 
-```bash
-; ezpz doctor
-== Runtime Context ==
-User: foremans
-Machine: x86_64
-Hostname: x4712c1s0b0n0
-PBS_JOBID: 8227686.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-PBS_NODEFILE: /var/spool/pbs/aux/8227686.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-ezpz: v0.9.0 (/lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/ezpz-distributed-metrics/src/ezpz/__init__.py)
+### ✅ `ezpz test`
 
-Module list:
-  gcc-runtime/13.3.0-ghotoln <H>
-  gmp/6.3.0-mtokfaw <H>
-  mpfr/4.2.1-gkcdl5w <H>
-  mpc/1.3.1-rdrlvsl <H>
-  gcc/13.3.0
-  oneapi/release/2025.2.0
-  libxml2/2.13.5
-  hwloc/2.12.1-level-zero
-  mpich/opt/develop-git.6037a7a
-  libfabric/1.22.0
-  cray-pals/1.8.0
-  cray-libpals/1.8.0
-  hdf5/1.14.6
-  frameworks/2025.2.0
-
-Base environment:
-  Mamba root: /lus/flare/datascience/Aurora_deployment/foremans/micromamba
-
-Active environment:
-  Virtual env: /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/ezpz-distributed-metrics/venvs/aurora/ezpz-distributed-metrics-aurora_frameworks-2025.2.0
-  Conda env: /opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0 (/opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0)
-
-Python: /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/ezpz-distributed-metrics/venvs/aurora/ezpz-distributed-metrics-aurora_frameworks-2025.2.0/bin/python3 (3.10.14)
-PyTorch: 2.8.0a0+gitba56102 (/opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/lib/python3.10/site-packages/torch/__init__.py)
-
-Scheduler resources:
-  NHOSTS: 2
-  NGPU_PER_HOST: 12
-  NGPUS: 24
-
-[✅ OKAY] [mpi      ]: mpi4py import succeeded and an MPI launcher was found.
-[✅ OKAY] [wandb    ]: wandb authentication provided in '~/.netrc' Should be all set.
-[✅ OKAY] [torch    ]: PyTorch detected at least one accelerator.
-[✅ OKAY] [hostfile ]: HOSTFILE=/var/spool/pbs/aux/8227686.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov (2 hosts).
-[✅ OKAY] [scheduler]: Detected active scheduler: PBS.
-```
-
-</details>
-
-### ✅ ezpz test
-
-Run the bundled test suite (great for first-time validation).
+Run the bundled test suite (great for first-time validation):
 
 ```bash
 ezpz test
-uv run --with "git+https://github.com/saforem2/ezpz" ezpz test
 ```
 
+Or, try without installing:
 
-### 🚀 `ezpz` Launch
+```bash
+TMPDIR=$(pwd) uv run \
+    --python=$(which python3) \
+    --with "git+https://github.com/saforem2/ezpz" \
+    ezpz test
+```
+
+See [docs/CLI/Test](https://saforem2.github.io/ezpz/cli/test/) for more information.
+
+### 🚀 `ezpz launch`
 
 Single entry point for distributed jobs.
 
@@ -184,198 +179,116 @@ will propagate them through the detected launcher.
 Use the provided
 
 ```bash
-ezpz launch <cmd-to-launch>
+ezpz launch <launch flags> -- <cmd> <cmd flags>
 ```
 
-to automatically launch `<cmd-to-launch>` across all available[^schedulers]
+to automatically launch `<cmd>` across all available[^schedulers]
 accelerators.
 
-- Example(s):
+Use it to launch:
 
-  - arbitrary command(s):
- 
-    ```bash
-    ezpz launch hostname
-    ```
+- Arbitrary command(s):
 
-  - launch arbitrary Python string:
- 
-    ```bash
-    ezpz launch python3 -c 'import ezpz; ezpz.setup_torch()'
-    ```
+  ```bash
+  ezpz launch hostname
+  ```
 
+- Arbitrary Python string:
 
-[^schedulers]: By default, this will detect if we're running behind a job scheduler (e.g. PBS or Slurm).
-    If so, we automatically determine the specifics of the currently active job; 
+  ```bash
+  ezpz launch python3 -c 'import ezpz; ezpz.setup_torch()'
+  ```
+
+- One of the ready-to-go examples:
+
+  ```bash
+  ezpz launch python3 -m ezpz.test_dist --profile
+  ezpz launch -n 8 -- python3 -m ezpz.examples.fsdp_tp --tp 4
+  ```
+
+- Your own distributed training script:
+
+  ```bash
+  ezpz launch -n 16 -ppn 8 -- python3 -m your_app.train --config configs/your_config.yaml
+  ```
+
+  to launch `your_app.train` across 16 processes, 8 per node.
+
+See [docs/CLI/Launch](https://saforem2.github.io/ezpz/cli/launch/) for more information.
+
+[^schedulers]:
+    By default, this will detect if we're running behind a job scheduler (e.g. PBS or Slurm).
+    If so, we automatically determine the specifics of the currently active job;
     explicitly, this will determine:
 
     1. The number of available nodes
     2. How many GPUs are present on each of these nodes
     3. How many GPUs we have _total_
 
-    It will then use this information to automatically construct the appropriate 
+    It will then use this information to automatically construct the appropriate
     {`mpiexec`, `srun`} command to launch, and finally, execute the launch cmd.
 
-#### 📝 Ready-to-go Examples:
+#### 📝 Ready-to-go Examples
 
-1. **Simple fully connected (`torch.nn.Linear`) example with MNIST**:
+See [📝 Examples](https://saforem2.github.io/ezpz/examples/) for complete example scripts covering:
 
-   See [src/ezpz/test_dist.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
+1. [Use FSDP + MNIST to train a CNN](https://saforem2.github.io/ezpz/examples/#train-mlp-with-ddp-on-mnist)
+   - [\[docs\]](https://saforem2.github.io/ezpz/python/Code-Reference/examples/fsdp/), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
+1. [Use FSDP + MNIST to train a Vision Transformer](https://saforem2.github.io/ezpz/examples/#train-vit-with-fsdp-on-mnist)
+   - [\[docs\]](https://saforem2.github.io/ezpz/python/Code-Reference/examples/vit/), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)
+1. [Use FSDP + HF Datasets to train a Diffusion Language Model](https://saforem2.github.io/ezpz/examples/#train-diffusion-llm-with-fsdp-on-hf-datasets)
+   - [\[docs\]](https://saforem2.github.io/ezpz/python/Code-Reference/examples/diffusion/), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
+1. [Use FSDP + HF Datasets + Tensor Parallelism to train a Llama style model](https://saforem2.github.io/ezpz/examples/#train-transformer-with-fsdp-and-tp-on-hf-datasets)
+   - [\[docs\]](https://saforem2.github.io/ezpz/python/Code-Reference/examples/fsdp_tp/), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
+1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](https://saforem2.github.io/ezpz/examples/#train-fine-tune-llm-with-fsdp-on-hf-datasets)
+   - [\[docs\]](https://saforem2.github.io/ezpz/python/Code-Reference/examples/hf_trainer/), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
+     - [Comparison between Aurora/Polaris at ALCF](https://saforem2.github.io/ezpz/notes/hf-trainer-comparison/)
 
-    ```bash
-    ezpz launch python3 -m ezpz.test_dist
-    ```
+## ⚙️ Environment Variables
 
-1. **ViT + {DDP, FSDP}**:
+Additional configuration can be done through environment variables, including:
 
-   See [src/ezpz/examples/vit.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)
-
-   ```bash
-   ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
-   ```
-
-1. **FSDP Example**:
-
-   See [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
-
-   ```bash
-   ezpz launch python3 -m ezpz.examples.fsdp
-   ```
-
-1. **FSDP Example with Tensor Parallelism**:
-
-   See [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
+1. The colorized logging output can be toggled via the `NO_COLOR` environment
+   var, e.g. to turn off colors:
 
    ```bash
-   ezpz launch python3 -m ezpz.examples.fsdp_tp \
-       --tp=2 \
-       --epochs=5 \
-       --batch-size=2 \
-       --dataset=eliplutchok/fineweb-small-sample \
+   NO_COLOR=1 ezpz launch python3 -m your_app.train
    ```
 
-1. **Diffusion LLM Model**:
-
-   See [src/ezpz/examples/diffusion.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
-
-   ```bash
-   ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanfordnlp/imdb
-   ```
-
-1. **Finetuning an LLM with HF Trainer**:
-
-   See [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
-
-   ```bash
-   ezpz launch python3 -m ezpz.examples.hf_trainer \
-     --streaming \
-     --dataset_name=eliplutchok/fineweb-small-sample \
-     --tokenizer_name meta-llama/Llama-3.2-1B \
-     --model_name_or_path meta-llama/Llama-3.2-1B \
-     --bf16=true \
-     --do_train=true \
-     --do_eval=true \
-     --report-to=wandb \
-     --logging-steps=1 \
-     --include-tokens-per-second=true \
-     --max-steps=50000 \
-     --include-num-input-tokens-seen=true \
-     --optim=adamw_torch \
-     --logging-first-step \
-     --include-for-metrics='inputs,loss' \
-     --max-eval-samples=50 \
-     --per_device_train_batch_size=1 \
-     --block-size=8192 \
-     --gradient_checkpointing=true \
-     --fsdp=shard_grad_op
-   ```
-
-## Bring ezpz to your application
-
-- **Accelerator detection:** `ezpz.get_torch_device_type()` and 
-  `ezpz.setup_torch()` normalize CUDA/XPU/MPS/CPU selection.
-- **Scheduler smarts:** detects PBS/Slurm automatically;
-  otherwise falls back to `mpirun` with sensible `--env` forwarding.
-- **Observability:** structured logs, host/machine detection, 
-  and launch-time filters to keep noisy scheduler output out of your logs.
-
-- **Required modifications**:
-
-  ```diff
-  # your_app/train.py
-
-  + import ezpz
-  + ezpz.setup_torch()
-
-    # optional but useful: get logger to log from only rank 0 by default
-  + logger = ezpz.get_logger(__name__)
-
-    model = build_model(...)
-
-  - model.to("cuda")
-  + model.to(ezpz.get_torch_device_type())
-  ```
-
-  then, we can launch `your_app/train.py` with:
-
-  ```bash
-  ezpz launch python3 -m your_app.train --additional-args ...
-  ```
-
-
-## Track metrics with `ezpz.History`
-
-Capture metrics across all ranks, persist JSONL, generate text/PNG plots, and (when configured) log to Weights & Biases—no extra code on worker ranks.
-
-```python
-import ezpz
-from ezpz import History
-
-logger = ezpz.get_logger(__name__)
-
-ezpz.setup_torch()
-history = History()
-
-for step in range(num_steps):
-    t0 = time.perf_counter()
-    loss, acc = train_step(...)
-    ezpz.synchronize()
-    dt = time.perf_counter() - t0
-
-    logger.info(
-            history.update(
-                {
-                    "train/step": step,
-                    "train/loss": loss,
-                    "train/acc": acc
-                }
-            )
-    )
-
-# Aggregated statistics (mean/min/max/std) are recorded across all MPI ranks,
-# and plots + JSONL logs land in outputs/ by default.
-```
-
-
-## More to explore
-
-- Examples live under `ezpz.examples.*`—copy them or extend them for your workloads.
-- Want richer visuals or profiling? 
-  - Change the default plot marker used in the text based plots:
+2. Changing the plot marker used in the text-based plots:
 
     ```bash
     # highest resolution, may not be supported in all terminals
-    EZPZ_TPLOT_MARKER="braille" ezpz test
+    EZPZ_TPLOT_MARKER="braille" ezpz launch python3 -m your_app.train
     # next-best resolution, more widely supported
-    EZPZ_TPLOT_MARKER="fhd" ezpz test
+    EZPZ_TPLOT_MARKER="fhd" ezpz launch python3 -m your_app.train
+    ```
+3. Forcing a specific torch device (useful on GPU hosts when you want CPU-only):
+
+    ```bash
+    TORCH_DEVICE=cpu ezpz test
     ```
 
+## ➕ More Information
+
+- Examples live under `ezpz.examples.*`—copy them or extend them for your workloads.
 - Stuck? Check the [docs](https://saforem2.github.io/ezpz), or run `ezpz doctor` for actionable hints.
-
 - See my recent talk on:
-  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)
-  for a detailed walk-through containing examples and use cases.
+[**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)
+for a detailed walk-through containing examples and use cases. - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo) - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/) - [Slides (reveal.js)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/slides)
+<!--
+Checkout the [docs](https://saforem2.github.io/ezpz) for more information on:
 
-  - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo)
-  - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/)
-  - [Slides (reveal.js)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/slides)
+
+- [Quickstart](https://saforem2.github.io/ezpz/quickstart/):
+  - [Writing Hardware Agnostic Distributed PyTorch Code](https://saforem2.github.io/ezpz/quickstart/#🌐-write-hardware-agnostic-distributed-pytorch-code)
+    - Details on [Automatic Accelerator Detection and Setup](https://saforem2.github.io/ezpz/python/Code-Reference/dist/):
+  - [Tracking Metrics with `ezpz.History`](https://saforem2.github.io/ezpz/quickstart/#📊-track-metrics-with-ezpzhistory)
+
+  ```python
+  >>> device = ezpz.get_device()
+  'cuda'  # or 'xpu', 'mps', 'cpu' depending on available hardware
+  ```
+
+- [CLI Utilities] for: - [Diagnosing Environment Issues]: `ezpz doctor` - [Running distributed smoke tests]: `ezpz test` - [Launching _any_ executable]: `ezpz launch`, with support for: - [Automatic Job Scheduler Detection and Launching]
+  -->
