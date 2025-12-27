@@ -21,7 +21,7 @@ from torch.nn.attention.flex_attention import (
 )
 
 # from torchtitan.tools.utils import has_cuda_capability
-from ezpz.utils.tools import has_cuda_capability
+# from ezpz.utils.tools import has_cuda_capability
 
 # FlexAttention mask type. For each mask type, we initialize it at most once per
 # batch. To record what it is initialized, FLEX_ATTN_MASK_T is used as the key to
@@ -210,8 +210,8 @@ class ScaledDotProductAttention(torch.nn.Module):
             SDPBackend.EFFICIENT_ATTENTION,
             SDPBackend.MATH,
         ]
-        if has_cuda_capability(10, 0):
-            cls.backends.insert(0, SDPBackend.CUDNN_ATTENTION)
+        # if has_cuda_capability(10, 0):
+        #     cls.backends.insert(0, SDPBackend.CUDNN_ATTENTION)
 
     def forward(
         self,
