@@ -1,5 +1,15 @@
 # 📝 Notes
 
+/// warning | 🚧 Work in Progress
+
+The notes section is being refreshed; some pages may be incomplete or out of
+date. When in doubt, refer to the source code at
+<https://github.com/saforem2/ezpz> or open an issue with questions or problems.
+
+///
+
+<!--
+
 ## 2024-12-30
 
 Launch and train across all your accelerators, using your favorite framework +
@@ -585,3 +595,5 @@ $ setup_alcf
 ```
 
 </details>
+
+-->

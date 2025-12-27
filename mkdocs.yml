@@ -209,15 +209,15 @@ nav:
       - notes/index.md
       - 🏗️ Architecture: notes/architecture.md
       - 🛠️ Development Workflow: notes/development-workflow.md
-      - 🧪 Example Walkthrough: notes/example.md
+      # - 🧪 Example Walkthrough: notes/example.md
       - ❓ FAQ: notes/faq.md
       - 🧤 Hands-On Slides: notes/slides-2025-05-07.md
       - 🤗 HF Trainer: notes/hf-trainer.md
       - ⚖️ HF Trainer Comparison: notes/hf-trainer-comparison.md
       - 🕸️ Parallelism: notes/parallelism.md
       - 🗓️ PBS: notes/pbs.md
-      - 🐍 Python Library: notes/python-library.md
-      - 📦 Release: notes/release.md
+      # - 🐍 Python Library: notes/python-library.md
+      # - 📦 Release: notes/release.md
       - 🏖️ Shell Environment: notes/shell-environment.md
       - 🧵 Style Guide: notes/style-guide.md
       - 🤖 Systems: notes/systems.md
@@ -260,19 +260,19 @@ nav:
             - utils: python/Code-Reference/data/utils.md
         - examples:
             - python/Code-Reference/examples/index.md
-            - generate: python/Code-Reference/examples/generate.md
-            - hf_trainer: python/Code-Reference/examples/hf_trainer.md
-            - vit: python/Code-Reference/examples/vit.md
+            - cifar/train_ds: python/Code-Reference/examples/cifar/train_ds.md
+            - cria: python/Code-Reference/examples/cria.md
+            - diffusion: python/Code-Reference/examples/diffusion.md
             - fsdp: python/Code-Reference/examples/fsdp.md
             - fsdp_tp: python/Code-Reference/examples/fsdp_tp.md
-            - diffusion: python/Code-Reference/examples/diffusion.md
+            - generate: python/Code-Reference/examples/generate.md
             - generate_tui: python/Code-Reference/examples/generate_tui.md
-            - minimal: python/Code-Reference/examples/minimal.md
-            - cria: python/Code-Reference/examples/cria.md
             - hf: python/Code-Reference/examples/hf.md
+            - hf_trainer: python/Code-Reference/examples/hf_trainer.md
             - hf_trainer_alt: python/Code-Reference/examples/hf_trainer_alt.md
+            - minimal: python/Code-Reference/examples/minimal.md
+            - vit: python/Code-Reference/examples/vit.md
             - vit_timm: python/Code-Reference/examples/vit_timm.md
-            - cifar/train_ds: python/Code-Reference/examples/cifar/train_ds.md
             - deepspeed tp:
                 - train: python/Code-Reference/examples/deepspeed/tp/train.md
                 - train_batch_length: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
