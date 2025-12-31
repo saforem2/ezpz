@@ -7,9 +7,9 @@ MPS, and CPU—with zero-code changes and guardrails for HPC schedulers.
 
 It provides a:
 
-- 🧰 [CLI: `ezpz`](#ezpz-cli-toolbox) with utilities for launching distributed jobs
-- 🐍 [Python library `ezpz`](#python-library) for writing hardware-agnostic, distributed PyTorch code
-- 📝 [Pre-built examples](#ready-to-go-examples):
+- 🧰 [CLI: `ezpz`](#-ezpz-cli-toolbox) with utilities for launching distributed jobs
+- 🐍 [Python library `ezpz`](#-python-library) for writing hardware-agnostic, distributed PyTorch code
+- 📝 [Pre-built examples](#-ready-to-go-examples):
 
     All of which:
 
@@ -24,16 +24,6 @@ Checkout the [📘 **Docs**](https://saforem2.github.io/ezpz) for more informati
     To use `ezpz`, we first need a Python environment
     (preferably _virtual_) that has `torch` and `mpi4py` installed.
     - Already have one? Skip to (2.) below!
-        <details closed><summary><b>[Optional]</b></summary>
-        **Note**: This is _technically_ optional, but recommended.<br>
-        Especially if you happen to be running behind a job scheduler (e.g.
-        PBS/Slurm) at any of {ALCF, OLCF, NERSC}, this will automatically 
-        load the appropriate modules and use these to bootstrap a virtual
-        environment.<br>
-        However, if you already have a Python environment with
-        {`torch`, `mpi4py`} installed and would prefer to use that, skip
-        directly to (2.) installing `ezpz` below
-        </details>
     - _Otherwise_, we can use the provided
       [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
       to setup our environment:
@@ -41,6 +31,20 @@ Checkout the [📘 **Docs**](https://saforem2.github.io/ezpz) for more informati
         ```bash
         source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
         ```
+
+        <details closed><summary><b>[Optional]</b></summary>
+            
+        <b>Note</b>: This is <i>technically</i> optional, but recommended.<br>
+        Especially if you happen to be running behind a job scheduler (e.g.
+        PBS/Slurm) at any of {ALCF, OLCF, NERSC}, this will automatically 
+        load the appropriate modules and use these to bootstrap a virtual
+        environment.<br>
+        
+        However, if you already have a Python environment with
+        {`torch`, `mpi4py`} installed and would prefer to use that, skip
+        directly to (2.) installing `ezpz` below
+      
+        </details>
 
 1. **Install `ezpz`[^uvi]**:
 
@@ -133,8 +137,7 @@ See [🐍 Python Library](https://saforem2.github.io/ezpz/python/Code-Reference/
     - Single-process logging with filtering for distributed runs
 
 > [!NOTE]
-> **Examples**
-> See [Examples](#ready-to-go-examples) for ready-to-go examples that can be
+> See [Examples](#-ready-to-go-examples) for ready-to-go examples that can be
 > used as templates or starting points for your own distributed PyTorch
 > workloads.
 
@@ -158,7 +161,6 @@ ezpz --help
 ```
 
 > [!NOTE]
-> **CLI Toolbox**
 > Checkout [🧰 **CLI**](https://saforem2.github.io/ezpz/cli/) for additional information.
 
 ### 🩺 `ezpz doctor`
