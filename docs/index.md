@@ -26,6 +26,14 @@ Checkout the [📘 **Docs**](https://saforem2.github.io/ezpz) for more informati
     To use `ezpz`, we first need a Python environment
     (preferably _virtual_) that has `torch` and `mpi4py` installed.
     - Already have one? Skip to (2.) below!
+    - _Otherwise_, we can use the provided
+      [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
+      to setup our environment:
+
+        ```bash
+        source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+        ```
+
         <details closed><summary><b>[Optional]</b></summary>
         **Note**: This is _technically_ optional, but recommended.<br>
         Especially if you happen to be running behind a job scheduler (e.g.
@@ -36,13 +44,6 @@ Checkout the [📘 **Docs**](https://saforem2.github.io/ezpz) for more informati
         {`torch`, `mpi4py`} installed and would prefer to use that, skip
         directly to (2.) installing `ezpz` below
         </details>
-    - _Otherwise_, we can use the provided
-      [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
-      to setup our environment:
-
-        ```bash
-        source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
-        ```
 
 1. **Install `ezpz`[^uvi]**:
 
