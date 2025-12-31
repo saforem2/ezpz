@@ -66,7 +66,7 @@ Checkout the [📘 docs](https://saforem2.github.io/ezpz) for more information!
 
       </details>
 
-    - <details closed><summary>... _or try without installing_!</summary>
+    - <details closed><summary>... <i>or try without installing</i>!</summary>
 
         If you already have a Python environment with
         {`torch`, `mpi4py`} installed, you can try `ezpz` without installing

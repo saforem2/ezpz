@@ -1,13 +1,15 @@
 # 📝 Ready-to-go Examples
 
+This section contains ready-to-run examples demonstrating various features of
+the `ezpz` library.
+
 ## Train MLP with DDP on MNIST
 
 Train a simple fully connected (`torch.nn.Linear`) network using DDP
 on the MNIST dataset.
 
-See: [\[docs\]](../python/Code-Reference/test_dist.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
-1. 📘 Docs: [test-dist](../python/Code-Reference/test_dist.md)
-1. 🐍 Source: [src/ezpz/test_dist.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)
+See: \[📘 [docs](../python/Code-Reference/test_dist.md)\],
+\[🐍 [source](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)\]
 
 ```bash
 # or, equivalently: ezpz test
@@ -86,10 +88,8 @@ options:
 
 ## Train CNN with FSDP on MNIST
 
-See:
-
-1. 📘 Docs: [examples/FSDP](../python/Code-Reference/examples/fsdp.md)
-1. 🐍 Source: [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
+See: \[📘 [examples/FSDP](../python/Code-Reference/examples/fsdp.md)\],
+\[🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)\]
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp
@@ -129,10 +129,8 @@ options:
 
 ## Train ViT with FSDP on MNIST
 
-See:
-
-1. 📘 Docs: [examples/ViT](../python/Code-Reference/examples/vit.md)
-1. 🐍 Source: [src/ezpz/examples/vit.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)
+See: \[📘 [examples/ViT](../python/Code-Reference/examples/vit.md)\],
+\[🐍 [src/ezpz/examples/vit.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)\]
 
 ```bash
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
@@ -204,10 +202,8 @@ options:
 
 FSDP Example with Tensor Parallelism
 
-See:
-
-1. 📘 Docs: [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)
-1. 🐍 Source: [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
+See: \[📘 [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)\],
+\[🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)\]
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
@@ -280,10 +276,8 @@ options:
 
 ## Train Diffusion LLM with FSDP on HF Datasets
 
-See:
-
-1. 📘 Docs: [examples/Diffusion](../python/Code-Reference/examples/diffusion.md)
-1. 🐍 Source: [src/ezpz/examples/diffusion.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
+See: \[📘 [examples/Diffusion](../python/Code-Reference/examples/diffusion.md)\],
+\[🐍 [src/ezpz/examples/diffusion.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)\]
 
 ```bash
 ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanfordnlp/imdb
@@ -339,11 +333,10 @@ options:
 
 ## Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets
 
-See:
+See: \[📘 [examples/HF Trainer](../python/Code-Reference/examples/hf_trainer.md)\],
+\[🐍 [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)\]
 
-1. 📘 Docs: [examples/HF Trainer](../python/Code-Reference/examples/hf_trainer.md)
-    - [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
-1. 🐍 Source: [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
+- [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.hf_trainer \
