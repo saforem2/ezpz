@@ -19,9 +19,11 @@ EZPZ_SHELL_TYPE="$(basename "${SHELL}")"
 if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
 	# Allow aliases to be expanded (needed for `launch` alias)
 	shopt -s expand_aliases
-elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
-	setopt LOCAL_OPTIONS # make sure options are local to this script
-	setopt KSH_ARRAYS    # arrays are 0-indexed
+# elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+# 	if command -v setopt &>/dev/null; then
+#         setopt LOCAL_OPTIONS # make sure options are local to this script
+#         setopt KSH_ARRAYS    # arrays are 0-indexed
+#     fi
 fi
 
 ###############################################
@@ -2909,9 +2911,11 @@ if [[ -n "${EZPZ_CHECK_WORKING_DIR:-}" ]]; then
 	fi
 fi
 
-if [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
-	unsetopt KSH_ARRAYS
-fi
+# if [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
+# 	if command -v setopt &>/dev/null; then
+#         unsetopt KSH_ARRAYS
+#     fi
+# fi
 
 # If DEBUG mode was enabled, turn off command tracing now that setup is done.
 # if [[ -n "${DEBUG:-}" ]]; then
