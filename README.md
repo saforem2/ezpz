@@ -132,7 +132,8 @@ See [🐍 Python Library](https://saforem2.github.io/ezpz/python/Code-Reference/
         - with _safe fall-backs_ when no scheduler is detected
     - Single-process logging with filtering for distributed runs
 
-> **Note — Examples**  
+> [!NOTE]
+> **Examples**
 > See [Examples](#ready-to-go-examples) for ready-to-go examples that can be
 > used as templates or starting points for your own distributed PyTorch
 > workloads.
@@ -156,7 +157,8 @@ To see the list of available commands, run:
 ezpz --help
 ```
 
-> **Note — CLI Toolbox**  
+> [!NOTE]
+> **CLI Toolbox**
 > Checkout [🧰 **CLI**](https://saforem2.github.io/ezpz/cli/) for additional information.
 
 ### 🩺 `ezpz doctor`
