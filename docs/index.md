@@ -244,7 +244,7 @@ See [📝 Examples](./examples/index.md) for complete example scripts covering:
     - [\[docs\]](python/Code-Reference/examples/diffusion.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
 1. [Use FSDP + HF Datasets + Tensor Parallelism to train a Llama style model](./examples/index.md#train-transformer-with-fsdp-and-tp-on-hf-datasets)
     - [\[docs\]](python/Code-Reference/examples/fsdp_tp.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
-1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](examples/index.md#train-fine-tune-llm-with-fsdp-on-hf-datasets)
+1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](./examples/index.md#train-or-fine-tune-an-llm-with-fsdp-and-hf-trainer-on-hf-datasets)
     - [\[docs\]](python/Code-Reference/examples/hf_trainer.md), [\[source\]](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
         - [Comparison between Aurora/Polaris at ALCF](notes/hf-trainer-comparison.md)
 
