@@ -95,10 +95,11 @@ def savejobenv_dep():
 def cmd_exists(cmd: str) -> bool:
     """Check whether command exists.
 
-    >>> cmd_exists("ls")
-    True
-    >>> cmd_exists("hostname")
-    True
+    Examples:
+        >>> cmd_exists("ls")
+        True
+        >>> cmd_exists("hostname")
+        True
     """
     return shutil.which(cmd) is not None
 
