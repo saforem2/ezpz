@@ -31,6 +31,8 @@ ezpz launch python3 -m ezpz.examples.hf_trainer \
     --fsdp=shard_grad_op
 ```
 
+## Help
+
 <details closed><summary><code>--help</code></summary>
 
 ```bash
@@ -851,3 +853,532 @@ options:
 
 </details>
 
+## Output
+
+<details closed><summary>Output on Sunspot</summary>
+
+```bash
+#[aurora_frameworks-2025.2.0](ezpz-aurora_frameworks-2025.2.0)
+#[/t/d/f/p/s/ezpz][dev][!?] [󰔛  3m18s]
+#[12/31/25 @ 13:11:04][x1921c1s5b0n0]
+; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=eliplutchok/fineweb-small-sample --model_name_or_path meta-llama/Llama-3.2-1B --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=100 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=outputs/ezpz.hf_trainer/$(tstamp)
+
+
+[2025-12-31 13:11:10,316555][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+[2025-12-31 13:11:10,318860][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+[2025-12-31 13:11:10,319330][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
+[2025-12-31 13:11:10,544612][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2025-12-31-131110]----
+[2025-12-31 13:11:11,591145][I][ezpz/launch:416:launch] Job ID: 12458340
+[2025-12-31 13:11:11,591935][I][ezpz/launch:417:launch] nodelist: ['x1921c1s5b0n0', 'x1921c1s7b0n0']
+[2025-12-31 13:11:11,592339][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/12458340.sunspot-pbs-0001.head.cm.sunspot.alcf.anl.gov
+[2025-12-31 13:11:11,593030][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
+[2025-12-31 13:11:11,593768][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
+[2025-12-31 13:11:11,594177][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/12458340.sunspot-pbs-0001.head.cm.sunspot.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+[2025-12-31 13:11:11,594907][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=eliplutchok/fineweb-small-sample --model_name_or_path meta-llama/Llama-3.2-1B --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-m
+etrics=inputs,loss --max-eval-samples=100 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=outputs/ezpz.hf_trainer/2025-12-31-131106
+[2025-12-31 13:11:11,596750][I][ezpz/launch:433:launch] Took: 1.54 seconds to build command.
+[2025-12-31 13:11:11,597152][I][ezpz/launch:436:launch] Executing:
+mpiexec
+  --envall
+  --np=24
+  --ppn=12
+  --hostfile=/var/spool/pbs/aux/12458340.sunspot-pbs-0001.head.cm.sunspot.alcf.anl.gov
+  --no-vni
+  --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+  python3
+  -m
+  ezpz.examples.hf_trainer
+  --streaming
+  --dataset_name=eliplutchok/fineweb-small-sample
+  --model_name_or_path
+  meta-llama/Llama-3.2-1B
+  --bf16=true
+  --do_train=true
+  --do_eval=true
+  --report-to=wandb
+  --logging-steps=1
+  --include-tokens-per-second=true
+  --max-steps=100
+  --include-num-input-tokens-seen=true
+  --optim=adamw_torch
+  --logging-first-step
+  --include-for-metrics=inputs,loss
+  --max-eval-samples=100
+  --per_device_train_batch_size=1
+  --per_device_eval_batch_size=1
+  --block_size=8192
+  --gradient_checkpointing=true
+  --fsdp=auto_wrap
+  --output_dir=outputs/ezpz.hf_trainer/2025-12-31-131106
+[2025-12-31 13:11:11,599586][I][ezpz/launch:443:launch] Execution started @ 2025-12-31-131111...
+[2025-12-31 13:11:11,600073][I][ezpz/launch:139:run_command] Running command:
+ mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/12458340.sunspot-pbs-0001.head.cm.sunspot.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=eliplutchok/fineweb-small-sample --model_name_or_path meta-llama/Llama-3.2-1B --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --inc
+lude-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics=inputs,loss --max-eval-samples=100 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=outputs/ezpz.hf_trainer/2025-12-31-131106
+cpubind:list x1921c1s7b0n0 pid 93007 rank 12 0: mask 0x1c
+cpubind:list x1921c1s7b0n0 pid 93008 rank 13 1: mask 0x1c00
+cpubind:list x1921c1s7b0n0 pid 93009 rank 14 2: mask 0x1c0000
+cpubind:list x1921c1s7b0n0 pid 93010 rank 15 3: mask 0x1c000000
+cpubind:list x1921c1s7b0n0 pid 93011 rank 16 4: mask 0x1c00000000
+cpubind:list x1921c1s7b0n0 pid 93012 rank 17 5: mask 0x1c0000000000
+cpubind:list x1921c1s7b0n0 pid 93013 rank 18 6: mask 0x1c0000000000000
+cpubind:list x1921c1s7b0n0 pid 93014 rank 19 7: mask 0x1c000000000000000
+cpubind:list x1921c1s7b0n0 pid 93015 rank 20 8: mask 0x1c00000000000000000
+cpubind:list x1921c1s7b0n0 pid 93016 rank 21 9: mask 0x1c0000000000000000000
+cpubind:list x1921c1s7b0n0 pid 93017 rank 22 10: mask 0x1c000000000000000000000
+cpubind:list x1921c1s7b0n0 pid 93018 rank 23 11: mask 0x1c00000000000000000000000
+cpubind:list x1921c1s5b0n0 pid 87023 rank 0 0: mask 0x1c
+cpubind:list x1921c1s5b0n0 pid 87024 rank 1 1: mask 0x1c00
+cpubind:list x1921c1s5b0n0 pid 87025 rank 2 2: mask 0x1c0000
+cpubind:list x1921c1s5b0n0 pid 87026 rank 3 3: mask 0x1c000000
+cpubind:list x1921c1s5b0n0 pid 87027 rank 4 4: mask 0x1c00000000
+cpubind:list x1921c1s5b0n0 pid 87028 rank 5 5: mask 0x1c0000000000
+cpubind:list x1921c1s5b0n0 pid 87029 rank 6 6: mask 0x1c0000000000000
+cpubind:list x1921c1s5b0n0 pid 87030 rank 7 7: mask 0x1c000000000000000
+cpubind:list x1921c1s5b0n0 pid 87031 rank 8 8: mask 0x1c00000000000000000
+cpubind:list x1921c1s5b0n0 pid 87032 rank 9 9: mask 0x1c0000000000000000000
+cpubind:list x1921c1s5b0n0 pid 87033 rank 10 10: mask 0x1c000000000000000000000
+cpubind:list x1921c1s5b0n0 pid 87034 rank 11 11: mask 0x1c00000000000000000000000
+[2025-12-31 13:11:27,799167][I][ezpz/dist:1501:setup_torch_distributed] Using device=xpu with backend=xccl
+[2025-12-31 13:11:27,802253][I][ezpz/dist:1366:setup_torch_DDP] Caught MASTER_PORT=54045 from environment!
+[2025-12-31 13:11:27,803043][I][ezpz/dist:1382:setup_torch_DDP] Using torch.distributed.init_process_group with
+- master_addr='x1921c1s5b0n0'
+- master_port='54045'
+- world_size=24
+- rank=0
+- local_rank=0
+- timeout=datetime.timedelta(seconds=3600)
+- backend='xccl'
+[2025-12-31 13:11:27,804069][I][ezpz/dist:1014:init_process_group] Calling torch.distributed.init_process_group_with: rank=0 world_size=24 backend=xccl
+[2025-12-31 13:11:28,454410][I][ezpz/dist:1727:setup_torch] Using device='xpu' with backend='xccl' + 'xccl' for distributed training.
+[2025-12-31 13:11:28,455234][W][ezpz/dist:544:print_dist_setup] Using [24 / 24] available "xpu" devices !!
+[2025-12-31 13:11:28,455704][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=00/23][local_rank=00/11]
+[2025-12-31 13:11:28,454824][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=01/23][local_rank=01/11]
+[2025-12-31 13:11:28,454876][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=02/23][local_rank=02/11]
+[2025-12-31 13:11:28,454899][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=03/23][local_rank=03/11]
+[2025-12-31 13:11:28,454911][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=04/23][local_rank=04/11]
+[2025-12-31 13:11:28,454896][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=05/23][local_rank=05/11]
+[2025-12-31 13:11:28,454886][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=06/23][local_rank=06/11]
+[2025-12-31 13:11:28,454893][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=07/23][local_rank=07/11]
+[2025-12-31 13:11:28,454866][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=08/23][local_rank=08/11]
+[2025-12-31 13:11:28,454886][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=09/23][local_rank=09/11]
+[2025-12-31 13:11:28,454902][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=0/1][rank=10/23][local_rank=10/11]
+[2025-12-31 13:11:28,454855][I][ezpz/dist:1774:setup_torch] ['x1921c1s5b0n0'][device='xpu'][node=1/1][rank=11/23][local_rank=11/11]
+[2025-12-31 13:11:28,454881][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=15/23][local_rank=03/11]
+[2025-12-31 13:11:28,454875][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=20/23][local_rank=08/11]
+[2025-12-31 13:11:28,454929][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=12/23][local_rank=00/11]
+[2025-12-31 13:11:28,454925][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=13/23][local_rank=01/11]
+[2025-12-31 13:11:28,454931][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=14/23][local_rank=02/11]
+[2025-12-31 13:11:28,454901][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=16/23][local_rank=04/11]
+[2025-12-31 13:11:28,454931][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=17/23][local_rank=05/11]
+[2025-12-31 13:11:28,454943][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=18/23][local_rank=06/11]
+[2025-12-31 13:11:28,454938][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=19/23][local_rank=07/11]
+[2025-12-31 13:11:28,454938][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=21/23][local_rank=09/11]
+[2025-12-31 13:11:28,454901][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=0/1][rank=22/23][local_rank=10/11]
+[2025-12-31 13:11:28,454938][I][ezpz/dist:1774:setup_torch] ['x1921c1s7b0n0'][device='xpu'][node=1/1][rank=23/23][local_rank=11/11]
+[rank18]:[W1231 13:11:28.633965523 OperatorEntry.cpp:218] Warning: Warning only once for all operators,  other operators may also be overridden.
+  Overriding a previously registered kernel for the same operator and the same dispatch key
+  operator: aten::geometric_(Tensor(a!) self, float p, *, Generator? generator=None) -> Tensor(a!)
+    registered at /lus/tegu/projects/datasets/software/wheelforge/repositories/pytorch_2p8_rel_07_18_2025/pytorch/build/aten/src/ATen/RegisterSchema.cpp:6
+  dispatch key: XPU
+  previous kernel: registered at /lus/tegu/projects/datasets/software/wheelforge/repositories/pytorch_2p8_rel_07_18_2025/pytorch/aten/src/ATen/VmapModeRegistrations.cpp:37
+       new kernel: registered at /lus/tegu/projects/datasets/software/wheelforge/repositories/ipex_2.8.10_xpu_rel_08_18_2025/intel-extension-for-pytorch/build/Release/csrc/gpu/csrc/gpu/xpu/ATen/RegisterXPU_0.cpp:172 (function operator())
+[2025-12-31 13:11:29,171] [INFO] [real_accelerator.py:260:get_accelerator] Setting ds_accelerator to xpu (auto detect)
+[2025-12-31 13:11:29,204358][I][_distutils/spawn:77:spawn] icx -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/include -Wformat -Wformat-security -fstack-protector-all -D_FORTIFY_SOURCE=2 -fpic -fPIC -O2 -Wl,-z,noexecstack,-z,relro,-z,now,-rpath,$ORIGIN/../..,-rpath,$ORIGIN/../../.. -fPIC -O2 -isystem /opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/include -Wformat -Wformat-security -fstack-protector-all -D_FORTIFY_SOURCE=2 -fpic -fPIC -O2 -Wl,-z,noexecstack,-z,relro,-z,now,-rpath,$ORIGIN/../..,-rpath,$ORIGIN/../../.. -fPIC -c /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmpophyvmvj/test.c -o /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmpophyvmvj/test.o
+[2025-12-31 13:11:29,205464][I][_distutils/spawn:77:spawn] icx /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmp8f2fq7zm/test.o -laio -o /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmp8f2fq7zm/a.out
+[2025-12-31 13:11:29,246560][I][_distutils/spawn:77:spawn] icx /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmpatgpchkq/test.o -laio -o /var/run/palsd/9d1b9e6f-df49-49d4-bfef-16df4fa53619/tmp/tmpatgpchkq/a.out
+/opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/lib/python3.10/site-packages/neural_compressor/utils/utility.py:44: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import parse_version
+[2025-12-31 13:11:32,228] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,237] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,262] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,464] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,551] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,671] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,671] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,841] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,850] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:32,963] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,139] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,227] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,289658][I][ezpz/dist:2039:setup_wandb] Setting up wandb from rank=0
+[2025-12-31 13:11:33,290377][I][ezpz/dist:2040:setup_wandb] Using WB_PROJECT=ezpz-hf_trainer-meta-llama-Llama-3.2-1B
+[2025-12-31 13:11:33,338] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,463] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,480] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,494] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,609] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:33,629] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+wandb: Currently logged in as: foremans (aurora_gpt) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+[2025-12-31 13:11:33,959] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:34,200] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:34,286] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:34,294] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:34,298] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+[2025-12-31 13:11:34,305] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
+wandb: Tracking run with wandb version 0.23.1
+wandb: Run data is saved locally in /lus/tegu/projects/datascience/foremans/projects/saforem2/ezpz/wandb/run-20251231_131133-00uzvvx5
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run good-grass-171
+wandb:  View project at https://wandb.ai/aurora_gpt/ezpz-hf_trainer-meta-llama-Llama-3.2-1B
+wandb:  View run at https://wandb.ai/aurora_gpt/ezpz-hf_trainer-meta-llama-Llama-3.2-1B/runs/00uzvvx5
+[2025-12-31 13:11:34,781999][I][ezpz/dist:2069:setup_wandb] wandb.run=[good-grass-171](https://wandb.ai/aurora_gpt/ezpz-hf_trainer-meta-llama-Llama-3.2-1B/runs/00uzvvx5)
+[2025-12-31 13:11:34,868548][I][ezpz/dist:2112:setup_wandb] Running on machine='SunSpot'
+[2025-12-31 13:11:34,874006][W][examples/hf_trainer:121:parse_args] Process rank: 0, device: xpu:0, n_gpu: 1, distributed training: True
+[2025-12-31 13:11:34,875393][I][examples/hf_trainer:149:parse_args] Training/evaluation parameters TrainingArguments(
+_n_gpu=1,
+accelerator_config={'split_batches': False, 'dispatch_batches': None, 'even_batches': True, 'use_seedable_sampler': True, 'non_blocking': False, 'gradient_accumulation_kwargs': None, 'use_configured_state': False},
+adafactor=False,
+adam_beta1=0.9,
+adam_beta2=0.999,
+adam_epsilon=1e-08,
+auto_find_batch_size=False,
+average_tokens_across_devices=True,
+batch_eval_metrics=False,
+bf16=True,
+bf16_full_eval=False,
+data_seed=None,
+dataloader_drop_last=False,
+dataloader_num_workers=0,
+dataloader_persistent_workers=False,
+dataloader_pin_memory=True,
+dataloader_prefetch_factor=None,
+ddp_backend=None,
+ddp_broadcast_buffers=None,
+ddp_bucket_cap_mb=None,
+ddp_find_unused_parameters=None,
+ddp_timeout=1800,
+debug=[],
+deepspeed=None,
+disable_tqdm=False,
+do_eval=True,
+do_predict=False,
+do_train=True,
+eval_accumulation_steps=None,
+eval_delay=0,
+eval_do_concat_batches=True,
+eval_on_start=False,
+eval_steps=None,
+eval_strategy=no,
+eval_use_gather_object=False,
+fp16=False,
+fp16_backend=auto,
+fp16_full_eval=False,
+fp16_opt_level=O1,
+fsdp=[<FSDPOption.AUTO_WRAP: 'auto_wrap'>],
+fsdp_config={'min_num_params': 0, 'xla': False, 'xla_fsdp_v2': False, 'xla_fsdp_grad_ckpt': False},
+fsdp_min_num_params=0,
+fsdp_transformer_layer_cls_to_wrap=None,
+full_determinism=False,
+gradient_accumulation_steps=1,
+gradient_checkpointing=True,
+gradient_checkpointing_kwargs=None,
+greater_is_better=None,
+group_by_length=False,
+half_precision_backend=auto,
+hub_always_push=False,
+hub_model_id=None,
+hub_private_repo=None,
+hub_revision=None,
+hub_strategy=every_save,
+hub_token=<HUB_TOKEN>,
+ignore_data_skip=False,
+include_for_metrics=['inputs,loss'],
+include_inputs_for_metrics=False,
+include_num_input_tokens_seen=all,
+include_tokens_per_second=True,
+jit_mode_eval=False,
+label_names=None,
+label_smoothing_factor=0.0,
+learning_rate=5e-05,
+length_column_name=length,
+liger_kernel_config=None,
+load_best_model_at_end=False,
+local_rank=0,
+log_level=passive,
+log_level_replica=warning,
+log_on_each_node=True,
+logging_dir=outputs/ezpz.hf_trainer/2025-12-31-131106/runs/Dec31_13-11-28_x1921c1s5b0n0,
+logging_first_step=True,
+logging_nan_inf_filter=True,
+logging_steps=1.0,
+logging_strategy=steps,
+lr_scheduler_kwargs={},
+lr_scheduler_type=linear,
+max_grad_norm=1.0,
+max_steps=100,
+metric_for_best_model=None,
+mp_parameters=,
+neftune_noise_alpha=None,
+no_cuda=False,
+num_train_epochs=3.0,
+optim=adamw_torch,
+optim_args=None,
+optim_target_modules=None,
+output_dir=outputs/ezpz.hf_trainer/2025-12-31-131106,
+overwrite_output_dir=False,
+parallelism_config=None,
+past_index=-1,
+per_device_eval_batch_size=1,
+per_device_train_batch_size=1,
+prediction_loss_only=False,
+project=huggingface,
+push_to_hub=False,
+push_to_hub_model_id=None,
+push_to_hub_organization=None,
+push_to_hub_token=<PUSH_TO_HUB_TOKEN>,
+ray_scope=last,
+remove_unused_columns=True,
+report_to=['wandb'],
+restore_callback_states_from_checkpoint=False,
+resume_from_checkpoint=None,
+run_name=None,
+save_on_each_node=False,
+save_only_model=False,
+save_safetensors=True,
+save_steps=500,
+save_strategy=steps,
+save_total_limit=None,
+seed=42,
+skip_memory_metrics=True,
+tf32=None,
+torch_compile=False,
+torch_compile_backend=None,
+torch_compile_mode=None,
+torch_empty_cache_steps=None,
+torchdynamo=None,
+tpu_metrics_debug=False,
+tpu_num_cores=None,
+trackio_space_id=trackio,
+use_cpu=False,
+use_legacy_prediction_loop=False,
+use_liger_kernel=False,
+use_mps_device=False,
+warmup_ratio=0.0,
+warmup_steps=0,
+weight_decay=0.0,
+)
+[INFO|configuration_utils.py:765] 2025-12-31 13:11:37,787 >> loading configuration file config.json from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/config.json
+[INFO|configuration_utils.py:839] 2025-12-31 13:11:37,798 >> Model config LlamaConfig {
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 128000,
+  "dtype": "bfloat16",
+  "eos_token_id": 128001,
+  "head_dim": 64,
+  "hidden_act": "silu",
+  "hidden_size": 2048,
+  "initializer_range": 0.02,
+  "intermediate_size": 8192,
+  "max_position_embeddings": 131072,
+  "mlp_bias": false,
+  "model_type": "llama",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 16,
+  "num_key_value_heads": 8,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_scaling": {
+    "factor": 32.0,
+    "high_freq_factor": 4.0,
+    "low_freq_factor": 1.0,
+    "original_max_position_embeddings": 8192,
+    "rope_type": "llama3"
+  },
+  "rope_theta": 500000.0,
+  "tie_word_embeddings": true,
+  "transformers_version": "4.57.3",
+  "use_cache": true,
+  "vocab_size": 128256
+}
+
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,956 >> loading file tokenizer.json from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/tokenizer.json
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,957 >> loading file tokenizer.model from cache at None
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,957 >> loading file added_tokens.json from cache at None
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,957 >> loading file special_tokens_map.json from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/special_tokens_map.json
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,957 >> loading file tokenizer_config.json from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/tokenizer_config.json
+[INFO|tokenization_utils_base.py:2111] 2025-12-31 13:11:37,957 >> loading file chat_template.jinja from cache at None
+[INFO|tokenization_utils_base.py:2380] 2025-12-31 13:11:38,257 >> Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
+[INFO|modeling_utils.py:1172] 2025-12-31 13:11:38,311 >> loading weights file model.safetensors from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/model.safetensors
+[INFO|configuration_utils.py:986] 2025-12-31 13:11:38,313 >> Generate config GenerationConfig {
+  "bos_token_id": 128000,
+  "eos_token_id": 128001
+}
+
+[INFO|configuration_utils.py:941] 2025-12-31 13:12:10,482 >> loading configuration file generation_config.json from cache at /home/foremans/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B/snapshots/4e20de362430cd3b72f300e6b0f18e50e7166e08/generation_config.json
+[INFO|configuration_utils.py:986] 2025-12-31 13:12:10,482 >> Generate config GenerationConfig {
+  "bos_token_id": 128000,
+  "do_sample": true,
+  "eos_token_id": 128001,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+[INFO|dynamic_module_utils.py:423] 2025-12-31 13:12:10,535 >> Could not locate the custom_generate/generate.py inside meta-llama/Llama-3.2-1B.
+My guessed rank = 0
+2025:12:31-13:12:10:(87023) |CCL_WARN| value of CCL_OP_SYNC changed to be 1 (default:0)
+2025:12:31-13:12:10:(87023) |CCL_WARN| value of CCL_PROCESS_LAUNCHER changed to be pmix (default:hydra)
+[INFO|trainer.py:699] 2025-12-31 13:12:12,555 >> max_steps is given, it will override any value given in num_train_epochs
+[INFO|trainer.py:749] 2025-12-31 13:12:12,555 >> Using auto half precision backend
+[INFO|trainer.py:2519] 2025-12-31 13:12:20,429 >> ***** Running training *****
+[INFO|trainer.py:2520] 2025-12-31 13:12:20,429 >>   Num examples = 2,400
+[INFO|trainer.py:2521] 2025-12-31 13:12:20,429 >>   Num Epochs = 9,223,372,036,854,775,807
+[INFO|trainer.py:2522] 2025-12-31 13:12:20,429 >>   Instantaneous batch size per device = 1
+[INFO|trainer.py:2525] 2025-12-31 13:12:20,429 >>   Total train batch size (w. parallel, distributed & accumulation) = 24
+[INFO|trainer.py:2526] 2025-12-31 13:12:20,429 >>   Gradient Accumulation steps = 1
+[INFO|trainer.py:2527] 2025-12-31 13:12:20,430 >>   Total optimization steps = 100
+[INFO|trainer.py:2528] 2025-12-31 13:12:20,430 >>   Number of trainable parameters = 51,492,278
+[INFO|integration_utils.py:867] 2025-12-31 13:12:20,431 >> Automatic Weights & Biases logging enabled, to disable set os.environ["WANDB_DISABLED"] = "true"
+  0%|          | 0/100 [00:00<?, ?it/s]
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,209 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+[WARNING|_logger.py:93] 2025-12-31 13:12:35,211 >> `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+  1%|1         | 1/100 [00:27<44:53, 27.20s/it]
+
+
+{'loss': 2.5586, 'grad_norm': 6.847109794616699, 'learning_rate': 5e-05, 'epoch': 0.01, 'num_input_tokens_seen': 196608, 'train_runtime': 27.3002, 'train_tokens_per_second': 7201.711}
+  1%|1         | 1/100 [00:27<44:53, 27.20s/it]
+{'loss': 2.8427, 'grad_norm': 30.46836280822754, 'learning_rate': 4.9500000000000004e-05, 'epoch': 0.02, 'num_input_tokens_seen': 393216, 'train_runtime': 30.8283, 'train_tokens_per_second': 12755.034}
+  2%|2         | 2/100 [00:30<21:45, 13.32s/it]
+{'loss': 2.6978, 'grad_norm': 6.160351276397705, 'learning_rate': 4.9e-05, 'epoch': 0.03, 'num_input_tokens_seen': 589824, 'train_runtime': 34.3821, 'train_tokens_per_second': 17154.96}
+  3%|3         | 3/100 [00:34<14:19,  8.86s/it]
+{'loss': 2.7241, 'grad_norm': 8.175165176391602, 'learning_rate': 4.85e-05, 'epoch': 0.04, 'num_input_tokens_seen': 786432, 'train_runtime': 37.9205, 'train_tokens_per_second': 20738.951}
+  4%|4         | 4/100 [00:37<10:48,  6.76s/it]
+{'loss': 2.5838, 'grad_norm': 3.6873040199279785, 'learning_rate': 4.8e-05, 'epoch': 0.05, 'num_input_tokens_seen': 983040, 'train_runtime': 42.1184, 'train_tokens_per_second': 23339.934}
+  5%|5         | 5/100 [00:42<09:14,  5.84s/it]
+{'loss': 2.5221, 'grad_norm': 2.4761757850646973, 'learning_rate': 4.75e-05, 'epoch': 0.06, 'num_input_tokens_seen': 1179648, 'train_runtime': 45.6481, 'train_tokens_per_second': 25842.199}
+  6%|6         | 6/100 [00:45<07:54,  5.05s/it]
+{'loss': 2.5722, 'grad_norm': 2.04353404045105, 'learning_rate': 4.7e-05, 'epoch': 0.07, 'num_input_tokens_seen': 1376256, 'train_runtime': 49.1873, 'train_tokens_per_second': 27979.885}
+  7%|7         | 7/100 [00:49<07:03,  4.56s/it]
+{'loss': 2.5689, 'grad_norm': 2.259411573410034, 'learning_rate': 4.6500000000000005e-05, 'epoch': 0.08, 'num_input_tokens_seen': 1572864, 'train_runtime': 52.7226, 'train_tokens_per_second': 29832.818}
+  8%|8         | 8/100 [00:52<06:29,  4.23s/it]
+{'loss': 2.4844, 'grad_norm': 2.1371400356292725, 'learning_rate': 4.600000000000001e-05, 'epoch': 0.09, 'num_input_tokens_seen': 1769472, 'train_runtime': 56.2493, 'train_tokens_per_second': 31457.696}
+  9%|9         | 9/100 [00:56<06:05,  4.01s/it]
+{'loss': 2.4309, 'grad_norm': 1.866400122642517, 'learning_rate': 4.55e-05, 'epoch': 0.1, 'num_input_tokens_seen': 1966080, 'train_runtime': 60.3531, 'train_tokens_per_second': 32576.267}
+ 10%|#         | 10/100 [01:00<06:03,  4.04s/it]
+{'loss': 2.5054, 'grad_norm': 1.7331500053405762, 'learning_rate': 4.5e-05, 'epoch': 0.11, 'num_input_tokens_seen': 2162688, 'train_runtime': 63.8948, 'train_tokens_per_second': 33847.662}
+ 11%|#1        | 11/100 [01:03<05:45,  3.89s/it]
+
+# ...[clipped]...
+{'loss': 2.4254, 'grad_norm': 0.8518961071968079, 'learning_rate': 2.5e-06, 'epoch': 0.96, 'num_input_tokens_seen': 18874368, 'train_runtime': 375.093, 'train_tokens_per_second': 50319.166}
+ 96%|#########6| 96/100 [06:15<00:14,  3.74s/it]
+{'loss': 2.3401, 'grad_norm': 0.8734815716743469, 'learning_rate': 2.0000000000000003e-06, 'epoch': 0.97, 'num_input_tokens_seen': 19070976, 'train_runtime': 378.6219, 'train_tokens_per_second': 50369.452}
+ 97%|#########7| 97/100 [06:18<00:11,  3.68s/it]
+{'loss': 2.3438, 'grad_norm': 0.9289000034332275, 'learning_rate': 1.5e-06, 'epoch': 0.98, 'num_input_tokens_seen': 19267584, 'train_runtime': 382.1676, 'train_tokens_per_second': 50416.578}
+ 98%|#########8| 98/100 [06:22<00:07,  3.64s/it]
+{'loss': 2.3568, 'grad_norm': 0.9797356724739075, 'learning_rate': 1.0000000000000002e-06, 'epoch': 0.99, 'num_input_tokens_seen': 19464192, 'train_runtime': 385.7005, 'train_tokens_per_second': 50464.53}
+ 99%|#########9| 99/100 [06:25<00:03,  3.61s/it]
+{'loss': 2.3369, 'grad_norm': 0.8283581137657166, 'learning_rate': 5.000000000000001e-07, 'epoch': 1.0, 'num_input_tokens_seen': 19660800, 'train_runtime': 389.2267, 'train_tokens_per_second': 50512.468}
+100%|##########| 100/100 [06:29<00:00,  3.58s/it]
+/opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/lib/python3.10/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:678: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+[INFO|trainer.py:4309] 2025-12-31 13:18:50,978 >> Saving model checkpoint to outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100
+[INFO|configuration_utils.py:491] 2025-12-31 13:18:50,989 >> Configuration saved in outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/config.json
+[INFO|configuration_utils.py:757] 2025-12-31 13:18:50,995 >> Configuration saved in outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/generation_config.json
+[INFO|modeling_utils.py:4189] 2025-12-31 13:18:56,954 >> The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/model.safetensors.index.json.
+[INFO|tokenization_utils_base.py:2725] 2025-12-31 13:18:56,961 >> tokenizer config file saved in outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/tokenizer_config.json
+[INFO|tokenization_utils_base.py:2734] 2025-12-31 13:18:56,966 >> Special tokens file saved in outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/special_tokens_map.json
+[2025-12-31 13:18:58,330717][I][utils/fsdp_utils:131:save_fsdp_model] Saving model to outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/pytorch_model_fsdp.bin
+[2025-12-31 13:19:03,449014][I][utils/fsdp_utils:133:save_fsdp_model] Model saved to outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/pytorch_model_fsdp.bin
+[2025-12-31 13:19:17,425476][I][utils/fsdp_utils:264:save_fsdp_optimizer] Saving Optimizer state to outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/optimizer.bin
+[2025-12-31 13:19:25,842120][I][utils/fsdp_utils:266:save_fsdp_optimizer] Optimizer state saved in outputs/ezpz.hf_trainer/2025-12-31-131106/checkpoint-100/optimizer.bin
+[INFO|trainer.py:2810] 2025-12-31 13:19:25,859 >>
+
+Training completed. Do not forget to share your model on huggingface.co/models =)
+
+
+
+
+{'train_runtime': 425.4295, 'train_samples_per_second': 5.641, 'train_steps_per_second': 0.235, 'train_tokens_per_second': 1925.584, 'train_loss': 2.489668021202087, 'epoch': 1.0, 'num_input_tokens_seen': 19660800}
+100%|##########| 100/100 [07:05<00:00,  3.58s/it]
+100%|##########| 100/100 [07:05<00:00,  4.25s/it]
+
+/opt/aurora/25.190.0/frameworks/aurora_frameworks-2025.2.0/lib/python3.10/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:678: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+  warnings.warn(
+[INFO|trainer.py:4309] 2025-12-31 13:19:27,160 >> Saving model checkpoint to outputs/ezpz.hf_trainer/2025-12-31-131106
+[INFO|configuration_utils.py:491] 2025-12-31 13:19:27,171 >> Configuration saved in outputs/ezpz.hf_trainer/2025-12-31-131106/config.json
+[INFO|configuration_utils.py:757] 2025-12-31 13:19:27,177 >> Configuration saved in outputs/ezpz.hf_trainer/2025-12-31-131106/generation_config.json
+[INFO|modeling_utils.py:4189] 2025-12-31 13:19:33,132 >> The model is bigger than the maximum size per checkpoint (5GB) and is going to be split in 2 checkpoint shards. You can find where each parameters has been saved in the index located at outputs/ezpz.hf_trainer/2025-12-31-131106/model.safetensors.index.json.
+[INFO|tokenization_utils_base.py:2725] 2025-12-31 13:19:33,139 >> tokenizer config file saved in outputs/ezpz.hf_trainer/2025-12-31-131106/tokenizer_config.json
+[INFO|tokenization_utils_base.py:2734] 2025-12-31 13:19:33,143 >> Special tokens file saved in outputs/ezpz.hf_trainer/2025-12-31-131106/special_tokens_map.json
+***** train metrics *****
+  epoch                    =        1.0
+  num_input_tokens_seen    =   19660800
+  total_flos               =  4454709GF
+  train_loss               =     2.4897
+  train_runtime            = 0:07:05.42
+  train_samples            =     726000
+  train_samples_per_second =      5.641
+  train_steps_per_second   =      0.235
+  train_tokens_per_second  =   1925.584
+[INFO|trainer.py:4643] 2025-12-31 13:19:33,298 >>
+***** Running Evaluation *****
+[INFO|trainer.py:4647] 2025-12-31 13:19:33,299 >>   Num examples: Unknown
+[INFO|trainer.py:4648] 2025-12-31 13:19:33,299 >>   Batch size = 1
+***** eval metrics *****
+  epoch                   =        1.0
+  eval_accuracy           =     0.5153
+  eval_loss               =     2.1941
+  eval_runtime            = 0:00:14.81
+  eval_samples            =        100
+  eval_samples_per_second =      0.337
+  eval_steps_per_second   =      0.067
+  num_input_tokens_seen   =   19660800
+  perplexity              =     8.9716
+[2025-12-31 13:19:48,219557][I][examples/hf_trainer:942:<module>] Took 500.42 seconds
+wandb:
+wandb: 🚀 View run good-grass-171 at:
+wandb: Find logs at: ../../../../../../lus/tegu/projects/datascience/foremans/projects/saforem2/ezpz/wandb/run-20251231_131133-00uzvvx5/logs
+My guessed rank = 7
+My guessed rank = 11
+My guessed rank = 6
+My guessed rank = 9
+My guessed rank = 1
+My guessed rank = 5
+My guessed rank = 3
+My guessed rank = 2
+My guessed rank = 8
+My guessed rank = 10
+My guessed rank = 23
+My guessed rank = 17
+My guessed rank = 20
+My guessed rank = 19
+My guessed rank = 18
+My guessed rank = 21
+My guessed rank = 4
+My guessed rank = 14
+My guessed rank = 15
+My guessed rank = 12
+My guessed rank = 16
+My guessed rank = 13
+My guessed rank = 22
+[2025-12-31 13:19:51,674119][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2025-12-31-131951]----
+[2025-12-31 13:19:51,675067][I][ezpz/launch:448:launch] Execution finished with 0.
+[2025-12-31 13:19:51,675475][I][ezpz/launch:449:launch] Executing finished in 520.07 seconds.
+[2025-12-31 13:19:51,675848][I][ezpz/launch:450:launch] Took 520.08 seconds to run. Exiting.
+took: 8m 46s
+```
+
+</details>

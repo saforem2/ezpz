@@ -15,6 +15,8 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
 
+## Help
+
 <details closed><summary><code>--help</code></summary>
 
 ```bash
@@ -76,10 +78,14 @@ options:
 
 </details>
 
-<details closed><summary>Output on Sunspot:</summary>
+## Output
+
+</details closed><summary>Output on Sunspot</summary>
 
 ```bash
-
+$ ezpz launch python3 -m ezpz.examples.fsdp_tp
 ```
 
+
 </details>
+
