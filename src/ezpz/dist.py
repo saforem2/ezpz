@@ -1502,8 +1502,8 @@ def setup_torch_distributed(
             " ".join(
                 [
                     "Using",
-                    "torch_{device,backend}=",
-                    "{" + f"{get_torch_device_type()}, {be}" + "}",
+                    f"device={get_torch_device_type()}",
+                    f"with backend={be}",
                 ]
             )
         )
