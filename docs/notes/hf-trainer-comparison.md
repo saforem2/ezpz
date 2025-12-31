@@ -35,11 +35,16 @@
 
 
 [^1]: W&B Run: [glad-moon-1](https://wandb.ai/aurora_gpt/ezpz-hf_trainer--eagle-auroragpt-foremans-downloads-global_step138650/runs/k1rvbdmc)
+
 [^2]: W&B Run: [cosmic-sunset-5](https://wandb.ai/aurora_gpt/ezpz-hf_trainer--flare-AuroraGPT-AuroraGPT-v1-Experiments-AuroraGPT-2B-public-sophiag-hf-global_step138650/runs/pqytcarn)
+
 [^3]: Tokens per sample on Polaris:
+
 [^4]: Tokens per sample on Aurora:
+
 [^5]: Tokens per optimizer step on Polaris:
       - ~ **8183** = (2004.87 / 0.245) \[`tokens_per_second` / `steps_per_second`\]
+
 [^6]: Tokens per optimizer step on Aurora:
       - ~ **8197** = (2737.984 / 0.334) \[`tokens_per_second` / `steps_per_second`\]
 
@@ -172,7 +177,7 @@ In order to truly do a fair comparison, we'd need to:
 This would tell us whether Aurora is "less efficient per device" because of comms,
 kernel maturity, input pipeline, or just the scaling point we chose.
 
-[^operational]: This is what we care about, operationally
+<!-- [^operational]: This is what we care about, operationally -->
 
 ## Running on Aurora
 
