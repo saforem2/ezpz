@@ -88,8 +88,10 @@ options:
 
 ## Train CNN with FSDP on MNIST
 
-See: \[📘 [examples/FSDP](../python/Code-Reference/examples/fsdp.md)\],
-\[🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)\]
+See:
+
+- 📘 [examples/FSDP](../python/Code-Reference/examples/fsdp.md)
+- 🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp
@@ -129,8 +131,10 @@ options:
 
 ## Train ViT with FSDP on MNIST
 
-See: \[📘 [examples/ViT](../python/Code-Reference/examples/vit.md)\],
-\[🐍 [src/ezpz/examples/vit.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)\]
+See:
+
+- 📘 [examples/ViT](../python/Code-Reference/examples/vit.md)
+- 🐍 [src/ezpz/examples/vit.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
@@ -202,8 +206,10 @@ options:
 
 FSDP Example with Tensor Parallelism
 
-See: \[📘 [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)\],
-\[🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)\]
+See:
+
+- 📘 [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)
+- 🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
@@ -276,8 +282,10 @@ options:
 
 ## Train Diffusion LLM with FSDP on HF Datasets
 
-See: \[📘 [examples/Diffusion](../python/Code-Reference/examples/diffusion.md)\],
-\[🐍 [src/ezpz/examples/diffusion.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)\]
+See:
+
+- 📘 [examples/Diffusion](../python/Code-Reference/examples/diffusion.md)
+- 🐍 [src/ezpz/examples/diffusion.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanfordnlp/imdb
@@ -333,10 +341,12 @@ options:
 
 ## Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets
 
-See: \[📘 [examples/HF Trainer](../python/Code-Reference/examples/hf_trainer.md)\],
-\[🐍 [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)\]
+See:
 
-- [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
+- 📘 [examples/HF Trainer](../python/Code-Reference/examples/hf_trainer.md)
+    - [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
+- 🐍 [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
+
 
 ```bash
 ezpz launch python3 -m ezpz.examples.hf_trainer \
