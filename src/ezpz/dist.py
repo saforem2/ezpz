@@ -965,13 +965,8 @@ def get_torch_backend_on_xpu() -> str:
 
     Examples:
 
-        ```python
-        >>> torch_version = float('.'join(torch.__version__.split('.')[:2]))
-        >>> if torch_version > 2.5:
-        >>>     backend = 'xccl'
-        >>> else:
-        >>>     backend = 'ccl'
-        ```
+        >>> get_torch_backend_on_xpu()
+        "xccl"
     """
     torch_version = get_torch_version_as_float()
     assert torch.xpu.is_available()
@@ -1506,7 +1501,7 @@ def setup_torch_distributed(
         logger.info(
             " ".join(
                 [
-                    f"Using {fw=} with",
+                    "Using",
                     "torch_{device,backend}=",
                     "{" + f"{get_torch_device_type()}, {be}" + "}",
                 ]
