@@ -197,7 +197,14 @@ markdown_extensions:
 nav:
   - 🍋 ezpz: index.md
   - 🏃‍♂️ Quickstart: quickstart.md
-  - 📝 Examples: examples/index.md
+  - 📝 Examples: 
+      - examples/index.md
+      - Train MLP with DDP on MNIST: examples/test-dist.md
+      - Train CNN with FSDP on MNIST: examples/fsdp.md
+      - Train ViT with FSDP on MNIST: examples/vit.md
+      - Train Transformer with FSDP and TP on HF Datasets: examples/fsdp-tp.md
+      - Train Diffusion LLM with FSDP on HF Datasets: examples/diffusion.md
+      - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer.md
   - 🧰 CLI:
       - cli/index.md
       - 🩺 Doctor: cli/doctor.md

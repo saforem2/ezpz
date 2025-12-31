@@ -293,7 +293,7 @@ def main() -> int:
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
     import ezpz.dist
-    rank = ezpz.dist.setup_torch()
+    rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
     # rank = ezpz.dist.setup_torch(
     #     # seed=training_args.seed,
     #     # device_id=int(devid) if devid is not None else devid,

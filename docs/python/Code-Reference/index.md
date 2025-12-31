@@ -1,4 +1,8 @@
 # 🍋 `ezpz`
 
-This section provides comprehensive documentation for the Python library,
-including installation instructions, usage examples, and API references.
+The files in this section correspond to modules from:
+
+<https://github.com/saforem2/ezpz/blob/main/src/ezpz/>
+
+and are built automatically using
+[mkdocstrings](https://mkdocstrings.github.io/).

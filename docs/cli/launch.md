@@ -64,12 +64,12 @@ Use it to launch:
 
 See [📝 Examples](../examples/index.md) for complete example scripts covering:
 
-1. [Use DDP + MNIST to train a MLP](../python/Code-Reference/test_dist.md)
-1. [Use FSDP + MNIST to train a CNN](../examples/index.md#train-mlp-with-ddp-on-mnist)
-1. [Use FSDP + MNIST to train a Vision Transformer](../examples/index.md#train-vit-with-fsdp-on-mnist)
-1. [Use FSDP + HF Datasets to train a Diffusion Language Model](../examples/index.md#train-diffusion-llm-with-fsdp-on-hf-datasets)
-1. [Use FSDP + HF Datasets + Tensor Parallelism to train a Llama style model](../examples/index.md#train-transformer-with-fsdp-and-tp-on-hf-datasets)
-1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](../examples/index.md#train-or-fine-tune-an-llm-with-fsdp-and-hf-trainer-on-hf-datasets)
+1. [Use DDP + MNIST to train a MLP](../examples/test-dist.md)
+1. [Use FSDP + MNIST to train a CNN](../examples/fsdp.md)
+1. [Use FSDP + MNIST to train a Vision Transformer](../examples/vit.md)
+1. [Use FSDP + HF Datasets to train a Diffusion Language Model](../examples/diffusion.md)
+1. [Use FSDP + HF Datasets + Tensor Parallelism to train a Llama style model](../examples/fsdp-tp.md)
+1. [Use FSDP + HF {Datasets + AutoModel + Trainer} to train / fine-tune an LLM](../examples/hf-trainer.md)
     - [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
 
 <!--
