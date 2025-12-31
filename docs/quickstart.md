@@ -17,11 +17,13 @@ These can be broken down, roughly into two distinct categories:
       ```
 
       This script contains utilities for automatic:
-        - Job scheduler detection with Slurm and PBS
-        - Module loading and base Python environment setup
-        - Virtual environment creation and activation
+
+      - Job scheduler detection with Slurm and PBS
+      - Module loading and base Python environment setup
+      - Virtual environment creation and activation
 
       ... _and more_!
+
     - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
       additional information.
 
@@ -32,8 +34,20 @@ These can be broken down, roughly into two distinct categories:
     1. Experiment Tracking and tools for automatically
        recording, saving and plotting metrics.
 
+/// note | Pick and Choose
+
 Each of these components are designed so that you can pick and choose only
 those tools that are useful for you.
+
+For example, if you're only interested in the automatic device detection,
+all you need is:
+
+```python
+import ezpz
+device = ezpz.get_torch_device()
+```
+
+///
 
 ## 🌐 Write Hardware Agnostic Distributed PyTorch Code
 
@@ -46,41 +60,103 @@ those tools that are useful for you.
   everything after `--` is the command to run:
 
     ```bash
-    ezpz launch -n 8 -x PYTHONPATH=/tmp/.venv/bin:${PYTHONPATH} -x EZPZ_LOG_LEVEL=DEBUG -- python3 -m ezpz.examples.vit --fsdp --compile
+    ezpz launch <launch flags> -- <command to run> <command args>
+    ```
+
+    e.g.:
+
+    ```bash
+    ezpz launch -- python3 -m ezpz.examples.fsdp
+    ```
+
+    or, specify `-n 8` processes, forward a specific `PYTHONPATH`, and set
+    `EZPZ_LOG_LEVEL=DEBUG`:
+
+    ```bash
+    ezpz launch -n 8 \
+        -x PYTHONPATH=/tmp/.venv/bin:${PYTHONPATH} \
+        -x EZPZ_LOG_LEVEL=DEBUG \
+        -- \
+        python3 -m ezpz.examples.fsdp
     ```
 
 ### 🤝 Using `ezpz` in Your Application
 
 The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
 
-For example, suppose you have a PyTorch training script that looks something
-like:
 
-```python
-torch.distributed.init_process_group(backend="nccl", ...)
+- `ezpz.setup_torch()` replaces manual `torch.distributed` initialization:
 
-local_rank = int(os.environ["LOCAL_RANK"])
+    ```diff
+    - torch.distributed.init_process_group(backend="nccl", ...)
+    + ezpz.setup_torch()
+    ```
 
-model = build_model(...)
-model.to("cuda")
-model = torch.nn.parallel.DistributedDataParallel(
-    model,
-    device_ids=[local_rank],
-    output_device=local_rank
-)
+- `ezpz.get_local_rank()` replaces manual `os.environ["LOCAL_RANK"]`:
 
-for iter, batch in enumerate(dataloader):
-    batch = batch.to("cuda")
-    t0 = time.perf_counter()
-    loss = train_step(...)
-    torch.cuda.synchronize()
-    metrics = {
-        "dt": time.perf_counter() - t0,
-        "loss": loss.item(),
-        # ...
-    }
-```
+    ```diff
+    - local_rank = int(os.environ["LOCAL_RANK"])
+    + local_rank = ezpz.get_local_rank()
+    ```
 
+- `ezpz.get_rank()` replaces manual `os.environ["RANK"]`:
+
+    ```diff
+    - rank = int(os.environ["RANK"])
+    + rank = ezpz.get_rank()
+    ```
+
+- `ezpz.get_world_size()` replaces manual `os.environ["WORLD_SIZE"]`:
+
+    ```diff
+    - world_size = int(os.environ["WORLD_SIZE"])
+    + world_size = ezpz.get_world_size()
+    ```
+
+- `ezpz.get_torch_device()` replaces manual device assignment:
+
+    ```diff
+    - device = torch.device(f"cuda")
+    + device = ezpz.get_torch_device()
+    ```
+
+    ```diff
+    model = build_model(...)
+
+    - model.to("cuda")
+    + model.to(ezpz.get_torch_device())
+    ```
+
+- `ezpz.wrap_model()` replaces manual `DistributedDataParallel` wrapping:
+
+    ```diff
+    - model = torch.nn.parallel.DistributedDataParallel(
+    -     model,
+    -     device_ids=[local_rank],
+    -     output_device=local_rank
+    - )
+
+    + model = ezpz.wrap_model(use_fsdp=False)
+    ```
+
+- `ezpz.synchronize()` replaces manual device synchronization:
+
+    ```diff
+    for iter, batch in enumerate(dataloader):
+    -     batch = batch.to("cuda")
+    +     batch = batch.to(ezpz.get_torch_device())
+        t0 = time.perf_counter()
+        loss = train_step(...)
+    -     torch.cuda.synchronize()
+    -     ezpz.synchronize()
+        metrics = {
+            "dt": time.perf_counter() - t0,
+            "loss": loss.item(),
+            # ...
+        }
+    ```
+
+<!--
 We can generalize this script to run on any distributed setup with `ezpz` as follows:
 
 
@@ -105,6 +181,7 @@ for iter, batch in enumerate(dataloader):
         # ...
     }
 ```
+-->
 
 <!--
 
@@ -166,6 +243,7 @@ Capture metrics across all ranks, persist JSONL, generate text/PNG plots, and
 import ezpz
 from ezpz import History
 
+# single process logging, automatically!
 logger = ezpz.get_logger(__name__)
 
 ezpz.setup_torch()
@@ -189,6 +267,8 @@ for step in range(num_steps):
 
 # Aggregated statistics (mean/min/max/std) are recorded across all MPI ranks,
 # and plots + JSONL logs land in outputs/ by default.
+if ezpz.get_rank() == 0:
+    history.finalize()
 ```
 
 ## Complete Example
