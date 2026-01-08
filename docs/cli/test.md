@@ -1,5 +1,26 @@
 # ✅ `ezpz test`
 
+/// note | `ezpz test`
+
+Run the bundled test suite (great for first-time validation):
+
+```bash
+ezpz test
+```
+
+Or, try without installing:
+
+```bash
+TMPDIR=$(pwd) uv run \
+    --python=$(which python3) \
+    --with "git+https://github.com/saforem2/ezpz" \
+    ezpz test
+```
+
+See [✅ **Test**](https://saforem2.github.io/ezpz/cli/test/) for more information.
+
+///
+
 Run the bundled test suite (great for first-time validation):
 
 ```bash

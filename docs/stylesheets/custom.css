@@ -7,9 +7,9 @@
 :root {
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --h1-font-size: 1.5rem;
-  --h2-font-size: 1.25rem;
-  --h3-font-size: 1.2rem;
+  --h1-font-size: 1.33rem;
+  --h2-font-size: 1.2rem;
+  --h3-font-size: 1.15rem;
   --h4-font-size: 1.1251rem;
   --h5-font-size: 1.06255rem;
   --h6-font-size: 1rem;
@@ -211,12 +211,12 @@
 }
 
 :root {
-    --h1-padding: 0pt;
-    --h2-padding: 0pt;
-    --h3-padding: 0pt;
-    --h4-padding: 0pt;
-    --h5-padding: 0pt;
-    --h6-padding: 0pt;
+  --h1-padding: 0pt;
+  --h2-padding: 0pt;
+  --h3-padding: 0pt;
+  --h4-padding: 0pt;
+  --h5-padding: 0pt;
+  --h6-padding: 0pt;
 }
 
 .md-typeset h1 {
@@ -229,12 +229,13 @@
   width: auto;
   font-weight: 800;
   margin-block-end: 0.5lh;
-  padding-inline-start: 5pt;
+  /* padding-inline-start: 5pt; */
   color: var(--h1-fg-color);
   font-size: var(--h1-font-size);
   background: linear-gradient(0.25turn, var(--h1-bg-color), rgba(0, 0, 0, 0));
   /* background-color: var(--h1-bg-color); */
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   code {
     padding: 0pt 2pt;
@@ -259,6 +260,7 @@
   padding-inline-start: 5pt;
   background: linear-gradient(0.25turn, var(--h2-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   letter-spacing: -1pt;
   font-weight: 600;
@@ -284,6 +286,7 @@
   /* background-color: var(--h3-bg-color); */
   background: linear-gradient(0.25turn, var(--h3-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   code {
     padding: 0pt 2pt;
@@ -310,6 +313,7 @@
   /* background-color: var(--h4-bg-color); */
   background: linear-gradient(0.25turn, var(--h4-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   code {
     padding: 0pt 2pt;
@@ -336,6 +340,7 @@
   /* background-color: var(--h5-bg-color); */
   background: linear-gradient(0.25turn, var(--h5-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   code {
     padding: 0pt 2pt;
@@ -360,11 +365,32 @@
   /* background-color: var(--h6-bg-color); */
   background: linear-gradient(0.25turn, var(--h6-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
+  border-right: none;
   border-radius: var(--link-border-radius);
   code {
     padding: 0pt 2pt;
   }
   &:hover {
     border: 1px solid var(--h6-fg-color);
+  }
+}
+
+.md-sidebar {
+  padding: 5pt 0;
+}
+
+.md-main__inner {
+  margin-top: auto;
+  padding-block-start: 5pt;
+}
+
+.md-nav__title {
+  display: none;
+}
+
+.md-code__nav {
+  background-color: unset;
+  &:hover {
+    color: var(--md-accent-fg-color);
   }
 }

@@ -1,5 +1,73 @@
 # 🚀 `ezpz launch`
 
+/// note | `ezpz launch`
+
+Single entry point for distributed jobs.
+
+`ezpz` detects PBS/Slurm automatically and falls back to `mpirun`, forwarding
+useful environment variables so your script behaves the same on laptops and
+clusters.
+
+Add your own args to any command (`--config`, `--batch-size`, etc.) and `ezpz`
+will propagate them through the detected launcher.
+
+Use the provided
+
+```bash
+ezpz launch <launch flags> -- <cmd> <cmd flags>
+```
+
+to automatically launch `<cmd>` across all available[^schedulers]
+accelerators.
+
+Use it to launch:
+
+- Arbitrary command(s):
+
+    ```bash
+    ezpz launch hostname
+    ```
+
+- Arbitrary Python string:
+
+    ```bash
+    ezpz launch python3 -c 'import ezpz; ezpz.setup_torch()'
+    ```
+
+- One of the ready-to-go examples:
+
+    ```bash
+    ezpz launch python3 -m ezpz.test_dist --profile
+    ezpz launch -n 8 -- python3 -m ezpz.examples.fsdp_tp --tp 4
+    ```
+
+- Your own distributed training script:
+
+    ```bash
+    ezpz launch -n 16 -ppn 8 -- python3 -m your_app.train --config configs/your_config.yaml
+    ```
+
+    to launch `your_app.train` across 16 processes, 8 per node.
+
+
+See [🚀 **Launch**](https://saforem2.github.io/ezpz/cli/launch/) for more information.
+
+[^schedulers]: By default, this will detect if we're running behind a job scheduler (e.g. PBS or Slurm).
+    If so, we automatically determine the specifics of the currently active job; 
+    explicitly, this will determine:
+
+    1. The number of available nodes
+    2. How many GPUs are present on each of these nodes
+    3. How many GPUs we have _total_
+
+    It will then use this information to automatically construct the appropriate 
+    {`mpiexec`, `srun`} command to launch, and finally, execute the launch cmd.
+
+
+
+
+///
+
 Single entry point for distributed jobs.
 
 `ezpz` detects PBS/Slurm automatically and falls back to `mpirun`, forwarding

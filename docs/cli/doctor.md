@@ -1,5 +1,21 @@
 # 🩺 Doctor
 
+/// note | `ezpz doctor`
+
+Health-check your environment and ensure that `ezpz` is installed correctly
+
+```bash
+ezpz doctor
+ezpz doctor --json   # machine-friendly output for CI
+```
+
+Checks MPI, scheduler detection, Torch import + accelerators, and wandb
+readiness, returning non-zero on errors.
+
+See: [🩺 **Doctor**](https://saforem2.github.io/ezpz/cli/doctor/) for more information.
+
+///
+
 Health-check your environment and ensure that `ezpz` is installed correctly
 
 `ezpz doctor` inspects the active environment and reports whether common launch

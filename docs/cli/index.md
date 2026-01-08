@@ -1,5 +1,32 @@
 ## 🧰 `ezpz` CLI
 
+/// note | CLI: `ezpz`
+
+Once installed, `ezpz` provides a CLI with a few useful utilities
+to help with distributed launches and environment validation.
+
+Explicitly, these are:
+
+```bash
+ezpz doctor  # environment validation and health-check
+ezpz test    # distributed smoke test
+ezpz launch  # general purpose, scheduler-aware launching
+```
+
+To see the list of available commands, run:
+
+```bash
+ezpz --help
+```
+
+/// note | 🧰 CLI Toolbox
+
+Checkout [🧰 **CLI**](https://saforem2.github.io/ezpz/cli/) for additional information.
+
+///
+
+///
+
 Once installed, `ezpz` provides a CLI with a few useful utilities
 to help with distributed launches and environment validation.
 
