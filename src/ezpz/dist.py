@@ -959,7 +959,10 @@ def get_torch_version_as_float() -> float:
 
 
 def get_torch_backend_on_xpu() -> str:
-    """Deal with breaking change introduced in torch 2.6:
+    """
+    ! DEPRECATED FUNCTION !
+
+    Deal with breaking change introduced in torch 2.6:
 
     See: https://github.com/pytorch/pytorch/pull/141856
 
@@ -968,9 +971,20 @@ def get_torch_backend_on_xpu() -> str:
         >>> get_torch_backend_on_xpu()
         "xccl"
     """
-    torch_version = get_torch_version_as_float()
-    assert torch.xpu.is_available()
-    return "xccl" if torch_version > 2.5 else "ccl"
+    # torch_version = get_torch_version_as_float()
+    # assert torch.xpu.is_available()
+    # return "xccl" if torch_version > 2.5 else "ccl"
+    # XXX: This is broken for whatever reason, so hardcoding for now
+    #
+    #     ```python
+    #     >>> import ezpz
+    #     >>> ezpz.get_torch_version_as_float()
+    #     2.11
+    #     >>> ezpz.get_torch_backend_on_xpu()
+    #     'ccl'
+    #     ```
+    # ???
+    return "xccl"
 
 
 def get_torch_backend() -> str:
@@ -986,9 +1000,7 @@ def get_torch_backend() -> str:
     return (
         "nccl"
         if torch.cuda.is_available()
-        else (
-            get_torch_backend_on_xpu() if torch.xpu.is_available() else "gloo"
-        )
+        else ("xccl" if torch.xpu.is_available() else "gloo")
     )
 
 
