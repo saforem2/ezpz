@@ -37,7 +37,7 @@ ezpz --help
 <!---->
 <!-- /// note | 🧰 CLI Toolbox -->
 <!---->
-<!-- Checkout [🧰 **CLI**](https://saforem2.github.io/ezpz/cli/) for additional information. -->
+<!-- Checkout [🧰 **CLI**](https://ezpz.cool/cli/) for additional information. -->
 <!---->
 <!-- /// -->
 <!---->
