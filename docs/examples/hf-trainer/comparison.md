@@ -104,12 +104,12 @@
 /// note
 
 - `[samples/step] = [samples/sec] / [steps/sec]`
-  - Polaris: `1.958 / 0.245 ≈  8.0` samples/step (✅ matches global batch 8)
-  - Aurora : `8.021 / 0.334 ≈ 24.0` samples/step (✅ matches global batch 24)
+    - Polaris: `1.958 / 0.245 ≈  8.0` samples/step (✅ matches global batch 8)
+    - Aurora : `8.021 / 0.334 ≈ 24.0` samples/step (✅ matches global batch 24)
 
 - `[tokens/step] = [tokens/sec]/[steps/sec]`
-  - Polaris: `2004.87 / 0.245 ≈ 8183` tokens/step
-  - Aurora : `2737.98 / 0.334 ≈ 8197` tokens/step
+    - Polaris: `2004.87 / 0.245 ≈ 8183` tokens/step
+    - Aurora : `2737.98 / 0.334 ≈ 8197` tokens/step
 
 ///
 
@@ -127,9 +127,9 @@ then:
 Since `tokens/step` is ~ equal, compare `steps/sec` (or step time):
 
 - Polaris: `0.245 steps/sec`
-  - → step time ≈ **4.08 s/step**
+    - → step time ≈ **4.08 s/step**
 - Aurora : `0.334 steps/sec`
-  - → step time ≈ **2.99 s/step**
+    - → step time ≈ **2.99 s/step**
 
 Aurora is ~1.36× faster per optimizer step (0.334 / 0.245), and therefore
 ~1.36× faster in `tokens/sec`, for this _exact training configuration_.
@@ -138,34 +138,32 @@ We can normalize by device count
 (though this penalizes Aurora with 3× more devices):
 
 - `steps/sec/device`:
-  - Polaris: `0.245 /  8 = 0.0306`
-  - Aurora : `0.334 / 24 = 0.0139`
+    - Polaris: `0.245 /  8 = 0.0306`
+    - Aurora : `0.334 / 24 = 0.0139`
 
     So per device, Polaris is ~2.2× "better" on this metric.
 
-But this is to be somewhat expected since they're operating at
-different scales, i.e.:
+But this is to be somewhat expected since they're operating at different
+scales, i.e.: 24-way data parallel will usually lose per-device efficiency to
+comms/overheads vs 8-way, unless you increase work per device (bigger
+microbatch, longer seq, etc.).
 
-> 24-way data parallel will usually lose per-device efficiency to
-> comms/overheads vs 8-way, unless you increase work per device
-> (bigger microbatch, longer seq, etc.).
-
-So,
+So:
 
 1. **Time-to-train / throughput at chosen scale**:
-   - Aurora: 1.36× higher `steps/sec` _and_ `tokens/sec`;
-     this is what we'd care about, operationally.
+    - Aurora: 1.36× higher `steps/sec` _and_ `tokens/sec`;
+        this is what we'd care about, operationally.
 1. **Scaling efficiency**
-   - Per-device efficiency ratio:  
+    - Per-device efficiency ratio:  
 
-     ```text
-     [0.334 / 24] / [0.245 / 8] ≈ 0.45
-     ```
+        ```text
+        [0.334 / 24] / [0.245 / 8] ≈ 0.45
+        ```
 
-     i.e. Aurora with 24 devices is delivering ~45% of the _per-device_ step
-     throughput on Polaris with 8 devices.
+        i.e. Aurora with 24 devices is delivering ~45% of the _per-device_ step
+        throughput on Polaris with 8 devices.
 
-     (how much we're paying for using more devices)
+        (how much we're paying for using more devices)
 
 ### 🫸 Packing in our Sequences
 
@@ -192,11 +190,33 @@ comms, kernel maturity, input pipeline, or just the scaling point we chose.
 
 ```bash
 #[aurora_frameworks-2025.2.0](ezpz-distributed-metrics-aurora_frameworks-2025.2.0)
-#[12/18/25,13:21:37][x4310c7s4b0n0][/f/A/A/E/A/t/s/ezpz-distributed-metrics][ distributed-metrics][$?] [1m11s]
-; ckpt=/flare/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/public/sophiag/hf/global_step138650 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=stanfordnlp/imdb --model_name_or_path"${ckpt}" --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=50 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=$(tstamp)
+#[12/18/25,13:21:37][x4310c7s4b0n0][/f/A/A/E/A/t/s/ezpz-distributed-metrics][distributed-metrics][$?] [1m11s]
+; ckpt=/flare/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/public/sophiag/hf/global_step138650 
+; ezpz launch python3 -m ezpz.examples.hf_trainer \
+    --streaming \
+    --dataset_name=stanfordnlp/imdb \
+    --model_name_or_path="${ckpt}" \
+    --bf16=true \
+    --do_train=true \
+    --do_eval=true \
+    --report-to=wandb \
+    --logging-steps=1 \
+    --include-tokens-per-second=true \
+    --max-steps=100 \
+    --include-num-input-tokens-seen=true \
+    --optim=adamw_torch \
+    --logging-first-step \
+    --include-for-metrics='inputs,loss' \
+    --max-eval-samples=50 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
+    --block_size=8192 \
+    --gradient_checkpointing=true \
+    --fsdp=auto_wrap \
+    --output_dir=$(tstamp)
 ```
 
-- <details closed><sumamry>Output:</sumamry>
+- <details closed><summary>Output:</summary>
 
     ```bash
     # [2025-12-18 13:21:50,091003][I][ezpz/launch:378:launch] ----[🍋 ezpz.launch][started][2025-12-18-132150]----
@@ -311,11 +331,33 @@ comms, kernel maturity, input pipeline, or just the scaling point we chose.
 # (2025-09-25/base) (ezpz-distributed-metrics-mconda3)
 #[/e/A/f/p/s/ezpz-distributed-metrics][🌱 distributed-metrics][🤷✓] [⏱️ 1m28s]
 #[12/18/25 @ 13:32:34][x3006c0s1b0n0]
-; ckpt=/eagle/AuroraGPT/foremans/Downloads/global_step138650 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=stanfordnlp/imdb --model_name_or_path "${ckpt}" --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=50 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=$(tstamp)
+; ckpt=/eagle/AuroraGPT/foremans/Downloads/global_step138650
+; ezpz launch python3 -m ezpz.examples.hf_trainer \
+      --streaming \
+      --dataset_name=stanfordnlp/imdb \
+      --model_name_or_path "${ckpt}" \
+      --bf16=true \
+      --do_train=true \
+      --do_eval=true \
+      --report-to=wandb \
+      --logging-steps=1 \
+      --include-tokens-per-second=true \
+      --max-steps=100 \
+      --include-num-input-tokens-seen=true \
+      --optim=adamw_torch \
+      --logging-first-step \
+      --include-for-metrics='inputs,loss' \
+      --max-eval-samples=50 \
+      --per_device_train_batch_size=1 \
+      --per_device_eval_batch_size=1 \
+      --block_size=8192 \
+      --gradient_checkpointing=true \
+      --fsdp=auto_wrap \
+      --output_dir=$(tstamp)
 ```
 
 
-- <details closed><sumamry>Output:</sumamry>
+- <details closed><summary>Output:</summary>
 
     ```bash
     [2025-12-18 13:32:45,480638][i][ezpz/launch:378:launch] ----[🍋 ezpz.launch][started][2025-12-18-133245]----
