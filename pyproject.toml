@@ -14,7 +14,6 @@ dependencies = [
     "numpy",
     "omegaconf",
     "plotext",
-    "pyinstrument",
     "rich",
     "seaborn",
     "sh",
@@ -52,7 +51,7 @@ ezpz-generate-tui = "ezpz.examples.generate_tui:main"
 vit = ["timm"]
 mpi = ["mpi4py"]
 # xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
-xpu = ["pytorch-triton-xpu"]
+# xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchvision"]
 docs = [
     "mkdocs",
@@ -71,6 +70,7 @@ dev = [
     "ipython",
     "isort",
     "jupyter",
+    "pyinstrument",
     "ptipython",
     "pudb",
     "pynvim",
@@ -129,7 +129,7 @@ override-dependencies = [
     "torchvision; sys_platform == 'never'",
     "mpi4py; sys_platform == 'never'",
 ]
-conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
+# conflicts = [[{ extra = "xpu" }, { extra = "cpu" }, { extra = "cu128" }]]
 
 # [tool.uv.sources]
 # ezpz = { workspace = true }
