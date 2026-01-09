@@ -134,7 +134,7 @@ Scheduler resources:
 
 ```bash
 #[aurora_frameworks-2025.2.0]
-#[~][󰔛  23s]
+#[~][23s]
 #[12/26/25 @ 15:24:07][x1921c0s3b0n0]
 ; uv run --python=$(which python3) --with "git+https://github.com/saforem2/ezpz@distributed-metrics" ezpz doctor --json
 ```

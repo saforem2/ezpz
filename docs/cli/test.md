@@ -21,7 +21,7 @@ ezpz test
 
         ```bash
         (ezpz)
-        #[12/26/25 @ 14:59:27][~/v/s/ezpz][distributed-metrics][$✘»!?] [󰔛  20s]
+        #[12/26/25 @ 14:59:27][~/v/s/ezpz][distributed-metrics][$✘»!?] [20s]
         ; ezpz test
         [2025-12-26 14:59:36,627513][I][ezpz/test_dist:132:__post_init__] Outputs will be saved to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936
         [2025-12-26 14:59:36,629251][I][ezpz/dist:1506:setup_torch_distributed] Using fw='ddp' with torch_{device,backend}= {mps, gloo}
