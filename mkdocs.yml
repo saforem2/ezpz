@@ -216,14 +216,6 @@ nav:
             - 🤗 <code>ezpz.examples.hf_trainer</code>:
                 - examples/hf-trainer/index.md
                 - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
-            # - Train MLP with DDP on MNIST: examples/test-dist.md
-            # - Train CNN with FSDP on MNIST: examples/fsdp.md
-            # - Train ViT with FSDP on MNIST: examples/vit.md
-            # - Train Transformer with FSDP and TP on HF Datasets: examples/fsdp-tp.md
-            # - Train Diffusion LLM with FSDP on HF Datasets: examples/diffusion.md
-            # - 🤗 HF Trainer Example:
-            #     - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer/index.md
-            #     - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
         - 🗓️ PBS: notes/pbs.md
       - 🧪 Experimental:
         - ✍️ <code>ezpz generate</code>: cli/generate.md
@@ -231,13 +223,13 @@ nav:
 
   - 📝 Examples:
       - examples/index.md
-      - Train MLP with DDP on MNIST: examples/test-dist.md
-      - Train CNN with FSDP on MNIST: examples/fsdp.md
-      - Train ViT with FSDP on MNIST: examples/vit.md
-      - Train Transformer with FSDP and TP on HF Datasets: examples/fsdp-tp.md
-      - Train Diffusion LLM with FSDP on HF Datasets: examples/diffusion.md
-      - 🤗 HF Trainer Example:
-          - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer/index.md
+      - <code>ezpz.test_dist</code>: examples/test-dist.md
+      - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
+      - <code>ezpz.examples.vit</code>: examples/vit.md
+      - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
+      - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
+      - 🤗 <code>ezpz.examples.hf_trainer</code>:
+          - examples/hf-trainer/index.md
           - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
 
   - 🐍 Python API:
@@ -275,22 +267,22 @@ nav:
               - <code>ezpz.data.utils</code>: python/Code-Reference/data/utils.md
           - <code>ezpz.examples</code>:
               - python/Code-Reference/examples/index.md
-              - <code>ezpz.exaples.cifar.train_ds</code>: python/Code-Reference/examples/cifar/train_ds.md
-              - <code>ezpz.exaples.diffusion</code>: python/Code-Reference/examples/diffusion.md
-              - <code>ezpz.exaples.fsdp</code>: python/Code-Reference/examples/fsdp.md
-              - <code>ezpz.exaples.fsdp_tp</code>: python/Code-Reference/examples/fsdp_tp.md
-              - <code>ezpz.exaples.generate</code>: python/Code-Reference/examples/generate.md
-              - <code>ezpz.exaples.generate_tui</code>: python/Code-Reference/examples/generate_tui.md
-              - <code>ezpz.exaples.hf</code>: python/Code-Reference/examples/hf.md
-              - <code>ezpz.exaples.hf_trainer</code>: python/Code-Reference/examples/hf_trainer.md
-              - <code>ezpz.exaples.hf_trainer_alt</code>: python/Code-Reference/examples/hf_trainer_alt.md
-              - <code>ezpz.exaples.minimal</code>: python/Code-Reference/examples/minimal.md
-              - <code>ezpz.exaples.vit</code>: python/Code-Reference/examples/vit.md
-              - <code>ezpz.exaples.vit_timm</code>: python/Code-Reference/examples/vit_timm.md
-              - <code>ezpz.exaples.deepspeed tp</code>:
-                  - train</code>: python/Code-Reference/examples/deepspeed/tp/train.md
-                  - train_batch_length</code>: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
-                  - utils</code>: python/Code-Reference/examples/deepspeed/tp/utils.md
+              # - <code>ezpz.examples.cifar.train_ds</code>: python/Code-Reference/examples/cifar/train_ds.md
+              - <code>ezpz.examples.diffusion</code>: python/Code-Reference/examples/diffusion.md
+              - <code>ezpz.examples.fsdp</code>: python/Code-Reference/examples/fsdp.md
+              - <code>ezpz.examples.fsdp_tp</code>: python/Code-Reference/examples/fsdp_tp.md
+              - <code>ezpz.examples.generate</code>: python/Code-Reference/examples/generate.md
+              - <code>ezpz.examples.generate_tui</code>: python/Code-Reference/examples/generate_tui.md
+              - <code>ezpz.examples.hf</code>: python/Code-Reference/examples/hf.md
+              - <code>ezpz.examples.hf_trainer</code>: python/Code-Reference/examples/hf_trainer.md
+              # - <code>ezpz.examples.hf_trainer_alt</code>: python/Code-Reference/examples/hf_trainer_alt.md
+              - <code>ezpz.examples.minimal</code>: python/Code-Reference/examples/minimal.md
+              - <code>ezpz.examples.vit</code>: python/Code-Reference/examples/vit.md
+              # - <code>ezpz.examples.vit_timm</code>: python/Code-Reference/examples/vit_timm.md
+              # - <code>ezpz.examples.deepspeed tp</code>:
+              #     - <code>train</code>: python/Code-Reference/examples/deepspeed/tp/train.md
+              #     - <code>train_batch_length</code>: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
+              #     - <code>utils</code>: python/Code-Reference/examples/deepspeed/tp/utils.md
           - <code>ezpz.log</code>:
               - python/Code-Reference/log/index.md
               - <code>ezpz.log.config</code>: python/Code-Reference/log/config.md
