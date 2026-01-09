@@ -230,7 +230,7 @@ details below:
 
 - We can use the provided
   [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
-  to setup our environment:
+  to set up our environment:
 
     ```bash
     source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env

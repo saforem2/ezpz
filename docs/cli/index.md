@@ -1,7 +1,7 @@
 # 🧰 `ezpz` CLI
 
 Once installed, `ezpz` provides a CLI with a few useful utilities
-to help with launch distributed PyTorch applications.
+to help launch distributed PyTorch applications.
 
 Explicitly, these are `ezpz <command>`:
 

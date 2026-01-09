@@ -18,6 +18,41 @@ ezpz launch <launch flags> -- <cmd> <cmd flags>
 to automatically launch `<cmd>` across all available[^schedulers]
 accelerators.
 
+/// details | Sequence Diagram
+    type: tip
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant CLI as ezpz_launch
+    participant Scheduler as PBS_or_Slurm
+    participant MPI as mpirun_mpiexec
+    participant App as User_application
+
+    User->>CLI: ezpz launch <launch_flags> -- <cmd> <cmd_flags>
+    CLI->>Scheduler: detect_scheduler()
+    alt scheduler_detected
+        Scheduler-->>CLI: scheduler_type, job_metadata
+        CLI->>Scheduler: build_scheduler_command(cmd_to_launch)
+        Scheduler-->>CLI: launch_cmd (mpiexec_or_srun)
+        CLI->>MPI: run_command(launch_cmd)
+        MPI->>App: start_ranks_and_execute
+        App-->>MPI: return_codes
+        MPI-->>CLI: aggregate_status
+    else no_scheduler_detected
+        Scheduler-->>CLI: unknown
+        CLI->>MPI: mpirun -np 2 <cmd> <cmd_flags>
+        MPI->>App: start_local_ranks
+        App-->>MPI: return_codes
+        MPI-->>CLI: aggregate_status
+    end
+    CLI-->>User: exit_code
+```
+
+///
+
+
 /// details | Simple Example
     type: example
 
