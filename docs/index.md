@@ -5,14 +5,12 @@
 `ezpz` makes distributed PyTorch code portable across any supported hardware
 {NVIDIA, AMD, Intel, MPS, CPU} with **zero code changes**.
 
-This lets us write Python applications that can be run anywhere, at any scale.
-
-Built to run _at scale_, with native job scheduler (PBS, Slurm)[^lcfs]
-integration, and graceful fallbacks for running locally (Mac, Linux) machines
+This lets us write Python applications that can be run _anywhere_, _at any
+scale_; with native job scheduler (PBS, Slurm)[^lcfs] integration and graceful
+fallbacks for running locally[^dev] on Mac, Linux machines.
 
 [^lcfs]: With first class support for all of the major HPC Supercomputing
     centers (e.g. ALCF, OLCF, NERSC)
-
 
 [^dev]: This is particularly useful if you'd like to run development /
     debugging experiments locally
@@ -345,7 +343,7 @@ Core features:
         type: success
 
     ```bash
-    #[01/08/26 @ 14:56:50][~/v/s/ezpz][dev][$✘!?] [󰔛  4s]
+    #[01/08/26 @ 14:56:50][~/v/s/ezpz][dev][$✘!?] [4s]
     ; ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
 
 
@@ -480,26 +478,19 @@ Core features:
     - Weights & Biases integration
     - Persistent storage of metrics in `.h5` format
     - Plotting support:
-        - Graphical plots (`svg`, `png`) via `matplotlib`
-        - Terminal-based ASCII plots via
-          [`plotext`](https://github.com/piccolomo/plotext#guide)  
-
-          /// details | [Text Plot Example]
+        - /// details | Graphical plots (`svg`, `png`) via `matplotlib`
               type: example
-
-          ![`tplot` Split Dark](./assets/tplot-split-dark.png) ![`tplot` Dark](./assets/tplot-dark.png)
-
-          ![`tplot` Split Light](./assets/tplot-split-light.png) ![`tplot` Light](./assets/tplot-light.png)
-          ///
-
-          /// details | [Matplotlib Example(s)]
-              type: example
-
           ![Accuracy](./assets/mplot/svgs/accuracy.svg)
           ![Loss](./assets/mplot/svgs/loss.svg)
           ![Forward time](./assets/mplot/svgs/dtf.svg)
           ![Backward time](./assets/mplot/svgs/dtb.svg)
+          ///
 
+        - /// details | Terminal-based ASCII plots via [`plotext`](https://github.com/piccolomo/plotext#guide)
+              type: example
+          ![`tplot` Split Dark](./assets/tplot-split-dark.png) ![`tplot` Dark](./assets/tplot-dark.png)
+
+          ![`tplot` Split Light](./assets/tplot-split-light.png) ![`tplot` Light](./assets/tplot-light.png)
           ///
 
 ## Environment Variables
@@ -598,7 +589,6 @@ Additional configuration can be done through environment variables, including:
 | EZPZ_LOG_LEVEL                               | Set ezpz logging verbosity.                                                      |
 | LOG_LEVEL                                    | General log level for various modules.                                           |
 | LOG_FROM_ALL_RANKS                           | Allow logs from all ranks (not just rank 0).                                     |
-| TENSORBOARD_DIR                              | Redirect TensorBoard logging output.                                             |
 | PYTHONHASHSEED                               | Fix Python hash seed for reproducibility.                                        |
 | WANDB_DISABLED                               | Disable Weights & Biases logging.                                                |
 | WANDB_MODE                                   | Set W&B mode (online, offline, dryrun).                                          |
