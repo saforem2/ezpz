@@ -5,35 +5,32 @@ Contains methods for initializing distributed communication.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
-from torch.nn.parallel.distributed import DistributedDataParallel
-
-import sys
 import datetime
+from functools import wraps
 import logging
 import os
-import socket
-import time
-from datetime import timedelta
-from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, Union
+import socket
+import sys
+import time
+from typing import Callable, Optional, Union, Any, Iterable
+from datetime import timedelta
 
-import rich
-import rich.text
-import torch.nn
-import torch.nn.parallel
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
-
-
-import torch
-import torch.distributed
 from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
+import rich
+import rich.text
+import torch
+import torch.distributed
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import MixedPrecision
+import torch.nn
+# import torch.nn.parallel
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel.distributed import DistributedDataParallel
 
-import ezpz.tp
 from ezpz.lazy import lazy_import
+import ezpz.tp
 
 TORCH_DTYPES_MAP = {
     "bf16": torch.bfloat16,
@@ -421,54 +418,15 @@ def _get_dist_info(
         "NUM_NODES": num_nodes,
         "NGPUS": num_gpus,
         "NGPUS_AVAILABLE": get_world_size_total(),
-        # 'NGPUS': get_world_size_total(),
         "NODE_ID": get_node_index(),
         "RANK": get_rank(),
         "rank": get_rank(),
         "SCHEDULER": get_scheduler(),
-        # 'WORLD_SIZE': get_world_size(),
         "WORLD_SIZE_TOTAL": get_world_size_total(),
         "WORLD_SIZE_IN_USE": get_world_size_in_use(),
         "world_size": get_world_size(),
         "EZPZ_RUN_COMMAND": (os.environ.get("EZPZ_RUN_COMMAND", sys.argv[0])),
-        # "LAUNCH_CMD":
-        # "LAUNCH_CMD": (
-        #     ezpz.pbs.get_pbs_launch_cmd(
-        #         hostfile=hfp,
-        #         verbose=(get_rank() == 0),
-        #     )
-        #     if scheduler.lower() == "pbs"
-        #     else None
-        # ),
     }
-    # ws = os.environ.get("WORLD_SIZE", None)
-    # if ws is not None:
-    #     logger.info(f'Caught "WORLD_SIZE"={ws} from environment!')
-    #     dist_info |= {"WORLD_SIZE": int(ws)}
-    # hostfile = (
-    #     Path(get_hostfile_with_fallback(hostfile)).as_posix()
-    #     if hostfile is None else hostfile
-    # )
-    # assert hostfile is not None and Path(hostfile).is_file(), (
-    #     f'{hostfile=} not None and {Path(hostfile).is_file()=}'
-    # )
-    # if max_hosts_to_print is not None and len(hosts) > max_hosts_to_print:
-    #     # if len(hosts) > max_hosts_to_print:
-    #     logger.warning(f'{len(hosts)=} > {max_hosts_to_print=} in dist.get_dist_info')
-    #     logger.warning(f'Truncating `hosts: [addr1, addr2, ...] at {max_hosts_to_print}')
-    # hosts = (
-    #     [h.split('.')[0] for h in hosts] if (
-    #                 max_hosts_to_print is not None
-    #                 and len(hosts) < max_hosts_to_print
-    #     )
-    #     else (
-    #         [h.split('.')[0] for h in hosts[:max_hosts_to_print]].extend(
-    #             [
-    #                 f'[(...) truncated ({len(hosts)} > {max_hosts_to_print})]'
-    #             ]
-    #         )
-    #     )
-    # )
     return dist_info
 
 
@@ -689,42 +647,6 @@ def wrap_model(
         model = wrap_with_ddp(model)
 
     return model
-
-    # if use_fsdp:
-    #     if dtype in {"fp16", "bf16", "fp32"}:
-    #         try:
-    #             if rank == 0:
-    #                 logger.info(f"Wrapping model model with FSDP + {dtype}")
-    #             return FSDP(
-    #                 model,
-    #                 mixed_precision=MixedPrecision(
-    #                     param_dtype=TORCH_DTYPES_MAP[dtype],
-    #                     reduce_dtype=torch.float32,
-    #                     cast_forward_inputs=True,
-    #                 ),
-    #             )
-    #         except Exception as exc:
-    #             if rank == 0:
-    #                 logger.warning(f"Encountered exception: {exc}")
-    #                 logger.warning(
-    #                     "Unable to wrap model with FSDP. Falling back to DDP..."
-    #                 )
-    #             model = ezpz.dist.wrap_model_for_ddp(
-    #                 model=model,
-    #             )
-    # device_type = ezpz.dist.get_torch_device_type()
-    # local_rank = ezpz.dist.get_local_rank()
-    # devids = (
-    #     f"{device_type}:{local_rank}"
-    #     if device_type == "cuda"
-    #     else local_rank
-    #     if device_type == "xpu"
-    #     else None
-    # )
-    # return DDP(
-    #     model,
-    #     device_ids=[devids] if devids is not None else None,
-    # )
 
 
 def setup(
@@ -994,14 +916,21 @@ def get_torch_backend() -> str:
     Returns:
         str: The current PyTorch backend.
     """
+    # return (
+    #     "nccl"
+    #     if torch.cuda.is_available()
+    #     else ("xccl" if (torch.xpu.is_available() and torch.distributeelse "gloo")
+    # )
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
         return backend_from_env
-    return (
-        "nccl"
-        if torch.cuda.is_available()
-        else ("xccl" if torch.xpu.is_available() else "gloo")
-    )
+    if torch.cuda.is_available() and torch.distributed.is_backend_available("nccl"):
+            return "nccl"
+    if torch.xpu.is_available():
+        if torch.distributed.is_backend_available("xccl"):
+            return "xccl"
+        return "ccl"
+    return "gloo"
 
 
 def init_process_group(
@@ -1569,6 +1498,16 @@ def setup_torch_distributed(
     return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
 
 
+def _torch_barrier(
+    group: (
+        torch.distributed.ProcessGroup | None  # type:ignore
+    ) = torch.distributed.GroupMember.WORLD,  # type:ignore
+    async_op: bool = False,
+    device_ids: str | Iterable | None = None,
+) -> torch.distributed.Work | None:  # type:ignore
+    return torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
+
+
 def barrier(
     device: Optional[torch.device | int | str] = None,
     group: (
@@ -1576,6 +1515,7 @@ def barrier(
     ) = torch.distributed.GroupMember.WORLD,  # type:ignore
     async_op: bool = False,
     device_ids: str | Iterable | None = None,
+    implementation: Optional[str] = None,
 ) -> torch.distributed.Work | None:  # type:ignore
     """
     Barrier for all processes in the group.
@@ -1602,23 +1542,34 @@ def barrier(
         >>> if handle is not None:
         ...     handle.wait()
     """
-    try:
-        # logger.warning(
-        #     "Unable to use `torch.distributed.barrier` "
-        #     "for this process group. "
-        #     "Falling back to `mpi4py` barrier."
-        # )
-        MPI.COMM_WORLD.barrier()
-    except Exception:
-        if get_rank() == 0:
-            logger.warning(
-                "Unable to use `MPI.COMM_WORLD.barrier` "
-                "for this process group. "
-                "Falling back to `torch.distributed` barrier."
-            )
-        torch.distributed.barrier(  # type:ignore
-            group=group, async_op=async_op, device_ids=device_ids
+    if implementation is not None and implementation.lower() not in {
+        "mpi", "torch"
+    }:
+        raise ValueError(
+            f"Unsupported barrier implementation: {implementation}"
         )
+    if implementation is None or implementation.lower() == "mpi":
+        try:
+            MPI.COMM_WORLD.barrier()
+        except Exception:
+            if get_rank() == 0:
+                logger.warning(
+                    "Unable to use `MPI.COMM_WORLD.barrier` "
+                    "for this process group. "
+                    "Falling back to `torch.distributed` barrier."
+                )
+            _torch_barrier(group, async_op=async_op, device_ids=device_ids)
+    if implementation is not None and implementation.lower() == "torch":
+        try:
+            _torch_barrier(group, async_op=async_op, device_ids=device_ids)
+        except Exception:
+            if get_rank() == 0:
+                logger.warning(
+                    "Unable to use `ezpz.dist._torch_barrier` "
+                    "for this process group. "
+                    "Falling back to `MPI.COMM_WORLD.barrier()` barrier."
+                )
+            MPI.COMM_WORLD.barrier()
 
 
 def setup_torch(
