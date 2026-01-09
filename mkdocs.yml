@@ -68,7 +68,6 @@ theme:
 
 plugins:
   # - typeset
-  - optimize
   - glightbox
   - search
   - autorefs
