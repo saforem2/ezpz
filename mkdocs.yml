@@ -213,9 +213,9 @@ nav:
             - <code>ezpz.examples.vit</code>: examples/vit.md
             - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
             - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
-            - 🤗 <code>ezpz.examples.hf_trainer</code>:
+            - <code>ezpz.examples.hf_trainer</code>:
                 - examples/hf-trainer/index.md
-                - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
+                - HF Trainer Comparison: examples/hf-trainer/comparison.md
         - 🗓️ PBS: notes/pbs.md
       - 🧪 Experimental:
         - ✍️ <code>ezpz generate</code>: cli/generate.md
@@ -228,9 +228,9 @@ nav:
       - <code>ezpz.examples.vit</code>: examples/vit.md
       - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
       - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
-      - 🤗 <code>ezpz.examples.hf_trainer</code>:
+      - <code>ezpz.examples.hf_trainer</code>:
           - examples/hf-trainer/index.md
-          - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
+          - HF Trainer Comparison: examples/hf-trainer/comparison.md
 
   - 🐍 Python API:
       - python/index.md
