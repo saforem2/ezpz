@@ -121,7 +121,7 @@ The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
     ```
 
     ```diff
-    model = build_model(...)
+      model = build_model(...)
 
     - model.to("cuda")
     + model.to(ezpz.get_torch_device())
@@ -142,18 +142,18 @@ The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
 - `ezpz.synchronize()` replaces manual device synchronization:
 
     ```diff
-    for iter, batch in enumerate(dataloader):
+      for iter, batch in enumerate(dataloader):
     -     batch = batch.to("cuda")
     +     batch = batch.to(ezpz.get_torch_device())
-        t0 = time.perf_counter()
-        loss = train_step(...)
+          t0 = time.perf_counter()
+          loss = train_step(...)
     -     torch.cuda.synchronize()
-    -     ezpz.synchronize()
-        metrics = {
-            "dt": time.perf_counter() - t0,
-            "loss": loss.item(),
-            # ...
-        }
+    +     ezpz.synchronize()
+          metrics = {
+              "dt": time.perf_counter() - t0,
+              "loss": loss.item(),
+              # ...
+          }
     ```
 
 <!--

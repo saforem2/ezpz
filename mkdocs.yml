@@ -199,167 +199,152 @@ markdown_extensions:
 nav:
   - 🍋 ezpz: index.md
   - 🏃‍♂️ Quickstart: quickstart.md
-  - 📝 Examples: 
+
+  - 🧰 CLI:
+      - cli/index.md
+      - 🩺 <code>ezpz doctor</code>: cli/doctor.md
+      - ✅ <code>ezpz test</code>: cli/test.md
+      - 🚀 <code>ezpz launch</code>:
+        - cli/launch/index.md
+        - 📝 Examples:
+            - examples/index.md
+            - <code>ezpz.test_dist</code>: examples/test-dist.md
+            - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
+            - <code>ezpz.examples.vit</code>: examples/vit.md
+            - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
+            - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
+            - 🤗 <code>ezpz.examples.hf_trainer</code>:
+                - examples/hf-trainer/index.md
+                - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
+            # - Train MLP with DDP on MNIST: examples/test-dist.md
+            # - Train CNN with FSDP on MNIST: examples/fsdp.md
+            # - Train ViT with FSDP on MNIST: examples/vit.md
+            # - Train Transformer with FSDP and TP on HF Datasets: examples/fsdp-tp.md
+            # - Train Diffusion LLM with FSDP on HF Datasets: examples/diffusion.md
+            # - 🤗 HF Trainer Example:
+            #     - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer/index.md
+            #     - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
+        - 🗓️ PBS: notes/pbs.md
+      - 🧪 Experimental:
+        - ✍️ <code>ezpz generate</code>: cli/generate.md
+        - 🖥️ <code>ezpz generate_tui</code>: cli/generate-tui.md
+
+  - 📝 Examples:
       - examples/index.md
       - Train MLP with DDP on MNIST: examples/test-dist.md
       - Train CNN with FSDP on MNIST: examples/fsdp.md
       - Train ViT with FSDP on MNIST: examples/vit.md
       - Train Transformer with FSDP and TP on HF Datasets: examples/fsdp-tp.md
       - Train Diffusion LLM with FSDP on HF Datasets: examples/diffusion.md
-      - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer.md
-  - 🧰 CLI:
-      - cli/index.md
-      - 🩺 Doctor: cli/doctor.md
-      - ✅ Test: cli/test.md
-      - 🚀 Launch: cli/launch.md
-      - 🧪 Experimental:
-        - ✍️ Generate: cli/generate.md
-        - 🖥️ Generate TUI: cli/generate-tui.md
+      - 🤗 HF Trainer Example:
+          - Train or Fine-Tune an LLM with FSDP and HF Trainer on HF Datasets: examples/hf-trainer/index.md
+          - ⚖️ HF Trainer Comparison: examples/hf-trainer/comparison.md
+
+  - 🐍 Python API:
+      - python/index.md
+      - <code>ezpz</code>:
+          - python/Code-Reference/index.md
+          - <code>ezpz.configs</code>: python/Code-Reference/configs.md
+          - <code>ezpz.dist</code>: python/Code-Reference/dist.md
+          - <code>ezpz.doctor</code>: python/Code-Reference/doctor.md
+          - <code>ezpz.history</code>: python/Code-Reference/history.md
+          - <code>ezpz.integrations</code>: python/Code-Reference/integrations.md
+          - <code>ezpz.jobs</code>: python/Code-Reference/jobs.md
+          - <code>ezpz.launch</code>: python/Code-Reference/launch.md
+          - <code>ezpz.lazy</code>: python/Code-Reference/lazy.md
+          - <code>ezpz.model</code>: python/Code-Reference/model.md
+          - <code>ezpz.pbs</code>: python/Code-Reference/pbs.md
+          - <code>ezpz.plot</code>: python/Code-Reference/plot.md
+          - <code>ezpz.profile</code>: python/Code-Reference/profile.md
+          - <code>ezpz.slurm</code>: python/Code-Reference/slurm.md
+          - <code>ezpz.test</code>: python/Code-Reference/test.md
+          - <code>ezpz.test dist</code>: python/Code-Reference/test_dist.md
+          - <code>ezpz.tplot</code>: python/Code-Reference/tplot.md
+          - <code>ezpz.cli</code>:
+              - python/Code-Reference/cli/index.md
+              - <code>ezpz.cli.flags</code>: python/Code-Reference/cli/flags.md
+              - <code>ezpz.cli.launch_cmd</code>: python/Code-Reference/cli/launch_cmd.md
+              - <code>ezpz.cli.test_cmd</code>: python/Code-Reference/cli/test_cmd.md
+          - <code>ezpz.data</code>:
+              - python/Code-Reference/data/index.md
+              - <code>ezpz.data.distributed</code>: python/Code-Reference/data/distributed.md
+              - <code>ezpz.data.hf</code>: python/Code-Reference/data/hf.md
+              - <code>ezpz.data.llama</code>: python/Code-Reference/data/llama.md
+              - <code>ezpz.data.text</code>: python/Code-Reference/data/text.md
+              - <code>ezpz.data.vision</code>: python/Code-Reference/data/vision.md
+              - <code>ezpz.data.utils</code>: python/Code-Reference/data/utils.md
+          - <code>ezpz.examples</code>:
+              - python/Code-Reference/examples/index.md
+              - <code>ezpz.exaples.cifar.train_ds</code>: python/Code-Reference/examples/cifar/train_ds.md
+              - <code>ezpz.exaples.diffusion</code>: python/Code-Reference/examples/diffusion.md
+              - <code>ezpz.exaples.fsdp</code>: python/Code-Reference/examples/fsdp.md
+              - <code>ezpz.exaples.fsdp_tp</code>: python/Code-Reference/examples/fsdp_tp.md
+              - <code>ezpz.exaples.generate</code>: python/Code-Reference/examples/generate.md
+              - <code>ezpz.exaples.generate_tui</code>: python/Code-Reference/examples/generate_tui.md
+              - <code>ezpz.exaples.hf</code>: python/Code-Reference/examples/hf.md
+              - <code>ezpz.exaples.hf_trainer</code>: python/Code-Reference/examples/hf_trainer.md
+              - <code>ezpz.exaples.hf_trainer_alt</code>: python/Code-Reference/examples/hf_trainer_alt.md
+              - <code>ezpz.exaples.minimal</code>: python/Code-Reference/examples/minimal.md
+              - <code>ezpz.exaples.vit</code>: python/Code-Reference/examples/vit.md
+              - <code>ezpz.exaples.vit_timm</code>: python/Code-Reference/examples/vit_timm.md
+              - <code>ezpz.exaples.deepspeed tp</code>:
+                  - train</code>: python/Code-Reference/examples/deepspeed/tp/train.md
+                  - train_batch_length</code>: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
+                  - utils</code>: python/Code-Reference/examples/deepspeed/tp/utils.md
+          - <code>ezpz.log</code>:
+              - python/Code-Reference/log/index.md
+              - <code>ezpz.log.config</code>: python/Code-Reference/log/config.md
+              - <code>ezpz.log.console</code>: python/Code-Reference/log/console.md
+              - <code>ezpz.log.__main__</code>: python/Code-Reference/log/__main__.md
+              - <code>ezpz.log.dataframe</code>: python/Code-Reference/log/dataframe.md
+              - <code>ezpz.log.handler</code>: python/Code-Reference/log/handler.md
+              - <code>ezpz.log.style</code>: python/Code-Reference/log/style.md
+              - <code>ezpz.log.test</code>: python/Code-Reference/log/test.md
+          - <code>ezpz.models</code>:
+              - python/Code-Reference/models/index.md
+              - <code>ezpz.models.attention</code>: python/Code-Reference/models/attention.md
+              - <code>ezpz.models.llama</code>: python/Code-Reference/models/llama.md
+              - <code>ezpz.models.minimal</code>: python/Code-Reference/models/minimal.md
+              - <code>ezpz.models.llama3.model</code>: python/Code-Reference/models/llama3/model.md
+              - <code>ezpz.models.vit.attention</code>: python/Code-Reference/models/vit/attention.md
+          - <code>ezpz.tp</code>:
+              - python/Code-Reference/tp/index.md
+              - <code>ezpz.tp.layers</code>: python/Code-Reference/tp/layers.md
+              - <code>ezpz.tp.mappings</code>: python/Code-Reference/tp/mappings.md
+              - <code>ezpz.tp.utils</code>: python/Code-Reference/tp/utils.md
+          - <code>ezpz.utils</code>:
+              - python/Code-Reference/utils.md
+              - <code>ezpz.utils.tar_env</code>: python/Code-Reference/utils/tar_env.md
+              - <code>ezpz.utils.yeet_env</code>: python/Code-Reference/utils/yeet_env.md
+
   - 📓 Notes:
       - notes/index.md
-      # - 🧪 Example Walkthrough: notes/example.md
       - ❓ FAQ: notes/faq.md
-      - 🤗 HF Trainer: notes/hf-trainer.md
-      - ⚖️ HF Trainer Comparison: notes/hf-trainer-comparison.md
-      - 🗓️ PBS: notes/pbs.md
-      # - 🐍 Python Library: notes/python-library.md
-      # - 📦 Release: notes/release.md
-      - \[Old / Incomplete / WIP\]:
-        - 🧤 Hands-On Slides: notes/slides-2025-05-07.md
-        - 🏗️ Architecture: notes/architecture.md
-        - 🛠️ Development Workflow: notes/development-workflow.md
-        - 🕸️ Parallelism: notes/parallelism.md
-        - 🏖️ Shell Environment: notes/shell-environment.md
-        - 🧵 Style Guide: notes/style-guide.md
-        - 🤖 Systems: notes/systems.md
-        - 📦 Yeet Environment: notes/yeet-env.md
-  - 🐍 API Reference:
-    - python/index.md
-    - <code>ezpz</code>:
-        - python/Code-Reference/index.md
-        # - __init__: python/Code-Reference/__init__.md
-        # - __about__: python/Code-Reference/__about__.md
-        - <code>ezpz.configs</code>: python/Code-Reference/configs.md
-        - <code>ezpz.dist</code>: python/Code-Reference/dist.md
-        - <code>ezpz.doctor</code>: python/Code-Reference/doctor.md
-        - <code>ezpz.history</code>: python/Code-Reference/history.md
-        - <code>ezpz.integrations</code>: python/Code-Reference/integrations.md
-        - <code>ezpz.jobs</code>: python/Code-Reference/jobs.md
-        - <code>ezpz.launch</code>: python/Code-Reference/launch.md
-        - <code>ezpz.lazy</code>: python/Code-Reference/lazy.md
-        - <code>ezpz.model</code>: python/Code-Reference/model.md
-        - <code>ezpz.pbs</code>: python/Code-Reference/pbs.md
-        - <code>ezpz.plot</code>: python/Code-Reference/plot.md
-        - <code>ezpz.profile</code>: python/Code-Reference/profile.md
-        - <code>ezpz.slurm</code>: python/Code-Reference/slurm.md
-        - <code>ezpz.test</code>: python/Code-Reference/test.md
-        - <code>ezpz.test dist</code>: python/Code-Reference/test_dist.md
-        - <code>ezpz.tplot</code>: python/Code-Reference/tplot.md
-        # - Train</code>: python/Code-Reference/train.md
-        - <code>ezpz.cli</code>:
-            - python/Code-Reference/cli/index.md
-            - <code>ezpz.cli.flags</code>: python/Code-Reference/cli/flags.md
-            - <code>ezpz.cli.launch_cmd</code>: python/Code-Reference/cli/launch_cmd.md
-            - <code>ezpz.cli.test_cmd</code>: python/Code-Reference/cli/test_cmd.md
-        - <code>ezpz.data</code>:
-            - python/Code-Reference/data/index.md
-            - <code>ezpz.data.distributed</code>: python/Code-Reference/data/distributed.md
-            - <code>ezpz.data.hf</code>: python/Code-Reference/data/hf.md
-            - <code>ezpz.data.llama</code>: python/Code-Reference/data/llama.md
-            - <code>ezpz.data.text</code>: python/Code-Reference/data/text.md
-            - <code>ezpz.data.vision</code>: python/Code-Reference/data/vision.md
-            - <code>ezpz.data.utils</code>: python/Code-Reference/data/utils.md
-        - <code>ezpz.examples</code>:
-            - python/Code-Reference/examples/index.md
-            - <code>ezpz.exaples.cifar.train_ds</code>: python/Code-Reference/examples/cifar/train_ds.md
-            # - <code>ezpz.cria</code>: python/Code-Reference/examples/cria.md
-            - <code>ezpz.exaples.diffusion</code>: python/Code-Reference/examples/diffusion.md
-            - <code>ezpz.exaples.fsdp</code>: python/Code-Reference/examples/fsdp.md
-            - <code>ezpz.exaples.fsdp_tp</code>: python/Code-Reference/examples/fsdp_tp.md
-            - <code>ezpz.exaples.generate</code>: python/Code-Reference/examples/generate.md
-            - <code>ezpz.exaples.generate_tui</code>: python/Code-Reference/examples/generate_tui.md
-            - <code>ezpz.exaples.hf</code>: python/Code-Reference/examples/hf.md
-            - <code>ezpz.exaples.hf_trainer</code>: python/Code-Reference/examples/hf_trainer.md
-            - <code>ezpz.exaples.hf_trainer_alt</code>: python/Code-Reference/examples/hf_trainer_alt.md
-            - <code>ezpz.exaples.minimal</code>: python/Code-Reference/examples/minimal.md
-            - <code>ezpz.exaples.vit</code>: python/Code-Reference/examples/vit.md
-            - <code>ezpz.exaples.vit_timm</code>: python/Code-Reference/examples/vit_timm.md
-            - <code>ezpz.exaples.deepspeed tp</code>:
-                - train</code>: python/Code-Reference/examples/deepspeed/tp/train.md
-                - train_batch_length</code>: python/Code-Reference/examples/deepspeed/tp/train_batch_length.md
-                - utils</code>: python/Code-Reference/examples/deepspeed/tp/utils.md
-        - <code>ezpz.log</code>:
-            - python/Code-Reference/log/index.md
-            - <code>ezpz.log.config</code>: python/Code-Reference/log/config.md
-            - <code>ezpz.log.console</code>: python/Code-Reference/log/console.md
-            - <code>ezpz.log.__main__</code>: python/Code-Reference/log/__main__.md
-            - <code>ezpz.log.dataframe</code>: python/Code-Reference/log/dataframe.md
-            - <code>ezpz.log.handler</code>: python/Code-Reference/log/handler.md
-            - <code>ezpz.log.style</code>: python/Code-Reference/log/style.md
-            - <code>ezpz.log.test</code>: python/Code-Reference/log/test.md
-        - <code>ezpz.models</code>:
-            - python/Code-Reference/models/index.md
-            - <code>ezpz.models.attention</code>: python/Code-Reference/models/attention.md
-            - <code>ezpz.models.llama</code>: python/Code-Reference/models/llama.md
-            - <code>ezpz.models.minimal</code>: python/Code-Reference/models/minimal.md
-            - <code>ezpz.models.llama3.model</code>: python/Code-Reference/models/llama3/model.md
-            - <code>ezpz.models.vit.attention</code>: python/Code-Reference/models/vit/attention.md
-        - <code>ezpz.tp</code>:
-            - python/Code-Reference/tp/index.md
-            - <code>ezpz.tp.layers</code>: python/Code-Reference/tp/layers.md
-            - <code>ezpz.tp.mappings</code>: python/Code-Reference/tp/mappings.md
-            - <code>ezpz.tp.utils</code>: python/Code-Reference/tp/utils.md
-        - <code>ezpz.utils</code>:
-            - python/Code-Reference/utils.md
-            - <code>ezpz.utils.tar_env</code>: python/Code-Reference/utils/tar_env.md
-            - <code>ezpz.utils.yeet_env</code>: python/Code-Reference/utils/yeet_env.md
-    - 🧪 tests:
-        - python/tests/index.md
-        - configs: python/tests/test-configs.md
-        - configs-improved: python/tests/test-configs-improved.md
-        - comprehensive harness: python/tests/comprehensive-test.md
-        - dist: python/tests/test-dist.md
-        - ezpz: python/tests/test-ezpz.md
-        - jobs: python/tests/test-jobs.md
-        - launch: python/tests/test-launch.md
-        - lazy: python/tests/test-lazy.md
-        - logging: python/tests/test-log.md
-        - modules: python/tests/test-modules-directly.md
-        - property based: python/tests/test-property-based.md
-        - profile: python/tests/test-profile.md
-        - history: python/tests/test-history.md
-        - simple: python/tests/simple-test.md
-        - simple-runner: python/tests/simple-test-runner.md
-        - simple-ezpz : python/tests/test-simple-ezpz.md
-        - tp: python/tests/test-tp.md
-        - tplot: python/tests/test-tplot.md
-        - utils: python/tests/test-utils.md
-        - utils-improved: python/tests/test-utils-improved.md
-
-# - WIP Docs:
-# - 👀 Overview: ./docs/overview.md
-# - README (Draft): WIP/readme-draft.md
-# - CLI: launch.md
-# - FAQ (WIP): faq.md
-# - Tests: tests/index.md
-    # - hf_trainer: python/Code-Reference/examples/hf_trainer.md
-    # - vit: python/Code-Reference/examples/vit.md
-    # - fsdp: python/Code-Reference/examples/fsdp.md
-    # - fsdp_tp: python/Code-Reference/examples/fsdp_tp.md
-    # - diffusion: python/Code-Reference/examples/diffusion.md
-    # - generate_tui: python/Code-Reference/examples/generate_tui.md
-    # - minimal: python/Code-Reference/examples/minimal.md
-      # - Code-Reference/index.md
-      # - "<code>ezpz.__init__</code>": Code-Reference/init-reference.md
-      # - "<code>ezpz.configs</code>": Code-Reference/config-reference.md
-      # - "<code>ezpz.dist</code>": Code-Reference/dist-reference.md
-      # - "<code>ezpz.jobs</code>": Code-Reference/jobs-reference.md
-      # - "<code>ezpz.launch</code>": Code-Reference/launch-reference.md
-      # - "<code>ezpz.log</code>": Code-Reference/log-reference.md
-      # - "<code>ezpz.generate</code>": Code-Reference/generate-reference.md
-      # - "<code>ezpz.hf_trainer</code>": Code-Reference/hf-trainer-reference.md
-      # - "<code>ezpz.history</code>": Code-Reference/history-reference.md
-      # - "<code>ezpz.test_dist</code>": Code-Reference/test-dist-reference.md
-      # - "<code>ezpz.test</code>": Code-Reference/test-reference.md
-      # - "<code>ezpz.tp.__init__</code>": Code-Reference/tp-init-reference.md
-      # - "<code>ezpz.utils</code>": Code-Reference/utils-reference.md
+      - 🧤 Hands-On Slides: notes/slides-2025-05-07.md
+      - 🧪 testing:
+          - python/tests/index.md
+          - configs: python/tests/test-configs.md
+          - configs-improved: python/tests/test-configs-improved.md
+          - comprehensive harness: python/tests/comprehensive-test.md
+          - dist: python/tests/test-dist.md
+          - ezpz: python/tests/test-ezpz.md
+          - jobs: python/tests/test-jobs.md
+          - launch: python/tests/test-launch.md
+          - lazy: python/tests/test-lazy.md
+          - logging: python/tests/test-log.md
+          - modules: python/tests/test-modules-directly.md
+          - property based: python/tests/test-property-based.md
+          - profile: python/tests/test-profile.md
+          - history: python/tests/test-history.md
+          - simple: python/tests/simple-test.md
+          - simple-runner: python/tests/simple-test-runner.md
+          - simple-ezpz: python/tests/test-simple-ezpz.md
+          - tp: python/tests/test-tp.md
+          - tplot: python/tests/test-tplot.md
+          - utils: python/tests/test-utils.md
+          - utils-improved: python/tests/test-utils-improved.md
+      - 🚧 INCOMPLETE:
+          - 🕸️ Parallelism: notes/parallelism.md
+          - 🏖️ Shell Environment: notes/shell-environment.md
+          - 🤖 Systems: notes/systems.md
+          - 📦 Yeet Environment: notes/yeet-env.md
