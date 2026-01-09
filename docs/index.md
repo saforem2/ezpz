@@ -34,9 +34,9 @@ These can be broken down (~roughly) into three categories:
     - See [**Features**](#features) for a list of core features and functionality
       provided by `ezpz`.
     - The complete API reference for `ezpz` is available at:
-        - [`ezpz`](https://saforem2.github.io/ezpz/python/Code-Reference/):
+        - [`ezpz`](https://ezpz.cool/python/Code-Reference/):
           Entry point for the `ezpz` library.
-        - [`ezpz.dist`](https://saforem2.github.io/ezpz/python/Code-Reference/dist/):
+        - [`ezpz.dist`](https://ezpz.cool/python/Code-Reference/dist/):
           Contains the bulk of the important logic related to device detection
           and distributed initialization.
 
@@ -46,17 +46,17 @@ These can be broken down (~roughly) into three categories:
     your own applications!
 
     1. [`ezpz.examples.test_dist`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py):
-       [Train MLP with DDP on MNIST](https://saforem2.github.io/ezpz/examples/test-dist/)
+       [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test-dist/)
     1. [`ezpz.examples.fsdp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py):
-       [Train CNN with FSDP on MNIST](https://saforem2.github.io/ezpz/examples/fsdp/)
+       [Train CNN with FSDP on MNIST](https://ezpz.cool/examples/fsdp/)
     1. [`ezpz.examples.vit`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py):
-       [Train ViT with FSDP on MNIST](https://saforem2.github.io/ezpz/examples/vit/)
+       [Train ViT with FSDP on MNIST](https://ezpz.cool/examples/vit/)
     1. [`ezpz.examples.fsdp_tp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py):
-       [Train Transformer with FSDP and TP on HF Datasets](https://saforem2.github.io/ezpz/examples/fsdp-tp/)
+       [Train Transformer with FSDP and TP on HF Datasets](https://ezpz.cool/examples/fsdp-tp/)
     1. [`ezpz.examples.diffusion`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py):
-       [Train Diffusion LLM with FSDP on HF Datasets](https://saforem2.github.io/ezpz/examples/diffusion/)
+       [Train Diffusion LLM with FSDP on HF Datasets](https://ezpz.cool/examples/diffusion/)
     1. [`ezpz.examples.hf_trainer`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py):
-       [Train LLM with FSDP and HF Trainer on HF Datasets](https://saforem2.github.io/ezpz/examples/hf-trainer/)
+       [Train LLM with FSDP and HF Trainer on HF Datasets](https://ezpz.cool/examples/hf-trainer/)
     1. /// details | `demo.py`
            type: example
 
@@ -454,7 +454,7 @@ Core features:
     ///
 
 - Automatic distributed initialization using
-  [`ezpz.setup_torch()`](https://saforem2.github.io/ezpz/python/Code-Reference/dist/#ezpz.dist.setup_torch)
+  [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/dist/#ezpz.dist.setup_torch)
   with automatic {device, backend} selection
 
     ```python
@@ -473,7 +473,7 @@ Core features:
     ```
 
 - Metric tracking, aggregation, and recording via
-  [`ezpz.History()`](https://saforem2.github.io/ezpz/python/Code-Reference/#ezpz.History):
+  [`ezpz.History()`](https://ezpz.cool/python/Code-Reference/#ezpz.History):
     - Automatic distributed statistics (min, max, mean, stddev) across ranks[^distributed-history]
     - Weights & Biases integration
     - Persistent storage of metrics in `.h5` format
@@ -608,11 +608,11 @@ Additional configuration can be done through environment variables, including:
 
 ## More Information
 
-- Examples live under [`ezpz.examples.*`](https://saforem2.github.io/ezpz/examples/)—copy them or
+- Examples live under [`ezpz.examples.*`](https://ezpz.cool/examples/)—copy them or
   extend them for your workloads.
-- Stuck? Check the [docs](https://saforem2.github.io/ezpz), or run `ezpz doctor` for actionable hints.
+- Stuck? Check the [docs](https://ezpz.cool), or run `ezpz doctor` for actionable hints.
 - See my (~ recent) talk on:
-  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://saforem2.github.io/ezpz/slides-2025-05-07/)
+  [**_LLMs on Aurora_: Hands On with `ezpz`**](https://ezpz.cool/slides-2025-05-07/)
   for a detailed walk-through containing examples and use cases.
     - [🎥 YouTube](https://www.youtube.com/watch?v=15ZK9REQiBo)
     - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/)

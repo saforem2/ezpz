@@ -23,17 +23,17 @@ ezpz launch python3 -m ezpz.examples.hf_trainer
     be run at _**any scale**_, on **_any hardware_**:
 
     1. [`ezpz.examples.test_dist`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py):
-       [Train MLP with DDP on MNIST](https://saforem2.github.io/ezpz/examples/test-dist/)
+       [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test-dist/)
     1. [`ezpz.examples.fsdp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py):
-       [Train CNN with FSDP on MNIST](https://saforem2.github.io/ezpz/examples/fsdp/)
+       [Train CNN with FSDP on MNIST](https://ezpz.cool/examples/fsdp/)
     1. [`ezpz.examples.vit`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py):
-       [Train ViT with FSDP on MNIST](https://saforem2.github.io/ezpz/examples/vit/)
+       [Train ViT with FSDP on MNIST](https://ezpz.cool/examples/vit/)
     1. [`ezpz.examples.fsdp_tp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py):
-       [Train Transformer with FSDP and TP on HF Datasets](https://saforem2.github.io/ezpz/examples/fsdp-tp/)
+       [Train Transformer with FSDP and TP on HF Datasets](https://ezpz.cool/examples/fsdp-tp/)
     1. [`ezpz.examples.diffusion`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py):
-       [Train Diffusion LLM with FSDP on HF Datasets](https://saforem2.github.io/ezpz/examples/diffusion/)
+       [Train Diffusion LLM with FSDP on HF Datasets](https://ezpz.cool/examples/diffusion/)
     1. [`ezpz.examples.hf_trainer`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py):
-       [Train LLM with FSDP and HF Trainer on HF Datasets](https://saforem2.github.io/ezpz/examples/hf-trainer/)
+       [Train LLM with FSDP and HF Trainer on HF Datasets](https://ezpz.cool/examples/hf-trainer/)
 
     1. /// details | `demo.py`
            type: example
