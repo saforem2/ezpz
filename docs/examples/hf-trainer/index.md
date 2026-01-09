@@ -2,8 +2,8 @@
 
 See:
 
-- 📘 [examples/HF Trainer](../python/Code-Reference/examples/hf_trainer.md)
-    - [Comparison between Aurora/Polaris at ALCF](../notes/hf-trainer-comparison.md)
+- 🤗 [examples/HF Trainer](../../python/Code-Reference/examples/hf_trainer.md)
+    - [Comparison between Aurora/Polaris at ALCF](./comparison.md)
 - 🐍 [src/ezpz/examples/hf_trainer.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)
 
 
@@ -859,7 +859,7 @@ options:
 
 ```bash
 #[aurora_frameworks-2025.2.0](ezpz-aurora_frameworks-2025.2.0)
-#[/t/d/f/p/s/ezpz][dev][!?] [󰔛  3m18s]
+#[/t/d/f/p/s/ezpz][dev][!?] [3m18s]
 #[12/31/25 @ 13:11:04][x1921c1s5b0n0]
 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=eliplutchok/fineweb-small-sample --model_name_or_path meta-llama/Llama-3.2-1B --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=100 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=outputs/ezpz.hf_trainer/$(tstamp)
 

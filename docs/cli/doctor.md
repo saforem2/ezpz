@@ -1,16 +1,26 @@
 # 🩺 Doctor
 
-Health-check your environment and ensure that `ezpz` is installed correctly
-
-`ezpz doctor` inspects the active environment and reports whether common launch
-prerequisites are satisfied before you submit a distributed job.
-
-The command is available from the main CLI group:
-
 ```bash
 ezpz doctor
 ezpz doctor --json   # machine-friendly output for CI
 ```
+
+Health-check your environment and ensure that everything is ready to go!
+
+Checks MPI, scheduler detection, Torch import + accelerators, and `wandb`
+readiness, returning non-zero on errors.
+
+<!-- Health-check your environment and ensure that `ezpz` is installed correctly -->
+<!---->
+<!-- `ezpz doctor` inspects the active environment and reports whether common launch -->
+<!-- prerequisites are satisfied before you submit a distributed job. -->
+<!---->
+<!-- The command is available from the main CLI group: -->
+<!---->
+<!-- ```bash -->
+<!-- ezpz doctor -->
+<!-- ezpz doctor --json   # machine-friendly output for CI -->
+<!-- ``` -->
 
 ## What gets checked?
 
@@ -22,16 +32,15 @@ Explicitly, this checks:
 - MPI installation and `mpi4py` bindings
 - Job scheduler (PBS / Slurm) and determines specifics of _active_ job.
 
-    This includes the number of available nodes, how many accelerators per node,
-    and the total number of accelerators.
+  This includes the number of available nodes, how many accelerators per node,
+  and the total number of accelerators.
 
-
-| Check      | Status Criteria | Remedy Hints |
-|------------|-----------------|--------------|
-| **MPI**    | Confirms both `mpi4py` and a launcher (`mpiexec`/`mpirun`) are accessible. | Suggests installing the missing component. |
-| **Scheduler** | Identifies PBS/SLURM based on environment variables. | Points to the scheduler plug-in mechanism if the host is unknown. |
-| **wandb**  | Detects the `wandb` Python package plus credentials or offline mode. | Recommends `WANDB_MODE=offline` when credentials are absent. |
-| **torch**  | Validates the PyTorch install and accelerator visibility (`cuda`, `xpu`, `mps`, or CPU). | Advises setting `TORCH_DEVICE` for CPU-only runs. |
+| Check         | Status Criteria                                                                          | Remedy Hints                                                      |
+| ------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **MPI**       | Confirms both `mpi4py` and a launcher (`mpiexec`/`mpirun`) are accessible.               | Suggests installing the missing component.                        |
+| **Scheduler** | Identifies PBS/SLURM based on environment variables.                                     | Points to the scheduler plug-in mechanism if the host is unknown. |
+| `wandb`       | Detects the `wandb` Python package plus credentials or offline mode.                     | Recommends `WANDB_MODE=offline` when credentials are absent.      |
+| `torch`       | Validates the PyTorch install and accelerator visibility (`cuda`, `xpu`, `mps`, or CPU). | Advises setting `TORCH_DEVICE` for CPU-only runs.                 |
 
 Each line is reported with a severity (`OK`, `WARNING`, `ERROR`) and, when
 relevant, an actionable remediation hint.
@@ -125,7 +134,7 @@ Scheduler resources:
 
 ```bash
 #[aurora_frameworks-2025.2.0]
-#[~][󰔛  23s]
+#[~][23s]
 #[12/26/25 @ 15:24:07][x1921c0s3b0n0]
 ; uv run --python=$(which python3) --with "git+https://github.com/saforem2/ezpz@distributed-metrics" ezpz doctor --json
 ```
@@ -164,6 +173,5 @@ Scheduler resources:
   }
 ]
 ```
-
 
 </details>

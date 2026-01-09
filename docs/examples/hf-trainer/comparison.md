@@ -2,36 +2,41 @@
 
 ## 📊 Data
 
-| Metric            |     Polaris     |       Aurora        |
-| ----------------- | :-------------: | :-----------------: |
-| Local Batch Size  |        1        |          1          |
-| World Size        |        8        |         24          |
-| Global Batch Size |        8        |         24          |
-| Sequence Length   |      8192       |        8192         |
-| Epoch             |       1.0       |        2.24         |
-| Perplexity        |     16.6743     |       12.7268       |
-| Input tokens seen |    6,553,600    |     19,660,800      |
-| Total FLOPs       |  6,691,434 GF   |    6,691,434 GF     |
-| `steps/sec`       |      0.245      |        0.334        |
-| `samples/sec`     |      1.958      |        8.021        |
-| `tokens/sec`      |    2,004.87     |      2,737.98       |
-| `tokens/sample`   |   ~ 1024[^3]    |      ~ 341[^4]      |
-| `tokens/step`     |   ~ 8183[^5]    |     ~ 8197[^6]      |
-| `tokens/sec/gpu`  |     250.61      |       114.08        |
-| &nbsp;            |                 |                     |
-| **Train/**        |                 |                     |
-| loss              |     3.0482      |       2.8478        |
-| runtime           |   0:06:48.60    |     0:04:59.19      |
-| samples           |     25,000      |       25,000        |
-| &nbsp;            |                 |                     |
-| **Eval/**         |                 |                     |
-| accuracy          |     0.4328      |       0.4701        |
-| loss              |     2.8139      |       2.5437        |
-| runtime           |   0:00:06.26    |     0:00:09.12      |
-| samples           |       50        |         50          |
-| `samples/sec`     |      1.118      |        0.329        |
-| `steps/sec`       |      0.16       |        0.11         |
-| W&B run           | glad-moon-1[^1] | cosmic-sunset-5[^2] |
+| **CONFIG**        |   Polaris    |    Aurora    |
+| ----------------- | :----------: | :----------: |
+| Local Batch Size  |      1       |      1       |
+| World Size        |      8       |      24      |
+| Global Batch Size |      8       |      24      |
+| Sequence Length   |     8192     |     8192     |
+| Epoch             |     1.0      |     2.24     |
+| Perplexity        |   16.6743    |   12.7268    |
+| Input tokens seen |  6,553,600   |  19,660,800  |
+| Total FLOPs       | 6,691,434 GF | 6,691,434 GF |
+
+| **METRICS**      |  Polaris   |   Aurora   |
+| ---------------- | :--------: | :--------: |
+| `steps/sec`      |   0.245    |   0.334    |
+| `samples/sec`    |   1.958    |   8.021    |
+| `tokens/sec`     |  2,004.87  |  2,737.98  |
+| `tokens/sample`  | ~ 1024[^3] | ~ 341[^4]  |
+| `tokens/step`    | ~ 8183[^5] | ~ 8197[^6] |
+| `tokens/sec/gpu` |   250.61   |   114.08   |
+
+| **TRAIN** |  Polaris   |   Aurora   |
+| --------- | :--------: | :--------: |
+| loss      |   3.0482   |   2.8478   |
+| runtime   | 0:06:48.60 | 0:04:59.19 |
+| samples   |   25,000   |   25,000   |
+
+| **EVAL**      |     Polaris     |       Aurora        |
+| ------------- | :-------------: | :-----------------: |
+| accuracy      |     0.4328      |       0.4701        |
+| loss          |     2.8139      |       2.5437        |
+| runtime       |   0:00:06.26    |     0:00:09.12      |
+| samples       |       50        |         50          |
+| `samples/sec` |      1.118      |        0.329        |
+| `steps/sec`   |      0.16       |        0.11         |
+| W&B run       | glad-moon-1[^1] | cosmic-sunset-5[^2] |
 
 
 [^1]: W&B Run: [glad-moon-1](https://wandb.ai/aurora_gpt/ezpz-hf_trainer--eagle-auroragpt-foremans-downloads-global_step138650/runs/k1rvbdmc)
@@ -95,16 +100,20 @@
 
 ## 🔍 Details
 
-> [!NOTE]
-> - `[samples/step] = [samples/sec] / [steps/sec]`
->    - Polaris: `1.958 / 0.245 ≈  8.0` samples/step (✅ matches global batch 8)
->    - Aurora:  `8.021 / 0.334 ≈ 24.0` samples/step (✅ matches global batch 24)
->
-> - `[tokens/step] = [tokens/sec]/[steps/sec]`
->    - Polaris: `2004.87 / 0.245 ≈ 8183` tokens/step
->    - Aurora:  `2737.98 / 0.334 ≈ 8197` tokens/step
->
-> So both runs are doing ~8192 `tokens/step` (close enough).
+
+/// note
+
+- `[samples/step] = [samples/sec] / [steps/sec]`
+    - Polaris: `1.958 / 0.245 ≈  8.0` samples/step (✅ matches global batch 8)
+    - Aurora : `8.021 / 0.334 ≈ 24.0` samples/step (✅ matches global batch 24)
+
+- `[tokens/step] = [tokens/sec]/[steps/sec]`
+    - Polaris: `2004.87 / 0.245 ≈ 8183` tokens/step
+    - Aurora : `2737.98 / 0.334 ≈ 8197` tokens/step
+
+///
+
+So both runs are doing ~8192 `tokens/step` (close enough).
 
 Since we know that
 $\text{tokens/sec} = (\text{tokens/step}) \times (\text{steps/sec})$,
@@ -119,7 +128,7 @@ Since `tokens/step` is ~ equal, compare `steps/sec` (or step time):
 
 - Polaris: `0.245 steps/sec`
     - → step time ≈ **4.08 s/step**
-- Aurora:  `0.334 steps/sec`
+- Aurora : `0.334 steps/sec`
     - → step time ≈ **2.99 s/step**
 
 Aurora is ~1.36× faster per optimizer step (0.334 / 0.245), and therefore
@@ -130,38 +139,38 @@ We can normalize by device count
 
 - `steps/sec/device`:
     - Polaris: `0.245 /  8 = 0.0306`
-    - Aurora:  `0.334 / 24 = 0.0139`
+    - Aurora : `0.334 / 24 = 0.0139`
 
     So per device, Polaris is ~2.2× "better" on this metric.
 
-But this is to be somewhat expected since they're operating at
-different scales, i.e.:
+But this is to be somewhat expected since they're operating at different
+scales, i.e.: 24-way data parallel will usually lose per-device efficiency to
+comms/overheads vs 8-way, unless you increase work per device (bigger
+microbatch, longer seq, etc.).
 
-> 24-way data parallel will usually lose per-device efficiency to
-> comms/overheads vs 8-way, unless you increase work per device
-> (bigger microbatch, longer seq, etc.).
-
-So,
+So:
 
 1. **Time-to-train / throughput at chosen scale**:
-    - Aurora: 1.36× higher `steps/sec` _and_ `tokens/sec`.
-   
-    this is what we'd care about, operationally.
+    - Aurora: 1.36× higher `steps/sec` _and_ `tokens/sec`;
+        this is what we'd care about, operationally.
 1. **Scaling efficiency**
-    - Per-device efficiency ratio:
-        - (0.334/24) / (0.245/8) ≈ 0.45
-     
-       i.e. Aurora with 24 devices is delivering ~45% of the _per-device_ step
-       throughput on Polaris with 8 devices.
+    - Per-device efficiency ratio:  
 
-       (how much we're paying for using more devices)
+        ```text
+        [0.334 / 24] / [0.245 / 8] ≈ 0.45
+        ```
+
+        i.e. Aurora with 24 devices is delivering ~45% of the _per-device_ step
+        throughput on Polaris with 8 devices.
+
+        (how much we're paying for using more devices)
 
 ### 🫸 Packing in our Sequences
 
 Note that the `tokens/sample` are different:
 
 - **Polaris**: ~ `8183 /  8 ≈ 1024` \[tokens/sample\]
-- **Aurora**:  ~ `8197 / 24 ≈  341` \[tokens/sample\]
+- **Aurora** : ~ `8197 / 24 ≈  341` \[tokens/sample\]
 
 This means that we're not feeding the same "sample" definition
 (sequence length / packing / truncation).
@@ -171,23 +180,43 @@ but _not_ per-sample!
 
 In order to truly do a fair comparison, we'd need to:
 
-1. **fix seq_len and packing** so tokens/sample matches, then
+1. fix `seq_len` and packing so tokens/sample matches, then
 1. sweep DP size (8 vs 24) on each system and plot step time vs devices
 
-This would tell us whether Aurora is "less efficient per device" because of comms,
-kernel maturity, input pipeline, or just the scaling point we chose.
-
-<!-- [^operational]: This is what we care about, operationally -->
+This would tell us whether Aurora is "less efficient per device" because of
+comms, kernel maturity, input pipeline, or just the scaling point we chose.
 
 ## Running on Aurora
 
 ```bash
 #[aurora_frameworks-2025.2.0](ezpz-distributed-metrics-aurora_frameworks-2025.2.0)
-#[12/18/25,13:21:37][x4310c7s4b0n0][/f/A/A/E/A/t/s/ezpz-distributed-metrics][ distributed-metrics][$?] [1m11s]
-; ckpt=/flare/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/public/sophiag/hf/global_step138650 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=stanfordnlp/imdb --model_name_or_path"${ckpt}" --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=50 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=$(tstamp)
+#[12/18/25,13:21:37][x4310c7s4b0n0][/f/A/A/E/A/t/s/ezpz-distributed-metrics][distributed-metrics][$?] [1m11s]
+; ckpt=/flare/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/public/sophiag/hf/global_step138650 
+; ezpz launch python3 -m ezpz.examples.hf_trainer \
+    --streaming \
+    --dataset_name=stanfordnlp/imdb \
+    --model_name_or_path="${ckpt}" \
+    --bf16=true \
+    --do_train=true \
+    --do_eval=true \
+    --report-to=wandb \
+    --logging-steps=1 \
+    --include-tokens-per-second=true \
+    --max-steps=100 \
+    --include-num-input-tokens-seen=true \
+    --optim=adamw_torch \
+    --logging-first-step \
+    --include-for-metrics='inputs,loss' \
+    --max-eval-samples=50 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
+    --block_size=8192 \
+    --gradient_checkpointing=true \
+    --fsdp=auto_wrap \
+    --output_dir=$(tstamp)
 ```
 
-- <details closed><sumamry>Output:</sumamry>
+- <details closed><summary>Output:</summary>
 
     ```bash
     # [2025-12-18 13:21:50,091003][I][ezpz/launch:378:launch] ----[🍋 ezpz.launch][started][2025-12-18-132150]----
@@ -251,10 +280,14 @@ kernel maturity, input pipeline, or just the scaling point we chose.
     [INFO|trainer.py:2528] 2025-12-18 13:23:51,165 >>   Number of trainable parameters = 82,752,264
     [INFO|integration_utils.py:867] 2025-12-18 13:23:51,171 >> Automatic Weights & Biases logging enabled, to disable set os.environ["WANDB_DISABLED"] = "true"
       0%|          | 0/100 [00:00<?, ?it/s]
+
     # [...clipped...]
+
     {'loss': 2.6031, 'grad_norm': 1.8801486492156982, 'learning_rate': 5.000000000000001e-07, 'epoch': 2.24, 'num_input_tokens_seen': 19660800, 'train_runtime': 252.007, 'train_tokens_per_second': 78016.894}
     100%|##########| 100/100 [04:11<00:00,  2.27s/it]
+
     # [...clipped...]
+
     [INFO|trainer.py:4309] 2025-12-18 13:28:05,079 >> Saving model checkpoint to 2025-12-18-132143/checkpoint-100
     {'train_runtime': 299.1983, 'train_samples_per_second': 8.021, 'train_steps_per_second': 0.334, 'train_tokens_per_second': 2737.984, 'train_loss': 2.8478338932991027, 'epoch': 2.24, 'num_input_tokens_seen': 19660800}
     100%|##########| 100/100 [04:59<00:00,  2.27s/it]
@@ -298,11 +331,33 @@ kernel maturity, input pipeline, or just the scaling point we chose.
 # (2025-09-25/base) (ezpz-distributed-metrics-mconda3)
 #[/e/A/f/p/s/ezpz-distributed-metrics][🌱 distributed-metrics][🤷✓] [⏱️ 1m28s]
 #[12/18/25 @ 13:32:34][x3006c0s1b0n0]
-; ckpt=/eagle/AuroraGPT/foremans/Downloads/global_step138650 ; ezpz launch python3 -m ezpz.examples.hf_trainer --streaming --dataset_name=stanfordnlp/imdb --model_name_or_path "${ckpt}" --bf16=true --do_train=true --do_eval=true --report-to=wandb --logging-steps=1 --include-tokens-per-second=true --max-steps=100 --include-num-input-tokens-seen=true --optim=adamw_torch --logging-first-step --include-for-metrics='inputs,loss' --max-eval-samples=50 --per_device_train_batch_size=1 --per_device_eval_batch_size=1 --block_size=8192 --gradient_checkpointing=true --fsdp=auto_wrap --output_dir=$(tstamp)
+; ckpt=/eagle/AuroraGPT/foremans/Downloads/global_step138650
+; ezpz launch python3 -m ezpz.examples.hf_trainer \
+      --streaming \
+      --dataset_name=stanfordnlp/imdb \
+      --model_name_or_path "${ckpt}" \
+      --bf16=true \
+      --do_train=true \
+      --do_eval=true \
+      --report-to=wandb \
+      --logging-steps=1 \
+      --include-tokens-per-second=true \
+      --max-steps=100 \
+      --include-num-input-tokens-seen=true \
+      --optim=adamw_torch \
+      --logging-first-step \
+      --include-for-metrics='inputs,loss' \
+      --max-eval-samples=50 \
+      --per_device_train_batch_size=1 \
+      --per_device_eval_batch_size=1 \
+      --block_size=8192 \
+      --gradient_checkpointing=true \
+      --fsdp=auto_wrap \
+      --output_dir=$(tstamp)
 ```
 
 
-- <details closed><sumamry>Output:</sumamry>
+- <details closed><summary>Output:</summary>
 
     ```bash
     [2025-12-18 13:32:45,480638][i][ezpz/launch:378:launch] ----[🍋 ezpz.launch][started][2025-12-18-133245]----

@@ -1,9 +1,13 @@
 # ✍️ `ezpz-generate`
 
-> [!WARNING]
-> Experimental / not well tested. The flow works in simple cases but has not
-> seen broad coverage—treat as best-effort and be ready to fall back to your
-> own HF script if needed.
+/// details | Warning
+    type: warning
+
+Experimental / not well tested. The flow works in simple cases but has not
+seen broad coverage—treat as best-effort and be ready to fall back to your
+own HF script if needed.
+
+///
 
 Interactive text generation loop for Hugging Face causal language models.
 
