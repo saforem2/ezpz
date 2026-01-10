@@ -142,12 +142,6 @@ jobs:
               commits.append("- No notable changes recorded.")
 
           released_on = datetime.datetime.utcnow().strftime("%-d %B %Y")
-          # entry = (
-          #     f"#### [{new_version}](https://github.com/{repo}/releases/tag/{new_version})\n\n"
-          #     f"> {released_on}\n\n"
-          #     + "\n".join(commits)
-          #     + "\n\n"
-          # )
 
           tag = f"v{new_version}"
           entry = (
