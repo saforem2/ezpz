@@ -193,7 +193,7 @@ jobs:
           else
             git push origin HEAD:main
             # git push origin "v${NEW_VERSION}"     # <- FIX
-            or: git push origin --tags
+            git push origin --tags
           fi
 
       - name: Publish GitHub release
