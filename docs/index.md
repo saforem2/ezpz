@@ -488,9 +488,9 @@ Core features:
 
         - /// details | Terminal-based ASCII plots via [`plotext`](https://github.com/piccolomo/plotext#guide)
               type: example
-          ![`tplot` Split Dark](./assets/tplot-split-dark.png) ![`tplot` Dark](./assets/tplot-dark.png)
+          ![`tplot` Split Dark](./assets/tplot-split-dark.png#only-dark) ![`tplot` Dark](./assets/tplot-dark.png#only-dark)
 
-          ![`tplot` Split Light](./assets/tplot-split-light.png) ![`tplot` Light](./assets/tplot-light.png)
+          ![`tplot` Split Light](./assets/tplot-split-light.png#only-light) ![`tplot` Light](./assets/tplot-light.png#only-light)
           ///
 
 ## Environment Variables

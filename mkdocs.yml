@@ -75,6 +75,16 @@ plugins:
       handlers:
         python:
           paths: [src]
+  - social:
+      enabled: !ENV [CI, true]
+      cards_layout_options:
+        font_family: IBM Plex Mono
+        title: ezpz.cool
+        description: Write once, run anywhere
+        background_color: #00FFFF
+        # background_image: layouts/background.png
+        # background_color: transparent
+        # 
     # enabled: true
     # custom_templates: templates
     # default_handler: python
@@ -82,7 +92,6 @@ plugins:
     #   python:
     #     options:
     #       show_source: false
-
 # markdown_extensions:
 #   - attr_list
 #   - pymdownx.inlinehilite
