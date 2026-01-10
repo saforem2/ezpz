@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: 3.x
       - run: pip install zensical mkdocs-autorefs "mkdocs-material[imaging]" mkdocstrings mkdocstrings-python pymdown-extensions mkdocs-mermaid2-plugin mkdocs-glightbox
-      - run: zensical build --clean
+      - run: mkdocs build
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
