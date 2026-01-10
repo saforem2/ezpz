@@ -77,7 +77,7 @@ plugins:
         python:
           paths: [src]
   - social:
-      enabled: !ENV [CI, true]
+      enabled: !ENV [CI, false]
       cards_layout_options:
         font_family: IBM Plex Mono
         title: ezpz.cool
