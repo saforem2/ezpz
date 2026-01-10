@@ -83,10 +83,6 @@ plugins:
         title: ezpz.cool
         description: Write once, run anywhere
         background_color: #00FFFF
-        # background_image: layouts/background.png
-        # background_color: transparent
-        # 
-    # enabled: true
     # custom_templates: templates
     # default_handler: python
     # handlers:
@@ -115,7 +111,7 @@ plugins:
 #   # - pymdownx.emoji:
 #   #     emoji_index: !!python/name:material.extensions.emoji.twemoji
 #   #     emoji_generator: !!python/name:material.extensions.emoji.to_svg
-#
+
 extra_css:
   - https://drafts.csswg.org/css-color-4/#lab-colors
   - https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values
@@ -128,9 +124,9 @@ extra_css:
   - stylesheets/atom-one-dark-reasonable.css
   - stylesheets/custom.css
   - overrides/fonts.css
-  # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css
   - https://iosevka-webfonts.github.io/iosevka/Iosevka.css
   - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css
+  # - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css
   # - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-term.css
   # - overrides/MIosevkaTerm/MiosevkaTerm.css
   # - overrides/MIosevkaTerm/MiosevkaTerm-Unhinted.css
