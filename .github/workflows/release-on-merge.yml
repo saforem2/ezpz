@@ -32,37 +32,57 @@ jobs:
 
       - name: Determine bump level
         id: bump_level
+        shell: bash
         run: |
           set -euo pipefail
+
+          # Default bump if nothing is specified via labels.
           bump="${VERSION_BUMP:-patch}"
-          # jstr=$(cat "${GITHUB_EVENT_PATH}" | jq '.pull_request.labels | join(",")')
-          # labels=$(cat "${GITHUB_EVENT_PATH}" | jq '.pull_request.labels')
-          # if [[ labels == null ]]; then
-          #   labels=("patch")
-          # fi
-          # py_str=("import json, os, sys; path=os.environ['GITHUB_EVENT_PATH'] ; with open(path, 'r') as fh: event=json.load(fh) ; print(event['pull_request']['labels'])")
-          # labels=$(python3 -c "${py_str}")
-          labels=$(python - <<'PY'
-          import json, os, sys
-          path = os.environ["GITHUB_EVENT_PATH"]
-          with open(path, "r") as fh:
-              event = json.load(fh)
-          labels = event.get("pull_request", {}).get("labels", [])
-          labels = [lbl.get("name", "").strip().lower() for lbl in labels]
-          # labels = [lbl.get("name", "").strip().lower() for lbl in event.get("pull_request", {}).get("labels", [])]
-          print(",".join([l for l in labels if l]))
-          PY)
-          IFS=',' read -r -a arr <<< "${labels}"
-          for label in "${arr[@]}"; do
-            case "$label" in
-              major|release:major|semver:major) bump="major" ;;
-              minor|release:minor|semver:minor) bump="minor" ;;
-              patch|release:patch|semver:patch) bump="patch" ;;
-              # null|release:null|semver:null) bump="patch" ;;
-              # *) bump="${bump:-patch}" ;;
-            esac
-          done
+
+          # Read labels from the event payload (works on pull_request events).
+          labels="$(python - <<'PY'
+          import json, os
+
+          path = os.environ.get("GITHUB_EVENT_PATH", "")
+          event = {}
+          if path:
+              with open(path, "r", encoding="utf-8") as fh:
+                  event = json.load(fh)
+
+          pr = event.get("pull_request", {}) or {}
+          labels = pr.get("labels", []) or []
+          names = [ (l.get("name","") or "").strip().lower() for l in labels ]
+          # Emit comma-separated list (safe for bash substring checks)
+          print(",".join([n for n in names if n]))
+          PY
+          )"
+
+          echo "PR labels: ${labels:-<none>}"
+
+          # Skip labels (support multiple aliases)
+          if [[ ",${labels}," == *",release:skip,"* ]] || \
+            [[ ",${labels}," == *",skip-release,"* ]] || \
+            [[ ",${labels}," == *",no-release,"* ]] || \
+            [[ ",${labels}," == *",skip-version-bump,"* ]]; then
+            echo "Release/version bump skipped due to label."
+            echo "skip_release=true" >> "$GITHUB_OUTPUT"
+            echo "bump=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Bump labels (last one wins if multiple)
+          if [[ ",${labels}," == *",release:major,"* ]] || [[ ",${labels}," == *",semver:major,"* ]]; then
+            bump="major"
+          fi
+          if [[ ",${labels}," == *",release:minor,"* ]] || [[ ",${labels}," == *",semver:minor,"* ]]; then
+            bump="minor"
+          fi
+          if [[ ",${labels}," == *",release:patch,"* ]] || [[ ",${labels}," == *",semver:patch,"* ]]; then
+            bump="patch"
+          fi
+
           echo "Using bump level: ${bump}"
+          echo "skip_release=false" >> "$GITHUB_OUTPUT"
           echo "bump=${bump}" >> "$GITHUB_OUTPUT"
 
       - name: Install hatch
@@ -70,19 +90,20 @@ jobs:
 
       - name: Bump version
         id: bump
+        if: steps.bump_level.outputs.skip_release != 'true'
         run: |
           set -euo pipefail
-          old_version=$(hatch version)
-          vnew=${{ steps.bump_level.outputs.bump }}
-          echo "Bumping with ${vnew}"
-          # echo "Bumping version from "${old_version}" to ${{ steps.bump_level.outputs.bump }}"
-          hatch version "${vnew}"
-          new_version=$(hatch version)
-          export NEW_VERSION="${new_version}"
+          old_version="$(hatch version)"
+          bump="${{ steps.bump_level.outputs.bump }}"
+          echo "Bumping version (${bump}) from ${old_version}"
+          hatch version "${bump}"
+          new_version="$(hatch version)"
+          echo "NEW_VERSION=${new_version}" >> "$GITHUB_ENV"
           echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog entry
         id: changelog
+        if: steps.bump_level.outputs.skip_release != 'true'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
           REPO: ${{ github.repository }}
@@ -90,8 +111,8 @@ jobs:
           set -euo pipefail
           PREV_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
           export PREV_TAG
-
           python - <<'PY'
+          # ... your existing python changelog code ...
           import datetime
           import sys
           import os
@@ -121,8 +142,10 @@ jobs:
               commits.append("- No notable changes recorded.")
 
           released_on = datetime.datetime.utcnow().strftime("%-d %B %Y")
+
+          tag = f"v{new_version}"
           entry = (
-              f"#### [{new_version}](https://github.com/{repo}/releases/tag/{new_version})\n\n"
+              f"#### [{tag}](https://github.com/{repo}/releases/tag/{tag})\n\n"
               f"> {released_on}\n\n"
               + "\n".join(commits)
               + "\n\n"
@@ -148,6 +171,7 @@ jobs:
           PY
 
       - name: Commit version and changelog
+        if: steps.bump_level.outputs.skip_release != 'true'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
         run: |
@@ -157,19 +181,88 @@ jobs:
           git add src/ezpz/__about__.py CHANGELOG.md
           git commit -m "chore: release v${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
+
           if [ "${ACT}" = "true" ]; then
             echo "ACT run detected; skipping pushes."
           else
             git push origin HEAD:main
-            git push origin "${NEW_VERSION}"
+            # git push origin "v${NEW_VERSION}"     # <- FIX
+            git push origin --tags
           fi
 
       - name: Publish GitHub release
-        if: env.ACT != 'true'
+        if: env.ACT != 'true' && steps.bump_level.outputs.skip_release != 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.bump.outputs.new_version }}
-          name: ${{ steps.bump.outputs.new_version }}
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          name: v${{ steps.bump.outputs.new_version }}
           body: ${{ steps.changelog.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Generate changelog entry
+      #   id: changelog
+      #   env:
+      #     NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+      #     REPO: ${{ github.repository }}
+      #   run: |
+      #     set -euo pipefail
+      #     PREV_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
+      #     export PREV_TAG
+      #
+      #     python - <<'PY'
+      #     import datetime
+      #     import sys
+      #     import os
+      #     import subprocess
+      #     from pathlib import Path
+      #
+      #     new_version = os.environ["NEW_VERSION"]
+      #     repo = os.environ["REPO"]
+      #     prev_tag = os.environ.get("PREV_TAG") or ""
+      #
+      #     log_range = "HEAD" if not prev_tag else f"{prev_tag}..HEAD"
+      #     raw_commits = subprocess.run(
+      #         ["git", "log", "--pretty=format:%s|%H", log_range],
+      #         check=True,
+      #         text=True,
+      #         capture_output=True,
+      #     ).stdout.strip().splitlines()
+      #
+      #     commits = []
+      #     for line in raw_commits:
+      #         if "|" not in line:
+      #             continue
+      #         subject, commit = line.split("|", 1)
+      #         commits.append(f"- {subject} [`{commit[:7]}`](https://github.com/{repo}/commit/{commit})")
+      #
+      #     if not commits:
+      #         commits.append("- No notable changes recorded.")
+      #
+      #     released_on = datetime.datetime.utcnow().strftime("%-d %B %Y")
+      #     entry = (
+      #         f"#### [{new_version}](https://github.com/{repo}/releases/tag/{new_version})\n\n"
+      #         f"> {released_on}\n\n"
+      #         + "\n".join(commits)
+      #         + "\n\n"
+      #     )
+      #
+      #     changelog = Path("CHANGELOG.md")
+      #     content = changelog.read_text().splitlines()
+      #     insert_at = len(content)
+      #     for idx, line in enumerate(content):
+      #         if line.startswith("Generated by"):
+      #             insert_at = idx + 1
+      #             while insert_at < len(content) and content[insert_at].strip() == "":
+      #                 insert_at += 1
+      #             break
+      #
+      #     new_content = content[:insert_at] + ["", entry.rstrip(), ""] + content[insert_at:]
+      #     changelog.write_text("\n".join(new_content).rstrip() + "\n")
+      #
+      #     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+      #         fh.write("body<<EOF\n")
+      #         fh.write(entry)
+      #         fh.write("\nEOF\n")
+      #     PY
+
