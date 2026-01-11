@@ -6,5 +6,5 @@
 hardware {NVIDIA, AMD, Intel, MPS, CPU} with **zero code changes**.
 
 > [!NOTE]
-> See docs at [**saforem2.github.io/ezpz**](https://saforem2.github.io/ezpz/)
+> See docs at [**ezpz.cool**](https://ezpz.cool)
 > for full documentation.
