@@ -82,6 +82,7 @@ These can be broken down, roughly into two distinct categories:
             -- \
             python3 -m ezpz.examples.fsdp
         ```
+<br>
 
 ### 🤝 Using `ezpz` in Your Application
 

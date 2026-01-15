@@ -78,8 +78,7 @@ These can be broken down (~roughly) into:
 
         1. ??? example "`demo.py`"
 
-                ```python
-                # demo.py
+                ```python title="demo.py"
                 import ezpz
 
                 # automatic device + backend setup for distributed PyTorch
