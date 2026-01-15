@@ -14,7 +14,7 @@
   --h5-font-size: 1.06255rem;
   --h6-font-size: 1rem;
   --font-family-headings: "mIosevka-QP Web";
-  --link-border-radius: 0.05rem;
+  --link-border-radius: 0.4rem;
 }
 
 .md-typeset p {
@@ -22,10 +22,10 @@
 }
 
 .md-typeset pre > code {
-	word-break: normal;
-	line-height: 1.2461006045341491;
-	font-size: inherit;
-	-webkit-font-smoothing: subpixel-antialiased;
+  word-break: normal;
+  line-height: 1.2461006045341491;
+  font-size: inherit;
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 /* .md-typeset h3 { */
@@ -79,7 +79,8 @@
   --orange-fg-dark-bg: #fd971f;
   --yellow-fg-dark-bg: #ffff00;
   --green-fg-dark-bg: #07b875;
-  --blue-fg-dark-bg: #29b6f6;
+  --blue-fg-dark-bg: #3f51b5;
+  /* --blue-fg-dark-bg: #29b6f6; */
   --purple-fg-dark-bg: #ae81ff;
   --pink-fg-dark-bg: #ff67ff;
   --cyan-fg-dark-bg: #56b6c2;
@@ -174,7 +175,6 @@
   /* font-size: 1em; */
   quotes: 0 0.2941176471em;
   word-break: break-word;
-  /* line-height: 1.1em; */
 }
 
 .highlighttable .linenos {
@@ -184,7 +184,6 @@
   padding: 0.7720588235em 0 0.7720588235em 1.1764705882em;
   -webkit-user-select: none;
   user-select: none;
-  /* line-height: 1.1em; */
 }
 
 .md-content__button svg {
@@ -224,6 +223,7 @@
   --h4-padding: 0pt;
   --h5-padding: 0pt;
   --h6-padding: 0pt;
+  --md-order-radius: 0.4rem;
 }
 
 .md-typeset h1 {
@@ -238,16 +238,17 @@
   margin-block-end: 0.5lh;
   color: var(--h1-fg-color);
   font-size: var(--h1-font-size);
-  background: linear-gradient(0.25turn, var(--h1-bg-color), rgba(0, 0, 0, 0));
+  background: oklch(from var(--h1-fg-color) calc(l * 1.15) c h / 0.1);
+  /* background: linear-gradient(0.25turn, var(--h1-bg-color), rgba(0, 0, 0, 0)); */
   border: 1px solid rgba(0, 0, 0, 0);
   border-right: none;
   border-radius: var(--link-border-radius);
   translate: -5px;
   padding-inline-start: 10px;
   width: 101.5%;
-  line-height: 1.5;
   /* padding-inline-start: 5pt; */
   /* background-color: var(--h1-bg-color); */
+  padding-block: 0.25rem;
   code {
     padding: 0pt 2pt;
     background-color: var(--md-code-bg-color);
@@ -269,10 +270,12 @@
   color: var(--h2-fg-color);
   font-size: var(--h2-font-size);
   padding-inline-start: 5pt;
-  background: linear-gradient(0.25turn, var(--h2-bg-color), rgba(0, 0, 0, 0));
+  background: oklch(from var(--h2-fg-color) calc(l * 1.15) c h / 0.1);
+  /* background: linear-gradient(0.25turn, var(--h2-bg-color), rgba(0, 0, 0, 0)); */
   border: 1px solid rgba(0, 0, 0, 0);
   border-right: none;
   border-radius: var(--link-border-radius);
+  padding-block: 0.25rem;
   letter-spacing: -1pt;
   font-weight: 600;
   translate: -5px;

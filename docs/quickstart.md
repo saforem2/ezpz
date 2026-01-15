@@ -7,25 +7,25 @@ These can be broken down, roughly into two distinct categories:
 
 1. **Shell Environment and Setup**:
 
-    - Bash script at
-      [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh),
+    - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh)
 
-      Use via:
+          Use via:
 
-      ```bash
-      source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
-      ```
+          ```bash
+          source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+          ```
 
-      This script contains utilities for automatic:
+        ??? details "What's in `utils.sh`?"
 
-      - Job scheduler detection with Slurm and PBS
-      - Module loading and base Python environment setup
-      - Virtual environment creation and activation
+              This script contains utilities for automatic:
 
-      ... _and more_!
+              - Job scheduler detection with Slurm and PBS
+              - Module loading and base Python environment setup
+              - Virtual environment creation and activation
+                ... _and more_!
+              - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
+              additional information.
 
-    - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
-      additional information.
 
 1. [**Python Library**]:
     1. Launching and running distributed PyTorch code (_from python!_)
@@ -34,22 +34,23 @@ These can be broken down, roughly into two distinct categories:
     1. Experiment Tracking and tools for automatically
        recording, saving and plotting metrics.
 
-/// note | Pick and Choose
-
-Each of these components are designed so that you can pick and choose only
-those tools that are useful for you.
-
-For example, if you're only interested in the automatic device detection,
-all you need is:
-
-```python
-import ezpz
-device = ezpz.get_torch_device()
-```
-
-///
+---
 
 ## 🌐 Write Hardware Agnostic Distributed PyTorch Code
+
+???+ tip inline end "Pick and Choose"
+
+    Each of these components are designed so that you can pick and choose only
+    those tools that are useful for you.
+
+    For example, if you're only interested in the automatic device detection,
+    all you need is:
+
+    ```python
+    import ezpz
+    device = ezpz.get_torch_device()
+    ```
+
 
 - **Accelerator detection:** `ezpz.get_torch_device_type()` and
   `ezpz.setup_torch()` normalize CUDA/XPU/MPS/CPU selection.
@@ -63,22 +64,24 @@ device = ezpz.get_torch_device()
     ezpz launch <launch flags> -- <command to run> <command args>
     ```
 
-    e.g.:
+    ??? abstract "Examples"
 
-    ```bash
-    ezpz launch -- python3 -m ezpz.examples.fsdp
-    ```
+        e.g.:
 
-    or, specify `-n 8` processes, forward a specific `PYTHONPATH`, and set
-    `EZPZ_LOG_LEVEL=DEBUG`:
+        ```bash
+        ezpz launch -- python3 -m ezpz.examples.fsdp
+        ```
 
-    ```bash
-    ezpz launch -n 8 \
-        -x PYTHONPATH=/tmp/.venv/bin:${PYTHONPATH} \
-        -x EZPZ_LOG_LEVEL=DEBUG \
-        -- \
-        python3 -m ezpz.examples.fsdp
-    ```
+        or, specify `-n 8` processes, forward a specific `PYTHONPATH`, and set
+        `EZPZ_LOG_LEVEL=DEBUG`:
+
+        ```bash
+        ezpz launch -n 8 \
+            -x PYTHONPATH=/tmp/.venv/bin:${PYTHONPATH} \
+            -x EZPZ_LOG_LEVEL=DEBUG \
+            -- \
+            python3 -m ezpz.examples.fsdp
+        ```
 
 ### 🤝 Using `ezpz` in Your Application
 
