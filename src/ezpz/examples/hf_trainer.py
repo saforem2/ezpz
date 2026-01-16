@@ -89,26 +89,19 @@ def parse_args() -> dict:
             )
             wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
         run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
-        wandb.define_metric("num_input_tokens_seen")
-        wandb.define_metric("train/", step_metric="num_input_tokens_seen")
-        # wandb.define_metric("train/epoch")
-        # wandb.define_metric("train/step")
-        wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
-        # wandb.define_metric()
-        # wandb.define_metric(
-        #     name="num_input_tokens_seen",
-        #     step_metric="num_input_tokens_seen",
-        # )  # Allow us to track the number of tokens seen during training
-        if run is not None:
-            # wandb.log({"train_iter": 0}, step=0)
-            run.config.update(
-                {
-                    "model": model_args.__dict__,
-                    "data": data_args.__dict__,
-                    "training": training_args.to_dict(),
-                    "ezpz.dist_info": ezpz.get_dist_info(),
-                }
-            )
+        if run is not None and run is wandb.run:
+            wandb.define_metric("num_input_tokens_seen")
+            wandb.define_metric("train/", step_metric="num_input_tokens_seen")
+            wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
+            if run is not None:
+                run.config.update(
+                    {
+                        "model": model_args.__dict__,
+                        "data": data_args.__dict__,
+                        "training": training_args.to_dict(),
+                        "ezpz.dist_info": ezpz.get_dist_info(),
+                    }
+                )
 
     if training_args.should_log:
         # The default of training_args.log_level is passive,
@@ -744,8 +737,11 @@ def main() -> int:
             # return metric.compute(predictions=preds, references=labels)
             return metric.compute(predictions=preds, references=labels)
 
-    if rank == 0 and wandb is not None:
-        wandb.run.watch(model, log="all")  # type:ignore
+    if rank == 0 and wandb is not None and wandb.run is not None:
+        try:
+            wandb.run.watch(model, log="all")  # type:ignore
+        except Exception:
+            logger.warning("Failed to wandb.watch the model. Continuing!")
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -846,7 +842,10 @@ def main() -> int:
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
         if wandb is not None and wandb.run is not None:
-            wandb.log({f"eval/{k}": v for k, v in metrics.items()})
+            try:
+                wandb.log({f"eval/{k}": v for k, v in metrics.items()})
+            except Exception as e:
+                logger.info(f"Unable to log eval metrics to wandb: {e}")
 
         # model.eval()
         # losses = []
