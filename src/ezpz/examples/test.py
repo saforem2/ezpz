@@ -356,7 +356,7 @@ class Trainer:
                     }
                 )
             except Exception:
-                pass
+                logger.warning("Failed to log final dataset to wandb")
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -450,7 +450,6 @@ def train(
     from ezpz.models.minimal import SequentialLinearNet
     from ezpz.utils import model_summary
 
-    # logger.info(f"Setting up torch with {config.backend=}...")
     timings = {}
     t0m = time.perf_counter()
     model = SequentialLinearNet(
@@ -510,7 +509,7 @@ def train(
     try:
         wandb.log(timings)  # type:ignore
     except Exception:
-        pass
+        logger.warning("Unable to 'wandb.log(timings)', skipping!")
 
     return trainer
 
