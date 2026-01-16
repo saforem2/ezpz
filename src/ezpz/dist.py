@@ -586,13 +586,19 @@ def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
     return wrap_model_for_ddp(model)
 
 
-def wrap_with_fsdp(model: torch.nn.Module, dtype: str = "bfloat16") -> FSDP:
+def wrap_with_fsdp(
+        model: torch.nn.Module,
+        dtype: str = "bfloat16",
+        device_id: int | None = None,
+        **kwargs,
+) -> FSDP:
     """Wrap a model with FSDP using the given parameter dtype.
 
     Args:
-        model: Model to wrap with FSDP.
-        dtype: Parameter dtype for mixed precision (e.g., ``\"bf16\"``).
-
+        model (torch.nn.Module): Model to wrap with FSDP.
+        dtype (str): Parameter dtype for mixed precision (e.g., ``\"bf16\"``).
+        device_id (int | None): Device ID to use for FSDP. Defaults to None.
+        **kwargs (dict[str, Any] | None): Additional keyword arguments to pass to FSDP.
     Examples:
         >>> fsdp_model = wrap_with_fsdp(
         ...     MyNet().to(get_torch_device_type()), dtype="bf16"
@@ -602,18 +608,21 @@ def wrap_with_fsdp(model: torch.nn.Module, dtype: str = "bfloat16") -> FSDP:
         logger.info(f"Wrapping model model with FSDP + {dtype}")
     return FSDP(
         model,
+        device_id=device_id,
         mixed_precision=MixedPrecision(
             param_dtype=TORCH_DTYPES_MAP[dtype],
             reduce_dtype=torch.float32,
             cast_forward_inputs=True,
         ),
+        **kwargs,
     )
 
 
 def wrap_model(
     model: torch.nn.Module,
-    use_fsdp: Optional[bool] = True,
+    use_fsdp: bool | None = True,
     dtype: str = "bfloat16",
+    device_id: int | None = None,
 ) -> DistributedDataParallel | FSDP | torch.nn.Module:
     """Wrap a model with DDP or FSDP depending on ``use_fsdp`` and world size.
 
@@ -642,7 +651,7 @@ def wrap_model(
     if rank == 0:
         logger.info(f"Wrapping model with: {'fsdp' if use_fsdp else 'ddp'}")
     if use_fsdp:
-        model = wrap_with_fsdp(model, dtype=dtype)
+        model = wrap_with_fsdp(model, dtype=dtype, device_id=device_id)
     else:
         model = wrap_with_ddp(model)
 
