@@ -95,8 +95,8 @@ ezpz_ensure_micromamba_hook() {
 
 # --- Helper Functions ---
 
-# # Set the default log level to INFO if the
-# # environment variable isn't already set.
+# Set the default log level to INFO if the
+# environment variable isn't already set.
 EZPZ_LOG_LEVEL="${EZPZ_LOG_LEVEL:-INFO}"
 export EZPZ_LOG_LEVEL
 
@@ -115,8 +115,6 @@ log_error() {
 	printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}" >&2
 }
 
-# alias log_message='log_message_stdout ${FUNCNAME} ${LINENO}'
-#
 log_message() {
 	local level="$1"
 	shift || true
@@ -134,15 +132,7 @@ log_message() {
 	*) log_level="${GREEN}I${RESET}" ;;
 	esac
 
-	if [[ "${EZPZ_SHELL_TYPE}" == "bash" ]]; then
-		log_msg="[${date}][${log_level}][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
-	elif [[ "${EZPZ_SHELL_TYPE}" == "zsh" ]]; then
-		local fft=("${funcfiletrace[@]}")
-		log_msg="[${date}][${log_level}][${fft[1]}] ${string}"
-	else
-		log_msg="[${date}][${log_level}] ${string}"
-	fi
-
+	log_msg="[${date}][${log_level}][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
 	# printf is predictable; preserves backslashes unless you add %b intentionally
 	printf "%b\n" "${log_msg}"
 }

@@ -202,78 +202,36 @@ def get_logger(
         if level is None
         else level
     )
-    # level = os.environ.get("LOG_LEVEL", "INFO") if level is None else level
-    # if colored_logs and use_colored_logs():
     if not colored_logs:
         os.environ["NO_COLOR"] = "1"
-    logging.config.dictConfig(get_logging_config())
+
+    logging_config = get_logging_config()
+
+    LOG_FROM_ALL_RANKS = os.environ.get(
+        "LOG_FROM_ALL_RANKS", os.environ.get("EZPZ_LOG_FROM_ALL_RANKS")
+    )
+    if LOG_FROM_ALL_RANKS is not None and to_bool(LOG_FROM_ALL_RANKS):
+        LOG_FROM_ALL_RANKS = True
+        print(
+            f"[{rank:>2}] Logging from all ranks at level {ezpz_log_level} enabled via EZPZ_LOG_FROM_ALL_RANKS"
+        )
+        logging_config["handlers"]["term"] |= {"rank": rank}
+
+    logging.config.dictConfig(logging_config)
     logger = logging.getLogger(name if name is not None else __name__)
-    if rank_zero_only:
+    if LOG_FROM_ALL_RANKS:
+        logger.setLevel(ezpz_log_level)
+        return logger
+
+    elif rank_zero_only:
         if int(rank) == 0:
             logger.setLevel(ezpz_log_level)
         else:
             logger.setLevel("CRITICAL")
     else:
         logger.setLevel(ezpz_log_level)
+
     return logger
-
-
-# def _get_logger(
-#     name: Optional[str] = None,
-#     level: str = "INFO",
-#     markup: Optional[bool] = True,
-#     redirect: Optional[bool] = False,
-#     **kwargs,
-# ) -> logging.Logger:
-#     from ezpz.log.console import get_console
-#     from ezpz.log.handler import RichHandler as EnrichHandler
-#     import logging
-#
-#     log = logging.getLogger(name)
-#     log.setLevel(level)
-#     console = get_console(markup=markup, redirect=redirect, **kwargs)
-#     if console.is_jupyter:
-#         console.is_jupyter = False
-#     log.addHandler(
-#         EnrichHandler(
-#             omit_repeated_times=False,
-#             level=level,
-#             console=console,
-#             show_time=True,
-#             show_level=True,
-#             show_path=True,
-#             markup=markup,
-#             enable_link_path=False,
-#         )
-#     )
-#     if len(log.handlers) > 1 and all(
-#         [i == log.handlers[0] for i in log.handlers]
-#     ):
-#         log.handlers = [log.handlers[0]]
-#     enrich_handlers = get_active_enrich_handlers(log)
-#     found_handlers = 0
-#     if len(enrich_handlers) > 1:
-#         for h in log.handlers:
-#             if isinstance(h, EnrichHandler):
-#                 if found_handlers > 1:
-#                     log.warning(
-#                         "More than one `EnrichHandler` in current logger: "
-#                         f"{log.handlers}"
-#                     )
-#                     log.removeHandler(h)
-#                 found_handlers += 1
-#     if len(get_active_enrich_handlers(log)) > 1:
-#         log.warning(
-#             f"More than one `EnrichHandler` in current logger: {log.handlers}"
-#         )
-#     #     log.warning(f'Using {enrich_handlers[-1][1]}')
-#     #     log.removeHandler(log.handlers[enrich_handlers[-1][0]])
-#     #     # log.handlers = enrich_handlers[-1]
-#     # # assert (
-#     #     len() == 1
-#     # # )
-#
-#     return log
 
 
 def getLogger(
@@ -386,82 +344,4 @@ def get_logger_new(
     logging.config.dictConfig(config)
     log = logging.getLogger(name=name)
     log.setLevel(level)
-    return log
-
-
-def get_logger1(
-    name: Optional[str] = None,
-    level: str = "INFO",
-    rank_zero_only: bool = True,
-    **kwargs,
-) -> logging.Logger:
-    """Legacy helper retained for compatibility; prefer :func:`get_logger`."""
-    from ezpz.dist import get_rank, get_world_size
-
-    log = logging.getLogger(name)
-    # from ezpz.log.handler import RichHandler
-    from rich.logging import RichHandler as OriginalRichHandler
-
-    from ezpz.log.console import get_console, is_interactive
-    from ezpz.log.handler import RichHandler as EnrichHandler
-
-    _ = (
-        log.setLevel("CRITICAL")
-        if (get_rank() == 0 and rank_zero_only)
-        else log.setLevel(level)
-    )
-    # if rank_zero_only:
-    #     if RANK != 0:
-    #         log.setLevel('CRITICAL')
-    #     else:
-    #         log.setLevel(level)
-    if get_rank() == 0:
-        console = get_console(
-            markup=True,  # (WORLD_SIZE == 1),
-            redirect=(get_world_size() > 1),
-            **kwargs,
-        )
-        # if console.is_jupyter:
-        #     console.is_jupyter = False
-        # log.propagate = True
-        # log.handlers = []
-        use_markup = get_world_size() == 1 and not is_interactive()
-        log.addHandler(
-            OriginalRichHandler(
-                omit_repeated_times=False,
-                level=level,
-                console=console,
-                show_time=True,
-                show_level=True,
-                show_path=True,
-                markup=use_markup,
-                enable_link_path=use_markup,
-            )
-        )
-        log.setLevel(level)
-    # if (
-    #         len(log.handlers) > 1
-    #         and all([i == log.handlers[0] for i in log.handlers])
-    # ):
-    #     log.handlers = [log.handlers[0]]
-    if len(log.handlers) > 1 and all(
-        [i == log.handlers[0] for i in log.handlers]
-    ):
-        log.handlers = [log.handlers[0]]
-    enrich_handlers = get_active_enrich_handlers(log)
-    found_handlers = 0
-    if len(enrich_handlers) > 1:
-        for h in log.handlers:
-            if isinstance(h, EnrichHandler):
-                if found_handlers > 1:
-                    log.warning(
-                        "More than one `EnrichHandler` in current logger: "
-                        f"{log.handlers}"
-                    )
-                    log.removeHandler(h)
-                found_handlers += 1
-    if len(get_active_enrich_handlers(log)) > 1:
-        log.warning(
-            f"More than one `EnrichHandler` in current logger: {log.handlers}"
-        )
     return log

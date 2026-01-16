@@ -184,6 +184,9 @@ def _infer_topology(
                     f"ngpus={ngpus}, nhosts={nhosts}, ngpu_per_host={ngpu_per_host}"
                 )
 
+    assert (
+        ngpus is not None and nhosts is not None and ngpu_per_host is not None
+    )
     if not (0 < ngpus <= ngpus_max):
         raise ValueError(
             f"`ngpus` must be > 0 and <= {ngpus_max}, got {ngpus}."

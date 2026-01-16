@@ -20,14 +20,7 @@ fallbacks for running locally[^dev] on Mac, Linux machines.
 `ezpz` is, at its core, a Python library that provides a variety of utilities
 for both _writing_ and _launching_ distributed PyTorch applications.
 
-These can be broken down (~roughly) into three categories:
-
-1. 🧰 [**CLI**](./cli/index.md): `ezpz <command>`  
-   Utilities for launching distributed PyTorch applications:
-    - [`ezpz doctor`](./cli/doctor.md): Health check your environment
-    - [`ezpz test`](./cli/test.md): Run simple distributed smoke test
-    - [`ezpz launch`](./cli/launch/index.md): Launch arbitrary distributed commands  
-      with _automatic **job scheduler** detection_ (PBS, Slurm) !!
+These can be broken down (~roughly) into:
 
 1. 🐍 [**Python library**](./python/Code-Reference/index.md): `import ezpz`  
    Python API for writing hardware-agnostic, distributed PyTorch code.  
@@ -40,6 +33,181 @@ These can be broken down (~roughly) into three categories:
           Contains the bulk of the important logic related to device detection
           and distributed initialization.
 
+1. 🧰 [**CLI**](./cli/index.md): `ezpz <command>`  
+   Utilities for launching distributed PyTorch applications:
+    - 🩺 [`ezpz doctor`](./cli/doctor.md): Health check your environment
+    - 🚀 [`ezpz launch`](./cli/launch/index.md): Launch commands with _automatic
+      **job scheduler** detection_ (PBS, Slurm)
+        - 💯 [`ezpz test`](./cli/test.md): Run simple distributed smoke test
+        - 📝 [`ezpz.examples.*`](./cli/index.md): Scalable and _ready-to-go_!
+
+            | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
+            | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
+            | [:lucide-book:][ex-test-dist] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test_dist`  | Train MLP with DDP on MNIST                     |
+            | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
+            | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
+            | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
+            | [:lucide-book:][ex-diffusion] · [:lucide-file-code:][api-diffusion] · [:lucide-github:][gh-diffusion]          | `ezpz.examples.diffusion`  | Train Diffusion LLM with FSDP on HF Datasets    |
+            | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:lucide-github:][gh-hf-trainer] | `ezpz.examples.hf_trainer` | Train LLM with FSDP + HF Trainer on HF Datasets |
+
+
+        - ??? tip "🤗 HF Integration"
+
+                1. `ezpz.examples.`{[`fsdp_tp`](./examples/fsdp-tp.md),[`diffusion,hf_trainer`](./examples/diffusion.md),[`hf_trainer`](./examples/hf-trainer/index.md)} all support
+                    arbitrary 🤗 Hugging Face
+                    [datasets](https://huggingface.co/docs/datasets/index) e.g.:
+
+                    ```bash
+                    # use any --dataset from HF Datasets hub
+                    ezpz launch python3 -m ezpz.examples.fsdp_tp --dataset stanfordnlp/imdb
+                    ```
+
+                1. [`ezpz.examples.hf_trainer`](./examples/hf-trainer/index.md) supports
+                arbitrary combinations of (compatible) `transformers.from_pretrained`
+                models, and HF Datasets (with support for streaming!)
+
+                    ```bash
+                    ezpz launch python3 -m ezpz.examples.hf_trainer \
+                        --streaming \
+                        --dataset_name=eliplutchok/fineweb-small-sample \
+                        --tokenizer_name meta-llama/Llama-3.2-1B \
+                        --model_name_or_path meta-llama/Llama-3.2-1B \
+                        --bf16=true
+                        # ...etc.
+                    ```
+
+        1. ??? example "`demo.py`"
+
+                ```python title="demo.py"
+                import ezpz
+
+                # automatic device + backend setup for distributed PyTorch
+                _ = ezpz.setup_torch()  # CUDA/NCCL, XPU/XCCL, {MPS, CPU}/GLOO, ...
+
+                device = ezpz.get_torch_device() # {cuda, xpu, mps, cpu, ...}
+                rank = ezpz.get_rank()
+                world_size = ezpz.get_world_size()
+                # ...etc
+
+                if rank == 0:
+                    print(f"Hello from rank {rank} / {world_size} on {device}!")
+                ```
+
+                We can launch this script with:
+
+                ```bash
+                ezpz launch python3 demo.py
+                ```
+
+                ??? abstract "Output(s)"
+
+                    ??? success "MacBook Pro"
+
+                        ```bash
+                        # from MacBook Pro
+                        $ ezpz launch python3 demo.py
+                        [2026-01-08 07:22:31,989741][I][ezpz/launch:515:run] No active scheduler detected; falling back to local mpirun: mpirun -np 2 python3 /Users/samforeman/python/ezpz_demo.py
+                        Using [2 / 2] available "mps" devices !!
+                        Hello from rank 0 / 2 on mps!
+                        ```
+
+                    ??? success "Aurora (2 nodes)"
+
+                        ```bash
+                        # from 2 nodes of Aurora:
+                        #[aurora_frameworks-2025.2.0](foremans-aurora_frameworks-2025.2.0)[C v7.5.0-gcc][43s]
+                        #[01/08/26,07:26:10][x4604c5s2b0n0][~]
+                        ; ezpz launch python3 demo.py
+
+                        [2026-01-08 07:26:19,723138][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+                        [2026-01-08 07:26:19,725453][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+                        [2026-01-08 07:26:19,725932][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
+                        [2026-01-08 07:26:20,290222][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2026-01-08-072620]----
+                        [2026-01-08 07:26:21,566797][I][ezpz/launch:416:launch] Job ID: 8246832
+                        [2026-01-08 07:26:21,567684][I][ezpz/launch:417:launch] nodelist: ['x4604c5s2b0n0', 'x4604c5s3b0n0']
+                        [2026-01-08 07:26:21,568082][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+                        [2026-01-08 07:26:21,568770][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
+                        [2026-01-08 07:26:21,569557][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
+                        [2026-01-08 07:26:21,569959][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+                        [2026-01-08 07:26:21,570821][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 demo.py
+                        [2026-01-08 07:26:21,571548][I][ezpz/launch:433:launch] Took: 2.11 seconds to build command.
+                        [2026-01-08 07:26:21,571918][I][ezpz/launch:436:launch] Executing:
+                        mpiexec
+                        --envall
+                        --np=24
+                        --ppn=12
+                        --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+                        --no-vni
+                        --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+                        python3
+                        demo.py
+                        [2026-01-08 07:26:21,573262][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
+                        [2026-01-08 07:26:21,573781][I][ezpz/launch:443:launch] Execution started @ 2026-01-08-072621...
+                        [2026-01-08 07:26:21,574195][I][ezpz/launch:138:run_command] Caught 24 filters
+                        [2026-01-08 07:26:21,574532][I][ezpz/launch:139:run_command] Running command:
+                        mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 demo.py
+                        cpubind:list x4604c5s3b0n0 pid 131587 rank 12 0: mask 0x1c
+                        cpubind:list x4604c5s3b0n0 pid 131588 rank 13 1: mask 0x1c00
+                        cpubind:list x4604c5s3b0n0 pid 131589 rank 14 2: mask 0x1c0000
+                        cpubind:list x4604c5s3b0n0 pid 131590 rank 15 3: mask 0x1c000000
+                        cpubind:list x4604c5s3b0n0 pid 131591 rank 16 4: mask 0x1c00000000
+                        cpubind:list x4604c5s3b0n0 pid 131592 rank 17 5: mask 0x1c0000000000
+                        cpubind:list x4604c5s3b0n0 pid 131593 rank 18 6: mask 0x1c0000000000000
+                        cpubind:list x4604c5s3b0n0 pid 131594 rank 19 7: mask 0x1c000000000000000
+                        cpubind:list x4604c5s3b0n0 pid 131595 rank 20 8: mask 0x1c00000000000000000
+                        cpubind:list x4604c5s3b0n0 pid 131596 rank 21 9: mask 0x1c0000000000000000000
+                        cpubind:list x4604c5s3b0n0 pid 131597 rank 22 10: mask 0x1c000000000000000000000
+                        cpubind:list x4604c5s3b0n0 pid 131598 rank 23 11: mask 0x1c00000000000000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121225 rank 0 0: mask 0x1c
+                        cpubind:list x4604c5s2b0n0 pid 121226 rank 1 1: mask 0x1c00
+                        cpubind:list x4604c5s2b0n0 pid 121227 rank 2 2: mask 0x1c0000
+                        cpubind:list x4604c5s2b0n0 pid 121228 rank 3 3: mask 0x1c000000
+                        cpubind:list x4604c5s2b0n0 pid 121229 rank 4 4: mask 0x1c00000000
+                        cpubind:list x4604c5s2b0n0 pid 121230 rank 5 5: mask 0x1c0000000000
+                        cpubind:list x4604c5s2b0n0 pid 121231 rank 6 6: mask 0x1c0000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121232 rank 7 7: mask 0x1c000000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121233 rank 8 8: mask 0x1c00000000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121234 rank 9 9: mask 0x1c0000000000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121235 rank 10 10: mask 0x1c000000000000000000000
+                        cpubind:list x4604c5s2b0n0 pid 121236 rank 11 11: mask 0x1c00000000000000000000000
+                        Using [24 / 24] available "xpu" devices !!
+                        Hello from rank 0 / 24 on xpu!
+                        [2026-01-08 07:26:33,060432][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-072633]----
+                        [2026-01-08 07:26:33,061512][I][ezpz/launch:448:launch] Execution finished with 0.
+                        [2026-01-08 07:26:33,062045][I][ezpz/launch:449:launch] Executing finished in 11.49 seconds.
+                        [2026-01-08 07:26:33,062531][I][ezpz/launch:450:launch] Took 11.49 seconds to run. Exiting.
+                        took: 22s
+                        ```
+
+[^distributed-history]: The `ezpz.History` class automatically computes
+    distributed statistics (min, max, mean, std) across ranks for all
+    recorded metrics.  
+    **NOTE**: This is automatically disabled when
+    `ezpz.get_world_size() >= 384` (e.g. >= {32, 96} {Aurora, Polaris} nodes)
+    due to the additional overhead introduced (but can be manually enabled, if
+    desired).
+
+
+  [ex-test-dist]: ./examples/test-dist.md "Example"
+  [api-test-dist]: ./python/Code-Reference/test_dist.md "API Reference"
+  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py "GitHub Source"
+  [ex-fsdp]: ./examples/fsdp.md "Example"
+  [api-fsdp]: ./python/Code-Reference/examples/fsdp.md "API Reference"
+  [gh-fsdp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py "GitHub Source"
+  [ex-vit]: ./examples/vit.md "Example"
+  [api-vit]: ./python/Code-Reference/examples/vit.md "API Reference"
+  [gh-vit]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py "GitHub Source"
+  [ex-fsdp-tp]: ./examples/fsdp-tp.md "Example"
+  [api-fsdp-tp]: ./python/Code-Reference/examples/fsdp_tp.md "API Reference"
+  [gh-fsdp-tp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py "GitHub Source"
+  [ex-diffusion]: ./examples/diffusion.md "Example"
+  [api-diffusion]: ./python/Code-Reference/examples/diffusion.md "API Reference"
+  [gh-diffusion]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py "GitHub Source"
+  [ex-hf-trainer]: ./examples/hf-trainer/index.md "Example"
+  [api-hf-trainer]: ./python/Code-Reference/examples/hf_trainer.md "API Reference"
+  [gh-hf-trainer]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py "GitHub Source"
+
+<!--
 1. 📝 [**Complete Examples**](./examples/index.md): `ezpz.examples.*`  
     A collection of performant, scalable distributed training examples that can
     be run at _**any scale**_, on **_any hardware_**; or bootstrap them for
@@ -57,161 +225,112 @@ These can be broken down (~roughly) into three categories:
        [Train Diffusion LLM with FSDP on HF Datasets](https://ezpz.cool/examples/diffusion/)
     1. [`ezpz.examples.hf_trainer`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py):
        [Train LLM with FSDP and HF Trainer on HF Datasets](https://ezpz.cool/examples/hf-trainer/)
-    1. /// details | `demo.py`
-           type: example
+    1. ??? example "`demo.py`"
 
-        ```python
-        # demo.py
-        import ezpz
+            ```python
+            # demo.py
+            import ezpz
 
-        # automatic device + backend setup for distributed PyTorch
-        _ = ezpz.setup_torch()  # CUDA/NCCL, XPU/XCCL, {MPS, CPU}/GLOO, ...
+            # automatic device + backend setup for distributed PyTorch
+            _ = ezpz.setup_torch()  # CUDA/NCCL, XPU/XCCL, {MPS, CPU}/GLOO, ...
 
-        device = ezpz.get_torch_device() # {cuda, xpu, mps, cpu, ...}
-        rank = ezpz.get_rank()
-        world_size = ezpz.get_world_size()
-        # ...etc
+            device = ezpz.get_torch_device() # {cuda, xpu, mps, cpu, ...}
+            rank = ezpz.get_rank()
+            world_size = ezpz.get_world_size()
+            # ...etc
 
-        if rank == 0:
-            print(f"Hello from rank {rank} / {world_size} on {device}!")
-        ```
+            if rank == 0:
+                print(f"Hello from rank {rank} / {world_size} on {device}!")
+            ```
 
-        We can launch this script with:
+            We can launch this script with:
 
-        ```bash
-        ezpz launch python3 demo.py
-        ```
+            ```bash
+            ezpz launch python3 demo.py
+            ```
 
-        /// details | Output(s)
-            type: abstract
+            ??? abstract "Output(s)"
 
-        /// details | MacBook Pro
-            type: success
+                ??? success "MacBook Pro"
 
-        ```bash
-        # from MacBook Pro
-        $ ezpz launch python3 demo.py
-        [2026-01-08 07:22:31,989741][I][ezpz/launch:515:run] No active scheduler detected; falling back to local mpirun: mpirun -np 2 python3 /Users/samforeman/python/ezpz_demo.py
-        Using [2 / 2] available "mps" devices !!
-        Hello from rank 0 / 2 on mps!
-        ```
+                    ```bash
+                    # from MacBook Pro
+                    $ ezpz launch python3 demo.py
+                    [2026-01-08 07:22:31,989741][I][ezpz/launch:515:run] No active scheduler detected; falling back to local mpirun: mpirun -np 2 python3 /Users/samforeman/python/ezpz_demo.py
+                    Using [2 / 2] available "mps" devices !!
+                    Hello from rank 0 / 2 on mps!
+                    ```
 
-        ///
+                ??? success "Aurora (2 nodes)"
 
-        /// details | Aurora (2 nodes)
-            type: success
+                    ```bash
+                    # from 2 nodes of Aurora:
+                    #[aurora_frameworks-2025.2.0](foremans-aurora_frameworks-2025.2.0)[C v7.5.0-gcc][43s]
+                    #[01/08/26,07:26:10][x4604c5s2b0n0][~]
+                    ; ezpz launch python3 demo.py
 
-        ```bash
-        # from 2 nodes of Aurora:
-        #[aurora_frameworks-2025.2.0](foremans-aurora_frameworks-2025.2.0)[C v7.5.0-gcc][43s]
-        #[01/08/26,07:26:10][x4604c5s2b0n0][~]
-        ; ezpz launch python3 demo.py
+                    [2026-01-08 07:26:19,723138][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+                    [2026-01-08 07:26:19,725453][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+                    [2026-01-08 07:26:19,725932][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
+                    [2026-01-08 07:26:20,290222][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2026-01-08-072620]----
+                    [2026-01-08 07:26:21,566797][I][ezpz/launch:416:launch] Job ID: 8246832
+                    [2026-01-08 07:26:21,567684][I][ezpz/launch:417:launch] nodelist: ['x4604c5s2b0n0', 'x4604c5s3b0n0']
+                    [2026-01-08 07:26:21,568082][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+                    [2026-01-08 07:26:21,568770][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
+                    [2026-01-08 07:26:21,569557][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
+                    [2026-01-08 07:26:21,569959][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+                    [2026-01-08 07:26:21,570821][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 demo.py
+                    [2026-01-08 07:26:21,571548][I][ezpz/launch:433:launch] Took: 2.11 seconds to build command.
+                    [2026-01-08 07:26:21,571918][I][ezpz/launch:436:launch] Executing:
+                    mpiexec
+                    --envall
+                    --np=24
+                    --ppn=12
+                    --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+                    --no-vni
+                    --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+                    python3
+                    demo.py
+                    [2026-01-08 07:26:21,573262][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
+                    [2026-01-08 07:26:21,573781][I][ezpz/launch:443:launch] Execution started @ 2026-01-08-072621...
+                    [2026-01-08 07:26:21,574195][I][ezpz/launch:138:run_command] Caught 24 filters
+                    [2026-01-08 07:26:21,574532][I][ezpz/launch:139:run_command] Running command:
+                    mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 demo.py
+                    cpubind:list x4604c5s3b0n0 pid 131587 rank 12 0: mask 0x1c
+                    cpubind:list x4604c5s3b0n0 pid 131588 rank 13 1: mask 0x1c00
+                    cpubind:list x4604c5s3b0n0 pid 131589 rank 14 2: mask 0x1c0000
+                    cpubind:list x4604c5s3b0n0 pid 131590 rank 15 3: mask 0x1c000000
+                    cpubind:list x4604c5s3b0n0 pid 131591 rank 16 4: mask 0x1c00000000
+                    cpubind:list x4604c5s3b0n0 pid 131592 rank 17 5: mask 0x1c0000000000
+                    cpubind:list x4604c5s3b0n0 pid 131593 rank 18 6: mask 0x1c0000000000000
+                    cpubind:list x4604c5s3b0n0 pid 131594 rank 19 7: mask 0x1c000000000000000
+                    cpubind:list x4604c5s3b0n0 pid 131595 rank 20 8: mask 0x1c00000000000000000
+                    cpubind:list x4604c5s3b0n0 pid 131596 rank 21 9: mask 0x1c0000000000000000000
+                    cpubind:list x4604c5s3b0n0 pid 131597 rank 22 10: mask 0x1c000000000000000000000
+                    cpubind:list x4604c5s3b0n0 pid 131598 rank 23 11: mask 0x1c00000000000000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121225 rank 0 0: mask 0x1c
+                    cpubind:list x4604c5s2b0n0 pid 121226 rank 1 1: mask 0x1c00
+                    cpubind:list x4604c5s2b0n0 pid 121227 rank 2 2: mask 0x1c0000
+                    cpubind:list x4604c5s2b0n0 pid 121228 rank 3 3: mask 0x1c000000
+                    cpubind:list x4604c5s2b0n0 pid 121229 rank 4 4: mask 0x1c00000000
+                    cpubind:list x4604c5s2b0n0 pid 121230 rank 5 5: mask 0x1c0000000000
+                    cpubind:list x4604c5s2b0n0 pid 121231 rank 6 6: mask 0x1c0000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121232 rank 7 7: mask 0x1c000000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121233 rank 8 8: mask 0x1c00000000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121234 rank 9 9: mask 0x1c0000000000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121235 rank 10 10: mask 0x1c000000000000000000000
+                    cpubind:list x4604c5s2b0n0 pid 121236 rank 11 11: mask 0x1c00000000000000000000000
+                    Using [24 / 24] available "xpu" devices !!
+                    Hello from rank 0 / 24 on xpu!
+                    [2026-01-08 07:26:33,060432][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-072633]----
+                    [2026-01-08 07:26:33,061512][I][ezpz/launch:448:launch] Execution finished with 0.
+                    [2026-01-08 07:26:33,062045][I][ezpz/launch:449:launch] Executing finished in 11.49 seconds.
+                    [2026-01-08 07:26:33,062531][I][ezpz/launch:450:launch] Took 11.49 seconds to run. Exiting.
+                    took: 22s
+                    ```
+-->
 
-        [2026-01-08 07:26:19,723138][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
-        [2026-01-08 07:26:19,725453][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
-        [2026-01-08 07:26:19,725932][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
-        [2026-01-08 07:26:20,290222][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2026-01-08-072620]----
-        [2026-01-08 07:26:21,566797][I][ezpz/launch:416:launch] Job ID: 8246832
-        [2026-01-08 07:26:21,567684][I][ezpz/launch:417:launch] nodelist: ['x4604c5s2b0n0', 'x4604c5s3b0n0']
-        [2026-01-08 07:26:21,568082][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-        [2026-01-08 07:26:21,568770][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
-        [2026-01-08 07:26:21,569557][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
-        [2026-01-08 07:26:21,569959][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
-        [2026-01-08 07:26:21,570821][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 demo.py
-        [2026-01-08 07:26:21,571548][I][ezpz/launch:433:launch] Took: 2.11 seconds to build command.
-        [2026-01-08 07:26:21,571918][I][ezpz/launch:436:launch] Executing:
-        mpiexec
-        --envall
-        --np=24
-        --ppn=12
-        --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-        --no-vni
-        --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
-        python3
-        demo.py
-        [2026-01-08 07:26:21,573262][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
-        [2026-01-08 07:26:21,573781][I][ezpz/launch:443:launch] Execution started @ 2026-01-08-072621...
-        [2026-01-08 07:26:21,574195][I][ezpz/launch:138:run_command] Caught 24 filters
-        [2026-01-08 07:26:21,574532][I][ezpz/launch:139:run_command] Running command:
-        mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 demo.py
-        cpubind:list x4604c5s3b0n0 pid 131587 rank 12 0: mask 0x1c
-        cpubind:list x4604c5s3b0n0 pid 131588 rank 13 1: mask 0x1c00
-        cpubind:list x4604c5s3b0n0 pid 131589 rank 14 2: mask 0x1c0000
-        cpubind:list x4604c5s3b0n0 pid 131590 rank 15 3: mask 0x1c000000
-        cpubind:list x4604c5s3b0n0 pid 131591 rank 16 4: mask 0x1c00000000
-        cpubind:list x4604c5s3b0n0 pid 131592 rank 17 5: mask 0x1c0000000000
-        cpubind:list x4604c5s3b0n0 pid 131593 rank 18 6: mask 0x1c0000000000000
-        cpubind:list x4604c5s3b0n0 pid 131594 rank 19 7: mask 0x1c000000000000000
-        cpubind:list x4604c5s3b0n0 pid 131595 rank 20 8: mask 0x1c00000000000000000
-        cpubind:list x4604c5s3b0n0 pid 131596 rank 21 9: mask 0x1c0000000000000000000
-        cpubind:list x4604c5s3b0n0 pid 131597 rank 22 10: mask 0x1c000000000000000000000
-        cpubind:list x4604c5s3b0n0 pid 131598 rank 23 11: mask 0x1c00000000000000000000000
-        cpubind:list x4604c5s2b0n0 pid 121225 rank 0 0: mask 0x1c
-        cpubind:list x4604c5s2b0n0 pid 121226 rank 1 1: mask 0x1c00
-        cpubind:list x4604c5s2b0n0 pid 121227 rank 2 2: mask 0x1c0000
-        cpubind:list x4604c5s2b0n0 pid 121228 rank 3 3: mask 0x1c000000
-        cpubind:list x4604c5s2b0n0 pid 121229 rank 4 4: mask 0x1c00000000
-        cpubind:list x4604c5s2b0n0 pid 121230 rank 5 5: mask 0x1c0000000000
-        cpubind:list x4604c5s2b0n0 pid 121231 rank 6 6: mask 0x1c0000000000000
-        cpubind:list x4604c5s2b0n0 pid 121232 rank 7 7: mask 0x1c000000000000000
-        cpubind:list x4604c5s2b0n0 pid 121233 rank 8 8: mask 0x1c00000000000000000
-        cpubind:list x4604c5s2b0n0 pid 121234 rank 9 9: mask 0x1c0000000000000000000
-        cpubind:list x4604c5s2b0n0 pid 121235 rank 10 10: mask 0x1c000000000000000000000
-        cpubind:list x4604c5s2b0n0 pid 121236 rank 11 11: mask 0x1c00000000000000000000000
-        Using [24 / 24] available "xpu" devices !!
-        Hello from rank 0 / 24 on xpu!
-        [2026-01-08 07:26:33,060432][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-072633]----
-        [2026-01-08 07:26:33,061512][I][ezpz/launch:448:launch] Execution finished with 0.
-        [2026-01-08 07:26:33,062045][I][ezpz/launch:449:launch] Executing finished in 11.49 seconds.
-        [2026-01-08 07:26:33,062531][I][ezpz/launch:450:launch] Took 11.49 seconds to run. Exiting.
-        took: 22s
-        ```
-
-        ///
-
-        ///
-
-        ///
-
-    /// details | 🤗 HF Integration
-        type: tip
-
-    1. `ezpz.examples.{fsdp_tp,diffusion,hf_trainer}` all support
-        arbitrary 🤗 Hugging Face
-        [datasets](https://huggingface.co/docs/datasets/index) e.g.:
-
-        ```bash
-        # use any --dataset from HF Datasets hub
-        ezpz launch python3 -m ezpz.examples.fsdp_tp --dataset stanfordnlp/imdb
-        ```
-
-    1. [`ezpz.examples.hf_trainer`](./examples/hf-trainer/index.md) supports
-       arbitrary combinations of (compatible) `transformers.from_pretrained`
-       models, and HF Datasets (with support for streaming!)
-
-       ```bash
-       ezpz launch python3 -m ezpz.examples.hf_trainer \
-           --streaming \
-           --dataset_name=eliplutchok/fineweb-small-sample \
-           --tokenizer_name meta-llama/Llama-3.2-1B \
-           --model_name_or_path meta-llama/Llama-3.2-1B \
-           --bf16=true
-           # ...etc.
-       ```
-
-    ///
-
-[^distributed-history]: The `ezpz.History` class automatically computes
-    distributed statistics (min, max, mean, std) across ranks for all
-    recorded metrics.  
-    **NOTE**: This is automatically disabled when
-    `ezpz.get_world_size() >= 384` (e.g. >= {32, 96} {Aurora, Polaris} nodes)
-    due to the additional overhead introduced (but can be manually enabled, if
-    desired).
-
-
-
-## Getting Started
+## 🐣 Getting Started
 
 To use `ezpz`, we first need:
 
@@ -223,95 +342,82 @@ If you already have both of these things: skip directly to
 [Install](#install-ezpz); otherwise, see the
 details below:
 
-/// details | [**Optional**]: Setup Python Environment
-    type: tip
+??? tip "[**Optional**]: Setup Python Environment"
 
-- We can use the provided
-  [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
-  to set up our environment:
+    - We can use the provided
+      [src/ezpz/bin/utils.sh](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)[^bitly]
+      to set up our environment:
 
-    ```bash
-    source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
-    ```
+        ```bash
+        source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+        ```
 
-    /// details | [**Details**]
-        type: abstract
+        ??? abstract "[**Details**]"
 
-    **Note**: This is _technically_ optional, but recommended.<br>
-    Especially if you happen to be running behind a job scheduler (e.g.
-    PBS/Slurm) at any of {ALCF, OLCF, NERSC}, this will automatically 
-    load the appropriate modules and use these to bootstrap a virtual
-    environment.  
-    However, if you already have a Python environment with
-    {`torch`, `mpi4py`} installed and would prefer to use that, skip
-    directly to (2.) installing `ezpz` below
+            **Note**: This is _technically_ optional, but recommended.<br>
+            Especially if you happen to be running behind a job scheduler (e.g.
+            PBS/Slurm) at any of {ALCF, OLCF, NERSC}, this will automatically 
+            load the appropriate modules and use these to bootstrap a virtual
+            environment.  
+            However, if you already have a Python environment with
+            {`torch`, `mpi4py`} installed and would prefer to use that, skip
+            directly to (2.) installing `ezpz` below
 
-    ///
-
-///
-
-### Install `ezpz`
+### 📦 Install `ezpz`
 
 To install `ezpz`, we can use `uv`[^uvi] to install directly from GitHub:
 
 ```bash
 uv pip install "git+https://github.com/saforem2/ezpz"
 ```
+
 <!-- - <details closed><summary>Need <code>torch</code> or <code>mpi4py</code>?</summary> -->
-/// details | Need `torch` or `mpi4py`?
-    type: question
 
-If you don't already have PyTorch or `mpi4py` installed,
-you can specify these as additional dependencies:
+??? question "Need `torch` or `mpi4py`?"
 
-```bash
-uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[torch,mpi]"
-```
-
-///
-
-/// details | Try _without installing_ via `uv run`
-    type: tip
-
-If you already have a Python environment with
-{`torch`, `mpi4py`} installed, you can try `ezpz` without installing
-it:
-
-```bash
-# pip install uv first, if needed
-uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
-
-TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
-    --python=$(which python3) \
-    ezpz test
-
-TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
-    --python=$(which python3) \
-    ezpz launch \
-        python3 -m ezpz.examples.fsdp_tp
-```
-
-///
-
-/// details | `ezpz test`
-    type: example
-
-After installing, we can run a simple smoke test to verify distributed
-functionality and device detection:
-
-- [`ezpz test`](./cli/test.md): Simple distributed smoke test; explicitly,
-    this will train a simple MLP on MNIST dataset using PyTorch + DDP.
+    If you don't already have PyTorch or `mpi4py` installed,
+    you can specify these as additional dependencies:
 
     ```bash
-    ezpz test
+    uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[torch,mpi]"
     ```
 
-    - See
-        \[[W\&B Report: `ezpz test`](https://api.wandb.ai/links/aurora_gpt/q56ai28l)\]
-        for example output and demonstration of metric tracking with
-        automatic `wandb` integration.
+??? tip "Try _without installing_ via `uv run`"
 
-///
+    If you already have a Python environment with
+    {`torch`, `mpi4py`} installed, you can try `ezpz` without installing
+    it:
+
+    ```bash
+    # pip install uv first, if needed
+    uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
+
+    TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
+        --python=$(which python3) \
+        ezpz test
+
+    TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
+        --python=$(which python3) \
+        ezpz launch \
+            python3 -m ezpz.examples.fsdp_tp
+    ```
+
+??? example "`ezpz test`"
+
+    After installing, we can run a simple smoke test to verify distributed
+    functionality and device detection:
+
+    - [`ezpz test`](./cli/test.md): Simple distributed smoke test; explicitly,
+        this will train a simple MLP on MNIST dataset using PyTorch + DDP.
+
+        ```bash
+        ezpz test
+        ```
+
+        - See
+            \[[W&B Report: `ezpz test`](https://api.wandb.ai/links/aurora_gpt/q56ai28l)\]
+            for example output and demonstration of metric tracking with
+            automatic `wandb` integration.
 
 [^uvi]: If you don't have `uv` installed, you can install it via:
 
@@ -325,175 +431,166 @@ functionality and device detection:
     convenience that actually points to
     <https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh>
 
-## Features
+## ✨ Features
 
 Core features:
 
-- Job launching utilities with automatic scheduler detection
+1. **Job launching utilities** with _automatic scheduler detection_
   (PBS, Slurm), plus safe fallbacks when no scheduler is detected
 
     ```bash
     ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
     ```
 
-    /// details | Output
-        type: abstract
+    ??? abstract "Output"
 
-    /// details | MacBook Pro
-        type: success
+        ??? success "MacBook Pro"
 
-    ```bash
-    #[01/08/26 @ 14:56:50][~/v/s/ezpz][dev][$✘!?] [4s]
-    ; ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
+            ```bash
+            #[01/08/26 @ 14:56:50][~/v/s/ezpz][dev][$✘!?] [4s]
+            ; ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
 
 
-    [2026-01-08 14:56:54,307030][I][ezpz/launch:515:run] No active scheduler detected; falling back to local mpirun: mpirun -np 2 python3 -c 'import ezpz; print(ezpz.setup_torch())'
-    Using [2 / 2] available "mps" devices !!
-    0
-    1
-    [2025-12-23-162222] Execution time: 4s sec
-    ```
+            [2026-01-08 14:56:54,307030][I][ezpz/launch:515:run] No active scheduler detected; falling back to local mpirun: mpirun -np 2 python3 -c 'import ezpz; print(ezpz.setup_torch())'
+            Using [2 / 2] available "mps" devices !!
+            0
+            1
+            [2025-12-23-162222] Execution time: 4s sec
+            ```
 
-    ///
+        ??? success "Aurora (2 Nodes)"
 
-    /// details | Aurora (2 Nodes)
-        type: success
-
-    ```bash
-    #[aurora_frameworks-2025.2.0](torchtitan-aurora_frameworks-2025.2.0)[1m9s]
-    #[01/08/26,14:56:42][x4418c6s1b0n0][/f/d/f/p/p/torchtitan][main][?]
-    ; ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
+            ```bash
+            #[aurora_frameworks-2025.2.0](torchtitan-aurora_frameworks-2025.2.0)[1m9s]
+            #[01/08/26,14:56:42][x4418c6s1b0n0][/f/d/f/p/p/torchtitan][main][?]
+            ; ezpz launch python3 -c 'import ezpz; print(ezpz.setup_torch())'
 
 
-    [2026-01-08 14:58:01,994729][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
-    [2026-01-08 14:58:01,997067][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
-    [2026-01-08 14:58:01,997545][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
-    [2026-01-08 14:58:02,465850][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2026-01-08-145802]----
-    [2026-01-08 14:58:04,765720][I][ezpz/launch:416:launch] Job ID: 8247203
-    [2026-01-08 14:58:04,766527][I][ezpz/launch:417:launch] nodelist: ['x4418c6s1b0n0', 'x4717c0s6b0n0']
-    [2026-01-08 14:58:04,766930][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    [2026-01-08 14:58:04,767616][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
-    [2026-01-08 14:58:04,768399][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
-    [2026-01-08 14:58:04,768802][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
-    [2026-01-08 14:58:04,769517][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 -c 'import ezpz; print(ezpz.setup_torch())'
-    [2026-01-08 14:58:04,770278][I][ezpz/launch:433:launch] Took: 3.01 seconds to build command.
-    [2026-01-08 14:58:04,770660][I][ezpz/launch:436:launch] Executing:
-    mpiexec
-    --envall
-    --np=24
-    --ppn=12
-    --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-    --no-vni
-    --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
-    python3
-    -c
-    import ezpz; print(ezpz.setup_torch())
-    [2026-01-08 14:58:04,772125][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
-    [2026-01-08 14:58:04,772651][I][ezpz/launch:443:launch] Execution started @ 2026-01-08-145804...
-    [2026-01-08 14:58:04,773070][I][ezpz/launch:138:run_command] Caught 24 filters
-    [2026-01-08 14:58:04,773429][I][ezpz/launch:139:run_command] Running command:
-    mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 -c 'import ezpz; print(ezpz.setup_torch())'
-    cpubind:list x4717c0s6b0n0 pid 118589 rank 12 0: mask 0x1c
-    cpubind:list x4717c0s6b0n0 pid 118590 rank 13 1: mask 0x1c00
-    cpubind:list x4717c0s6b0n0 pid 118591 rank 14 2: mask 0x1c0000
-    cpubind:list x4717c0s6b0n0 pid 118592 rank 15 3: mask 0x1c000000
-    cpubind:list x4717c0s6b0n0 pid 118593 rank 16 4: mask 0x1c00000000
-    cpubind:list x4717c0s6b0n0 pid 118594 rank 17 5: mask 0x1c0000000000
-    cpubind:list x4717c0s6b0n0 pid 118595 rank 18 6: mask 0x1c0000000000000
-    cpubind:list x4717c0s6b0n0 pid 118596 rank 19 7: mask 0x1c000000000000000
-    cpubind:list x4717c0s6b0n0 pid 118597 rank 20 8: mask 0x1c00000000000000000
-    cpubind:list x4717c0s6b0n0 pid 118598 rank 21 9: mask 0x1c0000000000000000000
-    cpubind:list x4717c0s6b0n0 pid 118599 rank 22 10: mask 0x1c000000000000000000000
-    cpubind:list x4717c0s6b0n0 pid 118600 rank 23 11: mask 0x1c00000000000000000000000
-    cpubind:list x4418c6s1b0n0 pid 66450 rank 0 0: mask 0x1c
-    cpubind:list x4418c6s1b0n0 pid 66451 rank 1 1: mask 0x1c00
-    cpubind:list x4418c6s1b0n0 pid 66452 rank 2 2: mask 0x1c0000
-    cpubind:list x4418c6s1b0n0 pid 66453 rank 3 3: mask 0x1c000000
-    cpubind:list x4418c6s1b0n0 pid 66454 rank 4 4: mask 0x1c00000000
-    cpubind:list x4418c6s1b0n0 pid 66455 rank 5 5: mask 0x1c0000000000
-    cpubind:list x4418c6s1b0n0 pid 66456 rank 6 6: mask 0x1c0000000000000
-    cpubind:list x4418c6s1b0n0 pid 66457 rank 7 7: mask 0x1c000000000000000
-    cpubind:list x4418c6s1b0n0 pid 66458 rank 8 8: mask 0x1c00000000000000000
-    cpubind:list x4418c6s1b0n0 pid 66459 rank 9 9: mask 0x1c0000000000000000000
-    cpubind:list x4418c6s1b0n0 pid 66460 rank 10 10: mask 0x1c000000000000000000000
-    cpubind:list x4418c6s1b0n0 pid 66461 rank 11 11: mask 0x1c00000000000000000000000
-    Using [24 / 24] available "xpu" devices !!
-    8
-    10
-    0
-    4
-    3
-    5
-    7
-    11
-    6
-    1
-    9
-    2
-    14
-    15
-    12
-    13
-    16
-    17
-    19
-    22
-    20
-    23
-    18
-    21
-    [2026-01-08 14:58:14,252433][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-145814]----
-    [2026-01-08 14:58:14,253726][I][ezpz/launch:448:launch] Execution finished with 0.
-    [2026-01-08 14:58:14,254184][I][ezpz/launch:449:launch] Executing finished in 9.48 seconds.
-    [2026-01-08 14:58:14,254555][I][ezpz/launch:450:launch] Took 9.48 seconds to run. Exiting.
-    took: 18s
-    ```
+            [2026-01-08 14:58:01,994729][I][numexpr/utils:148:_init_num_threads] Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+            [2026-01-08 14:58:01,997067][I][numexpr/utils:151:_init_num_threads] Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+            [2026-01-08 14:58:01,997545][I][numexpr/utils:164:_init_num_threads] NumExpr defaulting to 16 threads.
+            [2026-01-08 14:58:02,465850][I][ezpz/launch:396:launch] ----[🍋 ezpz.launch][started][2026-01-08-145802]----
+            [2026-01-08 14:58:04,765720][I][ezpz/launch:416:launch] Job ID: 8247203
+            [2026-01-08 14:58:04,766527][I][ezpz/launch:417:launch] nodelist: ['x4418c6s1b0n0', 'x4717c0s6b0n0']
+            [2026-01-08 14:58:04,766930][I][ezpz/launch:418:launch] hostfile: /var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+            [2026-01-08 14:58:04,767616][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
+            [2026-01-08 14:58:04,768399][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
+            [2026-01-08 14:58:04,768802][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+            [2026-01-08 14:58:04,769517][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: python3 -c 'import ezpz; print(ezpz.setup_torch())'
+            [2026-01-08 14:58:04,770278][I][ezpz/launch:433:launch] Took: 3.01 seconds to build command.
+            [2026-01-08 14:58:04,770660][I][ezpz/launch:436:launch] Executing:
+            mpiexec
+            --envall
+            --np=24
+            --ppn=12
+            --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+            --no-vni
+            --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
+            python3
+            -c
+            import ezpz; print(ezpz.setup_torch())
+            [2026-01-08 14:58:04,772125][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
+            [2026-01-08 14:58:04,772651][I][ezpz/launch:443:launch] Execution started @ 2026-01-08-145804...
+            [2026-01-08 14:58:04,773070][I][ezpz/launch:138:run_command] Caught 24 filters
+            [2026-01-08 14:58:04,773429][I][ezpz/launch:139:run_command] Running command:
+            mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 -c 'import ezpz; print(ezpz.setup_torch())'
+            cpubind:list x4717c0s6b0n0 pid 118589 rank 12 0: mask 0x1c
+            cpubind:list x4717c0s6b0n0 pid 118590 rank 13 1: mask 0x1c00
+            cpubind:list x4717c0s6b0n0 pid 118591 rank 14 2: mask 0x1c0000
+            cpubind:list x4717c0s6b0n0 pid 118592 rank 15 3: mask 0x1c000000
+            cpubind:list x4717c0s6b0n0 pid 118593 rank 16 4: mask 0x1c00000000
+            cpubind:list x4717c0s6b0n0 pid 118594 rank 17 5: mask 0x1c0000000000
+            cpubind:list x4717c0s6b0n0 pid 118595 rank 18 6: mask 0x1c0000000000000
+            cpubind:list x4717c0s6b0n0 pid 118596 rank 19 7: mask 0x1c000000000000000
+            cpubind:list x4717c0s6b0n0 pid 118597 rank 20 8: mask 0x1c00000000000000000
+            cpubind:list x4717c0s6b0n0 pid 118598 rank 21 9: mask 0x1c0000000000000000000
+            cpubind:list x4717c0s6b0n0 pid 118599 rank 22 10: mask 0x1c000000000000000000000
+            cpubind:list x4717c0s6b0n0 pid 118600 rank 23 11: mask 0x1c00000000000000000000000
+            cpubind:list x4418c6s1b0n0 pid 66450 rank 0 0: mask 0x1c
+            cpubind:list x4418c6s1b0n0 pid 66451 rank 1 1: mask 0x1c00
+            cpubind:list x4418c6s1b0n0 pid 66452 rank 2 2: mask 0x1c0000
+            cpubind:list x4418c6s1b0n0 pid 66453 rank 3 3: mask 0x1c000000
+            cpubind:list x4418c6s1b0n0 pid 66454 rank 4 4: mask 0x1c00000000
+            cpubind:list x4418c6s1b0n0 pid 66455 rank 5 5: mask 0x1c0000000000
+            cpubind:list x4418c6s1b0n0 pid 66456 rank 6 6: mask 0x1c0000000000000
+            cpubind:list x4418c6s1b0n0 pid 66457 rank 7 7: mask 0x1c000000000000000
+            cpubind:list x4418c6s1b0n0 pid 66458 rank 8 8: mask 0x1c00000000000000000
+            cpubind:list x4418c6s1b0n0 pid 66459 rank 9 9: mask 0x1c0000000000000000000
+            cpubind:list x4418c6s1b0n0 pid 66460 rank 10 10: mask 0x1c000000000000000000000
+            cpubind:list x4418c6s1b0n0 pid 66461 rank 11 11: mask 0x1c00000000000000000000000
+            Using [24 / 24] available "xpu" devices !!
+            8
+            10
+            0
+            4
+            3
+            5
+            7
+            11
+            6
+            1
+            9
+            2
+            14
+            15
+            12
+            13
+            16
+            17
+            19
+            22
+            20
+            23
+            18
+            21
+            [2026-01-08 14:58:14,252433][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-145814]----
+            [2026-01-08 14:58:14,253726][I][ezpz/launch:448:launch] Execution finished with 0.
+            [2026-01-08 14:58:14,254184][I][ezpz/launch:449:launch] Executing finished in 9.48 seconds.
+            [2026-01-08 14:58:14,254555][I][ezpz/launch:450:launch] Took 9.48 seconds to run. Exiting.
+            took: 18s
+            ```
 
-    ///
+1. **Automatic distributed initialization** using
+   [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/dist/#ezpz.dist.setup_torch)
+   with automatic {device, backend} selection
 
-    ///
+     ```python
+     import ezpz
+     _ = ezpz.setup_torch()
+ 
+     device = ezpz.get_torch_device()
+     # cuda, xpu, mps, cpu, ...
+     ```
 
-- Automatic distributed initialization using
-  [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/dist/#ezpz.dist.setup_torch)
-  with automatic {device, backend} selection
+1. **Metric tracking, aggregation, and recording** via
+   [`ezpz.History()`](https://ezpz.cool/python/Code-Reference/#ezpz.History):
+     - _Automatic Markdown Report Generation_!
+         - See [**📄 Test Report**](./cli/test-report.md) for an example report
+           generated by `ezpz test` command
+     - Automatic distributed statistics (min, max, mean, stddev) across ranks[^distributed-history]
+     - Weights & Biases integration
+     - Persistent storage of metrics in `.h5` format
+     - Plotting support:
+         - ??? example "Graphical plots"
+             ![Accuracy](./assets/mplot/svgs/accuracy.svg)
+             ![Loss](./assets/mplot/svgs/loss.svg)
+             ![Forward time](./assets/mplot/svgs/dtf.svg)
+             ![Backward time](./assets/mplot/svgs/dtb.svg)
+ 
+         - ??? example "Terminal-based ASCII plots via [`plotext`](https://github.com/piccolomo/plotext#guide)"
+             <div class="ansi-block"><pre class="terminal"><code>     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;<br/>0.992&#x2524; <span style="color:#A00">++</span> accuracy/max                                                                      &#x259F;               &#x2597;          &#x2502;<br/>     &#x2502; <span style="color:#0AA">--</span> accuracy/min                                                      &#x2596; &#x2597;            <span style="color:#A00">+</span>&#x2588;      <span style="color:#A00">+</span>&#x2596;       &#x2588;   <span style="color:#A00">++</span>&#x2596;<span style="color:#A00">+</span>   &#x2502;<br/>     &#x2502; <span style="color:#0A0">&#xB7;&#xB7;</span> accuracy/mean                     <span style="color:#A00">+</span>                           &#x2597;&#x258C; &#x2590;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2588;        &#x2597;&#x258C;  &#x2597;&#x259C;   <span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span> &#x2590;&#x258C;  <span style="color:#A00">+</span>    &#x2588;   <span style="color:#0A0">&#xB7;</span>&#x2590;&#x258C;&#x259F;   &#x2502;<br/>     &#x2502; &#x259E;&#x259E; accuracy                         <span style="color:#A00">++</span>                <span style="color:#A00">+</span>         &#x259F;&#x2590;&#x258C; &#x259E;&#x2599;&#x2599;&#x259C;   &#x2597;&#x258C;   &#x2590;&#x259A;  &#x2590;&#x2590;  <span style="color:#0A0">&#xB7;</span>&#x259F;<span style="color:#A00">+</span>&#x259F;&#x2590;&#x2599;&#x258C;&#x2597;&#x258C;&#x2597;  &#x2597;&#x258C;&#x258C;&#x2597;&#x2597;&#x259C;&#x2590;&#x258C;&#x2588; <span style="color:#A00">+</span>&#x259E;&#x2502;<br/>     &#x2502;                                <span style="color:#A00">+</span>  <span style="color:#A00">+++</span><span style="color:#0A0">&#xB7;</span>   &#x2597;          &#x2597;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>       <span style="color:#A00">+</span>&#x2597;&#x259C;&#x2590;&#x258C;<span style="color:#A00">+</span>&#x258C;&#x2588;&#x259C;&#x2590;   &#x2590;&#x258C;<span style="color:#A00">+</span>  &#x2590;&#x2590;&#x2597; &#x2590;&#x2590;<span style="color:#A00">+</span>&#x2596;&#x2590;&#x2590;<span style="color:#A00">+</span>&#x259B;&#x259F;&#x2588;&#x258C;&#x258C;&#x258C;&#x259B;&#x2584;<span style="color:#A00">+</span>&#x2588;&#x258C;&#x258C;&#x2588;&#x2590; &#x259C;&#x258C;&#x2588;<span style="color:#A00">+</span>&#x2597;&#x258C;&#x2502;<br/>     &#x2502;                              &#x2597;&#x258C;<span style="color:#A00">+</span> &#x2597;&#x258C;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;&#xB7;</span>   &#x258C;&#x258C;    &#x259F;  &#x2597;&#x258C;&#x2588;&#x2597;&#x258C;  &#x259F;  &#x2597;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x259E;&#x2590;&#x258C;&#x2599;&#x259A;&#x258C;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x2590;<span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span> &#x259E;&#x258C;<span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span> &#x259E;<span style="color:#0A0">&#xB7;</span>&#x259C;&#x259F;&#x258C;&#x2590;&#x2590;&#x2590;&#x259E;&#x2590;&#x259F;&#x258C;&#x2588;&#x2588;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x258C;&#x259D;&#x2596;&#x258C;&#x2598;&#x258C;&#x2588;&#x2590; <span style="color:#0A0">&#xB7;</span>&#x258C;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x2588;&#x258C;&#x2502;<br/>0.928&#x2524;                       &#x2597;&#x258C;     &#x2590;&#x258C;<span style="color:#A00">+</span> &#x2590;&#x258C;<span style="color:#0A0">&#xB7;&#xB7;</span>&#x2584;&#x258C; <span style="color:#A00">+</span>&#x258C;&#x258C;<span style="color:#A00">+</span>   &#x2588; &#x2597;&#x2590;&#x258C;&#x2588;&#x2590;&#x258C;&#x259F;&#x2590;&#x2590;<span style="color:#A00">+</span>&#x2597;&#x258C;&#x2599;&#x259A;&#x258C;&#x2590;&#x258C;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x2598;&#x259D;<span style="color:#0A0">&#xB7;</span>&#x2590;&#x259E;&#x2584;&#x258C;&#x258C;&#x258C;&#x259F;<span style="color:#0A0">&#xB7;</span>&#x2597;&#x2598;<span style="color:#0AA">-</span>&#x2590;&#x2588;&#x258C;&#x259D;&#x259E;&#x259D;&#x258C;&#x2590;&#x258C;&#x2598;&#x259D;&#x2588;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x259D;&#x258C; &#x2590;&#x258C;<span style="color:#0AA">-</span>&#x2590;&#x2588;&#x259E;  &#x259A;&#x259C;&#x2597;&#x2580;&#x258C;&#x2502;<br/>     &#x2502;                     &#x259F; &#x2590;&#x258C;&#x2597;&#x258C; &#x2597;&#x258C;&#x259E;&#x258C;<span style="color:#0A0">&#xB7;</span> &#x259E;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2590;&#x259D;&#x258C;<span style="color:#A00">++</span>&#x258C;&#x258C;<span style="color:#A00">+</span>&#x259E;&#x259C;&#x2597;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x259B;&#x259F;&#x258C;&#x2588;&#x259E;&#x258C;&#x2588;&#x258C;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2588;  &#x2590;&#x258C;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span> <span style="color:#0AA">--</span>&#x2590;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x259A;&#x258C;&#x2599;&#x2598;&#x2599;&#x2588;<span style="color:#0A0">&#xB7;</span><span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span>&#x259C;&#x258C;  <span style="color:#0AA">-</span>  &#x2598; <span style="color:#0AA">-</span>&#x2588;&#x2588;<span style="color:#0AA">---</span> &#x2590;&#x258C; &#x2590;&#x2588;&#x258C;   &#x2590;&#x2590;<span style="color:#0A0">&#xB7;</span> &#x2502;<br/>     &#x2502;                  &#x2597;&#x258C; &#x2588; &#x259E;&#x258C;&#x2590;&#x259A;&#x2597;&#x2588;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2597;&#x2598;&#x259D;&#x2596;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x258C;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>&#x258C;&#x258C;&#x2597;&#x2598;<span style="color:#0A0">&#xB7;</span>&#x2598; &#x2599;&#x2598;&#x259C;&#x259A;&#x2588;&#x258C;&#x2599;&#x2580;&#x258C;&#x259D;&#x259E;&#x2598;<span style="color:#0AA">-</span>&#x2588;   &#x2598; <span style="color:#0AA">-</span> <span style="color:#0AA">--</span>&#x259D;&#x258C; &#x259D;&#x258C;&#x259D; &#x259D;&#x2588;<span style="color:#0AA">---</span><span style="color:#0A0">&#xB7;</span>&#x2598;       <span style="color:#0AA">-</span>&#x259D;&#x2588;  <span style="color:#0AA">-</span> &#x2590;&#x258C; &#x259D;&#x258C;&#x2598;   &#x2590;&#x259E;  &#x2502;<br/>     &#x2502;      <span style="color:#A00">+</span>        &#x2597;<span style="color:#A00">+</span> &#x258C;&#x258C;<span style="color:#A00">+</span>&#x2588;<span style="color:#A00">+</span>&#x258C;&#x258C;&#x259F;&#x2590;&#x2590;&#x2588;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span>&#x259A;<span style="color:#0A0">&#xB7;</span>&#x2590;<span style="color:#0A0">&#xB7;&#xB7;</span>&#x259A;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x258C;<span style="color:#0A0">&#xB7;</span>&#x259F;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x258C;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span><span style="color:#0AA">-</span> &#x259C;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span><span style="color:#0AA">-</span>&#x259D;&#x258C;&#x259C; <span style="color:#0AA">-----</span>&#x2588;        <span style="color:#0AA">-</span> <span style="color:#0AA">-</span> <span style="color:#0AA">-</span>    &#x259C;<span style="color:#0AA">-</span>  <span style="color:#0AA">--</span>         &#x2588;    &#x2590;&#x258C; <span style="color:#0AA">-</span>     &#x2590;&#x258C;  &#x2502;<br/>     &#x2502;      <span style="color:#A00">+</span>   &#x2597;&#x258C;   &#x2588;<span style="color:#0A0">&#xB7;</span> &#x258C;&#x2590;&#x2590;&#x2590;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2588;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x2588;&#x259D; <span style="color:#0AA">-</span>&#x2590;&#x259F;&#x258C;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span>&#x2590;&#x2590;<span style="color:#0AA">-</span>&#x258C;&#x259E;&#x259D;<span style="color:#0A0">&#xB7;</span>&#x2588;<span style="color:#0AA">---</span>               &#x2588;                                &#x2588;    <span style="color:#0AA">-</span>&#x2598;        &#x2598;  &#x2502;<br/>     &#x2502;      <span style="color:#A00">+</span>   &#x2590;&#x258C; &#x2597; &#x259B;&#x2596;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x259D;&#x259F;&#x2590;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2588;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x259D;<span style="color:#0AA">-</span>  &#x2590;&#x258C;&#x2598;<span style="color:#0AA">--</span>&#x2590;&#x2590; &#x259D;&#x2598;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span>&#x259D;<span style="color:#0AA">-</span> <span style="color:#0AA">-</span>               &#x2588;                                &#x2588;                 &#x2502;<br/>0.865&#x2524;      <span style="color:#A00">+</span>   &#x2590;&#x258C; &#x2588; &#x258C;&#x258C;&#x2584;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2588;&#x2590;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2588;<span style="color:#0AA">---</span>   &#x259D;&#x258C;  <span style="color:#0AA">-</span> &#x2588;   <span style="color:#0AA">--</span>                   &#x259C;                                &#x259C;                 &#x2502;<br/>     &#x2502;      <span style="color:#A00">+</span>   &#x2590;&#x258C;<span style="color:#A00">+</span>&#x2588; &#x258C;&#x259D;<span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span><span style="color:#0AA">-</span>&#x259D; &#x2598;<span style="color:#0A0">&#xB7;</span>&#x2588;<span style="color:#0AA">---</span>       <span style="color:#0AA">-</span> &#x2588;    <span style="color:#0AA">-</span>                                                                      &#x2502;<br/>     &#x2502;     &#x2596;<span style="color:#A00">+</span>&#x2596;  &#x259F;&#x258C;<span style="color:#A00">+</span>&#x259B;&#x2596;&#x258C;<span style="color:#0AA">-</span> <span style="color:#0AA">--</span>  <span style="color:#0A0">&#xB7;&#xB7;</span>&#x259D;<span style="color:#0AA">-</span>         <span style="color:#0AA">-</span> &#x259C;                                                                           &#x2502;<br/>     &#x2502;    &#x2590;&#x258C;&#x2590;&#x258C; &#x2590;&#x259D;&#x258C;&#x2597;&#x2598;&#x2599;&#x2598;   <span style="color:#0AA">-</span>  <span style="color:#0AA">-</span><span style="color:#0A0">&#xB7;</span><span style="color:#0AA">-</span>                                                                                        &#x2502;<br/>     &#x2502;   <span style="color:#A00">+</span>&#x2590;&#x258C;&#x2590;&#x2599;&#x258C;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2599;&#x2598;<span style="color:#0AA">-</span>&#x2588;<span style="color:#0A0">&#xB7;</span>   <span style="color:#0AA">-</span>  <span style="color:#0AA">--</span>                                                                                         &#x2502;<br/>0.801&#x2524;  <span style="color:#A00">++</span>&#x2590;&#x258C;&#x2590;&#x2588;&#x259A;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2588;<span style="color:#0A0">&#xB7;</span> &#x2588;<span style="color:#0A0">&#xB7;</span>      <span style="color:#0AA">--</span>                                                                                         &#x2502;<br/>     &#x2502;  <span style="color:#A00">++</span>&#x2590;&#x258C;&#x2590;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x2580;<span style="color:#0A0">&#xB7;</span>&#x2588;<span style="color:#0A0">&#xB7;</span> &#x2588;<span style="color:#0A0">&#xB7;</span>      <span style="color:#0AA">--</span>                                                                                         &#x2502;<br/>     &#x2502;&#x258C; <span style="color:#A00">++</span>&#x2590;&#x259A;&#x2590;&#x2588;<span style="color:#0A0">&#xB7;</span> <span style="color:#0AA">-</span>&#x2588;<span style="color:#0A0">&#xB7;</span> &#x259C;<span style="color:#0AA">-</span>       <span style="color:#0AA">-</span>                                                                                         &#x2502;<br/>     &#x2502;&#x258C; <span style="color:#A00">++</span>&#x2590;&#x2590;&#x2590;&#x2588;<span style="color:#0A0">&#xB7;</span> <span style="color:#0AA">-</span>&#x2588;<span style="color:#0A0">&#xB7;</span>                                                                                                    &#x2502;<br/>     &#x2502;&#x258C; <span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>&#x2590;&#x2590;&#x2590;&#x2588;<span style="color:#0AA">-</span> <span style="color:#0AA">-</span>&#x2588;<span style="color:#0A0">&#xB7;</span>                                                                                                    &#x2502;<br/>     &#x2502;&#x258C; <span style="color:#0A0">&#xB7;&#xB7;</span>&#x2590;&#x2590;&#x258C;&#x259C;<span style="color:#0AA">-</span> <span style="color:#0AA">-</span>&#x2588;<span style="color:#0AA">-</span>                                                                                                    &#x2502;<br/>0.737&#x2524;&#x258C;&#x259F;<span style="color:#0A0">&#xB7;&#xB7;</span>&#x2590;&#x2590;&#x258C;   <span style="color:#0AA">-</span>&#x2588;<span style="color:#0AA">-</span>                                                                                                    &#x2502;<br/>     &#x2502;&#x258C;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x259E;&#x259F;&#x259D;&#x258C;   <span style="color:#0AA">-</span>&#x259C;<span style="color:#0AA">-</span>                                                                                                    &#x2502;<br/>     &#x2502;&#x258C;&#x259B;&#x2596;&#x258C;&#x2588;<span style="color:#0AA">-</span>    <span style="color:#0AA">--</span>                                                                                                     &#x2502;<br/>     &#x2502;&#x258C;&#x258C;&#x258C;&#x258C;&#x2588;<span style="color:#0AA">-</span>    <span style="color:#0AA">--</span>                                                                                                     &#x2502;<br/>     &#x2502;&#x258C;&#x258C;&#x259A;&#x2598;&#x2588;<span style="color:#0AA">-</span>     <span style="color:#0AA">-</span>                                                                                                     &#x2502;<br/>     &#x2502;&#x258C;&#x258C;<span style="color:#0AA">--</span>&#x259C;<span style="color:#0AA">-</span>                                                                                                           &#x2502;<br/>0.673&#x2524;&#x2599;&#x2598;<span style="color:#0AA">--</span>                                                                                                             &#x2502;<br/>     &#x2502;&#x2588;<span style="color:#0A0">&#xB7;</span> <span style="color:#0AA">-</span>                                                                                                             &#x2502;<br/>     &#x2502;&#x2588;<span style="color:#0A0">&#xB7;</span>                                                                                                               &#x2502;<br/>     &#x2502;&#x259D;                                                                                                                &#x2502;<br/>     &#x2502;<span style="color:#0AA">-</span>                                                                                                                &#x2502;<br/>     &#x2502;<span style="color:#0AA">-</span>                                                                                                                &#x2502;<br/>0.609&#x2524;<span style="color:#0AA">-</span>                                                                                                                &#x2502;<br/>     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;<br/>     1.0                        49.2                        97.5                        145.8                     194.0 <br/></code></pre></div>
+             <div class="ansi-block"><pre class="terminal"><code>                            accuracy                                                  accuracy/min                      <br/>     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;<br/>0.992&#x2524;                                &#x2597;&#x2597;      &#x259F;   &#x2596;   &#x2596; &#x2597;  &#x2502;0.977&#x2524;                                <span style="color:#0AA">--</span>        <span style="color:#0AA">-</span>      <span style="color:#0AA">-</span> <span style="color:#0AA">-</span> &#x2502;<br/>     &#x2502;                              &#x259F;&#x259F;&#x259F;&#x2588; &#x2597;&#x258C; &#x259F; &#x2588; &#x258C;&#x259F;&#x2588;&#x258C;&#x2596;&#x2590;&#x2599;&#x259E;&#x2588;&#x258C;&#x259E;&#x2502;0.915&#x2524;           <span style="color:#0AA">-</span> <span style="color:#0AA">--</span> <span style="color:#0AA">---</span> <span style="color:#0AA">---------------------------------</span>&#x2502;<br/>0.935&#x2524;           &#x2596;  &#x259F; &#x259F; &#x2596;&#x2597;&#x258C; &#x2590; &#x258C;&#x2588;&#x2597;&#x258C;&#x2597;&#x2599;&#x2588;&#x259C;&#x259B;&#x2588;&#x2597;&#x259F;&#x2599; &#x259B;&#x2588;&#x259C;&#x2588;&#x2588;&#x2588;&#x2588;&#x259C;&#x2580;&#x259B;&#x2588;&#x258C;&#x259C;&#x2599;&#x258C;&#x2502;0.854&#x2524;       <span style="color:#0AA">---------------</span> <span style="color:#0AA">-</span> <span style="color:#0AA">--</span> <span style="color:#0AA">--</span>   <span style="color:#0AA">-</span>   <span style="color:#0AA">-</span> <span style="color:#0AA">-</span>    <span style="color:#0AA">-</span>  <span style="color:#0AA">-</span>   <span style="color:#0AA">-</span> &#x2502;<br/>     &#x2502;        &#x2597;&#x2596;&#x258C;&#x258C;&#x258C;&#x259F;&#x2588; &#x259B;&#x259F;&#x258C;&#x2590;&#x2599;&#x259B;&#x259B;&#x259F;&#x2599;&#x2588;&#x2588;&#x259A;&#x259E;&#x259B;&#x259C;&#x259D; &#x259D;&#x259B;&#x259C;&#x259B;&#x259F; &#x259C;&#x259D;&#x259D;&#x259D; &#x2588;&#x259D; &#x258C;&#x259C;&#x258C;&#x259D;&#x2588;&#x2598;&#x2502;0.793&#x2524;  <span style="color:#0AA">-----------</span>   <span style="color:#0AA">--</span>                                   &#x2502;<br/>0.878&#x2524;     &#x2596; &#x259F;&#x2590;&#x2599;&#x2588;&#x2588;&#x2599;&#x2588;&#x2590;&#x259F; &#x2588;&#x259A;&#x2588;&#x259C;  &#x2598; &#x259D;&#x2598;  &#x258C;       &#x259D;      &#x2590;  &#x258C;   &#x259C; &#x2502;     &#x2502;  <span style="color:#0AA">----</span> <span style="color:#0AA">-</span>   <span style="color:#0AA">-</span>                                         &#x2502;<br/>     &#x2502;     &#x258C;&#x259F;&#x2588;&#x2580;&#x259C;&#x259C;&#x2588;&#x2598;  &#x2598; &#x2588;           &#x2598;              &#x259D;        &#x2502;0.732&#x2524; <span style="color:#0AA">---</span> <span style="color:#0AA">-</span>                                               &#x2502;<br/>0.820&#x2524;  &#x259F;&#x259F;&#x259F;&#x2599;&#x2588;&#x258C;   &#x259D;     &#x259D;                                   &#x2502;0.671&#x2524;<span style="color:#0AA">---</span>                                                  &#x2502;<br/>     &#x2502;  &#x2588;&#x2588;&#x2588;&#x2588;&#x2590;&#x258C;                                             &#x2502;0.609&#x2524;<span style="color:#0AA">-</span>                                                    &#x2502;<br/>     &#x2502;&#x258C; &#x2588;&#x2588; &#x2588;&#x259D;&#x258C;                                             &#x2502;     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;<br/>0.763&#x2524;&#x258C; &#x2588;&#x259C; &#x2588;                                               &#x2502;     1.0         49.2         97.5         145.8      194.0 <br/>     &#x2502;&#x2599;&#x2588;&#x2588;  &#x259C;                                               &#x2502;accuracy/min                  iter                          <br/>0.706&#x2524;&#x2588;&#x2588;&#x258C;                                                  &#x2502;                          accuracy/std                      <br/>     &#x2502;&#x2588; &#x2598;                                                  &#x2502;     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;<br/>0.648&#x2524;&#x259C;                                                    &#x2502;0.094&#x2524;<span style="color:#A0A">\*</span>    <span style="color:#A0A">\*</span>                                               &#x2502;<br/>     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;0.078&#x2524;<span style="color:#A0A">\*</span>    <span style="color:#A0A">\*</span>                                               &#x2502;<br/>     1.0         49.2         97.5         145.8      194.0 0.062&#x2524;<span style="color:#A0A">\*</span>  <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span>                                               &#x2502;<br/>accuracy                      iter                          0.047&#x2524;<span style="color:#A0A">\*\*</span> <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span>     <span style="color:#A0A">\*</span>                                         &#x2502;<br/>                          accuracy/mean                          &#x2502;<span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A">\*</span>   <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span>    <span style="color:#A0A">\*</span>                <span style="color:#A0A">\*</span>         <span style="color:#A0A">\*</span>         &#x2502;<br/>     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;0.031&#x2524;<span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A">\*\*</span>  <span style="color:#A0A">\*\*\*\*</span>  <span style="color:#A0A">\*\*\*\*\*\*\*</span>       <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span>  <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span> <span style="color:#A0A">\*</span> <span style="color:#A0A">\*\*</span> <span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A">\*</span>  &#x2502;<br/>0.977&#x2524;                                <span style="color:#0A0">&#xB7;&#xB7;</span>      <span style="color:#0A0">&#xB7;</span>        <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;</span> &#x2502;0.016&#x2524;<span style="color:#A0A">\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*</span>&#x2502;<br/>     &#x2502;                  <span style="color:#0A0">&#xB7;</span>      <span style="color:#0A0">&#xB7;</span>     <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span>  <span style="color:#0A0">&#xB7;</span>   <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span>&#x2502;0.000&#x2524;<span style="color:#A0A">\*</span>   <span style="color:#A0A">\*</span> <span style="color:#A0A">\*\*\*\*\*\*\*\*\*\*\*</span>  <span style="color:#A0A">\*\*\*\*\*\*\*\*</span> <span style="color:#A0A">\*\*\*</span> <span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A">\*\*\*\*\*\*</span> <span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A">\*\*\*\*</span>&#x2502;<br/>0.923&#x2524;              <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span>  <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span>&#x2502;     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;<br/>     &#x2502;          <span style="color:#0A0">&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span>  <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span>    <span style="color:#0A0">&#xB7;</span>  <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;</span>&#x2502;     1.0         49.2         97.5         145.8      194.0 <br/>     &#x2502;       <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;</span>   <span style="color:#0A0">&#xB7;</span>   <span style="color:#0A0">&#xB7;</span>              <span style="color:#0A0">&#xB7;</span>      <span style="color:#0A0">&#xB7;</span> &#x2502;accuracy/std                  iter                          <br/>0.868&#x2524;       <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;</span>                                   &#x2502;                          accuracy/max                      <br/>     &#x2502;  <span style="color:#0A0">&#xB7;&#xB7;</span>  <span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span>  <span style="color:#0A0">&#xB7;</span>                                         &#x2502;     &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;<br/>0.814&#x2524;  <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span>                                             &#x2502;0.992&#x2524;                  <span style="color:#A00">+</span>            <span style="color:#A00">+++</span>    <span style="color:#A00">+</span> <span style="color:#A00">+</span> <span style="color:#A00">++</span> <span style="color:#A00">+</span> <span style="color:#A00">+</span> <span style="color:#A00">+++</span> &#x2502;<br/>     &#x2502;  <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;</span> <span style="color:#0A0">&#xB7;</span>                                             &#x2502;0.936&#x2524;           <span style="color:#A00">+</span>  <span style="color:#A00">+++++++</span> <span style="color:#A00">+++++++++++++++++++++++++++++++</span>&#x2502;<br/>0.760&#x2524; <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;&#xB7;</span>                                               &#x2502;0.880&#x2524;   <span style="color:#A00">+</span> <span style="color:#A00">+</span> <span style="color:#A00">++++++++++++++++++++</span> <span style="color:#A00">+</span>      <span style="color:#A00">+</span> <span style="color:#A00">+</span> <span style="color:#A00">+</span>    <span style="color:#A00">+</span>      <span style="color:#A00">+</span> &#x2502;<br/>     &#x2502; <span style="color:#0A0">&#xB7;&#xB7;</span>                                                  &#x2502;0.824&#x2524;  <span style="color:#A00">++</span> <span style="color:#A00">++++</span>  <span style="color:#A00">+</span>   <span style="color:#A00">+</span>                                     &#x2502;<br/>     &#x2502; <span style="color:#0A0">&#xB7;&#xB7;</span>                                                  &#x2502;     &#x2502;<span style="color:#A00">++++++</span> <span style="color:#A00">+</span>                                             &#x2502;<br/>0.706&#x2524;<span style="color:#0A0">&#xB7;&#xB7;&#xB7;</span>                                                  &#x2502;0.768&#x2524;<span style="color:#A00">+++</span>                                                  &#x2502;<br/>     &#x2502;<span style="color:#0A0">&#xB7;&#xB7;</span>                                                   &#x2502;0.712&#x2524;<span style="color:#A00">++</span>                                                   &#x2502;<br/>0.652&#x2524;<span style="color:#0A0">&#xB7;</span>                                                    &#x2502;0.656&#x2524;<span style="color:#A00">++</span>                                                   &#x2502;<br/>     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;     &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;<br/>     1.0         49.2         97.5         145.8      194.0      1.0         49.2         97.5         145.8      194.0 <br/>accuracy/mean                 iter                          accuracy/max                  iter                          <br/></code></pre></div>
+             <div class="ansi-block"><pre class="terminal"><code>    &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;<br/>1.78&#x2524; <span style="color:#A00">++</span> loss/max                                                                                                      &#x2502;<br/>    &#x2502; <span style="color:#0AA">--</span> loss/min                                                                                                      &#x2502;<br/>    &#x2502; <span style="color:#0A0">&#xB7;&#xB7;</span> loss/mean                                                                                                     &#x2502;<br/>    &#x2502; &#x259E;&#x259E; loss                                                                                                          &#x2502;<br/>    &#x2502;&#x258C;<span style="color:#A00">+</span>                                                                                                                &#x2502;<br/>    &#x2502;&#x259A;<span style="color:#0A0">&#xB7;</span>                                                                                                                &#x2502;<br/>1.50&#x2524;&#x2590;<span style="color:#0A0">&#xB7;</span>                                                                                                                &#x2502;<br/>    &#x2502;&#x2590;<span style="color:#0A0">&#xB7;</span>                                                                                                                &#x2502;<br/>    &#x2502;&#x2590;<span style="color:#0A0">&#xB7;</span>                                                                                                                &#x2502;<br/>    &#x2502; &#x258C;                                                                                                                &#x2502;<br/>    &#x2502; &#x258C;                                                                                                                &#x2502;<br/>    &#x2502; &#x258C;                                                                                                                &#x2502;<br/>1.21&#x2524; &#x259A;                                                                                                                &#x2502;<br/>    &#x2502; &#x2590;<span style="color:#A00">+</span>                                                                                                               &#x2502;<br/>    &#x2502; &#x2590;&#x259F;                                                                                                               &#x2502;<br/>    &#x2502; &#x259D;&#x2588;                                                                                                               &#x2502;<br/>    &#x2502;  &#x2590;                                                                                                               &#x2502;<br/>0.93&#x2524;  &#x259D;&#x2596;<span style="color:#A00">+</span>                                                                                                             &#x2502;<br/>    &#x2502;  <span style="color:#0AA">-</span>&#x2599;&#x258C;                                                                                                             &#x2502;<br/>    &#x2502;  <span style="color:#0AA">-</span>&#x259D;&#x259A;<span style="color:#A00">+</span>                                                                                                            &#x2502;<br/>    &#x2502;   <span style="color:#0AA">-</span>&#x2590;<span style="color:#A00">+</span>&#x2596;    &#x2597;&#x258C;                                                                                                     &#x2502;<br/>    &#x2502;    &#x2590;&#x2590;&#x259A;    &#x2590;&#x258C;                                                                                                     &#x2502;<br/>    &#x2502;    &#x2590;&#x2590;&#x2590;    &#x2590;&#x258C;                                                                                                     &#x2502;<br/>0.65&#x2524;     &#x2588;&#x2590; &#x2584;&#x2596;<span style="color:#A00">+</span>&#x2590;&#x258C;<span style="color:#A00">+</span>                                                                                                    &#x2502;<br/>    &#x2502;     &#x2588;&#x2590;&#x259E;<span style="color:#0A0">&#xB7;</span>&#x2590;<span style="color:#0A0">&#xB7;</span>&#x2590;&#x2590;<span style="color:#A00">+</span>         <span style="color:#A00">+</span>             <span style="color:#A00">+</span>                                                                            &#x2502;<br/>    &#x2502;     &#x2588;&#x2590;&#x258C; <span style="color:#0A0">&#xB7;</span>&#x258C;&#x258C;&#x259D;&#x2596;&#x259E;&#x2584;      <span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span> <span style="color:#A00">+</span>           &#x259F;                                                                            &#x2502;<br/>    &#x2502;     &#x259D;&#x259D;&#x258C;  &#x259A;&#x258C;<span style="color:#0AA">-</span>&#x2588;<span style="color:#0A0">&#xB7;</span>&#x2590; <span style="color:#A00">+</span>&#x2596;   <span style="color:#0A0">&#xB7;&#xB7;</span> <span style="color:#A00">++</span>          &#x2588;                                                                            &#x2502;<br/>    &#x2502;      <span style="color:#0AA">-</span>   &#x2590;&#x258C;<span style="color:#0AA">-</span>&#x2588; &#x2590;&#x2597;&#x2590;&#x258C;<span style="color:#A00">+</span>&#x259F; &#x2597;&#x258C;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span>          &#x2588;         &#x2597;             <span style="color:#A00">+</span>                                                    &#x2502;<br/>    &#x2502;      <span style="color:#0AA">-</span>   &#x2590;&#x258C; &#x259C;<span style="color:#0AA">-</span>&#x2590;&#x258C;&#x2588;&#x2590;<span style="color:#A00">+</span>&#x2588; &#x2590;&#x258C;<span style="color:#0A0">&#xB7;&#xB7;</span>&#x2597;&#x258C;<span style="color:#A00">+</span>   &#x2596;&#x2596;  <span style="color:#A00">+</span>&#x2588;   <span style="color:#A00">+</span>&#x2596;    &#x2588;  &#x2596;         <span style="color:#A00">++</span>                                                &#x2597;&#x258C;  &#x2502;<br/>0.37&#x2524;           &#x2598;   <span style="color:#0AA">-</span>&#x2598;&#x259D;&#x259D;&#x2596;&#x2588;<span style="color:#A00">+</span>&#x2590;&#x258C;&#x259E;&#x2596;&#x2590;&#x259A;<span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;</span>&#x2590;&#x259C;&#x2590;<span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>&#x2588; <span style="color:#A00">+</span>&#x2597;&#x2580;&#x258C; &#x2584;  &#x2588; &#x2590;&#x258C; <span style="color:#A00">+</span>&#x2597;&#x2597; &#x2597;&#x258C;  <span style="color:#A00">++</span>&#x2597;&#x258C;            &#x259F;       &#x2597;                &#x2597;        &#x2590;&#x258C;  &#x2502;<br/>    &#x2502;                <span style="color:#0AA">-</span>  &#x2599;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x259E;&#x259A;&#x258C;&#x259D;&#x2588;&#x259D;&#x2584;&#x2599;&#x258C;&#x2590;<span style="color:#0AA">-</span>&#x259D;&#x2584;<span style="color:#0A0">&#xB7;</span>&#x2597;&#x259C; &#x2597;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x2590;&#x259D;&#x2596;<span style="color:#0A0">&#xB7;</span>&#x2588; &#x259E;&#x259A;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>&#x2588;&#x2588; &#x2590;&#x258C; &#x2597;&#x2596;<span style="color:#0A0">&#xB7;</span>&#x2590;&#x258C;&#x259F;    <span style="color:#A00">+</span>   &#x2597;&#x258C; &#x2588;     &#x259F; &#x2588;<span style="color:#0A0">&#xB7;</span> <span style="color:#A00">+</span> <span style="color:#A00">+</span>    <span style="color:#A00">+</span> &#x2597;    &#x2588;   &#x2597;&#x258C;   &#x2590;&#x258C;  &#x2502;<br/>    &#x2502;                   &#x259D; &#x2580;  &#x2598; &#x259D;  &#x259C;&#x258C;&#x258C;<span style="color:#0AA">--</span>&#x259D;&#x2584;&#x2598;&#x2590;<span style="color:#A00">+</span>&#x2590;&#x259C;<span style="color:#0AA">-</span>&#x2590;&#x2590; &#x259A;&#x2584;&#x259B;&#x2596;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2580;&#x2588;&#x2590;&#x259B;&#x2596;&#x259E;&#x258C;<span style="color:#A00">+</span>&#x258C;&#x258C;&#x259F;&#x2590;&#x258C;&#x2588; <span style="color:#A00">++</span> <span style="color:#0A0">&#xB7;</span><span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span> &#x259E;&#x258C; &#x2588; <span style="color:#A00">++</span>&#x2597;&#x2597;&#x259C; &#x258C;&#x258C;&#x2596;&#x259F;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span><span style="color:#A00">++</span>&#x2597;&#x258C;<span style="color:#A00">+</span>&#x2597;&#x2588;  <span style="color:#A00">+</span> &#x2588;  &#x259F;&#x2590;&#x258C;   &#x2590;&#x258C;  &#x2502;<br/>    &#x2502;                              &#x259A;&#x258C;   &#x259C;<span style="color:#0AA">--</span>&#x259A;&#x2590;   &#x2588;   &#x2598;&#x259D;&#x2598;<span style="color:#0AA">-</span> &#x259D;&#x2590;&#x258C;&#x2588;<span style="color:#0AA">-</span>&#x259D;&#x2596;&#x258C;&#x259D;&#x2580;&#x259F;&#x259D;&#x2598;&#x258C;&#x259F;<span style="color:#0A0">&#xB7;</span> <span style="color:#0A0">&#xB7;&#xB7;&#xB7;&#xB7;</span>&#x258C;&#x258C;&#x2597;&#x2588;&#x2597;&#x259A;&#x259E;&#x2580;&#x259E;&#x2590;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x259C;&#x258C;&#x258C;&#x259A;&#x2597;<span style="color:#0A0">&#xB7;</span>&#x259F;&#x2590;&#x2599;&#x258C;&#x2588;&#x2588;<span style="color:#A00">+</span>&#x2597;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x258C;&#x258C; &#x259B;&#x259F;&#x2590; <span style="color:#A00">+</span>&#x2597;&#x259F;&#x258C;<span style="color:#0A0">&#xB7;</span>&#x2596;&#x2502;<br/>    &#x2502;                                      <span style="color:#0AA">-</span>&#x2598;   &#x259C;         &#x2590;&#x258C;&#x259D;  &#x259D;&#x2598;  &#x2588; <span style="color:#0AA">-</span>&#x259A;&#x2598;&#x2599;&#x2580;&#x2580;&#x2599;&#x258C;&#x259F;&#x258C;&#x259D;&#x2598;&#x2598;&#x259C;<span style="color:#0A0">&#xB7;</span>&#x2598;<span style="color:#0AA">--</span>&#x259D;&#x259E;&#x258C; &#x259A;&#x258C;<span style="color:#0AA">-</span>&#x2580;&#x2584;&#x258C;&#x259C;&#x2588;&#x2588; &#x259C;&#x2597;&#x2598;&#x258C;&#x259F;&#x258C;&#x258C;&#x2596;&#x258C;&#x2588;&#x2590;<span style="color:#A00">+</span><span style="color:#0A0">&#xB7;</span>&#x258C;&#x2588;&#x258C;&#x2590;&#x258C;&#x2502;<br/>    &#x2502;                                                      &#x2598;       &#x259D;    &#x259D;<span style="color:#0AA">--</span>&#x259D;&#x259D;&#x259D;&#x258C;    <span style="color:#0AA">-</span>       &#x2590;&#x258C;  &#x259D;&#x258C; &#x259D;&#x259D;  &#x259C;<span style="color:#0AA">-</span>&#x259A;&#x2598;&#x2598;&#x259D;&#x2588;<span style="color:#0A0">&#xB7;</span>&#x259D;&#x259D;&#x2584;&#x2596;&#x258C;&#x2588;&#x259D;&#x2598;&#x259D;&#x2502;<br/>0.08&#x2524;                                                                                      &#x259D;&#x258C;               &#x259C;    &#x259D;&#x258C;&#x259D;   &#x2502;<br/>    &#x2514;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2518;<br/>    1.0                        49.2                         97.5                        145.8                     194.0 <br/></code></pre></div>
+             <div class="ansi-block"><pre class="terminal"><code>                              loss                                                      loss/min                        <br>    ┌──────────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────────┐<br>1.66┤▌                                                     │1.66┤<span style="color:#0AA">-</span>                                                     │<br>    │▐                                                     │1.39┤<span style="color:#0AA">--</span>                                                    │<br>1.39┤▐                                                     │1.13┤ <span style="color:#0AA">-</span>                                                    │<br>    │▐                                                     │0.87┤ <span style="color:#0AA">-</span>                                                    │<br>1.13┤▐▖                                                    │    │ <span style="color:#0AA">--</span> <span style="color:#0AA">-</span>                                                 │<br>    │▝▌                                                    │0.61┤  <span style="color:#0AA">--------</span> <span style="color:#0AA">-</span>                                          │<br>0.87┤ ▐▖                                                   │0.35┤   <span style="color:#0AA">-</span> <span style="color:#0AA">-</span> <span style="color:#0AA">------------------------------------</span> <span style="color:#0AA">-------</span> <span style="color:#0AA">--</span>│<br>    │ ▝▌▖ ▐                                                │0.08┤                  <span style="color:#0AA">-</span> <span style="color:#0AA">-</span>    <span style="color:#0AA">---</span> <span style="color:#0AA">--</span> <span style="color:#0AA">----------------------</span>│<br>    │  █▌▖▐                                                │    └┬────────────┬─────────────┬────────────┬────────────┬┘<br>0.61┤  ▜█▝▟▙▖         ▐                                    │    1.0         49.2          97.5         145.8      194.0 <br>    │   ▝ █▜▙█▐▗▌ ▖ ▄ ▐ ▗  ▗▗                            ▗ │loss/min                      iter                          <br>0.35┤     ▝ ▝▝▛▟█▟▚█▘▙▟▗▛▄▌█▞▄▙▙▌▄▟▗   ▗▖▌  ▄▌▗  ▖▗ ▗▌▗▌ █ │                            loss/std                        <br>    │              ▜ ▐ ▜▘▜▝▀▘▝█▛▜▝█▀▟▄▄▟▙▙▛▀██▛▙███▐▐▙█▌▐█▖│     ┌─────────────────────────────────────────────────────┐<br>0.08┤                         ▝   ▝  ▘▝▀    ▝▝▌ ▀▀▝▘▀▀▛▝▜▛▝│0.216┤     <span style="color:#A0A"><em></em></span><em>                                                │<br>    └┬────────────┬─────────────┬────────────┬────────────┬┘0.180┤     <span style="color:#A0A"></span></em>                                                │<br>    1.0         49.2          97.5         145.8      194.0 0.144┤   <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A"></span></em>                                                 │<br>loss                          iter                          0.108┤   <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A"></span></em>                                                 │<br>                            loss/mean                            │  <span style="color:#A0A"><strong></strong></span><strong> <span style="color:#A0A">\*</span></strong> <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A">\*\*</span>    <span style="color:#A0A"></span></em>    <span style="color:#A0A"><strong></strong></span><strong> <span style="color:#A0A"></span></strong> <span style="color:#A0A"><em></em></span><em>     <span style="color:#A0A"></span></em>           <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A"></span></em>                  │<br>    ┌──────────────────────────────────────────────────────┐0.072┤<span style="color:#A0A">\*\*\*\*</span> <span style="color:#A0A"><strong><em></em></strong></span><strong><em> <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A">\*</span></em>  <span style="color:#A0A">\*\*</span></em></strong>  <span style="color:#A0A">\*\*\*\*\*\*\*</span> <span style="color:#A0A">\*\*\*\*\*\*\*\*\*\*</span>  <span style="color:#A0A"><strong></strong></span><strong> <span style="color:#A0A">\*\*</span></strong> <span style="color:#A0A"><em></em></span><em>               │<br>1.72┤<span style="color:#0A0">·</span>                                                     │0.036┤<span style="color:#A0A">\*\*\*\*\*</span> <span style="color:#A0A">\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*</span> │<br>    │<span style="color:#0A0">·</span>                                                     │0.000┤    <span style="color:#A0A"></span></em>   <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A"></span></em> <span style="color:#A0A"><strong></strong></span><strong> <span style="color:#A0A">\*</span></strong>  <span style="color:#A0A"><strong></strong></span><strong> <span style="color:#A0A"><em></em></span><em> <span style="color:#A0A"></span></em> <span style="color:#A0A">\*</span> <span style="color:#A0A"></span></strong> <span style="color:#A0A">\*\*\*\*\*\*\*</span> <span style="color:#A0A"><strong></strong></span><strong>  <span style="color:#A0A">\*\*\*\*</span></strong> <span style="color:#A0A">\*\*</span>                 │<br>1.45┤<span style="color:#0A0">·</span>                                                     │     └┬────────────┬────────────┬────────────┬────────────┬┘<br>    │ <span style="color:#0A0">·</span>                                                    │     1.0         49.2         97.5         145.8      194.0 <br>    │ <span style="color:#0A0">·</span>                                                    │loss/std                      iter                          <br>1.18┤ <span style="color:#0A0">·</span>                                                    │                            loss/max                        <br>    │ <span style="color:#0A0">·</span>                                                    │    ┌──────────────────────────────────────────────────────┐<br>0.92┤ <span style="color:#0A0">··</span>                                                   │1.78┤<span style="color:#A00">+</span>                                                     │<br>    │  <span style="color:#0A0">·</span>                                                   │1.50┤<span style="color:#A00">+</span>                                                     │<br>0.65┤  <span style="color:#0A0">····</span>                                                │1.23┤ <span style="color:#A00">+</span>                                                    │<br>    │  <span style="color:#0A0">·····</span>    <span style="color:#0A0">·</span>                                          │0.95┤ <span style="color:#A00">++</span>                                                   │<br>    │       <span style="color:#0A0">·······</span>    <span style="color:#0A0">·</span>                                   │    │ <span style="color:#A00">+++</span> <span style="color:#A00">+</span>                                                │<br>0.39┤       <span style="color:#0A0">·</span> <span style="color:#0A0">················</span> <span style="color:#0A0">····</span>    <span style="color:#0A0">·</span> <span style="color:#0A0">·</span>   <span style="color:#0A0">·</span>    <span style="color:#0A0">·</span>  <span style="color:#0A0">·</span>   <span style="color:#0A0">·</span> │0.67┤  <span style="color:#A00">+++++++++++</span>     <span style="color:#A00">+</span>                                   │<br>    │              <span style="color:#0A0">·····</span> <span style="color:#0A0">··································</span>│0.40┤       <span style="color:#A00">+++++++++++++++++++++++++++++++++++++++++++++++</span>│<br>0.12┤                                <span style="color:#0A0">···</span>     <span style="color:#0A0">····</span> <span style="color:#0A0">·</span> <span style="color:#0A0">·······</span>│0.12┤                <span style="color:#A00">+</span>        <span style="color:#A00">++</span>  <span style="color:#A00">+</span> <span style="color:#A00">+++++++++++++</span> <span style="color:#A00">+++++++++</span>│<br>    └┬────────────┬─────────────┬────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘<br>    1.0         49.2          97.5         145.8      194.0     1.0         49.2          97.5         145.8      194.0 <br>loss/mean                     iter                          loss/max                      iter                          <br></code></pre></div>
 
-    ```python
-    import ezpz
-    _ = ezpz.setup_torch()
+1. **Automatic single-process logging** with rank-aware filtering for
+   distributed runs:
 
-    device = ezpz.get_torch_device()
-    # cuda, xpu, mps, cpu, ...
-    ```
+     ```python
+     logger = ezpz.get_logger(__name__)
+     ```
 
-- Automatic single-process logging with rank-aware filtering for distributed
-  runs:
-
-    ```python
-    logger = ezpz.get_logger(__name__)
-    ```
-
-- Metric tracking, aggregation, and recording via
-  [`ezpz.History()`](https://ezpz.cool/python/Code-Reference/#ezpz.History):
-    - Automatic distributed statistics (min, max, mean, stddev) across ranks[^distributed-history]
-    - Weights & Biases integration
-    - Persistent storage of metrics in `.h5` format
-    - Plotting support:
-        - /// details | Graphical plots (`svg`, `png`) via `matplotlib`
-              type: example
-          ![Accuracy](./assets/mplot/svgs/accuracy.svg)
-          ![Loss](./assets/mplot/svgs/loss.svg)
-          ![Forward time](./assets/mplot/svgs/dtf.svg)
-          ![Backward time](./assets/mplot/svgs/dtb.svg)
-          ///
-
-        - /// details | Terminal-based ASCII plots via [`plotext`](https://github.com/piccolomo/plotext#guide)
-              type: example
-          ![`tplot` Split Dark](./assets/tplot-split-dark.png#only-dark) ![`tplot` Dark](./assets/tplot-dark.png#only-dark)
-
-          ![`tplot` Split Light](./assets/tplot-split-light.png#only-light) ![`tplot` Light](./assets/tplot-light.png#only-light)
-          ///
-
-## Environment Variables
+## ⚙️ Environment Variables
 
 Additional configuration can be done through environment variables, including:
 
@@ -573,40 +670,37 @@ Additional configuration can be done through environment variables, including:
 
 -->
 
-/// details | Complete List
-    type: info
+??? info "Complete List"
+
+    | Environment Variable                         | Purpose / how it’s used                                                          |
+    | -------------------------------------------- | :------------------------------------------------------------------------------- |
+    | TORCH_DEVICE                                 | Force device selection (cpu, cuda, mps, xpu) when picking the torch device.      |
+    | TORCH_BACKEND                                | Override distributed backend (nccl, gloo, mpi, xla).                             |
+    | TORCH_DDP_TIMEOUT                            | Adjust DDP init timeout (seconds) for slow launches.                             |
+    | MASTER_ADDR                                  | Manually set rendezvous address if auto-detection is wrong/unreachable.          |
+    | MASTER_PORT                                  | Manually set rendezvous port for distributed init.                               |
+    | HOSTFILE                                     | Point ezpz at a specific hostfile when scheduler defaults are missing/incorrect. |
+    | NO_COLOR / NOCOLOR / COLOR / COLORTERM       | Enable/disable colored output to suit terminals or log sinks.                    |
+    | EZPZ_LOG_LEVEL                               | Set ezpz logging verbosity.                                                      |
+    | LOG_LEVEL                                    | General log level for various modules.                                           |
+    | LOG_FROM_ALL_RANKS                           | Allow logs from all ranks (not just rank 0).                                     |
+    | PYTHONHASHSEED                               | Fix Python hash seed for reproducibility.                                        |
+    | WANDB_DISABLED                               | Disable Weights & Biases logging.                                                |
+    | WANDB_MODE                                   | Set W&B mode (online, offline, dryrun).                                          |
+    | WANDB_PROJECT / WB_PROJECT / WB_PROJECT_NAME | Set project name for W&B runs.                                                   |
+    | WANDB_API_KEY                                | Supply W&B API key for authentication.                                           |
+    | EZPZ_LOCAL_HISTORY                           | Control local history storage/enablement.                                        |
+    | EZPZ_NO_DISTRIBUTED_HISTORY                  | Disable distributed history aggregation.                                         |
+    | EZPZ_TPLOT_TYPE                              | Select timeline plot type.                                                       |
+    | EZPZ_TPLOT_MARKER                            | Marker style for timeline plots.                                                 |
+    | EZPZ_TPLOT_MAX_HEIGHT                        | Max height for timeline plots.                                                   |
+    | EZPZ_TPLOT_MAX_WIDTH                         | Max width for timeline plots.                                                    |
+    | EZPZ_TPLOT_RAW_MARKER                        | Marker for raw timeline data.                                                    |
+    | CPU_BIND                                     | Override default CPU binding for PBS launch commands (advanced).                 |
 
 
-| Environment Variable                         | Purpose / how it’s used                                                          |
-| -------------------------------------------- | :------------------------------------------------------------------------------- |
-| TORCH_DEVICE                                 | Force device selection (cpu, cuda, mps, xpu) when picking the torch device.      |
-| TORCH_BACKEND                                | Override distributed backend (nccl, gloo, mpi, xla).                             |
-| TORCH_DDP_TIMEOUT                            | Adjust DDP init timeout (seconds) for slow launches.                             |
-| MASTER_ADDR                                  | Manually set rendezvous address if auto-detection is wrong/unreachable.          |
-| MASTER_PORT                                  | Manually set rendezvous port for distributed init.                               |
-| HOSTFILE                                     | Point ezpz at a specific hostfile when scheduler defaults are missing/incorrect. |
-| NO_COLOR / NOCOLOR / COLOR / COLORTERM       | Enable/disable colored output to suit terminals or log sinks.                    |
-| EZPZ_LOG_LEVEL                               | Set ezpz logging verbosity.                                                      |
-| LOG_LEVEL                                    | General log level for various modules.                                           |
-| LOG_FROM_ALL_RANKS                           | Allow logs from all ranks (not just rank 0).                                     |
-| PYTHONHASHSEED                               | Fix Python hash seed for reproducibility.                                        |
-| WANDB_DISABLED                               | Disable Weights & Biases logging.                                                |
-| WANDB_MODE                                   | Set W&B mode (online, offline, dryrun).                                          |
-| WANDB_PROJECT / WB_PROJECT / WB_PROJECT_NAME | Set project name for W&B runs.                                                   |
-| WANDB_API_KEY                                | Supply W&B API key for authentication.                                           |
-| EZPZ_LOCAL_HISTORY                           | Control local history storage/enablement.                                        |
-| EZPZ_NO_DISTRIBUTED_HISTORY                  | Disable distributed history aggregation.                                         |
-| EZPZ_TPLOT_TYPE                              | Select timeline plot type.                                                       |
-| EZPZ_TPLOT_MARKER                            | Marker style for timeline plots.                                                 |
-| EZPZ_TPLOT_MAX_HEIGHT                        | Max height for timeline plots.                                                   |
-| EZPZ_TPLOT_MAX_WIDTH                         | Max width for timeline plots.                                                    |
-| EZPZ_TPLOT_RAW_MARKER                        | Marker for raw timeline data.                                                    |
-| CPU_BIND                                     | Override default CPU binding for PBS launch commands (advanced).                 |
 
-///
-
-
-## More Information
+## ℹ️ More Information
 
 - Examples live under [`ezpz.examples.*`](https://ezpz.cool/examples/)—copy them or
   extend them for your workloads.

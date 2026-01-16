@@ -54,6 +54,7 @@ mpi = ["mpi4py"]
 # xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchvision"]
 docs = [
+    "zensical",
     "mkdocs",
     "mkdocstrings",
     "mkdocs-material",

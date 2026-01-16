@@ -1,5 +1,6 @@
+site_dir: "_site"
 site_name: "ezpz"
-site_url: https://saforem2.github.io/ezpz
+site_url: https://ezpz.cool
 repo_name: "saforem2/ezpz"
 repo_url: https://github.com/saforem2/ezpz
 edit_uri: edit/main/docs/
@@ -70,7 +71,7 @@ plugins:
   # - typeset
   - glightbox
   - search
-  - autorefs
+  # - autorefs
   - mkdocstrings:
       # enabled: !ENV [CI, true]
       handlers:
@@ -80,7 +81,7 @@ plugins:
       enabled: !ENV [CI, false]
       cards_layout_options:
         font_family: IBM Plex Mono
-        title: ezpz.cool
+        title: ezpz
         description: Write once, run anywhere
         background_color: #00FFFF
     # custom_templates: templates
@@ -122,7 +123,7 @@ extra_css:
   - stylesheets/oklch.min.css
   - stylesheets/one-light.css
   - stylesheets/atom-one-dark-reasonable.css
-  - stylesheets/custom.css
+  - stylesheets/theme.css
   - overrides/fonts.css
   - https://iosevka-webfonts.github.io/iosevka/Iosevka.css
   - https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css
@@ -160,9 +161,10 @@ markdown_extensions:
       permalink: true
   # Python Markdown Extensions
   - pymdownx.betterem
+  - admonition
   - pymdownx.blocks.admonition
   - pymdownx.blocks.caption
-  - pymdownx.blocks.details
+  # - pymdownx.blocks.details
   - pymdownx.critic
   - pymdownx.caret
   - pymdownx.escapeall
@@ -179,6 +181,7 @@ markdown_extensions:
   #     anchor_linenums: true
   #     pygments_lang_class: true
   #     # auto_title: true
+  - pymdownx.details
   - pymdownx.superfences:
       preserve_tabs: true
       custom_fences:
@@ -207,24 +210,25 @@ nav:
 
   - 🧰 CLI:
       - cli/index.md
+      - 🚀 <code>ezpz launch</code>: cli/launch/index.md
+      - 💯 <code>ezpz test</code>: cli/test.md
       - 🩺 <code>ezpz doctor</code>: cli/doctor.md
-      - ✅ <code>ezpz test</code>: cli/test.md
-      - 🚀 <code>ezpz launch</code>:
-        - cli/launch/index.md
-        - 📝 Examples:
-            - examples/index.md
-            - <code>ezpz.test_dist</code>: examples/test-dist.md
-            - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
-            - <code>ezpz.examples.vit</code>: examples/vit.md
-            - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
-            - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
-            - <code>ezpz.examples.hf_trainer</code>:
-                - examples/hf-trainer/index.md
-                - HF Trainer Comparison: examples/hf-trainer/comparison.md
-        - 🗓️ PBS: notes/pbs.md
+      - 📘 References:
+          - 📄 Test Report: cli/test-report.md
+          - 🗓️ PBS: notes/pbs.md
+          # - 📝 Examples:
+          #     - examples/index.md
+          #     - <code>ezpz.test_dist</code>: examples/test-dist.md
+          #     - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
+          #     - <code>ezpz.examples.vit</code>: examples/vit.md
+          #     - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
+          #     - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
+          #     - <code>ezpz.examples.hf_trainer</code>:
+          #         - examples/hf-trainer/index.md
+          #         - HF Trainer Comparison: examples/hf-trainer/comparison.md
       - 🧪 Experimental:
-        - ✍️ <code>ezpz generate</code>: cli/generate.md
-        - 🖥️ <code>ezpz generate_tui</code>: cli/generate-tui.md
+          - ✍️ <code>ezpz generate</code>: cli/generate.md
+          - 🖥️ <code>ezpz generate_tui</code>: cli/generate-tui.md
 
   - 📝 Examples:
       - examples/index.md

@@ -4,6 +4,16 @@ Launch with:
 
     ezpz launch -m ezpz.examples.vit --dataset mnist --batch_size 256
 
+Quick smoke test on a laptop:
+
+    python -m ezpz.examples.vit --dataset fake --max_iters 1 \
+        --batch_size 4 --img_size 64 --patch_size 8 \
+        --num_heads 2 --head_dim 16 --depth 2 --num_classes 10
+
+Model presets:
+
+    --model debug|small|medium|med|large
+
 Help output (``python3 -m ezpz.examples.vit --help``):
 
     usage: ezpz.examples.vit [-h] [--img_size IMG_SIZE] [--batch_size BATCH_SIZE]
@@ -64,6 +74,7 @@ from dataclasses import asdict
 from dataclasses import dataclass, field
 import functools
 from pathlib import Path
+import sys
 import time
 from typing import Any, Optional
 
@@ -88,27 +99,182 @@ except Exception:
     wandb = None  # type:ignore
     logger.warning("Failed to import wandb")
 
-try:
-    from timm.models.vision_transformer import VisionTransformer  # type:ignore
-except (ImportError, ModuleNotFoundError) as e:
-    logger.exception(
-        "Please install timm to use VisionTransformer: uv pip install timm (`--no-deps` on Aurora)"
-    )
-    raise e
+
+class PatchEmbed(torch.nn.Module):
+    """Convert images into patch embeddings."""
+
+    def __init__(
+        self,
+        img_size: int,
+        patch_size: int,
+        in_chans: int,
+        embed_dim: int,
+    ) -> None:
+        super().__init__()
+        if img_size % patch_size != 0:
+            raise ValueError("img_size must be divisible by patch_size")
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = (img_size // patch_size) ** 2
+        self.proj = torch.nn.Conv2d(
+            in_chans,
+            embed_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.proj(x)
+        x = x.flatten(2).transpose(1, 2)
+        return x
+
+
+class SimpleVisionTransformer(torch.nn.Module):
+    """Minimal Vision Transformer implementation without timm."""
+
+    def __init__(
+        self,
+        img_size: int,
+        patch_size: int,
+        in_chans: int,
+        embed_dim: int,
+        depth: int,
+        num_heads: int,
+        num_classes: int,
+        block_fn: Any,
+        class_token: bool = False,
+        global_pool: str = "avg",
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.patch_embed = PatchEmbed(
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+        )
+        num_patches = self.patch_embed.num_patches
+        self.class_token = class_token
+        self.global_pool = global_pool
+        if class_token:
+            self.cls_token = torch.nn.Parameter(torch.zeros(1, 1, embed_dim))
+            num_patches += 1
+        else:
+            self.cls_token = None
+        self.pos_embed = torch.nn.Parameter(
+            torch.zeros(1, num_patches, embed_dim)
+        )
+        self.pos_drop = torch.nn.Dropout(p=dropout)
+        self.blocks = torch.nn.ModuleList(
+            [
+                block_fn(dim=embed_dim, num_heads=num_heads)
+                for _ in range(depth)
+            ]
+        )
+        self.norm = torch.nn.LayerNorm(embed_dim)
+        self.head = (
+            torch.nn.Linear(embed_dim, num_classes)
+            if num_classes > 0
+            else torch.nn.Identity()
+        )
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        torch.nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        if self.cls_token is not None:
+            torch.nn.init.trunc_normal_(self.cls_token, std=0.02)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.patch_embed(x)
+        if self.cls_token is not None:
+            cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)
+        x = self.pos_drop(x + self.pos_embed)
+        for block in self.blocks:
+            x = block(x)
+        x = self.norm(x)
+        if self.global_pool == "avg":
+            if self.cls_token is not None:
+                x = x[:, 1:]
+            x = x.mean(dim=1)
+        elif self.cls_token is not None:
+            x = x[:, 0]
+        else:
+            x = x.mean(dim=1)
+        return self.head(x)
+
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 4,
+        "num_heads": 2,
+        "head_dim": 16,
+        "depth": 2,
+    },
+    "small": {
+        "batch_size": 128,
+        "num_heads": 16,
+        "head_dim": 64,
+        "depth": 24,
+    },
+    "medium": {
+        "batch_size": 64,
+        "num_heads": 12,
+        "head_dim": 64,
+        "depth": 16,
+    },
+    "large": {
+        "batch_size": 32,
+        "num_heads": 16,
+        "head_dim": 64,
+        "depth": 32,
+    },
+}
+MODEL_ALIASES = {"med": "medium"}
+MODEL_PRESET_FLAGS = {
+    "batch_size": ["--batch_size", "--batch-size"],
+    "num_heads": ["--num_heads", "--num-heads"],
+    "head_dim": ["--head_dim", "--head-dim"],
+    "depth": ["--depth"],
+}
 
-def parse_args() -> argparse.Namespace:
+
+def _arg_provided(argv: list[str], flags: list[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.model is None:
+        return
+    model_name = args.model
+    model_key = MODEL_ALIASES.get(model_name)
+    if model_key is None:
+        model_key = model_name
+    preset = MODEL_PRESETS[model_key]
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse CLI arguments for ViT training."""
+    if argv is None:
+        argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.vit",
         description="Train a simple ViT",
     )
     parser.add_argument(
-        "--img_size", "--img-size", default=224, help="Image size"
+        "--img_size",
+        "--img-size",
+        type=int,
+        default=224,
+        help="Image size",
     )
     parser.add_argument(
         "--batch_size",
@@ -164,9 +330,19 @@ def parse_args() -> argparse.Namespace:
         choices=["fake", "mnist"],
         help="Dataset to use",
     )
+    parser.add_argument(
+        "--model",
+        default=None,
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help="Model size preset (overrides defaults)",
+    )
     parser.add_argument("--depth", type=int, default=24, help="Depth")
     parser.add_argument(
-        "--patch_size", "--patch-size", type=int, default=16, help="Patch size"
+        "--patch_size",
+        "--patch-size",
+        type=int,
+        default=16,
+        help="Patch size",
     )
     parser.add_argument("--dtype", default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
@@ -178,10 +354,15 @@ def parse_args() -> argparse.Namespace:
         help="Number of workers",
     )
     parser.add_argument(
-        "--max_iters", "--max-iters", default=100, help="Maximum iterations"
+        "--max_iters",
+        "--max-iters",
+        type=int,
+        default=100,
+        help="Maximum iterations",
     )
     parser.add_argument(
         "--warmup",
+        type=float,
         default=0.1,
         help="Warmup iterations (or fraction) before starting to collect metrics.",
     )
@@ -206,7 +387,9 @@ def parse_args() -> argparse.Namespace:
         help="CUDA SDPA backend to use.",
     )
     parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    apply_model_preset(args, argv)
+    return args
 
 
 @dataclass
@@ -314,15 +497,19 @@ def train_fn(
     #     drop_last=True,
     # )
 
-    model = VisionTransformer(
+    in_chans = 1 if dataset == "mnist" else 3
+    model = SimpleVisionTransformer(
         img_size=config.img_size,
         patch_size=config.patch_size,
+        in_chans=in_chans,
         embed_dim=(config.num_heads * config.head_dim),
         depth=config.depth,
         num_heads=config.num_heads,
+        num_classes=args.num_classes,
         class_token=False,
         global_pool="avg",
         block_fn=block_fn,
+        dropout=args.dropout,
     )
 
     mstr = summarize_model(
@@ -331,7 +518,7 @@ def train_fn(
         depth=1,
         input_size=(
             config.batch_size,
-            3,
+            in_chans,
             config.img_size,
             config.img_size,
         ),
@@ -484,6 +671,7 @@ def main(args: argparse.Namespace):
     targs = dict(**vars(args))
     targs.pop("dataset", None)
     targs.pop("use_timm", None)
+    targs.pop("model", None)
     train_args = VitTrainArgs(**targs)
     # train_args:  = (**targs)
     config = timmViTConfig(
