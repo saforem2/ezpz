@@ -50,7 +50,7 @@ def get_styles(colorized: bool = True) -> dict:
 class RichHandler(OriginalRichHandler):
     """Enriched handler that does not wrap."""
 
-    def __init__(self, rank: Optional[int | str | None] = None, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, rank: Optional[int | str] = None, *args: Any, **kwargs: Any) -> None:
         if "console" not in kwargs:
             console = get_console(
                 redirect=False,
