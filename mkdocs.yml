@@ -71,7 +71,7 @@ plugins:
   # - typeset
   - glightbox
   - search
-  - autorefs
+  # - autorefs
   - mkdocstrings:
       # enabled: !ENV [CI, true]
       handlers:
