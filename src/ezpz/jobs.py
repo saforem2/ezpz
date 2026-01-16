@@ -17,11 +17,18 @@ from ezpz.dist import get_rank
 
 RANK = get_rank()
 SCHEDULER = get_scheduler()
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-LOG_FROM_ALL_RANKS = os.environ.get("LOG_FROM_ALL_RANKS", False)
+LOG_LEVEL = os.environ.get(
+    "EZPZ_LOG_LEVEL", os.environ.get("LOG_LEVEL", "INFO")
+).upper()
+LOG_FROM_ALL_RANKS = os.environ.get(
+    "LOG_FROM_ALL_RANKS", os.environ.get("EZPZ_LOG_FROM_ALL_RANKS", False)
+)
 
 log = logging.getLogger(__name__)
 if LOG_FROM_ALL_RANKS:
+    log.warning(
+        f"[{RANK:>2}] Logging from all ranks at level {LOG_LEVEL} enabled via EZPZ_LOG_FROM_ALL_RANKS"
+    )
     log.setLevel(LOG_LEVEL)
 else:
     log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
@@ -114,8 +121,9 @@ def get_jobenv(
     verbose_pbs_env: Optional[bool] = None,
 ) -> dict:
     """Collect runtime information describing the active batch job."""
-    from ezpz.dist import \
-        get_dist_info  # get_pbs_launch_info,; get_pbs_launch_cmd,
+    from ezpz.dist import (
+        get_dist_info,
+    )  # get_pbs_launch_info,; get_pbs_launch_cmd,
     from ezpz.pbs import get_pbs_env
 
     hostfile = os.environ.get("HOSTFILE") if hostfile is None else hostfile
@@ -211,7 +219,11 @@ def save_to_dotenv_file(
     launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
     assert launch_cmd is not None
     for denvf in [denvf1, denvf2]:
-        log.info(" ".join(["Saving job env to", f"{denvf.parent.as_posix()}/.jobenv"]))
+        log.info(
+            " ".join(
+                ["Saving job env to", f"{denvf.parent.as_posix()}/.jobenv"]
+            )
+        )
         # launch_cmd = jobenv.get(
         #         'LAUNCH_CMD',
         #         get_jobenv().get('LAUNCH_CMD', '')
@@ -483,7 +495,9 @@ def loadjobenv_from_yaml(
     jobdir = Path(get_jobdir_from_jobslog(idx) if jobdir is None else jobdir)
     assert jobdir.is_dir()
     if len((jobenv_files_yaml := list(jobdir.rglob("*.yaml")))) == 0:
-        raise FileNotFoundError(f"Unable to find `.yaml` file(s) in `{jobdir=}`")
+        raise FileNotFoundError(
+            f"Unable to find `.yaml` file(s) in `{jobdir=}`"
+        )
     jobenv_file = jobenv_files_yaml[0]
     with jobenv_file.open("r") as stream:
         jobenv = dict(yaml.safe_load(stream))
