@@ -55,7 +55,7 @@ nav = [
         { "📘 References" = [
             { "🗓️ PBS" = "notes/pbs.md" },
             { "📄 Report" = "cli/test-report.md" },
-        ]},
+        ] },
     ] },
 
     { "📝 Examples" = [
@@ -65,6 +65,7 @@ nav = [
         { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
         { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
         { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+        # { "🤗 HuggingFace Trainer" = [
         { "<code>ezpz.examples.hf_trainer</code>" = [
             "examples/hf-trainer/index.md",
             { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
@@ -74,6 +75,7 @@ nav = [
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
         ] },
     ] },
+
 
     { "🐍 Python API" = [
         "python/index.md",
@@ -95,6 +97,77 @@ nav = [
             { "<code>ezpz.test</code>" = "python/Code-Reference/test.md" },
             { "<code>ezpz.test dist</code>" = "python/Code-Reference/test_dist.md" },
             { "<code>ezpz.tplot</code>" = "python/Code-Reference/tplot.md" },
+
+            { "<code>ezpz.cli</code>" = [
+                "python/Code-Reference/cli/index.md",
+                { "<code>ezpz.cli.flags</code>" = "python/Code-Reference/cli/flags.md" },
+                { "<code>ezpz.cli.launch_cmd</code>" = "python/Code-Reference/cli/launch_cmd.md" },
+                { "<code>ezpz.cli.test_cmd</code>" = "python/Code-Reference/cli/test_cmd.md" },
+            ] },
+
+            { "<code>ezpz.data</code>" = [
+                "python/Code-Reference/data/index.md",
+                { "<code>ezpz.data.distributed</code>" = "python/Code-Reference/data/distributed.md" },
+                { "<code>ezpz.data.hf</code>" = "python/Code-Reference/data/hf.md" },
+                { "<code>ezpz.data.llama</code>" = "python/Code-Reference/data/llama.md" },
+                { "<code>ezpz.data.text</code>" = "python/Code-Reference/data/text.md" },
+                { "<code>ezpz.data.vision</code>" = "python/Code-Reference/data/vision.md" },
+                { "<code>ezpz.data.utils</code>" = "python/Code-Reference/data/utils.md" },
+            ] },
+
+            { "<code>ezpz.examples</code>" = [
+                "python/Code-Reference/examples/index.md",
+                # { "<code>ezpz.examples.cifar.train_ds</code>" = "python/Code-Reference/examples/cifar/train_ds.md" },
+                { "<code>ezpz.examples.diffusion</code>" = "python/Code-Reference/examples/diffusion.md" },
+                { "<code>ezpz.examples.fsdp</code>" = "python/Code-Reference/examples/fsdp.md" },
+                { "<code>ezpz.examples.fsdp_tp</code>" = "python/Code-Reference/examples/fsdp_tp.md" },
+                { "<code>ezpz.examples.generate</code>" = "python/Code-Reference/examples/generate.md" },
+                { "<code>ezpz.examples.generate_tui</code>" = "python/Code-Reference/examples/generate_tui.md" },
+                { "<code>ezpz.examples.hf</code>" = "python/Code-Reference/examples/hf.md" },
+                { "<code>ezpz.examples.hf_trainer</code>" = "python/Code-Reference/examples/hf_trainer.md" },
+                # { "<code>ezpz.examples.hf_trainer_alt</code>" = "python/Code-Reference/examples/hf_trainer_alt.md" },
+                { "<code>ezpz.examples.minimal</code>" = "python/Code-Reference/examples/minimal.md" },
+                { "<code>ezpz.examples.vit</code>" = "python/Code-Reference/examples/vit.md" },
+                # { "<code>ezpz.examples.vit_timm</code>" = "python/Code-Reference/examples/vit_timm.md" },
+                # { "<code>ezpz.examples.deepspeed tp</code>" = [
+                #   { "<code>train</code>"              = "python/Code-Reference/examples/deepspeed/tp/train.md" },
+                #   { "<code>train_batch_length</code>" = "python/Code-Reference/examples/deepspeed/tp/train_batch_length.md" },
+                #   { "<code>utils</code>"              = "python/Code-Reference/examples/deepspeed/tp/utils.md" },
+                # ] },
+            ] },
+
+            { "<code>ezpz.log</code>" = [
+                "python/Code-Reference/log/index.md",
+                { "<code>ezpz.log.config</code>" = "python/Code-Reference/log/config.md" },
+                { "<code>ezpz.log.console</code>" = "python/Code-Reference/log/console.md" },
+                { "<code>ezpz.log.__main__</code>" = "python/Code-Reference/log/__main__.md" },
+                { "<code>ezpz.log.dataframe</code>" = "python/Code-Reference/log/dataframe.md" },
+                { "<code>ezpz.log.handler</code>" = "python/Code-Reference/log/handler.md" },
+                { "<code>ezpz.log.style</code>" = "python/Code-Reference/log/style.md" },
+                { "<code>ezpz.log.test</code>" = "python/Code-Reference/log/test.md" },
+            ] },
+
+            { "<code>ezpz.models</code>" = [
+                "python/Code-Reference/models/index.md",
+                { "<code>ezpz.models.attention</code>" = "python/Code-Reference/models/attention.md" },
+                { "<code>ezpz.models.llama</code>" = "python/Code-Reference/models/llama.md" },
+                { "<code>ezpz.models.minimal</code>" = "python/Code-Reference/models/minimal.md" },
+                { "<code>ezpz.models.llama3.model</code>" = "python/Code-Reference/models/llama3/model.md" },
+                { "<code>ezpz.models.vit.attention</code>" = "python/Code-Reference/models/vit/attention.md" },
+            ] },
+
+            { "<code>ezpz.tp</code>" = [
+                "python/Code-Reference/tp/index.md",
+                { "<code>ezpz.tp.layers</code>" = "python/Code-Reference/tp/layers.md" },
+                { "<code>ezpz.tp.mappings</code>" = "python/Code-Reference/tp/mappings.md" },
+                { "<code>ezpz.tp.utils</code>" = "python/Code-Reference/tp/utils.md" },
+            ] },
+
+            { "<code>ezpz.utils</code>" = [
+                "python/Code-Reference/utils.md",
+                { "<code>ezpz.utils.tar_env</code>" = "python/Code-Reference/utils/tar_env.md" },
+                { "<code>ezpz.utils.yeet_env</code>" = "python/Code-Reference/utils/yeet_env.md" },
+            ] },
         ] },
     ] },
 
@@ -111,71 +184,104 @@ nav = [
     ] },
 ]
 
-    # { "🚀 Launch" = [
-    #     "cli/launch/index.md",
-    #     { "📝 Examples" = [
-    #         "examples/index.md",
-    #         { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
-    #         { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
-    #         { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
-    #         { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
-    #         { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
-    #         { "<code>ezpz.examples.hf_trainer</code>" = [
-    #             "examples/hf-trainer/index.md",
-    #             { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
-    #         ] },
-    #     ] },
-    #     { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
-    #     { "✅ <code>ezpz test</code>" = "cli/test.md" },
-    #     { "🗓️ PBS" = "notes/pbs.md" },
-    # ] },
-        # { "🚀 <code>ezpz launch</code>" = [
-        #     "cli/launch/index.md",
-        #     # { "📝 Examples" = [
-        #     #     "examples/index.md",
-        #     #     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
-        #     #     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
-        #     #     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
-        #     #     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
-        #     #     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
-        #     #     { "<code>ezpz.examples.hf_trainer</code>" = [
-        #     #         "examples/hf-trainer/index.md",
-        #     #         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
-        #     #     ] },
-        #     #     { "🧪 Experimental" = [
-        #     #         { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
-        #     #         { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
-        #     #     ] },
-        #     # ] },
-        #     { "💯 <code>ezpz test</code>" = "cli/test.md" },
-        #     { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
-        #     { "🗓️ PBS" = "notes/pbs.md" },
-        #
-        #     # { "📝 Examples" = [
-        #     #     "examples/index.md",
-        #     #     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
-        #     #     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
-        #     #     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
-        #     #     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
-        #     #     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
-        #     #     { "<code>ezpz.examples.hf_trainer</code>" = [
-        #     #         "examples/hf-trainer/index.md",
-        #     #         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
-        #     #     ]},
-        #     # ]},
-        # ] },
-        # { "📝 Examples" = [
-        #     "examples/index.md",
-        #     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
-        #     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
-        #     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
-        #     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
-        #     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
-        #     { "<code>ezpz.examples.hf_trainer</code>" = [
-        #         "examples/hf-trainer/index.md",
-        #         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" }
-        #     ]}
-        # ]},
+# { "🐍 Python API" = [
+#     "python/index.md",
+#     { "<code>ezpz</code>" = [
+#         "python/Code-Reference/index.md",
+#         { "<code>ezpz.configs</code>" = "python/Code-Reference/configs.md" },
+#         { "<code>ezpz.dist</code>" = "python/Code-Reference/dist.md" },
+#         { "<code>ezpz.doctor</code>" = "python/Code-Reference/doctor.md" },
+#         { "<code>ezpz.history</code>" = "python/Code-Reference/history.md" },
+#         { "<code>ezpz.integrations</code>" = "python/Code-Reference/integrations.md" },
+#         { "<code>ezpz.jobs</code>" = "python/Code-Reference/jobs.md" },
+#         { "<code>ezpz.launch</code>" = "python/Code-Reference/launch.md" },
+#         { "<code>ezpz.log</code>" = [
+#             "python/Code-Reference/log/index.md",
+#             { "<code>ezpz.log.config</code>" = "python/Code-Reference/log/config.md" },
+#             { "<code>ezpz.log.console</code>" = "python/Code-Reference/log/console.md" },
+#             { "<code>ezpz.log.dataframe</code>" = "python/Code-Reference/log/dataframe.md" },
+#             { "<code>ezpz.log.handler</code>" = "python/Code-Reference/log/handler.md" },
+#             { "<code>ezpz.log.style</code>" = "python/Code-Reference/log/style.md" },
+#             { "<code>ezpz.log.index</code>" = "python/Code-Reference/log/index.md" },
+#             { "<code>ezpz.log.test</code>" = "python/Code-Reference/log/test.md" },
+#         ]},
+#         { "<code>ezpz.lazy</code>" = "python/Code-Reference/lazy.md" },
+#         { "<code>ezpz.model</code>" = "python/Code-Reference/model.md" },
+#         { "<code>ezpz.pbs</code>" = "python/Code-Reference/pbs.md" },
+#         { "<code>ezpz.plot</code>" = "python/Code-Reference/plot.md" },
+#         { "<code>ezpz.profile</code>" = "python/Code-Reference/profile.md" },
+#         { "<code>ezpz.slurm</code>" = "python/Code-Reference/slurm.md" },
+#         { "<code>ezpz.test</code>" = "python/Code-Reference/test.md" },
+#         { "<code>ezpz.test dist</code>" = "python/Code-Reference/test_dist.md" },
+#         { "<code>ezpz.tplot</code>" = "python/Code-Reference/tplot.md" },
+#     ] },
+# ] },
+
+# { "🚀 Launch" = [
+#     "cli/launch/index.md",
+#     { "📝 Examples" = [
+#         "examples/index.md",
+#         { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
+#         { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
+#         { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
+#         { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
+#         { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+#         { "<code>ezpz.examples.hf_trainer</code>" = [
+#             "examples/hf-trainer/index.md",
+#             { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
+#         ] },
+#     ] },
+#     { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
+#     { "✅ <code>ezpz test</code>" = "cli/test.md" },
+#     { "🗓️ PBS" = "notes/pbs.md" },
+# ] },
+# { "🚀 <code>ezpz launch</code>" = [
+#     "cli/launch/index.md",
+#     # { "📝 Examples" = [
+#     #     "examples/index.md",
+#     #     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
+#     #     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
+#     #     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
+#     #     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
+#     #     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+#     #     { "<code>ezpz.examples.hf_trainer</code>" = [
+#     #         "examples/hf-trainer/index.md",
+#     #         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
+#     #     ] },
+#     #     { "🧪 Experimental" = [
+#     #         { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
+#     #         { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
+#     #     ] },
+#     # ] },
+#     { "💯 <code>ezpz test</code>" = "cli/test.md" },
+#     { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
+#     { "🗓️ PBS" = "notes/pbs.md" },
+#
+#     # { "📝 Examples" = [
+#     #     "examples/index.md",
+#     #     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
+#     #     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
+#     #     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
+#     #     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
+#     #     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+#     #     { "<code>ezpz.examples.hf_trainer</code>" = [
+#     #         "examples/hf-trainer/index.md",
+#     #         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
+#     #     ]},
+#     # ]},
+# ] },
+# { "📝 Examples" = [
+#     "examples/index.md",
+#     { "<code>ezpz.test_dist</code>" = "examples/test-dist.md" },
+#     { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
+#     { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
+#     { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
+#     { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+#     { "<code>ezpz.examples.hf_trainer</code>" = [
+#         "examples/hf-trainer/index.md",
+#         { "HF Trainer Comparison" = "examples/hf-trainer/comparison.md" }
+#     ]}
+# ]},
 
 
 # Zensical supports both implicit navigation and explicitly defined navigation.
@@ -200,11 +306,11 @@ nav = [
 #extra_css = ["stylesheets/extra.css"]
 #
 extra_css = [
-    "https://drafts.csswg.org/css-color-4/#lab-colors",
-    "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",
-    "https://drafts.csswg.org/css-color-4/#resolving-oklab-oklch-values",
-    "https://drafts.csswg.org/css-color-4/#serializing-lab-lch",
-    "https://drafts.csswg.org/css-color-4/#serializing-oklab-oklch",
+    # "https://drafts.csswg.org/css-color-4/#lab-colors",
+    # "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",
+    # "https://drafts.csswg.org/css-color-4/#resolving-oklab-oklch-values",
+    # "https://drafts.csswg.org/css-color-4/#serializing-lab-lch",
+    # "https://drafts.csswg.org/css-color-4/#serializing-oklab-oklch",
     "https://unpkg.com/katex@0/dist/katex.min.css",
     "stylesheets/oklch.min.css",
     "stylesheets/one-light.css",
@@ -237,6 +343,7 @@ extra_javascript = [
 # Section for configuring theme options
 # ----------------------------------------------------------------------------
 [project.theme]
+
 
 # change this to "classic" to use the traditional Material for MkDocs look.
 #variant = "classic"
@@ -329,7 +436,7 @@ features = [
     # With this feature enabled, Zensical will automatically hide parts
     # of the header when the user scrolls past a certain point.
     # https://zensical.org/docs/setup/header/#automatic-hiding
-    # "header.autohide",
+    "header.autohide",
 
     # Turn on this feature to expand all collapsible sections in the
     # navigation sidebar by default.
@@ -385,7 +492,7 @@ features = [
     # When sticky tabs are enabled, navigation tabs will lock below the header
     # and always remain visible when scrolling down.
     # https://zensical.org/docs/setup/navigation/#sticky-navigation-tabs
-    "navigation.tabs.sticky",
+    # "navigation.tabs.sticky",
 
     # A back-to-top button can be shown when the user, after scrolling down,
     # starts to scroll up again.
@@ -423,15 +530,29 @@ features = [
 # Read more:
 # - https://zensical.org/docs/setup/colors/
 # ----------------------------------------------------------------------------
+# Palette toggle for automatic mode
 [[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+# Palette toggle for light mode
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
 scheme = "default"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
 
+# Palette toggle for dark mode
 [[project.theme.palette]]
+# [data-md-color-primary="indigo"]
+primary = "lime"
+accent = "lime"
+media = "(prefers-color-scheme: dark)"
 scheme = "slate"
 toggle.icon = "lucide/moon"
-toggle.name = "Switch to light mode"
+toggle.name = "Switch to system preference"
+
 
 # ----------------------------------------------------------------------------
 # In the "font" subsection you can configure the fonts used. By default, fonts
@@ -462,6 +583,35 @@ code = "Iosevka Fixed Web"
 [project.theme.icon]
 logo = "custom/lemon"
 repo = "custom/github"
+
+# [project.theme.icon.admonition]
+# note = "fontawesome/solid/note-sticky"
+# abstract = "fontawesome/solid/book"
+# info = "fontawesome/solid/circle-info"
+# tip = "fontawesome/solid/bullhorn"
+# success = "fontawesome/solid/check"
+# question = "fontawesome/solid/circle-question"
+# warning = "fontawesome/solid/triangle-exclamation"
+# failure = "fontawesome/solid/bomb"
+# danger = "fontawesome/solid/skull"
+# bug = "fontawesome/solid/robot"
+# example = "fontawesome/solid/flask"
+# quote = "fontawesome/solid/quote-left"
+
+# [project.theme.icon.admonition]
+# note = "octicons/tag-16"
+# abstract = "octicons/checklist-16"
+# info = "octicons/info-16"
+# # tip = "octicons/squirrel-16"
+# tip = "octicons/light-bulb"
+# success = "octicons/check-16"
+# question = "octicons/question-16"
+# warning = "octicons/alert-16"
+# failure = "octicons/fire"
+# danger = "octicons/zap-16"
+# bug = "octicons/bug-16"
+# example = "octicons/beaker-16"
+# quote = "octicons/quote-16"
 
 # ----------------------------------------------------------------------------
 # The "extra" section contains miscellaneous settings.
@@ -494,9 +644,12 @@ custom_fences = [
 [project.markdown_extensions.pymdownx.blocks.caption]
 [project.markdown_extensions.pymdownx.highlight]
 anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+[project.markdown_extensions.pymdownx.snippets]
 
 [project.markdown_extensions.pymdownx.emoji]
-emoji_index = "zensical.extensions.emoji.twemoji" # (1)!
+emoji_index = "zensical.extensions.emoji.twemoji"    # (1)!
 emoji_generator = "zensical.extensions.emoji.to_svg"
 
 [project.markdown_extensions.abbr]
