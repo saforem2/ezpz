@@ -58,39 +58,39 @@
 }
 
 /* ---------- LIGHT (Material "default") base palette ---------- */
+/* --md-code-bg-color--lighter: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.05 */
+/* ); */
+/* --md-default-fg-color--lightest: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5 */
+/* ); */
+/* --md-code-fg-color: oklch(from #444444 l c h); */
+/* --md-code-bg-color: oklch(from #fcfcfcl c h); */
+/* --md-default-fg-color--lightest: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.9 */
+/* ); */
+/* --md-code-bg-color--light: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.1 */
+/* ); */
+/* --md-code-bg-color--lighter: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.75 */
+/* ); */
+/* oklch(from var(--md-code-fg-color) calc(l * 0.85) c h /1.05) */
+/* --md-code-bg-color: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
+/* ); */
+/* #36436e */
+/* --md-code-bg-color: oklch(from hsl(0, 0%, 66%) calc(l * 1.15) c h / 0.1); */
+/* --md-code-bg-color: oklch( */
+/*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
+/* ); */
+/* --md-code-bg-color: #f8f8f8; */
+/* --md-primary-fg-color: #f8f8f8; */
 [data-md-color-scheme="default"] {
   --md-code-bg-color: oklch(from #f5f5f5 l c h);
-  /* --md-code-bg-color--lighter: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.05 */
-  /* ); */
   --md-code-bg-color--light: --md-default-fg-color--lightest: oklch(
       from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5
     );
-  /* --md-default-fg-color--lightest: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5 */
-  /* ); */
-  /* --md-code-fg-color: oklch(from #444444 l c h); */
-  /* --md-code-bg-color: oklch(from #fcfcfcl c h); */
-  /* --md-default-fg-color--lightest: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.9 */
-  /* ); */
-  /* --md-code-bg-color--light: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.1 */
-  /* ); */
-  /* --md-code-bg-color--lighter: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.75 */
-  /* ); */
-  /* oklch(from var(--md-code-fg-color) calc(l * 0.85) c h /1.05) */
-  /* --md-code-bg-color: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
-  /* ); */
-  /* #36436e */
-  /* --md-code-bg-color: oklch(from hsl(0, 0%, 66%) calc(l * 1.15) c h / 0.1); */
-  /* --md-code-bg-color: oklch( */
-  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
-  /* ); */
-  /* --md-code-bg-color: #f8f8f8; */
-  /* --md-primary-fg-color: #f8f8f8; */
   --md-typeset-a-color: rgba(19, 122, 245, 1);
   --md-accent-fg-color: oklch(from rgb(19, 122, 245) l c h);
   --md-accent-bg-color: oklch(from rgb(19, 122, 245) calc(l * 1.15) c h / 0.1);
@@ -158,6 +158,10 @@
 
   .md-header {
     color: #1c1c1c;
+  }
+
+  .md-code__button {
+    color: var(--md-default-fg-color--lighter);
   }
 }
 
