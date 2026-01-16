@@ -699,7 +699,7 @@ def main() -> Trainer:
         "main/train": (t_train - t_setup),
         "main/total": (t1 - t0),
     }
-    if wandb is not None and (wbrun := getattr("wandb", "run", None)) is not None:
+    if wandb is not None and (wbrun := getattr(wandb, "run", None)) is not None:
         try:
             wandb.log(data=timings)
         except Exception:
