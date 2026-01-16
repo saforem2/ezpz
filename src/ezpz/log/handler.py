@@ -50,7 +50,7 @@ def get_styles(colorized: bool = True) -> dict:
 class RichHandler(OriginalRichHandler):
     """Enriched handler that does not wrap."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, rank: Optional[int | str | None] = None, *args: Any, **kwargs: Any) -> None:
         if "console" not in kwargs:
             console = get_console(
                 redirect=False,
@@ -69,6 +69,9 @@ class RichHandler(OriginalRichHandler):
             show_time=kwargs.get("show_time", True),
             show_level=kwargs.get("show_level", True),
             show_path=kwargs.get("show_path", True),
+            link_path=kwargs.get("enable_link_path", False),
+            rank=rank,
+
         )  # type: ignore
 
     def render(
@@ -145,12 +148,14 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         show_path: bool = True,
         time_format: str = "%Y-%m-%d %H:%M:%S.%f",
         link_path: Optional[bool] = False,
+        rank: Optional[int | str] = None,
     ) -> None:
         self.show_time = show_time
         self.show_level = show_level
         self.show_path = show_path
         self.time_format = time_format
         self.link_path = link_path
+        self.rank = rank
         self._last_time: Optional[str] = None
         self.colorized = use_colored_logs()
         self.styles = get_styles()
@@ -168,6 +173,11 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         funcName: Optional[str] = None,
     ) -> Text:
         result = Text()
+        if self.rank is not None:
+            result += Text("[", style=self.styles.get("log.brace", ""))
+            result += Text(f"{self.rank}", style="log.rank")
+            result += Text("]", style=self.styles.get("log.brace", ""))
+
         if self.show_time:
             log_time = datetime.now() if log_time is None else log_time
             log_time_display = log_time.strftime(
