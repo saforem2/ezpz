@@ -40,7 +40,9 @@ DS_CONFIG_YAML = CONF_DIR.joinpath("ds_config.yaml")
 DS_CONFIG_JSON = CONF_DIR.joinpath("ds_config.json")
 # LOGS_DIR = PROJECT_DIR.joinpath("logs")
 WORKING_DIR = Path(
-    os.environ.get("PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd()))
+    os.environ.get(
+        "PBS_O_WORKDIR", os.environ.get("SLURM_SUBMIT_DIR", os.getcwd())
+    )
 )
 LOGS_DIR = WORKING_DIR.joinpath("logs")
 OUTPUTS_DIR = WORKING_DIR.joinpath("outputs")
@@ -107,6 +109,7 @@ def cmd_exists(cmd: str) -> bool:
 def get_scheduler(_scheduler: Optional[str] = None) -> str:
     """Infer the active scheduler from environment variables or hostname."""
     from ezpz import get_hostname, get_machine
+
     if _scheduler is not None:
         log.info(f"Using user-specified scheduler: {_scheduler}")
         return _scheduler.upper()
@@ -134,9 +137,7 @@ def get_scheduler(_scheduler: Optional[str] = None) -> str:
 
 
 def load_ds_config(
-    fpath: Optional[
-        Union[str, os.PathLike, Path]
-    ] = None,  # type:ignore[reportDeprecated]
+    fpath: Optional[Union[str, os.PathLike, Path]] = None,  # type:ignore[reportDeprecated]
 ) -> dict[str, Any]:
     """Load a DeepSpeed configuration file (JSON or YAML)."""
     fpath = Path(DS_CONFIG_PATH) if fpath is None else f"{fpath}"
@@ -162,17 +163,6 @@ def get_logging_config() -> dict:
         config = yaml.load(stream, Loader=yaml.FullLoader)
     config.setdefault("loggers", {})
     return config
-
-
-# def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
-#     import logging
-#     import logging.config
-#
-#     logging.config.dictConfig(get_logging_config())
-#     log = logging.getLogger(name)
-#     if level is not None:
-#         log.setLevel("INFO")
-#     return log
 
 
 def print_json(
@@ -375,6 +365,7 @@ class BaseConfig(ABC):
 @rich.repr.auto
 class TrainConfig(BaseConfig):
     """High-level training options shared by ezpz scripts."""
+
     gas: int = 1
     # ---- [NOTE]+ Framework + Backend ----------------
     # `framework`: `{'backend'}`
@@ -392,7 +383,9 @@ class TrainConfig(BaseConfig):
     ds_config_path: Optional[str] = None
     wandb_project_name: Optional[str] = None
     ngpus: Optional[int] = None
-    extras: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+    extras: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         """Populate known fields while capturing any extras in ``self.extras``."""
@@ -460,6 +453,7 @@ class TrainConfig(BaseConfig):
 @dataclass
 class ZeroConfig:
     """Subset of DeepSpeed ZeRO options exposed via the ezpz CLI."""
+
     stage: int = 0
     allgather_partitions: Optional[bool] = None
     allgather_bucket_size: int = int(5e8)
@@ -614,7 +608,9 @@ class HfDataTrainingArguments:
     )
     dataset_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+        metadata={
+            "help": "The name of the dataset to use (via the datasets library)."
+        },
     )
     dataset_config_name: Optional[str] = field(
         default=None,
@@ -686,7 +682,9 @@ class HfDataTrainingArguments:
             )
         },
     )
-    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    streaming: bool = field(
+        default=False, metadata={"help": "Enable streaming mode"}
+    )
     block_size: Optional[int] = field(
         default=None,
         metadata={
@@ -709,16 +707,21 @@ class HfDataTrainingArguments:
     )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
-        metadata={"help": "The number of processes to use for the preprocessing."},
+        metadata={
+            "help": "The number of processes to use for the preprocessing."
+        },
     )
     keep_linebreaks: bool = field(
         default=True,
-        metadata={"help": "Whether to keep line breaks when using TXT files or not."},
+        metadata={
+            "help": "Whether to keep line breaks when using TXT files or not."
+        },
     )
 
     def __post_init__(self):
         """Validate dataset arguments and ensure required files are present."""
         from transformers.utils.versions import require_version
+
         if self.streaming:
             require_version(
                 "datasets>=2.0.0",
@@ -799,7 +802,9 @@ def print_config_tree(
         branch = tree.add(field, highlight=highlight)  # , guide_style=style)
         config_group = cfg[field]
         if isinstance(config_group, DictConfig):
-            branch_content = str(OmegaConf.to_yaml(config_group, resolve=resolve))
+            branch_content = str(
+                OmegaConf.to_yaml(config_group, resolve=resolve)
+            )
             branch.add(Text(branch_content, style="red"))
         else:
             branch_content = str(config_group)
