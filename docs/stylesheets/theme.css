@@ -59,15 +59,41 @@
 
 /* ---------- LIGHT (Material "default") base palette ---------- */
 [data-md-color-scheme="default"] {
-  --md-code-bg-color: oklch(from #fcfcfcl c h);
+  --md-code-bg-color: oklch(from #f5f5f5 l c h);
+  /* --md-code-bg-color--lighter: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.05 */
+  /* ); */
+  --md-code-bg-color--light: --md-default-fg-color--lightest: oklch(
+      from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5
+    );
+  /* --md-default-fg-color--lightest: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5 */
+  /* ); */
+  /* --md-code-fg-color: oklch(from #444444 l c h); */
+  /* --md-code-bg-color: oklch(from #fcfcfcl c h); */
+  /* --md-default-fg-color--lightest: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.9 */
+  /* ); */
+  /* --md-code-bg-color--light: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.1 */
+  /* ); */
+  /* --md-code-bg-color--lighter: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.75 */
+  /* ); */
+  /* oklch(from var(--md-code-fg-color) calc(l * 0.85) c h /1.05) */
+  /* --md-code-bg-color: oklch( */
+  /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
+  /* ); */
   /* #36436e */
   /* --md-code-bg-color: oklch(from hsl(0, 0%, 66%) calc(l * 1.15) c h / 0.1); */
   /* --md-code-bg-color: oklch( */
   /*   from var(--md-code-fg-color) calc(l * 1.15) c h / 0.075 */
   /* ); */
   /* --md-code-bg-color: #f8f8f8; */
-  --md-primary-fg-color: #f8f8f8;
+  /* --md-primary-fg-color: #f8f8f8; */
   --md-typeset-a-color: rgba(19, 122, 245, 1);
+  --md-accent-fg-color: oklch(from rgb(19, 122, 245) l c h);
+  --md-accent-bg-color: oklch(from rgb(19, 122, 245) calc(l * 1.15) c h / 0.1);
 
   /* greys */
   --dark-grey-fg-light-bg: #444444;
@@ -103,13 +129,32 @@
   --white: oklch(from #7d8697 l c h);
   --bright-white: oklch(from #aaaaaa l c h);
 
-  /* .md-typeset a:hover { */
-  /*   color: #ff1a8f; */
-  /*   transition: color 0.2s ease-in-out; */
-  /*   text-decoration: underline; */
-  /*   text-underline-offset: 2px; */
-  /*   text-decoration-thickness: 2px; */
-  /* } */
+  --dark-grey-fg: oklch(from var(--dark-grey-fg-light-bg) l c h);
+  --dark-grey-bg: oklch(
+    from var(--dark-grey-fg-light-bg) calc(l * 1.15) c h / 0.1
+  );
+  --grey-fg: oklch(from var(--grey-fg-light-bg) l c h);
+  --grey-bg: oklch(from var(--grey-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --light-grey-fg: oklch(from var(--light-grey-fg-light-bg) l c h);
+  --light-grey-bg: oklch(
+    from var(--light-grey-fg-light-bg) calc(l * 1.15) c h / 0.1
+  );
+  --red-fg: oklch(from var(--red-fg-light-bg) l c h);
+  --red-bg: oklch(from var(--red-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --orange-fg: oklch(from var(--orange-fg-light-bg) l c h);
+  --orange-bg: oklch(from var(--orange-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --yellow-fg: oklch(from var(--yellow-fg-light-bg) l c h);
+  --yellow-bg: oklch(from var(--yellow-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --green-fg: oklch(from var(--green-fg-light-bg) l c h);
+  --green-bg: oklch(from var(--green-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --blue-fg: oklch(from var(--blue-fg-light-bg) l c h);
+  --blue-bg: oklch(from var(--blue-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --purple-fg: oklch(from var(--purple-fg-light-bg) l c h);
+  --purple-bg: oklch(from var(--purple-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --pink-fg: oklch(from var(--pink-fg-light-bg) l c h);
+  --pink-bg: oklch(from var(--pink-fg-light-bg) calc(l * 1.15) c h / 0.1);
+  --cyan-fg: oklch(from var(--cyan-fg-light-bg) l c h);
+  --cyan-bg: oklch(from var(--cyan-fg-light-bg) calc(l * 1.15) c h / 0.1);
 
   .md-header {
     color: #1c1c1c;
@@ -118,31 +163,28 @@
 
 /* ---------- DARK (Material "slate") base palette + dark text helpers ---------- */
 [data-md-color-scheme="slate"] {
+  --md-code-fg-color: #cccccc;
   --md-code-bg-color: oklch(
+    from var(--md-code-fg-color) calc(l * 0.85) c h / 0.05
+  );
+  --md-code-bg-color--lighter: oklch(
     from var(--md-code-fg-color) calc(l * 0.85) c h / 0.075
   );
   --md-code-bg-color--light: oklch(
-      from var(--md-code-fg-color) calc(l * 0.85) c h / 0.25
-    )
-    --md-header-fg-color: oklch(from #eeeeee l c h);
+    from var(--md-code-bg-color) calc(l * 0.85) c h / 0.3
+  );
+  --md-header-fg-color: oklch(from #eeeeee l c h);
   --md-typeset-a-color: oklch(from #82b1ff l c h);
   --md-header-bg-color: oklch(from #222222 l c h);
   --md-primary-fg-color: oklch(from #222222 l c h);
   --md-default-bg-color: oklch(from #1c1c1c l c h);
   --md-default-heading-color: oklch(from #f5f5f5 l c h);
-  /* --md-accent-fg-color: oklch(from #ff67ff l c h); */
-  /* --md-accent-bg-color: oklch( */
-  /*   from var(--md-accent-fg-color) calc(l * 0.85) c h/0.1 */
-  /* ); */
-
-  /* dark “text” aliases you listed */
   --yellow-text: oklch(from #ffff00 l c h);
   --pink-text: oklch(from #ff67ff l c h);
   --green-text: oklch(from #07b875 l c h);
   --orcid-green: oklch(from #a6ce39 l c h);
   --red-text: oklch(from #ff5252 l c h);
   --blue-text: oklch(from #29b6f6 l c h);
-
   --color-dark-grey: oklch(from #444444 l c h);
   --color-grey: oklch(from #888888 l c h);
   --color-light-grey: oklch(from #cccccc l c h);
@@ -154,13 +196,9 @@
   --color-purple: oklch(from #9a77cf l c h);
   --color-pink: oklch(from #e599f7 l c h);
   --color-cyan: oklch(from #56b6c2 l c h);
-
-  /* greys */
   --dark-grey-fg-light-bg: oklch(from #666666 l c h);
   --grey-fg-light-bg: oklch(from #aaaaaa l c h);
   --light-grey-fg-light-bg: oklch(from #cccccc l c h);
-
-  /* accents (dark) */
   --red-fg-light-bg: oklch(from #ff5252 l c h);
   --orange-fg-light-bg: oklch(from #fd971f l c h);
   --yellow-fg-light-bg: oklch(from #ffff00 l c h);
@@ -168,10 +206,7 @@
   --blue-fg-light-bg: oklch(from #29b6f6 l c h);
   --purple-fg-light-bg: oklch(from #ae81ff l c h);
   --pink-fg-light-bg: oklch(from #ff67ff l c h);
-  /* cyan: your sass referenced $ansi-cyan-fg; keep the common value you used elsewhere */
   --cyan-fg-light-bg: oklch(from #56b6c2 l c h);
-
-  /* ansi */
   --black: oklch(from #777777 l c h);
   --bright-black: oklch(from #888888 l c h);
   --red: oklch(from #fc1a70 l c h);
@@ -188,85 +223,30 @@
   --bright-cyan: oklch(from #38d9a9 l c h);
   --white: oklch(from #838383 l c h);
   --bright-white: oklch(from #999999 l c h);
-}
-
-/* ---------- derived tokens (scheme-aware; multiplier differs by scheme) ---------- */
-
-[data-md-color-scheme="default"] {
-  --dark-grey-fg: oklch(from var(--dark-grey-fg-light-bg) l c h);
-  --dark-grey-bg: oklch(
-    from var(--dark-grey-fg-light-bg) calc(l * 1.15) c h / 0.1
-  );
-
-  --grey-fg: oklch(from var(--grey-fg-light-bg) l c h);
-  --grey-bg: oklch(from var(--grey-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --light-grey-fg: oklch(from var(--light-grey-fg-light-bg) l c h);
-  --light-grey-bg: oklch(
-    from var(--light-grey-fg-light-bg) calc(l * 1.15) c h / 0.1
-  );
-
-  --red-fg: oklch(from var(--red-fg-light-bg) l c h);
-  --red-bg: oklch(from var(--red-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --orange-fg: oklch(from var(--orange-fg-light-bg) l c h);
-  --orange-bg: oklch(from var(--orange-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --yellow-fg: oklch(from var(--yellow-fg-light-bg) l c h);
-  --yellow-bg: oklch(from var(--yellow-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --green-fg: oklch(from var(--green-fg-light-bg) l c h);
-  --green-bg: oklch(from var(--green-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --blue-fg: oklch(from var(--blue-fg-light-bg) l c h);
-  --blue-bg: oklch(from var(--blue-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --purple-fg: oklch(from var(--purple-fg-light-bg) l c h);
-  --purple-bg: oklch(from var(--purple-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --pink-fg: oklch(from var(--pink-fg-light-bg) l c h);
-  --pink-bg: oklch(from var(--pink-fg-light-bg) calc(l * 1.15) c h / 0.1);
-
-  --cyan-fg: oklch(from var(--cyan-fg-light-bg) l c h);
-  --cyan-bg: oklch(from var(--cyan-fg-light-bg) calc(l * 1.15) c h / 0.1);
-}
-
-/* DARK derived (0.85) */
-[data-md-color-scheme="slate"] {
   --dark-grey-fg: oklch(from var(--dark-grey-fg-light-bg) l c h);
   --dark-grey-bg: oklch(
     from var(--dark-grey-fg-light-bg) calc(l * 0.85) c h / 0.1
   );
-
   --grey-fg: oklch(from var(--grey-fg-light-bg) l c h);
   --grey-bg: oklch(from var(--grey-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --light-grey-fg: oklch(from var(--light-grey-fg-light-bg) l c h);
   --light-grey-bg: oklch(
     from var(--light-grey-fg-light-bg) calc(l * 0.85) c h / 0.1
   );
-
   --red-fg: oklch(from var(--red-fg-light-bg) l c h);
   --red-bg: oklch(from var(--red-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --orange-fg: oklch(from var(--orange-fg-light-bg) l c h);
   --orange-bg: oklch(from var(--orange-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --yellow-fg: oklch(from var(--yellow-fg-light-bg) l c h);
   --yellow-bg: oklch(from var(--yellow-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --green-fg: oklch(from var(--green-fg-light-bg) l c h);
   --green-bg: oklch(from var(--green-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --blue-fg: oklch(from var(--blue-fg-light-bg) l c h);
   --blue-bg: oklch(from var(--blue-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --purple-fg: oklch(from var(--purple-fg-light-bg) l c h);
   --purple-bg: oklch(from var(--purple-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --pink-fg: oklch(from var(--pink-fg-light-bg) l c h);
   --pink-bg: oklch(from var(--pink-fg-light-bg) calc(l * 0.85) c h / 0.1);
-
   --cyan-fg: oklch(from var(--cyan-fg-light-bg) l c h);
   --cyan-bg: oklch(from var(--cyan-fg-light-bg) calc(l * 0.85) c h / 0.1);
 }
@@ -562,9 +542,9 @@
   display: block;
   width: 100%;
   overflow: auto;
-  padding: 0.5rem;
+  /* padding: 0.5rem; */
   border-radius: 0.4rem;
-  background: var(--md-code-bg-color);
+  /* background: var(--md-code-bg-color); */
   font-family: var(--md-code-font, monospace);
 }
 
@@ -589,6 +569,10 @@
 
 .md-nav__item .md-nav__link--active code {
   color: var(--md-accent-fg-color);
+}
+
+.md-content__button.md-icon {
+  translate: -0.4rem;
 }
 
 /**/

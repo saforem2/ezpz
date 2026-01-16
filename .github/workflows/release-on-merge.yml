@@ -112,7 +112,6 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
           export PREV_TAG
           python - <<'PY'
-          # ... your existing python changelog code ...
           import datetime
           import sys
           import os
@@ -265,4 +264,3 @@ jobs:
       #         fh.write(entry)
       #         fh.write("\nEOF\n")
       #     PY
-
