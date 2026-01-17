@@ -644,9 +644,12 @@ custom_fences = [
 [project.markdown_extensions.md_in_html]
 [project.markdown_extensions.pymdownx.blocks.caption]
 [project.markdown_extensions.pymdownx.highlight]
+linenums = true
 anchor_linenums = true
 line_spans = "__span"
 pygments_lang_class = true
+auto_title = true
+linenums_style = "pymdownx-inline"
 [project.markdown_extensions.pymdownx.snippets]
 
 [project.markdown_extensions.pymdownx.emoji]
@@ -656,7 +659,7 @@ emoji_generator = "zensical.extensions.emoji.to_svg"
 [project.markdown_extensions.abbr]
 [project.markdown_extensions.def_list]
 [project.markdown_extensions.toc]
-permalink = true
+permalink = "⚓︎"
 [project.markdown_extensions.pymdownx.arithmatex]
 generic = true
 [project.markdown_extensions.pymdownx.betterem]

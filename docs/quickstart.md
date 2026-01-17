@@ -43,7 +43,9 @@ These can be broken down, roughly into two distinct categories:
 
 ## 🌐 Write Hardware Agnostic Distributed PyTorch Code
 
-???+ tip inline end "Pick and Choose"
+???+ tip inline end "Use `ezpz` in Your Application"
+
+    🤝 Using `ezpz` in Your Application
 
     Each of these components are designed so that you can pick and choose only
     those tools that are useful for you.
@@ -56,6 +58,7 @@ These can be broken down, roughly into two distinct categories:
     device = ezpz.get_torch_device()
     ```
 
+The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
 
 - **Accelerator detection:** `ezpz.get_torch_device_type()` and
   `ezpz.setup_torch()` normalize CUDA/XPU/MPS/CPU selection.
@@ -69,12 +72,22 @@ These can be broken down, roughly into two distinct categories:
     ezpz launch <launch flags> -- <command to run> <command args>
     ```
 
-    ??? abstract "Examples"
+    ???+ abstract "Examples"
 
-        e.g.:
+        To pass arguments through to the launcher[^launcher]
 
         ```bash
         ezpz launch -- python3 -m ezpz.examples.fsdp
+
+        # pass --line-buffer through to mpiexec:
+        ezpz launch --line-buffer -- python3 -m ezpz.examples.vit --compile --fsdp
+
+        # Create and use a custom hostfile
+        head -n 2 "${PBS_NODEFILE}" > hostfile0-2
+        ezpz launch --hostfile hostfile0-2 -- python3 -m ezpz.examples.fsdp_tp
+
+        # use explicit np/ppn/nhosts
+        ezpz launch -np 4 -ppn 2 --nhosts 2 --hostfile hostfile0-2 -- python3 -m ezpz.examples.diffusion
         ```
 
         or, specify `-n 8` processes, forward a specific `PYTHONPATH`, and set
@@ -88,11 +101,6 @@ These can be broken down, roughly into two distinct categories:
             python3 -m ezpz.examples.fsdp
         ```
 <br>
-
-### 🤝 Using `ezpz` in Your Application
-
-The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
-
 
 - `ezpz.setup_torch()` replaces manual `torch.distributed` initialization:
 
