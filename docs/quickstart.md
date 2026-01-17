@@ -43,21 +43,6 @@ These can be broken down, roughly into two distinct categories:
 
 ## 🌐 Write Hardware Agnostic Distributed PyTorch Code
 
-???+ tip inline end "Use `ezpz` in Your Application"
-
-    🤝 Using `ezpz` in Your Application
-
-    Each of these components are designed so that you can pick and choose only
-    those tools that are useful for you.
-
-    For example, if you're only interested in the automatic device detection,
-    all you need is:
-
-    ```python
-    import ezpz
-    device = ezpz.get_torch_device()
-    ```
-
 The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
 
 - **Accelerator detection:** `ezpz.get_torch_device_type()` and
@@ -100,7 +85,68 @@ The real usefulness of `ezpz` comes from its usefulness in _other_ applications.
             -- \
             python3 -m ezpz.examples.fsdp
         ```
-<br>
+
+[^launcher]: This will be `srun` if a Slurm scheduler is detected, `mpirun` /
+    `mpiexec` otherwise.
+
+### 📝 Examples
+
+???+ tip "🤝 Use `ezpz` in Your Application"
+
+    Each of these components are designed so that you can pick and choose only
+    those tools that are useful for you.
+
+    For example, if you're only interested in:
+
+    - Automatic device detection:
+
+        ```python
+        import ezpz
+        device = ezpz.get_torch_device()
+        ```
+    - Metric / Experiment Tracking:
+
+        ```python
+        import ezpz
+
+        logger = ezpz.get_logger(__name__)
+        # ezpz WandB setup and automatic integration with History
+        run = ezpz.setup_wandb(project_name="ezpz-quickstart")
+        history = ezpz.History()
+        for i in range(10):
+            loss = forward_step(...)
+            logger.info(history.update({"step": i, "loss": loss}))
+        ```
+
+        ??? abstract "Output"
+
+            ```bash
+            (.venv)
+            #[01/17/26 @ 12:56:36][~/v/s/ezpz][dev][$!?]
+            ✦ ; cat << EOF > ~/python/quickstart.py
+            import ezpz
+            logger = ezpz.get_logger('quickstart')
+            history = ezpz.History()
+            for i in range(10):
+                logger.info(history.update({"step": i}))
+            EOF
+
+            python3 ~/python/quickstart.py
+            [2026-01-17 12:56:40,604302][I][ezpz/history:214:__init__] Not using distributed metrics! Will only be tracked from a single rank...
+            [2026-01-17 12:56:40,606251][I][ezpz/history:220:__init__] Using History with distributed_history=False
+            [2026-01-17 12:56:40,607138][I][python/quickstart:5:<module>] step=0
+            [2026-01-17 12:56:40,607740][I][python/quickstart:5:<module>] step=1
+            [2026-01-17 12:56:40,608065][I][python/quickstart:5:<module>] step=2
+            [2026-01-17 12:56:40,608377][I][python/quickstart:5:<module>] step=3
+            [2026-01-17 12:56:40,608652][I][python/quickstart:5:<module>] step=4
+            [2026-01-17 12:56:40,608926][I][python/quickstart:5:<module>] step=5
+            [2026-01-17 12:56:40,609311][I][python/quickstart:5:<module>] step=6
+            [2026-01-17 12:56:40,609709][I][python/quickstart:5:<module>] step=7
+            [2026-01-17 12:56:40,610036][I][python/quickstart:5:<module>] step=8
+            [2026-01-17 12:56:40,610323][I][python/quickstart:5:<module>] step=9
+            [2026-01-17-112101] Execution time: 3s sec
+            ```
+
 
 - `ezpz.setup_torch()` replaces manual `torch.distributed` initialization:
 
@@ -251,44 +297,11 @@ for step in range(num_steps):
 
 -->
 
-## 📈 Track metrics with `ezpz.History`
+## ✅ Complete Example
 
 Capture metrics across all ranks, persist JSONL, generate text/PNG plots, and
 (when configured) log to Weights & Biases—no extra code on worker ranks.
 
-```python
-import ezpz
-from ezpz import History
-
-# single process logging, automatically!
-logger = ezpz.get_logger(__name__)
-
-ezpz.setup_torch()
-history = History()
-
-for step in range(num_steps):
-    t0 = time.perf_counter()
-    loss, acc = train_step(...)
-    ezpz.synchronize()
-    dt = time.perf_counter() - t0
-
-    logger.info(
-            history.update(
-                {
-                    "train/step": step,
-                    "train/loss": loss,
-                    "train/acc": acc
-                }
-            )
-    )
-
-# Aggregated statistics (mean/min/max/std) are recorded across all MPI ranks,
-# and plots + JSONL logs land in outputs/ by default.
-if ezpz.get_rank() == 0:
-    history.finalize()
-```
-
-## ✅ Complete Example
 
 ```python title="example.py"
 import ezpz
