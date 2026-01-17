@@ -1038,11 +1038,13 @@ ezpz_setup_new_uv_venv() {
 		venv_dir="$2"
 	elif [[ "$#" -eq 1 ]]; then
 		py_version="$1"
-		venv_dir=$(ezpz_get_venv_dir)
+        venv_dir="${WORKING_DIR:-$(pwd)}/.venv/"
+		# venv_dir=$(ezpz_get_venv_dir)
 		# venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
 	else
 		py_version="${DEFAULT_PYTHON_VERSION:-3.12}"
-		venv_dir=$(ezpz_get_venv_dir)
+		# venv_dir=$(ezpz_get_venv_dir)
+        venv_dir="${WORKING_DIR:-$(pwd)}/.venv/"
 		# venv_dir="${WORKING_DIR:-$(pwd)}/venvs/${mn}/py${py_version}"
 	fi
 
@@ -1059,7 +1061,7 @@ ezpz_setup_new_uv_venv() {
 	log_message INFO "  - Creating (new) venv in ${CYAN}${venv_dir}${RESET}..."
 	mkdir -p "${venv_dir%/*}" 2>/dev/null || true
 	uv venv --python="python${py_version}" --system-site-packages "${venv_dir}" || return 1
-	ezpz_link_dotvenv "${venv_dir}"
+	# ezpz_link_dotvenv "${venv_dir}"
 	# shellcheck disable=SC1090
 	source "${fpactivate}"
 }
@@ -1130,7 +1132,7 @@ ezpz_setup_uv_venv() {
 	if [[ ! -f "${fpactivate}" ]]; then
 		log_message INFO "  - Creating venv in ${CYAN}${venv_dir}${RESET}..."
 		uv venv --python="$(which python3)" --system-site-packages "${venv_dir}"
-		ezpz_link_dotvenv "${venv_dir}"
+		# ezpz_link_dotvenv "${venv_dir}"
 	fi
 	# shellcheck disable=SC1090
 	[ -f "${fpactivate}" ] && log_message INFO "  - Activating: ${fpactivate}" && source "${fpactivate}"
@@ -1162,7 +1164,7 @@ ezpz_get_venv_dir() {
 		fi
 	fi
 	# env_name=$(echo "${env_name}" | sed -E 's/python([0-9\.]+)/py\1/')
-	echo "${wd}/venvs/$(ezpz_get_machine_name)/${env_name}"
+	# echo "${wd}/venvs/$(ezpz_get_machine_name)/${env_name}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1234,7 +1236,7 @@ ezpz_setup_venv_from_conda() {
 					# python3 -m venv "${VENV_DIR}" --system-site-packages
 				fi
 				uv venv --python="$(which python3)" --system-site-packages "${VENV_DIR}"
-				ezpz_link_dotvenv "${VENV_DIR}"
+				# ezpz_link_dotvenv "${VENV_DIR}"
 				# shellcheck disable=SC1090,SC1091
 				source "${VENV_DIR}/bin/activate" || {
 					log_message ERROR "  - Failed to source ${fpactivate} after creation."
@@ -1296,7 +1298,7 @@ ezpz_setup_venv_from_pythonuserbase() {
 			if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
 				log_message INFO "  - Creating venv (on top of ${GREEN}${PYTHON_NAME}${RESET}) in VENV_DIR..."
 				python3 -m venv "${VENV_DIR}" --system-site-packages
-				ezpz_link_dotvenv "${VENV_DIR}"
+				# ezpz_link_dotvenv "${VENV_DIR}"
 				# shellcheck disable=SC1090,SC1091
 				source "${VENV_DIR}/bin/activate" || {
 					log_message ERROR "  - Failed to source ${fpactivate} after creation."
