@@ -548,7 +548,7 @@ def train_fn(
         model=model,
         use_fsdp=args.fsdp,
         dtype=args.dtype,
-        device_id=int(ezpz.get_local_rank())
+        # device_id=int(ezpz.get_local_rank())
     )
     if world_size > 1:
         model = ezpz.dist.wrap_model(
