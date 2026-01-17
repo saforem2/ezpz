@@ -344,7 +344,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=16,
         help="Patch size",
     )
-    parser.add_argument("--dtype", default="bf16", help="Data type")
+    parser.add_argument("--dtype", type=str, default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
     parser.add_argument(
         "--num_workers",
@@ -548,6 +548,7 @@ def train_fn(
         model=model,
         use_fsdp=args.fsdp,
         dtype=args.dtype,
+        device_id=int(ezpz.get_local_rank())
     )
     if world_size > 1:
         model = ezpz.dist.wrap_model(
