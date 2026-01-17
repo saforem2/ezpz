@@ -15,30 +15,17 @@ import time
 from contextlib import ContextDecorator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union, Sequence
+from typing import Any, Iterable, Optional, Union
 
 import ezpz
 import ezpz.dist
 
 from ezpz.lazy import lazy_import
-#
-# ezpz = lazy_import("ezpz")
-# assert ezpz is not None
 
-# import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-# import torch.distributed
 import xarray as xr
-
-# from ezpz.dist import get_rank
-
-# import ezpz
-
-# import ezpz.plot as ezplot
-
-# import ezpz.dist
 
 from ezpz import get_rank
 from ezpz import plot as ezplot
@@ -47,7 +34,7 @@ from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.log import get_logger
 from ezpz.tplot import (
     DEFAULT_MARKER,
-    MAX_PLOT_HEIGHT,
+    # MAX_PLOT_HEIGHT,
     MAX_PLOT_WIDTH,
     plotext_hist_series,
     plotext_plot_series,
