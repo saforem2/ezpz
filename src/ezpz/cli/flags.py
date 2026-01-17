@@ -116,6 +116,12 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         help="Record shapes in the profiler",
     )
     parser.add_argument(
+        "--save-datasets",
+        action="store_true",
+        default=False,
+        help="Save datasets",
+    )
+    parser.add_argument(
         "--with-stack",
         default=True,
         action="store_true",
