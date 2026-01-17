@@ -648,7 +648,7 @@ linenums = true
 anchor_linenums = true
 line_spans = "__span"
 pygments_lang_class = true
-auto_title = true
+# auto_title = true
 linenums_style = "pymdownx-inline"
 [project.markdown_extensions.pymdownx.snippets]
 
