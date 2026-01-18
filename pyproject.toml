@@ -54,6 +54,10 @@ mpi = ["mpi4py"]
 # xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
 # xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchvision"]
+# torch-xpu = [
+#     "torch-xpu ; sys_platform == 'linux'",
+#     "torchvision-xpu ; sys_platform == 'linux'",
+# ]
 docs = [
     "zensical",
     "mkdocs",
@@ -72,6 +76,7 @@ dev = [
     "ipython",
     "isort",
     "jupyter",
+    "hypothesis",
     "pyinstrument",
     "ptipython",
     "pudb",
@@ -221,3 +226,4 @@ docstring-code-format = true
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
+
