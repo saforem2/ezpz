@@ -79,8 +79,6 @@ import time
 from typing import Any, Optional
 
 import torch
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
 
 import ezpz
 import ezpz.dist
@@ -92,6 +90,45 @@ from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
 logger = ezpz.get_logger(__name__)
+
+fp = Path(__file__)
+WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+WBRUN_NAME = f"{ezpz.get_timestamp()}"
+
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 4,
+        "num_heads": 2,
+        "head_dim": 16,
+        "depth": 2,
+    },
+    "small": {
+        "batch_size": 128,
+        "num_heads": 16,
+        "head_dim": 64,
+        "depth": 24,
+    },
+    "medium": {
+        "batch_size": 64,
+        "num_heads": 12,
+        "head_dim": 64,
+        "depth": 16,
+    },
+    "large": {
+        "batch_size": 32,
+        "num_heads": 16,
+        "head_dim": 64,
+        "depth": 32,
+    },
+}
+MODEL_ALIASES = {"med": "medium"}
+MODEL_PRESET_FLAGS = {
+    "batch_size": ["--batch_size", "--batch-size"],
+    "num_heads": ["--num_heads", "--num-heads"],
+    "head_dim": ["--head_dim", "--head-dim"],
+    "depth": ["--depth"],
+}
+
 
 try:
     import wandb
@@ -202,45 +239,6 @@ class SimpleVisionTransformer(torch.nn.Module):
         else:
             x = x.mean(dim=1)
         return self.head(x)
-
-
-fp = Path(__file__)
-WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
-
-MODEL_PRESETS = {
-    "debug": {
-        "batch_size": 4,
-        "num_heads": 2,
-        "head_dim": 16,
-        "depth": 2,
-    },
-    "small": {
-        "batch_size": 128,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 24,
-    },
-    "medium": {
-        "batch_size": 64,
-        "num_heads": 12,
-        "head_dim": 64,
-        "depth": 16,
-    },
-    "large": {
-        "batch_size": 32,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 32,
-    },
-}
-MODEL_ALIASES = {"med": "medium"}
-MODEL_PRESET_FLAGS = {
-    "batch_size": ["--batch_size", "--batch-size"],
-    "num_heads": ["--num_heads", "--num-heads"],
-    "head_dim": ["--head_dim", "--head-dim"],
-    "depth": ["--depth"],
-}
 
 
 def _arg_provided(argv: list[str], flags: list[str]) -> bool:
@@ -541,11 +539,14 @@ def train_fn(
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
     if wandb is not None and ezpz.verify_wandb():
-        try:
-            wandb.run.watch(model, log="all")
-        except Exception as e:
-            logger.exception(e)
-            logger.warning("Failed to watch model with wandb; continuing...")
+        if (run := getattr(wandb, "run")) is not None and run is wandb.run:
+            try:
+                wandb.run.watch(model, log="all")  # type:ignore
+            except Exception as e:
+                logger.exception(e)
+                logger.warning(
+                    "Failed to watch model with wandb; continuing..."
+                )
 
     model = ezpz.dist.wrap_model(
         model=model,
