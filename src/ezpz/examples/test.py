@@ -40,25 +40,32 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
 
-WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-if not WANDB_DISABLED and WANDB_MODE != "disabled":
-    try:
-        wandb = ezpz.lazy.lazy_import("wandb")
-        if not ezpz.dist.verify_wandb():
-            logger.warning("W&B API key not found, skipping wandb setup!")
-            logger.info(
-                "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-            )
-    except Exception as e:
-        wandb = None
-        WANDB_DISABLED = True
-        logger.exception(e)
-        logger.warning("W&B not available, skipping wandb setup!")
-        logger.info("Continue without W&B logging...")
-else:
+WANDB_DISABLED = False
+try:
+    import wandb
+except Exception:
     wandb = None
     WANDB_DISABLED = True
+
+# WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+# WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+# if not WANDB_DISABLED and WANDB_MODE != "disabled":
+#     try:
+#         wandb = ezpz.lazy.lazy_import("wandb")
+#         if not ezpz.dist.verify_wandb():
+#             logger.warning("W&B API key not found, skipping wandb setup!")
+#             logger.info(
+#                 "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
+#             )
+#     except Exception as e:
+#         wandb = None
+#         WANDB_DISABLED = True
+#         logger.exception(e)
+#         logger.warning("W&B not available, skipping wandb setup!")
+#         logger.info("Continue without W&B logging...")
+# else:
+#     wandb = None
+#     WANDB_DISABLED = True
 
 
 @dataclass
@@ -300,8 +307,8 @@ class Trainer:
         """Perform the backwards/optimiser step and return elapsed seconds."""
         t0 = time.perf_counter()
         if self.config.backend == "deepspeed":
-            self.model.backward(loss)  # type:ignore
-            self.model.step(loss)  # type:ignore
+            self.model.backward(loss)
+            self.model.step(loss)
         else:
             loss.backward()
             self.optimizer.step()
@@ -347,7 +354,7 @@ class Trainer:
             env_info=env_info,
         )
         logger.info(f"{dataset=}")
-        if wandb is not None and not WANDB_DISABLED:
+        if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
             try:
                 wandb.log(
                     {
@@ -500,37 +507,26 @@ def train(
     t0t = time.perf_counter()
     _ = trainer.train(profiler=profiler)
     t1t = time.perf_counter()
-    rank = ezpz.get_rank()
-    history: ezpz.history.History = trainer.history
-    dataset = history.finalize(
-        run_name="ezpz.test_dist",
-        dataset_fname="train",
-        warmup=config.warmup,
-        save=(rank == 0 and config.save_datasets),
-        plot=(rank == 0),
-        outdir=config.outdir,
-        env_info=trainer._gather_environment_snapshot(),
-    )
-    logger.info(f"{dataset=}")
-    if wandb is not None and ezpz.verify_wandb():
-        try:
-            wandb.log(
-                {
-                    "train_metrics": wandb.Table(
-                        dataframe=dataset.to_dataframe()
-                    )
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log final dataset to wandb")
-
-    # if ezpz.get_world_size() > 1:
-    #     ezpz.barrier()
-
-    # Record timings and return trainer
     logger.info(
         f"Took: {(dt_train_duration := t1t - t0t):.2f} seconds to finish training"
     )
+
+    rank = ezpz.get_rank()
+    history: ezpz.history.History = trainer.history
+
+    dataset = None
+    # Record timings and return trainer
+    if rank == 0:
+        dataset = history.finalize(
+            run_name="ezpz.examples.test",
+            dataset_fname="train",
+            warmup=config.warmup,
+            save=(rank == 0 and config.save_datasets),
+            plot=(rank == 0),
+            outdir=config.outdir,
+            env_info=trainer._gather_environment_snapshot(),
+        )
+        logger.info(f"{dataset=}")
     timings = {
         "timings/model": dt_model,
         "timings/optimizer": dt_optimizer,
@@ -538,10 +534,24 @@ def train(
         "timings/training_start": dt_train_start,
         "timings/train_duration": dt_train_duration,
     }
-    try:
-        wandb.log(timings)  # type:ignore
-    except Exception:
-        logger.warning("Unable to 'wandb.log(timings)', skipping!")
+    if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
+        try:
+            wandb.log(timings, commit=False)
+        except Exception as e:
+            logger.exception(e)
+            logger.warning("Unable to 'wandb.log(timings)', skipping!")
+        if dataset is not None:
+            try:
+                wandb.log(
+                    {
+                        "train_metrics": wandb.Table(
+                            dataframe=dataset.to_dataframe()
+                        )
+                    }
+                )
+            except Exception as e:
+                logger.exception(e)
+                logger.warning("Failed to log final dataset to wandb")
 
     if ezpz.get_world_size() > 1:
         ezpz.barrier()
