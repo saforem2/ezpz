@@ -13,7 +13,7 @@ from pathlib import Path
 import socket
 import sys
 import time
-from typing import Callable, Optional, Union, Any, Iterable
+from typing import Callable, Literal, Optional, Union, Any, Iterable, Sequence
 from datetime import timedelta
 
 from mpi4py import MPI
@@ -25,6 +25,7 @@ import torch.distributed
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 import torch.nn
+
 # import torch.nn.parallel
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel.distributed import DistributedDataParallel
@@ -587,10 +588,10 @@ def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
 
 
 def wrap_with_fsdp(
-        model: torch.nn.Module,
-        dtype: str = "bfloat16",
-        device_id: int | None = None,
-        **kwargs,
+    model: torch.nn.Module,
+    dtype: str = "bfloat16",
+    device_id: int | None = None,
+    **kwargs,
 ) -> FSDP:
     """Wrap a model with FSDP using the given parameter dtype.
 
@@ -933,8 +934,10 @@ def get_torch_backend() -> str:
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
         return backend_from_env
-    if torch.cuda.is_available() and torch.distributed.is_backend_available("nccl"):
-            return "nccl"
+    if torch.cuda.is_available() and torch.distributed.is_backend_available(
+        "nccl"
+    ):
+        return "nccl"
     if torch.xpu.is_available():
         if torch.distributed.is_backend_available("xccl"):
             return "xccl"
@@ -1514,7 +1517,9 @@ def _torch_barrier(
     async_op: bool = False,
     device_ids: str | Iterable | None = None,
 ) -> torch.distributed.Work | None:  # type:ignore
-    return torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
+    return torch.distributed.barrier(
+        group=group, async_op=async_op, device_ids=device_ids
+    )
 
 
 def barrier(
@@ -1552,7 +1557,8 @@ def barrier(
         ...     handle.wait()
     """
     if implementation is not None and implementation.lower() not in {
-        "mpi", "torch"
+        "mpi",
+        "torch",
     }:
         raise ValueError(
             f"Unsupported barrier implementation: {implementation}"
@@ -1721,25 +1727,25 @@ def setup_torch(
                 lcp = len(str(cpsize - 1))
                 cprank = ezpz.tp.get_context_parallel_rank()
                 # cpranks = ezpz.tp.get_context_parallel_ranks()
-                psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
+                psizes.append(f"[cp={cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
                 barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
                 pprank = ezpz.tp.get_pipeline_parallel_rank()
                 # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
                 lpp = len(str(ppsize - 1))
-                psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
+                psizes.append(f"[pp={pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
                 barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 tprank = ezpz.tp.get_tensor_parallel_rank()
                 # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-                psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
+                psizes.append(f"[tp={tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
                 barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
                 dprank = ezpz.tp.get_data_parallel_rank()
                 # dpranks = ezpz.tp.get_data_parallel_ranks()
-                psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
+                psizes.append(f"[dp={dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
                 barrier(group=ezpz.tp.get_data_parallel_group())
     # if not os.environ.get("ALREADY_PRINTED_HOSTS", "0"):
     # if rank == 0:
@@ -1917,59 +1923,193 @@ def _verify_wandb_from_netrc_config() -> bool:
 
 
 def verify_wandb() -> bool:
-    import wandb
-
     rank = get_rank()
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-    if WANDB_DISABLED or WANDB_MODE == "disabled":
-        if get_rank() == 0:
+
+    try:
+        import wandb
+    except Exception:
+        if rank == 0:
             logger.warning(
-                f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+                "Unable to import wandb, please install with `pip install wandb`"
             )
         return False
-    else:
-        try:
-            import wandb
 
-            if wandb.api.api_key is not None:
-                return True
-        except (ImportError, ModuleNotFoundError):
-            if rank == 0:
-                logger.warning(
-                    "Unable to import `wandb`. Install with `pip install wandb`"
-                )
-            return False
-        if (
-            wandb.api.api_key is None
-            or os.environ.get("WANDB_API_KEY", None) is None
-        ):
-            if rank == 0:
-                logger.warning("'WANDB_API_KEY' not found in environment!")
-                logger.info("Attempting to verify login from '~/.netrc':")
-            return _verify_wandb_from_netrc_config()
+    wandb_disabled = os.environ.get("WANDB_DISABLED")
+    if wandb_disabled:
+        if rank == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+            )
         return False
+
+    wandb_mode = os.environ.get("WANDB_MODE")
+    if wandb_mode is not None and wandb_mode.lower() == "disabled":
+        if get_rank() == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+            )
+        return False
+
+    if wandb is not None:
+        if (
+            wandb.api.api_key is not None
+            or os.environ.get("WANDB_API_KEY", None) is not None
+        ):
+            return True
+        if rank == 0:
+            logger.warning("'WANDB_API_KEY' not found in environment!")
+            logger.info("Attempting to verify login from '~/.netrc':")
+        return _verify_wandb_from_netrc_config()
+
+    return False
+
+
+def get_wandb_mode(
+    wandb_mode: str
+    | None
+    | Literal["online", "offline", "disabled", "shared"] = None,
+) -> str:
+    _wandb_mode = (
+        os.environ.get("WANDB_MODE") if wandb_mode is None else wandb_mode
+    )
+    wandb_disabled = os.environ.get("WANDB_DISABLED")
+
+    rank = ezpz.get_rank()
+
+    # Case 1: [Any, Any]
+    if wandb_disabled is not None and _wandb_mode is not None:
+        if _wandb_mode.lower() != "disabled":
+            if rank == 0:
+                logger.info(
+                    f"Overriding WANDB_MODE={_wandb_mode} to 'disabled' "
+                    f"since WANDB_DISABLED={wandb_disabled} is set!"
+                )
+        return "disabled"
+
+    # Case 2: [Any, None]
+    if wandb_disabled is not None and _wandb_mode is None:
+        if rank == 0:
+            logger.info(
+                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+                f"Setting WANDB_MODE=disabled"
+            )
+        return "disabled"
+
+    # Case 3: [None, Any]
+    if wandb_disabled is None and _wandb_mode is not None:
+        _wandb_mode = _wandb_mode.lower()
+        assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
+            f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
+            "{'online', 'offline', 'disabled', 'shared'}"
+        )
+        if rank == 0:
+            logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
+        return _wandb_mode
+
+    # Case 4: [None, None]
+    else:  # i.e. wandb_disabled is None and wandb_mode is None
+        if rank == 0:
+            logger.info(
+                f"Logging with W&B in ONLINE mode!, caught: {_wandb_mode=}"
+                f"Setting WANDB_MODE=online"
+            )
+        _wandb_mode = "online"
+
+    # if wandb_disabled:
+    #     logger.info(
+    #         f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+    #         f"Setting WANDB_MODE=disabled"
+    #     )
+    #     _wandb_mode = "disabled"
+    # rank = ezpz.get_rank()
+    # if _wandb_mode is not None:
+    #     if rank == 0:
+    #         logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
+    #     assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
+    #         f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
+    #         "{'online', 'offline', 'disabled', 'shared'}"
+    #     )
+    #
+    # if _wandb_mode is not None:
+    #     if rank == 0:
+    #         logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
+    # assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
+    #     f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
+    #     "{'online', 'offline', 'disabled', 'shared'}"
+    # )
+    return _wandb_mode
 
 
 def setup_wandb(
     project_name: Optional[str] = None,
-    entity: Optional[str] = None,
-    config: Optional[dict | DictConfig] = None,
-    start_method: str = "thread",
+    entity: str | None = None,
+    config: dict[str, Any] | str | DictConfig | None = None,
     outdir: Optional[str | Path | os.PathLike] = None,
-    init_timeout: int = 300,
-    allow_val_change: bool = False,
+    project: str | None = None,
+    dir: PathLike | None = None,
+    id: str | None = None,
+    name: str | None = None,
+    notes: str | None = None,
+    tags: Sequence[str] | None = None,
+    config_exclude_keys: list[str] | None = None,
+    config_include_keys: list[str] | None = None,
+    allow_val_change: bool | None = None,
+    group: str | None = None,
+    job_type: str | None = None,
+    mode: Literal["online", "offline", "disabled", "shared"] | None = None,
+    force: bool = False,
+    reinit: bool
+    | Literal[
+        None, "default", "return_previous", "finish_previous", "create_new"
+    ] = None,
+    resume: bool | Literal["allow", "never", "must", "auto"] | None = None,
+    resume_from: str | None = None,
+    fork_from: str | None = None,
+    save_code: bool | None = None,
+    init_timeout: int | float | None = None,
+    start_method: Literal["fork", "spawn", "thread", "process"] | None = None,
+    tensorboard: bool | None = None,
+    sync_tensorboard: bool | None = None,
+    monitor_gym: bool | None = None,
+    settings: dict[str, Any] | None = None,
 ):
     """Setup wandb for logging.
 
+
     Args:
         project_name (str, optional): The name of the project. Defaults to None.
-        entity (str, optional): The entity name. Defaults to None.
-        config (dict | DictConfig, optional): The configuration dictionary. Defaults to None.
-        start_method (str, optional): The start method for wandb. Defaults to "thread".
-        outdir (str | Path | os.PathLike, optional): The output directory. Defaults to None.
-        init_timeout (int, optional): The timeout for wandb initialization. Defaults to 300.
-        allow_val_change (bool, optional): Whether to allow value changes in wandb config. Defaults to False.
+        config (dict[str, Any] | str | DictConfig, optional): The configuration to log. Defaults to None.
+        outdir (str | Path | os.PathLike, optional): The output directory. Defaults
+            to None, which will use the current working directory.
+        entity (str, optional): The entity to log to. Defaults to None.
+        project (str, optional): The project to log to. Defaults to None.
+        dir (PathLike, optional): The directory to log to. Defaults to None.
+        id (str, optional): The run ID. Defaults to None.
+        name (str, optional): The run name. Defaults to None.
+        notes (str, optional): The run notes. Defaults to None.
+        tags (Sequence[str], optional): The run tags. Defaults to None.
+        config_exclude_keys (list[str], optional): The keys to exclude from the config.
+            Defaults to None.
+        config_include_keys (list[str], optional): The keys to include from the config.
+            Defaults to None.
+        allow_val_change (bool, optional): Whether to allow value changes in the config.
+            Defaults to None.
+        group (str, optional): The run group. Defaults to None.
+        job_type (str, optional): The job type. Defaults to None.
+        mode (Literal["online", "offline", "disabled", "shared"], optional): The wandb mode.
+            Defaults to None.
+        force (bool, optional): Whether to force a new run. Defaults to None.
+        reinit (bool | Literal[...], optional): Whether to reinitialize the run.
+            Defaults to None.
+        resume (bool | Literal[...], optional): Whether to resume the run. Defaults to
+            None.
+        resume_from (str, optional): The run ID to resume from. Defaults to None.
+        fork_from (str, optional): The run ID to fork from. Defaults to None.
+        save_code (bool, optional): Whether to save the code. Defaults to None.
+        tensorboard (bool, optional): Whether to sync tensorboard. Defaults to None.
+        sync_tensorboard (bool, optional): Whether to sync tensorboard. Defaults to None.
+        monitor_gym (bool, optional): Whether to monitor gym. Defaults to None.
+        settings (dict[str, Any], optional): Additional wandb settings. Defaults to None.
 
     Examples:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
@@ -2014,79 +2154,122 @@ def setup_wandb(
         os.environ.get("TENSORBOARD_DIR", None)
         if config is None
         else config.get("tensorboard_dir", None)
+        if isinstance(config, (dict, DictConfig))
+        else None
     )
     if tensorboard_dir is not None:
         logger.info(f"Patching tensorboard from {tensorboard_dir}")
         try:
-            wandb.tensorboard.patch(root_logdir=tensorboard_dir)  # type:ignore
+            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         except Exception as exc:
             logger.exception(exc)
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime("%Y-%m-%d-%H%M%S")
-    run = wandb.init(
-        entity=entity,
-        # resume='allow',
-        dir=outdir,
-        sync_tensorboard=(tensorboard_dir is not None),  # True,
-        project=(project_name if project_name is not None else None),
-        # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-        # settings=wandb.Settings(
-        #     start_method=start_method, init_timeout=init_timeout
-        # ),
-        allow_val_change=allow_val_change,
-    )
-    assert run is not None and run is wandb.run
-    # run.log_code(HERE.as_posix(), include_fn=include_file)
-    logger.info(f"wandb.run=[{run.name}]({run.url})")
-    if (
-        wandb is not None
-        and wandb.run is not None
-        and "DIST_INFO" not in wandb.run.config
-    ):
-        wandb.run.config.update({"DIST_INFO": get_dist_info()})
-    torch_version = torch.__version__
-    torch_file = torch.__file__
-    run.config.update(
-        {
-            "created_at": dstr,
-            "day": ezpz.get_timestamp("%d"),
-            "ezpz_file": ezpz.__file__,
-            "ezpz_version": ezpz.__version__,
-            "hostname": get_hostname(),
-            "month": ezpz.get_timestamp("%m"),
-            "pytorch_backend": str(get_torch_backend()).lower(),
-            "torch_version": torch_version,
-            "torch_version_as_float": get_torch_version_as_float(),
-            "torch_file": torch_file,
-            "world_size": get_world_size(),
-            "year": ezpz.get_timestamp("%Y"),
-            "working_directory": os.getcwd(),
+    settings = wandb.Settings()
+    # resume='allow',
+    # dir=outdir,
+    # sync_tensorboard = ((tensorboard_dir is not None),)  # True,
+    # project=(project_name if project_name is not None else None),
+    # dir=(tensorboard_dir if tensorboard_dir is not None else None),
+    # settings=wandb.Settings(
+    #     start_method=start_method, init_timeout=init_timeout
+    # ),
+    # allow_val_change=allow_val_change,
+
+    try:
+        run = wandb.init(
+            entity=entity,
+            project=(
+                project
+                if project is not None
+                else project_name
+                if project_name is not None
+                else None
+            ),
+            dir=(dir if dir is not None else outdir),
+            id=id,
+            name=name,
+            notes=notes,
+            tags=tags,
+            config_exclude_keys=config_exclude_keys,
+            config_include_keys=config_include_keys,
+            allow_val_change=allow_val_change,
+            group=group,
+            job_type=job_type,
+            mode=get_wandb_mode(mode),
+            force=force,
+            reinit=reinit,
+            resume=resume,
+            resume_from=resume_from,
+            fork_from=fork_from,
+            save_code=save_code,
+            tensorboard=(tensorboard if tensorboard is not None else False),
+            monitor_gym=monitor_gym,
+            settings=(
+                settings
+                if settings is not None
+                else wandb.Settings(
+                    init_timeout=init_timeout, start_method=start_method
+                ),
+            ),
+        )
+        assert run is not None and run is wandb.run
+        # run.log_code(HERE.as_posix(), include_fn=include_file)
+        logger.info(f"wandb.run=[{run.name}]({run.url})")
+        if (
+            wandb is not None
+            and wandb.run is not None
+            and "DIST_INFO" not in wandb.run.config
+        ):
+            wandb.run.config.update({"DIST_INFO": get_dist_info()})
+        torch_version = torch.__version__
+        torch_file = torch.__file__
+        run.config.update(
+            {
+                "created_at": dstr,
+                "day": ezpz.get_timestamp("%d"),
+                "ezpz_file": ezpz.__file__,
+                "ezpz_version": ezpz.__version__,
+                "hostname": get_hostname(),
+                "month": ezpz.get_timestamp("%m"),
+                "pytorch_backend": str(get_torch_backend()).lower(),
+                "torch_version": torch_version,
+                "torch_version_as_float": get_torch_version_as_float(),
+                "torch_file": torch_file,
+                "world_size": get_world_size(),
+                "year": ezpz.get_timestamp("%Y"),
+                "working_directory": os.getcwd(),
+            }
+        )
+        if config is not None:
+            if isinstance(config, DictConfig):
+                cfg = OmegaConf.to_container(
+                    config, resolve=True, throw_on_missing=True
+                )
+                run.config.update({"config": cfg})
+            else:
+                run.config.update({"config": config})
+        env = {
+            k: v
+            for k, v in dict(os.environ).items()
+            if not k.startswith("_ModuleTable") and "API" not in k
         }
-    )
-    if config is not None:
-        if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(
-                config, resolve=True, throw_on_missing=True
-            )
-            run.config.update({"config": cfg})
-        else:
-            run.config.update({"config": config})
-    env = {
-        k: v
-        for k, v in dict(os.environ).items()
-        if not k.startswith("_ModuleTable") and "API" not in k
-    }
-    _ = env.pop("LS_COLORS", None)
-    _ = env.pop("PS1", None)
-    run.config.update({"env": env})
-    machine = get_machine()
-    logger.info(f"Running on {machine=}")
-    run.config.update({"machine": machine})
-    model_size = os.environ.get("MODEL_SIZE", None)
-    if model_size is not None:
-        run.config.update({"MODEL_SIZE": model_size})
-    return wandb.run
+        _ = env.pop("LS_COLORS", None)
+        _ = env.pop("PS1", None)
+        run.config.update({"env": env})
+        machine = get_machine()
+        logger.info(f"Running on {machine=}")
+        run.config.update({"machine": machine})
+        model_size = os.environ.get("MODEL_SIZE", None)
+        if model_size is not None:
+            run.config.update({"MODEL_SIZE": model_size})
+        return wandb.run
+    except Exception as e:
+        logger.exception(f"{e}")
+        logger.error(f"Unable to call `wandb.init(...)` from {rank=}")
+        logger.warning("Continuing without wandb logging...")
+        return None
 
 
 def run_bash_command(cmd: str) -> Any:
