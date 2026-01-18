@@ -2,10 +2,6 @@
 utils/tar_env.py
 """
 
-import os
-import sys
-from pathlib import Path
-
 import ezpz
 
 logger = ezpz.get_logger(__name__)
