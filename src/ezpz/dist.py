@@ -590,7 +590,7 @@ def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
 def wrap_with_fsdp(
     model: torch.nn.Module,
     dtype: str = "bfloat16",
-    device_id: int | None = None,
+    device_id: int | torch.device | None = None,
     **kwargs,
 ) -> FSDP:
     """Wrap a model with FSDP using the given parameter dtype.
@@ -1935,6 +1935,7 @@ def verify_wandb() -> bool:
         return False
 
     wandb_disabled = os.environ.get("WANDB_DISABLED")
+    wandb_mode = os.environ.get("WANDB_MODE")
     if wandb_disabled:
         if rank == 0:
             logger.warning(
@@ -1942,11 +1943,10 @@ def verify_wandb() -> bool:
             )
         return False
 
-    wandb_mode = os.environ.get("WANDB_MODE")
     if wandb_mode is not None and wandb_mode.lower() == "disabled":
         if get_rank() == 0:
             logger.warning(
-                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+                f"Logging with W&B is disabled!, caught: {wandb_mode=}"
             )
         return False
 
@@ -1960,8 +1960,7 @@ def verify_wandb() -> bool:
             logger.warning("'WANDB_API_KEY' not found in environment!")
             logger.info("Attempting to verify login from '~/.netrc':")
         return _verify_wandb_from_netrc_config()
-
-    return False
+    raise RuntimeError("Unreachable code in `_verify_wandb`")
 
 
 def get_wandb_mode(
@@ -1991,7 +1990,7 @@ def get_wandb_mode(
         if rank == 0:
             logger.info(
                 f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
-                f"Setting WANDB_MODE=disabled"
+                f" Setting WANDB_MODE=disabled"
             )
         return "disabled"
 
@@ -2011,33 +2010,9 @@ def get_wandb_mode(
         if rank == 0:
             logger.info(
                 f"Logging with W&B in ONLINE mode!, caught: {_wandb_mode=}"
-                f"Setting WANDB_MODE=online"
+                f" Setting WANDB_MODE=online"
             )
-        _wandb_mode = "online"
-
-    # if wandb_disabled:
-    #     logger.info(
-    #         f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
-    #         f"Setting WANDB_MODE=disabled"
-    #     )
-    #     _wandb_mode = "disabled"
-    # rank = ezpz.get_rank()
-    # if _wandb_mode is not None:
-    #     if rank == 0:
-    #         logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
-    #     assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
-    #         f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
-    #         "{'online', 'offline', 'disabled', 'shared'}"
-    #     )
-    #
-    # if _wandb_mode is not None:
-    #     if rank == 0:
-    #         logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
-    # assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
-    #     f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
-    #     "{'online', 'offline', 'disabled', 'shared'}"
-    # )
-    return _wandb_mode
+        return "online"
 
 
 def setup_wandb(
@@ -2166,17 +2141,6 @@ def setup_wandb(
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime("%Y-%m-%d-%H%M%S")
-    # settings = wandb.Settings()
-    # resume='allow',
-    # dir=outdir,
-    # sync_tensorboard = ((tensorboard_dir is not None),)  # True,
-    # project=(project_name if project_name is not None else None),
-    # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-    # settings=wandb.Settings(
-    #     start_method=start_method, init_timeout=init_timeout
-    # ),
-    # allow_val_change=allow_val_change,
-
     try:
         run = wandb.init(
             entity=entity,
@@ -2205,12 +2169,20 @@ def setup_wandb(
             fork_from=fork_from,
             save_code=save_code,
             tensorboard=(tensorboard if tensorboard is not None else False),
+            sync_tensorboard=(
+                sync_tensorboard if sync_tensorboard is not None else False
+            ),
             monitor_gym=monitor_gym,
             settings=(
                 settings
                 if settings is not None
                 else wandb.Settings(
-                    init_timeout=init_timeout, start_method=start_method
+                    init_timeout=(
+                        init_timeout if init_timeout is not None else 60
+                    ),
+                    start_method=(
+                        start_method if start_method is not None else "fork"
+                    ),
                 ),
             ),
         )
