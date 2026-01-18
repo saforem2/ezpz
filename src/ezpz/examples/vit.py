@@ -548,17 +548,18 @@ def train_fn(
                     "Failed to watch model with wandb; continuing..."
                 )
 
-    model = ezpz.dist.wrap_model(
-        model=model,
-        use_fsdp=args.fsdp,
-        dtype=args.dtype,
-        # device_id=int(ezpz.get_local_rank())
-    )
+    # model = ezpz.dist.wrap_model(
+    #     model=model,
+    #     use_fsdp=args.fsdp,
+    #     dtype=args.dtype,
+    #     # device_id=int(ezpz.get_local_rank())
+    # )
     if world_size > 1:
         model = ezpz.dist.wrap_model(
             model=model,
             use_fsdp=args.fsdp,
             dtype=args.dtype,
+            device_id=ezpz.get_torch_device(as_torch_device=True),
         )
         # if args.fsdp:
         #     logger.info("Using FSDP for distributed training")
