@@ -216,23 +216,13 @@ nav:
       - 📘 References:
           - 📄 Test Report: cli/test-report.md
           - 🗓️ PBS: notes/pbs.md
-          # - 📝 Examples:
-          #     - examples/index.md
-          #     - <code>ezpz.test_dist</code>: examples/test-dist.md
-          #     - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
-          #     - <code>ezpz.examples.vit</code>: examples/vit.md
-          #     - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
-          #     - <code>ezpz.examples.diffusion</code>: examples/diffusion.md
-          #     - <code>ezpz.examples.hf_trainer</code>:
-          #         - examples/hf-trainer/index.md
-          #         - HF Trainer Comparison: examples/hf-trainer/comparison.md
       - 🧪 Experimental:
           - ✍️ <code>ezpz generate</code>: cli/generate.md
           - 🖥️ <code>ezpz generate_tui</code>: cli/generate-tui.md
 
   - 📝 Examples:
       - examples/index.md
-      - <code>ezpz.test_dist</code>: examples/test-dist.md
+      - <code>ezpz.examples.test</code>: examples/test.md
       - <code>ezpz.examples.fsdp</code>: examples/fsdp.md
       - <code>ezpz.examples.vit</code>: examples/vit.md
       - <code>ezpz.examples.fsdp_tp</code>: examples/fsdp-tp.md
@@ -259,7 +249,6 @@ nav:
           - <code>ezpz.profile</code>: python/Code-Reference/profile.md
           - <code>ezpz.slurm</code>: python/Code-Reference/slurm.md
           - <code>ezpz.test</code>: python/Code-Reference/test.md
-          - <code>ezpz.test dist</code>: python/Code-Reference/test_dist.md
           - <code>ezpz.tplot</code>: python/Code-Reference/tplot.md
           - <code>ezpz.cli</code>:
               - python/Code-Reference/cli/index.md
@@ -276,6 +265,7 @@ nav:
               - <code>ezpz.data.utils</code>: python/Code-Reference/data/utils.md
           - <code>ezpz.examples</code>:
               - python/Code-Reference/examples/index.md
+              - <code>ezpz.examples.test</code>: python/Code-Reference/examples/test.md
               # - <code>ezpz.examples.cifar.train_ds</code>: python/Code-Reference/examples/cifar/train_ds.md
               - <code>ezpz.examples.diffusion</code>: python/Code-Reference/examples/diffusion.md
               - <code>ezpz.examples.fsdp</code>: python/Code-Reference/examples/fsdp.md
