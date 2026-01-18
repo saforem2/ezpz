@@ -540,9 +540,12 @@ def train_fn(
     model_size_in_billions = num_params / 1e9
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
-    if wandb is not None:
-        if wandb.run is not None:
+    if wandb is not None and ezpz.verify_wandb():
+        try:
             wandb.run.watch(model, log="all")
+        except Exception as e:
+            logger.exception(e)
+            logger.warning("Failed to watch model with wandb; continuing...")
 
     model = ezpz.dist.wrap_model(
         model=model,
@@ -656,16 +659,16 @@ def train_fn(
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
     rank = ezpz.dist.setup_torch()
-    if rank == 0:
+    if rank == 0 and ezpz.verify_wandb():
         try:
             fp = Path(__file__).resolve()
             run = ezpz.setup_wandb(
                 project_name=f"ezpz.{fp.parent.name}.{fp.stem}"
             )
-            if wandb is not None:
-                assert run is not None and run is wandb.run
+            if wandb is not None and run is not None and run is wandb.run:
+                # assert run is not None and run is wandb.run
                 wandb.config.update(ezpz.get_dist_info())
-                wandb.config.update({**vars(args)})  # type:ignore
+                wandb.config.update({**vars(args)})
         except Exception:
             logger.warning("Failed to setup wandb, continuing without!")
 
