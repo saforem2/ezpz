@@ -370,20 +370,6 @@ class Trainer:
             if profiler is not None:
                 profiler.step()
 
-        # dataset = (
-        #     self.finalize()
-        #     if self.rank == 0
-        #     else self.history.get_dataset(warmup=self.config.warmup)
-        # )
-        # if ezpz.get_world_size() > 1:
-        #     ezpz.barrier()
-        # return (
-        #     self.finalize()
-        #     if self.rank == 0
-        #     else self.history.get_dataset(warmup=self.config.warmup)
-        # )
-        # return dataset
-
     def _gather_environment_snapshot(self) -> dict[str, dict[str, str]]:
         """Collect key runtime environment details for reporting."""
 
