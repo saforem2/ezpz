@@ -440,10 +440,6 @@ running on one of the known machines:
     At ALCF, if our `$(hostname)` starts with `x*`, we’re on a compute
     node.
 
-   <!--
-   will build and execute the appropriate {`mpi{exec,run}`, `srun`} command, _launching_ [`ezpz/test_dist.py`](src/ezpz/test_dist.py) (as a module, `-m`).
-   -->
-
 <!--
 - There are two main, distinct components of `ezpz`:
 

@@ -183,7 +183,7 @@ hostfile = pbs.get_pbs_nodefile()  # falls back if not on PBS
 cmd = pbs.get_pbs_launch_cmd(hostfile=hostfile, ngpus=4)
 
 # Run a distributed smoke test
-subprocess.run(f"{cmd} python -m ezpz.test_dist", shell=True, check=True)
+subprocess.run(f"{cmd} python -m ezpz.examples.test", shell=True, check=True)
 ```
 
 ## 📌 Notes

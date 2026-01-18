@@ -283,7 +283,7 @@ Use it to launch:
 - One of the ready-to-go examples:
 
     ```bash
-    ezpz launch python3 -m ezpz.test_dist --profile
+    ezpz launch python3 -m ezpz.examples.test --profile
     ezpz launch -n 8 -- python3 -m ezpz.examples.fsdp_tp --tp 4
     ```
 
@@ -350,7 +350,7 @@ Use it to launch:
 
     | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
     | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-    | [:lucide-book:][ex-test-dist] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test_dist`  | Train MLP with DDP on MNIST                     |
+    | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test] · [:lucide-github:][gh-test]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
     | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
     | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
     | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
@@ -611,9 +611,9 @@ Use it to launch:
                     took: 18s
                     ```
 
-  [ex-test-dist]: ../../examples/test-dist.md "Example"
-  [api-test-dist]: ../../python/Code-Reference/test_dist.md "API Reference"
-  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py "GitHub Source"
+  [ex-test]: ../../examples/test.md "Example"
+  [api-test]: ../../python/Code-Reference/examples/test.md "API Reference"
+  [gh-test]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py "GitHub Source"
   [ex-fsdp]: ../../examples/fsdp.md "Example"
   [api-fsdp]: ../../python/Code-Reference/examples/fsdp.md "API Reference"
   [gh-fsdp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py "GitHub Source"

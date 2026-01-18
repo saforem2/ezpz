@@ -7,7 +7,7 @@ the `ezpz` library.
 
     | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
     | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-    | [:lucide-book:][ex-test-dist] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test_dist`  | Train MLP with DDP on MNIST                     |
+    | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test] · [:lucide-github:][gh-test]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
     | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
     | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
     | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
@@ -155,9 +155,9 @@ the `ezpz` library.
                     took: 22s
                     ```
 
-  [ex-test-dist]: ./test-dist.md "Example"
-  [api-test-dist]: ../python/Code-Reference/test_dist.md "API Reference"
-  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py "GitHub Source"
+  [ex-test]: ./test.md "Example"
+  [api-test]: ../python/Code-Reference/examples/test.md "API Reference"
+  [gh-test]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py "GitHub Source"
   [ex-fsdp]: ./fsdp.md "Example"
   [api-fsdp]: ../python/Code-Reference/examples/fsdp.md "API Reference"
   [gh-fsdp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py "GitHub Source"
@@ -177,15 +177,15 @@ the `ezpz` library.
 <!-- 1. 📝 **Complete Examples**: `ezpz.examples.*`   -->
 <!--     A collection of ready-to-go distributed training examples that can -->
 <!--     be run at _**any scale**_, on **_any hardware_**: -->
-<!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py)\] [`ezpz.examples.test_dist`](../python/Code-Reference/examples/test_dist.md): [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test-dist/) -->
+<!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py)\] [`ezpz.examples.test`](../python/Code-Reference/examples/test.md): [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test/) -->
 <!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py)\] [`ezpz.examples.fsdp`](../python/Code-Reference/examples/fsdp.md): [Train CNN with FSDP on MNIST](https://ezpz.cool/examples/fsdp/) -->
 <!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py)\] [`ezpz.examples.vit`](../python/Code-Reference/examples/vit.md): [Train ViT with FSDP on MNIST](https://ezpz.cool/examples/vit/) -->
 <!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)\] [`ezpz.examples.fsdp_tp`](../python/Code-Reference/examples/fsdp_tp.md): [Train Transformer with FSDP and TP on HF Datasets](https://ezpz.cool/examples/fsdp-tp/) -->
 <!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py)\] [`ezpz.examples.diffusion`](../python/Code-Reference/examples/diffusion.md): [Train Diffusion LLM with FSDP on HF Datasets](https://ezpz.cool/examples/diffusion/) -->
 <!--     - \[[:octicons-mark-github-16:](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py)\] [`ezpz.examples.hf_trainer`](../python/Code-Reference/examples/hf_trainer.md): [Train LLM with FSDP and HF Trainer on HF Datasets](https://ezpz.cool/examples/hf-trainer/) -->
 <!---->
-<!--     1. [`ezpz.examples.test_dist`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py): -->
-<!--        [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test-dist/) -->
+<!--     1. [`ezpz.examples.test`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py): -->
+<!--        [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test/) -->
 <!--     1. [`ezpz.examples.fsdp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py): -->
 <!--        [Train CNN with FSDP on MNIST](https://ezpz.cool/examples/fsdp/) -->
 <!--     1. [`ezpz.examples.vit`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py): -->

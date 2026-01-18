@@ -7,8 +7,8 @@ _Generated at 2026-01-14T18:52:21.425580Z_
 ### Paths
 
 - **Working directory**: /Users/samforeman/vibes
-- **Output directory**: /Users/samforeman/vibes/outputs/ezpz.test_dist/2026-01-14-125205
-- **Dataset root**: /Users/samforeman/vibes/outputs/ezpz.test_dist/datasets/mnist
+- **Output directory**: /Users/samforeman/vibes/outputs/ezpz.examples.test/2026-01-14-125205
+- **Dataset root**: /Users/samforeman/vibes/outputs/ezpz.examples.test/datasets/mnist
 - **Hostname**: Sams-MacBook-Pro-2.local
 
 ### Python

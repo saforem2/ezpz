@@ -13,7 +13,7 @@ Explicitly, these are `ezpz <command>`:
 
         | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
         | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-        | [:lucide-book:][ex-test-dist] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test_dist`  | Train MLP with DDP on MNIST                     |
+        | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
         | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
         | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
         | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
@@ -21,9 +21,9 @@ Explicitly, these are `ezpz <command>`:
         | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:lucide-github:][gh-hf-trainer] | `ezpz.examples.hf_trainer` | Train LLM with FSDP + HF Trainer on HF Datasets |
 
 
-  [ex-test-dist]: ../examples/test-dist.md "Example"
-  [api-test-dist]: ../python/Code-Reference/test_dist.md "API Reference"
-  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py "GitHub Source"
+  [ex-test]: ../examples/test.md "Example"
+  [api-test-dist]: ../python/Code-Reference/examples/test.md "API Reference"
+  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py "GitHub Source"
   [ex-fsdp]: ../examples/fsdp.md "Example"
   [api-fsdp]: ../python/Code-Reference/examples/fsdp.md "API Reference"
   [gh-fsdp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py "GitHub Source"

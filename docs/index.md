@@ -15,7 +15,13 @@ fallbacks for running locally[^dev] on Mac, Linux machines.
 [^dev]: This is particularly useful if you'd like to run development /
     debugging experiments locally
 
-## Overview
+## 🗂️ Organization
+
+- 🍋 [ezpz](../docs/index.md): Home of the `ezpz` documentation
+    - [Quickstart](../docs/quickstart.md): Overview and getting started guide
+      highlighting the core features of `ezpz`.
+
+## 👀 Overview
 
 `ezpz` is, at its core, a Python library that provides a variety of utilities
 for both _writing_ and _launching_ distributed PyTorch applications.
@@ -43,7 +49,7 @@ These can be broken down (~roughly) into:
 
             | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
             | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-            | [:lucide-book:][ex-test-dist] · [:lucide-file-code:][api-test-dist] · [:lucide-github:][gh-test-dist]                                                                                                                    | `ezpz.examples.test_dist`  | Train MLP with DDP on MNIST                     |
+            | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test] · [:lucide-github:][gh-test]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
             | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
             | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
             | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
@@ -188,9 +194,9 @@ These can be broken down (~roughly) into:
     desired).
 
 
-  [ex-test-dist]: ./examples/test-dist.md "Example"
-  [api-test-dist]: ./python/Code-Reference/test_dist.md "API Reference"
-  [gh-test-dist]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py "GitHub Source"
+  [ex-test]: ./examples/test.md "Example"
+  [api-test]: ./python/Code-Reference/examples/test.md "API Reference"
+  [gh-test]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py "GitHub Source"
   [ex-fsdp]: ./examples/fsdp.md "Example"
   [api-fsdp]: ./python/Code-Reference/examples/fsdp.md "API Reference"
   [gh-fsdp]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py "GitHub Source"
@@ -213,8 +219,8 @@ These can be broken down (~roughly) into:
     be run at _**any scale**_, on **_any hardware_**; or bootstrap them for
     your own applications!
 
-    1. [`ezpz.examples.test_dist`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/test_dist.py):
-       [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test-dist/)
+    1. [`ezpz.examples.test`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py):
+       [Train MLP with DDP on MNIST](https://ezpz.cool/examples/test/)
     1. [`ezpz.examples.fsdp`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp.py):
        [Train CNN with FSDP on MNIST](https://ezpz.cool/examples/fsdp/)
     1. [`ezpz.examples.vit`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/vit.py):
@@ -598,7 +604,13 @@ Additional configuration can be done through environment variables, including:
    var, e.g. to turn off colors:
 
     ```bash
-    NO_COLOR=1 ezpz launch python3 -m your_app.train
+    NO_COLOR=1 ezpz launch python3 -m ezpz.examples.fsdp
+    ```
+
+1. Force logging from **all** ranks (not just rank 0):
+
+    ```bash
+    EZPZ_LOG_ALL_RANKS=1 ezpz launch --line-buffer python3 -m ezpz.examples.vit
     ```
 
 1. Forcing a specific torch device (useful on GPU hosts when you want CPU-only):
@@ -629,46 +641,6 @@ Additional configuration can be done through environment variables, including:
         ```bash
         LINES=40 COLUMNS=100 ezpz test
         ```
-
-<!--
-        <details closed><summary>30x120</summary>
-
-        ```bash
-            ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-        1.84┤ ++ loss/max                                                                                                      │
-            │ -- loss/min                                                                                                      │
-            │ ·· loss/mean                                                                                                     │
-            │ ▞▞ loss                                                                                                          │
-        1.54┤▐·                                                                                                                │
-            │▐·                                                                                                                │
-            │▝▖+                                                                                                               │
-            │ ▝▖                                                                                                               │
-        1.23┤ -▌                                                                                                               │
-            │ -▌ +                                                                                                             │
-            │  ▌+++                                                                                                            │
-            │  ▝▖ +                                                                                                            │
-        0.93┤  -▌ +                                                                                                            │
-            │   ▚·+++▖                                                                                                         │
-            │   ▐··▗▐▌  +                                                                                                      │
-            │   ▐▞▖█▐▐++++ +                                                                                                   │
-            │    ▘▐█▐▝▖  ++▗+ + +                                                                                              │
-        0.62┤     -▘▜·▚▖▖ +█ + ++    +                                                                                         │
-            │      --  █▚▞▟▐ ▗ ++  ++ +                                                                                        │
-            │      - - ▜▝▌▝·▌█▗▚▗▄▌++▖+▗++++     +                                                                             │
-            │        -----  █▝▞·▘·▝▟▐▌▗█  +++▄  +++ +  +    +                                                                  │
-        0.31┤            ---▝- - · ▝▞▝▘▝▄▀▚▚▞▝▖++ +▖++++ ▖ ++++                                                                │
-            │             - - ----------▝-· ··▙▀▀▌▞▚·▄ ▄▐▐+++ ▗▖+++ ▗▚+ +++ + + +   +     +         +     +  +                 │
-            │                    -    -------·▝--▝▌▝▞ ▀·▜·▚▚▟·▌▌▗▀▞▄▐▐▗·▗·▄+++·+▞▖++ +++++++▗++++++++++++++++ ▖ ▗+++▗++++++++++│
-            │                                -   -- ----·----▀▘▝▘---▜-▘▀▀▟·▚▞▚▞▚▌▝▚▄▚·▟·▗▚▚▖▌▚▄▄▖▄▄·▟·▖▄▚▄▗▚·▟▚·▌▜·▗▀▖·▟···▞▖··│
-        0.01┤                                                                 --▘ -- ▀ ▀▘--▝▘---▝--▀-▀▝·--▘-▀--▀▘-▀▀-▝▀▌▀▀▀▘▝▀▀│
-            └┬───────────────────────────┬────────────────────────────┬───────────────────────────┬───────────────────────────┬┘
-            1.0                        49.2                         97.5                        145.8                     194.0
-        text saved in /home/foremans/outputs/ezpz.test_dist/2026-01-07-222319/plots/tplot/loss_summary.txt
-        ```
-
-        </details>
-
--->
 
 ??? info "Complete List"
 
