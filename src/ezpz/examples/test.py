@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """
-test_dist.py
-
-- to launch:
-
-  ```bash
-  $ source ezpz/src/ezpz/bin/savejobenv
-  $ BACKEND=DDP launch python3 ezpz_ddp.py
-  ```
+examples/test.py
 """
 
 import argparse
@@ -70,7 +63,7 @@ except Exception:
 
 @dataclass
 class TrainConfig:
-    """Runtime configuration for the ``ezpz.test_dist`` distributed smoke test."""
+    """Runtime configuration for the `ezpz.examples.test` distributed smoke test."""
 
     warmup: int
     tp: int
@@ -111,7 +104,7 @@ class TrainConfig:
         )
         self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
         self.outdir = Path(os.getcwd()).joinpath(
-            "outputs", "ezpz.test_dist", f"{self._created_at}"
+            "outputs", "ezpz.examples.test", f"{self._created_at}"
         )
         self.outdir.mkdir(parents=True, exist_ok=True)
         dataset_root = (
@@ -215,7 +208,7 @@ class Trainer:
             wbconfig |= asdict(self.config)
             wbconfig |= ezpz.get_dist_info()
             _ = ezpz.setup_wandb(
-                project_name="ezpz.test_dist",
+                project_name="ezpz.examples.test",
                 config=wbconfig,
             )
             if (wbrun := getattr(wandb, "run", None)) is not None and callable(
@@ -345,7 +338,7 @@ class Trainer:
         outdir = Path(outdir) if outdir is not None else self.config.outdir
         env_info = self._gather_environment_snapshot()
         dataset = self.history.finalize(
-            run_name="ezpz.test_dist",
+            run_name="ezpz.examples.test",
             dataset_fname="train",
             warmup=self.config.warmup,
             save=False,  # XXX: don't bother saving test data
@@ -559,7 +552,7 @@ def train(
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for ``ezpz.test_dist``."""
+    """Parse CLI arguments for `ezpz.examples.test`."""
     parser = build_test_parser()
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
@@ -706,7 +699,7 @@ def build_model_and_optimizer(
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> Trainer:
-    """Entry point used by ``python -m ezpz.test_dist``."""
+    """Entry point used by ``python -m ezpz.examples.test``."""
     t0 = time.perf_counter()
     args = parse_args()
     config = get_config_from_args(args)
