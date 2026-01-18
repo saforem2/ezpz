@@ -95,6 +95,7 @@ class TrainConfig:
     dataset_root: Optional[PathLike] = None
     num_workers: int = 0
     no_distributed_history: bool = False
+    save_datasets: bool = False
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
@@ -185,7 +186,7 @@ class Trainer:
         self.model.to(self.device_id)
         self.model.to(self.dtype)
         metrics_path = self.config.outdir.joinpath("metrics.jsonl")
-        self.history = ezpz.history.History(
+        self.history: ezpz.history.History = ezpz.history.History(
             report_dir=self.config.outdir,
             report_enabled=True,
             jsonl_path=metrics_path,
@@ -356,13 +357,11 @@ class Trainer:
                     }
                 )
             except Exception:
-                pass
+                logger.warning("Failed to log final dataset to wandb")
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def train(
-        self, profiler: Optional[torch.profiler.profile] = None
-    ) -> Dataset:
+    def train(self, profiler: Optional[torch.profiler.profile] = None) -> None:
         """Loop over all training iterations and return the final dataset."""
         for step in range(self.config.train_iters):
             if step == self.config.warmup:
@@ -371,11 +370,19 @@ class Trainer:
             if profiler is not None:
                 profiler.step()
 
-        return (
-            self.finalize()
-            if self.rank == 0
-            else self.history.get_dataset(warmup=self.config.warmup)
-        )
+        # dataset = (
+        #     self.finalize()
+        #     if self.rank == 0
+        #     else self.history.get_dataset(warmup=self.config.warmup)
+        # )
+        # if ezpz.get_world_size() > 1:
+        #     ezpz.barrier()
+        # return (
+        #     self.finalize()
+        #     if self.rank == 0
+        #     else self.history.get_dataset(warmup=self.config.warmup)
+        # )
+        # return dataset
 
     def _gather_environment_snapshot(self) -> dict[str, dict[str, str]]:
         """Collect key runtime environment details for reporting."""
@@ -450,7 +457,6 @@ def train(
     from ezpz.models.minimal import SequentialLinearNet
     from ezpz.utils import model_summary
 
-    # logger.info(f"Setting up torch with {config.backend=}...")
     timings = {}
     t0m = time.perf_counter()
     model = SequentialLinearNet(
@@ -494,7 +500,32 @@ def train(
     t0t = time.perf_counter()
     _ = trainer.train(profiler=profiler)
     t1t = time.perf_counter()
-    # -------------------------------------------
+    rank = ezpz.get_rank()
+    history: ezpz.history.History = trainer.history
+    dataset = history.finalize(
+        run_name="ezpz.test_dist",
+        dataset_fname="train",
+        warmup=config.warmup,
+        save=(rank == 0 and config.save_datasets),
+        plot=(rank == 0),
+        outdir=config.outdir,
+        env_info=trainer._gather_environment_snapshot(),
+    )
+    logger.info(f"{dataset=}")
+    if wandb is not None and ezpz.verify_wandb():
+        try:
+            wandb.log(
+                {
+                    "train_metrics": wandb.Table(
+                        dataframe=dataset.to_dataframe()
+                    )
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log final dataset to wandb")
+
+    # if ezpz.get_world_size() > 1:
+    #     ezpz.barrier()
 
     # Record timings and return trainer
     logger.info(
@@ -510,8 +541,10 @@ def train(
     try:
         wandb.log(timings)  # type:ignore
     except Exception:
-        pass
+        logger.warning("Unable to 'wandb.log(timings)', skipping!")
 
+    if ezpz.get_world_size() > 1:
+        ezpz.barrier()
     return trainer
 
 
@@ -699,7 +732,10 @@ def main() -> Trainer:
         "main/train": (t_train - t_setup),
         "main/total": (t1 - t0),
     }
-    if wandb is not None and (wbrun := getattr(wandb, "run", None)) is not None:
+    if (
+        wandb is not None
+        and (wbrun := getattr(wandb, "run", None)) is not None
+    ):
         try:
             wandb.log(data=timings)
         except Exception:
