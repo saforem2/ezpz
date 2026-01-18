@@ -253,6 +253,10 @@
   --pink-bg: oklch(from var(--pink-fg-light-bg) calc(l * 0.85) c h / 0.1);
   --cyan-fg: oklch(from var(--cyan-fg-light-bg) l c h);
   --cyan-bg: oklch(from var(--cyan-fg-light-bg) calc(l * 0.85) c h / 0.1);
+
+  .highlight [data-linenos]::before {
+    background-color: unset;
+  }
 }
 
 /* ---------- heading color mapping (keeps your prior intent) ---------- */
@@ -349,75 +353,75 @@
 }
 
 .md-typeset h1 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h1-fg-color);
-        background: var(--h1-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: clip;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h1-fg-color);
+    background: var(--h1-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: clip;
+  }
 }
 
 .md-typeset h2 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h2-fg-color);
-        background: var(--h2-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: hidden;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h2-fg-color);
+    background: var(--h2-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: hidden;
+  }
 }
 
 .md-typeset h3 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h3-fg-color);
-        background: var(--h3-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: hidden;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h3-fg-color);
+    background: var(--h3-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: hidden;
+  }
 }
 
 .md-typeset h4 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h4-fg-color);
-        background: var(--h4-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: hidden;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h4-fg-color);
+    background: var(--h4-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: hidden;
+  }
 }
 
 .md-typeset h5 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h5-fg-color);
-        background: var(--h5-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: hidden;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h5-fg-color);
+    background: var(--h5-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: hidden;
+  }
 }
 
 .md-typeset h6 {
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: var(--link-border-radius);
-    &:hover {
-        color: var(--h6-fg-color);
-        background: var(--h6-bg-color);
-        padding-inline-start: 0.5rem;
-        margin-inline-start: -0.5rem;
-        overflow: hidden;
-    }
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+  &:hover {
+    color: var(--h6-fg-color);
+    background: var(--h6-bg-color);
+    padding-inline-start: 0.5rem;
+    margin-inline-start: -0.5rem;
+    overflow: hidden;
+  }
 }
 
 .md-content__button {
