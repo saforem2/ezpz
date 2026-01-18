@@ -1707,9 +1707,9 @@ def setup_torch(
             f"+ '{get_torch_backend()}' "
             "for distributed training."
         )
-    lrank = len(str(world_size - 1))
+    # lrank = len(str(world_size - 1))
     # nz = lrank - len(str(rank))
-    hn = socket.gethostname()
+    # hn = socket.gethostname()
     psizes = [print_dist_setup(display=False)]
     if (
         tensor_parallel_size > 1
@@ -2166,7 +2166,7 @@ def setup_wandb(
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime("%Y-%m-%d-%H%M%S")
-    settings = wandb.Settings()
+    # settings = wandb.Settings()
     # resume='allow',
     # dir=outdir,
     # sync_tensorboard = ((tensorboard_dir is not None),)  # True,
