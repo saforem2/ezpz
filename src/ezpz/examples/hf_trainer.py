@@ -93,15 +93,14 @@ def parse_args() -> dict:
             wandb.define_metric("num_input_tokens_seen")
             wandb.define_metric("train/", step_metric="num_input_tokens_seen")
             wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
-            if run is not None:
-                run.config.update(
-                    {
-                        "model": model_args.__dict__,
-                        "data": data_args.__dict__,
-                        "training": training_args.to_dict(),
-                        "ezpz.dist_info": ezpz.get_dist_info(),
-                    }
-                )
+            run.config.update(
+                {
+                    "model": model_args.__dict__,
+                    "data": data_args.__dict__,
+                    "training": training_args.to_dict(),
+                    "ezpz.dist_info": ezpz.get_dist_info(),
+                }
+            )
 
     if training_args.should_log:
         # The default of training_args.log_level is passive,
@@ -286,12 +285,12 @@ def main() -> int:
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
     import ezpz.dist
+
     rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
     # rank = ezpz.dist.setup_torch(
     #     # seed=training_args.seed,
     #     # device_id=int(devid) if devid is not None else devid,
     # )
-
 
     args = parse_args()
     # args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]
@@ -299,7 +298,7 @@ def main() -> int:
     assert "data" in args and "model" in args and "training" in args
     data_args: HfDataTrainingArguments = args["data"]
     model_args: HfModelArguments = args["model"]
-    training_args : TrainingArguments = args["training"]
+    training_args: TrainingArguments = args["training"]
 
     try:
         import wandb
@@ -315,7 +314,6 @@ def main() -> int:
             "We will continue without running evaluations. "
             'Please install it using "pip install evaluate" to run evaluations'
         )
-
 
     dsconfig_fp = (
         Path(training_args.deepspeed) if training_args.deepspeed else None
