@@ -8,10 +8,10 @@ from typing import List, Optional
 
 import ezpz
 from ezpz.configs import get_scheduler
-from ezpz.launch import launch
+from ezpz.launch import launch, run
 
 
-def _build_test_command(argv: List[str]) -> List[str]:
+def _build_test_command(argv: List[str] | None = None) -> List[str]:
     """Normalize user-provided arguments into a test command list."""
 
     if not argv:
@@ -51,16 +51,21 @@ def main(args: Optional[List[str]] = None) -> int:
 
     if scheduler in {"pbs", "slurm"}:
         cmd_str = " ".join(shlex.quote(part) for part in command)
+        # return launch(cmd_to_launch=cmd_str)
         return launch(cmd_to_launch=cmd_str)
 
-    fallback_cmd = ["mpirun", "-np", "2", *command]
+    # fallback_cmd = ["mpirun", "-np", "2", *command]
+    cmd_str = [*command, *args]
+    return run(cmd_str)
     # result = subprocess.run(fallback_cmd, check=False)
     # ezpz.cleanup()
     # return result.returncode
-    return launch(cmd_to_launch=fallback_cmd)
+    # return result
+    # return run(fallback_cmd)
 
 
 if __name__ == "__main__":
     t0 = time.perf_counter()
-    main()
+    retcode = main()
+    ezpz.cleanup()
     print(f"Took {time.perf_counter() - t0:.2f} seconds")
