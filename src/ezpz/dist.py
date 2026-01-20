@@ -487,8 +487,8 @@ def print_dist_setup(
         f"['{hn}']",
         f"[{device=}]",
         f"[node={node:>0{node_len}d}/{(num_nodes - 1):<0{num_nodes_len}d}]",
-        f"[rank={rank:>0{rank_width}d}/{wsa - 1:<0{rank_width}d}]",
         f"[local_rank={local_rank:>0{local_rank_width}d}/{gpus_per_node - 1:<0{local_rank_width}d}]",
+        f"[rank={rank:>0{rank_width}d}/{wsa - 1:<0{rank_width}d}]",
     ]
     if framework is not None:
         dist_list.append(f"[{framework=}]")
@@ -1747,12 +1747,14 @@ def setup_torch(
                 # dpranks = ezpz.tp.get_data_parallel_ranks()
                 psizes.append(f"[dp={dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
                 barrier(group=ezpz.tp.get_data_parallel_group())
+    barrier()
     # if not os.environ.get("ALREADY_PRINTED_HOSTS", "0"):
     # if rank == 0:
+    # if rank == 0:
     logger.info("".join(psizes))
+    barrier()
     # _ = print_dist_setup()
     # os.environ["ALREADY_PRINTED_HOSTS"] = "1"
-    barrier()
     return rank
 
 
