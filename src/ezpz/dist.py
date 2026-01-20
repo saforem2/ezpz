@@ -1120,6 +1120,15 @@ def get_local_rank() -> int:
         >>> local_rank = get_local_rank()
         >>> print(f"Local rank of the current process: {local_rank}")
     """
+    local_rank = os.environ.get(
+        "LOCAL_RANK",
+        os.environ.get(
+            "PMI_LOCAL_RANK",
+            os.environ.get("SLURM_LOCAL_ID")
+        )
+    )
+    if local_rank is not None:
+        return int(local_rank)
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
@@ -1277,6 +1286,7 @@ def setup_torch_DDP(
     world_size = int(get_world_size())
     rank = int(get_rank())
     local_rank = int(get_local_rank())
+    local_world_size = get_gpus_per_node()
     # ensure there is no funny business going on
     if os_rank and int(os_rank) != int(rank):
         logger.warning(f"Mismatch between {os_rank=} and {rank=}")
@@ -1286,9 +1296,9 @@ def setup_torch_DDP(
         logger.warning(f"Mismatch between {os_local_rank=} and {local_rank=}")
     # now, set these variables explicitly in the process' environment
     os.environ["LOCAL_RANK"] = str(local_rank)
+    os.environ["LOCAL_WORLD_SIZE"] = str(local_world_size)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
-    os.environ["LOCAL_SIZE"] = str(get_gpus_per_node())
     os.environ["LOCAL_IDX"] = str(local_rank)
     # -- Exit early if already initialized --
     import torch.distributed
@@ -2565,7 +2575,16 @@ def get_gpus_per_node() -> int:
     #         'No {X, G}pus found; but _assert specified. Returning !!'
     #     )
     # logger.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
-    ngpu_per_host = os.environ.get("NGPU_PER_HOST", None)
+    ngpu_per_host = os.environ.get(
+        "NGPU_PER_HOST",
+        os.environ.get(
+            "LOCAL_WORLD_SIZE",
+            os.environ.get(
+                "PMI_LOCAL_SIZE",
+                os.environ.get("SLURM_NTASKS_PER_NODE")
+            )
+        )
+    )
     if ngpu_per_host is not None:
         return int(ngpu_per_host)
     if torch.cuda.is_available():
