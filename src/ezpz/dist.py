@@ -24,7 +24,12 @@ import rich.text
 import torch
 import torch.distributed
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import FSDPModule, fully_shard, MixedPrecisionPolicy, MixedPrecision
+from torch.distributed.fsdp import (
+    FSDPModule,
+    fully_shard,
+    MixedPrecisionPolicy,
+    MixedPrecision,
+)
 import torch.nn
 
 # import torch.nn.parallel
@@ -632,12 +637,14 @@ def wrap_with_fsdp(
         **kwargs,
     )
 
+
 def wrap_with_fsdp2(
     model: torch.nn.Module,
     dtype: str = "bfloat16",
     device_mesh: DeviceMesh | None = None,
     **kwargs,
 ) -> FSDPModule:
+    """WIP"""
     if get_rank() == 0:
         logger.info(f"Wrapping model model with FSDP + {dtype}")
     fsdp_kwargs = {
@@ -649,6 +656,7 @@ def wrap_with_fsdp2(
     for module in model.modules():
         fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
     return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
+
 
 def wrap_model(
     model: torch.nn.Module,
