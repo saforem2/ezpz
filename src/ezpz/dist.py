@@ -1288,6 +1288,8 @@ def setup_torch_DDP(
     os.environ["LOCAL_RANK"] = str(local_rank)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_SIZE"] = str(get_gpus_per_node())
+    os.environ["LOCAL_IDX"] = str(local_rank)
     # -- Exit early if already initialized --
     import torch.distributed
 
