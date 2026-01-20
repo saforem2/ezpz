@@ -5,6 +5,7 @@ Contains methods for initializing distributed communication.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+from torch.distributed.device_mesh import DeviceMesh
 import datetime
 from functools import wraps
 import logging
@@ -23,7 +24,7 @@ import rich.text
 import torch
 import torch.distributed
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
+from torch.distributed.fsdp import FSDPModule, fully_shard, MixedPrecisionPolicy, MixedPrecision
 import torch.nn
 
 # import torch.nn.parallel
@@ -510,10 +511,10 @@ def print_dist_setup(
         )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
-                f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
+                f"[{num_nodes_from_hostfile=}]"
                 f"vs."
-                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}\\n"
-                r"¯\\_(ツ)_/¯ ??"
+                f"[{num_nodes}] ({wsa=} // {gpus_per_node=})"
+                # r" ¯\\_(ツ)_/¯ ??"
             )
     return dist_str
 
@@ -623,12 +624,30 @@ def wrap_with_fsdp(
         **kwargs,
     )
 
+def wrap_with_fsdp2(
+    model: torch.nn.Module,
+    dtype: str = "bfloat16",
+    device_mesh: DeviceMesh | None = None,
+    **kwargs,
+) -> FSDPModule:
+    if get_rank() == 0:
+        logger.info(f"Wrapping model model with FSDP + {dtype}")
+    fsdp_kwargs = {
+        "mp_policy": MixedPrecisionPolicy(
+            param_dtype=TORCH_DTYPES_MAP[dtype],
+            reduce_dtype=torch.float32,
+        )
+    }
+    for module in model.modules():
+        fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
+    return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
 
 def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool | None = True,
     dtype: str = "bfloat16",
     device_id: int | None = None,
+    device_mesh: Optional[DeviceMesh | None] = None,
 ) -> DistributedDataParallel | FSDP | torch.nn.Module:
     """Wrap a model with DDP or FSDP depending on ``use_fsdp`` and world size.
 
@@ -658,6 +677,7 @@ def wrap_model(
         logger.info(f"Wrapping model with: {'fsdp' if use_fsdp else 'ddp'}")
     if use_fsdp:
         model = wrap_with_fsdp(model, dtype=dtype, device_id=device_id)
+        # model = wrap_with_fsdp2(model, dtype=dtype, device_id=device_id, device_mesh=device_mesh)
     else:
         model = wrap_with_ddp(model)
 
@@ -1483,6 +1503,9 @@ def setup_torch_distributed(
         local_rank = dsetup["local_rank"]
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
+        if torch.xpu.is_available():
+            torch.xpu.set_device(local_rank)
+
     elif fw in {"deepspeed", "ds"}:
         init_deepspeed(timeout=int(timeout))
         world_size = get_world_size()
@@ -1697,11 +1720,11 @@ def setup_torch(
     os.environ["WORLD_SIZE"] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
-    if torch.xpu.is_available():
-        os.environ["CCL_LOCAL_SIZE"] = str(local_size)
-        os.environ["CCL_LOCAL_RANK"] = str(local_rank)
-        os.environ["CCL_LOCAL_IDX"] =str(local_rank)
-        torch.xpu.set_device(local_rank)
+    # if torch.xpu.is_available():
+    #     os.environ["CCL_LOCAL_SIZE"] = str(local_size)
+    #     os.environ["CCL_LOCAL_RANK"] = str(local_rank)
+    #     os.environ["CCL_LOCAL_IDX"] =str(local_rank)
+    #     # torch.xpu.set_device(local_rank)
     if seed is not None:
         if rank == 0:
             logger.warning(f"Manually specifying {seed=}")
