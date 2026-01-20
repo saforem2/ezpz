@@ -1122,10 +1122,7 @@ def get_local_rank() -> int:
     """
     local_rank = os.environ.get(
         "LOCAL_RANK",
-        os.environ.get(
-            "PMI_LOCAL_RANK",
-            os.environ.get("SLURM_LOCAL_ID")
-        )
+        os.environ.get("PMI_LOCAL_RANK", os.environ.get("SLURM_LOCAL_ID")),
     )
     if local_rank is not None:
         return int(local_rank)
@@ -2580,10 +2577,9 @@ def get_gpus_per_node() -> int:
         os.environ.get(
             "LOCAL_WORLD_SIZE",
             os.environ.get(
-                "PMI_LOCAL_SIZE",
-                os.environ.get("SLURM_NTASKS_PER_NODE")
-            )
-        )
+                "PMI_LOCAL_SIZE", os.environ.get("SLURM_NTASKS_PER_NODE")
+            ),
+        ),
     )
     if ngpu_per_host is not None:
         return int(ngpu_per_host)
