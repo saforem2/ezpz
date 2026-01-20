@@ -481,11 +481,11 @@ def run(argv: Sequence[str] | None = None) -> int:
             launch(
                 cmd_to_launch=command_parts,
                 include_python=False,
-                ngpus=args.nproc if args.nproc > -1 else None,
-                nhosts=args.nhosts if args.nhosts > -1 else None,
-                ngpu_per_host=args.nproc_per_node
-                if args.nproc_per_node > -1
-                else None,
+                ngpus=(args.nproc if args.nproc > -1 else None),
+                nhosts=(args.nhosts if args.nhosts > -1 else None),
+                ngpu_per_host=(
+                    args.nproc_per_node if args.nproc_per_node > -1 else None
+                ),
                 hostfile=args.hostfile,
                 filters=args.filter,
                 launcher_args=getattr(args, "launcher_args", []),
@@ -516,9 +516,27 @@ def run(argv: Sequence[str] | None = None) -> int:
         "No active scheduler detected; falling back to local mpirun: %s",
         " ".join(shlex.quote(part) for part in fallback_cmd),
     )
-    result = subprocess.run(fallback_cmd, check=False)
+    # cmd_str = [*fallback_cmd]
+    # return run(cmd_str)
+    # result = run(cmd_str)
+    # result = subprocess.run(fallback_cmd, check=False)
+    # ezpz.dist.cleanup()
+    # return result.returncode
+    filters = getattr(args, "filters", [])
+    if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
+        filters += get_aurora_filters()
+
+    print("\n") if ezpz.get_rank() == 0 else None
+    logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
+    logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
+    cmd_start = time.perf_counter()
+    retcode = run_command(command=fallback_cmd, filters=filters)
+    cmd_finish = time.perf_counter()
+    logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
+    logger.info(f"Execution finished with {retcode}.")
+    logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
     ezpz.dist.cleanup()
-    return result.returncode
+    return retcode
 
 
 def main() -> int:
