@@ -473,9 +473,14 @@ def print_dist_setup(
     hostfile = get_hostfile_with_fallback(hostfile)
     num_nodes = max((wsa // gpus_per_node, 1))
     num_nodes_from_hostfile = get_num_nodes()
-    node = get_node_index()
+    # node = get_node_index()
+    nodes = get_nodes_from_hostfile(hostfile)
+    node_dict = {
+        n: idx for idx, n in enumerate(sorted(set(nodes)))
+    }
     device = get_torch_device_type()
     hn = socket.gethostname()
+    node = node_dict.get(hn, 0)
 
     # Widths for alignment; pad with zeros for rank/local_rank to keep bracket contents aligned.
     rank_width = len(str(max(0, wsa - 1)))
