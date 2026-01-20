@@ -512,22 +512,16 @@ def run(argv: Sequence[str] | None = None) -> int:
         fallback_cmd.extend(["--map-by", f"ppr:{requested_ppn}:node"])
     fallback_cmd.extend(getattr(args, "launcher_args", []))
     fallback_cmd.extend(command_parts)
-    logger.info(
-        "No active scheduler detected; falling back to local mpirun: %s",
-        " ".join(shlex.quote(part) for part in fallback_cmd),
-    )
-    # cmd_str = [*fallback_cmd]
-    # return run(cmd_str)
-    # result = run(cmd_str)
-    # result = subprocess.run(fallback_cmd, check=False)
-    # ezpz.dist.cleanup()
-    # return result.returncode
     filters = getattr(args, "filters", [])
     if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
         filters += get_aurora_filters()
 
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
+    logger.info(
+        "No active scheduler detected; falling back to local mpirun: %s",
+        " ".join(shlex.quote(part) for part in fallback_cmd),
+    )
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
     retcode = run_command(command=fallback_cmd, filters=filters)
