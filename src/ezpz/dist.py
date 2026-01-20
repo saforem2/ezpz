@@ -474,14 +474,22 @@ def print_dist_setup(
     hostfile = get_hostfile_with_fallback(hostfile)
     num_nodes = max((wsa // gpus_per_node, 1))
     num_nodes_from_hostfile = get_num_nodes()
-    # node = get_node_index()
-    nodes = get_nodes_from_hostfile(hostfile)
-    node_dict = {
-        n: idx for idx, n in enumerate(sorted(set(nodes)))
-    }
+    node = get_node_index()
+    # nodes = get_nodes_from_hostfile(hostfile)
+    # nodes = [h.split(".")[0] for h in get_nodes_from_hostfile(hostfile)]
+    # nodes = [h.split("-")[0] for h in nodes]
+    # node_dict = {
+    #     h: idx for idx, h in enumerate(sorted(set(nodes)))
+    # }
+    # node_dict = {
+    #     idx: n for idx, n in enumerate(sorted(set(nodes)))
+    # }
     device = get_torch_device_type()
     hn = socket.gethostname()
-    node = node_dict.get(hn, 0)
+    # try:
+    #     node = node_dict[hn]
+    # except Exception:
+    #     ezpz.breakpoint(0)
 
     # Widths for alignment; pad with zeros for rank/local_rank to keep bracket contents aligned.
     rank_width = len(str(max(0, wsa - 1)))
@@ -2337,7 +2345,8 @@ def get_nodes_from_hostfile(
 
 def get_node_index() -> int:
     """Get the index of the current node in the hostfile"""
-    return get_rank() % get_num_nodes()
+    # return get_rank() % get_num_nodes()
+    return get_rank() // get_gpus_per_node()
 
 
 def write_localhost_to_hostfile(hostfile: PathLike):
