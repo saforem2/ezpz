@@ -249,6 +249,7 @@ nav:
           - <code>ezpz.profile</code>: python/Code-Reference/profile.md
           - <code>ezpz.slurm</code>: python/Code-Reference/slurm.md
           - <code>ezpz.test</code>: python/Code-Reference/test.md
+          - <code>ezpz.test_dist</code>: python/Code-Reference/test_dist.md
           - <code>ezpz.tplot</code>: python/Code-Reference/tplot.md
           - <code>ezpz.cli</code>:
               - python/Code-Reference/cli/index.md
@@ -312,7 +313,7 @@ nav:
       - notes/index.md
       - ❓ FAQ: notes/faq.md
       - 🧤 Hands-On Slides: notes/slides-2025-05-07.md
-      - 🧪 testing:
+      - 🧪 Tests:
           - python/tests/index.md
           - configs: python/tests/test-configs.md
           - configs-improved: python/tests/test-configs-improved.md
@@ -330,6 +331,7 @@ nav:
           - simple: python/tests/simple-test.md
           - simple-runner: python/tests/simple-test-runner.md
           - simple-ezpz: python/tests/test-simple-ezpz.md
+          - test: python/tests/test.md
           - tp: python/tests/test-tp.md
           - tplot: python/tests/test-tplot.md
           - utils: python/tests/test-utils.md
