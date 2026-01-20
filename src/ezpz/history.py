@@ -2299,11 +2299,12 @@ class History:
             and wandb.run is not None
         ):
             dset_name = f"{fname}_dataset" if fname != "dataset" else fname
+            dataframe = dataset.to_dataframe()
+            wbtable = wandb.Table(dataframe=dataframe)
             try:
-                wandb.log(
-                    {f"{dset_name}": wandb.Table(dataset.to_dataframe())}
-                )
-            except Exception:
+                wandb.log({f"{dset_name}": wbtable})
+            except Exception as e:
+                logger.exception(e)
                 logger.warning("Unable to save dataset to W&B, skipping!")
 
         return save_dataset(
@@ -2421,4 +2422,6 @@ class History:
                 "Saving history report to %s",
                 base_dir.joinpath(self._report_filename),
             )
+        if wandb is not None and (run := getattr(wandb, "run")) is not None:
+            logger.info(f"wandb.run=[{run.name}]({run.url})")
         return dataset
