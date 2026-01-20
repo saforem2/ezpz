@@ -1693,6 +1693,9 @@ def setup_torch(
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
     if torch.xpu.is_available():
+        os.environ["CCL_LOCAL_SIZE"] = str(local_size)
+        os.environ["CCL_LOCAL_RANK"] = str(local_rank)
+        os.environ["CCL_LOCAL_IDX"] =str(local_rank)
         torch.xpu.set_device(local_rank)
     if seed is not None:
         if rank == 0:
@@ -1809,8 +1812,8 @@ def setup_tensorflow(
         "mixed_float16",
         # 'mixed_bfloat16'
     ]:
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # type:ignore
-    TF_FLOAT = tf.keras.backend.floatx()  # type:ignore
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get("TF_EAGER", None)
     if eager_mode is not None:
         logger.info("Detected `TF_EAGER` from env. Running eagerly.")
