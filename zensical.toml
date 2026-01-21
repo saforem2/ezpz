@@ -52,13 +52,13 @@ nav = [
         { "🚀 <code>ezpz launch</code>" = "cli/launch/index.md" },
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
-        { "📘 References" = [
-            { "🗓️ PBS" = "notes/pbs.md" },
-            { "📄 Report" = "cli/test-report.md" },
-        ] },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
+        ] },
+        { "📘 References" = [
+            { "🗓️ PBS" = "notes/pbs.md" },
+            { "📄 Report" = "cli/test-report.md" },
         ] },
     ] },
 
@@ -561,6 +561,13 @@ inherited_members = true
 show_source = true
 
 
+# [project.markdown_extensions.zensical.extensions.preview]
+# configurations = [
+# { targets.include = [
+#         ""
+#     ]}
+# ]
+
 [project.markdown_extensions.admonition]
 [project.markdown_extensions.pymdownx.details]
 [project.markdown_extensions.pymdownx.superfences]
@@ -580,6 +587,7 @@ pygments_lang_class = true
 # auto_title = true
 linenums_style = "pymdownx-inline"
 [project.markdown_extensions.pymdownx.snippets]
+base_path = "includes"
 
 [project.markdown_extensions.pymdownx.emoji]
 emoji_index = "zensical.extensions.emoji.twemoji"    # (1)!
