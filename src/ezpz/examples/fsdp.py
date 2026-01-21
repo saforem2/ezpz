@@ -37,6 +37,7 @@ from torch.utils.data import DistributedSampler, DataLoader
 import argparse
 import os
 from pathlib import Path
+import sys
 import time
 
 import ezpz
@@ -66,23 +67,70 @@ fname = f"{fp.parent.stem}.{fp.stem}"
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 OUTPUT_DIR = Path(os.getcwd()).joinpath("outputs", fname)
 
+MODEL_PRESETS = {
+    "debug": {
+        "conv1_channels": 8,
+        "conv2_channels": 16,
+        "fc_dim": 64,
+    },
+    "small": {
+        "conv1_channels": 16,
+        "conv2_channels": 32,
+        "fc_dim": 128,
+    },
+    "medium": {
+        "conv1_channels": 32,
+        "conv2_channels": 64,
+        "fc_dim": 256,
+    },
+    "large": {
+        "conv1_channels": 64,
+        "conv2_channels": 128,
+        "fc_dim": 512,
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "conv1_channels": ["--conv1-channels"],
+    "conv2_channels": ["--conv2-channels"],
+    "fc_dim": ["--fc-dim"],
+}
+
 
 class Net(nn.Module):
     """Simple CNN classifier used in the FSDP example."""
 
-    def __init__(self, num_classes: int = 10):
+    def __init__(
+        self,
+        num_classes: int = 10,
+        img_size: int = 28,
+        conv1_channels: int = 32,
+        conv2_channels: int = 64,
+        fc_dim: int = 128,
+    ):
         """Initialize convolutional and fully connected layers.
 
         Args:
             num_classes: Number of output classes for the classifier.
+            img_size: Input image size (assumes square inputs).
+            conv1_channels: Number of output channels for conv1.
+            conv2_channels: Number of output channels for conv2.
+            fc_dim: Hidden dimension for the first fully connected layer.
         """
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, conv1_channels, 3, 1)
+        self.conv2 = nn.Conv2d(conv1_channels, conv2_channels, 3, 1)
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(9216, 128)
-        self.fc2 = nn.Linear(128, num_classes)
+        feature_size = self._feature_size(img_size, conv2_channels)
+        self.fc1 = nn.Linear(feature_size, fc_dim)
+        self.fc2 = nn.Linear(fc_dim, num_classes)
+
+    @staticmethod
+    def _feature_size(img_size: int, conv2_channels: int) -> int:
+        conv1_size = img_size - 2
+        conv2_size = conv1_size - 2
+        pooled_size = conv2_size // 2
+        return conv2_channels * pooled_size * pooled_size
 
     def forward(self, x):
         """Compute logits for input images."""
@@ -120,17 +168,21 @@ def train(
     Returns:
         Dict with epoch, wall-clock duration, and averaged train loss.
     """
-    DEVICE = ezpz.get_torch_device()
-    DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
+    device_type = ezpz.dist.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+    )
     model.train()
-    ddp_loss = torch.zeros(2).to(DEVICE_ID)
+    ddp_loss = torch.zeros(2).to(device)
     if sampler:
         sampler.set_epoch(epoch)
     ezpz.dist.synchronize()
     t0 = time.perf_counter()
     batch, target = next(iter(train_loader))
     for _, (batch, target) in enumerate(train_loader):
-        batch, target = batch.to(DEVICE_ID), target.to(DEVICE_ID)
+        batch, target = batch.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(batch)
         loss = F.nll_loss(output, target, reduction="sum")
@@ -150,22 +202,24 @@ def train(
 
 def test(model, test_loader):
     """Evaluate model on validation data and gather metrics."""
-    DEVICE = ezpz.get_torch_device()
-    DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
+    device_type = ezpz.dist.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+    )
     model.eval()
     # correct = 0
-    ddp_loss = torch.zeros(3).to(DEVICE_ID)
+    ddp_loss = torch.zeros(3).to(device)
     with torch.no_grad():
         for batch, target in test_loader:
-            batch, target = batch.to(DEVICE_ID), target.to(DEVICE_ID)
+            batch, target = batch.to(device), target.to(device)
             output = model(batch)
-            ddp_loss[0] += F.nll_loss(
-                output, target, reduction="sum"
-            ).item()  # sum up batch loss
+            ddp_loss[0] += F.nll_loss(output, target, reduction="sum")
             pred = output.argmax(
                 dim=1, keepdim=True
             )  # get the index of the max log-probability
-            ddp_loss[1] += pred.eq(target.view_as(pred)).sum().item()
+            ddp_loss[1] += pred.eq(target.view_as(pred)).sum()
             ddp_loss[2] += len(batch)
 
     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
@@ -180,19 +234,33 @@ def test(model, test_loader):
 
 def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
     """Create the FSDP-wrapped model, optimizer, and LR scheduler."""
-    DEVICE = ezpz.get_torch_device()
-    DEVICE_ID = f"{DEVICE}:{ezpz.get_local_rank()}"
+    device_type = ezpz.dist.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+    )
     if args.dataset == "MNIST":
         num_classes = 10
+        img_size = 28
     elif args.dataset == "OpenImages":
         num_classes = 600
+        img_size = 224
     elif args.dataset == "ImageNet":
         num_classes = 1000
+        img_size = 224
     elif args.dataset == "ImageNet1k":
         num_classes = 1000
+        img_size = 224
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
-    model = Net(num_classes=num_classes).to(DEVICE_ID)
+    model = Net(
+        num_classes=num_classes,
+        img_size=img_size,
+        conv1_channels=args.conv1_channels,
+        conv2_channels=args.conv2_channels,
+        fc_dim=args.fc_dim,
+    ).to(device)
     logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
     dtypes = {
         "fp16": torch.float16,
@@ -203,6 +271,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
     dtype = dtypes[args.dtype]
     model = FSDP(
         model,
+        device_id=device,
         mixed_precision=MixedPrecision(
             param_dtype=dtype,
             cast_forward_inputs=True,
@@ -360,8 +429,24 @@ def fsdp_main(args: argparse.Namespace) -> None:
         logger.info(f"{dataset=}")
 
 
-def parse_args() -> argparse.Namespace:
+def _arg_provided(argv: list[str], flags: list[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS[args.model]
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI parser for the FSDP example."""
+    if argv is None:
+        argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="PyTorch MNIST Example using FSDP"
     )
@@ -385,6 +470,34 @@ def parse_args() -> argparse.Namespace:
         default=64,
         metavar="N",
         help="input batch size for training (default: 64)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=sorted(MODEL_PRESETS.keys()),
+        help="Model size preset (overrides conv/fc defaults)",
+    )
+    parser.add_argument(
+        "--conv1-channels",
+        type=int,
+        default=32,
+        metavar="N",
+        help="Number of output channels in conv1",
+    )
+    parser.add_argument(
+        "--conv2-channels",
+        type=int,
+        default=64,
+        metavar="N",
+        help="Number of output channels in conv2",
+    )
+    parser.add_argument(
+        "--fc-dim",
+        type=int,
+        default=128,
+        metavar="N",
+        help="Hidden dimension for the first linear layer",
     )
     parser.add_argument(
         "--dtype",
@@ -441,7 +554,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="data directory prefix",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    apply_model_preset(args, argv)
+    return args
 
 
 if __name__ == "__main__":
