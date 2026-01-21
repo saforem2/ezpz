@@ -169,6 +169,59 @@ WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 WBRUN_NAME = f"{ezpz.get_timestamp()}"
 OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
+MODEL_PRESETS = {
+    "debug": {
+        "dim": 128,
+        "n_layers": 4,
+        "n_heads": 4,
+        "n_kv_heads": 2,
+        "multiple_of": 128,
+        "seq_length": 256,
+        "seq_len": 256,
+        "batch_size": 1,
+    },
+    "small": {
+        "dim": 256,
+        "n_layers": 8,
+        "n_heads": 8,
+        "n_kv_heads": 4,
+        "multiple_of": 128,
+        "seq_length": 512,
+        "seq_len": 512,
+        "batch_size": 2,
+    },
+    "medium": {
+        "dim": 512,
+        "n_layers": 16,
+        "n_heads": 8,
+        "n_kv_heads": 4,
+        "multiple_of": 256,
+        "seq_length": 1024,
+        "seq_len": 1024,
+        "batch_size": 2,
+    },
+    "large": {
+        "dim": 1024,
+        "n_layers": 24,
+        "n_heads": 16,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_length": 2048,
+        "seq_len": 2048,
+        "batch_size": 1,
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "dim": ["--dim"],
+    "n_layers": ["--n-layers"],
+    "n_heads": ["--n-heads"],
+    "n_kv_heads": ["--n-kv-heads"],
+    "multiple_of": ["--multiple-of"],
+    "seq_length": ["--seq-length"],
+    "seq_len": ["--seq-len"],
+    "batch_size": ["--batch-size"],
+}
+
 
 SHARDING_STRATEGIES = {
     "no_shard": ShardingStrategy.NO_SHARD,
@@ -374,8 +427,24 @@ def _wandb_log_histograms(
         wandb.log(hist_payload, step=step)
 
 
-def parse_args():
+def _arg_provided(argv: list[str], flags: list[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS[args.model]
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def parse_args(argv: Optional[list[str]] = None):
     """CLI parser for 2D parallel (TP/SP + FSDP) training."""
+    if argv is None:
+        argv = sys.argv[1:]
     parser = argparse.ArgumentParser(description="2D Parallel Training")
     parser.add_argument("--dim", type=int, default=256)
     parser.add_argument("--n-layers", type=int, default=32)
@@ -389,6 +458,13 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=sorted(MODEL_PRESETS.keys()),
+        help="Model size preset (overrides dim/layer defaults)",
+    )
     parser.add_argument("--test-batch-size", type=int, default=1000)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=None)
@@ -443,7 +519,9 @@ def parse_args():
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
     # depth_init: bool = True
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    apply_model_preset(args, argv)
+    return args
 
 
 def parallelize(
@@ -451,6 +529,7 @@ def parallelize(
     device_mesh: DeviceMesh,
     mixed_precision: Optional[MixedPrecision],
     sharding_strategy: Optional[ShardingStrategy | str] = None,
+    device_id: Optional[torch.device] = None,
 ) -> nn.Module:
     """Wrap the model with tensor-parallel and FSDP sharding strategies."""
     tp_mesh = device_mesh["tp"]
@@ -521,6 +600,7 @@ def parallelize(
         mixed_precision=mixed_precision,
         device_mesh=dp_mesh,
         sharding_strategy=sharding_strategy,
+        device_id=device_id,
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
     return sharded_model
@@ -662,8 +742,12 @@ def train(
             wandb.config.update(ezpz.get_dist_info())
             wandb.config.update(asdict(config))  # type:ignore
 
-    device_type = str(ezpz.get_torch_device(as_torch_device=False))
-    device_id = f"{device_type}:{ezpz.get_local_rank()}"
+    device_type = ezpz.dist.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.get_local_rank()}")
+    )
     model = Transformer.from_model_args(config)
     mstr = summarize_model(
         model,
@@ -676,7 +760,7 @@ def train(
         # ).shape,
     )
     logger.info(f"\n{mstr}")
-    model.to(device_id)
+    model.to(device)
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
         mp_config = MixedPrecision(
@@ -689,6 +773,7 @@ def train(
         device_mesh,
         mp_config,
         sharding_strategy=args.sharding_strategy,
+        device_id=device,
     )
     base_model = model
     if not hasattr(base_model, "layers"):
@@ -707,7 +792,7 @@ def train(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, foreach=True)
 
-    device = ezpz.get_torch_device(as_torch_device=False)
+    # reuse device for input placement
 
     tp_group = device_mesh.get_group("tp")
     if args.dataset.lower() == "mnist":
@@ -810,7 +895,7 @@ def train(
             else:
                 x = batch
             assert isinstance(x, torch.Tensor)
-            x = x.to(device_id)
+            x = x.to(device)
             x = x.to(torch.long)
             if args.dataset == "random":
                 inp = x[:, :-1]
@@ -818,10 +903,10 @@ def train(
             else:
                 inp = x[:, :-1]
                 labels = x[:, 1:]
-            inp = inp.to(device_id)
-            labels = labels.to(device_id)
+            inp = inp.to(device)
+            labels = labels.to(device)
             if attn_mask is not None:
-                attn_mask = attn_mask.to(device_id)
+                attn_mask = attn_mask.to(device)
             pred = model(inp)
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
@@ -904,7 +989,7 @@ def train(
             if grad_norm_preclip is not None:
                 metrics["grad/norm_preclip"] = float(grad_norm_preclip)
             if global_step % max(metrics_every, 1) == 0:
-                metrics.update(_collect_param_grad_stats(model, device_id))
+                metrics.update(_collect_param_grad_stats(model, device))
                 metrics["opt/iter"] = (global_step,)
                 metrics["opt/lr"] = float(optimizer.param_groups[0]["lr"])
                 metrics["input/iter"] = (global_step,)
