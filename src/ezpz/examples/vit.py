@@ -70,9 +70,8 @@ Help output (``python3 -m ezpz.examples.vit --help``):
 """
 
 import argparse
-from dataclasses import asdict
-from dataclasses import dataclass, field
 import functools
+import math
 from pathlib import Path
 import sys
 import time
@@ -84,7 +83,6 @@ import ezpz
 import ezpz.dist
 
 # from TORCH_DTYPES_MAP
-from ezpz.configs import timmViTConfig
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
@@ -127,6 +125,16 @@ MODEL_PRESET_FLAGS = {
     "num_heads": ["--num_heads", "--num-heads"],
     "head_dim": ["--head_dim", "--head-dim"],
     "depth": ["--depth"],
+}
+MNIST_DEFAULTS = {
+    "img_size": 28,
+    "num_classes": 10,
+    "patch_size": 4,
+}
+MNIST_DEFAULT_FLAGS = {
+    "img_size": ["--img_size", "--img-size"],
+    "num_classes": ["--num_classes", "--num-classes"],
+    "patch_size": ["--patch_size", "--patch-size"],
 }
 
 
@@ -259,6 +267,25 @@ def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
             setattr(args, field_name, value)
 
 
+def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.dataset != "mnist":
+        return
+    for field_name, value in MNIST_DEFAULTS.items():
+        flags = MNIST_DEFAULT_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def validate_dataset_args(args: argparse.Namespace) -> None:
+    if args.dataset != "mnist":
+        return
+    if args.img_size % args.patch_size != 0:
+        raise ValueError(
+            "MNIST img_size must be divisible by patch_size; "
+            f"got img_size={args.img_size} and patch_size={args.patch_size}."
+        )
+
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse CLI arguments for ViT training."""
     if argv is None:
@@ -324,7 +351,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--dataset",
-        default="fake",
+        default="mnist",
         choices=["fake", "mnist"],
         help="Dataset to use",
     )
@@ -387,54 +414,28 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
+    apply_dataset_overrides(args, argv)
+    validate_dataset_args(args)
     return args
 
 
-@dataclass
-class VitTrainArgs:
-    """Structured configuration for Vision Transformer training."""
-
-    img_size: int = 224
-    batch_size: int = 128
-    num_heads: int = 16
-    compile: bool = False
-    depth: int = 8
-    dtype: str = "bf16"
-    head_dim: int = 64
-    hidden_dim: int = 1024
-    mlp_dim: int = 2048
-    max_iters: int = 1000
-    dropout: float = 0.1
-    attention_dropout: float = 0.0
-    num_classes: int = 1000
-    dataset: str = "fake"
-    depth: int = 24
-    patch_size: int = 16
-    num_workers: int = 0
-    warmup: float = 0.1
-    attn_type: str = "native"
-    fsdp: Optional[bool] = None
-    format: Optional[str] = field(default_factory=str)
-    cuda_sdpa_backend: Optional[str] = "all"
-
-
-def get_device_type():
-    """Resolve the torch device type, falling back if MPS lacks collectives."""
-    import os
-
-    device_override = os.environ.get("TORCH_DEVICE")
-    device_type = device_override or ezpz.get_torch_device()
-    if isinstance(device_type, str) and device_type.startswith("mps"):
-        logger.warning(
-            "MPS does not support torch.distributed collectives; falling back to CPU"
-        )
-        return "cpu"
-    return ezpz.get_torch_device_type()
+# def get_device_type():
+#     """Resolve the torch device type, falling back if MPS lacks collectives."""
+#     import os
+#
+#     device_override = os.environ.get("TORCH_DEVICE")
+#     device_type = device_override or ezpz.get_torch_device()
+#     if isinstance(device_type, str) and device_type.startswith("mps"):
+#         logger.warning(
+#             "MPS does not support torch.distributed collectives; falling back to CPU"
+#         )
+#         return "cpu"
+#     return ezpz.get_torch_device_type()
 
 
 def train_fn(
     block_fn: Any,
-    args: VitTrainArgs,
+    args: argparse.Namespace,
     dataset: Optional[str] = "fake",
 ) -> ezpz.History:
     """Train the Vision Transformer on fake or MNIST data.
@@ -456,24 +457,15 @@ def train_fn(
     device_type = ezpz.dist.get_torch_device_type()
     device = torch.device(f"{device_type}:{local_rank}")
     # torch.set_default_device(device)
-    config = timmViTConfig(
-        img_size=args.img_size,
-        batch_size=args.batch_size,
-        num_heads=args.num_heads,
-        head_dim=args.head_dim,
-        depth=args.depth,
-        patch_size=args.patch_size,
-    )
-
-    logger.info(f"{asdict(config)=}")
+    logger.info("train_args=%s", vars(args))
 
     if dataset == "fake":
-        data = get_fake_data(
+        dataset_dict = get_fake_data(
             img_size=args.img_size,
             batch_size=args.batch_size,
         )
     elif dataset == "mnist":
-        data = get_mnist(
+        dataset_dict = get_mnist(
             train_batch_size=args.batch_size,
             test_batch_size=args.batch_size,
             download=(ezpz.dist.get_rank() == 0),
@@ -497,12 +489,12 @@ def train_fn(
 
     in_chans = 1 if dataset == "mnist" else 3
     model = SimpleVisionTransformer(
-        img_size=config.img_size,
-        patch_size=config.patch_size,
+        img_size=args.img_size,
+        patch_size=args.patch_size,
         in_chans=in_chans,
-        embed_dim=(config.num_heads * config.head_dim),
-        depth=config.depth,
-        num_heads=config.num_heads,
+        embed_dim=(args.num_heads * args.head_dim),
+        depth=args.depth,
+        num_heads=args.num_heads,
         num_classes=args.num_classes,
         class_token=False,
         global_pool="avg",
@@ -515,10 +507,10 @@ def train_fn(
         verbose=False,
         depth=1,
         input_size=(
-            config.batch_size,
+            args.batch_size,
             in_chans,
-            config.img_size,
-            config.img_size,
+            args.img_size,
+            args.img_size,
         ),
     )
     model.to(device)
@@ -541,7 +533,10 @@ def train_fn(
     if wandb is not None and ezpz.verify_wandb():
         if (run := getattr(wandb, "run")) is not None and run is wandb.run:
             try:
-                wandb.run.watch(model, log="all")  # type:ignore
+                if args.compile:
+                    logger.info("Skipping wandb watch while compiling")
+                else:
+                    wandb.run.watch(model, log="all")  # type:ignore
             except Exception as e:
                 logger.exception(e)
                 logger.warning(
@@ -598,6 +593,9 @@ def train_fn(
     model.train()  # type:ignore
 
     history = ezpz.history.History()
+    eval_history = ezpz.history.History()
+    run_stamp = ezpz.get_timestamp()
+    run_dir = Path.cwd().joinpath("outputs", WBRUN_NAME, run_stamp)
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -609,22 +607,25 @@ def train_fn(
             * (
                 args.max_iters
                 if args.max_iters is not None
-                else len(data["train"]["loader"])
+                else len(dataset_dict["train"]["loader"])
             )
         )
     )
     # data["train"].to(ezpz.dist.get_torch_device_type())
-    for step, data in enumerate(data["train"]["loader"]):
+    last_step = -1
+    for step, batch in enumerate(dataset_dict["train"]["loader"]):
+        last_step = step
         if args.max_iters is not None and step > int(args.max_iters):
             break
         t0 = time.perf_counter()
-        inputs = data[0].to(device=device, non_blocking=True)
-        label = data[1].to(device=device, non_blocking=True)
+        inputs = batch[0].to(device=device, non_blocking=True)
+        label = batch[1].to(device=device, non_blocking=True)
         ezpz.dist.synchronize()
         with torch.autocast(device_type=device_type, dtype=torch_dtype):
             t1 = time.perf_counter()
             outputs = model(inputs)
             loss = criterion(outputs, label)
+            acc = (outputs.argmax(dim=-1) == label).float().mean()
             t2 = time.perf_counter()
         ezpz.dist.synchronize()
         optimizer.zero_grad(set_to_none=True)
@@ -635,25 +636,109 @@ def train_fn(
         ezpz.dist.synchronize()
         t4 = time.perf_counter()
         if step >= warmup_iters:
-            logger.info(
-                history.update(
-                    {
-                        "train/iter": step,
-                        "train/loss": loss,
-                        "train/dt": t4 - t0,
-                        "train/dtd": t1 - t0,
-                        "train/dtf": t2 - t1,
-                        "train/dto": t3 - t2,
-                        "train/dtb": t4 - t3,
-                    }
-                ).replace("train/", "")
+            loss_value = float(loss.detach().item())
+            acc_value = float(acc.detach().item())
+            if not math.isfinite(loss_value) or not math.isfinite(acc_value):
+                logger.warning(
+                    "Skipping non-finite train metrics at step=%s", step
+                )
+                continue
+            train_msg = history.update(
+                {
+                    "train/iter": step,
+                    "train/loss": loss_value,
+                    "train/acc": acc_value,
+                    "train/dt": t4 - t0,
+                    "train/dtd": t1 - t0,
+                    "train/dtf": t2 - t1,
+                    "train/dto": t3 - t2,
+                    "train/dtb": t4 - t3,
+                }
+            ).replace("train/", "")
+            logger.info("[train] %s", train_msg)
+
+    if "test" in dataset_dict:
+        model.eval()  # type:ignore
+        eval_loss = 0.0
+        eval_acc = 0.0
+        eval_count = 0
+        eval_step = 0
+        with torch.no_grad():
+            for batch in dataset_dict["test"]["loader"]:
+                inputs = batch[0].to(device=device, non_blocking=True)
+                labels = batch[1].to(device=device, non_blocking=True)
+                with torch.autocast(device_type=device_type, dtype=torch_dtype):
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    correct = (outputs.argmax(dim=-1) == labels).sum()
+                batch_size = labels.numel()
+                eval_loss += loss.item() * batch_size
+                eval_acc += correct.item()
+                eval_count += batch_size
+                batch_loss = float(loss.detach().item())
+                batch_acc = float(correct.item() / batch_size)
+                if math.isfinite(batch_loss) and math.isfinite(batch_acc):
+                    eval_msg = eval_history.update(
+                        {
+                            "eval/iter": eval_step,
+                            "eval/loss": batch_loss,
+                            "eval/acc": batch_acc,
+                        }
+                    ).replace("eval/", "")
+                    logger.info("[eval] %s", eval_msg)
+                eval_step += 1
+        if eval_count:
+            total_loss = torch.tensor(eval_loss, device=device)
+            total_correct = torch.tensor(eval_acc, device=device)
+            total_count = torch.tensor(eval_count, device=device)
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                torch.distributed.all_reduce(total_loss)
+                torch.distributed.all_reduce(total_correct)
+                torch.distributed.all_reduce(total_count)
+            eval_loss_value = float(total_loss.item() / total_count.item())
+            eval_acc_value = float(total_correct.item() / total_count.item())
+            if not math.isfinite(eval_loss_value) or not math.isfinite(
+                eval_acc_value
+            ):
+                logger.warning("Skipping non-finite eval metrics")
+                model.train()  # type:ignore
+                return history
+            summary_rows = [
+                ("loss", f"{eval_loss_value:.6f}"),
+                ("acc", f"{eval_acc_value:.6f}"),
+                ("samples", f"{int(total_count.item())}"),
+            ]
+            header = ("eval metric", "value")
+            col1 = max(len(header[0]), *(len(row[0]) for row in summary_rows))
+            col2 = max(len(header[1]), *(len(row[1]) for row in summary_rows))
+            summary_table = [
+                "Eval summary:",
+                f"| {header[0]:<{col1}} | {header[1]:>{col2}} |",
+                f"|:{'-' * (col1 - 1)} | {'-' * (col2 - 1)}:|",
+            ]
+            summary_table.extend(
+                f"| {name:<{col1}} | {value:>{col2}} |"
+                for name, value in summary_rows
             )
+            logger.info("\n".join(f"[eval] {line}" for line in summary_table))
+        model.train()  # type:ignore
 
     if ezpz.dist.get_rank() == 0:
         dataset = history.finalize(
-            run_name=WBRUN_NAME, dataset_fname="train", verbose=False
+            outdir=run_dir,
+            run_name=WBRUN_NAME,
+            dataset_fname="train",
+            verbose=False,
         )
         logger.info(f"{dataset=}")
+        if "test" in dataset_dict:
+            eval_dataset = eval_history.finalize(
+                outdir=run_dir,
+                run_name=WBRUN_NAME,
+                dataset_fname="eval",
+                verbose=False,
+            )
+            logger.info(f"{eval_dataset=}")
 
     return history
 
@@ -674,29 +759,20 @@ def main(args: argparse.Namespace):
         except Exception:
             logger.warning("Failed to setup wandb, continuing without!")
 
-    targs = dict(**vars(args))
-    targs.pop("dataset", None)
-    targs.pop("use_timm", None)
-    targs.pop("model", None)
-    train_args = VitTrainArgs(**targs)
-    # train_args:  = (**targs)
-    config = timmViTConfig(
-        img_size=args.img_size,
-        batch_size=args.batch_size,
-        num_heads=args.num_heads,
-        head_dim=args.head_dim,
-        depth=args.depth,
-        patch_size=int(args.patch_size),
-    )
-
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
     ) -> torch.Tensor:
         """Scaled dot-product attention with configurable backend."""
-        scale = config.head_dim ** (-0.5)
+        scale = args.head_dim ** (-0.5)
         q = q * scale
         attn = q @ k.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
+        if args.attention_dropout > 0.0:
+            attn = torch.nn.functional.dropout(
+                attn,
+                p=args.attention_dropout,
+                training=torch.is_grad_enabled(),
+            )
         x = attn @ v
         return x
 
@@ -722,12 +798,19 @@ def main(args: argparse.Namespace):
 
         block_fn = functools.partial(
             AttentionBlock,
-            attn_fn=torch.nn.functional.scaled_dot_product_attention,
+            attn_fn=lambda q, k, v: torch.nn.functional.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                dropout_p=(
+                    args.attention_dropout if torch.is_grad_enabled() else 0.0
+                ),
+            ),
         )
     else:
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
-    train_fn(block_fn, args=train_args, dataset=args.dataset)
+    train_fn(block_fn, args=args, dataset=args.dataset)
 
 
 if __name__ == "__main__":
