@@ -5,6 +5,7 @@ Contains methods for initializing distributed communication.
 """
 
 from __future__ import absolute_import, annotations, division, print_function
+from torch.distributed.device_mesh import DeviceMesh
 import datetime
 from functools import wraps
 import logging
@@ -13,7 +14,7 @@ from pathlib import Path
 import socket
 import sys
 import time
-from typing import Callable, Optional, Union, Any, Iterable
+from typing import Callable, Literal, Optional, Union, Any, Iterable, Sequence
 from datetime import timedelta
 
 from mpi4py import MPI
@@ -23,8 +24,14 @@ import rich.text
 import torch
 import torch.distributed
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import MixedPrecision
+from torch.distributed.fsdp import (
+    FSDPModule,
+    fully_shard,
+    MixedPrecisionPolicy,
+    MixedPrecision,
+)
 import torch.nn
+
 # import torch.nn.parallel
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel.distributed import DistributedDataParallel
@@ -315,27 +322,28 @@ def get_hosts_from_hostfile(
     """
     # hostfile = '' if hostfile is None else hostfile
     hostname = get_hostname()
-    hostfile = os.environ.get(
-        "HOSTFILE",
-        os.environ.get(
-            "PBS_NODEFILE",
+    if hostfile is None:
+        hostfile = os.environ.get(
+            "HOSTFILE",
             os.environ.get(
-                "COBALT_NODEFILE",
-                None,
+                "PBS_NODEFILE",
+                os.environ.get(
+                    "COBALT_NODEFILE",
+                    None,
+                ),
             ),
-        ),
-    )
+        )
     hosts: list[str] = []
-    assert hostfile is not None
-    if Path(hostfile).is_file():
+    if hostfile is not None and Path(hostfile).is_file():
         if get_rank() == 0:
-            logger.debug(f"Reading hosts from {hostfile}")
+            logger.debug("Reading hosts from %s", hostfile)
         hpath = Path(hostfile).resolve().absolute()
         with hpath.open("r") as f:
             hosts.extend([h.rstrip("\n") for h in f.readlines()])
-    else:
-        hosts.append(hostname)
-    return Path(hostfile).as_posix(), hosts
+        return hpath.as_posix(), hosts
+    hosts.append(hostname)
+    hostfile_path = Path(hostfile).as_posix() if hostfile else ""
+    return hostfile_path, hosts
 
 
 def get_hostname() -> str:
@@ -395,9 +403,13 @@ def _get_dist_info(
     from ezpz.configs import get_scheduler
 
     hf = get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
-    hfp = Path(hf)
-    assert hfp is not None and hfp.is_file()
-    hosts = get_nodes_from_hostfile(hfp.as_posix())
+    hfp = Path(hf) if hf is not None else None
+    if hfp is not None and hfp.is_file():
+        hosts = get_nodes_from_hostfile(hfp.as_posix())
+        hostfile_path = hfp.absolute().resolve().as_posix()
+    else:
+        hosts = [get_hostname()]
+        hostfile_path = hfp.as_posix() if hfp is not None else ""
     num_nodes = len(hosts)
     num_gpus_per_node = get_gpus_per_node()
     num_gpus = num_nodes * num_gpus_per_node
@@ -410,7 +422,7 @@ def _get_dist_info(
         "DISTRIBUTED_BACKEND": get_torch_backend(),
         "GPUS_PER_NODE": num_gpus_per_node,
         "HOSTS": f"{hosts}",
-        "HOSTFILE": hfp.absolute().resolve().as_posix(),
+        "HOSTFILE": hostfile_path,
         "HOSTNAME": get_hostname(),
         "LOCAL_RANK": get_local_rank(),
         "local_rank": get_local_rank(),
@@ -473,8 +485,21 @@ def print_dist_setup(
     num_nodes = max((wsa // gpus_per_node, 1))
     num_nodes_from_hostfile = get_num_nodes()
     node = get_node_index()
+    # nodes = get_nodes_from_hostfile(hostfile)
+    # nodes = [h.split(".")[0] for h in get_nodes_from_hostfile(hostfile)]
+    # nodes = [h.split("-")[0] for h in nodes]
+    # node_dict = {
+    #     h: idx for idx, h in enumerate(sorted(set(nodes)))
+    # }
+    # node_dict = {
+    #     idx: n for idx, n in enumerate(sorted(set(nodes)))
+    # }
     device = get_torch_device_type()
     hn = socket.gethostname()
+    # try:
+    #     node = node_dict[hn]
+    # except Exception:
+    #     ezpz.breakpoint(0)
 
     # Widths for alignment; pad with zeros for rank/local_rank to keep bracket contents aligned.
     rank_width = len(str(max(0, wsa - 1)))
@@ -486,8 +511,8 @@ def print_dist_setup(
         f"['{hn}']",
         f"[{device=}]",
         f"[node={node:>0{node_len}d}/{(num_nodes - 1):<0{num_nodes_len}d}]",
-        f"[rank={rank:>0{rank_width}d}/{wsa - 1:<0{rank_width}d}]",
         f"[local_rank={local_rank:>0{local_rank_width}d}/{gpus_per_node - 1:<0{local_rank_width}d}]",
+        f"[rank={rank:>0{rank_width}d}/{wsa - 1:<0{rank_width}d}]",
     ]
     if framework is not None:
         dist_list.append(f"[{framework=}]")
@@ -504,10 +529,10 @@ def print_dist_setup(
         )
         if num_nodes_from_hostfile != num_nodes:
             logger.critical(
-                f"num_nodes_from_hostfile = [{num_nodes_from_hostfile=}]"
+                f"[{num_nodes_from_hostfile=}]"
                 f"vs."
-                f"[{wsa=} // {gpus_per_node=}] = {num_nodes}\\n"
-                r"¯\\_(ツ)_/¯ ??"
+                f"[{num_nodes}] ({wsa=} // {gpus_per_node=})"
+                # r" ¯\\_(ツ)_/¯ ??"
             )
     return dist_str
 
@@ -532,19 +557,16 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
     if device is None:
         device = get_torch_device(as_torch_device=True)
 
-    return (
+    if torch.cuda.is_available():
         torch.cuda.synchronize(device)
-        if torch.cuda.is_available()
-        else (
-            torch.xpu.synchronize(device)
-            if torch.xpu.is_available()
-            else (
-                torch.mps.synchronize()
-                if torch.backends.mps.is_available()
-                else torch.cpu.synchronize(device)
-            )
-        )
-    )
+        return None
+    if torch.xpu.is_available():
+        torch.xpu.synchronize(device)
+        return None
+    if torch.backends.mps.is_available():
+        torch.mps.synchronize()
+        return None
+    return None
 
 
 def wrap_model_for_ddp(model: torch.nn.Module) -> DistributedDataParallel:
@@ -587,10 +609,10 @@ def wrap_with_ddp(model: torch.nn.Module) -> DistributedDataParallel:
 
 
 def wrap_with_fsdp(
-        model: torch.nn.Module,
-        dtype: str = "bfloat16",
-        device_id: int | None = None,
-        **kwargs,
+    model: torch.nn.Module,
+    dtype: str = "bfloat16",
+    device_id: int | torch.device | None = None,
+    **kwargs,
 ) -> FSDP:
     """Wrap a model with FSDP using the given parameter dtype.
 
@@ -618,11 +640,32 @@ def wrap_with_fsdp(
     )
 
 
+def wrap_with_fsdp2(
+    model: torch.nn.Module,
+    dtype: str = "bfloat16",
+    device_mesh: DeviceMesh | None = None,
+    **kwargs,
+) -> FSDPModule:
+    """WIP"""
+    if get_rank() == 0:
+        logger.info(f"Wrapping model model with FSDP + {dtype}")
+    fsdp_kwargs = {
+        "mp_policy": MixedPrecisionPolicy(
+            param_dtype=TORCH_DTYPES_MAP[dtype],
+            reduce_dtype=torch.float32,
+        )
+    }
+    for module in model.modules():
+        fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
+    return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
+
+
 def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool | None = True,
     dtype: str = "bfloat16",
     device_id: int | None = None,
+    device_mesh: Optional[DeviceMesh | None] = None,
 ) -> DistributedDataParallel | FSDP | torch.nn.Module:
     """Wrap a model with DDP or FSDP depending on ``use_fsdp`` and world size.
 
@@ -652,6 +695,7 @@ def wrap_model(
         logger.info(f"Wrapping model with: {'fsdp' if use_fsdp else 'ddp'}")
     if use_fsdp:
         model = wrap_with_fsdp(model, dtype=dtype, device_id=device_id)
+        # model = wrap_with_fsdp2(model, dtype=dtype, device_id=device_id, device_mesh=device_mesh)
     else:
         model = wrap_with_ddp(model)
 
@@ -831,14 +875,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         else (
             "cuda"
             if torch.cuda.is_available()
-            else (
-                "mps"
-                if (
-                    torch.backends.mps.is_available()
-                    and torch.get_default_dtype() != torch.float64
-                )
-                else "cpu"
-            )
+            else ("mps" if torch.backends.mps.is_available() else "cpu")
         )
     )
 
@@ -873,7 +910,9 @@ def get_torch_device(
     env_info = _get_env_torch_device()
     if env_info is not None:
         _apply_env_torch_device(env_info)
-        return env_info[1]
+        return (
+            torch.device(env_info[0]) if as_torch_device else env_info[0]
+        )
     if device_type is None:
         device_type = get_torch_device_type(device_type)
         return torch.device(device_type) if as_torch_device else device_type
@@ -933,8 +972,10 @@ def get_torch_backend() -> str:
     backend_from_env = os.environ.get("TORCH_BACKEND", None)
     if backend_from_env is not None:
         return backend_from_env
-    if torch.cuda.is_available() and torch.distributed.is_backend_available("nccl"):
-            return "nccl"
+    if torch.cuda.is_available() and torch.distributed.is_backend_available(
+        "nccl"
+    ):
+        return "nccl"
     if torch.xpu.is_available():
         if torch.distributed.is_backend_available("xccl"):
             return "xccl"
@@ -1052,12 +1093,13 @@ def get_world_size_total() -> int:
     # nhosts = get_num_nodes()
     # ngpu_per_host = get_gpus_per_node()
     # return ngpu_per_host * nhosts
-    return get_gpus_per_node() * get_num_nodes()
+    return max(get_gpus_per_node(), 1) * get_num_nodes()
 
 
 def get_world_size(
     total: Optional[bool] = None,
     in_use: Optional[bool] = None,
+    implementation: str = "mpi",
 ) -> int:
     """
     Get the total number of *PUs available or currently in use.
@@ -1086,19 +1128,46 @@ def get_world_size(
     # 1. 'world_size' == total AVAILABLE gpus (for record keeping)
     # 2. 'world_size' == number of gpus CURRENTLY IN USE (from {`mpi`, ...})
     # ¯\_(ツ)_/¯
+    impl = implementation.lower()
+    mpi_size: Optional[int] = None
+    torch_size: Optional[int] = None
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        try:
+            torch_size = int(torch.distributed.get_world_size())  # type: ignore
+        except Exception:
+            torch_size = None
     try:
-        world_size = int(MPI.COMM_WORLD.Get_size())
+        mpi_size = int(MPI.COMM_WORLD.Get_size())
     except Exception:
-        num_nodes = get_num_nodes()
-        gpus_per_node = get_gpus_per_node()
-        world_size = num_nodes * gpus_per_node
+        mpi_size = None
+
+    if mpi_size is not None and torch_size is not None and mpi_size != torch_size:
         if get_rank() == 0:
             logger.warning(
-                "MPI not initialized !!"
-                "Calculating (and using!! ??) "
-                "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
-                f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
+                "MPI world size (%s) differs from torch.distributed (%s)",
+                mpi_size,
+                torch_size,
             )
+
+    if impl in {"torch", "pytorch", "pt"}:
+        if torch_size is not None:
+            return torch_size
+        if mpi_size is not None:
+            return mpi_size
+    if mpi_size is not None:
+        return mpi_size
+    if torch_size is not None:
+        return torch_size
+    num_nodes = get_num_nodes()
+    gpus_per_node = get_gpus_per_node()
+    world_size = num_nodes * gpus_per_node
+    if get_rank() == 0:
+        logger.warning(
+            "MPI not initialized !!"
+            "Calculating (and using!! ??) "
+            "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
+            f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
+        )
     # if world_size == 1:
     #     gpus_per_node = get_gpus_per_node()
     #     num_nodes = get_num_nodes()
@@ -1117,6 +1186,12 @@ def get_local_rank() -> int:
         >>> local_rank = get_local_rank()
         >>> print(f"Local rank of the current process: {local_rank}")
     """
+    local_rank = os.environ.get(
+        "LOCAL_RANK",
+        os.environ.get("PMI_LOCAL_RANK", os.environ.get("SLURM_LOCAL_ID")),
+    )
+    if local_rank is not None:
+        return int(local_rank)
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
@@ -1274,6 +1349,7 @@ def setup_torch_DDP(
     world_size = int(get_world_size())
     rank = int(get_rank())
     local_rank = int(get_local_rank())
+    local_world_size = get_gpus_per_node()
     # ensure there is no funny business going on
     if os_rank and int(os_rank) != int(rank):
         logger.warning(f"Mismatch between {os_rank=} and {rank=}")
@@ -1283,8 +1359,10 @@ def setup_torch_DDP(
         logger.warning(f"Mismatch between {os_local_rank=} and {local_rank=}")
     # now, set these variables explicitly in the process' environment
     os.environ["LOCAL_RANK"] = str(local_rank)
+    os.environ["LOCAL_WORLD_SIZE"] = str(local_world_size)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_IDX"] = str(local_rank)
     # -- Exit early if already initialized --
     import torch.distributed
 
@@ -1466,6 +1544,9 @@ def setup_torch_distributed(
         local_rank = dsetup["local_rank"]
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
+        if torch.xpu.is_available():
+            torch.xpu.set_device(local_rank)
+
     elif fw in {"deepspeed", "ds"}:
         init_deepspeed(timeout=int(timeout))
         world_size = get_world_size()
@@ -1514,7 +1595,9 @@ def _torch_barrier(
     async_op: bool = False,
     device_ids: str | Iterable | None = None,
 ) -> torch.distributed.Work | None:  # type:ignore
-    return torch.distributed.barrier(group=group, async_op=async_op, device_ids=device_ids)
+    return torch.distributed.barrier(
+        group=group, async_op=async_op, device_ids=device_ids
+    )
 
 
 def barrier(
@@ -1552,7 +1635,8 @@ def barrier(
         ...     handle.wait()
     """
     if implementation is not None and implementation.lower() not in {
-        "mpi", "torch"
+        "mpi",
+        "torch",
     }:
         raise ValueError(
             f"Unsupported barrier implementation: {implementation}"
@@ -1677,8 +1761,11 @@ def setup_torch(
     os.environ["WORLD_SIZE"] = str(world_size)
     # nthreads = os.environ.get('OMP_NUM_THREADS', None)
     # if ACCELERATOR_TYPE == "IntelGPU" and device == "xpu":
-    if torch.xpu.is_available():
-        torch.xpu.set_device(local_rank)
+    # if torch.xpu.is_available():
+    #     os.environ["CCL_LOCAL_SIZE"] = str(local_size)
+    #     os.environ["CCL_LOCAL_RANK"] = str(local_rank)
+    #     os.environ["CCL_LOCAL_IDX"] =str(local_rank)
+    #     # torch.xpu.set_device(local_rank)
     if seed is not None:
         if rank == 0:
             logger.warning(f"Manually specifying {seed=}")
@@ -1701,9 +1788,9 @@ def setup_torch(
             f"+ '{get_torch_backend()}' "
             "for distributed training."
         )
-    lrank = len(str(world_size - 1))
+    # lrank = len(str(world_size - 1))
     # nz = lrank - len(str(rank))
-    hn = socket.gethostname()
+    # hn = socket.gethostname()
     psizes = [print_dist_setup(display=False)]
     if (
         tensor_parallel_size > 1
@@ -1721,32 +1808,34 @@ def setup_torch(
                 lcp = len(str(cpsize - 1))
                 cprank = ezpz.tp.get_context_parallel_rank()
                 # cpranks = ezpz.tp.get_context_parallel_ranks()
-                psizes.append(f"[cp:{cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
+                psizes.append(f"[cp={cprank:>{lcp}}/{cpsize - 1:<{lcp}}]")
                 barrier(group=ezpz.tp.get_context_parallel_group())
             if ppsize > 1:
                 pprank = ezpz.tp.get_pipeline_parallel_rank()
                 # ppranks = ezpz.tp.get_pipeline_parallel_ranks()
                 lpp = len(str(ppsize - 1))
-                psizes.append(f"[pp:{pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
+                psizes.append(f"[pp={pprank:>{lpp}}/{ppsize - 1:<{lpp}}]")
                 barrier(group=ezpz.tp.get_pipeline_parallel_group())
             if tpsize > 1:
                 ltp = len(str(tpsize - 1))
                 tprank = ezpz.tp.get_tensor_parallel_rank()
                 # tpranks = ezpz.tp.get_tensor_parallel_ranks()
-                psizes.append(f"[tp:{tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
+                psizes.append(f"[tp={tprank:>{ltp}}/{tpsize - 1:<{ltp}}]")
                 barrier(group=ezpz.tp.get_tensor_parallel_group())
             if dpsize > 1:
                 ldp = len(str(dpsize - 1))
                 dprank = ezpz.tp.get_data_parallel_rank()
                 # dpranks = ezpz.tp.get_data_parallel_ranks()
-                psizes.append(f"[dp:{dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
+                psizes.append(f"[dp={dprank:>{ldp}}/{dpsize - 1:<{ldp}}]")
                 barrier(group=ezpz.tp.get_data_parallel_group())
+    barrier()
     # if not os.environ.get("ALREADY_PRINTED_HOSTS", "0"):
     # if rank == 0:
+    # if rank == 0:
     logger.info("".join(psizes))
+    barrier()
     # _ = print_dist_setup()
     # os.environ["ALREADY_PRINTED_HOSTS"] = "1"
-    barrier()
     return rank
 
 
@@ -1792,8 +1881,8 @@ def setup_tensorflow(
         "mixed_float16",
         # 'mixed_bfloat16'
     ]:
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")  # type:ignore
-    TF_FLOAT = tf.keras.backend.floatx()  # type:ignore
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get("TF_EAGER", None)
     if eager_mode is not None:
         logger.info("Detected `TF_EAGER` from env. Running eagerly.")
@@ -1917,59 +2006,168 @@ def _verify_wandb_from_netrc_config() -> bool:
 
 
 def verify_wandb() -> bool:
-    import wandb
-
     rank = get_rank()
-    WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-    WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-    if WANDB_DISABLED or WANDB_MODE == "disabled":
-        if get_rank() == 0:
+
+    try:
+        import wandb
+    except Exception:
+        if rank == 0:
             logger.warning(
-                f"Logging with W&B is disabled!, caught: {WANDB_DISABLED=}"
+                "Unable to import wandb, please install with `pip install wandb`"
             )
         return False
-    else:
-        try:
-            import wandb
 
-            if wandb.api.api_key is not None:
-                return True
-        except (ImportError, ModuleNotFoundError):
-            if rank == 0:
-                logger.warning(
-                    "Unable to import `wandb`. Install with `pip install wandb`"
-                )
-            return False
-        if (
-            wandb.api.api_key is None
-            or os.environ.get("WANDB_API_KEY", None) is None
-        ):
-            if rank == 0:
-                logger.warning("'WANDB_API_KEY' not found in environment!")
-                logger.info("Attempting to verify login from '~/.netrc':")
-            return _verify_wandb_from_netrc_config()
+    wandb_disabled = os.environ.get("WANDB_DISABLED")
+    wandb_mode = os.environ.get("WANDB_MODE")
+    if wandb_disabled:
+        if rank == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+            )
         return False
+
+    if wandb_mode is not None and wandb_mode.lower() == "disabled":
+        if get_rank() == 0:
+            logger.warning(
+                f"Logging with W&B is disabled!, caught: {wandb_mode=}"
+            )
+        return False
+
+    if wandb is not None:
+        if (
+            wandb.api.api_key is not None
+            or os.environ.get("WANDB_API_KEY", None) is not None
+        ):
+            return True
+        if rank == 0:
+            logger.warning("'WANDB_API_KEY' not found in environment!")
+            logger.info("Attempting to verify login from '~/.netrc':")
+        return _verify_wandb_from_netrc_config()
+    raise RuntimeError("Unreachable code in `_verify_wandb`")
+
+
+def get_wandb_mode(
+    wandb_mode: str
+    | None
+    | Literal["online", "offline", "disabled", "shared"] = None,
+) -> str:
+    _wandb_mode = (
+        os.environ.get("WANDB_MODE") if wandb_mode is None else wandb_mode
+    )
+    wandb_disabled = os.environ.get("WANDB_DISABLED")
+
+    rank = ezpz.get_rank()
+
+    # Case 1: [Any, Any]
+    if wandb_disabled is not None and _wandb_mode is not None:
+        if _wandb_mode.lower() != "disabled":
+            if rank == 0:
+                logger.info(
+                    f"Overriding WANDB_MODE={_wandb_mode} to 'disabled' "
+                    f"since WANDB_DISABLED={wandb_disabled} is set!"
+                )
+        return "disabled"
+
+    # Case 2: [Any, None]
+    if wandb_disabled is not None and _wandb_mode is None:
+        if rank == 0:
+            logger.info(
+                f"Logging with W&B is disabled!, caught: {wandb_disabled=}"
+                f" Setting WANDB_MODE=disabled"
+            )
+        return "disabled"
+
+    # Case 3: [None, Any]
+    if wandb_disabled is None and _wandb_mode is not None:
+        _wandb_mode = _wandb_mode.lower()
+        assert _wandb_mode in {"online", "offline", "disabled", "shared"}, (
+            f"Invalid WANDB_MODE={_wandb_mode}, expected one of "
+            "{'online', 'offline', 'disabled', 'shared'}"
+        )
+        if rank == 0:
+            logger.info(f"Caught WANDB_MODE={_wandb_mode} from environment!")
+        return _wandb_mode
+
+    # Case 4: [None, None]
+    else:  # i.e. wandb_disabled is None and wandb_mode is None
+        if rank == 0:
+            logger.info(
+                f"Logging with W&B in ONLINE mode!, caught: {_wandb_mode=}"
+                f" Setting WANDB_MODE=online"
+            )
+        return "online"
 
 
 def setup_wandb(
     project_name: Optional[str] = None,
-    entity: Optional[str] = None,
-    config: Optional[dict | DictConfig] = None,
-    start_method: str = "thread",
+    entity: str | None = None,
+    config: dict[str, Any] | str | DictConfig | None = None,
     outdir: Optional[str | Path | os.PathLike] = None,
-    init_timeout: int = 300,
-    allow_val_change: bool = False,
+    project: str | None = None,
+    dir: PathLike | None = None,
+    id: str | None = None,
+    name: str | None = None,
+    notes: str | None = None,
+    tags: Sequence[str] | None = None,
+    config_exclude_keys: list[str] | None = None,
+    config_include_keys: list[str] | None = None,
+    allow_val_change: bool | None = None,
+    group: str | None = None,
+    job_type: str | None = None,
+    mode: Literal["online", "offline", "disabled", "shared"] | None = None,
+    force: bool = False,
+    reinit: bool
+    | Literal[
+        None, "default", "return_previous", "finish_previous", "create_new"
+    ] = None,
+    resume: bool | Literal["allow", "never", "must", "auto"] | None = None,
+    resume_from: str | None = None,
+    fork_from: str | None = None,
+    save_code: bool | None = None,
+    init_timeout: int | float | None = None,
+    start_method: Literal["fork", "spawn", "thread", "process"] | None = None,
+    tensorboard: bool | None = None,
+    sync_tensorboard: bool | None = None,
+    monitor_gym: bool | None = None,
+    settings: dict[str, Any] | None = None,
 ):
     """Setup wandb for logging.
 
+
     Args:
         project_name (str, optional): The name of the project. Defaults to None.
-        entity (str, optional): The entity name. Defaults to None.
-        config (dict | DictConfig, optional): The configuration dictionary. Defaults to None.
-        start_method (str, optional): The start method for wandb. Defaults to "thread".
-        outdir (str | Path | os.PathLike, optional): The output directory. Defaults to None.
-        init_timeout (int, optional): The timeout for wandb initialization. Defaults to 300.
-        allow_val_change (bool, optional): Whether to allow value changes in wandb config. Defaults to False.
+        config (dict[str, Any] | str | DictConfig, optional): The configuration to log. Defaults to None.
+        outdir (str | Path | os.PathLike, optional): The output directory. Defaults
+            to None, which will use the current working directory.
+        entity (str, optional): The entity to log to. Defaults to None.
+        project (str, optional): The project to log to. Defaults to None.
+        dir (PathLike, optional): The directory to log to. Defaults to None.
+        id (str, optional): The run ID. Defaults to None.
+        name (str, optional): The run name. Defaults to None.
+        notes (str, optional): The run notes. Defaults to None.
+        tags (Sequence[str], optional): The run tags. Defaults to None.
+        config_exclude_keys (list[str], optional): The keys to exclude from the config.
+            Defaults to None.
+        config_include_keys (list[str], optional): The keys to include from the config.
+            Defaults to None.
+        allow_val_change (bool, optional): Whether to allow value changes in the config.
+            Defaults to None.
+        group (str, optional): The run group. Defaults to None.
+        job_type (str, optional): The job type. Defaults to None.
+        mode (Literal["online", "offline", "disabled", "shared"], optional): The wandb mode.
+            Defaults to None.
+        force (bool, optional): Whether to force a new run. Defaults to None.
+        reinit (bool | Literal[...], optional): Whether to reinitialize the run.
+            Defaults to None.
+        resume (bool | Literal[...], optional): Whether to resume the run. Defaults to
+            None.
+        resume_from (str, optional): The run ID to resume from. Defaults to None.
+        fork_from (str, optional): The run ID to fork from. Defaults to None.
+        save_code (bool, optional): Whether to save the code. Defaults to None.
+        tensorboard (bool, optional): Whether to sync tensorboard. Defaults to None.
+        sync_tensorboard (bool, optional): Whether to sync tensorboard. Defaults to None.
+        monitor_gym (bool, optional): Whether to monitor gym. Defaults to None.
+        settings (dict[str, Any], optional): Additional wandb settings. Defaults to None.
 
     Examples:
         >>> setup_wandb(project_name="my_project", entity="my_entity")
@@ -2014,79 +2212,119 @@ def setup_wandb(
         os.environ.get("TENSORBOARD_DIR", None)
         if config is None
         else config.get("tensorboard_dir", None)
+        if isinstance(config, (dict, DictConfig))
+        else None
     )
     if tensorboard_dir is not None:
         logger.info(f"Patching tensorboard from {tensorboard_dir}")
         try:
-            wandb.tensorboard.patch(root_logdir=tensorboard_dir)  # type:ignore
+            wandb.tensorboard.patch(root_logdir=tensorboard_dir)
         except Exception as exc:
             logger.exception(exc)
     # wbrun_id = wandb.util.generate_id()
     now = datetime.datetime.now()
     dstr = now.strftime("%Y-%m-%d-%H%M%S")
-    run = wandb.init(
-        entity=entity,
-        # resume='allow',
-        dir=outdir,
-        sync_tensorboard=(tensorboard_dir is not None),  # True,
-        project=(project_name if project_name is not None else None),
-        # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-        # settings=wandb.Settings(
-        #     start_method=start_method, init_timeout=init_timeout
-        # ),
-        allow_val_change=allow_val_change,
-    )
-    assert run is not None and run is wandb.run
-    # run.log_code(HERE.as_posix(), include_fn=include_file)
-    logger.info(f"wandb.run=[{run.name}]({run.url})")
-    if (
-        wandb is not None
-        and wandb.run is not None
-        and "DIST_INFO" not in wandb.run.config
-    ):
-        wandb.run.config.update({"DIST_INFO": get_dist_info()})
-    torch_version = torch.__version__
-    torch_file = torch.__file__
-    run.config.update(
-        {
-            "created_at": dstr,
-            "day": ezpz.get_timestamp("%d"),
-            "ezpz_file": ezpz.__file__,
-            "ezpz_version": ezpz.__version__,
-            "hostname": get_hostname(),
-            "month": ezpz.get_timestamp("%m"),
-            "pytorch_backend": str(get_torch_backend()).lower(),
-            "torch_version": torch_version,
-            "torch_version_as_float": get_torch_version_as_float(),
-            "torch_file": torch_file,
-            "world_size": get_world_size(),
-            "year": ezpz.get_timestamp("%Y"),
-            "working_directory": os.getcwd(),
+    try:
+        run = wandb.init(
+            entity=entity,
+            project=(
+                project
+                if project is not None
+                else project_name
+                if project_name is not None
+                else None
+            ),
+            dir=(dir if dir is not None else outdir),
+            id=id,
+            name=name,
+            notes=notes,
+            tags=tags,
+            config_exclude_keys=config_exclude_keys,
+            config_include_keys=config_include_keys,
+            allow_val_change=allow_val_change,
+            group=group,
+            job_type=job_type,
+            mode=get_wandb_mode(mode),
+            force=force,
+            reinit=reinit,
+            resume=resume,
+            resume_from=resume_from,
+            fork_from=fork_from,
+            save_code=save_code,
+            tensorboard=(tensorboard if tensorboard is not None else False),
+            sync_tensorboard=(
+                sync_tensorboard if sync_tensorboard is not None else False
+            ),
+            monitor_gym=monitor_gym,
+            settings=(
+                settings
+                if settings is not None
+                else wandb.Settings(
+                    init_timeout=(
+                        init_timeout if init_timeout is not None else 60
+                    ),
+                    start_method=(
+                        start_method if start_method is not None else "fork"
+                    ),
+                ),
+            ),
+        )
+        assert run is not None and run is wandb.run
+        # run.log_code(HERE.as_posix(), include_fn=include_file)
+        logger.info(f"wandb.run=[{run.name}]({run.url})")
+        if (
+            wandb is not None
+            and wandb.run is not None
+            and "DIST_INFO" not in wandb.run.config
+        ):
+            wandb.run.config.update({"DIST_INFO": get_dist_info()})
+        torch_version = torch.__version__
+        torch_file = torch.__file__
+        run.config.update(
+            {
+                "created_at": dstr,
+                "day": ezpz.get_timestamp("%d"),
+                "ezpz_file": ezpz.__file__,
+                "ezpz_version": ezpz.__version__,
+                "hostname": get_hostname(),
+                "month": ezpz.get_timestamp("%m"),
+                "pytorch_backend": str(get_torch_backend()).lower(),
+                "torch_version": torch_version,
+                "torch_version_as_float": get_torch_version_as_float(),
+                "torch_file": torch_file,
+                "world_size": get_world_size(),
+                "year": ezpz.get_timestamp("%Y"),
+                "working_directory": os.getcwd(),
+            }
+        )
+        if config is not None:
+            if isinstance(config, DictConfig):
+                cfg = OmegaConf.to_container(
+                    config, resolve=True, throw_on_missing=True
+                )
+                run.config.update({"config": cfg})
+            else:
+                run.config.update({"config": config})
+        env = {
+            k: v
+            for k, v in dict(os.environ).items()
+            if not k.startswith("_ModuleTable") and "API" not in k
         }
-    )
-    if config is not None:
-        if isinstance(config, DictConfig):
-            cfg = OmegaConf.to_container(
-                config, resolve=True, throw_on_missing=True
-            )
-            run.config.update({"config": cfg})
-        else:
-            run.config.update({"config": config})
-    env = {
-        k: v
-        for k, v in dict(os.environ).items()
-        if not k.startswith("_ModuleTable") and "API" not in k
-    }
-    _ = env.pop("LS_COLORS", None)
-    _ = env.pop("PS1", None)
-    run.config.update({"env": env})
-    machine = get_machine()
-    logger.info(f"Running on {machine=}")
-    run.config.update({"machine": machine})
-    model_size = os.environ.get("MODEL_SIZE", None)
-    if model_size is not None:
-        run.config.update({"MODEL_SIZE": model_size})
-    return wandb.run
+        _ = env.pop("LS_COLORS", None)
+        _ = env.pop("PS1", None)
+        run.config.update({"env": env})
+        machine = get_machine()
+        logger.info(f"Running on {machine=}")
+        run.config.update({"machine": machine})
+        model_size = os.environ.get("MODEL_SIZE", None)
+        if model_size is not None:
+            run.config.update({"MODEL_SIZE": model_size})
+        return wandb.run
+    except Exception as e:
+        logger.exception(f"{e}")
+        logger.error(f"Unable to call `wandb.init(...)` from {rank=}")
+        logger.warning("Continuing without wandb logging...")
+        return None
 
 
 def run_bash_command(cmd: str) -> Any:
@@ -2140,7 +2378,8 @@ def get_nodes_from_hostfile(
 
 def get_node_index() -> int:
     """Get the index of the current node in the hostfile"""
-    return get_rank() % get_num_nodes()
+    # return get_rank() % get_num_nodes()
+    return get_rank() // get_gpus_per_node()
 
 
 def write_localhost_to_hostfile(hostfile: PathLike):
@@ -2406,7 +2645,15 @@ def get_gpus_per_node() -> int:
     #         'No {X, G}pus found; but _assert specified. Returning !!'
     #     )
     # logger.warning('No {x,g}-pus found, returning' + f'{cpus_per_node}')
-    ngpu_per_host = os.environ.get("NGPU_PER_HOST", None)
+    ngpu_per_host = os.environ.get(
+        "NGPU_PER_HOST",
+        os.environ.get(
+            "LOCAL_WORLD_SIZE",
+            os.environ.get(
+                "PMI_LOCAL_SIZE", os.environ.get("SLURM_NTASKS_PER_NODE")
+            ),
+        ),
+    )
     if ngpu_per_host is not None:
         return int(ngpu_per_host)
     if torch.cuda.is_available():

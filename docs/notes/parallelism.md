@@ -1,3 +1,7 @@
+---
+status: deprecated
+---
+
 # 🕸️ Parallelism Support
 
 ## Examples from Aurora
@@ -7,7 +11,7 @@ Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
 - `TP = 1`, `CP = 4`, `PP = 2`, `DP = 3`
 
   ```bash
-  $ launch python3 -Wignore -m ezpz.test_dist --tp 1 --cp 4 --pp 2
+  $ launch python3 -Wignore -m ezpz.examples.test --tp 1 --cp 4 --pp 2
   # ...clipped...
   [2024-12-31 15:36:13.333215][INFO][__init__.py:146] - > initializing model parallel with size 1
   [2024-12-31 15:36:13.333942][INFO][__init__.py:151] - > initializing context parallel with size 4
@@ -43,7 +47,7 @@ Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
 - `TP = CP = PP = 2`, `DP = 3`
 
   ```bash
-  $ launch python3 -Wignore -m ezpz.test_dist --tp 2 --cp 2 --pp 2 #--dtype=float32
+  $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2 --pp 2 #--dtype=float32
   # ...clipped...
   [2024-12-31 15:19:37.033562][INFO][__init__.py:146] - > initializing model parallel with size 2
   [2024-12-31 15:19:37.034083][INFO][__init__.py:151] - > initializing context parallel with size 2
@@ -81,7 +85,7 @@ Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
 - `TP = CP = 2`, `PP = 1`, `DP = 6`
 
   ```bash
-  $ launch python3 -Wignore -m ezpz.test_dist --tp 2 --cp 2
+  $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2
   # ...clipped...
   [2024-12-31 15:29:21.697491][INFO][__init__.py:146] - > initializing model parallel with size 2
   [2024-12-31 15:29:21.698012][INFO][__init__.py:151] - > initializing context parallel with size 2

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The distributed computing tests (`test_dist.py`) verify the distributed training functionality, including rank management, device detection, and process group initialization.
+The distributed computing tests (`examples/test.py`) verify the distributed training functionality, including rank management, device detection, and process group initialization.
 
 ## Test Cases
 
@@ -109,5 +109,5 @@ def test_get_dist_info(self):
 ## Running Tests
 
 ```bash
-python -m pytest tests/test_dist.py
+python -m pytest tests/test.py
 ```

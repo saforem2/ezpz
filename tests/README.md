@@ -9,7 +9,7 @@ The tests are organized to cover the main modules of the ezpz package:
 - `test_basic.py` - Simple tests to verify the test framework works
 - `test_ezpz.py` - Tests for the main ezpz module
 - `test_configs.py` - Tests for the configs module
-- `test_dist.py` - Tests for the distributed computing module
+- `test.py` - Tests for the distributed computing module
 - `test_history.py` - Tests for the history/metrics tracking module
 - `test_jobs.py` - Tests for the job management module
 - `test_log.py` - Tests for the logging module

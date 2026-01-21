@@ -81,7 +81,7 @@ class TestLaunch:
             return SimpleNamespace(returncode=7)
 
         monkeypatch.setattr(launch.subprocess, "run", fake_run)
-        rc = launch.run(["python", "-m", "ezpz.test_dist"])
+        rc = launch.run(["python", "-m", "ezpz.examples.test"])
 
         assert rc == 7
         assert cleanup_called, "Expected cleanup to be invoked"
@@ -91,7 +91,7 @@ class TestLaunch:
             "4",
             "python",
             "-m",
-            "ezpz.test_dist",
+            "ezpz.examples.test",
         ]
         assert recorded["check"] is False
 
@@ -144,7 +144,7 @@ class TestLaunch:
                 "4",
                 "python",
                 "-m",
-                "ezpz.test_dist",
+                "ezpz.examples.test",
             ]
         )
 
@@ -161,7 +161,7 @@ class TestLaunch:
             "ppr:4:node",
             "python",
             "-m",
-            "ezpz.test_dist",
+            "ezpz.examples.test",
         ]
 
     def test_parse_args_supports_separator_passthrough(self):

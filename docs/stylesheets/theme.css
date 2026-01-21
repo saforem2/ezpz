@@ -92,8 +92,13 @@
       from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5
     );
   --md-typeset-a-color: rgba(19, 122, 245, 1);
-  --md-accent-fg-color: oklch(from rgb(19, 122, 245) l c h);
-  --md-accent-bg-color: oklch(from rgb(19, 122, 245) calc(l * 1.15) c h / 0.1);
+  /* --md-accent-fg-color: oklch(from rgb(19, 122, 245) l c h); */
+  --md-accent-fg-color: oklch(from #ff1a8f l c h);
+  /* --md-accent-bg-color: oklch(from rgb(19, 122, 245) calc(l * 1.15) c h / 0.1); */
+  --md-accent-fg-color--transparent: oklch(
+    from var(--md-accent-fg-color) calc(l * 1.15) c h / 0.1
+  );
+  /* oklch(from var(--md-accent-fg-color) calc(l * 0.85) c h / 0.1) */
 
   /* greys */
   --dark-grey-fg-light-bg: #444444;
@@ -177,6 +182,14 @@
   --md-code-bg-color--light: oklch(
     from var(--md-code-bg-color) calc(l * 0.85) c h / 0.3
   );
+  /* --md-accent-fg-color: oklch(from rgb(255, 255, 0, 1) l c h); */
+  --md-accent-fg-color: oklch(from #ff67ff l c h);
+  --md-accent-fg-color--transparent: oklch(
+    from var(--md-accent-fg-color) calc(l * 0.85) c h / 0.1
+  );
+  /* --md-accent-bg-color: oklch( */
+  /*   from rgb(255, 255, 0, 1) calc(l * 1.15) c h / 0.1 */
+  /* ); */
   --md-header-fg-color: oklch(from #eeeeee l c h);
   --md-typeset-a-color: oklch(from #82b1ff l c h);
   --md-header-bg-color: oklch(from #222222 l c h);
@@ -208,6 +221,7 @@
   --yellow-fg-light-bg: oklch(from #ffff00 l c h);
   --green-fg-light-bg: oklch(from #07b875 l c h);
   --blue-fg-light-bg: oklch(from #29b6f6 l c h);
+  --blue-fg-light-bg: oklch(from #82b1ff l c h);
   --purple-fg-light-bg: oklch(from #ae81ff l c h);
   --pink-fg-light-bg: oklch(from #ff67ff l c h);
   --cyan-fg-light-bg: oklch(from #56b6c2 l c h);
@@ -253,37 +267,49 @@
   --pink-bg: oklch(from var(--pink-fg-light-bg) calc(l * 0.85) c h / 0.1);
   --cyan-fg: oklch(from var(--cyan-fg-light-bg) l c h);
   --cyan-bg: oklch(from var(--cyan-fg-light-bg) calc(l * 0.85) c h / 0.1);
+
+  .highlight [data-linenos]::before {
+    background-color: unset;
+  }
 }
 
 /* ---------- heading color mapping (keeps your prior intent) ---------- */
 [data-md-color-scheme="slate"] {
   --h1-fg-color: var(--color-light-grey);
   --h1-bg-color: oklch(from var(--color-light-grey) calc(l * 0.85) c h / 0.1);
-  --h2-fg-color: var(--blue-fg);
-  --h2-bg-color: var(--blue-bg);
-  --h3-fg-color: var(--green-fg);
-  --h3-bg-color: var(--green-bg);
-  --h4-fg-color: var(--purple-fg);
-  --h4-bg-color: var(--purple-bg);
-  --h5-fg-color: var(--yellow-fg);
-  --h5-bg-color: var(--yellow-bg);
-  --h6-fg-color: var(--orange-fg);
-  --h6-bg-color: var(--orange-bg);
+
+  --h2-fg-color: var(--md-accent-fg-color);
+  --h2-bg-color: var(--md-accent-fg-color--transparent);
+  --h3-fg-color: var(--blue-fg);
+  --h3-bg-color: var(--blue-bg);
+
+  /* --h2-fg-color: var(--blue-fg); */
+  /* --h2-bg-color: var(--blue-bg); */
+  --h4-fg-color: var(--green-fg);
+  --h4-bg-color: var(--green-bg);
+  --h5-fg-color: var(--purple-fg);
+  --h5-bg-color: var(--purple-bg);
+  --h6-fg-color: var(--yellow-fg);
+  --h6-bg-color: var(--yellow-bg);
+  /* --h6-fg-color: var(--orange-fg); */
+  /* --h6-bg-color: var(--orange-bg); */
 }
 
 [data-md-color-scheme="default"] {
   --h1-fg-color: var(--color-dark-grey);
   --h1-bg-color: oklch(from var(--color-dark-grey) calc(l * 1.15) c h / 0.1);
-  --h2-fg-color: var(--blue-fg);
-  --h2-bg-color: var(--blue-bg);
-  --h3-fg-color: var(--green-fg);
-  --h3-bg-color: var(--green-bg);
-  --h4-fg-color: var(--purple-fg);
-  --h4-bg-color: var(--purple-bg);
-  --h5-fg-color: var(--cyan-fg);
-  --h5-bg-color: var(--cyan-bg);
-  --h6-fg-color: var(--orange-fg);
-  --h6-bg-color: var(--orange-bg);
+  --h2-fg-color: var(--md-accent-fg-color);
+  --h2-bg-color: var(--md-accent-fg-color--transparent);
+  /* --h2-fg-color: var(--blue-fg); */
+  /* --h2-bg-color: var(--blue-bg); */
+  --h3-fg-color: var(--blue-fg);
+  --h3-bg-color: var(--blue-bg);
+  --h4-fg-color: var(--green-fg);
+  --h4-bg-color: var(--green-bg);
+  --h5-fg-color: var(--purple-fg);
+  --h5-bg-color: var(--purple-bg);
+  --h6-fg-color: var(--cyan-fg);
+  --h6-bg-color: var(--cyan-bg);
 }
 
 /* ---------- typography/layout tweaks ---------- */
@@ -348,152 +374,76 @@
   padding-right: 0.4em;
 }
 
-.md-nav__link .md-ellipsis {
-  overflow: visible;
-}
-
-/* ---------- headings ---------- */
 .md-typeset h1 {
-  margin: unset;
-  /* letter-spacing: -1pt; */
-  font-weight: 800;
-  opacity: 100%;
-  width: auto;
-  margin-block-end: 0.5lh;
-
-  color: var(--h1-fg-color);
-  font-size: var(--h1-font-size);
-
-  background: var(--h1-bg-color);
   border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
   border-radius: var(--link-border-radius);
-
-  padding-inline-start: 10px;
-  /* translate: -5px; */
-  /* width: 101.5%; */
-  padding-block: 0.25rem;
 }
-
-.md-typeset h1 code {
-  padding: 0pt 2pt;
-  background-color: var(--md-code-bg-color);
-  font-size: 1em;
-  color: var(--md-code-fg-color);
-  font-family: var(--md-code-font-family);
-}
-
 .md-typeset h1:hover {
-  border: 1px solid var(--h1-fg-color);
+  color: var(--h1-fg-color);
+  background: var(--h1-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: clip;
 }
 
 .md-typeset h2 {
-  margin: unset;
-  opacity: 100%;
-  margin-block: 0.5lh;
-
-  color: var(--h2-fg-color);
-  font-size: var(--h2-font-size);
-
-  background: var(--h2-bg-color);
   border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
   border-radius: var(--link-border-radius);
-
-  padding-block: 0.25rem;
-  /* letter-spacing: -1pt; */
-  font-weight: 600;
-
-  /* translate: -5px; */
-  padding-inline-start: 10px;
 }
-
-.md-typeset h2 code {
-  padding: 0pt 2pt;
-}
-
 .md-typeset h2:hover {
-  border: 1px solid var(--h2-fg-color);
+  color: var(--h2-fg-color);
+  background: var(--h2-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: hidden;
 }
 
 .md-typeset h3 {
-  margin: unset;
-  opacity: 100%;
-  margin-block: 0.5lh;
-  padding-block: 0.25rem;
-
-  color: var(--h3-fg-color);
-  font-size: var(--h3-font-size);
-
-  /* background: linear-gradient(0.25turn, var(--h3-bg-color), rgba(0, 0, 0, 0)); */
-  background: oklch(from var(--h3-bg-color) l c h);
   border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
   border-radius: var(--link-border-radius);
-
-  /* translate: -5px; */
-  padding-inline-start: 10px;
-
-  font-weight: 650;
-  /* letter-spacing: -2%; */
 }
-
-.md-typeset h3 code {
-  padding: 0pt 2pt;
-}
-
 .md-typeset h3:hover {
-  border: 1px solid var(--h3-fg-color);
+  color: var(--h3-fg-color);
+  background: var(--h3-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: hidden;
 }
 
 .md-typeset h4 {
-  margin: unset;
-  opacity: 100%;
-  margin-block: 0.5lh;
-  padding-block: 0.15rem;
-
-  color: var(--h4-fg-color);
-  font-size: var(--h4-font-size);
-
-  /* background: linear-gradient(0.25turn, var(--h4-bg-color), rgba(0, 0, 0, 0)); */
-  background: oklch(from var(--h4-bg-color) l c h);
   border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
   border-radius: var(--link-border-radius);
-
-  /* translate: -5px; */
-  padding-inline-start: 10px;
-
-  font-weight: 400;
-  /* letter-spacing: -2%; */
 }
-
-.md-typeset h4 code {
-  padding: 0pt 2pt;
-}
-
 .md-typeset h4:hover {
-  border: 1px solid var(--h4-fg-color);
+  color: var(--h4-fg-color);
+  background: var(--h4-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: hidden;
 }
 
 .md-typeset h5 {
-  margin: unset;
-  opacity: 100%;
-  margin-block: 0.5lh;
-
-  color: var(--h5-fg-color);
-  font-size: var(--h5-font-size);
-
-  background: linear-gradient(0.25turn, var(--h5-bg-color), rgba(0, 0, 0, 0));
   border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
   border-radius: var(--link-border-radius);
+}
+.md-typeset h5:hover {
+  color: var(--h5-fg-color);
+  background: var(--h5-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: hidden;
+}
 
-  /* translate: -5px; */
-  padding-inline-start: 10px;
-
-  font-weight: 400;
-  /* letter-spacing: -2%; */
+.md-typeset h6 {
+  border: 1px solid rgba(0, 0, 0, 0);
+  border-radius: var(--link-border-radius);
+}
+.md-typeset h6:hover {
+  color: var(--h6-fg-color);
+  background: var(--h6-bg-color);
+  padding-inline-start: 0.5rem;
+  margin-inline-start: -0.5rem;
+  overflow: hidden;
 }
 
 .md-content__button {
@@ -503,42 +453,6 @@
 
 .md-content__button svg {
   margin-block-start: auto;
-}
-
-.md-typeset h5 code {
-  padding: 0pt 2pt;
-}
-
-.md-typeset h5:hover {
-  border: 1px solid var(--h5-fg-color);
-}
-
-.md-typeset h6 {
-  margin: unset;
-  opacity: 100%;
-  margin-block: 0.5lh;
-  padding-block: 0.1rem;
-
-  color: var(--h6-fg-color);
-  font-size: var(--h6-font-size);
-
-  background: linear-gradient(0.25turn, var(--h6-bg-color), rgba(0, 0, 0, 0));
-  border: 1px solid rgba(0, 0, 0, 0);
-  border-right: none;
-  border-radius: var(--link-border-radius);
-
-  /* translate: -5px; */
-  padding-inline-start: 10px;
-
-  font-weight: 500;
-}
-
-.md-typeset h6 code {
-  padding: 0pt 2pt;
-}
-
-.md-typeset h6:hover {
-  border: 1px solid var(--h6-fg-color);
 }
 
 /* ---------- mkdocs material layout bits ---------- */
@@ -552,18 +466,9 @@
   font-family: var(--md-code-font, monospace);
 }
 
-/* .ansi-block { */
-/*   display: block; */
-/*   width: 100%; */
-/*   overflow: auto; */
-/*   padding: 0pt 0.5rem; */
-/*   background: var(--md-code-bg-color); */
-/*   border-radius: 0.4rem; */
+/* .md-grid { */
+/*   max-width: 65rem; */
 /* } */
-
-.md-grid {
-  max-width: 65rem;
-}
 
 .md-code__nav {
   margin-block: 0.1rem;
@@ -577,6 +482,10 @@
 
 .md-content__button.md-icon {
   translate: -0.4rem;
+}
+
+.md-main__inner {
+  margin-top: auto;
 }
 
 /**/

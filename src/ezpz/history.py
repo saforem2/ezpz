@@ -15,30 +15,17 @@ import time
 from contextlib import ContextDecorator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union, Sequence
+from typing import Any, Iterable, Optional, Union
 
 import ezpz
 import ezpz.dist
 
 from ezpz.lazy import lazy_import
-#
-# ezpz = lazy_import("ezpz")
-# assert ezpz is not None
 
-# import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-# import torch.distributed
 import xarray as xr
-
-# from ezpz.dist import get_rank
-
-# import ezpz
-
-# import ezpz.plot as ezplot
-
-# import ezpz.dist
 
 from ezpz import get_rank
 from ezpz import plot as ezplot
@@ -47,7 +34,7 @@ from ezpz.configs import OUTPUTS_DIR, PathLike
 from ezpz.log import get_logger
 from ezpz.tplot import (
     DEFAULT_MARKER,
-    MAX_PLOT_HEIGHT,
+    # MAX_PLOT_HEIGHT,
     MAX_PLOT_WIDTH,
     plotext_hist_series,
     plotext_plot_series,
@@ -2312,11 +2299,12 @@ class History:
             and wandb.run is not None
         ):
             dset_name = f"{fname}_dataset" if fname != "dataset" else fname
+            dataframe = dataset.to_dataframe()
+            wbtable = wandb.Table(dataframe=dataframe)
             try:
-                wandb.log(
-                    {f"{dset_name}": wandb.Table(dataset.to_dataframe())}
-                )
-            except Exception:
+                wandb.log({f"{dset_name}": wbtable})
+            except Exception as e:
+                logger.exception(e)
                 logger.warning("Unable to save dataset to W&B, skipping!")
 
         return save_dataset(
@@ -2373,7 +2361,15 @@ class History:
         else:
             base_dir = Path(outdir).expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
-        self._configure_report_destination(base_dir)
+        dataset_label = dataset_fname if dataset_fname is not None else "dataset"
+        report_dir = (
+            base_dir.joinpath(dataset_label)
+            if dataset_fname is not None
+            else base_dir
+        )
+        if dataset_fname is not None:
+            self._report_filename = f"report-{dataset_label}.md"
+        self._configure_report_destination(report_dir)
         env_details = (
             env_info
             if env_info is not None
@@ -2382,12 +2378,16 @@ class History:
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
         if plot:
+            plotdir = (
+                base_dir.joinpath("plots", dataset_label)
+                if dataset_fname is not None
+                else base_dir.joinpath("plots")
+            )
             logger.info(
                 "Saving plots to %s (matplotlib) and %s (tplot)",
-                base_dir.joinpath("plots", "mplot"),
-                base_dir.joinpath("plots", "tplot"),
+                plotdir.joinpath("mplot"),
+                plotdir.joinpath("tplot"),
             )
-            plotdir = base_dir.joinpath("plots")
             tplotdir = plotdir.joinpath("tplot")
             mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
@@ -2434,4 +2434,6 @@ class History:
                 "Saving history report to %s",
                 base_dir.joinpath(self._report_filename),
             )
+        if wandb is not None and (run := getattr(wandb, "run")) is not None:
+            logger.info(f"wandb.run=[{run.name}]({run.url})")
         return dataset

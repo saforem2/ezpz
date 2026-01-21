@@ -43,9 +43,10 @@ main.add_command(launch_cmd, name="launch")
 def tar_env_cmd(args: tuple[str, ...]) -> None:
     """Create (or locate) a tarball for the current environment."""
     from ezpz.utils import tar_env as tar_env_module
+    rc = tar_env_module.main()
 
-    rc = tar_env_module.run(_ensure_sequence(args))
-    _handle_exit_code(rc)
+    # rc = tar_env_module.main(_ensure_sequence(args))
+    # _handle_exit_code(rc)
 
 
 @main.command(

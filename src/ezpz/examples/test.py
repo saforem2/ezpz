@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """
-test_dist.py
-
-- to launch:
-
-  ```bash
-  $ source ezpz/src/ezpz/bin/savejobenv
-  $ BACKEND=DDP launch python3 ezpz_ddp.py
-  ```
+examples/test.py
 """
 
 import argparse
@@ -40,30 +33,37 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
 
-WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
-WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
-if not WANDB_DISABLED and WANDB_MODE != "disabled":
-    try:
-        wandb = ezpz.lazy.lazy_import("wandb")
-        if not ezpz.dist.verify_wandb():
-            logger.warning("W&B API key not found, skipping wandb setup!")
-            logger.info(
-                "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
-            )
-    except Exception as e:
-        wandb = None
-        WANDB_DISABLED = True
-        logger.exception(e)
-        logger.warning("W&B not available, skipping wandb setup!")
-        logger.info("Continue without W&B logging...")
-else:
+WANDB_DISABLED = False
+try:
+    import wandb
+except Exception:
     wandb = None
     WANDB_DISABLED = True
+
+# WANDB_DISABLED = os.environ.get("WANDB_DISABLED", False)
+# WANDB_MODE = os.environ.get("WANDB_MODE", "").lower()
+# if not WANDB_DISABLED and WANDB_MODE != "disabled":
+#     try:
+#         wandb = ezpz.lazy.lazy_import("wandb")
+#         if not ezpz.dist.verify_wandb():
+#             logger.warning("W&B API key not found, skipping wandb setup!")
+#             logger.info(
+#                 "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
+#             )
+#     except Exception as e:
+#         wandb = None
+#         WANDB_DISABLED = True
+#         logger.exception(e)
+#         logger.warning("W&B not available, skipping wandb setup!")
+#         logger.info("Continue without W&B logging...")
+# else:
+#     wandb = None
+#     WANDB_DISABLED = True
 
 
 @dataclass
 class TrainConfig:
-    """Runtime configuration for the ``ezpz.test_dist`` distributed smoke test."""
+    """Runtime configuration for the `ezpz.examples.test` distributed smoke test."""
 
     warmup: int
     tp: int
@@ -95,6 +95,7 @@ class TrainConfig:
     dataset_root: Optional[PathLike] = None
     num_workers: int = 0
     no_distributed_history: bool = False
+    save_datasets: bool = False
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
@@ -103,7 +104,7 @@ class TrainConfig:
         )
         self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
         self.outdir = Path(os.getcwd()).joinpath(
-            "outputs", "ezpz.test_dist", f"{self._created_at}"
+            "outputs", "ezpz.examples.test", f"{self._created_at}"
         )
         self.outdir.mkdir(parents=True, exist_ok=True)
         dataset_root = (
@@ -185,7 +186,7 @@ class Trainer:
         self.model.to(self.device_id)
         self.model.to(self.dtype)
         metrics_path = self.config.outdir.joinpath("metrics.jsonl")
-        self.history = ezpz.history.History(
+        self.history: ezpz.history.History = ezpz.history.History(
             report_dir=self.config.outdir,
             report_enabled=True,
             jsonl_path=metrics_path,
@@ -207,7 +208,7 @@ class Trainer:
             wbconfig |= asdict(self.config)
             wbconfig |= ezpz.get_dist_info()
             _ = ezpz.setup_wandb(
-                project_name="ezpz.test_dist",
+                project_name="ezpz.examples.test",
                 config=wbconfig,
             )
             if (wbrun := getattr(wandb, "run", None)) is not None and callable(
@@ -299,8 +300,8 @@ class Trainer:
         """Perform the backwards/optimiser step and return elapsed seconds."""
         t0 = time.perf_counter()
         if self.config.backend == "deepspeed":
-            self.model.backward(loss)  # type:ignore
-            self.model.step(loss)  # type:ignore
+            self.model.backward(loss)
+            self.model.step(loss)
         else:
             loss.backward()
             self.optimizer.step()
@@ -337,7 +338,7 @@ class Trainer:
         outdir = Path(outdir) if outdir is not None else self.config.outdir
         env_info = self._gather_environment_snapshot()
         dataset = self.history.finalize(
-            run_name="ezpz.test_dist",
+            run_name="ezpz.examples.test",
             dataset_fname="train",
             warmup=self.config.warmup,
             save=False,  # XXX: don't bother saving test data
@@ -346,7 +347,7 @@ class Trainer:
             env_info=env_info,
         )
         logger.info(f"{dataset=}")
-        if wandb is not None and not WANDB_DISABLED:
+        if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
             try:
                 wandb.log(
                     {
@@ -360,9 +361,7 @@ class Trainer:
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def train(
-        self, profiler: Optional[torch.profiler.profile] = None
-    ) -> Dataset:
+    def train(self, profiler: Optional[torch.profiler.profile] = None) -> None:
         """Loop over all training iterations and return the final dataset."""
         for step in range(self.config.train_iters):
             if step == self.config.warmup:
@@ -370,12 +369,6 @@ class Trainer:
             _ = self.train_step()
             if profiler is not None:
                 profiler.step()
-
-        return (
-            self.finalize()
-            if self.rank == 0
-            else self.history.get_dataset(warmup=self.config.warmup)
-        )
 
     def _gather_environment_snapshot(self) -> dict[str, dict[str, str]]:
         """Collect key runtime environment details for reporting."""
@@ -493,12 +486,26 @@ def train(
     t0t = time.perf_counter()
     _ = trainer.train(profiler=profiler)
     t1t = time.perf_counter()
-    # -------------------------------------------
-
-    # Record timings and return trainer
     logger.info(
         f"Took: {(dt_train_duration := t1t - t0t):.2f} seconds to finish training"
     )
+
+    rank = ezpz.get_rank()
+    history: ezpz.history.History = trainer.history
+
+    dataset = None
+    # Record timings and return trainer
+    if rank == 0:
+        dataset = history.finalize(
+            run_name="ezpz.examples.test",
+            dataset_fname="train",
+            warmup=config.warmup,
+            save=(rank == 0 and config.save_datasets),
+            plot=(rank == 0),
+            outdir=config.outdir,
+            env_info=trainer._gather_environment_snapshot(),
+        )
+        logger.info(f"{dataset=}")
     timings = {
         "timings/model": dt_model,
         "timings/optimizer": dt_optimizer,
@@ -506,16 +513,32 @@ def train(
         "timings/training_start": dt_train_start,
         "timings/train_duration": dt_train_duration,
     }
-    try:
-        wandb.log(timings)  # type:ignore
-    except Exception:
-        logger.warning("Unable to 'wandb.log(timings)', skipping!")
+    if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
+        try:
+            wandb.log(timings, commit=False)
+        except Exception as e:
+            logger.exception(e)
+            logger.warning("Unable to 'wandb.log(timings)', skipping!")
+        if dataset is not None:
+            try:
+                wandb.log(
+                    {
+                        "train_metrics": wandb.Table(
+                            dataframe=dataset.to_dataframe()
+                        )
+                    }
+                )
+            except Exception as e:
+                logger.exception(e)
+                logger.warning("Failed to log final dataset to wandb")
 
+    if ezpz.get_world_size() > 1:
+        ezpz.barrier()
     return trainer
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for ``ezpz.test_dist``."""
+    """Parse CLI arguments for `ezpz.examples.test`."""
     parser = build_test_parser()
     args = parser.parse_args()
     if args.backend.lower() in {"ds", "deepspeed"}:
@@ -662,7 +685,7 @@ def build_model_and_optimizer(
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> Trainer:
-    """Entry point used by ``python -m ezpz.test_dist``."""
+    """Entry point used by ``python -m ezpz.examples.test``."""
     t0 = time.perf_counter()
     args = parse_args()
     config = get_config_from_args(args)
@@ -698,12 +721,12 @@ def main() -> Trainer:
         "main/train": (t_train - t_setup),
         "main/total": (t1 - t0),
     }
-    if wandb is not None and (wbrun := getattr(wandb, "run", None)) is not None:
+    if wandb is not None and (run := getattr(wandb, "run")) is not None:
         try:
             wandb.log(data=timings)
         except Exception:
             logger.warning("Failed to log timings to wandb")
-        logger.info(f"{wbrun.url=}")
+        logger.info(f"wandb.run=[{run.name}]({run.url})")
     return trainer
 
 

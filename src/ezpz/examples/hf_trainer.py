@@ -89,18 +89,10 @@ def parse_args() -> dict:
             )
             wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
         run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
-        wandb.define_metric("num_input_tokens_seen")
-        wandb.define_metric("train/", step_metric="num_input_tokens_seen")
-        # wandb.define_metric("train/epoch")
-        # wandb.define_metric("train/step")
-        wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
-        # wandb.define_metric()
-        # wandb.define_metric(
-        #     name="num_input_tokens_seen",
-        #     step_metric="num_input_tokens_seen",
-        # )  # Allow us to track the number of tokens seen during training
-        if run is not None:
-            # wandb.log({"train_iter": 0}, step=0)
+        if run is not None and run is wandb.run:
+            wandb.define_metric("num_input_tokens_seen")
+            wandb.define_metric("train/", step_metric="num_input_tokens_seen")
+            wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
             run.config.update(
                 {
                     "model": model_args.__dict__,
@@ -293,12 +285,12 @@ def main() -> int:
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
     import ezpz.dist
+
     rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
     # rank = ezpz.dist.setup_torch(
     #     # seed=training_args.seed,
     #     # device_id=int(devid) if devid is not None else devid,
     # )
-
 
     args = parse_args()
     # args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]
@@ -306,7 +298,7 @@ def main() -> int:
     assert "data" in args and "model" in args and "training" in args
     data_args: HfDataTrainingArguments = args["data"]
     model_args: HfModelArguments = args["model"]
-    training_args : TrainingArguments = args["training"]
+    training_args: TrainingArguments = args["training"]
 
     try:
         import wandb
@@ -322,7 +314,6 @@ def main() -> int:
             "We will continue without running evaluations. "
             'Please install it using "pip install evaluate" to run evaluations'
         )
-
 
     dsconfig_fp = (
         Path(training_args.deepspeed) if training_args.deepspeed else None
@@ -744,8 +735,11 @@ def main() -> int:
             # return metric.compute(predictions=preds, references=labels)
             return metric.compute(predictions=preds, references=labels)
 
-    if rank == 0 and wandb is not None:
-        wandb.run.watch(model, log="all")  # type:ignore
+    if rank == 0 and wandb is not None and wandb.run is not None:
+        try:
+            wandb.run.watch(model, log="all")  # type:ignore
+        except Exception:
+            logger.warning("Failed to wandb.watch the model. Continuing!")
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -846,7 +840,10 @@ def main() -> int:
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
         if wandb is not None and wandb.run is not None:
-            wandb.log({f"eval/{k}": v for k, v in metrics.items()})
+            try:
+                wandb.log({f"eval/{k}": v for k, v in metrics.items()})
+            except Exception as e:
+                logger.info(f"Unable to log eval metrics to wandb: {e}")
 
         # model.eval()
         # losses = []

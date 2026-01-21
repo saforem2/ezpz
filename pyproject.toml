@@ -39,13 +39,14 @@ maintainers = [{ name = "Sam Foreman", email = "saforem2@gmail.com" }]
 
 [project.scripts]
 ezpz = "ezpz.cli:main"
-ezpz-test = "ezpz.cli.test_cmd:main"
-ezpz-launch = "ezpz.cli.launch_cmd:main"
-ezpz-yeet-env = "ezpz.utils.yeet_env:main"
-ezpz-tar-env = "ezpz.utils.tar_env:main"
-ezpz-doctor = "ezpz.doctor:main"
-ezpz-generate = "ezpz.examples.generate:main"
-ezpz-generate-tui = "ezpz.examples.generate_tui:main"
+# XXX: DEPRECATED
+ezpz-test = "ezpz.cli.test_cmd:main"                  # XXX: Use `ezpz test`
+ezpz-launch = "ezpz.cli.launch_cmd:main"              # XXX: Use `ezpz launch`
+ezpz-yeet-env = "ezpz.utils.yeet_env:main"            # XXX: Use `ezpz yeet-env`
+ezpz-tar-env = "ezpz.utils.tar_env:main"              # XXX: Use `ezpz tar-env`
+ezpz-doctor = "ezpz.doctor:main"                      # XXX: Use `ezpz doctor`
+ezpz-generate = "ezpz.examples.generate:main"         # XXX: Use `ezpz generate`
+ezpz-generate-tui = "ezpz.examples.generate_tui:main" # XXX: Use `ezpz generate --tui`
 
 [project.optional-dependencies]
 vit = ["timm"]
@@ -53,6 +54,10 @@ mpi = ["mpi4py"]
 # xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
 # xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchvision"]
+# torch-xpu = [
+#     "torch-xpu ; sys_platform == 'linux'",
+#     "torchvision-xpu ; sys_platform == 'linux'",
+# ]
 docs = [
     "zensical",
     "mkdocs",
@@ -71,6 +76,7 @@ dev = [
     "ipython",
     "isort",
     "jupyter",
+    "hypothesis",
     "pyinstrument",
     "ptipython",
     "pudb",
@@ -220,3 +226,4 @@ docstring-code-format = true
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
+

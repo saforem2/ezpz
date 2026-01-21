@@ -6,7 +6,7 @@ import argparse
 
 
 def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
-    """Build the CLI argument parser for ``ezpz test`` (ezpz.test_dist)."""
+    """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
@@ -18,7 +18,7 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
             NOTE: `ezpz test` is a lightweight wrapper around:
 
             ```bash
-            ezpz launch python3 -m ezpz.test_dist
+            ezpz launch python3 -m ezpz.examples.test
             ```
             """
         ),
@@ -114,6 +114,12 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default=True,
         action="store_true",
         help="Record shapes in the profiler",
+    )
+    parser.add_argument(
+        "--save-datasets",
+        action="store_true",
+        default=False,
+        help="Save datasets",
     )
     parser.add_argument(
         "--with-stack",
