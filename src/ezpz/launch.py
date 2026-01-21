@@ -524,7 +524,11 @@ def run(argv: Sequence[str] | None = None) -> int:
     )
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    retcode = run_command(command=fallback_cmd, filters=filters)
+    if filters:
+        retcode = run_command(command=fallback_cmd, filters=filters)
+    else:
+        proc = subprocess.run(fallback_cmd, check=False)
+        retcode = proc.returncode
     cmd_finish = time.perf_counter()
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
