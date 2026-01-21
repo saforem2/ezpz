@@ -2361,7 +2361,15 @@ class History:
         else:
             base_dir = Path(outdir).expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
-        self._configure_report_destination(base_dir)
+        dataset_label = dataset_fname if dataset_fname is not None else "dataset"
+        report_dir = (
+            base_dir.joinpath(dataset_label)
+            if dataset_fname is not None
+            else base_dir
+        )
+        if dataset_fname is not None:
+            self._report_filename = f"report-{dataset_label}.md"
+        self._configure_report_destination(report_dir)
         env_details = (
             env_info
             if env_info is not None
@@ -2370,12 +2378,16 @@ class History:
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
         if plot:
+            plotdir = (
+                base_dir.joinpath("plots", dataset_label)
+                if dataset_fname is not None
+                else base_dir.joinpath("plots")
+            )
             logger.info(
                 "Saving plots to %s (matplotlib) and %s (tplot)",
-                base_dir.joinpath("plots", "mplot"),
-                base_dir.joinpath("plots", "tplot"),
+                plotdir.joinpath("mplot"),
+                plotdir.joinpath("tplot"),
             )
-            plotdir = base_dir.joinpath("plots")
             tplotdir = plotdir.joinpath("tplot")
             mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
