@@ -172,6 +172,11 @@ def plotext_hist_series(
     label: Optional[str],
     bins: Optional[int] = None,
 ) -> None:
+    series = np.asarray(series).reshape(-1)
+    finite_mask = np.isfinite(series)
+    if not finite_mask.any():
+        return
+    series = series[finite_mask]
     if label:
         if bins is not None:
             plotext.hist(series, bins=bins, label=label)
@@ -200,7 +205,9 @@ def plotext_subplots(
     if hasattr(plotext, "tw"):
         width = _clamp_width(plotext.tw())
     if hasattr(plotext, "th") and height_scale is not None:
-        height = _clamp_height(int(plotext.th() * height_scale))
+        plot_height = plotext.th()
+        if plot_height is not None:
+            height = _clamp_height(int(plot_height * height_scale))
     if width is None:
         width = _clamp_width(80)
     plotext.plot_size(width, height)
@@ -323,7 +330,7 @@ def tplot(
         logger.info(f"Using plot marker: {marker}")
     # if len(y.shape) == 2:
     if (yshape := getattr(y, "shape")) and yshape and len(yshape) == 2:
-        plotext.hist(y.flatten(), bins=bins, label=label)
+        plotext.hist(np.asarray(y).reshape(-1), bins=bins, label=label)
     else:
         if plot_type is None:
             plotext.plot(y, label=label, marker=marker)
