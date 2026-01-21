@@ -443,4 +443,3 @@ Additional configuration can be done through environment variables, including:
     - [Slides (html)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/)
     - [Slides (reveal.js)](https://samforeman.me/talks/incite-hackathon-2025/ezpz/slides)
 - [Reach out](https://samforeman.me)!
-

@@ -30,3 +30,4 @@ Explicitly, these are `ezpz <command>`:
         launch    Launch a command across the active scheduler.
         test      Run the distributed smoke test.
         ```
+
