@@ -1,3 +1,7 @@
+---
+status: deprecated
+---
+
 # 🏖️ Shell Environment
 
 ## Using an existing python environment

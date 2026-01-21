@@ -1,3 +1,7 @@
+---
+status: deprecated
+---
+
 # 🕸️ Parallelism Support
 
 ## Examples from Aurora
