@@ -322,27 +322,28 @@ def get_hosts_from_hostfile(
     """
     # hostfile = '' if hostfile is None else hostfile
     hostname = get_hostname()
-    hostfile = os.environ.get(
-        "HOSTFILE",
-        os.environ.get(
-            "PBS_NODEFILE",
+    if hostfile is None:
+        hostfile = os.environ.get(
+            "HOSTFILE",
             os.environ.get(
-                "COBALT_NODEFILE",
-                None,
+                "PBS_NODEFILE",
+                os.environ.get(
+                    "COBALT_NODEFILE",
+                    None,
+                ),
             ),
-        ),
-    )
+        )
     hosts: list[str] = []
-    assert hostfile is not None
-    if Path(hostfile).is_file():
+    if hostfile is not None and Path(hostfile).is_file():
         if get_rank() == 0:
-            logger.debug(f"Reading hosts from {hostfile}")
+            logger.debug("Reading hosts from %s", hostfile)
         hpath = Path(hostfile).resolve().absolute()
         with hpath.open("r") as f:
             hosts.extend([h.rstrip("\n") for h in f.readlines()])
-    else:
-        hosts.append(hostname)
-    return Path(hostfile).as_posix(), hosts
+        return hpath.as_posix(), hosts
+    hosts.append(hostname)
+    hostfile_path = Path(hostfile).as_posix() if hostfile else ""
+    return hostfile_path, hosts
 
 
 def get_hostname() -> str:
@@ -402,9 +403,13 @@ def _get_dist_info(
     from ezpz.configs import get_scheduler
 
     hf = get_hostfile_with_fallback(hostfile) if hostfile is None else hostfile
-    hfp = Path(hf)
-    assert hfp is not None and hfp.is_file()
-    hosts = get_nodes_from_hostfile(hfp.as_posix())
+    hfp = Path(hf) if hf is not None else None
+    if hfp is not None and hfp.is_file():
+        hosts = get_nodes_from_hostfile(hfp.as_posix())
+        hostfile_path = hfp.absolute().resolve().as_posix()
+    else:
+        hosts = [get_hostname()]
+        hostfile_path = hfp.as_posix() if hfp is not None else ""
     num_nodes = len(hosts)
     num_gpus_per_node = get_gpus_per_node()
     num_gpus = num_nodes * num_gpus_per_node
@@ -417,7 +422,7 @@ def _get_dist_info(
         "DISTRIBUTED_BACKEND": get_torch_backend(),
         "GPUS_PER_NODE": num_gpus_per_node,
         "HOSTS": f"{hosts}",
-        "HOSTFILE": hfp.absolute().resolve().as_posix(),
+        "HOSTFILE": hostfile_path,
         "HOSTNAME": get_hostname(),
         "LOCAL_RANK": get_local_rank(),
         "local_rank": get_local_rank(),
@@ -552,19 +557,16 @@ def synchronize(device: Optional[torch.device | int | str] = None) -> None:
     if device is None:
         device = get_torch_device(as_torch_device=True)
 
-    return (
+    if torch.cuda.is_available():
         torch.cuda.synchronize(device)
-        if torch.cuda.is_available()
-        else (
-            torch.xpu.synchronize(device)
-            if torch.xpu.is_available()
-            else (
-                torch.mps.synchronize()
-                if torch.backends.mps.is_available()
-                else torch.cpu.synchronize(device)
-            )
-        )
-    )
+        return None
+    if torch.xpu.is_available():
+        torch.xpu.synchronize(device)
+        return None
+    if torch.backends.mps.is_available():
+        torch.mps.synchronize()
+        return None
+    return None
 
 
 def wrap_model_for_ddp(model: torch.nn.Module) -> DistributedDataParallel:
@@ -873,14 +875,7 @@ def get_torch_device_type(device_type: Optional[str] = None) -> str:
         else (
             "cuda"
             if torch.cuda.is_available()
-            else (
-                "mps"
-                if (
-                    torch.backends.mps.is_available()
-                    and torch.get_default_dtype() != torch.float64
-                )
-                else "cpu"
-            )
+            else ("mps" if torch.backends.mps.is_available() else "cpu")
         )
     )
 
@@ -915,7 +910,9 @@ def get_torch_device(
     env_info = _get_env_torch_device()
     if env_info is not None:
         _apply_env_torch_device(env_info)
-        return env_info[1]
+        return (
+            torch.device(env_info[0]) if as_torch_device else env_info[0]
+        )
     if device_type is None:
         device_type = get_torch_device_type(device_type)
         return torch.device(device_type) if as_torch_device else device_type
@@ -1096,12 +1093,13 @@ def get_world_size_total() -> int:
     # nhosts = get_num_nodes()
     # ngpu_per_host = get_gpus_per_node()
     # return ngpu_per_host * nhosts
-    return get_gpus_per_node() * get_num_nodes()
+    return max(get_gpus_per_node(), 1) * get_num_nodes()
 
 
 def get_world_size(
     total: Optional[bool] = None,
     in_use: Optional[bool] = None,
+    implementation: str = "mpi",
 ) -> int:
     """
     Get the total number of *PUs available or currently in use.
@@ -1130,19 +1128,46 @@ def get_world_size(
     # 1. 'world_size' == total AVAILABLE gpus (for record keeping)
     # 2. 'world_size' == number of gpus CURRENTLY IN USE (from {`mpi`, ...})
     # ¯\_(ツ)_/¯
+    impl = implementation.lower()
+    mpi_size: Optional[int] = None
+    torch_size: Optional[int] = None
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        try:
+            torch_size = int(torch.distributed.get_world_size())  # type: ignore
+        except Exception:
+            torch_size = None
     try:
-        world_size = int(MPI.COMM_WORLD.Get_size())
+        mpi_size = int(MPI.COMM_WORLD.Get_size())
     except Exception:
-        num_nodes = get_num_nodes()
-        gpus_per_node = get_gpus_per_node()
-        world_size = num_nodes * gpus_per_node
+        mpi_size = None
+
+    if mpi_size is not None and torch_size is not None and mpi_size != torch_size:
         if get_rank() == 0:
             logger.warning(
-                "MPI not initialized !!"
-                "Calculating (and using!! ??) "
-                "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
-                f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
+                "MPI world size (%s) differs from torch.distributed (%s)",
+                mpi_size,
+                torch_size,
             )
+
+    if impl in {"torch", "pytorch", "pt"}:
+        if torch_size is not None:
+            return torch_size
+        if mpi_size is not None:
+            return mpi_size
+    if mpi_size is not None:
+        return mpi_size
+    if torch_size is not None:
+        return torch_size
+    num_nodes = get_num_nodes()
+    gpus_per_node = get_gpus_per_node()
+    world_size = num_nodes * gpus_per_node
+    if get_rank() == 0:
+        logger.warning(
+            "MPI not initialized !!"
+            "Calculating (and using!! ??) "
+            "[world_size]=[(num_nodes) x (num_*pus_per_node)]=[num_*pus_total]"
+            f"[{world_size}]=[({num_nodes}) x ({gpus_per_node})]"
+        )
     # if world_size == 1:
     #     gpus_per_node = get_gpus_per_node()
     #     num_nodes = get_num_nodes()
