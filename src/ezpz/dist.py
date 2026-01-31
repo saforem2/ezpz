@@ -1188,7 +1188,19 @@ def get_local_rank() -> int:
     """
     local_rank = os.environ.get(
         "LOCAL_RANK",
-        os.environ.get("PMI_LOCAL_RANK", os.environ.get("SLURM_LOCAL_ID")),
+        os.environ.get(
+            "PMI_LOCAL_RANK",
+            os.environ.get(
+                "OMPI_COMM_WORLD_LOCAL_RANK",
+                os.environ.get(
+                    "MPI_LOCALRANKID",
+                    os.environ.get(
+                        "MPICH_LOCALRANKID",
+                        os.environ.get("SLURM_LOCAL_ID"),
+                    ),
+                ),
+            ),
+        ),
     )
     if local_rank is not None:
         return int(local_rank)
