@@ -1188,10 +1188,44 @@ def get_local_rank() -> int:
     """
     local_rank = os.environ.get(
         "LOCAL_RANK",
-        os.environ.get("PMI_LOCAL_RANK", os.environ.get("SLURM_LOCAL_ID")),
+        os.environ.get(
+            "PMI_LOCAL_RANK",
+            os.environ.get(
+                "OMPI_COMM_WORLD_LOCAL_RANK",
+                os.environ.get(
+                    "MPI_LOCALRANKID",
+                    os.environ.get(
+                        "MPICH_LOCALRANKID",
+                        os.environ.get("SLURM_LOCAL_ID"),
+                    ),
+                ),
+            ),
+        ),
     )
+    if not os.environ.get("EZPZ_LOCAL_RANK_DEBUG_LOGGED"):
+        os.environ["EZPZ_LOCAL_RANK_DEBUG_LOGGED"] = "1"
+        logger.info(
+            "Local rank envs on %s rank=%s: LOCAL_RANK=%s PMI_LOCAL_RANK=%s "
+            "OMPI_COMM_WORLD_LOCAL_RANK=%s MPI_LOCALRANKID=%s MPICH_LOCALRANKID=%s "
+            "SLURM_LOCAL_ID=%s",
+            get_hostname(),
+            get_rank(),
+            os.environ.get("LOCAL_RANK"),
+            os.environ.get("PMI_LOCAL_RANK"),
+            os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK"),
+            os.environ.get("MPI_LOCALRANKID"),
+            os.environ.get("MPICH_LOCALRANKID"),
+            os.environ.get("SLURM_LOCAL_ID"),
+        )
     if local_rank is not None:
         return int(local_rank)
+    if get_rank() == 0 and not os.environ.get("EZPZ_LOCAL_RANK_LOGGED"):
+        os.environ["EZPZ_LOCAL_RANK_LOGGED"] = "1"
+        logger.info(
+            "Local rank env vars unset; falling back to rank modulo GPUs."
+            " Checked LOCAL_RANK, PMI_LOCAL_RANK, OMPI_COMM_WORLD_LOCAL_RANK,"
+            " MPI_LOCALRANKID, MPICH_LOCALRANKID, SLURM_LOCAL_ID."
+        )
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
