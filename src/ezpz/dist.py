@@ -1204,6 +1204,13 @@ def get_local_rank() -> int:
     )
     if local_rank is not None:
         return int(local_rank)
+    if get_rank() == 0 and not os.environ.get("EZPZ_LOCAL_RANK_LOGGED"):
+        os.environ["EZPZ_LOCAL_RANK_LOGGED"] = "1"
+        logger.info(
+            "Local rank env vars unset; falling back to rank modulo GPUs."
+            " Checked LOCAL_RANK, PMI_LOCAL_RANK, OMPI_COMM_WORLD_LOCAL_RANK,"
+            " MPI_LOCALRANKID, MPICH_LOCALRANKID, SLURM_LOCAL_ID."
+        )
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
