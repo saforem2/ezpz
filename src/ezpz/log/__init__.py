@@ -205,7 +205,7 @@ def get_logger(
     if not colored_logs:
         os.environ["NO_COLOR"] = "1"
 
-    logging_config = get_logging_config()
+    logging_config = get_logging_config(rank=int(rank))
 
     LOG_FROM_ALL_RANKS = os.environ.get(
         "LOG_FROM_ALL_RANKS", os.environ.get("EZPZ_LOG_FROM_ALL_RANKS")
