@@ -5,13 +5,14 @@ ezpz/configs.py
 import json
 import logging
 import os
+import sys
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union, cast
 
 import numpy as np
 import rich.repr
@@ -153,16 +154,135 @@ def load_ds_config(
     raise TypeError("Unexpected FileType")
 
 
-def get_logging_config() -> dict:
-    """Return the logging configuration dictionary used by ``logging.config``."""
-    # import logging.config
-    import yaml
+_CURRENT_JSON_LOG_FILE: Optional[Path] = None
+_LOGGING_CONFIG_CACHE: Optional[dict] = None
 
+
+def get_json_log_file() -> Optional[Path]:
+    """Return the path to the current JSON log file, if configured."""
+    return _CURRENT_JSON_LOG_FILE
+
+
+def get_logging_config(rank: Optional[int] = None) -> dict:
+    """Return the logging configuration dictionary used by ``logging.config``.
+
+    Args:
+        rank: The distributed rank. If None, will be determined automatically.
+              Used to create per-rank log files when EZPZ_LOG_FROM_ALL_RANKS is set.
+    """
+    global _CURRENT_JSON_LOG_FILE, _LOGGING_CONFIG_CACHE
+
+    # Return cached config if already initialized
+    if _LOGGING_CONFIG_CACHE is not None:
+        return _LOGGING_CONFIG_CACHE
+
+    from datetime import datetime
+
+    from ezpz.log.console import to_bool
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     cfp = CONF_DIR.joinpath("hydra", "job_logging", "custom.yaml")
-    with cfp.open("r") as stream:
-        config = yaml.load(stream, Loader=yaml.FullLoader)
-    config.setdefault("loggers", {})
-    return config
+    config = OmegaConf.load(cfp)
+
+    # Determine if we should log from all ranks
+    log_from_all_ranks = to_bool(
+        os.environ.get(
+            "LOG_FROM_ALL_RANKS",
+            os.environ.get("EZPZ_LOG_FROM_ALL_RANKS", ""),
+        )
+    )
+
+    # Get rank if not provided
+    if rank is None:
+        try:
+            from ezpz.dist import get_rank
+
+            rank = get_rank()
+        except Exception:
+            rank = 0
+
+    # Check for shared timestamp from parent process, or generate one
+    timestamp = os.environ.get("EZPZ_LOG_TIMESTAMP")
+    if not timestamp:
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        os.environ["EZPZ_LOG_TIMESTAMP"] = timestamp
+
+    # Check for shared job name from parent process, or derive one
+    job_name = os.environ.get("EZPZ_JSON_LOG_JOB_NAME")
+    if not job_name:
+        job_name = os.environ.get(
+            "HYDRA_JOB_NAME",
+            os.environ.get(
+                "EZPZ_JOB_NAME", _derive_default_job_name(sys.argv)
+            ),
+        )
+        os.environ["EZPZ_JSON_LOG_JOB_NAME"] = job_name
+
+    log_subdir = LOGS_DIR / job_name
+    log_subdir.mkdir(parents=True, exist_ok=True)
+    if log_from_all_ranks:
+        log_file = log_subdir / f"{timestamp}-rank{rank}.jsonl"
+    else:
+        log_file = log_subdir / f"{timestamp}-rank0.jsonl"
+
+    _CURRENT_JSON_LOG_FILE = log_file
+    config = OmegaConf.merge(
+        OmegaConf.create(
+            {
+                "hydra": {"job": {"name": job_name}},
+                "log_file": str(log_file),
+            }
+        ),
+        config,
+    )
+    OmegaConf.resolve(config)
+    config_dict = OmegaConf.to_container(config, resolve=True)
+    if not isinstance(config_dict, dict):
+        raise TypeError("Logging config must resolve to a dictionary.")
+    config_dict = cast(dict[str, Any], config_dict)
+    config_dict.setdefault("loggers", {})
+
+    # Update json_file handler with the computed path
+    # Only enable for rank 0 unless EZPZ_LOG_FROM_ALL_RANKS is set
+    if "handlers" in config_dict and "json_file" in config_dict["handlers"]:
+        if log_from_all_ranks or rank == 0:
+            config_dict["handlers"]["json_file"]["filename"] = str(log_file)
+        else:
+            # Remove json_file handler for non-zero ranks when not logging from all
+            del config_dict["handlers"]["json_file"]
+            if "root" in config_dict and "handlers" in config_dict["root"]:
+                handlers = config_dict["root"]["handlers"]
+                if "json_file" in handlers:
+                    handlers.remove("json_file")
+
+    _LOGGING_CONFIG_CACHE = config_dict
+    return config_dict
+
+
+def _derive_default_job_name(argv: Sequence[str]) -> str:
+    """Derive a log-friendly job name from command-line arguments.
+
+    Looks for ``python -m <module>`` patterns and converts the module name
+    (e.g., ``ezpz.examples.vit``) to a filename-safe form (``ezpz-examples-vit``).
+    Falls back to the executable base name plus the first non-option arg.
+    """
+    if not argv:
+        return "ezpz"
+
+    # Detect `python -m <module>` invocations
+    for i, arg in enumerate(argv):
+        if arg == "-m" and i + 1 < len(argv):
+            module_name = argv[i + 1]
+            return module_name.replace(".", "-")
+
+    # Fallback: use executable basename + optional first subcommand
+    base = Path(argv[0]).name
+    if base.endswith(".py"):
+        base = base[:-3]
+    parts = [base]
+    if len(argv) > 1 and argv[1] and not argv[1].startswith("-"):
+        parts.append(argv[1])
+    return "-".join(parts)
 
 
 def print_json(
@@ -288,7 +408,7 @@ def command_exists(cmd: str) -> bool:
 
 def git_ds_info():
     """Log the output of DeepSpeed's environment report plus Git metadata."""
-    from deepspeed.env_report import main as ds_report
+    from deepspeed.env_report import main as ds_report  # type: ignore[import-not-found]
 
     ds_report()
 
@@ -339,11 +459,11 @@ class BaseConfig(ABC):
 
     def get_config(self) -> dict:
         """Return the configuration as a standard dictionary via ``asdict``."""
-        return asdict(self)
+        return cast(dict[str, Any], asdict(self))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Return a deep copy of the dataclass ``__dict__``."""
-        return deepcopy(self.__dict__)
+        return cast(dict[str, Any], deepcopy(self.__dict__))
 
     def to_file(self, fpath: os.PathLike) -> None:
         """Write the configuration to ``fpath`` in JSON format."""
