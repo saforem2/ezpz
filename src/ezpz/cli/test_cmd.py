@@ -11,7 +11,9 @@ def _ensure_sequence(args: Iterable[str]) -> Sequence[str]:
     return tuple(args)
 
 
-def _print_help(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+def _print_help(
+    ctx: click.Context, _param: click.Parameter, value: bool
+) -> None:
     if not value or ctx.resilient_parsing:
         return
     from ezpz.cli.flags import build_launch_parser, build_test_parser
