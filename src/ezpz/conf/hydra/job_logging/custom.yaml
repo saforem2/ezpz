@@ -4,6 +4,9 @@ formatters:
   simple:
     # format: '[%(asctime)s][%(levelname)s][%(name)s][{module}.{funcName}:{lineno}]: %(message)s'
     format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+  json:
+    (): ezpz.log.formatters.JSONFormatter
+    datefmt: '%Y-%m-%dT%H:%M:%S'
 handlers:
   term:
     class: ezpz.log.handler.RichHandler
@@ -12,6 +15,12 @@ handlers:
     show_level: true
     enable_link_path: false
     level: INFO
+  json_file:
+    class: logging.FileHandler
+    formatter: json
+    filename: logs/${hydra.job.name}.jsonl
+    mode: a
+    level: INFO
   # file:
   #   class: logging.FileHandler
   #   formatter: simple
@@ -19,7 +28,7 @@ handlers:
   #   level: INFO
   #   mode: w
 root:
-  handlers: [term]
+  handlers: [term, json_file]
   level: INFO
 disable_existing_loggers: false
 ...
