@@ -168,7 +168,12 @@ def main():
         import wandb
 
         if getattr(wandb, "run", None) is not None:
-            wandb.log(timings)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
     except Exception:
         logger.debug("Skipping wandb timings log")
 

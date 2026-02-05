@@ -691,7 +691,12 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:
         try:
-            wandb.log(timings)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
         except Exception:
             logger.warning("Failed to log timings to wandb")
 

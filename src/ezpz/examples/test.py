@@ -558,7 +558,13 @@ def train(
     }
     if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
         try:
-            wandb.log(timings, commit=False)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                },
+                commit=False,
+            )
         except Exception as e:
             logger.exception(e)
             logger.warning("Unable to 'wandb.log(timings)', skipping!")
@@ -784,7 +790,12 @@ def main() -> Trainer:
     }
     if wandb is not None and (run := getattr(wandb, "run")) is not None:
         try:
-            wandb.log(data=timings)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
         except Exception:
             logger.warning("Failed to log timings to wandb")
         logger.info(f"wandb.run=[{run.name}]({run.url})")
