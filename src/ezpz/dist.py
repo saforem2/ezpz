@@ -1204,7 +1204,7 @@ def get_local_rank() -> int:
     )
     if not os.environ.get("EZPZ_LOCAL_RANK_DEBUG_LOGGED"):
         os.environ["EZPZ_LOCAL_RANK_DEBUG_LOGGED"] = "1"
-        logger.info(
+        logger.debug(
             "Local rank envs on %s rank=%s: LOCAL_RANK=%s PMI_LOCAL_RANK=%s "
             "OMPI_COMM_WORLD_LOCAL_RANK=%s MPI_LOCALRANKID=%s MPICH_LOCALRANKID=%s "
             "SLURM_LOCAL_ID=%s",
