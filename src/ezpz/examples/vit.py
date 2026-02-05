@@ -84,6 +84,7 @@ import ezpz.dist
 
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
+from ezpz.examples import get_example_outdir
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
@@ -91,7 +92,6 @@ logger = ezpz.get_logger(__name__)
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 MODEL_PRESETS = {
     "debug": {
@@ -592,10 +592,24 @@ def train_fn(
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
 
-    history = ezpz.history.History()
-    eval_history = ezpz.history.History()
-    run_stamp = ezpz.get_timestamp()
-    run_dir = Path.cwd().joinpath("outputs", WBRUN_NAME, run_stamp)
+    outdir = get_example_outdir(WBPROJ_NAME)
+    logger.info("Outputs will be saved to %s", outdir)
+    metrics_path = outdir.joinpath("metrics.jsonl")
+    eval_metrics_path = outdir.joinpath("metrics-eval.jsonl")
+    history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(1 < world_size <= 384),
+    )
+    eval_history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=eval_metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(1 < world_size <= 384),
+    )
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -725,16 +739,16 @@ def train_fn(
 
     if ezpz.dist.get_rank() == 0:
         dataset = history.finalize(
-            outdir=run_dir,
-            run_name=WBRUN_NAME,
+            outdir=outdir,
+            run_name=WBPROJ_NAME,
             dataset_fname="train",
             verbose=False,
         )
         logger.info(f"{dataset=}")
         if "test" in dataset_dict:
             eval_dataset = eval_history.finalize(
-                outdir=run_dir,
-                run_name=WBRUN_NAME,
+                outdir=outdir,
+                run_name=WBPROJ_NAME,
                 dataset_fname="eval",
                 verbose=False,
             )
@@ -755,7 +769,7 @@ def main(args: argparse.Namespace):
             if wandb is not None and run is not None and run is wandb.run:
                 # assert run is not None and run is wandb.run
                 wandb.config.update(ezpz.get_dist_info())
-                wandb.config.update({**vars(args)})
+                wandb.config.update({"args": {**vars(args)}})
         except Exception:
             logger.warning("Failed to setup wandb, continuing without!")
 
