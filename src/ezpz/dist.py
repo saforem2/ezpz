@@ -9,6 +9,7 @@ from torch.distributed.device_mesh import DeviceMesh
 import datetime
 from functools import wraps
 import logging
+import json
 import os
 from pathlib import Path
 import socket
@@ -2134,24 +2135,32 @@ def get_wandb_mode(
 
 
 
-def get_git_branch_name():
+def get_git_branch_name() -> str | None:
+    """Return the git branch/ref ezpz was installed from, if available."""
     try:
-        # Run the git command
-        process = subprocess.Popen(["git", "rev-parse", "--abbrev-ref", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
-        if stderr:
-            print(f"Git error: {stderr}")
-            return None
-        # Strip any leading/trailing whitespace
-        branch_name = stdout.strip()
-        return branch_name
+        from importlib import metadata
 
-    except FileNotFoundError:
-        print("Git is not installed or not found in PATH.")
-        return None
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return None
+        dist = metadata.distribution("ezpz")
+        direct_url = None
+        if dist.files is not None:
+            for file in dist.files:
+                if str(file).endswith("direct_url.json"):
+                    direct_url = dist.read_text(file)
+                    break
+        if direct_url:
+            payload = json.loads(direct_url)
+            vcs_info = payload.get("vcs_info", {})
+            requested = vcs_info.get("requested_revision")
+            if requested:
+                return str(requested)
+            url = payload.get("url")
+            if isinstance(url, str) and "@" in url:
+                ref = url.split("@", 1)[1].split("#", 1)[0]
+                if ref:
+                    return ref
+    except Exception:
+        logger.debug("Unable to resolve ezpz install branch", exc_info=True)
+    return None
 
 
 def setup_wandb(
