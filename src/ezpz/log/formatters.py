@@ -24,5 +24,15 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
             "logger": record.name,
             "line": record.lineno,
+            "module": record.module,
+            "function": record.funcName,
+            "process": record.process,
+            "process_name": record.processName,
+            "thread": record.thread,
+            "thread_name": record.threadName,
         }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            log_record["stack"] = self.formatStack(record.stack_info)
         return json.dumps(log_record)
