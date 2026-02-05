@@ -137,11 +137,15 @@ def setup():
 
 def main():
     """Entrypoint for launching the minimal synthetic training example."""
+    t0 = time.perf_counter()
     model, optimizer = setup()
+    t_setup = time.perf_counter()
     module_name = "ezpz.examples.minimal"
     outdir = get_example_outdir(module_name)
     logger.info("Outputs will be saved to %s", outdir)
+    train_start = time.perf_counter()
     history = train(model, optimizer, outdir)
+    train_end = time.perf_counter()
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
             outdir=outdir,
@@ -150,6 +154,19 @@ def main():
             verbose=False,
         )
         logger.info(f"{dataset=}")
+    timings = {
+        "main/setup": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    try:
+        import wandb
+
+        if getattr(wandb, "run", None) is not None:
+            wandb.log(timings)
+    except Exception:
+        logger.debug("Skipping wandb timings log")
 
 
 if __name__ == "__main__":

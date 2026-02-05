@@ -597,7 +597,9 @@ def parse_args() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     """Set up distributed training, fit the model, and log samples."""
+    t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
+    t_setup = time.perf_counter()
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
@@ -648,6 +650,7 @@ def main(args: argparse.Namespace) -> None:
     device = ezpz.get_torch_device(as_torch_device=True)
     model.to(device)
 
+    train_start = time.perf_counter()
     history, wrapped_model = train(
         model=model,
         loader=loader,
@@ -657,6 +660,7 @@ def main(args: argparse.Namespace) -> None:
         lr=args.lr,
         outdir=outdir,
     )
+    train_end = time.perf_counter()
 
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
@@ -674,11 +678,20 @@ def main(args: argparse.Namespace) -> None:
     if ezpz.get_rank() == 0:
         for idx, text in enumerate(samples):
             logger.info("sample %s: %s", idx, text)
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": time.perf_counter() - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(timings)
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took: {time.perf_counter() - t0:.2f} seconds")

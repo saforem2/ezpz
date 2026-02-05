@@ -1058,18 +1058,31 @@ def train(
 
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
+    t0 = time.perf_counter()
     rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+    t_setup = time.perf_counter()
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
+    train_start = time.perf_counter()
     train(args=args, outdir=outdir)
+    train_end = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(timings)
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     return 0
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
     sys.exit(0)

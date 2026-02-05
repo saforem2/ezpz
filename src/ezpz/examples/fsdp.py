@@ -362,7 +362,9 @@ def get_data(args: argparse.Namespace) -> dict:
 
 def fsdp_main(args: argparse.Namespace) -> None:
     """Main training loop orchestrating data, model, and logging."""
+    t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
+    t_setup = time.perf_counter()
     if rank == 0:
         # try:
         fp = Path(__file__)
@@ -407,14 +409,26 @@ def fsdp_main(args: argparse.Namespace) -> None:
         scheduler.step()
         logger.info(history.update({**train_metrics, **test_metrics}))
 
+    train_end = time.perf_counter()
     logger.info(
         " ".join(
             [
                 f"{args.epochs + 1} epochs took",
-                f"{time.perf_counter() - start:.1f}s",
+                f"{train_end - start:.1f}s",
             ]
         )
     )
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - start,
+        "main/total": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(timings)
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     ezpz.dist.barrier()
 
     if args.save_model:
@@ -563,7 +577,5 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     fsdp_main(args=args)
     ezpz.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

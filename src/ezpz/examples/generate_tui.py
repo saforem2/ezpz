@@ -16,6 +16,7 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -355,4 +356,6 @@ class GenerateApp(App):
 
 
 if __name__ == "__main__":
+    t0 = time.perf_counter()
     GenerateApp().run()
+    print(f"Timings: {{'main/total': {time.perf_counter() - t0:.2f}}}")

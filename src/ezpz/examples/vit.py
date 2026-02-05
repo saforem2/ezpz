@@ -759,7 +759,9 @@ def train_fn(
 
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
+    t0 = time.perf_counter()
     rank = ezpz.dist.setup_torch()
+    t_setup = time.perf_counter()
     if rank == 0 and ezpz.verify_wandb():
         try:
             fp = Path(__file__).resolve()
@@ -824,12 +826,23 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
+    train_start = time.perf_counter()
     train_fn(block_fn, args=args, dataset=args.dataset)
+    train_end = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(timings)
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
