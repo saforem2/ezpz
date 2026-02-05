@@ -99,10 +99,14 @@ class TrainConfig:
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
-        self._created_at = (
-            ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-        )
+        self._created_at = os.environ.get("EZPZ_LOG_TIMESTAMP")
+        if self._created_at is None:
+            self._created_at = (
+                ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
+            )
         self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
+        if self._created_at is not None:
+            os.environ["EZPZ_LOG_TIMESTAMP"] = self._created_at
         self.outdir = Path(os.getcwd()).joinpath(
             "outputs", "ezpz.examples.test", f"{self._created_at}"
         )

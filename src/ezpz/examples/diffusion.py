@@ -78,13 +78,12 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 import wandb
+from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
-OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 
 def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
@@ -599,12 +598,9 @@ def parse_args() -> argparse.Namespace:
 def main(args: argparse.Namespace) -> None:
     """Set up distributed training, fit the model, and log samples."""
     rank = ezpz.setup_torch(seed=args.seed)
-    if rank == 0:
-        outdir = args.outdir if args.outdir is not None else OUTDIR
-    else:
-        outdir = None
-    outdir = ezpz.dist.broadcast(outdir, root=0)
-    logger.info(f"Using {outdir=}")
+    base_dir = args.outdir if args.outdir else None
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    logger.info("Outputs will be saved to %s", outdir)
     # self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
     if ezpz.get_rank() == 0:
         run = ezpz.dist.setup_wandb(
@@ -613,7 +609,7 @@ def main(args: argparse.Namespace) -> None:
         )
         assert run is not None and run is wandb.run
         # wandb.config.update(ezpz.dist.get_dist_info())
-        wandb.config.update({"outdir": outdir, "args": {**vars(args)}})
+        wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
         # wandb.config.update({"args": {**vars(args)}})
 
     base_texts: List[str]
@@ -664,7 +660,7 @@ def main(args: argparse.Namespace) -> None:
 
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
-            run_name=WBRUN_NAME,
+            run_name=WBPROJ_NAME,
             dataset_fname="train",
             warmup=0.1,
         )

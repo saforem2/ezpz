@@ -14,16 +14,22 @@ Running ``python3 -m ezpz.examples.minimal --help`` prints:
 
 import os
 import time
+from pathlib import Path
 
 import torch
 
 import ezpz
+from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
-def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> ezpz.History:
+def train(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    outdir: os.PathLike | str,
+) -> ezpz.History:
     """Run a synthetic training loop on random data.
 
     Args:
@@ -38,7 +44,14 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> ezpz.Hist
         if isinstance(model, torch.nn.parallel.DistributedDataParallel)
         else model
     )
-    history = ezpz.History()
+    metrics_path = Path(outdir).joinpath("metrics.jsonl")
+    history = ezpz.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(1 < ezpz.get_world_size() <= 384),
+    )
     device_type = ezpz.get_torch_device_type()
     dtype = unwrapped_model.layers[0].weight.dtype
     bsize = int(os.environ.get("BATCH_SIZE", 64))
@@ -125,9 +138,17 @@ def setup():
 def main():
     """Entrypoint for launching the minimal synthetic training example."""
     model, optimizer = setup()
-    history = train(model, optimizer)
+    module_name = "ezpz.examples.minimal"
+    outdir = get_example_outdir(module_name)
+    logger.info("Outputs will be saved to %s", outdir)
+    history = train(model, optimizer, outdir)
     if ezpz.get_rank() == 0:
-        dataset = history.finalize()
+        dataset = history.finalize(
+            outdir=outdir,
+            run_name=module_name,
+            dataset_fname="train",
+            verbose=False,
+        )
         logger.info(f"{dataset=}")
 
 

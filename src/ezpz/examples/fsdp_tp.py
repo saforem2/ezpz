@@ -137,6 +137,7 @@ import torch.nn.functional as F
 
 
 from ezpz.models import summarize_model
+from ezpz.examples import get_example_outdir
 
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
@@ -166,8 +167,6 @@ except ImportError:
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
-OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 MODEL_PRESETS = {
     "debug": {
@@ -471,7 +470,7 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--tp", type=int, default=2)
     parser.add_argument("--sharding-strategy", type=str, default="full_shard")
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--outdir", type=str, default="outputs/fsdp_tp")
+    parser.add_argument("--outdir", type=str, default=None)
     # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
         "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
@@ -741,6 +740,7 @@ def train(
 
             wandb.config.update(ezpz.get_dist_info())
             wandb.config.update(asdict(config))  # type:ignore
+            wandb.config.update({"args": {**vars(args)}})
 
     device_type = ezpz.dist.get_torch_device_type()
     device = (
@@ -1047,7 +1047,7 @@ def train(
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
-            run_name=WBRUN_NAME,
+            run_name=WBPROJ_NAME,
             dataset_fname="train",
             warmup=0.1,
         )
@@ -1059,12 +1059,9 @@ def train(
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
     rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
-    if rank == 0:
-        outdir = args.outdir if args.outdir is not None else OUTDIR
-    else:
-        outdir = None
-    outdir = ezpz.dist.broadcast(outdir, root=0)
-    logger.info(f"Using {outdir=}")
+    base_dir = args.outdir if args.outdir else None
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    logger.info("Outputs will be saved to %s", outdir)
     train(args=args, outdir=outdir)
     return 0
 

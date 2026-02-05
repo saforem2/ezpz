@@ -53,6 +53,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
 from ezpz.models import summarize_model
+from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
 
@@ -362,14 +363,12 @@ def get_data(args: argparse.Namespace) -> dict:
 def fsdp_main(args: argparse.Namespace) -> None:
     """Main training loop orchestrating data, model, and logging."""
     rank = ezpz.setup_torch(seed=args.seed)
-    START_TIME = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-    START_TIME = ezpz.dist.broadcast(START_TIME, root=0)
     if rank == 0:
         # try:
         fp = Path(__file__)
         run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
         if run is not None and wandb is not None and run is wandb.run:
-            run.config.update({**vars(args)})
+            run.config.update({"args": {**vars(args)}})
             run.config.update({"ezpz.dist": {**ezpz.get_dist_info()}})
 
     data = get_data(args)
@@ -382,8 +381,8 @@ def fsdp_main(args: argparse.Namespace) -> None:
     optimizer = tmp["optimizer"]
     scheduler = tmp["scheduler"]
 
-    # if rank == 0:
-    outdir = Path(os.getcwd()).joinpath("outputs", fname, START_TIME)
+    outdir = get_example_outdir(WBPROJ_NAME)
+    logger.info("Outputs will be saved to %s", outdir)
     metrics_path = outdir.joinpath(f"metrics-{rank}.jsonl")
     outdir.mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
@@ -425,7 +424,10 @@ def fsdp_main(args: argparse.Namespace) -> None:
             torch.save(states, "mnist_cnn.pt")
 
     if rank == 0:
-        dataset = history.finalize(run_name="ezpz-fsdp", dataset_fname="train")
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+        )
         logger.info(f"{dataset=}")
 
 
