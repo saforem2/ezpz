@@ -14,6 +14,7 @@ from pathlib import Path
 import socket
 import sys
 import time
+import subprocess
 from typing import Callable, Literal, Optional, Union, Any, Iterable, Sequence
 from datetime import timedelta
 
@@ -2132,6 +2133,27 @@ def get_wandb_mode(
         return "online"
 
 
+
+def get_git_branch_name():
+    try:
+        # Run the git command
+        process = subprocess.Popen(["git", "rev-parse", "--abbrev-ref", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        if stderr:
+            print(f"Git error: {stderr}")
+            return None
+        # Strip any leading/trailing whitespace
+        branch_name = stdout.strip()
+        return branch_name
+
+    except FileNotFoundError:
+        print("Git is not installed or not found in PATH.")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+
 def setup_wandb(
     project_name: Optional[str] = None,
     entity: str | None = None,
@@ -2314,8 +2336,12 @@ def setup_wandb(
             wandb.run.config.update({"DIST_INFO": get_dist_info()})
         torch_version = torch.__version__
         torch_file = torch.__file__
+        branch = get_git_branch_name()
+        if branch:
+            logger.info(f"Current branch name: {branch}")
         run.config.update(
             {
+                "ezpz_branch": branch,
                 "created_at": dstr,
                 "day": ezpz.get_timestamp("%d"),
                 "ezpz_file": ezpz.__file__,
