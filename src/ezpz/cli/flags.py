@@ -153,6 +153,13 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         help="Number of training iterations",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=["debug", "small", "medium", "large"],
+        help="Model size preset for the smoke test.",
+    )
+    parser.add_argument(
         "--log-freq",
         "--log_freq",
         type=int,

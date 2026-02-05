@@ -12,7 +12,7 @@ import time
 import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Sequence
 
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -32,6 +32,44 @@ warnings.filterwarnings("ignore")
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
+
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 16,
+        "train_iters": 20,
+        "log_freq": 1,
+        "print_freq": 1,
+        "layer_sizes": [128, 64],
+    },
+    "small": {
+        "batch_size": 64,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [256, 128, 64],
+    },
+    "medium": {
+        "batch_size": 128,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [512, 256, 128],
+    },
+    "large": {
+        "batch_size": 256,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [1024, 512, 256],
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "batch_size": ["--batch-size"],
+    "train_iters": ["--train-iters", "--train_iters"],
+    "log_freq": ["--log-freq", "--log_freq"],
+    "print_freq": ["--print-freq", "--print_freq"],
+    "layer_sizes": ["--layer-sizes"],
+}
 
 WANDB_DISABLED = False
 try:
@@ -541,10 +579,28 @@ def train(
     return trainer
 
 
-def parse_args() -> argparse.Namespace:
+def _arg_provided(argv: Sequence[str], flags: Sequence[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def _apply_model_preset(args: argparse.Namespace, argv: Sequence[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS.get(args.model)
+    if preset is None:
+        return
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for `ezpz.examples.test`."""
+    argv = sys.argv[1:] if argv is None else list(argv)
     parser = build_test_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    _apply_model_preset(args, argv)
     if args.backend.lower() in {"ds", "deepspeed"}:
         try:
             import deepspeed  # type:ignore  # noqa: F401
