@@ -554,6 +554,7 @@ def train(
         "timings/trainer": dt_trainer,
         "timings/training_start": dt_train_start,
         "timings/train_duration": dt_train_duration,
+        "timings/end-to-end": time.perf_counter() - START_TIME,
     }
     if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
         try:

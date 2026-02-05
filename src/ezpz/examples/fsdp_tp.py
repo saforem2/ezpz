@@ -677,6 +677,7 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
     return [(layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)]
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
@@ -1056,6 +1057,7 @@ def train(
     return 0
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
     t0 = time.perf_counter()
@@ -1071,6 +1073,9 @@ def main(args: argparse.Namespace) -> int:
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - train_start,
         "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:

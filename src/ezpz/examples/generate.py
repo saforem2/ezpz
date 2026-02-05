@@ -35,6 +35,7 @@ def parse_args():
     return parser.parse_args()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def prompt_model(
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
@@ -69,6 +70,7 @@ def prompt_model(
     )
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main():
     """Load a model and enter an interactive text generation REPL."""
     t0 = time.perf_counter()
@@ -103,9 +105,13 @@ def main():
         except KeyboardInterrupt:
             print("\nExiting...")
             break
+    end_time = time.perf_counter()
     timings = {
         "main/load": t_load - t0,
-        "main/total": time.perf_counter() - t0,
+        "main/total": end_time - t0,
+        "timings/training_start": t_load - t0,
+        "timings/train_duration": end_time - t_load,
+        "timings/end-to-end": end_time - t0,
     }
     print(f"Timings: {timings}")
 

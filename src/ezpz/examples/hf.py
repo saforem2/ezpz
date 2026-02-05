@@ -98,6 +98,7 @@ def parse_args(
     return model_args, data_args, training_args
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def split_dataset(
     model_args: HfModelArguments,
     data_args: HfDataTrainingArguments,
@@ -180,6 +181,7 @@ def split_dataset(
     )
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> None:
     """Entrypoint for standalone HF causal LM fine-tuning without Trainer."""
     t0 = time.perf_counter()
@@ -850,6 +852,9 @@ def main() -> None:
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - train_start,
         "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:

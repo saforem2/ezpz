@@ -595,6 +595,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> None:
     """Set up distributed training, fit the model, and log samples."""
     t0 = time.perf_counter()
@@ -678,10 +679,14 @@ def main(args: argparse.Namespace) -> None:
     if ezpz.get_rank() == 0:
         for idx, text in enumerate(samples):
             logger.info("sample %s: %s", idx, text)
+    end_time = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - train_start,
-        "main/total": time.perf_counter() - t0,
+        "main/total": end_time - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": end_time - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:

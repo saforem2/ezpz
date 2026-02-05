@@ -135,6 +135,7 @@ def setup():
     return model, optimizer
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main():
     """Entrypoint for launching the minimal synthetic training example."""
     t0 = time.perf_counter()
@@ -158,6 +159,9 @@ def main():
         "main/setup": t_setup - t0,
         "main/train": train_end - train_start,
         "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
     try:

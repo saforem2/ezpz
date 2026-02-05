@@ -433,6 +433,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 #     return ezpz.get_torch_device_type()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train_fn(
     block_fn: Any,
     args: argparse.Namespace,
@@ -757,6 +758,7 @@ def train_fn(
     return history
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
     t0 = time.perf_counter()
@@ -833,6 +835,9 @@ def main(args: argparse.Namespace):
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - train_start,
         "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:

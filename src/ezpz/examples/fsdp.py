@@ -150,6 +150,7 @@ class Net(nn.Module):
         return output
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     model: nn.Module | DistributedDataParallel | FSDP,
     train_loader: DataLoader,
@@ -201,6 +202,7 @@ def train(
     }
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def test(model, test_loader):
     """Evaluate model on validation data and gather metrics."""
     device_type = ezpz.dist.get_torch_device_type()
@@ -360,6 +362,7 @@ def get_data(args: argparse.Namespace) -> dict:
     return data
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def fsdp_main(args: argparse.Namespace) -> None:
     """Main training loop orchestrating data, model, and logging."""
     t0 = time.perf_counter()
@@ -422,6 +425,9 @@ def fsdp_main(args: argparse.Namespace) -> None:
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - start,
         "main/total": train_end - t0,
+        "timings/training_start": start - t0,
+        "timings/train_duration": train_end - start,
+        "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:
