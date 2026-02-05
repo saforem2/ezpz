@@ -831,13 +831,11 @@ def main(args: argparse.Namespace):
     train_start = time.perf_counter()
     train_fn(block_fn, args=args, dataset=args.dataset)
     train_end = time.perf_counter()
+    t1 = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,
         "main/train": train_end - train_start,
-        "main/total": train_end - t0,
-        "timings/training_start": train_start - t0,
-        "timings/train_duration": train_end - train_start,
-        "timings/end-to-end": train_end - t0,
+        "main/total": t1 - t0,
     }
     logger.info("Timings: %s", timings)
     if wandb is not None and getattr(wandb, "run", None) is not None:
@@ -848,6 +846,12 @@ def main(args: argparse.Namespace):
                     for k, v in timings.items()
                 }
             )
+            # wandb.log(
+            #     {
+            #         (f"timings/{k}" if not k.startswith("timings/") else k): v
+            #         for k, v in timings.items()
+            #     }
+            # )
         except Exception:
             logger.warning("Failed to log timings to wandb")
 
