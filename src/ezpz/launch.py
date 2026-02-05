@@ -19,6 +19,7 @@ from typing import Optional
 
 import ezpz
 from ezpz.cli.flags import build_launch_parser
+from ezpz.configs import get_json_log_file
 
 logger = ezpz.get_logger(__name__)
 
@@ -57,6 +58,12 @@ def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
     )
+
+
+def _log_json_log_file(active_logger) -> None:
+    json_log_file = get_json_log_file()
+    if json_log_file is not None:
+        active_logger.info("Logs available at: %s", json_log_file)
 
 
 EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
@@ -394,11 +401,7 @@ def launch(
     start = time.perf_counter()
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
-    from ezpz.configs import get_json_log_file
-
-    json_log_file = get_json_log_file()
-    if json_log_file is not None:
-        logger.info(f"Logs available at: {json_log_file}")
+    _log_json_log_file(logger)
     jobid = get_active_jobid()
     assert jobid is not None, "No active job found."
     nodelist = get_nodelist_of_active_job()
@@ -449,11 +452,7 @@ def launch(
     cmd_start = time.perf_counter()
     retcode = run_command(command=cmd, filters=filters)
     cmd_finish = time.perf_counter()
-    from ezpz.configs import get_json_log_file
-
-    json_log_file = get_json_log_file()
-    if json_log_file is not None:
-        logger.info(f"Logs available at: {json_log_file}")
+    _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
@@ -528,11 +527,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
-    from ezpz.configs import get_json_log_file
-
-    json_log_file = get_json_log_file()
-    if json_log_file is not None:
-        logger.info(f"Logs available at: {json_log_file}")
+    _log_json_log_file(logger)
     logger.info(
         "No active scheduler detected; falling back to local mpirun: %s",
         " ".join(shlex.quote(part) for part in fallback_cmd),
@@ -545,11 +540,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         proc = subprocess.run(fallback_cmd, check=False)
         retcode = proc.returncode
     cmd_finish = time.perf_counter()
-    from ezpz.configs import get_json_log_file
-
-    json_log_file = get_json_log_file()
-    if json_log_file is not None:
-        logger.info(f"Logs available at: {json_log_file}")
+    _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
