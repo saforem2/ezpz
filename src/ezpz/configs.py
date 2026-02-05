@@ -155,7 +155,7 @@ def load_ds_config(
 
 
 _CURRENT_JSON_LOG_FILE: Optional[Path] = None
-_LOGGING_CONFIG_CACHE: Optional[dict] = None
+_LOGGING_CONFIG_CACHE: dict[tuple[int, bool], dict[str, Any]] = {}
 
 
 def get_json_log_file() -> Optional[Path]:
@@ -170,92 +170,145 @@ def get_logging_config(rank: Optional[int] = None) -> dict:
         rank: The distributed rank. If None, will be determined automatically.
               Used to create per-rank log files when EZPZ_LOG_FROM_ALL_RANKS is set.
     """
-    global _CURRENT_JSON_LOG_FILE, _LOGGING_CONFIG_CACHE
+    log_from_all_ranks = _get_log_from_all_ranks()
+    resolved_rank = _determine_rank(rank)
+    cache_key = (resolved_rank, log_from_all_ranks)
+    cached_config = _LOGGING_CONFIG_CACHE.get(cache_key)
+    if cached_config is not None:
+        return cached_config
 
-    # Return cached config if already initialized
-    if _LOGGING_CONFIG_CACHE is not None:
-        return _LOGGING_CONFIG_CACHE
+    config_dict = _build_logging_config(
+        rank=resolved_rank,
+        log_from_all_ranks=log_from_all_ranks,
+    )
+    _LOGGING_CONFIG_CACHE[cache_key] = config_dict
+    return config_dict
 
-    from datetime import datetime
 
+def _get_log_from_all_ranks() -> bool:
     from ezpz.log.console import to_bool
 
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    cfp = CONF_DIR.joinpath("hydra", "job_logging", "custom.yaml")
-    config = OmegaConf.load(cfp)
-
-    # Determine if we should log from all ranks
-    log_from_all_ranks = to_bool(
+    return to_bool(
         os.environ.get(
             "LOG_FROM_ALL_RANKS",
             os.environ.get("EZPZ_LOG_FROM_ALL_RANKS", ""),
         )
     )
 
-    # Get rank if not provided
-    if rank is None:
-        try:
-            from ezpz.dist import get_rank
 
-            rank = get_rank()
-        except Exception:
-            rank = 0
+def _determine_rank(rank: Optional[int]) -> int:
+    if rank is not None:
+        return rank
+    try:
+        from ezpz.dist import get_rank
 
-    # Check for shared timestamp from parent process, or generate one
+        return get_rank()
+    except Exception:
+        return 0
+
+
+def _get_or_init_logging_context() -> tuple[str, str]:
+    from datetime import datetime
+
     timestamp = os.environ.get("EZPZ_LOG_TIMESTAMP")
     if not timestamp:
         timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
         os.environ["EZPZ_LOG_TIMESTAMP"] = timestamp
 
-    # Check for shared job name from parent process, or derive one
     job_name = os.environ.get("EZPZ_JSON_LOG_JOB_NAME")
     if not job_name:
         job_name = os.environ.get(
             "HYDRA_JOB_NAME",
-            os.environ.get(
-                "EZPZ_JOB_NAME", _derive_default_job_name(sys.argv)
-            ),
+            os.environ.get("EZPZ_JOB_NAME", _derive_default_job_name(sys.argv)),
         )
         os.environ["EZPZ_JSON_LOG_JOB_NAME"] = job_name
 
+    return job_name, timestamp
+
+
+def _compute_log_file_path(
+    job_name: str, timestamp: str, rank: int, log_from_all_ranks: bool
+) -> Path:
     log_subdir = LOGS_DIR / job_name
     log_subdir.mkdir(parents=True, exist_ok=True)
     if log_from_all_ranks:
-        log_file = log_subdir / f"{timestamp}-rank{rank}.jsonl"
-    else:
-        log_file = log_subdir / f"{timestamp}-rank0.jsonl"
+        return log_subdir / f"{timestamp}-rank{rank}.jsonl"
+    return log_subdir / f"{timestamp}-rank0.jsonl"
 
-    _CURRENT_JSON_LOG_FILE = log_file
-    config = OmegaConf.merge(
+
+def _merge_logging_config(
+    base_config: DictConfig, job_name: str, log_file: Path
+) -> DictConfig:
+    merged_config = OmegaConf.merge(
         OmegaConf.create(
-            {
-                "hydra": {"job": {"name": job_name}},
-                "log_file": str(log_file),
-            }
+            {"hydra": {"job": {"name": job_name}}, "log_file": str(log_file)}
         ),
-        config,
+        base_config,
     )
-    OmegaConf.resolve(config)
+    if not isinstance(merged_config, DictConfig):
+        raise TypeError("Logging config must resolve to a dictionary.")
+    OmegaConf.resolve(merged_config)
+    return merged_config
+
+
+def _config_to_dict(config: DictConfig) -> dict[str, Any]:
     config_dict = OmegaConf.to_container(config, resolve=True)
     if not isinstance(config_dict, dict):
         raise TypeError("Logging config must resolve to a dictionary.")
-    config_dict = cast(dict[str, Any], config_dict)
-    config_dict.setdefault("loggers", {})
+    cast_config = cast(dict[str, Any], config_dict)
+    cast_config.setdefault("loggers", {})
+    return cast_config
 
-    # Update json_file handler with the computed path
-    # Only enable for rank 0 unless EZPZ_LOG_FROM_ALL_RANKS is set
-    if "handlers" in config_dict and "json_file" in config_dict["handlers"]:
-        if log_from_all_ranks or rank == 0:
-            config_dict["handlers"]["json_file"]["filename"] = str(log_file)
-        else:
-            # Remove json_file handler for non-zero ranks when not logging from all
-            del config_dict["handlers"]["json_file"]
-            if "root" in config_dict and "handlers" in config_dict["root"]:
-                handlers = config_dict["root"]["handlers"]
-                if "json_file" in handlers:
-                    handlers.remove("json_file")
 
-    _LOGGING_CONFIG_CACHE = config_dict
+def _adjust_json_file_handler(
+    config_dict: dict[str, Any],
+    log_from_all_ranks: bool,
+    rank: int,
+    log_file: Path,
+) -> None:
+    handlers = config_dict.get("handlers", {})
+    json_handler = handlers.get("json_file")
+    if not json_handler:
+        return
+
+    if log_from_all_ranks or rank == 0:
+        json_handler["filename"] = str(log_file)
+        return
+
+    del handlers["json_file"]
+    root = config_dict.get("root", {})
+    root_handlers = root.get("handlers", [])
+    if "json_file" in root_handlers:
+        root_handlers.remove("json_file")
+
+
+def _build_logging_config(rank: int, log_from_all_ranks: bool) -> dict[str, Any]:
+    global _CURRENT_JSON_LOG_FILE
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    cfp = CONF_DIR.joinpath("hydra", "job_logging", "custom.yaml")
+    base_config = OmegaConf.load(cfp)
+    if not isinstance(base_config, DictConfig):
+        raise TypeError("Logging config must resolve to a dictionary.")
+
+    job_name, timestamp = _get_or_init_logging_context()
+    log_file = _compute_log_file_path(
+        job_name=job_name,
+        timestamp=timestamp,
+        rank=rank,
+        log_from_all_ranks=log_from_all_ranks,
+    )
+
+    merged_config = _merge_logging_config(base_config, job_name, log_file)
+    config_dict = _config_to_dict(merged_config)
+    _adjust_json_file_handler(
+        config_dict=config_dict,
+        log_from_all_ranks=log_from_all_ranks,
+        rank=rank,
+        log_file=log_file,
+    )
+
+    _CURRENT_JSON_LOG_FILE = log_file
     return config_dict
 
 
@@ -273,7 +326,7 @@ def _derive_default_job_name(argv: Sequence[str]) -> str:
     for i, arg in enumerate(argv):
         if arg == "-m" and i + 1 < len(argv):
             module_name = argv[i + 1]
-            return module_name.replace(".", "-")
+            return module_name
 
     # Fallback: use executable basename + optional first subcommand
     base = Path(argv[0]).name
