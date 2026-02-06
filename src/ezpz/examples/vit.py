@@ -739,21 +739,29 @@ def train_fn(
         model.train()  # type:ignore
 
     if ezpz.dist.get_rank() == 0:
-        dataset = history.finalize(
-            outdir=outdir,
-            run_name=WBPROJ_NAME,
-            dataset_fname="train",
-            verbose=False,
-        )
-        logger.info(f"{dataset=}")
-        if "test" in dataset_dict:
-            eval_dataset = eval_history.finalize(
+        if history.history and any(len(v) for v in history.history.values()):
+            dataset = history.finalize(
                 outdir=outdir,
                 run_name=WBPROJ_NAME,
-                dataset_fname="eval",
+                dataset_fname="train",
                 verbose=False,
             )
-            logger.info(f"{eval_dataset=}")
+            logger.info(f"{dataset=}")
+        else:
+            logger.warning("No train metrics recorded; skipping dataset save")
+        if "test" in dataset_dict:
+            if eval_history.history and any(
+                len(v) for v in eval_history.history.values()
+            ):
+                eval_dataset = eval_history.finalize(
+                    outdir=outdir,
+                    run_name=WBPROJ_NAME,
+                    dataset_fname="eval",
+                    verbose=False,
+                )
+                logger.info(f"{eval_dataset=}")
+            else:
+                logger.warning("No eval metrics recorded; skipping dataset save")
 
     return history
 
