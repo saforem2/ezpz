@@ -318,6 +318,16 @@ def build_launch_parser(
         dest="hostfile",
         help="Hostfile to use for launching.",
     )
+    parser.add_argument(
+        "--cpu-bind",
+        type=str,
+        default=None,
+        dest="cpu_bind",
+        help=(
+            "CPU binding value to pass to the launcher. "
+            "Takes precedence over CPU_BIND when both are specified."
+        ),
+    )
     if include_command:
         parser.add_argument(
             "command",
