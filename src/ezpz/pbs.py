@@ -228,11 +228,17 @@ def _maybe_add_cpu_bind(
     return cmd
 
 
+def _normalize_cpu_bind_value(cpu_bind: str) -> str:
+    """Normalize user-provided CPU bind values to a launcher value."""
+    return cpu_bind.strip().removeprefix("--cpu-bind=").strip()
+
+
 def get_pbs_launch_cmd(
     ngpus: Optional[int] = None,
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[Pathish] = None,
+    cpu_bind: Optional[str] = None,
     *,
     verbose: bool = False,
 ) -> str:
@@ -303,15 +309,30 @@ def get_pbs_launch_cmd(
         cmd_list.append("--verbose")
 
     cpu_bind_env = os.environ.get("CPU_BIND")
+    cpu_bind_cli = (
+        _normalize_cpu_bind_value(cpu_bind)
+        if cpu_bind is not None and cpu_bind.strip()
+        else None
+    )
+    cpu_bind_env_value = (
+        _normalize_cpu_bind_value(cpu_bind_env)
+        if cpu_bind_env is not None and cpu_bind_env.strip()
+        else None
+    )
     use_verbose_cpu_bind = ngpus < 1024
     cpu_bind_prefix = (
         "--cpu-bind=verbose," if use_verbose_cpu_bind else "--cpu-bind="
     )
+    selected_cpu_bind = cpu_bind_cli or cpu_bind_env_value
 
-    if cpu_bind_env:
-        logger.warning(f"Detected CPU_BIND from environment: {cpu_bind_env}")
-        bind_value = cpu_bind_env.replace("--cpu-bind=", "")
-        cmd_list.append(f"{cpu_bind_prefix}{bind_value}")
+    if selected_cpu_bind:
+        if cpu_bind_cli is not None:
+            logger.info("Using cpu bind from --cpu-bind: %s", cpu_bind_cli)
+        else:
+            logger.warning(
+                "Detected CPU_BIND from environment: %s", cpu_bind_env
+            )
+        cmd_list.append(f"{cpu_bind_prefix}{selected_cpu_bind}")
     else:
         is_intel_xpu_machine = machine_name in {"aurora", "sunspot"}
         if is_intel_xpu_machine:
@@ -416,6 +437,7 @@ def build_launch_cmd(
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[Union[str, Path, os.PathLike]] = None,
+    cpu_bind: Optional[str] = None,
 ) -> str:
     """Build the launch command for the current job.
 
@@ -431,6 +453,7 @@ def build_launch_cmd(
             nhosts=nhosts,
             ngpu_per_host=ngpu_per_host,
             hostfile=hostfile,
+            cpu_bind=cpu_bind,
         )
 
     elif scheduler == "slurm":
