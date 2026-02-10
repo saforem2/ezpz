@@ -56,6 +56,7 @@ _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.jobs",
     "ezpz.launch",
     "ezpz.tplot",
+    # "ezpz.test",
 )
 
 __all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]  # type:ignore
