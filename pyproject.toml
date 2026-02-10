@@ -10,17 +10,18 @@ dependencies = [
     "click",
     "evaluate",
     "hydra-core",
-    "ipython",
     "numpy",
     "omegaconf",
     "plotext",
     "rich",
     "seaborn",
     "sh",
+    "transformers==4.50.1",
     "torchinfo",
-    "transformers>=4.50.1",
     "wandb",
     "xarray",
+    # "transformers>=4.50.1,<5.0",
+    # "ipython",
     # "accelerate",
     # "h5py",
     # "tiktoken",
@@ -226,4 +227,3 @@ docstring-code-format = true
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
-
