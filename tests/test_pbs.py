@@ -50,7 +50,21 @@ def test_get_pbs_launch_cmd_respects_cpu_bind_env(patch_topology, monkeypatch):
 
     cmd = pbs.get_pbs_launch_cmd(ngpus=8, nhosts=1, hostfile=hostfile)
 
-    assert cmd.endswith(f"--cpu-bind=verbose,list:0-1")
+    assert cmd.endswith("--cpu-bind=verbose,list:0-1")
+
+
+def test_get_pbs_launch_cmd_cpu_bind_arg_overrides_env(
+    patch_topology, monkeypatch
+):
+    """Explicit cpu_bind argument takes precedence over CPU_BIND env."""
+    hostfile = patch_topology(world_size=8, gpus_per_node=8, num_nodes=1)
+    monkeypatch.setenv("CPU_BIND", "--cpu-bind=list:0-1")
+
+    cmd = pbs.get_pbs_launch_cmd(
+        ngpus=8, nhosts=1, hostfile=hostfile, cpu_bind="list:2-3"
+    )
+
+    assert cmd.endswith("--cpu-bind=verbose,list:2-3")
 
 
 def test_get_pbs_launch_cmd_raises_on_inconsistent_topology(patch_topology):

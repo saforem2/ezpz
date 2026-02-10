@@ -1,12 +1,7 @@
 """Tests for the ezpz.launch module."""
 
 import os
-import sys
-import tempfile
-from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 import ezpz.launch as launch
 # try:
@@ -63,6 +58,7 @@ class TestLaunch:
     def test_main_fallback_to_mpirun(self, monkeypatch):
         """Ensure the CLI falls back to mpirun when no scheduler is active."""
         monkeypatch.setenv("WORLD_SIZE", "4")
+        monkeypatch.delenv("CPU_BIND", raising=False)
         monkeypatch.setattr(launch, "get_scheduler", lambda: "unknown")
         monkeypatch.setattr(launch, "get_active_jobid", lambda: None)
         monkeypatch.setattr(launch, "configure_warnings", lambda: None)
@@ -117,6 +113,7 @@ class TestLaunch:
         """Fallback mpirun honours hostfile and process count overrides."""
         hostfile = tmp_path / "hosts.txt"
         hostfile.write_text("node001\nnode002\n", encoding="utf-8")
+        monkeypatch.delenv("CPU_BIND", raising=False)
         monkeypatch.setattr(launch, "get_scheduler", lambda: "unknown")
         monkeypatch.setattr(launch, "get_active_jobid", lambda: None)
         monkeypatch.setattr(launch, "configure_warnings", lambda: None)
@@ -203,3 +200,52 @@ class TestLaunch:
         assert args.nproc == 2
         assert args.launcher_args == []
         assert args.command == ["python", "-m", "demo", "--flag"]
+
+    def test_fallback_cpu_bind_cli_precedence_over_env(self, monkeypatch):
+        """CLI --cpu-bind overrides CPU_BIND and emits precedence warning."""
+        monkeypatch.setenv("WORLD_SIZE", "2")
+        monkeypatch.setenv("CPU_BIND", "--cpu-bind=list:0-1")
+        monkeypatch.setattr(launch, "get_scheduler", lambda: "unknown")
+        monkeypatch.setattr(launch, "get_active_jobid", lambda: None)
+        monkeypatch.setattr(launch, "configure_warnings", lambda: None)
+        monkeypatch.setattr(launch.ezpz.dist, "cleanup", lambda: None)
+        recorded: dict[str, object] = {}
+        warnings: list[str] = []
+
+        def fake_run(cmd, check=False):
+            recorded["cmd"] = cmd
+            recorded["check"] = check
+            return SimpleNamespace(returncode=0)
+
+        def fake_warning(msg, *args):
+            warnings.append(msg % args if args else msg)
+
+        monkeypatch.setattr(launch.subprocess, "run", fake_run)
+        monkeypatch.setattr(launch.logger, "warning", fake_warning)
+
+        rc = launch.run(
+            [
+                "--cpu-bind",
+                "list:2-3",
+                "python",
+                "-m",
+                "ezpz.examples.test",
+            ]
+        )
+
+        assert rc == 0
+        assert recorded["cmd"] == [
+            "mpirun",
+            "-np",
+            "2",
+            "--cpu-bind=list:2-3",
+            "python",
+            "-m",
+            "ezpz.examples.test",
+        ]
+        assert recorded["check"] is False
+        assert any(
+            "Both --cpu-bind and CPU_BIND are specified." in message
+            and "Precedence order is: --cpu-bind > CPU_BIND." in message
+            for message in warnings
+        )
