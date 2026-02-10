@@ -9,7 +9,7 @@ Explicitly, these are `ezpz <command>`:
 - 🚀 [`ezpz launch`](./launch/index.md): Launch commands with _automatic
   **job scheduler** detection_ (PBS, Slurm)
     - 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
-    --8<-- "../includes/example-table.md"
+    --8<-- "../includes/cli-example-table.md"
 
 - ??? tip "`ezpz --help`"
 
