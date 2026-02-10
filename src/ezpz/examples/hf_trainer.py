@@ -272,6 +272,7 @@ def split_dataset(
     return datasets.DatasetDict(dsets)
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> int:
     """
     Main function to run the training and evaluation of a causal language model.
@@ -284,15 +285,18 @@ def main() -> int:
     """
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
+    t0 = time.perf_counter()
     import ezpz.dist
 
-    rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
+    # rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
+    rank = ezpz.dist.setup_torch()
     # rank = ezpz.dist.setup_torch(
     #     # seed=training_args.seed,
     #     # device_id=int(devid) if devid is not None else devid,
     # )
 
     args = parse_args()
+    t_setup = time.perf_counter()
     # args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]
     # def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
     assert "data" in args and "model" in args and "training" in args
@@ -783,6 +787,7 @@ def main() -> int:
     )
 
     # Training
+    train_start = time.perf_counter()
     if training_args.do_train:
         assert isinstance(trainer, Trainer)
         checkpoint = None
@@ -894,6 +899,27 @@ def main() -> int:
         #     #         # log the table to wandb
         #     #         assert wandb is not None and wandb.run is not None
         #     #         wandb.log({"sample_predictions": records_table})
+
+    train_end = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
 
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
