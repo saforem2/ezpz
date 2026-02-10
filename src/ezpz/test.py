@@ -1,7 +1,6 @@
 """CLI entry point for running the distributed smoke test locally."""
 
 import shlex
-import subprocess
 import sys
 import time
 from typing import List, Optional
@@ -57,11 +56,6 @@ def main(args: Optional[List[str]] = None) -> int:
     # fallback_cmd = ["mpirun", "-np", "2", *command]
     cmd_str = [*command, *args]
     return run(cmd_str)
-    # result = subprocess.run(fallback_cmd, check=False)
-    # ezpz.cleanup()
-    # return result.returncode
-    # return result
-    # return run(fallback_cmd)
 
 
 if __name__ == "__main__":
