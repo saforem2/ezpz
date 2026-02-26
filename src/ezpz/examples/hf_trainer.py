@@ -11,13 +11,14 @@ Here is the full list of checkpoints on the hub that can be fine-tuned by this s
 https://huggingface.co/models?filter=text-generation
 """
 
+import json
 import math
 import os
 import sys
 import time
 from itertools import chain
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import datasets
 import torch
@@ -43,10 +44,139 @@ from ezpz.configs import HfDataTrainingArguments, HfModelArguments
 logger = ezpz.get_logger(__name__)
 
 
+def _as_bool(value: Any, *, default: bool = True) -> bool:
+    """Convert common truthy/falsy values into a boolean.
+
+    Args:
+        value: Raw value to convert.
+        default: Value to return when ``value`` is ``None``.
+
+    Returns:
+        Parsed boolean value.
+
+    Raises:
+        ValueError: If ``value`` cannot be interpreted as a boolean.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+    raise ValueError(f"Cannot parse boolean value from {value!r}")
+
+
+def _normalize_legacy_hf_cli_args(
+    raw_args: list[str],
+) -> tuple[list[str], bool, list[str]]:
+    """Normalize deprecated HF Trainer CLI args for transformers v5.
+
+    Args:
+        raw_args: Raw argument list (excluding executable name).
+
+    Returns:
+        Tuple with normalized args, overwrite-output-dir flag, and rewrites.
+    """
+    normalized_args: list[str] = []
+    overwrite_output_dir = False
+    rewrites: list[str] = []
+
+    i = 0
+    while i < len(raw_args):
+        arg = raw_args[i]
+
+        if arg in {"--overwrite-output-dir", "--overwrite_output_dir"}:
+            next_arg = raw_args[i + 1] if i + 1 < len(raw_args) else None
+            if next_arg is not None and not next_arg.startswith("--"):
+                overwrite_output_dir = _as_bool(next_arg, default=True)
+                i += 2
+            else:
+                overwrite_output_dir = True
+                i += 1
+            rewrites.append("overwrite_output_dir")
+            continue
+
+        if arg.startswith("--overwrite-output-dir=") or arg.startswith(
+            "--overwrite_output_dir="
+        ):
+            overwrite_output_dir = _as_bool(arg.split("=", 1)[1], default=True)
+            rewrites.append("overwrite_output_dir")
+            i += 1
+            continue
+
+        if arg in {
+            "--include-tokens-per-second",
+            "--include_tokens_per_second",
+        }:
+            replacement = "--include-num-input-tokens-seen"
+            next_arg = raw_args[i + 1] if i + 1 < len(raw_args) else None
+            if next_arg is not None and not next_arg.startswith("--"):
+                normalized_args.extend([replacement, next_arg])
+                i += 2
+            else:
+                normalized_args.append(replacement)
+                i += 1
+            rewrites.append("include_tokens_per_second")
+            continue
+
+        if arg.startswith("--include-tokens-per-second=") or arg.startswith(
+            "--include_tokens_per_second="
+        ):
+            replacement = "--include-num-input-tokens-seen"
+            value = arg.split("=", 1)[1]
+            normalized_args.append(f"{replacement}={value}")
+            rewrites.append("include_tokens_per_second")
+            i += 1
+            continue
+
+        normalized_args.append(arg)
+        i += 1
+
+    return normalized_args, overwrite_output_dir, rewrites
+
+
+def _normalize_legacy_hf_json_args(
+    raw_args: dict[str, Any],
+) -> tuple[dict[str, Any], bool, list[str]]:
+    """Normalize deprecated HF Trainer JSON args for transformers v5.
+
+    Args:
+        raw_args: Parsed JSON config dictionary.
+
+    Returns:
+        Tuple with normalized config, overwrite-output-dir flag, and rewrites.
+    """
+    args = dict(raw_args)
+    rewrites: list[str] = []
+    overwrite_output_dir = False
+
+    if "overwrite_output_dir" in args:
+        overwrite_output_dir = _as_bool(args.pop("overwrite_output_dir"))
+        rewrites.append("overwrite_output_dir")
+
+    if (
+        "include_tokens_per_second" in args
+        and "include_num_input_tokens_seen" not in args
+    ):
+        args["include_num_input_tokens_seen"] = args.pop(
+            "include_tokens_per_second"
+        )
+        rewrites.append("include_tokens_per_second")
+
+    return args, overwrite_output_dir, rewrites
+
+
 def parse_args() -> dict:
     """Returns dictionary of
 
-    `{"model": model_args, "data": data_args, "training": training_args}`
+    `{"model": model_args, "data": data_args, "training": training_args,`
+    `"overwrite_output_dir": overwrite_output_dir}`
     """
     # NOTE:
     #   See all possible arguments by passing the --help flag to this script.
@@ -55,16 +185,62 @@ def parse_args() -> dict:
     parser = HfArgumentParser(
         (HfModelArguments, HfDataTrainingArguments, TrainingArguments)  # type:ignore
     )
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+    try:
+        transformers_major = int(transformers.__version__.split(".", 1)[0])
+    except (ValueError, AttributeError):
+        transformers_major = 5
+    use_v5_compat = transformers_major >= 5
+
+    if use_v5_compat:
+        cli_args, overwrite_output_dir, cli_rewrites = (
+            _normalize_legacy_hf_cli_args(sys.argv[1:])
+        )
+        rewrites: list[str] = list(cli_rewrites)
+    else:
+        cli_args = list(sys.argv[1:])
+        overwrite_output_dir = False
+        rewrites = []
+
+    if len(cli_args) == 1 and cli_args[0].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(
-            json_file=os.path.abspath(sys.argv[1])
-        )
+        if use_v5_compat:
+            with Path(os.path.abspath(cli_args[0])).open(
+                "r", encoding="utf-8"
+            ) as f:
+                json_args = json.load(f)
+            if not isinstance(json_args, dict):
+                raise ValueError(
+                    f"Expected JSON object in {cli_args[0]}, got {type(json_args)}"
+                )
+            normalized_json_args, json_overwrite_output_dir, json_rewrites = (
+                _normalize_legacy_hf_json_args(json_args)
+            )
+            rewrites.extend(json_rewrites)
+            overwrite_output_dir = json_overwrite_output_dir
+            model_args, data_args, training_args = parser.parse_dict(
+                normalized_json_args
+            )
+        else:
+            model_args, data_args, training_args = parser.parse_json_file(
+                json_file=os.path.abspath(cli_args[0])
+            )
     else:
         model_args, data_args, training_args = (
-            parser.parse_args_into_dataclasses()
+            parser.parse_args_into_dataclasses(args=cli_args)
         )
+
+    if use_v5_compat and rewrites and rank == 0:
+        normalized_fields = ", ".join(sorted(set(rewrites)))
+        logger.warning(
+            "Normalized deprecated TrainingArguments for transformers v5: %s",
+            normalized_fields,
+        )
+
+    if not use_v5_compat and hasattr(training_args, "overwrite_output_dir"):
+        overwrite_output_dir = bool(training_args.overwrite_output_dir)
+    if hasattr(training_args, "overwrite_output_dir"):
+        setattr(training_args, "overwrite_output_dir", overwrite_output_dir)
 
     try:
         import wandb
@@ -124,13 +300,13 @@ def parse_args() -> dict:
     log_level_info = 20  # "INFO"
     log_level_critical = 50  # "CRITICAL"
     log_level = log_level_info if rank == 0 else log_level_critical
-    import datasets.utils.logging
-    import transformers.utils.logging
+    from datasets.utils import logging as datasets_logging
+    from transformers.utils import logging as transformers_logging
 
-    datasets.utils.logging.set_verbosity(log_level)
-    transformers.utils.logging.set_verbosity(log_level)
-    transformers.utils.logging.enable_default_handler()
-    transformers.utils.logging.enable_explicit_format()
+    datasets_logging.set_verbosity(log_level)
+    transformers_logging.set_verbosity(log_level)
+    transformers_logging.enable_default_handler()
+    transformers_logging.enable_explicit_format()
 
     # logger.warning(
     #     f"Process rank: {training_args.local_rank}, "
@@ -140,7 +316,12 @@ def parse_args() -> dict:
     if rank == 0:
         logger.info(f"Training/evaluation parameters {training_args}")
 
-    return {"model": model_args, "data": data_args, "training": training_args}
+    return {
+        "model": model_args,
+        "data": data_args,
+        "training": training_args,
+        "overwrite_output_dir": overwrite_output_dir,
+    }
 
 
 # Write a function below to resolve possibility of optimizer being defined both as:
@@ -184,9 +365,23 @@ def decode_predictions(
         tokenizer (transformers.PreTrainedTokenizer): The tokenizer used to decode the predictions.
         predictions (transformers.TrainerPredictionOutput): The output from the Trainer containing predictions.
     """
-    labels = tokenizer.batch_decode(list(predictions.label_ids))
+
+    def _decode_token_batches(
+        token_ids: list[list[int]] | list[int],
+    ) -> list[str]:
+        """Decode token ids across transformers v4/v5 tokenizer APIs."""
+        if hasattr(tokenizer, "batch_decode"):
+            return list(tokenizer.batch_decode(token_ids))
+        if token_ids and isinstance(token_ids[0], list):
+            return [tokenizer.decode(ids) for ids in token_ids]
+        decoded = tokenizer.decode(token_ids)  # type: ignore[arg-type]
+        if isinstance(decoded, str):
+            return [decoded]
+        return list(decoded)
+
+    labels = _decode_token_batches(list(predictions.label_ids))
     logits = torch.Tensor(predictions.predictions).argmax(-1)
-    prediction_text = tokenizer.batch_decode(logits)
+    prediction_text = _decode_token_batches(logits.tolist())
     return {"labels": labels, "predictions": prediction_text}
 
 
@@ -297,12 +492,12 @@ def main() -> int:
 
     args = parse_args()
     t_setup = time.perf_counter()
-    # args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]
-    # def main(args: dict[str, HfModelArguments| HfDataTrainingArguments| TrainingArguments]) -> int:
+    # args includes model/data/training dataclasses plus overwrite_output_dir.
     assert "data" in args and "model" in args and "training" in args
     data_args: HfDataTrainingArguments = args["data"]
     model_args: HfModelArguments = args["model"]
     training_args: TrainingArguments = args["training"]
+    overwrite_output_dir = bool(args.get("overwrite_output_dir", False))
 
     try:
         import wandb
@@ -334,7 +529,7 @@ def main() -> int:
     if (
         os.path.isdir(training_args.output_dir)
         and training_args.do_train
-        and not training_args.overwrite_output_dir
+        and not overwrite_output_dir
     ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if (
@@ -343,7 +538,7 @@ def main() -> int:
         ):
             raise ValueError(
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
-                "Use --overwrite_output_dir to overcome."
+                "Use --resume_from_checkpoint to continue or --overwrite-output-dir=true to overwrite."
             )
         elif (
             last_checkpoint is not None
@@ -351,7 +546,7 @@ def main() -> int:
         ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
-                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+                "the `--output_dir` or pass --overwrite-output-dir=true to train from scratch."
             )
 
     # Set seed before initializing model.
@@ -370,7 +565,6 @@ def main() -> int:
     # download the dataset.
     train_split_name = data_args.train_split_name
     validation_split_name = data_args.validation_split_name
-    test_split_name = data_args.test_split_name
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         # dataset = datasets.load_dataset(
