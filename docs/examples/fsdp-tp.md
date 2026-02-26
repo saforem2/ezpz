@@ -5,7 +5,7 @@ FSDP Example with Tensor Parallelism
 See:
 
 - 📘 [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)
-- 🐍 [src/ezpz/examples/fsdp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
+- 🐍 [src/ezpz/examples/fsdp_tp.py](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/fsdp_tp.py)
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
@@ -80,12 +80,13 @@ options:
 
 ## Output
 
-</details closed><summary>Output on Sunspot</summary>
+<details closed><summary>Output on Sunspot</summary>
 
 ```bash
 $ ezpz launch python3 -m ezpz.examples.fsdp_tp
 ```
 
+/embed `ezpz-fsdp-tp.html`
+
 
 </details>
-

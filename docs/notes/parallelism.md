@@ -1,125 +1,105 @@
----
-status: deprecated
----
+# Parallelism Support
 
-# 🕸️ Parallelism Support
+ezpz supports four dimensions of parallelism for distributed training:
 
-## Examples from Aurora
+| Abbreviation | Full Name          | What is sharded                            |
+|:------------:|--------------------|--------------------------------------------|
+| **TP**       | Tensor Parallel    | Individual weight matrices (columns / rows) |
+| **CP**       | Context Parallel   | Sequence / context dimension               |
+| **PP**       | Pipeline Parallel  | Model layers across pipeline stages        |
+| **DP**       | Data Parallel      | Training data (each replica sees different batches) |
 
-Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
+These compose multiplicatively — the total world size is always:
 
-- `TP = 1`, `CP = 4`, `PP = 2`, `DP = 3`
+$$
+W = \text{TP} \times \text{CP} \times \text{PP} \times \text{DP}
+$$
 
-  ```bash
-  $ launch python3 -Wignore -m ezpz.examples.test --tp 1 --cp 4 --pp 2
-  # ...clipped...
-  [2024-12-31 15:36:13.333215][INFO][__init__.py:146] - > initializing model parallel with size 1
-  [2024-12-31 15:36:13.333942][INFO][__init__.py:151] - > initializing context parallel with size 4
-  [2024-12-31 15:36:13.334476][INFO][__init__.py:156] - > initializing pipeline with size 2
-  [2024-12-31 15:36:13.334971][INFO][__init__.py:159] - > initializing ddp with size 3
-  [2024-12-31 15:36:14.402809][INFO][dist.py:846] - [ 0/23]: [cp:0/3][pp:0/1][dp:0/2]
-  [2024-12-31 15:36:14.402209][INFO][dist.py:846] - [ 3/23]: [cp:3/3][pp:0/1][dp:0/2]
-  [2024-12-31 15:36:14.402211][INFO][dist.py:846] - [ 1/23]: [cp:1/3][pp:0/1][dp:0/2]
-  [2024-12-31 15:36:14.402197][INFO][dist.py:846] - [ 7/23]: [cp:3/3][pp:1/1][dp:0/2]
-  [2024-12-31 15:36:14.402239][INFO][dist.py:846] - [ 4/23]: [cp:0/3][pp:1/1][dp:0/2]
-  [2024-12-31 15:36:14.402224][INFO][dist.py:846] - [ 5/23]: [cp:1/3][pp:1/1][dp:0/2]
-  [2024-12-31 15:36:14.402200][INFO][dist.py:846] - [ 9/23]: [cp:1/3][pp:0/1][dp:1/2]
-  [2024-12-31 15:36:14.402223][INFO][dist.py:846] - [10/23]: [cp:2/3][pp:0/1][dp:1/2]
-  [2024-12-31 15:36:14.402229][INFO][dist.py:846] - [ 2/23]: [cp:2/3][pp:0/1][dp:0/2]
-  [2024-12-31 15:36:14.402216][INFO][dist.py:846] - [ 8/23]: [cp:0/3][pp:0/1][dp:1/2]
-  [2024-12-31 15:36:14.402206][INFO][dist.py:846] - [11/23]: [cp:3/3][pp:0/1][dp:1/2]
-  [2024-12-31 15:36:14.402208][INFO][dist.py:846] - [21/23]: [cp:1/3][pp:1/1][dp:2/2]
-  [2024-12-31 15:36:14.402256][INFO][dist.py:846] - [12/23]: [cp:0/3][pp:1/1][dp:1/2]
-  [2024-12-31 15:36:14.402312][INFO][dist.py:846] - [ 6/23]: [cp:2/3][pp:1/1][dp:0/2]
-  [2024-12-31 15:36:14.402233][INFO][dist.py:846] - [13/23]: [cp:1/3][pp:1/1][dp:1/2]
-  [2024-12-31 15:36:14.402255][INFO][dist.py:846] - [14/23]: [cp:2/3][pp:1/1][dp:1/2]
-  [2024-12-31 15:36:14.402234][INFO][dist.py:846] - [15/23]: [cp:3/3][pp:1/1][dp:1/2]
-  [2024-12-31 15:36:14.402252][INFO][dist.py:846] - [16/23]: [cp:0/3][pp:0/1][dp:2/2]
-  [2024-12-31 15:36:14.402235][INFO][dist.py:846] - [17/23]: [cp:1/3][pp:0/1][dp:2/2]
-  [2024-12-31 15:36:14.402209][INFO][dist.py:846] - [19/23]: [cp:3/3][pp:0/1][dp:2/2]
-  [2024-12-31 15:36:14.402218][INFO][dist.py:846] - [20/23]: [cp:0/3][pp:1/1][dp:2/2]
-  [2024-12-31 15:36:14.402243][INFO][dist.py:846] - [22/23]: [cp:2/3][pp:1/1][dp:2/2]
-  [2024-12-31 15:36:14.402211][INFO][dist.py:846] - [23/23]: [cp:3/3][pp:1/1][dp:2/2]
-  [2024-12-31 15:36:14.402291][INFO][dist.py:846] - [18/23]: [cp:2/3][pp:0/1][dp:2/2]
-  ```
+DP is derived automatically:
+$\text{DP} = W / (\text{TP} \times \text{CP} \times \text{PP})$.
 
+## Quick Start
 
-- `TP = CP = PP = 2`, `DP = 3`
+```bash
+# 24 GPUs, TP=2, CP=2, PP=1 → DP=6
+ezpz test --tp 2 --cp 2
 
-  ```bash
-  $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2 --pp 2 #--dtype=float32
-  # ...clipped...
-  [2024-12-31 15:19:37.033562][INFO][__init__.py:146] - > initializing model parallel with size 2
-  [2024-12-31 15:19:37.034083][INFO][__init__.py:151] - > initializing context parallel with size 2
-  [2024-12-31 15:19:37.034451][INFO][__init__.py:156] - > initializing pipeline with size 2
-  [2024-12-31 15:19:37.034792][INFO][__init__.py:159] - > initializing ddp with size 3
-  # ...clipped...
-  [2024-12-31 15:19:38.239822][INFO][dist.py:824] - Using device='xpu' with backend='DDP' + 'ccl' for distributed training.
-  [2024-12-31 15:19:38.240412][INFO][dist.py:846] - [ 0/23]: [cp:0/1][pp:0/1][tp:0/1][dp:0/2]
-  [2024-12-31 15:19:38.239840][INFO][dist.py:846] - [ 1/23]: [cp:0/1][pp:0/1][tp:1/1][dp:0/2]
-  [2024-12-31 15:19:38.239826][INFO][dist.py:846] - [ 2/23]: [cp:1/1][pp:0/1][tp:0/1][dp:0/2]
-  [2024-12-31 15:19:38.239838][INFO][dist.py:846] - [ 4/23]: [cp:0/1][pp:1/1][tp:0/1][dp:0/2]
-  [2024-12-31 15:19:38.239820][INFO][dist.py:846] - [ 6/23]: [cp:1/1][pp:1/1][tp:0/1][dp:0/2]
-  [2024-12-31 15:19:38.239835][INFO][dist.py:846] - [ 7/23]: [cp:1/1][pp:1/1][tp:1/1][dp:0/2]
-  [2024-12-31 15:19:38.239822][INFO][dist.py:846] - [ 8/23]: [cp:0/1][pp:0/1][tp:0/1][dp:1/2]
-  [2024-12-31 15:19:38.239818][INFO][dist.py:846] - [11/23]: [cp:1/1][pp:0/1][tp:1/1][dp:1/2]
-  [2024-12-31 15:19:38.239836][INFO][dist.py:846] - [ 3/23]: [cp:1/1][pp:0/1][tp:1/1][dp:0/2]
-  [2024-12-31 15:19:38.239845][INFO][dist.py:846] - [ 5/23]: [cp:0/1][pp:1/1][tp:1/1][dp:0/2]
-  [2024-12-31 15:19:38.239829][INFO][dist.py:846] - [ 9/23]: [cp:0/1][pp:0/1][tp:1/1][dp:1/2]
-  [2024-12-31 15:19:38.239822][INFO][dist.py:846] - [10/23]: [cp:1/1][pp:0/1][tp:0/1][dp:1/2]
-  [2024-12-31 15:19:38.239831][INFO][dist.py:846] - [12/23]: [cp:0/1][pp:1/1][tp:0/1][dp:1/2]
-  [2024-12-31 15:19:38.239814][INFO][dist.py:846] - [18/23]: [cp:1/1][pp:0/1][tp:0/1][dp:2/2]
-  [2024-12-31 15:19:38.239816][INFO][dist.py:846] - [20/23]: [cp:0/1][pp:1/1][tp:0/1][dp:2/2]
-  [2024-12-31 15:19:38.239827][INFO][dist.py:846] - [23/23]: [cp:1/1][pp:1/1][tp:1/1][dp:2/2]
-  [2024-12-31 15:19:38.239831][INFO][dist.py:846] - [13/23]: [cp:0/1][pp:1/1][tp:1/1][dp:1/2]
-  [2024-12-31 15:19:38.239826][INFO][dist.py:846] - [14/23]: [cp:1/1][pp:1/1][tp:0/1][dp:1/2]
-  [2024-12-31 15:19:38.239856][INFO][dist.py:846] - [15/23]: [cp:1/1][pp:1/1][tp:1/1][dp:1/2]
-  [2024-12-31 15:19:38.239848][INFO][dist.py:846] - [16/23]: [cp:0/1][pp:0/1][tp:0/1][dp:2/2]
-  [2024-12-31 15:19:38.239849][INFO][dist.py:846] - [17/23]: [cp:0/1][pp:0/1][tp:1/1][dp:2/2]
-  [2024-12-31 15:19:38.239814][INFO][dist.py:846] - [19/23]: [cp:1/1][pp:0/1][tp:1/1][dp:2/2]
-  [2024-12-31 15:19:38.239812][INFO][dist.py:846] - [21/23]: [cp:0/1][pp:1/1][tp:1/1][dp:2/2]
-  [2024-12-31 15:19:38.239817][INFO][dist.py:846] - [22/23]: [cp:1/1][pp:1/1][tp:0/1][dp:2/2]
-  ```
+# 24 GPUs, TP=1, CP=4, PP=2 → DP=3
+ezpz test --tp 1 --cp 4 --pp 2
+```
 
+Under the hood, `ezpz test` calls
+[`setup_torch()`][ezpz.distributed.setup_torch] with
+`tensor_parallel_size`, `pipeline_parallel_size`, and
+`context_parallel_size`.  When any of these is greater than 1, the call
+chains into [`ezpz.tp.initialize_tensor_parallel()`][ezpz.tp.initialize_tensor_parallel]
+to create the four process groups.
 
-- `TP = CP = 2`, `PP = 1`, `DP = 6`
+## How Process Groups Are Created
 
-  ```bash
-  $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2
-  # ...clipped...
-  [2024-12-31 15:29:21.697491][INFO][__init__.py:146] - > initializing model parallel with size 2
-  [2024-12-31 15:29:21.698012][INFO][__init__.py:151] - > initializing context parallel with size 2
-  [2024-12-31 15:29:21.698377][INFO][__init__.py:156] - > initializing pipeline with size 1
-  [2024-12-31 15:29:21.698745][INFO][__init__.py:159] - > initializing ddp with size 6
-  # ...clipped...
-  [2024-12-31 15:29:22.900343][INFO][dist.py:846] - [ 0/23]: [cp:0/1][tp:0/1][dp:0/5]
-  [2024-12-31 15:29:22.899759][INFO][dist.py:846] - [ 2/23]: [cp:1/1][tp:0/1][dp:0/5]
-  [2024-12-31 15:29:22.899758][INFO][dist.py:846] - [ 1/23]: [cp:0/1][tp:1/1][dp:0/5]
-  [2024-12-31 15:29:22.899760][INFO][dist.py:846] - [ 5/23]: [cp:0/1][tp:1/1][dp:1/5]
-  [2024-12-31 15:29:22.899758][INFO][dist.py:846] - [ 6/23]: [cp:1/1][tp:0/1][dp:1/5]
-  [2024-12-31 15:29:22.899745][INFO][dist.py:846] - [ 7/23]: [cp:1/1][tp:1/1][dp:1/5]
-  [2024-12-31 15:29:22.899740][INFO][dist.py:846] - [ 8/23]: [cp:0/1][tp:0/1][dp:2/5]
-  [2024-12-31 15:29:22.899743][INFO][dist.py:846] - [ 9/23]: [cp:0/1][tp:1/1][dp:2/5]
-  [2024-12-31 15:29:22.899741][INFO][dist.py:846] - [10/23]: [cp:1/1][tp:0/1][dp:2/5]
-  [2024-12-31 15:29:22.899741][INFO][dist.py:846] - [11/23]: [cp:1/1][tp:1/1][dp:2/5]
-  [2024-12-31 15:29:22.899759][INFO][dist.py:846] - [ 3/23]: [cp:1/1][tp:1/1][dp:0/5]
-  [2024-12-31 15:29:22.899760][INFO][dist.py:846] - [ 4/23]: [cp:0/1][tp:0/1][dp:1/5]
-  [2024-12-31 15:29:22.899756][INFO][dist.py:846] - [19/23]: [cp:1/1][tp:1/1][dp:4/5]
-  [2024-12-31 15:29:22.899760][INFO][dist.py:846] - [21/23]: [cp:0/1][tp:1/1][dp:5/5]
-  [2024-12-31 15:29:22.899777][INFO][dist.py:846] - [12/23]: [cp:0/1][tp:0/1][dp:3/5]
-  [2024-12-31 15:29:22.899775][INFO][dist.py:846] - [13/23]: [cp:0/1][tp:1/1][dp:3/5]
-  [2024-12-31 15:29:22.899787][INFO][dist.py:846] - [14/23]: [cp:1/1][tp:0/1][dp:3/5]
-  [2024-12-31 15:29:22.899791][INFO][dist.py:846] - [15/23]: [cp:1/1][tp:1/1][dp:3/5]
-  [2024-12-31 15:29:22.899781][INFO][disto.py:846] - [16/23]: [cp:0/1][tp:0/1][dp:4/5]
-  [2024-12-31 15:29:22.899782][INFO][dist.py:846] - [17/23]: [cp:0/1][tp:1/1][dp:4/5]
-  [2024-12-31 15:29:22.899798][INFO][dist.py:846] - [18/23]: [cp:1/1][tp:0/1][dp:4/5]
-  [2024-12-31 15:29:22.899755][INFO][dist.py:846] - [20/23]: [cp:0/1][tp:0/1][dp:5/5]
-  [2024-12-31 15:29:22.899758][INFO][dist.py:846] - [22/23]: [cp:1/1][tp:0/1][dp:5/5]
-  [2024-12-31 15:29:22.899758][INFO][dist.py:846] - [23/23]: [cp:1/1][tp:1/1][dp:5/5]
-  ```
+`initialize_tensor_parallel()` (in `src/ezpz/tp/__init__.py`) reshapes the
+flat list of ranks into a 4-D tensor:
 
+```python
+groups = torch.arange(world_size).reshape(
+    dp_size,                   # axis 0
+    pipeline_parallel_size,    # axis 1
+    context_parallel_size,     # axis 2
+    tensor_parallel_size,      # axis 3
+)
+```
 
-| World Size | TP | CP | PL | DP |
+Each parallelism group is formed by slicing along the corresponding axis
+while holding the other three fixed:
+
+| Group | Slice              | Varies   | Fixed        |
+|-------|--------------------|----------|--------------|
+| DP    | `groups[:, i, j, k]` | DP axis  | PP, CP, TP |
+| PP    | `groups[i, :, j, k]` | PP axis  | DP, CP, TP |
+| CP    | `groups[i, j, :, k]` | CP axis  | DP, PP, TP |
+| TP    | `groups[i, j, k, :]` | TP axis  | DP, PP, CP |
+
+## The `ezpz.tp` Module
+
+The `ezpz.tp` package provides Megatron-style tensor-parallel primitives
+(adapted from [fairscale](https://github.com/facebookresearch/fairscale)):
+
+| Sub-module | Contents |
+|------------|----------|
+| [`ezpz.tp`](../python/Code-Reference/tp/index.md) | `initialize_tensor_parallel()`, group accessors (`get_tensor_parallel_group()`, etc.), `destroy_tensor_parallel()` |
+| [`ezpz.tp.layers`](../python/Code-Reference/tp/layers.md) | `ColumnParallelLinear`, `RowParallelLinear`, `VocabParallelEmbedding`, `ParallelEmbedding` |
+| [`ezpz.tp.mappings`](../python/Code-Reference/tp/mappings.md) | Autograd communication functions: `copy_to_tensor_parallel_region`, `reduce_from_tensor_parallel_region`, `scatter_to_tensor_parallel_region`, `gather_from_tensor_parallel_region` |
+| [`ezpz.tp.utils`](../python/Code-Reference/tp/utils.md) | `ensure_divisibility`, `split_tensor_along_last_dim`, `VocabUtility` |
+
+## Model Wrapping
+
+[`wrap_model()`][ezpz.distributed.wrap_model] dispatches based on the
+`use_fsdp` flag:
+
+| Path       | Wrapper | When |
+|------------|---------|------|
+| DDP        | `torch.nn.parallel.DistributedDataParallel` | Default (`use_fsdp=False`) |
+| FSDP       | `torch.distributed.fsdp.FullyShardedDataParallel` | `use_fsdp=True` |
+| DeepSpeed  | `deepspeed.initialize()` | Used directly in user code (bypasses `wrap_model`) |
+| FSDP + TP  | `parallelize_module()` + FSDP on the DP mesh dimension | See the [`fsdp_tp` example](../examples/fsdp-tp.md) |
+
+If `world_size <= 1`, `wrap_model()` returns the model unwrapped.
+
+## CLI Flags
+
+Defined in `src/ezpz/cli/flags.py`:
+
+| Flag   | Default | Description              |
+|--------|---------|--------------------------|
+| `--tp` | 1       | Tensor parallel size     |
+| `--pp` | 1       | Pipeline parallel stages |
+| `--cp` | 1       | Context parallel size    |
+
+## Partition Table
+
+For a 24-GPU allocation, the valid TP / CP / PP / DP combinations are:
+
+| World Size | TP | CP | PP | DP |
 |:----------:|:--:|:--:|:--:|:--:|
 |     24     |  1 |  1 |  1 | 24 |
 |     24     |  2 |  1 |  1 | 12 |
@@ -140,3 +120,46 @@ Running some simple examples with different `--tp`, `--cp`, and `--pp` values.
 |     24     |  4 |  2 |  2 |  3 |
 |     24     |  2 |  4 |  2 |  3 |
 |     24     |  2 |  2 |  2 |  3 |
+
+## Examples from Aurora
+
+??? example "TP=1, CP=4, PP=2, DP=3"
+
+    ```bash
+    $ launch python3 -Wignore -m ezpz.examples.test --tp 1 --cp 4 --pp 2
+    [2024-12-31 15:36:13.333215][INFO][__init__.py:146] - > initializing model parallel with size 1
+    [2024-12-31 15:36:13.333942][INFO][__init__.py:151] - > initializing context parallel with size 4
+    [2024-12-31 15:36:13.334476][INFO][__init__.py:156] - > initializing pipeline with size 2
+    [2024-12-31 15:36:13.334971][INFO][__init__.py:159] - > initializing ddp with size 3
+    [2024-12-31 15:36:14.402809][INFO][dist.py:846] - [ 0/23]: [cp:0/3][pp:0/1][dp:0/2]
+    [2024-12-31 15:36:14.402209][INFO][dist.py:846] - [ 3/23]: [cp:3/3][pp:0/1][dp:0/2]
+    [2024-12-31 15:36:14.402211][INFO][dist.py:846] - [ 1/23]: [cp:1/3][pp:0/1][dp:0/2]
+    [2024-12-31 15:36:14.402197][INFO][dist.py:846] - [ 7/23]: [cp:3/3][pp:1/1][dp:0/2]
+    [2024-12-31 15:36:14.402239][INFO][dist.py:846] - [ 4/23]: [cp:0/3][pp:1/1][dp:0/2]
+    ...
+    ```
+
+??? example "TP=CP=PP=2, DP=3"
+
+    ```bash
+    $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2 --pp 2
+    [2024-12-31 15:19:37.033562][INFO][__init__.py:146] - > initializing model parallel with size 2
+    [2024-12-31 15:19:37.034083][INFO][__init__.py:151] - > initializing context parallel with size 2
+    [2024-12-31 15:19:37.034451][INFO][__init__.py:156] - > initializing pipeline with size 2
+    [2024-12-31 15:19:37.034792][INFO][__init__.py:159] - > initializing ddp with size 3
+    [2024-12-31 15:19:38.239822][INFO][dist.py:824] - Using device='xpu' with backend='DDP' + 'ccl' for distributed training.
+    [2024-12-31 15:19:38.240412][INFO][dist.py:846] - [ 0/23]: [cp:0/1][pp:0/1][tp:0/1][dp:0/2]
+    ...
+    ```
+
+??? example "TP=CP=2, PP=1, DP=6"
+
+    ```bash
+    $ launch python3 -Wignore -m ezpz.examples.test --tp 2 --cp 2
+    [2024-12-31 15:29:21.697491][INFO][__init__.py:146] - > initializing model parallel with size 2
+    [2024-12-31 15:29:21.698012][INFO][__init__.py:151] - > initializing context parallel with size 2
+    [2024-12-31 15:29:21.698377][INFO][__init__.py:156] - > initializing pipeline with size 1
+    [2024-12-31 15:29:21.698745][INFO][__init__.py:159] - > initializing ddp with size 6
+    [2024-12-31 15:29:22.900343][INFO][dist.py:846] - [ 0/23]: [cp:0/1][tp:0/1][dp:0/5]
+    ...
+    ```

@@ -237,6 +237,7 @@ nav:
           - python/Code-Reference/index.md
           - <code>ezpz.configs</code>: python/Code-Reference/configs.md
           - <code>ezpz.dist</code>: python/Code-Reference/dist.md
+          - <code>ezpz.distributed</code>: python/Code-Reference/distributed.md
           - <code>ezpz.doctor</code>: python/Code-Reference/doctor.md
           - <code>ezpz.history</code>: python/Code-Reference/history.md
           - <code>ezpz.integrations</code>: python/Code-Reference/integrations.md
@@ -319,6 +320,7 @@ nav:
           - configs-improved: python/tests/test-configs-improved.md
           - comprehensive harness: python/tests/comprehensive-test.md
           - dist: python/tests/test-dist.md
+          - distributed: python/tests/test-distributed.md
           - ezpz: python/tests/test-ezpz.md
           - jobs: python/tests/test-jobs.md
           - launch: python/tests/test-launch.md
@@ -336,8 +338,7 @@ nav:
           - tplot: python/tests/test-tplot.md
           - utils: python/tests/test-utils.md
           - utils-improved: python/tests/test-utils-improved.md
-      - 🚧 INCOMPLETE:
-          - 🕸️ Parallelism: notes/parallelism.md
-          - 🏖️ Shell Environment: notes/shell-environment.md
-          - 🤖 Systems: notes/systems.md
-          - 📦 Yeet Environment: notes/yeet-env.md
+      - 🕸️ Parallelism: notes/parallelism.md
+      - 🏖️ Shell Environment: notes/shell-environment.md
+      - 🤖 Systems: notes/systems.md
+      - 📦 Yeet Environment: notes/yeet-env.md
