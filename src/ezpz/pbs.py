@@ -459,7 +459,13 @@ def build_launch_cmd(
     elif scheduler == "slurm":
         import ezpz.slurm
 
-        return ezpz.slurm.build_launch_cmd()
+        return ezpz.slurm.build_launch_cmd(
+            ngpus=ngpus,
+            nhosts=nhosts,
+            ngpu_per_host=ngpu_per_host,
+            hostfile=hostfile,
+            cpu_bind=cpu_bind,
+        )
     else:
         raise ValueError(f"Unsupported scheduler: {scheduler}")
 
