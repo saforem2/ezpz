@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -83,9 +84,12 @@ def transfer(
         logger.info(f"Writing to the disk {dst} took {time.perf_counter() - end}")
     dirname = os.path.dirname(dst)
     assert os.path.isfile(dst)
-    if decompress:
+    if decompress and ezpz.get_rank() == 0:
         t0d = time.perf_counter()
-        os.system(f"tar -p -{flags} {dst} -C {dirname}")
+        subprocess.run(
+            ["tar", "-p", f"-{flags}", str(dst), "-C", str(dirname)],
+            check=True,
+        )
         logger.info(f"untar took {time.perf_counter() - t0d:.2f} seconds")
     logger.info(f"Total time: {time.perf_counter() - start_time} seconds")
     logger.info("==================\n")
@@ -99,9 +103,9 @@ def _create_tarball_if_needed(src: str | os.PathLike, overwrite: bool = False) -
     if tarball_fp.exists():
         logger.info(f"Tarball {tarball_fp} already exists")
         if overwrite and ezpz.get_rank() == 0:
-            backup = src_path.with_suffix(src_path.suffix + f"{ezpz.get_timestamp()}.bak")
+            backup = tarball_fp.with_suffix(f".{ezpz.get_timestamp()}.bak")
             logger.info(f"Backing up existing tarball to {backup}")
-            os.rename(src_path, backup)
+            os.rename(tarball_fp, backup)
         else:
             logger.info("Not overwriting existing tarball, exiting.")
             raise FileExistsError(
@@ -133,7 +137,7 @@ def execute_transfer(args: argparse.Namespace) -> int:
     else:
         raise ValueError(f"{src_fp} is neither a file nor a directory")
     dst_name = f"{src_tarball.name}".replace(".tar", "").replace(".gz", "")
-    dst_fp = Path("/tmp") / f"{dst_name}.tar.gz" if args.dst is None else Path(args.dst)
+    dst_fp = (Path("/tmp") / f"{dst_name}.tar.gz") if args.dst is None else Path(args.dst)
     logger.info(f"Copying {src_tarball} to {dst_fp}")
     transfer(
         src=src_tarball.as_posix(),
