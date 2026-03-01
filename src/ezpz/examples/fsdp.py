@@ -53,6 +53,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
 from ezpz.models import summarize_model
+from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
 
@@ -149,6 +150,7 @@ class Net(nn.Module):
         return output
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     model: nn.Module | DistributedDataParallel | FSDP,
     train_loader: DataLoader,
@@ -200,6 +202,7 @@ def train(
     }
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def test(model, test_loader):
     """Evaluate model on validation data and gather metrics."""
     device_type = ezpz.dist.get_torch_device_type()
@@ -359,17 +362,18 @@ def get_data(args: argparse.Namespace) -> dict:
     return data
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def fsdp_main(args: argparse.Namespace) -> None:
     """Main training loop orchestrating data, model, and logging."""
+    t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
-    START_TIME = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-    START_TIME = ezpz.dist.broadcast(START_TIME, root=0)
+    t_setup = time.perf_counter()
     if rank == 0:
         # try:
         fp = Path(__file__)
         run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
         if run is not None and wandb is not None and run is wandb.run:
-            run.config.update({**vars(args)})
+            run.config.update({"args": {**vars(args)}})
             run.config.update({"ezpz.dist": {**ezpz.get_dist_info()}})
 
     data = get_data(args)
@@ -382,8 +386,8 @@ def fsdp_main(args: argparse.Namespace) -> None:
     optimizer = tmp["optimizer"]
     scheduler = tmp["scheduler"]
 
-    # if rank == 0:
-    outdir = Path(os.getcwd()).joinpath("outputs", fname, START_TIME)
+    outdir = get_example_outdir(WBPROJ_NAME)
+    logger.info("Outputs will be saved to %s", outdir)
     metrics_path = outdir.joinpath(f"metrics-{rank}.jsonl")
     outdir.mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
@@ -408,14 +412,34 @@ def fsdp_main(args: argparse.Namespace) -> None:
         scheduler.step()
         logger.info(history.update({**train_metrics, **test_metrics}))
 
+    train_end = time.perf_counter()
     logger.info(
         " ".join(
             [
                 f"{args.epochs + 1} epochs took",
-                f"{time.perf_counter() - start:.1f}s",
+                f"{train_end - start:.1f}s",
             ]
         )
     )
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - start,
+        "main/total": train_end - t0,
+        "timings/training_start": start - t0,
+        "timings/train_duration": train_end - start,
+        "timings/end-to-end": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     ezpz.dist.barrier()
 
     if args.save_model:
@@ -425,7 +449,10 @@ def fsdp_main(args: argparse.Namespace) -> None:
             torch.save(states, "mnist_cnn.pt")
 
     if rank == 0:
-        dataset = history.finalize(run_name="ezpz-fsdp", dataset_fname="train")
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+        )
         logger.info(f"{dataset=}")
 
 
@@ -561,7 +588,5 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     fsdp_main(args=args)
     ezpz.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

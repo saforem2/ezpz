@@ -16,6 +16,7 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -52,6 +53,7 @@ DEFAULT_DTYPE = "bfloat16"
 DEFAULT_MAXLEN = "128"
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def prompt_model(
     model, tokenizer, prompt: str, max_length: int = 64, **kwargs
 ) -> str:
@@ -354,5 +356,19 @@ class GenerateApp(App):
             pass
 
 
-if __name__ == "__main__":
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def main() -> None:
+    t0 = time.perf_counter()
     GenerateApp().run()
+    end_time = time.perf_counter()
+    timings = {
+        "main/total": end_time - t0,
+        "timings/training_start": 0.0,
+        "timings/train_duration": end_time - t0,
+        "timings/end-to-end": end_time - t0,
+    }
+    print(f"Timings: {timings}")
+
+
+if __name__ == "__main__":
+    main()

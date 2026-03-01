@@ -137,6 +137,7 @@ import torch.nn.functional as F
 
 
 from ezpz.models import summarize_model
+from ezpz.examples import get_example_outdir
 
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
@@ -166,8 +167,6 @@ except ImportError:
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
-OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 MODEL_PRESETS = {
     "debug": {
@@ -471,7 +470,7 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--tp", type=int, default=2)
     parser.add_argument("--sharding-strategy", type=str, default="full_shard")
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--outdir", type=str, default="outputs/fsdp_tp")
+    parser.add_argument("--outdir", type=str, default=None)
     # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
         "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
@@ -678,6 +677,7 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
     return [(layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)]
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
@@ -741,6 +741,7 @@ def train(
 
             wandb.config.update(ezpz.get_dist_info())
             wandb.config.update(asdict(config))  # type:ignore
+            wandb.config.update({"args": {**vars(args)}})
 
     device_type = ezpz.dist.get_torch_device_type()
     device = (
@@ -1047,7 +1048,7 @@ def train(
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
-            run_name=WBRUN_NAME,
+            run_name=WBPROJ_NAME,
             dataset_fname="train",
             warmup=0.1,
         )
@@ -1056,23 +1057,42 @@ def train(
     return 0
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
+    t0 = time.perf_counter()
     rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
-    if rank == 0:
-        outdir = args.outdir if args.outdir is not None else OUTDIR
-    else:
-        outdir = None
-    outdir = ezpz.dist.broadcast(outdir, root=0)
-    logger.info(f"Using {outdir=}")
+    t_setup = time.perf_counter()
+    base_dir = args.outdir if args.outdir else None
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    logger.info("Outputs will be saved to %s", outdir)
+    train_start = time.perf_counter()
     train(args=args, outdir=outdir)
+    train_end = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     return 0
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")
     sys.exit(0)

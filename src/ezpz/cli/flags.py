@@ -153,6 +153,13 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         help="Number of training iterations",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=["debug", "small", "medium", "large"],
+        help="Model size preset for the smoke test.",
+    )
+    parser.add_argument(
         "--log-freq",
         "--log_freq",
         type=int,
@@ -310,6 +317,16 @@ def build_launch_parser(
         default=None,
         dest="hostfile",
         help="Hostfile to use for launching.",
+    )
+    parser.add_argument(
+        "--cpu-bind",
+        type=str,
+        default=None,
+        dest="cpu_bind",
+        help=(
+            "CPU binding value to pass to the launcher. "
+            "Takes precedence over CPU_BIND when both are specified."
+        ),
     )
     if include_command:
         parser.add_argument(

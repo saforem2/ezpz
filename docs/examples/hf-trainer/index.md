@@ -26,7 +26,6 @@ ezpz launch python3 -m ezpz.examples.hf_trainer \
     --include-for-metrics='inputs,loss' \
     --max-eval-samples=50 \
     --per_device_train_batch_size=1 \
-    --block-size=8192 \
     --gradient_checkpointing=true \
     --fsdp=shard_grad_op
 ```

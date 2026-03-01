@@ -9,11 +9,13 @@ from torch.distributed.device_mesh import DeviceMesh
 import datetime
 from functools import wraps
 import logging
+import json
 import os
 from pathlib import Path
 import socket
 import sys
 import time
+import subprocess
 from typing import Callable, Literal, Optional, Union, Any, Iterable, Sequence
 from datetime import timedelta
 
@@ -1188,10 +1190,44 @@ def get_local_rank() -> int:
     """
     local_rank = os.environ.get(
         "LOCAL_RANK",
-        os.environ.get("PMI_LOCAL_RANK", os.environ.get("SLURM_LOCAL_ID")),
+        os.environ.get(
+            "PMI_LOCAL_RANK",
+            os.environ.get(
+                "OMPI_COMM_WORLD_LOCAL_RANK",
+                os.environ.get(
+                    "MPI_LOCALRANKID",
+                    os.environ.get(
+                        "MPICH_LOCALRANKID",
+                        os.environ.get("SLURM_LOCAL_ID"),
+                    ),
+                ),
+            ),
+        ),
     )
+    if not os.environ.get("EZPZ_LOCAL_RANK_DEBUG_LOGGED"):
+        os.environ["EZPZ_LOCAL_RANK_DEBUG_LOGGED"] = "1"
+        logger.debug(
+            "Local rank envs on %s rank=%s: LOCAL_RANK=%s PMI_LOCAL_RANK=%s "
+            "OMPI_COMM_WORLD_LOCAL_RANK=%s MPI_LOCALRANKID=%s MPICH_LOCALRANKID=%s "
+            "SLURM_LOCAL_ID=%s",
+            get_hostname(),
+            get_rank(),
+            os.environ.get("LOCAL_RANK"),
+            os.environ.get("PMI_LOCAL_RANK"),
+            os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK"),
+            os.environ.get("MPI_LOCALRANKID"),
+            os.environ.get("MPICH_LOCALRANKID"),
+            os.environ.get("SLURM_LOCAL_ID"),
+        )
     if local_rank is not None:
         return int(local_rank)
+    if get_rank() == 0 and not os.environ.get("EZPZ_LOCAL_RANK_LOGGED"):
+        os.environ["EZPZ_LOCAL_RANK_LOGGED"] = "1"
+        logger.info(
+            "Local rank env vars unset; falling back to rank modulo GPUs."
+            " Checked LOCAL_RANK, PMI_LOCAL_RANK, OMPI_COMM_WORLD_LOCAL_RANK,"
+            " MPI_LOCALRANKID, MPICH_LOCALRANKID, SLURM_LOCAL_ID."
+        )
     return int(get_rank() % get_gpus_per_node()) if get_world_size() > 1 else 0
 
 
@@ -2098,6 +2134,35 @@ def get_wandb_mode(
         return "online"
 
 
+
+def get_git_branch_name() -> str | None:
+    """Return the git branch/ref ezpz was installed from, if available."""
+    try:
+        from importlib import metadata
+
+        dist = metadata.distribution("ezpz")
+        direct_url = None
+        if dist.files is not None:
+            for file in dist.files:
+                if str(file).endswith("direct_url.json"):
+                    direct_url = dist.read_text(file)
+                    break
+        if direct_url:
+            payload = json.loads(direct_url)
+            vcs_info = payload.get("vcs_info", {})
+            requested = vcs_info.get("requested_revision")
+            if requested:
+                return str(requested)
+            url = payload.get("url")
+            if isinstance(url, str) and "@" in url:
+                ref = url.split("@", 1)[1].split("#", 1)[0]
+                if ref:
+                    return ref
+    except Exception:
+        logger.debug("Unable to resolve ezpz install branch", exc_info=True)
+    return None
+
+
 def setup_wandb(
     project_name: Optional[str] = None,
     entity: str | None = None,
@@ -2280,8 +2345,12 @@ def setup_wandb(
             wandb.run.config.update({"DIST_INFO": get_dist_info()})
         torch_version = torch.__version__
         torch_file = torch.__file__
+        branch = get_git_branch_name()
+        if branch:
+            logger.info(f"Current branch name: {branch}")
         run.config.update(
             {
+                "ezpz_branch": branch,
                 "created_at": dstr,
                 "day": ezpz.get_timestamp("%d"),
                 "ezpz_file": ezpz.__file__,

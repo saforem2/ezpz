@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional, Tuple
@@ -954,10 +955,13 @@ def initialize_trainer(
 # --- Main Execution ---
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main():
     # 1. Setup distributed environment (if applicable) and parse args
+    t0 = time.perf_counter()
     rank = ezpz.setup_torch()  # Assuming this sets up DDP/device placement
     model_args, data_args, training_args = parse_arguments()
+    t_setup = time.perf_counter()
 
     # 2. Setup logging, W&B, telemetry after parsing args
     setup_logging(training_args, rank)
@@ -1008,6 +1012,7 @@ def main():
             logger.error(f"Failed to set up W&B model watch: {e}")
 
     # 9. Training
+    train_start = time.perf_counter()
     if training_args.do_train:
         logger.info("*** Starting Training ***")
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
@@ -1068,6 +1073,26 @@ def main():
         except Exception as e:
             logger.error(f"Failed to save run arguments to {args_save_path}: {e}")
 
+    train_end = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": train_end - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
     logger.info("Script finished successfully.")
 
 

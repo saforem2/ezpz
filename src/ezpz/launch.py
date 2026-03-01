@@ -19,6 +19,7 @@ from typing import Optional
 
 import ezpz
 from ezpz.cli.flags import build_launch_parser
+from ezpz.configs import get_json_log_file
 
 logger = ezpz.get_logger(__name__)
 
@@ -57,6 +58,12 @@ def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
     )
+
+
+def _log_json_log_file(active_logger) -> None:
+    json_log_file = get_json_log_file()
+    if json_log_file is not None:
+        active_logger.info("Logs available at: %s", json_log_file)
 
 
 EZPZ_LOG_LEVEL: str = os.environ.get("EZPZ_LOG_LEVEL", "INFO").upper()
@@ -115,6 +122,21 @@ def _get_mpirun_env_flags() -> list[str]:
             flags.extend(["-x", key])
         return flags
     return []
+
+
+def _normalize_cpu_bind_value(cpu_bind: Optional[str]) -> Optional[str]:
+    """Normalize user-provided CPU bind values to a launcher value."""
+    if cpu_bind is None:
+        return None
+    normalized = cpu_bind.strip().removeprefix("--cpu-bind=").strip()
+    return normalized or None
+
+
+def _cpu_bind_launcher_args(cpu_bind: Optional[str]) -> list[str]:
+    """Render launcher args for CPU bind, if provided."""
+    if cpu_bind is None:
+        return []
+    return [f"--cpu-bind={cpu_bind}"]
 
 
 def run_command(
@@ -313,6 +335,7 @@ def build_executable(
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[str | os.PathLike | Path] = None,
+    cpu_bind: Optional[str] = None,
     extra_launch_args: Optional[Sequence[str]] = None,
 ) -> list:
     """Build the full executable command to launch.
@@ -339,6 +362,7 @@ def build_executable(
             nhosts=nhosts,
             ngpu_per_host=ngpu_per_host,
             hostfile=hostfile,
+            cpu_bind=cpu_bind,
         )
         if launch_cmd is None
         else launch_cmd
@@ -387,6 +411,7 @@ def launch(
     nhosts: Optional[int] = None,
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[str | os.PathLike | Path] = None,
+    cpu_bind: Optional[str] = None,
     filters: Optional[list[str]] = None,
     launcher_args: Optional[Sequence[str]] = None,
 ) -> int:
@@ -394,6 +419,7 @@ def launch(
     start = time.perf_counter()
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
+    _log_json_log_file(logger)
     jobid = get_active_jobid()
     assert jobid is not None, "No active job found."
     nodelist = get_nodelist_of_active_job()
@@ -424,6 +450,7 @@ def launch(
         nhosts=nhosts,
         include_python=include_python,
         hostfile=selected_hostfile,
+        cpu_bind=cpu_bind,
         extra_launch_args=launcher_args,
     )
     # cmd_list = shlex.split(cmd)
@@ -444,6 +471,7 @@ def launch(
     cmd_start = time.perf_counter()
     retcode = run_command(command=cmd, filters=filters)
     cmd_finish = time.perf_counter()
+    _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
@@ -474,10 +502,23 @@ def run(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("No command provided to ezpz launch")
 
     scheduler = get_scheduler().lower()
+    cli_cpu_bind = _normalize_cpu_bind_value(getattr(args, "cpu_bind", None))
+    env_cpu_bind = _normalize_cpu_bind_value(os.environ.get("CPU_BIND"))
+    selected_cpu_bind = cli_cpu_bind or env_cpu_bind
+    if cli_cpu_bind is not None and env_cpu_bind is not None:
+        logger.warning(
+            "Both --cpu-bind and CPU_BIND are specified. "
+            "Precedence order is: --cpu-bind > CPU_BIND. "
+            "Using --cpu-bind=%s.",
+            cli_cpu_bind,
+        )
 
     if scheduler in {"pbs", "slurm"}:
         jobid = get_active_jobid()
         if jobid is not None:
+            launcher_args = list(getattr(args, "launcher_args", []))
+            if scheduler != "pbs":
+                launcher_args.extend(_cpu_bind_launcher_args(selected_cpu_bind))
             launch(
                 cmd_to_launch=command_parts,
                 include_python=False,
@@ -487,8 +528,9 @@ def run(argv: Sequence[str] | None = None) -> int:
                     args.nproc_per_node if args.nproc_per_node > -1 else None
                 ),
                 hostfile=args.hostfile,
+                cpu_bind=cli_cpu_bind if scheduler == "pbs" else None,
                 filters=args.filter,
-                launcher_args=getattr(args, "launcher_args", []),
+                launcher_args=launcher_args,
             )
             ezpz.dist.cleanup()
             return 0
@@ -510,6 +552,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         fallback_cmd.extend(["--hostfile", args.hostfile])
     if requested_ppn is not None and requested_nhosts is not None:
         fallback_cmd.extend(["--map-by", f"ppr:{requested_ppn}:node"])
+    fallback_cmd.extend(_cpu_bind_launcher_args(selected_cpu_bind))
     fallback_cmd.extend(getattr(args, "launcher_args", []))
     fallback_cmd.extend(command_parts)
     filters = getattr(args, "filters", [])
@@ -518,6 +561,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
+    _log_json_log_file(logger)
     logger.info(
         "No active scheduler detected; falling back to local mpirun: %s",
         " ".join(shlex.quote(part) for part in fallback_cmd),
@@ -530,6 +574,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         proc = subprocess.run(fallback_cmd, check=False)
         retcode = proc.returncode
     cmd_finish = time.perf_counter()
+    _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")

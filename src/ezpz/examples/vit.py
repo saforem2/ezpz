@@ -84,6 +84,7 @@ import ezpz.dist
 
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
+from ezpz.examples import get_example_outdir
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
@@ -91,7 +92,6 @@ logger = ezpz.get_logger(__name__)
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
 
 MODEL_PRESETS = {
     "debug": {
@@ -433,6 +433,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 #     return ezpz.get_torch_device_type()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def train_fn(
     block_fn: Any,
     args: argparse.Namespace,
@@ -592,10 +593,24 @@ def train_fn(
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
 
-    history = ezpz.history.History()
-    eval_history = ezpz.history.History()
-    run_stamp = ezpz.get_timestamp()
-    run_dir = Path.cwd().joinpath("outputs", WBRUN_NAME, run_stamp)
+    outdir = get_example_outdir(WBPROJ_NAME)
+    logger.info("Outputs will be saved to %s", outdir)
+    metrics_path = outdir.joinpath("metrics.jsonl")
+    eval_metrics_path = outdir.joinpath("metrics-eval.jsonl")
+    history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(1 < world_size <= 384),
+    )
+    eval_history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=eval_metrics_path,
+        jsonl_overwrite=True,
+        distributed_history=(1 < world_size <= 384),
+    )
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -724,28 +739,39 @@ def train_fn(
         model.train()  # type:ignore
 
     if ezpz.dist.get_rank() == 0:
-        dataset = history.finalize(
-            outdir=run_dir,
-            run_name=WBRUN_NAME,
-            dataset_fname="train",
-            verbose=False,
-        )
-        logger.info(f"{dataset=}")
-        if "test" in dataset_dict:
-            eval_dataset = eval_history.finalize(
-                outdir=run_dir,
-                run_name=WBRUN_NAME,
-                dataset_fname="eval",
+        if history.history and any(len(v) for v in history.history.values()):
+            dataset = history.finalize(
+                outdir=outdir,
+                run_name=WBPROJ_NAME,
+                dataset_fname="train",
                 verbose=False,
             )
-            logger.info(f"{eval_dataset=}")
+            logger.info(f"{dataset=}")
+        else:
+            logger.warning("No train metrics recorded; skipping dataset save")
+        if "test" in dataset_dict:
+            if eval_history.history and any(
+                len(v) for v in eval_history.history.values()
+            ):
+                eval_dataset = eval_history.finalize(
+                    outdir=outdir,
+                    run_name=WBPROJ_NAME,
+                    dataset_fname="eval",
+                    verbose=False,
+                )
+                logger.info(f"{eval_dataset=}")
+            else:
+                logger.warning("No eval metrics recorded; skipping dataset save")
 
     return history
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
+    t0 = time.perf_counter()
     rank = ezpz.dist.setup_torch()
+    t_setup = time.perf_counter()
     if rank == 0 and ezpz.verify_wandb():
         try:
             fp = Path(__file__).resolve()
@@ -755,7 +781,7 @@ def main(args: argparse.Namespace):
             if wandb is not None and run is not None and run is wandb.run:
                 # assert run is not None and run is wandb.run
                 wandb.config.update(ezpz.get_dist_info())
-                wandb.config.update({**vars(args)})
+                wandb.config.update({"args": {**vars(args)}})
         except Exception:
             logger.warning("Failed to setup wandb, continuing without!")
 
@@ -810,12 +836,35 @@ def main(args: argparse.Namespace):
     else:
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
+    train_start = time.perf_counter()
     train_fn(block_fn, args=args, dataset=args.dataset)
+    train_end = time.perf_counter()
+    t1 = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": t1 - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+            # wandb.log(
+            #     {
+            #         (f"timings/{k}" if not k.startswith("timings/") else k): v
+            #         for k, v in timings.items()
+            #     }
+            # )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

@@ -78,13 +78,12 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 import wandb
+from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
-WBRUN_NAME = f"{ezpz.get_timestamp()}"
-OUTDIR = Path("outputs").joinpath(f"{WBPROJ_NAME}", f"{WBRUN_NAME}")
 
 
 def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
@@ -596,15 +595,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> None:
     """Set up distributed training, fit the model, and log samples."""
+    t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
-    if rank == 0:
-        outdir = args.outdir if args.outdir is not None else OUTDIR
-    else:
-        outdir = None
-    outdir = ezpz.dist.broadcast(outdir, root=0)
-    logger.info(f"Using {outdir=}")
+    t_setup = time.perf_counter()
+    base_dir = args.outdir if args.outdir else None
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    logger.info("Outputs will be saved to %s", outdir)
     # self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
     if ezpz.get_rank() == 0:
         run = ezpz.dist.setup_wandb(
@@ -613,7 +612,7 @@ def main(args: argparse.Namespace) -> None:
         )
         assert run is not None and run is wandb.run
         # wandb.config.update(ezpz.dist.get_dist_info())
-        wandb.config.update({"outdir": outdir, "args": {**vars(args)}})
+        wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
         # wandb.config.update({"args": {**vars(args)}})
 
     base_texts: List[str]
@@ -652,6 +651,7 @@ def main(args: argparse.Namespace) -> None:
     device = ezpz.get_torch_device(as_torch_device=True)
     model.to(device)
 
+    train_start = time.perf_counter()
     history, wrapped_model = train(
         model=model,
         loader=loader,
@@ -661,10 +661,11 @@ def main(args: argparse.Namespace) -> None:
         lr=args.lr,
         outdir=outdir,
     )
+    train_end = time.perf_counter()
 
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
-            run_name=WBRUN_NAME,
+            run_name=WBPROJ_NAME,
             dataset_fname="train",
             warmup=0.1,
         )
@@ -678,11 +679,29 @@ def main(args: argparse.Namespace) -> None:
     if ezpz.get_rank() == 0:
         for idx, text in enumerate(samples):
             logger.info("sample %s: %s", idx, text)
+    end_time = time.perf_counter()
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - train_start,
+        "main/total": end_time - t0,
+        "timings/training_start": train_start - t0,
+        "timings/train_duration": train_end - train_start,
+        "timings/end-to-end": end_time - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
 
 
 if __name__ == "__main__":
     args = parse_args()
-    t0 = time.perf_counter()
     main(args)
     ezpz.dist.cleanup()
-    logger.info(f"Took: {time.perf_counter() - t0:.2f} seconds")

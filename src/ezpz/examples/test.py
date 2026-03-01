@@ -12,7 +12,7 @@ import time
 import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Sequence
 
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -32,6 +32,44 @@ warnings.filterwarnings("ignore")
 ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
+
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 16,
+        "train_iters": 20,
+        "log_freq": 1,
+        "print_freq": 1,
+        "layer_sizes": [128, 64],
+    },
+    "small": {
+        "batch_size": 64,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [256, 128, 64],
+    },
+    "medium": {
+        "batch_size": 128,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [512, 256, 128],
+    },
+    "large": {
+        "batch_size": 256,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [1024, 512, 256],
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "batch_size": ["--batch-size"],
+    "train_iters": ["--train-iters", "--train_iters"],
+    "log_freq": ["--log-freq", "--log_freq"],
+    "print_freq": ["--print-freq", "--print_freq"],
+    "layer_sizes": ["--layer-sizes"],
+}
 
 WANDB_DISABLED = False
 try:
@@ -99,10 +137,14 @@ class TrainConfig:
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
-        self._created_at = (
-            ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-        )
+        self._created_at = os.environ.get("EZPZ_LOG_TIMESTAMP")
+        if self._created_at is None:
+            self._created_at = (
+                ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
+            )
         self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
+        if self._created_at is not None:
+            os.environ["EZPZ_LOG_TIMESTAMP"] = self._created_at
         self.outdir = Path(os.getcwd()).joinpath(
             "outputs", "ezpz.examples.test", f"{self._created_at}"
         )
@@ -512,10 +554,17 @@ def train(
         "timings/trainer": dt_trainer,
         "timings/training_start": dt_train_start,
         "timings/train_duration": dt_train_duration,
+        "timings/end-to-end": time.perf_counter() - START_TIME,
     }
     if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
         try:
-            wandb.log(timings, commit=False)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                },
+                commit=False,
+            )
         except Exception as e:
             logger.exception(e)
             logger.warning("Unable to 'wandb.log(timings)', skipping!")
@@ -537,10 +586,28 @@ def train(
     return trainer
 
 
-def parse_args() -> argparse.Namespace:
+def _arg_provided(argv: Sequence[str], flags: Sequence[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def _apply_model_preset(args: argparse.Namespace, argv: Sequence[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS.get(args.model)
+    if preset is None:
+        return
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for `ezpz.examples.test`."""
+    argv = sys.argv[1:] if argv is None else list(argv)
     parser = build_test_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    _apply_model_preset(args, argv)
     if args.backend.lower() in {"ds", "deepspeed"}:
         try:
             import deepspeed  # type:ignore  # noqa: F401
@@ -723,7 +790,12 @@ def main() -> Trainer:
     }
     if wandb is not None and (run := getattr(wandb, "run")) is not None:
         try:
-            wandb.log(data=timings)
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
         except Exception:
             logger.warning("Failed to log timings to wandb")
         logger.info(f"wandb.run=[{run.name}]({run.url})")

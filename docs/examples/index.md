@@ -3,4 +3,4 @@
 This section contains ready-to-run examples demonstrating various features of
 the `ezpz` library.
 
---8<-- "../includes/example-table.md"
+--8<-- "../includes/examples-example-table.md"

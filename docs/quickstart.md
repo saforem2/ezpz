@@ -10,42 +10,57 @@
 🍋 `ezpz` provides a set of dynamic, light weight utilities that simplify
 running experiments with distributed PyTorch.
 
-These can be broken down, roughly into two distinct categories:
+<!-- 1. [**Python Library**](./python/Code-Reference/index.md): -->
 
-1. [**Python Library**](./python/Code-Reference/index.md):
-    1. Launching and running distributed PyTorch code (_from python!_)
-    1. Device Management, and running on different
-       {`cuda`, `xpu`, `mps`, `cpu`} devices
-    1. Experiment Tracking and tools for automatically
-       recording, saving and plotting metrics.
+These can be broken down, roughly into a few distinct categories:
 
-1. [**Shell Environment and Setup**](./notes/shell-environment.md):  
+1. Launching and running distributed PyTorch code:
 
-    ??? warning "Deprecation Notice"
+    ```bash
+    ezpz launch python3 -m ezpz.examples.test  # bash
+    ```
 
-        I plan to deprecate `utils.sh` in favor of a uv native approach.
-        This shell script was originally developed for personal use, and I
-        don't plan to officially support this script in the long term.
+    ```python
+    >>> import ezpz.examples.test
+    >>> ezpz.examples.test.main()  # launch from python!
+    ```
 
-    - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh):
-      Shell script containing a collection of functions that I've accumulated
-      over time and found to be useful.
-      To use these, we can source the file directly from the command line:
 
-        ```bash
-        source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
-        ```
 
-        ??? details "What's in `utils.sh`?"
+1. Device Management, and running on different
+    {`cuda`, `xpu`, `mps`, `cpu`} devices
+1. Experiment Tracking and tools for automatically
+    recording, saving and plotting metrics.
 
-            This script contains utilities for automatic:
+??? warning "[Deprecated] Shell Environment and Setup"
 
-            - Job scheduler detection with Slurm and PBS
-            - Module loading and base Python environment setup
-            - Virtual environment creation and activation
-            ... _and more_!
-            - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
-            additional information.
+    1. [**Shell Environment and Setup**](./notes/shell-environment.md):  
+
+        ??? warning "Deprecation Notice"
+
+            I plan to deprecate `utils.sh` in favor of a uv native approach.
+            This shell script was originally developed for personal use, and I
+            don't plan to officially support this script in the long term.
+
+        - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh):
+        Shell script containing a collection of functions that I've accumulated
+        over time and found to be useful.
+        To use these, we can source the file directly from the command line:
+
+            ```bash
+            source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+            ```
+
+            ??? details "What's in `utils.sh`?"
+
+                This script contains utilities for automatic:
+
+                - Job scheduler detection with Slurm and PBS
+                - Module loading and base Python environment setup
+                - Virtual environment creation and activation
+                ... _and more_!
+                - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
+                additional information.
 
 ---
 
