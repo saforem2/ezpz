@@ -620,17 +620,6 @@ def main() -> None:
 
     checkpointing_steps = training_args.save_steps
 
-    if report_to is not None and report_to != "none":
-        experiment_config = {
-            "model": model_args.__dict__,
-            "data": data_args.__dict__,
-            "training": training_args.to_dict(),
-        }
-        experiment_config["lr_scheduler_type"] = experiment_config[
-            "training"
-        ].get("lr_scheduler_type")
-        accelerator.init_trackers("ezpz-hf", experiment_config)
-
     train_start = time.perf_counter()
     total_batch_size = (
         training_args.per_device_train_batch_size
@@ -729,8 +718,7 @@ def main() -> None:
     perplexity: Optional[float] = None
     for epoch in range(starting_epoch, int(training_args.num_train_epochs)):
         model.train()
-        if report_to is not None and report_to != "none":
-            total_loss = 0
+        total_loss = 0
         if (
             training_args.resume_from_checkpoint
             and epoch == starting_epoch
@@ -778,8 +766,6 @@ def main() -> None:
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)
                     logger.info(summary)
-                    if report_to is not None and report_to != "none":
-                        accelerator.log(metrics, step=completed_steps)
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
@@ -825,9 +811,6 @@ def main() -> None:
             summary = history.update(eval_metrics)
             logger.info(summary)
 
-            if report_to is not None and report_to != "none":
-                accelerator.log(eval_metrics, step=completed_steps)
-
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
             unwrapped_model = accelerator.unwrap_model(model)
@@ -850,9 +833,6 @@ def main() -> None:
             output_dir = f"epoch_{epoch}"
             output_dir = os.path.join(output_dir, output_dir)
             accelerator.save_state(output_dir)
-
-    if report_to is not None and report_to != "none":
-        accelerator.end_training()
 
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
