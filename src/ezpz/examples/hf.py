@@ -566,10 +566,19 @@ def main() -> None:
     )
 
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(
-        len(train_dataloader) / training_args.gradient_accumulation_steps
-    )
+    try:
+        num_update_steps_per_epoch = math.ceil(
+            len(train_dataloader) / training_args.gradient_accumulation_steps
+        )
+    except TypeError:
+        # IterableDataset (streaming) has no len(); require max_steps
+        num_update_steps_per_epoch = None
     if training_args.max_steps <= 0:
+        if num_update_steps_per_epoch is None:
+            raise ValueError(
+                "max_steps must be set when using a streaming / "
+                "IterableDataset (dataset length is unknown)."
+            )
         training_args.max_steps = int(
             training_args.num_train_epochs * num_update_steps_per_epoch
         )
@@ -595,16 +604,20 @@ def main() -> None:
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
-    num_update_steps_per_epoch = math.ceil(
-        len(train_dataloader) / training_args.gradient_accumulation_steps
-    )
-    if overrode_max_train_steps:
-        training_args.max_steps = int(
-            training_args.num_train_epochs * num_update_steps_per_epoch
+    try:
+        num_update_steps_per_epoch = math.ceil(
+            len(train_dataloader) / training_args.gradient_accumulation_steps
         )
-    training_args.num_train_epochs = math.ceil(
-        training_args.max_steps / num_update_steps_per_epoch
-    )
+    except TypeError:
+        num_update_steps_per_epoch = None
+    if num_update_steps_per_epoch is not None:
+        if overrode_max_train_steps:
+            training_args.max_steps = int(
+                training_args.num_train_epochs * num_update_steps_per_epoch
+            )
+        training_args.num_train_epochs = math.ceil(
+            training_args.max_steps / num_update_steps_per_epoch
+        )
 
     checkpointing_steps = training_args.save_steps
 
@@ -686,15 +699,22 @@ def main() -> None:
         if "epoch" in training_difference:
             starting_epoch = int(training_difference.replace("epoch_", "")) + 1
             resume_step = None
-            completed_steps = starting_epoch * num_update_steps_per_epoch
+            completed_steps = (
+                starting_epoch * num_update_steps_per_epoch
+                if num_update_steps_per_epoch is not None
+                else 0
+            )
         else:
             resume_step = (
                 int(training_difference.replace("step_", ""))
                 * training_args.gradient_accumulation_steps
             )
-            starting_epoch = resume_step // len(train_dataloader)
             completed_steps = resume_step // training_args.gradient_accumulation_steps
-            resume_step -= starting_epoch * len(train_dataloader)
+            if num_update_steps_per_epoch is not None:
+                starting_epoch = resume_step // len(train_dataloader)
+                resume_step -= starting_epoch * len(train_dataloader)
+            else:
+                starting_epoch = 0
     else:
         resume_step = None
 
@@ -790,7 +810,11 @@ def main() -> None:
                     {
                         "perplexity": perplexity,
                         "eval_loss": eval_loss,
-                        "train_loss": float(total_loss) / len(train_dataloader),
+                        "train_loss": float(total_loss) / (
+                            len(train_dataloader)
+                            if num_update_steps_per_epoch is not None
+                            else max(completed_steps, 1)
+                        ),
                         "epoch": epoch,
                         "step": completed_steps,
                     },
