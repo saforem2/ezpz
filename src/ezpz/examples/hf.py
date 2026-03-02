@@ -655,7 +655,10 @@ def main() -> None:
     )
     logger.info("***** Running training *****")
     logger.info("  Num processes = %s", accelerator.num_processes)
-    logger.info("  Num examples = %s", len(train_dataset))
+    logger.info(
+        "  Num examples = %s",
+        len(train_dataset) if hasattr(train_dataset, "__len__") else "unknown (streaming)",
+    )
     logger.info("  Num Epochs = %s", training_args.num_train_epochs)
     logger.info(
         "  Instantaneous batch size per device = %s",
