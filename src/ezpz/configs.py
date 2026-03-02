@@ -62,15 +62,6 @@ QUARTO_OUTPUTS_DIR = PROJECT_DIR.joinpath("qmd", "outputs")
 # )
 
 
-FRAMEWORKS = {
-    "pytorch": ["p", "pt", "torch", "pytorch"],
-    "tensorflow": ["t", "tf", "tflow", "tensorflow"],
-}
-BACKENDS = {
-    "pytorch": ["ddp", "ds", "dspeed", "deepspeed", "h", "hvd", "horovod"],
-    "tensorflow": ["h", "hvd", "horovod"],
-}
-
 SCHEDULERS = {
     "ALCF": "PBS",
     "OLCF": "SLURM",
@@ -200,7 +191,7 @@ def _determine_rank(rank: Optional[int]) -> int:
     if rank is not None:
         return rank
     try:
-        from ezpz.dist import get_rank
+        from ezpz.distributed import get_rank
 
         return get_rank()
     except Exception:
@@ -540,13 +531,6 @@ class TrainConfig(BaseConfig):
     """High-level training options shared by ezpz scripts."""
 
     gas: int = 1
-    # ---- [NOTE]+ Framework + Backend ----------------
-    # `framework`: `{'backend'}`
-    #   • `tensorflow`: `{'horovod'}`
-    #   • `pytorch`: `{'DDP', 'deepspeed', 'horovod'}`
-    # -------------------------------------------------
-    framework: str = "pytorch"
-    backend: str = "DDP"
     use_wandb: bool = False
     seed: Optional[int] = None
     port: Optional[str] = None
@@ -582,45 +566,18 @@ class TrainConfig(BaseConfig):
         self.extras = extras
 
     def to_str(self) -> str:
-        """Return a compact identifier combining framework and backend."""
-        return "_".join(
-            [
-                f"fw-{self.framework}",
-                f"be-{self.backend}",
-            ]
-        )
+        """Return a compact identifier for this config."""
+        parts = [f"gas-{self.gas}"]
+        if self.seed is not None:
+            parts.append(f"seed-{self.seed}")
+        return "_".join(parts)
 
     def __post_init__(self):
-        """Validate framework/backend compatibility after initialisation."""
-        # assert self.framework.lower() in FRAMEWORKS.values()
-        # if self.seed is None:
-        #     self.seed = np.random.randint(0, 2**32 - 1)
-        assert self.framework in [
-            "t",
-            "tf",
-            "tflow",
-            "tensorflow",
-            "p",
-            "pt",
-            "ptorch",
-            "torch",
-            "pytorch",
-        ]
-        if self.framework in ["t", "tf", "tensorflow"]:
-            assert self.backend.lower() in BACKENDS["tensorflow"]
-        else:
-            assert self.backend.lower() in BACKENDS["pytorch"]
+        """Validate configuration after initialisation."""
         if self.use_wandb and self.wandb_project_name is None:
             self.wandb_project_name = os.environ.get(
                 "WANDB_PROJECT", os.environ.get("WB_PROJECT", "ezpz")
             )
-        if self.framework in ["p", "pt", "ptorch", "torch", "pytorch"]:
-            if self.backend.lower() in ["ds", "deepspeed", "dspeed"]:
-                self.ds_config = load_ds_config(
-                    DS_CONFIG_PATH
-                    if self.ds_config_path is None
-                    else self.ds_config_path
-                )
 
 
 @dataclass
