@@ -148,7 +148,7 @@ def breakpoint(rank: int = 0):
         )
         pdb.set_trace()
     # torch.distributed.barrier()
-    ezpz.dist.barrier()
+    ezpz.distributed.barrier()
 
 
 class ForkedPdb(pdb.Pdb):

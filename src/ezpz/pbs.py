@@ -21,7 +21,7 @@ import socket
 from getpass import getuser
 
 import ezpz
-from ezpz.dist import get_hostfile_with_fallback
+from ezpz.distributed import get_hostfile_with_fallback
 
 Pathish = Union[str, os.PathLike, Path]
 
@@ -378,13 +378,13 @@ def get_pbs_launch_info(
         hostfile = get_pbs_nodefile(jobid=jobid)
     assert hostfile is not None
     hfp = Path(hostfile)
-    hosts = ezpz.dist.get_nodes_from_hostfile(hfp)
+    hosts = ezpz.distributed.get_nodes_from_hostfile(hfp)
     hosts = [h.split(".")[0] for h in hosts]
     nhosts = len(hosts)
-    ngpu_per_host = ezpz.dist.get_gpus_per_node()
-    ngpus_available = ezpz.dist.get_world_size(total=True)
+    ngpu_per_host = ezpz.distributed.get_gpus_per_node()
+    ngpus_available = ezpz.distributed.get_world_size(total=True)
     ngpus = nhosts * ngpu_per_host
-    world_size_total = ezpz.dist.get_world_size_total()
+    world_size_total = ezpz.distributed.get_world_size_total()
     launch_cmd = get_pbs_launch_cmd(hostfile=hostfile)
     return {
         "HOSTFILE": hfp.as_posix(),
@@ -397,9 +397,9 @@ def get_pbs_launch_info(
         "NGPU_PER_HOST": f"{ngpu_per_host}",
         "NGPUS": f"{ngpus}",
         "NGPUS_AVAILABLE": f"{ngpus_available}",
-        "MACHINE": ezpz.dist.get_machine(),
-        "DEVICE": ezpz.dist.get_torch_device_type(),
-        "BACKEND": ezpz.dist.get_torch_backend(),
+        "MACHINE": ezpz.distributed.get_machine(),
+        "DEVICE": ezpz.distributed.get_torch_device_type(),
+        "BACKEND": ezpz.distributed.get_torch_backend(),
         "LAUNCH_CMD": launch_cmd,
         "world_size_total": f"{world_size_total}",
     }
@@ -427,8 +427,8 @@ def get_pbs_env(
         }
         pbsenv |= {"LAUNCH_CMD": get_pbs_launch_cmd(hostfile=hostfile)}
     os.environ |= pbsenv
-    if verbose and ezpz.dist.get_rank() == 0:
-        ezpz.dist.log_dict_as_bulleted_list(pbsenv, name="pbsenv")
+    if verbose and ezpz.distributed.get_rank() == 0:
+        ezpz.distributed.log_dict_as_bulleted_list(pbsenv, name="pbsenv")
     return pbsenv
 
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
 import ezpz
-import ezpz.dist
+import ezpz.distributed
 
 from ezpz.lazy import lazy_import
 
@@ -196,7 +196,7 @@ class History:
         if (
             os.environ.get("EZPZ_NO_DISTRIBUTED_HISTORY", None)
             or os.environ.get("EZPZ_LOCAL_HISTORY", False)
-            or ezpz.dist.get_world_size() <= 1
+            or ezpz.distributed.get_world_size() <= 1
         ):
             logger.info(
                 "Not using distributed metrics! Will only be tracked from a single rank..."
@@ -1188,19 +1188,19 @@ class History:
         sq_vals = values.square()
         max_vals = values.clone()
         min_vals = values.clone()
-        # world_size = ezpz.dist.get_world_size()
+        # world_size = ezpz.distributed.get_world_size()
         # world_size = self._dist.get_world_size()
-        if (world_size := ezpz.dist.get_world_size()) <= 1:
+        if (world_size := ezpz.distributed.get_world_size()) <= 1:
             return {
                 f"{key}/{suffix}": (value if suffix != "std" else 0.0)
                 for key, value in scalars.items()
                 for suffix in ("mean", "max", "min", "std")
             }
 
-        # ezpz.dist.all_reduce(sum_vals, op=ops.SUM, implementation="torch")
-        # ezpz.dist.all_reduce(sq_vals, op=ops.SUM, implementation="torch")
-        # ezpz.dist.all_reduce(max_vals, op=ops.MAX, implementation="torch")
-        # ezpz.dist.all_reduce(min_vals, op=ops.MIN, implementation="torch")
+        # ezpz.distributed.all_reduce(sum_vals, op=ops.SUM, implementation="torch")
+        # ezpz.distributed.all_reduce(sq_vals, op=ops.SUM, implementation="torch")
+        # ezpz.distributed.all_reduce(max_vals, op=ops.MAX, implementation="torch")
+        # ezpz.distributed.all_reduce(min_vals, op=ops.MIN, implementation="torch")
         # ops = self._dist.ReduceOp  # type: ignore[attr-defined]
         ops = torch.distributed.ReduceOp  # type: ignore[attr-defined]
         torch.distributed.all_reduce(sum_vals, op=ops.SUM)

@@ -87,7 +87,7 @@ class Model(nn.Module):
 def setup_training(cfg: DictConfig) -> TrainConfig:
     config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
-    rank = setup(framework=config.framework, backend=config.backend, seed=config.seed)
+    rank = setup(seed=config.seed)
     run = None
     # if rank != 0:
     #     # log.setLevel("CRITICAL")

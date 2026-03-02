@@ -42,7 +42,7 @@ def bcast_chunk(data: bytes | bytearray | None, chunk_size: int) -> bytearray:
         logger.info(f"size of data {size}")
     else:
         size = 0
-    size = ezpz.dist.broadcast(size, root=0)
+    size = ezpz.distributed.broadcast(size, root=0)
     nc = size // chunk_size + 1
     buffer = bytearray(size)
     import tqdm
@@ -51,7 +51,7 @@ def bcast_chunk(data: bytes | bytearray | None, chunk_size: int) -> bytearray:
         if i * chunk_size < size:
             end = min(i * chunk_size + chunk_size, size)
             payload = data[i * chunk_size : end] if ezpz.get_rank() == 0 else None
-            buffer[i * chunk_size : end] = ezpz.dist.broadcast(payload, root=0)
+            buffer[i * chunk_size : end] = ezpz.distributed.broadcast(payload, root=0)
     return buffer
 
 
