@@ -14,7 +14,7 @@ class TestUtils:
     def setup_mocks(self):
         """Setup mocks for all tests in this class."""
         # Mock the problematic functions at the module level
-        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+        with patch("ezpz.distributed.get_hostname", return_value="test-host"), patch(
             "ezpz.configs.get_scheduler", return_value="UNKNOWN"
         ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             yield
@@ -22,7 +22,7 @@ class TestUtils:
     def test_get_timestamp(self):
         """Test get_timestamp function."""
         # Import inside the test to ensure mocks are in place
-        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+        with patch("ezpz.distributed.get_hostname", return_value="test-host"), patch(
             "ezpz.configs.get_scheduler", return_value="UNKNOWN"
         ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils
@@ -39,7 +39,7 @@ class TestUtils:
     def test_normalize(self):
         """Test normalize function."""
         # Import inside the test to ensure mocks are in place
-        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+        with patch("ezpz.distributed.get_hostname", return_value="test-host"), patch(
             "ezpz.configs.get_scheduler", return_value="UNKNOWN"
         ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils
@@ -67,7 +67,7 @@ class TestUtils:
     def test_format_pair(self):
         """Test format_pair function."""
         # Import inside the test to ensure mocks are in place
-        with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+        with patch("ezpz.distributed.get_hostname", return_value="test-host"), patch(
             "ezpz.configs.get_scheduler", return_value="UNKNOWN"
         ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
             import ezpz.utils as utils

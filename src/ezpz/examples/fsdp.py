@@ -170,17 +170,17 @@ def train(
     Returns:
         Dict with epoch, wall-clock duration, and averaged train loss.
     """
-    device_type = ezpz.dist.get_torch_device_type()
+    device_type = ezpz.distributed.get_torch_device_type()
     device = (
         torch.device("cpu")
         if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.train()
     ddp_loss = torch.zeros(2).to(device)
     if sampler:
         sampler.set_epoch(epoch)
-    ezpz.dist.synchronize()
+    ezpz.distributed.synchronize()
     t0 = time.perf_counter()
     batch, target = next(iter(train_loader))
     for _, (batch, target) in enumerate(train_loader):
@@ -192,7 +192,7 @@ def train(
         optimizer.step()
         ddp_loss[0] += loss.item()
         ddp_loss[1] += len(batch)
-    ezpz.dist.synchronize()
+    ezpz.distributed.synchronize()
     t1 = time.perf_counter()
     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
     return {
@@ -205,11 +205,11 @@ def train(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def test(model, test_loader):
     """Evaluate model on validation data and gather metrics."""
-    device_type = ezpz.dist.get_torch_device_type()
+    device_type = ezpz.distributed.get_torch_device_type()
     device = (
         torch.device("cpu")
         if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.eval()
     # correct = 0
@@ -237,11 +237,11 @@ def test(model, test_loader):
 
 def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
     """Create the FSDP-wrapped model, optimizer, and LR scheduler."""
-    device_type = ezpz.dist.get_torch_device_type()
+    device_type = ezpz.distributed.get_torch_device_type()
     device = (
         torch.device("cpu")
         if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.dist.get_local_rank()}")
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     if args.dataset == "MNIST":
         num_classes = 10
@@ -377,7 +377,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
             run.config.update({"ezpz.dist": {**ezpz.get_dist_info()}})
 
     data = get_data(args)
-    ezpz.dist.barrier()
+    ezpz.distributed.barrier()
     train_loader = data["train"]["loader"]
     test_loader = data["test"]["loader"]
 
@@ -440,10 +440,10 @@ def fsdp_main(args: argparse.Namespace) -> None:
             )
         except Exception:
             logger.warning("Failed to log timings to wandb")
-    ezpz.dist.barrier()
+    ezpz.distributed.barrier()
 
     if args.save_model:
-        ezpz.dist.barrier()  # wait for slowpokes
+        ezpz.distributed.barrier()  # wait for slowpokes
         states = model.state_dict()
         if rank == 0:
             torch.save(states, "mnist_cnn.pt")

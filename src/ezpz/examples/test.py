@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from xarray import Dataset
 
 import ezpz
+import ezpz.distributed
 from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
 from ezpz.profile import get_profiling_context
@@ -83,7 +84,7 @@ except Exception:
 # if not WANDB_DISABLED and WANDB_MODE != "disabled":
 #     try:
 #         wandb = ezpz.lazy.lazy_import("wandb")
-#         if not ezpz.dist.verify_wandb():
+#         if not ezpz.distributed.verify_wandb():
 #             logger.warning("W&B API key not found, skipping wandb setup!")
 #             logger.info(
 #                 "To enable W&B logging, run `wandb login` or set the WANDB_API_KEY"
@@ -142,7 +143,7 @@ class TrainConfig:
             self._created_at = (
                 ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
             )
-        self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
+        self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
         if self._created_at is not None:
             os.environ["EZPZ_LOG_TIMESTAMP"] = self._created_at
         self.outdir = Path(os.getcwd()).joinpath(
@@ -239,10 +240,10 @@ class Trainer:
         )
 
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
-            ezpz.dist.barrier(group=ezpz.tp.get_tensor_parallel_group())
-            ezpz.dist.barrier(group=ezpz.tp.get_data_parallel_group())
-            ezpz.dist.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-            ezpz.dist.barrier(group=ezpz.tp.get_context_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_tensor_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_context_parallel_group())
 
         if self.rank == 0 and not WANDB_DISABLED:
             logger.debug("Setting up wandb")
@@ -260,7 +261,7 @@ class Trainer:
 
         if self.world_size > 1:
             logger.debug("Hit torch.distributed.barrier()")
-            ezpz.dist.barrier()
+            ezpz.distributed.barrier()
         self._train_loader, self._train_iterator = self._build_dataloader()
         self._feature_dim = self.config.input_size
 
@@ -329,7 +330,7 @@ class Trainer:
         logits = self.model(inputs)
         loss = calc_loss(logits, targets)
         accuracy = (logits.argmax(dim=1) == targets).float().mean()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         metrics = {
             "loss": loss.detach(),
             "accuracy": accuracy.detach(),
@@ -347,7 +348,7 @@ class Trainer:
         else:
             loss.backward()
             self.optimizer.step()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         return time.perf_counter() - t0
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -429,8 +430,8 @@ class Trainer:
             "Version": torch.__version__,
             "Device": str(self.device_id),
             "Backend": (
-                ezpz.dist.get_backend()
-                if hasattr(ezpz.dist, "get_backend")
+                ezpz.distributed.get_torch_backend()
+                if hasattr(ezpz.distributed, "get_torch_backend")
                 else "unknown"
             ),
         }
@@ -506,7 +507,7 @@ def train(
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
     model, optimizer = build_model_and_optimizer(
-        model, backend=config.backend, dtype=config.dtype
+        model, dtype=config.dtype
     )
     t2m = time.perf_counter()
     dt_optimizer = time.perf_counter() - t1m
@@ -668,11 +669,8 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 def build_model_and_optimizer(
     model: torch.nn.Module,
     dtype: Optional[str] = None,
-    backend: str = "DDP",
 ) -> ModelOptimizerPair:
     """Prepare the model and optimiser for the requested backend."""
-    if backend is not None:
-        assert backend.lower() in {"ddp", "deepspeed", "ds"}
     device_override = os.environ.get("TORCH_DEVICE")
     device_type = device_override or ezpz.get_torch_device()
     if isinstance(device_type, str) and device_type.startswith("mps"):
@@ -689,64 +687,62 @@ def build_model_and_optimizer(
         model.to(local_rank)
     logger.info(f"model=\n{model}")
     optimizer = torch.optim.Adam(model.parameters())
-    if backend.lower() == "ddp":
-        if world_size > 1:
-            model.to(device_type)
-            model = ezpz.dist.wrap_model(
-                model=model, use_fsdp=False, dtype=dtype
-            )
-            # model = DDP(model)
-            try:
-                if isinstance(device_type, str) and device_type.startswith(
-                    "cuda"
-                ):
-                    model = DDP(model, device_ids=[local_rank])
-                else:
-                    model = DDP(model)
-            except Exception:
-                model = DDP(model)
-
-    elif backend.lower() in ("ds", "deepspeed"):
-        parser = argparse.ArgumentParser(
-            prog="deepspeed", description="My training script."
+    if world_size > 1:
+        model.to(device_type)
+        model = ezpz.distributed.wrap_model(
+            model=model, use_fsdp=False, dtype=dtype
         )
-        parser.add_argument(
-            "--local_rank",
-            required=False,
-            type=int,
-            default=-1,
-            help="local rank passed from distributed launcher",
-        )
-        # parser.add_argument(
-        #     '--deepspeed',
-        #     action='store_true',
-        #     default=True,
-        #     help='Use deepspeed',
-        # )
-        # parser.add_argument(
-        #     '--deepspeed_config',
-        #     type=str,
-        #     default='deepspeed_config.json',
-        #     help='Deepspeed config file',
-        # )
         try:
-            import deepspeed  # type:ignore
-        except (ImportError, ModuleNotFoundError) as e:
-            logger.error(
-                "Deepspeed not available. "
-                "Install via `python3 -m pip install deepspeed`"
-            )
-            raise e
+            if isinstance(device_type, str) and device_type.startswith(
+                "cuda"
+            ):
+                model = DDP(model, device_ids=[local_rank])
+            else:
+                model = DDP(model)
+        except Exception:
+            model = DDP(model)
 
-        # Include DeepSpeed configuration arguments
-        parser = deepspeed.add_config_arguments(parser)
-        cmd_args = parser.parse_args()
-        model, optimizer, *_ = deepspeed.initialize(
-            args=cmd_args,
-            model=model,
-            optimizer=optimizer,
-        )
-        logger.info(f"{cmd_args=}")
+    # elif backend.lower() in ("ds", "deepspeed"):
+    #     parser = argparse.ArgumentParser(
+    #         prog="deepspeed", description="My training script."
+    #     )
+    #     parser.add_argument(
+    #         "--local_rank",
+    #         required=False,
+    #         type=int,
+    #         default=-1,
+    #         help="local rank passed from distributed launcher",
+    #     )
+    #     # parser.add_argument(
+    #     #     '--deepspeed',
+    #     #     action='store_true',
+    #     #     default=True,
+    #     #     help='Use deepspeed',
+    #     # )
+    #     # parser.add_argument(
+    #     #     '--deepspeed_config',
+    #     #     type=str,
+    #     #     default='deepspeed_config.json',
+    #     #     help='Deepspeed config file',
+    #     # )
+    #     try:
+    #         import deepspeed  # type:ignore
+    #     except (ImportError, ModuleNotFoundError) as e:
+    #         logger.error(
+    #             "Deepspeed not available. "
+    #             "Install via `python3 -m pip install deepspeed`"
+    #         )
+    #         raise e
+    #
+    #     # Include DeepSpeed configuration arguments
+    #     parser = deepspeed.add_config_arguments(parser)
+    #     cmd_args = parser.parse_args()
+    #     model, optimizer, *_ = deepspeed.initialize(
+    #         args=cmd_args,
+    #         model=model,
+    #         optimizer=optimizer,
+    #     )
+    #     logger.info(f"{cmd_args=}")
     return model, optimizer
 
 
@@ -757,8 +753,7 @@ def main() -> Trainer:
     args = parse_args()
     config = get_config_from_args(args)
     timings = {}
-    _ = ezpz.setup_torch(  # noqa
-        backend=config.backend,
+    _ = ezpz.distributed.setup_torch(
         tensor_parallel_size=config.tp,
         pipeline_parallel_size=config.pp,
         context_parallel_size=config.cp,

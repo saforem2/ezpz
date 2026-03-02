@@ -481,11 +481,11 @@ def main() -> int:
     # hfloglevel = "INFO" if rank == 0 else "ERROR"
     # logging.getLogger("datasets").setLevel(hfloglevel)
     t0 = time.perf_counter()
-    import ezpz.dist
+    import ezpz.distributed
 
-    # rank = ezpz.dist.setup_torch(device_id=ezpz.get_local_rank())
-    rank = ezpz.dist.setup_torch()
-    # rank = ezpz.dist.setup_torch(
+    # rank = ezpz.distributed.setup_torch(device_id=ezpz.get_local_rank())
+    rank = ezpz.distributed.setup_torch()
+    # rank = ezpz.distributed.setup_torch(
     #     # seed=training_args.seed,
     #     # device_id=int(devid) if devid is not None else devid,
     # )
@@ -1155,5 +1155,5 @@ if __name__ == "__main__":
     # )
     t0 = time.perf_counter()
     main()
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()
     logger.info(f"Took {time.perf_counter() - t0:.2f} seconds")

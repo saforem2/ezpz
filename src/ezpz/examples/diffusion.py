@@ -67,7 +67,7 @@ import time
 from typing import Dict, Iterable, List, Tuple
 from contextlib import nullcontext
 import ezpz
-import ezpz.dist
+import ezpz.distributed
 
 import torch
 from torch import nn
@@ -346,7 +346,7 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
-    wrapped_model = ezpz.dist.wrap_model(
+    wrapped_model = ezpz.distributed.wrap_model(
         model, use_fsdp=args.fsdp, dtype=args.dtype
     )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
@@ -399,7 +399,7 @@ def train(
             tokens = next(loader_iter)
         tokens = tokens.to(device)
         t1 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         full_param_ctx = (
             FSDP.summon_full_params(wrapped_model)
             if is_fsdp
@@ -412,13 +412,13 @@ def train(
         pred_noise = wrapped_model(xt, t)
         loss = torch.mean((pred_noise - noise) ** 2)
         t2 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
 
         loss.backward()
         optim.step()
         optim.zero_grad(set_to_none=True)
         t3 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
 
         if step % args.log_freq == 0 or step == steps - 1:
             logger.info(
@@ -604,14 +604,14 @@ def main(args: argparse.Namespace) -> None:
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
-    # self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
+    # self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
     if ezpz.get_rank() == 0:
-        run = ezpz.dist.setup_wandb(
+        run = ezpz.distributed.setup_wandb(
             project_name=WBPROJ_NAME,
             # outdir=outdir,
         )
         assert run is not None and run is wandb.run
-        # wandb.config.update(ezpz.dist.get_dist_info())
+        # wandb.config.update(ezpz.distributed.get_dist_info())
         wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
         # wandb.config.update({"args": {**vars(args)}})
 
@@ -704,4 +704,4 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     args = parse_args()
     main(args)
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()
