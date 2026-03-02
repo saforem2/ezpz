@@ -1035,7 +1035,7 @@ def train(
             history.log_metrics(
                 metrics,
                 logger=logger,
-                debug_prefixes=("hist/",),
+                debug_prefixes=("hist/", "grad/", "input/", "labels/", "param/"),
                 include_summary=True,
                 rank0_only_summary=True,
             )
