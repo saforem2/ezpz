@@ -25,7 +25,8 @@ if socket.getfqdn().startswith("x3"):
 
 _LAZY_MODULES: Dict[str, str] = {
     "configs": "ezpz.configs",
-    "dist": "ezpz.dist",
+    # "dist": "ezpz.dist",
+    "distributed": "ezpz.distributed",
     "doctor": "ezpz.doctor",
     "examples": "ezpz.examples",
     "history": "ezpz.history",
@@ -43,14 +44,13 @@ _LAZY_MODULES: Dict[str, str] = {
 _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.log",
     "ezpz.configs",
-    "ezpz.dist",
+    "ezpz.distributed",
     "ezpz.doctor",
     "ezpz.examples",
     "ezpz.utils",
     "ezpz.history",
     "ezpz.profile",
     "ezpz.tp",
-    "ezpz.dist",
     "ezpz.models",
     "ezpz.pbs",
     "ezpz.jobs",
