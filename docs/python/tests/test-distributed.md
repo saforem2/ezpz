@@ -1,6 +1,6 @@
 # Test Distributed
 
-Tests for the [`ezpz.distributed`](../Code-Reference/distributed.md) module — the simplified rewrite of `ezpz.dist`.
+Tests for the [`ezpz.distributed`](../Code-Reference/distributed.md) module.
 
 - See [`tests/test_distributed.py`](https://github.com/saforem2/ezpz/blob/main/tests/test_distributed.py)
 

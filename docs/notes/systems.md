@@ -32,8 +32,7 @@ Both the Python and shell sides detect the machine from the hostname:
 | `login*`/`nid*` | Perlmutter    |                                                  |
 
 **Python:** `get_machine()` in
-[`ezpz.distributed`](../python/Code-Reference/distributed.md) and
-[`ezpz.dist`](../python/Code-Reference/dist.md).
+[`ezpz.distributed`](../python/Code-Reference/distributed.md).
 
 **Shell:** `ezpz_get_machine_name()` in
 [`utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh).

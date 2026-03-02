@@ -9,8 +9,7 @@ The test suite is organized into individual files, each focusing on a specific m
 - [Main Module Tests](test-ezpz.md) - Tests for the core ezpz package
 - [Configs Module Tests](test-configs.md) - Tests for configuration management
 - [Improved Configs Tests](test-configs-improved.md) - Additional mocked coverage for configs
-- [Distributed Computing Tests](test-dist.md) - Tests for distributed training functionality (`ezpz.dist`)
-- [Distributed Module Tests](test-distributed.md) - Tests for the simplified distributed module (`ezpz.distributed`)
+- [Distributed Module Tests](test-distributed.md) - Tests for the distributed module (`ezpz.distributed`)
 - [History Module Tests](test-history.md) - Tests for metrics tracking and history management
 - [Jobs Module Tests](test-jobs.md) - Tests for job management and scheduling
 - [Logging Module Tests](test-log.md) - Tests for logging functionality
