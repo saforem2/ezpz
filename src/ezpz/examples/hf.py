@@ -724,7 +724,7 @@ def main() -> None:
     progress_bar.update(completed_steps)
     total_loss = 0
     perplexity: Optional[float] = None
-    for epoch in range(starting_epoch, training_args.num_train_epochs):
+    for epoch in range(starting_epoch, int(training_args.num_train_epochs)):
         model.train()
         if report_to is not None and report_to != "none":
             total_loss = 0
