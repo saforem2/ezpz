@@ -90,6 +90,15 @@ logger = logging.getLogger(__name__)
 logger.setLevel(EZPZ_LOG_LEVEL)
 logging.getLogger("sh").setLevel("WARNING")
 
+import warnings as _warnings
+
+_warnings.warn(
+    "ezpz.dist is deprecated and will be removed in a future release. "
+    "Use ezpz.distributed instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 ALREADY_PRINTED_DIST_SETUP = os.environ.get("ALREADY_PRINTED_DIST_SETUP", "0")
 ALREADY_PRINTED_HOSTS = os.environ.get("ALREADY_PRINTED_HOSTS", "0")
@@ -912,9 +921,7 @@ def get_torch_device(
     env_info = _get_env_torch_device()
     if env_info is not None:
         _apply_env_torch_device(env_info)
-        return (
-            torch.device(env_info[0]) if as_torch_device else env_info[0]
-        )
+        return torch.device(env_info[0]) if as_torch_device else env_info[0]
     if device_type is None:
         device_type = get_torch_device_type(device_type)
         return torch.device(device_type) if as_torch_device else device_type
@@ -1143,7 +1150,11 @@ def get_world_size(
     except Exception:
         mpi_size = None
 
-    if mpi_size is not None and torch_size is not None and mpi_size != torch_size:
+    if (
+        mpi_size is not None
+        and torch_size is not None
+        and mpi_size != torch_size
+    ):
         if get_rank() == 0:
             logger.warning(
                 "MPI world size (%s) differs from torch.distributed (%s)",
@@ -1357,6 +1368,73 @@ def all_reduce(
         )
 
 
+class TorchDistributedEnvironment:
+    """Environment variables for PyTorch distributed training.
+
+    Attributes:
+        master_port (int): The port to use for distributed communication.
+        master_addr (str): The address of the master node.
+        world_size (int): The total number of processes in the job.
+        rank (int): The rank of the current process.
+        local_rank (int): The local rank of the current process.
+    """
+
+    def __init__(
+        self,
+        master_port: str | int | None = None,
+        backend: str | None = None,
+        device_id: torch.device | int | None = None,
+    ):
+        self.env = setup_torch_DDP(
+            port=str(master_port),
+            backend=backend,
+            device_id=device_id,
+        )
+        self.master_port = self.env.get("master_port", None)
+        self.master_addr = self.env.get("master_addr", None)
+        self.world_size = self.env.get("world_size", None)
+        self.rank = self.env.get("rank", None)
+        self.local_rank = self.env.get("local_rank", None)
+
+    def as_dict(self) -> dict[str, int]:
+        """Return the distributed environment information as a dictionary."""
+        return self.env
+
+    def ensure_env_vars(self) -> None:
+        """Ensure that the necessary environment variables are set for PyTorch distributed training."""
+        os.environ["LOCAL_RANK"] = str(self.env["local_rank"])
+        os.environ["LOCAL_WORLD_SIZE"] = str(get_gpus_per_node())
+        os.environ["RANK"] = str(self.env["rank"])
+        os.environ["WORLD_SIZE"] = str(self.env["world_size"])
+        os.environ["LOCAL_IDX"] = str(self.env["local_rank"])
+
+
+def setup_torch_env(
+    master_port: Optional[str] = None,
+    backend: Optional[str] = None,
+    device_id: torch.device | int | None = None,
+) -> dict[str, int]:
+    """Setup environment variables for PyTorch distributed training.
+
+    Args:
+        master_port (Optional[str], optional): The port to use for distributed communication.
+            Defaults to None.
+        backend (Optional[str], optional): The backend to use for distributed training.
+            Defaults to None.
+        device_id (torch.device | int | None, optional): The device to use for distributed training.
+            Defaults to None.
+
+    Returns:
+        dict[str, int]: A dictionary containing the distributed setup information.
+            Includes keys like 'world_size', 'rank', and 'local_rank'.
+    """
+    torch_env = TorchDistributedEnvironment(
+        master_port=master_port, backend=backend, device_id=device_id
+    )
+    torch_env.ensure_env_vars()
+    return torch_env.as_dict()
+
+
 def setup_torch_DDP(
     port: str = "2345",
     timeout: int | str | timedelta = 3600,
@@ -1470,7 +1548,14 @@ def setup_torch_DDP(
         backend=backend,
         device_id=device_id,
     )
-    return {"world_size": world_size, "rank": rank, "local_rank": local_rank}
+    return {
+        "world_size": world_size,
+        "rank": rank,
+        "local_rank": local_rank,
+        "master_addr": master_addr,
+        "master_port": master_port,
+        "local_world_size": local_world_size,
+    }
 
 
 def setup_torch_distributed(
@@ -2134,7 +2219,6 @@ def get_wandb_mode(
         return "online"
 
 
-
 def get_git_branch_name() -> str | None:
     """Return the git branch/ref ezpz was installed from, if available."""
     try:
@@ -2488,6 +2572,44 @@ def write_hostfile_from_list_of_hosts(
                 f.write(f"{host}\n")
 
 
+def _expand_slurm_nodelist(nodelist_str: str) -> list[str]:
+    """Expand a ``SLURM_NODELIST`` string into individual hostnames.
+
+    Handles single nodes (``node001``), comma-separated lists
+    (``node[001,003]``), ranges (``node[001-003]``), and mixed
+    (``node[001-003,007,010-012]``).  Zero-padding is preserved.
+
+    Args:
+        nodelist_str: Raw value of ``SLURM_NODELIST``.
+
+    Returns:
+        List of expanded hostnames.
+
+    Examples:
+        >>> _expand_slurm_nodelist("node001")
+        ['node001']
+        >>> _expand_slurm_nodelist("node[001-003,007]")
+        ['node001', 'node002', 'node003', 'node007']
+    """
+    s = nodelist_str.strip()
+    if "[" not in s:
+        return [s]
+    bracket_start = s.index("[")
+    prefix = s[:bracket_start]
+    rest = s[bracket_start + 1 :].rstrip("]")
+    nodes: list[str] = []
+    for part in rest.split(","):
+        part = part.strip()
+        if "-" in part:
+            lo, hi = part.split("-", 1)
+            width = len(lo)
+            for i in range(int(lo), int(hi) + 1):
+                nodes.append(f"{prefix}{i:0{width}d}")
+        else:
+            nodes.append(f"{prefix}{part}")
+    return nodes
+
+
 def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
     """Make a hostfile from the SLURM_NODELIST environment variable.
 
@@ -2503,20 +2625,8 @@ def make_hostfile_from_slurm_env(outfile: Optional[PathLike] = None) -> Path:
         >>> print(hostfile.read_text().splitlines())  # doctest: +SKIP
     """
     nodes = os.environ.get("SLURM_NODELIST", None)
-    # if nodes is not None:
-    assert nodes is not None
-    # machine = get_machine()
-    prefix, idxs = nodes.split("[")
-    idxs = idxs.rstrip("]")
-    idxs = "-".join(idxs.split(",")).split("-")
-    nodelist = [f"{prefix}{i}" for i in idxs]
-    # idxs = (
-    #     nodes.split
-    # )
-    # idxs = (
-    #     nodes.lstrip('frontier').replace('[', '').replace(']', '').split('-')
-    # )
-    # nodelist = [f'frontier{i}' for i in idxs]
+    assert nodes is not None, "SLURM_NODELIST not set"
+    nodelist = _expand_slurm_nodelist(nodes)
     if outfile is None:
         outfile = Path(os.getcwd()).joinpath("hostfile")
     else:
