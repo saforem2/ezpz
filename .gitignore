@@ -1,4 +1,9 @@
 # user added
+zite/
+_site/*
+site1
+*.html
+event-*.json
 docs/old
 *core\.*
 *broken*
