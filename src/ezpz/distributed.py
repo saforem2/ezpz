@@ -1352,6 +1352,10 @@ def _setup_ddp(
             "world_size": world_size,
             "init_method": "env://",
         }
+        if device_id is None:
+            device_type = get_torch_device_type()
+            if device_type in ("cuda", "xpu"):
+                device_id = torch.device(f"{device_type}:{local_rank}")
         if device_id is not None:
             init_kwargs["device_id"] = device_id
         torch.distributed.init_process_group(**init_kwargs)
