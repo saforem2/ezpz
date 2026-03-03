@@ -464,6 +464,7 @@ def train_fn(
         dataset_dict = get_fake_data(
             img_size=args.img_size,
             batch_size=args.batch_size,
+            num_workers=args.num_workers,
         )
     elif dataset == "mnist":
         dataset_dict = get_mnist(
@@ -632,6 +633,8 @@ def train_fn(
         last_step = step
         if args.max_iters is not None and step > int(args.max_iters):
             break
+        if step < warmup_iters:
+            logger.info("warmup step %d / %d", step, warmup_iters)
         t0 = time.perf_counter()
         inputs = batch[0].to(device=device, non_blocking=True)
         label = batch[1].to(device=device, non_blocking=True)
