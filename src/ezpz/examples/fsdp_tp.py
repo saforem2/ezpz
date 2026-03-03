@@ -735,8 +735,7 @@ def train(
     dataset_tag = args.dataset.lower().replace("/", "_")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
         run = ezpz.distributed.setup_wandb(project_name=WBPROJ_NAME)
-        if wandb is not None:
-            assert run is not None and run is wandb.run
+        if run is not None and wandb is not None and run is wandb.run:
             from dataclasses import asdict
 
             wandb.config.update(ezpz.get_dist_info())
