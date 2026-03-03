@@ -1442,8 +1442,7 @@ class History:
         info_msg = summarize_dict(info_metrics, precision=precision).replace(
             "train/", ""
         )
-        if info_msg:
-            log.info(info_msg)
+        summary_msg = ""
         if include_summary:
             summary_input = info_metrics
             if omit_counter_metrics:
@@ -1459,8 +1458,9 @@ class History:
                 summary_msg = summarize_dict(
                     summary_stats, precision=precision
                 ).replace("train/", "")
-                if summary_msg:
-                    log.info(summary_msg)
+        combined = " ".join(part for part in (info_msg, summary_msg) if part)
+        if combined:
+            log.info(combined)
         debug_msg = summarize_dict(debug_metrics, precision=precision).replace(
             "train/", ""
         )
