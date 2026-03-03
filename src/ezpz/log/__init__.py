@@ -191,9 +191,12 @@ def get_logger(
 ) -> logging.Logger:
     """Return a logger initialised with the project's logging configuration."""
     if rank is None and rank_zero_only:
-        from ezpz.distributed import get_rank
+        try:
+            from ezpz.distributed import get_rank
 
-        rank = get_rank()
+            rank = get_rank()
+        except (RuntimeError, ImportError, Exception):
+            rank = 0
     assert rank is not None
     # if is_interactive():
     #     return get_rich_logger(name=name, level=level)

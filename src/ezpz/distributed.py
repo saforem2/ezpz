@@ -158,9 +158,23 @@ def _get_mpi_comm() -> Any:
 def get_rank() -> int:
     """Return the global MPI rank of the current process.
 
+    The value is resolved from well-known environment variables set by
+    common MPI implementations and job schedulers.  If none are set the
+    function falls back to querying the MPI communicator.
+
     Returns:
         Global rank (0-indexed).
     """
+    _ENV_VARS = (
+        "RANK",
+        "PMI_RANK",
+        "OMPI_COMM_WORLD_RANK",
+        "SLURM_PROCID",
+    )
+    for var in _ENV_VARS:
+        val = os.environ.get(var)
+        if val is not None:
+            return int(val)
     return int(_get_mpi_comm().Get_rank())
 
 
