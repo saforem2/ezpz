@@ -1166,9 +1166,8 @@ class TestWriteLocalhostToHostfile:
         content = hf.read_text()
         assert len(content) > 0
 
-    def test_nonzero_rank_does_not_write(self, tmp_path):
-        comm = _FakeComm(rank=1, size=4)
-        dist._MPI_COMM = comm
+    def test_nonzero_rank_does_not_write(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dist, "get_rank", lambda: 1)
         hf = tmp_path / "hostfile"
         dist.write_localhost_to_hostfile(hf)
         assert not hf.exists()
