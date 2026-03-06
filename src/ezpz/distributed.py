@@ -54,7 +54,9 @@ __all__ = [
     "get_world_size_in_use",
     "get_num_nodes",
     "get_gpus_per_node",
+    "get_cpus_per_node",
     "get_node_index",
+    "get_device_properties",
     # -- device / backend --
     "get_torch_device",
     "get_torch_device_type",
@@ -90,6 +92,7 @@ __all__ = [
     "get_nodes_from_hostfile",
     "get_hostfile_with_fallback",
     "write_localhost_to_hostfile",
+    "write_hostfile_from_list_of_hosts",
 ]
 
 # ---------------------------------------------------------------------------
@@ -282,6 +285,11 @@ def get_gpus_per_node() -> int:
     return 0
 
 
+def get_cpus_per_node() -> int:
+    """Return the number of CPUs available on the local node."""
+    return os.cpu_count() or 1
+
+
 def get_node_index() -> int:
     """Return the index of the current node (``rank // gpus_per_node``)."""
     gpn = get_gpus_per_node()
@@ -351,6 +359,28 @@ def get_torch_device(
             return torch.device(normalized) if as_torch_device else normalized
     dt = device_type if device_type is not None else get_torch_device_type()
     return torch.device(dt) if as_torch_device else dt
+
+
+def get_device_properties(device: int | None = None) -> dict[str, Any]:
+    """Return device properties as a dictionary.
+
+    Args:
+        device: Device index.  Defaults to ``get_local_rank()``.
+    """
+    import torch
+
+    device_type = get_torch_device_type()
+    idx = device if device is not None else get_local_rank()
+    if device_type == "cuda":
+        props = torch.cuda.get_device_properties(idx)
+        return {"name": props.name, "total_memory": props.total_mem}
+    if device_type == "xpu" and hasattr(torch, "xpu"):
+        props = torch.xpu.get_device_properties(idx)
+        return {
+            "name": props.name,
+            "total_memory": getattr(props, "total_memory", -1),
+        }
+    return {"name": device_type, "total_memory": -1}
 
 
 def get_torch_backend() -> str:
@@ -1263,6 +1293,22 @@ def write_localhost_to_hostfile(hostfile: str | os.PathLike) -> None:
     if get_rank() == 0:
         hn = get_hostname()
         Path(hostfile).write_text(hn)
+
+
+def write_hostfile_from_list_of_hosts(
+    hosts: Sequence[str],
+    hostfile: str | os.PathLike,
+) -> Path:
+    """Write a hostfile from a list of hostnames.
+
+    Args:
+        hosts: Sequence of hostnames to write.
+        hostfile: Path to write to.
+    """
+    hfp = Path(hostfile)
+    hfp.parent.mkdir(parents=True, exist_ok=True)
+    hfp.write_text("\n".join(hosts) + "\n")
+    return hfp
 
 
 # ===================================================================
