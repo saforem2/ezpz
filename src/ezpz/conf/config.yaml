@@ -2,8 +2,6 @@
 # @package _global_
 _target_: ezpz.configs.TrainConfig
 # ----------------------------------------------------------------------------
-framework: pytorch          # ML framework to use: one of 'pytorch', 'tensorflow'
-backend: 'DDP'              # Backend to use for distributed training
 ds_config_path: null
 port: null
 seed: null

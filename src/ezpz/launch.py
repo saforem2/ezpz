@@ -483,7 +483,7 @@ def launch(
 
 def run(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for launching commands with scheduler fallback."""
-    import ezpz.dist
+    import ezpz.distributed
 
     configure_warnings()
     argv = [] if argv is None else list(argv)
@@ -532,7 +532,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 filters=args.filter,
                 launcher_args=launcher_args,
             )
-            ezpz.dist.cleanup()
+            ezpz.distributed.cleanup()
             return 0
 
     requested_nproc = args.nproc if args.nproc > -1 else None
@@ -578,7 +578,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
     logger.info(f"Execution finished with {retcode}.")
     logger.info(f"Executing finished in {cmd_finish - cmd_start:.2f} seconds.")
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()
     return retcode
 
 

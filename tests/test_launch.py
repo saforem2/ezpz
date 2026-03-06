@@ -64,7 +64,7 @@ class TestLaunch:
         monkeypatch.setattr(launch, "configure_warnings", lambda: None)
         cleanup_called: list[bool] = []
         monkeypatch.setattr(
-            launch.ezpz.dist,
+            launch.ezpz.distributed,
             "cleanup",
             lambda: cleanup_called.append(True),
         )
@@ -119,7 +119,7 @@ class TestLaunch:
         monkeypatch.setattr(launch, "configure_warnings", lambda: None)
         cleanup_called: list[bool] = []
         monkeypatch.setattr(
-            launch.ezpz.dist,
+            launch.ezpz.distributed,
             "cleanup",
             lambda: cleanup_called.append(True),
         )
@@ -208,7 +208,7 @@ class TestLaunch:
         monkeypatch.setattr(launch, "get_scheduler", lambda: "unknown")
         monkeypatch.setattr(launch, "get_active_jobid", lambda: None)
         monkeypatch.setattr(launch, "configure_warnings", lambda: None)
-        monkeypatch.setattr(launch.ezpz.dist, "cleanup", lambda: None)
+        monkeypatch.setattr(launch.ezpz.distributed, "cleanup", lambda: None)
         recorded: dict[str, object] = {}
         warnings: list[str] = []
 

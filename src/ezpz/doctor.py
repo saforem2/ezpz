@@ -152,6 +152,22 @@ def check_scheduler(
     )
 
 
+def _verify_wandb_from_netrc() -> bool:
+    """Return ``True`` if ``~/.netrc`` has wandb credentials."""
+    from pathlib import Path
+
+    netrc_path = Path(os.path.expanduser("~/.netrc"))
+    if not netrc_path.is_file():
+        return False
+    try:
+        import netrc
+
+        auth = netrc.netrc(netrc_path).authenticators("api.wandb.ai")
+        return bool(auth)
+    except Exception:
+        return False
+
+
 def check_wandb(environ: Optional[dict[str, str]] = None) -> CheckResult:
     """Advise on Weights & Biases connectivity expectations."""
     env = os.environ if environ is None else environ
@@ -192,7 +208,7 @@ def check_wandb(environ: Optional[dict[str, str]] = None) -> CheckResult:
             status="ok",
             message="wandb is available and WANDB_API_KEY is set for cloud logging.",
         )
-    if ezpz.dist._verify_wandb_from_netrc_config():
+    if _verify_wandb_from_netrc():
         return CheckResult(
             name="wandb",
             status="ok",

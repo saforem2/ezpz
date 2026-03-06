@@ -61,13 +61,14 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
 import argparse
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 import time
 from typing import Dict, Iterable, List, Tuple
 from contextlib import nullcontext
 import ezpz
-import ezpz.dist
+import ezpz.distributed
 
 import torch
 from torch import nn
@@ -84,6 +85,63 @@ logger = ezpz.get_logger(__name__)
 
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+
+MODEL_PRESETS = {
+    "debug": {
+        "hidden": 64,
+        "n_layers": 2,
+        "n_heads": 2,
+        "seq_len": 12,
+        "timesteps": 32,
+        "batch_size": 4,
+    },
+    "small": {
+        "hidden": 128,
+        "n_layers": 4,
+        "n_heads": 4,
+        "seq_len": 24,
+        "timesteps": 64,
+        "batch_size": 8,
+    },
+    "medium": {
+        "hidden": 256,
+        "n_layers": 6,
+        "n_heads": 8,
+        "seq_len": 48,
+        "timesteps": 128,
+        "batch_size": 4,
+    },
+    "large": {
+        "hidden": 512,
+        "n_layers": 8,
+        "n_heads": 8,
+        "seq_len": 64,
+        "timesteps": 256,
+        "batch_size": 2,
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "hidden": ["--hidden"],
+    "n_layers": ["--n-layers"],
+    "n_heads": ["--n-heads"],
+    "seq_len": ["--seq-len"],
+    "timesteps": ["--timesteps"],
+    "batch_size": ["--batch-size"],
+}
+
+
+def _arg_provided(argv: list[str], flags: list[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS[args.model]
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
 
 
 def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
@@ -346,7 +404,7 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
-    wrapped_model = ezpz.dist.wrap_model(
+    wrapped_model = ezpz.distributed.wrap_model(
         model, use_fsdp=args.fsdp, dtype=args.dtype
     )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
@@ -399,7 +457,7 @@ def train(
             tokens = next(loader_iter)
         tokens = tokens.to(device)
         t1 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         full_param_ctx = (
             FSDP.summon_full_params(wrapped_model)
             if is_fsdp
@@ -412,13 +470,13 @@ def train(
         pred_noise = wrapped_model(xt, t)
         loss = torch.mean((pred_noise - noise) ** 2)
         t2 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
 
         loss.backward()
         optim.step()
         optim.zero_grad(set_to_none=True)
         t3 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
 
         if step % args.log_freq == 0 or step == steps - 1:
             logger.info(
@@ -508,8 +566,9 @@ def load_hf_texts(
     return texts
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the diffusion text example."""
+    argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="Tiny diffusion example for text generation."
     )
@@ -587,12 +646,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--lr", type=float, default=float(os.environ.get("LR", 3e-3))
     )
-    # parser.add_argument(
-    #     "--ddp",
-    #     action="store_true",
-    #     help="Enable DDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
-    # )
-    return parser.parse_args()
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=sorted(MODEL_PRESETS.keys()),
+        help="Model size preset (overrides hidden/layer/head defaults).",
+    )
+    parser.add_argument(
+        "--n-layers", type=int, default=2,
+    )
+    parser.add_argument(
+        "--n-heads", type=int, default=4,
+    )
+    args = parser.parse_args(argv)
+    apply_model_preset(args, argv)
+    return args
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -604,14 +673,14 @@ def main(args: argparse.Namespace) -> None:
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
-    # self._created_at = ezpz.dist.broadcast(self._created_at, root=0)
+    # self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
     if ezpz.get_rank() == 0:
-        run = ezpz.dist.setup_wandb(
+        run = ezpz.distributed.setup_wandb(
             project_name=WBPROJ_NAME,
             # outdir=outdir,
         )
         assert run is not None and run is wandb.run
-        # wandb.config.update(ezpz.dist.get_dist_info())
+        # wandb.config.update(ezpz.distributed.get_dist_info())
         wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
         # wandb.config.update({"args": {**vars(args)}})
 
@@ -647,6 +716,8 @@ def main(args: argparse.Namespace) -> None:
         hidden_size=args.hidden,
         max_seq_len=args.seq_len,
         timesteps=args.timesteps,
+        n_layers=args.n_layers,
+        n_heads=args.n_heads,
     )
     device = ezpz.get_torch_device(as_torch_device=True)
     model.to(device)
@@ -704,4 +775,4 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     args = parse_args()
     main(args)
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()

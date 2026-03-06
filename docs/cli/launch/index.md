@@ -85,7 +85,7 @@ accelerators.
         ```
 
 - Automatic distributed initialization using
-  [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/dist/#ezpz.dist.setup_torch)
+  [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/distributed/#ezpz.distributed.setup_torch)
   with automatic {device, backend} selection
 
     ```python

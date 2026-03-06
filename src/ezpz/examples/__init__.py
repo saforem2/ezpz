@@ -33,7 +33,7 @@ def get_example_outdir(
     created_at = os.environ.get("EZPZ_LOG_TIMESTAMP")
     if created_at is None:
         created_at = ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
-    created_at = ezpz.dist.broadcast(created_at, root=0)
+    created_at = ezpz.distributed.broadcast(created_at, root=0)
     if created_at is not None:
         os.environ["EZPZ_LOG_TIMESTAMP"] = created_at
     base_path = (

@@ -127,7 +127,7 @@ from typing import Iterable, Optional
 from torch.utils.data import DataLoader, DistributedSampler
 
 import ezpz
-import ezpz.dist
+import ezpz.distributed
 import ezpz.history
 
 import torch
@@ -683,7 +683,7 @@ def train(
     outdir: Path | str | os.PathLike,
 ) -> int:
     """Run TP/SP + FSDP training and optionally log metrics."""
-    world_size = ezpz.dist.get_world_size()
+    world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
     device_mesh = init_device_mesh(
@@ -734,16 +734,15 @@ def train(
     hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
     dataset_tag = args.dataset.lower().replace("/", "_")
     if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
-        run = ezpz.dist.setup_wandb(project_name=WBPROJ_NAME)
-        if wandb is not None:
-            assert run is not None and run is wandb.run
+        run = ezpz.distributed.setup_wandb(project_name=WBPROJ_NAME)
+        if run is not None and wandb is not None and run is wandb.run:
             from dataclasses import asdict
 
             wandb.config.update(ezpz.get_dist_info())
             wandb.config.update(asdict(config))  # type:ignore
             wandb.config.update({"args": {**vars(args)}})
 
-    device_type = ezpz.dist.get_torch_device_type()
+    device_type = ezpz.distributed.get_torch_device_type()
     device = (
         torch.device("cpu")
         if device_type == "cpu"
@@ -863,7 +862,7 @@ def train(
 
     # outdir = Path(args.outdir).joinpath(ezpz.utils.get_timestamp())
     metrics_path = Path(outdir).joinpath(
-        f"metrics-{ezpz.dist.get_rank()}.jsonl"
+        f"metrics-{ezpz.distributed.get_rank()}.jsonl"
     )
     Path(outdir).mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
@@ -887,7 +886,7 @@ def train(
         if sampler is not None:
             sampler.set_epoch(epoch)
         for idx, batch in enumerate(dataloader):
-            ezpz.dist.synchronize()
+            ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
             if isinstance(batch, dict) and "input_ids" in batch:
@@ -927,7 +926,7 @@ def train(
             if pad_id is not None:
                 labels = labels.clone()
                 labels[labels == int(pad_id)] = -100
-            ezpz.dist.synchronize()
+            ezpz.distributed.synchronize()
             t1 = perf_counter()
             tp_mod = getattr(ezpz, "tp", None)
             tp_rank = (
@@ -975,7 +974,7 @@ def train(
                     model.parameters(), args.max_grad_norm
                 )
             optimizer.step()
-            ezpz.dist.synchronize()
+            ezpz.distributed.synchronize()
             t2 = perf_counter()
             global_step += 1
             metrics: dict[str, object] = {
@@ -1035,7 +1034,7 @@ def train(
             history.log_metrics(
                 metrics,
                 logger=logger,
-                debug_prefixes=("hist/",),
+                debug_prefixes=("hist/", "grad/", "input/", "labels/", "param/"),
                 include_summary=True,
                 rank0_only_summary=True,
             )
@@ -1044,7 +1043,7 @@ def train(
     if act_handles:
         for handle in act_handles:
             handle.remove()
-    ezpz.dist.barrier()
+    ezpz.distributed.barrier()
     logger.info("Finished 2D training")
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
@@ -1061,7 +1060,7 @@ def train(
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
     t0 = time.perf_counter()
-    rank = ezpz.dist.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+    rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
@@ -1094,5 +1093,5 @@ def main(args: argparse.Namespace) -> int:
 if __name__ == "__main__":
     args = parse_args()
     main(args)
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()
     sys.exit(0)

@@ -25,7 +25,6 @@ import torch
 import transformers
 from huggingface_hub import HfApi
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 from transformers import (
     CONFIG_MAPPING,
     AutoConfig,
@@ -566,10 +565,19 @@ def main() -> None:
     )
 
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(
-        len(train_dataloader) / training_args.gradient_accumulation_steps
-    )
+    try:
+        num_update_steps_per_epoch = math.ceil(
+            len(train_dataloader) / training_args.gradient_accumulation_steps
+        )
+    except TypeError:
+        # IterableDataset (streaming) has no len(); require max_steps
+        num_update_steps_per_epoch = None
     if training_args.max_steps <= 0:
+        if num_update_steps_per_epoch is None:
+            raise ValueError(
+                "max_steps must be set when using a streaming / "
+                "IterableDataset (dataset length is unknown)."
+            )
         training_args.max_steps = int(
             training_args.num_train_epochs * num_update_steps_per_epoch
         )
@@ -595,29 +603,22 @@ def main() -> None:
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
-    num_update_steps_per_epoch = math.ceil(
-        len(train_dataloader) / training_args.gradient_accumulation_steps
-    )
-    if overrode_max_train_steps:
-        training_args.max_steps = int(
-            training_args.num_train_epochs * num_update_steps_per_epoch
+    try:
+        num_update_steps_per_epoch = math.ceil(
+            len(train_dataloader) / training_args.gradient_accumulation_steps
         )
-    training_args.num_train_epochs = math.ceil(
-        training_args.max_steps / num_update_steps_per_epoch
-    )
+    except TypeError:
+        num_update_steps_per_epoch = None
+    if num_update_steps_per_epoch is not None:
+        if overrode_max_train_steps:
+            training_args.max_steps = int(
+                training_args.num_train_epochs * num_update_steps_per_epoch
+            )
+        training_args.num_train_epochs = math.ceil(
+            training_args.max_steps / num_update_steps_per_epoch
+        )
 
     checkpointing_steps = training_args.save_steps
-
-    if report_to is not None and report_to != "none":
-        experiment_config = {
-            "model": model_args.__dict__,
-            "data": data_args.__dict__,
-            "training": training_args.to_dict(),
-        }
-        experiment_config["lr_scheduler_type"] = experiment_config[
-            "training"
-        ].get("lr_scheduler_type")
-        accelerator.init_trackers("ezpz-hf", experiment_config)
 
     train_start = time.perf_counter()
     total_batch_size = (
@@ -642,7 +643,10 @@ def main() -> None:
     )
     logger.info("***** Running training *****")
     logger.info("  Num processes = %s", accelerator.num_processes)
-    logger.info("  Num examples = %s", len(train_dataset))
+    logger.info(
+        "  Num examples = %s",
+        len(train_dataset) if hasattr(train_dataset, "__len__") else "unknown (streaming)",
+    )
     logger.info("  Num Epochs = %s", training_args.num_train_epochs)
     logger.info(
         "  Instantaneous batch size per device = %s",
@@ -658,9 +662,14 @@ def main() -> None:
     )
     logger.info("  Total optimization steps = %s", training_args.max_steps)
 
-    progress_bar = tqdm(
-        range(training_args.max_steps),
-        disable=not accelerator.is_local_main_process,
+    logging_steps = max(1, int(training_args.logging_steps))
+    outdir = Path(training_args.output_dir) if training_args.output_dir else Path.cwd() / "outputs"
+    outdir.mkdir(parents=True, exist_ok=True)
+    history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=True,
+        jsonl_path=outdir / "metrics.jsonl",
+        jsonl_overwrite=True,
     )
     completed_steps = 0
     starting_epoch = 0
@@ -686,25 +695,30 @@ def main() -> None:
         if "epoch" in training_difference:
             starting_epoch = int(training_difference.replace("epoch_", "")) + 1
             resume_step = None
-            completed_steps = starting_epoch * num_update_steps_per_epoch
+            completed_steps = (
+                starting_epoch * num_update_steps_per_epoch
+                if num_update_steps_per_epoch is not None
+                else 0
+            )
         else:
             resume_step = (
                 int(training_difference.replace("step_", ""))
                 * training_args.gradient_accumulation_steps
             )
-            starting_epoch = resume_step // len(train_dataloader)
             completed_steps = resume_step // training_args.gradient_accumulation_steps
-            resume_step -= starting_epoch * len(train_dataloader)
+            if num_update_steps_per_epoch is not None:
+                starting_epoch = resume_step // len(train_dataloader)
+                resume_step -= starting_epoch * len(train_dataloader)
+            else:
+                starting_epoch = 0
     else:
         resume_step = None
 
-    progress_bar.update(completed_steps)
     total_loss = 0
     perplexity: Optional[float] = None
-    for epoch in range(starting_epoch, training_args.num_train_epochs):
+    for epoch in range(starting_epoch, int(training_args.num_train_epochs)):
         model.train()
-        if report_to is not None and report_to != "none":
-            total_loss = 0
+        total_loss = 0
         if (
             training_args.resume_from_checkpoint
             and epoch == starting_epoch
@@ -728,8 +742,30 @@ def main() -> None:
 
             if accelerator.sync_gradients:
                 t1step = time.perf_counter() - t0step
-                progress_bar.update(1)
                 completed_steps += 1
+                total_loss += loss.detach().float().item()
+
+                tokens_per_step = total_batch_size * block_size
+                tps = tokens_per_step / t1step if t1step > 0 else 0.0
+                step_loss = loss.detach().float().item()
+                try:
+                    step_ppl = math.exp(step_loss)
+                except OverflowError:
+                    step_ppl = float("inf")
+
+                metrics = {
+                    "step": completed_steps,
+                    "epoch": epoch,
+                    "loss": step_loss,
+                    "perplexity": step_ppl,
+                    "learning_rate": lr_scheduler.get_last_lr()[0],
+                    "dts": t1step,
+                    "tokens_per_sec": tps,
+                }
+
+                if completed_steps % logging_steps == 0:
+                    summary = history.update(metrics)
+                    logger.info(summary)
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
@@ -739,20 +775,6 @@ def main() -> None:
                             training_args.output_dir, output_dir
                         )
                     accelerator.save_state(output_dir)
-
-            logging_steps = max(1, int(training_args.logging_steps))
-            if completed_steps % logging_steps == 0:
-                if report_to is not None and report_to != "none":
-                    logs = {
-                        "epoch": epoch,
-                        "step": completed_steps,
-                        "loss": loss.detach().float(),
-                        "learning_rate": lr_scheduler.get_last_lr()[0],
-                        "dts": t1step,
-                    }
-                    accelerator.log(logs, step=completed_steps)
-                    if wandb is not None and getattr(wandb, "run", None) is not None:
-                        wandb.log(logs)
 
             if completed_steps >= training_args.max_steps:
                 break
@@ -778,24 +800,16 @@ def main() -> None:
             except OverflowError:
                 perplexity = float("inf")
 
-            logger.info(
-                "epoch %s: perplexity: %s eval_loss: %s",
-                epoch,
-                perplexity,
-                eval_loss,
-            )
-
-            if report_to is not None and report_to != "none":
-                accelerator.log(
-                    {
-                        "perplexity": perplexity,
-                        "eval_loss": eval_loss,
-                        "train_loss": float(total_loss) / len(train_dataloader),
-                        "epoch": epoch,
-                        "step": completed_steps,
-                    },
-                    step=completed_steps,
-                )
+            avg_train_loss = float(total_loss) / max(completed_steps, 1)
+            eval_metrics = {
+                "step": completed_steps,
+                "epoch": epoch,
+                "eval_loss": float(eval_loss),
+                "eval_perplexity": perplexity,
+                "train_loss": avg_train_loss,
+            }
+            summary = history.update(eval_metrics)
+            logger.info(summary)
 
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
@@ -819,9 +833,6 @@ def main() -> None:
             output_dir = f"epoch_{epoch}"
             output_dir = os.path.join(output_dir, output_dir)
             accelerator.save_state(output_dir)
-
-    if report_to is not None and report_to != "none":
-        accelerator.end_training()
 
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
@@ -857,6 +868,17 @@ def main() -> None:
         "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
+
+    if accelerator.is_main_process:
+        history.finalize(
+            run_name="ezpz.examples.hf",
+            dataset_fname="train",
+            warmup=0,
+            save=True,
+            plot=True,
+            outdir=outdir,
+        )
+
     if wandb is not None and getattr(wandb, "run", None) is not None:
         try:
             wandb.log(

@@ -45,6 +45,7 @@ Copyright &copy; 2026 Sam Foreman
 nav = [
     { "🍋 ezpz" = "index.md" },
 
+    { "👀 Overview" = "overview.md" },
     { "🏃‍♂️ Quickstart" = "quickstart.md" },
 
     { "🧰 CLI" = [

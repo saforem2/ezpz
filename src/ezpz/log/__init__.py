@@ -11,7 +11,7 @@ from typing import Optional
 
 from ezpz.configs import get_logging_config
 
-# from ezpz.dist import get_rank, get_world_size
+# from ezpz.distributed import get_rank, get_world_size
 from ezpz.log.config import STYLES, use_colored_logs
 from ezpz.log.console import (
     Console,
@@ -67,7 +67,7 @@ __all__ = [
 # #
 # # if __name__ == "__main__":  # pragma: no cover
 # #     print_styles()
-# from ezpz.dist import get_rank, get_world_size
+# from ezpz.distributed import get_rank, get_world_size
 #
 # RANK = get_rank()
 # WORLD_SIZE = get_world_size()
@@ -84,7 +84,7 @@ def get_file_logger(
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     import logging
 
-    from ezpz.dist import get_rank
+    from ezpz.distributed import get_rank
 
     fname = "output" if fname is None else fname
     log = logging.getLogger(name)
@@ -191,9 +191,12 @@ def get_logger(
 ) -> logging.Logger:
     """Return a logger initialised with the project's logging configuration."""
     if rank is None and rank_zero_only:
-        from ezpz.dist import get_rank
+        try:
+            from ezpz.distributed import get_rank
 
-        rank = get_rank()
+            rank = get_rank()
+        except (RuntimeError, ImportError, Exception):
+            rank = 0
     assert rank is not None
     # if is_interactive():
     #     return get_rich_logger(name=name, level=level)
@@ -266,7 +269,7 @@ def get_rich_logger(
     name: Optional[str] = None, level: Optional[str] = None
 ) -> logging.Logger:
     """Return a logger backed by a single :class:`RichHandler`."""
-    from ezpz.dist import get_world_size
+    from ezpz.distributed import get_world_size
     from ezpz.log.handler import RichHandler
 
     level = "INFO" if level is None else level

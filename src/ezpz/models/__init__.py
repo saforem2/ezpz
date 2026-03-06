@@ -15,6 +15,7 @@ def summarize_model(
     input_size: Optional[Sequence[int]] = None,
 ):
     try:
+        import torchinfo
         from torchinfo import summary
 
         summary_str = summary(

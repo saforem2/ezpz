@@ -787,7 +787,7 @@ def get_hf_datasets_wip(
         return output
 
     # with training_args.main_process_first(desc="dataset map tokenization"):
-    if ezpz.dist.get_rank() == 0:
+    if ezpz.get_rank() == 0:
         if not data_args.streaming:
             tokenized_datasets = raw_datasets.map(
                 tokenize_function,

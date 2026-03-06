@@ -80,7 +80,7 @@ from typing import Any, Optional
 import torch
 
 import ezpz
-import ezpz.dist
+import ezpz.distributed
 
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
@@ -451,11 +451,11 @@ def train_fn(
     """
     # seed = int(os.environ.get('SEED', '0'))
     # rank = ezpz.setup(backend='DDP', seed=seed)
-    world_size = ezpz.dist.get_world_size()
+    world_size = ezpz.distributed.get_world_size()
 
-    local_rank = ezpz.dist.get_local_rank()
+    local_rank = ezpz.distributed.get_local_rank()
     # device_type = str(ezpz.get_torch_device(as_torch_device=False))
-    device_type = ezpz.dist.get_torch_device_type()
+    device_type = ezpz.distributed.get_torch_device_type()
     device = torch.device(f"{device_type}:{local_rank}")
     # torch.set_default_device(device)
     logger.info("train_args=%s", vars(args))
@@ -464,12 +464,13 @@ def train_fn(
         dataset_dict = get_fake_data(
             img_size=args.img_size,
             batch_size=args.batch_size,
+            num_workers=args.num_workers,
         )
     elif dataset == "mnist":
         dataset_dict = get_mnist(
             train_batch_size=args.batch_size,
             test_batch_size=args.batch_size,
-            download=(ezpz.dist.get_rank() == 0),
+            download=(ezpz.distributed.get_rank() == 0),
         )
     else:
         raise ValueError(
@@ -544,14 +545,14 @@ def train_fn(
                     "Failed to watch model with wandb; continuing..."
                 )
 
-    # model = ezpz.dist.wrap_model(
+    # model = ezpz.distributed.wrap_model(
     #     model=model,
     #     use_fsdp=args.fsdp,
     #     dtype=args.dtype,
     #     # device_id=int(ezpz.get_local_rank())
     # )
     if world_size > 1:
-        model = ezpz.dist.wrap_model(
+        model = ezpz.distributed.wrap_model(
             model=model,
             use_fsdp=args.fsdp,
             dtype=args.dtype,
@@ -574,21 +575,21 @@ def train_fn(
         #             logger.warning(
         #                 "Unable to wrap model with FSDP. Falling back to DDP..."
         #             )
-        #             model = ezpz.dist.wrap_model(model=model, f)
+        #             model = ezpz.distributed.wrap_model(model=model, f)
         #     else:
         #         try:
         #             model = FSDP(model)
         #         except Exception:
-        #             model = ezpz.dist.wrap_model(args=args, model=model)
+        #             model = ezpz.distributed.wrap_model(args=args, model=model)
         # else:
         #     logger.info("Using DDP for distributed training")
-        #     model = ezpz.dist.prepare_model_for_ddp(model)
+        #     model = ezpz.distributed.prepare_model_for_ddp(model)
 
     if args.compile:
         logger.info("Compiling model")
         model = torch.compile(model)
 
-    torch_dtype = ezpz.dist.TORCH_DTYPES_MAP[args.dtype]
+    torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
     model.train()  # type:ignore
@@ -626,29 +627,31 @@ def train_fn(
             )
         )
     )
-    # data["train"].to(ezpz.dist.get_torch_device_type())
+    # data["train"].to(ezpz.distributed.get_torch_device_type())
     last_step = -1
     for step, batch in enumerate(dataset_dict["train"]["loader"]):
         last_step = step
         if args.max_iters is not None and step > int(args.max_iters):
             break
+        if step < warmup_iters:
+            logger.info("warmup step %d / %d", step, warmup_iters)
         t0 = time.perf_counter()
         inputs = batch[0].to(device=device, non_blocking=True)
         label = batch[1].to(device=device, non_blocking=True)
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         with torch.autocast(device_type=device_type, dtype=torch_dtype):
             t1 = time.perf_counter()
             outputs = model(inputs)
             loss = criterion(outputs, label)
             acc = (outputs.argmax(dim=-1) == label).float().mean()
             t2 = time.perf_counter()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         t3 = time.perf_counter()
         optimizer.step()
-        ezpz.dist.synchronize()
+        ezpz.distributed.synchronize()
         t4 = time.perf_counter()
         if step >= warmup_iters:
             loss_value = float(loss.detach().item())
@@ -738,7 +741,7 @@ def train_fn(
             logger.info("\n".join(f"[eval] {line}" for line in summary_table))
         model.train()  # type:ignore
 
-    if ezpz.dist.get_rank() == 0:
+    if ezpz.distributed.get_rank() == 0:
         if history.history and any(len(v) for v in history.history.values()):
             dataset = history.finalize(
                 outdir=outdir,
@@ -770,7 +773,7 @@ def train_fn(
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
     t0 = time.perf_counter()
-    rank = ezpz.dist.setup_torch()
+    rank = ezpz.distributed.setup_torch()
     t_setup = time.perf_counter()
     if rank == 0 and ezpz.verify_wandb():
         try:
@@ -867,4 +870,4 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     args = parse_args()
     main(args)
-    ezpz.dist.cleanup()
+    ezpz.distributed.cleanup()

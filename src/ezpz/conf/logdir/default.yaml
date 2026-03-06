@@ -7,8 +7,6 @@ hydra:
   run:
     # Default output paths for all file logs
     dir: "outputs/runs/\
-      /${framework}\
-      /${backend}\
       /${now:%Y-%m-%d}\
       /${now:%H-%M-%S}"
   sweep:

@@ -13,7 +13,7 @@ from typing import Any, Optional, Union
 import yaml
 
 from ezpz.configs import get_scheduler
-from ezpz.dist import get_rank
+from ezpz.distributed import get_rank
 
 RANK = get_rank()
 SCHEDULER = get_scheduler()
@@ -113,17 +113,13 @@ def get_jobfile_json() -> Path:
 
 
 def get_jobenv(
-    framework: Optional[str] = None,
     hostfile: Optional[Union[str, Path]] = None,
-    # max_hosts_to_print: Optional[int] = None,
     verbose: Optional[bool] = None,
     verbose_dist_info: Optional[bool] = None,
     verbose_pbs_env: Optional[bool] = None,
 ) -> dict:
     """Collect runtime information describing the active batch job."""
-    from ezpz.dist import (
-        get_dist_info,
-    )  # get_pbs_launch_info,; get_pbs_launch_cmd,
+    from ezpz.distributed import get_dist_info
     from ezpz.pbs import get_pbs_env
 
     hostfile = os.environ.get("HOSTFILE") if hostfile is None else hostfile
@@ -134,7 +130,6 @@ def get_jobenv(
     try:
         jobenv |= get_dist_info(
             hostfile=hostfile,
-            framework=framework,
             verbose=verbose_dist_info,
         )
     except Exception as exc:
@@ -144,12 +139,7 @@ def get_jobenv(
     if scheduler.lower() != "pbs" and os.environ.get("PBS_JOBID"):
         scheduler = "PBS"
     if scheduler.lower() == "pbs":
-        # from ezpz.dist import get_pbs_launch_cmd
-        # if (dlaunch := os.environ.get("DIST_LAUNCH", None)) is not None:
-        #     dinfo |= {"DIST_LAUNCH": dlaunch}
         jobenv |= get_pbs_env(hostfile=hostfile, verbose=verbose_pbs_env)
-        # jobenv |= get_pbs_launch_info(hostfile=hostfile)
-        # jobenv |= {'LAUNCH_CMD': get_pbs_launch_cmd(hostfile=hostfile)}
         if verbose:
             log.info(
                 "\n".join(
@@ -158,12 +148,6 @@ def get_jobenv(
                     + ["\n"]
                 )
             )
-        # jobenv |= get_dist_info(
-        #     framework=framework,
-        #     verbose=verbose,
-        #     max_hosts_to_print=max_hosts_to_print,
-        #     hostfile=hostfile,
-        # )
         return jobenv
     # TODO: Add Slurm support to Python API
     raise ValueError(f"{scheduler} not yet implemented!")
@@ -348,7 +332,7 @@ def savejobenv_yaml(
 #         ngpu_per_host: Optional[int] = None,
 #         hostfile: Optional[Union[str, os.PathLike, Path]] = None,
 # ):
-#     # from ezpz.dist import get_pbs_launch_cmd
+#     # from ezpz.distributed import get_pbs_launch_cmd
 #     name = "LAUNCH_CMD"
 #     lcmd = (jobenv := get_jobenv()).get(
 #         name,
@@ -388,9 +372,7 @@ def savejobenv_yaml(
 
 def savejobenv(
     verbose: Optional[bool] = None,
-    framework: Optional[str] = None,
     hostfile: Optional[Union[str, Path]] = None,
-    # max_hosts_to_print: Optional[int] = None,
     print_jobenv: Optional[bool] = None,
     verbose_dotenv: Optional[bool] = None,
     verbose_get_jobenv: Optional[bool] = None,
@@ -401,8 +383,6 @@ def savejobenv(
     jobenv: dict[str, Any] = get_jobenv(
         verbose=verbose_get_jobenv,
         hostfile=hostfile,
-        framework=framework,
-        # max_hosts_to_print=max_hosts_to_print,
         verbose_pbs_env=verbose_pbs_env,
         verbose_dist_info=verbose_dist_info,
     )
@@ -506,7 +486,7 @@ def loadjobenv_from_yaml(
 
 def loadjobenv(jobdir: Optional[str | Path] = None) -> dict[str, str]:
     """Load job environment metadata from the cache under ``jobdir``."""
-    from ezpz.dist import get_dist_info
+    from ezpz.distributed import get_dist_info
     from ezpz.pbs import get_pbs_launch_info
 
     jobenv = {}
@@ -516,7 +496,7 @@ def loadjobenv(jobdir: Optional[str | Path] = None) -> dict[str, str]:
     jobenv |= get_pbs_launch_info()
     jobenv |= {
         f"{k.upper()}": f"{v}"
-        for k, v in (get_dist_info("pytorch", verbose=False).items())
+        for k, v in (get_dist_info(verbose=False).items())
     }
     for key, val in jobenv.items():
         os.environ[key] = val.as_posix() if isinstance(val, Path) else f"{val}"
@@ -545,7 +525,7 @@ def main(
 ):
     """Entry point that captures the current job environment and saves it."""
     # scheduler = get_scheduler()
-    # from ezpz.dist import get_dist_info
+    # from ezpz.distributed import get_dist_info
     # dinfo = get_dist_info(
     #     hostfile=hostfile,
     #     max_hosts_to_print=max_hosts_to_print,
@@ -576,9 +556,7 @@ def main(
     # _ = get_launch_cmd(verbose=True)
     try:
         savejobenv(
-            framework="pytorch",
             hostfile=hostfile,
-            # max_hosts_to_print=max_hosts_to_print,
             verbose=True,
             verbose_dist_info=True,
             print_jobenv=False,
@@ -635,7 +613,7 @@ if __name__ == "__main__":
     #     log.info('Didnt catch PBS_JOBID in env, loading jobenv!')
     #     _ = loadjobenv()
     #
-    # from ezpz.dist import get_dist_info
+    # from ezpz.distributed import get_dist_info
     # dinfo = get_dist_info()
     # log.info(
     #     '\n'.join(

@@ -79,7 +79,7 @@ These can be broken down (~roughly) into:
    Python API for writing hardware-agnostic, distributed PyTorch code.
     - See [**Features**](#features) for a list of core features and functionality
       provided by `ezpz`.
-    - See [`ezpz.dist`](./python/Code-Reference/dist.md) for details on
+    - See [`ezpz.distributed`](./python/Code-Reference/distributed.md) for details on
       the core logic related to device detection and distributed initialization.
 
 1. 🧰 [**CLI**](./cli/index.md): `ezpz <command>`  
@@ -318,7 +318,7 @@ Core features:
             ```
 
 1. **Automatic distributed initialization** using
-   [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/dist/#ezpz.dist.setup_torch)
+   [`ezpz.setup_torch()`](https://ezpz.cool/python/Code-Reference/distributed/#ezpz.distributed.setup_torch)
    with automatic {device, backend} selection
 
      ```python

@@ -29,7 +29,7 @@ from torch.nn.parallel import DistributedDataParallel
 from ezpz import (TrainConfig, get_gpus_per_node, get_local_rank, get_rank,
                   get_torch_backend, get_torch_device, get_world_size, setup,
                   setup_wandb, timeitlogit)
-from ezpz.dist import get_dist_info, get_node_index
+from ezpz.distributed import get_dist_info, get_node_index
 from ezpz.model import SimpleCNN
 
 try:
@@ -83,7 +83,7 @@ def train_model() -> float:
 def main(cfg: DictConfig) -> int:
     config: TrainConfig = instantiate(cfg)
     assert isinstance(config, TrainConfig)
-    rank = setup(framework=config.framework, backend=config.backend, seed=config.seed)
+    rank = setup(seed=config.seed)
     t1 = time.perf_counter()
     t0 = os.environ.get("START_TIME", None)
     # if t0 is not None:
@@ -108,7 +108,7 @@ def main(cfg: DictConfig) -> int:
         log.warning(f"Startup time: {startup_time}")
         wandb.log({"startup_time": startup_time})
         log.warning(Text(f'{Emoji("rocket")} [{run.name}]({run.url})'))
-        _ = get_dist_info(config.framework, verbose=True)
+        _ = get_dist_info(verbose=True)
     # ---- TRAIN MODEL ---------------------------------
     _ = train_model()
     # --------------------------------------------------

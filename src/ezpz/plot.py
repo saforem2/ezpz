@@ -12,13 +12,11 @@ import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
-# from ezpz.dist import get_rank
 import numpy as np
 import torch
 import xarray as xr
 
-# import ezpz
-from ezpz.dist import get_rank
+from ezpz.distributed import get_rank
 from ezpz.log import get_logger
 
 # from ezpz import get_timestamp
