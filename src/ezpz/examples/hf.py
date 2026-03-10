@@ -226,7 +226,7 @@ def main() -> None:
     t_setup = time.perf_counter()
 
     logger.warning(accelerator.state)
-    if accelerator.is_local_main_process:
+    if accelerator.is_main_process:
         datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_info()
     else:
