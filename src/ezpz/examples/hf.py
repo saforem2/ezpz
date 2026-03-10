@@ -190,12 +190,9 @@ def main() -> None:
     output_dir = training_args.output_dir or os.getcwd()
     wandb = None
     report_to = training_args.report_to
-    log_with = report_to if report_to is not None and report_to != "none" else None
-    project_dir = output_dir if log_with is not None else None
+    # Don't let Accelerator manage wandb — we handle it via ezpz.setup_wandb()
     accelerator = Accelerator(
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
-        log_with=log_with,
-        project_dir=project_dir,
     )
     t_setup = time.perf_counter()
 
@@ -404,6 +401,9 @@ def main() -> None:
         except Exception:
             logger.info("W&B setup skipped")
 
+    ezpz.barrier()  # sync all ranks after rank-0 wandb setup
+    logger.info("[rank %d] wandb setup complete, proceeding to data prep", rank)
+
     if training_args.do_train:
         column_names = list(raw_datasets[train_split_name].features)  # type:ignore
     else:
@@ -414,6 +414,7 @@ def main() -> None:
         """Tokenize raw text using the configured tokenizer."""
         return tokenizer(examples[text_column_name])
 
+    logger.info("[rank %d] entering tokenization", rank)
     with training_args.main_process_first(desc="dataset map tokenization"):
         if not data_args.streaming:
             tokenized_datasets = raw_datasets.map(
@@ -429,6 +430,7 @@ def main() -> None:
                 batched=True,
                 remove_columns=column_names,
             )
+    logger.info("[rank %d] tokenization done", rank)
 
     if hasattr(config, "max_position_embeddings"):
         max_pos_embeddings = config.max_position_embeddings
@@ -483,6 +485,7 @@ def main() -> None:
         result["labels"] = result["input_ids"].copy()
         return result
 
+    logger.info("[rank %d] entering group_texts", rank)
     with training_args.main_process_first(desc="grouping texts together"):
         if not data_args.streaming:
             lm_datasets = tokenized_datasets.map(
@@ -496,6 +499,7 @@ def main() -> None:
                 group_texts,
                 batched=True,
             )
+    logger.info("[rank %d] group_texts done", rank)
 
     train_dataset = None
     if training_args.do_train:
@@ -593,6 +597,7 @@ def main() -> None:
         else training_args.max_steps * accelerator.num_processes,
     )
 
+    logger.info("[rank %d] calling accelerator.prepare() ...", rank)
     (
         model,
         optimizer,
@@ -602,6 +607,7 @@ def main() -> None:
     ) = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
+    logger.info("[rank %d] accelerator.prepare() complete", rank)
 
     try:
         num_update_steps_per_epoch = math.ceil(
