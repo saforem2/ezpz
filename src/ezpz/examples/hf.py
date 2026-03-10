@@ -44,7 +44,7 @@ from ezpz.configs import HfDataTrainingArguments, HfModelArguments
 logger = ezpz.get_logger(__name__)
 
 try:
-    from accelerate import Accelerator  # noqa: E402 type:ignore
+    from accelerate import Accelerator, FullyShardedDataParallelPlugin  # noqa: E402 type:ignore
     from accelerate.utils import set_seed
 except ImportError as exc:
     logger.error(
@@ -191,24 +191,37 @@ def main() -> None:
     wandb = None
     report_to = training_args.report_to
 
-    # When all ranks load the full model (low_cpu_mem_usage=False, the
-    # default), FSDP's sync_module_states broadcast is redundant and can
-    # hang on multi-node.  Disable it so FSDP skips the broadcast.
-    if (
-        os.environ.get("ACCELERATE_USE_FSDP", "").lower() == "true"
-        and not model_args.low_cpu_mem_usage
-    ):
-        os.environ["FSDP_SYNC_MODULE_STATES"] = "false"
-        logger.info(
-            "[rank %d] low_cpu_mem_usage=False, setting "
-            "FSDP_SYNC_MODULE_STATES=%s",
-            rank,
-            os.environ["FSDP_SYNC_MODULE_STATES"],
+    # Build FSDP plugin explicitly when --fsdp is requested, bypassing
+    # the env-var machinery which can pick up stale/conflicting defaults.
+    fsdp_plugin = None
+    use_fsdp = os.environ.get("ACCELERATE_USE_FSDP", "").lower() == "true"
+    if use_fsdp:
+        from torch.distributed.fsdp import (
+            BackwardPrefetch,
+            MixedPrecision,
+            ShardingStrategy,
         )
+
+        mp_policy = MixedPrecision(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.bfloat16,
+            buffer_dtype=torch.bfloat16,
+        ) if training_args.bf16 else None
+        fsdp_plugin = FullyShardedDataParallelPlugin(
+            sharding_strategy=ShardingStrategy.FULL_SHARD,
+            backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+            mixed_precision_policy=mp_policy,
+            use_orig_params=True,
+            sync_module_states=False,
+            cpu_ram_efficient_loading=False,
+            limit_all_gathers=True,
+        )
+        logger.info("[rank %d] using explicit FSDP plugin: %s", rank, fsdp_plugin)
 
     # Don't let Accelerator manage wandb — we handle it via ezpz.setup_wandb()
     accelerator = Accelerator(
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
+        fsdp_plugin=fsdp_plugin,
     )
     t_setup = time.perf_counter()
 
