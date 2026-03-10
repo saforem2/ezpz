@@ -190,6 +190,22 @@ def main() -> None:
     output_dir = training_args.output_dir or os.getcwd()
     wandb = None
     report_to = training_args.report_to
+
+    # When all ranks load the full model (low_cpu_mem_usage=False, the
+    # default), FSDP's sync_module_states broadcast is redundant and can
+    # hang on multi-node.  Disable it so FSDP skips the broadcast.
+    if (
+        os.environ.get("ACCELERATE_USE_FSDP", "").lower() == "true"
+        and not model_args.low_cpu_mem_usage
+    ):
+        os.environ["FSDP_SYNC_MODULE_STATES"] = "false"
+        logger.info(
+            "[rank %d] low_cpu_mem_usage=False, setting "
+            "FSDP_SYNC_MODULE_STATES=%s",
+            rank,
+            os.environ["FSDP_SYNC_MODULE_STATES"],
+        )
+
     # Don't let Accelerator manage wandb — we handle it via ezpz.setup_wandb()
     accelerator = Accelerator(
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
