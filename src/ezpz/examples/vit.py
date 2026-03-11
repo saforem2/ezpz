@@ -556,7 +556,7 @@ def train_fn(
             model=model,
             use_fsdp=args.fsdp,
             dtype=args.dtype,
-            device_id=ezpz.get_torch_device(as_torch_device=True),
+            device_id=int(ezpz.get_local_rank()),
         )
         # if args.fsdp:
         #     logger.info("Using FSDP for distributed training")
