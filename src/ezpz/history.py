@@ -417,8 +417,6 @@ class History:
         lines: list[str] = ["## Environment", ""]
         for section, details in env_info.items():
             if isinstance(details, dict):
-                lines.append(f"### {section}")
-                lines.append("")
                 lines.extend((f"### {section}", ""))
                 lines.extend(
                     f"- **{key}**: {value}" for key, value in details.items()
@@ -478,6 +476,27 @@ class History:
         }
         if env_vars:
             summary["Environment Variables"] = env_vars
+
+        try:
+            dist_info = ezpz.get_dist_info()
+            summary["Distributed"] = {
+                str(k): str(v) for k, v in dist_info.items()
+            }
+        except Exception:
+            pass
+
+        if wandb is not None and getattr(wandb, "run", None) is not None:
+            run = wandb.run
+            wb_info: dict[str, str] = {
+                "Run Name": run.name,
+                "Project": run.project,
+                "URL": run.url,
+            }
+            wb_info.update(
+                {str(k): str(v) for k, v in run.config.items()}
+            )
+            summary["Weights & Biases"] = wb_info
+
         return summary
 
     def _collect_metric_groups(
@@ -2337,6 +2356,7 @@ class History:
         subplots_kwargs: Optional[dict[str, Any]] = None,
         tplot_type: Optional[str] = None,
         env_info: Optional[dict[str, Any]] = None,
+        timings: Optional[dict[str, float]] = None,
     ) -> xr.Dataset:
         dataset = (
             dataset
@@ -2375,14 +2395,33 @@ class History:
             if env_info is not None
             else self._default_environment_info()
         )
-        self._write_environment_section(env_details)
-        self._write_metric_summary(dataset)
+        if timings:
+            env_details["Timings"] = {
+                k: f"{v:.2f}s" for k, v in timings.items()
+            }
+        paths: dict[str, str] = {}
+        existing_paths = env_details.get("Paths")
+        if isinstance(existing_paths, dict):
+            paths.update(existing_paths)
+        paths.setdefault("Working Directory", str(Path.cwd()))
+        paths["Output Directory"] = str(base_dir)
+        if self.report_enabled:
+            paths["Report"] = str(
+                report_dir / self._report_filename
+            )
+        plotdir = None
         if plot:
             plotdir = (
                 base_dir.joinpath("plots", dataset_label)
                 if dataset_fname is not None
                 else base_dir.joinpath("plots")
             )
+            paths["Plots (matplotlib)"] = str(plotdir / "mplot")
+            paths["Plots (terminal)"] = str(plotdir / "tplot")
+        env_details["Paths"] = paths
+        self._write_environment_section(env_details)
+        self._write_metric_summary(dataset)
+        if plot and plotdir is not None:
             logger.info(
                 "Saving plots to %s (matplotlib) and %s (tplot)",
                 plotdir.joinpath("mplot"),
@@ -2434,6 +2473,30 @@ class History:
                 "Saving history report to %s",
                 base_dir.joinpath(self._report_filename),
             )
-        if wandb is not None and (run := getattr(wandb, "run")) is not None:
+        if wandb is not None and (run := getattr(wandb, "run", None)) is not None:
             logger.info(f"wandb.run=[{run.name}]({run.url})")
+            try:
+                if self.history:
+                    columns = list(self.history.keys())
+                    max_len = max(len(v) for v in self.history.values())
+                    data = []
+                    for i in range(max_len):
+                        row = [
+                            self.history[col][i]
+                            if i < len(self.history[col])
+                            else None
+                            for col in columns
+                        ]
+                        data.append(row)
+                    run.log(
+                        {
+                            "training_history": wandb.Table(
+                                columns=columns, data=data
+                            )
+                        }
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to log training history table to wandb"
+                )
         return dataset
