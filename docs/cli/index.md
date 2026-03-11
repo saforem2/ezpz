@@ -9,6 +9,8 @@ Explicitly, these are `ezpz <command>`:
 - 🚀 [`ezpz launch`](./launch/index.md): Launch commands with _automatic
   **job scheduler** detection_ (PBS, Slurm)
     - 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
+- 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
+- 🚀 [`ezpz yeet-env`](./yeet-env.md): Broadcast environment tarball to all worker nodes via MPI
     --8<-- "../includes/cli-example-table.md"
 
 - ??? tip "`ezpz --help`"
