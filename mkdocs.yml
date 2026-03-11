@@ -207,12 +207,15 @@ markdown_extensions:
 nav:
   - 🍋 ezpz: index.md
   - 🏃‍♂️ Quickstart: quickstart.md
+  - 🔭 Overview: overview.md
 
   - 🧰 CLI:
       - cli/index.md
       - 🚀 <code>ezpz launch</code>: cli/launch/index.md
       - 💯 <code>ezpz test</code>: cli/test.md
       - 🩺 <code>ezpz doctor</code>: cli/doctor.md
+      - 📦 <code>ezpz tar-env</code>: cli/tar-env.md
+      - 🚀 <code>ezpz yeet-env</code>: cli/yeet-env.md
       - 📘 References:
           - 📄 Test Report: cli/test-report.md
           - 🗓️ PBS: notes/pbs.md
@@ -291,6 +294,7 @@ nav:
               - <code>ezpz.log.__main__</code>: python/Code-Reference/log/__main__.md
               - <code>ezpz.log.dataframe</code>: python/Code-Reference/log/dataframe.md
               - <code>ezpz.log.handler</code>: python/Code-Reference/log/handler.md
+              - <code>ezpz.log.formatters</code>: python/Code-Reference/log/formatters.md
               - <code>ezpz.log.style</code>: python/Code-Reference/log/style.md
               - <code>ezpz.log.test</code>: python/Code-Reference/log/test.md
           - <code>ezpz.models</code>:

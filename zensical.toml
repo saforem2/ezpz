@@ -45,8 +45,8 @@ Copyright &copy; 2026 Sam Foreman
 nav = [
     { "🍋 ezpz" = "index.md" },
 
-    { "👀 Overview" = "overview.md" },
     { "🏃‍♂️ Quickstart" = "quickstart.md" },
+    # { "👀 Overview" = "overview.md" },
 
     { "🧰 CLI" = [
         "cli/index.md",
@@ -168,6 +168,8 @@ nav = [
     { "📓 Notes" = [
         "notes/index.md",
         { "❓ FAQ" = "notes/faq.md" },
+        { "🖍️ Overview" = "notes/diagrams.md" },
+
         { "🧤 Hands-On Slides" = "notes/slides-2025-05-07.md" },
 
         { "WIP" = [
