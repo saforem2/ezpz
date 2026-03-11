@@ -430,6 +430,16 @@ Additional configuration can be done through environment variables, including:
     | EZPZ_TPLOT_MAX_WIDTH                         | Max width for timeline plots.                                                    |
     | EZPZ_TPLOT_RAW_MARKER                        | Marker for raw timeline data.                                                    |
     | CPU_BIND                                     | Override default CPU binding for PBS launch commands (advanced).                 |
+    | EZPZ_ATTENTION_FP32                          | Force FP32 attention in LLaMA models.                                            |
+    | EZPZ_DEBUG_NAN                               | Enable NaN debugging in model forward pass.                                      |
+    | EZPZ_RUN_COMMAND                             | Stores the command being executed (set by launcher).                             |
+    | EZPZ_VERSION                                 | Auto-set to package version at import time.                                      |
+    | EZPZ_JOB_NAME                                | Job name for logging purposes.                                                   |
+    | EZPZ_LOG_TIMESTAMP                           | Timestamp for logging context.                                                   |
+    | EZPZ_JSON_LOG_JOB_NAME                       | Job name for JSON log handler.                                                   |
+    | PYINSTRUMENT_PROFILER                         | Enable pyinstrument profiling (set to "1").                                      |
+    | MAKE_TARBALL                                  | Trigger tarball creation in yeet-env.                                            |
+    | HYDRA_JOB_NAME                               | Hydra job name (used as fallback).                                               |
 
 ## ℹ️ More Information
 
