@@ -912,6 +912,7 @@ def main() -> None:
             save=True,
             plot=True,
             outdir=outdir,
+            timings=timings,
         )
 
     if wandb is not None and getattr(wandb, "run", None) is not None:
