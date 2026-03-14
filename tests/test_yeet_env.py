@@ -126,10 +126,12 @@ class TestTransfer:
     """Tests for ``transfer``."""
 
     @patch("ezpz.utils.yeet_env.subprocess.run")
+    @patch("ezpz.distributed.barrier")
+    @patch("ezpz.get_local_rank", return_value=0)
     @patch("ezpz.get_rank", return_value=0)
     @patch("ezpz.get_timestamp", return_value="2024-01-01")
     def test_rank0_reads_broadcasts_writes_decompresses(
-        self, _ts, _rank, mock_subproc, tmp_path
+        self, _ts, _rank, _local_rank, _barrier, mock_subproc, tmp_path
     ):
         """Rank 0 reads file, broadcasts, writes at dst, decompresses."""
         src = tmp_path / "source.tar.gz"
@@ -174,10 +176,14 @@ class TestTransfer:
         mock_subproc.assert_not_called()
 
     @patch("ezpz.utils.yeet_env.subprocess.run")
+    @patch("ezpz.distributed.barrier")
+    @patch("ezpz.get_local_rank", return_value=1)
     @patch("ezpz.get_rank", return_value=1)
     @patch("ezpz.get_timestamp", return_value="2024-01-01")
-    def test_non_rank0_skips_decompression(self, _ts, _rank, mock_subproc, tmp_path):
-        """Non-rank-0 writes file but does not decompress."""
+    def test_non_rank0_skips_decompression(
+        self, _ts, _rank, _local_rank, _barrier, mock_subproc, tmp_path
+    ):
+        """Non-local-rank-0 writes file but does not decompress."""
         src = tmp_path / "source.tar.gz"
         dst = tmp_path / "dest.tar.gz"
         src.write_bytes(b"data")
