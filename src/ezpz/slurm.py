@@ -32,7 +32,11 @@ def get_slurm_running_jobs() -> list[str] | None:
     """
     try:
         from sh import sacct  # type:ignore
+    except (ImportError, ModuleNotFoundError):
+        logger.warning("sacct unavailable (sh package not installed)")
+        return None
 
+    try:
         return list(
             {
                 i.replace(".", " ").split(" ")[0]
@@ -41,7 +45,7 @@ def get_slurm_running_jobs() -> list[str] | None:
         )
     except Exception as e:
         logger.error("Error getting running jobs from sacct: %s", e)
-        raise e
+        return None
 
 
 def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
@@ -63,7 +67,7 @@ def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
         raise e
     try:
         output = scontrol("show", "job", str(jobid)).split("\n")
-        node_line = next((i for i in output if " NodeList=" in i), None)
+        node_line = next((i for i in output if "NodeList=" in i), None)
         if not node_line:
             raise ValueError("NodeList not found in scontrol output")
         match = re.search(r"NodeList=([^\s]+)", node_line)
@@ -173,8 +177,8 @@ def build_launch_cmd(
     hostfile : path-like, optional
         Path to a hostfile (one hostname per line).
     cpu_bind : str, optional
-        Accepted for interface parity with the PBS launcher; not currently
-        appended to the ``srun`` invocation.
+        CPU binding policy (e.g. ``"verbose,list:0-7"``).  Passed as
+        ``--cpu-bind=<value>`` to ``srun`` when provided.
     """
     if ngpu_per_host is None:
         ngpu_per_host = ezpz.get_gpus_per_node()
@@ -213,4 +217,14 @@ def build_launch_cmd(
 
     total_gpus = ngpus if ngpus is not None else num_nodes * ngpu_per_host
 
-    return f"srun -u --verbose -N{num_nodes} -n{total_gpus}"
+    if total_gpus <= 0:
+        raise ValueError(
+            f"Total tasks must be positive, got {total_gpus} "
+            f"(num_nodes={num_nodes}, ngpu_per_host={ngpu_per_host}). "
+            f"On CPU-only machines, pass ngpus explicitly."
+        )
+
+    cmd = f"srun -u --verbose -N{num_nodes} -n{total_gpus}"
+    if cpu_bind is not None:
+        cmd += f" --cpu-bind={cpu_bind}"
+    return cmd
