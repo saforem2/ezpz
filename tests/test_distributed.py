@@ -934,7 +934,7 @@ class TestWrapModelForDDP:
             mock_ddp.assert_called_once_with(model)
 
     def test_cuda_wrapping(self, fake_comm):
-        """CUDA path passes device_ids=[cuda:local_rank]."""
+        """CUDA path passes device_ids=[local_rank] (int ordinal)."""
         model = torch.nn.Linear(10, 10)
         with (
             patch.object(dist, "get_torch_device_type", return_value="cuda"),
@@ -945,7 +945,7 @@ class TestWrapModelForDDP:
             ) as mock_ddp,
         ):
             dist.wrap_model_for_ddp(model)
-            mock_ddp.assert_called_once_with(model, device_ids=["cuda:2"])
+            mock_ddp.assert_called_once_with(model, device_ids=[2])
 
     def test_xpu_wrapping(self, fake_comm):
         """XPU path passes device_ids=[local_rank] (int, not string)."""

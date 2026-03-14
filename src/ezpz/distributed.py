@@ -714,12 +714,7 @@ def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
     device_type = get_torch_device_type()
     local_rank = get_local_rank()
     if device_type in {"cuda", "xpu"}:
-        dev_id = (
-            f"{device_type}:{local_rank}"
-            if device_type == "cuda"
-            else local_rank
-        )
-        return DDP(model, device_ids=[dev_id])
+        return DDP(model, device_ids=[local_rank])
     return DDP(model)
 
 
@@ -1495,7 +1490,7 @@ def _wrap_fsdp2(
         ),
         **kwargs,
     }
-    for module in model.modules():
+    for module in model.children():
         fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
     return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
 
