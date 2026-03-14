@@ -165,11 +165,15 @@ class TestMakeHostfileFromSlurm:
 class TestGetRank:
     """Tests for ``get_rank``."""
 
-    def test_returns_int(self, fake_comm):
+    def test_returns_int(self, fake_comm, monkeypatch):
+        for v in ("RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID"):
+            monkeypatch.delenv(v, raising=False)
         assert dist.get_rank() == 0
         assert isinstance(dist.get_rank(), int)
 
-    def test_nonzero_rank(self):
+    def test_nonzero_rank(self, monkeypatch):
+        for v in ("RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID"):
+            monkeypatch.delenv(v, raising=False)
         comm = _FakeComm(rank=7, size=8)
         dist._MPI_COMM = comm
         assert dist.get_rank() == 7
@@ -397,6 +401,8 @@ class TestGetNodeIndex:
     """Tests for ``get_node_index``."""
 
     def test_basic(self, monkeypatch):
+        for v in ("RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID"):
+            monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv("NGPU_PER_HOST", "4")
         comm = _FakeComm(rank=5, size=8)
         dist._MPI_COMM = comm
