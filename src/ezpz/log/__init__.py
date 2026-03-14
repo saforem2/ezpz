@@ -195,7 +195,7 @@ def get_logger(
             from ezpz.distributed import get_rank
 
             rank = get_rank()
-        except (RuntimeError, ImportError, Exception):
+        except (RuntimeError, ImportError):
             rank = 0
     assert rank is not None
     # if is_interactive():
