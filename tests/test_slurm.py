@@ -65,27 +65,28 @@ def _mock_scontrol_no_nodelist(*_args, **_kwargs):
 class TestGetSlurmRunningJobs:
     """Tests for ``get_slurm_running_jobs``."""
 
-    def test_happy_path(self, monkeypatch):
+    def test_happy_path(self):
         """Parses sacct output and returns unique job IDs as strings."""
-        monkeypatch.setattr(slurm, "get_slurm_running_jobs", lambda: list(
-            {
-                i.replace(".", " ").split(" ")[0]
-                for i in [j for j in _mock_sacct().split("\n") if " RUNNING " in j]
-            }
-        ))
-        result = slurm.get_slurm_running_jobs()
+        mock_sh = MagicMock()
+        mock_sh.sacct = _mock_sacct
+        with patch.dict("sys.modules", {"sh": mock_sh}):
+            result = slurm.get_slurm_running_jobs()
         assert isinstance(result, list)
         assert set(result) == {"12345", "67890"}
 
-    def test_sacct_failure_raises(self):
-        """When sacct fails, the exception propagates."""
-        with patch.dict("sys.modules", {"sh": MagicMock(sacct=_mock_sacct_failure)}):
-            with pytest.raises(RuntimeError, match="sacct not available"):
-                try:
-                    from sh import sacct  # type:ignore
-                    sacct()
-                except Exception as e:
-                    raise e
+    def test_sacct_failure_returns_none(self):
+        """When sacct fails, returns None instead of raising."""
+        mock_sh = MagicMock()
+        mock_sh.sacct = _mock_sacct_failure
+        with patch.dict("sys.modules", {"sh": mock_sh}):
+            result = slurm.get_slurm_running_jobs()
+        assert result is None
+
+    def test_sacct_unavailable_returns_none(self):
+        """When sh package is not installed, returns None."""
+        with patch.dict("sys.modules", {"sh": None}):
+            result = slurm.get_slurm_running_jobs()
+        assert result is None
 
 
 # ===================================================================
