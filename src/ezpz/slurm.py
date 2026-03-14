@@ -181,6 +181,15 @@ def build_launch_cmd(
 
     if nhosts is not None:
         num_nodes = nhosts
+    elif ngpus is not None and ngpu_per_host is not None and ngpu_per_host > 0:
+        # Infer node count from total GPUs and per-node count, matching the
+        # PBS launcher logic so `-n 2 -ppn 2` means 1 node, not max.
+        if ngpus % ngpu_per_host != 0:
+            raise ValueError(
+                f"`ngpus` must be divisible by `ngpu_per_host`: "
+                f"ngpus={ngpus}, ngpu_per_host={ngpu_per_host}"
+            )
+        num_nodes = ngpus // ngpu_per_host
     elif hostfile is not None and Path(hostfile).is_file():
         with open(hostfile) as f:
             num_nodes = len([ln for ln in f if ln.strip()])
