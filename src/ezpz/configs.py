@@ -564,6 +564,7 @@ class TrainConfig(BaseConfig):
             setattr(self, key, value)
             extras[key] = value
         self.extras = extras
+        self.__post_init__()
 
     def to_str(self) -> str:
         """Return a compact identifier for this config."""
