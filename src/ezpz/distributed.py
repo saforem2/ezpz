@@ -1549,6 +1549,8 @@ def _expand_slurm_nodelist(nodelist_str: str) -> list[str]:
     nodes: list[str] = []
     for part in rest.split(","):
         part = part.strip()
+        if not part:
+            continue
         if "-" in part:
             lo, hi = part.split("-", 1)
             width = len(lo)  # preserve zero-padding width

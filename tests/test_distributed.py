@@ -122,9 +122,7 @@ class TestExpandSlurmNodelist:
     def test_empty_brackets(self):
         # Edge case: ``node[]`` should produce no nodes
         result = dist._expand_slurm_nodelist("node[]")
-        # An empty split produces one empty-string part; the function
-        # appends ``prefix + part`` which gives "node".
-        assert result == ["node"]
+        assert result == []
 
     def test_large_range(self):
         result = dist._expand_slurm_nodelist("n[0000-0099]")
