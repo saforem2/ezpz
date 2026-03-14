@@ -96,6 +96,8 @@ MARKER_MAP = {
     "std": "*",
 }
 
+__all__ = ["History", "StopWatch"]
+
 
 class StopWatch(ContextDecorator):
     """
@@ -1359,6 +1361,11 @@ class History:
         metrics: dict[str, Any],
         debug_prefixes: tuple[str, ...] = ("hist/",),
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Split metrics into info-level and debug-level groups.
+
+        Keys starting with any of ``debug_prefixes`` are placed in the
+        debug dict; everything else goes into the info dict.
+        """
         info_metrics: dict[str, Any] = {}
         debug_metrics: dict[str, Any] = {}
         for key, value in metrics.items():
@@ -1372,6 +1379,7 @@ class History:
     def summarize_min_max_std(
         metrics: dict[str, Any],
     ) -> dict[str, float]:
+        """Compute mean/min/max/std for each numeric metric."""
         numeric: dict[str, list[float]] = {}
         for key, value in metrics.items():
             if isinstance(value, (int, float)):
@@ -1392,6 +1400,11 @@ class History:
     def summarize_distributed_min_max_std(
         self, metrics: dict[str, Any]
     ) -> dict[str, float]:
+        """Compute distributed mean/min/max/std via all-reduce.
+
+        Falls back to local ``summarize_min_max_std`` when distributed
+        stats are unavailable. All-zero entries are pruned.
+        """
         summary_stats = self._compute_distributed_metrics(metrics)
         if not summary_stats:
             summary_stats = self.summarize_min_max_std(metrics)
@@ -1443,6 +1456,13 @@ class History:
             "bidx",
         ),
     ) -> None:
+        """Log metrics, routing debug-prefixed keys to debug level.
+
+        Args:
+            metrics: Dict of metric name to scalar value.
+            include_summary: If True, append distributed min/max/std summary.
+            omit_counter_metrics: If True, skip counter keys (iter, epoch, etc.).
+        """
         log = logger if logger is not None else get_logger(__name__)
         info_metrics, debug_metrics = self.split_metrics_for_logging(
             metrics, debug_prefixes=debug_prefixes
@@ -1958,6 +1978,7 @@ class History:
         # subplots_kwargs: Optional[dict[str, Any]] = None,
         # plot_kwargs: Optional[dict[str, Any]] = None,
     ):
+        """Plot the full xarray Dataset via ``ezplot.plot_dataset``."""
         dataset = (
             dataset
             if dataset is not None
@@ -1985,6 +2006,7 @@ class History:
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
     ):
+        """Plot a 2D xarray DataArray (chain x draw) with matplotlib/seaborn."""
         import matplotlib.pyplot as plt
         import seaborn as sns
 
@@ -2096,6 +2118,10 @@ class History:
         plot_type: Optional[str] = None,
         verbose: bool = False,
     ):
+        """Create terminal plots for all metrics using plotext.
+
+        Counter metrics (iter, epoch, step, etc.) are skipped.
+        """
         dataset = (
             dataset
             if dataset is not None
@@ -2147,6 +2173,7 @@ class History:
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
     ):
+        """Create matplotlib ridge plots for all metrics in the dataset."""
         plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
         subplots_kwargs = (
             {} if subplots_kwargs is None else dict(subplots_kwargs)
@@ -2208,6 +2235,7 @@ class History:
         return dataset
 
     def history_to_dict(self) -> dict:
+        """Convert internal history to a dictionary of numpy arrays."""
         # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
         return {
             k: torch.Tensor(v).numpy(force=True)
@@ -2219,6 +2247,12 @@ class History:
         x: Union[list, np.ndarray, torch.Tensor],
         warmup: Optional[float] = 0.0,
     ) -> xr.DataArray:
+        """Convert a list, array, or tensor to an xarray DataArray.
+
+        Args:
+            x: Input data (1D, 2D, or 3D).
+            warmup: Fraction of initial samples to drop (0.0 to 1.0).
+        """
         if isinstance(x, tuple):
             x = list(x)
         if (
@@ -2275,6 +2309,12 @@ class History:
         ] = None,
         warmup: Optional[float] = 0.0,
     ):
+        """Build an xarray Dataset from the history data.
+
+        Args:
+            data: Dict of metric arrays; defaults to ``self.history``.
+            warmup: Fraction of initial samples to drop.
+        """
         data = self.history_to_dict() if data is None else data
         data_vars = {}
         for key, val in data.items():
@@ -2301,6 +2341,16 @@ class History:
         warmup: Optional[int | float] = None,
         **kwargs,
     ) -> Path:
+        """Save the history dataset to disk.
+
+        Args:
+            outdir: Directory to write the dataset file.
+            fname: Base filename (default ``"dataset"``).
+            use_hdf5: If True, save as HDF5; otherwise NetCDF.
+
+        Returns:
+            Path to the saved file.
+        """
         dataset = (
             dataset
             if dataset is not None
@@ -2358,6 +2408,11 @@ class History:
         env_info: Optional[dict[str, Any]] = None,
         timings: Optional[dict[str, float]] = None,
     ) -> xr.Dataset:
+        """End-of-training cleanup: save dataset, generate plots, log artifacts.
+
+        Returns:
+            The finalized xarray Dataset.
+        """
         dataset = (
             dataset
             if dataset is not None

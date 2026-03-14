@@ -1,5 +1,10 @@
-"""
-ezpz/configs.py
+"""Configuration dataclasses, logging setup, and path constants for ezpz.
+
+Provides :class:`TrainConfig`, :class:`ZeroConfig`, :class:`ViTConfig`, and
+related dataclasses used to configure distributed training runs, DeepSpeed
+ZeRO optimisation, and vision model architectures.  Also exposes directory
+constants (``LOGS_DIR``, ``OUTPUTS_DIR``) and helpers for scheduler
+detection and DeepSpeed config loading.
 """
 
 import json
@@ -531,18 +536,39 @@ class TrainConfig(BaseConfig):
     """High-level training options shared by ezpz scripts."""
 
     gas: int = 1
+    """Gradient accumulation steps."""
+
     use_wandb: bool = False
+    """Enable Weights & Biases logging."""
+
     seed: Optional[int] = None
+    """Random seed for reproducibility. ``None`` means no explicit seeding."""
+
     port: Optional[str] = None
+    """Port for the distributed rendezvous endpoint."""
+
     dtype: Optional[Any] = None
+    """Default data type for model parameters (e.g. ``"bf16"``)."""
+
     load_from: Optional[str] = None
+    """Path to a checkpoint to resume training from."""
+
     save_to: Optional[str] = None
+    """Directory where checkpoints will be saved."""
+
     ds_config_path: Optional[str] = None
+    """Path to a DeepSpeed JSON/YAML config file."""
+
     wandb_project_name: Optional[str] = None
+    """W&B project name. Auto-set from ``WANDB_PROJECT`` when ``use_wandb`` is True."""
+
     ngpus: Optional[int] = None
+    """Number of GPUs to use. ``None`` means use all available."""
+
     extras: dict[str, Any] = field(
         default_factory=dict, init=False, repr=False
     )
+    """Extra keyword arguments not matching any declared field."""
 
     def __init__(self, **kwargs: Any) -> None:
         """Populate known fields while capturing any extras in ``self.extras``."""
@@ -586,27 +612,70 @@ class ZeroConfig:
     """Subset of DeepSpeed ZeRO options exposed via the ezpz CLI."""
 
     stage: int = 0
+    """ZeRO optimisation stage (0–3)."""
+
     allgather_partitions: Optional[bool] = None
+    """Use allgather for partition reconstruction."""
+
     allgather_bucket_size: int = int(5e8)
+    """Number of elements allgathered at a time."""
+
     overlap_comm: Optional[bool] = None
+    """Overlap gradient reduction with backward pass."""
+
     reduce_scatter: bool = True
+    """Use reduce-scatter instead of allreduce for gradients."""
+
     reduce_bucket_size: int = int(5e8)
+    """Number of elements reduced at a time."""
+
     contiguous_gradients: Optional[bool] = None
+    """Copy gradients to a contiguous buffer as they are produced."""
+
     offload_param: Optional[dict] = None
+    """Parameter offloading config (e.g. ``{"device": "cpu"}``)."""
+
     offload_optimizer: Optional[dict] = None
+    """Optimizer state offloading config (e.g. ``{"device": "cpu"}``)."""
+
     stage3_max_live_parameters: int = int(1e9)
+    """Max number of parameters resident per GPU before releasing (stage 3)."""
+
     stage3_max_reuse_distance: int = int(1e9)
+    """Max reuse distance for parameters before re-fetching (stage 3)."""
+
     stage3_prefetch_bucket_size: int = int(5e8)
+    """Prefetch bucket size for stage 3 parameter fetching."""
+
     stage3_param_persistence_threshold: int = int(1e6)
+    """Parameters smaller than this stay on the GPU (stage 3)."""
+
     sub_group_size: Optional[int] = None
+    """Number of parameters within a sub-group for ZeRO-3 partitioning."""
+
     elastic_checkpoint: Optional[dict] = None
+    """Configuration for elastic checkpointing."""
+
     stage3_gather_16bit_weights_on_model_save: Optional[bool] = None
+    """Gather full fp16 weights on save for portability (stage 3)."""
+
     ignore_unused_parameters: Optional[bool] = None
+    """Silence errors about parameters not used in the forward pass."""
+
     round_robin_gradients: Optional[bool] = None
+    """Distribute gradient partitions round-robin across ranks."""
+
     zero_hpz_partition_size: Optional[int] = None
+    """Hierarchical partitioning group size (ZeRO++)."""
+
     zero_quantized_weights: Optional[bool] = None
+    """Enable weight quantisation for communication (ZeRO++)."""
+
     zero_quantized_gradients: Optional[bool] = None
+    """Enable gradient quantisation for communication (ZeRO++)."""
+
     log_trace_cache_warnings: Optional[bool] = None
+    """Log warnings about trace cache misses."""
 
 
 @dataclass
@@ -954,15 +1023,34 @@ def print_config_tree(
 
 @dataclass
 class ViTConfig:
+    """Configuration for a Vision Transformer model."""
+
     img_size: int = 224
+    """Input image resolution (height and width)."""
+
     patch_size: int = 16
+    """Size of each image patch."""
+
     depth: int = 12
+    """Number of transformer encoder layers."""
+
     num_heads: int = 12
+    """Number of self-attention heads."""
+
     hidden_dim: int = 768
+    """Embedding / hidden dimension."""
+
     mlp_dim: int = 3072
+    """Feed-forward network inner dimension."""
+
     dropout: float = 0.0
+    """Dropout rate for embeddings and feed-forward layers."""
+
     attention_dropout: float = 0.0
+    """Dropout rate applied to attention weights."""
+
     num_classes: int = 10
+    """Number of output classification classes."""
 
     def __post_init__(self):
         self.seq_len = (self.img_size // self.patch_size) ** 2  # 196, default
@@ -970,17 +1058,40 @@ class ViTConfig:
 
 @dataclass
 class timmViTConfig:
+    """Configuration for a timm-style Vision Transformer (larger defaults)."""
+
     img_size: int = 224
+    """Input image resolution."""
+
     batch_size: int = 128
+    """Training batch size per device."""
+
     num_heads: int = 16
+    """Number of self-attention heads."""
+
     head_dim: int = 64
+    """Dimension per attention head."""
+
     depth: int = 24
+    """Number of transformer encoder layers."""
+
     patch_size: int = 16
+    """Size of each image patch."""
+
     hidden_dim: int = 1024
+    """Embedding / hidden dimension."""
+
     mlp_dim: int = 4096
+    """Feed-forward network inner dimension."""
+
     dropout: float = 0.0
+    """Dropout rate for embeddings and feed-forward layers."""
+
     attention_dropout: float = 0.0
+    """Dropout rate applied to attention weights."""
+
     num_classes: int = 1000
+    """Number of output classification classes."""
 
     def __post_init__(self):
         self.seq_len = (self.img_size // self.patch_size) ** 2  # 196, default
@@ -988,18 +1099,49 @@ class timmViTConfig:
 
 @dataclass
 class TrainArgs:
+    """Arguments for vision model training runs."""
+
     img_size: int
+    """Input image resolution."""
+
     batch_size: int
+    """Training batch size per device."""
+
     num_heads: int
+    """Number of self-attention heads."""
+
     head_dim: int
+    """Dimension per attention head."""
+
     depth: int
+    """Number of transformer encoder layers."""
+
     patch_size: int
+    """Size of each image patch."""
+
     dtype: str
+    """Data type string (e.g. ``"bf16"``, ``"fp32"``)."""
+
     compile: bool
+    """Enable ``torch.compile`` for the model."""
+
     attn_type: str
+    """Attention backend (``"native"``, ``"sdpa"``, ``"flash"``, etc.)."""
+
     warmup: int | float
+    """Learning rate warmup steps or fraction of total steps."""
+
     num_workers: int
+    """Number of data loader workers."""
+
     max_iters: int
+    """Maximum training iterations."""
+
     fsdp: Optional[bool] = False
+    """Enable Fully Sharded Data Parallel wrapping."""
+
     format: Optional[str] = field(default_factory=str)
+    """Output format string for logging."""
+
     cuda_sdpa_backend: Optional[str] = field(default_factory=str)
+    """Override the CUDA SDPA backend selection."""
