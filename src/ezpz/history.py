@@ -2526,7 +2526,7 @@ class History:
         if self.report_enabled:
             logger.info(
                 "Saving history report to %s",
-                base_dir.joinpath(self._report_filename),
+                self._report_dir.joinpath(self._report_filename),
             )
         if wandb is not None and (run := getattr(wandb, "run", None)) is not None:
             logger.info(f"wandb.run=[{run.name}]({run.url})")
