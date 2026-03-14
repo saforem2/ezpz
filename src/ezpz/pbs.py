@@ -151,7 +151,19 @@ def _infer_topology(
         )
 
     if nhosts is None:
-        nhosts = nhosts_max
+        # When both ngpus and ngpu_per_host are given, infer nhosts from them
+        # rather than defaulting to the max available nodes.  This lets users
+        # request a subset of their allocation (e.g. -n 2 -ppn 2 on a 2-node
+        # job to use only 1 node).
+        if ngpus is not None and ngpu_per_host is not None:
+            if ngpu_per_host <= 0 or ngpus % ngpu_per_host != 0:
+                raise ValueError(
+                    f"`ngpus` must be divisible by `ngpu_per_host`: "
+                    f"ngpus={ngpus}, ngpu_per_host={ngpu_per_host}"
+                )
+            nhosts = ngpus // ngpu_per_host
+        else:
+            nhosts = nhosts_max
 
     # Case A: ngpus not provided -> infer from nhosts / ngpu_per_host.
     if ngpus is None:
