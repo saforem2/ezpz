@@ -32,7 +32,7 @@ ezpz yeet-env
 ezpz yeet-env --src /path/to/env.tar.gz --dst /local/scratch/env
 
 # Use smaller chunks for memory-constrained nodes
-ezpz yeet-env --chunk-size 536870912
+ezpz yeet-env --chunk-size 67108864
 
 # Force overwrite of existing destination
 ezpz yeet-env --overwrite
