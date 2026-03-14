@@ -207,7 +207,6 @@ markdown_extensions:
 nav:
   - 🍋 ezpz: index.md
   - 🏃‍♂️ Quickstart: quickstart.md
-  - 🔭 Overview: overview.md
 
   - 🧰 CLI:
       - cli/index.md
