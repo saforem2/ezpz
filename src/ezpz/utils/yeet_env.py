@@ -84,13 +84,15 @@ def transfer(
         logger.info(f"Writing to the disk {dst} took {time.perf_counter() - end}")
     dirname = os.path.dirname(dst)
     assert os.path.isfile(dst)
-    if decompress and ezpz.get_rank() == 0:
+    if decompress and ezpz.get_local_rank() == 0:
         t0d = time.perf_counter()
         subprocess.run(
             ["tar", "-p", f"-{flags}", str(dst), "-C", str(dirname)],
             check=True,
         )
         logger.info(f"untar took {time.perf_counter() - t0d:.2f} seconds")
+    if decompress:
+        ezpz.distributed.barrier()  # wait for local_rank==0 to finish untar
     logger.info(f"Total time: {time.perf_counter() - start_time} seconds")
     logger.info("==================\n")
 
@@ -103,7 +105,7 @@ def _create_tarball_if_needed(src: str | os.PathLike, overwrite: bool = False) -
     if tarball_fp.exists():
         logger.info(f"Tarball {tarball_fp} already exists")
         if overwrite and ezpz.get_rank() == 0:
-            backup = tarball_fp.with_suffix(f".{ezpz.get_timestamp()}.bak")
+            backup = tarball_fp.parent / f"{tarball_fp.name}.{ezpz.get_timestamp()}.bak"
             logger.info(f"Backing up existing tarball to {backup}")
             os.rename(tarball_fp, backup)
         else:
