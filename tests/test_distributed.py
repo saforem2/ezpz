@@ -254,6 +254,10 @@ class TestGetLocalRank:
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
             "SLURM_LOCAL_ID",
+            "RANK",
+            "PMI_RANK",
+            "OMPI_COMM_WORLD_RANK",
+            "SLURM_PROCID",
         ):
             monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv("NGPU_PER_HOST", "4")
