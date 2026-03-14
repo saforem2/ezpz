@@ -46,6 +46,7 @@ nav = [
     { "🍋 ezpz" = "index.md" },
 
     { "🏃‍♂️ Quickstart" = "quickstart.md" },
+    { "⚙️ Configuration" = "configuration.md" },
     # { "👀 Overview" = "overview.md" },
 
     { "🧰 CLI" = [
