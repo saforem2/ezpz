@@ -67,13 +67,20 @@ def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
         raise e
     try:
         output = scontrol("show", "job", str(jobid)).split("\n")
-        node_line = next((i for i in output if "NodeList=" in i), None)
-        if not node_line:
-            raise ValueError("NodeList not found in scontrol output")
-        match = re.search(r"NodeList=([^\s]+)", node_line)
-        if not match:
-            raise ValueError("NodeList value not found")
-        return _expand_slurm_nodelist(match.group(1))
+        # scontrol can return multiple NodeList= lines; skip "(null)" entries
+        # which appear for batch job wrappers before the real allocation.
+        best_match: str | None = None
+        for line in output:
+            m = re.search(r"NodeList=([^\s]+)", line)
+            if m and m.group(1) != "(null)":
+                best_match = m.group(1)
+                break
+        if not best_match:
+            raise ValueError(
+                f"NodeList not found (or all entries are (null)) "
+                f"in scontrol output for job {jobid}"
+            )
+        return _expand_slurm_nodelist(best_match)
     except Exception as e:
         logger.error(f"Error getting nodelist for job {jobid}: {e}")
         raise e
@@ -225,6 +232,8 @@ def build_launch_cmd(
         )
 
     cmd = f"srun -u --verbose -N{num_nodes} -n{total_gpus}"
+    if ngpu_per_host > 0:
+        cmd += f" --gpus-per-node={ngpu_per_host}"
     if cpu_bind is not None:
         cmd += f" --cpu-bind={cpu_bind}"
     return cmd
