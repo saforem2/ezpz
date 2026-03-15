@@ -1,12 +1,5 @@
 # 🏃‍♂️ Quick Start
 
-!!! example "Work In Progress"
-
-    This quickstart guide is a work in progress; refer to the
-    [API Reference](./python/Code-Reference/index.md) for the most up-to-date information.
-
-    [Feedback / suggestions welcome!](https://github.com/saforem2/ezpz/issues/new)
-
 🍋 `ezpz` provides a set of dynamic, light weight utilities that simplify
 running experiments with distributed PyTorch.
 

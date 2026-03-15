@@ -45,9 +45,13 @@ Copyright &copy; 2026 Sam Foreman
 nav = [
     { "🍋 ezpz" = "index.md" },
 
-    { "🏃‍♂️ Quickstart" = "quickstart.md" },
-    { "⚙️ Configuration" = "configuration.md" },
-    # { "👀 Overview" = "overview.md" },
+    { "📖 Guide" = [
+        { "🏃‍♂️ Quickstart" = "quickstart.md" },
+        { "📖 Getting Started" = "guide.md" },
+        { "⚙️ Configuration" = "configuration.md" },
+        { "🏗️ Architecture" = "architecture.md" },
+        { "🔧 Troubleshooting" = "troubleshooting.md" },
+    ] },
 
     { "🧰 CLI" = [
         "cli/index.md",
@@ -170,17 +174,16 @@ nav = [
         "notes/index.md",
         { "❓ FAQ" = "notes/faq.md" },
         { "🖍️ Overview" = "notes/diagrams.md" },
+        { "🏔️ Perlmutter" = "notes/perlmutter.md" },
 
         { "🧤 Hands-On Slides" = "notes/slides-2025-05-07.md" },
 
-        { "WIP" = [
-            { "🚧 INCOMPLETE" = [
-                { "🕸️ Parallelism" = "notes/parallelism.md" },
-                { "🏖️ Shell Environment" = "notes/shell-environment.md" },
-                { "🤖 Systems" = "notes/systems.md" },
-                { "📦 Yeet Environment" = "notes/yeet-env.md" },
-            ] },
+        { "🕸️ Parallelism" = "notes/parallelism.md" },
+        { "🏖️ Shell Environment" = "notes/shell-environment.md" },
+        { "🤖 Systems" = "notes/systems.md" },
+        { "📦 Yeet Environment" = "notes/yeet-env.md" },
 
+        { "WIP" = [
             { "🧪 Tests" = [
                 { "🧪 Tests" = "python/tests/index.md" },
                 { "configs" = "python/tests/test-configs.md" },

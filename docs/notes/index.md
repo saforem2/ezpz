@@ -119,7 +119,7 @@ ezpz_setup_job
 
 ### Python Library
 
-WIP
+See the [Python API Reference](../python/Code-Reference/index.md).
 
 ## Old
 

@@ -341,7 +341,7 @@
   box-decoration-break: clone;
   quotes: 0 0.2941176471em;
   word-break: break-word;
-  font-size: 0.85em;
+  font-size: 1em;
 }
 
 .highlighttable .linenos {
