@@ -918,8 +918,8 @@ def print_dist_setup(
 
     rw = len(str(max(0, world_size - 1)))
     lw = len(str(max(0, gpn - 1)))
-    nw = len(str(node))
-    nnw = len(str(num_nodes))
+    nnw = len(str(max(0, num_nodes - 1)))
+    nw = nnw
 
     parts = [
         f"['{hn}']",
