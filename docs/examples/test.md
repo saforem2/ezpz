@@ -3,6 +3,12 @@
 Train a simple fully connected (`torch.nn.Linear`) network using DDP
 on the MNIST dataset.
 
+!!! info "Key API Functions"
+
+    - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for DDP
+    - [`cleanup()`][ezpz.distributed.cleanup] — Tear down the process group
+
 See: \[📘 [docs](../python/Code-Reference/examples/test.md)\],
 \[🐍 [source](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py)\]
 

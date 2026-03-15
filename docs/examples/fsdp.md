@@ -1,5 +1,11 @@
 # Train CNN with FSDP on MNIST
 
+!!! info "Key API Functions"
+
+    - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP (with `strategy="fsdp"`)
+    - [`TrainConfig`][ezpz.configs.TrainConfig] — Training configuration
+
 See:
 
 - 📘 [examples/FSDP](../python/Code-Reference/examples/fsdp.md)

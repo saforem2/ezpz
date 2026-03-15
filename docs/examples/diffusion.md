@@ -1,5 +1,11 @@
 # Train Diffusion LLM with FSDP on HF Datasets
 
+!!! info "Key API Functions"
+
+    - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP
+    - [`History`][ezpz.history.History] — Track training metrics
+
 See:
 
 - 📘 [examples/Diffusion](../python/Code-Reference/examples/diffusion.md)

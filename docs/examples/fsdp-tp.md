@@ -2,6 +2,12 @@
 
 FSDP Example with Tensor Parallelism
 
+!!! info "Key API Functions"
+
+    - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP
+    - [`ezpz.tp`](../python/Code-Reference/tp/index.md) — Tensor parallelism utilities
+
 See:
 
 - 📘 [examples/FSDP TP](../python/Code-Reference/examples/fsdp_tp.md)

@@ -1,5 +1,12 @@
 # Train ViT with FSDP on MNIST
 
+!!! info "Key API Functions"
+
+    - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for DDP / FSDP
+    - [`ViTConfig`][ezpz.configs.ViTConfig] — Vision Transformer configuration
+    - [`History`][ezpz.history.History] — Track training metrics
+
 See:
 
 - 📘 [examples/ViT](../python/Code-Reference/examples/vit.md)
