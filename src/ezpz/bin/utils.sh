@@ -906,7 +906,7 @@ ezpz_setup_conda_polaris() {
 }
 
 ezpz_setup_conda_perlmutter() {
-	module load pytorch
+    module load cudatoolkit/12.9 nccl/2.24.3 pytorch cray-mpich
 }
 
 ezpz_install_and_setup_micromamba() {
