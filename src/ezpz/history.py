@@ -1427,6 +1427,9 @@ class History:
                 and std_v == 0.0
             ):
                 continue
+            # Skip zero-variance metrics (min == max) — no useful info
+            if min_v is not None and max_v is not None and min_v == max_v:
+                continue
             if mean_v is not None:
                 pruned[f"{base}/mean"] = mean_v
             if min_v is not None:
@@ -1481,7 +1484,8 @@ class History:
         info_msg = summarize_dict(info_metrics, precision=precision).replace(
             "train/", ""
         )
-        summary_msg = ""
+        if info_msg:
+            log.info(info_msg)
         if include_summary:
             summary_input = info_metrics
             if omit_counter_metrics:
@@ -1497,9 +1501,8 @@ class History:
                 summary_msg = summarize_dict(
                     summary_stats, precision=precision
                 ).replace("train/", "")
-        combined = " ".join(part for part in (info_msg, summary_msg) if part)
-        if combined:
-            log.info(combined)
+                if summary_msg:
+                    log.info(summary_msg)
         debug_msg = summarize_dict(debug_metrics, precision=precision).replace(
             "train/", ""
         )
