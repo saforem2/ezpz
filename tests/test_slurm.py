@@ -286,12 +286,12 @@ class TestBuildLaunchCmd:
     def test_explicit_nhosts_and_ngpu_per_host(self):
         """Uses explicit nhosts/ngpu_per_host without any discovery."""
         result = slurm.build_launch_cmd(nhosts=4, ngpu_per_host=8)
-        assert result == "srun -u --verbose -N4 -n32"
+        assert result == "srun -u --verbose -N4 -n32 --gpus-per-node=8"
 
     def test_explicit_ngpus_overrides_calculation(self):
         """Explicit ngpus takes precedence over nhosts * ngpu_per_host."""
         result = slurm.build_launch_cmd(ngpus=16, nhosts=4, ngpu_per_host=8)
-        assert result == "srun -u --verbose -N4 -n16"
+        assert result == "srun -u --verbose -N4 -n16 --gpus-per-node=8"
 
     def test_hostfile_determines_nhosts(self, tmp_path, monkeypatch):
         """Reads nhosts from hostfile when nhosts not explicitly given."""
@@ -299,14 +299,14 @@ class TestBuildLaunchCmd:
         hostfile.write_text("nid001\nnid002\nnid003\n")
         monkeypatch.setattr(ezpz, "get_gpus_per_node", lambda: 4)
         result = slurm.build_launch_cmd(hostfile=str(hostfile))
-        assert result == "srun -u --verbose -N3 -n12"
+        assert result == "srun -u --verbose -N3 -n12 --gpus-per-node=4"
 
     def test_slurm_nnodes_env_var(self, monkeypatch):
         """Uses SLURM_NNODES env var when hostfile/nhosts not given."""
         monkeypatch.setenv("SLURM_NNODES", "8")
         monkeypatch.setattr(ezpz, "get_gpus_per_node", lambda: 4)
         result = slurm.build_launch_cmd()
-        assert result == "srun -u --verbose -N8 -n32"
+        assert result == "srun -u --verbose -N8 -n32 --gpus-per-node=4"
 
     def test_autodiscover_from_active_job(self, monkeypatch):
         """Falls back to sacct/scontrol when no env vars or args."""
@@ -321,7 +321,7 @@ class TestBuildLaunchCmd:
         )
         monkeypatch.setattr(ezpz, "get_gpus_per_node", lambda: 4)
         result = slurm.build_launch_cmd()
-        assert result == "srun -u --verbose -N2 -n8"
+        assert result == "srun -u --verbose -N2 -n8 --gpus-per-node=4"
 
     def test_no_running_job_raises(self, monkeypatch):
         """Raises ValueError when no SLURM job found and no args given."""
