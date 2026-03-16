@@ -124,7 +124,7 @@ def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
 
 </details>
 
-<details closed markdown><summary><strong>`build_vocab`</strong></summary>
+<details closed markdown><summary><strong><code>build_vocab</code></strong></summary>
 
 Builds a minimal word-level vocabulary from the training corpus, with
 `<pad>` and `<unk>` as special tokens.
@@ -141,7 +141,7 @@ def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
 
 </details>
 
-<details closed markdown><summary><strong>`ToyTextDataset`</strong></summary>
+<details closed markdown><summary><strong><code>ToyTextDataset</code></strong></summary>
 
 A `Dataset` that encodes sentences to fixed-length token-id tensors,
 padding or truncating to `seq_len`.
@@ -186,7 +186,7 @@ class ToyTextDataset(Dataset):
 
 </details>
 
-<details closed markdown><summary><strong>`DiffusionSchedule`</strong></summary>
+<details closed markdown><summary><strong><code>DiffusionSchedule</code></strong></summary>
 
 A dataclass that precomputes the linear beta schedule and cumulative
 alpha products used by the DDPM forward/reverse processes.
@@ -211,7 +211,7 @@ class DiffusionSchedule:
 
 </details>
 
-<details closed markdown><summary><strong>`DiffusionTextModel`</strong></summary>
+<details closed markdown><summary><strong><code>DiffusionTextModel</code></strong></summary>
 
 A transformer-based denoiser. It embeds token ids, adds positional and
 timestep embeddings, runs through a `TransformerEncoder`, and projects
@@ -555,7 +555,7 @@ def load_hf_texts(
 
 </details>
 
-<details closed markdown><summary><strong>`main`</strong></summary>
+<details closed markdown><summary><strong><code>main</code></strong></summary>
 
 Entry point decorated with `@ezpz.timeitlogit`. Calls
 `ezpz.setup_torch` for distributed init, builds the vocabulary and

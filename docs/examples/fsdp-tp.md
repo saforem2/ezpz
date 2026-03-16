@@ -387,7 +387,7 @@ def parse_args(argv: Optional[list[str]] = None):
 
 </details>
 
-<details closed markdown><summary><strong>`parallelize`: TP Parallelization + FSDP Wrapping</strong></summary>
+<details closed markdown><summary><strong><code>parallelize</code>: TP Parallelization + FSDP Wrapping</strong></summary>
 
 This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
@@ -488,7 +488,7 @@ FSDP on the `"dp"` sub-mesh.
 
 </details>
 
-<details closed markdown><summary><strong>`train`: Device Mesh, Data Loading, and Training Loop</strong></summary>
+<details closed markdown><summary><strong><code>train</code>: Device Mesh, Data Loading, and Training Loop</strong></summary>
 
 `train` orchestrates the full run. It first creates the 2D device mesh,
 loads data, then runs the epoch loop.
@@ -729,7 +729,7 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
 </details>
 
-<details closed markdown><summary><strong>`main` and Entrypoint</strong></summary>
+<details closed markdown><summary><strong><code>main</code> and Entrypoint</strong></summary>
 
 `main` calls `ezpz.distributed.setup_torch` to initialize the
 distributed backend (including TP groups), determines the output

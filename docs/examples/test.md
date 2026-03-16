@@ -78,7 +78,7 @@ can be reported later.
 
 </details>
 
-<details closed markdown><summary><strong>`MODEL_PRESETS`</strong></summary>
+<details closed markdown><summary><strong><code>MODEL_PRESETS</code></strong></summary>
 
 Named presets that bundle batch size, iteration count, logging frequency,
 and layer sizes into a single `--model` flag.
@@ -128,7 +128,7 @@ explicitly provided flags take precedence over the preset defaults.
 
 </details>
 
-<details closed markdown><summary><strong>`TrainConfig` Dataclass</strong></summary>
+<details closed markdown><summary><strong><code>TrainConfig</code> Dataclass</strong></summary>
 
 All runtime configuration lives in a single dataclass. `__post_init__`
 creates the output directory, broadcasts the timestamp across ranks, and
@@ -243,7 +243,7 @@ corresponding `torch.dtype`:
 
 </details>
 
-<details closed markdown><summary><strong>`Trainer` Class</strong></summary>
+<details closed markdown><summary><strong><code>Trainer</code> Class</strong></summary>
 
 Coordinates the training loop, metric tracking, and profiling.
 
@@ -490,7 +490,7 @@ optionally logs the final dataset to W&B.
 
 </details>
 
-<details closed markdown><summary><strong>`calc_loss`</strong></summary>
+<details closed markdown><summary><strong><code>calc_loss</code></strong></summary>
 
 Standalone loss function using cross-entropy. Cast to `float32` before
 computing to avoid issues with reduced-precision dtypes.
@@ -504,7 +504,7 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 
 </details>
 
-<details closed markdown><summary><strong>`build_model_and_optimizer`</strong></summary>
+<details closed markdown><summary><strong><code>build_model_and_optimizer</code></strong></summary>
 
 Moves the model to the appropriate device, creates an Adam optimizer,
 and wraps the model in `DDP` when running multi-rank. Falls back to CPU
@@ -552,7 +552,7 @@ def build_model_and_optimizer(
 
 </details>
 
-<details closed markdown><summary><strong>`train` (module-level)</strong></summary>
+<details closed markdown><summary><strong><code>train</code> (module-level)</strong></summary>
 
 Orchestrates the full training run: builds the `SequentialLinearNet`
 model, wraps it with `build_model_and_optimizer`, constructs a `Trainer`,
@@ -670,7 +670,7 @@ def train(
 
 </details>
 
-<details closed markdown><summary><strong>`main`</strong></summary>
+<details closed markdown><summary><strong><code>main</code></strong></summary>
 
 Entry point for `python -m ezpz.examples.test`. Parses CLI args, calls
 `setup_torch` (with optional tensor/pipeline/context parallelism),
@@ -730,7 +730,7 @@ def main() -> Trainer:
 
 </details>
 
-<details closed markdown><summary><strong>`__main__` guard</strong></summary>
+<details closed markdown><summary><strong><code>__main__</code> guard</strong></summary>
 
 Calls `main()`, tears down the distributed process group, and exits.
 

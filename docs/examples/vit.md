@@ -284,7 +284,7 @@ def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
 
 </details>
 
-<details closed markdown><summary><strong>`train_fn` -- Distributed Setup and Data Loading</strong></summary>
+<details closed markdown><summary><strong><code>train_fn</code> -- Distributed Setup and Data Loading</strong></summary>
 
 `train_fn` is the core training routine. It begins by querying the
 distributed environment for `world_size`, `local_rank`, and device, then
@@ -324,7 +324,7 @@ def train_fn(
 
 </details>
 
-<details closed markdown><summary><strong>`train_fn` -- Model Creation, Wrapping, and Compilation</strong></summary>
+<details closed markdown><summary><strong><code>train_fn</code> -- Model Creation, Wrapping, and Compilation</strong></summary>
 
 The `SimpleVisionTransformer` is instantiated, moved to the target device,
 then wrapped with DDP or FSDP via `ezpz.distributed.wrap_model` when
@@ -367,7 +367,7 @@ running multi-GPU. Optional `torch.compile` follows.
 
 </details>
 
-<details closed markdown><summary><strong>`train_fn` -- Training Loop</strong></summary>
+<details closed markdown><summary><strong><code>train_fn</code> -- Training Loop</strong></summary>
 
 The loop iterates over the training dataloader, with a configurable warmup
 period. Each step runs a forward pass under `torch.autocast`, computes
@@ -410,7 +410,7 @@ for data-transfer, forward, backward, and optimizer phases.
 
 </details>
 
-<details closed markdown><summary><strong>`train_fn` -- Metrics and Evaluation</strong></summary>
+<details closed markdown><summary><strong><code>train_fn</code> -- Metrics and Evaluation</strong></summary>
 
 After warmup, each step's loss, accuracy, and timing breakdown are logged
 to an `ezpz.History` object. After training, if a test split exists, the
@@ -479,7 +479,7 @@ and optionally uploads them to W&B.
 
 </details>
 
-<details closed markdown><summary><strong>`main` -- Entrypoint</strong></summary>
+<details closed markdown><summary><strong><code>main</code> -- Entrypoint</strong></summary>
 
 `main` calls `ezpz.distributed.setup_torch()` to initialize the process
 group, optionally sets up W&B, configures the attention function (native
