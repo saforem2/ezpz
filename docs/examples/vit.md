@@ -16,6 +16,49 @@ See:
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 ```
 
+## What to Expect
+
+Trains a lightweight Vision Transformer on MNIST. Supports DDP and FSDP
+modes, with optional `torch.compile`. You'll see per-step loss, accuracy,
+and timing metrics.
+
+## Code Walkthrough
+
+### ViT Architecture
+
+The model follows the standard ViT pattern: images are split into patches,
+embedded, and processed by transformer blocks:
+
+```python
+class SimpleVisionTransformer(torch.nn.Module):
+    def __init__(self, img_size, patch_size, embed_dim, depth, num_heads, ...):
+        self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
+        self.pos_embed = torch.nn.Parameter(torch.zeros(1, num_patches, embed_dim))
+        self.blocks = torch.nn.ModuleList([
+            AttentionBlock(dim=embed_dim, num_heads=num_heads)
+            for _ in range(depth)
+        ])
+        self.norm = torch.nn.LayerNorm(embed_dim)
+        self.head = torch.nn.Linear(embed_dim, num_classes)
+```
+
+`PatchEmbed` uses a strided convolution to convert image patches into
+tokens. Global average pooling replaces the class token by default.
+
+### Model Presets and Compilation
+
+Model presets (`--model debug|small|medium|large`) control depth, head
+count, and head dimension as a unit. The `--compile` flag wraps the model
+with `torch.compile` for fused kernels:
+
+```python
+if args.compile:
+    model = torch.compile(model)
+```
+
+Use `--fsdp` to switch from DDP to FSDP wrapping — useful when the ViT
+is too large to replicate on every GPU.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

@@ -17,6 +17,62 @@ See: \[📘 [docs](../python/Code-Reference/examples/test.md)\],
 ezpz launch python3 -m ezpz.examples.test
 ```
 
+## What to Expect
+
+Trains a 2-layer MLP on MNIST for 200 iterations (by default). You'll see
+per-step loss, accuracy, and timing. The test passes when training completes
+without error — it's the standard smoke test for verifying your distributed
+setup works.
+
+## Code Walkthrough
+
+### Setup
+
+The `TrainConfig` dataclass captures all CLI flags and configures profiling.
+`setup_torch()` handles device detection and process group initialization:
+
+```python
+rank = ezpz.setup_torch(
+    seed=args.seed,
+    tp=args.tp,
+    pp=args.pp,
+    cp=args.cp,
+    backend=args.backend,
+)
+config = TrainConfig(warmup=args.warmup, tp=args.tp, ...)
+```
+
+Parallelism dimensions (`--tp`, `--pp`, `--cp`) are passed directly
+to `setup_torch()`, which creates the appropriate process groups.
+
+### Training
+
+Each `train_step()` calls `_forward_step()` and `_backward_step()`
+with separate timing, then logs via `history.update()`:
+
+```python
+def train_step(self) -> dict:
+    self.train_iter += 1
+    metrics, loss = self._forward_step()      # forward + loss
+    metrics["dtb"] = self._backward_step(loss) # backward + optim
+    self.optimizer.zero_grad()
+    if self.train_iter % self.config.log_freq == 0:
+        summary = self.history.update({"iter": self.train_iter, **metrics})
+```
+
+The profiling context wraps the entire training loop, supporting both
+PyTorch profiler and pyinstrument.
+
+### Notable Features
+
+- **Model presets**: `--model debug|small|medium|large` adjusts batch size,
+  layer sizes, and iteration count as a unit.
+- **Profiling flags**: `--profile` enables PyTorch profiler with configurable
+  wait/warmup/active cycles. `--pyinstrument-profiler` enables statistical
+  profiling instead.
+- **Dataset support**: Currently MNIST, with a pluggable `_build_dataloader()`
+  method.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

@@ -21,6 +21,54 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
 
+## What to Expect
+
+Demonstrates 2D parallelism: tensor parallelism within each node, FSDP
+across nodes. Requires at least 2 GPUs. Trains a Llama-style transformer
+on a HuggingFace text dataset with loss and timing metrics.
+
+## Code Walkthrough
+
+### Device Mesh and 2D Parallelism
+
+The key concept is a 2D device mesh that separates TP (within-node) from
+FSDP (across-node) parallelism:
+
+```python
+mesh = init_device_mesh(device_type, (dp_size, tp_size),
+                        mesh_dim_names=("dp", "tp"))
+
+# TP: parallelize attention and FFN layers within each node
+parallelize_module(model, mesh["tp"], {
+    "attention.wq": ColwiseParallel(),
+    "attention.wv": ColwiseParallel(),
+    "attention.wo": RowwiseParallel(),
+    "feed_forward.w1": ColwiseParallel(),
+    "feed_forward.w2": RowwiseParallel(),
+})
+
+# FSDP: shard remaining parameters across nodes
+model = FSDP(model, device_mesh=mesh["dp"], ...)
+```
+
+### Parallel Layout
+
+The grid below shows how GPUs are organized. Each **row** is a TP group
+(within one host), and each **column** is an FSDP group (across hosts):
+
+```
+┌──────────┬──────────┬──────────┬──────────┐
+│  GPU 0   │  GPU 1   │  GPU 2   │  GPU 3   │  ← Host 1 (TP group)
+├──────────┼──────────┼──────────┼──────────┤
+│  GPU 4   │  GPU 5   │  GPU 6   │  GPU 7   │  ← Host 2 (TP group)
+├──────────┼──────────┼──────────┼──────────┤
+│  GPU 8   │  GPU 9   │  GPU 10  │  GPU 11  │  ← Host 3 (TP group)
+└──────────┴──────────┴──────────┴──────────┘
+     ↑          ↑          ↑          ↑
+   FSDP       FSDP       FSDP       FSDP
+  group 0    group 1    group 2    group 3
+```
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

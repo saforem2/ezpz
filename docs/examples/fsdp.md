@@ -15,6 +15,43 @@ See:
 ezpz launch python3 -m ezpz.examples.fsdp
 ```
 
+## What to Expect
+
+Trains a CNN on MNIST using FSDP sharding. Compare with the
+[DDP test example](test.md) to see that the training loop is identical —
+only the wrapping strategy changes.
+
+## Code Walkthrough
+
+### FSDP Wrapping
+
+The model is wrapped with `FullyShardedDataParallel` instead of DDP.
+Mixed precision is configured via `MixedPrecision`:
+
+```python
+model = FSDP(
+    model,
+    device_id=device,
+    mixed_precision=MixedPrecision(
+        param_dtype=dtype,
+        reduce_dtype=dtype,
+        buffer_dtype=dtype,
+    ),
+)
+```
+
+With FSDP, parameters are sharded across GPUs and gathered on-demand
+for each forward/backward pass, dramatically reducing per-GPU memory.
+
+### When to Use FSDP vs DDP
+
+- **DDP** replicates the full model on every GPU. Use it when your model
+  fits in a single GPU's memory — it's simpler and has lower communication
+  overhead.
+- **FSDP** shards model parameters across GPUs. Use it when the model is
+  too large to fit in a single GPU's memory, or when you want to train
+  larger batch sizes by reclaiming parameter memory.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
