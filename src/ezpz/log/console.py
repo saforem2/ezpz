@@ -166,7 +166,7 @@ def get_console(*args: str, redirect: bool = True, **kwargs: Any) -> Console:
     if "color_system" not in kwargs:
         kwargs["color_system"] = "truecolor"
     kwargs["force_terminal"] = True
-    console = Console(**kwargs)
+    console = Console(redirect=redirect, **kwargs)
     # XXX: Hack for the time being
     console.is_jupyter = False
     # console.is_interactive = is_interactive()

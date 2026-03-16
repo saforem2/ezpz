@@ -1111,6 +1111,7 @@ def setup_wandb(
     sync_tensorboard: bool | None = None,
     monitor_gym: bool | None = None,
     settings: dict[str, Any] | None = None,
+    **kwargs,
 ) -> Any:
     """Initialise a wandb run (rank 0 only logs, others get disabled mode).
 
@@ -1189,6 +1190,7 @@ def setup_wandb(
                     else "fork",
                 )
             ),
+            **kwargs,
         )
         if run is not None:
             logger.info("wandb.run=[%s](%s)", run.name, run.url)
