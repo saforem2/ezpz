@@ -15,42 +15,63 @@ See:
 ezpz launch python3 -m ezpz.examples.fsdp
 ```
 
-## What to Expect
-
-Trains a CNN on MNIST using FSDP sharding. Compare with the
-[DDP test example](test.md) to see that the training loop is identical —
-only the wrapping strategy changes.
-
 ## Code Walkthrough
 
 ### FSDP Wrapping
 
 The model is wrapped with `FullyShardedDataParallel` instead of DDP.
-Mixed precision is configured via `MixedPrecision`:
+Parameters are sharded across GPUs and gathered on-demand for each
+forward/backward pass, reducing per-GPU memory:
 
-```python
-model = FSDP(
-    model,
-    device_id=device,
-    mixed_precision=MixedPrecision(
-        param_dtype=dtype,
-        reduce_dtype=dtype,
-        buffer_dtype=dtype,
-    ),
-)
+```python title="src/ezpz/examples/fsdp.py" linenums="275"
+    model = FSDP(
+        model,
+        device_id=device,
+        mixed_precision=MixedPrecision(
+            param_dtype=dtype,
+            reduce_dtype=dtype,
+            buffer_dtype=dtype,
+        ),
+    )
 ```
 
-With FSDP, parameters are sharded across GPUs and gathered on-demand
-for each forward/backward pass, dramatically reducing per-GPU memory.
+### Training Loop
+
+The training loop is identical to the DDP version — only the wrapping
+changes:
+
+```python title="src/ezpz/examples/fsdp.py" linenums="153"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def train(
+    model: nn.Module | DistributedDataParallel | FSDP,
+    train_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    sampler: DistributedSampler | None = None,
+) -> dict:
+    ...
+    model.train()
+    ddp_loss = torch.zeros(2).to(device)
+    ...
+    for _, (batch, target) in enumerate(train_loader):
+        batch, target = batch.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(batch)
+        loss = F.nll_loss(output, target, reduction="sum")
+        loss.backward()
+        optimizer.step()
+        ddp_loss[0] += loss.item()
+        ddp_loss[1] += len(batch)
+    ...
+    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+```
 
 ### When to Use FSDP vs DDP
 
-- **DDP** replicates the full model on every GPU. Use it when your model
-  fits in a single GPU's memory — it's simpler and has lower communication
-  overhead.
+- **DDP** replicates the full model on every GPU. Simpler and lower
+  communication overhead when the model fits in memory.
 - **FSDP** shards model parameters across GPUs. Use it when the model is
-  too large to fit in a single GPU's memory, or when you want to train
-  larger batch sizes by reclaiming parameter memory.
+  too large to fit in a single GPU's memory.
 
 ## Help
 

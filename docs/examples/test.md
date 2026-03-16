@@ -17,51 +17,57 @@ See: \[📘 [docs](../python/Code-Reference/examples/test.md)\],
 ezpz launch python3 -m ezpz.examples.test
 ```
 
-## What to Expect
-
-Trains a 2-layer MLP on MNIST for 200 iterations (by default). You'll see
-per-step loss, accuracy, and timing. The test passes when training completes
-without error — it's the standard smoke test for verifying your distributed
-setup works.
-
 ## Code Walkthrough
 
-### Setup
+### Training Step
 
-The `TrainConfig` dataclass captures all CLI flags and configures profiling.
-`setup_torch()` handles device detection and process group initialization:
+Each `train_step()` splits forward and backward into separately timed
+phases, then logs via `history.update()`:
 
-```python
-rank = ezpz.setup_torch(
-    seed=args.seed,
-    tp=args.tp,
-    pp=args.pp,
-    cp=args.cp,
-    backend=args.backend,
-)
-config = TrainConfig(warmup=args.warmup, tp=args.tp, ...)
+```python title="src/ezpz/examples/test.py" linenums="354"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def train_step(self) -> dict:
+        """Run one optimiser step, emitting periodic logs/metrics."""
+        self.train_iter += 1
+        metrics, loss = self._forward_step()
+        metrics["dtb"] = self._backward_step(loss)
+        self.optimizer.zero_grad()
+        if self.train_iter == self.config.train_iters:
+            return metrics
+        if (
+            self.train_iter % self.config.log_freq == 0
+            or self.train_iter % self.config.print_freq == 0
+        ):
+            summary = self.history.update({"iter": self.train_iter, **metrics})
+            if self.train_iter % self.config.print_freq == 0:
+                logger.info(f"{summary}")
+        return metrics
 ```
 
-Parallelism dimensions (`--tp`, `--pp`, `--cp`) are passed directly
-to `setup_torch()`, which creates the appropriate process groups.
+### Forward Pass
 
-### Training
+The forward step fetches a batch, reshapes inputs for the MLP, and
+computes loss + accuracy:
 
-Each `train_step()` calls `_forward_step()` and `_backward_step()`
-with separate timing, then logs via `history.update()`:
-
-```python
-def train_step(self) -> dict:
-    self.train_iter += 1
-    metrics, loss = self._forward_step()      # forward + loss
-    metrics["dtb"] = self._backward_step(loss) # backward + optim
-    self.optimizer.zero_grad()
-    if self.train_iter % self.config.log_freq == 0:
-        summary = self.history.update({"iter": self.train_iter, **metrics})
+```python title="src/ezpz/examples/test.py" linenums="323"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def _forward_step(self) -> tuple[dict, torch.Tensor]:
+        """Execute a forward pass returning metrics and the loss tensor."""
+        t0 = time.perf_counter()
+        batch_inputs, targets = self._next_batch()
+        inputs = self._prepare_inputs(batch_inputs)
+        targets = targets.to(self.device_id)
+        logits = self.model(inputs)
+        loss = calc_loss(logits, targets)
+        accuracy = (logits.argmax(dim=1) == targets).float().mean()
+        ezpz.distributed.synchronize()
+        metrics = {
+            "loss": loss.detach(),
+            "accuracy": accuracy.detach(),
+            "dtf": time.perf_counter() - t0,
+        }
+        return metrics, loss
 ```
-
-The profiling context wraps the entire training loop, supporting both
-PyTorch profiler and pyinstrument.
 
 ### Notable Features
 
@@ -70,8 +76,6 @@ PyTorch profiler and pyinstrument.
 - **Profiling flags**: `--profile` enables PyTorch profiler with configurable
   wait/warmup/active cycles. `--pyinstrument-profiler` enables statistical
   profiling instead.
-- **Dataset support**: Currently MNIST, with a pluggable `_build_dataloader()`
-  method.
 
 ## Help
 

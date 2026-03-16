@@ -19,91 +19,119 @@ See:
 ezpz launch python3 -m ezpz.examples.minimal
 ```
 
-## What to Expect
-
-You'll see per-step loss and timing printed at regular intervals.
-Loss should decrease as the model learns to reconstruct random vectors.
-On completion, a `History` dataset is finalized with timing summaries.
-
 ## Code Walkthrough
 
 ### Setup
 
 The `setup()` function initializes the distributed runtime, builds the model,
-and wraps it for DDP when running on multiple GPUs:
+and wraps it for DDP when running on multiple GPUs.
+All hyperparameters come from **environment variables** — no argparse needed.
 
-```python
+```python title="src/ezpz/examples/minimal.py" linenums="94"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def setup():
+    """Initialize distributed runtime, model, and optimizer."""
     rank = ezpz.setup_torch(seed=int(os.environ.get("SEED", 0)))
-    # Optional W&B initialization (rank 0 only)
-    if rank == 0:
-        ezpz.setup_wandb(project_name="ezpz.examples.minimal")
+    if os.environ.get("WANDB_DISABLED", False):
+        logger.info("WANDB_DISABLED is set, not initializing wandb")
+    elif rank == 0:
+        try:
+            _ = ezpz.setup_wandb(
+                project_name=os.environ.get("PROJECT_NAME", "ezpz.examples.minimal")
+            )
+        except Exception:
+            logger.exception("Failed to initialize wandb, continuing without it")
+    device_type = ezpz.get_torch_device_type()
+    from ezpz.models.minimal import SequentialLinearNet
 
     model = SequentialLinearNet(
-        input_dim=int(os.environ.get("INPUT_SIZE", 128)),
+        input_dim=int((os.environ.get("INPUT_SIZE", 128))),
         output_dim=int(os.environ.get("OUTPUT_SIZE", 128)),
-        sizes=[int(x) for x in os.environ.get(
-            "LAYER_SIZES", "256,512,1024,2048,1024,512,256,128"
-        ).split(",")],
+        sizes=[
+            int(x)
+            for x in os.environ.get(
+                "LAYER_SIZES", "256,512,1024,2048,1024,512,256,128"
+            ).split(",")
+        ],
     )
     model.to(device_type)
-    optimizer = torch.optim.Adam(model.parameters())
+    model.to((os.environ.get("DTYPE", torch.bfloat16)))
+    try:
+        from ezpz.utils import model_summary
 
+        model_summary(model)
+    except Exception:
+        logger.exception("Failed to summarize model")
+    logger.info(f"{model=}")
+    optimizer = torch.optim.Adam(model.parameters())
     if ezpz.get_world_size() > 1:
         model = ezpz.distributed.wrap_model_for_ddp(model)
 
     return model, optimizer
 ```
 
-All hyperparameters come from **environment variables** — no argparse needed.
-This pattern keeps the script minimal while still being configurable.
-
 ### Training Loop
 
 The `train()` function runs a synthetic reconstruction loop with
-`history.update()` for metric tracking:
+`history.update()` for metric tracking. Forward and backward timings
+(`dtf`, `dtb`) are tracked separately.
 
-```python
-for step in range(int(os.environ.get("TRAIN_ITERS", 500))):
-    with torch.autocast(device_type=device_type, dtype=dtype):
-        t0 = time.perf_counter()
-        x = torch.rand((bsize, isize), dtype=dtype).to(device_type)
-        y = model(x)
-        loss = ((y - x) ** 2).sum()
-        dtf = (t1 := time.perf_counter()) - t0
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        dtb = time.perf_counter() - t1
-        if step % log_freq == 0 and step > warmup:
-            summary = history.update({
-                "iter": step,
-                "loss": loss.item(),
-                "dt": dtf + dtb,
-                "dtf": dtf,
-                "dtb": dtb,
-            })
+```python title="src/ezpz/examples/minimal.py" linenums="64"
+    for step in range(int(os.environ.get("TRAIN_ITERS", 500))):
+        with torch.autocast(
+            device_type=device_type,
+            dtype=dtype,
+        ):
+            t0 = time.perf_counter()
+            x = torch.rand((bsize, isize), dtype=dtype).to(device_type)
+            y = model(x)
+            loss = ((y - x) ** 2).sum()
+            dtf = (t1 := time.perf_counter()) - t0
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            dtb = time.perf_counter() - t1
+            if step % log_freq == 0 and step > warmup:
+                summary = history.update(
+                    {
+                        "iter": step,
+                        "loss": loss.item(),
+                        "dt": dtf + dtb,
+                        "dtf": dtf,
+                        "dtb": dtb,
+                    }
+                )
+            if step % print_freq == 0 and step > warmup:
+                logger.info(summary)
+    return history
 ```
-
-The forward and backward timings (`dtf`, `dtb`) are tracked separately,
-and `autocast` handles mixed-precision automatically.
 
 ### Finalization
 
 After training, rank 0 calls `history.finalize()` to save metrics and
 print a timing report:
 
-```python
+```python title="src/ezpz/examples/minimal.py" linenums="139"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
 def main():
+    """Entrypoint for launching the minimal synthetic training example."""
+    t0 = time.perf_counter()
     model, optimizer = setup()
+    t_setup = time.perf_counter()
+    module_name = "ezpz.examples.minimal"
+    outdir = get_example_outdir(module_name)
+    logger.info("Outputs will be saved to %s", outdir)
+    train_start = time.perf_counter()
     history = train(model, optimizer, outdir)
+    train_end = time.perf_counter()
     if ezpz.get_rank() == 0:
         dataset = history.finalize(
             outdir=outdir,
-            run_name="ezpz.examples.minimal",
+            run_name=module_name,
             dataset_fname="train",
+            verbose=False,
         )
-    logger.info("Timings: %s", timings)
+        logger.info(f"{dataset=}")
 ```
 
 ## Configuration

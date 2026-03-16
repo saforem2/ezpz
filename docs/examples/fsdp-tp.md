@@ -21,35 +21,32 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
 
-## What to Expect
-
-Demonstrates 2D parallelism: tensor parallelism within each node, FSDP
-across nodes. Requires at least 2 GPUs. Trains a Llama-style transformer
-on a HuggingFace text dataset with loss and timing metrics.
-
 ## Code Walkthrough
 
 ### Device Mesh and 2D Parallelism
 
-The key concept is a 2D device mesh that separates TP (within-node) from
-FSDP (across-node) parallelism:
+A 2D device mesh separates TP (within-node) from FSDP (across-node)
+parallelism. From the source:
 
-```python
-mesh = init_device_mesh(device_type, (dp_size, tp_size),
-                        mesh_dim_names=("dp", "tp"))
-
-# TP: parallelize attention and FFN layers within each node
-parallelize_module(model, mesh["tp"], {
-    "attention.wq": ColwiseParallel(),
-    "attention.wv": ColwiseParallel(),
-    "attention.wo": RowwiseParallel(),
-    "feed_forward.w1": ColwiseParallel(),
-    "feed_forward.w2": RowwiseParallel(),
-})
-
-# FSDP: shard remaining parameters across nodes
-model = FSDP(model, device_mesh=mesh["dp"], ...)
+```python title="src/ezpz/examples/fsdp_tp.py"
+from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel as FSDP,
+    MixedPrecision,
+    ShardingStrategy,
+)
+from torch.distributed.tensor.parallel import (
+    parallelize_module,
+    ColwiseParallel,
+    RowwiseParallel,
+    PrepareModuleInput,
+    SequenceParallel,
+)
 ```
+
+The mesh is initialized with `("dp", "tp")` dimensions, then attention
+and FFN layers are parallelized along the TP axis while FSDP shards
+across the DP axis.
 
 ### Parallel Layout
 

@@ -16,48 +16,83 @@ See:
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 ```
 
-## What to Expect
-
-Trains a lightweight Vision Transformer on MNIST. Supports DDP and FSDP
-modes, with optional `torch.compile`. You'll see per-step loss, accuracy,
-and timing metrics.
-
 ## Code Walkthrough
 
 ### ViT Architecture
 
-The model follows the standard ViT pattern: images are split into patches,
-embedded, and processed by transformer blocks:
+The model follows the standard ViT pattern — `PatchEmbed` uses a strided
+convolution to turn image patches into tokens, then transformer blocks
+process the sequence:
 
-```python
+```python title="src/ezpz/examples/vit.py" linenums="177"
 class SimpleVisionTransformer(torch.nn.Module):
-    def __init__(self, img_size, patch_size, embed_dim, depth, num_heads, ...):
-        self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
-        self.pos_embed = torch.nn.Parameter(torch.zeros(1, num_patches, embed_dim))
-        self.blocks = torch.nn.ModuleList([
-            AttentionBlock(dim=embed_dim, num_heads=num_heads)
-            for _ in range(depth)
-        ])
-        self.norm = torch.nn.LayerNorm(embed_dim)
-        self.head = torch.nn.Linear(embed_dim, num_classes)
-```
+    """Minimal Vision Transformer implementation without timm."""
 
-`PatchEmbed` uses a strided convolution to convert image patches into
-tokens. Global average pooling replaces the class token by default.
+    def __init__(
+        self,
+        img_size: int,
+        patch_size: int,
+        in_chans: int,
+        embed_dim: int,
+        depth: int,
+        num_heads: int,
+        num_classes: int,
+        block_fn: Any,
+        class_token: bool = False,
+        global_pool: str = "avg",
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.patch_embed = PatchEmbed(
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+        )
+        num_patches = self.patch_embed.num_patches
+        ...
+        self.pos_embed = torch.nn.Parameter(
+            torch.zeros(1, num_patches, embed_dim)
+        )
+        self.blocks = torch.nn.ModuleList(
+            [
+                block_fn(dim=embed_dim, num_heads=num_heads)
+                for _ in range(depth)
+            ]
+        )
+        self.norm = torch.nn.LayerNorm(embed_dim)
+        self.head = (
+            torch.nn.Linear(embed_dim, num_classes)
+            if num_classes > 0
+            else torch.nn.Identity()
+        )
+```
 
 ### Model Presets and Compilation
 
 Model presets (`--model debug|small|medium|large`) control depth, head
-count, and head dimension as a unit. The `--compile` flag wraps the model
-with `torch.compile` for fused kernels:
+count, and head dimension as a unit:
 
-```python
-if args.compile:
-    model = torch.compile(model)
+```python title="src/ezpz/examples/vit.py" linenums="96"
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 4,
+        "num_heads": 2,
+        "head_dim": 16,
+        "depth": 2,
+    },
+    "small": {
+        "batch_size": 128,
+        "num_heads": 16,
+        "head_dim": 64,
+        "depth": 24,
+    },
+    ...
+}
 ```
 
-Use `--fsdp` to switch from DDP to FSDP wrapping — useful when the ViT
-is too large to replicate on every GPU.
+Use `--compile` for `torch.compile` fused kernels, and `--fsdp` to switch
+from DDP to FSDP wrapping.
 
 ## Help
 
