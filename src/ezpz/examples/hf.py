@@ -225,6 +225,40 @@ def main() -> None:
     )
     t_setup = time.perf_counter()
 
+    # Initialise wandb early so console capture covers the full run.
+    if rank == 0:
+        try:
+            import wandb
+
+            if (
+                wandb is not None
+                and report_to is not None
+                and report_to != "none"
+                and not os.environ.get("WANDB_DISABLED", False)
+            ):
+                wbproj_name = (
+                    model_args.wandb_project_name
+                    if model_args.wandb_project_name is not None
+                    else model_args.model_name_or_path
+                )
+                if wbproj_name is None:
+                    wbproj_name = "ezpz-hf-default-project"
+                wbproj_name = f"ezpz-hf-{wbproj_name}".replace("/", "-")
+                run = ezpz.setup_wandb(project_name=wbproj_name)
+                if run is not None and run is wandb.run:
+                    wandb.define_metric("num_input_tokens_seen")
+                    run.config.update(
+                        {
+                            "model": model_args.__dict__,
+                            "data": data_args.__dict__,
+                            "training": training_args.to_dict(),
+                            "ezpz.dist_info": ezpz.get_dist_info(),
+                        }
+                    )
+        except Exception:
+            logger.info("W&B setup skipped")
+    ezpz.barrier()
+
     logger.warning(accelerator.state)
     if accelerator.is_main_process:
         datasets.utils.logging.set_verbosity_warning()
@@ -398,40 +432,7 @@ def main() -> None:
         if len(tokenizer) > embedding_size:
             model.resize_token_embeddings(len(tokenizer))
 
-    if rank == 0:
-        try:
-            import wandb
-
-            if (
-                wandb is not None
-                and report_to is not None
-                and report_to != "none"
-                and not os.environ.get("WANDB_DISABLED", False)
-            ):
-                wbproj_name = (
-                    model_args.wandb_project_name
-                    if model_args.wandb_project_name is not None
-                    else model_args.model_name_or_path
-                )
-                if wbproj_name is None:
-                    wbproj_name = "ezpz-hf-default-project"
-                wbproj_name = f"ezpz-hf-{wbproj_name}".replace("/", "-")
-                run = ezpz.setup_wandb(project_name=wbproj_name)
-                if run is not None and run is wandb.run:
-                    wandb.define_metric("num_input_tokens_seen")
-                    run.config.update(
-                        {
-                            "model": model_args.__dict__,
-                            "data": data_args.__dict__,
-                            "training": training_args.to_dict(),
-                            "ezpz.dist_info": ezpz.get_dist_info(),
-                        }
-                    )
-        except Exception:
-            logger.info("W&B setup skipped")
-
-    ezpz.barrier()  # sync all ranks after rank-0 wandb setup
-    logger.info("[rank %d] wandb setup complete, proceeding to data prep", rank)
+    logger.info("[rank %d] proceeding to data prep", rank)
 
     if training_args.do_train:
         column_names = list(raw_datasets[train_split_name].features)  # type:ignore

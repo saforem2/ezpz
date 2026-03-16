@@ -242,18 +242,14 @@ class Trainer:
         if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
             ezpz.distributed.barrier(group=ezpz.tp.get_tensor_parallel_group())
             ezpz.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
-            ezpz.distributed.barrier(group=ezpz.tp.get_pipeline_parallel_group())
-            ezpz.distributed.barrier(group=ezpz.tp.get_context_parallel_group())
+            ezpz.distributed.barrier(
+                group=ezpz.tp.get_pipeline_parallel_group()
+            )
+            ezpz.distributed.barrier(
+                group=ezpz.tp.get_context_parallel_group()
+            )
 
         if self.rank == 0 and not WANDB_DISABLED:
-            logger.debug("Setting up wandb")
-            wbconfig = {}
-            wbconfig |= asdict(self.config)
-            wbconfig |= ezpz.get_dist_info()
-            _ = ezpz.setup_wandb(
-                project_name="ezpz.examples.test",
-                config=wbconfig,
-            )
             if (wbrun := getattr(wandb, "run", None)) is not None and callable(
                 wbrun.watch
             ):
@@ -506,9 +502,7 @@ def train(
     t1m = time.perf_counter()
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
-    model, optimizer = build_model_and_optimizer(
-        model, dtype=config.dtype
-    )
+    model, optimizer = build_model_and_optimizer(model, dtype=config.dtype)
     t2m = time.perf_counter()
     dt_optimizer = time.perf_counter() - t1m
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
@@ -693,9 +687,7 @@ def build_model_and_optimizer(
             model=model, use_fsdp=False, dtype=dtype
         )
         try:
-            if isinstance(device_type, str) and device_type.startswith(
-                "cuda"
-            ):
+            if isinstance(device_type, str) and device_type.startswith("cuda"):
                 model = DDP(model, device_ids=[local_rank])
             else:
                 model = DDP(model)
@@ -760,6 +752,27 @@ def main() -> Trainer:
     )
     t_setup = time.perf_counter()
     logger.info(f"Took: {(t_setup - t0):.2f} seconds to setup torch")
+    # Initialise wandb early so console capture covers the full run.
+    if ezpz.get_rank() == 0 and not WANDB_DISABLED:
+        wbconfig = {}
+        wbconfig |= asdict(config)
+        wbconfig |= ezpz.get_dist_info()
+        console = os.environ.get("WANDB_CONSOLE", "auto").lower()
+        assert console in {
+            "auto",
+            "wrap",
+            "redirect",
+            "wrap_raw",
+            "wrap_emu",
+            "off",
+        }, f"Invalid WANDB_CONSOLE value: {console}"
+        logger.info(f"W&B console logging set to: {console}")
+        settings = wandb.Settings(console=console)
+        _ = ezpz.distributed.setup_wandb(
+            project_name="ezpz.examples.test",
+            config=wbconfig,
+            settings=settings,
+        )
     with config.ctx as c:
         trainer = train(config, profiler=c)
     t_train = time.perf_counter()

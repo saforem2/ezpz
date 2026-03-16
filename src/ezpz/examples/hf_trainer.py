@@ -242,42 +242,6 @@ def parse_args() -> dict:
     if hasattr(training_args, "overwrite_output_dir"):
         setattr(training_args, "overwrite_output_dir", overwrite_output_dir)
 
-    try:
-        import wandb
-    except (ImportError, ModuleNotFoundError):
-        wandb = None  # type:ignore
-
-    if (
-        wandb is not None
-        and rank == 0
-        and not os.environ.get("WANDB_DISABLED", False)
-    ):
-        if (
-            model_args.wandb_project_name is None
-            and model_args.model_name_or_path is None
-        ):
-            wbproj_name = "ezpz-hf_trainer-default-project"
-        else:
-            wbproj_name = (
-                model_args.wandb_project_name
-                if model_args.wandb_project_name is not None
-                else model_args.model_name_or_path
-            )
-            wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
-        run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
-        if run is not None and run is wandb.run:
-            wandb.define_metric("num_input_tokens_seen")
-            wandb.define_metric("train/", step_metric="num_input_tokens_seen")
-            wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
-            run.config.update(
-                {
-                    "model": model_args.__dict__,
-                    "data": data_args.__dict__,
-                    "training": training_args.to_dict(),
-                    "ezpz.dist_info": ezpz.get_dist_info(),
-                }
-            )
-
     if training_args.should_log:
         # The default of training_args.log_level is passive,
         # so we set log level at info here to have that default.
@@ -485,10 +449,6 @@ def main() -> int:
 
     # rank = ezpz.distributed.setup_torch(device_id=ezpz.get_local_rank())
     rank = ezpz.distributed.setup_torch()
-    # rank = ezpz.distributed.setup_torch(
-    #     # seed=training_args.seed,
-    #     # device_id=int(devid) if devid is not None else devid,
-    # )
 
     args = parse_args()
     t_setup = time.perf_counter()
@@ -498,6 +458,42 @@ def main() -> int:
     model_args: HfModelArguments = args["model"]
     training_args: TrainingArguments = args["training"]
     overwrite_output_dir = bool(args.get("overwrite_output_dir", False))
+
+    # Initialise wandb early so console capture covers the full run.
+    try:
+        import wandb
+    except (ImportError, ModuleNotFoundError):
+        wandb = None  # type:ignore
+    if (
+        wandb is not None
+        and rank == 0
+        and not os.environ.get("WANDB_DISABLED", False)
+    ):
+        if (
+            model_args.wandb_project_name is None
+            and model_args.model_name_or_path is None
+        ):
+            wbproj_name = "ezpz-hf_trainer-default-project"
+        else:
+            wbproj_name = (
+                model_args.wandb_project_name
+                if model_args.wandb_project_name is not None
+                else model_args.model_name_or_path
+            )
+            wbproj_name = f"ezpz-hf_trainer-{wbproj_name}"
+        run = ezpz.setup_wandb(project_name=wbproj_name.replace("/", "-"))
+        if run is not None and run is wandb.run:
+            wandb.define_metric("num_input_tokens_seen")
+            wandb.define_metric("train/", step_metric="num_input_tokens_seen")
+            wandb.define_metric("eval/", step_metric="num_input_tokens_seen")
+            run.config.update(
+                {
+                    "model": model_args.__dict__,
+                    "data": data_args.__dict__,
+                    "training": training_args.to_dict(),
+                    "ezpz.dist_info": ezpz.get_dist_info(),
+                }
+            )
 
     try:
         import wandb

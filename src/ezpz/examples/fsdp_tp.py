@@ -733,14 +733,15 @@ def train(
     hist_bins = int(os.environ.get("EZPZ_HIST_BINS", "64"))
     hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
     dataset_tag = args.dataset.lower().replace("/", "_")
-    if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
-        run = ezpz.distributed.setup_wandb(project_name=WBPROJ_NAME)
-        if run is not None and wandb is not None and run is wandb.run:
-            from dataclasses import asdict
+    # Update wandb config with model args (run already initialised in main).
+    if (
+        ezpz.get_rank() == 0
+        and wandb is not None
+        and getattr(wandb, "run", None) is not None
+    ):
+        from dataclasses import asdict
 
-            wandb.config.update(ezpz.get_dist_info())
-            wandb.config.update(asdict(config))  # type:ignore
-            wandb.config.update({"args": {**vars(args)}})
+        wandb.config.update(asdict(config))  # type:ignore
 
     device_type = ezpz.distributed.get_torch_device_type()
     device = (
@@ -1065,6 +1066,12 @@ def main(args: argparse.Namespace) -> int:
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
+    # Initialise wandb early so console capture covers the full run.
+    if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
+        run = ezpz.distributed.setup_wandb(project_name=WBPROJ_NAME)
+        if run is not None and wandb is not None and run is wandb.run:
+            wandb.config.update(ezpz.get_dist_info())
+            wandb.config.update({"args": {**vars(args)}})
     train_start = time.perf_counter()
     train(args=args, outdir=outdir)
     train_end = time.perf_counter()
