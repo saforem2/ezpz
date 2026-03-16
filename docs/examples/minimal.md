@@ -36,7 +36,8 @@ ezpz launch python3 -m ezpz.examples.minimal
 
 ## Code Walkthrough
 
-### Imports and Logger
+
+<details closed><summary><strong>Imports and Logger</strong></summary>
 
 Standard imports plus `ezpz` for distributed training utilities. The rank-aware logger ensures only rank 0 prints by default.
 
@@ -53,7 +54,9 @@ from ezpz.examples import get_example_outdir
 logger = ezpz.get_logger(__name__)
 ```
 
-### `train()`
+</details>
+
+<details closed><summary><strong>`train()`</strong></summary>
 
 The `@ezpz.timeitlogit` decorator logs wall-clock time for the entire function. Inside, the model is unwrapped if DDP-wrapped, and an `ezpz.History` is created to track metrics to a JSONL file.
 
@@ -129,7 +132,9 @@ The training loop generates random input, computes a reconstruction loss, and re
     return history
 ```
 
-### `setup()`
+</details>
+
+<details closed><summary><strong>`setup()`</strong></summary>
 
 Initializes the distributed backend via `ezpz.setup_torch()`, optionally sets up W&B on rank 0, builds a `SequentialLinearNet` with env-var-driven dimensions, and wraps the model for DDP when running multi-GPU.
 
@@ -179,7 +184,9 @@ def setup():
     return model, optimizer
 ```
 
-### `main()`
+</details>
+
+<details closed><summary><strong>`main()`</strong></summary>
 
 Orchestrates the full run: calls `setup()`, runs `train()`, then finalizes the history on rank 0 to persist metrics. Timing breakdowns are logged and optionally sent to W&B.
 
@@ -227,7 +234,9 @@ def main():
         logger.debug("Skipping wandb timings log")
 ```
 
-### `__main__` Guard
+</details>
+
+<details closed><summary><strong>`__main__` Guard</strong></summary>
 
 Prints a usage message on `--help`, otherwise calls `main()`.
 
@@ -258,6 +267,8 @@ if __name__ == "__main__":
     else:
         main()
 ```
+
+</details>
 
 ## Configuration
 

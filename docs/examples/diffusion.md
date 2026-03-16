@@ -27,7 +27,8 @@ ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanf
 
 ## Code Walkthrough
 
-### Imports and Setup
+
+<details closed><summary><strong>Imports and Setup</strong></summary>
 
 Standard library, PyTorch, and `ezpz` imports. FSDP and DDP are imported
 for distributed wrapping.
@@ -61,7 +62,9 @@ fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 ```
 
-### Model Presets
+</details>
+
+<details closed><summary><strong>Model Presets</strong></summary>
 
 Predefined hyperparameter bundles (`debug`, `small`, `medium`, `large`)
 that can be selected via `--model`. CLI flags that the user passes
@@ -119,7 +122,9 @@ def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
             setattr(args, field_name, value)
 ```
 
-### `build_vocab`
+</details>
+
+<details closed><summary><strong>`build_vocab`</strong></summary>
 
 Builds a minimal word-level vocabulary from the training corpus, with
 `<pad>` and `<unk>` as special tokens.
@@ -134,7 +139,9 @@ def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
     return vocab, inv_vocab
 ```
 
-### `ToyTextDataset`
+</details>
+
+<details closed><summary><strong>`ToyTextDataset`</strong></summary>
 
 A `Dataset` that encodes sentences to fixed-length token-id tensors,
 padding or truncating to `seq_len`.
@@ -177,7 +184,9 @@ class ToyTextDataset(Dataset):
         return self._encode(self.texts[idx])
 ```
 
-### `DiffusionSchedule`
+</details>
+
+<details closed><summary><strong>`DiffusionSchedule`</strong></summary>
 
 A dataclass that precomputes the linear beta schedule and cumulative
 alpha products used by the DDPM forward/reverse processes.
@@ -200,7 +209,9 @@ class DiffusionSchedule:
         self.alpha_bars = torch.cumprod(self.alphas, dim=0)
 ```
 
-### `DiffusionTextModel`
+</details>
+
+<details closed><summary><strong>`DiffusionTextModel`</strong></summary>
 
 A transformer-based denoiser. It embeds token ids, adds positional and
 timestep embeddings, runs through a `TransformerEncoder`, and projects
@@ -295,7 +306,9 @@ weights from the token embedding layer.
         return logits.argmax(dim=-1)
 ```
 
-### Noise Functions
+</details>
+
+<details closed><summary><strong>Noise Functions</strong></summary>
 
 #### `sample_timesteps`
 
@@ -325,7 +338,9 @@ def add_noise(
     return noisy, noise
 ```
 
-### Reverse Diffusion
+</details>
+
+<details closed><summary><strong>Reverse Diffusion</strong></summary>
 
 #### `p_sample`
 
@@ -414,7 +429,9 @@ def generate_text(
     return samples
 ```
 
-### Training Loop
+</details>
+
+<details closed><summary><strong>Training Loop</strong></summary>
 
 Wraps the model with `ezpz.distributed.wrap_model` (DDP or FSDP),
 creates an `ezpz.History` for metric tracking, and runs a fixed number
@@ -477,7 +494,9 @@ embeds tokens, adds noise, and computes the denoising loss:
         optim.zero_grad(set_to_none=True)
 ```
 
-### Data Sources
+</details>
+
+<details closed><summary><strong>Data Sources</strong></summary>
 
 The default corpus is a handful of hard-coded sentences.
 Alternatively, `--hf-dataset` pulls text from a Hugging Face dataset.
@@ -534,7 +553,9 @@ def load_hf_texts(
     return texts
 ```
 
-### `main`
+</details>
+
+<details closed><summary><strong>`main`</strong></summary>
 
 Entry point decorated with `@ezpz.timeitlogit`. Calls
 `ezpz.setup_torch` for distributed init, builds the vocabulary and
@@ -635,7 +656,9 @@ Training, history finalization, sample generation, and timing summary:
             logger.info("sample %s: %s", idx, text)
 ```
 
-### Script Entry Point
+</details>
+
+<details closed><summary><strong>Script Entry Point</strong></summary>
 
 Parses CLI args, runs `main`, and tears down the process group.
 
@@ -645,6 +668,8 @@ if __name__ == "__main__":
     main(args)
     ezpz.distributed.cleanup()
 ```
+
+</details>
 
 ## Help
 

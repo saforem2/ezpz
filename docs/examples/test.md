@@ -29,7 +29,8 @@ ezpz launch python3 -m ezpz.examples.test
 
 ## Code Walkthrough
 
-### Imports and Constants
+
+<details closed><summary><strong>Imports and Constants</strong></summary>
 
 Standard library and PyTorch imports, plus `ezpz` modules for distributed
 training, CLI flag parsing, and profiling.
@@ -75,7 +76,9 @@ logger = ezpz.get_logger(__name__)
 `START_TIME` is captured at import time so end-to-end wall-clock timings
 can be reported later.
 
-### `MODEL_PRESETS`
+</details>
+
+<details closed><summary><strong>`MODEL_PRESETS`</strong></summary>
 
 Named presets that bundle batch size, iteration count, logging frequency,
 and layer sizes into a single `--model` flag.
@@ -123,7 +126,9 @@ MODEL_PRESET_FLAGS = {
 `MODEL_PRESET_FLAGS` maps each preset field to its CLI flags so that
 explicitly provided flags take precedence over the preset defaults.
 
-### `TrainConfig` Dataclass
+</details>
+
+<details closed><summary><strong>`TrainConfig` Dataclass</strong></summary>
 
 All runtime configuration lives in a single dataclass. `__post_init__`
 creates the output directory, broadcasts the timestamp across ranks, and
@@ -236,7 +241,9 @@ corresponding `torch.dtype`:
         return torch.float32
 ```
 
-### `Trainer` Class
+</details>
+
+<details closed><summary><strong>`Trainer` Class</strong></summary>
 
 Coordinates the training loop, metric tracking, and profiling.
 
@@ -481,7 +488,9 @@ optionally logs the final dataset to W&B.
         return dataset
 ```
 
-### `calc_loss`
+</details>
+
+<details closed><summary><strong>`calc_loss`</strong></summary>
 
 Standalone loss function using cross-entropy. Cast to `float32` before
 computing to avoid issues with reduced-precision dtypes.
@@ -493,7 +502,9 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     return torch.nn.functional.cross_entropy(logits.float(), targets)
 ```
 
-### `build_model_and_optimizer`
+</details>
+
+<details closed><summary><strong>`build_model_and_optimizer`</strong></summary>
 
 Moves the model to the appropriate device, creates an Adam optimizer,
 and wraps the model in `DDP` when running multi-rank. Falls back to CPU
@@ -539,7 +550,9 @@ def build_model_and_optimizer(
     return model, optimizer
 ```
 
-### `train` (module-level)
+</details>
+
+<details closed><summary><strong>`train` (module-level)</strong></summary>
 
 Orchestrates the full training run: builds the `SequentialLinearNet`
 model, wraps it with `build_model_and_optimizer`, constructs a `Trainer`,
@@ -655,7 +668,9 @@ def train(
     return trainer
 ```
 
-### `main`
+</details>
+
+<details closed><summary><strong>`main`</strong></summary>
 
 Entry point for `python -m ezpz.examples.test`. Parses CLI args, calls
 `setup_torch` (with optional tensor/pipeline/context parallelism),
@@ -713,7 +728,9 @@ def main() -> Trainer:
     return trainer
 ```
 
-### `__main__` guard
+</details>
+
+<details closed><summary><strong>`__main__` guard</strong></summary>
 
 Calls `main()`, tears down the distributed process group, and exits.
 
@@ -725,6 +742,8 @@ if __name__ == "__main__":
     ezpz.cleanup()
     sys.exit(0)
 ```
+
+</details>
 
 ## Help
 

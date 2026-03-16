@@ -27,7 +27,8 @@ ezpz launch python3 -m ezpz.examples.fsdp
 
 ## Code Walkthrough
 
-### Imports
+
+<details closed><summary><strong>Imports</strong></summary>
 
 Standard PyTorch imports plus FSDP-specific modules and `ezpz` helpers for
 distributed setup, logging, and metric tracking.
@@ -65,7 +66,9 @@ except Exception:
     wandb = None  # type: ignore
 ```
 
-### Model Presets
+</details>
+
+<details closed><summary><strong>Model Presets</strong></summary>
 
 Named presets (`debug`, `small`, `medium`, `large`) let users scale the CNN
 architecture from the command line with `--model <preset>`.
@@ -95,7 +98,9 @@ MODEL_PRESETS = {
 }
 ```
 
-### `Net` -- CNN Architecture
+</details>
+
+<details closed><summary><strong>`Net` -- CNN Architecture</strong></summary>
 
 A two-layer convolutional network with dropout and two fully connected
 layers. `_feature_size` computes the flattened dimension after convolutions
@@ -155,7 +160,9 @@ class Net(nn.Module):
         return output
 ```
 
-### `train` -- Single-Epoch Training
+</details>
+
+<details closed><summary><strong>`train` -- Single-Epoch Training</strong></summary>
 
 Runs one training epoch, accumulating loss across batches. After the loop,
 `dist.all_reduce` sums the loss and sample count across all ranks so every
@@ -214,7 +221,9 @@ def train(
     }
 ```
 
-### `test` -- Evaluation
+</details>
+
+<details closed><summary><strong>`test` -- Evaluation</strong></summary>
 
 Evaluates the model on validation data with gradients disabled. Tracks
 loss, correct predictions, and total samples, then all-reduces across
@@ -254,7 +263,9 @@ def test(model, test_loader):
     }
 ```
 
-### `prepare_model_optimizer_and_scheduler` -- FSDP Wrapping
+</details>
+
+<details closed><summary><strong>`prepare_model_optimizer_and_scheduler` -- FSDP Wrapping</strong></summary>
 
 Creates the `Net` model, wraps it with `FullyShardedDataParallel` using
 mixed-precision settings, and returns the model, optimizer, and LR
@@ -316,7 +327,9 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
     }
 ```
 
-### `get_data` -- Data Loading
+</details>
+
+<details closed><summary><strong>`get_data` -- Data Loading</strong></summary>
 
 Dispatches to dataset-specific loaders (`get_mnist`, `get_imagenet1k`,
 `get_openimages`, `get_imagenet`) from `ezpz.data.vision` based on the
@@ -379,7 +392,9 @@ def get_data(args: argparse.Namespace) -> dict:
     return data
 ```
 
-### `fsdp_main` -- Main Function
+</details>
+
+<details closed><summary><strong>`fsdp_main` -- Main Function</strong></summary>
 
 Orchestrates the full training run: initializes distributed training with
 `ezpz.setup_torch`, optionally sets up Weights & Biases logging, loads
@@ -492,7 +507,9 @@ the model checkpoint is saved if `--save-model` was passed, and
         logger.info(f"{dataset=}")
 ```
 
-### Entrypoint
+</details>
+
+<details closed><summary><strong>Entrypoint</strong></summary>
 
 Parses CLI arguments, runs `fsdp_main`, and calls `ezpz.cleanup()` to tear
 down the process group.
@@ -503,6 +520,8 @@ if __name__ == "__main__":
     fsdp_main(args=args)
     ezpz.cleanup()
 ```
+
+</details>
 
 ## Help
 

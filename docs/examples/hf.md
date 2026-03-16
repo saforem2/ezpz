@@ -39,7 +39,8 @@ ezpz launch python3 -m ezpz.examples.hf \
 
 ## Code Walkthrough
 
-### Imports
+
+<details closed><summary><strong>Imports</strong></summary>
 
 Standard library, HuggingFace, and ezpz imports. The `Accelerator` and
 `FullyShardedDataParallelPlugin` from `accelerate` are loaded in a
@@ -106,7 +107,9 @@ require_version(
 )
 ```
 
-### `parse_args`
+</details>
+
+<details closed><summary><strong>`parse_args`</strong></summary>
 
 Uses HuggingFace's `HfArgumentParser` to parse three dataclass groups in
 one pass. Supports loading arguments from a JSON file when the sole CLI
@@ -152,7 +155,9 @@ def parse_args(
     return model_args, data_args, training_args
 ```
 
-### `split_dataset`
+</details>
+
+<details closed><summary><strong>`split_dataset`</strong></summary>
 
 Loads a named dataset from the HuggingFace Hub, splitting it into
 train/validation by percentage. Falls back gracefully when the requested
@@ -242,7 +247,9 @@ def split_dataset(
     )
 ```
 
-### `main` -- Distributed Setup
+</details>
+
+<details closed><summary><strong>`main` -- Distributed Setup</strong></summary>
 
 `setup_torch()` initializes the process group and returns the local rank.
 Arguments are parsed, and the output directory is established.
@@ -260,7 +267,9 @@ def main() -> None:
     report_to = training_args.report_to
 ```
 
-### `main` -- FSDP Plugin
+</details>
+
+<details closed><summary><strong>`main` -- FSDP Plugin</strong></summary>
 
 When `ACCELERATE_USE_FSDP=true`, an explicit `FullyShardedDataParallelPlugin`
 is constructed with a bf16 mixed-precision policy, bypassing Accelerate's
@@ -293,7 +302,9 @@ env-var machinery which can pick up stale defaults.
         logger.info("[rank %d] using explicit FSDP plugin: %s", rank, fsdp_plugin)
 ```
 
-### `main` -- Accelerator
+</details>
+
+<details closed><summary><strong>`main` -- Accelerator</strong></summary>
 
 The `Accelerator` is created with gradient accumulation and the optional
 FSDP plugin. W&B logging is handled separately via `ezpz.setup_wandb()`,
@@ -308,7 +319,9 @@ so it is not passed to Accelerate.
     t_setup = time.perf_counter()
 ```
 
-### `main` -- Dataset Loading
+</details>
+
+<details closed><summary><strong>`main` -- Dataset Loading</strong></summary>
 
 Datasets are loaded from the Hub via `split_dataset` (or from local
 files), then the text column is identified for tokenization.
@@ -365,7 +378,9 @@ files), then the text column is identified for tokenization.
             )
 ```
 
-### `main` -- Model & Tokenizer
+</details>
+
+<details closed><summary><strong>`main` -- Model & Tokenizer</strong></summary>
 
 Config, tokenizer, and model are resolved from `AutoConfig`,
 `AutoTokenizer`, and `AutoModelForCausalLM`. The embedding layer is
@@ -445,7 +460,9 @@ matrix.
             model.resize_token_embeddings(len(tokenizer))
 ```
 
-### `main` -- W&B Setup
+</details>
+
+<details closed><summary><strong>`main` -- W&B Setup</strong></summary>
 
 Weights & Biases is initialized on rank 0 only via `ezpz.setup_wandb()`.
 A custom metric axis (`num_input_tokens_seen`) is defined and the full
@@ -487,7 +504,9 @@ config is uploaded to the run.
     ezpz.barrier()  # sync all ranks after rank-0 wandb setup
 ```
 
-### `main` -- Tokenization
+</details>
+
+<details closed><summary><strong>`main` -- Tokenization</strong></summary>
 
 Raw text is tokenized with `dataset.map()`. The main process runs the map
 first (via `main_process_first`) so other ranks can reuse the cache.
@@ -522,7 +541,9 @@ first (via `main_process_first`) so other ranks can reuse the cache.
     logger.info("[rank %d] tokenization done", rank)
 ```
 
-### `main` -- `group_texts`
+</details>
+
+<details closed><summary><strong>`main` -- `group_texts`</strong></summary>
 
 Tokenized sequences are concatenated end-to-end, then sliced into
 fixed-length `block_size` chunks. This maximizes token utilization by
@@ -567,7 +588,9 @@ objective).
     logger.info("[rank %d] group_texts done", rank)
 ```
 
-### `main` -- DataLoaders
+</details>
+
+<details closed><summary><strong>`main` -- DataLoaders</strong></summary>
 
 Train and eval `DataLoader`s are built from the processed datasets. The
 train loader shuffles when not streaming.
@@ -591,7 +614,9 @@ train loader shuffles when not streaming.
         )
 ```
 
-### `main` -- Optimizer & LR Scheduler
+</details>
+
+<details closed><summary><strong>`main` -- Optimizer & LR Scheduler</strong></summary>
 
 AdamW is used with separate weight-decay groups (bias and LayerNorm
 weights are excluded). The LR scheduler is created from the HuggingFace
@@ -634,7 +659,9 @@ weights are excluded). The LR scheduler is created from the HuggingFace
     )
 ```
 
-### `main` -- `accelerator.prepare`
+</details>
+
+<details closed><summary><strong>`main` -- `accelerator.prepare`</strong></summary>
 
 All training objects are wrapped by Accelerate in one call. This handles
 DDP/FSDP wrapping, optimizer state sharding, and dataloader distribution.
@@ -653,7 +680,9 @@ DDP/FSDP wrapping, optimizer state sharding, and dataloader distribution.
     logger.info("[rank %d] accelerator.prepare() complete", rank)
 ```
 
-### `main` -- History & Checkpointing Setup
+</details>
+
+<details closed><summary><strong>`main` -- History & Checkpointing Setup</strong></summary>
 
 An `ezpz.history.History` object is created for metric tracking.
 Checkpoint resumption is handled by detecting `step_*` or `epoch_*`
@@ -673,7 +702,9 @@ directories and calling `accelerator.load_state`.
     starting_epoch = 0
 ```
 
-### `main` -- Training Loop
+</details>
+
+<details closed><summary><strong>`main` -- Training Loop</strong></summary>
 
 Each epoch iterates over the dataloader inside `accelerator.accumulate`,
 which handles gradient accumulation transparently. After each optimizer
@@ -747,7 +778,9 @@ step, per-step metrics (loss, perplexity, tokens/sec) are recorded via
                 break
 ```
 
-### `main` -- Evaluation Loop
+</details>
+
+<details closed><summary><strong>`main` -- Evaluation Loop</strong></summary>
 
 At the end of each epoch, an eval pass gathers losses across all ranks
 and computes perplexity. Results are logged through `history.update`.
@@ -786,7 +819,9 @@ and computes perplexity. Results are logged through `history.update`.
             logger.info(summary)
 ```
 
-### `main` -- Epoch Checkpointing & Hub Upload
+</details>
+
+<details closed><summary><strong>`main` -- Epoch Checkpointing & Hub Upload</strong></summary>
 
 If `push_to_hub` is enabled, the model and tokenizer are saved and
 uploaded after each epoch. Per-epoch state can also be saved locally when
@@ -817,7 +852,9 @@ uploaded after each epoch. Per-epoch state can also be saved locally when
             accelerator.save_state(output_dir)
 ```
 
-### `main` -- Finalization & Save
+</details>
+
+<details closed><summary><strong>`main` -- Finalization & Save</strong></summary>
 
 After all epochs complete, the unwrapped model is saved. Timing
 information is collected and `history.finalize()` generates summary
@@ -882,12 +919,16 @@ plots and writes final metrics. W&B timings are logged as a last step.
             logger.warning("Failed to log timings to wandb")
 ```
 
-### `__main__` guard
+</details>
+
+<details closed><summary><strong>`__main__` guard</strong></summary>
 
 ```python title="src/ezpz/examples/hf.py" linenums="930"
 if __name__ == "__main__":
     main()
 ```
+
+</details>
 
 ## Comparison with `hf_trainer.py`
 

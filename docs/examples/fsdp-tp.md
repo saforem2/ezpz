@@ -33,7 +33,8 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
 
 ## Code Walkthrough
 
-### Module Docstring: Parallel Layout
+
+<details closed><summary><strong>Module Docstring: Parallel Layout</strong></summary>
 
 The file opens with a docstring describing the 2D parallelism layout --
 TP (tensor parallel) within each host, FSDP (data parallel) across hosts.
@@ -94,7 +95,9 @@ We use a simple diagram to illustrate below:
 """
 ```
 
-### Imports
+</details>
+
+<details closed><summary><strong>Imports</strong></summary>
 
 Standard library, PyTorch, and `ezpz` imports. The key distributed
 primitives -- `DeviceMesh`, `FSDP`, and `parallelize_module` -- are
@@ -159,7 +162,9 @@ fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 ```
 
-### Model Presets
+</details>
+
+<details closed><summary><strong>Model Presets</strong></summary>
 
 `MODEL_PRESETS` defines canned configurations (`debug`, `small`,
 `medium`, `large`) that override default CLI values for quick
@@ -210,7 +215,9 @@ MODEL_PRESETS = {
 }
 ```
 
-### Sharding Strategies
+</details>
+
+<details closed><summary><strong>Sharding Strategies</strong></summary>
 
 Maps user-facing string names to PyTorch `ShardingStrategy` enum values.
 
@@ -224,7 +231,9 @@ SHARDING_STRATEGIES = {
 }
 ```
 
-### Sequence Parallel Label Slicing
+</details>
+
+<details closed><summary><strong>Sequence Parallel Label Slicing</strong></summary>
 
 When sequence parallelism is active, each TP rank only sees a slice of
 the sequence dimension. This helper narrows the label tensor to match
@@ -289,7 +298,9 @@ def _slice_for_sequence_parallel(
     return shard
 ```
 
-### Argument Parsing
+</details>
+
+<details closed><summary><strong>Argument Parsing</strong></summary>
 
 `parse_args` defines every CLI flag. The `--model` flag selects a preset
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
@@ -374,7 +385,9 @@ def parse_args(argv: Optional[list[str]] = None):
     return args
 ```
 
-### `parallelize`: TP Parallelization + FSDP Wrapping
+</details>
+
+<details closed><summary><strong>`parallelize`: TP Parallelization + FSDP Wrapping</strong></summary>
 
 This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
@@ -473,7 +486,9 @@ FSDP on the `"dp"` sub-mesh.
     return sharded_model
 ```
 
-### `train`: Device Mesh, Data Loading, and Training Loop
+</details>
+
+<details closed><summary><strong>`train`: Device Mesh, Data Loading, and Training Loop</strong></summary>
 
 `train` orchestrates the full run. It first creates the 2D device mesh,
 loads data, then runs the epoch loop.
@@ -712,7 +727,9 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
     return 0
 ```
 
-### `main` and Entrypoint
+</details>
+
+<details closed><summary><strong>`main` and Entrypoint</strong></summary>
 
 `main` calls `ezpz.distributed.setup_torch` to initialize the
 distributed backend (including TP groups), determines the output
@@ -752,6 +769,8 @@ if __name__ == "__main__":
     ezpz.distributed.cleanup()
     sys.exit(0)
 ```
+
+</details>
 
 ## Help
 
