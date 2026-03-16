@@ -29,35 +29,333 @@ ezpz launch python3 -m ezpz.examples.test
 
 ## Code Walkthrough
 
-### Training Step
+### Imports and Constants
 
-Each `train_step()` splits forward and backward into separately timed
-phases, then logs via `history.update()`:
+Standard library and PyTorch imports, plus `ezpz` modules for distributed
+training, CLI flag parsing, and profiling.
 
-```python title="src/ezpz/examples/test.py" linenums="354"
-    @ezpz.timeitlogit(rank=ezpz.get_rank())
-    def train_step(self) -> dict:
-        """Run one optimiser step, emitting periodic logs/metrics."""
-        self.train_iter += 1
-        metrics, loss = self._forward_step()
-        metrics["dtb"] = self._backward_step(loss)
-        self.optimizer.zero_grad()
-        if self.train_iter == self.config.train_iters:
-            return metrics
-        if (
-            self.train_iter % self.config.log_freq == 0
-            or self.train_iter % self.config.print_freq == 0
-        ):
-            summary = self.history.update({"iter": self.train_iter, **metrics})
-            if self.train_iter % self.config.print_freq == 0:
-                logger.info(f"{summary}")
-        return metrics
+```python title="src/ezpz/examples/test.py" linenums="1"
+#!/usr/bin/env python3
+"""
+examples/test.py
+"""
+
+import argparse
+import json
+import os
+import platform
+import sys
+import time
+import warnings
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Iterator, Optional, Sequence
+
+import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
+from xarray import Dataset
+
+import ezpz
+import ezpz.distributed
+from ezpz.configs import PathLike
+from ezpz.cli.flags import build_test_parser
+from ezpz.profile import get_profiling_context
+
+START_TIME = time.perf_counter()  # start time
+
+# noqa: E402
+warnings.filterwarnings("ignore")
+
+ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
+
+logger = ezpz.get_logger(__name__)
 ```
 
-### Forward Pass
+`START_TIME` is captured at import time so end-to-end wall-clock timings
+can be reported later.
 
-The forward step fetches a batch, reshapes inputs for the MLP, and
-computes loss + accuracy:
+### `MODEL_PRESETS`
+
+Named presets that bundle batch size, iteration count, logging frequency,
+and layer sizes into a single `--model` flag.
+
+```python title="src/ezpz/examples/test.py" linenums="37"
+MODEL_PRESETS = {
+    "debug": {
+        "batch_size": 16,
+        "train_iters": 20,
+        "log_freq": 1,
+        "print_freq": 1,
+        "layer_sizes": [128, 64],
+    },
+    "small": {
+        "batch_size": 64,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [256, 128, 64],
+    },
+    "medium": {
+        "batch_size": 128,
+        "train_iters": 200,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [512, 256, 128],
+    },
+    "large": {
+        "batch_size": 256,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [1024, 512, 256],
+    },
+}
+MODEL_PRESET_FLAGS = {
+    "batch_size": ["--batch-size"],
+    "train_iters": ["--train-iters", "--train_iters"],
+    "log_freq": ["--log-freq", "--log_freq"],
+    "print_freq": ["--print-freq", "--print_freq"],
+    "layer_sizes": ["--layer-sizes"],
+}
+```
+
+`MODEL_PRESET_FLAGS` maps each preset field to its CLI flags so that
+explicitly provided flags take precedence over the preset defaults.
+
+### `TrainConfig` Dataclass
+
+All runtime configuration lives in a single dataclass. `__post_init__`
+creates the output directory, broadcasts the timestamp across ranks, and
+builds the profiling context manager.
+
+```python title="src/ezpz/examples/test.py" linenums="103"
+@dataclass
+class TrainConfig:
+    """Runtime configuration for the `ezpz.examples.test` distributed smoke test."""
+
+    warmup: int
+    tp: int
+    pp: int
+    cp: int
+    batch_size: int
+    input_size: int
+    output_size: int
+    train_iters: int
+    log_freq: int
+    backend: str
+    dtype: str
+    print_freq: int
+    pyinstrument_profiler: bool
+    pytorch_profiler: bool
+    pytorch_profiler_wait: int
+    pytorch_profiler_warmup: int
+    pytorch_profiler_active: int
+    pytorch_profiler_repeat: int
+    profile_memory: bool
+    rank_zero_only: bool
+    record_shapes: bool
+    with_stack: bool
+    with_flops: bool
+    with_modules: bool
+    acc_events: bool
+    layer_sizes: list = field(default_factory=lambda: [512, 256, 128])
+    dataset: str = "mnist"
+    dataset_root: Optional[PathLike] = None
+    num_workers: int = 0
+    no_distributed_history: bool = False
+    save_datasets: bool = False
+
+    def __post_init__(self):
+        """Initialise output paths and configure profiling context managers."""
+        self._created_at = os.environ.get("EZPZ_LOG_TIMESTAMP")
+        if self._created_at is None:
+            self._created_at = (
+                ezpz.get_timestamp() if ezpz.get_rank() == 0 else None
+            )
+        self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
+        if self._created_at is not None:
+            os.environ["EZPZ_LOG_TIMESTAMP"] = self._created_at
+        self.outdir = Path(os.getcwd()).joinpath(
+            "outputs", "ezpz.examples.test", f"{self._created_at}"
+        )
+        self.outdir.mkdir(parents=True, exist_ok=True)
+        dataset_root = (
+            Path(self.dataset_root).expanduser()
+            if self.dataset_root is not None
+            else self.outdir.parent.joinpath("datasets", self.dataset)
+        )
+        dataset_root.mkdir(parents=True, exist_ok=True)
+        self.dataset_root = dataset_root
+        profiler_type = "torch" if self.pytorch_profiler else "pyinstrument"
+        self.ctx = get_profiling_context(
+            profiler_type=profiler_type,
+            rank_zero_only=self.rank_zero_only,
+            record_shapes=self.record_shapes,
+            with_stack=self.with_stack,
+            with_flops=self.with_flops,
+            with_modules=self.with_modules,
+            acc_events=self.acc_events,
+            profile_memory=self.profile_memory,
+            wait=self.pytorch_profiler_wait,
+            warmup=self.pytorch_profiler_warmup,
+            active=self.pytorch_profiler_active,
+            repeat=self.pytorch_profiler_repeat,
+            outdir=self.outdir,
+        )
+        logger.info(f"Outputs will be saved to {self.outdir}")
+```
+
+`get_torch_dtype()` converts the string `dtype` field into the
+corresponding `torch.dtype`:
+
+```python title="src/ezpz/examples/test.py" linenums="178"
+    def get_torch_dtype(self) -> torch.dtype:
+        """Return the torch dtype requested by this configuration."""
+        if self.dtype is None:
+            return torch.get_default_dtype()
+        if self.dtype in {
+            "fp16",
+            "half",
+            "float16",
+        }:
+            return torch.float16
+        if self.dtype in {
+            "bfloat16",
+            "bf16",
+        }:
+            return torch.bfloat16
+        if self.dtype in {
+            "float32",
+            "fp32",
+            "float",
+            "single",
+        }:
+            return torch.float32
+        logger.warning(f"Unknown dtype: {self.dtype=}, using float32")
+        return torch.float32
+```
+
+### `Trainer` Class
+
+Coordinates the training loop, metric tracking, and profiling.
+
+#### `__init__` and `__post_init__`
+
+Class-level attributes capture distributed topology at definition time.
+`__post_init__` moves the model to the device, initializes the
+`History` tracker, optionally sets up W&B, and builds the dataloader.
+
+```python title="src/ezpz/examples/test.py" linenums="204"
+@dataclass
+class Trainer:
+    """Co-ordinate training loops, logging, and profiling for the test model."""
+
+    config: TrainConfig
+    model: torch.nn.Module
+    optimizer: torch.optim.Optimizer
+    # history: ezpz.History = field(init=False)
+    train_iter: int = 0
+    rank: int = ezpz.get_rank()
+    # device_type: str = ezpz.get_torch_device_type()
+    device_type = os.environ.get("TORCH_DEVICE", ezpz.get_torch_device())
+    world_size = ezpz.get_world_size()
+    local_rank = ezpz.get_local_rank()
+    device_id = f"{device_type}:{local_rank}"
+    _train_loader: Optional[DataLoader] = field(init=False, default=None)
+    _train_iterator: Optional[Iterator[tuple[torch.Tensor, torch.Tensor]]] = (
+        field(init=False, default=None)
+    )
+    _feature_dim: int = field(init=False, default=0)
+
+    def __post_init__(self):
+        """Move the model to the target device and register logging hooks."""
+        self.device_id = f"{self.device_type}:{self.local_rank}"
+        self.dtype = self.config.get_torch_dtype()
+        self.model.to(self.device_id)
+        self.model.to(self.dtype)
+        metrics_path = self.config.outdir.joinpath("metrics.jsonl")
+        self.history: ezpz.history.History = ezpz.history.History(
+            report_dir=self.config.outdir,
+            report_enabled=True,
+            jsonl_path=metrics_path,
+            jsonl_overwrite=True,
+            distributed_history=(
+                1 < self.world_size <= 384 and not self.config.pytorch_profiler
+            ),
+        )
+
+        if self.config.tp > 1 or self.config.pp > 1 or self.config.cp > 1:
+            ezpz.distributed.barrier(group=ezpz.tp.get_tensor_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_data_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_pipeline_parallel_group())
+            ezpz.distributed.barrier(group=ezpz.tp.get_context_parallel_group())
+
+        if self.rank == 0 and not WANDB_DISABLED:
+            logger.debug("Setting up wandb")
+            wbconfig = {}
+            wbconfig |= asdict(self.config)
+            wbconfig |= ezpz.get_dist_info()
+            _ = ezpz.setup_wandb(
+                project_name="ezpz.examples.test",
+                config=wbconfig,
+            )
+            if (wbrun := getattr(wandb, "run", None)) is not None and callable(
+                wbrun.watch
+            ):
+                wbrun.watch(self.model, log="all")
+
+        if self.world_size > 1:
+            logger.debug("Hit torch.distributed.barrier()")
+            ezpz.distributed.barrier()
+        self._train_loader, self._train_iterator = self._build_dataloader()
+        self._feature_dim = self.config.input_size
+```
+
+#### `_build_dataloader`
+
+Constructs the training `DataLoader`. Currently supports MNIST via
+`ezpz.data.vision.get_mnist`; only rank 0 downloads the data.
+
+```python title="src/ezpz/examples/test.py" linenums="268"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def _build_dataloader(
+        self,
+    ) -> tuple[DataLoader, Iterator[tuple[torch.Tensor, torch.Tensor]]]:
+        """Construct a training dataloader for the requested dataset."""
+        dataset_name = self.config.dataset.lower()
+        if dataset_name == "mnist":
+            try:
+                from ezpz.data.vision import get_mnist
+            except (
+                ModuleNotFoundError
+            ) as exc:  # pragma: no cover - optional dep
+                msg = (
+                    "torchvision is required to use the MNIST dataset. "
+                    "Install it via `pip install torchvision`."
+                )
+                raise RuntimeError(msg) from exc
+            assert self.config.dataset_root is not None
+            dset_root = Path(self.config.dataset_root).expanduser().resolve()
+            dset_root.mkdir(parents=True, exist_ok=True)
+            bundle = get_mnist(
+                train_batch_size=self.config.batch_size,
+                test_batch_size=self.config.batch_size,
+                outdir=dset_root,
+                num_workers=self.config.num_workers,
+                download=self.rank == 0,
+                pin_memory=str(self.device_type).startswith(("cuda", "mps")),
+            )
+            train_loader = bundle["train"]["loader"]
+            return train_loader, iter(train_loader)
+        raise ValueError(f"Unknown dataset: {dataset_name!r}")
+```
+
+#### `_forward_step`
+
+Fetches a batch, reshapes/pads inputs to match the model's expected
+feature dimension, runs the forward pass, and computes cross-entropy
+loss and accuracy. Returns both a metrics dict and the raw loss tensor.
 
 ```python title="src/ezpz/examples/test.py" linenums="323"
     @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -79,13 +377,354 @@ computes loss + accuracy:
         return metrics, loss
 ```
 
-### Notable Features
+#### `_backward_step`
 
-- **Model presets**: `--model debug|small|medium|large` adjusts batch size,
-  layer sizes, and iteration count as a unit.
-- **Profiling flags**: `--profile` enables PyTorch profiler with configurable
-  wait/warmup/active cycles. `--pyinstrument-profiler` enables statistical
-  profiling instead.
+Runs backpropagation and the optimizer step. Branches on whether the
+backend is DeepSpeed (which manages its own `.backward()` / `.step()`)
+or standard PyTorch.
+
+```python title="src/ezpz/examples/test.py" linenums="341"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def _backward_step(self, loss: torch.Tensor) -> float:
+        """Perform the backwards/optimiser step and return elapsed seconds."""
+        t0 = time.perf_counter()
+        if self.config.backend == "deepspeed":
+            self.model.backward(loss)
+            self.model.step(loss)
+        else:
+            loss.backward()
+            self.optimizer.step()
+        ezpz.distributed.synchronize()
+        return time.perf_counter() - t0
+```
+
+#### `train_step`
+
+One full optimizer step: forward, backward, zero-grad. Logs metrics at
+`log_freq` intervals and prints summaries at `print_freq` intervals.
+
+```python title="src/ezpz/examples/test.py" linenums="354"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def train_step(self) -> dict:
+        """Run one optimiser step, emitting periodic logs/metrics."""
+        self.train_iter += 1
+        metrics, loss = self._forward_step()
+        metrics["dtb"] = self._backward_step(loss)
+        self.optimizer.zero_grad()
+        if self.train_iter == self.config.train_iters:
+            return metrics
+        if (
+            self.train_iter % self.config.log_freq == 0
+            or self.train_iter % self.config.print_freq == 0
+        ):
+            summary = self.history.update({"iter": self.train_iter, **metrics})
+            if self.train_iter % self.config.print_freq == 0:
+                logger.info(f"{summary}")
+        return metrics
+```
+
+#### `train`
+
+The outer training loop. Iterates for `config.train_iters` steps and
+optionally advances the PyTorch profiler each step.
+
+```python title="src/ezpz/examples/test.py" linenums="406"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def train(self, profiler: Optional[torch.profiler.profile] = None) -> None:
+        """Loop over all training iterations and return the final dataset."""
+        for step in range(self.config.train_iters):
+            if step == self.config.warmup:
+                logger.info(f"Warmup complete at step {step}")
+            _ = self.train_step()
+            if profiler is not None:
+                profiler.step()
+```
+
+#### `finalize`
+
+Flushes the `History` tracker, generates plots (rank 0 only), and
+optionally logs the final dataset to W&B.
+
+```python title="src/ezpz/examples/test.py" linenums="372"
+    @ezpz.timeitlogit(rank=ezpz.get_rank())
+    def finalize(
+        self, outdir: Optional[str | Path | os.PathLike] = None
+    ) -> Dataset:
+        """Flush profilers and return the aggregated training dataset."""
+        import ambivalent
+        import matplotlib.pyplot as plt
+
+        plt.style.use(ambivalent.STYLES["ambivalent"])
+        outdir = Path(outdir) if outdir is not None else self.config.outdir
+        env_info = self._gather_environment_snapshot()
+        dataset = self.history.finalize(
+            run_name="ezpz.examples.test",
+            dataset_fname="train",
+            warmup=self.config.warmup,
+            save=False,  # XXX: don't bother saving test data
+            plot=(self.rank == 0),
+            outdir=outdir,
+            env_info=env_info,
+        )
+        logger.info(f"{dataset=}")
+        if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
+            try:
+                wandb.log(
+                    {
+                        "train_metrics": wandb.Table(
+                            dataframe=dataset.to_dataframe()
+                        )
+                    }
+                )
+            except Exception:
+                logger.warning("Failed to log final dataset to wandb")
+        return dataset
+```
+
+### `calc_loss`
+
+Standalone loss function using cross-entropy. Cast to `float32` before
+computing to avoid issues with reduced-precision dtypes.
+
+```python title="src/ezpz/examples/test.py" linenums="662"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """Return the cross entropy loss for the classification dataset."""
+    return torch.nn.functional.cross_entropy(logits.float(), targets)
+```
+
+### `build_model_and_optimizer`
+
+Moves the model to the appropriate device, creates an Adam optimizer,
+and wraps the model in `DDP` when running multi-rank. Falls back to CPU
+on MPS since MPS does not support `torch.distributed` collectives.
+
+```python title="src/ezpz/examples/test.py" linenums="668"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def build_model_and_optimizer(
+    model: torch.nn.Module,
+    dtype: Optional[str] = None,
+) -> ModelOptimizerPair:
+    """Prepare the model and optimiser for the requested backend."""
+    device_override = os.environ.get("TORCH_DEVICE")
+    device_type = device_override or ezpz.get_torch_device()
+    if isinstance(device_type, str) and device_type.startswith("mps"):
+        logger.warning(
+            "MPS does not support torch.distributed collectives; falling back to CPU"
+        )
+        device_type = "cpu"
+    world_size = ezpz.get_world_size()
+    local_rank = ezpz.get_local_rank()
+    if isinstance(device_type, str) and device_type in {"cuda", "xpu"}:
+        device_type = f"{device_type}:{local_rank}"
+    model.to(device_type)
+    if isinstance(device_type, str) and device_type.startswith("cuda"):
+        model.to(local_rank)
+    logger.info(f"model=\n{model}")
+    optimizer = torch.optim.Adam(model.parameters())
+    if world_size > 1:
+        model.to(device_type)
+        model = ezpz.distributed.wrap_model(
+            model=model, use_fsdp=False, dtype=dtype
+        )
+        try:
+            if isinstance(device_type, str) and device_type.startswith(
+                "cuda"
+            ):
+                model = DDP(model, device_ids=[local_rank])
+            else:
+                model = DDP(model)
+        except Exception:
+            model = DDP(model)
+    return model, optimizer
+```
+
+### `train` (module-level)
+
+Orchestrates the full training run: builds the `SequentialLinearNet`
+model, wraps it with `build_model_and_optimizer`, constructs a `Trainer`,
+runs the training loop, finalizes history, and logs timings.
+
+```python title="src/ezpz/examples/test.py" linenums="481"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def train(
+    config: TrainConfig, profiler: Optional[torch.profiler.profile] = None
+) -> Trainer:
+    """Instantiate the model/optimiser and run the training loop."""
+    from ezpz.models.minimal import SequentialLinearNet
+    from ezpz.utils import model_summary
+
+    timings = {}
+    t0m = time.perf_counter()
+    model = SequentialLinearNet(
+        input_dim=config.input_size,
+        output_dim=config.output_size,
+        sizes=config.layer_sizes,
+    )
+    logger.info(
+        f"Model size: {sum(p.numel() for p in model.parameters())} parameters"
+    )
+    try:
+        logger.info(f"\n{model_summary(model)}")
+    except Exception as e:
+        logger.warning(
+            f"Failed to summarize model: {e}, using default summary"
+        )
+        logger.info(model)
+    t1m = time.perf_counter()
+    dt_model = t1m - t0m
+    logger.info(f"Took: {dt_model} seconds to build model")
+    model, optimizer = build_model_and_optimizer(
+        model, dtype=config.dtype
+    )
+    t2m = time.perf_counter()
+    dt_optimizer = time.perf_counter() - t1m
+    logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
+    trainer = Trainer(config=config, model=model, optimizer=optimizer)
+    t1tr = time.perf_counter()
+    logger.info(
+        f"Took: {(dt_trainer := t1tr - t2m):.2f} seconds to build trainer"
+    )
+    jstr = json.dumps(asdict(config), indent=2, sort_keys=True, default=str)
+    logger.info(f"config:\n{jstr}")
+    t1s = time.perf_counter()
+    logger.info(
+        f"Took: {(dt_train_start := t1s - START_TIME):.2f} to get here."
+    )
+
+    # -------------------------------------------
+    # Main training loop
+    t0t = time.perf_counter()
+    _ = trainer.train(profiler=profiler)
+    t1t = time.perf_counter()
+    logger.info(
+        f"Took: {(dt_train_duration := t1t - t0t):.2f} seconds to finish training"
+    )
+
+    rank = ezpz.get_rank()
+    history: ezpz.history.History = trainer.history
+
+    dataset = None
+    # Record timings and return trainer
+    if rank == 0:
+        dataset = history.finalize(
+            run_name="ezpz.examples.test",
+            dataset_fname="train",
+            warmup=config.warmup,
+            save=(rank == 0 and config.save_datasets),
+            plot=(rank == 0),
+            outdir=config.outdir,
+            env_info=trainer._gather_environment_snapshot(),
+        )
+        logger.info(f"{dataset=}")
+    timings = {
+        "timings/model": dt_model,
+        "timings/optimizer": dt_optimizer,
+        "timings/trainer": dt_trainer,
+        "timings/training_start": dt_train_start,
+        "timings/train_duration": dt_train_duration,
+        "timings/end-to-end": time.perf_counter() - START_TIME,
+    }
+    if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                },
+                commit=False,
+            )
+        except Exception as e:
+            logger.exception(e)
+            logger.warning("Unable to 'wandb.log(timings)', skipping!")
+        if dataset is not None:
+            try:
+                wandb.log(
+                    {
+                        "train_metrics": wandb.Table(
+                            dataframe=dataset.to_dataframe()
+                        )
+                    }
+                )
+            except Exception as e:
+                logger.exception(e)
+                logger.warning("Failed to log final dataset to wandb")
+
+    if ezpz.get_world_size() > 1:
+        ezpz.barrier()
+    return trainer
+```
+
+### `main`
+
+Entry point for `python -m ezpz.examples.test`. Parses CLI args, calls
+`setup_torch` (with optional tensor/pipeline/context parallelism),
+enters the profiling context, and kicks off `train()`.
+
+```python title="src/ezpz/examples/test.py" linenums="749"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def main() -> Trainer:
+    """Entry point used by ``python -m ezpz.examples.test``."""
+    t0 = time.perf_counter()
+    args = parse_args()
+    config = get_config_from_args(args)
+    timings = {}
+    _ = ezpz.distributed.setup_torch(
+        tensor_parallel_size=config.tp,
+        pipeline_parallel_size=config.pp,
+        context_parallel_size=config.cp,
+    )
+    t_setup = time.perf_counter()
+    logger.info(f"Took: {(t_setup - t0):.2f} seconds to setup torch")
+    with config.ctx as c:
+        trainer = train(config, profiler=c)
+    t_train = time.perf_counter()
+    if trainer.config.backend.lower() in ["ds", "deepspeed"]:
+        try:
+            import deepspeed.comm
+
+            deepspeed.comm.log_summary()
+        except ImportError as e:
+            logger.exception(e)
+            logger.exception(
+                "Deepspeed not available. "
+                "Install via `python3 -m pip install deepspeed`"
+            )
+            logger.info("Continuing without deepspeed summary...")
+
+    logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} seconds")
+    t1 = time.perf_counter()
+    timings = {
+        "main/setup_torch": (t_setup - t0),
+        "main/train": (t_train - t_setup),
+        "main/total": (t1 - t0),
+    }
+    if wandb is not None and (run := getattr(wandb, "run")) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
+        logger.info(f"wandb.run=[{run.name}]({run.url})")
+    return trainer
+```
+
+### `__main__` guard
+
+Calls `main()`, tears down the distributed process group, and exits.
+
+```python title="src/ezpz/examples/test.py" linenums="800"
+if __name__ == "__main__":
+    import sys
+
+    trainer = main()
+    ezpz.cleanup()
+    sys.exit(0)
+```
 
 ## Help
 

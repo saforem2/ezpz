@@ -27,10 +27,160 @@ ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanf
 
 ## Code Walkthrough
 
-### Noise Schedule
+### Imports and Setup
 
-The `DiffusionSchedule` precomputes alpha/beta values for a linear noise
-schedule:
+Standard library, PyTorch, and `ezpz` imports. FSDP and DDP are imported
+for distributed wrapping.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="61"
+import argparse
+import math
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+import time
+from typing import Dict, Iterable, List, Tuple
+from contextlib import nullcontext
+import ezpz
+import ezpz.distributed
+
+import torch
+from torch import nn
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
+import torch.functional as F
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+import wandb
+from ezpz.examples import get_example_outdir
+
+logger = ezpz.get_logger(__name__)
+
+fp = Path(__file__)
+WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+```
+
+### Model Presets
+
+Predefined hyperparameter bundles (`debug`, `small`, `medium`, `large`)
+that can be selected via `--model`. CLI flags that the user passes
+explicitly take priority over preset values.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="89"
+MODEL_PRESETS = {
+    "debug": {
+        "hidden": 64,
+        "n_layers": 2,
+        "n_heads": 2,
+        "seq_len": 12,
+        "timesteps": 32,
+        "batch_size": 4,
+    },
+    "small": {
+        "hidden": 128,
+        "n_layers": 4,
+        "n_heads": 4,
+        "seq_len": 24,
+        "timesteps": 64,
+        "batch_size": 8,
+    },
+    "medium": {
+        "hidden": 256,
+        "n_layers": 6,
+        "n_heads": 8,
+        "seq_len": 48,
+        "timesteps": 128,
+        "batch_size": 4,
+    },
+    "large": {
+        "hidden": 512,
+        "n_layers": 8,
+        "n_heads": 8,
+        "seq_len": 64,
+        "timesteps": 256,
+        "batch_size": 2,
+    },
+}
+```
+
+```python title="src/ezpz/examples/diffusion.py" linenums="133"
+def _arg_provided(argv: list[str], flags: list[str]) -> bool:
+    return any(flag in argv for flag in flags)
+
+
+def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
+    if args.model is None:
+        return
+    preset = MODEL_PRESETS[args.model]
+    for field_name, value in preset.items():
+        flags = MODEL_PRESET_FLAGS.get(field_name, [])
+        if not _arg_provided(argv, flags):
+            setattr(args, field_name, value)
+```
+
+### `build_vocab`
+
+Builds a minimal word-level vocabulary from the training corpus, with
+`<pad>` and `<unk>` as special tokens.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="147"
+def build_vocab(texts: Iterable[str]) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """Create a tiny vocabulary from a list of strings."""
+    specials = ["<pad>", "<unk>"]
+    words = sorted({word for text in texts for word in text.lower().split()})
+    vocab = {tok: idx for idx, tok in enumerate(specials + words)}
+    inv_vocab = {idx: tok for tok, idx in vocab.items()}
+    return vocab, inv_vocab
+```
+
+### `ToyTextDataset`
+
+A `Dataset` that encodes sentences to fixed-length token-id tensors,
+padding or truncating to `seq_len`.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="156"
+class ToyTextDataset(Dataset):
+    """Pads or truncates sentences to a fixed length."""
+
+    def __init__(
+        self, texts: List[str], vocab: Dict[str, int], seq_len: int = 12
+    ):
+        """Store corpus and vocabulary for encoding.
+
+        Args:
+            texts: Raw sentences.
+            vocab: Token-to-id mapping.
+            seq_len: Target sequence length for padding/truncation.
+        """
+        self.texts = texts
+        self.vocab = vocab
+        self.seq_len = seq_len
+        self.pad_id = vocab["<pad>"]
+        self.unk_id = vocab["<unk>"]
+
+    def __len__(self) -> int:
+        """Return number of sentences in the corpus."""
+        return len(self.texts)
+
+    def _encode(self, text: str) -> torch.Tensor:
+        """Convert a sentence to a fixed-length tensor of token ids."""
+        tokens = [
+            self.vocab.get(tok, self.unk_id) for tok in text.lower().split()
+        ]
+        tokens = tokens[: self.seq_len]
+        tokens += [self.pad_id] * (self.seq_len - len(tokens))
+        return torch.tensor(tokens, dtype=torch.long)
+
+    def __getitem__(self, idx: int) -> torch.Tensor:  # type:ignore
+        """Return encoded tokens for the indexed sentence."""
+        return self._encode(self.texts[idx])
+```
+
+### `DiffusionSchedule`
+
+A dataclass that precomputes the linear beta schedule and cumulative
+alpha products used by the DDPM forward/reverse processes.
 
 ```python title="src/ezpz/examples/diffusion.py" linenums="193"
 @dataclass
@@ -50,10 +200,74 @@ class DiffusionSchedule:
         self.alpha_bars = torch.cumprod(self.alphas, dim=0)
 ```
 
-### Model
+### `DiffusionTextModel`
 
-The denoiser is a transformer that predicts noise residuals given noisy
-token embeddings and a timestep:
+A transformer-based denoiser. It embeds token ids, adds positional and
+timestep embeddings, runs through a `TransformerEncoder`, and projects
+back to the embedding dimension.
+
+#### `__init__`
+
+Sets up token, position, and timestep embeddings plus a multi-layer
+transformer encoder and a linear projection head.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="210"
+class DiffusionTextModel(nn.Module):
+    """Simple transformer that predicts noise on token embeddings."""
+
+    def __init__(
+        self,
+        vocab_size: int,
+        hidden_size: int,
+        max_seq_len: int,
+        timesteps: int,
+        n_layers: int = 2,
+        n_heads: int = 4,
+    ) -> None:
+        """Initialize embeddings and transformer encoder.
+
+        Args:
+            vocab_size: Size of the token vocabulary.
+            hidden_size: Dimensionality of embeddings and model width.
+            max_seq_len: Maximum sequence length.
+            timesteps: Number of diffusion steps.
+            n_layers: Number of transformer encoder layers.
+            n_heads: Attention heads per layer.
+        """
+        super().__init__()
+        self.hidden_size = hidden_size  # type:ignore
+        self.token_emb = nn.Embedding(vocab_size, hidden_size)
+        self.pos_emb = nn.Embedding(max_seq_len, hidden_size)
+        self.time_emb = nn.Embedding(timesteps, hidden_size)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_size,
+            nhead=n_heads,
+            dim_feedforward=4 * hidden_size,
+            batch_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=n_layers
+        )
+        self.proj = nn.Linear(hidden_size, hidden_size)
+```
+
+#### `embed_tokens`
+
+Looks up token embeddings and scales by `sqrt(hidden_size)`, matching
+standard transformer scaling. The `.clone()` avoids autograd issues with
+FSDP-sharded parameters.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="248"
+    def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Embed token ids and scale them for transformer input."""
+        # Clone avoids autograd complaints about views when using sharded params.
+        return self.token_emb(tokens).clone() * math.sqrt(self.hidden_size)
+```
+
+#### `forward`
+
+Adds positional and timestep embeddings to the noisy input, runs the
+transformer encoder, and projects the result to predict noise residuals.
 
 ```python title="src/ezpz/examples/diffusion.py" linenums="253"
     def forward(
@@ -66,7 +280,14 @@ token embeddings and a timestep:
         h = noisy_embs + pos.unsqueeze(0) + temb
         h = self.encoder(h)
         return self.proj(h)
+```
 
+#### `decode_tokens`
+
+Projects continuous embeddings back to discrete token ids using tied
+weights from the token embedding layer.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="264"
     def decode_tokens(self, embs: torch.Tensor) -> torch.Tensor:
         """Project embeddings back to token ids via tied embeddings."""
         weights = self.token_emb.weight  # (vocab, hidden)
@@ -74,11 +295,356 @@ token embeddings and a timestep:
         return logits.argmax(dim=-1)
 ```
 
-### Sampling
+### Noise Functions
 
-New text is generated by running the reverse diffusion process — starting
-from pure noise and iteratively denoising back to coherent token
-embeddings, then projecting to token ids via `decode_tokens()`.
+#### `sample_timesteps`
+
+Draws uniform random timestep indices for each item in the batch.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="271"
+def sample_timesteps(
+    batch_size: int, schedule: DiffusionSchedule, device: torch.device
+) -> torch.Tensor:
+    """Uniformly sample diffusion steps for a batch."""
+    return torch.randint(0, schedule.timesteps, (batch_size,), device=device)
+```
+
+#### `add_noise`
+
+Applies the DDPM forward process: mixes clean embeddings `x0` with
+Gaussian noise according to the cumulative alpha schedule at timestep `t`.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="278"
+def add_noise(
+    x0: torch.Tensor, t: torch.Tensor, schedule: DiffusionSchedule
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Apply forward diffusion noise to clean embeddings."""
+    noise = torch.randn_like(x0)
+    alpha_bar = schedule.alpha_bars.to(x0.device)[t].view(-1, 1, 1)
+    noisy = torch.sqrt(alpha_bar) * x0 + torch.sqrt(1 - alpha_bar) * noise
+    return noisy, noise
+```
+
+### Reverse Diffusion
+
+#### `p_sample`
+
+Performs a single reverse-diffusion step: predicts the noise with the
+model, computes the posterior mean, and (for `t > 0`) adds scaled noise.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="288"
+def p_sample(
+    model: DiffusionTextModel,
+    xt: torch.Tensor,
+    t: int,
+    schedule: DiffusionSchedule,
+) -> torch.Tensor:
+    """Predict one reverse-diffusion step at timestep ``t``."""
+    t_batch = torch.full((xt.size(0),), t, device=xt.device, dtype=torch.long)
+    beta = schedule.betas.to(xt.device)[t]
+    alpha = schedule.alphas.to(xt.device)[t]
+    alpha_bar = schedule.alpha_bars.to(xt.device)[t]
+    eps = model(xt, t_batch)
+    mean = (xt - (beta / torch.sqrt(1 - alpha_bar)) * eps) / torch.sqrt(alpha)
+    if t == 0:
+        return mean
+    noise = torch.randn_like(xt)
+    return mean + torch.sqrt(beta) * noise
+```
+
+#### `generate_text`
+
+Samples new sentences by running the full reverse diffusion chain from
+pure Gaussian noise down to `t=0`, then decoding the resulting
+embeddings to token ids. Only rank 0 generates; FSDP parameters are
+gathered via `summon_full_params` when needed.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="307"
+def generate_text(
+    model: DiffusionTextModel,
+    schedule: DiffusionSchedule,
+    inv_vocab: Dict[int, str],
+    seq_len: int,
+    num_samples: int,
+    skip_tokens: Tuple[str, ...] = ("<pad>", "<unk>"),
+) -> List[str]:
+    """Sample sequences from the trained diffusion model.
+
+    Args:
+        model: Trained diffusion network (possibly FSDP wrapped).
+        schedule: Noise schedule with precomputed alphas.
+        inv_vocab: Mapping from token ids back to string tokens.
+        seq_len: Maximum sequence length.
+        num_samples: Number of sentences to generate.
+        skip_tokens: Tokens to drop from decoded outputs.
+
+    Returns:
+        List of generated text strings.
+    """
+    model.eval()
+    samples: List[str] = []
+    do_sample = ezpz.get_rank() == 0
+    is_fsdp = isinstance(model, FSDP)
+    base_model = model.module if hasattr(model, "module") else model
+    full_param_ctx = (
+        FSDP.summon_full_params(model)  # , recursive=True)
+        if is_fsdp
+        else nullcontext()
+    )
+
+    with torch.no_grad():
+        with full_param_ctx:
+            if not do_sample:
+                return samples
+            token_emb_weight = base_model.token_emb.weight  # type:ignore
+            for _ in range(num_samples):
+                xt = torch.randn(
+                    (1, seq_len, base_model.hidden_size),
+                    device=token_emb_weight.device,
+                )
+                for t in reversed(range(schedule.timesteps)):
+                    xt = p_sample(base_model, xt, t, schedule)
+                logits = torch.einsum("bld,vd->blv", xt, token_emb_weight)
+                token_ids = logits.argmax(dim=-1)[0].tolist()
+                words = [
+                    inv_vocab.get(tok_id, "<unk>") for tok_id in token_ids
+                ]
+                words = [w for w in words if w not in skip_tokens]
+                samples.append(" ".join(words))
+    return samples
+```
+
+### Training Loop
+
+Wraps the model with `ezpz.distributed.wrap_model` (DDP or FSDP),
+creates an `ezpz.History` for metric tracking, and runs a fixed number
+of gradient steps. Each step embeds a token batch, adds noise at a
+random timestep, predicts the noise, and minimizes MSE loss.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="392"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def train(
+    model: DiffusionTextModel,
+    loader: DataLoader,
+    schedule: DiffusionSchedule,
+    args: argparse.Namespace,
+    steps: int,
+    outdir: Path | os.PathLike | str,
+    lr: float = 1e-3,
+) -> tuple[ezpz.History, torch.nn.Module]:
+    """Train the diffusion text model for a fixed number of steps."""
+    device = ezpz.get_torch_device(as_torch_device=True)
+    # if not isinstance(model, (DistributeFSDP):
+    model.to(device)
+    model.train()
+    wrapped_model = ezpz.distributed.wrap_model(
+        model, use_fsdp=args.fsdp, dtype=args.dtype
+    )
+    optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
+```
+
+The inner loop fetches batches (cycling the iterator when exhausted),
+embeds tokens, adds noise, and computes the denoising loss:
+
+```python title="src/ezpz/examples/diffusion.py" linenums="451"
+    loader_iter = iter(loader)
+    for step in range(steps):
+        t0 = time.perf_counter()
+        try:
+            tokens = next(loader_iter)
+        except StopIteration:
+            loader_iter = iter(loader)
+            tokens = next(loader_iter)
+        tokens = tokens.to(device)
+        t1 = time.perf_counter()
+        ezpz.distributed.synchronize()
+        full_param_ctx = (
+            FSDP.summon_full_params(wrapped_model)
+            if is_fsdp
+            else nullcontext()
+        )
+        with full_param_ctx:
+            x0 = base_model.embed_tokens(tokens)
+        t = sample_timesteps(tokens.size(0), schedule, device=device)
+        xt, noise = add_noise(x0, t, schedule)
+        pred_noise = wrapped_model(xt, t)
+        loss = torch.mean((pred_noise - noise) ** 2)
+        t2 = time.perf_counter()
+        ezpz.distributed.synchronize()
+
+        loss.backward()
+        optim.step()
+        optim.zero_grad(set_to_none=True)
+```
+
+### Data Sources
+
+The default corpus is a handful of hard-coded sentences.
+Alternatively, `--hf-dataset` pulls text from a Hugging Face dataset.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="519"
+def get_default_texts() -> List[str]:
+    """Return a small corpus of seed sentences for toy training."""
+    return [
+        "the product team ships updates every week",
+        "customers ask for faster onboarding",
+        "the service autoscaling keeps latency steady",
+        "data pipelines need reliable monitoring",
+        "large language models assist with code reviews",
+        "cloud costs drop when workloads are right sized",
+        "edge devices sync logs during quiet hours",
+        "dashboards show live metrics for incidents",
+    ]
+```
+
+```python title="src/ezpz/examples/diffusion.py" linenums="533"
+def load_hf_texts(
+    dataset_name: str,
+    split: str,
+    text_column: str,
+    limit: int,
+) -> List[str]:
+    """
+    Pull a small slice of text from a Hugging Face dataset for quick experiments.
+
+    This uses only a limited number of rows (`limit`) to keep the example light.
+    """
+    try:
+        from datasets import load_dataset  # type: ignore
+    except Exception as exc:  # pragma: no cover - best-effort import
+        raise RuntimeError(
+            "datasets package is required for --hf-dataset usage"
+        ) from exc
+
+    logger.info(
+        "Loading HF dataset %s split=%s column=%s limit=%s",
+        dataset_name,
+        split,
+        text_column,
+        limit,
+    )
+    dataset = load_dataset(dataset_name, split=split)
+    if text_column not in list(dataset.column_names):
+        raise ValueError(
+            f"text_column '{text_column}' not in dataset columns {dataset.column_names}"
+        )
+    texts = [str(row[text_column]) for row in dataset.select(range(limit))]
+    if not texts:
+        raise ValueError("No text rows found from HF dataset.")
+    return texts
+```
+
+### `main`
+
+Entry point decorated with `@ezpz.timeitlogit`. Calls
+`ezpz.setup_torch` for distributed init, builds the vocabulary and
+dataset, constructs the model and schedule, runs `train`, finalizes the
+`History`, generates sample text, and logs timing breakdowns to W&B.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="667"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def main(args: argparse.Namespace) -> None:
+    """Set up distributed training, fit the model, and log samples."""
+    t0 = time.perf_counter()
+    rank = ezpz.setup_torch(seed=args.seed)
+    t_setup = time.perf_counter()
+    base_dir = args.outdir if args.outdir else None
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    logger.info("Outputs will be saved to %s", outdir)
+    if ezpz.get_rank() == 0:
+        run = ezpz.distributed.setup_wandb(
+            project_name=WBPROJ_NAME,
+        )
+        assert run is not None and run is wandb.run
+        wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
+```
+
+Corpus selection, vocabulary construction, data loader setup, and model
+instantiation:
+
+```python title="src/ezpz/examples/diffusion.py" linenums="687"
+    base_texts: List[str]
+    if args.hf_dataset:
+        base_texts = load_hf_texts(
+            dataset_name=args.hf_dataset,
+            split=args.hf_split,
+            text_column=args.hf_text_column,
+            limit=args.hf_limit,
+        )
+    else:
+        base_texts = get_default_texts()
+        if args.extra_text:
+            base_texts = base_texts + args.extra_text
+
+    vocab, inv_vocab = build_vocab(base_texts)
+    dataset = ToyTextDataset(base_texts, vocab, seq_len=args.seq_len)
+    sampler = (
+        DistributedSampler(dataset) if ezpz.get_world_size() > 1 else None
+    )
+    loader = DataLoader(
+        dataset,
+        sampler=sampler,
+        batch_size=args.batch_size,
+        shuffle=(sampler is None),
+        drop_last=False,
+    )
+
+    schedule = DiffusionSchedule(timesteps=args.timesteps)
+    model = DiffusionTextModel(
+        vocab_size=len(vocab),
+        hidden_size=args.hidden,
+        max_seq_len=args.seq_len,
+        timesteps=args.timesteps,
+        n_layers=args.n_layers,
+        n_heads=args.n_heads,
+    )
+    device = ezpz.get_torch_device(as_torch_device=True)
+    model.to(device)
+```
+
+Training, history finalization, sample generation, and timing summary:
+
+```python title="src/ezpz/examples/diffusion.py" linenums="725"
+    train_start = time.perf_counter()
+    history, wrapped_model = train(
+        model=model,
+        loader=loader,
+        schedule=schedule,
+        args=args,
+        steps=args.train_steps,
+        lr=args.lr,
+        outdir=outdir,
+    )
+    train_end = time.perf_counter()
+
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+            warmup=0.1,
+        )
+    samples = generate_text(
+        wrapped_model,
+        schedule,
+        inv_vocab,
+        seq_len=args.seq_len,
+        num_samples=args.samples,
+    )
+    if ezpz.get_rank() == 0:
+        for idx, text in enumerate(samples):
+            logger.info("sample %s: %s", idx, text)
+```
+
+### Script Entry Point
+
+Parses CLI args, runs `main`, and tears down the process group.
+
+```python title="src/ezpz/examples/diffusion.py" linenums="775"
+if __name__ == "__main__":
+    args = parse_args()
+    main(args)
+    ezpz.distributed.cleanup()
+```
 
 ## Help
 

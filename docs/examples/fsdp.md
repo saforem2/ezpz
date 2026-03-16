@@ -27,28 +27,139 @@ ezpz launch python3 -m ezpz.examples.fsdp
 
 ## Code Walkthrough
 
-### FSDP Wrapping
+### Imports
 
-The model is wrapped with `FullyShardedDataParallel` instead of DDP.
-Parameters are sharded across GPUs and gathered on-demand for each
-forward/backward pass, reducing per-GPU memory:
+Standard PyTorch imports plus FSDP-specific modules and `ezpz` helpers for
+distributed setup, logging, and metric tracking.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="275"
-    model = FSDP(
-        model,
-        device_id=device,
-        mixed_precision=MixedPrecision(
-            param_dtype=dtype,
-            reduce_dtype=dtype,
-            buffer_dtype=dtype,
-        ),
-    )
+```python title="src/ezpz/examples/fsdp.py" linenums="34"
+# Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DistributedSampler, DataLoader
+import argparse
+import os
+from pathlib import Path
+import sys
+import time
+
+import ezpz
+
+# from ezpz.history import WANDB_DISABLED
+import torch
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import MixedPrecision
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.optim.lr_scheduler import StepLR
+
+from ezpz.models import summarize_model
+from ezpz.examples import get_example_outdir
+
+logger = ezpz.get_logger(__name__)
+
+try:
+    import wandb
+except Exception:
+    wandb = None  # type: ignore
 ```
 
-### Training Loop
+### Model Presets
 
-The training loop is identical to the DDP version — only the wrapping
-changes:
+Named presets (`debug`, `small`, `medium`, `large`) let users scale the CNN
+architecture from the command line with `--model <preset>`.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="71"
+MODEL_PRESETS = {
+    "debug": {
+        "conv1_channels": 8,
+        "conv2_channels": 16,
+        "fc_dim": 64,
+    },
+    "small": {
+        "conv1_channels": 16,
+        "conv2_channels": 32,
+        "fc_dim": 128,
+    },
+    "medium": {
+        "conv1_channels": 32,
+        "conv2_channels": 64,
+        "fc_dim": 256,
+    },
+    "large": {
+        "conv1_channels": 64,
+        "conv2_channels": 128,
+        "fc_dim": 512,
+    },
+}
+```
+
+### `Net` -- CNN Architecture
+
+A two-layer convolutional network with dropout and two fully connected
+layers. `_feature_size` computes the flattened dimension after convolutions
+and pooling so the first linear layer is sized correctly.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="100"
+class Net(nn.Module):
+    """Simple CNN classifier used in the FSDP example."""
+
+    def __init__(
+        self,
+        num_classes: int = 10,
+        img_size: int = 28,
+        conv1_channels: int = 32,
+        conv2_channels: int = 64,
+        fc_dim: int = 128,
+    ):
+        """Initialize convolutional and fully connected layers.
+
+        Args:
+            num_classes: Number of output classes for the classifier.
+            img_size: Input image size (assumes square inputs).
+            conv1_channels: Number of output channels for conv1.
+            conv2_channels: Number of output channels for conv2.
+            fc_dim: Hidden dimension for the first fully connected layer.
+        """
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, conv1_channels, 3, 1)
+        self.conv2 = nn.Conv2d(conv1_channels, conv2_channels, 3, 1)
+        self.dropout1 = nn.Dropout(0.25)
+        self.dropout2 = nn.Dropout(0.5)
+        feature_size = self._feature_size(img_size, conv2_channels)
+        self.fc1 = nn.Linear(feature_size, fc_dim)
+        self.fc2 = nn.Linear(fc_dim, num_classes)
+
+    @staticmethod
+    def _feature_size(img_size: int, conv2_channels: int) -> int:
+        conv1_size = img_size - 2
+        conv2_size = conv1_size - 2
+        pooled_size = conv2_size // 2
+        return conv2_channels * pooled_size * pooled_size
+
+    def forward(self, x):
+        """Compute logits for input images."""
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = F.max_pool2d(x, 2)
+        x = self.dropout1(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.dropout2(x)
+        x = self.fc2(x)
+        output = F.log_softmax(x, dim=1)
+        return output
+```
+
+### `train` -- Single-Epoch Training
+
+Runs one training epoch, accumulating loss across batches. After the loop,
+`dist.all_reduce` sums the loss and sample count across all ranks so every
+worker sees the global average.
 
 ```python title="src/ezpz/examples/fsdp.py" linenums="153"
 @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -59,10 +170,31 @@ def train(
     epoch: int,
     sampler: DistributedSampler | None = None,
 ) -> dict:
-    ...
+    """One epoch of training and loss aggregation across ranks.
+
+    Args:
+        model: Wrapped model (DDP/FSDP).
+        train_loader: Dataloader for training set.
+        optimizer: Optimizer instance.
+        epoch: Current epoch index.
+        sampler: Optional distributed sampler to set epoch.
+
+    Returns:
+        Dict with epoch, wall-clock duration, and averaged train loss.
+    """
+    device_type = ezpz.distributed.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
+    )
     model.train()
     ddp_loss = torch.zeros(2).to(device)
-    ...
+    if sampler:
+        sampler.set_epoch(epoch)
+    ezpz.distributed.synchronize()
+    t0 = time.perf_counter()
+    batch, target = next(iter(train_loader))
     for _, (batch, target) in enumerate(train_loader):
         batch, target = batch.to(device), target.to(device)
         optimizer.zero_grad()
@@ -72,16 +204,305 @@ def train(
         optimizer.step()
         ddp_loss[0] += loss.item()
         ddp_loss[1] += len(batch)
-    ...
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+    ezpz.distributed.synchronize()
+    t1 = time.perf_counter()
+    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
+    return {
+        "epoch": epoch,
+        "dt": t1 - t0,
+        "train_loss": ddp_loss[0] / ddp_loss[1],
+    }
 ```
 
-### When to Use FSDP vs DDP
+### `test` -- Evaluation
 
-- **DDP** replicates the full model on every GPU. Simpler and lower
-  communication overhead when the model fits in memory.
-- **FSDP** shards model parameters across GPUs. Use it when the model is
-  too large to fit in a single GPU's memory.
+Evaluates the model on validation data with gradients disabled. Tracks
+loss, correct predictions, and total samples, then all-reduces across
+ranks.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="205"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def test(model, test_loader):
+    """Evaluate model on validation data and gather metrics."""
+    device_type = ezpz.distributed.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
+    )
+    model.eval()
+    # correct = 0
+    ddp_loss = torch.zeros(3).to(device)
+    with torch.no_grad():
+        for batch, target in test_loader:
+            batch, target = batch.to(device), target.to(device)
+            output = model(batch)
+            ddp_loss[0] += F.nll_loss(output, target, reduction="sum")
+            pred = output.argmax(
+                dim=1, keepdim=True
+            )  # get the index of the max log-probability
+            ddp_loss[1] += pred.eq(target.view_as(pred)).sum()
+            ddp_loss[2] += len(batch)
+
+    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
+
+    test_loss = ddp_loss[0] / ddp_loss[2]
+
+    return {
+        "test_loss": test_loss,
+        "test_acc": 100.0 * ddp_loss[1] / ddp_loss[2],
+    }
+```
+
+### `prepare_model_optimizer_and_scheduler` -- FSDP Wrapping
+
+Creates the `Net` model, wraps it with `FullyShardedDataParallel` using
+mixed-precision settings, and returns the model, optimizer, and LR
+scheduler.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="238"
+def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
+    """Create the FSDP-wrapped model, optimizer, and LR scheduler."""
+    device_type = ezpz.distributed.get_torch_device_type()
+    device = (
+        torch.device("cpu")
+        if device_type == "cpu"
+        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
+    )
+    if args.dataset == "MNIST":
+        num_classes = 10
+        img_size = 28
+    elif args.dataset == "OpenImages":
+        num_classes = 600
+        img_size = 224
+    elif args.dataset == "ImageNet":
+        num_classes = 1000
+        img_size = 224
+    elif args.dataset == "ImageNet1k":
+        num_classes = 1000
+        img_size = 224
+    else:
+        raise ValueError(f"Unsupported dataset: {args.dataset}")
+    model = Net(
+        num_classes=num_classes,
+        img_size=img_size,
+        conv1_channels=args.conv1_channels,
+        conv2_channels=args.conv2_channels,
+        fc_dim=args.fc_dim,
+    ).to(device)
+    logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
+    dtypes = {
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+        "bfloat16": torch.bfloat16,
+        "fp32": torch.float32,
+    }
+    dtype = dtypes[args.dtype]
+    model = FSDP(
+        model,
+        device_id=device,
+        mixed_precision=MixedPrecision(
+            param_dtype=dtype,
+            cast_forward_inputs=True,
+        ),
+    )
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    logger.info(f"{model=}")
+    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    return {
+        "model": model,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+    }
+```
+
+### `get_data` -- Data Loading
+
+Dispatches to dataset-specific loaders (`get_mnist`, `get_imagenet1k`,
+`get_openimages`, `get_imagenet`) from `ezpz.data.vision` based on the
+`--dataset` flag.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="293"
+def get_data(args: argparse.Namespace) -> dict:
+    """Load train/test datasets according to args.dataset."""
+    data_prefix_fallback = Path(os.getcwd()).joinpath(
+        ".cache", "ezpz", "data", f"{args.dataset.lower()}"
+    )
+    data_prefix = args.data_prefix or data_prefix_fallback
+    if args.dataset == "MNIST":
+        from ezpz.data.vision import get_mnist
+
+        data = get_mnist(
+            outdir=Path(data_prefix),
+            train_batch_size=args.batch_size,
+            test_batch_size=args.test_batch_size,
+            pin_memory=True,
+            num_workers=args.num_workers,
+        )
+
+    elif args.dataset == "ImageNet1k":
+        from ezpz.data.vision import get_imagenet1k
+
+        data = get_imagenet1k(
+            outdir=Path(data_prefix),
+            train_batch_size=args.batch_size,
+            test_batch_size=args.test_batch_size,
+            pin_memory=True,
+            num_workers=args.num_workers,
+        )
+
+    elif args.dataset == "OpenImages":
+        from ezpz.data.vision import get_openimages
+
+        data = get_openimages(
+            outdir=Path(data_prefix),
+            train_batch_size=args.batch_size,
+            test_batch_size=args.test_batch_size,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=args.num_workers,
+        )
+    elif args.dataset == "ImageNet":
+        from ezpz.data.vision import get_imagenet
+
+        data = get_imagenet(
+            outdir=Path(data_prefix),
+            train_batch_size=args.batch_size,
+            test_batch_size=args.test_batch_size,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=args.num_workers,
+        )
+    else:
+        raise ValueError(f"Unsupported dataset: {args.dataset}")
+
+    return data
+```
+
+### `fsdp_main` -- Main Function
+
+Orchestrates the full training run: initializes distributed training with
+`ezpz.setup_torch`, optionally sets up Weights & Biases logging, loads
+data, prepares the FSDP-wrapped model, and runs the epoch loop.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="365"
+@ezpz.timeitlogit(rank=ezpz.get_rank())
+def fsdp_main(args: argparse.Namespace) -> None:
+    """Main training loop orchestrating data, model, and logging."""
+    t0 = time.perf_counter()
+    rank = ezpz.setup_torch(seed=args.seed)
+    t_setup = time.perf_counter()
+    if rank == 0:
+        # try:
+        fp = Path(__file__)
+        run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
+        if run is not None and wandb is not None and run is wandb.run:
+            run.config.update({"args": {**vars(args)}})
+            run.config.update({"ezpz.dist": {**ezpz.get_dist_info()}})
+
+    data = get_data(args)
+    ezpz.distributed.barrier()
+    train_loader = data["train"]["loader"]
+    test_loader = data["test"]["loader"]
+
+    tmp = prepare_model_optimizer_and_scheduler(args)
+    model = tmp["model"]
+    optimizer = tmp["optimizer"]
+    scheduler = tmp["scheduler"]
+```
+
+An `ezpz.history.History` object tracks per-epoch metrics and optionally
+writes them to JSONL. The epoch loop calls `train`, `test`, and
+`scheduler.step` each iteration.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="389"
+    outdir = get_example_outdir(WBPROJ_NAME)
+    logger.info("Outputs will be saved to %s", outdir)
+    metrics_path = outdir.joinpath(f"metrics-{rank}.jsonl")
+    outdir.mkdir(parents=True, exist_ok=True)
+    history = ezpz.history.History(
+        report_dir=outdir,
+        report_enabled=(rank == 0),
+        jsonl_path=metrics_path,
+        # jsonl_overwrite=True,
+        distributed_history=(
+            1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
+        ),
+    )
+    start = time.perf_counter()
+    for epoch in range(1, args.epochs + 1):
+        train_metrics = train(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            epoch=epoch,
+            sampler=data["train"]["sampler"],
+        )
+        test_metrics = test(model, test_loader)
+        scheduler.step()
+        logger.info(history.update({**train_metrics, **test_metrics}))
+```
+
+After training completes, timings are logged (and optionally sent to W&B),
+the model checkpoint is saved if `--save-model` was passed, and
+`history.finalize` writes the final report on rank 0.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="415"
+    train_end = time.perf_counter()
+    logger.info(
+        " ".join(
+            [
+                f"{args.epochs + 1} epochs took",
+                f"{train_end - start:.1f}s",
+            ]
+        )
+    )
+    timings = {
+        "main/setup_torch": t_setup - t0,
+        "main/train": train_end - start,
+        "main/total": train_end - t0,
+        "timings/training_start": start - t0,
+        "timings/train_duration": train_end - start,
+        "timings/end-to-end": train_end - t0,
+    }
+    logger.info("Timings: %s", timings)
+    if wandb is not None and getattr(wandb, "run", None) is not None:
+        try:
+            wandb.log(
+                {
+                    (f"timings/{k}" if not k.startswith("timings/") else k): v
+                    for k, v in timings.items()
+                }
+            )
+        except Exception:
+            logger.warning("Failed to log timings to wandb")
+    ezpz.distributed.barrier()
+
+    if args.save_model:
+        ezpz.distributed.barrier()  # wait for slowpokes
+        states = model.state_dict()
+        if rank == 0:
+            torch.save(states, "mnist_cnn.pt")
+
+    if rank == 0:
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+        )
+        logger.info(f"{dataset=}")
+```
+
+### Entrypoint
+
+Parses CLI arguments, runs `fsdp_main`, and calls `ezpz.cleanup()` to tear
+down the process group.
+
+```python title="src/ezpz/examples/fsdp.py" linenums="589"
+if __name__ == "__main__":
+    args = parse_args()
+    fsdp_main(args=args)
+    ezpz.cleanup()
+```
 
 ## Help
 
