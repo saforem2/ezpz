@@ -29,7 +29,7 @@ ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 ## Code Walkthrough
 
 
-<details closed><summary><strong>Imports and Setup</strong></summary>
+<details closed markdown><summary><strong>Imports and Setup</strong></summary>
 
 The module pulls in `ezpz` for distributed training, data helpers for fake
 and MNIST datasets, and the shared `AttentionBlock` from `ezpz.models`.
@@ -62,7 +62,7 @@ WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 
 </details>
 
-<details closed><summary><strong>Model Presets</strong></summary>
+<details closed markdown><summary><strong>Model Presets</strong></summary>
 
 Four named presets (`debug`, `small`, `medium`, `large`) bundle
 `batch_size`, `num_heads`, `head_dim`, and `depth` together. The `med`
@@ -117,7 +117,7 @@ MNIST_DEFAULT_FLAGS = {
 
 </details>
 
-<details closed><summary><strong>PatchEmbed</strong></summary>
+<details closed markdown><summary><strong>PatchEmbed</strong></summary>
 
 Converts an image into a sequence of patch embeddings using a strided
 `Conv2d`. The kernel size and stride both equal `patch_size`.
@@ -154,7 +154,7 @@ class PatchEmbed(torch.nn.Module):
 
 </details>
 
-<details closed><summary><strong>SimpleVisionTransformer</strong></summary>
+<details closed markdown><summary><strong>SimpleVisionTransformer</strong></summary>
 
 Standard ViT: patch embedding, optional class token, learnable positional
 embeddings, a stack of `AttentionBlock` layers, layer norm, and a linear
@@ -248,7 +248,7 @@ transformer blocks, and pools to a single vector for classification.
 
 </details>
 
-<details closed><summary><strong>Argument Parsing and Preset Application</strong></summary>
+<details closed markdown><summary><strong>Argument Parsing and Preset Application</strong></summary>
 
 `parse_args` builds the CLI, then applies model-size presets and
 MNIST-specific defaults for any flags that were not explicitly provided by
@@ -284,7 +284,7 @@ def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
 
 </details>
 
-<details closed><summary><strong>`train_fn` -- Distributed Setup and Data Loading</strong></summary>
+<details closed markdown><summary><strong>`train_fn` -- Distributed Setup and Data Loading</strong></summary>
 
 `train_fn` is the core training routine. It begins by querying the
 distributed environment for `world_size`, `local_rank`, and device, then
@@ -324,7 +324,7 @@ def train_fn(
 
 </details>
 
-<details closed><summary><strong>`train_fn` -- Model Creation, Wrapping, and Compilation</strong></summary>
+<details closed markdown><summary><strong>`train_fn` -- Model Creation, Wrapping, and Compilation</strong></summary>
 
 The `SimpleVisionTransformer` is instantiated, moved to the target device,
 then wrapped with DDP or FSDP via `ezpz.distributed.wrap_model` when
@@ -367,7 +367,7 @@ running multi-GPU. Optional `torch.compile` follows.
 
 </details>
 
-<details closed><summary><strong>`train_fn` -- Training Loop</strong></summary>
+<details closed markdown><summary><strong>`train_fn` -- Training Loop</strong></summary>
 
 The loop iterates over the training dataloader, with a configurable warmup
 period. Each step runs a forward pass under `torch.autocast`, computes
@@ -410,7 +410,7 @@ for data-transfer, forward, backward, and optimizer phases.
 
 </details>
 
-<details closed><summary><strong>`train_fn` -- Metrics and Evaluation</strong></summary>
+<details closed markdown><summary><strong>`train_fn` -- Metrics and Evaluation</strong></summary>
 
 After warmup, each step's loss, accuracy, and timing breakdown are logged
 to an `ezpz.History` object. After training, if a test split exists, the
@@ -479,7 +479,7 @@ and optionally uploads them to W&B.
 
 </details>
 
-<details closed><summary><strong>`main` -- Entrypoint</strong></summary>
+<details closed markdown><summary><strong>`main` -- Entrypoint</strong></summary>
 
 `main` calls `ezpz.distributed.setup_torch()` to initialize the process
 group, optionally sets up W&B, configures the attention function (native
@@ -551,7 +551,7 @@ are logged (and sent to W&B if available).
 
 </details>
 
-<details closed><summary><strong>Script Entry Point</strong></summary>
+<details closed markdown><summary><strong>Script Entry Point</strong></summary>
 
 When run as a module (`python -m ezpz.examples.vit`), arguments are parsed
 and `main` is called.
