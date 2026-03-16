@@ -73,6 +73,16 @@ def train(
 - **FSDP** shards model parameters across GPUs. Use it when the model is
   too large to fit in a single GPU's memory.
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/fsdp.py</code></summary>
+
+```python title="src/ezpz/examples/fsdp.py"
+--8<-- "src/ezpz/examples/fsdp.py"
+```
+
+</details>
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

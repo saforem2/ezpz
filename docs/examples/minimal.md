@@ -1,5 +1,10 @@
 # Minimal Training (Synthetic Data)
 
+!!! warning "Deprecated"
+
+    This example is deprecated and may be removed in a future release.
+    See [`ezpz.examples.test`](test.md) for the recommended smoke test.
+
 The simplest ezpz example — trains an MLP to reconstruct random inputs
 using env-var configuration. No dataset downloads required.
 
@@ -150,6 +155,16 @@ All configuration is via environment variables:
 | `LOG_FREQ` | `1` | Log metrics every N steps |
 | `PRINT_FREQ` | `10` | Print summary every N steps |
 | `WARMUP_ITERS` | `10` | Steps to skip before recording metrics |
+
+## Source
+
+<details closed><summary><code>src/ezpz/examples/minimal.py</code></summary>
+
+```python title="src/ezpz/examples/minimal.py"
+--8<-- "src/ezpz/examples/minimal.py"
+```
+
+</details>
 
 ## Help
 

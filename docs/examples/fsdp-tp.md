@@ -66,6 +66,16 @@ The grid below shows how GPUs are organized. Each **row** is a TP group
   group 0    group 1    group 2    group 3
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/fsdp_tp.py</code></summary>
+
+```python title="src/ezpz/examples/fsdp_tp.py"
+--8<-- "src/ezpz/examples/fsdp_tp.py"
+```
+
+</details>
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

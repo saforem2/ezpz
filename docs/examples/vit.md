@@ -94,6 +94,16 @@ MODEL_PRESETS = {
 Use `--compile` for `torch.compile` fused kernels, and `--fsdp` to switch
 from DDP to FSDP wrapping.
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/vit.py</code></summary>
+
+```python title="src/ezpz/examples/vit.py"
+--8<-- "src/ezpz/examples/vit.py"
+```
+
+</details>
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

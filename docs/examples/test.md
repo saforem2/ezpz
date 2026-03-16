@@ -77,6 +77,16 @@ computes loss + accuracy:
   wait/warmup/active cycles. `--pyinstrument-profiler` enables statistical
   profiling instead.
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/test.py</code></summary>
+
+```python title="src/ezpz/examples/test.py"
+--8<-- "src/ezpz/examples/test.py"
+```
+
+</details>
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

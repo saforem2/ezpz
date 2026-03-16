@@ -70,7 +70,6 @@ nav = [
 
     { "📝 Examples" = [
         "examples/index.md",
-        { "Minimal (Synthetic)" = "examples/minimal.md" },
         { "<code>ezpz.examples.test</code>" = "examples/test.md" },
         { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
         { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
@@ -81,6 +80,7 @@ nav = [
             "examples/hf-trainer/index.md",
             { "🤗 HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
         ] },
+        { "Minimal (Synthetic) [deprecated]" = "examples/minimal.md" },
     ] },
     # ] },
 
@@ -595,7 +595,7 @@ pygments_lang_class = true
 # auto_title = true
 linenums_style = "pymdownx-inline"
 [project.markdown_extensions.pymdownx.snippets]
-base_path = "includes"
+base_path = ["includes", "."]
 
 [project.markdown_extensions.pymdownx.emoji]
 emoji_index = "zensical.extensions.emoji.twemoji"    # (1)!
