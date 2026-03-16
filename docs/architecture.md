@@ -30,6 +30,75 @@ graph LR
     end
 ```
 
+## `setup_torch()` Decision Flow
+
+```mermaid
+graph TD
+    A["setup_torch() called"] --> B[get_torch_device]
+    B --> C{"TORCH_DEVICE env var?"}
+    C -->|yes| D[use specified device]
+    C -->|no| E{"torch.cuda available?"}
+    E -->|yes| F["device = cuda"]
+    E -->|no| G{"torch.xpu available?"}
+    G -->|yes| H["device = xpu"]
+    G -->|no| I{"MPS available?"}
+    I -->|yes| J["device = mps"]
+    I -->|no| K["device = cpu"]
+    D & F & H & J & K --> L[get_torch_backend]
+    L --> M{device type}
+    M -->|cuda| N["backend = nccl"]
+    M -->|xpu| O["backend = ccl"]
+    M -->|cpu/mps| P["backend = gloo"]
+    N & O & P --> Q[init_process_group]
+    Q --> R["return rank, world_size, local_rank"]
+```
+
+## Launcher Decision Tree
+
+```mermaid
+graph TD
+    A["ezpz launch"] --> B{"PBS_JOBID set?"}
+    B -->|yes| C["Use mpiexec + PBS_NODEFILE"]
+    B -->|no| D{"SLURM_JOB_ID set?"}
+    D -->|yes| E["Use srun + SLURM topology"]
+    D -->|no| F{"Known hostname?"}
+    F -->|yes| G[Map to scheduler]
+    F -->|no| H["Fallback: mpirun -np N"]
+```
+
+## DDP vs FSDP vs FSDP+TP
+
+```mermaid
+graph LR
+    subgraph DDP["DDP — Data Parallel"]
+        D1["GPU 0: Full Model"]
+        D2["GPU 1: Full Model"]
+        D3["GPU N: Full Model"]
+        D1 <-->|"gradient sync"| D2
+        D2 <-->|"gradient sync"| D3
+    end
+
+    subgraph FSDP["FSDP — Fully Sharded"]
+        F1["GPU 0: Shard 0"]
+        F2["GPU 1: Shard 1"]
+        F3["GPU N: Shard N"]
+        F1 <-->|"gather/scatter params"| F2
+        F2 <-->|"gather/scatter params"| F3
+    end
+
+    subgraph FSDPTP["FSDP+TP — 2D Parallel"]
+        subgraph Node1["Node 1 (TP)"]
+            T1["GPU 0"]
+            T2["GPU 1"]
+        end
+        subgraph Node2["Node 2 (TP)"]
+            T3["GPU 2"]
+            T4["GPU 3"]
+        end
+        Node1 <-->|"FSDP across nodes"| Node2
+    end
+```
+
 ## Module Map
 
 | Module | Purpose |

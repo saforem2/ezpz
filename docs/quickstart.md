@@ -1,11 +1,14 @@
 # 🏃‍♂️ Quick Start
 
-🍋 `ezpz` provides a set of dynamic, light weight utilities that simplify
-running experiments with distributed PyTorch.
+`ezpz` makes distributed PyTorch training work everywhere — your laptop,
+a SLURM cluster, or a PBS supercomputer — with zero boilerplate changes.
+Call `setup_torch()` instead of manual `init_process_group`, wrap your model
+with `wrap_model()`, and launch with `ezpz launch`. This page walks through
+the key APIs with before/after diffs and a complete runnable example.
 
 <!-- 1. [**Python Library**](./python/Code-Reference/index.md): -->
 
-These can be broken down, roughly into a few distinct categories:
+At a high level, `ezpz` breaks down into a few distinct categories:
 
 1. Launching and running distributed PyTorch code:
 
@@ -82,10 +85,12 @@ training, device management, and metric tracking.
       testing locally
 
 - **Flexible resource specification:** `-np`, `-ppn`, `--nhosts`, `--hostfile`,
-  etc.  
-  Including the ability to pass 
+  etc.
+  Including the ability to pass custom resource flags like `-np`, `--nhosts`,
+  `--hostfile`, and other scheduler-specific options.
 
-- **Pass-through arguments:** Ability 
+- **Pass-through arguments:** Pass any additional flags through to the
+  underlying launcher.
   For launcher-only flags/env (e.g., `-x FOO=bar`), place them before `--`;
   everything after `--` is the command to run:
 

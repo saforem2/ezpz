@@ -70,12 +70,13 @@ nav = [
 
     { "📝 Examples" = [
         "examples/index.md",
-        # { "ezpz.examples" = [
+        { "Minimal (Synthetic)" = "examples/minimal.md" },
         { "<code>ezpz.examples.test</code>" = "examples/test.md" },
         { "<code>ezpz.examples.fsdp</code>" = "examples/fsdp.md" },
         { "<code>ezpz.examples.vit</code>" = "examples/vit.md" },
-        { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
         { "<code>ezpz.examples.diffusion</code>" = "examples/diffusion.md" },
+        { "<code>ezpz.examples.fsdp_tp</code>" = "examples/fsdp-tp.md" },
+        { "<code>ezpz.examples.hf</code>" = "examples/hf.md" },
         { "<code>ezpz.examples.hf_trainer</code>" = [
             "examples/hf-trainer/index.md",
             { "🤗 HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
