@@ -17,6 +17,16 @@ See: \[📘 [docs](../python/Code-Reference/examples/test.md)\],
 ezpz launch python3 -m ezpz.examples.test
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/test.py</code></summary>
+
+```python title="src/ezpz/examples/test.py"
+--8<-- "src/ezpz/examples/test.py"
+```
+
+</details>
+
 ## Code Walkthrough
 
 ### Training Step
@@ -76,16 +86,6 @@ computes loss + accuracy:
 - **Profiling flags**: `--profile` enables PyTorch profiler with configurable
   wait/warmup/active cycles. `--pyinstrument-profiler` enables statistical
   profiling instead.
-
-## Source
-
-<details closed><summary><code>src/ezpz/examples/test.py</code></summary>
-
-```python title="src/ezpz/examples/test.py"
---8<-- "src/ezpz/examples/test.py"
-```
-
-</details>
 
 ## Help
 

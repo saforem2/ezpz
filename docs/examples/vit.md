@@ -16,6 +16,16 @@ See:
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/vit.py</code></summary>
+
+```python title="src/ezpz/examples/vit.py"
+--8<-- "src/ezpz/examples/vit.py"
+```
+
+</details>
+
 ## Code Walkthrough
 
 ### ViT Architecture
@@ -93,16 +103,6 @@ MODEL_PRESETS = {
 
 Use `--compile` for `torch.compile` fused kernels, and `--fsdp` to switch
 from DDP to FSDP wrapping.
-
-## Source
-
-<details closed><summary><code>src/ezpz/examples/vit.py</code></summary>
-
-```python title="src/ezpz/examples/vit.py"
---8<-- "src/ezpz/examples/vit.py"
-```
-
-</details>
 
 ## Help
 

@@ -24,6 +24,16 @@ See:
 ezpz launch python3 -m ezpz.examples.minimal
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/minimal.py</code></summary>
+
+```python title="src/ezpz/examples/minimal.py"
+--8<-- "src/ezpz/examples/minimal.py"
+```
+
+</details>
+
 ## Code Walkthrough
 
 ### Setup
@@ -155,16 +165,6 @@ All configuration is via environment variables:
 | `LOG_FREQ` | `1` | Log metrics every N steps |
 | `PRINT_FREQ` | `10` | Print summary every N steps |
 | `WARMUP_ITERS` | `10` | Steps to skip before recording metrics |
-
-## Source
-
-<details closed><summary><code>src/ezpz/examples/minimal.py</code></summary>
-
-```python title="src/ezpz/examples/minimal.py"
---8<-- "src/ezpz/examples/minimal.py"
-```
-
-</details>
 
 ## Help
 

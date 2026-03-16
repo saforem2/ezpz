@@ -15,6 +15,16 @@ See:
 ezpz launch python3 -m ezpz.examples.fsdp
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/fsdp.py</code></summary>
+
+```python title="src/ezpz/examples/fsdp.py"
+--8<-- "src/ezpz/examples/fsdp.py"
+```
+
+</details>
+
 ## Code Walkthrough
 
 ### FSDP Wrapping
@@ -72,16 +82,6 @@ def train(
   communication overhead when the model fits in memory.
 - **FSDP** shards model parameters across GPUs. Use it when the model is
   too large to fit in a single GPU's memory.
-
-## Source
-
-<details closed><summary><code>src/ezpz/examples/fsdp.py</code></summary>
-
-```python title="src/ezpz/examples/fsdp.py"
---8<-- "src/ezpz/examples/fsdp.py"
-```
-
-</details>
 
 ## Help
 

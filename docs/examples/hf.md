@@ -27,6 +27,16 @@ ezpz launch python3 -m ezpz.examples.hf \
     --output_dir ./output-hf
 ```
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/hf.py</code></summary>
+
+```python title="src/ezpz/examples/hf.py"
+--8<-- "src/ezpz/examples/hf.py"
+```
+
+</details>
+
 ## Code Walkthrough
 
 ### Setup & Config
@@ -199,16 +209,6 @@ The companion [`hf_trainer.py`](hf-trainer/index.md) uses the
 **HuggingFace Trainer abstraction**, which handles the loop internally.
 Use the Trainer version when you want standard training with minimal code;
 use this version when you need full control.
-
-## Source
-
-<details closed><summary><code>src/ezpz/examples/hf.py</code></summary>
-
-```python title="src/ezpz/examples/hf.py"
---8<-- "src/ezpz/examples/hf.py"
-```
-
-</details>
 
 ## Help
 
