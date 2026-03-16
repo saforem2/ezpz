@@ -665,7 +665,7 @@ def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool = True,
     dtype: str = "bfloat16",
-    device_id: int | None = None,
+    device_id: torch.device | int | None = None,
     device_mesh: Any = None,
 ) -> torch.nn.Module:
     """Wrap *model* with DDP or FSDP for distributed training.
@@ -692,10 +692,19 @@ def wrap_model(
     if get_rank() == 0:
         logger.info("Wrapping model with %s", "fsdp" if use_fsdp else "ddp")
     if use_fsdp:
+        device_type = get_torch_device_type()
+        if device_type in ("cpu", "mps"):
+            logger.warning(
+                "FSDP is not supported on %s devices; falling back to DDP.",
+                device_type,
+            )
+            return wrap_model_for_ddp(model)
         if device_mesh is not None:
             return _wrap_fsdp2(
                 model, dtype=dtype, device_mesh=device_mesh,
             )
+        if device_id is not None:
+            device_id = torch.device(device_type, device_id)
         return _wrap_fsdp(model, dtype=dtype, device_id=device_id)
     return wrap_model_for_ddp(model)
 
@@ -1445,7 +1454,7 @@ def _init_horovod() -> dict[str, int]:
 def _wrap_fsdp(
     model: torch.nn.Module,
     dtype: str = "bfloat16",
-    device_id: int | None = None,
+    device_id: torch.device | int | None = None,
     **kwargs: Any,
 ) -> torch.nn.Module:
     """Wrap *model* with FSDP 1 and mixed precision."""
