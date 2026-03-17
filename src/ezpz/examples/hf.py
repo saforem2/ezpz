@@ -292,10 +292,11 @@ def main() -> None:
     accelerator.wait_for_everyone()
 
     last_checkpoint = None
+    overwrite = getattr(training_args, "overwrite_output_dir", False)
     if (
         os.path.isdir(output_dir)
         and training_args.do_train
-        and not training_args.overwrite_output_dir
+        and not overwrite
     ):
         last_checkpoint = get_last_checkpoint(output_dir)
         if (
@@ -303,11 +304,11 @@ def main() -> None:
             and len(os.listdir(output_dir)) > 0
         ):
             raise ValueError(
-                "Output directory already exists and is not empty. Use --overwrite_output_dir to train from scratch."
+                "Output directory already exists and is not empty."
             )
         if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
             logger.info(
-                "Checkpoint detected, resuming training at %s. To avoid this behavior, change the output_dir or add --overwrite_output_dir.",
+                "Checkpoint detected, resuming training at %s. To avoid this behavior, change the output_dir.",
                 last_checkpoint,
             )
 
