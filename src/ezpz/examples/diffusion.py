@@ -599,18 +599,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))
     )
     parser.add_argument(
+        "--dataset",
         "--hf-dataset",
         type=str,
         default=None,
         help="Optional Hugging Face dataset name (e.g., 'ag_news'). When set, replaces the toy corpus.",
     )
     parser.add_argument(
+        "--split",
         "--hf-split",
         type=str,
         default="train",
         help="Dataset split to load.",
     )
     parser.add_argument(
+        "--text-column",
         "--hf-text-column",
         type=str,
         default="text",
