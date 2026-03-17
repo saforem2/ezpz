@@ -139,7 +139,7 @@ run_example fsdp_tp \
     ezpz launch python3 -m ezpz.examples.fsdp_tp --model small --dataset stanfordnlp/imdb
 
 run_example diffusion \
-    ezpz launch python3 -m ezpz.examples.diffusion --model small --dataset standfordnlp/imdb
+    ezpz launch python3 -m ezpz.examples.diffusion --model small --dataset stanfordnlp/imdb
 
 run_example hf \
     ezpz launch python3 -m ezpz.examples.hf \

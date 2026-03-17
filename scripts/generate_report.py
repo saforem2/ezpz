@@ -25,8 +25,6 @@ import re
 import statistics
 from pathlib import Path
 from typing import Any, Optional
-import ezpz
-import torch
 
 # ── Metric key mapping per example ───────────────────────────────────────────
 # Each example logs slightly different key names in its history.  We map
@@ -222,7 +220,7 @@ def generate_report(outdir: Path) -> str:
         ["Job ID", f"{env.get('job_id', '?')} ({env.get('scheduler', '?')})"],
         ["Nodes", gpu_desc],
         ["Python", env.get("python", "?")],
-        ["PyTorch", torch.__version__],
+        ["PyTorch", env.get("torch", "?")],
         ["ezpz", env.get("ezpz_version", "?")],
     ]
 
