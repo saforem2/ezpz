@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash --login
 # run_benchmarks.sh — Run all ezpz examples sequentially and generate a report.
 #
 # Usage:
@@ -19,6 +19,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
+
+source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
 
 # ── Source user env setup if available ────────────────────────────────────────
 if [[ -n "${EZPZ_SETUP_ENV:-}" ]] && [[ -f "${EZPZ_SETUP_ENV}" ]]; then
@@ -52,6 +54,7 @@ else
 fi
 
 # ── Capture environment info ────────────────────────────────────────────────
+
 NOW="$(date "+%Y-%m-%d-%H%M%S")"
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
@@ -70,7 +73,8 @@ else
     NUM_NODES=1
 fi
 
-GPUS_PER_NODE="$(${PYTHON} -c 'import torch; print(torch.cuda.device_count())' 2>/dev/null || echo 0)"
+
+GPUS_PER_NODE="${NGPU_PER_HOST:-"$(${PYTHON} -c 'import ezpz; print(ezpz.distributed.get_gpus_per_node())' 2>/dev/null || echo 0)"}"
 TOTAL_GPUS=$(( NUM_NODES * GPUS_PER_NODE ))
 
 # Write env.json
@@ -133,6 +137,9 @@ run_example vit \
 
 run_example fsdp_tp \
     ezpz launch python3 -m ezpz.examples.fsdp_tp --model small --dataset stanfordnlp/imdb
+
+run_example diffusion \
+    ezpz launch python3 -m ezpz.examples.diffusion --model small --dataset standfordnlp/imdb
 
 run_example hf \
     ezpz launch python3 -m ezpz.examples.hf \
