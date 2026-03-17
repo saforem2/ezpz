@@ -1,8 +1,9 @@
 # 🏃‍♂️ Quick Start
 
-A lean walkthrough: install, write a script, launch it, track metrics.
+Everything you need to get started: install, write a script, launch it, track
+metrics, and a complete API cheat sheet with before/after diffs.
 
-For detailed examples, terminal output, and the full API cheat sheet, see the
+For a complete runnable example with terminal output, see the
 [Reference](./reference.md).
 
 ## 📦 Install
@@ -261,7 +262,7 @@ For the full History API — distributed aggregation, environment variables,
 
 ## 🔗 Next Steps
 
-- **[Reference](./reference.md)** — API cheat sheet with before/after diffs and complete example
+- **[Reference](./reference.md)** — complete runnable example with terminal output
 - **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
 - **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags

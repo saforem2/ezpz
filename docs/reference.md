@@ -1,76 +1,8 @@
 # 📖 Reference
 
-`ezpz` makes distributed PyTorch training work everywhere — your laptop,
-a SLURM cluster, or a PBS supercomputer — with zero boilerplate changes.
-Call `setup_torch()` instead of manual `init_process_group`, wrap your model
-with `wrap_model()`, and launch with `ezpz launch`. This page walks through
-the key APIs with before/after diffs and a complete runnable example.
-
-At a high level, `ezpz` breaks down into a few distinct categories:
-
-1. Launching and running distributed PyTorch code:
-
-    ```bash
-    ezpz launch python3 -m ezpz.examples.test  # bash
-    ```
-
-    ```python
-    >>> import ezpz.examples.test
-    >>> ezpz.examples.test.main()  # launch from python!
-    ```
-
-2. Device Management, and running on different
-    {`cuda`, `xpu`, `mps`, `cpu`} devices
-3. Experiment Tracking and tools for automatically
-    recording, saving and plotting metrics.
-
-??? question "[Optional] Shell Environment and Setup"
-
-    1. [**Shell Environment and Setup**](./notes/shell-environment.md):
-
-        ??? warning "Deprecation Notice"
-
-            I plan to deprecate `utils.sh` in favor of a uv native approach.
-            This shell script was originally developed for personal use, and I
-            don't plan to officially support this script in the long term.
-
-        - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh):
-        Shell script containing a collection of functions that I've accumulated
-        over time and found to be useful.
-        To use these, we can source the file directly from the command line:
-
-            ```bash
-            source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
-            ```
-
-            ??? details "What's in `utils.sh`?"
-
-                This script contains utilities for automatic:
-
-                - Job scheduler detection with Slurm and PBS
-                - Module loading and base Python environment setup
-                - Virtual environment creation and activation
-                ... _and more_!
-                - Check out [🏖️ Shell Environment](./notes/shell-environment.md) for
-                additional information.
-
----
-
-## 🪄 Using `ezpz`
-
-The real usefulness of `ezpz` comes from its usefulness in _other_
-applications.
-
-With `ezpz`, we can write hardware-agnostic distributed PyTorch code that
-can be launched easily on different cluster environments.
-
-This allows us to focus on the important parts of our application, without
-having to worry about the boilerplate code required to set up distributed
-training, device management, and metric tracking.
-
-
-- **Accelerator detection:** `ezpz.get_torch_device_type()` and
-  `ezpz.setup_torch()` normalize CUDA/XPU/MPS/CPU selection.
+This page covers the launcher details and a complete runnable example with
+metric tracking. For installation, the API cheat sheet, and getting started,
+see the [Quick Start](./quickstart.md).
 
 ### 🚀 Scheduler-Aware Launcher: `ezpz launch`
 
@@ -131,78 +63,9 @@ For complete CLI usage, flags, and the sequence diagram, see the
 [^launcher]: This will be `srun` if a Slurm scheduler is detected, `mpirun` /
     `mpiexec` otherwise.
 
-### 🛠️ API Cheat Sheet
-
-Each `ezpz` component can be used independently — pick only what you need.
-
-#### Setup & Distributed Init
-
-```diff
-- import os, torch.distributed as dist
-- dist.init_process_group(backend="nccl", ...)
-- rank = int(os.environ["RANK"])
-- local_rank = int(os.environ["LOCAL_RANK"])
-- world_size = int(os.environ["WORLD_SIZE"])
-
-+ import ezpz
-+ rank = ezpz.setup_torch()          # returns global rank
-+ local_rank = ezpz.get_local_rank()
-+ world_size = ezpz.get_world_size()
-```
-
-#### Device Management
-
-```diff
-- device = torch.device("cuda")
-- model.to("cuda")
-- batch = batch.to("cuda")
-
-+ device = ezpz.get_torch_device()   # cuda, xpu, mps, or cpu
-+ model.to(device)
-+ batch = batch.to(device)
-```
-
-#### Model Wrapping
-
-```diff
-- from torch.nn.parallel import DistributedDataParallel as DDP
-- model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-
-+ model = ezpz.wrap_model(model)                  # DDP (default)
-+ model = ezpz.wrap_model(model, use_fsdp=True)   # FSDP
-```
-
-#### Training Loop
-
-```diff
-  for step, batch in enumerate(dataloader):
--     batch = batch.to("cuda")
-+     batch = batch.to(ezpz.get_torch_device())
-      t0 = time.perf_counter()
-      loss = train_step(...)
--     torch.cuda.synchronize()
-+     ezpz.synchronize()
-      dt = time.perf_counter() - t0
-```
-
-#### Metric Tracking
-
-```python
-import ezpz
-
-logger = ezpz.get_logger(__name__)
-ezpz.setup_wandb(project_name="my-project")  # optional
-history = ezpz.History()
-
-for step in range(100):
-    loss = train_step(...)
-    logger.info(history.update({"step": step, "loss": loss.item()}))
-
-history.finalize(outdir="./outputs")  # saves dataset + plots
-```
-
-For full details on `History`, see the
-[Metric Tracking guide](./history.md).
+For the API cheat sheet (before/after diffs for setup, device management,
+model wrapping, training loop, and metric tracking), see the
+[Quick Start](./quickstart.md#api-cheat-sheet).
 
 ## ✅ Complete Example with History
 
