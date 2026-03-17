@@ -2241,7 +2241,7 @@ class History:
         """Convert internal history to a dictionary of numpy arrays."""
         # return {k: np.stack(v).squeeze() for k, v in self.history.items()}
         return {
-            k: torch.Tensor(v).numpy(force=True)
+            k: torch.Tensor(v).detach().numpy(force=True)
             for k, v in self.history.items()
         }
 
@@ -2263,7 +2263,7 @@ class History:
             and len(x) > 0
             and isinstance(x[0], torch.Tensor)
         ):
-            x = torch.Tensor(x).numpy(force=True)
+            x = torch.Tensor(x).detach().numpy(force=True)
         try:
             arr = grab_tensor(x)
         except ValueError:
