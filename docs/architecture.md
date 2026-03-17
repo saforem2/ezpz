@@ -47,7 +47,7 @@ graph TD
     D & F & H & J & K --> L[get_torch_backend]
     L --> M{device type}
     M -->|cuda| N["backend = nccl"]
-    M -->|xpu| O["backend = ccl"]
+    M -->|xpu| O["backend = xccl"]
     M -->|cpu/mps| P["backend = gloo"]
     N & O & P --> Q[init_process_group]
     Q --> R["return rank, world_size, local_rank"]
@@ -99,6 +99,16 @@ graph LR
     end
 ```
 
+### When to use each strategy
+
+| Strategy | Use when | `wrap_model()` call |
+|----------|----------|---------------------|
+| **DDP** | Model fits in a single GPU's memory | `ezpz.wrap_model(model)` |
+| **FSDP** | Model is too large for one GPU, or you want to reduce memory per GPU | `ezpz.wrap_model(model, use_fsdp=True)` |
+| **FSDP+TP** | Very large models where even FSDP isn't enough; combines sharding across nodes with tensor parallelism within nodes | `ezpz.wrap_model(model, use_fsdp=True)` + `setup_torch(tensor_parallel_size=N)` |
+
+DDP is the simplest — start here unless you have a reason not to.
+
 ## Module Map
 
 | Module | Purpose |
@@ -121,7 +131,7 @@ graph LR
     1. Calls `get_torch_device()` which checks the `TORCH_DEVICE` env var first,
        then probes `torch.cuda`, `torch.xpu`, and `torch.backends.mps` in order.
     2. `get_torch_backend()` maps the detected device to a communication backend
-       (`cuda` → `nccl`, `xpu` → `ccl`, `cpu` → `gloo`).
+       (`cuda` → `nccl`, `xpu` → `xccl`, `cpu` → `gloo`).
     3. Attempts MPI-based initialization via `_init_dist_via_mpi()` first, then
        falls back to torchrun-style env vars (`RANK`, `LOCAL_RANK`, `WORLD_SIZE`).
     4. Returns `(rank, world_size, local_rank)`.
