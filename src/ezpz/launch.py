@@ -249,6 +249,14 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
                 "This warning can be disabled by setting SYCL_DISABLE_FSYCL_SYCLHPP_WARNING macro.",
                 "|      ^",
                 '# "operator: aten::geometric"',
+                "1 warning generated.",
+                "|                             ^",
+                '41 | __SYCL_WARNING("You are including <sycl/sycl.hpp> without -fsycl flcan be disabled by setting SYCL_DISABLE_FSYCL_SYCLHPP_WARNING macro."',
+                "ag, \\",
+                "34 | #define __SYCL_WARNING(msg) _Pragma(__SYCL_TOmacro.",
+                "STRING(GCC warning msg))",
+                '41 | __SYCL_WARNING("are including <sycl/sycl.hpp> without -fsycl flag, \',
+                "by setting SYCL_DISABLE_FSYCL_SYCLHPP_WARNING macro.",
             ]
         logger.info(
             " ".join(
