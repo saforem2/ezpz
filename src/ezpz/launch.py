@@ -237,7 +237,18 @@ def get_aurora_filters(additional_filters: Optional[list] = None) -> list:
                 "AttributeError",
                 "Initialized with serialization",
                 "AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'",
-                # "operator: aten::geometric"
+                "In file included from /var/run/palsd/",
+                "/opt/aurora/26.26.0/oneapi/compiler/latest/include/sycl/sycl.hpp:41:1",
+                '41 | __SYCL_WARNING("You are including <sycl/sycl.hpp> without -fsycl flag',
+                "| ^",
+                "/opt/aurora/26.26.0/oneapi/compiler/latest/include/sycl/sycl.hpp:34:29: note:",
+                "34 | #define __SYCL_WARNING(msg) _Pragma(__SYCL_TOSTRING(GCC warning msg))",
+                # |                             ^
+                "<scratch space>:58:6: note: expanded from here",
+                '58 |  GCC warning "You are including <sycl/sycl.hpp> without -fsycl flag, which is errorenous for device code compilation.',
+                "This warning can be disabled by setting SYCL_DISABLE_FSYCL_SYCLHPP_WARNING macro.",
+                "|      ^",
+                '# "operator: aten::geometric"',
             ]
         logger.info(
             " ".join(
@@ -518,7 +529,9 @@ def run(argv: Sequence[str] | None = None) -> int:
         if jobid is not None:
             launcher_args = list(getattr(args, "launcher_args", []))
             if scheduler != "pbs":
-                launcher_args.extend(_cpu_bind_launcher_args(selected_cpu_bind))
+                launcher_args.extend(
+                    _cpu_bind_launcher_args(selected_cpu_bind)
+                )
             launch(
                 cmd_to_launch=command_parts,
                 include_python=False,
