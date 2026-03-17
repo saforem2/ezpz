@@ -681,6 +681,8 @@ def wrap_model(
         The wrapped model.  If ``world_size <= 1`` the original model is
         returned unchanged.
     """
+    import torch
+
     ws = get_world_size()
     if ws <= 1:
         logger.warning(
