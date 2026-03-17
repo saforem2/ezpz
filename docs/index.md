@@ -4,6 +4,8 @@
 
 `ezpz` makes distributed PyTorch code portable across any supported hardware
 {NVIDIA, AMD, Intel, MPS, CPU} with **zero code changes**.
+Built for researchers and engineers running distributed PyTorch on HPC
+systems (ALCF, NERSC, OLCF) or local workstations.
 
 This lets us write Python applications that can be run _anywhere_, _at any
 scale_; with native job scheduler (PBS, Slurm)[^lcfs] integration and graceful
@@ -15,7 +17,7 @@ fallbacks for running locally[^dev] on Mac, Linux machines.
 [^dev]: This is particularly useful if you'd like to run development /
     debugging experiments locally
 
-## Why `ezpz`?
+## 🤔 Why `ezpz`?
 
 Distributed PyTorch requires boilerplate that varies by hardware, backend, and
 job scheduler. `ezpz` replaces all of it.
@@ -43,18 +45,34 @@ job scheduler. `ezpz` replaces all of it.
     import os, torch, torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel as DDP
 
-    backend = "nccl" if torch.cuda.is_available() else "gloo"
+    backend = "gloo"
+    device_type = "cpu"
+    if torch.cuda.is_available():
+        backend = "nccl"
+        device_type = "cuda"
+    elif torch.xpu.is_available():
+        backend = "xccl"
+        device_type = "xpu"
+
     rank = int(os.environ.get("RANK", 0))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     dist.init_process_group(backend, rank=rank, world_size=world_size)
+
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
         device = torch.device(f"cuda:{local_rank}")
+    elif torch.xpu.is_available():
+        torch.xpu.set_device(local_rank)
+        device = torch.device(f"xpu:{local_rank}")
     else:
         device = torch.device("cpu")
+
     model = torch.nn.Linear(128, 10).to(device)
-    model = DDP(model, device_ids=[local_rank] if backend == "nccl" else None)
+    model = DDP(
+        model,
+        device_ids=[local_rank] if backend in ["nccl", "xccl"] else None
+    )
     ```
 
     ```bash
