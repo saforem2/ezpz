@@ -159,11 +159,29 @@ def _find_wandb_url(logfile: Path) -> Optional[str]:
         text = logfile.read_text(errors="replace")
     except OSError:
         return None
-    for line in text.splitlines():
-        m = pattern.search(line)
-        if m:
-            return m.group(0)
-    return None
+    urls = pattern.findall(text)
+    # Prefer run-specific URL (contains /runs/)
+    for url in urls:
+        if "/runs/" in url:
+            return url
+    return urls[0] if urls else None
+
+
+def _align_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """Build a markdown table with columns padded to equal widths."""
+    ncols = len(headers)
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    def _row_line(cells: list[str]) -> str:
+        padded = [cells[i].ljust(widths[i]) for i in range(ncols)]
+        return "| " + " | ".join(padded) + " |"
+    lines = [_row_line(headers)]
+    lines.append("|" + "|".join("-" * (w + 2) for w in widths) + "|")
+    for row in rows:
+        lines.append(_row_line(row))
+    return lines
 
 
 def _fmt(val: Optional[float], precision: int = 4) -> str:
@@ -195,30 +213,32 @@ def generate_report(outdir: Path) -> str:
     )
     git_desc = f"`{env.get('git_commit', '?')}` (branch: {env.get('git_branch', '?')})"
 
+    env_headers = ["Key", "Value"]
+    env_rows = [
+        ["Date", env.get("date", "?")],
+        ["Git Commit", git_desc],
+        ["Job ID", f"{env.get('job_id', '?')} ({env.get('scheduler', '?')})"],
+        ["Nodes", gpu_desc],
+        ["Python", env.get("python", "?")],
+        ["PyTorch", env.get("torch", "?")],
+        ["ezpz", env.get("ezpz_version", "?")],
+    ]
+
     lines: list[str] = [
         "# ezpz Benchmark Report",
         "",
         "## Environment",
         "",
-        "| Key | Value |",
-        "|-----|-------|",
-        f"| Date | {env.get('date', '?')} |",
-        f"| Git Commit | {git_desc} |",
-        f"| Job ID | {env.get('job_id', '?')} ({env.get('scheduler', '?')}) |",
-        f"| Nodes | {gpu_desc} |",
-        f"| Python | {env.get('python', '?')} |",
-        f"| PyTorch | {env.get('torch', '?')} |",
-        f"| ezpz | {env.get('ezpz_version', '?')} |",
+        *_align_table(env_headers, env_rows),
         "",
     ]
 
     # ── Per-example results ──────────────────────────────────────────────
-    header = (
-        "| Example | Status | Wall Time | Steps | Final Loss "
-        "| Mean dt (s) | Throughput | W&B |"
-    )
-    sep = "|---------|--------|-----------|-------|------------|-------------|------------|-----|"
-    lines += ["## Results", "", header, sep]
+    results_headers = [
+        "Example", "Status", "Wall Time", "Steps",
+        "Final Loss", "Mean dt (s)", "Throughput", "W&B",
+    ]
+    results_rows: list[list[str]] = []
 
     for row in timings:
         name = row["name"]
@@ -253,10 +273,12 @@ def generate_report(outdir: Path) -> str:
             f"{statistics.mean(throughputs):.0f} tok/s" if throughputs else "—"
         )
 
-        lines.append(
-            f"| {name} | {status} | {wall_str} | {num_steps} "
-            f"| {final_loss} | {mean_dt} | {tp_str} | {wandb_cell} |"
-        )
+        results_rows.append([
+            name, status, wall_str, num_steps,
+            final_loss, mean_dt, tp_str, wandb_cell,
+        ])
+
+    lines += ["## Results", "", *_align_table(results_headers, results_rows)]
 
     # ── Per-example log paths ────────────────────────────────────────────
     lines += [
