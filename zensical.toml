@@ -46,8 +46,9 @@ nav = [
     { "🍋 ezpz" = "index.md" },
 
     { "📖 Guide" = [
-        { "🏃‍♂️ Quickstart" = "quickstart.md" },
-        { "📖 Getting Started" = "guide.md" },
+        { "🏃‍♂️ Quick Start" = "quickstart.md" },
+        { "📖 Reference" = "reference.md" },
+        { "📊 Metric Tracking" = "history.md" },
         { "⚙️ Configuration" = "configuration.md" },
         { "🏗️ Architecture" = "architecture.md" },
         { "🔧 Troubleshooting" = "troubleshooting.md" },
