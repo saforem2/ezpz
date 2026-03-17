@@ -79,7 +79,7 @@ produces terminal-friendly plots automatically via `finalize()`.
 import ezpz
 import torch
 
-from ezpz.models.minimal import SequentialLinearNet
+from ezpz.models.minimal import SequentialLinearNet  # multi-layer Linear+ReLU network
 
 import time
 
@@ -121,6 +121,12 @@ if rank == 0:
 
 ezpz.cleanup()
 ```
+
+!!! note "Swap in your own model"
+
+    `SequentialLinearNet` is a small multi-layer Linear+ReLU network included
+    for demonstration. Replace it with any `torch.nn.Module` — the rest of
+    the script (setup, wrapping, training loop, history) stays the same.
 
 ??? info "🪵 Logs"
 
