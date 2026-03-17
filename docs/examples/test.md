@@ -32,8 +32,12 @@ ezpz launch python3 -m ezpz.examples.test
 
 <details closed markdown><summary><strong>Imports and Constants</strong></summary>
 
-Standard library and PyTorch imports, plus `ezpz` modules for distributed
-training, CLI flag parsing, and profiling.
+`DDP` is imported directly because this example uses vanilla data-parallel
+wrapping (no FSDP). `build_test_parser` from `ezpz.cli.flags` provides a
+shared argument parser so CLI flags like `--epochs`, `--lr`, and `--compile`
+are consistent across all built-in examples. `get_profiling_context` lets
+the example optionally run under PyTorch Profiler or pyinstrument without
+changing the training loop.
 
 ```python title="src/ezpz/examples/test.py" linenums="1"
 #!/usr/bin/env python3

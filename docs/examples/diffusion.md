@@ -30,8 +30,13 @@ ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanf
 
 <details closed markdown><summary><strong>Imports and Setup</strong></summary>
 
-Standard library, PyTorch, and `ezpz` imports. FSDP and DDP are imported
-for distributed wrapping.
+Both `FSDP` and `DDP` are imported because the example supports switching
+between them via a CLI flag, letting users compare sharding strategies on
+the same diffusion model. `wandb` is imported at the top level for
+experiment tracking; `nullcontext` provides a no-op context manager when
+profiling is disabled. `ezpz.distributed` handles backend detection and
+process group setup so the same script runs on CUDA, XPU, and CPU
+clusters.
 
 ```python title="src/ezpz/examples/diffusion.py" linenums="61"
 import argparse

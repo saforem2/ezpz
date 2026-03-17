@@ -31,8 +31,13 @@ ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 
 <details closed markdown><summary><strong>Imports and Setup</strong></summary>
 
-The module pulls in `ezpz` for distributed training, data helpers for fake
-and MNIST datasets, and the shared `AttentionBlock` from `ezpz.models`.
+`AttentionBlock` is the reusable multi-head self-attention layer shared
+across ezpz's model zoo — importing it here lets the ViT assemble
+transformer blocks without duplicating attention code. The `get_fake_data`
+/ `get_mnist` helpers abstract dataset loading so the same training loop
+works with randomly generated tensors (for quick smoke tests) or real MNIST
+data. `summarize_model` prints a parameter-count breakdown useful for
+verifying FSDP sharding.
 
 ```python title="src/ezpz/examples/vit.py" linenums="72"
 import argparse

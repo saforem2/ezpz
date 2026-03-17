@@ -3,7 +3,7 @@
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
-    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP (with `strategy="fsdp"`)
+    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP (with `use_fsdp=True`)
     - [`TrainConfig`][ezpz.configs.TrainConfig] — Training configuration
 
 See:
@@ -30,8 +30,13 @@ ezpz launch python3 -m ezpz.examples.fsdp
 
 <details closed markdown><summary><strong>Imports</strong></summary>
 
-Standard PyTorch imports plus FSDP-specific modules and `ezpz` helpers for
-distributed setup, logging, and metric tracking.
+The FSDP and `MixedPrecision` imports enable fully-sharded data parallelism
+with optional half-precision compute, which is the core distribution strategy
+this example demonstrates. `ezpz` replaces the manual `init_process_group` /
+device-selection boilerplate so the same script works on CUDA, XPU, and MPS
+without changes. `summarize_model` and `get_example_outdir` are convenience
+helpers for logging parameter counts and writing outputs to a timestamped
+directory.
 
 ```python title="src/ezpz/examples/fsdp.py" linenums="34"
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
@@ -71,7 +76,11 @@ except Exception:
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
 Named presets (`debug`, `small`, `medium`, `large`) let users scale the CNN
-architecture from the command line with `--model <preset>`.
+architecture from the command line with `--model <preset>`. Each preset
+bundles `conv1_channels`, `conv2_channels`, and `fc_dim` so you can quickly
+compare FSDP overhead at different model sizes without manually tuning
+individual flags. Any CLI flag the user passes explicitly overrides the
+preset value.
 
 ```python title="src/ezpz/examples/fsdp.py" linenums="71"
 MODEL_PRESETS = {
