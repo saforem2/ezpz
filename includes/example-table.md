@@ -7,25 +7,21 @@
     | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
     | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
     | [:lucide-book:][ex-diffusion] · [:lucide-file-code:][api-diffusion] · [:lucide-github:][gh-diffusion]          | `ezpz.examples.diffusion`  | Train Diffusion LLM with FSDP on HF Datasets    |
+    | [:lucide-book:][ex-hf] · [:lucide-file-code:][api-hf] · [:lucide-github:][gh-hf]                               | `ezpz.examples.hf`         | Fine-tune causal LM with Accelerate + FSDP       |
     | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:lucide-github:][gh-hf-trainer] | `ezpz.examples.hf_trainer` | Train LLM with FSDP + HF Trainer on HF Datasets |
 
 
-    ??? note "Running Examples"
+    Any of the examples can be launched with:
 
-        Any of the examples below can be launched with (sensible defaults if not
-        specified):
-
-        ```bash
-        ezpz launch python3 -m ezpz.examples.fsdp
-        ezpz launch python3 -m ezpz.examples.fsdp_tp
-        # ...etc
-        ezpz launch python3 -m ezpz.examples.hf_trainer
-        ```
+    ```bash
+    ezpz launch python3 -m ezpz.examples.<example>
+    ```
 
     ??? tip "🤗 HF Integration"
 
-        1. `ezpz.examples.`{[`fsdp_tp`](https://ezpz.cool/examples/fsdp-tp.md), 
-            [`diffusion, hf_trainer`](https://ezpz.cool/examples/diffusion.md),
+        1. `ezpz.examples.`{[`fsdp_tp`](https://ezpz.cool/examples/fsdp-tp.md),
+            [`diffusion`](https://ezpz.cool/examples/diffusion.md),
+            [`hf`](https://ezpz.cool/examples/hf.md),
             [`hf_trainer`](https://ezpz.cool/examples/hf-trainer/index.md)}
             all support arbitrary 🤗 Hugging Face
             [datasets](https://huggingface.co/docs/datasets/index) e.g.:
@@ -34,6 +30,11 @@
             dataset="stanfordnlp/imdb"  # or any other HF dataset
             ezpz launch python3 -m ezpz.examples.fsdp_tp --dataset "${dataset}"
             ezpz launch python3 -m ezpz.examples.diffusion --dataset "${dataset}"
+            ezpz launch python3 -m ezpz.examples.hf \
+                --model_name_or_path meta-llama/Llama-3.2-1B \
+                --dataset_name="${dataset}" \
+                --streaming \
+                --bf16=true
             ezpz launch python3 -m ezpz.examples.hf_trainer \
                 --model_name_or_path meta-llama/Llama-3.2-1B \
                 --dataset_name="${dataset}" \
@@ -41,18 +42,27 @@
                 --bf16=true
             ```
 
-        1. [`ezpz.examples.hf_trainer`](https://ezpz.cool/examples/hf-trainer/index.md) supports
+        1. [`ezpz.examples.hf`](https://ezpz.cool/examples/hf.md) and
+            [`ezpz.examples.hf_trainer`](https://ezpz.cool/examples/hf-trainer/index.md) both support
             arbitrary combinations of (compatible) `transformers.from_pretrained`
-            models, and HF Datasets (with support for streaming!)
+            models, and HF Datasets (with support for streaming!).
+            `hf` uses an explicit training loop with Accelerate, while
+            `hf_trainer` wraps the HF `Trainer` API.
 
             ```bash
+            ezpz launch python3 -m ezpz.examples.hf \
+                --streaming \
+                --dataset_name=eliplutchok/fineweb-small-sample \
+                --tokenizer_name meta-llama/Llama-3.2-1B \
+                --model_name_or_path meta-llama/Llama-3.2-1B \
+                --bf16=true
+
             ezpz launch python3 -m ezpz.examples.hf_trainer \
                 --streaming \
                 --dataset_name=eliplutchok/fineweb-small-sample \
                 --tokenizer_name meta-llama/Llama-3.2-1B \
                 --model_name_or_path meta-llama/Llama-3.2-1B \
                 --bf16=true
-                # ...etc.
             ```
 
     ??? example "Simple Example"
@@ -111,55 +121,39 @@
                 [2026-01-08 14:58:04,773070][I][ezpz/launch:138:run_command] Caught 24 filters
                 [2026-01-08 14:58:04,773429][I][ezpz/launch:139:run_command] Running command:
                 mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8247203.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 -c 'import ezpz; print(ezpz.setup_torch())'
+                ```
+
+                <details><summary>CPU bind output (24 lines)</summary>
+
+                ```
                 cpubind:list x4717c0s6b0n0 pid 118589 rank 12 0: mask 0x1c
                 cpubind:list x4717c0s6b0n0 pid 118590 rank 13 1: mask 0x1c00
-                cpubind:list x4717c0s6b0n0 pid 118591 rank 14 2: mask 0x1c0000
-                cpubind:list x4717c0s6b0n0 pid 118592 rank 15 3: mask 0x1c000000
-                cpubind:list x4717c0s6b0n0 pid 118593 rank 16 4: mask 0x1c00000000
-                cpubind:list x4717c0s6b0n0 pid 118594 rank 17 5: mask 0x1c0000000000
-                cpubind:list x4717c0s6b0n0 pid 118595 rank 18 6: mask 0x1c0000000000000
-                cpubind:list x4717c0s6b0n0 pid 118596 rank 19 7: mask 0x1c000000000000000
-                cpubind:list x4717c0s6b0n0 pid 118597 rank 20 8: mask 0x1c00000000000000000
-                cpubind:list x4717c0s6b0n0 pid 118598 rank 21 9: mask 0x1c0000000000000000000
-                cpubind:list x4717c0s6b0n0 pid 118599 rank 22 10: mask 0x1c000000000000000000000
-                cpubind:list x4717c0s6b0n0 pid 118600 rank 23 11: mask 0x1c00000000000000000000000
-                cpubind:list x4418c6s1b0n0 pid 66450 rank 0 0: mask 0x1c
-                cpubind:list x4418c6s1b0n0 pid 66451 rank 1 1: mask 0x1c00
-                cpubind:list x4418c6s1b0n0 pid 66452 rank 2 2: mask 0x1c0000
-                cpubind:list x4418c6s1b0n0 pid 66453 rank 3 3: mask 0x1c000000
-                cpubind:list x4418c6s1b0n0 pid 66454 rank 4 4: mask 0x1c00000000
-                cpubind:list x4418c6s1b0n0 pid 66455 rank 5 5: mask 0x1c0000000000
-                cpubind:list x4418c6s1b0n0 pid 66456 rank 6 6: mask 0x1c0000000000000
-                cpubind:list x4418c6s1b0n0 pid 66457 rank 7 7: mask 0x1c000000000000000
-                cpubind:list x4418c6s1b0n0 pid 66458 rank 8 8: mask 0x1c00000000000000000
-                cpubind:list x4418c6s1b0n0 pid 66459 rank 9 9: mask 0x1c0000000000000000000
+                ...
                 cpubind:list x4418c6s1b0n0 pid 66460 rank 10 10: mask 0x1c000000000000000000000
                 cpubind:list x4418c6s1b0n0 pid 66461 rank 11 11: mask 0x1c00000000000000000000000
+                ```
+
+                </details>
+
+                ```bash
                 Using [24 / 24] available "xpu" devices !!
+                ```
+
+                <details><summary>Raw rank output (24 lines)</summary>
+
+                ```
                 8
                 10
                 0
                 4
-                3
-                5
-                7
-                11
-                6
-                1
-                9
-                2
-                14
-                15
-                12
-                13
-                16
-                17
-                19
-                22
-                20
-                23
+                ...
                 18
                 21
+                ```
+
+                </details>
+
+                ```bash
                 [2026-01-08 14:58:14,252433][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-145814]----
                 [2026-01-08 14:58:14,253726][I][ezpz/launch:448:launch] Execution finished with 0.
                 [2026-01-08 14:58:14,254184][I][ezpz/launch:449:launch] Executing finished in 9.48 seconds.
@@ -237,30 +231,21 @@
                 [2026-01-08 07:26:21,574195][I][ezpz/launch:138:run_command] Caught 24 filters
                 [2026-01-08 07:26:21,574532][I][ezpz/launch:139:run_command] Running command:
                 mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8246832.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 python3 demo.py
+                ```
+
+                <details><summary>CPU bind output (24 lines)</summary>
+
+                ```
                 cpubind:list x4604c5s3b0n0 pid 131587 rank 12 0: mask 0x1c
                 cpubind:list x4604c5s3b0n0 pid 131588 rank 13 1: mask 0x1c00
-                cpubind:list x4604c5s3b0n0 pid 131589 rank 14 2: mask 0x1c0000
-                cpubind:list x4604c5s3b0n0 pid 131590 rank 15 3: mask 0x1c000000
-                cpubind:list x4604c5s3b0n0 pid 131591 rank 16 4: mask 0x1c00000000
-                cpubind:list x4604c5s3b0n0 pid 131592 rank 17 5: mask 0x1c0000000000
-                cpubind:list x4604c5s3b0n0 pid 131593 rank 18 6: mask 0x1c0000000000000
-                cpubind:list x4604c5s3b0n0 pid 131594 rank 19 7: mask 0x1c000000000000000
-                cpubind:list x4604c5s3b0n0 pid 131595 rank 20 8: mask 0x1c00000000000000000
-                cpubind:list x4604c5s3b0n0 pid 131596 rank 21 9: mask 0x1c0000000000000000000
-                cpubind:list x4604c5s3b0n0 pid 131597 rank 22 10: mask 0x1c000000000000000000000
-                cpubind:list x4604c5s3b0n0 pid 131598 rank 23 11: mask 0x1c00000000000000000000000
-                cpubind:list x4604c5s2b0n0 pid 121225 rank 0 0: mask 0x1c
-                cpubind:list x4604c5s2b0n0 pid 121226 rank 1 1: mask 0x1c00
-                cpubind:list x4604c5s2b0n0 pid 121227 rank 2 2: mask 0x1c0000
-                cpubind:list x4604c5s2b0n0 pid 121228 rank 3 3: mask 0x1c000000
-                cpubind:list x4604c5s2b0n0 pid 121229 rank 4 4: mask 0x1c00000000
-                cpubind:list x4604c5s2b0n0 pid 121230 rank 5 5: mask 0x1c0000000000
-                cpubind:list x4604c5s2b0n0 pid 121231 rank 6 6: mask 0x1c0000000000000
-                cpubind:list x4604c5s2b0n0 pid 121232 rank 7 7: mask 0x1c000000000000000
-                cpubind:list x4604c5s2b0n0 pid 121233 rank 8 8: mask 0x1c00000000000000000
-                cpubind:list x4604c5s2b0n0 pid 121234 rank 9 9: mask 0x1c0000000000000000000
+                ...
                 cpubind:list x4604c5s2b0n0 pid 121235 rank 10 10: mask 0x1c000000000000000000000
                 cpubind:list x4604c5s2b0n0 pid 121236 rank 11 11: mask 0x1c00000000000000000000000
+                ```
+
+                </details>
+
+                ```bash
                 Using [24 / 24] available "xpu" devices !!
                 Hello from rank 0 / 24 on xpu!
                 [2026-01-08 07:26:33,060432][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2026-01-08-072633]----
@@ -286,6 +271,9 @@
   [ex-diffusion]: examples/diffusion.md "Example"
   [api-diffusion]: python/Code-Reference/examples/diffusion.md "API Reference"
   [gh-diffusion]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/diffusion.py "GitHub Source"
+  [ex-hf]: examples/hf.md "Example"
+  [api-hf]: python/Code-Reference/examples/hf.md "API Reference"
+  [gh-hf]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf.py "GitHub Source"
   [ex-hf-trainer]: examples/hf-trainer/index.md "Example"
   [api-hf-trainer]: python/Code-Reference/examples/hf_trainer.md "API Reference"
   [gh-hf-trainer]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py "GitHub Source"
