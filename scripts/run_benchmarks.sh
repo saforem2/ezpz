@@ -52,6 +52,7 @@ else
 fi
 
 # ── Capture environment info ────────────────────────────────────────────────
+NOW="$(date "+%Y-%m-%d-%H%M%S")"
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
 HOSTNAME_STR="$(hostname)"
@@ -153,7 +154,7 @@ run_example hf_trainer \
         --per_device_eval_batch_size=1 \
         --block_size=8192 \
         --fsdp=auto_wrap \
-        --output_dir=outputs/ezpz.hf
+        --output_dir="${BENCH_DIR}/outputs/ezpz.hf/${NOW}"
 
 run_example hf_trainer \
     ezpz launch python3 -m ezpz.examples.hf_trainer \
@@ -175,7 +176,7 @@ run_example hf_trainer \
         --per_device_eval_batch_size=1 \
         --block_size=8192 \
         --fsdp=auto_wrap \
-        --output_dir=outputs/ezpz.hf_trainer
+        --output_dir="${BENCH_DIR}/outputs/ezpz.hf_trainer/${NOW}"
 
 # ── Generate report ─────────────────────────────────────────────────────────
 echo ""
