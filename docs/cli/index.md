@@ -5,13 +5,62 @@ to help launch distributed PyTorch applications.
 
 Explicitly, these are `ezpz <command>`:
 
-- 🩺 [`ezpz doctor`](./doctor.md): Health check your environment
 - 🚀 [`ezpz launch`](./launch/index.md): Launch commands with _automatic
   **job scheduler** detection_ (PBS, Slurm)
-    - 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
-- 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
-- 🚀 [`ezpz yeet-env`](./yeet-env.md): Broadcast environment tarball to all worker nodes via MPI
-    --8<-- "../includes/cli-example-table.md"
+- 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
+- 🩺 [`ezpz doctor`](./doctor.md): Health check your environment
+- 📝 [`ezpz.examples`](../examples/index.md): Collection of distributed
+  training examples
+    - ??? note "Distributed Training Examples"
+
+            See the [Examples](../examples/index.md) page for full details.
+
+            - [`test`](../examples/test.md): Simplest DDP training loop
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.test
+                ```
+
+            - [`fsdp`](../examples/fsdp.md): FSDP for memory-efficient training
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.fsdp
+                ```
+
+            - [`vit`](../examples/vit.md): Vision Transformer with FSDP + optional `torch.compile`
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.vit
+                ```
+
+            - [`fsdp_tp`](../examples/fsdp-tp.md): 2D parallelism (FSDP + Tensor Parallel)
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.fsdp_tp
+                ```
+
+            - [`diffusion`](../examples/diffusion.md): Diffusion model training with FSDP
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.diffusion
+                ```
+
+            - [`hf`](../examples/hf.md): Fine-tune causal LM with explicit training loop (Accelerate + FSDP)
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.hf
+                ```
+
+            - [`hf_trainer`](../examples/hf-trainer/index.md): Hugging Face Trainer integration
+
+                ```bash
+                ezpz launch python3 -m ezpz.examples.hf_trainer
+                ```
+
+- ??? question "Experimental"
+
+        - 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
+        - 🚀 [`ezpz yeet-env`](./yeet-env.md): Broadcast environment tarball to all worker nodes via MPI
 
 - ??? tip "`ezpz --help`"
 
@@ -32,4 +81,3 @@ Explicitly, these are `ezpz <command>`:
         launch    Launch a command across the active scheduler.
         test      Run the distributed smoke test.
         ```
-
