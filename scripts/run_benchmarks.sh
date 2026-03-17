@@ -143,7 +143,6 @@ run_example hf_trainer \
         --do_eval=true \
         --report-to=wandb \
         --logging-steps=1 \
-        --include-tokens-per-second=true \
         --max-steps=100 \
         --include-num-input-tokens-seen=true \
         --optim=adamw_torch \
@@ -166,7 +165,6 @@ run_example hf_trainer \
         --do_eval=true \
         --report-to=wandb \
         --logging-steps=1 \
-        --include-tokens-per-second=true \
         --max-steps=100 \
         --include-num-input-tokens-seen=true \
         --optim=adamw_torch \
