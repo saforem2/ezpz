@@ -134,13 +134,50 @@ run_example fsdp_tp \
     ezpz launch python3 -m ezpz.examples.fsdp_tp --model small --dataset stanfordnlp/imdb
 
 run_example hf_trainer \
+    ezpz launch python3 -m ezpz.examples.hf \
+        --dataset_name=eliplutchok/fineweb-small-sample \
+        --streaming \
+        --model_name_or_path meta-llama/Llama-3.2-1B \
+        --bf16=true \
+        --do_train=true \
+        --do_eval=true \
+        --report-to=wandb \
+        --logging-steps=1 \
+        --include-tokens-per-second=true \
+        --max-steps=100 \
+        --include-num-input-tokens-seen=true \
+        --optim=adamw_torch \
+        --logging-first-step \
+        --include-for-metrics='inputs,loss' \
+        --max-eval-samples=100 \
+        --per_device_train_batch_size=1 \
+        --per_device_eval_batch_size=1 \
+        --block_size=8192 \
+        --fsdp=auto_wrap \
+        --output_dir=outputs/ezpz.hf
+
+run_example hf_trainer \
     ezpz launch python3 -m ezpz.examples.hf_trainer \
         --dataset_name=eliplutchok/fineweb-small-sample \
         --streaming \
         --model_name_or_path meta-llama/Llama-3.2-1B \
-        --per_device_train_batch_size 4 \
-        --num_train_epochs 1 \
-        --block_size 512
+        --bf16=true \
+        --do_train=true \
+        --do_eval=true \
+        --report-to=wandb \
+        --logging-steps=1 \
+        --include-tokens-per-second=true \
+        --max-steps=100 \
+        --include-num-input-tokens-seen=true \
+        --optim=adamw_torch \
+        --logging-first-step \
+        --include-for-metrics='inputs,loss' \
+        --max-eval-samples=100 \
+        --per_device_train_batch_size=1 \
+        --per_device_eval_batch_size=1 \
+        --block_size=8192 \
+        --fsdp=auto_wrap \
+        --output_dir=outputs/ezpz.hf_trainer
 
 # ── Generate report ─────────────────────────────────────────────────────────
 echo ""
