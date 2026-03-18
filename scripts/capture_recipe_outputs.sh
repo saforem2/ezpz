@@ -12,8 +12,11 @@
 
 set -euo pipefail
 
+source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+
 OUTDIR="${1:-./recipe_outputs}"
-SCRIPTS_DIR=$(mktemp -d)
+SCRIPTS_DIR="${SCRIPTS_DIR:-"$(pwd)/tmp-scripts"}"
+mkdir -p "${SCRIPTS_DIR}"
 mkdir -p "$OUTDIR"
 
 strip_ansi() { perl -pe 's/\e\[[0-9;]*[mGKHF]//g'; }
@@ -36,16 +39,18 @@ cat > "$SCRIPTS_DIR/recipe_wandb.py" << 'PYEOF'
 import ezpz
 
 rank = ezpz.setup_torch()
-ezpz.setup_wandb(project_name="my-experiment")
-history = ezpz.History()
+if rank == 0:
+    ezpz.setup_wandb(project_name="ezpz-wandb-recipe")
 
+history = ezpz.History()
 num_steps = 10
 for step in range(num_steps):
     loss_val = 1.0 / (step + 1)
     lr_val = 1e-3
     history.update({"loss": loss_val, "lr": lr_val})
 
-history.finalize(outdir="/tmp/recipe_outputs", plot=False)
+if rank == 0:
+    history.finalize(outdir="wandb-recipe-outputs", plot=False)
 PYEOF
 
 cat > "$SCRIPTS_DIR/recipe_timing.py" << 'PYEOF'
@@ -86,12 +91,11 @@ PYEOF
 # ── run each recipe ─────────────────────────────────────────────────────
 
 RECIPES=(recipe_fsdp recipe_wandb recipe_timing recipe_no_dist_history)
-NP="${NP:-12}"  # 12 XPU tiles per Aurora node (6 GPUs × 2 tiles)
 
 for recipe in "${RECIPES[@]}"; do
-    echo "── Running ${recipe} (np=${NP}) ──"
+    echo "── Running ${recipe} ──"
     WANDB_MODE=disabled \
-        ezpz launch -np "$NP" -- python3 "$SCRIPTS_DIR/${recipe}.py" \
+        ezpz launch python3 "$SCRIPTS_DIR/${recipe}.py" \
         2>&1 | strip_ansi > "$OUTDIR/${recipe}.txt"
     echo "   → saved to $OUTDIR/${recipe}.txt"
 done
