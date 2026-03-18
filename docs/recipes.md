@@ -20,7 +20,7 @@ Set up FSDP with a single flag change from DDP.
     ezpz.cleanup()
     ```
 
-=== "Output"
+=== "Output (2 CPUs)"
 
     ```bash
     $ ezpz launch -np 2 -- python3 recipe_fsdp.py
@@ -36,6 +36,28 @@ Set up FSDP with a single flag change from DDP.
     [I][ezpz/launch] Executing finished in 2.97 seconds.
     ```
 
+=== "Output: Polaris 8 [=2x4] GPUs"
+
+    ```bash
+    $ ezpz launch -np 8 -- python3 recipe_fsdp.py
+    [I][ezpz/launch] ----[🍋 ezpz.launch][started]----
+    [I][ezpz/pbs] ✅ Using [8/8] GPUs [2 hosts] x [4 GPU/host]
+    [I][ezpz/launch] mpiexec --np=8 --ppn=4 python3 recipe_fsdp.py
+    [I][ezpz/launch] Execution started...
+    Using [8 / 8] available "cuda" devices !!
+    [rank 0] model wrapped, optimizer ready
+    [rank 1] model wrapped, optimizer ready
+    [rank 2] model wrapped, optimizer ready
+    [rank 3] model wrapped, optimizer ready
+    [rank 4] model wrapped, optimizer ready
+    [rank 5] model wrapped, optimizer ready
+    [rank 6] model wrapped, optimizer ready
+    [rank 7] model wrapped, optimizer ready
+    [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
+    [I][ezpz/launch] Execution finished with 0.
+    [I][ezpz/launch] Executing finished in 9.49 seconds.
+    ```
+
 ## W&B Logging
 
 Pair `setup_wandb` with `History` for automatic metric tracking and logging.
@@ -46,19 +68,21 @@ Pair `setup_wandb` with `History` for automatic metric tracking and logging.
     import ezpz
 
     rank = ezpz.setup_torch()
-    ezpz.setup_wandb(project_name="my-experiment")
-    history = ezpz.History()
+    if rank == 0:
+        ezpz.setup_wandb(project_name="ezpz-wandb-recipe")
 
+    history = ezpz.History()
     num_steps = 10
     for step in range(num_steps):
         loss_val = 1.0 / (step + 1)
         lr_val = 1e-3
         history.update({"loss": loss_val, "lr": lr_val})
 
-    history.finalize(outdir="./outputs")
+    if rank == 0:
+        history.finalize(outdir="wandb-recipe-outputs", plot=False)
     ```
 
-=== "Output"
+=== "Output (2x MPS)"
 
     ```bash
     $ ezpz launch -np 2 -- python3 recipe_wandb.py
@@ -72,6 +96,23 @@ Pair `setup_wandb` with `History` for automatic metric tracking and logging.
     [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
     [I][ezpz/launch] Execution finished with 0.
     [I][ezpz/launch] Executing finished in 2.76 seconds.
+    ```
+
+=== "Output: Polaris 8 [=2x4] GPUs"
+
+    ```bash
+    $ ezpz launch -np 8 -- python3 recipe_wandb.py
+    [I][ezpz/launch] ----[🍋 ezpz.launch][started]----
+    [I][ezpz/pbs] ✅ Using [8/8] GPUs [2 hosts] x [4 GPU/host]
+    [I][ezpz/launch] mpiexec --np=8 --ppn=4 python3 recipe_wandb.py
+    [I][ezpz/launch] Execution started...
+    Using [8 / 8] available "cuda" devices !!
+    [I][ezpz/history] Using History with distributed_history=True
+    [I][utils] Saving dataset to: wandb-recipe-outputs/dataset_dataset.h5
+    [I][ezpz/history] Saving history report to wandb-recipe-outputs/report.md
+    [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
+    [I][ezpz/launch] Execution finished with 0.
+    [I][ezpz/launch] Executing finished in 9.80 seconds.
     ```
 
 ## Custom Hostfile
@@ -126,7 +167,7 @@ Use `ezpz.synchronize()` for correct cross-backend timing that works on CUDA, XP
     ezpz.cleanup()
     ```
 
-=== "Output"
+=== "Output (2x MPS)"
 
     ```bash
     $ ezpz launch -np 2 -- python3 recipe_timing.py
@@ -139,6 +180,28 @@ Use `ezpz.synchronize()` for correct cross-backend timing that works on CUDA, XP
     [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
     [I][ezpz/launch] Execution finished with 0.
     [I][ezpz/launch] Executing finished in 2.41 seconds.
+    ```
+
+=== "Output: Polaris 8 [=2x4] GPUs"
+
+    ```bash
+    $ ezpz launch -np 8 -- python3 recipe_timing.py
+    [I][ezpz/launch] ----[🍋 ezpz.launch][started]----
+    [I][ezpz/pbs] ✅ Using [8/8] GPUs [2 hosts] x [4 GPU/host]
+    [I][ezpz/launch] mpiexec --np=8 --ppn=4 python3 recipe_timing.py
+    [I][ezpz/launch] Execution started...
+    Using [8 / 8] available "cuda" devices !!
+    [rank 0] step time: 0.0988s
+    [rank 1] step time: 0.0893s
+    [rank 2] step time: 0.0907s
+    [rank 3] step time: 0.0957s
+    [rank 4] step time: 0.0866s
+    [rank 5] step time: 0.0912s
+    [rank 6] step time: 0.0838s
+    [rank 7] step time: 0.0910s
+    [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
+    [I][ezpz/launch] Execution finished with 0.
+    [I][ezpz/launch] Executing finished in 7.11 seconds.
     ```
 
 ## Multi-Node Launch Patterns
@@ -180,7 +243,7 @@ EZPZ_NO_DISTRIBUTED_HISTORY=1 ezpz launch -np 512 -- python3 train.py
     ezpz.cleanup()
     ```
 
-=== "Output"
+=== "Output (2x MPS)"
 
     ```bash
     $ ezpz launch -np 2 -- python3 recipe_no_dist_history.py
@@ -194,4 +257,27 @@ EZPZ_NO_DISTRIBUTED_HISTORY=1 ezpz launch -np 512 -- python3 train.py
     [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
     [I][ezpz/launch] Execution finished with 0.
     [I][ezpz/launch] Executing finished in 2.95 seconds.
+    ```
+
+=== "Output: Polaris 8 [=2x4] GPUs"
+
+    ```bash
+    $ ezpz launch -np 8 -- python3 recipe_no_dist_history.py
+    [I][ezpz/launch] ----[🍋 ezpz.launch][started]----
+    [I][ezpz/pbs] ✅ Using [8/8] GPUs [2 hosts] x [4 GPU/host]
+    [I][ezpz/launch] mpiexec --np=8 --ppn=4 python3 recipe_no_dist_history.py
+    [I][ezpz/launch] Execution started...
+    Using [8 / 8] available "cuda" devices !!
+    [I][ezpz/history] Using History with distributed_history=False
+    [rank 0] distributed_history=False
+    [rank 1] distributed_history=False
+    [rank 2] distributed_history=False
+    [rank 3] distributed_history=False
+    [rank 4] distributed_history=False
+    [rank 5] distributed_history=False
+    [rank 6] distributed_history=False
+    [rank 7] distributed_history=False
+    [I][ezpz/launch] ----[🍋 ezpz.launch][stop]----
+    [I][ezpz/launch] Execution finished with 0.
+    [I][ezpz/launch] Executing finished in 8.38 seconds.
     ```
