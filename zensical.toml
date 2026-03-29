@@ -47,11 +47,13 @@ nav = [
 
     { "📖 Guide" = [
         { "🏃‍♂️ Quick Start" = "quickstart.md" },
+        { "🧑‍🍳 Recipes" = "recipes.md" },
         { "📖 Reference" = "reference.md" },
         { "📊 Metric Tracking" = "history.md" },
         { "⚙️ Configuration" = "configuration.md" },
         { "🏗️ Architecture" = "architecture.md" },
         { "🔧 Troubleshooting" = "troubleshooting.md" },
+        { "❓ FAQ" = "notes/faq.md" },
     ] },
 
     { "🧰 CLI" = [
@@ -174,7 +176,6 @@ nav = [
 
     { "📓 Notes" = [
         "notes/index.md",
-        { "❓ FAQ" = "notes/faq.md" },
         { "🖍️ Overview" = "notes/diagrams.md" },
         { "🏔️ Perlmutter" = "notes/perlmutter.md" },
 
@@ -185,32 +186,31 @@ nav = [
         { "🤖 Systems" = "notes/systems.md" },
         { "📦 Yeet Environment" = "notes/yeet-env.md" },
 
-        { "WIP" = [
-            { "🧪 Tests" = [
-                { "🧪 Tests" = "python/tests/index.md" },
-                { "configs" = "python/tests/test-configs.md" },
-                { "configs-improved" = "python/tests/test-configs-improved.md" },
-                { "comprehensive harness" = "python/tests/comprehensive-test.md" },
-                { "dist" = "python/tests/test-dist.md" },
-                { "ezpz" = "python/tests/test-ezpz.md" },
-                { "jobs" = "python/tests/test-jobs.md" },
-                { "launch" = "python/tests/test-launch.md" },
-                { "lazy" = "python/tests/test-lazy.md" },
-                { "logging" = "python/tests/test-log.md" },
-                { "modules" = "python/tests/test-modules-directly.md" },
-                { "property based" = "python/tests/test-property-based.md" },
-                { "profile" = "python/tests/test-profile.md" },
-                { "history" = "python/tests/test-history.md" },
-                { "simple" = "python/tests/simple-test.md" },
-                { "simple-runner" = "python/tests/simple-test-runner.md" },
-                { "simple-ezpz" = "python/tests/test-simple-ezpz.md" },
-                { "tp" = "python/tests/test-tp.md" },
-                { "tplot" = "python/tests/test-tplot.md" },
-                { "utils" = "python/tests/test-utils.md" },
-                { "utils-improved" = "python/tests/test-utils-improved.md" },
-            ] },
-
-        ] },
+        # { "WIP" = [
+        #     { "🧪 Tests" = [
+        #         { "🧪 Tests" = "python/tests/index.md" },
+        #         { "configs" = "python/tests/test-configs.md" },
+        #         { "configs-improved" = "python/tests/test-configs-improved.md" },
+        #         { "comprehensive harness" = "python/tests/comprehensive-test.md" },
+        #         { "dist" = "python/tests/test-dist.md" },
+        #         { "ezpz" = "python/tests/test-ezpz.md" },
+        #         { "jobs" = "python/tests/test-jobs.md" },
+        #         { "launch" = "python/tests/test-launch.md" },
+        #         { "lazy" = "python/tests/test-lazy.md" },
+        #         { "logging" = "python/tests/test-log.md" },
+        #         { "modules" = "python/tests/test-modules-directly.md" },
+        #         { "property based" = "python/tests/test-property-based.md" },
+        #         { "profile" = "python/tests/test-profile.md" },
+        #         { "history" = "python/tests/test-history.md" },
+        #         { "simple" = "python/tests/simple-test.md" },
+        #         { "simple-runner" = "python/tests/simple-test-runner.md" },
+        #         { "simple-ezpz" = "python/tests/test-simple-ezpz.md" },
+        #         { "tp" = "python/tests/test-tp.md" },
+        #         { "tplot" = "python/tests/test-tplot.md" },
+        #         { "utils" = "python/tests/test-utils.md" },
+        #         { "utils-improved" = "python/tests/test-utils-improved.md" },
+        #     ] },
+        # ] },
     ] },
 ]
 
