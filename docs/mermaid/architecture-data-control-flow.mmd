@@ -1,5 +1,5 @@
 flowchart LR
-    A["CLI: ezpz-launch"] --> B{"Scheduler?"}
+    A["CLI: ezpz launch"] --> B{"Scheduler?"}
     B -->|pbs or slurm| C["Job discovery (jobs.py)"]
     B -->|unknown| D["Local fallback (mpirun)"]
     C --> E["Hostfile + counts (pbs.py or slurm.py)"]

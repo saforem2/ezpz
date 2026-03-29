@@ -256,7 +256,7 @@ if __name__ == "__main__":
                             "INPUT_SIZE=128",
                             "OUTPUT_SIZE=128",
                             "LAYER_SIZES=\"'128,256,128'\"",
-                            "ezpz-launch",
+                            "ezpz launch",
                             "-m ezpz.examples.minimal",
                         ]
                     ),
@@ -294,7 +294,7 @@ All configuration is via environment variables:
 ```bash
 $ python3 -m ezpz.examples.minimal --help
 Usage:
-PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES="'128,256,128'" ezpz-launch -m ezpz.examples.minimal
+PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES="'128,256,128'" ezpz launch -m ezpz.examples.minimal
 ```
 
 </details>
