@@ -1,5 +1,37 @@
 # 🙋 Frequently Asked Questions
 
+## General
+
+### Does ezpz work on my laptop?
+
+Yes. On Mac it uses the MPS backend, on Linux/Windows it uses CPU or CUDA if
+available. `ezpz.setup_torch()` auto-detects everything. Single-process mode
+works without MPI.
+
+### Do I need MPI installed?
+
+For multi-GPU training, yes (MPICH or OpenMPI). For single-process
+development/debugging on a laptop, no — ezpz falls back gracefully.
+
+### How do I use FSDP instead of DDP?
+
+One flag: `ezpz.wrap_model(model, use_fsdp=True)`. That's it.
+
+### How do I disable W&B logging?
+
+Set `WANDB_DISABLED=1` in your environment before running.
+
+### What happens on a single GPU?
+
+ezpz initializes a process group of size 1. DDP/FSDP wrapping still works (it
+becomes a no-op wrapper). Your code runs identically.
+
+### How do I debug distributed issues?
+
+Use `ezpz doctor` to check your environment. For NCCL issues, set
+`NCCL_DEBUG=INFO`. For XPU issues, check that the correct Intel modules are
+loaded (see Common Issues below).
+
 ## ⚠️ Common Issues
 
 1. `ImportError: <path-to-kernel.so>: undefined symbol: [...]`
@@ -16,7 +48,7 @@
    _without_ having loaded the correct set of (newer) modules, you will
    encounter something like:
 
-   <details closed><summary><code>code</code></summary>:
+   <details closed><summary><code>code</code></summary>
 
    ```bash
    #[🐍 2025-08-pt29]
