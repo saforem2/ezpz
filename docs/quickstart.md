@@ -20,6 +20,35 @@ uv pip install git+https://github.com/saforem2/ezpz
     uv pip install -e .
     ```
 
+??? tip "Try _without installing_ via `uv run`"
+
+    If you already have a Python environment with
+    {`torch`, `mpi4py`} installed, you can try `ezpz` without installing
+    it:
+
+    ```bash
+    # pip install uv first, if needed
+    uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
+
+    TMPDIR=$(pwd) uv run --with "git+https://github.com/saforem2/ezpz" \
+        --python=$(which python3) \
+        ezpz test
+    ```
+
+??? example "Verify: `ezpz test`"
+
+    After installing, run a quick smoke test to verify distributed
+    functionality and device detection:
+
+    ```bash
+    ezpz test
+    ```
+
+    This trains a simple MLP on MNIST using DDP and reports timing
+    metrics. See the
+    [W&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)
+    for example output.
+
 ??? question "[Optional] Shell Environment and Setup"
 
     1. [**Shell Environment and Setup**](./notes/shell-environment.md):
