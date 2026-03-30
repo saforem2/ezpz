@@ -520,6 +520,9 @@ def main() -> int:
         )
         _ = ds_config.pop("optimizer")
 
+    os.makedirs(training_args.output_dir, exist_ok=True)
+    logger.info("Outputs will be saved to %s", training_args.output_dir)
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if (

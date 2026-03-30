@@ -702,6 +702,7 @@ def main() -> None:
     logging_steps = max(1, int(training_args.logging_steps))
     outdir = Path(training_args.output_dir) if training_args.output_dir else Path.cwd() / "outputs"
     outdir.mkdir(parents=True, exist_ok=True)
+    logger.info("Outputs will be saved to %s", outdir)
     history = ezpz.history.History(
         report_dir=outdir,
         report_enabled=True,

@@ -66,6 +66,24 @@ METRIC_KEYS: dict[str, dict[str, str | tuple[str, ...]]] = {
 }
 
 
+# Maps example names to their output directory names under outputs/.
+_EXAMPLE_OUTPUT_DIRS: dict[str, str] = {
+    "test": "ezpz.examples.test",
+    "fsdp": "ezpz.examples.fsdp",
+    "vit": "ezpz.examples.vit",
+    "fsdp_tp": "ezpz.examples.fsdp_tp",
+    "diffusion": "ezpz.examples.diffusion",
+    "minimal": "ezpz.examples.minimal",
+}
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from *text*."""
+    return _ANSI_RE.sub("", text)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open() as f:
         return json.load(f)
@@ -80,6 +98,7 @@ def _find_outdir_in_log(logfile: Path) -> Optional[Path]:
     """Extract the example output directory from a log file.
 
     Looks for lines matching ``Outputs will be saved to <path>``.
+    Strips ANSI escape codes before matching to handle Rich-formatted output.
     """
     pattern = re.compile(r"Outputs will be saved to\s+(.+)")
     try:
@@ -87,7 +106,8 @@ def _find_outdir_in_log(logfile: Path) -> Optional[Path]:
     except OSError:
         return None
     for line in text.splitlines():
-        m = pattern.search(line)
+        clean = _strip_ansi(line)
+        m = pattern.search(clean)
         if m:
             candidate = Path(m.group(1).strip())
             if candidate.is_dir():
@@ -95,10 +115,35 @@ def _find_outdir_in_log(logfile: Path) -> Optional[Path]:
     return None
 
 
+def _find_outdir_by_name(name: str) -> Optional[Path]:
+    """Fallback: search ``outputs/`` for the most recent run of *name*."""
+    dir_name = _EXAMPLE_OUTPUT_DIRS.get(name)
+    if dir_name is None:
+        return None
+    outputs_dir = Path.cwd() / "outputs" / dir_name
+    if not outputs_dir.is_dir():
+        return None
+    # Pick the most recently modified subdirectory (each run is timestamped).
+    subdirs = sorted(
+        (d for d in outputs_dir.iterdir() if d.is_dir()),
+        key=lambda d: d.stat().st_mtime,
+    )
+    return subdirs[-1] if subdirs else None
+
+
 def _find_jsonl(outdir: Path) -> Optional[Path]:
-    """Find the first ``.jsonl`` file under *outdir*."""
-    candidates = sorted(outdir.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime)
-    return candidates[-1] if candidates else None
+    """Find the most recently modified ``.jsonl`` file under *outdir*.
+
+    Prefers files named ``metrics*.jsonl`` over logging JSONL files.
+    """
+    candidates = list(outdir.rglob("*.jsonl"))
+    if not candidates:
+        return None
+    # Prefer metrics files over logging JSONL.
+    metrics = [c for c in candidates if c.stem.startswith("metrics")]
+    pool = metrics if metrics else candidates
+    pool.sort(key=lambda p: p.stat().st_mtime)
+    return pool[-1]
 
 
 def _parse_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -250,8 +295,11 @@ def generate_report(outdir: Path) -> str:
         wandb_url = _find_wandb_url(logfile)
         wandb_cell = f"[link]({wandb_url})" if wandb_url else "\u2014"
 
-        # Attempt to locate and parse metrics
+        # Attempt to locate and parse metrics.
+        # Primary: extract output dir from log.  Fallback: search outputs/.
         example_outdir = _find_outdir_in_log(logfile)
+        if example_outdir is None:
+            example_outdir = _find_outdir_by_name(name)
         jsonl_path = _find_jsonl(example_outdir) if example_outdir else None
         entries = _parse_jsonl(jsonl_path) if jsonl_path else []
 
