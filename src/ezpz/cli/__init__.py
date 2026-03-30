@@ -62,6 +62,18 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
     _handle_exit_code(rc)
 
 
+@main.command(
+    name="benchmark",
+    context_settings={"ignore_unknown_options": True},
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def benchmark_cmd(args: tuple[str, ...]) -> None:
+    """Run all ezpz examples sequentially and generate a report."""
+    from ezpz.examples.run_all import main as run_all_main
+
+    run_all_main(list(args))
+
+
 @main.command(name="doctor", context_settings={"ignore_unknown_options": True})
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def doctor_cmd(args: tuple[str, ...]) -> None:
