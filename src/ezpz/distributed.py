@@ -410,6 +410,31 @@ def get_torch_backend() -> str:
 # ===================================================================
 
 
+def _configure_rank_warnings(rank: int) -> None:
+    """Suppress warnings on non-rank-0 processes to prevent duplicates.
+
+    In distributed training, ``warnings.warn()`` calls from libraries like
+    ``torch._dynamo`` fire independently on every rank, producing N identical
+    copies.  This helper silences them on all ranks except 0.
+
+    Set ``EZPZ_WARN_FROM_ALL_RANKS=1`` to keep warnings on every rank.
+    """
+    import logging
+    import warnings
+
+    logging.captureWarnings(True)
+
+    warn_from_all = os.environ.get(
+        "WARN_FROM_ALL_RANKS",
+        os.environ.get("EZPZ_WARN_FROM_ALL_RANKS", ""),
+    )
+    if warn_from_all.lower() in ("1", "true", "yes", "on"):
+        return
+
+    if rank != 0:
+        warnings.filterwarnings("ignore")
+
+
 def setup_torch(
     port: str | int | None = None,
     seed: int | None = None,
@@ -532,6 +557,7 @@ def setup_torch(
 
     logger.info(print_dist_setup(display=False))
     barrier()
+    _configure_rank_warnings(rank)
     return rank
 
 
