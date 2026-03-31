@@ -7,7 +7,11 @@ Explicitly, these are `ezpz <command>`:
 
 - 🚀 [`ezpz launch`](./launch/index.md): Launch commands with _automatic
   **job scheduler** detection_ (PBS, Slurm)
+- 📮 [`ezpz submit`](./submit.md): Submit jobs to PBS (`qsub`) or SLURM
+  (`sbatch`) — generates job scripts automatically
 - 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
+- 📊 [`ezpz benchmark`](./benchmark.md): Run all examples and generate a
+  report
 - 🩺 [`ezpz doctor`](./doctor.md): Health check your environment
 - 📝 [`ezpz.examples`](../examples/index.md): Collection of distributed
   training examples
@@ -77,7 +81,11 @@ Explicitly, these are `ezpz <command>`:
         -h, --help  Show this message and exit.
 
         Commands:
-        doctor    Inspect the environment for ezpz launch readiness.
-        launch    Launch a command across the active scheduler.
-        test      Run the distributed smoke test.
+        benchmark  Run all ezpz examples sequentially and generate a report.
+        doctor     Inspect the environment for ezpz launch readiness.
+        launch     Launch a command across the active scheduler.
+        submit     Submit a job to the active scheduler (PBS/SLURM).
+        tar-env    Create (or locate) a tarball for the current environment.
+        test       Run the distributed smoke test.
+        yeet-env   Distribute an environment tarball across worker nodes.
         ```
