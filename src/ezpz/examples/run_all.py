@@ -221,16 +221,41 @@ def build_command(
     ]
 
 
+def _fmt_duration(seconds: int | float) -> str:
+    """Format seconds as a human-readable duration string."""
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}m {s:02d}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m:02d}m {s:02d}s"
+
+
 def run_example(
     name: str,
     cmd: list[str],
     bench_dir: Path,
+    *,
+    index: int = 0,
+    total: int = 1,
+    elapsed_so_far: float = 0.0,
+    completed_so_far: int = 0,
 ) -> dict[str, Any]:
     """Run an example as a subprocess, capturing output to a log file."""
+    import shlex
+
     logfile = bench_dir / f"{name}.log"
     print()
     print("\u2550" * 64)
-    print(f"  Running: {name}")
+    print(f"  [{index}/{total}] Running: {name}")
+    if completed_so_far > 0:
+        avg = elapsed_so_far / completed_so_far
+        remaining = avg * (total - index + 1)
+        print(f"         ETA: ~{_fmt_duration(remaining)} remaining")
+    print(f"         cmd: {shlex.join(cmd)}")
+    print(f"         log: {logfile}")
     print("\u2550" * 64)
 
     t0 = time.perf_counter()
@@ -244,9 +269,12 @@ def run_example(
     elapsed = int(time.perf_counter() - t0)
 
     if proc.returncode == 0:
-        print(f"  \u2713 {name} completed in {elapsed}s")
+        print(f"  \u2713 {name} completed in {_fmt_duration(elapsed)}")
     else:
-        print(f"  \u2717 {name} FAILED (exit {proc.returncode}) after {elapsed}s")
+        print(
+            f"  \u2717 {name} FAILED (exit {proc.returncode})"
+            f" after {_fmt_duration(elapsed)}"
+        )
 
     return {
         "name": name,
@@ -294,16 +322,29 @@ def main(argv: list[str] | None = None) -> None:
     timings_path.write_text("name,exit_code,wall_seconds\n", encoding="utf-8")
 
     selected = [e for e in EXAMPLES if e["name"] in args.examples]
+    total = len(selected)
     results: list[dict[str, Any]] = []
+    suite_t0 = time.perf_counter()
 
-    for example in selected:
+    print(f"Running {total} example(s): {', '.join(e['name'] for e in selected)}")
+
+    for i, example in enumerate(selected, 1):
         cmd = build_command(
             example,
             model=args.model,
             bench_dir=bench_dir,
             timestamp=timestamp,
         )
-        result = run_example(example["name"], cmd, bench_dir)
+        elapsed_so_far = time.perf_counter() - suite_t0
+        result = run_example(
+            example["name"],
+            cmd,
+            bench_dir,
+            index=i,
+            total=total,
+            elapsed_so_far=elapsed_so_far,
+            completed_so_far=len(results),
+        )
         results.append(result)
 
         with timings_path.open("a") as f:
@@ -311,11 +352,26 @@ def main(argv: list[str] | None = None) -> None:
                 f"{result['name']},{result['exit_code']},{result['wall_seconds']}\n"
             )
 
-    # ── Generate report ──────────────────────────────────────────────────
+    # ── Summary ──────────────────────────────────────────────────────────
+    suite_elapsed = time.perf_counter() - suite_t0
+    passed = sum(1 for r in results if r["exit_code"] == 0)
+    failed = total - passed
     print()
     print("\u2550" * 64)
-    print("  Generating report")
+    status_line = f"  {passed}/{total} passed"
+    if failed:
+        status_line += f", {failed} FAILED"
+    status_line += f" in {_fmt_duration(suite_elapsed)}"
+    print(status_line)
+    print("\u2500" * 64)
+    for r in results:
+        icon = "\u2713" if r["exit_code"] == 0 else "\u2717"
+        print(f"  {icon} {r['name']:<12s} {_fmt_duration(r['wall_seconds']):>8s}")
     print("\u2550" * 64)
+
+    # ── Generate report ──────────────────────────────────────────────────
+    print()
+    print("Generating report...")
 
     from ezpz.examples.report import generate_report
 
