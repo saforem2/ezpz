@@ -20,18 +20,30 @@ import ezpz
 import torch
 import torch.nn.functional as F
 
-if ezpz.get_torch_version_as_float() >= 2.12:
-    from torch.distributed.tensor.experimental._context_parallel._attention import _create_cp_block_mask as create_cp_block_mask
-else:
-    from torch.distributed.tensor.experimental._attention import create_cp_block_mask
+create_cp_block_mask = None
+try:
+    if ezpz.get_torch_version_as_float() >= 2.12:
+        from torch.distributed.tensor.experimental._context_parallel._attention import _create_cp_block_mask as create_cp_block_mask
+    else:
+        from torch.distributed.tensor.experimental._attention import create_cp_block_mask
+except ImportError:
+    pass  # Not available in this torch version; CP mask support disabled.
 
-from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch.nn.attention.flex_attention import (
-    _mask_mod_signature,
-    BlockMask,
-    create_block_mask,
-    flex_attention,
-)
+try:
+    from torch.nn.attention import sdpa_kernel, SDPBackend
+    from torch.nn.attention.flex_attention import (
+        _mask_mod_signature,
+        BlockMask,
+        create_block_mask,
+        flex_attention,
+    )
+except ImportError:
+    sdpa_kernel = None  # type: ignore[assignment,misc]
+    SDPBackend = None  # type: ignore[assignment,misc]
+    _mask_mod_signature = None  # type: ignore[assignment,misc]
+    BlockMask = None  # type: ignore[assignment,misc]
+    create_block_mask = None  # type: ignore[assignment,misc]
+    flex_attention = None  # type: ignore[assignment,misc]
 
 # from torchtitan.tools.utils import has_cuda_capability
 # from ezpz.utils.tools import has_cuda_capability
