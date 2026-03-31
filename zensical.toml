@@ -117,6 +117,7 @@ nav = [
             { "<code>ezpz.plot</code>" = "python/Code-Reference/plot.md" },
             { "<code>ezpz.profile</code>" = "python/Code-Reference/profile.md" },
             { "<code>ezpz.slurm</code>" = "python/Code-Reference/slurm.md" },
+            { "<code>ezpz.submit</code>" = "python/Code-Reference/submit.md" },
             { "<code>ezpz.test</code>" = "python/Code-Reference/test.md" },
             { "<code>ezpz.test_dist</code>" = "python/Code-Reference/test_dist.md" },
             { "<code>ezpz.tplot</code>" = "python/Code-Reference/tplot.md" },
