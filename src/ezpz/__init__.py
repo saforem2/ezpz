@@ -38,6 +38,7 @@ _LAZY_MODULES: Dict[str, str] = {
     "profile": "ezpz.profile",
     "tp": "ezpz.tp",
     "tplot": "ezpz.tplot",
+    "tracker": "ezpz.tracker",
     "utils": "ezpz.utils",
 }
 
@@ -56,6 +57,7 @@ _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     "ezpz.jobs",
     "ezpz.launch",
     "ezpz.tplot",
+    "ezpz.tracker",
     # "ezpz.test",
 )
 
@@ -120,6 +122,11 @@ def try_import_wandb() -> object | None:
         wandb = None
         WANDB_DISABLED = True
     return wandb
+
+
+def get_torch_version_as_float() -> float:
+    import torch
+    return float(".".join(torch.__version__.split(".")[:2]))
 
 
 # Record the package version in the environment for compatibility with callers
