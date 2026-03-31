@@ -1,4 +1,4 @@
-# 📊 Metric Tracking with `History`
+# 📊 Metric Tracking
 
 The `History` class records, aggregates, and visualizes training metrics across
 all distributed ranks, with optional Weights & Biases integration.

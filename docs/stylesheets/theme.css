@@ -15,6 +15,7 @@
 :root {
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* --font-size: 13pt; */
 
   --h1-font-size: 1.33rem;
   --h2-font-size: 1.2rem;
@@ -313,6 +314,10 @@
 }
 
 /* ---------- typography/layout tweaks ---------- */
+/* .md-typeset { */
+/*   font-size: var(--font-size); */
+/* } */
+
 .md-typeset p {
   margin-block: 0.5lh;
 }
@@ -342,6 +347,8 @@
   quotes: 0 0.2941176471em;
   word-break: break-word;
   font-size: 1em;
+  padding: 0pt 0.4em;
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .highlighttable .linenos {
@@ -488,7 +495,6 @@
   margin-top: auto;
 }
 
-/**/
 /* [dir="ltr"] .md-nav__list .md-nav__item--section > .md-nav > .md-nav__list { */
 /*   margin-left: 0.5rem; */
 /* } */

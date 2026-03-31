@@ -1,4 +1,4 @@
-# 🏃‍♂️ Quick Start
+# 🏃‍♂️‍➡️ Quick Start
 
 Everything you need to get started: install, write a script, launch it, track
 metrics, and a complete API cheat sheet with before/after diffs.

@@ -1,3 +1,10 @@
+---
+# icon: lucide/citrus
+hide:
+  - navigation
+  #  - toc
+---
+
 # 🍋 ezpz
 
 > _Write once, run anywhere_.
@@ -89,7 +96,7 @@ job scheduler. `ezpz` replaces all of it.
 No cluster required — this runs on a laptop:
 
 ```bash
-pip install "git+https://github.com/saforem2/ezpz"
+uv pip install "git+https://github.com/saforem2/ezpz"
 ```
 
 ```python title="hello.py"

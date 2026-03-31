@@ -124,7 +124,8 @@ ezpz.cleanup()
 
 !!! note "Swap in your own model"
 
-    `SequentialLinearNet` is a small multi-layer Linear+ReLU network included
+    [`SequentialLinearNet`](/python/Code-Reference/models/minimal/#ezpz.models.minimal.SequentialLinearNet)
+    is a small multi-layer Linear+ReLU network included
     for demonstration. Replace it with any `torch.nn.Module` — the rest of
     the script (setup, wrapping, training loop, history) stays the same.
 
