@@ -1,5 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
+"""Llama-style transformer model with RoPE, GQA, and SwiGLU FFN.
+
+Includes :class:`ModelArgs` configuration, rotary-embedding helpers,
+and a full :class:`Transformer` stack used by :mod:`ezpz.examples.test`
+and :mod:`ezpz.examples.fsdp`.
+"""
 
 from dataclasses import dataclass
 import logging
@@ -26,6 +32,24 @@ def _tensor_stats(label: str, tensor: torch.Tensor) -> tuple[int, float]:
 
 @dataclass
 class ModelArgs:
+    """Configuration for the Llama transformer architecture.
+
+    Attributes:
+        dim: Model embedding dimension.
+        n_layers: Number of transformer blocks.
+        n_heads: Number of query attention heads.
+        n_kv_heads: Number of key/value heads for grouped-query attention.
+            Defaults to ``n_heads`` (standard multi-head attention).
+        vocab_size: Vocabulary size (typically set by the tokenizer).
+        multiple_of: Rounds the SwiGLU hidden dimension up to this multiple.
+        ffn_dim_multiplier: Optional multiplier applied to the FFN hidden dim.
+        norm_eps: Epsilon for RMSNorm layers.
+        batch_size: Default training batch size.
+        max_seq_len: Maximum sequence length for precomputed RoPE frequencies.
+        depth_init: If ``True``, scale init std per layer id; otherwise use
+            total layer count.
+    """
+
     dim: int = 4096
     n_layers: int = 32
     n_heads: int = 32

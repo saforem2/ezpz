@@ -1,1 +1,1 @@
-# Package marker for llama3 model components.
+"""Llama 3 model components (torchtitan-derived)."""

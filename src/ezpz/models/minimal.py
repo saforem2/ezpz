@@ -1,10 +1,29 @@
+"""Minimal feed-forward model used by :mod:`ezpz.examples.test` and other smoke tests.
+
+Provides a simple variable-depth MLP that can be wrapped in FSDP / DDP
+without any special handling, making it useful for validating distributed
+training infrastructure.
 """
-ezpz/models/minimal.py
-"""
+
 import torch
 
 
 class SequentialLinearNet(torch.nn.Module):
+    """Variable-depth MLP built from stacked ``Linear`` + ``ReLU`` layers.
+
+    When *sizes* is ``None`` the network is a single linear projection from
+    *input_dim* to *output_dim*.  Otherwise each entry in *sizes* adds a
+    hidden layer, e.g. ``sizes=[256, 128]`` produces::
+
+        Linear(input_dim, 256) → ReLU → Linear(256, 128) → ReLU → Linear(128, output_dim)
+
+    Args:
+        input_dim: Dimensionality of the input features.
+        output_dim: Dimensionality of the output predictions.
+        sizes: Optional list of hidden-layer widths.  ``None`` gives a
+            single linear layer.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -21,6 +40,14 @@ class SequentialLinearNet(torch.nn.Module):
         self.layers = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the forward pass through all layers.
+
+        Args:
+            x: Input tensor of shape ``(batch, input_dim)``.
+
+        Returns:
+            Output tensor of shape ``(batch, output_dim)``.
+        """
         return self.layers(x)
 
 
