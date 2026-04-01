@@ -386,17 +386,6 @@ class Trainer:
             env_info=env_info,
         )
         logger.info(f"{dataset=}")
-        if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
-            try:
-                wandb.log(
-                    {
-                        "train_metrics": wandb.Table(
-                            dataframe=dataset.to_dataframe()
-                        )
-                    }
-                )
-            except Exception:
-                logger.warning("Failed to log final dataset to wandb")
         return dataset
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -531,6 +520,16 @@ def train(
     history: ezpz.history.History = trainer.history
 
     dataset = None
+    # Log timings via the tracker before finalize() closes backends
+    timings = {
+        "timings/model": dt_model,
+        "timings/optimizer": dt_optimizer,
+        "timings/trainer": dt_trainer,
+        "timings/training_start": dt_train_start,
+        "timings/train_duration": dt_train_duration,
+        "timings/end-to-end": time.perf_counter() - START_TIME,
+    }
+    history.tracker.log(timings)
     # Record timings and return trainer
     if rank == 0:
         dataset = history.finalize(
@@ -543,38 +542,6 @@ def train(
             env_info=trainer._gather_environment_snapshot(),
         )
         logger.info(f"{dataset=}")
-    timings = {
-        "timings/model": dt_model,
-        "timings/optimizer": dt_optimizer,
-        "timings/trainer": dt_trainer,
-        "timings/training_start": dt_train_start,
-        "timings/train_duration": dt_train_duration,
-        "timings/end-to-end": time.perf_counter() - START_TIME,
-    }
-    if wandb is not None and ezpz.verify_wandb() and not WANDB_DISABLED:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                },
-                commit=False,
-            )
-        except Exception as e:
-            logger.exception(e)
-            logger.warning("Unable to 'wandb.log(timings)', skipping!")
-        if dataset is not None:
-            try:
-                wandb.log(
-                    {
-                        "train_metrics": wandb.Table(
-                            dataframe=dataset.to_dataframe()
-                        )
-                    }
-                )
-            except Exception as e:
-                logger.exception(e)
-                logger.warning("Failed to log final dataset to wandb")
 
     if ezpz.get_world_size() > 1:
         ezpz.barrier()
@@ -744,7 +711,6 @@ def main() -> Trainer:
     t0 = time.perf_counter()
     args = parse_args()
     config = get_config_from_args(args)
-    timings = {}
     _ = ezpz.distributed.setup_torch(
         tensor_parallel_size=config.tp,
         pipeline_parallel_size=config.pp,
@@ -775,7 +741,6 @@ def main() -> Trainer:
         )
     with config.ctx as c:
         trainer = train(config, profiler=c)
-    t_train = time.perf_counter()
     if trainer.config.backend.lower() in ["ds", "deepspeed"]:
         try:
             import deepspeed.comm
@@ -790,23 +755,6 @@ def main() -> Trainer:
             logger.info("Continuing without deepspeed summary...")
 
     logger.info(f"Took: {time.perf_counter() - START_TIME:.2f} seconds")
-    t1 = time.perf_counter()
-    timings = {
-        "main/setup_torch": (t_setup - t0),
-        "main/train": (t_train - t_setup),
-        "main/total": (t1 - t0),
-    }
-    if wandb is not None and (run := getattr(wandb, "run")) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
-        logger.info(f"wandb.run=[{run.name}]({run.url})")
     return trainer
 
 
