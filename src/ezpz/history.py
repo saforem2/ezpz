@@ -12,10 +12,11 @@ import platform
 import shutil
 import sys
 import time
+import warnings
 from contextlib import ContextDecorator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable, Optional, Sequence, Union
 
 import ezpz
 import ezpz.distributed
@@ -46,6 +47,7 @@ from ezpz.tplot import (
 )
 
 # from ezpz import tplot as eztplot
+from ezpz.tracker import NullTracker, Tracker, setup_tracker
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
 
 # xr = lazy_import("xarray")
@@ -178,6 +180,11 @@ class History:
         jsonl_path: Optional[PathLike] = None,
         jsonl_overwrite: bool = False,
         distributed_history: bool = AUTO_USE_DISTRIBUTED_HISTORY,
+        project_name: Optional[str] = None,
+        backends: Optional[str | Sequence[str]] = None,
+        config: Optional[dict[str, Any]] = None,
+        outdir: Optional[PathLike] = None,
+        tracker: Optional[Tracker] = None,
     ) -> None:
         """
         Initialize the History object.
@@ -191,6 +198,14 @@ class History:
             jsonl_path (Optional[PathLike]): Destination for JSONL metric logging.
             jsonl_overwrite (bool): Whether to truncate an existing JSONL log.
             distributed_history (bool): Enable distributed history tracking.
+            project_name (Optional[str]): Project name for tracker backends (e.g. wandb).
+            backends (Optional[str | Sequence[str]]): Comma-separated string or list
+                of tracker backend names (e.g. ``"wandb,csv"``).
+            config (Optional[dict[str, Any]]): Run-level config (hyperparameters) to
+                log via the tracker.
+            outdir (Optional[PathLike]): Output directory for file-based tracker
+                backends (e.g. CSV).
+            tracker (Optional[Tracker]): Inject a pre-built Tracker instance directly.
         """
         self.keys = [] if keys is None else keys
         self.history: dict[str, list[Any]] = {}
@@ -249,6 +264,44 @@ class History:
         self._dist = torch.distributed
         self._environment_written = False
         self._metric_summary_written = False
+        # -- Tracker integration --
+        if tracker is not None:
+            self._tracker: Tracker = tracker
+        elif any(arg is not None for arg in (project_name, backends)):
+            self._tracker = setup_tracker(
+                project_name=project_name,
+                backends=backends,
+                config=config,
+                outdir=str(outdir) if outdir is not None else None,
+            )
+        else:
+            # Backward compat: auto-detect existing wandb.run
+            if wandb is not None and getattr(wandb, "run", None) is not None:
+                warnings.warn(
+                    "History detected an active wandb.run but no 'backends' "
+                    "argument was provided. Automatically using "
+                    "backends='wandb'. In a future version, pass "
+                    "backends='wandb' explicitly.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._tracker = setup_tracker(backends="wandb")
+            else:
+                self._tracker = NullTracker()
+        if config is not None and not isinstance(self._tracker, NullTracker):
+            self._tracker.log_config(config)
+
+    @property
+    def tracker(self) -> Tracker:
+        """The internal Tracker instance.
+
+        Use this to access backend-specific features::
+
+            wb = history.tracker.get_backend("wandb")
+            if wb is not None:
+                wb.watch(model, log="all")
+        """
+        return self._tracker
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -375,32 +428,19 @@ class History:
         kind: str = "matplotlib",
         commit: bool = False,
     ) -> None:
-        if (
-            not ENABLE_WANDB
-            or wandb is None
-            or getattr(wandb, "run", None) is None
-            or self._rank != 0
-        ):
-            return
-        if asset_path is None:
+        if self._rank != 0 or asset_path is None:
             return
         asset_path = Path(asset_path)
         if not asset_path.exists():
             return
         if asset_path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
             return
-        try:
-            title = key or asset_path.stem
-            wandb.log(
-                {
-                    f"plots/{title}": wandb.Image(
-                        str(asset_path), caption=f"{kind}:{title}"
-                    )
-                },
-                commit=commit,
-            )
-        except Exception as exc:
-            logger.debug("W&B image logging failed: %s", exc)
+        title = key or asset_path.stem
+        self._tracker.log_image(
+            f"plots/{title}",
+            str(asset_path),
+            caption=f"{kind}:{title}",
+        )
 
     def _write_environment_section(
         self, env_info: Optional[dict[str, Any]]
@@ -487,15 +527,15 @@ class History:
         except Exception:
             pass
 
-        if wandb is not None and getattr(wandb, "run", None) is not None:
-            run = wandb.run
+        _wandb_run = self._tracker.wandb_run
+        if _wandb_run is not None:
             wb_info: dict[str, str] = {
-                "Run Name": run.name,
-                "Project": run.project,
-                "URL": run.url,
+                "Run Name": _wandb_run.name,
+                "Project": _wandb_run.project,
+                "URL": _wandb_run.url,
             }
             wb_info.update(
-                {str(k): str(v) for k, v in run.config.items()}
+                {str(k): str(v) for k, v in _wandb_run.config.items()}
             )
             summary["Weights & Biases"] = wb_info
 
@@ -1266,9 +1306,10 @@ class History:
         self,
         metrics: dict,
         precision: int = 6,
-        use_wandb: Optional[bool] = True,
+        use_wandb: Optional[bool] = None,
         commit: Optional[bool] = True,
         summarize: Optional[bool] = True,
+        step: Optional[int] = None,
     ) -> str:
         """
         Update the history with a dictionary of metrics.
@@ -1300,13 +1341,14 @@ class History:
             if aggregated_metrics and self._rank == 0
             else self._sanitize_metrics(metrics)
         )
-        if (
-            wandb is not None
-            and use_wandb
-            # and not WANDB_DISABLED
-            and getattr(wandb, "run", None) is not None
-        ):
-            wandb.log(sanitized_metrics, commit=commit)
+        if use_wandb is not None:
+            warnings.warn(
+                "The 'use_wandb' parameter is deprecated. Use "
+                "backends='wandb' in the History constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self._tracker.log(sanitized_metrics, step=step, commit=commit)
         self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
             scalar_summary = {
@@ -2364,20 +2406,17 @@ class History:
                 )
             )
         )
-        if (
-            ENABLE_WANDB
-            and dataset is not None
-            and wandb is not None
-            and wandb.run is not None
-        ):
+        if dataset is not None:
             dset_name = f"{fname}_dataset" if fname != "dataset" else fname
-            dataframe = dataset.to_dataframe()
-            wbtable = wandb.Table(dataframe=dataframe)
             try:
-                wandb.log({f"{dset_name}": wbtable})
+                dataframe = dataset.to_dataframe()
+                columns = list(dataframe.columns)
+                data_rows = dataframe.values.tolist()
+                self._tracker.log_table(
+                    dset_name, columns=columns, data=data_rows
+                )
             except Exception as e:
-                logger.exception(e)
-                logger.warning("Unable to save dataset to W&B, skipping!")
+                logger.warning("Unable to log dataset table via tracker: %s", e)
 
         return save_dataset(
             dataset,
@@ -2531,30 +2570,28 @@ class History:
                 "Saving history report to %s",
                 self._report_dir.joinpath(self._report_filename),
             )
-        if wandb is not None and (run := getattr(wandb, "run", None)) is not None:
-            logger.info(f"wandb.run=[{run.name}]({run.url})")
+        _wandb_run = self._tracker.wandb_run
+        if _wandb_run is not None:
+            logger.info(f"wandb.run=[{_wandb_run.name}]({_wandb_run.url})")
+        if self.history:
             try:
-                if self.history:
-                    columns = list(self.history.keys())
-                    max_len = max(len(v) for v in self.history.values())
-                    data = []
-                    for i in range(max_len):
-                        row = [
-                            self.history[col][i]
-                            if i < len(self.history[col])
-                            else None
-                            for col in columns
-                        ]
-                        data.append(row)
-                    run.log(
-                        {
-                            "training_history": wandb.Table(
-                                columns=columns, data=data
-                            )
-                        }
-                    )
+                columns = list(self.history.keys())
+                max_len = max(len(v) for v in self.history.values())
+                table_data = []
+                for i in range(max_len):
+                    row = [
+                        self.history[col][i]
+                        if i < len(self.history[col])
+                        else None
+                        for col in columns
+                    ]
+                    table_data.append(row)
+                self._tracker.log_table(
+                    "training_history", columns=columns, data=table_data
+                )
             except Exception:
                 logger.warning(
-                    "Failed to log training history table to wandb"
+                    "Failed to log training history table via tracker"
                 )
+        self._tracker.finish()
         return dataset

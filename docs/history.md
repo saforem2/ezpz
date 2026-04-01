@@ -1,7 +1,8 @@
 # 📊 Metric Tracking
 
 The `History` class records, aggregates, and visualizes training metrics across
-all distributed ranks, with optional Weights & Biases integration.
+all distributed ranks, with built-in support for dispatching to external
+backends (Weights & Biases, CSV, or custom).
 
 ## Quick Start
 
@@ -10,17 +11,25 @@ import ezpz
 from ezpz.history import History
 
 rank = ezpz.setup_torch()
-history = History()
+history = History(
+    project_name="my-project",
+    backends="wandb,csv",
+    outdir="./outputs",
+    config={"lr": 1e-4, "batch_size": 32},
+)
 
 for step in range(100):
     loss = train_step(...)
-    # update() returns a summary string suitable for logging
-    summary = history.update({"step": step, "loss": loss.item()})
+    # update() returns a summary string and dispatches to all backends
+    summary = history.update({"step": step, "loss": loss.item()}, step=step)
     logger.info(summary)  # e.g. "step=42 loss=0.123456"
 
 if rank == 0:
-    history.finalize(outdir="./outputs")
+    history.finalize(outdir="./outputs")  # also calls tracker.finish()
 ```
+
+For local-only tracking (no external backends), just use `History()` with no
+backend arguments — it works the same as before.
 
 ## Creating a `History`
 
@@ -30,6 +39,10 @@ history = History(
     distributed_history=True,     # aggregate stats across ranks (default: auto)
     report_dir="./outputs",       # where to write the markdown report
     jsonl_path="./metrics.jsonl", # per-step JSONL log
+    project_name="my-project",   # passed to wandb backend
+    backends="wandb,csv",        # external backends to dispatch to
+    config={"lr": 1e-4},         # run-level hyperparameters
+    outdir="./outputs",          # directory for file-based backends
 )
 ```
 
@@ -41,6 +54,11 @@ history = History(
 | `report_enabled` | `True` | Generate a markdown report on `finalize()` |
 | `jsonl_path` | `report_dir/{run_id}.jsonl` | Path for per-step JSONL log |
 | `jsonl_overwrite` | `False` | Truncate existing JSONL file |
+| `project_name` | `None` | Project name for backends that support it (e.g. wandb) |
+| `backends` | `None` | Comma-separated string or list of backend names (e.g. `"wandb,csv"`) |
+| `config` | `None` | Run-level config dict logged via the tracker on init |
+| `outdir` | `None` | Output directory for file-based backends (e.g. CSV) |
+| `tracker` | `None` | Inject a pre-built `Tracker` instance directly |
 
 ### Distributed history auto-detection
 
@@ -57,8 +75,8 @@ this with:
 ```python
 summary = history.update(
     {"loss": 0.42, "lr": 1e-3},
+    step=42,           # forwarded to tracker backends
     precision=6,       # decimal places in summary string
-    use_wandb=True,    # log to W&B if available
 )
 ```
 
@@ -67,7 +85,7 @@ Each call to `update()`:
 1. Appends values to the internal history dict
 2. If `distributed_history=True`, computes **min, max, mean, std** across all
    ranks via `torch.distributed.all_reduce`
-3. Logs to Weights & Biases (if configured)
+3. Dispatches metrics to all configured tracker backends (wandb, CSV, etc.)
 4. Writes a JSONL entry to disk
 5. Returns a formatted summary string: `"loss=0.420000 lr=0.001000"`
 
@@ -127,20 +145,38 @@ Returns the xarray `Dataset` for further analysis.
 
 ## Weights & Biases Integration
 
-Call `ezpz.setup_wandb()` **before** creating `History()`:
+Pass `backends="wandb"` when creating `History`:
 
 ```python
-ezpz.setup_wandb(project_name="my-project")
-history = History()
+history = History(
+    project_name="my-project",
+    backends="wandb",
+    config={"lr": 1e-4, "batch_size": 32},
+)
 ```
 
 With W&B active:
 
-- Every `update()` call logs metrics via `wandb.log()`
-- `finalize()` uploads the full training history as a `wandb.Table`
-- Matplotlib plots are logged as `wandb.Image` artifacts
+- Every `update()` call logs metrics via the wandb backend
+- `finalize()` uploads the full training history as a table
+- Matplotlib plots are logged as image artifacts
 
-Set `WANDB_DISABLED=1` or pass `use_wandb=False` to `update()` to skip.
+Set `WANDB_DISABLED=1` or `backends="none"` to skip.
+
+!!! tip "Multiple backends"
+
+    Combine backends in a single call: `backends="wandb,csv"` dispatches
+    to both W&B and CSV simultaneously. See [`Tracker`](./tracker.md) for
+    details on available backends and how to register custom ones.
+
+    You can also access backend-specific features via the `tracker`
+    property:
+
+    ```python
+    wb = history.tracker.get_backend("wandb")
+    if wb is not None:
+        wb.watch(model, log="all")
+    ```
 
 ## Environment Variables
 
