@@ -1,4 +1,4 @@
-# Experiment Tracking
+# 📊 Experiment Tracking
 
 The `History` class handles the full experiment tracking lifecycle:
 recording metrics, computing distributed statistics, dispatching to
