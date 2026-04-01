@@ -290,7 +290,7 @@ def submit(
     if scheduler.upper() not in ("PBS", "SLURM"):
         print(
             f"No supported scheduler detected (got {scheduler!r}).\n"
-            "Set PBS_JOBID, SLURM_JOB_ID, or pass --scheduler explicitly.",
+            "Pass --scheduler PBS or --scheduler SLURM explicitly.",
             file=sys.stderr,
         )
         return None

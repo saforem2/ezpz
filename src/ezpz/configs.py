@@ -129,6 +129,11 @@ def get_scheduler(_scheduler: Optional[str] = None) -> str:
         return SCHEDULERS["OLCF"]
     if machine.lower() in ["nersc", "perlmutter"]:
         return SCHEDULERS["NERSC"]
+    # Fall back to checking for scheduler commands on the system
+    if cmd_exists("qsub"):
+        return "PBS"
+    if cmd_exists("sbatch"):
+        return "SLURM"
     return "UNKNOWN"
     # raise RuntimeError(f'Unknown {machine=}')
 
