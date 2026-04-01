@@ -37,11 +37,8 @@ but nothing is dispatched externally.
 
 ```python
 history = History(
-    # --- Metric accumulation ---
-    keys=["loss", "lr"],           # pre-declare metric names (optional)
-    distributed_history=True,      # aggregate stats across ranks (default: auto)
-
     # --- Local outputs ---
+    distributed_history=True,      # aggregate stats across ranks (default: auto)
     report_dir="./outputs",        # markdown report directory
     jsonl_path="./metrics.jsonl",  # per-step JSONL log
 
@@ -55,11 +52,10 @@ history = History(
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `keys` | `None` | Metric names to pre-initialize |
 | `distributed_history` | auto | Compute min/max/mean/std across ranks via all-reduce |
-| `report_dir` | `OUTPUTS_DIR/history` | Directory for the markdown report |
+| `report_dir` | `./outputs/history` | Directory for the markdown report |
 | `report_enabled` | `True` | Generate a markdown report on `finalize()` |
-| `jsonl_path` | `report_dir/{run_id}.jsonl` | Path for per-step JSONL log |
+| `jsonl_path` | auto | Path for per-step JSONL log (defaults to `{report_dir}/{timestamp}.jsonl`) |
 | `jsonl_overwrite` | `False` | Truncate existing JSONL file |
 | `project_name` | `None` | Project name for backends that support it (e.g. wandb) |
 | `backends` | `None` | Comma-separated string or list of backend names |
@@ -230,7 +226,7 @@ dataset = history.finalize(
 | Matplotlib plots | `{outdir}/plots/mplot/*.png` |
 | Terminal plots | `{outdir}/plots/tplot/*.txt` |
 | Markdown report | `{outdir}/report.md` |
-| JSONL log | `{outdir}/{run_id}.jsonl` |
+| JSONL log | `{outdir}/{timestamp}.jsonl` |
 
 It also uploads the training history table to any active backends and
 calls `tracker.finish()` to flush and close all backend connections.
@@ -238,20 +234,96 @@ Returns the xarray `Dataset` for further analysis.
 
 ??? example "Terminal plot output"
 
-    `finalize()` generates text-based plots directly in the terminal:
+    `finalize()` generates text-based plots directly in the terminal.
+    Individual metric plots show raw values, while summary plots overlay
+    min/max/mean/std with distinct markers (`·` mean, `-` min, `+` max,
+    `*` std):
 
     ```
-                             loss [2025-08-26-075820]
-          ┌─────────────────────────────────────────────────────┐
-     11008┤████████████████████████████████▌▐███████████▐▐██████│
-     10944┤████████████████████████████████▙▟███████████▟▟██████│
-          └──┬──┬────┬─────┬───┬─────┬───┬────┬─────┬──────┬────┘
-            44 84   185   296 366   471 551  647   750    867
-     loss                          iter
+                              loss                                                      loss/min
+    ┌──────────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────────┐
+1.73┤⡇                                                     │1.73┤-                                                     │
+    │⢱                                                     │1.45┤--                                                    │
+1.45┤⢸                                                     │1.18┤ -                                                    │
+    │⢸                                                     │0.91┤ -                                                    │
+1.18┤⢸⡄                                                    │    │ --                                                   │
+    │ ⢇                                                    │0.63┤  -------  -                                          │
+    │ ⢸⡆                                                   │0.36┤   - -------------------------------- ----- ------- --│
+0.91┤ ⠈⡇                                                   │0.08┤                  - -    --- -------------------------│
+    │  ⣇⡄ ⢰                                                │    └┬────────────┬─────────────┬────────────┬────────────┬┘
+0.63┤  ⢿⣷⠾⣸⣼⢠⡆        ⢀                                    │    1.0         49.2          97.5         145.8      194.0
+    │   ⠈ ⣿⠙⣿⣿⣀⢰⡇ ⡀   ⢸ ⣠  ⣠⢀                            ⢀ │loss/min                      iter
+0.36┤     ⠈ ⠙⠈⣿⢼⣧⠺⣷⣴⠷⣠⢸⢠⡏⡆⣇⣿⡸⣀⣠⣦⡆⣀⣤⣠    ⡀⡇  ⣀⡄    ⢀ ⢠⡆ ⡀ ⣿ │                            loss/std
+    │           ⠙ ⠈⢻ ⠸⠙⢼⠃⣿⠘⠙⠇⠘⣿⠟⢿⠘⢿⠻⣤⣠⣀⣸⡧⣧⠶⠙⣿⣧⡴⣆⣴⣧⣿⣠⢸⡇⣼⡇⢀⣿⡄│     ┌─────────────────────────────────────────────────────┐
+0.08┤                    ⠈    ⠈ ⠈    ⠁⠈⠙ ⠈  ⠙⠘⠇⠘⠟⠉⠘⠋⠋⠹⡟⠣⢾⡏⠋│0.174┤   *                                                 │
+    └┬────────────┬─────────────┬────────────┬────────────┬┘0.145┤   * *                                               │
+    1.0         49.2          97.5         145.8      194.0 0.116┤   * ** *  *                                         │
+loss                          iter                          0.087┤  ** ****  *     *    **    *      *                 │
+                            loss/mean                            │ ********  **  *****  **  *** *   ***      *  ***    │
+    ┌──────────────────────────────────────────────────────┐0.058┤********** ********** ** *************** *** **** *  │
+1.77┤·                                                     │0.029┤** ********************************************** ***│
+    │·                                                     │0.000┤    ***  *  ** *   * * *  ** ** ****  ***   * **** **│
+1.49┤·                                                     │     └┬────────────┬────────────┬────────────┬────────────┬┘
+    │ ·                                                    │     1.0         49.2         97.5         145.8      194.0
+    │ ·                                                    │loss/std                      iter
+1.22┤ ·                                                    │                            loss/max
+    │ ·                                                    │    ┌──────────────────────────────────────────────────────┐
+0.94┤ ··                                                   │1.81┤+                                                     │
+    │  ·                                                   │1.53┤++                                                    │
+0.67┤  ···                                                 │1.25┤ +                                                    │
+    │  ·····    ·                                          │0.97┤ ++                                                   │
+    │      ········    ·                                   │    │  +  +                                                │
+0.39┤       · ················ ····    · ·   ·       ·   · │0.69┤  ++++++++ ++     +                                   │
+    │             ······ ·· ·······························│0.41┤       ++++++++++++++++++++++++++++++++++++++++++++ + │
+0.12┤                                ···      ··· · ·······│0.13┤                + +    + +++ +++++++++ +++++++++++++++│
+    └┬────────────┬─────────────┬────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘
+    1.0         49.2          97.5         145.8      194.0     1.0         49.2          97.5         145.8      194.0
+loss/mean                     iter                          loss/max                      iter
     ```
 
-    When distributed history is enabled, summary plots show min/max/mean/std
-    overlaid with distinct markers (`·` mean, `-` min, `+` max, `*` std).
+    Combined summary plot with all statistics overlaid:
+
+    ```
+    ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1.81┤ ++ loss/max                                                                                                      │
+    │ -- loss/min                                                                                                      │
+    │ ·· loss/mean                                                                                                     │
+    │ ⢕⢕ loss                                                                                                          │
+    │⢣·                                                                                                                │
+    │⢸·                                                                                                                │
+1.52┤⢸·                                                                                                                │
+    │⠘⡄                                                                                                                │
+    │ ⡇                                                                                                                │
+    │ ⡇                                                                                                                │
+    │ ⡇                                                                                                                │
+    │ ⢸+                                                                                                               │
+1.23┤ ⢸·                                                                                                               │
+    │ ⢸⣾                                                                                                               │
+    │ ⠈⢻                                                                                                               │
+    │  ⢸                                                                                                               │
+    │  ·⡇+                                                                                                             │
+0.95┤  -⣇⡄                                                                                                             │
+    │   ⣿⢣+                                                                                                            │
+    │   ⠈⢸+                                                                                                            │
+    │    ⢸·                                                                                                            │
+    │    ⢸·                                                                                                            │
+    │    ⠈⡆⣀    ⢠⡆                                                                                                     │
+0.66┤     ⣿⢸++  ⢸⡇                                                                                                     │
+    │     ⣿⢸⢀·⣠⡆⢸⡇⢠⡆ ⢀      +                                                                                          │
+    │     ⣿⢸⡇⠉⠈⡇⡸⠣⣼⡇ ⣿     +·             ⣠                                                                            │
+    │     ⠈⠸⡇-·⢸⡇·⣿⠣⢤⣿·⡀   ⢠⡆+            ⣿                                                                            │
+    │      -  -⢸⡇-⠙-⢸⡟⣼⢇   ⢸⡇ ++          ⣿   +     ⢀             +                                                    │
+    │      -   ⠸⡇ --⢸⡇⣿⠘⡄⣠+⢸⡇ ·⢠⡆+ + ⡀   +⣿  ⢰⠣⡀ ⢀  ⣿ ⢀⡄         ++              +                                 ⢀⡄  │
+0.37┤      -        ⠈⠃⠈-⡇⣿·⡜⡇·⢀⣼⡇⡀+·⢸⡇⡀ +·⣿ ⢀⣼·⢇ ⡿⡀ ⣿ ⢸⡇ + ⢀ ⢀⡄  +·              ⣾                        ⣴        ⢸⡇  │
+    │               --  ⡇⡇⠣⡇⢇⡔⠁⠙⣿⢣⢰⡇⢸⠙⢣⣠··⣿+⢸⣿ ⢸⢀⠇⢇·⣿+⡜⢇⢄·+⣿ ⢸⡇ ⢀⡀⣾⢠⡆⣴    +   +⡀ ⣿     + ⣴+          ⢀    ⣿   ⢀⡄   ⢸⡇  │
+    │               -   ⠈⠁  ⠸⡇  ⠈-⣿⡇⡇--⠙⣄⠴⢹+⢸⢿-⢸⢸ ⢸⡾⡇⢇⡇·-⣷⢹⡏⡆⡜⡇·⡇⡇⡿⣸⡇⡿⡀   · + ⡸⡇+⣿ ++⣠⢠⢺ ⡿⡀   ·+ ⢀⡄++⣿  + ⡿⡀ +⢸⡇   ⢸⡇  │
+    │                             ⠈⢣⡇   ⠙-⠘⡄⢸  ⠸⣸  ⠁ ⠘⠇- ⠙⢸⡇⢿-⠣⡆⡇⠙·⣿⠑⠃⡇⣴· ····⡇⡇⢀⣿⢰⠑⠞⠏⠃⢸·⡇⣇⡄⣴·⣴·⢀⢸⡇⡀⣴⣿⢀⠤⡄·⡇⡇ ⣾⢸⢱ ++⢸⡇· │
+    │                               ⠁      ⠈⠃   ⣿         ⢸⡇-  ⠘⠇  ⠻ -⠈⠉⣦⠒⠊⢶⠣⢴⡇⠑⠁⠁⣿··--⠸⣴⡇⠈⢇⡇⠉⠉⢆⡟⣼⣿⣧⠃⢹⢸·⡇⣴⡇⡇⡀⡏⣾⢸+·⡎⣿⡇⢰⡇│
+    │                                           ⠙         ⠈⠃            ⠈- - ⠈⠃   ⠈--   ⠈⠃ ⢸⡇  ⢸⡇⠙⠙⠙ ⠘⢼-⢇⠏⠃⠙⣿-⠻⢸⢠⡆⡇⣿⠈⠚⠈│
+0.08┤                                                                                      ⠘⠇   ⠁           ⢿   ⠁⠸⡇⢿   │
+    └┬───────────────────────────┬────────────────────────────┬───────────────────────────┬───────────────────────────┬┘
+    1.0                        49.2                         97.5                        145.8                     194.0
+    ```
 
 ## `StopWatch`: Timing Context Manager
 
