@@ -44,8 +44,8 @@ import click
     help="Print the generated script without submitting.",
 )
 @click.option(
-    "--no-launch", is_flag=True, default=False,
-    help="Do not wrap the command with 'ezpz launch'.",
+    "--launch", is_flag=True, default=False,
+    help="Wrap the command with 'ezpz launch'.",
 )
 def submit_cmd(
     args: tuple[str, ...],
@@ -58,7 +58,7 @@ def submit_cmd(
     scheduler: str | None,
     env_setup: str | None,
     dry_run: bool,
-    no_launch: bool,
+    launch: bool,
 ) -> None:
     """Submit a job to the active scheduler (PBS/SLURM).
 
@@ -107,7 +107,7 @@ def submit_cmd(
         filesystems=filesystems,
         job_name=job_name,
         scheduler=scheduler,
-        wrap_with_launch=not no_launch,
+        wrap_with_launch=launch,
         dry_run=dry_run,
         env_setup=resolved_env,
     )
