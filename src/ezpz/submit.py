@@ -51,32 +51,17 @@ def detect_env_setup() -> str:
     Checks (in order):
 
     1. ``EZPZ_SETUP_ENV`` — sourced verbatim if set.
-    2. ``VIRTUAL_ENV`` — activates the venv.
-    3. ``CONDA_PREFIX`` — activates the conda environment.
+    2. Falls back to the ``ezpz_setup_env`` helper fetched via curl.
 
     Returns:
         A (possibly multi-line) string of shell commands, or ``""`` if no
         environment was detected.
     """
-    lines: list[str] = []
-
     setup_env = os.environ.get("EZPZ_SETUP_ENV")
     if setup_env and Path(setup_env).is_file():
-        lines.append(f"source {shlex.quote(setup_env)}")
+        return f"source {shlex.quote(setup_env)}"
 
-    venv = os.environ.get("VIRTUAL_ENV")
-    if venv:
-        activate = Path(venv) / "bin" / "activate"
-        lines.append(f"source {shlex.quote(str(activate))}")
-        return "\n".join(lines)
-
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        env_name = Path(conda_prefix).name
-        lines.append(f"conda activate {shlex.quote(env_name)}")
-        return "\n".join(lines)
-
-    return "\n".join(lines)
+    return "source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env"
 
 
 # ── Script generation ────────────────────────────────────────────────────────
