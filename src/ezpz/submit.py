@@ -119,6 +119,8 @@ def generate_pbs_script(
     if account:
         lines.append(f"#PBS -A {account}")
     lines += [
+        "#PBS -k doe",
+        "#PBS -j oe",
         f"#PBS -q {queue}",
         f"#PBS -N {job_name}",
         "",
