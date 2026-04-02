@@ -5,6 +5,32 @@ recording metrics, computing distributed statistics, dispatching to
 external backends (Weights & Biases, CSV, or custom), and producing
 plots and reports at the end of a run.
 
+!!! info "Recent changes"
+
+    **Tracker integration** (v0.11): `History` now owns a `Tracker`
+    internally. Pass `backends=` directly to `History()` instead of
+    managing wandb separately:
+
+    ```python
+    # Before (deprecated)
+    import wandb
+    wandb.init(project="my-project")
+    history = History()
+    history.update({"loss": 0.42}, use_wandb=True)
+
+    # After
+    history = History(project_name="my-project", backends="wandb,csv")
+    history.update({"loss": 0.42}, step=step)
+    ```
+
+    - `use_wandb` parameter on `update()` is **deprecated** — use
+      `backends="wandb"` in the constructor
+    - If an active `wandb.run` is detected without `backends=` being set,
+      History will use it automatically with a deprecation warning
+    - Backend errors are isolated — a failing backend logs a warning but
+      never crashes your training run
+    - See [Tracker docs](./tracker.md) for the full backend API
+
 ## Quick Start
 
 ```python
