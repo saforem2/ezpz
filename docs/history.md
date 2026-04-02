@@ -232,59 +232,10 @@ It also uploads the training history table to any active backends and
 calls `tracker.finish()` to flush and close all backend connections.
 Returns the xarray `Dataset` for further analysis.
 
-??? example "Terminal plot output"
-
-    `finalize()` generates text-based plots directly in the terminal.
-    Each metric gets an individual plot:
-
-    ```
-                              loss
-    ┌──────────────────────────────────────────────────────┐
-1.73┤⡇                                                     │
-    │⢱                                                     │
-1.45┤⢸                                                     │
-    │⢸                                                     │
-1.18┤⢸⡄                                                    │
-    │ ⢇                                                    │
-    │ ⢸⡆                                                   │
-0.91┤ ⠈⡇                                                   │
-    │  ⣇⡄ ⢰                                                │
-0.63┤  ⢿⣷⠾⣸⣼⢠⡆        ⢀                                    │
-    │   ⠈ ⣿⠙⣿⣿⣀⢰⡇ ⡀   ⢸ ⣠  ⣠⢀                            ⢀ │
-0.36┤     ⠈ ⠙⠈⣿⢼⣧⠺⣷⣴⠷⣠⢸⢠⡏⡆⣇⣿⡸⣀⣠⣦⡆⣀⣤⣠    ⡀⡇  ⣀⡄    ⢀ ⢠⡆ ⡀ ⣿ │
-    │           ⠙ ⠈⢻ ⠸⠙⢼⠃⣿⠘⠙⠇⠘⣿⠟⢿⠘⢿⠻⣤⣠⣀⣸⡧⣧⠶⠙⣿⣧⡴⣆⣴⣧⣿⣠⢸⡇⣼⡇⢀⣿⡄│
-0.08┤                    ⠈    ⠈ ⠈    ⠁⠈⠙ ⠈  ⠙⠘⠇⠘⠟⠉⠘⠋⠋⠹⡟⠣⢾⡏⠋│
-    └┬────────────┬─────────────┬────────────┬────────────┬┘
-    1.0         49.2          97.5         145.8      194.0
-loss                          iter
-    ```
-
-    With distributed history enabled, summary plots overlay
-    min/max/mean/std with distinct markers
-    (`·` mean, `-` min, `+` max, `*` std):
-
-    ```
-                            loss/mean
-    ┌──────────────────────────────────────────────────────┐
-1.77┤·                                                     │
-    │·                                                     │
-1.49┤·                                                     │
-    │ ·                                                    │
-    │ ·                                                    │
-1.22┤ ·                                                    │
-    │ ·                                                    │
-0.94┤ ··                                                   │
-    │  ·                                                   │
-0.67┤  ···                                                 │
-    │  ·····    ·                                          │
-    │      ········    ·                                   │
-0.39┤       · ················ ····    · ·   ·       ·   · │
-    │             ······ ·· ·······························│
-0.12┤                                ···      ··· · ·······│
-    └┬────────────┬─────────────┬────────────┬────────────┬┘
-    1.0         49.2          97.5         145.8      194.0
-loss/mean                     iter
-    ```
+`finalize()` also generates text-based plots directly in the terminal
+using braille characters. Each metric gets an individual plot, and
+distributed runs produce a combined summary with min/max/mean/std
+overlaid. Try `ezpz test` to see it in action.
 
 ## `StopWatch`: Timing Context Manager
 
