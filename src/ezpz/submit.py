@@ -122,7 +122,7 @@ def generate_pbs_script(
         f"#PBS -q {queue}",
         f"#PBS -N {job_name}",
         "",
-        "set -euo pipefail",
+        "set -eo pipefail",
         f"cd {shlex.quote(working_dir)}",
     ]
     if env_setup:
@@ -181,7 +181,7 @@ def generate_slurm_script(
         f"#SBATCH --partition={queue}",
         f"#SBATCH --job-name={job_name}",
         "",
-        "set -euo pipefail",
+        "set -eo pipefail",
         f"cd {shlex.quote(working_dir)}",
     ]
     if env_setup:
