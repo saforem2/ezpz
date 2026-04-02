@@ -50,16 +50,18 @@ def detect_env_setup() -> str:
 
     Checks (in order):
 
-    1. ``EZPZ_SETUP_ENV`` — sourced verbatim if set.
+    1. ``EZPZ_SETUP_ENV`` — if it points to a file, sources it; otherwise
+       used as inline shell commands.
     2. Falls back to the ``ezpz_setup_env`` helper fetched via curl.
 
     Returns:
-        A (possibly multi-line) string of shell commands, or ``""`` if no
-        environment was detected.
+        A (possibly multi-line) string of shell commands.
     """
     setup_env = os.environ.get("EZPZ_SETUP_ENV")
-    if setup_env and Path(setup_env).is_file():
-        return f"source {shlex.quote(setup_env)}"
+    if setup_env:
+        if Path(setup_env).is_file():
+            return f"source {shlex.quote(setup_env)}"
+        return setup_env
 
     return "source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env"
 
@@ -244,6 +246,7 @@ def submit(
     scheduler: str | None = None,
     wrap_with_launch: bool = True,
     dry_run: bool = False,
+    env_setup: str | None = None,
 ) -> str | None:
     """Submit a job to the active scheduler.
 
@@ -322,6 +325,7 @@ def submit(
             job_name=job_name,
             working_dir=working_dir,
             wrap_with_launch=wrap_with_launch,
+            env_setup=env_setup,
         )
     else:
         script_text = generate_slurm_script(
@@ -333,6 +337,7 @@ def submit(
             job_name=job_name,
             working_dir=working_dir,
             wrap_with_launch=wrap_with_launch,
+            env_setup=env_setup,
         )
 
     # Print for transparency

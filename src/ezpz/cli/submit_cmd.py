@@ -36,6 +36,10 @@ import click
     help="Override scheduler auto-detection.",
 )
 @click.option(
+    "--env", "env_setup", default=None,
+    help="Environment setup: a script path or inline shell commands.",
+)
+@click.option(
     "--dry-run", is_flag=True, default=False,
     help="Print the generated script without submitting.",
 )
@@ -52,6 +56,7 @@ def submit_cmd(
     filesystems: str,
     job_name: str | None,
     scheduler: str | None,
+    env_setup: str | None,
     dry_run: bool,
     no_launch: bool,
 ) -> None:
@@ -84,6 +89,14 @@ def submit_cmd(
             "  ezpz submit job.sh --nodes 4"
         )
 
+    # Resolve --env: if it's a file path, source it; otherwise use verbatim
+    resolved_env: str | None = None
+    if env_setup is not None:
+        if Path(env_setup).is_file():
+            resolved_env = f"source {env_setup}"
+        else:
+            resolved_env = env_setup
+
     submit(
         command=command,
         script=script_path,
@@ -96,4 +109,5 @@ def submit_cmd(
         scheduler=scheduler,
         wrap_with_launch=not no_launch,
         dry_run=dry_run,
+        env_setup=resolved_env,
     )

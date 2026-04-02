@@ -22,55 +22,35 @@ from ezpz.submit import (
 
 
 class TestDetectEnvSetup:
-    def test_picks_up_virtual_env(self, tmp_path: Path):
-        venv = tmp_path / "myvenv"
-        venv.mkdir()
-        with patch.dict(os.environ, {"VIRTUAL_ENV": str(venv)}, clear=False):
+    def test_falls_back_to_curl_helper(self):
+        env = os.environ.copy()
+        env.pop("EZPZ_SETUP_ENV", None)
+        with patch.dict(os.environ, env, clear=True):
             result = detect_env_setup()
-        assert "source" in result
-        assert "myvenv/bin/activate" in result
+        assert "ezpz_setup_env" in result
+        assert "curl" in result
 
-    def test_picks_up_conda_prefix(self, tmp_path: Path):
-        with patch.dict(
-            os.environ,
-            {"CONDA_PREFIX": "/opt/conda/envs/myenv"},
-            clear=False,
-        ):
-            # Clear VIRTUAL_ENV so conda path is taken
-            env = os.environ.copy()
-            env.pop("VIRTUAL_ENV", None)
-            with patch.dict(os.environ, env, clear=True):
-                result = detect_env_setup()
-        assert "conda activate" in result
-        assert "myenv" in result
-
-    def test_picks_up_ezpz_setup_env(self, tmp_path: Path):
+    def test_picks_up_ezpz_setup_env_file(self, tmp_path: Path):
         setup_file = tmp_path / "setup.sh"
         setup_file.write_text("module load foo")
         with patch.dict(
             os.environ,
             {"EZPZ_SETUP_ENV": str(setup_file)},
-            clear=False,
+            clear=True,
         ):
-            env = os.environ.copy()
-            env.pop("VIRTUAL_ENV", None)
-            env.pop("CONDA_PREFIX", None)
-            with patch.dict(os.environ, env, clear=True):
-                env2 = os.environ.copy()
-                env2["EZPZ_SETUP_ENV"] = str(setup_file)
-                with patch.dict(os.environ, env2, clear=True):
-                    result = detect_env_setup()
+            result = detect_env_setup()
         assert "source" in result
         assert "setup.sh" in result
 
-    def test_returns_empty_when_nothing_set(self):
-        env = os.environ.copy()
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("CONDA_PREFIX", None)
-        env.pop("EZPZ_SETUP_ENV", None)
-        with patch.dict(os.environ, env, clear=True):
+    def test_picks_up_ezpz_setup_env_inline(self):
+        inline = "module load frameworks && source .venv/bin/activate"
+        with patch.dict(
+            os.environ,
+            {"EZPZ_SETUP_ENV": inline},
+            clear=True,
+        ):
             result = detect_env_setup()
-        assert result == ""
+        assert result == inline
 
 
 # ── generate_pbs_script ──────────────────────────────────────────────────────
