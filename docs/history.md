@@ -13,8 +13,8 @@ plots and reports at the end of a run.
 
     ```python
     # Before (deprecated)
-    import wandb
-    wandb.init(project="my-project")
+    import ezpz
+    ezpz.setup_wandb(project_name="my-project")
     history = History()
     history.update({"loss": 0.42}, use_wandb=True)
 
