@@ -217,8 +217,8 @@ Each `ezpz` component can be used independently — pick only what you need.
 - from torch.nn.parallel import DistributedDataParallel as DDP
 - model = DDP(model, device_ids=[local_rank], output_device=local_rank)
 
-+ model = ezpz.wrap_model(model)                  # DDP (default)
-+ model = ezpz.wrap_model(model, use_fsdp=True)   # FSDP
++ model = ezpz.wrap_model(model)                   # FSDP (default)
++ model = ezpz.wrap_model(model, use_fsdp=False)   # DDP
 ```
 
 #### Training Loop
