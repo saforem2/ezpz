@@ -41,7 +41,7 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--job-name` | Job name (auto-derived from command if omitted) |
 | `--scheduler` | Force `PBS` or `SLURM` (auto-detected by default) |
 | `--dry-run` | Print the script without submitting |
-| `--no-launch` | Don't wrap the command with `ezpz launch` |
+| `--launch` | Wrap the command with `ezpz launch` |
 
 ## Examples
 
@@ -61,11 +61,11 @@ ezpz submit -N 2 -q debug -t 01:00:00 \
     -- python3 -m ezpz.examples.test
 ```
 
-### Submit without `ezpz launch` wrapping
+### Submit with `ezpz launch` wrapping
 
 ```bash
-ezpz submit --no-launch -N 1 -q debug \
-    -- mpirun -np 4 ./my_binary
+ezpz submit --launch -N 1 -q debug \
+    -- python3 -m ezpz.examples.test
 ```
 
 ## Environment Detection
