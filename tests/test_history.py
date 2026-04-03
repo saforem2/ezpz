@@ -1,7 +1,9 @@
 """Tests for the ezpz.history module."""
 
 import json
+import os
 import warnings
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -311,3 +313,25 @@ class TestHistoryTrackerIntegration:
         tracker = Tracker([backend])
         hist = history.History(tracker=tracker)
         assert hist.tracker.get_backend("fake") is backend
+
+    @patch.dict(os.environ, {"EZPZ_TRACKER_BACKENDS": "csv"})
+    def test_env_var_activates_tracker(self, tmp_path):
+        """EZPZ_TRACKER_BACKENDS env var activates backends in History()."""
+        hist = history.History(outdir=str(tmp_path), report_enabled=False)
+        assert not isinstance(hist.tracker, NullTracker)
+        assert hist.tracker.get_backend("csv") is not None
+
+    def test_finalize_redirects_csv_to_outdir(self, tmp_path):
+        """finalize() moves CSV backend output to the output directory."""
+        hist = history.History(
+            backends="csv",
+            outdir=str(tmp_path / "init_dir"),
+            report_enabled=False,
+        )
+        hist.update({"loss": 0.9})
+        hist.update({"loss": 0.5})
+        final_outdir = tmp_path / "final_dir"
+        hist.finalize(outdir=final_outdir, save=False, plot=False)
+        assert (final_outdir / "metrics.csv").exists()
+        # Old location should be cleaned up
+        assert not (tmp_path / "init_dir" / "metrics.csv").exists()
