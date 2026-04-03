@@ -31,7 +31,7 @@ import xarray as xr
 from ezpz import get_rank
 from ezpz import plot as ezplot
 from ezpz import timeitlogit
-from ezpz.configs import OUTPUTS_DIR, PathLike
+from ezpz.configs import OUTPUTS_DIR, PathLike, get_json_log_file
 from ezpz.log import get_logger
 from ezpz.tplot import (
     DEFAULT_MARKER,
@@ -2517,6 +2517,17 @@ class History:
             )
             paths["Plots (matplotlib)"] = str(plotdir / "mplot")
             paths["Plots (terminal)"] = str(plotdir / "tplot")
+        json_log = get_json_log_file()
+        if json_log is not None and json_log.exists():
+            link_path = base_dir / json_log.name
+            if not link_path.exists():
+                try:
+                    link_path.symlink_to(json_log)
+                except OSError:
+                    pass
+            paths["JSON Log"] = str(json_log)
+        if self._jsonl_path is not None:
+            paths["Metrics JSONL"] = str(self._jsonl_path)
         env_details["Paths"] = paths
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
@@ -2596,4 +2607,8 @@ class History:
                     "Failed to log training history table via tracker"
                 )
         self._tracker.finish()
+        if paths:
+            logger.info("Output files:")
+            for label, fpath in paths.items():
+                logger.info("  %s: %s", label, fpath)
         return dataset
