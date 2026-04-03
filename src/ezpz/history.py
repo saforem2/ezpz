@@ -2504,10 +2504,14 @@ class History:
             paths.update(existing_paths)
         paths.setdefault("Working Directory", str(Path.cwd()))
         paths["Output Directory"] = str(base_dir)
+        output_files: dict[str, str] = {
+            "Output Directory": str(base_dir),
+        }
         if self.report_enabled:
             paths["Report"] = str(
                 report_dir / self._report_filename
             )
+            output_files["Report"] = paths["Report"]
         plotdir = None
         if plot:
             plotdir = (
@@ -2517,6 +2521,8 @@ class History:
             )
             paths["Plots (matplotlib)"] = str(plotdir / "mplot")
             paths["Plots (terminal)"] = str(plotdir / "tplot")
+            output_files["Plots (matplotlib)"] = paths["Plots (matplotlib)"]
+            output_files["Plots (terminal)"] = paths["Plots (terminal)"]
         json_log = get_json_log_file()
         if json_log is not None and json_log.exists():
             link_path = base_dir / json_log.name
@@ -2526,8 +2532,10 @@ class History:
                 except OSError:
                     pass
             paths["JSON Log"] = str(json_log)
+            output_files["JSON Log"] = paths["JSON Log"]
         if self._jsonl_path is not None:
             paths["Metrics JSONL"] = str(self._jsonl_path)
+            output_files["Metrics JSONL"] = paths["Metrics JSONL"]
         env_details["Paths"] = paths
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
@@ -2607,8 +2615,8 @@ class History:
                     "Failed to log training history table via tracker"
                 )
         self._tracker.finish()
-        if paths:
+        if output_files:
             logger.info("Output files:")
-            for label, fpath in paths.items():
+            for label, fpath in output_files.items():
                 logger.info("  %s: %s", label, fpath)
         return dataset
