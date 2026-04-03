@@ -2594,6 +2594,8 @@ class History:
                 use_hdf5 = False
 
             fname = "dataset" if dataset_fname is None else dataset_fname
+            ext = ".h5" if use_hdf5 else ".nc"
+            output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
             _ = self.save_dataset(
                 dataset=dataset,
                 outdir=base_dir,
