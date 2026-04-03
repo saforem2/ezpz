@@ -2480,6 +2480,17 @@ class History:
         else:
             base_dir = Path(outdir).expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
+        # Redirect CSV backend to base_dir so all output is co-located
+        _csv_be = self._tracker.get_backend("csv")
+        if _csv_be is not None and hasattr(_csv_be, "_csv_path"):
+            old_csv = _csv_be._csv_path
+            _csv_be._outdir = base_dir  # type: ignore[attr-defined]
+            _csv_be._csv_path = base_dir / "metrics.csv"  # type: ignore[attr-defined]
+            if old_csv.exists() and old_csv != _csv_be._csv_path:
+                try:
+                    old_csv.unlink()
+                except OSError:
+                    pass
         dataset_label = dataset_fname if dataset_fname is not None else "dataset"
         report_dir = (
             base_dir.joinpath(dataset_label)
@@ -2536,6 +2547,9 @@ class History:
         if self._jsonl_path is not None:
             paths["Metrics JSONL"] = str(self._jsonl_path)
             output_files["Metrics JSONL"] = paths["Metrics JSONL"]
+        if _csv_be is not None and hasattr(_csv_be, "_csv_path"):
+            paths["Metrics CSV"] = str(_csv_be._csv_path)
+            output_files["Metrics CSV"] = paths["Metrics CSV"]
         env_details["Paths"] = paths
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
