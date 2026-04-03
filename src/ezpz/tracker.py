@@ -149,10 +149,11 @@ class WandbBackend(TrackerBackend):
 
         # Resolve mode — disable on non-rank-0 processes
         from ezpz.distributed import _resolve_wandb_mode
+        _mode_arg = kwargs.pop("mode", None)
         if rank != 0:
             _mode = "disabled"
         else:
-            _mode = _resolve_wandb_mode(kwargs.pop("mode", None))
+            _mode = _resolve_wandb_mode(_mode_arg)
 
         outdir_str = Path(outdir).as_posix() if outdir else os.getcwd()
 
@@ -252,15 +253,20 @@ class WandbBackend(TrackerBackend):
 class CSVBackend(TrackerBackend):
     """Backend that writes metrics to a CSV file and config to JSON.
 
+    Only rank 0 writes files; other ranks buffer in memory (no-op I/O).
+
     Args:
         outdir: Directory where ``metrics.csv`` and ``config.json`` are written.
+        rank: Distributed rank. Non-0 ranks skip all file I/O.
     """
 
     name: str = "csv"
 
-    def __init__(self, outdir: str | os.PathLike) -> None:
+    def __init__(self, outdir: str | os.PathLike, rank: int = 0) -> None:
+        self._rank = rank
         self._outdir = Path(outdir)
-        self._outdir.mkdir(parents=True, exist_ok=True)
+        if self._rank == 0:
+            self._outdir.mkdir(parents=True, exist_ok=True)
         self._csv_path = self._outdir / "metrics.csv"
         self._fieldnames: list[str] = []
         self._rows: list[dict[str, Any]] = []
@@ -283,6 +289,8 @@ class CSVBackend(TrackerBackend):
             self._flush()
 
     def log_config(self, config: dict[str, Any]) -> None:
+        if self._rank != 0:
+            return
         config_path = self._outdir / "config.json"
         existing: dict[str, Any] = {}
         if config_path.exists():
@@ -304,6 +312,8 @@ class CSVBackend(TrackerBackend):
         columns: list[str],
         data: list[list[Any]],
     ) -> None:
+        if self._rank != 0:
+            return
         table_path = self._outdir / f"{key}.csv"
         with table_path.open("w", newline="") as f:
             writer = csv.writer(f)
@@ -312,7 +322,7 @@ class CSVBackend(TrackerBackend):
 
     def _flush(self) -> None:
         """Write all buffered rows to the CSV file."""
-        if not self._rows:
+        if self._rank != 0 or not self._rows:
             return
         with self._csv_path.open("w", newline="") as f:
             writer = csv.DictWriter(
@@ -545,7 +555,7 @@ def setup_tracker(
                 )
             elif name == "csv":
                 csv_outdir = outdir or os.getcwd()
-                backend = cls(outdir=csv_outdir)
+                backend = cls(outdir=csv_outdir, rank=rank)
                 if config is not None:
                     backend.log_config(config)
             else:
