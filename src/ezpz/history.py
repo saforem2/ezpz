@@ -240,6 +240,7 @@ class History:
         self._asset_dir: Optional[Path] = None
         self._report_filename = "report.md"
         self._report_initialized = False
+        self._jsonl_path_explicit = jsonl_path is not None
         if jsonl_path is None:
             default_jsonl_dir = (
                 self._report_dir if report_enabled else Path(OUTPUTS_DIR)
@@ -324,7 +325,7 @@ class History:
         self._report_path = base_dir.joinpath(self._report_filename)
         self._asset_dir = base_dir.joinpath("assets")
         self._report_initialized = False
-        if self._jsonl_enabled:
+        if self._jsonl_enabled and not self._jsonl_path_explicit:
             self._jsonl_path = base_dir.joinpath(f"{self._run_id}.jsonl")
         self._environment_written = False
         self._metric_summary_written = False
