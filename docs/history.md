@@ -29,7 +29,7 @@ plots and reports at the end of a run.
       History will use it automatically with a deprecation warning
     - Backend errors are isolated — a failing backend logs a warning but
       never crashes your training run
-    - See [Tracker docs](./tracker.md) for the full backend API
+    - See [Tracker docs](./python/Code-Reference/tracker.md) for the full backend API
 
 ## Quick Start
 
