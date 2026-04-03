@@ -2540,7 +2540,7 @@ class History:
             link_path = base_dir / json_log.name
             if not link_path.exists():
                 try:
-                    link_path.symlink_to(json_log)
+                    link_path.symlink_to(json_log.resolve())
                 except OSError:
                     pass
             paths["JSON Log"] = str(json_log)
@@ -2596,13 +2596,13 @@ class History:
 
             fname = "dataset" if dataset_fname is None else dataset_fname
             ext = ".h5" if use_hdf5 else ".nc"
-            output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
             _ = self.save_dataset(
                 dataset=dataset,
                 outdir=base_dir,
                 fname=fname,
                 use_hdf5=use_hdf5,
             )
+            output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
         if self.report_enabled:
             logger.info(
                 "Saving history report to %s",
