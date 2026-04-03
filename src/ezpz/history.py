@@ -267,7 +267,9 @@ class History:
         # -- Tracker integration --
         if tracker is not None:
             self._tracker: Tracker = tracker
-        elif any(arg is not None for arg in (project_name, backends)):
+        elif any(
+            arg is not None for arg in (project_name, backends)
+        ) or os.environ.get("EZPZ_TRACKER_BACKENDS"):
             self._tracker = setup_tracker(
                 project_name=project_name,
                 backends=backends,
