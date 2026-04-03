@@ -147,9 +147,12 @@ class WandbBackend(TrackerBackend):
                 ),
             )
 
-        # Resolve mode
+        # Resolve mode — disable on non-rank-0 processes
         from ezpz.distributed import _resolve_wandb_mode
-        _mode = _resolve_wandb_mode(kwargs.pop("mode", None))
+        if rank != 0:
+            _mode = "disabled"
+        else:
+            _mode = _resolve_wandb_mode(kwargs.pop("mode", None))
 
         outdir_str = Path(outdir).as_posix() if outdir else os.getcwd()
 
