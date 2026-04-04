@@ -576,7 +576,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     fallback_cmd.extend(_cpu_bind_launcher_args(selected_cpu_bind))
     fallback_cmd.extend(getattr(args, "launcher_args", []))
     fallback_cmd.extend(command_parts)
-    filters = getattr(args, "filters", [])
+    filters = getattr(args, "filter", [])
     if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
         filters += get_aurora_filters()
 
