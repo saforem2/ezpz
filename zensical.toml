@@ -52,6 +52,7 @@ nav = [
         "recipes.md",
         "reference.md",
         "history.md",
+        "tracker.md",
         "configuration.md",
         "architecture.md",
         "troubleshooting.md",
