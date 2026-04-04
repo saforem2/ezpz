@@ -178,7 +178,10 @@ def get_rank() -> int:
         val = os.environ.get(var)
         if val is not None:
             return int(val)
-    return int(_get_mpi_comm().Get_rank())
+    try:
+        return int(_get_mpi_comm().Get_rank())
+    except Exception:
+        return 0
 
 
 def get_local_rank() -> int:
@@ -229,12 +232,28 @@ def get_world_size(
         return get_world_size_total()
     if in_use:
         return get_world_size_in_use()
-    return int(_get_mpi_comm().Get_size())
+    _ENV_VARS = (
+        "WORLD_SIZE",
+        "PMI_SIZE",
+        "OMPI_COMM_WORLD_SIZE",
+        "SLURM_NTASKS",
+    )
+    for var in _ENV_VARS:
+        val = os.environ.get(var)
+        if val is not None:
+            return int(val)
+    try:
+        return int(_get_mpi_comm().Get_size())
+    except Exception:
+        return 1
 
 
 def get_world_size_in_use() -> int:
     """Return the number of MPI ranks currently participating."""
-    return int(_get_mpi_comm().Get_size())
+    try:
+        return int(_get_mpi_comm().Get_size())
+    except Exception:
+        return 1
 
 
 def get_world_size_total() -> int:
