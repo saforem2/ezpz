@@ -30,7 +30,7 @@ class TestConfigs:
     def test_command_exists(self):
         """Test command_exists function."""
         # Test with a command that should exist
-        assert configs.command_exists("python") is True
+        assert configs.command_exists("python3") is True
         # Test with a command that should not exist
         assert configs.command_exists("nonexistent_command_xyz") is False
 

@@ -902,7 +902,8 @@ class TestWrapModel:
         comm = _FakeComm(rank=0, size=1)
         dist._MPI_COMM = comm
         model = torch.nn.Linear(10, 10)
-        result = dist.wrap_model(model)
+        with patch.object(dist, "get_world_size", return_value=1):
+            result = dist.wrap_model(model)
         assert result is model
 
     def test_ddp_path(self, fake_comm):

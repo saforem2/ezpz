@@ -16,7 +16,7 @@ class TestLaunch:
     def test_command_exists(self):
         """Test command_exists function."""
         # Test with a command that should exist
-        assert launch.command_exists("python") is True
+        assert launch.command_exists("python3") is True
 
         # Test with a command that should not exist
         assert launch.command_exists("nonexistent_command_xyz") is False
