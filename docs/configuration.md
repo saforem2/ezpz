@@ -60,6 +60,7 @@
 | LOG_FROM_ALL_RANKS                           | Allow logs from all ranks (not just rank 0).                                     |
 | EZPZ_LOG_FROM_ALL_RANKS                      | Alias for `LOG_FROM_ALL_RANKS` (supported fallback).                             |
 | PYTHONHASHSEED                               | Fix Python hash seed for reproducibility.                                        |
+| EZPZ_TRACKER_BACKENDS                        | Comma-separated tracker backends (e.g. `wandb,csv`). Defaults to `wandb`.        |
 | WANDB_DISABLED                               | Disable Weights & Biases logging.                                                |
 | WANDB_MODE                                   | Set W&B mode (online, offline, dryrun).                                          |
 | WANDB_PROJECT / WB_PROJECT / WB_PROJECT_NAME | Set project name for W&B runs.                                                   |
