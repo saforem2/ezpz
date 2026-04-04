@@ -1354,10 +1354,18 @@ class TestSetEnvVars:
     """Tests for ``_set_env_vars``."""
 
     def test_sets_vars(self, monkeypatch):
+        monkeypatch.delenv("RANK", raising=False)
+        monkeypatch.delenv("LOCAL_RANK", raising=False)
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
         dist._set_env_vars(rank=3, local_rank=1, world_size=8)
         assert os.environ["RANK"] == "3"
         assert os.environ["LOCAL_RANK"] == "1"
         assert os.environ["WORLD_SIZE"] == "8"
+        # Clean up — _set_env_vars writes to os.environ directly,
+        # which monkeypatch doesn't track automatically.
+        del os.environ["RANK"]
+        del os.environ["LOCAL_RANK"]
+        del os.environ["WORLD_SIZE"]
 
 
 # ===================================================================
