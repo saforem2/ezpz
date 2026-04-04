@@ -29,7 +29,7 @@ plots and reports at the end of a run.
       History will use it automatically with a deprecation warning
     - Backend errors are isolated — a failing backend logs a warning but
       never crashes your training run
-    - See [Tracker docs](./python/Code-Reference/tracker.md) for the full backend API
+    - See [Tracker docs](./tracker.md) for the full backend API
 
 ## Quick Start
 
@@ -252,7 +252,31 @@ dataset = history.finalize(
 | Matplotlib plots | `{outdir}/plots/mplot/*.png` |
 | Terminal plots | `{outdir}/plots/tplot/*.txt` |
 | Markdown report | `{outdir}/report.md` |
-| JSONL log | `{outdir}/{timestamp}.jsonl` |
+| Metrics JSONL | `{outdir}/metrics.jsonl` |
+| Metrics CSV | `{outdir}/metrics.csv` (when `csv` backend is active) |
+| JSON log symlink | `{outdir}/{timestamp}-rank0.jsonl` → `logs/...` |
+
+All output is co-located in `{outdir}`:
+
+- The **CSV backend** is automatically redirected to `{outdir}` so
+  `metrics.csv`, `config.json`, and `training_history.csv` land
+  alongside plots and reports.
+- A **symlink** to the structured JSON log file is created in `{outdir}`
+  so you don't have to hunt for it under `logs/`.
+
+At the end, `finalize()` logs a summary of all output paths:
+
+```
+Output files:
+  Output Directory: ./outputs/my-experiment/2026-04-04-...
+  Report: ./outputs/.../report.md
+  Plots (matplotlib): ./outputs/.../plots/mplot
+  Plots (terminal): ./outputs/.../plots/tplot
+  JSON Log: ./logs/ezpz-test/2026-...-rank0.jsonl
+  Metrics JSONL: ./outputs/.../metrics.jsonl
+  Metrics CSV: ./outputs/.../metrics.csv
+  Dataset: ./outputs/.../train.h5
+```
 
 It also uploads the training history table to any active backends and
 calls `tracker.finish()` to flush and close all backend connections.
