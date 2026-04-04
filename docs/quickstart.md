@@ -98,7 +98,7 @@ model = torch.nn.Linear(128, 64).to(device)
 model = ezpz.wrap_model(
     model,
     use_fsdp=True,  # False will use DDP
-    dtype=torch.bfloat16,
+    dtype="bfloat16",
 )
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
