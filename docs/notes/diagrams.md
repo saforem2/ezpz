@@ -533,7 +533,7 @@ plots — all from the same recorded data.
 flowchart LR
     subgraph training["Training Loop"]
         step["optimizer.step()"]
-        record["history.record(metrics)"]
+        record["history.update(metrics)"]
     end
 
     subgraph history_mod["ezpz.History"]

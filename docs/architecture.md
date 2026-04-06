@@ -103,11 +103,11 @@ graph LR
 
 | Strategy | Use when | `wrap_model()` call |
 |----------|----------|---------------------|
-| **DDP** | Model fits in a single GPU's memory | `ezpz.wrap_model(model)` |
-| **FSDP** | Model is too large for one GPU, or you want to reduce memory per GPU | `ezpz.wrap_model(model, use_fsdp=True)` |
-| **FSDP+TP** | Very large models where even FSDP isn't enough; combines sharding across nodes with tensor parallelism within nodes | `ezpz.wrap_model(model, use_fsdp=True)` + `setup_torch(tensor_parallel_size=N)` |
+| **DDP** | Model fits in a single GPU's memory | `ezpz.wrap_model(model, use_fsdp=False)` |
+| **FSDP** | Model is too large for one GPU, or you want to reduce memory per GPU | `ezpz.wrap_model(model)` (default) |
+| **FSDP+TP** | Very large models where even FSDP isn't enough; combines sharding across nodes with tensor parallelism within nodes | `ezpz.wrap_model(model)` + `setup_torch(tensor_parallel_size=N)` |
 
-DDP is the simplest — start here unless you have a reason not to.
+FSDP is the default (`use_fsdp=True`). Pass `use_fsdp=False` for DDP when your model fits in a single GPU's memory.
 
 ## Module Map
 

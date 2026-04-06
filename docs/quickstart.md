@@ -14,7 +14,7 @@ uv pip install git+https://github.com/saforem2/ezpz
 
 !!! tip "Editable install for development"
 
-    ```bash
+    ```bash linenums='0'
     git clone https://github.com/saforem2/ezpz.git
     cd ezpz
     uv pip install -e .
@@ -26,7 +26,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     {`torch`, `mpi4py`} installed, you can try `ezpz` without installing
     it:
 
-    ```bash
+    ```bash linenums='0'
     # pip install uv first, if needed
     uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
 
@@ -40,7 +40,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     After installing, run a quick smoke test to verify distributed
     functionality and device detection:
 
-    ```bash
+    ```bash linenums='0'
     ezpz test
     ```
 
@@ -64,7 +64,7 @@ uv pip install git+https://github.com/saforem2/ezpz
         over time and found to be useful.
         To use these, we can source the file directly from the command line:
 
-            ```bash
+            ```bash linenums='0'
             source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
             ```
 
@@ -76,7 +76,7 @@ uv pip install git+https://github.com/saforem2/ezpz
             save the relevant environment variables to a file
             `~/.pbsenv` which can be later sourced via `source
             ~/.pbsenv` from, e.g., another terminal:
-            ```bash
+            ```bash linenums='0'
             $ qsub -A <ALLOCATION> -q <QUEUE> \
                 -l select=2 \
                 -l walltime=01:00:00,filesystems=eagle:home \
@@ -86,7 +86,7 @@ uv pip install git+https://github.com/saforem2/ezpz
 
 ## 🚂 Distributed Training Script
 
-```python title="train.py"
+```python title="train.py" linenums='0'
 import ezpz
 import torch
 
@@ -123,7 +123,7 @@ device.
 
 ## 🚀 Launch It
 
-```bash
+```bash linenums='0'
 ezpz launch python3 train.py
 ```
 
@@ -146,7 +146,7 @@ active job scheduler automatically:
 
     To pass arguments through to the launcher[^launcher]:
 
-    ```bash
+    ```bash linenums='0'
     $ ezpz launch -- python3 -m ezpz.examples.fsdp
 
     # pass --line-buffer through to mpiexec:
@@ -186,7 +186,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Setup & Distributed Init
 
-```diff
+```diff linenums='0'
 - import os, torch.distributed as dist
 - dist.init_process_group(backend="nccl", ...)
 - rank = int(os.environ["RANK"])
@@ -240,44 +240,20 @@ Each `ezpz` component can be used independently — pick only what you need.
 import ezpz
 
 logger = ezpz.get_logger(__name__)
-ezpz.setup_wandb(project_name="my-project")  # optional
-history = ezpz.History()
+history = ezpz.History(
+    project_name="my-project",   # optional
+    backends="wandb",            # or "wandb,csv", or omit for local-only
+)
 
 for step in range(100):
     loss = train_step(...)
-    logger.info(history.update({"step": step, "loss": loss.item()}))
+    logger.info(history.update({"loss": loss.item()}, step=step))
 
 history.finalize(outdir="./outputs")  # saves dataset + plots
 ```
 
-For full details on `History`, see the
-[Metric Tracking guide](./history.md).
-
-## 📊 Track Metrics
-
-Use the built-in `History` class to record, save, and plot training metrics:
-
-```python
-from ezpz.history import History
-
-# Optional: enable W&B logging before creating History
-ezpz.setup_wandb(project_name="my-project")
-
-history = History()
-
-for step in range(100):
-    # ... training loop ...
-    metrics = {"loss": loss.item(), "lr": optimizer.param_groups[0]["lr"]}
-    # update() returns a summary string suitable for logging
-    summary = history.update(metrics)
-    logger.info(summary)  # e.g. "loss=0.123456 lr=0.001000"
-
-history.finalize(outdir="./outputs")  # saves dataset + generates plots
-```
-
 `History` automatically computes distributed statistics (min, max, mean, std)
-across all ranks for every recorded metric — no extra code needed on worker
-ranks.
+across all ranks — no extra code needed on worker ranks.
 
 !!! tip "What `finalize` produces"
 

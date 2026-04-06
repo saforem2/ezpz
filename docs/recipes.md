@@ -60,7 +60,7 @@ Set up FSDP with a single flag change from DDP.
 
 ## W&B Logging
 
-Pair `setup_wandb` with `History` for automatic metric tracking and logging.
+Pass `backends="wandb"` to `History` for automatic metric dispatch to Weights & Biases.
 
 === "`recipe_wandb.py`"
 
@@ -68,15 +68,16 @@ Pair `setup_wandb` with `History` for automatic metric tracking and logging.
     import ezpz
 
     rank = ezpz.setup_torch()
-    if rank == 0:
-        ezpz.setup_wandb(project_name="ezpz-wandb-recipe")
 
-    history = ezpz.History()
+    history = ezpz.History(
+        project_name="ezpz-wandb-recipe",
+        backends="wandb",  # or "wandb,csv" for both
+    )
     num_steps = 10
     for step in range(num_steps):
         loss_val = 1.0 / (step + 1)
         lr_val = 1e-3
-        history.update({"loss": loss_val, "lr": lr_val})
+        history.update({"loss": loss_val, "lr": lr_val}, step=step)
 
     if rank == 0:
         history.finalize(outdir="wandb-recipe-outputs", plot=False)

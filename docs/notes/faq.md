@@ -32,6 +32,52 @@ Use `ezpz doctor` to check your environment. For NCCL issues, set
 `NCCL_DEBUG=INFO`. For XPU issues, check that the correct Intel modules are
 loaded (see Common Issues below).
 
+### When should I use DDP vs FSDP?
+
+**DDP** (Distributed Data Parallel): each rank holds a full copy of the model.
+Use this when the model fits comfortably in one GPU's memory.
+
+**FSDP** (Fully Sharded Data Parallel): parameters are sharded across GPUs.
+Use this when the model is too large for a single GPU, or you want to reduce
+per-GPU memory usage.
+
+FSDP is the default in ezpz — `wrap_model(model)` uses `use_fsdp=True`. On
+CPU and MPS devices, `wrap_model()` automatically falls back to DDP since FSDP
+isn't supported on those backends.
+
+### When should I use FSDP + Tensor Parallelism?
+
+For very large models where FSDP alone isn't enough. Pass
+`tensor_parallel_size` to `setup_torch()` to enable 2D parallelism:
+
+```python
+rank = ezpz.setup_torch(tensor_parallel_size=8)
+```
+
+See [`ezpz.examples.fsdp_tp`](../examples/fsdp-tp.md) for a working example.
+
+### How do I set up distributed data loading?
+
+Use `torch.utils.data.distributed.DistributedSampler` to shard data across
+ranks. Key points:
+
+- Call `sampler.set_epoch(epoch)` before each epoch for correct shuffling
+- Use `drop_last=True` for consistent batch sizes across ranks
+- See `ezpz.data.distributed` for a ready-made factory
+  (`get_random_dataset_fsdp_tp()`) that handles sampler setup and optional
+  tensor-parallel broadcasting
+
+### How do I enable debug logging?
+
+Set these environment variables as needed:
+
+- `EZPZ_LOG_LEVEL=DEBUG` — ezpz internal decisions (device selection, backend choice, hostfile resolution)
+- `NCCL_DEBUG=INFO` — NCCL connection setup and transport selection (use `TRACE` for full collective-level detail)
+- `LOG_FROM_ALL_RANKS=1` — output from every rank, not just rank 0
+
+See [Troubleshooting](../troubleshooting.md) for a step-by-step debugging
+workflow.
+
 ## ⚠️ Common Issues
 
 1. `ImportError: <path-to-kernel.so>: undefined symbol: [...]`
@@ -97,3 +143,37 @@ loaded (see Common Issues below).
      ```
 
      </details>
+
+2. **NCCL timeout on multi-node jobs**
+
+    Symptom: training hangs or crashes with `NCCL timeout` after scaling to
+    multiple nodes.
+
+    This usually means NCCL picked the wrong network interface. Check available
+    interfaces with `ip link show` and set:
+
+    ```bash
+    NCCL_SOCKET_IFNAME=eth0 ezpz launch python3 -m your_app.train
+    ```
+
+    Also verify that `MASTER_ADDR` is reachable from all nodes:
+
+    ```bash
+    echo $MASTER_ADDR
+    ping -c 1 $MASTER_ADDR
+    ```
+
+3. **Training runs on CPU despite GPUs being available**
+
+    Symptom: `setup_torch()` reports `device='cpu'` even though GPUs are
+    present.
+
+    This usually means GPU drivers or modules aren't loaded. Run `ezpz doctor`
+    to diagnose. As a quick workaround, force the device explicitly:
+
+    ```bash
+    TORCH_DEVICE=cuda ezpz launch python3 -m your_app.train
+    ```
+
+    On HPC systems, ensure the correct modules are loaded (e.g.
+    `module load cuda` for NVIDIA, or the appropriate Intel modules for XPU).

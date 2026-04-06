@@ -31,17 +31,17 @@ job scheduler. `ezpz` replaces all of it.
 
 === "With ezpz"
 
-    ```python title="train.py"
+    ``` python title="train.py" linenums='0'
     import ezpz
     import torch
 
     rank = ezpz.setup_torch()           # auto-detects device + backend
     device = ezpz.get_torch_device()
     model = torch.nn.Linear(128, 10).to(device)
-    model = ezpz.wrap_model(model)       # DDP by default
+    model = ezpz.wrap_model(model)       # FSDP (default)
     ```
 
-    ```bash
+    ```bash linenums='0' title='launch.sh'
     # Same command everywhere -- Mac laptop, NVIDIA cluster, Intel Aurora:
     ezpz launch python3 train.py
     ```
@@ -82,7 +82,7 @@ job scheduler. `ezpz` replaces all of it.
     )
     ```
 
-    ```bash
+    ```bash linenums='0'
     # Different launch per {scheduler, cluster}:
     mpiexec -np 8 --ppn 4 python3 train.py      # Polaris    @ ALCF  [NVIDIA / PBS]
     mpiexec -np 24 --ppn 12 python3 train.py    # Aurora     @ ALCF  [INTEL / PBS]
@@ -93,20 +93,26 @@ job scheduler. `ezpz` replaces all of it.
 
 ## 🏃‍♂️ Try it out!
 
-No cluster required — this runs on a laptop:
+No cluster required — this runs on a laptop[^uv]:
 
-```bash
+```bash linenums='0'
 uv pip install "git+https://github.com/saforem2/ezpz"
 ```
 
-```python title="hello.py"
+[^uv]: if you _still_ haven't installed uv:
+
+    ```bash linenums="0"
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+```python title="hello.py" linenums='0'
 import ezpz
 rank = ezpz.setup_torch()
 print(f"Hello from rank {rank} on {ezpz.get_torch_device()}!")
 ezpz.cleanup()
 ```
 
-```bash
+```bash linenums='0'
 python3 hello.py
 # Hello from rank 0 on mps!
 ```
