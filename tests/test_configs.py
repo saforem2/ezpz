@@ -126,3 +126,33 @@ class TestConfigs:
         )
         assert config.model_name_or_path == "test-model"
         assert config.output_dir == "/tmp/test"
+
+
+@pytest.mark.skipif(configs is None, reason="ezpz.configs not available")
+class TestLoadDsConfig:
+    """Tests for load_ds_config covering JSON, YAML, and invalid suffixes."""
+
+    def test_loads_json(self, tmp_path):
+        """load_ds_config successfully loads a .json file."""
+        json_file = tmp_path / "ds_config.json"
+        json_file.write_text('{"key": "value", "num": 42}', encoding="utf-8")
+        result = configs.load_ds_config(json_file)
+        assert isinstance(result, dict)
+        assert result["key"] == "value"
+        assert result["num"] == 42
+
+    def test_loads_yaml(self, tmp_path):
+        """load_ds_config successfully loads a .yaml file."""
+        yaml_file = tmp_path / "ds_config.yaml"
+        yaml_file.write_text("key: value\nnum: 42\n", encoding="utf-8")
+        result = configs.load_ds_config(yaml_file)
+        assert isinstance(result, dict)
+        assert result["key"] == "value"
+        assert result["num"] == 42
+
+    def test_bad_suffix_raises(self, tmp_path):
+        """load_ds_config raises TypeError for unsupported file extensions."""
+        txt_file = tmp_path / "ds_config.txt"
+        txt_file.write_text("key=value", encoding="utf-8")
+        with pytest.raises(TypeError, match="Unexpected FileType"):
+            configs.load_ds_config(txt_file)
