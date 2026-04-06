@@ -1,5 +1,11 @@
 # Train Diffusion LLM with FSDP on HF Datasets
 
+This example trains a text diffusion model (DDPM) with FSDP on HuggingFace
+datasets. Use this when you want to see how ezpz handles generative model
+training — it covers the full diffusion pipeline including noise scheduling,
+forward/reverse processes, and vocabulary management, all distributed across
+multiple GPUs.
+
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training

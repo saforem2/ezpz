@@ -1,8 +1,11 @@
 # Fine-Tune a Causal LM (HuggingFace + Accelerate)
 
-Fine-tune a HuggingFace causal language model with an explicit training loop.
-Uses Accelerate for distributed training and ezpz for setup, metrics, and
-W&B integration.
+Use this example when you want to fine-tune a pretrained HuggingFace language
+model with full control over the training loop. Unlike the `hf_trainer`
+example which uses the HF Trainer abstraction, this writes the loop
+explicitly — giving you control over gradient accumulation, custom
+evaluation, and learning rate scheduling while still using Accelerate for
+distributed coordination and ezpz for setup and metrics.
 
 !!! info "Key API Functions"
 
