@@ -52,10 +52,13 @@ class TestParseArgs:
         assert args.overwrite is True
         assert args.worker is True
 
-    def test_missing_required_src(self):
+    def test_missing_required_src(self, capsys):
         """Raises SystemExit when --src is missing."""
         with pytest.raises(SystemExit):
             yeet.parse_args([])
+        # argparse prints usage to stderr — just verify it was captured
+        captured = capsys.readouterr()
+        assert "--src" in captured.err
 
 
 # ===================================================================
