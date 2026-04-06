@@ -266,13 +266,15 @@ def tplot_dict(
     plotext.theme("clear")  # pyright[ReportUnknownMemberType]
     w, h = _clamp_size(*figsize)
     plotext.plot_size(w, h)
-    plotext.plot(list(data.values()))
+    for key, vals in data.items():
+        plotext.plot(np.asarray(vals).tolist(), label=key)
     if ylabel is not None:
         plotext.ylabel(ylabel)
     if xlabel is not None:
         plotext.xlabel(xlabel)
     if title is not None:
         plotext.title(title)
+    print()  # ensure plot starts on a new line
     plotext.show()
     if outfile is not None:
         logger.info(f"Appending plot to: {outfile}")
@@ -313,7 +315,12 @@ def tplot(
         y = torch.stack(y).numpy()
     if x is not None and isinstance(x, list):
         x = torch.stack(x).numpy()
-    assert isinstance(y, (np.ndarray, torch.Tensor))
+    # Convert xarray DataArray to numpy
+    if hasattr(y, "values") and hasattr(y, "dims"):
+        y = y.values
+    if isinstance(y, torch.Tensor):
+        y = y.numpy()
+    assert isinstance(y, np.ndarray), f"Expected ndarray, got {type(y)}"
     y = np.nan_to_num(y, nan=0.0)
 
     figsize = (60, 20) if figsize is None else figsize
@@ -375,6 +382,7 @@ def tplot(
         if x is not None:
             assert len(x.shape) == 1
             plotext.xticks(x.tolist())
+    print()  # ensure plot starts on a new line
     plotext.show()
     if outfile is not None:
         if verbose:
