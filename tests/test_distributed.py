@@ -60,8 +60,15 @@ def _reset_mpi_singleton():
 
 
 @pytest.fixture()
-def fake_comm():
+def fake_comm(monkeypatch):
     """Inject a ``_FakeComm`` as the cached MPI communicator."""
+    for var in (
+        "WORLD_SIZE", "PMI_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS",
+        "RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID",
+        "LOCAL_RANK", "PMI_LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK",
+        "MPI_LOCALRANKID", "MPICH_LOCALRANKID", "SLURM_LOCAL_ID",
+    ):
+        monkeypatch.delenv(var, raising=False)
     comm = _FakeComm(rank=0, size=4)
     dist._MPI_COMM = comm
     return comm
@@ -258,6 +265,10 @@ class TestGetLocalRank:
             "PMI_RANK",
             "OMPI_COMM_WORLD_RANK",
             "SLURM_PROCID",
+            "WORLD_SIZE",
+            "PMI_SIZE",
+            "OMPI_COMM_WORLD_SIZE",
+            "SLURM_NTASKS",
         ):
             monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv("NGPU_PER_HOST", "4")

@@ -5,8 +5,9 @@ from __future__ import annotations
 import csv
 import json
 import os
+import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -174,6 +175,26 @@ class TestCSVBackend:
         CSVBackend(outdir=nested, rank=1)
         assert not nested.exists()
 
+    def test_commit_false_defers_flush(self, tmp_path: Path):
+        """commit=False buffers rows without writing until commit=True."""
+        backend = CSVBackend(outdir=tmp_path, rank=0)
+        backend.log({"loss": 0.5}, commit=False)
+        backend.log({"loss": 0.3}, commit=False)
+        assert not (tmp_path / "metrics.csv").exists()
+        backend.log({"loss": 0.1}, commit=True)
+        rows = list(csv.DictReader((tmp_path / "metrics.csv").open()))
+        assert len(rows) == 3
+
+    def test_finish_flushes_uncommitted(self, tmp_path: Path):
+        """finish() writes rows that were buffered with commit=False."""
+        backend = CSVBackend(outdir=tmp_path, rank=0)
+        backend.log({"loss": 0.5}, commit=False)
+        backend.log({"loss": 0.3}, commit=False)
+        assert not (tmp_path / "metrics.csv").exists()
+        backend.finish()
+        rows = list(csv.DictReader((tmp_path / "metrics.csv").open()))
+        assert len(rows) == 2
+
 
 # ── WandbBackend rank-gating ────────────────────────────────────────────────
 
@@ -203,6 +224,102 @@ class TestWandbBackendRankGating:
         assert backend._run is not None or True  # should not raise
 
 
+# ── WandbBackend behavior (mocked wandb) ────────────────────────────────────
+
+
+class TestWandbBackendBehavior:
+    """Verify WandbBackend delegates correctly to the wandb API."""
+
+    @pytest.fixture()
+    def mock_wandb(self):
+        """Fully mocked wandb module."""
+        wandb = MagicMock()
+        wandb.init.return_value = MagicMock()
+        return wandb
+
+    @pytest.fixture()
+    def backend(self, mock_wandb, monkeypatch):
+        """WandbBackend wired to the mocked wandb module."""
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        return WandbBackend(rank=0)
+
+    def test_run_property(self, backend, mock_wandb):
+        assert backend.run is mock_wandb.init.return_value
+
+    def test_log_delegates_with_step(self, backend, mock_wandb):
+        backend.log({"loss": 0.5}, step=1)
+        mock_wandb.log.assert_called_once_with(
+            {"loss": 0.5}, commit=True, step=1
+        )
+
+    def test_log_omits_step_when_none(self, backend, mock_wandb):
+        backend.log({"loss": 0.5})
+        mock_wandb.log.assert_called_once_with({"loss": 0.5}, commit=True)
+
+    def test_log_commit_false(self, backend, mock_wandb):
+        backend.log({"x": 1}, commit=False)
+        mock_wandb.log.assert_called_once_with({"x": 1}, commit=False)
+
+    def test_log_config_updates_run(self, backend):
+        backend.log_config({"lr": 1e-4})
+        backend._run.config.update.assert_called_with({"lr": 1e-4})
+
+    def test_finish_calls_wandb_finish(self, backend, mock_wandb):
+        backend.finish()
+        mock_wandb.finish.assert_called_once()
+
+    def test_log_table_creates_table(self, backend, mock_wandb):
+        backend.log_table("data", ["a", "b"], [[1, 2]])
+        mock_wandb.Table.assert_called_once_with(
+            columns=["a", "b"], data=[[1, 2]]
+        )
+        mock_wandb.log.assert_called_once()
+
+    def test_log_image_creates_image(self, backend, mock_wandb):
+        backend.log_image("plot", "/tmp/img.png", caption="test")
+        mock_wandb.Image.assert_called_once_with(
+            "/tmp/img.png", caption="test"
+        )
+        mock_wandb.log.assert_called_once()
+
+    def test_watch_delegates_to_run(self, backend):
+        model = MagicMock()
+        backend.watch(model, log="all")
+        backend._run.watch.assert_called_once_with(model, log="all")
+
+    def test_init_failure_all_methods_noop(self, mock_wandb, monkeypatch):
+        """wandb.init() failure ⇒ _run is None ⇒ all methods are silent."""
+        mock_wandb.init.side_effect = RuntimeError("boom")
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        backend = WandbBackend(rank=0)
+        assert backend._run is None
+        # None of these should raise
+        backend.log({"x": 1})
+        backend.log_config({"y": 2})
+        backend.log_table("t", ["a"], [[1]])
+        backend.log_image("i", "/tmp/img.png")
+        backend.watch(MagicMock())
+        backend.finish()
+
+    def test_system_info_in_config(self, backend):
+        """torch_version and ezpz_version injected into run config."""
+        update_calls = backend._run.config.update.call_args_list
+        all_keys: set[str] = set()
+        for call in update_calls:
+            if call.args:
+                all_keys.update(call.args[0].keys())
+        assert "torch_version" in all_keys
+        assert "ezpz_version" in all_keys
+
+    def test_init_config_applied(self, mock_wandb, monkeypatch):
+        """Explicit config dict is applied to the run."""
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        backend = WandbBackend(config={"lr": 0.01}, rank=0)
+        update_calls = backend._run.config.update.call_args_list
+        configs = [c.args[0] for c in update_calls if c.args]
+        assert {"lr": 0.01} in configs
+
+
 # ── Tracker multiplexer ──────────────────────────────────────────────────────
 
 
@@ -214,6 +331,9 @@ class _FakeBackend(TrackerBackend):
     def __init__(self):
         self.logs: list[dict] = []
         self.configs: list[dict] = []
+        self.tables: list[dict] = []
+        self.images: list[dict] = []
+        self.watches: list[dict] = []
         self.finished = False
 
     def log(self, metrics, step=None, commit=True):
@@ -221,6 +341,15 @@ class _FakeBackend(TrackerBackend):
 
     def log_config(self, config):
         self.configs.append(config)
+
+    def log_table(self, key, columns, data):
+        self.tables.append({"key": key, "columns": columns, "data": data})
+
+    def log_image(self, key, image_path, caption=None):
+        self.images.append({"key": key, "path": image_path, "caption": caption})
+
+    def watch(self, model, **kwargs):
+        self.watches.append({"model": model, **kwargs})
 
     def finish(self):
         self.finished = True
@@ -236,6 +365,15 @@ class _FailingBackend(TrackerBackend):
 
     def log_config(self, config):
         raise RuntimeError("log_config failed")
+
+    def log_table(self, key, columns, data):
+        raise RuntimeError("log_table failed")
+
+    def log_image(self, key, image_path, caption=None):
+        raise RuntimeError("log_image failed")
+
+    def watch(self, model, **kwargs):
+        raise RuntimeError("watch failed")
 
     def finish(self):
         raise RuntimeError("finish failed")
@@ -285,6 +423,50 @@ class TestTracker:
     def test_wandb_run_without_wandb_backend(self):
         tracker = Tracker([_FakeBackend()])
         assert tracker.wandb_run is None
+
+    def test_log_table_fans_out(self):
+        b1, b2 = _FakeBackend(), _FakeBackend()
+        tracker = Tracker([b1, b2])
+        tracker.log_table("data", ["a", "b"], [[1, 2]])
+        assert len(b1.tables) == 1
+        assert b1.tables[0]["key"] == "data"
+        assert len(b2.tables) == 1
+
+    def test_log_image_fans_out(self):
+        b1, b2 = _FakeBackend(), _FakeBackend()
+        tracker = Tracker([b1, b2])
+        tracker.log_image("plot", "/tmp/img.png", caption="test")
+        assert len(b1.images) == 1
+        assert b1.images[0]["caption"] == "test"
+        assert len(b2.images) == 1
+
+    def test_watch_fans_out(self):
+        b1, b2 = _FakeBackend(), _FakeBackend()
+        tracker = Tracker([b1, b2])
+        model = object()
+        tracker.watch(model, log="all")
+        assert len(b1.watches) == 1
+        assert b1.watches[0]["model"] is model
+        assert b1.watches[0]["log"] == "all"
+        assert len(b2.watches) == 1
+
+    def test_catches_log_table_exception(self):
+        good = _FakeBackend()
+        tracker = Tracker([_FailingBackend(), good])
+        tracker.log_table("t", ["a"], [[1]])
+        assert len(good.tables) == 1
+
+    def test_catches_log_image_exception(self):
+        good = _FakeBackend()
+        tracker = Tracker([_FailingBackend(), good])
+        tracker.log_image("i", "/tmp/img.png")
+        assert len(good.images) == 1
+
+    def test_catches_watch_exception(self):
+        good = _FakeBackend()
+        tracker = Tracker([_FailingBackend(), good])
+        tracker.watch(object())
+        assert len(good.watches) == 1
 
 
 # ── setup_tracker factory ────────────────────────────────────────────────────
@@ -362,3 +544,34 @@ class TestRegistration:
             # Clean up registry
             from ezpz.tracker import _BACKEND_REGISTRY
             _BACKEND_REGISTRY.pop("my", None)
+
+
+# ── Full lifecycle ──────────────────────────────────────────────────────────
+
+
+class TestFullLifecycle:
+    def test_csv_init_log_finish(self, tmp_path: Path):
+        """End-to-end: init → config → log N steps → table → finish."""
+        tracker = setup_tracker(
+            backends="csv", outdir=tmp_path, config={"lr": 0.01}
+        )
+        for step in range(5):
+            tracker.log({"loss": 1.0 / (step + 1)}, step=step)
+        tracker.log_table(
+            "predictions", ["input", "output"], [[1, 2], [3, 4]]
+        )
+        tracker.finish()
+
+        # metrics.csv has 5 rows
+        rows = list(csv.DictReader((tmp_path / "metrics.csv").open()))
+        assert len(rows) == 5
+        assert rows[0]["loss"] == "1.0"
+        assert rows[0]["step"] == "0"
+
+        # config.json has lr
+        config = json.loads((tmp_path / "config.json").read_text())
+        assert config["lr"] == 0.01
+
+        # predictions.csv exists with 2 data rows + header
+        lines = (tmp_path / "predictions.csv").read_text().strip().splitlines()
+        assert len(lines) == 3  # header + 2 data rows
