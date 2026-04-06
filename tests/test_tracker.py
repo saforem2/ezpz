@@ -405,10 +405,18 @@ class TestTracker:
         good = _FakeBackend()
         bad = _FailingBackend()
         tracker = Tracker([bad, good])
-        # Should not raise; bad backend's error is logged as warning
-        tracker.log({"loss": 0.5})
-        tracker.log_config({"lr": 1e-4})
-        tracker.finish()
+        # Suppress the warning output from the tracker logger
+        import logging
+
+        tracker_logger = logging.getLogger("ezpz.tracker")
+        prev_level = tracker_logger.level
+        tracker_logger.setLevel(logging.CRITICAL)
+        try:
+            tracker.log({"loss": 0.5})
+            tracker.log_config({"lr": 1e-4})
+            tracker.finish()
+        finally:
+            tracker_logger.setLevel(prev_level)
         # Good backend still received the calls
         assert len(good.logs) == 1
         assert len(good.configs) == 1
@@ -489,8 +497,15 @@ class TestSetupTracker:
         assert (tmp_path / "metrics.csv").exists()
 
     def test_unknown_backend_warns(self):
-        tracker = setup_tracker(backends="nonexistent_xyz")
-        # Should return NullTracker since no backends activated
+        import logging
+
+        tracker_logger = logging.getLogger("ezpz.tracker")
+        prev_level = tracker_logger.level
+        tracker_logger.setLevel(logging.CRITICAL)
+        try:
+            tracker = setup_tracker(backends="nonexistent_xyz")
+        finally:
+            tracker_logger.setLevel(prev_level)
         assert isinstance(tracker, NullTracker)
 
     @patch.dict(os.environ, {"WANDB_MODE": "disabled"})
@@ -503,8 +518,16 @@ class TestSetupTracker:
         assert tracker.get_backend("csv") is not None
 
     def test_comma_separated_string(self, tmp_path: Path):
-        tracker = setup_tracker(backends="csv,none_xyz", outdir=tmp_path)
-        # csv should activate, none_xyz should warn and be skipped
+        import logging
+
+        tracker_logger = logging.getLogger("ezpz.tracker")
+        prev_level = tracker_logger.level
+        tracker_logger.setLevel(logging.CRITICAL)
+        try:
+            tracker = setup_tracker(backends="csv,none_xyz", outdir=tmp_path)
+        finally:
+            tracker_logger.setLevel(prev_level)
+        # csv should activate, none_xyz should be skipped
         assert tracker.get_backend("csv") is not None
 
     @patch.dict(os.environ, {"EZPZ_TRACKER_BACKENDS": "csv"})

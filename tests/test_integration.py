@@ -1,60 +1,51 @@
 """Integration tests for ezpz core functionality."""
 
 import os
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
-def test_import_structure():
-    """Test that the basic import structure works."""
-    # This test just verifies that we can import the main modules
-    # without immediate errors, even if they don't work fully
-
-    # Test basic imports that should always work
-    import ezpz
-
-    assert hasattr(ezpz, "__version__")
-
-    # Test that we can import submodules
+def test_submodule_imports():
+    """Core submodules should be importable."""
     import ezpz.configs
     import ezpz.lazy
     import ezpz.utils
 
-    # Verify the imports worked
-    assert ezpz.configs is not None
-    assert ezpz.utils is not None
-    assert ezpz.lazy is not None
+    # Verify they're real modules, not None stubs
+    assert hasattr(ezpz.configs, "get_logging_config")
+    assert hasattr(ezpz.utils, "get_timestamp")
+    assert hasattr(ezpz.lazy, "lazy_import")
 
 
-def test_version_access():
-    """Test that version information is accessible."""
+def test_version_is_consistent():
+    """Version from __about__ should match the top-level __version__."""
+    import ezpz
+    from ezpz.__about__ import __version__ as about_version
+
+    assert ezpz.__version__ == about_version
+
+
+def test_conftest_disables_wandb():
+    """conftest should set WANDB_MODE=disabled for test isolation."""
+    assert os.environ.get("WANDB_MODE") == "disabled"
+
+
+def test_logging_config_structure():
+    """get_logging_config should return a valid dictConfig dict."""
+    from ezpz.configs import get_logging_config
+
+    config = get_logging_config(rank=0)
+    assert isinstance(config, dict)
+    assert "handlers" in config
+    assert "root" in config or "loggers" in config
+
+
+def test_rank_functions_return_ints():
+    """Rank helpers should return non-negative integers."""
     import ezpz
 
-    assert isinstance(ezpz.__version__, str)
-    assert len(ezpz.__version__) > 0
+    rank = ezpz.get_rank()
+    local_rank = ezpz.get_local_rank()
+    world_size = ezpz.get_world_size()
 
-
-def test_logger_creation():
-    """Test that logger creation works."""
-    import ezpz
-
-    logger = ezpz.get_logger("test")
-    assert logger is not None
-    assert hasattr(logger, "info")
-    assert hasattr(logger, "error")
-    assert hasattr(logger, "debug")
-
-
-class TestEnvironmentVariables:
-    """Test environment variable handling."""
-
-    def test_wandb_disabled(self):
-        """Test that WANDB_MODE is set to disabled."""
-        assert os.environ.get("WANDB_MODE") == "disabled"
-
-    def test_log_level_set(self):
-        """Test that EZPZ_LOG_LEVEL is set."""
-        assert os.environ.get("EZPZ_LOG_LEVEL") is not None
+    assert isinstance(rank, int) and rank >= 0
+    assert isinstance(local_rank, int) and local_rank >= 0
+    assert isinstance(world_size, int) and world_size >= 1
