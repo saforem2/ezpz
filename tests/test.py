@@ -49,10 +49,7 @@ class TestDist:
             assert dist.get_torch_device() == "cpu"
             assert str(torch.get_default_device()) == "cpu"
         finally:
-            try:
-                torch.set_default_device(previous_device)
-            except Exception:
-                torch.set_default_device("cpu")
+            torch.set_default_device(previous_device or "cpu")
 
     def test_seed_everything(self):
         """Test seed_everything function."""

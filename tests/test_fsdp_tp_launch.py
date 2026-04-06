@@ -18,7 +18,7 @@ def test_fsdp_tp_launch_tp_random_smoke():
     # hostfile = os.environ.get("EZPZ_HOSTFILE") or os.environ.get("HOSTFILE")
     # if not hostfile:
     #     pytest.skip("Set EZPZ_HOSTFILE or HOSTFILE for ezpz launch test.")
-    hostfile = Path(os.getcwd()).joinpath('hostfile-localhost')
+    hostfile = Path(os.getcwd()).joinpath("hostfile-localhost")
     ezpz.distributed.write_localhost_to_hostfile(hostfile)
 
     cmd = [

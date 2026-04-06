@@ -1,5 +1,6 @@
 """Configuration file for pytest."""
 
+import logging
 import os
 import shutil
 import sys
@@ -13,7 +14,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Set environment variables for testing
 os.environ["WANDB_MODE"] = "disabled"
-os.environ["EZPZ_LOG_LEVEL"] = "ERROR"
+os.environ["EZPZ_LOG_LEVEL"] = "CRITICAL"
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _suppress_ezpz_loggers():
+    """Silence all ezpz loggers during tests to keep output clean.
+
+    Tests that need to verify log output should use caplog or
+    temporarily lower the level on the specific logger they need.
+    """
+    # Suppress the root ezpz logger and all children
+    for name in ("ezpz", "ezpz.tracker", "ezpz.launch", "ezpz.history"):
+        logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
 @pytest.fixture
