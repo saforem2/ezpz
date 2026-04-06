@@ -46,40 +46,107 @@
 
 ## Environment Variables
 
-| Environment Variable                         | Purpose / how it's used                                                          |
-| -------------------------------------------- | :------------------------------------------------------------------------------- |
-| TORCH_DEVICE                                 | Force device selection (cpu, cuda, mps, xpu) when picking the torch device.      |
-| TORCH_BACKEND                                | Override distributed backend (nccl, gloo, mpi, xccl, ccl).                       |
-| TORCH_DDP_TIMEOUT                            | Adjust DDP init timeout (seconds) for slow launches.                             |
-| MASTER_ADDR                                  | Manually set rendezvous address if auto-detection is wrong/unreachable.          |
-| MASTER_PORT                                  | Manually set rendezvous port for distributed init.                               |
-| HOSTFILE                                     | Point ezpz at a specific hostfile when scheduler defaults are missing/incorrect. |
-| NO_COLOR / NOCOLOR / COLOR / COLORTERM       | Enable/disable colored output to suit terminals or log sinks.                    |
-| EZPZ_LOG_LEVEL                               | Set ezpz logging verbosity.                                                      |
-| LOG_LEVEL                                    | General log level for various modules.                                           |
-| LOG_FROM_ALL_RANKS                           | Allow logs from all ranks (not just rank 0).                                     |
-| EZPZ_LOG_FROM_ALL_RANKS                      | Alias for `LOG_FROM_ALL_RANKS` (supported fallback).                             |
-| PYTHONHASHSEED                               | Fix Python hash seed for reproducibility.                                        |
-| EZPZ_TRACKER_BACKENDS                        | Comma-separated tracker backends (e.g. `wandb,csv`). Defaults to `wandb`.        |
-| WANDB_DISABLED                               | Disable Weights & Biases logging.                                                |
-| WANDB_MODE                                   | Set W&B mode (online, offline, dryrun).                                          |
-| WANDB_PROJECT / WB_PROJECT / WB_PROJECT_NAME | Set project name for W&B runs.                                                   |
-| WANDB_API_KEY                                | Supply W&B API key for authentication.                                           |
-| EZPZ_LOCAL_HISTORY                           | Control local history storage/enablement.                                        |
-| EZPZ_NO_DISTRIBUTED_HISTORY                  | Disable distributed history aggregation.                                         |
-| EZPZ_TPLOT_TYPE                              | Select timeline plot type.                                                       |
-| EZPZ_TPLOT_MARKER                            | Marker style for timeline plots.                                                 |
-| EZPZ_TPLOT_MAX_HEIGHT                        | Max height for timeline plots.                                                   |
-| EZPZ_TPLOT_MAX_WIDTH                         | Max width for timeline plots.                                                    |
-| EZPZ_TPLOT_RAW_MARKER                        | Marker for raw timeline data.                                                    |
-| CPU_BIND                                     | Override default CPU binding for PBS launch commands (advanced).                 |
-| EZPZ_ATTENTION_FP32                          | Force FP32 attention in LLaMA models.                                            |
-| EZPZ_DEBUG_NAN                               | Enable NaN debugging in model forward pass.                                      |
-| EZPZ_RUN_COMMAND                             | Stores the command being executed (set by launcher).                             |
-| EZPZ_VERSION                                 | Auto-set to package version at import time.                                      |
-| EZPZ_JOB_NAME                                | Job name for logging purposes.                                                   |
-| EZPZ_LOG_TIMESTAMP                           | Timestamp for logging context.                                                   |
-| EZPZ_JSON_LOG_JOB_NAME                       | Job name for JSON log handler.                                                   |
-| PYINSTRUMENT_PROFILER                         | Enable pyinstrument profiling (set to "1").                                      |
-| MAKE_TARBALL                                  | Trigger tarball creation in yeet-env.                                            |
-| HYDRA_JOB_NAME                               | Hydra job name (used as fallback).                                               |
+### Device & Distribution
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `TORCH_DEVICE` | Force device selection instead of auto-detection. | `cpu`, `cuda`, `mps`, `xpu`. Auto-detected. |
+| `TORCH_BACKEND` | Override distributed backend. | `nccl`, `gloo`, `mpi`, `xccl`, `ccl`. Auto-detected. |
+| `TORCH_DDP_TIMEOUT` | DDP init timeout for slow launches. | Seconds. Default: `3600`. |
+| `MASTER_ADDR` | Rendezvous address for distributed init. | Hostname/IP. Auto-detected from scheduler. |
+| `MASTER_PORT` | Rendezvous port for distributed init. | Port number. Auto-detected (picks a free port). |
+| `HOSTFILE` | Path to hostfile when scheduler defaults are missing. | File path. Auto-created from PBS/SLURM. |
+
+### Logging
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `NO_COLOR` / `NOCOLOR` / `COLOR` / `COLORTERM` | Enable/disable colored output to suit terminals or log sinks. | Set `NO_COLOR=1` to disable. |
+| `EZPZ_LOG_LEVEL` | Set ezpz logging verbosity. | `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default: `INFO`. |
+| `LOG_LEVEL` | General log level for various modules. | Same as above. |
+| `LOG_FROM_ALL_RANKS` | Allow logs from all ranks (not just rank 0). | Set to `1` to enable. Default: rank 0 only. |
+| `EZPZ_LOG_FROM_ALL_RANKS` | Alias for `LOG_FROM_ALL_RANKS`. | Same as above. |
+
+### Log Formatting
+
+#### Prefix Style Presets
+
+Set `EZPZ_LOG_PREFIX_STYLE` to apply a preset. Individual `EZPZ_LOG_*` vars
+still override after the preset is applied.
+
+| Style | Output | Description |
+|-------|--------|-------------|
+| `full` | `[2026-04-04 21:04][I][ezpz/launch:601.run] msg` | Default — all components, full brackets |
+| `minimal` | `I ezpz/launch:601.run -- msg` | Level + path, no time, no brackets |
+| `time` | `21:04:13 I -- msg` | Time + level, no path, no brackets |
+| `plain` | `2026-04-04 21:04 I ezpz/launch:601.run -- msg` | All components, no brackets, no color |
+| `none` | `msg` | No prefix at all |
+
+#### Individual Options
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `EZPZ_LOG_PREFIX_STYLE` | Apply a preset that configures multiple options at once (see table above). Individual vars override. | `full` (default), `minimal`, `time`, `plain`, `none`. |
+| `EZPZ_LOG_USE_BRACKETS` | Wrap each prefix component in brackets: `[time][level][path]`. | `1` (default) / `0`. |
+| `EZPZ_LOG_USE_SINGLE_BRACKET` | Wrap all prefix components in one bracket: `[time level path]`. Only applies when `EZPZ_LOG_USE_BRACKETS=0`. | `0` (default) / `1`. |
+| `EZPZ_LOG_USE_COLORED_PREFIX` | Colorize the log prefix (time, level, path). Message content is unaffected. | `1` (default) / `0`. |
+| `EZPZ_LOG_SHOW_TIME` | Show timestamp in log output. | `1` (default) / `0`. |
+| `EZPZ_LOG_SHOW_LEVEL` | Show log level (`I`, `W`, `E`, etc.) in log output. | `1` (default) / `0`. |
+| `EZPZ_LOG_SHOW_PATH` | Show module/file path in log output. | `1` (default) / `0`. |
+| `EZPZ_LOG_RANK` | Show rank number in log output. | `0` (default) / `1`. |
+| `EZPZ_LOG_ENABLE_LINK_PATH` | Make file paths clickable links (terminal support required). | `0` (default) / `1`. |
+| `EZPZ_LOG_TIME_FORMAT` | Override the timestamp format string. | `strftime` format. Default: `%Y-%m-%d %H:%M:%S`. |
+| `EZPZ_LOG_TIME_DETAILED` | Use microsecond-precision timestamps. | `0` (default) / `1`. |
+| `EZPZ_LOG_DAY_SEPARATOR` | Separator between year/month/day in timestamps. | Default: `-`. |
+| `EZPZ_LOG_DAY_TIME_SEPARATOR` | Separator between date and time in timestamps. | Default: ` ` (space). |
+
+### Experiment Tracking
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `EZPZ_TRACKER_BACKENDS` | Comma-separated tracker backends. | e.g. `wandb,csv`. Default: `wandb`. |
+| `WANDB_DISABLED` | Disable Weights & Biases logging. | Set to `1` to disable. |
+| `WANDB_MODE` | Set W&B mode. | `online`, `offline`, `dryrun`. |
+| `WANDB_PROJECT` / `WB_PROJECT` / `WB_PROJECT_NAME` | Set project name for W&B runs. | String (aliases for the same setting). |
+| `WANDB_API_KEY` | Supply W&B API key for authentication. | API key string. |
+| `EZPZ_LOCAL_HISTORY` | Enable local-only history (skip distributed aggregation). | Set to any truthy value (e.g. `1`). |
+| `EZPZ_NO_DISTRIBUTED_HISTORY` | Disable distributed history aggregation. | Set to any truthy value. Auto-enabled at 384+ ranks. |
+
+### Plotting
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `EZPZ_TPLOT_TYPE` | Select timeline plot type. | Plot type string. |
+| `EZPZ_TPLOT_MARKER` | Marker style for terminal plots. | `braille` (highest resolution), `fhd` (more compatible). |
+| `EZPZ_TPLOT_MAX_HEIGHT` | Max height (rows) for terminal plots. | Integer. Auto-scales to terminal height. |
+| `EZPZ_TPLOT_MAX_WIDTH` | Max width (columns) for terminal plots. | Integer. Auto-scales to terminal width. |
+| `EZPZ_TPLOT_RAW_MARKER` | Marker for raw timeline data points. | Same values as `EZPZ_TPLOT_MARKER`. |
+
+### Model & Debug
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `EZPZ_ATTENTION_FP32` | Force FP32 attention in LLaMA models. | Set to `1` to enable. |
+| `EZPZ_DEBUG_NAN` | Enable NaN debugging in model forward pass. | Set to `1` to enable. |
+| `PYINSTRUMENT_PROFILER` | Enable pyinstrument profiling. | Set to `1` to enable. |
+
+### Launcher & Jobs
+
+| Variable | Purpose | Values / Default |
+|----------|---------|-----------------|
+| `CPU_BIND` | CPU binding strategy for MPI process pinning. | `depth` (with `--depth=N`), or `list:core_ranges` (e.g. `list:2-4:10-12`). Machine-specific defaults set automatically. |
+| `EZPZ_RUN_COMMAND` | The command being executed (set by launcher, read-only). | Auto-set. |
+| `EZPZ_JOB_NAME` | Job name for logging. | String. Falls back to scheduler job name. |
+| `EZPZ_LOG_TIMESTAMP` | Timestamp for logging context. | Auto-set. |
+| `EZPZ_JSON_LOG_JOB_NAME` | Job name for JSON log handler. | String. |
+| `HYDRA_JOB_NAME` | Hydra job name (used as fallback for `EZPZ_JOB_NAME`). | String. |
+
+### Auto-set / Read-only
+
+These are set automatically and don't typically need to be configured by users.
+
+| Variable | Purpose |
+|----------|---------|
+| `EZPZ_VERSION` | Auto-set to package version at import time. |
+| `PYTHONHASHSEED` | Fix Python hash seed for reproducibility. |
+| `MAKE_TARBALL` | Trigger tarball creation in `ezpz yeet-env`. |
