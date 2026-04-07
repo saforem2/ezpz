@@ -584,13 +584,14 @@ def cleanup() -> None:
     """Destroy the ``torch.distributed`` process group if active."""
     import torch.distributed
 
-    try:
-        import wandb  # noqa: F811
+    if get_rank() == 0 and verify_wandb():
+        try:
+            import wandb  # noqa: F811
 
-        if wandb.run is not None:
-            logger.info("wandb.run=[%s](%s)", wandb.run.name, wandb.run.url)
-    except Exception:
-        pass
+            if wandb.run is not None and not getattr(wandb.run, "disabled", False):
+                logger.info("wandb.run=[%s](%s)", wandb.run.name, wandb.run.url)
+        except Exception:
+            pass
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()
 
