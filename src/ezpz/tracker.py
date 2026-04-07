@@ -40,13 +40,6 @@ __all__ = [
 ]
 
 
-def _get_timestamp() -> str:
-    """Return an ISO-format timestamp for the current moment."""
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _default_project_name() -> str:
     """Derive a project name from the running script, e.g. ``ezpz.examples.fsdp``.
 
@@ -485,6 +478,14 @@ class MLflowBackend(TrackerBackend):
             _experiment = _default_project_name()
 
         try:
+            # Log CPU/GPU/memory usage as system/* metrics.
+            # Only enable when using native auth (MLFLOW_TRACKING_TOKEN),
+            # not the X-API-Key patch which the background thread may bypass.
+            if os.environ.get("MLFLOW_TRACKING_TOKEN"):
+                try:
+                    mlflow.enable_system_metrics_logging()
+                except Exception:
+                    pass  # psutil or nvidia-ml-py not installed
             mlflow.set_experiment(_experiment)
             self._run = mlflow.start_run(**kwargs)
             self._active = True
@@ -618,6 +619,25 @@ class MLflowBackend(TrackerBackend):
                 get_world_size,
             )
 
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+
+            # Git branch (best-effort)
+            git_branch = ""
+            try:
+                import subprocess
+
+                git_branch = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    ).strip()
+                )
+            except Exception:
+                pass
+
             params: dict[str, Any] = {
                 "ezpz": {
                     "version": ezpz.__version__,
@@ -630,10 +650,15 @@ class MLflowBackend(TrackerBackend):
                     "rank": get_rank(),
                     "local_rank": get_local_rank(),
                     "working_directory": os.getcwd(),
-                    "timestamp": _get_timestamp(),
+                    "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "date": now.strftime("%Y-%m-%d"),
+                    "year": now.strftime("%Y"),
+                    "month": now.strftime("%m"),
+                    "day": now.strftime("%d"),
                     "python_version": sys.version.split()[0],
                     "torch_version": torch.__version__,
                     "command": " ".join(sys.argv),
+                    "git_branch": git_branch,
                 },
             }
             self._mlflow.log_params(self._flatten(params))

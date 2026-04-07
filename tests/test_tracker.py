@@ -453,8 +453,13 @@ class TestMLflowBackendBehavior:
         assert "ezpz.backend" in system_params
         assert "ezpz.world_size" in system_params
         assert "ezpz.timestamp" in system_params
+        assert "ezpz.date" in system_params
+        assert "ezpz.year" in system_params
+        assert "ezpz.month" in system_params
+        assert "ezpz.day" in system_params
         assert "ezpz.python_version" in system_params
         assert "ezpz.command" in system_params
+        assert "ezpz.git_branch" in system_params
 
     def test_nested_config_flattened(self, backend, mock_mlflow):
         """Nested config dicts are flattened with dot-separated keys."""
