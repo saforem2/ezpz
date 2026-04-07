@@ -31,12 +31,37 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CSVBackend",
+    "MLflowBackend",
     "NullTracker",
     "Tracker",
     "TrackerBackend",
     "WandbBackend",
     "setup_tracker",
 ]
+
+
+def _get_timestamp() -> str:
+    """Return an ISO-format timestamp for the current moment."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _default_project_name() -> str:
+    """Derive a project name from the running script, e.g. ``ezpz.examples.fsdp``.
+
+    Falls back to ``"ezpz"`` when ``__main__`` has no file path.
+    """
+    import sys
+
+    main = sys.modules.get("__main__")
+    if main is None:
+        return "ezpz"
+    fpath = getattr(main, "__file__", None)
+    if fpath is None:
+        return "ezpz"
+    fp = Path(fpath)
+    return f"ezpz.{fp.parent.stem}.{fp.stem}"
 
 
 # ── Backend ABC ──────────────────────────────────────────────────────────────
@@ -94,6 +119,9 @@ class TrackerBackend(ABC):
     ) -> None:
         """Log an image asset.  No-op unless overridden."""
 
+    def log_artifacts(self, paths: dict[str, str]) -> None:
+        """Upload local files as run artifacts.  No-op unless overridden."""
+
     def watch(self, model: Any, **kwargs: Any) -> None:
         """Attach gradient/parameter tracking to a model.  No-op unless overridden."""
 
@@ -132,11 +160,12 @@ class WandbBackend(TrackerBackend):
         if rank is None:
             try:
                 from ezpz.distributed import get_rank
+
                 rank = get_rank()
             except Exception:
                 rank = 0
 
-        # Resolve project name from args / env
+        # Resolve project name from args / env / script name
         _project = project_name
         if _project is None:
             _project = os.environ.get(
@@ -146,9 +175,12 @@ class WandbBackend(TrackerBackend):
                     os.environ.get("WB_PROJECT_NAME"),
                 ),
             )
+        if _project is None:
+            _project = _default_project_name()
 
         # Resolve mode — disable on non-rank-0 processes
         from ezpz.distributed import _resolve_wandb_mode
+
         _mode_arg = kwargs.pop("mode", None)
         if rank != 0:
             _mode = "disabled"
@@ -169,7 +201,9 @@ class WandbBackend(TrackerBackend):
         try:
             self._run = wandb.init(**init_kwargs)
         except Exception as exc:
-            logger.warning("wandb.init() failed: %s — continuing without wandb", exc)
+            logger.warning(
+                "wandb.init() failed: %s — continuing without wandb", exc
+            )
             self._run = None
             return
 
@@ -332,6 +366,341 @@ class CSVBackend(TrackerBackend):
             writer.writerows(self._rows)
 
 
+# ── MLflow backend ──────────────────────────────────────────────────────────
+
+
+class MLflowBackend(TrackerBackend):
+    """Backend that delegates to `MLflow Tracking <https://mlflow.org>`_.
+
+    Logs metrics via ``mlflow.log_metrics``, config via ``mlflow.log_params``,
+    and tables/images as artifacts.
+
+    Args:
+        project_name: MLflow experiment name.
+        config: Run-level config dict logged as MLflow params.
+        outdir: Artifact location (forwarded to ``mlflow.start_run``).
+        rank: Distributed rank (non-0 is silently disabled).
+        **kwargs: Forwarded to ``mlflow.start_run``.
+    """
+
+    name: str = "mlflow"
+
+    def __init__(
+        self,
+        project_name: str | None = None,
+        config: dict[str, Any] | None = None,
+        outdir: str | os.PathLike | None = None,
+        rank: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        import mlflow
+
+        self._mlflow = mlflow
+
+        if rank is None:
+            try:
+                from ezpz.distributed import get_rank
+
+                rank = get_rank()
+            except Exception:
+                rank = 0
+
+        if rank != 0:
+            self._run = None
+            self._active = False
+            return
+
+        # ── Tracking URI & auth ─────────────────────────────────────────
+        # Load .env if python-dotenv is available (picks up
+        # MLFLOW_TRACKING_URI, AMSC_API_KEY, etc.)
+        try:
+            from dotenv import find_dotenv, load_dotenv
+
+            # find_dotenv walks upward from cwd (or caller) to locate .env
+            env_file = find_dotenv(usecwd=True) or find_dotenv()
+            if env_file:
+                load_dotenv(env_file)
+        except ImportError:
+            pass
+
+        # Suppress urllib3 TLS warnings when insecure mode is enabled
+        if os.environ.get("MLFLOW_TRACKING_INSECURE_TLS", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        ):
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+        if tracking_uri:
+            mlflow.set_tracking_uri(tracking_uri)
+
+        # Inject API key auth. Try MLFLOW_TRACKING_TOKEN (Bearer) first,
+        # then AMSC_API_KEY (X-API-Key header via request hook).
+        api_key = os.environ.get("MLFLOW_TRACKING_TOKEN")
+        if api_key:
+            pass  # MLflow handles Bearer auth natively
+        else:
+            api_key = os.environ.get("AMSC_API_KEY")
+            if api_key:
+                # Patch mlflow's request layer to inject X-API-Key header
+                try:
+                    import mlflow.utils.rest_utils as _rest
+
+                    _orig_call = _rest.http_request
+
+                    def _patched_call(*args: Any, **kwargs: Any) -> Any:
+                        extra = kwargs.pop("extra_headers", {}) or {}
+                        extra["X-API-Key"] = api_key  # type: ignore[assignment]
+                        kwargs["extra_headers"] = extra
+                        return _orig_call(*args, **kwargs)
+
+                    _rest.http_request = _patched_call  # type: ignore[assignment]
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to patch mlflow auth headers: %s", exc
+                    )
+
+        # Resolve experiment name: explicit arg → MLFLOW_EXPERIMENT_NAME →
+        # wandb project env vars → script-derived default
+        _experiment = project_name
+        if _experiment is None:
+            _experiment = os.environ.get(
+                "MLFLOW_EXPERIMENT_NAME",
+                os.environ.get(
+                    "WB_PROJECT",
+                    os.environ.get(
+                        "WANDB_PROJECT",
+                        os.environ.get("WB_PROJECT_NAME"),
+                    ),
+                ),
+            )
+        if _experiment is None:
+            _experiment = _default_project_name()
+
+        try:
+            mlflow.set_experiment(_experiment)
+            self._run = mlflow.start_run(**kwargs)
+            self._active = True
+        except Exception as exc:
+            logger.warning(
+                "mlflow.start_run() failed: %s — continuing without mlflow",
+                exc,
+            )
+            self._run = None
+            self._active = False
+            return
+
+        self._step = 0  # auto-increment when caller doesn't provide step
+
+        # Log base system/environment params under the "ezpz." prefix
+        self._log_system_params()
+
+        if config is not None:
+            self.log_config({"config": config})
+
+        # Cache tracking info for later retrieval
+        self._tracking_uri = self._mlflow.get_tracking_uri()
+        run_info = self._run.info
+        self._experiment_id = run_info.experiment_id
+        self._run_id = run_info.run_id
+        self._run_name = run_info.run_name or self._run_id
+        if self._tracking_uri.startswith("http"):
+            self._run_url: str | None = (
+                f"{self._tracking_uri.rstrip('/')}/"
+                f"#/experiments/{self._experiment_id}/"
+                f"runs/{self._run_id}"
+            )
+        else:
+            self._run_url = None
+
+        # Print setup info directly (like wandb does) so it's always visible
+        # regardless of log level.
+        import sys
+
+        _w = sys.stderr.write
+        _w("🔄 mlflow: Tracking run with mlflow\n")
+        _w(f"🔄 mlflow: Experiment: {_experiment}\n")
+        _w(f"🔄 mlflow: Run name: {self._run_name}\n")
+        _w(f"🔄 mlflow: Tracking URI: {self._tracking_uri}\n")
+        if self._run_url:
+            _w(f"mlflow: 🔗 View run at {self._run_url}\n")
+        else:
+            _w(
+                f"mlflow: Run ID: {self._run_id} "
+                f"(view with: mlflow ui --port 5000)\n"
+            )
+        sys.stderr.flush()
+
+    @property
+    def run(self) -> Any:
+        """The underlying ``mlflow.ActiveRun``, or ``None``."""
+        return self._run
+
+    @property
+    def run_url(self) -> str | None:
+        """Dashboard URL for this run, or ``None`` for local file stores."""
+        return getattr(self, "_run_url", None)
+
+    def log(
+        self,
+        metrics: dict[str, Any],
+        step: int | None = None,
+        commit: bool = True,
+    ) -> None:
+        if not self._active:
+            return
+        # Auto-increment step so MLflow records a time series (line chart)
+        # rather than overwriting step 0 each call (bar chart).
+        if step is None:
+            step = self._step
+        self._step = step + 1
+        # MLflow only accepts float-coercible values
+        safe: dict[str, float] = {}
+        for k, v in metrics.items():
+            try:
+                safe[k] = float(v)
+            except (TypeError, ValueError):
+                continue
+        if safe:
+            self._mlflow.log_metrics(safe, step=step)
+
+    @staticmethod
+    def _flatten(
+        d: dict[str, Any], prefix: str = "", sep: str = "."
+    ) -> dict[str, str]:
+        """Flatten a nested dict into dot-separated keys with string values."""
+        out: dict[str, str] = {}
+        for k, v in d.items():
+            key = f"{prefix}{sep}{k}" if prefix else k
+            if isinstance(v, dict):
+                out.update(MLflowBackend._flatten(v, prefix=key, sep=sep))
+            else:
+                out[key] = str(v)
+        return out
+
+    def _log_system_params(self) -> None:
+        """Log base ezpz/system info as MLflow params under ``ezpz.*``."""
+        try:
+            import sys
+
+            import torch
+
+            import ezpz
+            from ezpz.configs import get_scheduler
+            from ezpz.distributed import (
+                get_hostname,
+                get_local_rank,
+                get_machine,
+                get_rank,
+                get_torch_backend,
+                get_torch_device,
+                get_world_size,
+            )
+
+            params: dict[str, Any] = {
+                "ezpz": {
+                    "version": ezpz.__version__,
+                    "hostname": get_hostname(),
+                    "machine": get_machine(),
+                    "scheduler": get_scheduler(),
+                    "device": str(get_torch_device()),
+                    "backend": get_torch_backend(),
+                    "world_size": get_world_size(),
+                    "rank": get_rank(),
+                    "local_rank": get_local_rank(),
+                    "working_directory": os.getcwd(),
+                    "timestamp": _get_timestamp(),
+                    "python_version": sys.version.split()[0],
+                    "torch_version": torch.__version__,
+                    "command": " ".join(sys.argv),
+                },
+            }
+            self._mlflow.log_params(self._flatten(params))
+        except Exception as exc:
+            logger.warning("mlflow system params failed: %s", exc)
+
+    def log_config(self, config: dict[str, Any]) -> None:
+        if not self._active:
+            return
+        flat = self._flatten(config)
+        if flat:
+            try:
+                self._mlflow.log_params(flat)
+            except Exception as exc:
+                logger.warning("mlflow.log_params failed: %s", exc)
+
+    def log_artifacts(self, paths: dict[str, str]) -> None:
+        """Upload local files as MLflow artifacts.
+
+        Args:
+            paths: Mapping of ``label → file_path``.  Each existing file
+                   is uploaded under an artifact subdirectory matching the
+                   label (e.g. ``"Report" → "Report/report.md"``).
+        """
+        if not self._active:
+            return
+        for label, fpath in paths.items():
+            p = Path(fpath)
+            if not p.exists():
+                continue
+            try:
+                if p.is_dir():
+                    self._mlflow.log_artifacts(str(p), artifact_path=label)
+                else:
+                    self._mlflow.log_artifact(str(p), artifact_path=label)
+            except Exception as exc:
+                logger.warning(
+                    "mlflow log_artifact(%s) failed: %s", label, exc
+                )
+
+    def finish(self) -> None:
+        if not self._active:
+            return
+        try:
+            self._mlflow.end_run()
+        except Exception as exc:
+            logger.warning("mlflow.end_run failed: %s", exc)
+
+    def log_table(
+        self,
+        key: str,
+        columns: list[str],
+        data: list[list[Any]],
+    ) -> None:
+        if not self._active:
+            return
+        import tempfile
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".csv", delete=False, prefix=f"{key}_"
+            ) as f:
+                writer = csv.writer(f)
+                writer.writerow(columns)
+                writer.writerows(data)
+                temp_path = f.name
+            self._mlflow.log_artifact(temp_path, artifact_path="tables")
+            Path(temp_path).unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("mlflow log_table failed: %s", exc)
+
+    def log_image(
+        self,
+        key: str,
+        image_path: str | Path,
+        caption: str | None = None,
+    ) -> None:
+        if not self._active:
+            return
+        try:
+            self._mlflow.log_artifact(str(image_path), artifact_path="images")
+        except Exception as exc:
+            logger.warning("mlflow log_image failed: %s", exc)
+
+
 # ── Tracker multiplexer ──────────────────────────────────────────────────────
 
 
@@ -427,6 +796,18 @@ class Tracker:
                     exc,
                 )
 
+    def log_artifacts(self, paths: dict[str, str]) -> None:
+        """Upload local files as artifacts on all backends that support it."""
+        for backend in self._backends:
+            try:
+                backend.log_artifacts(paths)
+            except Exception as exc:
+                logger.warning(
+                    "Tracker backend %s.log_artifacts() failed: %s",
+                    backend.name,
+                    exc,
+                )
+
     def finish(self) -> None:
         """Finalise all backends."""
         for backend in self._backends:
@@ -461,6 +842,17 @@ class Tracker:
             return wb.run
         return None
 
+    @property
+    def mlflow_run(self) -> Any:
+        """Convenience accessor for the underlying ``mlflow.ActiveRun``.
+
+        Returns ``None`` if no MLflow backend is active.
+        """
+        ml = self.get_backend("mlflow")
+        if ml is not None and isinstance(ml, MLflowBackend):
+            return ml.run
+        return None
+
 
 class NullTracker(Tracker):
     """A no-op tracker used when no backends are configured.
@@ -491,6 +883,7 @@ def register_backend(name: str, cls: type[TrackerBackend]) -> None:
 # Built-in registrations
 register_backend("wandb", WandbBackend)
 register_backend("csv", CSVBackend)
+register_backend("mlflow", MLflowBackend)
 
 
 def setup_tracker(
@@ -521,6 +914,7 @@ def setup_tracker(
     if rank is None:
         try:
             from ezpz.distributed import get_rank
+
             rank = get_rank()
         except Exception:
             rank = 0

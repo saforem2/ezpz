@@ -13,6 +13,7 @@ import pytest
 
 from ezpz.tracker import (
     CSVBackend,
+    MLflowBackend,
     NullTracker,
     Tracker,
     TrackerBackend,
@@ -318,6 +319,150 @@ class TestWandbBackendBehavior:
         update_calls = backend._run.config.update.call_args_list
         configs = [c.args[0] for c in update_calls if c.args]
         assert {"lr": 0.01} in configs
+
+
+# ── MLflowBackend (mocked) ──────────────────────────────────────────────────
+
+
+class TestMLflowBackendBehavior:
+    """Verify MLflowBackend delegates correctly to the mlflow API."""
+
+    @pytest.fixture()
+    def mock_mlflow(self):
+        """Fully mocked mlflow module."""
+        mlflow = MagicMock()
+        mlflow.start_run.return_value = MagicMock()
+        return mlflow
+
+    @pytest.fixture()
+    def backend(self, mock_mlflow, monkeypatch):
+        """MLflowBackend wired to the mocked mlflow module."""
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        return MLflowBackend(project_name="test-project", rank=0)
+
+    def test_set_experiment_called(self, mock_mlflow, monkeypatch):
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        MLflowBackend(project_name="my-exp", rank=0)
+        mock_mlflow.set_experiment.assert_called_once_with("my-exp")
+
+    def test_start_run_called(self, mock_mlflow, monkeypatch):
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        MLflowBackend(rank=0)
+        mock_mlflow.start_run.assert_called_once()
+
+    def test_run_property(self, backend, mock_mlflow):
+        assert backend.run is mock_mlflow.start_run.return_value
+
+    def test_log_delegates_metrics(self, backend, mock_mlflow):
+        backend.log({"loss": 0.5, "lr": 1e-4}, step=10)
+        mock_mlflow.log_metrics.assert_called_once_with(
+            {"loss": 0.5, "lr": 1e-4}, step=10
+        )
+
+    def test_log_skips_non_numeric(self, backend, mock_mlflow):
+        """Non-float-coercible values are silently dropped."""
+        backend.log({"loss": 0.5, "name": "hello"})
+        call_args = mock_mlflow.log_metrics.call_args
+        logged = call_args[0][0]
+        assert "loss" in logged
+        assert "name" not in logged
+
+    def test_log_config_calls_log_params(self, backend, mock_mlflow):
+        mock_mlflow.log_params.reset_mock()
+        backend.log_config({"lr": 0.01, "epochs": 10})
+        mock_mlflow.log_params.assert_called_once_with(
+            {"lr": "0.01", "epochs": "10"}
+        )
+
+    def test_finish_calls_end_run(self, backend, mock_mlflow):
+        backend.finish()
+        mock_mlflow.end_run.assert_called_once()
+
+    def test_log_table_creates_artifact(self, backend, mock_mlflow):
+        backend.log_table("preds", ["x", "y"], [[1, 2], [3, 4]])
+        mock_mlflow.log_artifact.assert_called_once()
+        call_args = mock_mlflow.log_artifact.call_args
+        assert call_args[1]["artifact_path"] == "tables"
+
+    def test_log_image_creates_artifact(self, backend, mock_mlflow):
+        backend.log_image("plot", "/tmp/img.png")
+        mock_mlflow.log_artifact.assert_called_once_with(
+            "/tmp/img.png", artifact_path="images"
+        )
+
+    def test_rank_nonzero_is_noop(self, mock_mlflow, monkeypatch):
+        """Non-rank-0 backend should not call any mlflow API."""
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        backend = MLflowBackend(rank=1)
+        assert not backend._active
+        assert backend.run is None
+        # None of these should call mlflow
+        backend.log({"x": 1})
+        backend.log_config({"y": 2})
+        backend.log_table("t", ["a"], [[1]])
+        backend.log_image("i", "/tmp/img.png")
+        backend.finish()
+        mock_mlflow.start_run.assert_not_called()
+        mock_mlflow.log_metrics.assert_not_called()
+        mock_mlflow.end_run.assert_not_called()
+
+    def test_init_failure_all_methods_noop(self, mock_mlflow, monkeypatch):
+        """start_run() failure ⇒ all methods are silent no-ops."""
+        mock_mlflow.start_run.side_effect = RuntimeError("boom")
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        backend = MLflowBackend(rank=0)
+        assert not backend._active
+        assert backend.run is None
+        backend.log({"x": 1})
+        backend.log_config({"y": 2})
+        backend.finish()
+
+    def test_setup_tracker_activates_mlflow(self, mock_mlflow, monkeypatch):
+        """setup_tracker(backends='mlflow') should create a working tracker."""
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        tracker = setup_tracker(
+            backends="mlflow", project_name="test", rank=0
+        )
+        assert not isinstance(tracker, NullTracker)
+        be = tracker.get_backend("mlflow")
+        assert isinstance(be, MLflowBackend)
+        assert be._active
+
+    def test_config_logged_at_init(self, mock_mlflow, monkeypatch):
+        """Config dict passed to constructor is logged as params."""
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        MLflowBackend(config={"lr": 0.01}, rank=0)
+        # log_params called twice: system params + user config
+        calls = mock_mlflow.log_params.call_args_list
+        assert len(calls) >= 2
+        # Last call should contain the user config (flattened to strings)
+        last_params = calls[-1][0][0]
+        assert last_params == {"config.lr": "0.01"}
+
+    def test_system_params_logged(self, mock_mlflow, monkeypatch):
+        """System info is auto-logged under ezpz.* prefix."""
+        monkeypatch.setitem(sys.modules, "mlflow", mock_mlflow)
+        MLflowBackend(rank=0)
+        calls = mock_mlflow.log_params.call_args_list
+        assert len(calls) >= 1
+        system_params = calls[0][0][0]
+        assert "ezpz.version" in system_params
+        assert "ezpz.hostname" in system_params
+        assert "ezpz.torch_version" in system_params
+        assert "ezpz.device" in system_params
+        assert "ezpz.backend" in system_params
+        assert "ezpz.world_size" in system_params
+        assert "ezpz.timestamp" in system_params
+        assert "ezpz.python_version" in system_params
+        assert "ezpz.command" in system_params
+
+    def test_nested_config_flattened(self, backend, mock_mlflow):
+        """Nested config dicts are flattened with dot-separated keys."""
+        mock_mlflow.log_params.reset_mock()
+        backend.log_config({"model": {"hidden": 256, "layers": 4}})
+        mock_mlflow.log_params.assert_called_once_with(
+            {"model.hidden": "256", "model.layers": "4"}
+        )
 
 
 # ── Tracker multiplexer ──────────────────────────────────────────────────────
