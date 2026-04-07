@@ -405,6 +405,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="CUDA SDPA backend to use.",
     )
     parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
+    parser.add_argument(
+        "--fsdp-sharding-strategy",
+        type=str,
+        default="full-shard",
+        choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
+        help="FSDP sharding strategy (default: full-shard)",
+    )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     apply_dataset_overrides(args, argv)
@@ -533,11 +540,15 @@ def train_fn(
     #     # device_id=int(ezpz.get_local_rank())
     # )
     if world_size > 1:
+        reshard = ezpz.distributed.resolve_fsdp_strategy(
+            args.fsdp_sharding_strategy
+        )
+        use_fsdp = args.fsdp and reshard is not None
         model = ezpz.distributed.wrap_model(
             model=model,
-            use_fsdp=args.fsdp,
+            use_fsdp=use_fsdp,
             dtype=args.dtype,
-            device_id=int(ezpz.get_local_rank()),
+            **({"reshard_after_forward": reshard} if reshard is not None else {}),
         )
         # if args.fsdp:
         #     logger.info("Using FSDP for distributed training")

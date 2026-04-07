@@ -940,7 +940,8 @@ class TestWrapModel:
         ):
             dist.wrap_model(model, use_fsdp=True, dtype="bf16")
             mock_fsdp2.assert_called_once_with(
-                model, dtype="bf16", device_mesh=mock_mesh
+                model, dtype="bf16", device_mesh=mock_mesh,
+                reshard_after_forward=True,
             )
 
     def test_fsdp_falls_back_to_ddp_on_cpu(self, fake_comm):

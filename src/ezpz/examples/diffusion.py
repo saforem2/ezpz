@@ -403,8 +403,15 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
+    reshard = ezpz.distributed.resolve_fsdp_strategy(
+        args.fsdp_sharding_strategy
+    )
+    use_fsdp = args.fsdp and reshard is not None
     wrapped_model = ezpz.distributed.wrap_model(
-        model, use_fsdp=args.fsdp, dtype=args.dtype
+        model,
+        use_fsdp=use_fsdp,
+        dtype=args.dtype,
+        **({"reshard_after_forward": reshard} if reshard is not None else {}),
     )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
@@ -591,6 +598,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--fsdp",
         action="store_true",
         help="Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
+    )
+    parser.add_argument(
+        "--fsdp-sharding-strategy",
+        type=str,
+        default="full-shard",
+        choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
+        help="FSDP sharding strategy (default: full-shard)",
     )
     parser.add_argument(
         "--fsdp-mixed-precision",

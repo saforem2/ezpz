@@ -707,12 +707,49 @@ def all_reduce(
 # ===================================================================
 
 
+FSDP_SHARDING_STRATEGIES = {
+    "full-shard": True,
+    "shard-grad-op": False,
+    "no-shard": None,
+    "hybrid-shard": "hybrid",
+}
+"""Map CLI sharding strategy names to ``reshard_after_forward`` values.
+
+Used by :func:`wrap_model` and the example CLI parsers::
+
+    --fsdp-sharding-strategy full-shard   # reshard_after_forward=True  (ZeRO-3)
+    --fsdp-sharding-strategy shard-grad-op # reshard_after_forward=False (ZeRO-2)
+    --fsdp-sharding-strategy hybrid-shard  # reshard to intra-node size
+    --fsdp-sharding-strategy no-shard      # fall back to DDP
+"""
+
+
+def resolve_fsdp_strategy(
+    strategy: str,
+) -> bool | int | None:
+    """Convert a CLI sharding strategy name to a ``reshard_after_forward`` value.
+
+    Returns ``None`` when the strategy is ``"no-shard"`` (caller should
+    use DDP instead).
+    """
+    if strategy not in FSDP_SHARDING_STRATEGIES:
+        raise ValueError(
+            f"Unknown FSDP sharding strategy {strategy!r}. "
+            f"Choose from: {', '.join(FSDP_SHARDING_STRATEGIES)}"
+        )
+    val = FSDP_SHARDING_STRATEGIES[strategy]
+    if val == "hybrid":
+        return get_gpus_per_node()
+    return val
+
+
 def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool = True,
     dtype: str = "bfloat16",
     device_id: torch.device | int | None = None,
     device_mesh: Any = None,
+    reshard_after_forward: bool | int = True,
 ) -> torch.nn.Module:
     """Wrap *model* with DDP or FSDP for distributed training.
 
@@ -720,8 +757,13 @@ def wrap_model(
         model: Model to wrap.
         use_fsdp: Use FSDP when ``True``, DDP when ``False``.
         dtype: Mixed-precision parameter dtype for FSDP (e.g. ``"bf16"``).
-        device_id: Explicit device ordinal for FSDP.
+        device_id: Explicit device ordinal for FSDP (legacy FSDP1 only).
         device_mesh: Optional :class:`torch.distributed.device_mesh.DeviceMesh`.
+        reshard_after_forward: Controls parameter lifetime after forward:
+
+            - ``True`` (default): reshard after forward (FULL_SHARD / ZeRO-3).
+            - ``False``: keep unsharded (SHARD_GRAD_OP / ZeRO-2).
+            - ``int``: reshard to this world-size (HYBRID_SHARD).
 
     Returns:
         The wrapped model.  If ``world_size <= 1`` the original model is
@@ -754,7 +796,12 @@ def wrap_model(
         from torch.distributed.device_mesh import init_device_mesh
 
         device_mesh = init_device_mesh(device_type, (ws,))
-    return _wrap_fsdp2(model, dtype=dtype, device_mesh=device_mesh)
+    return _wrap_fsdp2(
+        model,
+        dtype=dtype,
+        device_mesh=device_mesh,
+        reshard_after_forward=reshard_after_forward,
+    )
 
 
 def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
