@@ -104,7 +104,7 @@ still override after the preset is applied.
 
 | Variable | Purpose | Values / Default |
 |----------|---------|-----------------|
-| `EZPZ_TRACKER_BACKENDS` | Comma-separated tracker backends. | e.g. `wandb,csv`. Default: `wandb`. |
+| `EZPZ_TRACKER_BACKENDS` | Comma-separated tracker backends. | `wandb`, `csv`, `mlflow`. e.g. `wandb,csv,mlflow`. Default: `wandb`. |
 | `WANDB_DISABLED` | Disable Weights & Biases logging. | Set to `1` to disable. |
 | `WANDB_MODE` | Set W&B mode. | `online`, `offline`, `dryrun`. |
 | `WANDB_PROJECT` / `WB_PROJECT` / `WB_PROJECT_NAME` | Set project name for W&B runs. | String (aliases for the same setting). |

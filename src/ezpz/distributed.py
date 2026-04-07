@@ -748,7 +748,9 @@ def wrap_model(
             return wrap_model_for_ddp(model)
         if device_mesh is not None:
             return _wrap_fsdp2(
-                model, dtype=dtype, device_mesh=device_mesh,
+                model,
+                dtype=dtype,
+                device_mesh=device_mesh,
             )
         if device_id is not None:
             device_id = torch.device(device_type, device_id)
@@ -1249,7 +1251,7 @@ def setup_wandb(
 
             run.config.update(
                 {
-                    "DIST_INFO": get_dist_info(),
+                    # "DIST_INFO": get_dist_info(),
                     "hostname": get_hostname(),
                     "pytorch_backend": get_torch_backend(),
                     "torch_version": torch.__version__,
