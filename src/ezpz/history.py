@@ -291,7 +291,18 @@ class History:
                 self._tracker = setup_tracker(backends="wandb")
             else:
                 self._tracker = NullTracker()
-        if config is not None and not isinstance(self._tracker, NullTracker):
+        # Forward config to the tracker when the backends didn't receive it
+        # in their constructors. This covers:
+        #   - Injected tracker= (backends never saw config)
+        #   - Auto-detect wandb.run path (setup_tracker called without config)
+        # The setup_tracker(config=...) path already handles config internally,
+        # so we skip it there to avoid duplicates.
+        _tracker_got_config = (
+            tracker is None
+            and any(arg is not None for arg in (project_name, backends))
+            or os.environ.get("EZPZ_TRACKER_BACKENDS")
+        )
+        if config is not None and not _tracker_got_config:
             self._tracker.log_config(config)
 
     @property
@@ -541,6 +552,18 @@ class History:
                 {str(k): str(v) for k, v in _wandb_run.config.items()}
             )
             summary["Weights & Biases"] = wb_info
+
+        _mlflow_be = self._tracker.get_backend("mlflow")
+        if _mlflow_be is not None and getattr(_mlflow_be, "_active", False):
+            ml_info: dict[str, str] = {
+                "Run ID": getattr(_mlflow_be, "_run_id", ""),
+                "Experiment ID": getattr(_mlflow_be, "_experiment_id", ""),
+                "Tracking URI": getattr(_mlflow_be, "_tracking_uri", ""),
+            }
+            run_url = getattr(_mlflow_be, "run_url", None)
+            if run_url is not None:
+                ml_info["URL"] = run_url
+            summary["MLflow"] = ml_info
 
         return summary
 
@@ -2611,6 +2634,18 @@ class History:
         _wandb_run = self._tracker.wandb_run
         if _wandb_run is not None:
             logger.info(f"wandb.run=[{_wandb_run.name}]({_wandb_run.url})")
+        _mlflow_be = self._tracker.get_backend("mlflow")
+        if _mlflow_be is not None and getattr(_mlflow_be, "_active", False):
+            _run_url = getattr(_mlflow_be, "run_url", None)
+            _run_id = getattr(_mlflow_be, "_run_id", "?")
+            if _run_url:
+                logger.info("mlflow.run=[%s](%s)", _run_id, _run_url)
+            else:
+                logger.info(
+                    "mlflow.run=%s (tracking_uri=%s)",
+                    _run_id,
+                    getattr(_mlflow_be, "_tracking_uri", "?"),
+                )
         if self.history:
             try:
                 columns = list(self.history.keys())
@@ -2631,9 +2666,11 @@ class History:
                 logger.warning(
                     "Failed to log training history table via tracker"
                 )
-        self._tracker.finish()
         if output_files:
+            # Upload output files as artifacts (MLflow, etc.) before finish
+            self._tracker.log_artifacts(output_files)
             logger.info("Output files:")
             for label, fpath in output_files.items():
                 logger.info("  %s: %s", label, fpath)
+        self._tracker.finish()
         return dataset
