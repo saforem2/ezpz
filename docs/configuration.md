@@ -107,10 +107,42 @@ still override after the preset is applied.
 | `EZPZ_TRACKER_BACKENDS` | Comma-separated tracker backends. | `wandb`, `csv`, `mlflow`. e.g. `wandb,csv,mlflow`. Default: `wandb`. |
 | `WANDB_DISABLED` | Disable Weights & Biases logging. | Set to `1` to disable. |
 | `WANDB_MODE` | Set W&B mode. | `online`, `offline`, `dryrun`. |
-| `WANDB_PROJECT` / `WB_PROJECT` / `WB_PROJECT_NAME` | Set project name for W&B runs. | String (aliases for the same setting). |
+| `WANDB_PROJECT` / `WB_PROJECT` / `WB_PROJECT_NAME` | Set project name for W&B runs. Also used as MLflow experiment name if `MLFLOW_EXPERIMENT_NAME` is not set. | String (aliases for the same setting). |
 | `WANDB_API_KEY` | Supply W&B API key for authentication. | API key string. |
+| `MLFLOW_TRACKING_URI` | MLflow tracking server URL or local path. | e.g. `https://mlflow.example.com` or `file:///path/to/mlruns`. |
+| `MLFLOW_EXPERIMENT_NAME` | MLflow experiment name. Falls back to `WANDB_PROJECT`, then auto-derived from script name. | String. |
+| `MLFLOW_TRACKING_TOKEN` | Bearer token for MLflow server auth. | Token string. |
+| `MLFLOW_TRACKING_INSECURE_TLS` | Skip TLS certificate verification for MLflow server. | `true` / `false`. |
+| `AMSC_API_KEY` | API key for AMSC MLflow server. Automatically sent as `X-API-Key` header. | API key string. |
 | `EZPZ_LOCAL_HISTORY` | Enable local-only history (skip distributed aggregation). | Set to any truthy value (e.g. `1`). |
 | `EZPZ_NO_DISTRIBUTED_HISTORY` | Disable distributed history aggregation. | Set to any truthy value. Auto-enabled at 384+ ranks. |
+
+#### MLflow Credential Files
+
+The MLflow backend automatically loads environment variables from dotenv
+files in this order:
+
+1. **`~/.amsc.env`** — User-level credentials (loaded first). Put your
+   `AMSC_API_KEY` and `MLFLOW_TRACKING_URI` here so they work across all
+   projects without committing secrets to version control.
+
+2. **Project `.env`** — Found by walking upward from the working directory
+   (loaded second, **overrides** values from `~/.amsc.env`). Use this for
+   project-specific tracking URIs or experiment names.
+
+Example `~/.amsc.env`:
+
+```bash
+AMSC_API_KEY=your-api-key-here
+MLFLOW_TRACKING_URI=https://mlflow.american-science-cloud.org
+MLFLOW_TRACKING_INSECURE_TLS=true
+```
+
+!!! tip "No `python-dotenv`?"
+
+    If `python-dotenv` is not installed, set the variables directly in your
+    shell environment or job script. The dotenv loading is a convenience,
+    not a requirement.
 
 ### Plotting
 

@@ -416,10 +416,14 @@ class MLflowBackend(TrackerBackend):
         try:
             from dotenv import find_dotenv, load_dotenv
 
-            # find_dotenv walks upward from cwd (or caller) to locate .env
+            # Load ~/.amsc.env first (user-level credentials), then
+            # project-level .env (which can override/extend).
+            amsc_env = Path.home() / ".amsc.env"
+            if amsc_env.is_file():
+                load_dotenv(amsc_env)
             env_file = find_dotenv(usecwd=True) or find_dotenv()
             if env_file:
-                load_dotenv(env_file)
+                load_dotenv(env_file, override=True)
         except ImportError:
             pass
 
