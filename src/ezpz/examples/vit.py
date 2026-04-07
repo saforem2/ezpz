@@ -724,18 +724,7 @@ def train_fn(
             logger.info("\n".join(f"[eval] {line}" for line in summary_table))
         model.train()  # type:ignore
 
-    if ezpz.distributed.get_rank() == 0:
-        if history.history and any(len(v) for v in history.history.values()):
-            dataset = history.finalize(
-                outdir=outdir,
-                run_name=WBPROJ_NAME,
-                verbose=False,
-            )
-            logger.info(f"{dataset=}")
-        else:
-            logger.warning("No metrics recorded; skipping dataset save")
-
-    return history
+    return history, outdir
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -797,7 +786,7 @@ def main(args: argparse.Namespace):
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
     train_start = time.perf_counter()
-    history = train_fn(block_fn, args=args, dataset=args.dataset)
+    history, outdir = train_fn(block_fn, args=args, dataset=args.dataset)
     train_end = time.perf_counter()
     t1 = time.perf_counter()
     timings = {
@@ -806,15 +795,22 @@ def main(args: argparse.Namespace):
         "main/total": t1 - t0,
     }
     logger.info("Timings: %s", timings)
-    try:
-        history.tracker.log(
-            {
-                (f"timings/{k}" if not k.startswith("timings/") else k): v
-                for k, v in timings.items()
-            }
-        )
-    except Exception:
-        logger.warning("Failed to log timings to tracker")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
+    if ezpz.distributed.get_rank() == 0:
+        if history.history and any(len(v) for v in history.history.values()):
+            dataset = history.finalize(
+                outdir=outdir,
+                run_name=WBPROJ_NAME,
+                verbose=False,
+            )
+            logger.info(f"{dataset=}")
+        else:
+            logger.warning("No metrics recorded; skipping dataset save")
 
 
 if __name__ == "__main__":

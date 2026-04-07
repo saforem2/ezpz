@@ -141,14 +141,6 @@ def main():
     train_start = time.perf_counter()
     history = train(model, optimizer, outdir)
     train_end = time.perf_counter()
-    if ezpz.get_rank() == 0:
-        dataset = history.finalize(
-            outdir=outdir,
-            run_name=module_name,
-            dataset_fname="train",
-            verbose=False,
-        )
-        logger.info(f"{dataset=}")
     timings = {
         "main/setup": t_setup - t0,
         "main/train": train_end - train_start,
@@ -164,6 +156,14 @@ def main():
             for k, v in timings.items()
         }
     )
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            outdir=outdir,
+            run_name=module_name,
+            dataset_fname="train",
+            verbose=False,
+        )
+        logger.info(f"{dataset=}")
 
 
 if __name__ == "__main__":

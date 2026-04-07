@@ -1050,14 +1050,6 @@ def train(
             handle.remove()
     ezpz.distributed.barrier()
     logger.info("Finished 2D training")
-    if ezpz.get_rank() == 0:
-        dataset = history.finalize(
-            run_name=WBPROJ_NAME,
-            dataset_fname="train",
-            warmup=0.1,
-        )
-        logger.info(f"{dataset=}")
-
     return history
 
 
@@ -1089,6 +1081,13 @@ def main(args: argparse.Namespace) -> int:
             for k, v in timings.items()
         }
     )
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            outdir=outdir,
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+        )
+        logger.info(f"{dataset=}")
     return 0
 
 

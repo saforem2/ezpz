@@ -889,6 +889,13 @@ def main() -> None:
     }
     logger.info("Timings: %s", timings)
 
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
+
     if accelerator.is_main_process:
         history.finalize(
             run_name="ezpz.examples.hf",
@@ -899,13 +906,6 @@ def main() -> None:
             outdir=outdir,
             timings=timings,
         )
-
-    history.tracker.log(
-        {
-            (f"timings/{k}" if not k.startswith("timings/") else k): v
-            for k, v in timings.items()
-        }
-    )
 
 
 if __name__ == "__main__":

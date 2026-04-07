@@ -732,12 +732,6 @@ def main(args: argparse.Namespace) -> None:
     )
     train_end = time.perf_counter()
 
-    if ezpz.get_rank() == 0:
-        dataset = history.finalize(
-            run_name=WBPROJ_NAME,
-            dataset_fname="train",
-            warmup=0.1,
-        )
     samples = generate_text(
         wrapped_model,
         schedule,
@@ -764,6 +758,12 @@ def main(args: argparse.Namespace) -> None:
             for k, v in timings.items()
         }
     )
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+            warmup=0.0,
+        )
 
 
 if __name__ == "__main__":
