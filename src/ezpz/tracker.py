@@ -526,10 +526,10 @@ class MLflowBackend(TrackerBackend):
         _w(f"🔄 mlflow: Run name: {self._run_name}\n")
         _w(f"🔄 mlflow: Tracking URI: {self._tracking_uri}\n")
         if self._run_url:
-            _w(f"mlflow: 🔗 View run at {self._run_url}\n")
+            _w(f"🔄 mlflow: 🔗 View run at {self._run_url}\n")
         else:
             _w(
-                f"mlflow: Run ID: {self._run_id} "
+                f"🔄 mlflow: Run ID: {self._run_id} "
                 f"(view with: mlflow ui --port 5000)\n"
             )
         sys.stderr.flush()
@@ -565,6 +565,20 @@ class MLflowBackend(TrackerBackend):
             except (TypeError, ValueError):
                 continue
         if safe:
+            # Rename raw keys to {key}/local when distributed aggregates
+            # ({key}/mean, /min, /max, /std) are present, so MLflow groups
+            # them under a shared prefix.
+            agg_suffixes = ("/mean", "/max", "/min", "/std")
+            agg_prefixes = {
+                k.rsplit("/", 1)[0]
+                for k in safe
+                if k.endswith(agg_suffixes)
+            }
+            if agg_prefixes:
+                safe = {
+                    (f"{k}/local" if k in agg_prefixes else k): v
+                    for k, v in safe.items()
+                }
             self._mlflow.log_metrics(safe, step=step)
 
     @staticmethod
