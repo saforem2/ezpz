@@ -739,24 +739,22 @@ def wrap_model(
         return model
     if get_rank() == 0:
         logger.info("Wrapping model with %s", "fsdp" if use_fsdp else "ddp")
-    if use_fsdp:
-        device_type = get_torch_device_type()
-        if device_type in ("cpu", "mps"):
-            logger.warning(
-                "FSDP is not supported on %s devices; falling back to DDP.",
-                device_type,
-            )
-            return wrap_model_for_ddp(model)
-        if device_mesh is not None:
-            return _wrap_fsdp2(
-                model,
-                dtype=dtype,
-                device_mesh=device_mesh,
-            )
-        if device_id is not None:
-            device_id = torch.device(device_type, device_id)
-        return _wrap_fsdp(model, dtype=dtype, device_id=device_id)
-    return wrap_model_for_ddp(model)
+    if not use_fsdp:
+        return wrap_model_for_ddp(model)
+    device_type = get_torch_device_type()
+    if device_type in ("cpu", "mps"):
+        logger.warning(
+            "FSDP is not supported on %s devices; falling back to DDP.",
+            device_type,
+        )
+        return wrap_model_for_ddp(model)
+    # Auto-create a 1D DeviceMesh when none is provided so FSDP2
+    # (fully_shard) is the default sharding strategy.
+    if device_mesh is None:
+        from torch.distributed.device_mesh import init_device_mesh
+
+        device_mesh = init_device_mesh(device_type, (ws,))
+    return _wrap_fsdp2(model, dtype=dtype, device_mesh=device_mesh)
 
 
 def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:

@@ -927,15 +927,20 @@ class TestWrapModel:
             mock_ddp.assert_called_once_with(model)
 
     def test_fsdp_path(self, fake_comm):
-        """use_fsdp=True ⇒ calls _wrap_fsdp on CUDA/XPU devices."""
+        """use_fsdp=True ⇒ calls _wrap_fsdp2 (FSDP2) on CUDA/XPU devices."""
         model = torch.nn.Linear(10, 10)
+        mock_mesh = MagicMock()
         with (
             patch.object(dist, "get_torch_device_type", return_value="cuda"),
-            patch.object(dist, "_wrap_fsdp", return_value=model) as mock_fsdp,
+            patch.object(dist, "_wrap_fsdp2", return_value=model) as mock_fsdp2,
+            patch(
+                "torch.distributed.device_mesh.init_device_mesh",
+                return_value=mock_mesh,
+            ),
         ):
             dist.wrap_model(model, use_fsdp=True, dtype="bf16")
-            mock_fsdp.assert_called_once_with(
-                model, dtype="bf16", device_id=None
+            mock_fsdp2.assert_called_once_with(
+                model, dtype="bf16", device_mesh=mock_mesh
             )
 
     def test_fsdp_falls_back_to_ddp_on_cpu(self, fake_comm):
