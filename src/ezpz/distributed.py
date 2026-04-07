@@ -1551,8 +1551,12 @@ def _wrap_fsdp2(
         ),
         **kwargs,
     }
+    # Skip container modules (ModuleList, ModuleDict) that don't implement
+    # forward — fully_shard raises ValueError on these.
+    _CONTAINERS = (torch.nn.ModuleList, torch.nn.ModuleDict)
     for module in model.children():
-        fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
+        if not isinstance(module, _CONTAINERS):
+            fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
     return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
 
 
