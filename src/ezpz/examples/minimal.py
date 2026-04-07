@@ -46,6 +46,9 @@ def train(
     )
     metrics_path = Path(outdir).joinpath("metrics.jsonl")
     history = ezpz.History(
+        project_name=os.environ.get("PROJECT_NAME", "ezpz.examples.minimal"),
+        config={"model": str(unwrapped_model), "outdir": str(outdir)},
+        outdir=outdir,
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
@@ -93,16 +96,7 @@ def train(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def setup():
     """Initialize distributed runtime, model, and optimizer."""
-    rank = ezpz.setup_torch(seed=int(os.environ.get("SEED", 0)))
-    if os.environ.get("WANDB_DISABLED", False):
-        logger.info("WANDB_DISABLED is set, not initializing wandb")
-    elif rank == 0:
-        try:
-            _ = ezpz.setup_wandb(
-                project_name=os.environ.get("PROJECT_NAME", "ezpz.examples.minimal")
-            )
-        except Exception:
-            logger.exception("Failed to initialize wandb, continuing without it")
+    ezpz.setup_torch(seed=int(os.environ.get("SEED", 0)))
     device_type = ezpz.get_torch_device_type()
     from ezpz.models.minimal import SequentialLinearNet
 
@@ -164,18 +158,12 @@ def main():
         "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
-    try:
-        import wandb
-
-        if getattr(wandb, "run", None) is not None:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-    except Exception:
-        logger.debug("Skipping wandb timings log")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -138,13 +138,6 @@ MNIST_DEFAULT_FLAGS = {
 }
 
 
-try:
-    import wandb
-except Exception:
-    wandb = None  # type:ignore
-    logger.warning("Failed to import wandb")
-
-
 class PatchEmbed(torch.nn.Module):
     """Convert images into patch embeddings."""
 
@@ -532,18 +525,6 @@ def train_fn(
     model_size_in_billions = num_params / 1e9
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
-    if wandb is not None and ezpz.verify_wandb():
-        if (run := getattr(wandb, "run")) is not None and run is wandb.run:
-            try:
-                if args.compile:
-                    logger.info("Skipping wandb watch while compiling")
-                else:
-                    wandb.run.watch(model, log="all")  # type:ignore
-            except Exception as e:
-                logger.exception(e)
-                logger.warning(
-                    "Failed to watch model with wandb; continuing..."
-                )
 
     # model = ezpz.distributed.wrap_model(
     #     model=model,
@@ -597,21 +578,23 @@ def train_fn(
     outdir = get_example_outdir(WBPROJ_NAME)
     logger.info("Outputs will be saved to %s", outdir)
     metrics_path = outdir.joinpath("metrics.jsonl")
-    eval_metrics_path = outdir.joinpath("metrics-eval.jsonl")
     history = ezpz.history.History(
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
         distributed_history=(1 < world_size <= 384),
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
     )
-    eval_history = ezpz.history.History(
-        report_dir=outdir,
-        report_enabled=True,
-        jsonl_path=eval_metrics_path,
-        jsonl_overwrite=True,
-        distributed_history=(1 < world_size <= 384),
-    )
+    try:
+        if args.compile:
+            logger.info("Skipping tracker watch while compiling")
+        else:
+            history.tracker.watch(model, log="all")
+    except Exception as e:
+        logger.exception(e)
+        logger.warning("Failed to watch model with tracker; continuing...")
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -696,7 +679,7 @@ def train_fn(
                 batch_loss = float(loss.detach().item())
                 batch_acc = float(correct.item() / batch_size)
                 if math.isfinite(batch_loss) and math.isfinite(batch_acc):
-                    eval_msg = eval_history.update(
+                    eval_msg = history.update(
                         {
                             "eval/iter": eval_step,
                             "eval/loss": batch_loss,
@@ -746,25 +729,11 @@ def train_fn(
             dataset = history.finalize(
                 outdir=outdir,
                 run_name=WBPROJ_NAME,
-                dataset_fname="train",
                 verbose=False,
             )
             logger.info(f"{dataset=}")
         else:
-            logger.warning("No train metrics recorded; skipping dataset save")
-        if "test" in dataset_dict:
-            if eval_history.history and any(
-                len(v) for v in eval_history.history.values()
-            ):
-                eval_dataset = eval_history.finalize(
-                    outdir=outdir,
-                    run_name=WBPROJ_NAME,
-                    dataset_fname="eval",
-                    verbose=False,
-                )
-                logger.info(f"{eval_dataset=}")
-            else:
-                logger.warning("No eval metrics recorded; skipping dataset save")
+            logger.warning("No metrics recorded; skipping dataset save")
 
     return history
 
@@ -773,20 +742,8 @@ def train_fn(
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
     t0 = time.perf_counter()
-    rank = ezpz.distributed.setup_torch()
+    _ = ezpz.distributed.setup_torch()
     t_setup = time.perf_counter()
-    if rank == 0 and ezpz.verify_wandb():
-        try:
-            fp = Path(__file__).resolve()
-            run = ezpz.setup_wandb(
-                project_name=f"ezpz.{fp.parent.name}.{fp.stem}"
-            )
-            if wandb is not None and run is not None and run is wandb.run:
-                # assert run is not None and run is wandb.run
-                wandb.config.update(ezpz.get_dist_info())
-                wandb.config.update({"args": {**vars(args)}})
-        except Exception:
-            logger.warning("Failed to setup wandb, continuing without!")
 
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
@@ -840,7 +797,7 @@ def main(args: argparse.Namespace):
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
     train_start = time.perf_counter()
-    train_fn(block_fn, args=args, dataset=args.dataset)
+    history = train_fn(block_fn, args=args, dataset=args.dataset)
     train_end = time.perf_counter()
     t1 = time.perf_counter()
     timings = {
@@ -849,22 +806,15 @@ def main(args: argparse.Namespace):
         "main/total": t1 - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-            # wandb.log(
-            #     {
-            #         (f"timings/{k}" if not k.startswith("timings/") else k): v
-            #         for k, v in timings.items()
-            #     }
-            # )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    try:
+        history.tracker.log(
+            {
+                (f"timings/{k}" if not k.startswith("timings/") else k): v
+                for k, v in timings.items()
+            }
+        )
+    except Exception:
+        logger.warning("Failed to log timings to tracker")
 
 
 if __name__ == "__main__":

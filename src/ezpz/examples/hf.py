@@ -218,45 +218,20 @@ def main() -> None:
         )
         logger.info("[rank %d] using explicit FSDP plugin: %s", rank, fsdp_plugin)
 
-    # Don't let Accelerator manage wandb — we handle it via ezpz.setup_wandb()
+    # Don't let Accelerator manage wandb — we handle it via History's tracker
     accelerator = Accelerator(
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
         fsdp_plugin=fsdp_plugin,
     )
     t_setup = time.perf_counter()
 
-    # Initialise wandb early so console capture covers the full run.
-    if rank == 0:
-        try:
-            import wandb
-
-            if (
-                wandb is not None
-                and report_to is not None
-                and report_to != "none"
-                and not os.environ.get("WANDB_DISABLED", False)
-            ):
-                wbproj_name = (
-                    model_args.wandb_project_name
-                    if model_args.wandb_project_name is not None
-                    else model_args.model_name_or_path
-                )
-                if wbproj_name is None:
-                    wbproj_name = "ezpz-hf-default-project"
-                wbproj_name = f"ezpz-hf-{wbproj_name}".replace("/", "-")
-                run = ezpz.setup_wandb(project_name=wbproj_name)
-                if run is not None and run is wandb.run:
-                    wandb.define_metric("num_input_tokens_seen")
-                    run.config.update(
-                        {
-                            "model": model_args.__dict__,
-                            "data": data_args.__dict__,
-                            "training": training_args.to_dict(),
-                            "ezpz.dist_info": ezpz.get_dist_info(),
-                        }
-                    )
-        except Exception:
-            logger.info("W&B setup skipped")
+    # Resolve project name for tracker backends
+    wbproj_name = (
+        model_args.wandb_project_name
+        if getattr(model_args, "wandb_project_name", None) is not None
+        else (model_args.model_name_or_path or "ezpz-hf-default-project")
+    )
+    wbproj_name = f"ezpz-hf-{wbproj_name}".replace("/", "-")
     ezpz.barrier()
 
     logger.warning(accelerator.state)
@@ -704,6 +679,13 @@ def main() -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     logger.info("Outputs will be saved to %s", outdir)
     history = ezpz.history.History(
+        project_name=wbproj_name,
+        config={
+            "model": model_args.__dict__,
+            "data": data_args.__dict__,
+            "training": training_args.to_dict(),
+        },
+        outdir=outdir,
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=outdir / "metrics.jsonl",
@@ -918,16 +900,12 @@ def main() -> None:
             timings=timings,
         )
 
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
 
 
 if __name__ == "__main__":

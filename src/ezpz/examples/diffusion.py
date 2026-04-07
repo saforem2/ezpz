@@ -78,7 +78,6 @@ import torch.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
-import wandb
 from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
@@ -425,6 +424,9 @@ def train(
     # outdir = Path(outdir).as_posix()
     metrics_path = Path(outdir).joinpath(f"metrics-{ezpz.get_rank()}.jsonl")
     history = ezpz.history.History(
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
+        outdir=outdir,
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
@@ -677,14 +679,7 @@ def main(args: argparse.Namespace) -> None:
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
     # self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
-    if ezpz.get_rank() == 0:
-        run = ezpz.distributed.setup_wandb(
-            project_name=WBPROJ_NAME,
-            # outdir=outdir,
-        )
-        assert run is not None and run is wandb.run
-        # wandb.config.update(ezpz.distributed.get_dist_info())
-        wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
+    # Tracker setup is handled by History constructor above (via train_fn)
         # wandb.config.update({"args": {**vars(args)}})
 
     base_texts: List[str]
@@ -763,16 +758,12 @@ def main(args: argparse.Namespace) -> None:
         "timings/end-to-end": end_time - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
 
 
 if __name__ == "__main__":
