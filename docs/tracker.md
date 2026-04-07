@@ -119,3 +119,46 @@ interrupted by a tracking failure.
 
 See [`ezpz.tracker`](./python/Code-Reference/tracker.md) for the full
 API documentation.
+
+---
+
+## Timing Comparisons
+
+
+| Backends | Localhost | Polaris | Sunspot |
+|:--------:|:---------:|:-------:|:-------:|
+| WandB    | 21s       | 40s     | 53s     |
+| WandB    | s         | s       | s       |
+| WandB    | s         | s       | s       |
+| WandB    | s         | s       | s       |
+| WandB    | s         | s       | s       |
+
+| MLFlow | XXX | XXX | XXX |
+|:------:|:---:|:---:|:---:|
+| MLFlow | XXX | XXX | XXX |
+| MLFlow | XXX | XXX | XXX |
+| MLFlow | XXX | XXX | XXX |
+| BOTH   | XXX | XXX | XXX |
+| BOTH   | XXX | XXX | XXX |
+| BOTH   | XXX | XXX | XXX |
+
+
+
+### MacBook Pro
+
+### Sunspot
+
+
+
+
+|           | Both   | MLFlow | WandB |
+|----------:|:------:|:------:|:-----:|
+| Polaris   | 5min   |        |       |
+| Polaris   | 5min   |        |       |
+| ---       |        |        |       |
+| Sunspot   | 22 min |        |       |
+| ---       | xxx    | 24 min | xxx   |
+| Localhost | xxx    | xxx    | xxx   |
+
+
+### Polaris
