@@ -116,6 +116,30 @@ Pass `backends="wandb"` to `History` for automatic metric dispatch to Weights & 
     [I][ezpz/launch] Executing finished in 9.80 seconds.
     ```
 
+## MLflow Tracking
+
+Same as W&B — just change the backend. Or use both at once.
+
+```bash
+# MLflow only
+EZPZ_TRACKER_BACKENDS=mlflow ezpz launch -np 2 -- python3 recipe_wandb.py
+
+# Both W&B and MLflow
+EZPZ_TRACKER_BACKENDS=wandb,mlflow ezpz launch -np 2 -- python3 recipe_wandb.py
+```
+
+No code changes needed — the `History` in the recipe above picks up
+`EZPZ_TRACKER_BACKENDS` automatically. Set your tracking server in
+`~/.amsc.env` or the project `.env`:
+
+```bash title="~/.amsc.env"
+AMSC_API_KEY=your-api-key
+MLFLOW_TRACKING_URI=https://mlflow.american-science-cloud.org
+MLFLOW_TRACKING_INSECURE_TLS=true
+```
+
+See [Tracker > MLflow](./tracker.md#mlflow) for the full setup guide.
+
 ## Custom Hostfile
 
 Use `--hostfile` with `ezpz launch` to target specific nodes.
