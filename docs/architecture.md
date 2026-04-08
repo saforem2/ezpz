@@ -118,6 +118,7 @@ FSDP is the default (`use_fsdp=True`). Pass `use_fsdp=False` for DDP when your m
 | `configs.py` | Dataclass configs, logging setup, path constants |
 | `launch.py` | Job launcher logic |
 | `history.py` | Metric tracking and visualization |
+| `tracker.py` | Multi-backend experiment tracking (wandb, MLflow, CSV) |
 | `doctor.py` | Runtime diagnostics (`ezpz doctor`) |
 | `jobs.py` | PBS job metadata helpers |
 | `pbs.py` / `slurm.py` | Scheduler-specific helpers |

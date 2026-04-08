@@ -242,7 +242,7 @@ import ezpz
 logger = ezpz.get_logger(__name__)
 history = ezpz.History(
     project_name="my-project",   # optional
-    backends="wandb",            # or "wandb,csv", or omit for local-only
+    backends="wandb",            # or "mlflow", "wandb,mlflow,csv", etc.
 )
 
 for step in range(100):
@@ -268,7 +268,8 @@ For the full History API — distributed aggregation, environment variables,
 ## 🔗 Next Steps
 
 - **[Reference](./reference.md)** — complete runnable example with terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
+- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, plots
+- **[Tracker](./tracker.md)** — multi-backend tracking (W&B, MLflow, CSV)
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
 - **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
 - **[Configuration](./configuration.md)** — environment variables and config dataclasses
