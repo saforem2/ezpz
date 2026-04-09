@@ -92,6 +92,52 @@ def test_get_pbs_launch_cmd_intel_cpu_binding_defaults(patch_topology, monkeypat
 
 
 # ---------------------------------------------------------------------------
+# _run_qstat_with_retry
+# ---------------------------------------------------------------------------
+
+
+class TestRunQstatWithRetry:
+    """Tests for ``_run_qstat_with_retry``."""
+
+    def test_succeeds_on_first_try(self):
+        """Returns output when qstat succeeds immediately."""
+        fn = MagicMock(return_value="output")
+        result = pbs._run_qstat_with_retry(fn, "-u", "testuser")
+        assert result == "output"
+        assert fn.call_count == 1
+
+    def test_retries_on_communication_failure(self, monkeypatch):
+        """Retries on transient PBS server errors and succeeds."""
+        monkeypatch.setattr(pbs, "_QSTAT_RETRY_DELAY", 0)
+        fn = MagicMock(
+            side_effect=[
+                Exception("Communication failure."),
+                Exception("cannot connect to server foo"),
+                "output",
+            ]
+        )
+        result = pbs._run_qstat_with_retry(fn, "-u", "testuser")
+        assert result == "output"
+        assert fn.call_count == 3
+
+    def test_raises_after_max_retries(self, monkeypatch):
+        """Raises after exhausting all retries."""
+        monkeypatch.setattr(pbs, "_QSTAT_RETRY_DELAY", 0)
+        monkeypatch.setattr(pbs, "_QSTAT_MAX_RETRIES", 3)
+        fn = MagicMock(side_effect=Exception("Communication failure."))
+        with pytest.raises(Exception, match="Communication failure"):
+            pbs._run_qstat_with_retry(fn, "-u", "testuser")
+        assert fn.call_count == 3
+
+    def test_non_transient_error_raises_immediately(self):
+        """Non-transient errors are not retried."""
+        fn = MagicMock(side_effect=RuntimeError("something else"))
+        with pytest.raises(RuntimeError, match="something else"):
+            pbs._run_qstat_with_retry(fn, "-u", "testuser")
+        assert fn.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # Fixtures / helpers for qstat-based tests
 # ---------------------------------------------------------------------------
 

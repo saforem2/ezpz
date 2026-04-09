@@ -111,6 +111,10 @@ def get_scheduler(_scheduler: Optional[str] = None) -> str:
         log.info(f"Using user-specified scheduler: {_scheduler}")
         return _scheduler.upper()
 
+    env_override = os.environ.get("EZPZ_SCHEDULER")
+    if env_override is not None:
+        return env_override.upper()
+
     if os.environ.get("PBS_JOBID"):
         return "PBS"
     if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_JOBID"):
