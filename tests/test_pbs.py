@@ -324,10 +324,10 @@ class TestGetPbsNodefileFromJobid:
 
     def test_path_construction_format(self):
         """Verify the function targets /var/spool/pbs/aux/{jobid}."""
-        # We can't access /var/spool/pbs/aux on a dev machine, so verify
-        # the function at least constructs the right parent path by catching
-        # the expected OSError / FileNotFoundError.
-        with pytest.raises((FileNotFoundError, OSError)):
+        # On dev machines the directory doesn't exist (FileNotFoundError/OSError).
+        # On PBS systems the directory exists but won't contain a matching
+        # file for a bogus jobid, so the function raises AssertionError.
+        with pytest.raises((FileNotFoundError, OSError, AssertionError)):
             pbs.get_pbs_nodefile_from_jobid(999999)
 
 
