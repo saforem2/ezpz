@@ -24,9 +24,18 @@ import ezpz.distributed
 PYTHON = sys.executable
 NPROCS = 2
 
+_SKIP_REASON = (
+    "Multi-rank tests require mpirun with SSH access to localhost. "
+    "Set EZPZ_LAUNCH_TEST=1 to enable (e.g. on HPC nodes)."
+)
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.slow,
+    pytest.mark.skipif(
+        not os.environ.get("EZPZ_LAUNCH_TEST"),
+        reason=_SKIP_REASON,
+    ),
 ]
 
 
@@ -51,6 +60,9 @@ def _run_multirank(
         "PMI_RANK", "PMI_SIZE", "PMI_LOCAL_RANK", "PMI_LOCAL_SIZE",
         "OMPI_COMM_WORLD_RANK", "OMPI_COMM_WORLD_SIZE",
         "OMPI_COMM_WORLD_LOCAL_RANK",
+        # Scrub scheduler env so get_active_jobid() doesn't call qstat/sacct
+        "PBS_JOBID", "PBS_NODEFILE", "PBS_NUM_NODES",
+        "SLURM_JOB_ID", "SLURM_JOBID", "SLURM_NNODES",
     ]:
         env.pop(var, None)
     env["MASTER_ADDR"] = "127.0.0.1"
@@ -59,6 +71,9 @@ def _run_multirank(
     env["WANDB_MODE"] = "disabled"
     env["NO_COLOR"] = "1"
     env["EZPZ_LOG_LEVEL"] = "CRITICAL"
+    # Force scheduler to UNKNOWN so ezpz launch skips qstat/sacct calls
+    # and falls through to the mpirun fallback path.
+    env["EZPZ_SCHEDULER"] = "UNKNOWN"
 
     result = subprocess.run(
         [

@@ -60,13 +60,21 @@ def test_fsdp_tp_launch_tp_random_smoke():
     ]
     env = os.environ.copy()
     env["EZPZ_DEBUG_NAN"] = "1"
-    proc = subprocess.run(
-        cmd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    env["EZPZ_SCHEDULER"] = "UNKNOWN"
+    # Scrub scheduler env so ezpz launch doesn't call qstat/sacct
+    for var in ("PBS_JOBID", "PBS_NODEFILE", "SLURM_JOB_ID", "SLURM_JOBID"):
+        env.pop(var, None)
+    try:
+        proc = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("ezpz launch timed out after 180s")
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     if proc.returncode != 0:
