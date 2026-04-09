@@ -290,7 +290,10 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             if bmode == "full":
                 self._open(path_text)
             text_arr = []
-            parent, remainder = path.split("/")
+            if "/" in path:
+                parent, remainder = path.rsplit("/", 1)
+            else:
+                parent, remainder = "", path
             if "." in remainder:
                 module, *fn = remainder.split(".")
                 fn = ".".join(fn)

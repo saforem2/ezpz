@@ -312,14 +312,14 @@ def tplot(
         else title
     )
     if isinstance(y, list):
-        y = torch.stack(y).numpy()
+        y = torch.stack(y).detach().cpu().numpy()
     if x is not None and isinstance(x, list):
-        x = torch.stack(x).numpy()
+        x = torch.stack(x).detach().cpu().numpy()
     # Convert xarray DataArray to numpy
     if hasattr(y, "values") and hasattr(y, "dims"):
         y = y.values
     if isinstance(y, torch.Tensor):
-        y = y.numpy()
+        y = y.detach().cpu().numpy()
     assert isinstance(y, np.ndarray), f"Expected ndarray, got {type(y)}"
     y = np.nan_to_num(y, nan=0.0)
 

@@ -158,7 +158,7 @@ def capture_env(bench_dir: Path) -> dict[str, Any]:
         job_id = os.environ["PBS_JOBID"]
         nodefile = os.environ.get("PBS_NODEFILE", "")
         if nodefile and Path(nodefile).exists():
-            num_nodes = len(Path(nodefile).read_text().splitlines())
+            num_nodes = len(set(Path(nodefile).read_text().splitlines()))
         else:
             num_nodes = int(os.environ.get("PBS_NUM_NODES", 1))
     elif os.environ.get("SLURM_JOB_ID"):
@@ -381,6 +381,8 @@ def main(argv: list[str] | None = None) -> None:
     print(report)
     print(f"\nReport written to {report_path}")
     print(f"\nDone. Results in: {bench_dir}")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
