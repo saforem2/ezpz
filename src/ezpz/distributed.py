@@ -85,8 +85,9 @@ __all__ = [
     "log_dict_as_bulleted_list",
     # -- timing --
     "timeitlogit",
-    # -- wandb --
+    # -- wandb / mlflow --
     "setup_wandb",
+    "setup_mlflow",
     "verify_wandb",
     # -- hostfile helpers --
     "get_nodes_from_hostfile",
@@ -1313,6 +1314,48 @@ def setup_wandb(
     except Exception as exc:
         logger.exception("wandb.init() failed from rank=%d: %s", rank, exc)
         logger.warning("Continuing without wandb logging.")
+        return None
+
+
+def setup_mlflow(
+    project_name: str | None = None,
+    config: dict[str, Any] | None = None,
+    outdir: str | os.PathLike | None = None,
+    **kwargs: Any,
+) -> Any:
+    """Initialise an MLflow run (rank 0 only logs, others return ``None``).
+
+    Convenience wrapper around :class:`~ezpz.tracker.MLflowBackend` that
+    mirrors :func:`setup_wandb`.  Handles dotenv loading, auth, experiment
+    name resolution, and system-param logging automatically.
+
+    Args:
+        project_name: MLflow experiment name.  Falls back to
+            ``MLFLOW_EXPERIMENT_NAME``, then wandb project env vars,
+            then a script-derived default.
+        config: Run-level config dict logged as MLflow params.
+        outdir: Artifact output directory.
+        **kwargs: Forwarded to ``mlflow.start_run``.
+
+    Returns:
+        The ``mlflow.ActiveRun`` object, or ``None`` if MLflow is
+        unavailable or the current rank is not 0.
+    """
+    try:
+        from ezpz.tracker import MLflowBackend
+
+        backend = MLflowBackend(
+            project_name=project_name,
+            config=config,
+            outdir=outdir,
+            **kwargs,
+        )
+        return backend.run
+    except ImportError:
+        logger.warning("mlflow is not installed; skipping MLflow setup.")
+        return None
+    except Exception as exc:
+        logger.warning("setup_mlflow() failed: %s — continuing without MLflow", exc)
         return None
 
 

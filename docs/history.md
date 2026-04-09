@@ -159,6 +159,15 @@ Set `WANDB_DISABLED=1` or `backends="none"` to disable.
 Built-in backend that logs to an [MLflow Tracking](https://mlflow.org)
 server or local filesystem.
 
+!!! tip "Standalone setup"
+
+    For one-call MLflow initialization outside of `History`, use
+    `ezpz.setup_mlflow()` — it mirrors `ezpz.setup_wandb()`:
+
+    ```python
+    run = ezpz.setup_mlflow(project_name="my-project", config={"lr": 1e-4})
+    ```
+
 ```bash
 # Enable MLflow tracking
 EZPZ_TRACKER_BACKENDS=mlflow ezpz launch python3 -m ezpz.examples.vit
