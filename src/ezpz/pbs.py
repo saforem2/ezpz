@@ -33,8 +33,8 @@ def get_pbs_running_jobs_for_user():
     try:
         from sh import qstat  # type:ignore
     except Exception as e:
-        print("Error importing sh.qstat:", e)
-        raise e
+        logger.debug("Error importing sh.qstat: %s", e)
+        raise
 
     jobarr = [
         i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i

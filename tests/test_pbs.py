@@ -148,9 +148,17 @@ class TestGetRunningJobsFromQstat:
 
     def test_qstat_unavailable(self):
         """ImportError when sh.qstat is not importable propagates."""
-        with patch.dict("sys.modules", {"sh": None}):
+        import sys
+        _orig_sh = sys.modules.get("sh", _SENTINEL := object())
+        try:
+            sys.modules["sh"] = None  # type: ignore[assignment]
             with pytest.raises((ImportError, ModuleNotFoundError)):
                 pbs.get_running_jobs_from_qstat()
+        finally:
+            if _orig_sh is _SENTINEL:
+                sys.modules.pop("sh", None)
+            else:
+                sys.modules["sh"] = _orig_sh
 
 
 # ===================================================================
@@ -196,9 +204,17 @@ class TestGetPbsRunningJobsForUser:
 
     def test_qstat_import_failure_raises(self):
         """When sh is not importable, the exception propagates."""
-        with patch.dict("sys.modules", {"sh": None}):
+        import sys
+        _orig_sh = sys.modules.get("sh", _SENTINEL := object())
+        try:
+            sys.modules["sh"] = None  # type: ignore[assignment]
             with pytest.raises(Exception):
                 pbs.get_pbs_running_jobs_for_user()
+        finally:
+            if _orig_sh is _SENTINEL:
+                sys.modules.pop("sh", None)
+            else:
+                sys.modules["sh"] = _orig_sh
 
 
 # ===================================================================
