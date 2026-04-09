@@ -144,13 +144,77 @@ history = History(
 
 The wandb backend:
 
-- Disables itself on non-rank-0 processes automatically
-- Resolves project name from: argument > `WB_PROJECT` > `WANDB_PROJECT` env vars
+- **Rank 0** initializes a real run (online/offline per `WANDB_MODE`)
+- **Rank != 0** gets `mode="disabled"` — no network calls, no duplicate runs
+- Resolves project name from: argument > `WB_PROJECT` > `WANDB_PROJECT`
+  \> `WB_PROJECT_NAME` env vars > script-derived default
 - Auto-logs system info (hostname, torch version, ezpz version)
 - Logs metrics on each `update()`, uploads training history table on `finalize()`
 - Logs matplotlib plots as image artifacts
 
 Set `WANDB_DISABLED=1` or `backends="none"` to disable.
+
+### MLflow
+
+Built-in backend that logs to an [MLflow Tracking](https://mlflow.org)
+server or local filesystem.
+
+```bash
+# Enable MLflow tracking
+EZPZ_TRACKER_BACKENDS=mlflow ezpz launch python3 -m ezpz.examples.vit
+
+# Use alongside wandb
+EZPZ_TRACKER_BACKENDS=wandb,mlflow ezpz launch python3 -m ezpz.examples.vit
+```
+
+**Features:**
+
+- **Automatic time-series**: Step counter auto-increments so MLflow shows
+  line charts (not bar charts) by default
+- **System metrics**: CPU/GPU/memory usage logged automatically via
+  `mlflow.enable_system_metrics_logging()` (when using native Bearer auth)
+- **Environment params**: Hostname, device, world size, git branch, torch
+  version, etc. logged under `ezpz.*` prefix
+- **User config**: Logged under `config.*` prefix (nested dicts flattened
+  with dot-separated keys)
+- **Metric grouping**: When distributed stats are present (`loss/mean`,
+  `/min`, `/max`, `/std`), the raw per-rank value is renamed to
+  `loss/local` so MLflow groups them under a collapsible `loss/` section
+- **Artifact uploads**: On `finalize()`, JSONL logs, markdown reports,
+  plots, and datasets are uploaded as run artifacts
+- **Rank-aware**: Only rank 0 creates a run; all other ranks are silent no-ops
+
+**Experiment name resolution** (first match wins):
+
+1. `project_name` argument
+2. `MLFLOW_EXPERIMENT_NAME` env var
+3. `WB_PROJECT` / `WANDB_PROJECT` / `WB_PROJECT_NAME` env vars
+4. Auto-derived from script: `ezpz.{parent}.{stem}` (e.g. `ezpz.examples.vit`)
+
+**Authentication:**
+
+| Env var                | Auth method                          |
+|------------------------|--------------------------------------|
+| `MLFLOW_TRACKING_TOKEN` | Bearer token (MLflow native)         |
+| `AMSC_API_KEY`          | `X-API-Key` header (for AMSC servers) |
+
+Credentials are loaded automatically from dotenv files:
+
+1. **`~/.amsc.env`** — user-level credentials (loaded first)
+2. **Project `.env`** — project-level overrides (loaded second)
+
+Example `~/.amsc.env`:
+
+```bash
+AMSC_API_KEY=your-api-key-here
+MLFLOW_TRACKING_URI=https://mlflow.american-science-cloud.org
+MLFLOW_TRACKING_INSECURE_TLS=true
+```
+
+!!! tip "`python-dotenv` not installed?"
+
+    Set the variables directly in your shell or job script.
+    Dotenv loading is a convenience, not a requirement.
 
 ### CSV
 
@@ -163,10 +227,19 @@ history.update({"loss": 0.3, "lr": 1e-4, "grad_norm": 0.8})  # columns auto-exte
 
 The CSV backend writes to the `outdir`:
 
-| File | Content |
-|------|---------|
-| `metrics.csv` | One row per `update()` call, columns auto-extend as new keys appear |
-| `config.json` | Merged config from the `config=` constructor argument |
+| File                   | Content                                                          |
+|------------------------|------------------------------------------------------------------|
+| `metrics.csv`          | One row per `update()` call, columns auto-extend as new keys appear |
+| `config.json`          | Merged config from the `config=` constructor argument            |
+| `training_history.csv` | Written by `log_table()` on `finalize()`                         |
+
+- **Rank 0 only** — non-rank-0 processes buffer rows in memory but skip
+  all file I/O
+
+### None
+
+Pass `backends="none"` (or set `EZPZ_TRACKER_BACKENDS=none`) to disable
+tracking entirely. Returns a `NullTracker` where all methods are no-ops.
 
 ### Multiple Backends
 
@@ -175,7 +248,7 @@ Combine backends to dispatch everywhere at once:
 ```python
 history = History(
     project_name="my-project",
-    backends="wandb,csv",
+    backends="wandb,mlflow,csv",
     outdir="./outputs",
     config={"lr": 1e-4, "batch_size": 32},
 )

@@ -149,7 +149,7 @@ These can be broken down (~roughly) into:
 
 - **[Quick Start](./quickstart.md)** — install, write a script, launch it
 - **[Recipes](./recipes.md)** — copy-pasteable patterns for common tasks
-- **[Reference](./reference.md)** — complete runnable example with terminal output
+- **[Complete Example](./reference.md)** — full runnable example with terminal output
 - **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
 - **[FAQ](./notes/faq.md)** — common questions and troubleshooting

@@ -4,7 +4,7 @@ Everything you need to get started: install, write a script, launch it, track
 metrics, and a complete API cheat sheet with before/after diffs.
 
 For a complete runnable example with terminal output, see the
-[Reference](./reference.md).
+[Complete Example](./reference.md).
 
 ## 📦 Install
 
@@ -177,7 +177,7 @@ active job scheduler automatically:
     `mpiexec` otherwise.
 
 For pass-through launcher flags, custom hostfiles, and advanced usage, see
-the [Reference launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
+the [Complete Example launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
 and the [CLI reference](./cli/launch/index.md).
 
 ## 🛠️ API Cheat Sheet
@@ -259,7 +259,7 @@ across all ranks — no extra code needed on worker ranks.
 
     Calling `history.finalize()` writes a summary dataset and generates
     loss curves and other plots — ready for inspection or inclusion in
-    reports. See the [Reference complete example](./reference.md#complete-example-with-history)
+    reports. See the [Complete Example](./reference.md#complete-example-with-history)
     for sample output with terminal plots.
 
 For the full History API — distributed aggregation, environment variables,
@@ -267,7 +267,7 @@ For the full History API — distributed aggregation, environment variables,
 
 ## 🔗 Next Steps
 
-- **[Reference](./reference.md)** — complete runnable example with terminal output
+- **[Complete Example](./reference.md)** — full runnable example with terminal output
 - **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, plots
 - **[Tracker](./tracker.md)** — multi-backend tracking (W&B, MLflow, CSV)
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)

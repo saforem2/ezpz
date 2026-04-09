@@ -1,7 +1,7 @@
-# 📖 Reference
+# 📖 Complete Example
 
-This page covers the launcher details and a complete runnable example with
-metric tracking. For installation, the API cheat sheet, and getting started,
+A complete runnable example with launcher details and metric tracking.
+For installation, the API cheat sheet, and getting started,
 see the [Quick Start](./quickstart.md).
 
 ### 🚀 Scheduler-Aware Launcher: `ezpz launch`

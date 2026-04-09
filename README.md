@@ -33,7 +33,7 @@ import ezpz
 rank = ezpz.setup_torch()           # auto-detects device + backend
 device = ezpz.get_torch_device()
 model = torch.nn.Linear(128, 10).to(device)
-model = ezpz.wrap_model(model)       # DDP by default
+model = ezpz.wrap_model(model)       # FSDP (default)
 ```
 
 ```bash
