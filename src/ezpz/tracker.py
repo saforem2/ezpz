@@ -408,17 +408,24 @@ class MLflowBackend(TrackerBackend):
         # MLFLOW_TRACKING_URI, AMSC_API_KEY, etc.)
         try:
             from dotenv import find_dotenv, load_dotenv
+        except Exception:
+            logger.warning(f"python-dotenv not available, skipping .env loading for mlflow credentials")
 
+        try:
             # Load ~/.amsc.env first (user-level credentials), then
             # project-level .env (which can override/extend).
             amsc_env = Path.home() / ".amsc.env"
             if amsc_env.is_file():
+                logger.info(f"Loading AMSC credentials from {amsc_env}")
                 load_dotenv(amsc_env)
             env_file = find_dotenv(usecwd=True) or find_dotenv()
             if env_file:
+                logger.info(f"Loading AMSC credentials from {env_file}")
                 load_dotenv(env_file, override=True)
-        except ImportError:
-            pass
+        except Exception as exc:
+            logger.exception(exc)
+            logger.exception("Failed to load .env files for mlflow credentials")
+            logger.info("Proceeding without .env credentials for mlflow (if required, set env vars manually)")
 
         # Suppress urllib3 TLS warnings when insecure mode is enabled
         if os.environ.get("MLFLOW_TRACKING_INSECURE_TLS", "").lower() in (
