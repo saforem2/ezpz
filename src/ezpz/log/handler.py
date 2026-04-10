@@ -327,11 +327,12 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             has_prefix = True
 
         # -- Close wrapper / separator before message --
-        if has_prefix:
-            if bmode == "single":
-                self._close(result)
+        if bmode == "single":
+            self._close(result)
+            if has_prefix:
                 result += Text(" ")
-            elif bmode == "none":
+        elif has_prefix:
+            if bmode == "none":
                 result += Text(" -- ", style=self._ps("repr.dash"))
             else:
                 result += Text(" ")
