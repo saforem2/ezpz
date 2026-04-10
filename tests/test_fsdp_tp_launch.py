@@ -59,11 +59,28 @@ def test_fsdp_tp_launch_tp_random_smoke():
         "256",
     ]
     env = os.environ.copy()
-    env["EZPZ_DEBUG_NAN"] = "1"
-    env["EZPZ_SCHEDULER"] = "UNKNOWN"
-    # Scrub scheduler env so ezpz launch doesn't call qstat/sacct
-    for var in ("PBS_JOBID", "PBS_NODEFILE", "SLURM_JOB_ID", "SLURM_JOBID"):
+    # Scrub distributed env vars that earlier tests may have leaked into
+    # the pytest process so that the mpirun children discover topology
+    # from MPI rather than stale env state.
+    for var in [
+        "MASTER_PORT", "MASTER_ADDR",
+        "RANK", "LOCAL_RANK", "WORLD_SIZE",
+        "LOCAL_WORLD_SIZE", "GROUP_RANK", "GROUP_WORLD_SIZE",
+        "PMI_RANK", "PMI_SIZE", "PMI_LOCAL_RANK", "PMI_LOCAL_SIZE",
+        "OMPI_COMM_WORLD_RANK", "OMPI_COMM_WORLD_SIZE",
+        "OMPI_COMM_WORLD_LOCAL_RANK",
+        "PBS_JOBID", "PBS_NODEFILE", "PBS_NUM_NODES",
+        "SLURM_JOB_ID", "SLURM_JOBID", "SLURM_NNODES",
+    ]:
         env.pop(var, None)
+    env["MASTER_ADDR"] = "127.0.0.1"
+    env["TORCH_DEVICE"] = "cpu"
+    env["TORCH_BACKEND"] = "gloo"
+    env["WANDB_MODE"] = "disabled"
+    env["NO_COLOR"] = "1"
+    env["EZPZ_LOG_LEVEL"] = "CRITICAL"
+    env["EZPZ_SCHEDULER"] = "UNKNOWN"
+    env["EZPZ_DEBUG_NAN"] = "1"
     try:
         proc = subprocess.run(
             cmd,
