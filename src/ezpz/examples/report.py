@@ -211,16 +211,45 @@ def _find_wandb_url(logfile: Path) -> Optional[str]:
     return urls[0] if urls else None
 
 
+def _find_mlflow_url(logfile: Path) -> Optional[str]:
+    """Extract an MLflow run URL from a log file."""
+    pattern = re.compile(r"View run at\s+(https?://\S+)")
+    try:
+        text = _strip_ansi(logfile.read_text(errors="replace"))
+    except OSError:
+        return None
+    m = pattern.search(text)
+    return m.group(1) if m else None
+
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+
+
+def _display_len(cell: str) -> int:
+    """Return the rendered width of *cell*, collapsing markdown links."""
+    return len(_MD_LINK_RE.sub(lambda m: m.group(1), cell))
+
+
 def _align_table(headers: list[str], rows: list[list[str]]) -> list[str]:
-    """Build a markdown table with columns padded to equal widths."""
+    """Build a markdown table with columns padded to equal widths.
+
+    Column widths are computed from the *display* length of each cell so
+    that markdown links (``[text](url)``) are measured by their visible
+    text, not the full URL.
+    """
     ncols = len(headers)
-    widths = [len(h) for h in headers]
+    widths = [_display_len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
-            widths[i] = max(widths[i], len(cell))
+            widths[i] = max(widths[i], _display_len(cell))
+
+    def _pad(cell: str, width: int) -> str:
+        return cell + " " * (width - _display_len(cell))
+
     def _row_line(cells: list[str]) -> str:
-        padded = [cells[i].ljust(widths[i]) for i in range(ncols)]
+        padded = [_pad(cells[i], widths[i]) for i in range(ncols)]
         return "| " + " | ".join(padded) + " |"
+
     lines = [_row_line(headers)]
     lines.append("|" + "|".join("-" * (w + 2) for w in widths) + "|")
     for row in rows:
@@ -280,7 +309,7 @@ def generate_report(outdir: Path) -> str:
     # ── Per-example results ──────────────────────────────────────────────
     results_headers = [
         "Example", "Status", "Wall Time", "Steps",
-        "Final Loss", "Mean dt (s)", "Throughput", "W&B",
+        "Final Loss", "Mean dt (s)", "Throughput", "W&B", "MLflow",
     ]
     results_rows: list[list[str]] = []
 
@@ -294,6 +323,8 @@ def generate_report(outdir: Path) -> str:
         logfile = outdir / f"{name}.log"
         wandb_url = _find_wandb_url(logfile)
         wandb_cell = f"[link]({wandb_url})" if wandb_url else "\u2014"
+        mlflow_url = _find_mlflow_url(logfile)
+        mlflow_cell = f"[link]({mlflow_url})" if mlflow_url else "\u2014"
 
         # Attempt to locate and parse metrics.
         # Primary: extract output dir from log.  Fallback: search outputs/.
@@ -322,7 +353,7 @@ def generate_report(outdir: Path) -> str:
 
         results_rows.append([
             name, status, wall_str, num_steps,
-            final_loss, mean_dt, tp_str, wandb_cell,
+            final_loss, mean_dt, tp_str, wandb_cell, mlflow_cell,
         ])
 
     lines += ["## Results", "", *_align_table(results_headers, results_rows)]
