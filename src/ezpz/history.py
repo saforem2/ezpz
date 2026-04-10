@@ -297,9 +297,8 @@ class History:
         #   - Auto-detect wandb.run path (setup_tracker called without config)
         # The setup_tracker(config=...) path already handles config internally,
         # so we skip it there to avoid duplicates.
-        _tracker_got_config = (
-            tracker is None
-            and any(arg is not None for arg in (project_name, backends))
+        _tracker_got_config = tracker is None and (
+            any(arg is not None for arg in (project_name, backends))
             or os.environ.get(
                 "EZPZ_TRACKER_BACKENDS", os.environ.get("EZPZ_TRACKER_BACKEND")
             )
