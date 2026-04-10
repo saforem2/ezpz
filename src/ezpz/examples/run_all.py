@@ -288,12 +288,15 @@ def main(argv: list[str] | None = None) -> None:
         description="Run all ezpz examples sequentially and generate a report.",
     )
     parser.add_argument(
-        "--examples",
-        nargs="+",
-        choices=ALL_EXAMPLE_NAMES,
-        default=ALL_EXAMPLE_NAMES,
+        "--run", "--examples",
+        dest="examples",
+        default=None,
         metavar="NAME",
-        help=f"Examples to run (default: all). Choices: {', '.join(ALL_EXAMPLE_NAMES)}",
+        help=(
+            "Examples to run, comma- or space-separated "
+            f"(default: all). Choices: {', '.join(ALL_EXAMPLE_NAMES)}"
+        ),
+        nargs="*",
     )
     parser.add_argument(
         "--model",
@@ -307,6 +310,21 @@ def main(argv: list[str] | None = None) -> None:
         help="Output directory (default: outputs/benchmarks/{timestamp}).",
     )
     args = parser.parse_args(argv)
+
+    # Normalize --run/--examples: accept comma-separated and/or space-separated
+    if args.examples is None:
+        args.examples = list(ALL_EXAMPLE_NAMES)
+    else:
+        expanded: list[str] = []
+        for token in args.examples:
+            expanded.extend(token.split(","))
+        bad = [n for n in expanded if n not in ALL_EXAMPLE_NAMES]
+        if bad:
+            parser.error(
+                f"Unknown example(s): {', '.join(bad)}. "
+                f"Choices: {', '.join(ALL_EXAMPLE_NAMES)}"
+            )
+        args.examples = expanded
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     bench_dir = args.outdir or Path("outputs/benchmarks") / timestamp
