@@ -215,6 +215,9 @@ class TestGetRunningJobsFromQstat:
 class TestGetPbsRunningJobsForUser:
     """Tests for ``get_pbs_running_jobs_for_user``."""
 
+    def setup_method(self):
+        pbs._pbs_jobs_cache = None
+
     def test_returns_jobid_to_nodelist_mapping(self):
         """Parses qstat -fn1wru and returns {jobid: [nodes]} dict."""
         mock_sh = MagicMock()

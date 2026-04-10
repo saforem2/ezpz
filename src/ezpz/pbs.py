@@ -30,6 +30,8 @@ logger = ezpz.get_logger(__name__)
 
 _QSTAT_MAX_RETRIES = 5
 _QSTAT_RETRY_DELAY = 2  # seconds
+_PBS_JOBS_CACHE_TTL = 30  # seconds
+_pbs_jobs_cache: tuple[float, dict[str, list[str]]] | None = None
 
 
 def _run_qstat_with_retry(qstat_fn, *args, **kwargs) -> str:
@@ -51,8 +53,18 @@ def _run_qstat_with_retry(qstat_fn, *args, **kwargs) -> str:
     raise last_exc  # type: ignore[misc]
 
 
-def get_pbs_running_jobs_for_user():
-    """Get all running jobs for the current user."""
+def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
+    """Get all running jobs for the current user.
+
+    Results are cached for up to 30 s to avoid redundant qstat calls
+    during a single launch sequence.
+    """
+    global _pbs_jobs_cache
+    if _pbs_jobs_cache is not None:
+        ts, cached = _pbs_jobs_cache
+        if time.monotonic() - ts < _PBS_JOBS_CACHE_TTL:
+            return cached
+
     try:
         from sh import qstat  # type:ignore
     except Exception as e:
@@ -63,13 +75,14 @@ def get_pbs_running_jobs_for_user():
     jobarr = [
         i for i in output.split("\n") if " R " in i
     ]
-    jobs = {}
+    jobs: dict[str, list[str]] = {}
     for row in jobarr:
         jstr = [i for i in row.split(" ") if len(i) > 0]
         jobid = jstr[0].split(".")[0]
         nodelist = [h.split("/")[0] for h in jstr[-1].split("+")]
         jobs[jobid] = nodelist
 
+    _pbs_jobs_cache = (time.monotonic(), jobs)
     return jobs
 
 
