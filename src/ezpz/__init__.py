@@ -125,8 +125,23 @@ def try_import_wandb() -> object | None:
 
 
 def get_torch_version_as_float() -> float:
+    """Return the PyTorch version as a float (e.g. 2.5).
+
+    .. deprecated::
+        Use :func:`get_torch_version_tuple` for semver-safe comparisons.
+    """
     import torch
     return float(".".join(torch.__version__.split(".")[:2]))
+
+
+def get_torch_version_tuple() -> tuple[int, int]:
+    """Return the PyTorch (major, minor) version as an integer tuple.
+
+    Semver-safe: ``(2, 12)`` compares correctly unlike the float ``2.12``.
+    """
+    import torch
+    parts = torch.__version__.split(".")[:2]
+    return (int(parts[0]), int(parts[1]))
 
 
 # Record the package version in the environment for compatibility with callers

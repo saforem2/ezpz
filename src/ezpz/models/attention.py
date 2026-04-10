@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 create_cp_block_mask = None
 try:
-    if ezpz.get_torch_version_as_float() >= 2.12:
+    if ezpz.get_torch_version_tuple() >= (2, 12):
         from torch.distributed.tensor.experimental._context_parallel._attention import _create_cp_block_mask as create_cp_block_mask
     else:
         from torch.distributed.tensor.experimental._attention import create_cp_block_mask
