@@ -44,8 +44,8 @@ import click
     help="Print the generated script without submitting.",
 )
 @click.option(
-    "--launch", is_flag=True, default=False,
-    help="Wrap the command with 'ezpz launch'.",
+    "--launch/--no-launch", default=True,
+    help="Wrap the command with 'ezpz launch' (default: on).",
 )
 def submit_cmd(
     args: tuple[str, ...],
