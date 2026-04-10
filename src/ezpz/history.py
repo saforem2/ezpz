@@ -300,7 +300,9 @@ class History:
         _tracker_got_config = (
             tracker is None
             and any(arg is not None for arg in (project_name, backends))
-            or os.environ.get("EZPZ_TRACKER_BACKENDS")
+            or os.environ.get(
+                "EZPZ_TRACKER_BACKENDS", os.environ.get("EZPZ_TRACKER_BACKEND")
+            )
         )
         if config is not None and not _tracker_got_config:
             self._tracker.log_config(config)
@@ -2442,7 +2444,9 @@ class History:
                     dset_name, columns=columns, data=data_rows
                 )
             except Exception as e:
-                logger.warning("Unable to log dataset table via tracker: %s", e)
+                logger.warning(
+                    "Unable to log dataset table via tracker: %s", e
+                )
 
         return save_dataset(
             dataset,
@@ -2515,7 +2519,9 @@ class History:
                     old_csv.unlink()
                 except OSError:
                     pass
-        dataset_label = dataset_fname if dataset_fname is not None else "dataset"
+        dataset_label = (
+            dataset_fname if dataset_fname is not None else "dataset"
+        )
         report_dir = (
             base_dir.joinpath(dataset_label)
             if dataset_fname is not None
@@ -2543,9 +2549,7 @@ class History:
             "Output Directory": str(base_dir),
         }
         if self.report_enabled:
-            paths["Report"] = str(
-                report_dir / self._report_filename
-            )
+            paths["Report"] = str(report_dir / self._report_filename)
             output_files["Report"] = paths["Report"]
         plotdir = None
         if plot:
