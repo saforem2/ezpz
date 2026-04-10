@@ -201,7 +201,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Device Management
 
-```diff
+```diff linenums='0'
 - device = torch.device("cuda")
 - model.to("cuda")
 - batch = batch.to("cuda")
@@ -213,7 +213,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Model Wrapping
 
-```diff
+```diff linenums='0'
 - from torch.nn.parallel import DistributedDataParallel as DDP
 - model = DDP(model, device_ids=[local_rank], output_device=local_rank)
 
@@ -223,7 +223,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Training Loop
 
-```diff
+```diff linenums='0'
   for step, batch in enumerate(dataloader):
 -     batch = batch.to("cuda")
 +     batch = batch.to(ezpz.get_torch_device())
@@ -236,7 +236,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Metric Tracking
 
-```python
+```python linenums='0'
 import ezpz
 
 logger = ezpz.get_logger(__name__)
@@ -263,14 +263,18 @@ across all ranks — no extra code needed on worker ranks.
     for sample output with terminal plots.
 
 For the full History API — distributed aggregation, environment variables,
-`StopWatch`, and more — see the [Metric Tracking guide](./history.md).
+`StopWatch`, and more — see the [Metric Tracking guide](./history.md).
 
 ## 🔗 Next Steps
 
-- **[Complete Example](./reference.md)** — full runnable example with terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, plots
+- **[Complete Example](./reference.md)** — full runnable example with terminal
+  output
+- **[Metric Tracking](./history.md)** — full `History` guide:
+  distributed stats, plots
 - **[Tracker](./tracker.md)** — multi-backend tracking (W&B, MLflow, CSV)
-- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
-- **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
-- **[Configuration](./configuration.md)** — environment variables and config dataclasses
+- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT,
+  Diffusion, etc.)
+- **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
+- **[Configuration](./configuration.md)** — environment variables and config
+  dataclasses
 - **[Architecture](./architecture.md)** — how `ezpz` works under the hood
