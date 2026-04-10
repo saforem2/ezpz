@@ -1504,22 +1504,30 @@ def _setup_ddp(
             "local_rank": local_rank,
         }
 
-    # Rank 0 determines master_addr and port, then broadcasts
-    master_addr = socket.gethostname() if rank == 0 else None
-    if master_addr is not None:
-        machine = get_machine().lower()
-        if machine in {"aurora", "polaris", "sirius"}:
-            master_addr = f"{master_addr}.hsn.cm.{machine}.alcf.anl.gov"
-        elif machine == "sophia":
-            master_addr = f"{master_addr}.lab.alcf.anl.gov"
+    # If MASTER_ADDR and MASTER_PORT are already set (e.g. by torchrun),
+    # use them directly instead of re-deriving via MPI broadcast.
+    env_master_addr = os.environ.get("MASTER_ADDR")
+    env_master_port = os.environ.get("MASTER_PORT")
+    if env_master_addr and env_master_port:
+        master_addr = env_master_addr
+        master_port = env_master_port
+    else:
+        # Rank 0 determines master_addr and port, then broadcasts
+        master_addr = socket.gethostname() if rank == 0 else None
+        if master_addr is not None:
+            machine = get_machine().lower()
+            if machine in {"aurora", "polaris", "sirius"}:
+                master_addr = f"{master_addr}.hsn.cm.{machine}.alcf.anl.gov"
+            elif machine == "sophia":
+                master_addr = f"{master_addr}.lab.alcf.anl.gov"
 
-    free_port = str(_get_free_port()) if rank == 0 else None
-    master_port = (
-        os.environ.get("MASTER_PORT", free_port) if rank == 0 else None
-    )
+        free_port = str(_get_free_port()) if rank == 0 else None
+        master_port = (
+            os.environ.get("MASTER_PORT", free_port) if rank == 0 else None
+        )
 
-    master_addr = broadcast(master_addr, root=0)
-    master_port = broadcast(master_port, root=0)
+        master_addr = broadcast(master_addr, root=0)
+        master_port = broadcast(master_port, root=0)
 
     os.environ["MASTER_ADDR"] = str(master_addr)
     os.environ["MASTER_PORT"] = str(master_port)
