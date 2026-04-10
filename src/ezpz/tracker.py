@@ -533,15 +533,16 @@ class MLflowBackend(TrackerBackend):
         import sys
 
         _w = sys.stderr.write
-        _w("🔄 mlflow: Tracking run with mlflow\n")
-        _w(f"🔄 mlflow: Experiment: {_experiment}\n")
-        _w(f"🔄 mlflow: Run name: {self._run_name}\n")
-        _w(f"🔄 mlflow: Tracking URI: {self._tracking_uri}\n")
+        _mlflow = "\033[91mmlflow\033[0m"
+        _w(f"🔄 {_mlflow}: Tracking run with mlflow\n")
+        _w(f"🔄 {_mlflow}: Experiment: {_experiment}\n")
+        _w(f"🔄 {_mlflow}: Run name: {self._run_name}\n")
+        _w(f"🔄 {_mlflow}: Tracking URI: {self._tracking_uri}\n")
         if self._run_url:
-            _w(f"🔄 mlflow: 🔗 View run at {self._run_url}\n")
+            _w(f"🔄 {_mlflow}: 🔗 View run at {self._run_url}\n")
         else:
             _w(
-                f"🔄 mlflow: Run ID: {self._run_id} "
+                f"🔄 {_mlflow}: Run ID: {self._run_id} "
                 f"(view with: mlflow ui --port 5000)\n"
             )
         sys.stderr.flush()
