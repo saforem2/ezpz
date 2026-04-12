@@ -3,8 +3,8 @@
 Everything you need to get started: install, write a script, launch it, track
 metrics, and a complete API cheat sheet with before/after diffs.
 
-For a complete runnable example with terminal output, see the
-[Complete Example](./reference.md).
+For a full walkthrough with real terminal output, see the
+[End-to-End Walkthrough](./reference.md).
 
 ## 📦 Install
 
@@ -95,11 +95,7 @@ rank = ezpz.setup_torch()  # auto-detects device + backend, returns global rank
 device = ezpz.get_torch_device()
 
 model = torch.nn.Linear(128, 64).to(device)
-model = ezpz.wrap_model(
-    model,
-    use_fsdp=True,  # False will use DDP
-    dtype="bfloat16",
-)
+model = ezpz.wrap_model(model, dtype="bfloat16")  # FSDP by default; use_fsdp=False for DDP
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 for step in range(100):
@@ -114,7 +110,8 @@ ezpz.cleanup()
 
 That's it — `ezpz` detects the available backend, initializes the process
 group, wraps your model in FSDP/DDP, and assigns each rank to the correct
-device.
+device. For help choosing between DDP, FSDP, and FSDP+TP, see the
+[Distributed Training Guide](./guides/distributed-training.md#quick-reference).
 
 !!! tip "`ezpz.synchronize()`"
 
@@ -177,8 +174,36 @@ active job scheduler automatically:
     `mpiexec` otherwise.
 
 For pass-through launcher flags, custom hostfiles, and advanced usage, see
-the [Complete Example launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
+the [Walkthrough launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
 and the [CLI reference](./cli/launch/index.md).
+
+## 📤 Submit It
+
+`ezpz launch` runs inside an existing allocation. To submit a **batch job**
+to the scheduler queue, use `ezpz submit`:
+
+```bash
+ezpz submit -N 2 -q debug -t 01:00:00 -A <project> \
+    -- python3 train.py
+```
+
+This auto-generates a PBS or SLURM job script, wraps your command with
+`ezpz launch`, and submits it. Preview the generated script first with
+`--dry-run`:
+
+```bash
+ezpz submit -N 2 -q debug -t 01:00:00 --dry-run -- python3 train.py
+```
+
+You can also submit an existing job script directly:
+
+```bash
+ezpz submit job.sh
+```
+
+See the [CLI reference](./cli/submit.md) for the full option list, or the
+[Distributed Training Guide](./guides/distributed-training.md#going-to-production-with-ezpz-submit)
+for a complete production workflow walkthrough.
 
 ## 🛠️ API Cheat Sheet
 
@@ -259,7 +284,7 @@ across all ranks — no extra code needed on worker ranks.
 
     Calling `history.finalize()` writes a summary dataset and generates
     loss curves and other plots — ready for inspection or inclusion in
-    reports. See the [Complete Example](./reference.md#complete-example-with-history)
+    reports. See the [Walkthrough](./reference.md#full-example-with-history)
     for sample output with terminal plots.
 
 For the full History API — distributed aggregation, environment variables,
@@ -267,11 +292,10 @@ For the full History API — distributed aggregation, environment variables,
 
 ## 🔗 Next Steps
 
-- **[Complete Example](./reference.md)** — full runnable example with terminal
-  output
+- **[End-to-End Walkthrough](./reference.md)** — full runnable example with real
+  terminal output
 - **[Metric Tracking](./history.md)** — full `History` guide:
   distributed stats, plots
-- **[Tracker](./tracker.md)** — multi-backend tracking (W&B, MLflow, CSV)
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT,
   Diffusion, etc.)
 - **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
