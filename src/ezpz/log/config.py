@@ -157,9 +157,9 @@ prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
 # 3) miscellaneous logging + repr overrides
 log_styles = {
     "log.day_time_separator": Style(color="blue"),
-    "log.day_color": Style(color="black", dim=True),
-    "log.time": Style(color="black"),
-    "log.time_color": Style(color="bright_white"),
+    "log.day_color": Style(),
+    "log.time": Style(),
+    "log.time_color": Style(),
     "log.colon": Style(),
     "logging.date": Style(),
     "logging.time": Style(),
