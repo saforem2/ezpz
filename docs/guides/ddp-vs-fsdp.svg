@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 620" style="font-family:'Iosevka Web',monospace,system-ui,sans-serif;font-size:13px">
+  <!-- Legend -->
+  <rect x="20" y="10" width="16" height="12" rx="2" fill="#4caf50"/>
+  <text x="42" y="20" fill="#aaa">Parameters</text>
+  <rect x="140" y="10" width="16" height="12" rx="2" fill="#ff9800"/>
+  <text x="162" y="20" fill="#aaa">Gradients</text>
+  <rect x="250" y="10" width="16" height="12" rx="2" fill="#2196f3"/>
+  <text x="272" y="20" fill="#aaa">Optimizer States</text>
+
+  <!-- ═══════════ Baseline / DDP ═══════════ -->
+  <text x="20" y="55" font-weight="bold" font-size="14" fill="#aaa">Baseline (DDP) — no sharding</text>
+
+  <text x="20" y="78" font-size="11" fill="#aaa">GPU 0</text>
+  <rect x="70"  y="66" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="66" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="66" width="210" height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="100" font-size="11" fill="#aaa">GPU 1</text>
+  <rect x="70"  y="88" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="88" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="88" width="210" height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="122" font-size="11" fill="#aaa">GPU N</text>
+  <rect x="70"  y="110" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="110" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="110" width="210" height="16" rx="3" fill="#2196f3"/>
+
+  <!-- Divider -->
+  <line x1="20" y1="140" x2="700" y2="140" stroke="#888" stroke-opacity="0.3" stroke-dasharray="4"/>
+
+  <!-- ═══════════ ZeRO-1 / SHARD_GRAD_OP (optim only) ═══════════ -->
+  <text x="20" y="165" font-weight="bold" font-size="14" fill="#aaa">ZeRO-1 — shard optimizer states</text>
+
+  <text x="20" y="188" font-size="11" fill="#aaa">GPU 0</text>
+  <rect x="70"  y="176" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="176" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="176" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="490" y="176" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="210" font-size="11" fill="#aaa">GPU 1</text>
+  <rect x="70"  y="198" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="198" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="198" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="560" y="198" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="232" font-size="11" fill="#aaa">GPU N</text>
+  <rect x="70"  y="220" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="220" width="210" height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="220" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="630" y="220" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <!-- Divider -->
+  <line x1="20" y1="250" x2="700" y2="250" stroke="#888" stroke-opacity="0.3" stroke-dasharray="4"/>
+
+  <!-- ═══════════ ZeRO-2 / SHARD_GRAD_OP (optim + grads) ═══════════ -->
+  <text x="20" y="275" font-weight="bold" font-size="14" fill="#aaa">ZeRO-2 — shard optimizer states + gradients</text>
+
+  <text x="20" y="298" font-size="11" fill="#aaa">GPU 0</text>
+  <rect x="70"  y="286" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="286" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="280" y="286" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="286" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="490" y="286" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="320" font-size="11" fill="#aaa">GPU 1</text>
+  <rect x="70"  y="308" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="308" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="350" y="308" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="308" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="560" y="308" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="342" font-size="11" fill="#aaa">GPU N</text>
+  <rect x="70"  y="330" width="210" height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="330" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="420" y="330" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="330" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="630" y="330" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <!-- Divider -->
+  <line x1="20" y1="360" x2="700" y2="360" stroke="#888" stroke-opacity="0.3" stroke-dasharray="4"/>
+
+  <!-- ═══════════ ZeRO-3 / FULL_SHARD (everything) ═══════════ -->
+  <text x="20" y="385" font-weight="bold" font-size="14" fill="#aaa">ZeRO-3 (FULL_SHARD) — shard everything</text>
+
+  <text x="20" y="408" font-size="11" fill="#aaa">GPU 0</text>
+  <rect x="70"  y="396" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="70"  y="396" width="70"  height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="396" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="280" y="396" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="396" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="490" y="396" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="430" font-size="11" fill="#aaa">GPU 1</text>
+  <rect x="70"  y="418" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="140" y="418" width="70"  height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="418" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="350" y="418" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="418" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="560" y="418" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <text x="20" y="452" font-size="11" fill="#aaa">GPU N</text>
+  <rect x="70"  y="440" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="210" y="440" width="70"  height="16" rx="3" fill="#4caf50"/>
+  <rect x="280" y="440" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="420" y="440" width="70"  height="16" rx="3" fill="#ff9800"/>
+  <rect x="490" y="440" width="210" height="16" rx="3" fill="#888" fill-opacity="0.1"/>
+  <rect x="630" y="440" width="70"  height="16" rx="3" fill="#2196f3"/>
+
+  <!-- ═══════════ Summary ═══════════ -->
+  <line x1="20" y1="472" x2="700" y2="472" stroke="#888" stroke-opacity="0.3" stroke-dasharray="4"/>
+
+  <text x="20" y="500" font-size="12" fill="#aaa">Per-GPU memory (1B params in float32, N GPUs):</text>
+  <text x="20" y="522" font-size="12" fill="#aaa">  Baseline = Params + Grads + Optim         = <tspan font-weight="bold">16 GB</tspan></text>
+  <text x="20" y="542" font-size="12" fill="#aaa">  ZeRO-1   = Params + Grads + Optim/N       = <tspan font-weight="bold">4 + 12/N GB</tspan></text>
+  <text x="20" y="562" font-size="12" fill="#aaa">  ZeRO-2   = Params + Grads/N + Optim/N     = <tspan font-weight="bold">2 + 14/N GB</tspan></text>
+  <text x="20" y="582" font-size="12" fill="#aaa">  ZeRO-3   = Params/N + Grads/N + Optim/N   = <tspan font-weight="bold">16/N GB</tspan></text>
+
+  <text x="20" y="610" font-size="11" fill="#888">ezpz: reshard_after_forward=False → ZeRO-2, reshard_after_forward=True → ZeRO-3</text>
+</svg>

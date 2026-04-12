@@ -6,7 +6,7 @@
    var, e.g. to turn off colors:
 
     ```bash
-    NO_COLOR=1 ezpz launch python3 -m ezpz.examples.fsdp
+    NO_COLOR=1 ezpz launch -- python3 -m ezpz.examples.fsdp
     ```
 
 2. Force logging from **all** ranks (not just rank 0):
@@ -44,6 +44,32 @@
         LINES=40 COLUMNS=100 ezpz test
         ```
 
+## Common Configurations
+
+Copy-paste these for common scenarios:
+
+```bash
+# Run offline — no external tracking
+EZPZ_TRACKER_BACKENDS=none WANDB_DISABLED=1 ezpz launch -- python3 train.py
+
+# Force CPU mode for debugging (no GPU required)
+TORCH_DEVICE=cpu TORCH_BACKEND=gloo ezpz launch -np 2 -- python3 train.py
+
+# Log to all tracking backends simultaneously
+EZPZ_TRACKER_BACKENDS=wandb,mlflow,csv ezpz launch -- python3 train.py
+
+# Quiet logging (warnings and errors only)
+EZPZ_LOG_LEVEL=WARNING ezpz launch -- python3 train.py
+
+# MLflow with AmSC credentials (see MLflow Credential Files below)
+EZPZ_TRACKER_BACKENDS=mlflow ezpz launch -- python3 train.py
+```
+
+!!! tip "Choosing a parallelism strategy"
+
+    See the [Distributed Training Guide](./guides/distributed-training.md#quick-reference)
+    for a decision table on when to use DDP vs FSDP vs FSDP+TP.
+
 ## Environment Variables
 
 ### Device & Distribution
@@ -51,7 +77,7 @@
 | Variable | Purpose | Values / Default |
 |----------|---------|-----------------|
 | `TORCH_DEVICE` | Force device selection instead of auto-detection. | `cpu`, `cuda`, `mps`, `xpu`. Auto-detected. |
-| `TORCH_BACKEND` | Override distributed backend. | `nccl`, `gloo`, `mpi`, `xccl`, `ccl`. Auto-detected. |
+| `TORCH_BACKEND` | Override distributed backend. | `nccl`, `gloo`, `mpi`, `xccl`. Auto-detected. |
 | `TORCH_DDP_TIMEOUT` | DDP init timeout for slow launches. | Seconds. Default: `3600`. |
 | `MASTER_ADDR` | Rendezvous address for distributed init. | Hostname/IP. Auto-detected from scheduler. |
 | `MASTER_PORT` | Rendezvous port for distributed init. | Port number. Auto-detected (picks a free port). |
@@ -104,7 +130,7 @@ still override after the preset is applied.
 
 | Variable | Purpose | Values / Default |
 |----------|---------|-----------------|
-| `EZPZ_TRACKER_BACKENDS` | Comma-separated tracker backends. | `wandb`, `csv`, `mlflow`. e.g. `wandb,csv,mlflow`. Default: `wandb`. |
+| `EZPZ_TRACKER_BACKENDS` / `EZPZ_TRACKERS` | Comma-separated tracker backends. `EZPZ_TRACKERS` is a shorthand alias. | `wandb`, `csv`, `mlflow`. e.g. `wandb,csv,mlflow`. Default: `wandb`. |
 | `WANDB_DISABLED` | Disable Weights & Biases logging. | Set to `1` to disable. |
 | `WANDB_MODE` | Set W&B mode. | `online`, `offline`, `dryrun`. |
 | `WANDB_PROJECT` / `WB_PROJECT` / `WB_PROJECT_NAME` | Set project name for W&B runs. Also used as MLflow experiment name if `MLFLOW_EXPERIMENT_NAME` is not set. | String (aliases for the same setting). |
