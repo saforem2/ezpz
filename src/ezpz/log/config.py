@@ -158,13 +158,11 @@ prefixed_colors = {f"color.{c}": Style(color=c) for c in _colors}
 log_styles = {
     "log.day_time_separator": Style(color="blue"),
     "log.day_color": Style(color="black", dim=True),
-    # "log.time_color": Style(color="bright_white"),
     "log.time": Style(color="black"),
     "log.time_color": Style(color="bright_white"),
     "log.colon": Style(),
     "logging.date": Style(),
     "logging.time": Style(),
-    # "log.time": Style(color="black", dim=True),
     "log.linenumber": Style(
         color="red",
         bold=False,
