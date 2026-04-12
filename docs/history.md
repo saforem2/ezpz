@@ -29,17 +29,15 @@ plots and reports at the end of a run.
       History will use it automatically with a deprecation warning
     - Backend errors are isolated — a failing backend logs a warning but
       never crashes your training run
-    - See [Tracker docs](./tracker.md) for the full backend API
 
 ## Quick Start
 
 ```python
 import ezpz
-from ezpz.history import History
 
 rank = ezpz.setup_torch()
 
-history = History(
+history = ezpz.History(
     project_name="my-project",
     backends="wandb,csv",
     outdir="./outputs",
@@ -65,7 +63,7 @@ but nothing is dispatched externally.
 history = History(
     # --- Local outputs ---
     distributed_history=True,      # aggregate stats across ranks (default: auto)
-    report_dir="./outputs",        # markdown report directory
+    report_dir="./outputs/history", # markdown report directory
     jsonl_path="./metrics.jsonl",  # per-step JSONL log
 
     # --- External backends ---
@@ -81,7 +79,7 @@ history = History(
 | `distributed_history` | auto | Compute min/max/mean/std across ranks via all-reduce |
 | `report_dir` | `./outputs/history` | Directory for the markdown report |
 | `report_enabled` | `True` | Generate a markdown report on `finalize()` |
-| `jsonl_path` | auto | Path for per-step JSONL log (defaults to `{report_dir}/{timestamp}.jsonl`) |
+| `jsonl_path` | `None` | Path for per-step JSONL log. When `None`, defaults to `<report_dir>/<run_id>.jsonl` |
 | `jsonl_overwrite` | `False` | Truncate existing JSONL file |
 | `project_name` | `None` | Project name for backends that support it (e.g. wandb) |
 | `backends` | `None` | Comma-separated string or list of backend names |
@@ -263,8 +261,15 @@ history = History(
 )
 ```
 
-Every `update()` call fans out to all backends. A failing backend logs a
-warning but never crashes your training run.
+Every `update()` call fans out to all backends.
+
+### Error Isolation
+
+Backend errors are isolated — if one backend fails during `log()`,
+`log_config()`, or `finish()`, the others still receive the call. A
+warning is logged but your training run is never interrupted by a
+tracking failure. This means a flaky network connection to your MLflow
+server won't crash a multi-day training job.
 
 ### Custom Backends
 
@@ -504,5 +509,3 @@ profiling individual phases within your training loop.
 - [Quick Start](./quickstart.md) for minimal setup
 - [Python API: `ezpz.history`](./python/Code-Reference/history.md) for the
   full History API reference
-- [Python API: `ezpz.tracker`](./python/Code-Reference/tracker.md) for the
-  full Tracker API reference

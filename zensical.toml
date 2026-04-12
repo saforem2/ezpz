@@ -49,10 +49,10 @@ nav = [
     # { "🍋 ezpz" = [
     { "📖 Guide" = [
         "quickstart.md",
+        { "🗺️ Distributed Training" = "guides/distributed-training.md" },
         "recipes.md",
         "reference.md",
         "history.md",
-        "tracker.md",
         "configuration.md",
         "architecture.md",
         "troubleshooting.md",
