@@ -9,8 +9,8 @@ on the MNIST dataset.
     - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for DDP
     - [`cleanup()`][ezpz.distributed.cleanup] — Tear down the process group
 
-See: \[📘 [docs](../python/Code-Reference/examples/test.md)\],
-\[🐍 [source](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py)\]
+See: 📘 [docs](../python/Code-Reference/examples/test.md),
+🐍 [source](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py)
 
 ```bash
 # or, equivalently: ezpz test

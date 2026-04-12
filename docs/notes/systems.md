@@ -9,8 +9,8 @@ use to override defaults.
 
 | System     | Scheduler | Launcher  | GPU Type    | Backend  | Hostfile Source                     |
 |------------|-----------|-----------|-------------|----------|-------------------------------------|
-| Aurora     | PBS Pro   | `mpiexec` | Intel XPU   | `ccl`    | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
-| Sunspot    | PBS Pro   | `mpiexec` | Intel XPU   | `ccl`    | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
+| Aurora     | PBS Pro   | `mpiexec` | Intel XPU   | `xccl`   | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
+| Sunspot    | PBS Pro   | `mpiexec` | Intel XPU   | `xccl`   | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
 | Polaris    | PBS Pro   | `mpiexec` | NVIDIA GPU  | `nccl`   | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
 | Sophia     | PBS Pro   | `mpiexec` | NVIDIA GPU  | `nccl`   | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
 | Sirius     | PBS Pro   | `mpiexec` | NVIDIA GPU  | `nccl`   | `/var/spool/pbs/aux/$PBS_JOBID.*`   |
@@ -55,7 +55,7 @@ Both the Python and shell sides detect the machine from the hostname:
 | Condition                     | Backend        |
 |-------------------------------|----------------|
 | `TORCH_BACKEND` env var set   | Value of env var |
-| Device is `xpu` (Intel)      | `ccl`          |
+| Device is `xpu` (Intel)      | `xccl`         |
 | Device is `cuda` (NVIDIA/AMD) | `nccl`         |
 | Device is `cpu` or `mps`     | `gloo`         |
 
@@ -112,7 +112,7 @@ If `NGPU_PER_HOST` is not set, these are checked in order:
 | Variable          | Default            | Description                          |
 |-------------------|--------------------|--------------------------------------|
 | `TORCH_DEVICE`    | _auto-detected_    | Force device type: `cuda`, `xpu`, `mps`, `cpu` |
-| `TORCH_BACKEND`   | _auto-detected_    | Force distributed backend: `nccl`, `ccl`, `gloo` |
+| `TORCH_BACKEND`   | _auto-detected_    | Force distributed backend: `nccl`, `xccl`, `gloo` |
 | `TORCH_DDP_TIMEOUT` | `3600`           | Timeout (seconds) for `init_process_group` |
 
 ### Scheduler / Job
@@ -154,7 +154,7 @@ If `NGPU_PER_HOST` is not set, these are checked in order:
 |---------|-----------|-----|
 | Scheduler not detected | `PBS_NODEFILE` / `SLURM_NODELIST` not in env | Set `EZPZ_LOG_LEVEL=DEBUG` and check output; use `--hostfile` |
 | `mpiexec` / `srun` not found | Module not loaded | `module load` the appropriate MPI or use full path |
-| Backend init fails (`nccl`/`ccl`) | Driver or module mismatch | Verify GPU drivers and modules; fall back to `TORCH_BACKEND=gloo` |
+| Backend init fails (`nccl`/`xccl`) | Driver or module mismatch | Verify GPU drivers and modules; fall back to `TORCH_BACKEND=gloo` |
 | Wandb hangs on init | No network on compute nodes | `export WANDB_MODE=offline` |
 
 ## Example Launch Commands
