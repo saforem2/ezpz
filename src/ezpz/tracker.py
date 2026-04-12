@@ -972,7 +972,10 @@ def setup_tracker(
 
     # Parse backends
     if backends is None:
-        backends = os.environ.get("EZPZ_TRACKER_BACKENDS", "wandb")
+        backends = os.environ.get(
+            "EZPZ_TRACKER_BACKENDS",
+            os.environ.get("EZPZ_TRACKERS", "wandb"),
+        )
     if isinstance(backends, str):
         backends = [b.strip() for b in backends.split(",") if b.strip()]
 
