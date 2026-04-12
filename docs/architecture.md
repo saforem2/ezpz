@@ -107,6 +107,9 @@ graph LR
 | **FSDP** | Model is too large for one GPU, or you want to reduce memory per GPU | `ezpz.wrap_model(model)` (default) |
 | **FSDP+TP** | Very large models where even FSDP isn't enough; combines sharding across nodes with tensor parallelism within nodes | `ezpz.wrap_model(model)` + `setup_torch(tensor_parallel_size=N)` |
 
+For a hands-on walkthrough with complete examples, see the
+[Distributed Training Guide](./guides/distributed-training.md).
+
 FSDP is the default (`use_fsdp=True`). Pass `use_fsdp=False` for DDP when your model fits in a single GPU's memory.
 
 ## Module Map
@@ -133,8 +136,8 @@ FSDP is the default (`use_fsdp=True`). Pass `use_fsdp=False` for DDP when your m
        then probes `torch.cuda`, `torch.xpu`, and `torch.backends.mps` in order.
     2. `get_torch_backend()` maps the detected device to a communication backend
        (`cuda` → `nccl`, `xpu` → `xccl`, `cpu` → `gloo`).
-    3. Attempts MPI-based initialization via `_init_dist_via_mpi()` first, then
-       falls back to torchrun-style env vars (`RANK`, `LOCAL_RANK`, `WORLD_SIZE`).
+    3. Uses MPI to discover rank, world_size, and master_addr, then falls back
+       to torchrun-style env vars (`RANK`, `LOCAL_RANK`, `WORLD_SIZE`).
     4. Returns `(rank, world_size, local_rank)`.
 
 ??? info "How the launcher picks between schedulers"
@@ -149,14 +152,11 @@ FSDP is the default (`use_fsdp=True`). Pass `use_fsdp=False` for DDP when your m
 
 ??? info "How `dist.py` shims to `distributed.py`"
 
-    `dist.py` was refactored from ~2870 lines down to a thin re-export shim
-    (~380 lines). The relationship is straightforward:
-
-    - All real implementation lives in `distributed.py`.
-    - `dist.py` imports and re-exports every symbol from `distributed.py`'s
-      `__all__`.
-    - It exists solely for backward compatibility so that existing code using
-      `from ezpz.dist import ...` continues to work.
+    All implementation lives in `distributed.py`. The file `dist.py` is a
+    backward-compatibility shim that re-exports every public symbol from
+    `distributed.py`, so existing `from ezpz.dist import ...` code continues
+    to work unchanged. New code should import from `ezpz` or
+    `ezpz.distributed` directly.
 
 ## Extension Points
 
