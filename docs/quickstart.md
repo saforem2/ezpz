@@ -174,8 +174,7 @@ active job scheduler automatically:
     `mpiexec` otherwise.
 
 For pass-through launcher flags, custom hostfiles, and advanced usage, see
-the [Walkthrough launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
-and the [CLI reference](./cli/launch/index.md).
+the [CLI reference](./cli/launch/index.md).
 
 ## 📤 Submit It
 
