@@ -2853,5 +2853,9 @@ class History:
         self._tracker.finish()
         grouped = self.get_grouped_datasets(warmup=warmup)
         if len(grouped) > 1:
+            for gname, gds in sorted(grouped.items()):
+                label = gname if gname else "default"
+                logger.info("[%s] %s", label, gds)
             return grouped
+        logger.info("%s", dataset)
         return dataset

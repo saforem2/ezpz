@@ -1087,7 +1087,7 @@ def main(args: argparse.Namespace) -> int:
             run_name=WBPROJ_NAME,
             dataset_fname="train",
         )
-        logger.info(f"{dataset=}")
+        del dataset  # logged by finalize()
     return 0
 
 

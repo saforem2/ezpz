@@ -163,7 +163,7 @@ def main():
             dataset_fname="train",
             verbose=False,
         )
-        logger.info(f"{dataset=}")
+        del dataset  # logged by finalize()
 
 
 if __name__ == "__main__":

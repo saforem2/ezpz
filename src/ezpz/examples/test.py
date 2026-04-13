@@ -357,8 +357,7 @@ class Trainer:
             outdir=outdir,
             env_info=env_info,
         )
-        logger.info(f"{dataset=}")
-        return dataset
+        return dataset  # logged by finalize()
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())
     def train(self, profiler: Optional[torch.profiler.profile] = None) -> None:
@@ -513,7 +512,7 @@ def train(
             outdir=config.outdir,
             env_info=trainer._gather_environment_snapshot(),
         )
-        logger.info(f"{dataset=}")
+        del dataset  # logged by finalize()
 
     if ezpz.get_world_size() > 1:
         ezpz.barrier()

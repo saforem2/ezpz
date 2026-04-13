@@ -431,7 +431,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
             run_name=WBPROJ_NAME,
             dataset_fname="train",
         )
-        logger.info(f"{dataset=}")
+        del dataset  # logged by finalize()
 
 
 def _arg_provided(argv: list[str], flags: list[str]) -> bool:

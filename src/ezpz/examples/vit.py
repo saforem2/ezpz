@@ -819,7 +819,7 @@ def main(args: argparse.Namespace):
                 run_name=WBPROJ_NAME,
                 verbose=False,
             )
-            logger.info(f"{dataset=}")
+            del dataset  # logged by finalize()
         else:
             logger.warning("No metrics recorded; skipping dataset save")
 
