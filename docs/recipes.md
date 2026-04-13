@@ -481,6 +481,8 @@ ezpz.cleanup()
     the all-reduce until the final micro-step:
 
     ```python
+    from contextlib import nullcontext
+
     for micro_step in range(accum_steps):
         ctx = model.no_sync() if micro_step < accum_steps - 1 else nullcontext()
         with ctx:
