@@ -2607,11 +2607,13 @@ class History:
         tplot_type: Optional[str] = None,
         env_info: Optional[dict[str, Any]] = None,
         timings: Optional[dict[str, float]] = None,
-    ) -> xr.Dataset:
+    ) -> dict[str, xr.Dataset] | xr.Dataset:
         """End-of-training cleanup: save dataset, generate plots, log artifacts.
 
         Returns:
-            The finalized xarray Dataset.
+            Dict mapping group prefix to xarray Dataset (one per group).
+            If no groups exist, returns a single flat Dataset for backward
+            compat.
         """
         dataset = (
             dataset
@@ -2772,15 +2774,36 @@ class History:
                 )
                 use_hdf5 = False
 
-            fname = "dataset" if dataset_fname is None else dataset_fname
             ext = ".h5" if use_hdf5 else ".nc"
-            _ = self.save_dataset(
-                dataset=dataset,
-                outdir=base_dir,
-                fname=fname,
-                use_hdf5=use_hdf5,
-            )
-            output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
+            grouped = self.get_grouped_datasets(warmup=warmup)
+            if len(grouped) > 1:
+                # Save one dataset per group (no NaN padding)
+                for gprefix, gds in grouped.items():
+                    label = gprefix if gprefix else (dataset_fname or "dataset")
+                    _ = self.save_dataset(
+                        dataset=gds,
+                        outdir=base_dir,
+                        fname=label,
+                        use_hdf5=use_hdf5,
+                    )
+                    output_files[f"Dataset ({label})"] = str(
+                        base_dir / f"{label}{ext}"
+                    )
+            else:
+                # Single group or no groups: save as a single flat dataset
+                fname = "dataset" if dataset_fname is None else dataset_fname
+                ds_to_save = (
+                    next(iter(grouped.values()))
+                    if grouped
+                    else dataset
+                )
+                _ = self.save_dataset(
+                    dataset=ds_to_save,
+                    outdir=base_dir,
+                    fname=fname,
+                    use_hdf5=use_hdf5,
+                )
+                output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
         if self.report_enabled:
             logger.info(
                 "Saving history report to %s",
@@ -2828,4 +2851,7 @@ class History:
             for label, fpath in output_files.items():
                 logger.info("  %s: %s", label, fpath)
         self._tracker.finish()
+        grouped = self.get_grouped_datasets(warmup=warmup)
+        if len(grouped) > 1:
+            return grouped
         return dataset
