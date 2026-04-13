@@ -291,13 +291,17 @@ For the full History API — distributed aggregation, environment variables,
 
 ## 🔗 Next Steps
 
+- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive
+  tutorial from hello world to production
+- **[Recipes](./recipes.md)** — copy-pasteable patterns (data loading, checkpointing,
+  gradient accumulation)
 - **[End-to-End Walkthrough](./reference.md)** — full runnable example with real
   terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide:
-  distributed stats, plots
+- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats,
+  multi-backend logging, plots
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT,
   Diffusion, etc.)
-- **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
+- **[CLI Reference](./cli/index.md)** — `ezpz launch`, `ezpz submit`, and more
 - **[Configuration](./configuration.md)** — environment variables and config
   dataclasses
 - **[Architecture](./architecture.md)** — how `ezpz` works under the hood
