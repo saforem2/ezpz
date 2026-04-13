@@ -323,7 +323,7 @@ history.tracker.log_image("sample", "outputs/sample.png", caption="Epoch 10")
 ## Finalization
 
 ```python
-dataset = history.finalize(
+result = history.finalize(
     outdir="./outputs",
     run_name="my-experiment",
     warmup=0.05,       # drop first 5% of samples
@@ -335,9 +335,9 @@ dataset = history.finalize(
 
 | Output | Path |
 |--------|------|
-| xarray Dataset | `{outdir}/dataset.hdf5` (or `.nc` without h5py) |
-| Matplotlib plots | `{outdir}/plots/mplot/*.png` |
-| Terminal plots | `{outdir}/plots/tplot/*.txt` |
+| xarray Dataset(s) | `{outdir}/train.h5`, `{outdir}/eval.h5` (one per group) |
+| Matplotlib plots | `{outdir}/plots/mplot/{group}/*.png` |
+| Terminal plots | `{outdir}/plots/tplot/{group}/*.txt` |
 | Markdown report | `{outdir}/report.md` |
 | Metrics JSONL | `{outdir}/metrics.jsonl` |
 | Metrics CSV | `{outdir}/metrics.csv` (when `csv` backend is active) |
@@ -351,23 +351,46 @@ All output is co-located in `{outdir}`:
 - A **symlink** to the structured JSON log file is created in `{outdir}`
   so you don't have to hunt for it under `logs/`.
 
-At the end, `finalize()` logs a summary of all output paths:
+### Grouped output
+
+When metrics use prefixed keys (e.g. `"train/loss"`, `"eval/acc"`),
+`finalize()` produces **separate datasets, plots, and output
+directories per group**. Each group has its own draw dimension — no
+NaN padding between groups with different numbers of steps.
 
 ```
-Output files:
-  Output Directory: ./outputs/my-experiment/2026-04-04-...
-  Report: ./outputs/.../report.md
-  Plots (matplotlib): ./outputs/.../plots/mplot
-  Plots (terminal): ./outputs/.../plots/tplot
-  JSON Log: ./logs/ezpz-test/2026-...-rank0.jsonl
-  Metrics JSONL: ./outputs/.../metrics.jsonl
-  Metrics CSV: ./outputs/.../metrics.csv
-  Dataset: ./outputs/.../train.h5
+outputs/my-experiment/
+├── train.h5                    # train metrics only (101 steps)
+├── eval.h5                     # eval metrics only (1250 steps)
+├── plots/
+│   ├── mplot/
+│   │   ├── train/              # train/ matplotlib plots
+│   │   └── eval/               # eval/ matplotlib plots
+│   └── tplot/
+│       ├── train/              # train/ terminal plots
+│       └── eval/               # eval/ terminal plots
+├── report.md
+└── metrics.jsonl
+```
+
+**Return value:** When multiple groups exist, `finalize()` returns
+`dict[str, xr.Dataset]` mapping group prefix to its dataset. With a
+single group (or unprefixed metrics), it returns a single `xr.Dataset`
+for backward compatibility.
+
+```python
+result = history.finalize(outdir="./outputs")
+
+# Grouped (train/ + eval/ prefixes):
+result["train"]  # xr.Dataset with train metrics
+result["eval"]   # xr.Dataset with eval metrics
+
+# Unprefixed (single group):
+result.data_vars  # xr.Dataset directly
 ```
 
 It also uploads the training history table to any active backends and
 calls `tracker.finish()` to flush and close all backend connections.
-Returns the xarray `Dataset` for further analysis.
 
 ??? example "Terminal plot output"
 
