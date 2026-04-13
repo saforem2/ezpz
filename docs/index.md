@@ -130,27 +130,31 @@ These can be broken down (~roughly) into:
    Python API for writing hardware-agnostic, distributed PyTorch code.
 
 1. 🧰 [**CLI**](./cli/index.md): `ezpz <command>`
-   Utilities for launching distributed PyTorch applications:
+   Utilities for launching and managing distributed PyTorch jobs:
     - 🚀 [`ezpz launch`](./cli/launch/index.md): Launch commands with _automatic
       **job scheduler** detection_ (PBS, Slurm)
+    - 📤 [`ezpz submit`](./cli/submit.md): Submit batch jobs to PBS or Slurm
     - 💯 [`ezpz test`](./cli/test.md): Run simple distributed smoke test
+    - 📊 [`ezpz benchmark`](./cli/benchmark.md): Run and compare example benchmarks
     - 🩺 [`ezpz doctor`](./cli/doctor.md): Health check your environment
 
 ## ✨ Features
 
 - **Automatic distributed initialization** — [`setup_torch()`](./python/Code-Reference/distributed.md#ezpz.distributed.setup_torch) detects device + backend
 - **Universal launcher** — [`ezpz launch`](./cli/launch/index.md) auto-detects PBS, Slurm, or falls back to `mpirun`
-- **Model wrapping** — [`wrap_model()`](./python/Code-Reference/distributed.md#ezpz.distributed.wrap_model) for DDP or FSDP with one flag
-- **Metric tracking** — [`History`](./history.md) with distributed statistics, W&B integration, and plot generation
+- **Batch job submission** — [`ezpz submit`](./cli/submit.md) generates and submits PBS/Slurm job scripts
+- **Model wrapping** — [`wrap_model()`](./python/Code-Reference/distributed.md#ezpz.distributed.wrap_model) for DDP, FSDP, or FSDP+TP with one call
+- **Multi-backend experiment tracking** — [`History`](./history.md) with distributed statistics and automatic dispatch to W&B, MLflow, and CSV
 - **Environment diagnostics** — [`ezpz doctor`](./cli/doctor.md) checks your setup
 - **Cross-backend timing** — [`synchronize()`](./python/Code-Reference/distributed.md#ezpz.distributed.synchronize) works on CUDA, XPU, MPS, and CPU
 
 ## 🔗 Next Steps
 
 - **[Quick Start](./quickstart.md)** — install, write a script, launch it
+- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive tutorial from hello world to production
 - **[Recipes](./recipes.md)** — copy-pasteable patterns for common tasks
 - **[End-to-End Walkthrough](./reference.md)** — full runnable example with real terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
+- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats, multi-backend logging, plots
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
 - **[FAQ](./notes/faq.md)** — common questions and troubleshooting
 - **[Architecture](./architecture.md)** — how `ezpz` works under the hood
