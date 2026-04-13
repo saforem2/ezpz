@@ -2272,6 +2272,7 @@ class History:
         logfreq: Optional[int] = None,
         plot_type: Optional[str] = None,
         verbose: bool = False,
+        group_prefix: str = "",
     ):
         """Create terminal plots for all metrics using plotext.
 
@@ -2305,8 +2306,13 @@ class History:
                 "draw",
             ]:
                 continue
+            display_name = (
+                f"{group_prefix}/{metric_name}"
+                if group_prefix
+                else metric_name
+            )
             self._tplot_metric_group(
-                metric_name,
+                display_name,
                 metric_vars,
                 warmup=warmup,
                 outdir=outdir_path,
@@ -2327,6 +2333,7 @@ class History:
         plot_kwargs: Optional[dict[str, Any]] = None,
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
+        group_prefix: str = "",
     ):
         """Create matplotlib ridge plots for all metrics in the dataset."""
         plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
@@ -2359,9 +2366,14 @@ class History:
         for idx, (metric_name, metric_vars) in enumerate(
             sorted(groups.items())
         ):
+            display_name = (
+                f"{group_prefix}/{metric_name}"
+                if group_prefix
+                else metric_name
+            )
             plot_kwargs["color"] = f"C{idx % 9}"
             asset = self._plot_metric_group(
-                metric_name,
+                display_name,
                 metric_vars,
                 warmup=warmup,
                 title=title,
@@ -2737,6 +2749,7 @@ class History:
                     title=group_title or None,
                     plot_kwargs=plot_kwargs,
                     subplots_kwargs=subplots_kwargs,
+                    group_prefix=group_prefix,
                 )
                 _ = self.tplot_all(
                     dataset=group_ds,
@@ -2746,6 +2759,7 @@ class History:
                     plot_type=tplot_type,
                     xkey=xkey,
                     verbose=verbose,
+                    group_prefix=group_prefix,
             )
         if save:
             try:
