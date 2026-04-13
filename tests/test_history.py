@@ -8,6 +8,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import torch
+import xarray as xr
 
 try:
     import ezpz.history as history
@@ -335,3 +336,88 @@ class TestHistoryTrackerIntegration:
         assert (final_outdir / "metrics.csv").exists()
         # Old location should be cleaned up
         assert not (tmp_path / "init_dir" / "metrics.csv").exists()
+
+
+class TestHistoryGroups:
+    """Tests for prefix-based metric grouping."""
+
+    def test_prefixed_keys_create_separate_groups(self):
+        """Metrics with different prefixes land in different groups."""
+        hist = history.History()
+        hist.update({"train/loss": 0.5, "train/acc": 0.8})
+        hist.update({"eval/loss": 0.3, "eval/acc": 0.9})
+        assert "train" in hist.groups
+        assert "eval" in hist.groups
+        assert "loss" in hist.groups["train"]
+        assert "acc" in hist.groups["train"]
+        assert "loss" in hist.groups["eval"]
+
+    def test_unprefixed_keys_go_to_default_group(self):
+        """Metrics without a prefix go to the '' (default) group."""
+        hist = history.History()
+        hist.update({"loss": 0.5, "dt": 0.01})
+        assert "" in hist.groups
+        assert "loss" in hist.groups[""]
+        assert "dt" in hist.groups[""]
+
+    def test_flattened_history_property(self):
+        """The .history property returns a flat dict with full keys."""
+        hist = history.History()
+        hist.update({"train/loss": 0.5})
+        hist.update({"eval/loss": 0.3})
+        flat = hist.history
+        assert "train/loss" in flat
+        assert "eval/loss" in flat
+        assert flat["train/loss"] == [0.5]
+        assert flat["eval/loss"] == [0.3]
+
+    def test_data_alias_matches_history(self):
+        """The .data property is an alias for .history."""
+        hist = history.History()
+        hist.update({"loss": 0.42})
+        assert hist.data == hist.history
+
+    def test_grouped_datasets_independent_dimensions(self):
+        """Each group gets its own dataset with independent draw dimension."""
+        hist = history.History()
+        # Train: 5 entries
+        for i in range(5):
+            hist.update({"train/loss": float(i), "train/iter": i})
+        # Eval: 20 entries
+        for i in range(20):
+            hist.update({"eval/loss": float(i) * 0.1, "eval/iter": i})
+        datasets = hist.get_grouped_datasets()
+        assert "train" in datasets
+        assert "eval" in datasets
+        train_ds = datasets["train"]
+        eval_ds = datasets["eval"]
+        # Each dataset has its own draw dimension length
+        assert train_ds["loss"].shape[0] == 5
+        assert eval_ds["loss"].shape[0] == 20
+
+    def test_split_prefix_extracts_correctly(self):
+        """_split_prefix extracts the prefix and strips keys."""
+        prefix, stripped = history.History._split_prefix(
+            {"train/loss": 0.5, "train/acc": 0.8}
+        )
+        assert prefix == "train"
+        assert stripped == {"loss": 0.5, "acc": 0.8}
+
+    def test_split_prefix_no_prefix(self):
+        """_split_prefix returns '' for unprefixed keys."""
+        prefix, stripped = history.History._split_prefix(
+            {"loss": 0.5, "acc": 0.8}
+        )
+        assert prefix == ""
+        assert stripped == {"loss": 0.5, "acc": 0.8}
+
+    def test_flat_dataset_still_works(self):
+        """get_dataset() still returns a single flat Dataset."""
+        hist = history.History()
+        for i in range(5):
+            hist.update({"train/loss": float(i)})
+            hist.update({"eval/loss": float(i) * 0.1})
+        ds = hist.get_dataset()
+        assert isinstance(ds, xr.Dataset)
+        # Flat dataset has both metrics (padded to max length)
+        assert "train_loss" in ds.data_vars or "train/loss" in str(ds)

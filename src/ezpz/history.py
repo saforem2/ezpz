@@ -208,8 +208,8 @@ class History:
             tracker (Optional[Tracker]): Inject a pre-built Tracker instance directly.
         """
         self.keys = [] if keys is None else keys
-        self.history: dict[str, list[Any]] = {}
-        self.data = self.history
+        self._groups: dict[str, dict[str, list[Any]]] = {}
+        self._flat_cache: dict[str, list[Any]] | None = None
         if (
             os.environ.get("EZPZ_NO_DISTRIBUTED_HISTORY", None)
             or os.environ.get("EZPZ_LOCAL_HISTORY", False)
@@ -305,6 +305,78 @@ class History:
         )
         if config is not None and not _tracker_got_config:
             self._tracker.log_config(config)
+
+    @property
+    def history(self) -> dict[str, list[Any]]:
+        """Flattened view of all metric groups.
+
+        Returns a dict keyed by full metric names (e.g. ``"train/loss"``,
+        ``"loss"``), preserving backward compatibility with code that reads
+        ``history.history["key"]``.
+        """
+        if self._flat_cache is not None:
+            return self._flat_cache
+        flat: dict[str, list[Any]] = {}
+        for prefix, metrics in self._groups.items():
+            for key, values in metrics.items():
+                full_key = f"{prefix}/{key}" if prefix else key
+                flat[full_key] = values
+        return flat
+
+    @history.setter
+    def history(self, value: dict[str, list[Any]]) -> None:
+        """Allow direct assignment for backward compat (e.g. reset)."""
+        self._groups.clear()
+        self._flat_cache = None
+        for full_key, values in value.items():
+            prefix, _, short_key = full_key.partition("/")
+            if not _:
+                prefix, short_key = "", full_key
+            group = self._groups.setdefault(prefix, {})
+            group[short_key] = values
+
+    @property
+    def data(self) -> dict[str, list[Any]]:
+        """Alias for :attr:`history` (backward compat)."""
+        return self.history
+
+    @data.setter
+    def data(self, value: dict[str, list[Any]]) -> None:
+        self.history = value
+
+    @property
+    def groups(self) -> dict[str, dict[str, list[Any]]]:
+        """Access the prefix-grouped metrics directly."""
+        return self._groups
+
+    @staticmethod
+    def _split_prefix(
+        metrics: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        """Extract prefix from metric keys and return (prefix, stripped_dict).
+
+        If any key contains ``"/"``, the part before the first ``"/"`` is
+        the prefix.  All keys are then stripped of that prefix.  If no key
+        contains ``"/"``, the prefix is ``""`` and keys are unchanged.
+        """
+        prefix = ""
+        for key in metrics:
+            if "/" in key:
+                prefix = key.split("/", 1)[0]
+                break
+        if not prefix:
+            return "", dict(metrics)
+        stripped: dict[str, Any] = {}
+        for key, val in metrics.items():
+            if key.startswith(f"{prefix}/"):
+                stripped[key[len(prefix) + 1 :]] = val
+            else:
+                stripped[key] = val
+        return prefix, stripped
+
+    def _invalidate_flat_cache(self) -> None:
+        """Mark the flattened history cache as stale."""
+        self._flat_cache = None
 
     @property
     def tracker(self) -> Tracker:
@@ -766,7 +838,7 @@ class History:
                 series = self._series_from_dataarray(array)
                 ax.plot(x, series, label=f"{name} {label}", linewidth=1.75)
 
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         ax.set_ylabel(name)
         if title is not None:
             ax.set_title(title)
@@ -934,7 +1006,7 @@ class History:
                 if plt is not None and hasattr(plt, "title"):
                     plt.title(label)
                 if plt is not None and hasattr(plt, "xlabel"):
-                    plt.xlabel("iter")
+                    plt.xlabel("step")
                 if plt is not None and hasattr(plt, "ylabel"):
                     plt.ylabel(label)
                 wrote_any = True
@@ -958,7 +1030,7 @@ class History:
                 if hasattr(plt, "title"):
                     plt.title(label)
                 if hasattr(plt, "xlabel"):
-                    plt.xlabel("iter")
+                    plt.xlabel("step")
                 if hasattr(plt, "ylabel"):
                     plt.ylabel(label)
                 wrote_any = True
@@ -1068,7 +1140,7 @@ class History:
                 points = max(points, len(series))
                 self._tplot(
                     y=series,
-                    xlabel="iter",
+                    xlabel="step",
                     ylabel=label,
                     append=append_flag,
                     outfile=asset_path.as_posix(),
@@ -1098,7 +1170,7 @@ class History:
                     overlay_points = max(overlay_points, len(series))
                     self._tplot(
                         y=series,
-                        xlabel="iter",
+                        xlabel="step",
                         ylabel=label,
                         append=overlay_append,
                         outfile=summary_path.as_posix(),
@@ -1313,19 +1385,23 @@ class History:
         self,
         key: str,
         val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray],
+        *,
+        prefix: str = "",
     ):
         """
         Update the history with a new key-value pair.
 
         Args:
-            key (str): The key to update in the history.
-            val (Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]): The value
-                to associate with the key.
+            key (str): The key to update in the group (without prefix).
+            val: The value to associate with the key.
+            prefix: The group prefix (e.g. "train", "eval", "").
         """
+        group = self._groups.setdefault(prefix, {})
         try:
-            self.history[key].append(val)
+            group[key].append(val)
         except KeyError:
-            self.history[key] = [val]
+            group[key] = [val]
+        self._invalidate_flat_cache()
         return val
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
@@ -1348,17 +1424,24 @@ class History:
             commit (Optional[bool]): Whether to commit the log to Weights & Biases.
             summarize (Optional[bool]): Whether to summarize the metrics.
         """
-        for key, val in metrics.items():
-            # if isinstance(val, (list, np.ndarray, torch.Tensor)):
-            #     val = grab_tensor(val)
+        prefix, stripped = self._split_prefix(metrics)
+        group = self._groups.setdefault(prefix, {})
+        for key, val in stripped.items():
             try:
-                self.history[key].append(val)
+                group[key].append(val)
             except KeyError:
-                self.history[key] = [val]
+                group[key] = [val]
+        self._invalidate_flat_cache()
         aggregated_metrics = self._compute_distributed_metrics(metrics)
         if aggregated_metrics and self._rank == 0:
             for agg_key, agg_val in aggregated_metrics.items():
-                self._update(agg_key, agg_val)
+                # Aggregated keys look like "train/loss/mean" — strip the
+                # same prefix so they land in the same group as raw metrics.
+                if prefix and agg_key.startswith(f"{prefix}/"):
+                    short_agg_key = agg_key[len(prefix) + 1 :]
+                else:
+                    short_agg_key = agg_key
+                self._update(short_agg_key, agg_val, prefix=prefix)
         metrics_for_logging = dict(metrics)
         if aggregated_metrics and self._rank == 0:
             metrics_for_logging.update(aggregated_metrics)
@@ -1830,7 +1913,7 @@ class History:
                     steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
                 )
 
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         if title is not None:
             fig.suptitle(title)
 
@@ -1980,7 +2063,7 @@ class History:
             # assert isinstance(ax, plt.Axes)
             assert key is not None
             _ = ax.set_ylabel(key)
-            _ = ax.set_xlabel("draw")
+            _ = ax.set_xlabel("step")
             # if num_chains > 0 and len(arr.shape) > 1:
             #     lw = LW / 2.
             #     #for idx in range(min(num_chains, arr.shape[1])):
@@ -2159,7 +2242,7 @@ class History:
         #     color=color
         # )
         # for idx in range(min(num_chains, i.shape[1])):
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         if title is not None:
             fig.suptitle(title)
 
@@ -2374,6 +2457,37 @@ class History:
             print(f"arr.shape: {arr.shape}")
             raise ValueError("Invalid shape encountered")
 
+    def get_grouped_datasets(
+        self,
+        warmup: Optional[float] = 0.0,
+    ) -> dict[str, xr.Dataset]:
+        """Build one xarray Dataset per metric group (prefix).
+
+        Each group's metrics share the same ``draw`` dimension, so
+        ``train/`` and ``eval/`` metrics get independent lengths instead
+        of being padded to the longest array.
+
+        Returns:
+            Dict mapping group prefix (``""`` for unprefixed) to Dataset.
+        """
+        datasets: dict[str, xr.Dataset] = {}
+        for prefix, group_data in self._groups.items():
+            data_vars: dict[str, xr.DataArray] = {}
+            for key, val_list in group_data.items():
+                name = key.replace("/", "_")
+                try:
+                    arr = torch.Tensor(val_list).detach().numpy(force=True)
+                    data_vars[name] = self.to_DataArray(arr, warmup)
+                except (ValueError, RuntimeError):
+                    logger.error(
+                        "Unable to create DataArray for %s/%s! Skipping!",
+                        prefix,
+                        key,
+                    )
+            if data_vars:
+                datasets[prefix] = xr.Dataset(data_vars)
+        return datasets
+
     def get_dataset(
         self,
         data: Optional[
@@ -2381,7 +2495,10 @@ class History:
         ] = None,
         warmup: Optional[float] = 0.0,
     ):
-        """Build an xarray Dataset from the history data.
+        """Build a single xarray Dataset from the history data.
+
+        For grouped datasets with independent dimensions, use
+        :meth:`get_grouped_datasets` instead.
 
         Args:
             data: Dict of metric arrays; defaults to ``self.history``.
@@ -2590,24 +2707,45 @@ class History:
             mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
             mplotdir.mkdir(exist_ok=True, parents=True)
-            _ = self.plot_all(
-                dataset=dataset,
-                outdir=mplotdir,
-                verbose=verbose,
-                num_chains=num_chains,
-                warmup=warmup,
-                title=title,
-                plot_kwargs=plot_kwargs,
-                subplots_kwargs=subplots_kwargs,
-            )
-            _ = self.tplot_all(
-                dataset=dataset,
-                outdir=tplotdir,
-                warmup=warmup,
-                append=append_tplot,
-                plot_type=tplot_type,
-                xkey=xkey,
-                verbose=verbose,
+            # Plot each metric group independently so train/ and eval/
+            # metrics get their own x-axis dimension.
+            grouped = self.get_grouped_datasets(warmup=warmup)
+            if not grouped:
+                # Fallback: use the flat dataset if no groups exist
+                grouped = {"": dataset}
+            for group_prefix, group_ds in sorted(grouped.items()):
+                group_suffix = f"_{group_prefix}" if group_prefix else ""
+                group_tplotdir = (
+                    tplotdir / group_prefix if group_prefix else tplotdir
+                )
+                group_mplotdir = (
+                    mplotdir / group_prefix if group_prefix else mplotdir
+                )
+                group_tplotdir.mkdir(exist_ok=True, parents=True)
+                group_mplotdir.mkdir(exist_ok=True, parents=True)
+                group_title = (
+                    f"{title} [{group_prefix}]"
+                    if title and group_prefix
+                    else (group_prefix or title)
+                )
+                _ = self.plot_all(
+                    dataset=group_ds,
+                    outdir=group_mplotdir,
+                    verbose=verbose,
+                    num_chains=num_chains,
+                    warmup=0.0,  # already applied in get_grouped_datasets
+                    title=group_title or None,
+                    plot_kwargs=plot_kwargs,
+                    subplots_kwargs=subplots_kwargs,
+                )
+                _ = self.tplot_all(
+                    dataset=group_ds,
+                    outdir=group_tplotdir,
+                    warmup=0.0,  # already applied
+                    append=append_tplot,
+                    plot_type=tplot_type,
+                    xkey=xkey,
+                    verbose=verbose,
             )
         if save:
             try:
