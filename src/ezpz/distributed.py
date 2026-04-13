@@ -1552,12 +1552,16 @@ def _setup_ddp(
             "world_size": world_size,
             "init_method": "env://",
         }
+        device = None
         if device_id is None:
             device_type = get_torch_device_type()
-            if device_type in ("cuda", "xpu"):
-                device_id = torch.device(f"{device_type}:{local_rank}")
+            if device_type == "cuda":
+                device = torch.device(f"{device_type}:{local_rank}")
+            # Don't pass device_id for xpu/xccl — the backend doesn't
+            # support split_group which DeviceMesh._unflatten requires
+            # when process groups are device-bound.
         if device_id is not None:
-            init_kwargs["device_id"] = device_id
+            init_kwargs["device_id"] = device
         torch.distributed.init_process_group(**init_kwargs)
 
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
