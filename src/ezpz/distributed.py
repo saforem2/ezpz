@@ -177,7 +177,7 @@ def get_rank() -> int:
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return int(val)
     try:
         return int(_get_mpi_comm().Get_rank())
@@ -205,7 +205,7 @@ def get_local_rank() -> int:
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return int(val)
     ws = get_world_size()
     if ws <= 1:
@@ -241,7 +241,7 @@ def get_world_size(
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return int(val)
     try:
         return int(_get_mpi_comm().Get_size())
@@ -292,7 +292,7 @@ def get_gpus_per_node() -> int:
         "SLURM_NTASKS_PER_NODE",
     ):
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return int(val)
     import torch
 
@@ -884,7 +884,7 @@ def get_hostname() -> str:
         pass
     for var in ("HOSTNAME", "HOST"):
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return val.strip().lower()
     try:
         import platform
