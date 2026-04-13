@@ -486,13 +486,12 @@ class MLflowBackend(TrackerBackend):
 
         try:
             # Log CPU/GPU/memory usage as system/* metrics.
-            # Only enable when using native auth (MLFLOW_TRACKING_TOKEN),
-            # not the X-API-Key patch which the background thread may bypass.
-            if os.environ.get("MLFLOW_TRACKING_TOKEN"):
-                try:
-                    mlflow.enable_system_metrics_logging()
-                except Exception:
-                    pass  # psutil or nvidia-ml-py not installed
+            # The AMSC_API_KEY monkey-patch on mlflow.utils.rest_utils is
+            # module-level, so the background metrics thread picks it up.
+            try:
+                mlflow.enable_system_metrics_logging()
+            except Exception:
+                pass  # psutil or nvidia-ml-py not installed
             mlflow.set_experiment(_experiment)
             self._run = mlflow.start_run(**kwargs)
             self._active = True

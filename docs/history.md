@@ -179,7 +179,7 @@ EZPZ_TRACKER_BACKENDS=wandb,mlflow ezpz launch python3 -m ezpz.examples.vit
 - **Automatic time-series**: Step counter auto-increments so MLflow shows
   line charts (not bar charts) by default
 - **System metrics**: CPU/GPU/memory usage logged automatically via
-  `mlflow.enable_system_metrics_logging()` (when using native Bearer auth)
+  `mlflow.enable_system_metrics_logging()` (requires `psutil`)
 - **Environment params**: Hostname, device, world size, git branch, torch
   version, etc. logged under `ezpz.*` prefix
 - **User config**: Logged under `config.*` prefix (nested dicts flattened
