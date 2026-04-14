@@ -350,7 +350,6 @@ def get_pbs_launch_cmd(
     cmd_list = [
         "mpiexec",
         "--envall",
-        "--line-buffer",
         f"--np={ngpus}",
         f"--ppn={ngpu_per_host}",
         f"--hostfile={hostfile_str}",
