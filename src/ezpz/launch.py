@@ -482,6 +482,7 @@ def launch(
     logger.info("Executing:\n" + "\n  ".join([f"{i}" for i in cmd_list]))
     t0 = time.perf_counter()
 
+    os.environ["EZPZ_RUN_COMMAND"] = str(cmd)
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
     proc = subprocess.run(cmd, check=False)
@@ -581,6 +582,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         "No active scheduler detected; falling back to local mpirun: %s",
         " ".join(shlex.quote(part) for part in fallback_cmd),
     )
+    os.environ["EZPZ_RUN_COMMAND"] = " ".join(fallback_cmd)
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
     proc = subprocess.run(fallback_cmd, check=False)
