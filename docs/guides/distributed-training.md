@@ -60,8 +60,10 @@ graph TD
     NCCL & CCL & GLOO --> MPI["Discover ranks via MPI"]
     MPI --> IPG["init_process_group"]
     IPG --> DEV["Set local device"]
-    DEV --> SEED["Seed RNGs"]
-    SEED --> DIAG["Print diagnostics"]
+    DEV --> SEED{"seed= provided?"}
+    SEED -->|yes| DO_SEED["Seed RNGs (rank-aware)"]
+    SEED -->|no| DIAG
+    DO_SEED --> DIAG["Print diagnostics"]
     DIAG --> RET(["Return rank"])
 ```
 
@@ -341,9 +343,10 @@ if rank == 0:
 ### Code Walkthrough
 
 **Setup** — `ezpz.setup_torch(seed=42)` initializes the distributed process
-group and seeds all RNGs for reproducibility. The seed is automatically
-varied per rank (`seed * (rank+1) * (local_rank+1)`) so each GPU gets a
-different random stream.
+group. When `seed=` is provided, it seeds Python, NumPy, and PyTorch RNGs
+for reproducibility. The seed is automatically varied per rank
+(`seed * (rank+1) * (local_rank+1)`) so each GPU gets a different random
+stream. If `seed=` is omitted, no seeding is performed.
 
 **Data loading** — `DistributedSampler` splits the dataset so each rank
 processes a unique subset. Call `sampler.set_epoch(epoch)` at the start of
