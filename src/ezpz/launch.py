@@ -482,13 +482,10 @@ def launch(
     logger.info("Executing:\n" + "\n  ".join([f"{i}" for i in cmd_list]))
     t0 = time.perf_counter()
 
-    filters = [] if filters is None else filters
-    if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
-        filters += get_aurora_filters()
-
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    retcode = run_command(command=cmd, filters=filters)
+    proc = subprocess.run(cmd, check=False)
+    retcode = proc.returncode
     cmd_finish = time.perf_counter()
     _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
@@ -576,9 +573,6 @@ def run(argv: Sequence[str] | None = None) -> int:
     fallback_cmd.extend(_cpu_bind_launcher_args(selected_cpu_bind))
     fallback_cmd.extend(getattr(args, "launcher_args", []))
     fallback_cmd.extend(command_parts)
-    filters = getattr(args, "filter", [])
-    if ezpz.get_machine().lower() in {"aurora", "sunspot"}:
-        filters += get_aurora_filters()
 
     print("\n") if ezpz.get_rank() == 0 else None
     logger.info(f"----[🍋 ezpz.launch][started][{ezpz.get_timestamp()}]----")
@@ -589,11 +583,8 @@ def run(argv: Sequence[str] | None = None) -> int:
     )
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    if filters:
-        retcode = run_command(command=fallback_cmd, filters=filters)
-    else:
-        proc = subprocess.run(fallback_cmd, check=False)
-        retcode = proc.returncode
+    proc = subprocess.run(fallback_cmd, check=False)
+    retcode = proc.returncode
     cmd_finish = time.perf_counter()
     _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
