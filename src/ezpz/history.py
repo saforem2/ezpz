@@ -12,10 +12,11 @@ import platform
 import shutil
 import sys
 import time
+import warnings
 from contextlib import ContextDecorator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable, Optional, Sequence, Union
 
 import ezpz
 import ezpz.distributed
@@ -30,7 +31,7 @@ import xarray as xr
 from ezpz import get_rank
 from ezpz import plot as ezplot
 from ezpz import timeitlogit
-from ezpz.configs import OUTPUTS_DIR, PathLike
+from ezpz.configs import OUTPUTS_DIR, PathLike, get_json_log_file
 from ezpz.log import get_logger
 from ezpz.tplot import (
     DEFAULT_MARKER,
@@ -46,6 +47,7 @@ from ezpz.tplot import (
 )
 
 # from ezpz import tplot as eztplot
+from ezpz.tracker import NullTracker, Tracker, setup_tracker
 from ezpz.utils import get_timestamp, grab_tensor, save_dataset, summarize_dict
 
 # xr = lazy_import("xarray")
@@ -178,6 +180,11 @@ class History:
         jsonl_path: Optional[PathLike] = None,
         jsonl_overwrite: bool = False,
         distributed_history: bool = AUTO_USE_DISTRIBUTED_HISTORY,
+        project_name: Optional[str] = None,
+        backends: Optional[str | Sequence[str]] = None,
+        config: Optional[dict[str, Any]] = None,
+        outdir: Optional[PathLike] = None,
+        tracker: Optional[Tracker] = None,
     ) -> None:
         """
         Initialize the History object.
@@ -191,10 +198,18 @@ class History:
             jsonl_path (Optional[PathLike]): Destination for JSONL metric logging.
             jsonl_overwrite (bool): Whether to truncate an existing JSONL log.
             distributed_history (bool): Enable distributed history tracking.
+            project_name (Optional[str]): Project name for tracker backends (e.g. wandb).
+            backends (Optional[str | Sequence[str]]): Comma-separated string or list
+                of tracker backend names (e.g. ``"wandb,csv"``).
+            config (Optional[dict[str, Any]]): Run-level config (hyperparameters) to
+                log via the tracker.
+            outdir (Optional[PathLike]): Output directory for file-based tracker
+                backends (e.g. CSV).
+            tracker (Optional[Tracker]): Inject a pre-built Tracker instance directly.
         """
         self.keys = [] if keys is None else keys
-        self.history: dict[str, list[Any]] = {}
-        self.data = self.history
+        self._groups: dict[str, dict[str, list[Any]]] = {}
+        self._flat_cache: dict[str, list[Any]] | None = None
         if (
             os.environ.get("EZPZ_NO_DISTRIBUTED_HISTORY", None)
             or os.environ.get("EZPZ_LOCAL_HISTORY", False)
@@ -225,6 +240,7 @@ class History:
         self._asset_dir: Optional[Path] = None
         self._report_filename = "report.md"
         self._report_initialized = False
+        self._jsonl_path_explicit = jsonl_path is not None
         if jsonl_path is None:
             default_jsonl_dir = (
                 self._report_dir if report_enabled else Path(OUTPUTS_DIR)
@@ -249,6 +265,130 @@ class History:
         self._dist = torch.distributed
         self._environment_written = False
         self._metric_summary_written = False
+        # -- Tracker integration --
+        if tracker is not None:
+            self._tracker: Tracker = tracker
+        elif any(
+            arg is not None for arg in (project_name, backends)
+        ) or os.environ.get("EZPZ_TRACKER_BACKENDS"):
+            self._tracker = setup_tracker(
+                project_name=project_name,
+                backends=backends,
+                config=config,
+                outdir=str(outdir) if outdir is not None else None,
+            )
+        else:
+            # Backward compat: auto-detect existing wandb.run
+            if wandb is not None and getattr(wandb, "run", None) is not None:
+                warnings.warn(
+                    "History detected an active wandb.run but no 'backends' "
+                    "argument was provided. Automatically using "
+                    "backends='wandb'. In a future version, pass "
+                    "backends='wandb' explicitly.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._tracker = setup_tracker(backends="wandb")
+            else:
+                self._tracker = NullTracker()
+        # Forward config to the tracker when the backends didn't receive it
+        # in their constructors. This covers:
+        #   - Injected tracker= (backends never saw config)
+        #   - Auto-detect wandb.run path (setup_tracker called without config)
+        # The setup_tracker(config=...) path already handles config internally,
+        # so we skip it there to avoid duplicates.
+        _tracker_got_config = tracker is None and (
+            any(arg is not None for arg in (project_name, backends))
+            or os.environ.get(
+                "EZPZ_TRACKER_BACKENDS", os.environ.get("EZPZ_TRACKER_BACKEND")
+            )
+        )
+        if config is not None and not _tracker_got_config:
+            self._tracker.log_config(config)
+
+    @property
+    def history(self) -> dict[str, list[Any]]:
+        """Flattened view of all metric groups.
+
+        Returns a dict keyed by full metric names (e.g. ``"train/loss"``,
+        ``"loss"``), preserving backward compatibility with code that reads
+        ``history.history["key"]``.
+        """
+        if self._flat_cache is not None:
+            return self._flat_cache
+        flat: dict[str, list[Any]] = {}
+        for prefix, metrics in self._groups.items():
+            for key, values in metrics.items():
+                full_key = f"{prefix}/{key}" if prefix else key
+                flat[full_key] = values
+        return flat
+
+    @history.setter
+    def history(self, value: dict[str, list[Any]]) -> None:
+        """Allow direct assignment for backward compat (e.g. reset)."""
+        self._groups.clear()
+        self._flat_cache = None
+        for full_key, values in value.items():
+            prefix, _, short_key = full_key.partition("/")
+            if not _:
+                prefix, short_key = "", full_key
+            group = self._groups.setdefault(prefix, {})
+            group[short_key] = values
+
+    @property
+    def data(self) -> dict[str, list[Any]]:
+        """Alias for :attr:`history` (backward compat)."""
+        return self.history
+
+    @data.setter
+    def data(self, value: dict[str, list[Any]]) -> None:
+        self.history = value
+
+    @property
+    def groups(self) -> dict[str, dict[str, list[Any]]]:
+        """Access the prefix-grouped metrics directly."""
+        return self._groups
+
+    @staticmethod
+    def _split_prefix(
+        metrics: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        """Extract prefix from metric keys and return (prefix, stripped_dict).
+
+        If any key contains ``"/"``, the part before the first ``"/"`` is
+        the prefix.  All keys are then stripped of that prefix.  If no key
+        contains ``"/"``, the prefix is ``""`` and keys are unchanged.
+        """
+        prefix = ""
+        for key in metrics:
+            if "/" in key:
+                prefix = key.split("/", 1)[0]
+                break
+        if not prefix:
+            return "", dict(metrics)
+        stripped: dict[str, Any] = {}
+        for key, val in metrics.items():
+            if key.startswith(f"{prefix}/"):
+                stripped[key[len(prefix) + 1 :]] = val
+            else:
+                stripped[key] = val
+        return prefix, stripped
+
+    def _invalidate_flat_cache(self) -> None:
+        """Mark the flattened history cache as stale."""
+        self._flat_cache = None
+
+    @property
+    def tracker(self) -> Tracker:
+        """The internal Tracker instance.
+
+        Use this to access backend-specific features::
+
+            wb = history.tracker.get_backend("wandb")
+            if wb is not None:
+                wb.watch(model, log="all")
+        """
+        return self._tracker
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -269,7 +409,7 @@ class History:
         self._report_path = base_dir.joinpath(self._report_filename)
         self._asset_dir = base_dir.joinpath("assets")
         self._report_initialized = False
-        if self._jsonl_enabled:
+        if self._jsonl_enabled and not self._jsonl_path_explicit:
             self._jsonl_path = base_dir.joinpath(f"{self._run_id}.jsonl")
         self._environment_written = False
         self._metric_summary_written = False
@@ -375,32 +515,19 @@ class History:
         kind: str = "matplotlib",
         commit: bool = False,
     ) -> None:
-        if (
-            not ENABLE_WANDB
-            or wandb is None
-            or getattr(wandb, "run", None) is None
-            or self._rank != 0
-        ):
-            return
-        if asset_path is None:
+        if self._rank != 0 or asset_path is None:
             return
         asset_path = Path(asset_path)
         if not asset_path.exists():
             return
         if asset_path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
             return
-        try:
-            title = key or asset_path.stem
-            wandb.log(
-                {
-                    f"plots/{title}": wandb.Image(
-                        str(asset_path), caption=f"{kind}:{title}"
-                    )
-                },
-                commit=commit,
-            )
-        except Exception as exc:
-            logger.debug("W&B image logging failed: %s", exc)
+        title = key or asset_path.stem
+        self._tracker.log_image(
+            f"plots/{title}",
+            str(asset_path),
+            caption=f"{kind}:{title}",
+        )
 
     def _write_environment_section(
         self, env_info: Optional[dict[str, Any]]
@@ -487,17 +614,29 @@ class History:
         except Exception:
             pass
 
-        if wandb is not None and getattr(wandb, "run", None) is not None:
-            run = wandb.run
+        _wandb_run = self._tracker.wandb_run
+        if _wandb_run is not None:
             wb_info: dict[str, str] = {
-                "Run Name": run.name,
-                "Project": run.project,
-                "URL": run.url,
+                "Run Name": _wandb_run.name,
+                "Project": _wandb_run.project,
+                "URL": _wandb_run.url,
             }
             wb_info.update(
-                {str(k): str(v) for k, v in run.config.items()}
+                {str(k): str(v) for k, v in _wandb_run.config.items()}
             )
             summary["Weights & Biases"] = wb_info
+
+        _mlflow_be = self._tracker.get_backend("mlflow")
+        if _mlflow_be is not None and getattr(_mlflow_be, "_active", False):
+            ml_info: dict[str, str] = {
+                "Run ID": getattr(_mlflow_be, "_run_id", ""),
+                "Experiment ID": getattr(_mlflow_be, "_experiment_id", ""),
+                "Tracking URI": getattr(_mlflow_be, "_tracking_uri", ""),
+            }
+            run_url = getattr(_mlflow_be, "run_url", None)
+            if run_url is not None:
+                ml_info["URL"] = run_url
+            summary["MLflow"] = ml_info
 
         return summary
 
@@ -699,7 +838,7 @@ class History:
                 series = self._series_from_dataarray(array)
                 ax.plot(x, series, label=f"{name} {label}", linewidth=1.75)
 
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         ax.set_ylabel(name)
         if title is not None:
             ax.set_title(title)
@@ -867,7 +1006,7 @@ class History:
                 if plt is not None and hasattr(plt, "title"):
                     plt.title(label)
                 if plt is not None and hasattr(plt, "xlabel"):
-                    plt.xlabel("iter")
+                    plt.xlabel("step")
                 if plt is not None and hasattr(plt, "ylabel"):
                     plt.ylabel(label)
                 wrote_any = True
@@ -891,7 +1030,7 @@ class History:
                 if hasattr(plt, "title"):
                     plt.title(label)
                 if hasattr(plt, "xlabel"):
-                    plt.xlabel("iter")
+                    plt.xlabel("step")
                 if hasattr(plt, "ylabel"):
                     plt.ylabel(label)
                 wrote_any = True
@@ -1001,7 +1140,7 @@ class History:
                 points = max(points, len(series))
                 self._tplot(
                     y=series,
-                    xlabel="iter",
+                    xlabel="step",
                     ylabel=label,
                     append=append_flag,
                     outfile=asset_path.as_posix(),
@@ -1031,7 +1170,7 @@ class History:
                     overlay_points = max(overlay_points, len(series))
                     self._tplot(
                         y=series,
-                        xlabel="iter",
+                        xlabel="step",
                         ylabel=label,
                         append=overlay_append,
                         outfile=summary_path.as_posix(),
@@ -1246,19 +1385,23 @@ class History:
         self,
         key: str,
         val: Union[Any, ScalarLike, list, torch.Tensor, np.ndarray],
+        *,
+        prefix: str = "",
     ):
         """
         Update the history with a new key-value pair.
 
         Args:
-            key (str): The key to update in the history.
-            val (Union[Any, ScalarLike, list, torch.Tensor, np.ndarray]): The value
-                to associate with the key.
+            key (str): The key to update in the group (without prefix).
+            val: The value to associate with the key.
+            prefix: The group prefix (e.g. "train", "eval", "").
         """
+        group = self._groups.setdefault(prefix, {})
         try:
-            self.history[key].append(val)
+            group[key].append(val)
         except KeyError:
-            self.history[key] = [val]
+            group[key] = [val]
+        self._invalidate_flat_cache()
         return val
 
     @timeitlogit(rank=get_rank(), record=True, verbose=False, prefix="history")
@@ -1266,9 +1409,10 @@ class History:
         self,
         metrics: dict,
         precision: int = 6,
-        use_wandb: Optional[bool] = True,
+        use_wandb: Optional[bool] = None,
         commit: Optional[bool] = True,
         summarize: Optional[bool] = True,
+        step: Optional[int] = None,
     ) -> str:
         """
         Update the history with a dictionary of metrics.
@@ -1280,17 +1424,24 @@ class History:
             commit (Optional[bool]): Whether to commit the log to Weights & Biases.
             summarize (Optional[bool]): Whether to summarize the metrics.
         """
-        for key, val in metrics.items():
-            # if isinstance(val, (list, np.ndarray, torch.Tensor)):
-            #     val = grab_tensor(val)
+        prefix, stripped = self._split_prefix(metrics)
+        group = self._groups.setdefault(prefix, {})
+        for key, val in stripped.items():
             try:
-                self.history[key].append(val)
+                group[key].append(val)
             except KeyError:
-                self.history[key] = [val]
+                group[key] = [val]
+        self._invalidate_flat_cache()
         aggregated_metrics = self._compute_distributed_metrics(metrics)
         if aggregated_metrics and self._rank == 0:
             for agg_key, agg_val in aggregated_metrics.items():
-                self._update(agg_key, agg_val)
+                # Aggregated keys look like "train/loss/mean" — strip the
+                # same prefix so they land in the same group as raw metrics.
+                if prefix and agg_key.startswith(f"{prefix}/"):
+                    short_agg_key = agg_key[len(prefix) + 1 :]
+                else:
+                    short_agg_key = agg_key
+                self._update(short_agg_key, agg_val, prefix=prefix)
         metrics_for_logging = dict(metrics)
         if aggregated_metrics and self._rank == 0:
             metrics_for_logging.update(aggregated_metrics)
@@ -1300,13 +1451,14 @@ class History:
             if aggregated_metrics and self._rank == 0
             else self._sanitize_metrics(metrics)
         )
-        if (
-            wandb is not None
-            and use_wandb
-            # and not WANDB_DISABLED
-            and getattr(wandb, "run", None) is not None
-        ):
-            wandb.log(sanitized_metrics, commit=commit)
+        if use_wandb is not None:
+            warnings.warn(
+                "The 'use_wandb' parameter is deprecated. Use "
+                "backends='wandb' in the History constructor instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self._tracker.log(sanitized_metrics, step=step, commit=commit)
         self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
             scalar_summary = {
@@ -1761,7 +1913,7 @@ class History:
                     steps, arr[:, idx], alpha=0.5, lw=LW / 2.0, **plot_kwargs
                 )
 
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         if title is not None:
             fig.suptitle(title)
 
@@ -1911,7 +2063,7 @@ class History:
             # assert isinstance(ax, plt.Axes)
             assert key is not None
             _ = ax.set_ylabel(key)
-            _ = ax.set_xlabel("draw")
+            _ = ax.set_xlabel("step")
             # if num_chains > 0 and len(arr.shape) > 1:
             #     lw = LW / 2.
             #     #for idx in range(min(num_chains, arr.shape[1])):
@@ -2090,7 +2242,7 @@ class History:
         #     color=color
         # )
         # for idx in range(min(num_chains, i.shape[1])):
-        ax.set_xlabel("draw")
+        ax.set_xlabel("step")
         if title is not None:
             fig.suptitle(title)
 
@@ -2120,6 +2272,7 @@ class History:
         logfreq: Optional[int] = None,
         plot_type: Optional[str] = None,
         verbose: bool = False,
+        group_prefix: str = "",
     ):
         """Create terminal plots for all metrics using plotext.
 
@@ -2153,8 +2306,13 @@ class History:
                 "draw",
             ]:
                 continue
+            display_name = (
+                f"{group_prefix}/{metric_name}"
+                if group_prefix
+                else metric_name
+            )
             self._tplot_metric_group(
-                metric_name,
+                display_name,
                 metric_vars,
                 warmup=warmup,
                 outdir=outdir_path,
@@ -2175,6 +2333,7 @@ class History:
         plot_kwargs: Optional[dict[str, Any]] = None,
         dataset: Optional[xr.Dataset] = None,
         data: Optional[dict] = None,
+        group_prefix: str = "",
     ):
         """Create matplotlib ridge plots for all metrics in the dataset."""
         plot_kwargs = {} if plot_kwargs is None else dict(plot_kwargs)
@@ -2207,9 +2366,14 @@ class History:
         for idx, (metric_name, metric_vars) in enumerate(
             sorted(groups.items())
         ):
+            display_name = (
+                f"{group_prefix}/{metric_name}"
+                if group_prefix
+                else metric_name
+            )
             plot_kwargs["color"] = f"C{idx % 9}"
             asset = self._plot_metric_group(
-                metric_name,
+                display_name,
                 metric_vars,
                 warmup=warmup,
                 title=title,
@@ -2305,6 +2469,37 @@ class History:
             print(f"arr.shape: {arr.shape}")
             raise ValueError("Invalid shape encountered")
 
+    def get_grouped_datasets(
+        self,
+        warmup: Optional[float] = 0.0,
+    ) -> dict[str, xr.Dataset]:
+        """Build one xarray Dataset per metric group (prefix).
+
+        Each group's metrics share the same ``draw`` dimension, so
+        ``train/`` and ``eval/`` metrics get independent lengths instead
+        of being padded to the longest array.
+
+        Returns:
+            Dict mapping group prefix (``""`` for unprefixed) to Dataset.
+        """
+        datasets: dict[str, xr.Dataset] = {}
+        for prefix, group_data in self._groups.items():
+            data_vars: dict[str, xr.DataArray] = {}
+            for key, val_list in group_data.items():
+                name = key.replace("/", "_")
+                try:
+                    arr = torch.Tensor(val_list).detach().numpy(force=True)
+                    data_vars[name] = self.to_DataArray(arr, warmup)
+                except (ValueError, RuntimeError):
+                    logger.error(
+                        "Unable to create DataArray for %s/%s! Skipping!",
+                        prefix,
+                        key,
+                    )
+            if data_vars:
+                datasets[prefix] = xr.Dataset(data_vars)
+        return datasets
+
     def get_dataset(
         self,
         data: Optional[
@@ -2312,7 +2507,10 @@ class History:
         ] = None,
         warmup: Optional[float] = 0.0,
     ):
-        """Build an xarray Dataset from the history data.
+        """Build a single xarray Dataset from the history data.
+
+        For grouped datasets with independent dimensions, use
+        :meth:`get_grouped_datasets` instead.
 
         Args:
             data: Dict of metric arrays; defaults to ``self.history``.
@@ -2364,20 +2562,19 @@ class History:
                 )
             )
         )
-        if (
-            ENABLE_WANDB
-            and dataset is not None
-            and wandb is not None
-            and wandb.run is not None
-        ):
+        if dataset is not None:
             dset_name = f"{fname}_dataset" if fname != "dataset" else fname
-            dataframe = dataset.to_dataframe()
-            wbtable = wandb.Table(dataframe=dataframe)
             try:
-                wandb.log({f"{dset_name}": wbtable})
+                dataframe = dataset.to_dataframe()
+                columns = list(dataframe.columns)
+                data_rows = dataframe.values.tolist()
+                self._tracker.log_table(
+                    dset_name, columns=columns, data=data_rows
+                )
             except Exception as e:
-                logger.exception(e)
-                logger.warning("Unable to save dataset to W&B, skipping!")
+                logger.warning(
+                    "Unable to log dataset table via tracker: %s", e
+                )
 
         return save_dataset(
             dataset,
@@ -2410,11 +2607,13 @@ class History:
         tplot_type: Optional[str] = None,
         env_info: Optional[dict[str, Any]] = None,
         timings: Optional[dict[str, float]] = None,
-    ) -> xr.Dataset:
+    ) -> dict[str, xr.Dataset] | xr.Dataset:
         """End-of-training cleanup: save dataset, generate plots, log artifacts.
 
         Returns:
-            The finalized xarray Dataset.
+            Dict mapping group prefix to xarray Dataset (one per group).
+            If no groups exist, returns a single flat Dataset for backward
+            compat.
         """
         dataset = (
             dataset
@@ -2439,7 +2638,20 @@ class History:
         else:
             base_dir = Path(outdir).expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
-        dataset_label = dataset_fname if dataset_fname is not None else "dataset"
+        # Redirect CSV backend to base_dir so all output is co-located
+        _csv_be = self._tracker.get_backend("csv")
+        if _csv_be is not None and hasattr(_csv_be, "_csv_path"):
+            old_csv = _csv_be._csv_path
+            _csv_be._outdir = base_dir  # type: ignore[attr-defined]
+            _csv_be._csv_path = base_dir / "metrics.csv"  # type: ignore[attr-defined]
+            if old_csv.exists() and old_csv != _csv_be._csv_path:
+                try:
+                    old_csv.unlink()
+                except OSError:
+                    pass
+        dataset_label = (
+            dataset_fname if dataset_fname is not None else "dataset"
+        )
         report_dir = (
             base_dir.joinpath(dataset_label)
             if dataset_fname is not None
@@ -2463,10 +2675,12 @@ class History:
             paths.update(existing_paths)
         paths.setdefault("Working Directory", str(Path.cwd()))
         paths["Output Directory"] = str(base_dir)
+        output_files: dict[str, str] = {
+            "Output Directory": str(base_dir),
+        }
         if self.report_enabled:
-            paths["Report"] = str(
-                report_dir / self._report_filename
-            )
+            paths["Report"] = str(report_dir / self._report_filename)
+            output_files["Report"] = paths["Report"]
         plotdir = None
         if plot:
             plotdir = (
@@ -2476,6 +2690,24 @@ class History:
             )
             paths["Plots (matplotlib)"] = str(plotdir / "mplot")
             paths["Plots (terminal)"] = str(plotdir / "tplot")
+            output_files["Plots (matplotlib)"] = paths["Plots (matplotlib)"]
+            output_files["Plots (terminal)"] = paths["Plots (terminal)"]
+        json_log = get_json_log_file()
+        if json_log is not None and json_log.exists():
+            link_path = base_dir / json_log.name
+            if not link_path.exists():
+                try:
+                    link_path.symlink_to(json_log.resolve())
+                except OSError:
+                    pass
+            paths["JSON Log"] = str(json_log)
+            output_files["JSON Log"] = paths["JSON Log"]
+        if self._jsonl_path is not None:
+            paths["Metrics JSONL"] = str(self._jsonl_path)
+            output_files["Metrics JSONL"] = paths["Metrics JSONL"]
+        if _csv_be is not None and hasattr(_csv_be, "_csv_path"):
+            paths["Metrics CSV"] = str(_csv_be._csv_path)
+            output_files["Metrics CSV"] = paths["Metrics CSV"]
         env_details["Paths"] = paths
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
@@ -2489,24 +2721,47 @@ class History:
             mplotdir = plotdir.joinpath("mplot")
             tplotdir.mkdir(exist_ok=True, parents=True)
             mplotdir.mkdir(exist_ok=True, parents=True)
-            _ = self.plot_all(
-                dataset=dataset,
-                outdir=mplotdir,
-                verbose=verbose,
-                num_chains=num_chains,
-                warmup=warmup,
-                title=title,
-                plot_kwargs=plot_kwargs,
-                subplots_kwargs=subplots_kwargs,
-            )
-            _ = self.tplot_all(
-                dataset=dataset,
-                outdir=tplotdir,
-                warmup=warmup,
-                append=append_tplot,
-                plot_type=tplot_type,
-                xkey=xkey,
-                verbose=verbose,
+            # Plot each metric group independently so train/ and eval/
+            # metrics get their own x-axis dimension.
+            grouped = self.get_grouped_datasets(warmup=warmup)
+            if not grouped:
+                # Fallback: use the flat dataset if no groups exist
+                grouped = {"": dataset}
+            for group_prefix, group_ds in sorted(grouped.items()):
+                group_suffix = f"_{group_prefix}" if group_prefix else ""
+                group_tplotdir = (
+                    tplotdir / group_prefix if group_prefix else tplotdir
+                )
+                group_mplotdir = (
+                    mplotdir / group_prefix if group_prefix else mplotdir
+                )
+                group_tplotdir.mkdir(exist_ok=True, parents=True)
+                group_mplotdir.mkdir(exist_ok=True, parents=True)
+                group_title = (
+                    f"{title} [{group_prefix}]"
+                    if title and group_prefix
+                    else (group_prefix or title)
+                )
+                _ = self.plot_all(
+                    dataset=group_ds,
+                    outdir=group_mplotdir,
+                    verbose=verbose,
+                    num_chains=num_chains,
+                    warmup=0.0,  # already applied in get_grouped_datasets
+                    title=group_title or None,
+                    plot_kwargs=plot_kwargs,
+                    subplots_kwargs=subplots_kwargs,
+                    group_prefix=group_prefix,
+                )
+                _ = self.tplot_all(
+                    dataset=group_ds,
+                    outdir=group_tplotdir,
+                    warmup=0.0,  # already applied
+                    append=append_tplot,
+                    plot_type=tplot_type,
+                    xkey=xkey,
+                    verbose=verbose,
+                    group_prefix=group_prefix,
             )
         if save:
             try:
@@ -2519,42 +2774,88 @@ class History:
                 )
                 use_hdf5 = False
 
-            fname = "dataset" if dataset_fname is None else dataset_fname
-            _ = self.save_dataset(
-                dataset=dataset,
-                outdir=base_dir,
-                fname=fname,
-                use_hdf5=use_hdf5,
-            )
+            ext = ".h5" if use_hdf5 else ".nc"
+            grouped = self.get_grouped_datasets(warmup=warmup)
+            if len(grouped) > 1:
+                # Save one dataset per group (no NaN padding)
+                for gprefix, gds in grouped.items():
+                    label = gprefix if gprefix else (dataset_fname or "dataset")
+                    _ = self.save_dataset(
+                        dataset=gds,
+                        outdir=base_dir,
+                        fname=label,
+                        use_hdf5=use_hdf5,
+                    )
+                    output_files[f"Dataset ({label})"] = str(
+                        base_dir / f"{label}{ext}"
+                    )
+            else:
+                # Single group or no groups: save as a single flat dataset
+                fname = "dataset" if dataset_fname is None else dataset_fname
+                ds_to_save = (
+                    next(iter(grouped.values()))
+                    if grouped
+                    else dataset
+                )
+                _ = self.save_dataset(
+                    dataset=ds_to_save,
+                    outdir=base_dir,
+                    fname=fname,
+                    use_hdf5=use_hdf5,
+                )
+                output_files["Dataset"] = str(base_dir / f"{fname}{ext}")
         if self.report_enabled:
             logger.info(
                 "Saving history report to %s",
                 self._report_dir.joinpath(self._report_filename),
             )
-        if wandb is not None and (run := getattr(wandb, "run", None)) is not None:
-            logger.info(f"wandb.run=[{run.name}]({run.url})")
+        _wandb_run = self._tracker.wandb_run
+        if _wandb_run is not None:
+            logger.info(f"wandb.run=[{_wandb_run.name}]({_wandb_run.url})")
+        _mlflow_be = self._tracker.get_backend("mlflow")
+        if _mlflow_be is not None and getattr(_mlflow_be, "_active", False):
+            _run_url = getattr(_mlflow_be, "run_url", None)
+            _run_id = getattr(_mlflow_be, "_run_id", "?")
+            if _run_url:
+                logger.info("mlflow.run=[%s](%s)", _run_id, _run_url)
+            else:
+                logger.info(
+                    "mlflow.run=%s (tracking_uri=%s)",
+                    _run_id,
+                    getattr(_mlflow_be, "_tracking_uri", "?"),
+                )
+        if self.history:
             try:
-                if self.history:
-                    columns = list(self.history.keys())
-                    max_len = max(len(v) for v in self.history.values())
-                    data = []
-                    for i in range(max_len):
-                        row = [
-                            self.history[col][i]
-                            if i < len(self.history[col])
-                            else None
-                            for col in columns
-                        ]
-                        data.append(row)
-                    run.log(
-                        {
-                            "training_history": wandb.Table(
-                                columns=columns, data=data
-                            )
-                        }
-                    )
+                columns = list(self.history.keys())
+                max_len = max(len(v) for v in self.history.values())
+                table_data = []
+                for i in range(max_len):
+                    row = [
+                        self.history[col][i]
+                        if i < len(self.history[col])
+                        else None
+                        for col in columns
+                    ]
+                    table_data.append(row)
+                self._tracker.log_table(
+                    "training_history", columns=columns, data=table_data
+                )
             except Exception:
                 logger.warning(
-                    "Failed to log training history table to wandb"
+                    "Failed to log training history table via tracker"
                 )
+        if output_files:
+            # Upload output files as artifacts (MLflow, etc.) before finish
+            self._tracker.log_artifacts(output_files)
+            logger.info("Output files:")
+            for label, fpath in output_files.items():
+                logger.info("  %s: %s", label, fpath)
+        self._tracker.finish()
+        grouped = self.get_grouped_datasets(warmup=warmup)
+        if len(grouped) > 1:
+            for gname, gds in sorted(grouped.items()):
+                label = gname if gname else "default"
+                logger.info("[%s] %s", label, gds)
+            return grouped
+        logger.info("%s", dataset)
         return dataset

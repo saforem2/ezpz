@@ -1,5 +1,11 @@
 # Train ViT with FSDP on MNIST
 
+This example shows how to train a Vision Transformer (ViT) with FSDP and
+optional `torch.compile()` for kernel fusion. Use this as a starting point
+when you need a transformer-based vision model with distributed training — it
+demonstrates patch embedding, positional encoding, and multi-head attention
+in a complete training loop.
+
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training

@@ -10,9 +10,6 @@ import pytest
 # Set up environment for testing
 os.environ["WANDB_MODE"] = "disabled"
 os.environ["EZPZ_LOG_LEVEL"] = "ERROR"
-os.environ["RANK"] = "0"
-os.environ["WORLD_SIZE"] = "1"
-os.environ["LOCAL_RANK"] = "0"
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))

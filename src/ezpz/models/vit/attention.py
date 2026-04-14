@@ -1,8 +1,12 @@
-"""
-ezpz/models/vit/attention.py
+"""Attention blocks for Vision Transformer experiments.
 
-Modified from content at
-<https://towardsdatascience.com/increasing-transformer-model-efficiency-through-attention-layer-optimization-fefa6f87b1d6>
+Provides :class:`AttentionBlock` (using ``torchvision.ops.MLP``) and
+:class:`timmAttentionBlock` (using ``timm.models.layers.Mlp``), both of
+which accept a pluggable attention function for benchmarking different
+attention backends.
+
+Based on `Increasing Transformer Model Efficiency Through Attention Layer
+Optimization <https://towardsdatascience.com/increasing-transformer-model-efficiency-through-attention-layer-optimization-fefa6f87b1d6>`_.
 """
 
 import functools
@@ -12,6 +16,17 @@ import torch.nn as nn
 
 
 class AttentionBlock(nn.Module):
+    """ViT attention block using ``torchvision.ops.MLP`` for the FFN.
+
+    Args:
+        attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
+        dim: Token embedding dimension.
+        num_heads: Number of attention heads.
+        format: QKV permutation format.  Use ``"bshd"`` for batch-first
+            layouts; defaults to the standard ``(heads, seq, dim)`` order.
+        **kwargs: Ignored (accepted for API compatibility).
+    """
+
     def __init__(
         self,
         attn_fn,
@@ -60,6 +75,19 @@ class AttentionBlock(nn.Module):
 
 
 class timmAttentionBlock(nn.Module):
+    """ViT attention block using ``timm.models.layers.Mlp`` for the FFN.
+
+    Identical to :class:`AttentionBlock` except the MLP is sourced from
+    the ``timm`` library instead of ``torchvision``.
+
+    Args:
+        attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
+        dim: Token embedding dimension.
+        num_heads: Number of attention heads.
+        format: QKV permutation format (see :class:`AttentionBlock`).
+        **kwargs: Ignored (accepted for API compatibility).
+    """
+
     def __init__(
         self,
         attn_fn,

@@ -138,13 +138,6 @@ MNIST_DEFAULT_FLAGS = {
 }
 
 
-try:
-    import wandb
-except Exception:
-    wandb = None  # type:ignore
-    logger.warning("Failed to import wandb")
-
-
 class PatchEmbed(torch.nn.Module):
     """Convert images into patch embeddings."""
 
@@ -412,6 +405,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="CUDA SDPA backend to use.",
     )
     parser.add_argument("--fsdp", action="store_true", help="Use FSDP")
+    parser.add_argument(
+        "--fsdp-sharding-strategy",
+        type=str,
+        default="full-shard",
+        choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
+        help="FSDP sharding strategy (default: full-shard)",
+    )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     apply_dataset_overrides(args, argv)
@@ -532,18 +532,6 @@ def train_fn(
     model_size_in_billions = num_params / 1e9
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
-    if wandb is not None and ezpz.verify_wandb():
-        if (run := getattr(wandb, "run")) is not None and run is wandb.run:
-            try:
-                if args.compile:
-                    logger.info("Skipping wandb watch while compiling")
-                else:
-                    wandb.run.watch(model, log="all")  # type:ignore
-            except Exception as e:
-                logger.exception(e)
-                logger.warning(
-                    "Failed to watch model with wandb; continuing..."
-                )
 
     # model = ezpz.distributed.wrap_model(
     #     model=model,
@@ -552,11 +540,15 @@ def train_fn(
     #     # device_id=int(ezpz.get_local_rank())
     # )
     if world_size > 1:
+        reshard = ezpz.distributed.resolve_fsdp_strategy(
+            args.fsdp_sharding_strategy
+        )
+        use_fsdp = args.fsdp and reshard is not None
         model = ezpz.distributed.wrap_model(
             model=model,
-            use_fsdp=args.fsdp,
+            use_fsdp=use_fsdp,
             dtype=args.dtype,
-            device_id=int(ezpz.get_local_rank()),
+            **({"reshard_after_forward": reshard} if reshard is not None else {}),
         )
         # if args.fsdp:
         #     logger.info("Using FSDP for distributed training")
@@ -597,21 +589,23 @@ def train_fn(
     outdir = get_example_outdir(WBPROJ_NAME)
     logger.info("Outputs will be saved to %s", outdir)
     metrics_path = outdir.joinpath("metrics.jsonl")
-    eval_metrics_path = outdir.joinpath("metrics-eval.jsonl")
     history = ezpz.history.History(
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
         distributed_history=(1 < world_size <= 384),
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
     )
-    eval_history = ezpz.history.History(
-        report_dir=outdir,
-        report_enabled=True,
-        jsonl_path=eval_metrics_path,
-        jsonl_overwrite=True,
-        distributed_history=(1 < world_size <= 384),
-    )
+    try:
+        if args.compile:
+            logger.info("Skipping tracker watch while compiling")
+        else:
+            history.tracker.watch(model, log="all")
+    except Exception as e:
+        logger.exception(e)
+        logger.warning("Failed to watch model with tracker; continuing...")
     logger.info(
         f"Training with {world_size} x {device_type} (s), using {torch_dtype=}"
     )
@@ -696,7 +690,7 @@ def train_fn(
                 batch_loss = float(loss.detach().item())
                 batch_acc = float(correct.item() / batch_size)
                 if math.isfinite(batch_loss) and math.isfinite(batch_acc):
-                    eval_msg = eval_history.update(
+                    eval_msg = history.update(
                         {
                             "eval/iter": eval_step,
                             "eval/loss": batch_loss,
@@ -741,52 +735,15 @@ def train_fn(
             logger.info("\n".join(f"[eval] {line}" for line in summary_table))
         model.train()  # type:ignore
 
-    if ezpz.distributed.get_rank() == 0:
-        if history.history and any(len(v) for v in history.history.values()):
-            dataset = history.finalize(
-                outdir=outdir,
-                run_name=WBPROJ_NAME,
-                dataset_fname="train",
-                verbose=False,
-            )
-            logger.info(f"{dataset=}")
-        else:
-            logger.warning("No train metrics recorded; skipping dataset save")
-        if "test" in dataset_dict:
-            if eval_history.history and any(
-                len(v) for v in eval_history.history.values()
-            ):
-                eval_dataset = eval_history.finalize(
-                    outdir=outdir,
-                    run_name=WBPROJ_NAME,
-                    dataset_fname="eval",
-                    verbose=False,
-                )
-                logger.info(f"{eval_dataset=}")
-            else:
-                logger.warning("No eval metrics recorded; skipping dataset save")
-
-    return history
+    return history, outdir
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace):
     """CLI entrypoint to configure logging and launch ViT training."""
     t0 = time.perf_counter()
-    rank = ezpz.distributed.setup_torch()
+    _ = ezpz.distributed.setup_torch()
     t_setup = time.perf_counter()
-    if rank == 0 and ezpz.verify_wandb():
-        try:
-            fp = Path(__file__).resolve()
-            run = ezpz.setup_wandb(
-                project_name=f"ezpz.{fp.parent.name}.{fp.stem}"
-            )
-            if wandb is not None and run is not None and run is wandb.run:
-                # assert run is not None and run is wandb.run
-                wandb.config.update(ezpz.get_dist_info())
-                wandb.config.update({"args": {**vars(args)}})
-        except Exception:
-            logger.warning("Failed to setup wandb, continuing without!")
 
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
@@ -840,7 +797,7 @@ def main(args: argparse.Namespace):
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
     train_start = time.perf_counter()
-    train_fn(block_fn, args=args, dataset=args.dataset)
+    history, outdir = train_fn(block_fn, args=args, dataset=args.dataset)
     train_end = time.perf_counter()
     t1 = time.perf_counter()
     timings = {
@@ -849,22 +806,22 @@ def main(args: argparse.Namespace):
         "main/total": t1 - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
+    if ezpz.distributed.get_rank() == 0:
+        if history.history and any(len(v) for v in history.history.values()):
+            dataset = history.finalize(
+                outdir=outdir,
+                run_name=WBPROJ_NAME,
+                verbose=False,
             )
-            # wandb.log(
-            #     {
-            #         (f"timings/{k}" if not k.startswith("timings/") else k): v
-            #         for k, v in timings.items()
-            #     }
-            # )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+            del dataset  # logged by finalize()
+        else:
+            logger.warning("No metrics recorded; skipping dataset save")
 
 
 if __name__ == "__main__":

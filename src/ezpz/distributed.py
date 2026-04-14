@@ -85,8 +85,9 @@ __all__ = [
     "log_dict_as_bulleted_list",
     # -- timing --
     "timeitlogit",
-    # -- wandb --
+    # -- wandb / mlflow --
     "setup_wandb",
+    "setup_mlflow",
     "verify_wandb",
     # -- hostfile helpers --
     "get_nodes_from_hostfile",
@@ -176,9 +177,12 @@ def get_rank() -> int:
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)
-        if val is not None:
+        if val is not None and val != "":
             return int(val)
-    return int(_get_mpi_comm().Get_rank())
+    try:
+        return int(_get_mpi_comm().Get_rank())
+    except Exception:
+        return 0
 
 
 def get_local_rank() -> int:
@@ -201,7 +205,7 @@ def get_local_rank() -> int:
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)
-        if val is not None:
+        if val is not None and val != "":
             return int(val)
     ws = get_world_size()
     if ws <= 1:
@@ -229,12 +233,28 @@ def get_world_size(
         return get_world_size_total()
     if in_use:
         return get_world_size_in_use()
-    return int(_get_mpi_comm().Get_size())
+    _ENV_VARS = (
+        "WORLD_SIZE",
+        "PMI_SIZE",
+        "OMPI_COMM_WORLD_SIZE",
+        "SLURM_NTASKS",
+    )
+    for var in _ENV_VARS:
+        val = os.environ.get(var)
+        if val is not None and val != "":
+            return int(val)
+    try:
+        return int(_get_mpi_comm().Get_size())
+    except Exception:
+        return 1
 
 
 def get_world_size_in_use() -> int:
     """Return the number of MPI ranks currently participating."""
-    return int(_get_mpi_comm().Get_size())
+    try:
+        return int(_get_mpi_comm().Get_size())
+    except Exception:
+        return 1
 
 
 def get_world_size_total() -> int:
@@ -272,7 +292,7 @@ def get_gpus_per_node() -> int:
         "SLURM_NTASKS_PER_NODE",
     ):
         val = os.environ.get(var)
-        if val is not None:
+        if val is not None and val != "":
             return int(val)
     import torch
 
@@ -410,6 +430,31 @@ def get_torch_backend() -> str:
 # ===================================================================
 
 
+def _configure_rank_warnings(rank: int) -> None:
+    """Suppress warnings on non-rank-0 processes to prevent duplicates.
+
+    In distributed training, ``warnings.warn()`` calls from libraries like
+    ``torch._dynamo`` fire independently on every rank, producing N identical
+    copies.  This helper silences them on all ranks except 0.
+
+    Set ``EZPZ_WARN_FROM_ALL_RANKS=1`` to keep warnings on every rank.
+    """
+    import logging
+    import warnings
+
+    logging.captureWarnings(True)
+
+    warn_from_all = os.environ.get(
+        "WARN_FROM_ALL_RANKS",
+        os.environ.get("EZPZ_WARN_FROM_ALL_RANKS", ""),
+    )
+    if warn_from_all.lower() in ("1", "true", "yes", "on"):
+        return
+
+    if rank != 0:
+        warnings.filterwarnings("ignore")
+
+
 def setup_torch(
     port: str | int | None = None,
     seed: int | None = None,
@@ -532,6 +577,7 @@ def setup_torch(
 
     logger.info(print_dist_setup(display=False))
     barrier()
+    _configure_rank_warnings(rank)
     return rank
 
 
@@ -539,13 +585,14 @@ def cleanup() -> None:
     """Destroy the ``torch.distributed`` process group if active."""
     import torch.distributed
 
-    try:
-        import wandb  # noqa: F811
+    if get_rank() == 0 and verify_wandb():
+        try:
+            import wandb  # noqa: F811
 
-        if wandb.run is not None:
-            logger.info("wandb.run=[%s](%s)", wandb.run.name, wandb.run.url)
-    except Exception:
-        pass
+            if wandb.run is not None and not getattr(wandb.run, "disabled", False):
+                logger.info("wandb.run=[%s](%s)", wandb.run.name, wandb.run.url)
+        except Exception:
+            pass
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()
 
@@ -661,12 +708,49 @@ def all_reduce(
 # ===================================================================
 
 
+FSDP_SHARDING_STRATEGIES = {
+    "full-shard": True,
+    "shard-grad-op": False,
+    "no-shard": None,
+    "hybrid-shard": "hybrid",
+}
+"""Map CLI sharding strategy names to ``reshard_after_forward`` values.
+
+Used by :func:`wrap_model` and the example CLI parsers::
+
+    --fsdp-sharding-strategy full-shard   # reshard_after_forward=True  (ZeRO-3)
+    --fsdp-sharding-strategy shard-grad-op # reshard_after_forward=False (ZeRO-2)
+    --fsdp-sharding-strategy hybrid-shard  # reshard to intra-node size
+    --fsdp-sharding-strategy no-shard      # fall back to DDP
+"""
+
+
+def resolve_fsdp_strategy(
+    strategy: str,
+) -> bool | int | None:
+    """Convert a CLI sharding strategy name to a ``reshard_after_forward`` value.
+
+    Returns ``None`` when the strategy is ``"no-shard"`` (caller should
+    use DDP instead).
+    """
+    if strategy not in FSDP_SHARDING_STRATEGIES:
+        raise ValueError(
+            f"Unknown FSDP sharding strategy {strategy!r}. "
+            f"Choose from: {', '.join(FSDP_SHARDING_STRATEGIES)}"
+        )
+    val = FSDP_SHARDING_STRATEGIES[strategy]
+    if val == "hybrid":
+        return get_gpus_per_node()
+    return val
+
+
 def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool = True,
     dtype: str = "bfloat16",
     device_id: torch.device | int | None = None,
     device_mesh: Any = None,
+    reshard_after_forward: bool | int = True,
 ) -> torch.nn.Module:
     """Wrap *model* with DDP or FSDP for distributed training.
 
@@ -674,8 +758,13 @@ def wrap_model(
         model: Model to wrap.
         use_fsdp: Use FSDP when ``True``, DDP when ``False``.
         dtype: Mixed-precision parameter dtype for FSDP (e.g. ``"bf16"``).
-        device_id: Explicit device ordinal for FSDP.
+        device_id: Explicit device ordinal for FSDP (legacy FSDP1 only).
         device_mesh: Optional :class:`torch.distributed.device_mesh.DeviceMesh`.
+        reshard_after_forward: Controls parameter lifetime after forward:
+
+            - ``True`` (default): reshard after forward (FULL_SHARD / ZeRO-3).
+            - ``False``: keep unsharded (SHARD_GRAD_OP / ZeRO-2).
+            - ``int``: reshard to this world-size (HYBRID_SHARD).
 
     Returns:
         The wrapped model.  If ``world_size <= 1`` the original model is
@@ -693,22 +782,27 @@ def wrap_model(
         return model
     if get_rank() == 0:
         logger.info("Wrapping model with %s", "fsdp" if use_fsdp else "ddp")
-    if use_fsdp:
-        device_type = get_torch_device_type()
-        if device_type in ("cpu", "mps"):
-            logger.warning(
-                "FSDP is not supported on %s devices; falling back to DDP.",
-                device_type,
-            )
-            return wrap_model_for_ddp(model)
-        if device_mesh is not None:
-            return _wrap_fsdp2(
-                model, dtype=dtype, device_mesh=device_mesh,
-            )
-        if device_id is not None:
-            device_id = torch.device(device_type, device_id)
-        return _wrap_fsdp(model, dtype=dtype, device_id=device_id)
-    return wrap_model_for_ddp(model)
+    if not use_fsdp:
+        return wrap_model_for_ddp(model)
+    device_type = get_torch_device_type()
+    if device_type in ("cpu", "mps"):
+        logger.warning(
+            "FSDP is not supported on %s devices; falling back to DDP.",
+            device_type,
+        )
+        return wrap_model_for_ddp(model)
+    # Auto-create a 1D DeviceMesh when none is provided so FSDP2
+    # (fully_shard) is the default sharding strategy.
+    if device_mesh is None:
+        from torch.distributed.device_mesh import init_device_mesh
+
+        device_mesh = init_device_mesh(device_type, (ws,))
+    return _wrap_fsdp2(
+        model,
+        dtype=dtype,
+        device_mesh=device_mesh,
+        reshard_after_forward=reshard_after_forward,
+    )
 
 
 def wrap_model_for_ddp(model: torch.nn.Module) -> torch.nn.Module:
@@ -790,7 +884,7 @@ def get_hostname() -> str:
         pass
     for var in ("HOSTNAME", "HOST"):
         val = os.environ.get(var)
-        if val:
+        if val is not None and val != "":
             return val.strip().lower()
     try:
         import platform
@@ -818,7 +912,9 @@ def get_machine(hostname: str | None = None) -> str:
         ("frontier", "Frontier"),
         ("sophia", "Sophia"),
         ("theta", "ThetaGPU"),
+        ("sunspot", "SunSpot"),
         ("x1", "SunSpot"),
+        ("aurora", "Aurora"),
         ("x4", "Aurora"),
         ("login", "Perlmutter"),
         ("nid", "Perlmutter"),
@@ -1202,7 +1298,7 @@ def setup_wandb(
 
             run.config.update(
                 {
-                    "DIST_INFO": get_dist_info(),
+                    # "DIST_INFO": get_dist_info(),
                     "hostname": get_hostname(),
                     "pytorch_backend": get_torch_backend(),
                     "torch_version": torch.__version__,
@@ -1218,6 +1314,48 @@ def setup_wandb(
     except Exception as exc:
         logger.exception("wandb.init() failed from rank=%d: %s", rank, exc)
         logger.warning("Continuing without wandb logging.")
+        return None
+
+
+def setup_mlflow(
+    project_name: str | None = None,
+    config: dict[str, Any] | None = None,
+    outdir: str | os.PathLike | None = None,
+    **kwargs: Any,
+) -> Any:
+    """Initialise an MLflow run (rank 0 only logs, others return ``None``).
+
+    Convenience wrapper around :class:`~ezpz.tracker.MLflowBackend` that
+    mirrors :func:`setup_wandb`.  Handles dotenv loading, auth, experiment
+    name resolution, and system-param logging automatically.
+
+    Args:
+        project_name: MLflow experiment name.  Falls back to
+            ``MLFLOW_EXPERIMENT_NAME``, then wandb project env vars,
+            then a script-derived default.
+        config: Run-level config dict logged as MLflow params.
+        outdir: Artifact output directory.
+        **kwargs: Forwarded to ``mlflow.start_run``.
+
+    Returns:
+        The ``mlflow.ActiveRun`` object, or ``None`` if MLflow is
+        unavailable or the current rank is not 0.
+    """
+    try:
+        from ezpz.tracker import MLflowBackend
+
+        backend = MLflowBackend(
+            project_name=project_name,
+            config=config,
+            outdir=outdir,
+            **kwargs,
+        )
+        return backend.run
+    except ImportError:
+        logger.warning("mlflow is not installed; skipping MLflow setup.")
+        return None
+    except Exception as exc:
+        logger.warning("setup_mlflow() failed: %s — continuing without MLflow", exc)
         return None
 
 
@@ -1366,22 +1504,30 @@ def _setup_ddp(
             "local_rank": local_rank,
         }
 
-    # Rank 0 determines master_addr and port, then broadcasts
-    master_addr = socket.gethostname() if rank == 0 else None
-    if master_addr is not None:
-        machine = get_machine().lower()
-        if machine in {"aurora", "polaris", "sirius"}:
-            master_addr = f"{master_addr}.hsn.cm.{machine}.alcf.anl.gov"
-        elif machine == "sophia":
-            master_addr = f"{master_addr}.lab.alcf.anl.gov"
+    # If MASTER_ADDR and MASTER_PORT are already set (e.g. by torchrun),
+    # use them directly instead of re-deriving via MPI broadcast.
+    env_master_addr = os.environ.get("MASTER_ADDR")
+    env_master_port = os.environ.get("MASTER_PORT")
+    if env_master_addr and env_master_port:
+        master_addr = env_master_addr
+        master_port = env_master_port
+    else:
+        # Rank 0 determines master_addr and port, then broadcasts
+        master_addr = socket.gethostname() if rank == 0 else None
+        if master_addr is not None:
+            machine = get_machine().lower()
+            if machine in {"aurora", "polaris", "sirius"}:
+                master_addr = f"{master_addr}.hsn.cm.{machine}.alcf.anl.gov"
+            elif machine == "sophia":
+                master_addr = f"{master_addr}.lab.alcf.anl.gov"
 
-    free_port = str(_get_free_port()) if rank == 0 else None
-    master_port = (
-        os.environ.get("MASTER_PORT", free_port) if rank == 0 else None
-    )
+        free_port = str(_get_free_port()) if rank == 0 else None
+        master_port = (
+            os.environ.get("MASTER_PORT", free_port) if rank == 0 else None
+        )
 
-    master_addr = broadcast(master_addr, root=0)
-    master_port = broadcast(master_port, root=0)
+        master_addr = broadcast(master_addr, root=0)
+        master_port = broadcast(master_port, root=0)
 
     os.environ["MASTER_ADDR"] = str(master_addr)
     os.environ["MASTER_PORT"] = str(master_port)
@@ -1406,12 +1552,16 @@ def _setup_ddp(
             "world_size": world_size,
             "init_method": "env://",
         }
+        device = None
         if device_id is None:
             device_type = get_torch_device_type()
-            if device_type in ("cuda", "xpu"):
-                device_id = torch.device(f"{device_type}:{local_rank}")
+            if device_type == "cuda":
+                device = torch.device(f"{device_type}:{local_rank}")
+            # Don't pass device_id for xpu/xccl — the backend doesn't
+            # support split_group which DeviceMesh._unflatten requires
+            # when process groups are device-bound.
         if device_id is not None:
-            init_kwargs["device_id"] = device_id
+            init_kwargs["device_id"] = device
         torch.distributed.init_process_group(**init_kwargs)
 
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
@@ -1503,8 +1653,12 @@ def _wrap_fsdp2(
         ),
         **kwargs,
     }
+    # Skip container modules (ModuleList, ModuleDict) that don't implement
+    # forward — fully_shard raises ValueError on these.
+    _CONTAINERS = (torch.nn.ModuleList, torch.nn.ModuleDict)
     for module in model.children():
-        fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
+        if not isinstance(module, _CONTAINERS):
+            fully_shard(module, mesh=device_mesh, **fsdp_kwargs)
     return fully_shard(model, mesh=device_mesh, **fsdp_kwargs)
 
 

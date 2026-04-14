@@ -5,20 +5,45 @@
 # LICENSE file in the root directory of this source tree.
 #
 # Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+"""Attention primitives for transformer models.
+
+Provides :class:`FlexAttention` (``torch.nn.attention.flex_attention``-based)
+and :class:`ScaledDotProductAttention` (``F.scaled_dot_product_attention``-based)
+modules, plus helpers for constructing and initialising block masks.
+"""
 
 import functools
 from typing import Callable, ClassVar
 
+import ezpz
+
 import torch
 import torch.nn.functional as F
-from torch.distributed.tensor.experimental._attention import create_cp_block_mask
-from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch.nn.attention.flex_attention import (
-    _mask_mod_signature,
-    BlockMask,
-    create_block_mask,
-    flex_attention,
-)
+
+create_cp_block_mask = None
+try:
+    if ezpz.get_torch_version_tuple() >= (2, 12):
+        from torch.distributed.tensor.experimental._context_parallel._attention import _create_cp_block_mask as create_cp_block_mask
+    else:
+        from torch.distributed.tensor.experimental._attention import create_cp_block_mask
+except ImportError:
+    pass  # Not available in this torch version; CP mask support disabled.
+
+try:
+    from torch.nn.attention import sdpa_kernel, SDPBackend
+    from torch.nn.attention.flex_attention import (
+        _mask_mod_signature,
+        BlockMask,
+        create_block_mask,
+        flex_attention,
+    )
+except ImportError:
+    sdpa_kernel = None  # type: ignore[assignment,misc]
+    SDPBackend = None  # type: ignore[assignment,misc]
+    _mask_mod_signature = None  # type: ignore[assignment,misc]
+    BlockMask = None  # type: ignore[assignment,misc]
+    create_block_mask = None  # type: ignore[assignment,misc]
+    flex_attention = None  # type: ignore[assignment,misc]
 
 # from torchtitan.tools.utils import has_cuda_capability
 # from ezpz.utils.tools import has_cuda_capability
@@ -188,6 +213,12 @@ class FlexAttention(torch.nn.Module):
 
 
 class ScaledDotProductAttention(torch.nn.Module):
+    """Attention using ``F.scaled_dot_product_attention`` with automatic backend selection.
+
+    Currently only supports causal masking.  On first instantiation the class
+    selects the best available SDPA backend (Flash, Efficient, Math).
+    """
+
     backends: ClassVar[list[SDPBackend]] = []
 
     def __init__(self, attn_mask_type: str) -> None:
@@ -227,7 +258,15 @@ class ScaledDotProductAttention(torch.nn.Module):
 
 def build_attention(
     use_flex_attn: bool, attn_mask_type: str, fixed_block_size: int | None = None
-):
+) -> FlexAttention | ScaledDotProductAttention:
+    """Factory that returns the appropriate attention module.
+
+    Args:
+        use_flex_attn: If ``True``, return a :class:`FlexAttention` instance;
+            otherwise return :class:`ScaledDotProductAttention`.
+        attn_mask_type: Mask type (``"causal"`` or ``"block_causal"``).
+        fixed_block_size: Optional fixed block size for :class:`FlexAttention`.
+    """
     if use_flex_attn:
         return FlexAttention(attn_mask_type, fixed_block_size)
     else:
@@ -247,7 +286,13 @@ def init_attention_mask(
     eos_id: int | None,
     cp_mesh: torch.distributed.device_mesh.DeviceMesh | None = None,
 ) -> None:
+    """Initialise the :class:`FlexAttention` block masks for the current batch.
 
+    Args:
+        batch: Input token tensor of shape ``(B, S, H, D)``.
+        eos_id: End-of-sequence token id (required for ``block_causal``).
+        cp_mesh: Optional context-parallel device mesh.
+    """
     # This is not functional yet because we currently gate the use of Flex + CP
     # while we continue debugging accuracy issues. However, we want to evaluate
     # the user experience with CP enabled.
@@ -257,3 +302,5 @@ def init_attention_mask(
         )
 
     FlexAttention.init_attention_mask(batch, eos_id)
+
+

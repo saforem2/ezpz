@@ -1,70 +1,44 @@
-"""Test individual modules without importing the main ezpz package."""
+"""Test individual modules can be imported and used directly."""
 
-import sys
-from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-
-def _run_configs_module_checks() -> bool:
-    """Run smoke checks for the configs module; return True on success."""
-    import ezpz.configs as configs
-
-    assert configs.HERE is not None
-    assert isinstance(configs.command_exists("python"), bool)
-    assert isinstance(configs.get_logging_config(), dict)
-    return True
+import numpy as np
 
 
 def test_configs_module():
-    """Test configs module directly."""
-    assert _run_configs_module_checks()
+    """configs module should provide logging config and path constants."""
+    import ezpz.configs as configs
 
+    assert configs.HERE is not None
+    assert configs.HERE.exists()
+    assert isinstance(configs.command_exists("python"), bool)
 
-def _run_utils_module_checks() -> bool:
-    import numpy as np
-
-    import ezpz.utils as utils
-
-    assert isinstance(utils.get_timestamp(), str)
-    assert utils.format_pair("test", 5) == "test=5"
-    assert utils.normalize("test_name.sub-name") == "test-name-sub-name"
-    np_array = np.array([1, 2, 3])
-    assert np.array_equal(utils.grab_tensor(np_array), np_array)
-    return True
+    config = configs.get_logging_config()
+    assert isinstance(config, dict)
+    assert "handlers" in config
 
 
 def test_utils_module():
-    """Test utils module directly."""
-    assert _run_utils_module_checks()
+    """utils module should provide timestamp, normalize, format_pair, grab_tensor."""
+    import ezpz.utils as utils
 
+    # get_timestamp returns a date string
+    ts = utils.get_timestamp()
+    assert len(ts) >= 10  # at least YYYY-MM-DD
 
-def _run_lazy_module_checks() -> bool:
-    import ezpz.lazy as lazy
+    # format_pair formats key=value
+    assert utils.format_pair("lr", 0.001) == "lr=0.001000"
 
-    os_module = lazy.lazy_import("os")
-    assert os_module is not None
-    assert hasattr(os_module, "path")
-    return True
+    # normalize replaces special chars
+    assert utils.normalize("my_model.v2") == "my-model-v2"
+
+    # grab_tensor passes through numpy
+    arr = np.array([1.0, 2.0])
+    assert np.array_equal(utils.grab_tensor(arr), arr)
 
 
 def test_lazy_module():
-    """Test lazy module directly."""
-    assert _run_lazy_module_checks()
+    """lazy module should defer imports until attribute access."""
+    import ezpz.lazy as lazy
 
-
-if __name__ == "__main__":
-    print("Running individual module tests...")
-    results = [
-        _run_configs_module_checks(),
-        _run_utils_module_checks(),
-        _run_lazy_module_checks(),
-    ]
-
-    if all(results):
-        print("\n🎉 All tests passed!")
-        sys.exit(0)
-    else:
-        print("\n❌ Some tests failed!")
-        sys.exit(1)
+    os_mod = lazy.lazy_import("os")
+    # Must actually USE the module to verify lazy resolution
+    assert os_mod.sep in ("/", "\\")

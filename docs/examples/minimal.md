@@ -1,9 +1,12 @@
 # Minimal Training (Synthetic Data)
 
-!!! warning "Deprecated"
+!!! danger "Deprecated — use `ezpz.examples.test` instead"
 
-    This example is deprecated and may be removed in a future release.
-    See [`ezpz.examples.test`](test.md) for the recommended smoke test.
+    This example is deprecated and will be removed in a future release.
+    **New users should start with [`ezpz.examples.test`](test.md)**, which
+    covers the same concepts with better defaults.
+
+    The walkthrough below is preserved for reference only.
 
 The simplest ezpz example — trains an MLP to reconstruct random inputs
 using env-var configuration. No dataset downloads required.

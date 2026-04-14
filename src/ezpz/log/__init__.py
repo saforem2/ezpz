@@ -23,18 +23,29 @@ from ezpz.log.console import (
     to_bool,
 )
 from ezpz.log.handler import FluidLogRender, RichHandler
-from ezpz.log.style import (
-    BEAT_TIME,
-    COLORS,
-    CustomLogging,
-    add_columns,
-    build_layout,
-    flatten_dict,
-    make_layout,
-    nested_dict_to_df,
-    print_config,
-    printarr,
-)
+
+# Defer ezpz.log.style imports so that ``python -m ezpz.log.style`` does
+# not trigger the "found in sys.modules prior to execution" RuntimeWarning.
+_STYLE_ATTRS = {
+    "BEAT_TIME",
+    "COLORS",
+    "CustomLogging",
+    "add_columns",
+    "build_layout",
+    "flatten_dict",
+    "make_layout",
+    "nested_dict_to_df",
+    "print_config",
+    "printarr",
+}
+
+
+def __getattr__(name: str):
+    if name in _STYLE_ATTRS:
+        import ezpz.log.style as _style
+
+        return getattr(_style, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "BEAT_TIME",

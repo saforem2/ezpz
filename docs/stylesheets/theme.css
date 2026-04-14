@@ -15,6 +15,7 @@
 :root {
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* --font-size: 13pt; */
 
   --h1-font-size: 1.33rem;
   --h2-font-size: 1.2rem;
@@ -29,7 +30,15 @@
   --h5-padding-block: 2pt;
   --h6-padding-block: 2pt;
 
-  --font-family-headings: "mIosevka-QP Web";
+  --font-family:
+    "Iosevka Web", monospace, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-family-headings:
+    "Iosevka Web", monospace, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol";
+  /* --font-family-headings: "mIosevka-QP Web"; */
   --link-border-radius: 0.4rem;
 
   --h1-padding: 0pt;
@@ -313,6 +322,10 @@
 }
 
 /* ---------- typography/layout tweaks ---------- */
+/* .md-typeset { */
+/*   font-size: var(--font-size); */
+/* } */
+
 .md-typeset p {
   margin-block: 0.5lh;
 }
@@ -342,6 +355,8 @@
   quotes: 0 0.2941176471em;
   word-break: break-word;
   font-size: 1em;
+  padding: 0pt 0.4em;
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .highlighttable .linenos {
@@ -488,7 +503,21 @@
   margin-top: auto;
 }
 
-/**/
 /* [dir="ltr"] .md-nav__list .md-nav__item--section > .md-nav > .md-nav__list { */
 /*   margin-left: 0.5rem; */
 /* } */
+
+/* ---------- mermaid diagrams ---------- */
+.mermaid,
+pre.mermaid {
+  text-align: left;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}

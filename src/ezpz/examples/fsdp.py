@@ -42,7 +42,6 @@ import time
 
 import ezpz
 
-# from ezpz.history import WANDB_DISABLED
 import torch
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -56,11 +55,6 @@ from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
-
-try:
-    import wandb
-except Exception:
-    wandb = None  # type: ignore
 
 
 fp = Path(__file__)
@@ -368,14 +362,6 @@ def fsdp_main(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
     t_setup = time.perf_counter()
-    if rank == 0:
-        # try:
-        fp = Path(__file__)
-        run = ezpz.setup_wandb(project_name=f"ezpz.{fp.parent.stem}.{fp.stem}")
-        if run is not None and wandb is not None and run is wandb.run:
-            run.config.update({"args": {**vars(args)}})
-            run.config.update({"ezpz.dist": {**ezpz.get_dist_info()}})
-
     data = get_data(args)
     ezpz.distributed.barrier()
     train_loader = data["train"]["loader"]
@@ -394,7 +380,8 @@ def fsdp_main(args: argparse.Namespace) -> None:
         report_dir=outdir,
         report_enabled=(rank == 0),
         jsonl_path=metrics_path,
-        # jsonl_overwrite=True,
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
         distributed_history=(
             1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
         ),
@@ -430,16 +417,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
         "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    history.tracker.log(timings)
     ezpz.distributed.barrier()
 
     if args.save_model:
@@ -453,7 +431,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
             run_name=WBPROJ_NAME,
             dataset_fname="train",
         )
-        logger.info(f"{dataset=}")
+        del dataset  # logged by finalize()
 
 
 def _arg_provided(argv: list[str], flags: list[str]) -> bool:

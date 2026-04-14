@@ -1,73 +1,11 @@
-# 📖 Reference
+# 📖 End-to-End Walkthrough
 
-This page covers the launcher details and a complete runnable example with
-metric tracking. For installation, the API cheat sheet, and getting started,
-see the [Quick Start](./quickstart.md).
-
-### 🚀 Scheduler-Aware Launcher: `ezpz launch`
-
-For complete CLI usage, flags, and the sequence diagram, see the
+What a full `ezpz` run actually looks like — from script to terminal
+output, plots, and saved artifacts. For setup instructions, see the
+[Quick Start](./quickstart.md). For launcher usage and flags, see the
 [`ezpz launch` CLI reference](./cli/launch/index.md).
 
-- **Scheduler smarts:** detects PBS / Slurm automatically!
-  `ezpz launch` will, by default, determine the appropriate launcher based on
-    the detected job scheduler environment.
-    - **Sensible Fallback**: Sensible fallback to `mpirun -np` when running /
-      testing locally
-
-- **Flexible resource specification:** `-np`, `-ppn`, `--nhosts`, `--hostfile`,
-  etc.
-  Including the ability to pass custom resource flags like `-np`, `--nhosts`,
-  `--hostfile`, and other scheduler-specific options.
-
-- **Pass-through arguments:** Pass any additional flags through to the
-  underlying launcher.
-  For launcher-only flags/env (e.g., `-x FOO=bar`), place them before `--`;
-  everything after `--` is the command to run:
-
-    ```bash
-    ezpz launch <launch flags> -- <command to run> <command args>
-    ```
-
-    ??? abstract "Launcher Examples"
-
-        To pass arguments through to the launcher[^launcher]
-
-        ```bash
-        $ ezpz launch -- python3 -m ezpz.examples.fsdp
-
-        # pass --line-buffer through to mpiexec:
-        $ ezpz launch --line-buffer -- python3 \
-              -m ezpz.examples.vit --compile --fsdp
-
-        # Create and use a custom hostfile
-        $ head -n 2 "${PBS_NODEFILE}" > hostfile0-2
-        $ ezpz launch --hostfile hostfile0-2 -- python3 \
-            -m ezpz.examples.fsdp_tp
-
-        # use explicit np/ppn/nhosts
-        $ ezpz launch \
-              -np 4 \
-              -ppn 2 \
-              --nhosts 2 \
-              --hostfile hostfile0-2 \
-              -- \
-              python3 -m ezpz.examples.diffusion
-
-        # forward the PYTHONPATH environment variable
-        $ ezpz launch -x PYTHONPATH=/tmp/.venv/bin:${PYTHONPATH} \
-              -- \
-              python3 -m ezpz.examples.fsdp
-        ```
-
-[^launcher]: This will be `srun` if a Slurm scheduler is detected, `mpirun` /
-    `mpiexec` otherwise.
-
-For the API cheat sheet (before/after diffs for setup, device management,
-model wrapping, training loop, and metric tracking), see the
-[Quick Start](./quickstart.md#api-cheat-sheet).
-
-## ✅ Complete Example with History
+## ✅ Full Example with History
 
 Capture metrics across all ranks, persist JSONL, generate text/PNG plots, and
 (when configured) log to Weights & Biases—no extra code on worker ranks.
@@ -97,22 +35,25 @@ optimizer = torch.optim.AdamW(model.parameters())
 
 history = ezpz.History()
 
+# Fixed input and target so loss converges over training
+batch = torch.randn(1, 16, device=device)
+target = torch.randn(1, 32, device=device)
+
 for i in range(10):
     t0 = time.perf_counter()
-    batch = torch.randn(1, 16)
-    batch = batch.to(device)
     output = model(batch)
-    pred = torch.randn(output.shape)
-    loss = ((output - pred.to(device)) ** 2).sum()
+    loss = ((output - target) ** 2).sum()
     loss.backward()
     optimizer.step()
+    optimizer.zero_grad()
     logger.info(
         history.update(
             {
                 "iter": i,
-                "loss": loss,
+                "loss": loss.item(),
                 "dt": time.perf_counter() - t0,
-            }
+            },
+            step=i,
         )
     )
 
@@ -124,7 +65,8 @@ ezpz.cleanup()
 
 !!! note "Swap in your own model"
 
-    `SequentialLinearNet` is a small multi-layer Linear+ReLU network included
+    [`SequentialLinearNet`](/python/Code-Reference/models/minimal/#ezpz.models.minimal.SequentialLinearNet)
+    is a small multi-layer Linear+ReLU network included
     for demonstration. Replace it with any `torch.nn.Module` — the rest of
     the script (setup, wrapping, training loop, history) stays the same.
 

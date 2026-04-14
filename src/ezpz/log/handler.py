@@ -17,8 +17,19 @@ from rich.logging import RichHandler as OriginalRichHandler
 from rich.style import Style
 from rich.text import Span, Text, TextType
 
-# from ezpz.log.config import NO_COLOR
-from ezpz.log.config import use_colored_logs
+from ezpz.distributed import get_rank
+from ezpz.log.config import (
+    EZPZ_LOG_DAY_TIME_SEPARATOR,
+    EZPZ_LOG_SHOW_LEVEL,
+    EZPZ_LOG_SHOW_PATH,
+    EZPZ_LOG_SHOW_RANK,
+    EZPZ_LOG_SHOW_TIME,
+    EZPZ_LOG_TIME_FORMAT,
+    EZPZ_LOG_USE_BRACKETS,
+    EZPZ_LOG_USE_COLORED_PREFIX,
+    EZPZ_LOG_USE_SINGLE_BRACKET,
+    use_colored_logs,
+)
 from ezpz.log.console import Console, get_console
 
 # Define the regex pattern for ANSI escape codes
@@ -50,7 +61,9 @@ def get_styles(colorized: bool = True) -> dict:
 class RichHandler(OriginalRichHandler):
     """Enriched handler that does not wrap."""
 
-    def __init__(self, rank: Optional[int | str] = None, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, rank: Optional[int | str] = None, *args: Any, **kwargs: Any
+    ) -> None:
         if "console" not in kwargs:
             console = get_console(
                 redirect=False,
@@ -71,8 +84,7 @@ class RichHandler(OriginalRichHandler):
             show_path=kwargs.get("show_path", True),
             link_path=kwargs.get("enable_link_path", False),
             rank=rank,
-
-        )  # type: ignore
+        )
 
     def render(
         self,
@@ -95,7 +107,7 @@ class RichHandler(OriginalRichHandler):
         parent = Path(fp).parent.as_posix().split("/")[-1] if fp else None
         module = getattr(record, "module", None)
         name = getattr(record, "name", None)
-        funcName = getattr(record, "funcName", None)
+        # funcName = getattr(record, "funcName", None)
         parr = []
         if fp is not None:
             fp = Path(fp)
@@ -115,9 +127,9 @@ class RichHandler(OriginalRichHandler):
         time_format = (
             None if self.formatter is None else self.formatter.datefmt
         )
-        default_time_fmt = "%Y-%m-%d %H:%M:%S,%f"
+        # default_time_fmt = "%Y%m%d@%H:%M:%S,%f"
         # default_time_fmt = "%Y-%m-%d %H:%M:%S"  # .%f'
-        time_format = time_format if time_format else default_time_fmt
+        time_format = time_format if time_format else EZPZ_LOG_TIME_FORMAT
         log_time = datetime.fromtimestamp(record.created)
 
         log_renderable = self._log_render(
@@ -146,7 +158,7 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         show_time: bool = True,
         show_level: bool = True,
         show_path: bool = True,
-        time_format: str = "%Y-%m-%d %H:%M:%S.%f",
+        time_format: str | None = None,
         link_path: Optional[bool] = False,
         rank: Optional[int | str] = None,
     ) -> None:
@@ -158,63 +170,130 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
         self.rank = rank
         self._last_time: Optional[str] = None
         self.colorized = use_colored_logs()
-        self.styles = get_styles()
+        self.styles = get_styles(colorized=self.colorized)
+        self.colored_prefix = EZPZ_LOG_USE_COLORED_PREFIX
+
+    def _ps(self, key: str) -> str:
+        """Return the prefix style for *key*, or empty if prefix color is off."""
+        return self.styles.get(key, "") if self.colored_prefix else ""
+
+    # Helpers for bracket modes
+    def _open(self, result: Text) -> None:
+        result.append(Text("[", style=self._ps("log.brace")))
+
+    def _close(self, result: Text) -> None:
+        result.append(Text("]", style=self._ps("log.brace")))
 
     def __call__(  # pylint: disable=too-many-arguments
         self,
         console: Console,  # type: ignore
         renderables: Iterable[ConsoleRenderable],
         log_time: Optional[datetime] = None,
-        time_format: str = "%Y-%m-%d %H:%M:%S.%f",
+        time_format: str | None = None,
         level: TextType = "",
         path: Optional[str] = None,
         line_no: Optional[int] = None,
         link_path: Optional[str] = None,
         funcName: Optional[str] = None,
     ) -> Text:
-        result = Text()
-        if self.rank is not None:
-            result += Text("[", style=self.styles.get("log.brace", ""))
-            result += Text(f"{self.rank}", style="log.rank")
-            result += Text("]", style=self.styles.get("log.brace", ""))
+        # Resolve bracket mode once:
+        #   "full"   -> each component wrapped: [time][level][path]
+        #   "single" -> one wrapper:            [time level path]
+        #   "none"   -> no brackets:            time level path -- msg
+        if EZPZ_LOG_USE_BRACKETS:
+            bmode = "full"
+        elif EZPZ_LOG_USE_SINGLE_BRACKET:
+            bmode = "single"
+        else:
+            bmode = "none"
 
-        if self.show_time:
+        result = Text()
+        has_prefix = False
+
+        # -- Rank --
+        if self.rank is not None or EZPZ_LOG_SHOW_RANK:
+            rank_val = self.rank if self.rank is not None else get_rank()
+            self._open(result)
+            result += Text(f"{rank_val}", style=self._ps("log.rank"))
+            self._close(result)
+            has_prefix = True
+
+        # Open single bracket (wraps everything until the final close)
+        if bmode == "single":
+            self._open(result)
+
+        # -- Time --
+        if self.show_time and EZPZ_LOG_SHOW_TIME:
             log_time = datetime.now() if log_time is None else log_time
             log_time_display = log_time.strftime(
-                time_format or self.time_format
+                time_format or self.time_format or EZPZ_LOG_TIME_FORMAT
             )
-            d, t = log_time_display.split(" ")
-            result += Text("[", style=self.styles.get("log.brace", ""))
-            result += Text(f"{d} ")
-            result += Text(t)
-            result += Text("]", style=self.styles.get("log.brace", ""))
+            if bmode == "full":
+                self._open(result)
+            if EZPZ_LOG_DAY_TIME_SEPARATOR in log_time_display:
+                d, t = log_time_display.split(EZPZ_LOG_DAY_TIME_SEPARATOR)
+                result += Text(d, style=self._ps("log.day_color"))
+                result += Text(
+                    EZPZ_LOG_DAY_TIME_SEPARATOR,
+                    style=self._ps("repr.colon"),
+                )
+                result += Text(t, style=self._ps("log.time_color"))
+            else:
+                result += Text(
+                    log_time_display,
+                    style=self._ps("log.time_color"),
+                )
+            if bmode == "full":
+                self._close(result)
+            else:
+                result += Text(" ")
             self._last_time = log_time_display
-        if self.show_level:
+            has_prefix = True
+
+        # -- Level --
+        if self.show_level and EZPZ_LOG_SHOW_LEVEL:
             if isinstance(level, Text):
                 lstr = level.plain.rstrip(" ")[0]
-                if self.colorized:
-                    style = level.spans[0].style
-                else:
-                    style = Style.null()
-                level.spans = [Span(0, len(lstr), style)]
-                ltext = Text("[", style=self.styles.get("log.brace", ""))
-                ltext.append(Text(f"{lstr}", style=style))
-                ltext.append(Text("]", style=self.styles.get("log.brace", "")))
-            elif isinstance(level, str):
-                lstr = level.rstrip(" ")[0]
-                style = (
-                    f"logging.level.{str(lstr)}"
-                    if self.colorized
+                lstyle = (
+                    level.spans[0].style
+                    if self.colorized and self.colored_prefix and level.spans
                     else Style.null()
                 )
-                ltext = Text("[", style=self.styles.get("log.brace", ""))
-                ltext = Text(f"{lstr}", style=style)
-                ltext.append(Text("]", style=self.styles.get("log.brace", "")))
+                level.spans = [Span(0, len(lstr), lstyle)]
+            elif isinstance(level, str):
+                lstr = level.rstrip(" ")[0]
+                lstyle = (
+                    f"logging.level.{lstr}"
+                    if self.colorized and self.colored_prefix
+                    else Style.null()
+                )
+            else:
+                lstr = str(level)
+                lstyle = Style.null()
+            show_path = (self.show_path and EZPZ_LOG_SHOW_PATH) and path
+            if bmode == "full":
+                ltext = (
+                    Text("[", style=self._ps("log.brace"))
+                    + Text(lstr, style=lstyle)
+                    + Text("]", style=self._ps("log.brace"))
+                )
+            elif show_path:
+                ltext = Text(lstr, style=lstyle) + Text(" ")
+            else:
+                ltext = Text(lstr, style=lstyle)
             result += ltext
-        if self.show_path and path:
-            path_text = Text("[", style=self.styles.get("log.brace", ""))
+            has_prefix = True
+
+        # -- Path --
+        if (self.show_path and EZPZ_LOG_SHOW_PATH) and path:
+            path_text = Text()
+            if bmode == "full":
+                self._open(path_text)
             text_arr = []
-            parent, remainder = path.split("/")
+            if "/" in path:
+                parent, remainder = path.rsplit("/", 1)
+            else:
+                parent, remainder = "", path
             if "." in remainder:
                 module, *fn = remainder.split(".")
                 fn = ".".join(fn)
@@ -224,37 +303,45 @@ class FluidLogRender:  # pylint: disable=too-few-public-methods
             if funcName is not None:
                 fn = funcName
             text_arr += [
-                Text(
-                    f"{parent}", style="log.parent"
-                ),  # self.styles.get('log.pa', '')),
+                Text(parent, style=self._ps("log.parent")),
                 Text("/"),
-                Text(f"{module}", style="log.path"),
+                Text(module, style=self._ps("log.path")),
             ]
             if line_no:
                 text_arr += [
-                    Text(":", style=self.styles.get("log.colon", "")),
+                    Text(":", style=self._ps("repr.colon")),
                     Text(
                         f"{line_no}",
-                        style=self.styles.get("log.linenumber", ""),
+                        style=self._ps("log.linenumber"),
                     ),
                 ]
             if fn is not None:
                 text_arr += [
-                    Text(":", style="log.colon"),
-                    Text(
-                        f"{fn}",
-                        style="repr.function",  # self.styles.get('repr.inspect.def', 'json.key'),
-                    ),
+                    Text(":"),
+                    Text(fn, style=self._ps("repr.function")),
                 ]
             path_text.append(Text.join(Text(""), text_arr))
-            path_text.append("]", style=self.styles.get("log.brace", ""))
-
+            if bmode == "full":
+                self._close(path_text)
             result += path_text
-        result += Text(" ", style=self.styles.get("repr.dash", ""))
+            has_prefix = True
+
+        # -- Close wrapper / separator before message --
+        if bmode == "single":
+            self._close(result)
+            if has_prefix:
+                result += Text(" ")
+        elif has_prefix:
+            if bmode == "none":
+                result += Text(" -- ", style=self._ps("repr.dash"))
+            else:
+                result += Text(" ")
+
+        # -- Message --
         for elem in renderables:
             if ANSI_ESCAPE_PATTERN.search(str(elem)):
-                # If the element is already ANSI formatted, append it directly
                 result += Text.from_ansi(str(elem))
             else:
                 result += elem
+
         return result

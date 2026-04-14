@@ -60,8 +60,15 @@ def _reset_mpi_singleton():
 
 
 @pytest.fixture()
-def fake_comm():
+def fake_comm(monkeypatch):
     """Inject a ``_FakeComm`` as the cached MPI communicator."""
+    for var in (
+        "WORLD_SIZE", "PMI_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS",
+        "RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID",
+        "LOCAL_RANK", "PMI_LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK",
+        "MPI_LOCALRANKID", "MPICH_LOCALRANKID", "SLURM_LOCAL_ID",
+    ):
+        monkeypatch.delenv(var, raising=False)
     comm = _FakeComm(rank=0, size=4)
     dist._MPI_COMM = comm
     return comm
@@ -258,6 +265,10 @@ class TestGetLocalRank:
             "PMI_RANK",
             "OMPI_COMM_WORLD_RANK",
             "SLURM_PROCID",
+            "WORLD_SIZE",
+            "PMI_SIZE",
+            "OMPI_COMM_WORLD_SIZE",
+            "SLURM_NTASKS",
         ):
             monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv("NGPU_PER_HOST", "4")
@@ -902,7 +913,8 @@ class TestWrapModel:
         comm = _FakeComm(rank=0, size=1)
         dist._MPI_COMM = comm
         model = torch.nn.Linear(10, 10)
-        result = dist.wrap_model(model)
+        with patch.object(dist, "get_world_size", return_value=1):
+            result = dist.wrap_model(model)
         assert result is model
 
     def test_ddp_path(self, fake_comm):
@@ -915,15 +927,21 @@ class TestWrapModel:
             mock_ddp.assert_called_once_with(model)
 
     def test_fsdp_path(self, fake_comm):
-        """use_fsdp=True ⇒ calls _wrap_fsdp on CUDA/XPU devices."""
+        """use_fsdp=True ⇒ calls _wrap_fsdp2 (FSDP2) on CUDA/XPU devices."""
         model = torch.nn.Linear(10, 10)
+        mock_mesh = MagicMock()
         with (
             patch.object(dist, "get_torch_device_type", return_value="cuda"),
-            patch.object(dist, "_wrap_fsdp", return_value=model) as mock_fsdp,
+            patch.object(dist, "_wrap_fsdp2", return_value=model) as mock_fsdp2,
+            patch(
+                "torch.distributed.device_mesh.init_device_mesh",
+                return_value=mock_mesh,
+            ),
         ):
             dist.wrap_model(model, use_fsdp=True, dtype="bf16")
-            mock_fsdp.assert_called_once_with(
-                model, dtype="bf16", device_id=None
+            mock_fsdp2.assert_called_once_with(
+                model, dtype="bf16", device_mesh=mock_mesh,
+                reshard_after_forward=True,
             )
 
     def test_fsdp_falls_back_to_ddp_on_cpu(self, fake_comm):
@@ -1354,10 +1372,18 @@ class TestSetEnvVars:
     """Tests for ``_set_env_vars``."""
 
     def test_sets_vars(self, monkeypatch):
+        monkeypatch.delenv("RANK", raising=False)
+        monkeypatch.delenv("LOCAL_RANK", raising=False)
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
         dist._set_env_vars(rank=3, local_rank=1, world_size=8)
         assert os.environ["RANK"] == "3"
         assert os.environ["LOCAL_RANK"] == "1"
         assert os.environ["WORLD_SIZE"] == "8"
+        # Clean up — _set_env_vars writes to os.environ directly,
+        # which monkeypatch doesn't track automatically.
+        del os.environ["RANK"]
+        del os.environ["LOCAL_RANK"]
+        del os.environ["WORLD_SIZE"]
 
 
 # ===================================================================

@@ -1,7 +1,11 @@
 """Tests for the ezpz.launch module."""
 
 import os
+import subprocess
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import ezpz.launch as launch
 # try:
@@ -16,7 +20,7 @@ class TestLaunch:
     def test_command_exists(self):
         """Test command_exists function."""
         # Test with a command that should exist
-        assert launch.command_exists("python") is True
+        assert launch.command_exists("python3") is True
 
         # Test with a command that should not exist
         assert launch.command_exists("nonexistent_command_xyz") is False
@@ -252,3 +256,139 @@ class TestLaunch:
             and "Precedence order is: --cpu-bind > CPU_BIND." in message
             for message in warnings
         )
+
+
+class TestRunCommand:
+    """Tests for run_command covering exit codes and output filtering."""
+
+    def test_returns_exit_code(self, monkeypatch, capsys):
+        """run_command returns the subprocess exit code on success."""
+        mock_process = MagicMock()
+        mock_process.stdout = iter(["hello\n"])
+        mock_process.returncode = 0
+        mock_process.__enter__ = lambda self: self
+        mock_process.__exit__ = lambda self, *a: None
+
+        monkeypatch.setattr(
+            launch.subprocess, "Popen", lambda *a, **kw: mock_process
+        )
+        rc = launch.run_command(["echo", "hello"])
+        capsys.readouterr()
+        assert rc == 0
+
+    def test_returns_nonzero_on_failure(self, monkeypatch, capsys):
+        """run_command returns non-zero exit code on failure."""
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])
+        mock_process.returncode = 1
+        mock_process.__enter__ = lambda self: self
+        mock_process.__exit__ = lambda self, *a: None
+
+        monkeypatch.setattr(
+            launch.subprocess, "Popen", lambda *a, **kw: mock_process
+        )
+        rc = launch.run_command(["false"])
+        capsys.readouterr()
+        assert rc == 1
+
+    def test_filters_lines(self, monkeypatch, capsys):
+        """Lines matching filters are excluded from printed output."""
+        mock_process = MagicMock()
+        mock_process.stdout = iter([
+            "keep this line\n",
+            "skip_this line\n",
+            "also keep\n",
+        ])
+        mock_process.returncode = 0
+        mock_process.__enter__ = lambda self: self
+        mock_process.__exit__ = lambda self, *a: None
+
+        monkeypatch.setattr(
+            launch.subprocess, "Popen", lambda *a, **kw: mock_process
+        )
+        rc = launch.run_command(["echo", "test"], filters=["skip_this"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "keep this line" in captured.out
+        assert "also keep" in captured.out
+        assert "skip_this" not in captured.out
+
+
+class TestGetActiveJobid:
+    """Tests for get_active_jobid covering PBS, SLURM, and unknown."""
+
+    def test_pbs_returns_pbs_jobid(self, monkeypatch):
+        """When scheduler is PBS, delegates to pbs module."""
+        monkeypatch.setattr(
+            "ezpz.configs.get_scheduler", lambda _scheduler=None: "PBS"
+        )
+        monkeypatch.setattr(
+            "ezpz.pbs.get_pbs_jobid_of_active_job", lambda: "12345"
+        )
+        result = launch.get_active_jobid()
+        assert result == "12345"
+
+    def test_slurm_returns_slurm_jobid(self, monkeypatch):
+        """When scheduler is SLURM, delegates to slurm module."""
+        monkeypatch.setattr(
+            "ezpz.configs.get_scheduler", lambda _scheduler=None: "SLURM"
+        )
+        monkeypatch.setattr(
+            "ezpz.slurm.get_slurm_jobid_of_active_job", lambda: "67890"
+        )
+        result = launch.get_active_jobid()
+        assert result == "67890"
+
+    def test_unknown_returns_none(self, monkeypatch):
+        """When scheduler is UNKNOWN, returns None."""
+        monkeypatch.setattr(
+            "ezpz.configs.get_scheduler", lambda _scheduler=None: "UNKNOWN"
+        )
+        result = launch.get_active_jobid()
+        assert result is None
+
+
+class TestKillExistingProcesses:
+    """Tests for kill_existing_processes covering pkill invocation."""
+
+    def test_calls_pkill(self, monkeypatch, capsys):
+        """Verify subprocess receives a pkill command with the filter pattern."""
+        monkeypatch.setattr(launch.ezpz, "get_machine", lambda: "localhost")
+        recorded_cmds = []
+
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])
+        mock_process.returncode = 0
+        mock_process.__enter__ = lambda self: self
+        mock_process.__exit__ = lambda self, *a: None
+
+        original_popen = launch.subprocess.Popen
+
+        def tracking_popen(cmd, **kwargs):
+            recorded_cmds.append(cmd)
+            return mock_process
+
+        monkeypatch.setattr(launch.subprocess, "Popen", tracking_popen)
+        rc = launch.kill_existing_processes(filters=["my_process"])
+        capsys.readouterr()
+        assert rc == 0
+        assert len(recorded_cmds) == 1
+        assert recorded_cmds[0][0] == "pkill"
+        assert "-f" in recorded_cmds[0]
+
+    def test_handles_pkill_failure(self, monkeypatch, capsys):
+        """pkill returning non-zero should not crash."""
+        monkeypatch.setattr(launch.ezpz, "get_machine", lambda: "localhost")
+
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])
+        mock_process.returncode = 1
+        mock_process.__enter__ = lambda self: self
+        mock_process.__exit__ = lambda self, *a: None
+
+        monkeypatch.setattr(
+            launch.subprocess, "Popen", lambda *a, **kw: mock_process
+        )
+        rc = launch.kill_existing_processes(filters=["some_filter"])
+        capsys.readouterr()
+        assert rc == 1  # reflects pkill's non-zero exit, but no exception

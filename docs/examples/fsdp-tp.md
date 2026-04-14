@@ -1,6 +1,10 @@
 # Train Transformer with FSDP and TP on HF Datasets
 
-FSDP Example with Tensor Parallelism
+Use this example when your model is large enough that FSDP alone isn't
+sufficient — 2D parallelism combines tensor parallelism (splitting individual
+layers across GPUs within a node) with FSDP (sharding parameters across
+nodes). This is the approach for training very large transformer models where
+both memory and communication efficiency matter.
 
 !!! info "Key API Functions"
 

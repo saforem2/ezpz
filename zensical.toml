@@ -43,27 +43,42 @@ Copyright &copy; 2026 Sam Foreman
 """
 
 nav = [
-    { "🍋 ezpz" = "index.md" },
-
+    # { "🍋 ezpz" = ["index.md"] },
+    # { "" = "index.md" },
+    "index.md",
+    # { "🍋 ezpz" = [
     { "📖 Guide" = [
-        { "🏃‍♂️ Quick Start" = "quickstart.md" },
-        { "🧑‍🍳 Recipes" = "recipes.md" },
-        { "📖 Reference" = "reference.md" },
-        { "📊 Metric Tracking" = "history.md" },
-        { "⚙️ Configuration" = "configuration.md" },
-        { "🏗️ Architecture" = "architecture.md" },
-        { "🔧 Troubleshooting" = "troubleshooting.md" },
-        { "❓ FAQ" = "notes/faq.md" },
+        "quickstart.md",
+        { "🗺️ Distributed Training" = "guides/distributed-training.md" },
+        "recipes.md",
+        "reference.md",
+        "history.md",
+        "configuration.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "notes/faq.md",
+        # { "Quick Start" = "quickstart.md" },
+        # { "🧑‍🍳 Recipes" = "recipes.md" },
+        # { "📖 Reference" = "reference.md" },
+        # { "📊 Metric Tracking" = "history.md" },
+        # { "⚙️ Configuration" = "configuration.md" },
+        # { "🏗️ Architecture" = "architecture.md" },
+        # { "🔧 Troubleshooting" = "troubleshooting.md" },
+        # { "❓ FAQ" = "notes/faq.md" },
     ] },
 
     { "🧰 CLI" = [
         "cli/index.md",
+    { "💻 <code>ezpz</code>" = [
         { "🚀 <code>ezpz launch</code>" = "cli/launch/index.md" },
+        { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
+        { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
+        ] },
         ] },
         { "📘 References" = [
             { "🗓️ PBS" = "notes/pbs.md" },
@@ -105,9 +120,11 @@ nav = [
             { "<code>ezpz.plot</code>" = "python/Code-Reference/plot.md" },
             { "<code>ezpz.profile</code>" = "python/Code-Reference/profile.md" },
             { "<code>ezpz.slurm</code>" = "python/Code-Reference/slurm.md" },
+            { "<code>ezpz.submit</code>" = "python/Code-Reference/submit.md" },
             { "<code>ezpz.test</code>" = "python/Code-Reference/test.md" },
             { "<code>ezpz.test_dist</code>" = "python/Code-Reference/test_dist.md" },
             { "<code>ezpz.tplot</code>" = "python/Code-Reference/tplot.md" },
+            { "<code>ezpz.tracker</code>" = "python/Code-Reference/tracker.md" },
 
             { "<code>ezpz.cli</code>" = [
                 "python/Code-Reference/cli/index.md",
@@ -456,7 +473,7 @@ features = [
     # When navigation integration for the table of contents is enabled, it is
     # always rendered as part of the navigation sidebar on the left.
     # https://zensical.org/docs/setup/navigation/#navigation-integration
-    "toc.integrate",
+    # "toc.integrate",
 ]
 
 # ----------------------------------------------------------------------------

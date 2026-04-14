@@ -867,6 +867,9 @@ def train(
     )
     Path(outdir).mkdir(parents=True, exist_ok=True)
     history = ezpz.history.History(
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
+        outdir=outdir,
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
@@ -1028,9 +1031,10 @@ def train(
                                 metrics[
                                     f"hist/{dataset_tag}/activations/{act_key}"
                                 ] = act_hist
-                    _wandb_log_histograms(
-                        metrics, step=global_step, enabled=track_hist
-                    )
+                    if history.tracker.get_backend("wandb") is not None:
+                        _wandb_log_histograms(
+                            metrics, step=global_step, enabled=track_hist
+                        )
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,
@@ -1046,15 +1050,7 @@ def train(
             handle.remove()
     ezpz.distributed.barrier()
     logger.info("Finished 2D training")
-    if ezpz.get_rank() == 0:
-        dataset = history.finalize(
-            run_name=WBPROJ_NAME,
-            dataset_fname="train",
-            warmup=0.1,
-        )
-        logger.info(f"{dataset=}")
-
-    return 0
+    return history
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -1066,14 +1062,9 @@ def main(args: argparse.Namespace) -> int:
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
-    # Initialise wandb early so console capture covers the full run.
-    if ezpz.get_rank() == 0 and not os.environ.get("WANDB_DISABLED", False):
-        run = ezpz.distributed.setup_wandb(project_name=WBPROJ_NAME)
-        if run is not None and wandb is not None and run is wandb.run:
-            wandb.config.update(ezpz.get_dist_info())
-            wandb.config.update({"args": {**vars(args)}})
+    # Tracker setup is handled by History constructor (inside train())
     train_start = time.perf_counter()
-    train(args=args, outdir=outdir)
+    history = train(args=args, outdir=outdir)
     train_end = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,
@@ -1084,16 +1075,19 @@ def main(args: argparse.Namespace) -> int:
         "timings/end-to-end": train_end - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            outdir=outdir,
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+        )
+        del dataset  # logged by finalize()
     return 0
 
 

@@ -78,7 +78,6 @@ import torch.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
-import wandb
 from ezpz.examples import get_example_outdir
 
 logger = ezpz.get_logger(__name__)
@@ -404,8 +403,15 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
+    reshard = ezpz.distributed.resolve_fsdp_strategy(
+        args.fsdp_sharding_strategy
+    )
+    use_fsdp = args.fsdp and reshard is not None
     wrapped_model = ezpz.distributed.wrap_model(
-        model, use_fsdp=args.fsdp, dtype=args.dtype
+        model,
+        use_fsdp=use_fsdp,
+        dtype=args.dtype,
+        **({"reshard_after_forward": reshard} if reshard is not None else {}),
     )
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
@@ -425,6 +431,9 @@ def train(
     # outdir = Path(outdir).as_posix()
     metrics_path = Path(outdir).joinpath(f"metrics-{ezpz.get_rank()}.jsonl")
     history = ezpz.history.History(
+        project_name=WBPROJ_NAME,
+        config={"args": vars(args), **ezpz.get_dist_info()},
+        outdir=outdir,
         report_dir=outdir,
         report_enabled=True,
         jsonl_path=metrics_path,
@@ -591,6 +600,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).",
     )
     parser.add_argument(
+        "--fsdp-sharding-strategy",
+        type=str,
+        default="full-shard",
+        choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
+        help="FSDP sharding strategy (default: full-shard)",
+    )
+    parser.add_argument(
         "--fsdp-mixed-precision",
         action="store_true",
         help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
@@ -677,14 +693,7 @@ def main(args: argparse.Namespace) -> None:
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
     # self._created_at = ezpz.distributed.broadcast(self._created_at, root=0)
-    if ezpz.get_rank() == 0:
-        run = ezpz.distributed.setup_wandb(
-            project_name=WBPROJ_NAME,
-            # outdir=outdir,
-        )
-        assert run is not None and run is wandb.run
-        # wandb.config.update(ezpz.distributed.get_dist_info())
-        wandb.config.update({"outdir": str(outdir), "args": {**vars(args)}})
+    # Tracker setup is handled by History constructor above (via train_fn)
         # wandb.config.update({"args": {**vars(args)}})
 
     base_texts: List[str]
@@ -737,12 +746,6 @@ def main(args: argparse.Namespace) -> None:
     )
     train_end = time.perf_counter()
 
-    if ezpz.get_rank() == 0:
-        dataset = history.finalize(
-            run_name=WBPROJ_NAME,
-            dataset_fname="train",
-            warmup=0.1,
-        )
     samples = generate_text(
         wrapped_model,
         schedule,
@@ -763,16 +766,18 @@ def main(args: argparse.Namespace) -> None:
         "timings/end-to-end": end_time - t0,
     }
     logger.info("Timings: %s", timings)
-    if wandb is not None and getattr(wandb, "run", None) is not None:
-        try:
-            wandb.log(
-                {
-                    (f"timings/{k}" if not k.startswith("timings/") else k): v
-                    for k, v in timings.items()
-                }
-            )
-        except Exception:
-            logger.warning("Failed to log timings to wandb")
+    history.tracker.log(
+        {
+            (f"timings/{k}" if not k.startswith("timings/") else k): v
+            for k, v in timings.items()
+        }
+    )
+    if ezpz.get_rank() == 0:
+        dataset = history.finalize(
+            run_name=WBPROJ_NAME,
+            dataset_fname="train",
+            warmup=0.0,
+        )
 
 
 if __name__ == "__main__":

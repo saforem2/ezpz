@@ -61,7 +61,7 @@ def test_check_mpi_success(monkeypatch):
 #     assert "WANDB" in result.remedy
 
 
-def test_run_returns_error_on_failed_check(monkeypatch):
+def test_run_returns_error_on_failed_check(monkeypatch, capsys):
     failing = [
         doctor.CheckResult(
             name="demo", status="error", message="failed", remedy=None
@@ -69,6 +69,7 @@ def test_run_returns_error_on_failed_check(monkeypatch):
     ]
     monkeypatch.setattr(doctor, "run_checks", lambda: failing)
     exit_code = doctor.run([])
+    capsys.readouterr()  # discard runtime context output
     assert exit_code == 1
 
 
@@ -86,3 +87,99 @@ def test_cli_doctor_json(monkeypatch):
     payload = json.loads(result.output)
     assert payload[0]["name"] == "mpi"
     assert payload[1]["remedy"] == "fix"
+
+
+class TestCheckScheduler:
+    """Tests for check_scheduler covering PBS, SLURM, and no-scheduler paths."""
+
+    def test_pbs_detected(self, monkeypatch, capsys):
+        """PBS_JOBID in environ and get_scheduler returning PBS -> ok."""
+        monkeypatch.setattr(doctor.ezpz.configs, "get_scheduler", lambda: "PBS")
+        result = doctor.check_scheduler(
+            get_scheduler=doctor.ezpz.configs.get_scheduler,
+            environ={"PBS_JOBID": "12345.pbs01"},
+        )
+        capsys.readouterr()
+        assert result.status == "ok"
+        assert result.name == "scheduler"
+        assert "PBS" in result.message
+
+    def test_slurm_detected(self, monkeypatch, capsys):
+        """SLURM_JOB_ID in environ and get_scheduler returning SLURM -> ok."""
+        monkeypatch.setattr(doctor.ezpz.configs, "get_scheduler", lambda: "SLURM")
+        result = doctor.check_scheduler(
+            get_scheduler=doctor.ezpz.configs.get_scheduler,
+            environ={"SLURM_JOB_ID": "98765"},
+        )
+        capsys.readouterr()
+        assert result.status == "ok"
+        assert result.name == "scheduler"
+        assert "SLURM" in result.message
+
+    def test_no_scheduler_warns(self, capsys):
+        """Empty environ and get_scheduler returning UNKNOWN -> warning."""
+        result = doctor.check_scheduler(
+            get_scheduler=lambda: "UNKNOWN",
+            environ={},
+        )
+        capsys.readouterr()
+        assert result.status == "warning"
+        assert result.name == "scheduler"
+        assert "No scheduler" in result.message or "local" in result.message.lower()
+
+
+class TestCheckTorchDevice:
+    """Tests for check_torch_device covering env override and no-accelerator."""
+
+    def test_device_env_override(self, monkeypatch, capsys):
+        """TORCH_DEVICE=cpu in environ -> ok with device mentioned."""
+        monkeypatch.setenv("TORCH_DEVICE", "cpu")
+        result = doctor.check_torch_device()
+        capsys.readouterr()
+        assert result.status == "ok"
+        assert result.name == "torch"
+        assert "cpu" in result.message.lower() or "TORCH_DEVICE" in result.message
+
+    def test_no_accelerator_warns(self, monkeypatch, capsys):
+        """All accelerators unavailable -> warning."""
+        monkeypatch.delenv("TORCH_DEVICE", raising=False)
+        import torch
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+        if hasattr(torch, "xpu"):
+            monkeypatch.setattr(torch.xpu, "is_available", lambda: False)
+            monkeypatch.setattr(torch.xpu, "device_count", lambda: 0)
+        monkeypatch.setattr(torch.backends.mps, "is_built", lambda: False)
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+        result = doctor.check_torch_device()
+        capsys.readouterr()
+        assert result.status == "warning"
+        assert result.name == "torch"
+        assert "accelerator" in result.message.lower() or "no" in result.message.lower()
+
+
+class TestCheckHostfile:
+    """Tests for check_hostfile covering no-job and PBS-with-nodefile paths."""
+
+    def test_no_job_context_is_ok(self, capsys):
+        """No PBS_JOBID or SLURM_JOB_ID in environ -> ok (no hostfile needed)."""
+        result = doctor.check_hostfile(environ={})
+        capsys.readouterr()
+        assert result.status == "ok"
+        assert result.name == "hostfile"
+        assert "not required" in result.message.lower() or "no scheduler" in result.message.lower()
+
+    def test_pbs_with_valid_nodefile(self, tmp_path, capsys):
+        """PBS_JOBID + PBS_NODEFILE pointing to real file -> ok."""
+        nodefile = tmp_path / "pbs_nodefile"
+        nodefile.write_text("node001\nnode002\n", encoding="utf-8")
+        env = {
+            "PBS_JOBID": "99999.pbs01",
+            "PBS_NODEFILE": str(nodefile),
+        }
+        result = doctor.check_hostfile(environ=env)
+        capsys.readouterr()
+        assert result.status == "ok"
+        assert result.name == "hostfile"
+        assert "HOSTFILE" in result.message or "PBS_NODEFILE" in result.message

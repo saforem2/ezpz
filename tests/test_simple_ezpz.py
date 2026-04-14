@@ -1,58 +1,28 @@
-"""Simple tests for ezpz functionality."""
+"""Smoke tests for ezpz core imports and basic functionality."""
 
-import os
-import sys
+import logging
+import re
 
-import pytest
+import ezpz
 
 
 def test_import_ezpz():
-    """Test that we can import ezpz without immediate errors."""
-    # This is a basic smoke test
-    try:
-        import ezpz
-
-        assert ezpz is not None
-        assert hasattr(ezpz, "__version__")
-    except Exception as e:
-        # If there are import errors, they're likely due to environment issues
-        # which is expected in some test environments
-        pytest.skip(f"Skipping due to import error: {e}")
+    """ezpz should import and expose a version string."""
+    assert ezpz is not None
+    assert hasattr(ezpz, "__version__")
 
 
-def test_version_accessible():
-    """Test that version information is accessible."""
-    try:
-        import ezpz
-
-        version = ezpz.__version__
-        assert isinstance(version, str)
-        assert len(version) > 0
-    except Exception as e:
-        pytest.skip(f"Skipping due to import error: {e}")
+def test_version_is_semver():
+    """Version should look like a semver string (e.g. 0.11.3)."""
+    assert re.match(r"\d+\.\d+\.\d+", ezpz.__version__), (
+        f"Version {ezpz.__version__!r} doesn't match semver pattern"
+    )
 
 
-def test_logger_creation():
-    """Test that logger creation works."""
-    try:
-        import ezpz
-
-        logger = ezpz.get_logger("test")
-        assert logger is not None
-        assert hasattr(logger, "info")
-        assert hasattr(logger, "error")
-        assert hasattr(logger, "debug")
-    except Exception as e:
-        pytest.skip(f"Skipping due to import error: {e}")
-
-
-def test_environment_variables():
-    """Test that expected environment variables are set."""
-    # These should be set by the ezpz initialization
-    assert os.environ.get("WANDB_MODE") == "disabled"
-    assert os.environ.get("EZPZ_LOG_LEVEL") is not None
-
-
-if __name__ == "__main__":
-    # Run the tests
-    pytest.main([__file__, "-v"])
+def test_logger_is_functional():
+    """get_logger should return a logger that can actually log."""
+    logger = ezpz.get_logger("test_simple")
+    assert isinstance(logger, logging.Logger)
+    assert logger.name == "test_simple"
+    # Actually invoke it — don't just check hasattr
+    logger.info("smoke test message")

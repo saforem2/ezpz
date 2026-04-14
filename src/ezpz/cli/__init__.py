@@ -8,6 +8,7 @@ import click
 
 from ezpz.__about__ import __version__
 from ezpz.cli.launch_cmd import launch_cmd
+from ezpz.cli.submit_cmd import submit_cmd
 from ezpz.cli.test_cmd import test_cmd
 
 CONTEXT_SETTINGS = {
@@ -36,6 +37,9 @@ main.add_command(test_cmd, name="test")
 main.add_command(launch_cmd, name="launch")
 
 
+main.add_command(submit_cmd, name="submit")
+
+
 @main.command(
     name="tar-env", context_settings={"ignore_unknown_options": True}
 )
@@ -60,6 +64,18 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
 
     rc = yeet_env_module.run(_ensure_sequence(args))
     _handle_exit_code(rc)
+
+
+@main.command(
+    name="benchmark",
+    context_settings={"ignore_unknown_options": True},
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def benchmark_cmd(args: tuple[str, ...]) -> None:
+    """Run all ezpz examples sequentially and generate a report."""
+    from ezpz.examples.run_all import main as run_all_main
+
+    run_all_main(list(args))
 
 
 @main.command(name="doctor", context_settings={"ignore_unknown_options": True})

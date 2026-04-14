@@ -11,6 +11,7 @@ for more information.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Optional, Union, Tuple
 
@@ -27,25 +28,61 @@ Pathish = Union[str, os.PathLike, Path]
 
 logger = ezpz.get_logger(__name__)
 
+_QSTAT_MAX_RETRIES = 5
+_QSTAT_RETRY_DELAY = 2  # seconds
+_PBS_JOBS_CACHE_TTL = 30  # seconds
+_pbs_jobs_cache: tuple[float, dict[str, list[str]]] | None = None
 
-def get_pbs_running_jobs_for_user():
-    """Get all running jobs for the current user."""
+
+def _run_qstat_with_retry(qstat_fn, *args, **kwargs) -> str:
+    """Run a qstat command with retries on transient PBS server errors."""
+    last_exc = None
+    for attempt in range(_QSTAT_MAX_RETRIES):
+        try:
+            return str(qstat_fn(*args, **kwargs))
+        except Exception as e:
+            last_exc = e
+            if "Communication failure" in str(e) or "cannot connect to server" in str(e):
+                logger.warning(
+                    "qstat failed (attempt %d/%d): %s — retrying in %ds",
+                    attempt + 1, _QSTAT_MAX_RETRIES, e, _QSTAT_RETRY_DELAY,
+                )
+                time.sleep(_QSTAT_RETRY_DELAY)
+            else:
+                raise
+    raise last_exc  # type: ignore[misc]
+
+
+def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
+    """Get all running jobs for the current user.
+
+    Results are cached for up to 30 s to avoid redundant qstat calls
+    during a single launch sequence.
+    """
+    global _pbs_jobs_cache
+    if _pbs_jobs_cache is not None:
+        ts, cached = _pbs_jobs_cache
+        if time.monotonic() - ts < _PBS_JOBS_CACHE_TTL:
+            return cached
+
     try:
         from sh import qstat  # type:ignore
     except Exception as e:
-        print("Error importing sh.qstat:", e)
-        raise e
+        logger.debug("Error importing sh.qstat: %s", e)
+        raise
 
+    output = _run_qstat_with_retry(qstat, f"-fn1wru {getuser()}")
     jobarr = [
-        i for i in qstat(f"-fn1wru {getuser()}").split("\n") if " R " in i
+        i for i in output.split("\n") if " R " in i
     ]
-    jobs = {}
+    jobs: dict[str, list[str]] = {}
     for row in jobarr:
         jstr = [i for i in row.split(" ") if len(i) > 0]
         jobid = jstr[0].split(".")[0]
         nodelist = [h.split("/")[0] for h in jstr[-1].split("+")]
         jobs[jobid] = nodelist
 
+    _pbs_jobs_cache = (time.monotonic(), jobs)
     return jobs
 
 
@@ -371,9 +408,10 @@ def get_running_jobs_from_qstat() -> list[int]:
         from sh import qstat as shqstat  # type: ignore
     except Exception as e:
         raise e
+    output = _run_qstat_with_retry(shqstat, "-u", os.environ.get("USER"))
     return [
         int(i.split(".")[0])
-        for i in shqstat("-u", os.environ.get("USER")).split("\n")[2:-1]
+        for i in output.split("\n")[2:-1]
         if " R " in i
     ]
 

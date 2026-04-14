@@ -5,7 +5,7 @@ Run the bundled test suite (great for first-time validation):
 ```bash
 ezpz test
 # or, equivalently:
-ezpz lauch python3 -m ezpz.examples.test
+ezpz launch python3 -m ezpz.examples.test
 ```
 
 (should take ~ 1 min on 2 nodes of Aurora, < 20s locally![^locally])

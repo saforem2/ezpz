@@ -1,5 +1,10 @@
 # Train CNN with FSDP on MNIST
 
+Use this example when your model is too large to fit on a single GPU, or you
+want to reduce per-GPU memory usage. FSDP shards model parameters, gradients,
+and optimizer states across ranks — enabling training of larger models with the
+same hardware. Switch from DDP to FSDP with a single flag: `use_fsdp=True`.
+
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training

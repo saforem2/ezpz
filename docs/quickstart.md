@@ -1,10 +1,10 @@
-# 🏃‍♂️ Quick Start
+# 🏃‍♂️‍➡️ Quick Start
 
 Everything you need to get started: install, write a script, launch it, track
 metrics, and a complete API cheat sheet with before/after diffs.
 
-For a complete runnable example with terminal output, see the
-[Reference](./reference.md).
+For a full walkthrough with real terminal output, see the
+[End-to-End Walkthrough](./reference.md).
 
 ## 📦 Install
 
@@ -14,7 +14,7 @@ uv pip install git+https://github.com/saforem2/ezpz
 
 !!! tip "Editable install for development"
 
-    ```bash
+    ```bash linenums='0'
     git clone https://github.com/saforem2/ezpz.git
     cd ezpz
     uv pip install -e .
@@ -26,7 +26,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     {`torch`, `mpi4py`} installed, you can try `ezpz` without installing
     it:
 
-    ```bash
+    ```bash linenums='0'
     # pip install uv first, if needed
     uv run --with "git+https://github.com/saforem2/ezpz" ezpz doctor
 
@@ -40,7 +40,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     After installing, run a quick smoke test to verify distributed
     functionality and device detection:
 
-    ```bash
+    ```bash linenums='0'
     ezpz test
     ```
 
@@ -64,7 +64,7 @@ uv pip install git+https://github.com/saforem2/ezpz
         over time and found to be useful.
         To use these, we can source the file directly from the command line:
 
-            ```bash
+            ```bash linenums='0'
             source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
             ```
 
@@ -76,7 +76,7 @@ uv pip install git+https://github.com/saforem2/ezpz
             save the relevant environment variables to a file
             `~/.pbsenv` which can be later sourced via `source
             ~/.pbsenv` from, e.g., another terminal:
-            ```bash
+            ```bash linenums='0'
             $ qsub -A <ALLOCATION> -q <QUEUE> \
                 -l select=2 \
                 -l walltime=01:00:00,filesystems=eagle:home \
@@ -86,7 +86,7 @@ uv pip install git+https://github.com/saforem2/ezpz
 
 ## 🚂 Distributed Training Script
 
-```python title="train.py"
+```python title="train.py" linenums='0'
 import ezpz
 import torch
 
@@ -95,11 +95,7 @@ rank = ezpz.setup_torch()  # auto-detects device + backend, returns global rank
 device = ezpz.get_torch_device()
 
 model = torch.nn.Linear(128, 64).to(device)
-model = ezpz.wrap_model(
-    model,
-    use_fsdp=True,  # False will use DDP
-    dtype=torch.bfloat16,
-)
+model = ezpz.wrap_model(model, dtype="bfloat16")  # FSDP by default; use_fsdp=False for DDP
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 for step in range(100):
@@ -114,7 +110,8 @@ ezpz.cleanup()
 
 That's it — `ezpz` detects the available backend, initializes the process
 group, wraps your model in FSDP/DDP, and assigns each rank to the correct
-device.
+device. For help choosing between DDP, FSDP, and FSDP+TP, see the
+[Distributed Training Guide](./guides/distributed-training.md#quick-reference).
 
 !!! tip "`ezpz.synchronize()`"
 
@@ -123,7 +120,7 @@ device.
 
 ## 🚀 Launch It
 
-```bash
+```bash linenums='0'
 ezpz launch python3 train.py
 ```
 
@@ -146,7 +143,7 @@ active job scheduler automatically:
 
     To pass arguments through to the launcher[^launcher]:
 
-    ```bash
+    ```bash linenums='0'
     $ ezpz launch -- python3 -m ezpz.examples.fsdp
 
     # pass --line-buffer through to mpiexec:
@@ -177,8 +174,35 @@ active job scheduler automatically:
     `mpiexec` otherwise.
 
 For pass-through launcher flags, custom hostfiles, and advanced usage, see
-the [Reference launcher section](./reference.md#scheduler-aware-launcher-ezpz-launch)
-and the [CLI reference](./cli/launch/index.md).
+the [CLI reference](./cli/launch/index.md).
+
+## 📤 Submit It
+
+`ezpz launch` runs inside an existing allocation. To submit a **batch job**
+to the scheduler queue, use `ezpz submit`:
+
+```bash
+ezpz submit -N 2 -q debug -t 01:00:00 -A <project> \
+    -- python3 train.py
+```
+
+This auto-generates a PBS or SLURM job script, wraps your command with
+`ezpz launch`, and submits it. Preview the generated script first with
+`--dry-run`:
+
+```bash
+ezpz submit -N 2 -q debug -t 01:00:00 --dry-run -- python3 train.py
+```
+
+You can also submit an existing job script directly:
+
+```bash
+ezpz submit job.sh
+```
+
+See the [CLI reference](./cli/submit.md) for the full option list, or the
+[Distributed Training Guide](./guides/distributed-training.md#going-to-production-with-ezpz-submit)
+for a complete production workflow walkthrough.
 
 ## 🛠️ API Cheat Sheet
 
@@ -186,7 +210,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Setup & Distributed Init
 
-```diff
+```diff linenums='0'
 - import os, torch.distributed as dist
 - dist.init_process_group(backend="nccl", ...)
 - rank = int(os.environ["RANK"])
@@ -201,7 +225,7 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Device Management
 
-```diff
+```diff linenums='0'
 - device = torch.device("cuda")
 - model.to("cuda")
 - batch = batch.to("cuda")
@@ -213,17 +237,17 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Model Wrapping
 
-```diff
+```diff linenums='0'
 - from torch.nn.parallel import DistributedDataParallel as DDP
 - model = DDP(model, device_ids=[local_rank], output_device=local_rank)
 
-+ model = ezpz.wrap_model(model)                  # DDP (default)
-+ model = ezpz.wrap_model(model, use_fsdp=True)   # FSDP
++ model = ezpz.wrap_model(model)                   # FSDP (default)
++ model = ezpz.wrap_model(model, use_fsdp=False)   # DDP
 ```
 
 #### Training Loop
 
-```diff
+```diff linenums='0'
   for step, batch in enumerate(dataloader):
 -     batch = batch.to("cuda")
 +     batch = batch.to(ezpz.get_torch_device())
@@ -236,64 +260,48 @@ Each `ezpz` component can be used independently — pick only what you need.
 
 #### Metric Tracking
 
-```python
+```python linenums='0'
 import ezpz
 
 logger = ezpz.get_logger(__name__)
-ezpz.setup_wandb(project_name="my-project")  # optional
-history = ezpz.History()
+history = ezpz.History(
+    project_name="my-project",   # optional
+    backends="wandb",            # or "mlflow", "wandb,mlflow,csv", etc.
+)
 
 for step in range(100):
     loss = train_step(...)
-    logger.info(history.update({"step": step, "loss": loss.item()}))
+    logger.info(history.update({"loss": loss.item()}, step=step))
 
 history.finalize(outdir="./outputs")  # saves dataset + plots
 ```
 
-For full details on `History`, see the
-[Metric Tracking guide](./history.md).
-
-## 📊 Track Metrics
-
-Use the built-in `History` class to record, save, and plot training metrics:
-
-```python
-from ezpz.history import History
-
-# Optional: enable W&B logging before creating History
-ezpz.setup_wandb(project_name="my-project")
-
-history = History()
-
-for step in range(100):
-    # ... training loop ...
-    metrics = {"loss": loss.item(), "lr": optimizer.param_groups[0]["lr"]}
-    # update() returns a summary string suitable for logging
-    summary = history.update(metrics)
-    logger.info(summary)  # e.g. "loss=0.123456 lr=0.001000"
-
-history.finalize(outdir="./outputs")  # saves dataset + generates plots
-```
-
 `History` automatically computes distributed statistics (min, max, mean, std)
-across all ranks for every recorded metric — no extra code needed on worker
-ranks.
+across all ranks — no extra code needed on worker ranks.
 
 !!! tip "What `finalize` produces"
 
     Calling `history.finalize()` writes a summary dataset and generates
     loss curves and other plots — ready for inspection or inclusion in
-    reports. See the [Reference complete example](./reference.md#complete-example-with-history)
+    reports. See the [Walkthrough](./reference.md#full-example-with-history)
     for sample output with terminal plots.
 
 For the full History API — distributed aggregation, environment variables,
-`StopWatch`, and more — see the [Metric Tracking guide](./history.md).
+`StopWatch`, and more — see the [Metric Tracking guide](./history.md).
 
 ## 🔗 Next Steps
 
-- **[Reference](./reference.md)** — complete runnable example with terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
-- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
-- **[CLI Reference](./cli/index.md)** — full `ezpz launch` usage and flags
-- **[Configuration](./configuration.md)** — environment variables and config dataclasses
+- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive
+  tutorial from hello world to production
+- **[Recipes](./recipes.md)** — copy-pasteable patterns (data loading, checkpointing,
+  gradient accumulation)
+- **[End-to-End Walkthrough](./reference.md)** — full runnable example with real
+  terminal output
+- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats,
+  multi-backend logging, plots
+- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT,
+  Diffusion, etc.)
+- **[CLI Reference](./cli/index.md)** — `ezpz launch`, `ezpz submit`, and more
+- **[Configuration](./configuration.md)** — environment variables and config
+  dataclasses
 - **[Architecture](./architecture.md)** — how `ezpz` works under the hood

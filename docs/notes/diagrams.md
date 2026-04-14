@@ -212,7 +212,7 @@ flowchart LR
         is_cuda -- no --> is_xpu
         is_xpu -- yes --> has_xccl
         has_xccl -- yes --> xccl(["xccl"])
-        has_xccl -- no --> ccl(["ccl"])
+        has_xccl -- no --> ccl(["ccl (legacy fallback)"])
         is_xpu -- no --> gloo
     end
 ```
@@ -533,7 +533,7 @@ plots — all from the same recorded data.
 flowchart LR
     subgraph training["Training Loop"]
         step["optimizer.step()"]
-        record["history.record(metrics)"]
+        record["history.update(metrics)"]
     end
 
     subgraph history_mod["ezpz.History"]

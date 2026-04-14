@@ -1,3 +1,10 @@
+---
+# icon: lucide/citrus
+hide:
+  - navigation
+  #  - toc
+---
+
 # 🍋 ezpz
 
 > _Write once, run anywhere_.
@@ -24,17 +31,17 @@ job scheduler. `ezpz` replaces all of it.
 
 === "With ezpz"
 
-    ```python title="train.py"
+    ``` python title="train.py" linenums='0'
     import ezpz
     import torch
 
     rank = ezpz.setup_torch()           # auto-detects device + backend
     device = ezpz.get_torch_device()
     model = torch.nn.Linear(128, 10).to(device)
-    model = ezpz.wrap_model(model)       # DDP by default
+    model = ezpz.wrap_model(model)       # FSDP (default)
     ```
 
-    ```bash
+    ```bash linenums='0' title='launch.sh'
     # Same command everywhere -- Mac laptop, NVIDIA cluster, Intel Aurora:
     ezpz launch python3 train.py
     ```
@@ -75,7 +82,7 @@ job scheduler. `ezpz` replaces all of it.
     )
     ```
 
-    ```bash
+    ```bash linenums='0'
     # Different launch per {scheduler, cluster}:
     mpiexec -np 8 --ppn 4 python3 train.py      # Polaris    @ ALCF  [NVIDIA / PBS]
     mpiexec -np 24 --ppn 12 python3 train.py    # Aurora     @ ALCF  [INTEL / PBS]
@@ -86,20 +93,26 @@ job scheduler. `ezpz` replaces all of it.
 
 ## 🏃‍♂️ Try it out!
 
-No cluster required — this runs on a laptop:
+No cluster required — this runs on a laptop[^uv]:
 
-```bash
-pip install "git+https://github.com/saforem2/ezpz"
+```bash linenums='0'
+uv pip install "git+https://github.com/saforem2/ezpz"
 ```
 
-```python title="hello.py"
+[^uv]: if you _still_ haven't installed uv:
+
+    ```bash linenums="0"
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+```python title="hello.py" linenums='0'
 import ezpz
 rank = ezpz.setup_torch()
 print(f"Hello from rank {rank} on {ezpz.get_torch_device()}!")
 ezpz.cleanup()
 ```
 
-```bash
+```bash linenums='0'
 python3 hello.py
 # Hello from rank 0 on mps!
 ```
@@ -117,27 +130,31 @@ These can be broken down (~roughly) into:
    Python API for writing hardware-agnostic, distributed PyTorch code.
 
 1. 🧰 [**CLI**](./cli/index.md): `ezpz <command>`
-   Utilities for launching distributed PyTorch applications:
+   Utilities for launching and managing distributed PyTorch jobs:
     - 🚀 [`ezpz launch`](./cli/launch/index.md): Launch commands with _automatic
       **job scheduler** detection_ (PBS, Slurm)
+    - 📤 [`ezpz submit`](./cli/submit.md): Submit batch jobs to PBS or Slurm
     - 💯 [`ezpz test`](./cli/test.md): Run simple distributed smoke test
+    - 📊 [`ezpz benchmark`](./cli/benchmark.md): Run and compare example benchmarks
     - 🩺 [`ezpz doctor`](./cli/doctor.md): Health check your environment
 
 ## ✨ Features
 
 - **Automatic distributed initialization** — [`setup_torch()`](./python/Code-Reference/distributed.md#ezpz.distributed.setup_torch) detects device + backend
 - **Universal launcher** — [`ezpz launch`](./cli/launch/index.md) auto-detects PBS, Slurm, or falls back to `mpirun`
-- **Model wrapping** — [`wrap_model()`](./python/Code-Reference/distributed.md#ezpz.distributed.wrap_model) for DDP or FSDP with one flag
-- **Metric tracking** — [`History`](./history.md) with distributed statistics, W&B integration, and plot generation
+- **Batch job submission** — [`ezpz submit`](./cli/submit.md) generates and submits PBS/Slurm job scripts
+- **Model wrapping** — [`wrap_model()`](./python/Code-Reference/distributed.md#ezpz.distributed.wrap_model) for DDP, FSDP, or FSDP+TP with one call
+- **Multi-backend experiment tracking** — [`History`](./history.md) with distributed statistics and automatic dispatch to W&B, MLflow, and CSV
 - **Environment diagnostics** — [`ezpz doctor`](./cli/doctor.md) checks your setup
 - **Cross-backend timing** — [`synchronize()`](./python/Code-Reference/distributed.md#ezpz.distributed.synchronize) works on CUDA, XPU, MPS, and CPU
 
 ## 🔗 Next Steps
 
 - **[Quick Start](./quickstart.md)** — install, write a script, launch it
+- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive tutorial from hello world to production
 - **[Recipes](./recipes.md)** — copy-pasteable patterns for common tasks
-- **[Reference](./reference.md)** — complete runnable example with terminal output
-- **[Metric Tracking](./history.md)** — full `History` guide: distributed stats, W&B, plots
+- **[End-to-End Walkthrough](./reference.md)** — full runnable example with real terminal output
+- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats, multi-backend logging, plots
 - **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
 - **[FAQ](./notes/faq.md)** — common questions and troubleshooting
 - **[Architecture](./architecture.md)** — how `ezpz` works under the hood
