@@ -1,4 +1,4 @@
-# 👣 End-to-End Walkthrough
+# 📖 End-to-End Walkthrough
 
 What a full `ezpz` run actually looks like — from script to terminal
 output, plots, and saved artifacts. For setup instructions, see the
