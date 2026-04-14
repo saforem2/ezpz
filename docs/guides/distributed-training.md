@@ -258,6 +258,8 @@ from torchvision import datasets, transforms
 
 import ezpz
 
+logger = ezpz.get_logger(__name__)
+
 # ── Model ────────────────────────────────────────────────────────────────────
 
 
@@ -323,21 +325,27 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
 
-        # Track metrics
+        # Track metrics with prefixed keys
         pred = output.argmax(dim=1, keepdim=True)
         correct = pred.eq(target.view_as(pred)).sum().item()
         accuracy = correct / len(target)
-        history.update({"loss": loss.item(), "accuracy": accuracy})
+        train_iter = epoch * len(loader) + batch_idx
+        summary = history.update(
+            {
+                "train/iter": train_iter,
+                "train/loss": loss.item(),
+                "train/accuracy": accuracy,
+            },
+            step=train_iter,
+        )
+        logger.info(summary)
 
-    if rank == 0:
-        avg_loss = sum(history["loss"][-len(loader):]) / len(loader)
-        print(f"Epoch {epoch + 1}/{num_epochs} — loss: {avg_loss:.4f}")
+# ── Finalize ─────────────────────────────────────────────────────────────────
 
-# ── Cleanup ──────────────────────────────────────────────────────────────────
+if rank == 0:
+    history.finalize(outdir="./outputs")
 
 ezpz.cleanup()
-if rank == 0:
-    print("Training complete!")
 ```
 
 ### Code Walkthrough
@@ -356,9 +364,12 @@ each epoch to reshuffle.
 model in `torch.nn.parallel.DistributedDataParallel`. Behind the scenes this
 registers gradient hooks that all-reduce after every `backward()`.
 
-**Metric tracking** — `ezpz.History` accumulates scalars per step. It
-automatically handles distributed aggregation (mean, min, max across ranks)
-and can log to multiple backends (see [Tracking Experiments](#tracking-experiments)).
+**Metric tracking** — `ezpz.History` accumulates scalars per step. Using
+prefixed keys like `"train/loss"` groups metrics so each group gets its
+own plot with an independent x-axis. The `logger.info(summary)` call prints
+a one-line summary each step. At the end, `history.finalize()` saves
+datasets, generates plots, and logs to any configured backends (see
+[Tracking Experiments](#tracking-experiments)).
 
 ### Running It
 
