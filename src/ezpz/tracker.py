@@ -506,15 +506,26 @@ class MLflowBackend(TrackerBackend):
             self._run = mlflow.start_run(**kwargs)
             self._active = True
         except Exception as exc:
-            logger.warning(
-                "mlflow.start_run() failed: %s — continuing without mlflow",
-                exc,
-            )
+            _msg = str(exc)
+            if "403" in _msg or "Permission" in _msg:
+                logger.warning(
+                    "mlflow.start_run() got 403 Permission Denied for "
+                    "experiment %r — this is a server-side auth issue, "
+                    "not an ezpz bug. Check your API key or try a "
+                    "different experiment name. Continuing without mlflow.",
+                    _experiment,
+                )
+            else:
+                logger.warning(
+                    "mlflow.start_run() failed: %s — continuing without mlflow",
+                    exc,
+                )
             self._run = None
             self._active = False
             return
 
         self._step = 0  # auto-increment when caller doesn't provide step
+        self._log_errors_warned = False  # suppress repeated 403 warnings
 
         # Log base system/environment params under the "ezpz." prefix
         self._log_system_params()
@@ -601,7 +612,19 @@ class MLflowBackend(TrackerBackend):
                     (f"{k}/local" if k in agg_prefixes else k): v
                     for k, v in safe.items()
                 }
-            self._mlflow.log_metrics(safe, step=step)
+            try:
+                self._mlflow.log_metrics(safe, step=step)
+            except Exception as exc:
+                if not self._log_errors_warned:
+                    _msg = str(exc)
+                    if "403" in _msg or "Permission" in _msg:
+                        logger.warning(
+                            "mlflow.log_metrics() got 403 — server is "
+                            "rejecting writes. Suppressing further warnings."
+                        )
+                    else:
+                        logger.warning("mlflow.log_metrics() failed: %s", exc)
+                    self._log_errors_warned = True
 
     @staticmethod
     def _flatten(
