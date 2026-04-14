@@ -69,7 +69,6 @@ nav = [
 
     { "🧰 CLI" = [
         "cli/index.md",
-    { "💻 <code>ezpz</code>" = [
         { "🚀 <code>ezpz launch</code>" = "cli/launch/index.md" },
         { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
@@ -78,7 +77,6 @@ nav = [
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
-        ] },
         ] },
         { "📘 References" = [
             { "🗓️ PBS" = "notes/pbs.md" },
