@@ -447,19 +447,32 @@ class MLflowBackend(TrackerBackend):
         if api_key:
             pass  # MLflow handles Bearer auth natively
         else:
-            api_key = os.environ.get("AMSC_API_KEY")
+            api_key = os.environ.get(
+                "AMSC_API_KEY", os.environ.get("AM_SC_API_KEY")
+            )
             if api_key:
-                # Patch mlflow's request layer to inject X-API-Key header
+                # Patch mlflow's request layer to inject X-Api-Key header.
+                # Signature must match http_request(host_creds, endpoint,
+                # method, ...) — see zhenghh04/alcf_mlflow_deployment.
                 try:
                     import mlflow.utils.rest_utils as _rest
 
                     _orig_call = _rest.http_request
 
-                    def _patched_call(*args: Any, **kwargs: Any) -> Any:
-                        extra = kwargs.pop("extra_headers", {}) or {}
-                        extra["X-API-Key"] = api_key  # type: ignore[assignment]
-                        kwargs["extra_headers"] = extra
-                        return _orig_call(*args, **kwargs)
+                    def _patched_call(  # type: ignore[no-untyped-def]
+                        host_creds: Any,
+                        endpoint: str,
+                        method: str,
+                        *args: Any,
+                        **kwargs: Any,
+                    ) -> Any:
+                        headers = dict(kwargs.get("extra_headers") or {})
+                        if kwargs.get("headers") is not None:
+                            headers.update(dict(kwargs["headers"]))
+                        headers["X-Api-Key"] = api_key
+                        kwargs["extra_headers"] = headers
+                        kwargs.pop("headers", None)
+                        return _orig_call(host_creds, endpoint, method, *args, **kwargs)
 
                     _rest.http_request = _patched_call  # type: ignore[assignment]
                 except Exception as exc:
@@ -467,32 +480,28 @@ class MLflowBackend(TrackerBackend):
                         "Failed to patch mlflow auth headers: %s", exc
                     )
 
-        # Resolve experiment name: explicit arg → MLFLOW_EXPERIMENT_NAME →
-        # wandb project env vars → script-derived default
-        _experiment = project_name
+        # Resolve experiment name: MLFLOW_EXPERIMENT_NAME (explicit override)
+        # → project_name arg → wandb project env vars → script-derived default.
+        # MLFLOW_EXPERIMENT_NAME wins over project_name so users can redirect
+        # MLflow to a different experiment without changing code.
+        _experiment = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+        if _experiment is None:
+            _experiment = project_name
         if _experiment is None:
             _experiment = os.environ.get(
-                "MLFLOW_EXPERIMENT_NAME",
+                "WB_PROJECT",
                 os.environ.get(
-                    "WB_PROJECT",
-                    os.environ.get(
-                        "WANDB_PROJECT",
-                        os.environ.get("WB_PROJECT_NAME"),
-                    ),
+                    "WANDB_PROJECT",
+                    os.environ.get("WB_PROJECT_NAME"),
                 ),
             )
         if _experiment is None:
             _experiment = _default_project_name()
+        # Replace dots with hyphens for cleaner experiment names
+        # (e.g. "ezpz.examples.vit" → "ezpz-examples-vit")
+        _experiment = _experiment.replace(".", "-")
 
         try:
-            # Log CPU/GPU/memory usage as system/* metrics.
-            # Only enable when using native auth (MLFLOW_TRACKING_TOKEN),
-            # not the X-API-Key patch which the background thread may bypass.
-            if os.environ.get("MLFLOW_TRACKING_TOKEN"):
-                try:
-                    mlflow.enable_system_metrics_logging()
-                except Exception:
-                    pass  # psutil or nvidia-ml-py not installed
             mlflow.set_experiment(_experiment)
             self._run = mlflow.start_run(**kwargs)
             self._active = True
