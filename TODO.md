@@ -153,7 +153,23 @@ Some appear to be one-off exploratory scripts rather than structured suites.
 
 ---
 
-## 11. Potential Enhancements [LOW]
+## 11. Tracker Improvements [MEDIUM]
+
+- **CSV fallback on backend failure**: When a backend (e.g. MLflow) fails
+  during `__init__`, automatically add a CSV backend so metrics are always
+  captured locally. Currently a backend failure means those metrics are
+  only in JSONL and wandb (if enabled).
+- **TensorBoard backend**: Add `TensorBoardBackend` using
+  `torch.utils.tensorboard.SummaryWriter`. Straightforward implementation
+  (~50 lines), widely used, works offline.
+- **AMSC MLflow server permissions**: The shared AMSC MLflow server
+  intermittently returns 403 on `log-batch` / `log-parameter` endpoints.
+  This is a server-side issue (not ezpz code), but worth documenting
+  workarounds and investigating with the AMSC admin.
+
+---
+
+## 12. Potential Enhancements [LOW]
 
 - Configurable timeout with better error messaging for `init_process_group`
   failures / NCCL hangs.
