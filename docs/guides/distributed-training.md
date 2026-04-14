@@ -9,7 +9,8 @@ hardware ezpz supports.
 graph LR
     A[Hello Distributed] --> B[DDP Training]
     B --> C[FSDP Training]
-    C --> D[HF Fine-Tuning]
+    C --> D[HF Trainer]
+    D --> E[HF Custom Loop]
 ```
 
 !!! info "Prerequisites"
@@ -700,7 +701,7 @@ still flow to W&B and CSV.
 
 ---
 
-## Example 4: Fine-Tuning with HuggingFace
+## Example 4: Fine-Tuning with HuggingFace Trainer
 
 ezpz integrates with the HuggingFace ecosystem in two ways:
 
@@ -798,12 +799,138 @@ if rank == 0:
     ezpz launch -np 16 -ppn 4 -- python3 hf_finetune.py
     ```
 
-### Custom Training Loop
+---
 
-For full control over the training loop (custom loss functions, gradient
-manipulation, non-standard architectures), use `ezpz.setup_torch()` for
-distributed init and write your own loop. See the
-[`ezpz.examples.hf`](../examples/hf.md) example for a complete implementation.
+## Example 5: Fine-Tuning with a Custom Loop
+
+For full control over the training loop — custom loss functions, gradient
+manipulation, non-standard architectures — use `ezpz.setup_torch()` +
+Accelerate with an explicit loop instead of the HF Trainer.
+
+This mirrors the approach in [`ezpz.examples.hf`](../examples/hf.md).
+
+```python title="hf_custom_loop.py"
+"""Fine-tune a causal LM with an explicit training loop."""
+import math
+import time
+import torch
+from torch.utils.data import DataLoader
+from datasets import load_dataset
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    default_data_collator,
+    get_scheduler,
+)
+from accelerate import Accelerator
+
+import ezpz
+
+logger = ezpz.get_logger(__name__)
+
+# ── Setup ────────────────────────────────────────────────────────────────────
+
+rank = ezpz.setup_torch(seed=42)
+device = ezpz.get_torch_device()
+accelerator = Accelerator(gradient_accumulation_steps=4)
+
+# ── Model + Tokenizer ────────────────────────────────────────────────────────
+
+model_name = "gpt2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token
+model = AutoModelForCausalLM.from_pretrained(model_name)
+
+# ── Dataset ──────────────────────────────────────────────────────────────────
+
+dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
+block_size = 256
+
+def tokenize_and_chunk(examples):
+    tokens = tokenizer(examples["text"], truncation=True, max_length=block_size)
+    tokens["labels"] = tokens["input_ids"].copy()
+    return tokens
+
+tokenized = dataset.map(tokenize_and_chunk, batched=True, remove_columns=["text"])
+loader = DataLoader(tokenized, batch_size=4, shuffle=True, collate_fn=default_data_collator)
+
+# ── Optimizer + Scheduler ────────────────────────────────────────────────────
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
+num_epochs = 1
+max_steps = num_epochs * len(loader)
+lr_scheduler = get_scheduler("linear", optimizer=optimizer, num_warmup_steps=100, num_training_steps=max_steps)
+
+# Prepare with Accelerate (handles FSDP, device placement, etc.)
+model, optimizer, loader, lr_scheduler = accelerator.prepare(model, optimizer, loader, lr_scheduler)
+
+# ── Tracking ─────────────────────────────────────────────────────────────────
+
+history = ezpz.History(project_name="hf-custom-loop")
+
+# ── Training Loop ────────────────────────────────────────────────────────────
+
+step = 0
+for epoch in range(num_epochs):
+    model.train()
+    for batch in loader:
+        t0 = time.perf_counter()
+        with accelerator.accumulate(model):
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
+
+        if accelerator.sync_gradients:
+            step += 1
+            dt = time.perf_counter() - t0
+            loss_val = loss.detach().float().item()
+            try:
+                ppl = math.exp(loss_val)
+            except OverflowError:
+                ppl = float("inf")
+            summary = history.update(
+                {
+                    "train/iter": step,
+                    "train/loss": loss_val,
+                    "train/perplexity": ppl,
+                    "train/lr": lr_scheduler.get_last_lr()[0],
+                    "train/dt": dt,
+                },
+                step=step,
+            )
+            if step % 10 == 0:
+                logger.info(summary)
+
+# ── Finalize ─────────────────────────────────────────────────────────────────
+
+if rank == 0:
+    history.finalize(outdir="./outputs")
+
+ezpz.cleanup()
+```
+
+### Running It
+
+```bash
+ezpz launch -np 4 -- python3 hf_custom_loop.py
+```
+
+The key differences from the Trainer approach:
+
+| | HF Trainer | Custom Loop |
+|---|---|---|
+| Training logic | Handled by Trainer | You write it |
+| Gradient accumulation | Config flag | `accelerator.accumulate()` |
+| Metric tracking | Trainer callbacks | `ezpz.History` directly |
+| Checkpointing | Automatic | `accelerator.save_state()` |
+| Flexibility | Limited | Full control |
+
+For the complete production-quality version with eval loops, checkpointing,
+and resume support, see [`ezpz.examples.hf`](../examples/hf.md).
 
 ---
 
