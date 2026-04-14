@@ -44,7 +44,7 @@ def test_get_pbs_launch_cmd_defaults_full_machine(patch_topology, monkeypatch):
 
     assert (
         cmd
-        == f"mpiexec --envall --np=16 --ppn=4 --hostfile={hostfile} --cpu-bind=depth --depth=8"
+        == f"mpiexec --envall --line-buffer --np=16 --ppn=4 --hostfile={hostfile} --cpu-bind=depth --depth=8"
     )
 
 

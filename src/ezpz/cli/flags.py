@@ -274,7 +274,7 @@ def build_launch_parser(
         "--filter",
         type=str,
         nargs="+",
-        help="Filter output lines by these strings.",
+        help="Deprecated: output filtering has been removed. This flag is ignored.",
     )
     parser.add_argument(
         "-n",
