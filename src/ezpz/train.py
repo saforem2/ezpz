@@ -13,12 +13,6 @@ import time
 
 import torch
 
-try:
-    import intel_extension_for_pytorch
-    import oneccl_bindings_for_pytorch
-except (ModuleNotFoundError, ImportError):
-    pass
-
 import hydra
 import torch.nn as nn
 import torch.optim as optim
