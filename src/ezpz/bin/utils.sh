@@ -1872,7 +1872,7 @@ ezpz_print_hosts() {
 }
 
 ezpz_get_num_xpus() {
-	python3 -c 'import intel_extension_for_pytorch as ipex; print(ipex.xpu.device_count())'
+    python3 -c 'import torch; print(torch.xpu.device_count())'
 }
 
 ezpz_get_num_gpus_nvidia() {
