@@ -503,6 +503,10 @@
   margin-top: auto;
 }
 
+.ansi-block {
+    overflow-x: auto;
+}
+
 /* [dir="ltr"] .md-nav__list .md-nav__item--section > .md-nav > .md-nav__list { */
 /*   margin-left: 0.5rem; */
 /* } */
@@ -520,4 +524,10 @@ pre.mermaid {
 .mermaid svg {
   max-width: 100%;
   height: auto;
+}
+
+/* ---------- tables ---------- */
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
 }
