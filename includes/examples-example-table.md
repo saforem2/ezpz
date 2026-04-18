@@ -2,13 +2,13 @@
 
     | Links                                                                                                                                                                                                                    | Example Module             | What it Does                                    |
     | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-    | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test] · [:lucide-github:][gh-test]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
-    | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:lucide-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
-    | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:lucide-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
-    | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:lucide-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
-    | [:lucide-book:][ex-diffusion] · [:lucide-file-code:][api-diffusion] · [:lucide-github:][gh-diffusion]          | `ezpz.examples.diffusion`  | Train Diffusion LLM with FSDP on HF Datasets    |
-    | [:lucide-book:][ex-hf] · [:lucide-file-code:][api-hf] · [:lucide-github:][gh-hf]                               | `ezpz.examples.hf`         | Fine-tune causal LM with Accelerate + FSDP       |
-    | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:lucide-github:][gh-hf-trainer] | `ezpz.examples.hf_trainer` | Train LLM with FSDP + HF Trainer on HF Datasets |
+    | [:lucide-book:][ex-test] · [:lucide-file-code:][api-test] · [:fontawesome-brands-github:][gh-test]                                                                                                                    | `ezpz.examples.test`  | Train MLP with DDP on MNIST                     |
+    | [:lucide-book:][ex-fsdp] · [:lucide-file-code:][api-fsdp] · [:fontawesome-brands-github:][gh-fsdp]                                                                                                                                   | `ezpz.examples.fsdp`       | Train CNN with FSDP on MNIST                    |
+    | [:lucide-book:][ex-vit] · [:lucide-file-code:][api-vit] · [:fontawesome-brands-github:][gh-vit]                            | `ezpz.examples.vit`        | Train ViT with FSDP on MNIST                    |
+    | [:lucide-book:][ex-fsdp-tp] · [:lucide-file-code:][api-fsdp-tp] · [:fontawesome-brands-github:][gh-fsdp-tp]                | `ezpz.examples.fsdp_tp`    | Train Transformer with FSDP + TP on HF Datasets |
+    | [:lucide-book:][ex-diffusion] · [:lucide-file-code:][api-diffusion] · [:fontawesome-brands-github:][gh-diffusion]          | `ezpz.examples.diffusion`  | Train Diffusion LLM with FSDP on HF Datasets    |
+    | [:lucide-book:][ex-hf] · [:lucide-file-code:][api-hf] · [:fontawesome-brands-github:][gh-hf]                               | `ezpz.examples.hf`         | Fine-tune causal LM with Accelerate + FSDP       |
+    | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:fontawesome-brands-github:][gh-hf-trainer] | `ezpz.examples.hf_trainer` | Train LLM with FSDP + HF Trainer on HF Datasets |
 
 
     Any of the examples can be launched with:
