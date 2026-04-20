@@ -326,8 +326,8 @@ def main(argv: list[str] | None = None) -> None:
             )
         args.examples = expanded
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bench_dir = args.outdir or Path("outputs/benchmarks") / timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    bench_dir = args.outdir or Path("outputs/ezpz-benchmarks") / timestamp
     bench_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Benchmark output directory: {bench_dir}")
