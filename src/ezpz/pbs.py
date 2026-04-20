@@ -28,6 +28,10 @@ Pathish = Union[str, os.PathLike, Path]
 
 logger = ezpz.get_logger(__name__)
 
+# Suppress the sh library's INFO-level "process started" noise
+import logging as _logging
+_logging.getLogger("sh").setLevel(_logging.WARNING)
+
 _QSTAT_MAX_RETRIES = 5
 _QSTAT_RETRY_DELAY = 2  # seconds
 _PBS_JOBS_CACHE_TTL = 30  # seconds
@@ -57,13 +61,19 @@ def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
     """Get all running jobs for the current user.
 
     Results are cached for up to 30 s to avoid redundant qstat calls
-    during a single launch sequence.
+    during a single launch sequence.  Only rank 0 runs qstat; other
+    ranks use the cached result.
     """
     global _pbs_jobs_cache
     if _pbs_jobs_cache is not None:
         ts, cached = _pbs_jobs_cache
         if time.monotonic() - ts < _PBS_JOBS_CACHE_TTL:
             return cached
+
+    # Only rank 0 should call qstat — all ranks get the same answer
+    # and spawning N qstat processes hammers the PBS server.
+    if ezpz.distributed.get_rank() != 0:
+        return {}
 
     try:
         from sh import qstat  # type:ignore
