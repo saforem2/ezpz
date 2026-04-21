@@ -213,13 +213,18 @@ def _find_wandb_url(logfile: Path) -> Optional[str]:
 
 def _find_mlflow_url(logfile: Path) -> Optional[str]:
     """Extract an MLflow run URL from a log file."""
+    # Match the mlflow banner line: 🔗 View run at https://...
+    # Exclude wandb URLs (wandb.ai) to avoid false matches.
     pattern = re.compile(r"View run at\s+(https?://\S+)")
     try:
         text = _strip_ansi(logfile.read_text(errors="replace"))
     except OSError:
         return None
-    m = pattern.search(text)
-    return m.group(1) if m else None
+    for m in pattern.finditer(text):
+        url = m.group(1)
+        if "wandb.ai" not in url:
+            return url
+    return None
 
 
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")

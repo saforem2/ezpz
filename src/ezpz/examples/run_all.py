@@ -305,6 +305,11 @@ def run_example(
     last_metrics: dict[str, str] | None = None
     tracker_lines: list[str] = []
     step_count = 0
+    last_print_step = 0
+    # Print ~10 progress updates total. We don't know the total steps
+    # ahead of time, so we use a doubling interval: print at step 1,
+    # then every N steps where N doubles each time we print.
+    print_interval = 1
 
     with logfile.open("w") as log_fh:
         with subprocess.Popen(
@@ -328,8 +333,7 @@ def run_example(
                 if metrics is not None:
                     last_metrics = metrics
                     step_count += 1
-                    # Print a progress dot every 10 steps
-                    if step_count % 10 == 0:
+                    if step_count - last_print_step >= print_interval:
                         elapsed_now = int(time.perf_counter() - t0)
                         step_id = metrics.get(
                             "iter", metrics.get("step", "?")
@@ -339,6 +343,9 @@ def run_example(
                             f"  ... step={step_id} loss={loss}"
                             f" [{_fmt_duration(elapsed_now)}]"
                         )
+                        last_print_step = step_count
+                        # Double the interval so we get ~log2(N) updates
+                        print_interval = min(print_interval * 2, 500)
 
     elapsed = int(time.perf_counter() - t0)
     returncode = proc.returncode or 0
