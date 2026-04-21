@@ -72,7 +72,24 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def benchmark_cmd(args: tuple[str, ...]) -> None:
-    """Run all ezpz examples sequentially and generate a report."""
+    """Run ezpz examples sequentially and generate a benchmark report.
+
+    Runs all (or selected) examples with timing, captures logs, and
+    produces a summary report with per-example metrics.
+
+    \b
+    Examples:
+      ezpz benchmark                        # run all examples
+      ezpz benchmark --run test,fsdp        # run specific examples
+      ezpz benchmark --model debug          # use debug model size
+      ezpz benchmark --outdir ./my-results  # custom output directory
+
+    \b
+    Options (passed through to the benchmark runner):
+      --run NAME[,NAME,...]   Examples to run (default: all)
+      --model SIZE            Model size: debug, small, medium, large
+      --outdir PATH           Output directory for logs and report
+    """
     from ezpz.examples.run_all import main as run_all_main
 
     run_all_main(list(args))
