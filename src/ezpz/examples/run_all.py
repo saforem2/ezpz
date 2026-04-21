@@ -316,7 +316,7 @@ def run_example(
         ) as proc:
             assert proc.stdout is not None
             for line in proc.stdout:
-                log_fh.write(line)
+                log_fh.write(_strip_ansi(line))
                 log_fh.flush()
                 # Extract tracker URLs
                 tracker = _extract_tracker_info(line)
