@@ -317,6 +317,7 @@ def generate_report(outdir: Path) -> str:
         "Final Loss", "Mean dt (s)", "Throughput", "W&B", "MLflow",
     ]
     results_rows: list[list[str]] = []
+    link_refs: list[str] = []
 
     for row in timings:
         name = row["name"]
@@ -327,9 +328,23 @@ def generate_report(outdir: Path) -> str:
 
         logfile = outdir / f"{name}.log"
         wandb_url = _find_wandb_url(logfile)
-        wandb_cell = f"[link]({wandb_url})" if wandb_url else "\u2014"
         mlflow_url = _find_mlflow_url(logfile)
-        mlflow_cell = f"[link]({mlflow_url})" if mlflow_url else "\u2014"
+        # Use short reference-style links: [run_id][run_id]
+        # with the full URL as a reference definition at the bottom.
+        if wandb_url:
+            wb_id = wandb_url.rstrip("/").rsplit("/", 1)[-1]
+            wandb_cell = f"[{wb_id}][{wb_id}]"
+            link_refs.append(f"[{wb_id}]: {wandb_url}")
+        else:
+            wandb_cell = "\u2014"
+        if mlflow_url:
+            ml_id = mlflow_url.rstrip("/").rsplit("/", 1)[-1]
+            # Shorten to first 8 chars if it's a UUID
+            ml_label = ml_id[:8] if len(ml_id) > 12 else ml_id
+            mlflow_cell = f"[{ml_label}][{ml_label}]"
+            link_refs.append(f"[{ml_label}]: {mlflow_url}")
+        else:
+            mlflow_cell = "\u2014"
 
         # Attempt to locate and parse metrics.
         # Primary: extract output dir from log.  Fallback: search outputs/.
@@ -373,6 +388,11 @@ def generate_report(outdir: Path) -> str:
         name = row["name"]
         logfile = outdir / f"{name}.log"
         lines.append(f"- **{name}**: `{logfile}`")
+
+    # Append link reference definitions at the bottom
+    if link_refs:
+        lines.append("")
+        lines.extend(link_refs)
 
     lines.append("")
     return "\n".join(lines)
