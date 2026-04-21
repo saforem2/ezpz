@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -233,17 +234,25 @@ def _fmt_duration(seconds: int | float) -> str:
     return f"{h}h {m:02d}m {s:02d}s"
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from a string."""
+    return _ANSI_RE.sub("", text)
+
+
 def _parse_summary_line(line: str) -> dict[str, str] | None:
     """Extract key=value pairs from a training log line.
 
     Returns a dict of metric names to values, or None if the line
     doesn't look like a training step log.
     """
-    import re
-
+    # Strip ANSI color codes before parsing
+    clean = _strip_ansi(line)
     # Match lines like: iter=10 loss=1.814 accuracy=0.484 dtf=0.009
     # Skip distributed stats (loss/mean, loss/max, etc.)
-    pairs = re.findall(r"(\w+)=([\d.e+-]+)", line)
+    pairs = re.findall(r"(\w+)=([\d.e+-]+)", clean)
     if not pairs:
         return None
     # Only consider lines with iter/step — those are training step logs
@@ -255,17 +264,14 @@ def _parse_summary_line(line: str) -> dict[str, str] | None:
 
 def _extract_tracker_info(line: str) -> str | None:
     """Extract wandb or mlflow run info from a log line."""
-    if "View run at" in line or "🚀 View run" in line:
+    clean = _strip_ansi(line)
+    if "View run at" in clean or "\U0001f680 View run" in clean:
         # wandb: 🚀 View run at https://...
-        import re
-
-        url = re.search(r"https?://\S+", line)
+        url = re.search(r"https?://\S+", clean)
         return f"  wandb: {url.group()}" if url else None
-    if "🔗 View run at" in line:
+    if "\U0001f517 View run at" in clean or "🔗 View run at" in clean:
         # mlflow: 🔗 View run at https://...
-        import re
-
-        url = re.search(r"https?://\S+", line)
+        url = re.search(r"https?://\S+", clean)
         return f"  mlflow: {url.group()}" if url else None
     return None
 
