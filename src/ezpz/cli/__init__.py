@@ -58,11 +58,28 @@ def tar_env_cmd(args: tuple[str, ...]) -> None:
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def yeet_env_cmd(args: tuple[str, ...]) -> None:
-    """Distribute an environment tarball across worker nodes."""
-    # from ezpz.utils import yeet_env as yeet_env_module
+    """Distribute a Python environment to worker nodes via parallel rsync.
+
+    By default, rsyncs the active venv/conda env to /tmp/<env-name>/
+    on all nodes in the current job allocation.
+
+    \b
+    Examples:
+      ezpz yeet-env                        # sync active env to all nodes
+      ezpz yeet-env --src /path/to/env     # sync a specific environment
+      ezpz yeet-env --dst /local/scratch    # custom destination
+      ezpz yeet-env --dry-run              # preview without syncing
+
+    \b
+    Options (passed through):
+      --src PATH       Source environment (default: active venv/conda)
+      --dst PATH       Destination on workers (default: /tmp/<env-name>/)
+      --hostfile PATH  Hostfile for node list (default: auto-detect)
+      --dry-run        Show what would be synced
+    """
     from ezpz.utils import yeet_env as yeet_env_module
 
-    rc = yeet_env_module.run(_ensure_sequence(args))
+    rc = yeet_env_module.run(list(args) if args else None)
     _handle_exit_code(rc)
 
 
