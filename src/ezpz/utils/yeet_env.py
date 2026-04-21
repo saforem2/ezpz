@@ -243,43 +243,72 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # ── Discover nodes ──────────────────────────────────────────────
     nodes = _get_worker_nodes(hostfile=args.hostfile)
     current = _get_current_hostname()
-    # Filter out the current node (no self-rsync needed)
-    remote_nodes = [n for n in nodes if n != current]
 
-    if not remote_nodes:
-        print(f"  No remote worker nodes found (only {current}).")
-        print(f"  Nothing to sync.")
-        return 0
+    if not nodes:
+        print(f"  No worker nodes found.")
+        return 1
+
+    # Copy locally first (current node), then rsync to remote nodes.
+    # The local copy is needed because /tmp is node-local.
+    needs_local_copy = not str(src).startswith("/tmp")
+    remote_nodes = [n for n in nodes if n != current]
 
     # ── Print summary ───────────────────────────────────────────────
     env_size = _get_env_size(src)
+    total_nodes = (1 if needs_local_copy else 0) + len(remote_nodes)
     print(f"  Source: {src} ({env_size})")
-    print(f"  Target: {dst}/ on {len(remote_nodes)} node(s)")
+    print(f"  Target: {dst}/ on {total_nodes} node(s)")
+    if needs_local_copy:
+        print(f"    local:  {current} (rsync to {dst}/)")
+    if remote_nodes:
+        print(f"    remote: {', '.join(remote_nodes)}")
     if args.dry_run:
-        print(f"  Nodes: {', '.join(remote_nodes)}")
         print(f"  [dry-run] No files transferred.")
+        return 0
+
+    if total_nodes == 0:
+        print(f"  Nothing to sync (source is already in {dst}).")
         return 0
 
     # ── Sync ────────────────────────────────────────────────────────
     print(f"  Syncing...")
     t0 = time.perf_counter()
-    results = _rsync_parallel(src, dst, remote_nodes)
-    total_elapsed = time.perf_counter() - t0
+    results: list[tuple[str, float, int]] = []
 
+    # Local copy first (current node's /tmp is node-local)
+    if needs_local_copy:
+        node, elapsed, rc = _rsync_to_node(src, dst, current)
+        icon = "\u2713" if rc == 0 else "\u2717"
+        print(f"    {icon} {node} (local) \u2014 {elapsed:.1f}s")
+        results.append((node, elapsed, rc))
+
+    # Remote nodes in parallel
+    if remote_nodes:
+        results.extend(_rsync_parallel(src, dst, remote_nodes))
+
+    total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
     if failed:
-        print(f"  {failed}/{len(remote_nodes)} node(s) failed!")
+        print(f"  {failed}/{total_nodes} node(s) failed!")
     else:
         print(f"  Done in {total_elapsed:.1f}s")
 
     # ── Guidance ────────────────────────────────────────────────────
+    is_venv = (src / "bin" / "activate").exists()
+    is_conda = (src / "conda-meta").is_dir()
     print()
     print(f"  To use this environment:")
-    print(f"    export PATH={dst}/bin:$PATH")
-    print(f"    ezpz launch python3 -m your_app.train")
+    if is_venv:
+        print(f"    deactivate 2>/dev/null")
+        print(f"    source {dst}/bin/activate")
+    elif is_conda:
+        print(f"    conda deactivate")
+        print(f"    conda activate {dst}")
+    else:
+        print(f"    export PATH={dst}/bin:$PATH")
     print()
-    print(f"  Or launch directly:")
-    print(f"    ezpz launch -x PATH={dst}/bin:$PATH -- python3 -m your_app.train")
+    print(f"  Then launch your training:")
+    print(f"    ezpz launch python3 -m your_app.train")
 
     return 1 if failed else 0
 

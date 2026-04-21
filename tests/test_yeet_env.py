@@ -158,12 +158,13 @@ class TestRun:
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
-    def test_single_node_no_sync(self, _nodes, _host, capsys):
-        """When only the current node exists, nothing to sync."""
+    def test_single_node_dry_run(self, _nodes, _host, capsys):
+        """Single node dry-run shows local copy plan."""
         rc = yeet.run(["--dry-run"])
         assert rc == 0
         captured = capsys.readouterr()
-        assert "Nothing to sync" in captured.out
+        assert "dry-run" in captured.out
+        assert "local:" in captured.out
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01", "node02", "node03"])
@@ -183,17 +184,21 @@ class TestRun:
         rc = yeet.run(["--src", "/nonexistent/path/to/env"])
         assert rc == 1
 
+    @patch("ezpz.utils.yeet_env._rsync_to_node")
     @patch("ezpz.utils.yeet_env._rsync_parallel")
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01", "node02"])
-    def test_syncs_to_remote_nodes(self, _nodes, _host, mock_rsync, capsys):
-        """Syncs only to remote nodes (not self)."""
+    def test_syncs_local_and_remote(self, _nodes, _host, mock_rsync, mock_local, capsys):
+        """Syncs locally first, then to remote nodes."""
+        mock_local.return_value = ("node01", 3.0, 0)
         mock_rsync.return_value = [("node02", 5.0, 0)]
         rc = yeet.run([])
         assert rc == 0
-        # Should only sync to node02, not node01 (self)
+        # Local rsync called for node01
+        mock_local.assert_called_once()
+        # Parallel rsync called for node02 only
         call_args = mock_rsync.call_args
-        nodes_arg = call_args[0][2]  # third positional arg
+        nodes_arg = call_args[0][2]
         assert "node02" in nodes_arg
         assert "node01" not in nodes_arg
         captured = capsys.readouterr()
