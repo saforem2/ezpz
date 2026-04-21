@@ -25,6 +25,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -106,6 +107,45 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
 def _get_current_hostname() -> str:
     """Return the short hostname of the current node."""
     return socket.getfqdn().split(".")[0]
+
+
+# ── Progress indicator ────────────────────────────────────────────────────────
+
+
+class _Spinner:
+    """Simple elapsed-time spinner for long-running operations."""
+
+    _FRAMES = ["\u280b", "\u2819", "\u2838", "\u2834", "\u2826", "\u2807"]
+
+    def __init__(self, label: str = "") -> None:
+        self._label = label
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+        # Clear the spinner line
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
+
+    def _spin(self) -> None:
+        t0 = time.perf_counter()
+        idx = 0
+        while not self._stop.is_set():
+            elapsed = time.perf_counter() - t0
+            frame = self._FRAMES[idx % len(self._FRAMES)]
+            msg = f"\r    {frame} {self._label} [{elapsed:.0f}s]"
+            sys.stdout.write(msg)
+            sys.stdout.flush()
+            idx += 1
+            self._stop.wait(0.3)
 
 
 # ── Rsync ────────────────────────────────────────────────────────────────────
@@ -324,14 +364,23 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
     # Local copy first (current node's /tmp is node-local)
     if needs_local_copy:
+        spinner = _Spinner(f"{current} (local)")
+        spinner.start()
         node, elapsed, rc = _rsync_to_node(src, dst, current)
+        spinner.stop()
         icon = "\u2713" if rc == 0 else "\u2717"
         print(f"    {icon} {node} (local) \u2014 {elapsed:.1f}s")
         results.append((node, elapsed, rc))
 
     # Remote nodes in parallel
     if remote_nodes:
-        results.extend(_rsync_parallel(src, dst, remote_nodes))
+        spinner = _Spinner(
+            f"{len(remote_nodes)} remote node(s)"
+        )
+        spinner.start()
+        remote_results = _rsync_parallel(src, dst, remote_nodes)
+        spinner.stop()
+        results.extend(remote_results)
 
     total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
