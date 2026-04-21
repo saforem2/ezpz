@@ -259,7 +259,7 @@ def _parse_summary_line(line: str) -> dict[str, str] | None:
         return None
     # Only consider lines with iter/step — those are training step logs
     keys = {k for k, _ in pairs}
-    if not keys & {"iter", "step", "train_iter"}:
+    if not keys & {"iter", "step", "train_iter", "epoch"}:
         return None
     result = {k: v for k, v in pairs if "/" not in k}
     # Detect phase from [train] / [eval] markers
@@ -344,13 +344,21 @@ def run_example(
                     ps["count"] += 1
                     if ps["count"] - ps["last_print"] >= ps["interval"]:
                         elapsed_now = int(time.perf_counter() - t0)
-                        step_id = metrics.get(
-                            "iter", metrics.get("step", "?")
+                        # Pick the right progress key
+                        for _k in ("iter", "step", "epoch"):
+                            if _k in metrics:
+                                step_label, step_id = _k, metrics[_k]
+                                break
+                        else:
+                            step_label, step_id = "step", "?"
+                        loss = metrics.get(
+                            "loss",
+                            metrics.get("train_loss", "?"),
                         )
-                        loss = metrics.get("loss", "?")
                         tag = f"[{phase}] " if phase else ""
                         print(
-                            f"  ... {tag}step={step_id} loss={loss}"
+                            f"  ... {tag}{step_label}={step_id}"
+                            f" loss={loss}"
                             f" [{_fmt_duration(elapsed_now)}]"
                         )
                         ps["last_print"] = ps["count"]
@@ -365,8 +373,10 @@ def run_example(
             parts = [
                 f"{k}={v}"
                 for k, v in last_metrics.items()
-                if k in ("iter", "step", "loss", "accuracy", "acc",
+                if k in ("iter", "step", "epoch", "loss", "train_loss",
+                         "test_loss", "accuracy", "acc", "test_acc",
                          "dtf", "dtb", "perplexity")
+                and not k.startswith("_")
             ]
             if parts:
                 summary += f" ({', '.join(parts)})"
