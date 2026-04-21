@@ -403,8 +403,13 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     else:
         print(f"    export PATH={dst}/bin:$PATH")
     print()
-    print(f"  Then launch your training:")
+    print(f"  Then launch your training (from a shared filesystem path):")
+    print(f"    cd /path/to/your/project")
     print(f"    ezpz launch python3 -m your_app.train")
+    print()
+    print(f"  Note: /tmp is node-local. Make sure your working directory")
+    print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
+    print(f"  so all ranks can access data and outputs.")
 
     return 1 if failed else 0
 
