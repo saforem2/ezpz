@@ -111,12 +111,57 @@ def _get_current_hostname() -> str:
 # ── Rsync ────────────────────────────────────────────────────────────────────
 
 
+def _patch_venv_paths(dst: Path, src: Path, node: str) -> None:
+    """Rewrite hardcoded paths in a copied venv so it works from *dst*.
+
+    Patches:
+    - ``bin/activate`` (and variants): replace VIRTUAL_ENV path
+    - ``bin/python*``: re-link to the system python if they're symlinks
+      pointing back to the original location
+    - ``pyvenv.cfg``: update ``home`` to point to the system python dir
+    """
+    src_str = str(src)
+    dst_str = str(dst)
+    # Patch activate scripts and pyvenv.cfg via sed on the remote node
+    patch_cmd = (
+        f"sed -i 's|{src_str}|{dst_str}|g' "
+        f"{dst_str}/bin/activate "
+        f"{dst_str}/bin/activate.csh "
+        f"{dst_str}/bin/activate.fish "
+        f"{dst_str}/pyvenv.cfg "
+        f"2>/dev/null; "
+        # Re-link python binaries: if python3 is a symlink to the original
+        # location, find the real interpreter and re-link to it.
+        f"cd {dst_str}/bin && "
+        f"for f in python python3 python3.*; do "
+        f"  if [ -L \"$f\" ]; then "
+        f"    target=$(readlink \"$f\"); "
+        f"    if echo \"$target\" | grep -q '{src_str}'; then "
+        # Find the base python from pyvenv.cfg's "home" line
+        f"      base=$(grep '^home' {dst_str}/pyvenv.cfg 2>/dev/null "
+        f"             | cut -d= -f2 | tr -d ' '); "
+        f"      if [ -n \"$base\" ] && [ -x \"$base/python3\" ]; then "
+        f"        ln -sf \"$base/python3\" \"$f\"; "
+        f"      fi; "
+        f"    fi; "
+        f"  fi; "
+        f"done"
+    )
+    subprocess.run(
+        ["ssh", node, patch_cmd],
+        capture_output=True,
+        check=False,
+    )
+
+
 def _rsync_to_node(
     src: Path,
     dst: Path,
     node: str,
+    *,
+    patch_paths: bool = True,
 ) -> tuple[str, float, int]:
-    """Rsync *src* to *node*:*dst* via SSH.
+    """Rsync *src* to *node*:*dst* via SSH, then patch venv paths.
 
     Returns ``(node, elapsed_seconds, returncode)``.
     """
@@ -137,7 +182,6 @@ def _rsync_to_node(
         text=True,
         check=False,
     )
-    elapsed = time.perf_counter() - t0
     if result.returncode != 0:
         logger.warning(
             "rsync to %s failed (exit %d): %s",
@@ -145,6 +189,9 @@ def _rsync_to_node(
             result.returncode,
             result.stderr.strip(),
         )
+    elif patch_paths:
+        _patch_venv_paths(dst, src, node)
+    elapsed = time.perf_counter() - t0
     return node, elapsed, result.returncode
 
 
