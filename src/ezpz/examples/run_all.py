@@ -233,6 +233,43 @@ def _fmt_duration(seconds: int | float) -> str:
     return f"{h}h {m:02d}m {s:02d}s"
 
 
+def _parse_summary_line(line: str) -> dict[str, str] | None:
+    """Extract key=value pairs from a training log line.
+
+    Returns a dict of metric names to values, or None if the line
+    doesn't look like a training step log.
+    """
+    import re
+
+    # Match lines like: iter=10 loss=1.814 accuracy=0.484 dtf=0.009
+    # Skip distributed stats (loss/mean, loss/max, etc.)
+    pairs = re.findall(r"(\w+)=([\d.e+-]+)", line)
+    if not pairs:
+        return None
+    # Only consider lines with iter/step — those are training step logs
+    keys = {k for k, _ in pairs}
+    if not keys & {"iter", "step", "train_iter"}:
+        return None
+    return {k: v for k, v in pairs if "/" not in k}
+
+
+def _extract_tracker_info(line: str) -> str | None:
+    """Extract wandb or mlflow run info from a log line."""
+    if "View run at" in line or "🚀 View run" in line:
+        # wandb: 🚀 View run at https://...
+        import re
+
+        url = re.search(r"https?://\S+", line)
+        return f"  wandb: {url.group()}" if url else None
+    if "🔗 View run at" in line:
+        # mlflow: 🔗 View run at https://...
+        import re
+
+        url = re.search(r"https?://\S+", line)
+        return f"  mlflow: {url.group()}" if url else None
+    return None
+
+
 def run_example(
     name: str,
     cmd: list[str],
@@ -259,26 +296,68 @@ def run_example(
     print("\u2550" * 64)
 
     t0 = time.perf_counter()
-    with logfile.open("w") as log_fh:
-        proc = subprocess.run(
-            cmd,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-    elapsed = int(time.perf_counter() - t0)
+    last_metrics: dict[str, str] | None = None
+    tracker_lines: list[str] = []
+    step_count = 0
 
-    if proc.returncode == 0:
-        print(f"  \u2713 {name} completed in {_fmt_duration(elapsed)}")
+    with logfile.open("w") as log_fh:
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                log_fh.write(line)
+                log_fh.flush()
+                # Extract tracker URLs
+                tracker = _extract_tracker_info(line)
+                if tracker is not None:
+                    tracker_lines.append(tracker)
+                    print(tracker)
+                # Extract training metrics
+                metrics = _parse_summary_line(line)
+                if metrics is not None:
+                    last_metrics = metrics
+                    step_count += 1
+                    # Print a progress dot every 10 steps
+                    if step_count % 10 == 0:
+                        elapsed_now = int(time.perf_counter() - t0)
+                        step_id = metrics.get(
+                            "iter", metrics.get("step", "?")
+                        )
+                        loss = metrics.get("loss", "?")
+                        print(
+                            f"  ... step={step_id} loss={loss}"
+                            f" [{_fmt_duration(elapsed_now)}]"
+                        )
+
+    elapsed = int(time.perf_counter() - t0)
+    returncode = proc.returncode or 0
+
+    if returncode == 0:
+        summary = f"  \u2713 {name} completed in {_fmt_duration(elapsed)}"
+        if last_metrics:
+            parts = [
+                f"{k}={v}"
+                for k, v in last_metrics.items()
+                if k in ("iter", "step", "loss", "accuracy", "acc",
+                         "dtf", "dtb", "perplexity")
+            ]
+            if parts:
+                summary += f" ({', '.join(parts)})"
+        print(summary)
     else:
         print(
-            f"  \u2717 {name} FAILED (exit {proc.returncode})"
+            f"  \u2717 {name} FAILED (exit {returncode})"
             f" after {_fmt_duration(elapsed)}"
         )
 
     return {
         "name": name,
-        "exit_code": proc.returncode,
+        "exit_code": returncode,
         "wall_seconds": elapsed,
     }
 
