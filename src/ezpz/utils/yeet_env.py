@@ -209,7 +209,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Show what would be synced without doing it.",
     )
-    return parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        # Filter out stray positional args (e.g. "yeet-env" leaked from
+        # click's UNPROCESSED dispatch or deprecated entry points).
+        real_unknown = [a for a in unknown if a.startswith("-")]
+        if real_unknown:
+            parser.error(f"unrecognized arguments: {' '.join(real_unknown)}")
+    return args
 
 
 def run(argv: Optional[Sequence[str]] = None) -> int:
