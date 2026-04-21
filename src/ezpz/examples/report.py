@@ -245,21 +245,17 @@ def _display_len(cell: str) -> int:
 def _align_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     """Build a markdown table with columns padded to equal widths.
 
-    Column widths are computed from the *display* length of each cell so
-    that markdown links (``[text](url)``) are measured by their visible
-    text, not the full URL.
+    Column widths are computed from the *raw* string length so the
+    source text aligns visually when printed to a terminal.
     """
     ncols = len(headers)
-    widths = [_display_len(h) for h in headers]
+    widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
-            widths[i] = max(widths[i], _display_len(cell))
-
-    def _pad(cell: str, width: int) -> str:
-        return cell + " " * (width - _display_len(cell))
+            widths[i] = max(widths[i], len(cell))
 
     def _row_line(cells: list[str]) -> str:
-        padded = [_pad(cells[i], widths[i]) for i in range(ncols)]
+        padded = [cells[i].ljust(widths[i]) for i in range(ncols)]
         return "| " + " | ".join(padded) + " |"
 
     lines = [_row_line(headers)]
