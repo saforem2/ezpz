@@ -227,12 +227,19 @@ def _find_mlflow_url(logfile: Path) -> Optional[str]:
     return None
 
 
-_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_INLINE_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_REF_LINK_RE = re.compile(r"\[([^\]]*)\]\[[^\]]*\]")
 
 
 def _display_len(cell: str) -> int:
-    """Return the rendered width of *cell*, collapsing markdown links."""
-    return len(_MD_LINK_RE.sub(lambda m: m.group(1), cell))
+    """Return the rendered width of *cell*, collapsing markdown links.
+
+    Handles both inline ``[text](url)`` and reference ``[text][ref]``
+    style links.
+    """
+    text = _MD_INLINE_LINK_RE.sub(lambda m: m.group(1), cell)
+    text = _MD_REF_LINK_RE.sub(lambda m: m.group(1), text)
+    return len(text)
 
 
 def _align_table(headers: list[str], rows: list[list[str]]) -> list[str]:
