@@ -246,7 +246,9 @@ def _parse_summary_line(line: str) -> dict[str, str] | None:
     """Extract key=value pairs from a training log line.
 
     Returns a dict of metric names to values, or None if the line
-    doesn't look like a training step log.
+    doesn't look like a training step log.  Includes a ``_phase``
+    key ("train", "eval", or "") parsed from ``[train]``/``[eval]``
+    markers in the log line.
     """
     # Strip ANSI color codes before parsing
     clean = _strip_ansi(line)
@@ -259,7 +261,11 @@ def _parse_summary_line(line: str) -> dict[str, str] | None:
     keys = {k for k, _ in pairs}
     if not keys & {"iter", "step", "train_iter"}:
         return None
-    return {k: v for k, v in pairs if "/" not in k}
+    result = {k: v for k, v in pairs if "/" not in k}
+    # Detect phase from [train] / [eval] markers
+    phase_match = re.search(r"\[(train|eval)\]", clean)
+    result["_phase"] = phase_match.group(1) if phase_match else ""
+    return result
 
 
 def _extract_tracker_info(line: str) -> str | None:
@@ -304,12 +310,9 @@ def run_example(
     t0 = time.perf_counter()
     last_metrics: dict[str, str] | None = None
     tracker_lines: list[str] = []
-    step_count = 0
-    last_print_step = 0
-    # Print ~10 progress updates total. We don't know the total steps
-    # ahead of time, so we use a doubling interval: print at step 1,
-    # then every N steps where N doubles each time we print.
-    print_interval = 1
+    # Track progress per phase (train/eval) independently, each with
+    # its own doubling interval so phase switches don't confuse the count.
+    phase_state: dict[str, dict[str, int]] = {}  # phase -> {count, last_print, interval}
 
     with logfile.open("w") as log_fh:
         with subprocess.Popen(
@@ -332,20 +335,26 @@ def run_example(
                 metrics = _parse_summary_line(line)
                 if metrics is not None:
                     last_metrics = metrics
-                    step_count += 1
-                    if step_count - last_print_step >= print_interval:
+                    phase = metrics.get("_phase", "")
+                    if phase not in phase_state:
+                        phase_state[phase] = {
+                            "count": 0, "last_print": 0, "interval": 1,
+                        }
+                    ps = phase_state[phase]
+                    ps["count"] += 1
+                    if ps["count"] - ps["last_print"] >= ps["interval"]:
                         elapsed_now = int(time.perf_counter() - t0)
                         step_id = metrics.get(
                             "iter", metrics.get("step", "?")
                         )
                         loss = metrics.get("loss", "?")
+                        tag = f"[{phase}] " if phase else ""
                         print(
-                            f"  ... step={step_id} loss={loss}"
+                            f"  ... {tag}step={step_id} loss={loss}"
                             f" [{_fmt_duration(elapsed_now)}]"
                         )
-                        last_print_step = step_count
-                        # Double the interval so we get ~log2(N) updates
-                        print_interval = min(print_interval * 2, 500)
+                        ps["last_print"] = ps["count"]
+                        ps["interval"] = min(ps["interval"] * 2, 500)
 
     elapsed = int(time.perf_counter() - t0)
     returncode = proc.returncode or 0
