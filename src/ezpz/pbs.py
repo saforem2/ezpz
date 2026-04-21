@@ -70,11 +70,6 @@ def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
         if time.monotonic() - ts < _PBS_JOBS_CACHE_TTL:
             return cached
 
-    # Only rank 0 should call qstat — all ranks get the same answer
-    # and spawning N qstat processes hammers the PBS server.
-    if ezpz.distributed.get_rank() != 0:
-        return {}
-
     try:
         from sh import qstat  # type:ignore
     except Exception as e:
