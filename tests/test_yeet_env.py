@@ -92,7 +92,6 @@ class TestRsyncToNode:
         call_args = mock_run.call_args[0][0]
         assert call_args[0] == "rsync"
         assert "-a" in call_args
-        assert "--delete" in call_args
         assert call_args[-1] == "node01:/tmp/env/"
         # Patch should be called after successful rsync
         mock_patch.assert_called_once()
@@ -191,21 +190,17 @@ class TestRun:
         assert rc == 1
 
     @patch("ezpz.utils.yeet_env._rsync_to_node")
-    @patch("ezpz.utils.yeet_env._rsync_parallel")
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01", "node02"])
-    def test_syncs_local_and_remote(self, _nodes, _host, mock_rsync, mock_local, capsys):
-        """Syncs locally first, then to remote nodes."""
-        mock_local.return_value = ("node01", 3.0, 0)
-        mock_rsync.return_value = [("node02", 5.0, 0)]
+    def test_syncs_local_and_remote(self, _nodes, _host, mock_rsync, capsys):
+        """Syncs local and remote nodes in parallel."""
+        mock_rsync.return_value = ("node01", 3.0, 0)
         rc = yeet.run([])
         assert rc == 0
-        # Local rsync called for node01
-        mock_local.assert_called_once()
-        # Parallel rsync called for node02 only
-        call_args = mock_rsync.call_args
-        nodes_arg = call_args[0][2]
-        assert "node02" in nodes_arg
-        assert "node01" not in nodes_arg
+        # Should be called for both nodes
+        assert mock_rsync.call_count == 2
+        call_nodes = [c.args[2] for c in mock_rsync.call_args_list]
+        assert "node01" in call_nodes
+        assert "node02" in call_nodes
         captured = capsys.readouterr()
         assert "To use this environment" in captured.out

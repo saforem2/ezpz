@@ -21,11 +21,9 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import os
 import socket
 import subprocess
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -112,40 +110,53 @@ def _get_current_hostname() -> str:
 # ── Progress indicator ────────────────────────────────────────────────────────
 
 
-class _Spinner:
-    """Simple elapsed-time spinner for long-running operations."""
+class _ProgressLine:
+    """Single-line progress display with rsync transfer info."""
 
     _FRAMES = ["\u280b", "\u2819", "\u2838", "\u2834", "\u2826", "\u2807"]
 
     def __init__(self, label: str = "") -> None:
         self._label = label
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._pct = ""
+        self._speed = ""
+        self._eta = ""
+        self._t0 = time.perf_counter()
+        self._idx = 0
 
-    def start(self) -> None:
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._spin, daemon=True)
-        self._thread.start()
+    def update(self, pct: str = "", speed: str = "", eta: str = "") -> None:
+        """Update progress from rsync --info=progress2 output."""
+        if pct:
+            self._pct = pct
+        if speed:
+            self._speed = speed
+        if eta:
+            self._eta = eta
+        self._redraw()
 
-    def stop(self) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join()
-        # Clear the spinner line
+    def tick(self) -> None:
+        """Advance the spinner without new rsync data."""
+        self._redraw()
+
+    def clear(self) -> None:
+        """Clear the progress line."""
         sys.stdout.write("\r\033[K")
         sys.stdout.flush()
 
-    def _spin(self) -> None:
-        t0 = time.perf_counter()
-        idx = 0
-        while not self._stop.is_set():
-            elapsed = time.perf_counter() - t0
-            frame = self._FRAMES[idx % len(self._FRAMES)]
-            msg = f"\r    {frame} {self._label} [{elapsed:.0f}s]"
-            sys.stdout.write(msg)
-            sys.stdout.flush()
-            idx += 1
-            self._stop.wait(0.3)
+    def _redraw(self) -> None:
+        elapsed = time.perf_counter() - self._t0
+        frame = self._FRAMES[self._idx % len(self._FRAMES)]
+        self._idx += 1
+        parts = [f"{frame} {self._label}"]
+        if self._pct:
+            parts.append(self._pct)
+        if self._speed:
+            parts.append(self._speed)
+        if self._eta:
+            parts.append(f"ETA {self._eta}")
+        parts.append(f"[{elapsed:.0f}s]")
+        msg = "\r    " + "  ".join(parts)
+        sys.stdout.write(msg)
+        sys.stdout.flush()
 
 
 # ── Rsync ────────────────────────────────────────────────────────────────────
@@ -200,8 +211,13 @@ def _rsync_to_node(
     node: str,
     *,
     patch_paths: bool = True,
+    progress_callback: object | None = None,
 ) -> tuple[str, float, int]:
     """Rsync *src* to *node*:*dst* via SSH, then patch venv paths.
+
+    Args:
+        progress_callback: If provided, called with ``(pct, speed, eta)``
+            strings parsed from ``rsync --info=progress2`` output.
 
     Returns ``(node, elapsed_seconds, returncode)``.
     """
@@ -209,55 +225,64 @@ def _rsync_to_node(
     src_str = str(src).rstrip("/") + "/"
     dst_str = f"{node}:{dst}/"
     t0 = time.perf_counter()
-    result = subprocess.run(
-        [
-            "rsync",
-            "-a",           # archive mode (preserves permissions, symlinks, etc.)
-            "--delete",     # remove files on dst that don't exist on src
-            "-q",           # quiet — suppress per-file output
-            src_str,
-            dst_str,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
+
+    cmd = [
+        "rsync",
+        "-a",               # archive mode
+        "--info=progress2",  # single overall progress line
+        src_str,
+        dst_str,
+    ]
+
+    if progress_callback is not None:
+        # Stream output line-by-line to parse progress
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                # rsync --info=progress2 output looks like:
+                #   1.23G  14%   45.67MB/s    0:03:12
+                line = line.strip()
+                if "%" in line:
+                    parts = line.split()
+                    # Find the percentage, speed, and ETA
+                    pct = ""
+                    speed = ""
+                    eta = ""
+                    for p in parts:
+                        if p.endswith("%"):
+                            pct = p
+                        elif p.endswith("/s"):
+                            speed = p
+                        elif ":" in p and p[0].isdigit():
+                            eta = p
+                    progress_callback(pct, speed, eta)  # type: ignore[operator]
+        returncode = proc.returncode or 0
+        stderr = proc.stderr.read() if proc.stderr else ""
+    else:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False,
+        )
+        returncode = result.returncode
+        stderr = result.stderr
+
+    if returncode != 0:
         logger.warning(
             "rsync to %s failed (exit %d): %s",
             node,
-            result.returncode,
-            result.stderr.strip(),
+            returncode,
+            stderr.strip() if stderr else "",
         )
     elif patch_paths:
         _patch_venv_paths(dst, src, node)
     elapsed = time.perf_counter() - t0
-    return node, elapsed, result.returncode
+    return node, elapsed, returncode
 
-
-def _rsync_parallel(
-    src: Path,
-    dst: Path,
-    nodes: list[str],
-) -> list[tuple[str, float, int]]:
-    """Rsync *src* to *dst* on all *nodes* in parallel.
-
-    Uses a thread pool with one thread per node (each thread manages
-    a subprocess).  Returns a list of ``(node, elapsed, returncode)``
-    tuples in completion order.
-    """
-    results: list[tuple[str, float, int]] = []
-    with ThreadPoolExecutor(max_workers=len(nodes)) as pool:
-        futures = {
-            pool.submit(_rsync_to_node, src, dst, node): node
-            for node in nodes
-        }
-        for future in as_completed(futures):
-            node, elapsed, rc = future.result()
-            icon = "\u2713" if rc == 0 else "\u2717"
-            print(f"    {icon} {node} \u2014 {elapsed:.1f}s")
-            results.append((node, elapsed, rc))
-    return results
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -360,27 +385,38 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # ── Sync ────────────────────────────────────────────────────────
     print(f"  Syncing...")
     t0 = time.perf_counter()
-    results: list[tuple[str, float, int]] = []
 
-    # Local copy first (current node's /tmp is node-local)
+    # Sync all nodes in parallel (local + remote together).
+    all_nodes = []
     if needs_local_copy:
-        spinner = _Spinner(f"{current} (local)")
-        spinner.start()
-        node, elapsed, rc = _rsync_to_node(src, dst, current)
-        spinner.stop()
-        icon = "\u2713" if rc == 0 else "\u2717"
-        print(f"    {icon} {node} (local) \u2014 {elapsed:.1f}s")
-        results.append((node, elapsed, rc))
+        all_nodes.append(current)
+    all_nodes.extend(remote_nodes)
 
-    # Remote nodes in parallel
-    if remote_nodes:
-        spinner = _Spinner(
-            f"{len(remote_nodes)} remote node(s)"
-        )
-        spinner.start()
-        remote_results = _rsync_parallel(src, dst, remote_nodes)
-        spinner.stop()
-        results.extend(remote_results)
+    results: list[tuple[str, float, int]] = []
+    with ThreadPoolExecutor(max_workers=len(all_nodes)) as pool:
+        futures = {}
+        for node in all_nodes:
+            progress = _ProgressLine(
+                f"{node} (local)" if node == current else node
+            )
+
+            def make_callback(p: _ProgressLine):
+                return lambda pct, speed, eta: p.update(pct, speed, eta)
+
+            fut = pool.submit(
+                _rsync_to_node, src, dst, node,
+                progress_callback=make_callback(progress),
+            )
+            futures[fut] = (node, progress)
+
+        for fut in as_completed(futures):
+            node, progress = futures[fut]
+            n, elapsed, rc = fut.result()
+            progress.clear()
+            label = f"{n} (local)" if n == current else n
+            icon = "\u2713" if rc == 0 else "\u2717"
+            print(f"    {icon} {label} \u2014 {elapsed:.1f}s")
+            results.append((n, elapsed, rc))
 
     total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
