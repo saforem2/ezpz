@@ -110,8 +110,17 @@ def _get_current_hostname() -> str:
 # ── Progress indicator ────────────────────────────────────────────────────────
 
 
+import threading
+
+_progress_lock = threading.Lock()
+
+
 class _ProgressLine:
-    """Single-line progress display with rsync transfer info."""
+    """Thread-safe single-line progress display with rsync transfer info.
+
+    Multiple instances share a lock so only one writes to the terminal
+    at a time, preventing garbled output from parallel rsyncs.
+    """
 
     _FRAMES = ["\u280b", "\u2819", "\u2838", "\u2834", "\u2826", "\u2807"]
 
@@ -133,14 +142,11 @@ class _ProgressLine:
             self._eta = eta
         self._redraw()
 
-    def tick(self) -> None:
-        """Advance the spinner without new rsync data."""
-        self._redraw()
-
     def clear(self) -> None:
         """Clear the progress line."""
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+        with _progress_lock:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
 
     def _redraw(self) -> None:
         elapsed = time.perf_counter() - self._t0
@@ -155,8 +161,9 @@ class _ProgressLine:
             parts.append(f"ETA {self._eta}")
         parts.append(f"[{elapsed:.0f}s]")
         msg = "\r    " + "  ".join(parts)
-        sys.stdout.write(msg)
-        sys.stdout.flush()
+        with _progress_lock:
+            sys.stdout.write(msg)
+            sys.stdout.flush()
 
 
 # ── Rsync ────────────────────────────────────────────────────────────────────
@@ -250,7 +257,6 @@ def _rsync_to_node(
                 line = line.strip()
                 if "%" in line:
                     parts = line.split()
-                    # Find the percentage, speed, and ETA
                     pct = ""
                     speed = ""
                     eta = ""
@@ -262,8 +268,9 @@ def _rsync_to_node(
                         elif ":" in p and p[0].isdigit():
                             eta = p
                     progress_callback(pct, speed, eta)  # type: ignore[operator]
+            # Read stderr before the context manager closes it
+            stderr = proc.stderr.read() if proc.stderr else ""
         returncode = proc.returncode or 0
-        stderr = proc.stderr.read() if proc.stderr else ""
     else:
         result = subprocess.run(
             cmd, capture_output=True, text=True, check=False,
