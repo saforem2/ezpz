@@ -112,39 +112,48 @@ def _get_current_hostname() -> str:
 
 import threading
 
-_progress_lock = threading.Lock()
 
+class _AggregateProgress:
+    """Single-line progress display that aggregates status across all nodes.
 
-class _ProgressLine:
-    """Thread-safe single-line progress display with rsync transfer info.
-
-    Multiple instances share a lock so only one writes to the terminal
-    at a time, preventing garbled output from parallel rsyncs.
+    Instead of N competing progress lines (one per node), this shows
+    one shared line: ``⠹ 3/8 nodes done  72%  45MB/s  [120s]``
     """
 
     _FRAMES = ["\u280b", "\u2819", "\u2838", "\u2834", "\u2826", "\u2807"]
 
-    def __init__(self, label: str = "") -> None:
-        self._label = label
-        self._pct = ""
-        self._speed = ""
-        self._eta = ""
+    def __init__(self, total_nodes: int) -> None:
+        self._total = total_nodes
+        self._done = 0
+        self._lock = threading.Lock()
         self._t0 = time.perf_counter()
         self._idx = 0
+        # Track latest progress from any node
+        self._pct = ""
+        self._speed = ""
 
     def update(self, pct: str = "", speed: str = "", eta: str = "") -> None:
-        """Update progress from rsync --info=progress2 output."""
-        if pct:
-            self._pct = pct
-        if speed:
-            self._speed = speed
-        if eta:
-            self._eta = eta
-        self._redraw()
+        """Called by any node's rsync thread with progress info."""
+        with self._lock:
+            if pct:
+                self._pct = pct
+            if speed:
+                self._speed = speed
+            self._redraw()
+
+    def mark_done(self, node: str, elapsed: float, rc: int) -> None:
+        """Called when a node finishes. Prints result on its own line."""
+        with self._lock:
+            sys.stdout.write("\r\033[K")
+            self._done += 1
+            icon = "\u2713" if rc == 0 else "\u2717"
+            print(f"    {icon} {node} \u2014 {elapsed:.1f}s")
+            if self._done < self._total:
+                self._redraw()
 
     def clear(self) -> None:
         """Clear the progress line."""
-        with _progress_lock:
+        with self._lock:
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
 
@@ -152,18 +161,16 @@ class _ProgressLine:
         elapsed = time.perf_counter() - self._t0
         frame = self._FRAMES[self._idx % len(self._FRAMES)]
         self._idx += 1
-        parts = [f"{frame} {self._label}"]
+        remaining = self._total - self._done
+        parts = [f"{frame} {remaining} node(s) syncing"]
         if self._pct:
             parts.append(self._pct)
         if self._speed:
             parts.append(self._speed)
-        if self._eta:
-            parts.append(f"ETA {self._eta}")
         parts.append(f"[{elapsed:.0f}s]")
         msg = "\r    " + "  ".join(parts)
-        with _progress_lock:
-            sys.stdout.write(msg)
-            sys.stdout.flush()
+        sys.stdout.write(msg)
+        sys.stdout.flush()
 
 
 # ── Rsync ────────────────────────────────────────────────────────────────────
@@ -399,31 +406,25 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         all_nodes.append(current)
     all_nodes.extend(remote_nodes)
 
+    # Cap parallelism to avoid overwhelming the source filesystem.
+    max_workers = min(len(all_nodes), 32)
+    progress = _AggregateProgress(total_nodes=len(all_nodes))
+
     results: list[tuple[str, float, int]] = []
-    with ThreadPoolExecutor(max_workers=len(all_nodes)) as pool:
-        futures = {}
-        for node in all_nodes:
-            progress = _ProgressLine(
-                f"{node} (local)" if node == current else node
-            )
-
-            def make_callback(p: _ProgressLine):
-                return lambda pct, speed, eta: p.update(pct, speed, eta)
-
-            fut = pool.submit(
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(
                 _rsync_to_node, src, dst, node,
-                progress_callback=make_callback(progress),
-            )
-            futures[fut] = (node, progress)
-
+                progress_callback=progress.update,
+            ): node
+            for node in all_nodes
+        }
         for fut in as_completed(futures):
-            node, progress = futures[fut]
             n, elapsed, rc = fut.result()
-            progress.clear()
             label = f"{n} (local)" if n == current else n
-            icon = "\u2713" if rc == 0 else "\u2717"
-            print(f"    {icon} {label} \u2014 {elapsed:.1f}s")
+            progress.mark_done(label, elapsed, rc)
             results.append((n, elapsed, rc))
+    progress.clear()
 
     total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
