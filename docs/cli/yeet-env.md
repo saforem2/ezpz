@@ -153,37 +153,24 @@ all distributed copies arrive already patched.
     Each source node rsyncs to up to 16 targets in parallel.
     Here's wave 2 in detail, showing all 5 sources fanning out:
 
-    ```mermaid
-    graph TD
-        subgraph "Wave 2 — 5 sources, fanout=16 each (80 parallel rsyncs)"
-            N00["node00 /tmp/.venv"] --> T05["node05"]
-            N00 --> T06["node06"]
-            N00 --> T07["node07"]
-            N00 --> T0d["⋮"]
-            N00 --> T20["node20"]
+    Each source node does up to 16 parallel rsyncs from its local
+    `/tmp/.venv`. Here's what one source looks like in wave 2:
 
-            N01["node01 /tmp/.venv"] --> T21["node21"]
-            N01 --> T22["node22"]
-            N01 --> T1d["⋮"]
-            N01 --> T36["node36"]
-
-            N02["node02 /tmp/.venv"] --> T37["node37"]
-            N02 --> T2d["⋮"]
-            N02 --> T52["node52"]
-
-            N03["node03 /tmp/.venv"] --> T53["node53"]
-            N03 --> T3d["⋮"]
-            N03 --> T68["node68"]
-
-            N04["node04 /tmp/.venv"] --> T69["node69"]
-            N04 --> T4d["⋮"]
-            N04 --> T84["node84"]
-        end
+    ```
+    node01 (/tmp/.venv)
+     ├─ rsync → node21
+     ├─ rsync → node22
+     ├─ rsync → node23
+     ├─ rsync → node24
+     ├─ rsync → node25     ← all 16 run in parallel
+     ├─ rsync → node26
+     ├─ rsync → ...
+     └─ rsync → node36
     ```
 
-    All 80 rsyncs in this wave run in parallel. Each source reads
-    from its local `/tmp/.venv` (fast SSD) and writes to the target
-    node's `/tmp/.venv` via SSH.
+    In wave 2, all 5 sources (node00–node04) do this simultaneously,
+    giving 5 × 16 = 80 parallel rsyncs. Each reads from local SSD
+    and writes to the target node's `/tmp/.venv` via SSH.
 
 ### Node discovery
 
