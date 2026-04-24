@@ -108,7 +108,9 @@ uv pip install "git+https://github.com/saforem2/ezpz"
 ```python title="hello.py" linenums='0'
 import ezpz
 rank = ezpz.setup_torch()
-print(f"Hello from rank {rank} on {ezpz.get_torch_device()}!")
+device = ezpz.get_torch_device()
+world_size = ezpz.get_world_size()
+print(f"Hello from rank {rank}/{world_size} on {device}!")
 ezpz.cleanup()
 ```
 
@@ -116,35 +118,41 @@ ezpz.cleanup()
 
     ```bash linenums='0'
     $ python3 hello.py
-    Hello from rank 0 on mps!
+    Hello from rank 0/1 on mps!
 
     $ ezpz launch python3 hello.py
-    Hello from rank 0 on mps!
-    Hello from rank 1 on mps!
+    Hello from rank 0/2 on mps!
+    Hello from rank 1/2 on mps!
     ```
 
-=== "Aurora (ALCF)"
+=== "Polaris (ALCF) — 2 nodes"
 
     ```bash linenums='0'
-    $ ezpz launch python3 hello.py
-    Using [24 / 24] available "xpu" devices !!
-    Hello from rank 0 on xpu!
+    $ ezpz launch python3 hello.py    # 2 nodes × 4 GPUs = 8 ranks
+    Hello from rank 0/8 on cuda!
+    Hello from rank 1/8 on cuda!
+    ...
+    Hello from rank 7/8 on cuda!
     ```
 
-=== "Polaris (ALCF)"
+=== "Aurora (ALCF) — 2 nodes"
 
     ```bash linenums='0'
-    $ ezpz launch python3 hello.py
-    Using [8 / 8] available "cuda" devices !!
-    Hello from rank 0 on cuda!
+    $ ezpz launch python3 hello.py    # 2 nodes × 12 GPUs = 24 ranks
+    Hello from rank 0/24 on xpu!
+    Hello from rank 1/24 on xpu!
+    ...
+    Hello from rank 23/24 on xpu!
     ```
 
-=== "Perlmutter (NERSC)"
+=== "Perlmutter (NERSC) — 2 nodes"
 
     ```bash linenums='0'
-    $ ezpz launch python3 hello.py
-    Using [8 / 8] available "cuda" devices !!
-    Hello from rank 0 on cuda!
+    $ ezpz launch python3 hello.py    # 2 nodes × 4 GPUs = 8 ranks
+    Hello from rank 0/8 on cuda!
+    Hello from rank 1/8 on cuda!
+    ...
+    Hello from rank 7/8 on cuda!
     ```
 
 Ready to get started? See the [Quick Start](./quickstart.md).
