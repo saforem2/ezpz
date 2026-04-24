@@ -107,7 +107,7 @@ per source:
 ```mermaid
 graph TD
     subgraph "Local copy + patch"
-        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on current node"]
+        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on node00"]
     end
 
     subgraph "Wave 1 — seed (fanout=4)"
@@ -117,22 +117,28 @@ graph TD
         L --> A4["node04"]
     end
 
-    subgraph "Wave 2 — fan out (fanout=16 per source)"
-        L --> B0["node05–node20"]
-        A1 --> B1["node21–node36"]
-        A2 --> B2["node37–node52"]
-        A3 --> B3["node53–node68"]
-        A4 --> B4["node69–node84"]
+    subgraph "Wave 2 — 5 sources × 16 each = 80 nodes"
+        L --> B0["node05–20"]
+        A1 --> B1["node21–36"]
+        A2 --> B2["node37–52"]
+        A3 --> B3["node53–68"]
+        A4 --> B4["node69–84"]
     end
 
-    subgraph "Wave 3 — 85 sources × 16 each"
-        B0 --> C0["..."]
-        B4 --> C4["up to 1,360 nodes"]
+    subgraph "Wave 3 — 85 sources × 16 each = 1,360 nodes"
+        B0 --> C0["node85–100"]
+        B1 --> C1["..."]
+        B4 --> C4["node1,269–1,284"]
+    end
+
+    subgraph "Wave 4 — 1,445 sources × 16 each"
+        C0 --> D0["..."]
+        C4 --> D4["up to 24,165 nodes"]
     end
 ```
 
-| Nodes | Waves | Sources after each wave |
-|-------|-------|------------------------|
+| Nodes | Waves | Sources after wave |
+|-------|-------|--------------------|
 | 1–4 | 1 | 1 → 5 |
 | 5–84 | 2 | 5 → 85 |
 | 85–1,444 | 3 | 85 → 1,445 |
@@ -141,6 +147,57 @@ graph TD
 All waves rsync from `/tmp/` (node-local storage), not the shared
 filesystem. Path patching happens only once on the local copy —
 all distributed copies arrive already patched.
+
+??? info "Detail: what a single wave looks like"
+
+    Each source node rsyncs to up to 16 targets in parallel.
+    Here's wave 2 in detail, showing all 5 sources fanning out:
+
+    ```mermaid
+    graph LR
+        subgraph "Wave 2 — 5 sources, fanout=16 each"
+            subgraph "node00 (original)"
+                N00["node00<br/>/tmp/.venv"]
+                N00 --> T01["node05"]
+                N00 --> T02["node06"]
+                N00 --> T03["..."]
+                N00 --> T16["node20"]
+            end
+
+            subgraph "node01 (from wave 1)"
+                N01["node01<br/>/tmp/.venv"]
+                N01 --> T17["node21"]
+                N01 --> T18["node22"]
+                N01 --> T19["..."]
+                N01 --> T32["node36"]
+            end
+
+            subgraph "node02"
+                N02["node02<br/>/tmp/.venv"]
+                N02 --> T33["node37"]
+                N02 --> T34["..."]
+                N02 --> T48["node52"]
+            end
+
+            subgraph "node03"
+                N03["node03<br/>/tmp/.venv"]
+                N03 --> T49["node53"]
+                N03 --> T50["..."]
+                N03 --> T64["node68"]
+            end
+
+            subgraph "node04"
+                N04["node04<br/>/tmp/.venv"]
+                N04 --> T65["node69"]
+                N04 --> T66["..."]
+                N04 --> T80["node84"]
+            end
+        end
+    ```
+
+    All 80 rsyncs in this wave run in parallel. Each source reads
+    from its local `/tmp/.venv` (fast SSD) and writes to the target
+    node's `/tmp/.venv` via SSH.
 
 ### Node discovery
 
