@@ -226,31 +226,37 @@ def _rsync_to_node(
     dst: Path,
     node: str,
     *,
+    from_node: str | None = None,
     progress_callback: object | None = None,
 ) -> tuple[str, float, int]:
-    """Rsync *src* to *node*:*dst* via SSH.
-
-    Path patching is done once on the local copy before distribution,
-    so rsynced copies are already patched.
+    """Rsync *src* to *node*:*dst*, optionally from a remote source.
 
     Args:
+        from_node: If set, SSH into this node and run rsync from there.
+            This enables tree distribution where completed nodes become
+            sources. If ``None``, rsync runs locally.
         progress_callback: If provided, called with ``(pct, speed, eta)``
             strings parsed from ``rsync --info=progress2`` output.
 
     Returns ``(node, elapsed_seconds, returncode)``.
     """
-    # Trailing slash on src ensures contents are synced, not the dir itself
     src_str = str(src).rstrip("/") + "/"
     dst_str = f"{node}:{dst}/"
     t0 = time.perf_counter()
 
-    cmd = [
+    rsync_cmd = [
         "rsync",
         "-a",               # archive mode
         "--info=progress2",  # single overall progress line
         src_str,
         dst_str,
     ]
+
+    # If source is a remote node, wrap the rsync in an SSH call
+    if from_node is not None:
+        cmd = ["ssh", from_node, " ".join(rsync_cmd)]
+    else:
+        cmd = rsync_cmd
 
     if progress_callback is not None:
         # Stream output line-by-line to parse progress
@@ -475,19 +481,15 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         with ThreadPoolExecutor(max_workers=len(batch)) as pool:
             futures = {}
             for src_node, src_path, target_node in batch:
-                # rsync from src_node:src_path to target_node:dst
-                # If src_node is the current node, rsync directly.
-                # Otherwise, rsync via SSH hop.
-                if src_node == current:
-                    rsync_src = src_path
-                else:
-                    # Remote-to-remote: rsync from src_node's /tmp copy
-                    rsync_src = dst  # path on src_node
+                # If src_node is the current node, rsync locally.
+                # Otherwise, SSH into src_node and rsync from there.
+                remote_src = None if src_node == current else src_node
                 fut = pool.submit(
                     _rsync_to_node,
-                    rsync_src,
+                    src_path,
                     dst,
                     target_node,
+                    from_node=remote_src,
                     progress_callback=progress.update,
                 )
                 futures[fut] = target_node
