@@ -397,33 +397,93 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     # ── Sync ────────────────────────────────────────────────────────
-    print(f"  Syncing...")
-    t0 = time.perf_counter()
+    #
+    # Tree-based distribution: instead of all N nodes pulling from the
+    # source (which saturates the source node's network), we sync in
+    # waves. Each wave, nodes that already have the data become sources
+    # for the next batch.
+    #
+    #   Wave 0: source → seed nodes (up to FANOUT)
+    #   Wave 1: each seed → FANOUT more nodes (from /tmp/)
+    #   Wave 2: each of those → FANOUT more ...
+    #
+    # This gives O(log_K(N)) waves instead of O(N) sequential rsyncs.
 
-    # Sync all nodes in parallel (local + remote together).
-    all_nodes = []
+    FANOUT = 16  # max concurrent rsyncs per source node
+
+    all_nodes: list[str] = []
     if needs_local_copy:
         all_nodes.append(current)
     all_nodes.extend(remote_nodes)
 
-    # Cap parallelism to avoid overwhelming the source filesystem.
-    max_workers = min(len(all_nodes), 32)
-    progress = _AggregateProgress(total_nodes=len(all_nodes))
-
+    total = len(all_nodes)
+    progress = _AggregateProgress(total_nodes=total)
     results: list[tuple[str, float, int]] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {
-            pool.submit(
-                _rsync_to_node, src, dst, node,
-                progress_callback=progress.update,
-            ): node
-            for node in all_nodes
-        }
-        for fut in as_completed(futures):
-            n, elapsed, rc = fut.result()
-            label = f"{n} (local)" if n == current else n
-            progress.mark_done(label, elapsed, rc)
-            results.append((n, elapsed, rc))
+
+    print(f"  Syncing ({total} nodes, fanout={FANOUT})...")
+    t0 = time.perf_counter()
+
+    # Nodes that have the data and can serve as sources.
+    # Start with just the original source path on the current node.
+    sources: list[tuple[str, Path]] = [(current, src)]
+    remaining = list(all_nodes)
+
+    wave = 0
+    while remaining:
+        wave += 1
+        # Assign remaining nodes to available sources (round-robin,
+        # up to FANOUT per source).
+        batch: list[tuple[str, Path, str]] = []  # (src_node, src_path, dst_node)
+        source_idx = 0
+        while remaining and source_idx < len(sources):
+            src_node, src_path = sources[source_idx]
+            count = 0
+            while remaining and count < FANOUT:
+                target = remaining.pop(0)
+                if target == src_node:
+                    # Local copy — rsync to self
+                    batch.append((src_node, src_path, target))
+                else:
+                    batch.append((src_node, src_path, target))
+                count += 1
+            source_idx += 1
+        # If we still have remaining nodes but ran out of sources,
+        # keep going with what we have — next wave will use newly
+        # completed nodes as sources.
+
+        if not batch:
+            break  # safety: shouldn't happen
+
+        # Execute this wave's rsyncs in parallel
+        with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+            futures = {}
+            for src_node, src_path, target_node in batch:
+                # rsync from src_node:src_path to target_node:dst
+                # If src_node is the current node, rsync directly.
+                # Otherwise, rsync via SSH hop.
+                if src_node == current:
+                    rsync_src = src_path
+                else:
+                    # Remote-to-remote: rsync from src_node's /tmp copy
+                    rsync_src = dst  # path on src_node
+                fut = pool.submit(
+                    _rsync_to_node,
+                    rsync_src,
+                    dst,
+                    target_node,
+                    progress_callback=progress.update,
+                )
+                futures[fut] = target_node
+
+            for fut in as_completed(futures):
+                n, elapsed, rc = fut.result()
+                label = f"{n} (local)" if n == current else n
+                progress.mark_done(label, elapsed, rc)
+                results.append((n, elapsed, rc))
+                if rc == 0:
+                    # This node now has the data — it can source future waves
+                    sources.append((n, dst))
+
     progress.clear()
 
     total_elapsed = time.perf_counter() - t0
