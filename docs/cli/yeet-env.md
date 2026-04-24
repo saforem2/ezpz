@@ -74,28 +74,45 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
 graph LR
     A["ezpz yeet-env"] --> B["Detect source env"]
     B --> C["Discover nodes"]
-    C --> D["Tree-based rsync"]
-    D --> E["Patch venv paths"]
-    E --> F["Print instructions"]
+    C --> D["rsync to local /tmp/"]
+    D --> E["Patch venv paths (once)"]
+    E --> F["Tree-based fan-out"]
+    F --> G["Print instructions"]
 ```
 
-### Tree-based distribution
+### Step 1: Local copy + patch
+
+First, `yeet-env` rsyncs the source environment to `/tmp/<env>/` on
+the current node and patches the venv paths **once**:
+
+- `sed` replaces hardcoded `VIRTUAL_ENV` paths in activate scripts
+- Re-links `python3` symlinks to the system Python
+- Updates `pyvenv.cfg`
+
+This patched copy in `/tmp/` becomes the source for all subsequent
+rsyncs — no per-node patching needed.
+
+### Step 2: Tree-based fan-out
 
 Instead of syncing from one source to all N nodes (which saturates
-the source node's network), `yeet-env` distributes in waves. Nodes
-that finish become sources for the next wave:
+the source node's network), `yeet-env` distributes the
+already-patched `/tmp/` copy in waves. Nodes that finish become
+sources for the next wave:
 
 ```mermaid
 graph TD
-    subgraph "Wave 0"
-        S["Source node<br/>(shared filesystem)"]
-        S --> A1["node01"]
-        S --> A2["node02"]
-        S --> A3["..."]
-        S --> A16["node16"]
+    subgraph "Local copy + patch"
+        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on current node"]
     end
 
-    subgraph "Wave 1"
+    subgraph "Wave 1 (from /tmp/)"
+        L --> A1["node01"]
+        L --> A2["node02"]
+        L --> A3["..."]
+        L --> A16["node16"]
+    end
+
+    subgraph "Wave 2 (from completed nodes)"
         A1 --> B1["node17"]
         A1 --> B2["node18"]
         A2 --> B3["node33"]
@@ -104,7 +121,7 @@ graph TD
         A16 --> B6["node256"]
     end
 
-    subgraph "Wave 2"
+    subgraph "Wave 3"
         B1 --> C1["node257"]
         B1 --> C2["..."]
         B6 --> C3["node4096"]
@@ -121,8 +138,9 @@ so the number of waves scales logarithmically:
 | 257–4,096 | 3 | 3× rsync |
 | 4,097–65,536 | 4 | 4× rsync |
 
-After wave 0, all subsequent waves rsync from `/tmp/` (node-local
-SSD) instead of the shared filesystem, which is much faster.
+All waves rsync from `/tmp/` (node-local SSD), not the shared
+filesystem. Path patching happens only once on the local copy —
+all distributed copies are already patched.
 
 ### Node discovery
 
@@ -134,16 +152,16 @@ SSD) instead of the shared filesystem, which is much faster.
 
 ### Path patching
 
-After rsync, the copied environment's `bin/activate` script and
-Python symlinks still contain hardcoded paths to the original
-location. `yeet-env` patches these on each node via SSH:
+Venv activate scripts and Python symlinks contain hardcoded absolute
+paths. `yeet-env` patches these **once** on the local `/tmp/` copy
+(step 1) before any distribution:
 
 - `sed` replaces the old `VIRTUAL_ENV` path in activate scripts
 - Re-links `python3` symlinks to the system Python
 - Updates `pyvenv.cfg` to point to the correct base Python
 
-This makes `source /tmp/<env>/bin/activate` work correctly from
-the new location.
+Since patching happens before fan-out, all distributed copies
+arrive already patched — no per-node SSH needed.
 
 ### Incremental syncs
 

@@ -77,9 +77,8 @@ class TestGetWorkerNodes:
 class TestRsyncToNode:
     """Tests for ``_rsync_to_node``."""
 
-    @patch("ezpz.utils.yeet_env._patch_venv_paths")
     @patch("ezpz.utils.yeet_env.subprocess.run")
-    def test_success(self, mock_run, mock_patch, tmp_path):
+    def test_success(self, mock_run, tmp_path):
         """Successful rsync returns (node, elapsed, 0)."""
         mock_run.return_value = MagicMock(returncode=0, stderr="")
         src = tmp_path / "env"
@@ -88,18 +87,14 @@ class TestRsyncToNode:
         assert node == "node01"
         assert rc == 0
         assert elapsed >= 0
-        # Check rsync command (first call)
         call_args = mock_run.call_args[0][0]
         assert call_args[0] == "rsync"
         assert "-a" in call_args
         assert call_args[-1] == "node01:/tmp/env/"
-        # Patch should be called after successful rsync
-        mock_patch.assert_called_once()
 
-    @patch("ezpz.utils.yeet_env._patch_venv_paths")
     @patch("ezpz.utils.yeet_env.subprocess.run")
-    def test_failure_skips_patch(self, mock_run, mock_patch, tmp_path):
-        """Failed rsync returns non-zero returncode and skips patching."""
+    def test_failure(self, mock_run, tmp_path):
+        """Failed rsync returns non-zero returncode."""
         mock_run.return_value = MagicMock(
             returncode=23, stderr="some files could not be transferred"
         )
@@ -108,11 +103,9 @@ class TestRsyncToNode:
         node, elapsed, rc = yeet._rsync_to_node(src, Path("/tmp/env"), "node01")
         assert node == "node01"
         assert rc == 23
-        mock_patch.assert_not_called()
 
-    @patch("ezpz.utils.yeet_env._patch_venv_paths")
     @patch("ezpz.utils.yeet_env.subprocess.run")
-    def test_trailing_slash_on_src(self, mock_run, mock_patch, tmp_path):
+    def test_trailing_slash_on_src(self, mock_run, tmp_path):
         """Source path gets a trailing slash for rsync content sync."""
         mock_run.return_value = MagicMock(returncode=0, stderr="")
         src = tmp_path / "env"

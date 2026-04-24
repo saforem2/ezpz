@@ -176,8 +176,11 @@ class _AggregateProgress:
 # ── Rsync ────────────────────────────────────────────────────────────────────
 
 
-def _patch_venv_paths(dst: Path, src: Path, node: str) -> None:
-    """Rewrite hardcoded paths in a copied venv so it works from *dst*.
+def _patch_venv_paths_local(dst: Path, src: Path) -> None:
+    """Rewrite hardcoded paths in a *local* venv copy so it works from *dst*.
+
+    Called once on the current node before tree distribution, so all
+    rsynced copies already have correct paths — no per-node SSH needed.
 
     Patches:
     - ``bin/activate`` (and variants): replace VIRTUAL_ENV path
@@ -187,36 +190,35 @@ def _patch_venv_paths(dst: Path, src: Path, node: str) -> None:
     """
     src_str = str(src)
     dst_str = str(dst)
-    # Patch activate scripts and pyvenv.cfg via sed on the remote node
-    patch_cmd = (
-        f"sed -i 's|{src_str}|{dst_str}|g' "
-        f"{dst_str}/bin/activate "
-        f"{dst_str}/bin/activate.csh "
-        f"{dst_str}/bin/activate.fish "
-        f"{dst_str}/pyvenv.cfg "
-        f"2>/dev/null; "
-        # Re-link python binaries: if python3 is a symlink to the original
-        # location, find the real interpreter and re-link to it.
-        f"cd {dst_str}/bin && "
-        f"for f in python python3 python3.*; do "
-        f"  if [ -L \"$f\" ]; then "
-        f"    target=$(readlink \"$f\"); "
-        f"    if echo \"$target\" | grep -q '{src_str}'; then "
-        # Find the base python from pyvenv.cfg's "home" line
-        f"      base=$(grep '^home' {dst_str}/pyvenv.cfg 2>/dev/null "
-        f"             | cut -d= -f2 | tr -d ' '); "
-        f"      if [ -n \"$base\" ] && [ -x \"$base/python3\" ]; then "
-        f"        ln -sf \"$base/python3\" \"$f\"; "
-        f"      fi; "
-        f"    fi; "
-        f"  fi; "
-        f"done"
-    )
-    subprocess.run(
-        ["ssh", node, patch_cmd],
-        capture_output=True,
-        check=False,
-    )
+    # Patch activate scripts and pyvenv.cfg via sed
+    for fname in ("bin/activate", "bin/activate.csh", "bin/activate.fish",
+                   "pyvenv.cfg"):
+        fpath = dst / fname
+        if fpath.is_file():
+            try:
+                text = fpath.read_text()
+                fpath.write_text(text.replace(src_str, dst_str))
+            except OSError:
+                pass
+    # Re-link python binaries
+    bin_dir = dst / "bin"
+    if bin_dir.is_dir():
+        # Read base python dir from pyvenv.cfg
+        cfg = dst / "pyvenv.cfg"
+        base_python = None
+        if cfg.is_file():
+            for line in cfg.read_text().splitlines():
+                if line.startswith("home"):
+                    base_python = line.split("=", 1)[1].strip()
+                    break
+        for link in bin_dir.iterdir():
+            if link.is_symlink() and link.name.startswith("python"):
+                target = str(link.resolve())
+                if src_str in target and base_python:
+                    py3 = Path(base_python) / "python3"
+                    if py3.exists():
+                        link.unlink()
+                        link.symlink_to(py3)
 
 
 def _rsync_to_node(
@@ -224,10 +226,12 @@ def _rsync_to_node(
     dst: Path,
     node: str,
     *,
-    patch_paths: bool = True,
     progress_callback: object | None = None,
 ) -> tuple[str, float, int]:
-    """Rsync *src* to *node*:*dst* via SSH, then patch venv paths.
+    """Rsync *src* to *node*:*dst* via SSH.
+
+    Path patching is done once on the local copy before distribution,
+    so rsynced copies are already patched.
 
     Args:
         progress_callback: If provided, called with ``(pct, speed, eta)``
@@ -292,8 +296,6 @@ def _rsync_to_node(
             returncode,
             stderr.strip() if stderr else "",
         )
-    elif patch_paths:
-        _patch_venv_paths(dst, src, node)
     elapsed = time.perf_counter() - t0
     return node, elapsed, returncode
 
@@ -423,10 +425,23 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     print(f"  Syncing ({total} nodes, fanout={FANOUT})...")
     t0 = time.perf_counter()
 
+    # Step 1: rsync source to local /tmp/ and patch paths ONCE.
+    # All subsequent tree rsyncs distribute the already-patched copy.
+    if needs_local_copy:
+        print(f"    Copying to local /tmp/...")
+        _, local_elapsed, local_rc = _rsync_to_node(src, dst, current)
+        if local_rc == 0:
+            _patch_venv_paths_local(dst, src)
+            print(f"    \u2713 {current} (local) \u2014 {local_elapsed:.1f}s")
+            results.append((current, local_elapsed, local_rc))
+        else:
+            print(f"    \u2717 {current} (local) \u2014 FAILED")
+            results.append((current, local_elapsed, local_rc))
+
     # Nodes that have the data and can serve as sources.
-    # Start with just the original source path on the current node.
-    sources: list[tuple[str, Path]] = [(current, src)]
-    remaining = list(all_nodes)
+    # After local copy, the patched /tmp/ copy is the source for all others.
+    sources: list[tuple[str, Path]] = [(current, dst)]
+    remaining = [n for n in all_nodes if n != current]
 
     wave = 0
     while remaining:
@@ -440,11 +455,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             count = 0
             while remaining and count < FANOUT:
                 target = remaining.pop(0)
-                if target == src_node:
-                    # Local copy — rsync to self
-                    batch.append((src_node, src_path, target))
-                else:
-                    batch.append((src_node, src_path, target))
+                batch.append((src_node, src_path, target))
                 count += 1
             source_idx += 1
         # If we still have remaining nodes but ran out of sources,
