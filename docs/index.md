@@ -112,10 +112,40 @@ print(f"Hello from rank {rank} on {ezpz.get_torch_device()}!")
 ezpz.cleanup()
 ```
 
-```bash linenums='0'
-python3 hello.py
-# Hello from rank 0 on mps!
-```
+=== "Laptop (Mac)"
+
+    ```bash linenums='0'
+    $ python3 hello.py
+    Hello from rank 0 on mps!
+
+    $ ezpz launch python3 hello.py
+    Hello from rank 0 on mps!
+    Hello from rank 1 on mps!
+    ```
+
+=== "Aurora (ALCF)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py
+    Using [24 / 24] available "xpu" devices !!
+    Hello from rank 0 on xpu!
+    ```
+
+=== "Polaris (ALCF)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py
+    Using [8 / 8] available "cuda" devices !!
+    Hello from rank 0 on cuda!
+    ```
+
+=== "Perlmutter (NERSC)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py
+    Using [8 / 8] available "cuda" devices !!
+    Hello from rank 0 on cuda!
+    ```
 
 Ready to get started? See the [Quick Start](./quickstart.md).
 
