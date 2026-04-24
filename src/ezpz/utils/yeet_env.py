@@ -411,7 +411,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     #
     # This gives O(log_K(N)) waves instead of O(N) sequential rsyncs.
 
-    FANOUT = 16  # max concurrent rsyncs per source node
+    FANOUT = 16    # max concurrent rsyncs per source node
+    SEED_FANOUT = 4  # smaller initial wave from a single source
 
     all_nodes: list[str] = []
     if needs_local_copy:
@@ -446,14 +447,19 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     wave = 0
     while remaining:
         wave += 1
+        # Use a smaller fanout for the first wave (single source node)
+        # to avoid saturating one node's outbound network. Once we have
+        # multiple sources, ramp up to full fanout.
+        wave_fanout = SEED_FANOUT if len(sources) == 1 else FANOUT
+
         # Assign remaining nodes to available sources (round-robin,
-        # up to FANOUT per source).
+        # up to wave_fanout per source).
         batch: list[tuple[str, Path, str]] = []  # (src_node, src_path, dst_node)
         source_idx = 0
         while remaining and source_idx < len(sources):
             src_node, src_path = sources[source_idx]
             count = 0
-            while remaining and count < FANOUT:
+            while remaining and count < wave_fanout:
                 target = remaining.pop(0)
                 batch.append((src_node, src_path, target))
                 count += 1

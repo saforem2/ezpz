@@ -97,7 +97,12 @@ rsyncs — no per-node patching needed.
 Instead of syncing from one source to all N nodes (which saturates
 the source node's network), `yeet-env` distributes the
 already-patched `/tmp/` copy in waves. Nodes that finish become
-sources for the next wave:
+sources for the next wave.
+
+The first wave uses a smaller seed fanout (4) since there's only
+one source node. Once those 4 seeds complete, there are now 5
+sources (original + 4 seeds), and subsequent waves fan out at 16
+per source:
 
 ```mermaid
 graph TD
@@ -105,42 +110,37 @@ graph TD
         S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on current node"]
     end
 
-    subgraph "Wave 1 (from /tmp/)"
+    subgraph "Wave 1 — seed (fanout=4)"
         L --> A1["node01"]
         L --> A2["node02"]
-        L --> A3["..."]
-        L --> A16["node16"]
+        L --> A3["node03"]
+        L --> A4["node04"]
     end
 
-    subgraph "Wave 2 (from completed nodes)"
-        A1 --> B1["node17"]
-        A1 --> B2["node18"]
-        A2 --> B3["node33"]
-        A2 --> B4["node34"]
-        A16 --> B5["node241"]
-        A16 --> B6["node256"]
+    subgraph "Wave 2 — fan out (fanout=16 per source)"
+        L --> B0["node05–node20"]
+        A1 --> B1["node21–node36"]
+        A2 --> B2["node37–node52"]
+        A3 --> B3["node53–node68"]
+        A4 --> B4["node69–node84"]
     end
 
-    subgraph "Wave 3"
-        B1 --> C1["node257"]
-        B1 --> C2["..."]
-        B6 --> C3["node4096"]
+    subgraph "Wave 3 — 85 sources × 16 each"
+        B0 --> C0["..."]
+        B4 --> C4["up to 1,360 nodes"]
     end
 ```
 
-Each wave multiplies the number of sources by the fanout (16),
-so the number of waves scales logarithmically:
+| Nodes | Waves | Sources after each wave |
+|-------|-------|------------------------|
+| 1–4 | 1 | 1 → 5 |
+| 5–84 | 2 | 5 → 85 |
+| 85–1,444 | 3 | 85 → 1,445 |
+| 1,445–24,165 | 4 | 1,445 → 24,165 |
 
-| Nodes | Waves | Time (approx) |
-|-------|-------|---------------|
-| 1–16 | 1 | 1× rsync |
-| 17–256 | 2 | 2× rsync |
-| 257–4,096 | 3 | 3× rsync |
-| 4,097–65,536 | 4 | 4× rsync |
-
-All waves rsync from `/tmp/` (node-local SSD), not the shared
+All waves rsync from `/tmp/` (node-local storage), not the shared
 filesystem. Path patching happens only once on the local copy —
-all distributed copies are already patched.
+all distributed copies arrive already patched.
 
 ### Node discovery
 
