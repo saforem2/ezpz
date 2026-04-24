@@ -154,44 +154,30 @@ all distributed copies arrive already patched.
     Here's wave 2 in detail, showing all 5 sources fanning out:
 
     ```mermaid
-    graph LR
-        subgraph "Wave 2 — 5 sources, fanout=16 each"
-            subgraph "node00 (original)"
-                N00["node00<br/>/tmp/.venv"]
-                N00 --> T01["node05"]
-                N00 --> T02["node06"]
-                N00 --> T03["..."]
-                N00 --> T16["node20"]
-            end
+    graph TD
+        subgraph "Wave 2 — 5 sources, fanout=16 each (80 parallel rsyncs)"
+            N00["node00 /tmp/.venv"] --> T05["node05"]
+            N00 --> T06["node06"]
+            N00 --> T07["node07"]
+            N00 --> T0d["⋮"]
+            N00 --> T20["node20"]
 
-            subgraph "node01 (from wave 1)"
-                N01["node01<br/>/tmp/.venv"]
-                N01 --> T17["node21"]
-                N01 --> T18["node22"]
-                N01 --> T19["..."]
-                N01 --> T32["node36"]
-            end
+            N01["node01 /tmp/.venv"] --> T21["node21"]
+            N01 --> T22["node22"]
+            N01 --> T1d["⋮"]
+            N01 --> T36["node36"]
 
-            subgraph "node02"
-                N02["node02<br/>/tmp/.venv"]
-                N02 --> T33["node37"]
-                N02 --> T34["..."]
-                N02 --> T48["node52"]
-            end
+            N02["node02 /tmp/.venv"] --> T37["node37"]
+            N02 --> T2d["⋮"]
+            N02 --> T52["node52"]
 
-            subgraph "node03"
-                N03["node03<br/>/tmp/.venv"]
-                N03 --> T49["node53"]
-                N03 --> T50["..."]
-                N03 --> T64["node68"]
-            end
+            N03["node03 /tmp/.venv"] --> T53["node53"]
+            N03 --> T3d["⋮"]
+            N03 --> T68["node68"]
 
-            subgraph "node04"
-                N04["node04<br/>/tmp/.venv"]
-                N04 --> T65["node69"]
-                N04 --> T66["..."]
-                N04 --> T80["node84"]
-            end
+            N04["node04 /tmp/.venv"] --> T69["node69"]
+            N04 --> T4d["⋮"]
+            N04 --> T84["node84"]
         end
     ```
 
