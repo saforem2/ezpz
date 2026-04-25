@@ -37,6 +37,15 @@ _QSTAT_RETRY_DELAY = 2  # seconds
 _PBS_JOBS_CACHE_TTL = 30  # seconds
 _pbs_jobs_cache: tuple[float, dict[str, list[str]]] | None = None
 
+# Default CPU bindings for Intel XPU machines (Aurora, Sunspot).
+# 12 ranks per node, 8 physical cores per rank, distributed across
+# 2 sockets (cores 0 and 52 excluded).
+# Source: https://github.com/argonne-lcf/pbs_utils/blob/main/doc/guide-get_cpu_bind_aurora.md
+_CPU_BIND_AURORA = (
+    "list:1-8:9-16:17-24:25-32:33-40:41-48:"
+    "53-60:61-68:69-76:77-84:85-92:93-100"
+)
+
 
 def _run_qstat_with_retry(qstat_fn, *args, **kwargs) -> str:
     """Run a qstat command with retries on transient PBS server errors."""
@@ -263,11 +272,7 @@ def _maybe_add_cpu_bind(
     # No explicit CPU_BIND -> set sensible defaults by machine
     machine_name_l = machine_name.lower()
     if machine_name_l in {"aurora", "sunspot"}:
-        cpu_bind_intel_xpu = (
-            "list:2-4:10-12:18-20:26-28:"
-            "34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-        )
-        cmd.extend(["--no-vni", f"--cpu-bind={cpu_bind_intel_xpu}"])
+        cmd.extend(["--no-vni", f"--cpu-bind={_CPU_BIND_AURORA}"])
     else:
         cmd.extend(["--cpu-bind=depth", "--depth=8"])
 
@@ -382,14 +387,10 @@ def get_pbs_launch_cmd(
     else:
         is_intel_xpu_machine = machine_name in {"aurora", "sunspot"}
         if is_intel_xpu_machine:
-            CPU_BIND_INTEL_XPU = (
-                "list:2-4:10-12:18-20:26-28:34-36:42-44:"
-                "54-56:62-64:70-72:78-80:86-88:94-96"
-            )
             cmd_list.extend(
                 [
                     "--no-vni",
-                    f"{cpu_bind_prefix}{CPU_BIND_INTEL_XPU}",
+                    f"{cpu_bind_prefix}{_CPU_BIND_AURORA}",
                 ]
             )
         else:

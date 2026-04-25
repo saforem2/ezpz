@@ -88,7 +88,7 @@ def test_get_pbs_launch_cmd_intel_cpu_binding_defaults(patch_topology, monkeypat
     cmd = pbs.get_pbs_launch_cmd(hostfile=hostfile)
 
     assert "--no-vni" in cmd
-    assert "--cpu-bind=list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96" in cmd
+    assert "--cpu-bind=list:1-8:9-16:17-24:25-32:33-40:41-48:53-60:61-68:69-76:77-84:85-92:93-100" in cmd
 
 
 # ---------------------------------------------------------------------------
