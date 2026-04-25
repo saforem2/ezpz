@@ -257,10 +257,7 @@ def _maybe_add_cpu_bind(
     if cpu_bind:
         logger.warning(f"Detected CPU_BIND from environment: {cpu_bind}")
         cpu_bind_val = cpu_bind.replace("--cpu-bind=", "")
-        if ngpus < 1024:
-            cmd.append(f"--cpu-bind=verbose,{cpu_bind_val}")
-        else:
-            cmd.append(f"--cpu-bind={cpu_bind_val}")
+        cmd.append(f"--cpu-bind={cpu_bind_val}")
         return cmd
 
     # No explicit CPU_BIND -> set sensible defaults by machine
@@ -270,12 +267,7 @@ def _maybe_add_cpu_bind(
             "list:2-4:10-12:18-20:26-28:"
             "34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
         )
-        if ngpus < 1024:
-            cmd.extend(
-                ["--no-vni", f"--cpu-bind=verbose,{cpu_bind_intel_xpu}"]
-            )
-        else:
-            cmd.extend(["--no-vni", f"--cpu-bind={cpu_bind_intel_xpu}"])
+        cmd.extend(["--no-vni", f"--cpu-bind={cpu_bind_intel_xpu}"])
     else:
         cmd.extend(["--cpu-bind=depth", "--depth=8"])
 
@@ -374,9 +366,8 @@ def get_pbs_launch_cmd(
         if cpu_bind_env is not None and cpu_bind_env.strip()
         else None
     )
-    use_verbose_cpu_bind = ngpus < 1024
     cpu_bind_prefix = (
-        "--cpu-bind=verbose," if use_verbose_cpu_bind else "--cpu-bind="
+        "--cpu-bind=verbose," if verbose else "--cpu-bind="
     )
     selected_cpu_bind = cpu_bind_cli or cpu_bind_env_value
 
