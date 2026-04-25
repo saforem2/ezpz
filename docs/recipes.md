@@ -490,3 +490,60 @@ ezpz.cleanup()
             loss.backward()
     optimizer.step()
     ```
+
+## MFU Tracking
+
+Track Model FLOPS Utilization — what fraction of the hardware's
+peak compute your model actually uses.
+
+```python title="recipe_mfu.py"
+import time
+import torch
+import ezpz
+from ezpz.flops import estimate_model_flops, compute_mfu
+
+rank = ezpz.setup_torch()
+device = ezpz.get_torch_device()
+
+model = torch.nn.Linear(4096, 4096).to(device)
+model = ezpz.wrap_model(model)
+optimizer = torch.optim.Adam(model.parameters())
+
+# Count FLOPS once before training
+model_flops = estimate_model_flops(model, input_shape=(32, 4096))
+if rank == 0:
+    print(f"Model FLOPS (fwd+bwd): {model_flops:.2e}")
+
+for step in range(100):
+    ezpz.synchronize()
+    t0 = time.perf_counter()
+    x = torch.randn(32, 4096, device=device)
+    loss = model(x).sum()
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    ezpz.synchronize()
+    dt = time.perf_counter() - t0
+
+    mfu = compute_mfu(model_flops, dt)
+    if step % 10 == 0 and rank == 0:
+        print(f"step={step} loss={loss.item():.4f} mfu={mfu:.2f}%")
+
+ezpz.cleanup()
+```
+
+`compute_mfu` auto-detects the device and world size. Supported
+accelerators: NVIDIA (A100, H100, H200, B200, L40S), AMD (MI250X,
+MI300X, MI325X, MI355X), and Intel PVC.
+
+!!! tip "When to use MFU"
+
+    MFU measures compute efficiency, not communication efficiency.
+    Low MFU can mean:
+
+    - **Memory-bound model** — the model doesn't have enough compute
+      per byte of data movement (e.g. small batch size)
+    - **Communication overhead** — gradient all-reduce takes too long
+      (try FSDP or reduce world size)
+    - **Kernel launch overhead** — too many small ops (try
+      `torch.compile`)

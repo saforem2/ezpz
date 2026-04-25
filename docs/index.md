@@ -187,6 +187,7 @@ These can be broken down (~roughly) into:
 - **Batch job submission** — [`ezpz submit`](./cli/submit.md) generates and submits PBS/Slurm job scripts
 - **Model wrapping** — [`wrap_model()`](./python/Code-Reference/distributed.md#ezpz.distributed.wrap_model) for DDP, FSDP, or FSDP+TP with one call
 - **Multi-backend experiment tracking** — [`History`](./history.md) with distributed statistics and automatic dispatch to W&B, MLflow, and CSV
+- **MFU tracking** — [`compute_mfu()`](./recipes.md#mfu-tracking) measures hardware utilization across NVIDIA, AMD, and Intel accelerators
 - **Environment diagnostics** — [`ezpz doctor`](./cli/doctor.md) checks your setup
 - **Cross-backend timing** — [`synchronize()`](./python/Code-Reference/distributed.md#ezpz.distributed.synchronize) works on CUDA, XPU, MPS, and CPU
 
