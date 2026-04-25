@@ -226,6 +226,44 @@ ezpz yeet-env --dst /local/scratch/myenv
 ezpz yeet-env --dry-run
 ```
 
+### Real-world example: 64 nodes on Sunspot
+
+??? example "9.1 GB venv → 65 nodes in ~5 minutes"
+
+    ```bash
+    $ ezpz yeet-env
+      Source: /lus/tegu/.../torchtitan/.venv (9.1G)
+      Target: /tmp/.venv/ on 65 node(s)
+        local:  x1922c3s6b0n0 (rsync to /tmp/.venv/)
+        remote: x1921c1s2b0n0-hsn0, x1921c2s7b0n0-hsn0, ... (64 nodes)
+      Syncing (65 nodes, fanout=16)...
+        Copying to local /tmp/...
+        ✓ x1922c3s6b0n0 (local) — 213.3s
+        ✓ x1921c2s7b0n0-hsn0 — 21.6s      ← wave 1 seeds (4 nodes)
+        ✓ x1921c3s1b0n0-hsn0 — 22.0s
+        ✓ x1921c1s2b0n0-hsn0 — 22.2s
+        ✓ x1921c3s0b0n0-hsn0 — 22.4s
+        ✓ x1922c3s6b0n0-hsn0 — 1.2s
+        ✓ x1922c3s2b0n0-hsn0 — 38.0s      ← wave 2 fan-out (60 nodes)
+        ✓ x1922c0s5b0n0-hsn0 — 38.9s
+        ...
+        ✓ x1921c5s2b0n0-hsn0 — 58.1s
+      Done in 293.8s
+    ```
+
+    **Timing breakdown:**
+
+    | Phase | Time | Notes |
+    |-------|------|-------|
+    | Local copy (Lustre → `/tmp/`) | 213s | One-time, includes path patching |
+    | Wave 1 seed (4 nodes) | ~22s | rsync from local `/tmp/` |
+    | Wave 2 fan-out (60 nodes) | ~58s | 5 sources × 16 targets each |
+    | **Total** | **~294s** | 9.1 GB to 65 nodes |
+
+    After wave 1, the 4 seed nodes + the original become 5 sources.
+    Wave 2 distributes to the remaining 60 nodes from all 5 sources
+    in parallel — each reading from fast node-local `/tmp/`.
+
 ### Complete workflow
 
 ```bash
