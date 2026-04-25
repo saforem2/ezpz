@@ -66,8 +66,8 @@ def train(
         _model_flops = estimate_model_flops(model, (bsize, isize))
         if ezpz.get_rank() == 0:
             logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
     warmup = int(os.environ.get("WARMUP_ITERS", 10))
     log_freq = int(os.environ.get("LOG_FREQ", 1))
     print_freq = int(os.environ.get("PRINT_FREQ", 10))

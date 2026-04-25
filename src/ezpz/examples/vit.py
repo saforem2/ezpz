@@ -594,8 +594,8 @@ def train_fn(
         )
         if ezpz.get_rank() == 0:
             logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
 
     model.train()  # type:ignore
 

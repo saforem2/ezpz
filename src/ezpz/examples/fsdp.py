@@ -397,8 +397,8 @@ def fsdp_main(args: argparse.Namespace) -> None:
         )
         if rank == 0:
             logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
 
     start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):

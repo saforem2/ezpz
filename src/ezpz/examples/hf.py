@@ -625,8 +625,8 @@ def main() -> None:
         )
         if rank == 0:
             logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
 
     try:
         num_update_steps_per_epoch = math.ceil(

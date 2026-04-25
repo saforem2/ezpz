@@ -437,8 +437,8 @@ def train(
         )
         if ezpz.get_rank() == 0:
             logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
 
     # outdir = Path(os.getcwd()) if outdir is None else outdir
     # outdir_parent = Path(outdir).joinpath(ezpz.utils.get_timestamp())
