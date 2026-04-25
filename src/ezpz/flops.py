@@ -170,13 +170,29 @@ def estimate_model_flops(
         except StopIteration:
             device = "cpu"
 
-    # Match the model's dtype to avoid dtype mismatch errors
-    try:
-        dtype = next(model.parameters()).dtype
-    except StopIteration:
-        dtype = torch.float32
+    # Detect if model expects integer inputs (has an embedding layer)
+    # vs float inputs (CNN, MLP, etc.)
+    has_embedding = any(
+        isinstance(m, (torch.nn.Embedding, torch.nn.EmbeddingBag))
+        for m in model.modules()
+    )
 
-    dummy = torch.randn(*input_shape, device=device, dtype=dtype)
+    if has_embedding:
+        # Language model: expects Long token IDs
+        # Find vocab size from the embedding layer
+        vocab_size = 32000  # fallback
+        for m in model.modules():
+            if isinstance(m, torch.nn.Embedding):
+                vocab_size = m.num_embeddings
+                break
+        dummy = torch.randint(0, vocab_size, input_shape, device=device)
+    else:
+        # Vision/MLP model: expects float tensors matching model dtype
+        try:
+            dtype = next(model.parameters()).dtype
+        except StopIteration:
+            dtype = torch.float32
+        dummy = torch.randn(*input_shape, device=device, dtype=dtype)
     was_training = model.training
     model.eval()
 

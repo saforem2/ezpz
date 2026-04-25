@@ -84,6 +84,17 @@ class TestEstimateModelFlops:
         )
         assert flops > 0
 
+    def test_embedding_model(self):
+        """Models with embeddings should use randint (not randn)."""
+        model = torch.nn.Sequential(
+            torch.nn.Embedding(1000, 64),
+            torch.nn.Linear(64, 10),
+        )
+        flops = estimate_model_flops(
+            model, input_shape=(4, 16), device="cpu"
+        )
+        assert flops > 0
+
 
 class TestComputeMfu:
     """Tests for ``compute_mfu``."""
