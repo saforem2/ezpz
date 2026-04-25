@@ -426,6 +426,20 @@ def train(
     )
     logger.info("Model summary:\n%s", mstr)
 
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    device_type = ezpz.get_torch_device_type()
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            wrapped_model,
+            (args.batch_size, args.seq_length),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
+
     # outdir = Path(os.getcwd()) if outdir is None else outdir
     # outdir_parent = Path(outdir).joinpath(ezpz.utils.get_timestamp())
     # outdir = Path(outdir).as_posix()
@@ -488,17 +502,22 @@ def train(
         ezpz.distributed.synchronize()
 
         if step % args.log_freq == 0 or step == steps - 1:
+            train_metrics = {
+                "train/step": step,
+                "train/loss": loss.item(),
+                "train/dt": t3 - t0,
+                "train/dtd": t1 - t0,
+                "train/dtf": t2 - t1,
+                "train/dtb": t3 - t2,
+            }
+            if _model_flops > 0 and device_type not in ("cpu", "mps"):
+                from ezpz.flops import compute_mfu
+                train_metrics["train/mfu"] = compute_mfu(
+                    _model_flops, t3 - t0,
+                    world_size=ezpz.get_world_size(),
+                )
             logger.info(
-                history.update(
-                    {
-                        "train/step": step,
-                        "train/loss": loss.item(),
-                        "train/dt": t3 - t0,
-                        "train/dtd": t1 - t0,
-                        "train/dtf": t2 - t1,
-                        "train/dtb": t3 - t2,
-                    }
-                ).replace("train/", "")
+                history.update(train_metrics).replace("train/", "")
             )
 
     # loader_iter = iter(loader)

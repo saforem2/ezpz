@@ -615,6 +615,19 @@ def main() -> None:
     )
     logger.info("[rank %d] accelerator.prepare() complete", rank)
 
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    _device_type = str(accelerator.device.type) if hasattr(accelerator.device, "type") else "cpu"
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (training_args.per_device_train_batch_size, block_size),
+        )
+        if rank == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
+
     try:
         num_update_steps_per_epoch = math.ceil(
             len(train_dataloader) / training_args.gradient_accumulation_steps
@@ -782,6 +795,12 @@ def main() -> None:
                     "dts": t1step,
                     "tokens_per_sec": tps,
                 }
+                if _model_flops > 0 and _device_type not in ("cpu", "mps") and t1step > 0:
+                    from ezpz.flops import compute_mfu
+                    metrics["mfu"] = compute_mfu(
+                        _model_flops, t1step,
+                        world_size=accelerator.num_processes,
+                    )
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)

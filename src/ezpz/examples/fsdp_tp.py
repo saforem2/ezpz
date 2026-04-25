@@ -858,6 +858,19 @@ def train(
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
 
     # ezpz.breakpoint(0)
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    device_type = ezpz.get_torch_device_type()
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, args.seq_length),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
+
     logger.info("Starting 2D training...")
     model.train()
 
@@ -1035,6 +1048,13 @@ def train(
                         _wandb_log_histograms(
                             metrics, step=global_step, enabled=track_hist
                         )
+            if _model_flops > 0 and device_type not in ("cpu", "mps"):
+                from ezpz.flops import compute_mfu
+                dt = metrics.get("dt", metrics.get("dtf", 0) + metrics.get("dtb", 0))
+                if dt > 0:
+                    metrics["mfu"] = compute_mfu(
+                        _model_flops, dt, world_size=world_size,
+                    )
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,
