@@ -787,24 +787,24 @@ def main() -> None:
                     step_ppl = float("inf")
 
                 metrics = {
-                    "step": completed_steps,
-                    "epoch": epoch,
-                    "loss": step_loss,
-                    "perplexity": step_ppl,
-                    "learning_rate": lr_scheduler.get_last_lr()[0],
-                    "dts": t1step,
-                    "tokens_per_sec": tps,
+                    "train/step": completed_steps,
+                    "train/epoch": epoch,
+                    "train/loss": step_loss,
+                    "train/perplexity": step_ppl,
+                    "train/lr": lr_scheduler.get_last_lr()[0],
+                    "train/dt": t1step,
+                    "train/tokens_per_sec": tps,
                 }
                 if _model_flops > 0 and _device_type not in ("cpu", "mps") and t1step > 0:
                     from ezpz.flops import compute_mfu
-                    metrics["mfu"] = compute_mfu(
+                    metrics["train/mfu"] = compute_mfu(
                         _model_flops, t1step,
                         world_size=accelerator.num_processes,
                     )
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)
-                    logger.info(summary)
+                    logger.info("[train] %s", summary)
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
@@ -841,14 +841,14 @@ def main() -> None:
 
             avg_train_loss = float(total_loss) / max(completed_steps, 1)
             eval_metrics = {
-                "step": completed_steps,
-                "epoch": epoch,
-                "eval_loss": float(eval_loss),
-                "eval_perplexity": perplexity,
-                "train_loss": avg_train_loss,
+                "eval/step": completed_steps,
+                "eval/epoch": epoch,
+                "eval/loss": float(eval_loss),
+                "eval/perplexity": perplexity,
+                "eval/train_loss": avg_train_loss,
             }
             summary = history.update(eval_metrics)
-            logger.info(summary)
+            logger.info("[eval] %s", summary)
 
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
