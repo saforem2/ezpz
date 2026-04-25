@@ -341,9 +341,11 @@ class Trainer:
         metrics, loss = self._forward_step()
         metrics["dtb"] = self._backward_step(loss)
         self.optimizer.zero_grad()
-        # Compute MFU if FLOPS were estimated and we're on a GPU
-        if self._model_flops > 0 and self.device_type not in ("cpu", "mps"):
+        # Compute throughput and MFU if FLOPS were estimated
+        if self._model_flops > 0:
             dt = metrics["dtf"] + metrics["dtb"]
+            if dt > 0:
+                metrics["tflops"] = self._model_flops / dt / 1e12
             from ezpz.flops import compute_mfu
             metrics["mfu"] = compute_mfu(
                 self._model_flops, dt, world_size=self.world_size,

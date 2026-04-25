@@ -678,7 +678,8 @@ def train_fn(
                     "train/dto": t3 - t2,
                     "train/dtb": t4 - t3,
             }
-            if _model_flops > 0 and device_type not in ("cpu", "mps"):
+            if _model_flops > 0 and (t4 - t0) > 0:
+                train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
                 from ezpz.flops import compute_mfu
                 train_metrics["train/mfu"] = compute_mfu(
                     _model_flops, t4 - t0,

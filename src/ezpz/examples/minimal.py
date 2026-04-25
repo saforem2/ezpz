@@ -95,8 +95,11 @@ def train(
                     "dtf": dtf,
                     "dtb": dtb,
                 }
-                if _model_flops > 0 and device_type not in ("cpu", "mps"):
+                if _model_flops > 0:
                     from ezpz.flops import compute_mfu
+                    dt_total = dtf + dtb
+                    if dt_total > 0:
+                        metrics["tflops"] = _model_flops / dt_total / 1e12
                     metrics["mfu"] = compute_mfu(
                         _model_flops, dtf + dtb,
                         world_size=ezpz.get_world_size(),

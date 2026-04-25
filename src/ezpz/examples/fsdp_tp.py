@@ -1048,10 +1048,11 @@ def train(
                         _wandb_log_histograms(
                             metrics, step=global_step, enabled=track_hist
                         )
-            if _model_flops > 0 and device_type not in ("cpu", "mps"):
-                from ezpz.flops import compute_mfu
+            if _model_flops > 0:
                 dt = metrics.get("dt", metrics.get("dtf", 0) + metrics.get("dtb", 0))
                 if dt > 0:
+                    metrics["tflops"] = _model_flops / dt / 1e12
+                    from ezpz.flops import compute_mfu
                     metrics["mfu"] = compute_mfu(
                         _model_flops, dt, world_size=world_size,
                     )

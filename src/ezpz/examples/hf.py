@@ -795,7 +795,8 @@ def main() -> None:
                     "train/dt": t1step,
                     "train/tokens_per_sec": tps,
                 }
-                if _model_flops > 0 and _device_type not in ("cpu", "mps") and t1step > 0:
+                if _model_flops > 0 and t1step > 0:
+                    metrics["train/tflops"] = _model_flops / t1step / 1e12
                     from ezpz.flops import compute_mfu
                     metrics["train/mfu"] = compute_mfu(
                         _model_flops, t1step,

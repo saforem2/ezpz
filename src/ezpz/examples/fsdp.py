@@ -412,12 +412,14 @@ def fsdp_main(args: argparse.Namespace) -> None:
         test_metrics = test(model, test_loader)
         scheduler.step()
         merged = {**train_metrics, **test_metrics}
-        if _model_flops > 0 and device_type not in ("cpu", "mps"):
-            from ezpz.flops import compute_mfu
+        if _model_flops > 0:
             dt = merged.get("dt", 1.0)
-            merged["mfu"] = compute_mfu(
-                _model_flops, dt, world_size=ezpz.get_world_size(),
-            )
+            if dt > 0:
+                merged["tflops"] = _model_flops / dt / 1e12
+                from ezpz.flops import compute_mfu
+                merged["mfu"] = compute_mfu(
+                    _model_flops, dt, world_size=ezpz.get_world_size(),
+                )
         logger.info(history.update(merged))
 
     train_end = time.perf_counter()
