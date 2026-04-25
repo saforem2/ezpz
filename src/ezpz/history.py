@@ -2649,6 +2649,15 @@ class History:
                     old_csv.unlink()
                 except OSError:
                     pass
+        # Redirect JSONL to base_dir so all output is co-located
+        if self._jsonl_enabled and self._jsonl_path is not None:
+            old_jsonl = self._jsonl_path
+            self._jsonl_path = base_dir / old_jsonl.name
+            if old_jsonl.exists() and old_jsonl != self._jsonl_path:
+                try:
+                    old_jsonl.rename(self._jsonl_path)
+                except OSError:
+                    pass
         dataset_label = (
             dataset_fname if dataset_fname is not None else "dataset"
         )
