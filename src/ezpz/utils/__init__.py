@@ -68,12 +68,6 @@ __all__ = [
     "DummyTqdmFile",
 ]
 
-
-# try:
-#     import intel_extension_for_pytorch as ipex
-# except (ImportError, ModuleNotFoundError):
-#     ipex = None
-
 # logger = ezpz.get_logger(__name__)
 # RANK = get_rank()
 logger = logging.getLogger(__name__)
@@ -385,11 +379,9 @@ def get_max_memory_allocated(device: torch.device) -> float:
     """
     if torch.cuda.is_available():
         return torch.cuda.max_memory_allocated(device)
-    elif torch.xpu.is_available():  #  and ipex is not None:
+    elif torch.xpu.is_available():
         try:
-            import intel_extension_for_pytorch as ipex
-
-            return ipex.xpu.max_memory_allocated(device)
+            return torch.xpu.max_memory_allocated(device)
         except ImportError:
             return -1.0
     raise RuntimeError(f"Memory allocation not available for {device=}")
@@ -398,11 +390,9 @@ def get_max_memory_allocated(device: torch.device) -> float:
 def get_max_memory_reserved(device: torch.device) -> float:
     if torch.cuda.is_available():
         return torch.cuda.max_memory_reserved(device)
-    elif torch.xpu.is_available():  #  and ipex is not None:
+    elif torch.xpu.is_available():
         try:
-            import intel_extension_for_pytorch as ipex
-
-            return ipex.xpu.max_memory_reserved(device)
+            return torch.xpu.max_memory_reserved(device)
         except ImportError:
             return -1.0
     raise RuntimeError(f"Memory allocation not available for {device=}")

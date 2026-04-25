@@ -107,15 +107,57 @@ uv pip install "git+https://github.com/saforem2/ezpz"
 
 ```python title="hello.py" linenums='0'
 import ezpz
+
 rank = ezpz.setup_torch()
-print(f"Hello from rank {rank} on {ezpz.get_torch_device()}!")
+device = ezpz.get_torch_device()
+world_size = ezpz.get_world_size()
+
+if rank == 0:
+    print(f"Using [{world_size} / {world_size}] available \"{device}\" devices !!")
+    print(f"Hello from rank {rank} on {device}!")
+
 ezpz.cleanup()
 ```
 
-```bash linenums='0'
-python3 hello.py
-# Hello from rank 0 on mps!
-```
+=== "Laptop (`python3`)"
+
+    ```bash linenums='0'
+    $ python3 hello.py
+    Using [1 / 1] available "mps" devices !!
+    Hello from rank 0 on mps!
+    ```
+
+=== "Laptop (`ezpz launch`)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py
+    Using [2 / 2] available "mps" devices !!
+    Hello from rank 0 on mps!
+    ```
+
+=== "Polaris (ALCF)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py   # 2 nodes × 4 GPUs
+    Using [8 / 8] available "cuda" devices !!
+    Hello from rank 0 on cuda!
+    ```
+
+=== "Aurora (ALCF)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py   # 2 nodes × 12 GPUs
+    Using [24 / 24] available "xpu" devices !!
+    Hello from rank 0 on xpu!
+    ```
+
+=== "Perlmutter (NERSC)"
+
+    ```bash linenums='0'
+    $ ezpz launch python3 hello.py   # 2 nodes × 4 GPUs
+    Using [8 / 8] available "cuda" devices !!
+    Hello from rank 0 on cuda!
+    ```
 
 Ready to get started? See the [Quick Start](./quickstart.md).
 

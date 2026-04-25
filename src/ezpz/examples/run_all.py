@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -233,6 +234,54 @@ def _fmt_duration(seconds: int | float) -> str:
     return f"{h}h {m:02d}m {s:02d}s"
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from a string."""
+    return _ANSI_RE.sub("", text)
+
+
+def _parse_summary_line(line: str) -> dict[str, str] | None:
+    """Extract key=value pairs from a training log line.
+
+    Returns a dict of metric names to values, or None if the line
+    doesn't look like a training step log.  Includes a ``_phase``
+    key ("train", "eval", or "") parsed from ``[train]``/``[eval]``
+    markers in the log line.
+    """
+    # Strip ANSI color codes before parsing
+    clean = _strip_ansi(line)
+    # Match lines like: iter=10 loss=1.814 accuracy=0.484 dtf=0.009
+    # Skip distributed stats (loss/mean, loss/max, etc.)
+    pairs = re.findall(r"(\w+)=([\d.e+-]+)", clean)
+    if not pairs:
+        return None
+    # Only consider lines with iter/step — those are training step logs
+    keys = {k for k, _ in pairs}
+    if not keys & {"iter", "step", "train_iter", "epoch"}:
+        return None
+    result = {k: v for k, v in pairs if "/" not in k}
+    # Detect phase from [train] / [eval] markers
+    phase_match = re.search(r"\[(train|eval)\]", clean)
+    result["_phase"] = phase_match.group(1) if phase_match else ""
+    return result
+
+
+def _extract_tracker_info(line: str) -> str | None:
+    """Extract wandb or mlflow run info from a log line."""
+    clean = _strip_ansi(line)
+    if "View run at" in clean or "\U0001f680 View run" in clean:
+        # wandb: 🚀 View run at https://...
+        url = re.search(r"https?://\S+", clean)
+        return f"  wandb: {url.group()}" if url else None
+    if "\U0001f517 View run at" in clean or "🔗 View run at" in clean:
+        # mlflow: 🔗 View run at https://...
+        url = re.search(r"https?://\S+", clean)
+        return f"  mlflow: {url.group()}" if url else None
+    return None
+
+
 def run_example(
     name: str,
     cmd: list[str],
@@ -259,26 +308,88 @@ def run_example(
     print("\u2550" * 64)
 
     t0 = time.perf_counter()
-    with logfile.open("w") as log_fh:
-        proc = subprocess.run(
-            cmd,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-    elapsed = int(time.perf_counter() - t0)
+    last_metrics: dict[str, str] | None = None
+    tracker_lines: list[str] = []
+    # Track progress per phase (train/eval) independently, each with
+    # its own doubling interval so phase switches don't confuse the count.
+    phase_state: dict[str, dict[str, int]] = {}  # phase -> {count, last_print, interval}
 
-    if proc.returncode == 0:
-        print(f"  \u2713 {name} completed in {_fmt_duration(elapsed)}")
+    with logfile.open("w") as log_fh:
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                log_fh.write(_strip_ansi(line))
+                log_fh.flush()
+                # Extract tracker URLs
+                tracker = _extract_tracker_info(line)
+                if tracker is not None:
+                    tracker_lines.append(tracker)
+                    print(tracker)
+                # Extract training metrics
+                metrics = _parse_summary_line(line)
+                if metrics is not None:
+                    last_metrics = metrics
+                    phase = metrics.get("_phase", "")
+                    if phase not in phase_state:
+                        phase_state[phase] = {
+                            "count": 0, "last_print": 0, "interval": 1,
+                        }
+                    ps = phase_state[phase]
+                    ps["count"] += 1
+                    if ps["count"] - ps["last_print"] >= ps["interval"]:
+                        elapsed_now = int(time.perf_counter() - t0)
+                        # Pick the right progress key
+                        for _k in ("iter", "step", "epoch"):
+                            if _k in metrics:
+                                step_label, step_id = _k, metrics[_k]
+                                break
+                        else:
+                            step_label, step_id = "step", "?"
+                        loss = metrics.get(
+                            "loss",
+                            metrics.get("train_loss", "?"),
+                        )
+                        tag = f"[{phase}] " if phase else ""
+                        print(
+                            f"  ... {tag}{step_label}={step_id}"
+                            f" loss={loss}"
+                            f" [{_fmt_duration(elapsed_now)}]"
+                        )
+                        ps["last_print"] = ps["count"]
+                        ps["interval"] = min(ps["interval"] * 2, 500)
+
+    elapsed = int(time.perf_counter() - t0)
+    returncode = proc.returncode or 0
+
+    if returncode == 0:
+        summary = f"  \u2713 {name} completed in {_fmt_duration(elapsed)}"
+        if last_metrics:
+            parts = [
+                f"{k}={v}"
+                for k, v in last_metrics.items()
+                if k in ("iter", "step", "epoch", "loss", "train_loss",
+                         "test_loss", "accuracy", "acc", "test_acc",
+                         "dtf", "dtb", "perplexity")
+                and not k.startswith("_")
+            ]
+            if parts:
+                summary += f" ({', '.join(parts)})"
+        print(summary)
     else:
         print(
-            f"  \u2717 {name} FAILED (exit {proc.returncode})"
+            f"  \u2717 {name} FAILED (exit {returncode})"
             f" after {_fmt_duration(elapsed)}"
         )
 
     return {
         "name": name,
-        "exit_code": proc.returncode,
+        "exit_code": returncode,
         "wall_seconds": elapsed,
     }
 
@@ -326,8 +437,8 @@ def main(argv: list[str] | None = None) -> None:
             )
         args.examples = expanded
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bench_dir = args.outdir or Path("outputs/benchmarks") / timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    bench_dir = args.outdir or Path("outputs/ezpz-benchmarks") / timestamp
     bench_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Benchmark output directory: {bench_dir}")

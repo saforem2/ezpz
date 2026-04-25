@@ -1,59 +1,339 @@
-# 🚀 Yeet Env
+# Distributing Python Environments
+
+On large HPC clusters, Python environments on shared filesystems
+create I/O contention and slow startup times. `ezpz yeet-env` solves
+this by rsyncing your environment to node-local `/tmp/` storage on
+every worker node in your job.
+
+## Quick Start
 
 ```bash
-ezpz yeet-env [OPTIONS]
-```
-
-Broadcast a Python environment tarball to all worker nodes via MPI, then
-optionally decompress it on each node's local storage.
-
-This is the second step in the environment distribution workflow (after
-[`ezpz tar-env`](./tar-env.md)). It uses MPI collective operations to
-efficiently distribute the tarball from rank 0 to every other rank, with
-chunked transfers to handle large environments.
-
-## Options
-
-| Flag                   | Default            | Description                                              |
-| ---------------------- | ------------------ | -------------------------------------------------------- |
-| `--src PATH`           | auto-detected      | Path to the source tarball to broadcast                  |
-| `--dst PATH`           | auto-detected      | Destination path on each node for the extracted env      |
-| `--decompress`         | `True`             | Decompress the tarball after transfer                    |
-| `--chunk-size BYTES`   | `134217728` (128MB) | Transfer chunk size in bytes for MPI broadcast           |
-| `--overwrite`          | `False`            | Overwrite existing files at destination                  |
-
-## Example
-
-```bash
-# Broadcast with defaults (auto-detect source tarball, decompress on arrival)
+# Inside an interactive job allocation:
 ezpz yeet-env
-
-# Specify source and destination explicitly
-ezpz yeet-env --src /path/to/env.tar.gz --dst /local/scratch/env
-
-# Use smaller chunks for memory-constrained nodes
-ezpz yeet-env --chunk-size 67108864
-
-# Force overwrite of existing destination
-ezpz yeet-env --overwrite
 ```
 
-??? tip "Workflow: tar-env + yeet-env"
+That's it. By default, `yeet-env`:
 
-    The typical workflow on an HPC cluster looks like:
+1. Detects the active Python environment (`sys.prefix`)
+2. Discovers all nodes from the job's hostfile (PBS/SLURM)
+3. Distributes the environment to `/tmp/<env-name>/` on every node
+4. Patches the activate scripts so they work from the new location
 
-    ```bash
-    # Step 1: Create the tarball (run once, from login node)
-    ezpz tar-env
+```
+  Source: /path/to/project/.venv (3.2 GB)
+  Target: /tmp/.venv/ on 4 node(s)
+    local:  node01 (rsync to /tmp/.venv/)
+    remote: node02, node03, node04
+  Syncing (4 nodes, fanout=16)...
+    ✓ node01 (local) — 12.3s
+    ✓ node02 — 11.8s
+    ✓ node03 — 12.1s
+    ✓ node04 — 11.9s
+  Done in 24.2s
 
-    # Step 2: Broadcast to all compute nodes (run inside job script)
-    ezpz yeet-env
+  To use this environment:
+    deactivate 2>/dev/null
+    source /tmp/.venv/bin/activate
+
+  Then launch your training (from a shared filesystem path):
+    cd /path/to/your/project
+    ezpz launch python3 -m your_app.train
+
+  Note: /tmp is node-local. Make sure your working directory
+  is on a shared filesystem (e.g. Lustre) before launching,
+  so all ranks can access data and outputs.
+```
+
+After the transfer, activate the local copy and launch:
+
+```bash
+deactivate 2>/dev/null           # leave the current env
+source /tmp/.venv/bin/activate   # activate the local copy
+cd /path/to/your/project         # shared filesystem for data/outputs
+ezpz launch python3 -m your_app.train
+```
+
+## CLI Options
+
+```
+ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--src` | Active venv/conda env | Source environment path |
+| `--dst` | `/tmp/<env-name>/` | Destination on each node |
+| `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
+| `--dry-run` | — | Preview without transferring |
+
+## How It Works
+
+### Overview
+
+```mermaid
+graph TD
+    A["ezpz yeet-env"] --> B["Detect source env"]
+    B --> C["Discover nodes"]
+    C --> D["rsync to local /tmp/"]
+    D --> E["Patch venv paths (once)"]
+    E --> F["Tree-based fan-out"]
+    F --> G["Print instructions"]
+```
+
+### Step 1: Local copy + patch
+
+First, `yeet-env` rsyncs the source environment to `/tmp/<env>/` on
+the current node and patches the venv paths **once**:
+
+- `sed` replaces hardcoded `VIRTUAL_ENV` paths in activate scripts
+- Re-links `python3` symlinks to the system Python
+- Updates `pyvenv.cfg`
+
+This patched copy in `/tmp/` becomes the source for all subsequent
+rsyncs — no per-node patching needed.
+
+### Step 2: Tree-based fan-out
+
+Instead of syncing from one source to all N nodes (which saturates
+the source node's network), `yeet-env` distributes the
+already-patched `/tmp/` copy in waves. Nodes that finish become
+sources for the next wave.
+
+The first wave uses a smaller seed fanout (4) since there's only
+one source node. Once those 4 seeds complete, there are now 5
+sources (original + 4 seeds), and subsequent waves fan out at 16
+per source:
+
+```mermaid
+graph TD
+    subgraph "Local copy + patch"
+        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on node00"]
+    end
+
+    subgraph "Wave 1 — seed (fanout=4)"
+        L --> A1["node01"]
+        L --> A2["node02"]
+        L --> A3["node03"]
+        L --> A4["node04"]
+    end
+
+    subgraph "Wave 2 — 5 sources × 16 each = 80 nodes"
+        L --> B0["node05–20"]
+        A1 --> B1["node21–36"]
+        A2 --> B2["node37–52"]
+        A3 --> B3["node53–68"]
+        A4 --> B4["node69–84"]
+    end
+
+    subgraph "Wave 3 — 85 sources × 16 each = 1,360 nodes"
+        B0 --> C0["node85–100"]
+        B1 --> C1["..."]
+        B4 --> C4["node1,269–1,284"]
+    end
+
+    subgraph "Wave 4 — 1,445 sources × 16 each"
+        C0 --> D0["..."]
+        C4 --> D4["up to 24,165 nodes"]
+    end
+```
+
+| Nodes | Waves | Sources after wave |
+|-------|-------|--------------------|
+| 1–4 | 1 | 1 → 5 |
+| 5–84 | 2 | 5 → 85 |
+| 85–1,444 | 3 | 85 → 1,445 |
+| 1,445–24,165 | 4 | 1,445 → 24,165 |
+
+All waves rsync from `/tmp/` (node-local storage), not the shared
+filesystem. Path patching happens only once on the local copy —
+all distributed copies arrive already patched.
+
+??? info "ASCII diagram: full tree distribution"
+
+    ```
+                       ezpz yeet-env
+
+    Step 0: Local copy + patch
+    ══════════════════════════
+
+    Lustre ──rsync──▶ /tmp/.venv (node00)
+                          │
+                      [patch paths]
+                          │
+    Step 1: Seed wave (fanout=4)
+    ════════════════════════════
+                          │
+          ┌───────┬───────┼───────┬───────┐
+          ▼       ▼       ▼       ▼       │
+       node01  node02  node03  node04     │
+          │       │       │       │       │
+    Step 2: Fan-out (fanout=16 per source)│
+    ══════════════════════════════════════╧══
+          │       │       │       │       │
+          ▼       ▼       ▼       ▼       ▼
+       ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐  5 sources
+       │ ×16 │ │ ×16 │ │ ×16 │ │ ×16 │ │ ×16 │  × 16 each
+       └──┬──┘ └──┬──┘ └──┬──┘ └──┬──┘ └──┬──┘  = 80 nodes
+          │       │       │       │       │
+       n05-20  n21-36  n37-52  n53-68  n69-84
+          │       │       │       │       │
+    Step 3: Fan-out (85 sources × 16 each)
+    ══════════════════════════════════════
+          ▼       ▼               ▼       ▼
+       ┌──┴──┐ ┌──┴──┐         ┌──┴──┐ ┌──┴──┐  85 sources
+       │ ×16 │ │ ×16 │  · · ·  │ ×16 │ │ ×16 │  × 16 each
+       └──┬──┘ └──┬──┘         └──┬──┘ └──┬──┘  = 1,360 nodes
+          │       │               │       │
+       n85-100   ...          n1269-84  n1285-1300
+          │
+    Step 4: 1,445 sources × 16 = up to 24,165 nodes
+    ═════════════════════════════════════════════════
+          ▼
+       · · ·
+
+    Key:
+      • All rsyncs within a wave run in parallel
+      • Each source reads from its local /tmp/ (fast SSD)
+      • Completed nodes become sources for the next wave
+      • Path patching happens ONCE (step 0), not per-node
     ```
 
-    This avoids the shared-filesystem bottleneck where hundreds of nodes
-    simultaneously try to read Python packages from the same NFS/Lustre mount.
+??? info "Detail: what a single wave looks like"
+
+    Each source node rsyncs to up to 16 targets in parallel.
+    Here's wave 2 in detail, showing all 5 sources fanning out:
+
+    Each source node does up to 16 parallel rsyncs from its local
+    `/tmp/.venv`. Here's what one source looks like in wave 2:
+
+    ```
+    node01 (/tmp/.venv)
+     ├─ rsync → node21
+     ├─ rsync → node22
+     ├─ rsync → node23
+     ├─ rsync → node24
+     ├─ rsync → node25     ← all 16 run in parallel
+     ├─ rsync → node26
+     ├─ rsync → ...
+     └─ rsync → node36
+    ```
+
+    In wave 2, all 5 sources (node00–node04) do this simultaneously,
+    giving 5 × 16 = 80 parallel rsyncs. Each reads from local SSD
+    and writes to the target node's `/tmp/.venv` via SSH.
+
+### Node discovery
+
+`yeet-env` uses the same node discovery as `ezpz launch`:
+
+1. Checks `PBS_NODEFILE` or `SLURM_NODELIST` env vars
+2. Falls back to scheduler-specific queries (qstat, scontrol)
+3. Deduplicates hostnames (PBS nodefiles repeat per-GPU)
+
+### Path patching
+
+Venv activate scripts and Python symlinks contain hardcoded absolute
+paths. `yeet-env` patches these **once** on the local `/tmp/` copy
+(step 1) before any distribution:
+
+- `sed` replaces the old `VIRTUAL_ENV` path in activate scripts
+- Re-links `python3` symlinks to the system Python
+- Updates `pyvenv.cfg` to point to the correct base Python
+
+Since patching happens before fan-out, all distributed copies
+arrive already patched — no per-node SSH needed.
+
+### Incremental syncs
+
+Because `yeet-env` uses `rsync -a`, subsequent runs are fast — only
+changed files are transferred. This makes it practical to re-run
+after installing new packages.
+
+## Examples
+
+### Default: sync the active env
+
+```bash
+# Inside an interactive job on Polaris:
+ezpz yeet-env
+```
+
+### Sync a specific environment
+
+```bash
+ezpz yeet-env --src /path/to/my-conda-env
+```
+
+### Custom destination
+
+```bash
+ezpz yeet-env --dst /local/scratch/myenv
+```
+
+### Preview without syncing
+
+```bash
+ezpz yeet-env --dry-run
+```
+
+### Real-world example: 64 nodes on Sunspot
+
+??? example "9.1 GB venv → 65 nodes in ~5 minutes"
+
+    ```bash
+    $ ezpz yeet-env
+      Source: /lus/tegu/.../torchtitan/.venv (9.1G)
+      Target: /tmp/.venv/ on 65 node(s)
+        local:  x1922c3s6b0n0 (rsync to /tmp/.venv/)
+        remote: x1921c1s2b0n0-hsn0, x1921c2s7b0n0-hsn0, ... (64 nodes)
+      Syncing (65 nodes, fanout=16)...
+        Copying to local /tmp/...
+        ✓ x1922c3s6b0n0 (local) — 213.3s
+        ✓ x1921c2s7b0n0-hsn0 — 21.6s      ← wave 1 seeds (4 nodes)
+        ✓ x1921c3s1b0n0-hsn0 — 22.0s
+        ✓ x1921c1s2b0n0-hsn0 — 22.2s
+        ✓ x1921c3s0b0n0-hsn0 — 22.4s
+        ✓ x1922c3s6b0n0-hsn0 — 1.2s
+        ✓ x1922c3s2b0n0-hsn0 — 38.0s      ← wave 2 fan-out (60 nodes)
+        ✓ x1922c0s5b0n0-hsn0 — 38.9s
+        ...
+        ✓ x1921c5s2b0n0-hsn0 — 58.1s
+      Done in 293.8s
+    ```
+
+    **Timing breakdown:**
+
+    | Phase | Time | Notes |
+    |-------|------|-------|
+    | Local copy (Lustre → `/tmp/`) | 213s | One-time, includes path patching |
+    | Wave 1 seed (4 nodes) | ~22s | rsync from local `/tmp/` |
+    | Wave 2 fan-out (60 nodes) | ~58s | 5 sources × 16 targets each |
+    | **Total** | **~294s** | 9.1 GB to 65 nodes |
+
+    After wave 1, the 4 seed nodes + the original become 5 sources.
+    Wave 2 distributes to the remaining 60 nodes from all 5 sources
+    in parallel — each reading from fast node-local `/tmp/`.
+
+### Complete workflow
+
+```bash
+# 1. Get an interactive allocation
+qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
+
+# 2. Distribute the environment
+ezpz yeet-env
+
+# 3. Activate the local copy
+deactivate 2>/dev/null
+source /tmp/<env-name>/bin/activate
+
+# 4. Launch from a shared filesystem path
+cd /path/to/your/project
+ezpz launch python3 -m your_app.train
+```
 
 ## See Also
 
-- [`ezpz tar-env`](./tar-env.md) — create the environment tarball
+- [`ezpz launch`](./launch/index.md) — launch distributed training
 - [`ezpz.utils.yeet_env`](../python/Code-Reference/utils/yeet_env.md) — Python API reference
+- [Shell Environment](../notes/shell-environment.md) — legacy shell setup utilities

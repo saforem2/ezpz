@@ -15,11 +15,11 @@ from omegaconf.dictconfig import DictConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 # import torch.distributed as dist
-try:
-    import intel_extension_for_pytorch
-    import oneccl_bindings_for_pytorch
-except (ImportError, ModuleNotFoundError):
-    pass
+# try:
+#     import intel_extension_for_pytorch
+#     import oneccl_bindings_for_pytorch
+# except (ImportError, ModuleNotFoundError):
+#     pass
 
 from ezpz import (TrainConfig, get_gpus_per_node, get_local_rank, get_rank,
                   get_torch_backend, get_torch_device, get_world_size, setup,

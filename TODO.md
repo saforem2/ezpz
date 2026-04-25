@@ -169,7 +169,18 @@ Some appear to be one-off exploratory scripts rather than structured suites.
 
 ---
 
-## 12. Potential Enhancements [LOW]
+## 12. Log System: Auto-strip ANSI for Non-TTY Output [MEDIUM]
+
+The global `ezpz.log` system should auto-detect when stdout is not a
+TTY (e.g. redirected to a file, piped through `subprocess.PIPE`) and
+strip ANSI escape codes. Currently `NO_COLOR=1` is the manual knob,
+but the default should be smart about it. Care needed: users who pipe
+through `tee` or `less -R` may want colors preserved. The benchmark
+runner already strips ANSI for its log files as a targeted fix.
+
+---
+
+## 13. Potential Enhancements [LOW]
 
 - Configurable timeout with better error messaging for `init_process_group`
   failures / NCCL hangs.

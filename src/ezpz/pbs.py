@@ -28,10 +28,23 @@ Pathish = Union[str, os.PathLike, Path]
 
 logger = ezpz.get_logger(__name__)
 
+# Suppress the sh library's INFO-level "process started" noise
+import logging as _logging
+_logging.getLogger("sh").setLevel(_logging.WARNING)
+
 _QSTAT_MAX_RETRIES = 5
 _QSTAT_RETRY_DELAY = 2  # seconds
 _PBS_JOBS_CACHE_TTL = 30  # seconds
 _pbs_jobs_cache: tuple[float, dict[str, list[str]]] | None = None
+
+# Default CPU bindings for Intel XPU machines (Aurora, Sunspot).
+# 12 ranks per node, 8 physical cores per rank, distributed across
+# 2 sockets (cores 0 and 52 excluded).
+# Source: https://github.com/argonne-lcf/pbs_utils/blob/main/doc/guide-get_cpu_bind_aurora.md
+_CPU_BIND_AURORA = (
+    "list:1-8:9-16:17-24:25-32:33-40:41-48:"
+    "53-60:61-68:69-76:77-84:85-92:93-100"
+)
 
 
 def _run_qstat_with_retry(qstat_fn, *args, **kwargs) -> str:
@@ -57,7 +70,8 @@ def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
     """Get all running jobs for the current user.
 
     Results are cached for up to 30 s to avoid redundant qstat calls
-    during a single launch sequence.
+    during a single launch sequence.  Only rank 0 runs qstat; other
+    ranks use the cached result.
     """
     global _pbs_jobs_cache
     if _pbs_jobs_cache is not None:
@@ -252,25 +266,13 @@ def _maybe_add_cpu_bind(
     if cpu_bind:
         logger.warning(f"Detected CPU_BIND from environment: {cpu_bind}")
         cpu_bind_val = cpu_bind.replace("--cpu-bind=", "")
-        if ngpus < 1024:
-            cmd.append(f"--cpu-bind=verbose,{cpu_bind_val}")
-        else:
-            cmd.append(f"--cpu-bind={cpu_bind_val}")
+        cmd.append(f"--cpu-bind={cpu_bind_val}")
         return cmd
 
     # No explicit CPU_BIND -> set sensible defaults by machine
     machine_name_l = machine_name.lower()
     if machine_name_l in {"aurora", "sunspot"}:
-        cpu_bind_intel_xpu = (
-            "list:2-4:10-12:18-20:26-28:"
-            "34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-        )
-        if ngpus < 1024:
-            cmd.extend(
-                ["--no-vni", f"--cpu-bind=verbose,{cpu_bind_intel_xpu}"]
-            )
-        else:
-            cmd.extend(["--no-vni", f"--cpu-bind={cpu_bind_intel_xpu}"])
+        cmd.extend(["--no-vni", f"--cpu-bind={_CPU_BIND_AURORA}"])
     else:
         cmd.extend(["--cpu-bind=depth", "--depth=8"])
 
@@ -369,9 +371,8 @@ def get_pbs_launch_cmd(
         if cpu_bind_env is not None and cpu_bind_env.strip()
         else None
     )
-    use_verbose_cpu_bind = ngpus < 1024
     cpu_bind_prefix = (
-        "--cpu-bind=verbose," if use_verbose_cpu_bind else "--cpu-bind="
+        "--cpu-bind=verbose," if verbose else "--cpu-bind="
     )
     selected_cpu_bind = cpu_bind_cli or cpu_bind_env_value
 
@@ -386,14 +387,10 @@ def get_pbs_launch_cmd(
     else:
         is_intel_xpu_machine = machine_name in {"aurora", "sunspot"}
         if is_intel_xpu_machine:
-            CPU_BIND_INTEL_XPU = (
-                "list:2-4:10-12:18-20:26-28:34-36:42-44:"
-                "54-56:62-64:70-72:78-80:86-88:94-96"
-            )
             cmd_list.extend(
                 [
                     "--no-vni",
-                    f"{cpu_bind_prefix}{CPU_BIND_INTEL_XPU}",
+                    f"{cpu_bind_prefix}{_CPU_BIND_AURORA}",
                 ]
             )
         else:

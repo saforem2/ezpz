@@ -55,7 +55,7 @@ def test_get_pbs_launch_cmd_respects_cpu_bind_env(patch_topology, monkeypatch):
 
     cmd = pbs.get_pbs_launch_cmd(ngpus=8, nhosts=1, hostfile=hostfile)
 
-    assert cmd.endswith("--cpu-bind=verbose,list:0-1")
+    assert cmd.endswith("--cpu-bind=list:0-1")
 
 
 def test_get_pbs_launch_cmd_cpu_bind_arg_overrides_env(
@@ -69,7 +69,7 @@ def test_get_pbs_launch_cmd_cpu_bind_arg_overrides_env(
         ngpus=8, nhosts=1, hostfile=hostfile, cpu_bind="list:2-3"
     )
 
-    assert cmd.endswith("--cpu-bind=verbose,list:2-3")
+    assert cmd.endswith("--cpu-bind=list:2-3")
 
 
 def test_get_pbs_launch_cmd_raises_on_inconsistent_topology(patch_topology):
@@ -88,7 +88,7 @@ def test_get_pbs_launch_cmd_intel_cpu_binding_defaults(patch_topology, monkeypat
     cmd = pbs.get_pbs_launch_cmd(hostfile=hostfile)
 
     assert "--no-vni" in cmd
-    assert "--cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96" in cmd
+    assert "--cpu-bind=list:1-8:9-16:17-24:25-32:33-40:41-48:53-60:61-68:69-76:77-84:85-92:93-100" in cmd
 
 
 # ---------------------------------------------------------------------------

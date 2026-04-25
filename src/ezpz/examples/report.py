@@ -213,41 +213,49 @@ def _find_wandb_url(logfile: Path) -> Optional[str]:
 
 def _find_mlflow_url(logfile: Path) -> Optional[str]:
     """Extract an MLflow run URL from a log file."""
+    # Match the mlflow banner line: 🔗 View run at https://...
+    # Exclude wandb URLs (wandb.ai) to avoid false matches.
     pattern = re.compile(r"View run at\s+(https?://\S+)")
     try:
         text = _strip_ansi(logfile.read_text(errors="replace"))
     except OSError:
         return None
-    m = pattern.search(text)
-    return m.group(1) if m else None
+    for m in pattern.finditer(text):
+        url = m.group(1)
+        if "wandb.ai" not in url:
+            return url
+    return None
 
 
-_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_INLINE_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_REF_LINK_RE = re.compile(r"\[([^\]]*)\]\[[^\]]*\]")
 
 
 def _display_len(cell: str) -> int:
-    """Return the rendered width of *cell*, collapsing markdown links."""
-    return len(_MD_LINK_RE.sub(lambda m: m.group(1), cell))
+    """Return the rendered width of *cell*, collapsing markdown links.
+
+    Handles both inline ``[text](url)`` and reference ``[text][ref]``
+    style links.
+    """
+    text = _MD_INLINE_LINK_RE.sub(lambda m: m.group(1), cell)
+    text = _MD_REF_LINK_RE.sub(lambda m: m.group(1), text)
+    return len(text)
 
 
 def _align_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     """Build a markdown table with columns padded to equal widths.
 
-    Column widths are computed from the *display* length of each cell so
-    that markdown links (``[text](url)``) are measured by their visible
-    text, not the full URL.
+    Column widths are computed from the *raw* string length so the
+    source text aligns visually when printed to a terminal.
     """
     ncols = len(headers)
-    widths = [_display_len(h) for h in headers]
+    widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
-            widths[i] = max(widths[i], _display_len(cell))
-
-    def _pad(cell: str, width: int) -> str:
-        return cell + " " * (width - _display_len(cell))
+            widths[i] = max(widths[i], len(cell))
 
     def _row_line(cells: list[str]) -> str:
-        padded = [_pad(cells[i], widths[i]) for i in range(ncols)]
+        padded = [cells[i].ljust(widths[i]) for i in range(ncols)]
         return "| " + " | ".join(padded) + " |"
 
     lines = [_row_line(headers)]
@@ -312,6 +320,7 @@ def generate_report(outdir: Path) -> str:
         "Final Loss", "Mean dt (s)", "Throughput", "W&B", "MLflow",
     ]
     results_rows: list[list[str]] = []
+    link_refs: list[str] = []
 
     for row in timings:
         name = row["name"]
@@ -322,9 +331,23 @@ def generate_report(outdir: Path) -> str:
 
         logfile = outdir / f"{name}.log"
         wandb_url = _find_wandb_url(logfile)
-        wandb_cell = f"[link]({wandb_url})" if wandb_url else "\u2014"
         mlflow_url = _find_mlflow_url(logfile)
-        mlflow_cell = f"[link]({mlflow_url})" if mlflow_url else "\u2014"
+        # Use short reference-style links: [run_id][run_id]
+        # with the full URL as a reference definition at the bottom.
+        if wandb_url:
+            wb_id = wandb_url.rstrip("/").rsplit("/", 1)[-1]
+            wandb_cell = f"[{wb_id}][{wb_id}]"
+            link_refs.append(f"[{wb_id}]: {wandb_url}")
+        else:
+            wandb_cell = "\u2014"
+        if mlflow_url:
+            ml_id = mlflow_url.rstrip("/").rsplit("/", 1)[-1]
+            # Shorten to first 8 chars if it's a UUID
+            ml_label = ml_id[:8] if len(ml_id) > 12 else ml_id
+            mlflow_cell = f"[{ml_label}][{ml_label}]"
+            link_refs.append(f"[{ml_label}]: {mlflow_url}")
+        else:
+            mlflow_cell = "\u2014"
 
         # Attempt to locate and parse metrics.
         # Primary: extract output dir from log.  Fallback: search outputs/.
@@ -368,6 +391,11 @@ def generate_report(outdir: Path) -> str:
         name = row["name"]
         logfile = outdir / f"{name}.log"
         lines.append(f"- **{name}**: `{logfile}`")
+
+    # Append link reference definitions at the bottom
+    if link_refs:
+        lines.append("")
+        lines.extend(link_refs)
 
     lines.append("")
     return "\n".join(lines)

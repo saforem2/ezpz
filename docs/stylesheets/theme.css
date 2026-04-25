@@ -519,11 +519,15 @@ pre.mermaid {
   margin: 0;
   box-shadow: none;
   background: transparent;
+  overflow: auto;
+  max-height: 80vh;
 }
 
 .mermaid svg {
-  max-width: 100%;
+  max-width: none;
+  min-width: 100%;
   height: auto;
+  cursor: grab;
 }
 
 /* ---------- tables ---------- */
