@@ -584,6 +584,19 @@ def train_fn(
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
+
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, in_chans, args.img_size, args.img_size),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
+
     model.train()  # type:ignore
 
     outdir = get_example_outdir(WBPROJ_NAME)
@@ -655,8 +668,7 @@ def train_fn(
                     "Skipping non-finite train metrics at step=%s", step
                 )
                 continue
-            train_msg = history.update(
-                {
+            train_metrics = {
                     "train/iter": step,
                     "train/loss": loss_value,
                     "train/acc": acc_value,
@@ -665,8 +677,14 @@ def train_fn(
                     "train/dtf": t2 - t1,
                     "train/dto": t3 - t2,
                     "train/dtb": t4 - t3,
-                }
-            ).replace("train/", "")
+            }
+            if _model_flops > 0 and device_type not in ("cpu", "mps"):
+                from ezpz.flops import compute_mfu
+                train_metrics["train/mfu"] = compute_mfu(
+                    _model_flops, t4 - t0,
+                    world_size=world_size,
+                )
+            train_msg = history.update(train_metrics).replace("train/", "")
             logger.info("[train] %s", train_msg)
 
     if "test" in dataset_dict:

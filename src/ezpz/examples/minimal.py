@@ -59,6 +59,15 @@ def train(
     dtype = unwrapped_model.layers[0].weight.dtype
     bsize = int(os.environ.get("BATCH_SIZE", 64))
     isize = unwrapped_model.layers[0].in_features
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(model, (bsize, isize))
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
     warmup = int(os.environ.get("WARMUP_ITERS", 10))
     log_freq = int(os.environ.get("LOG_FREQ", 1))
     print_freq = int(os.environ.get("PRINT_FREQ", 10))
@@ -79,14 +88,21 @@ def train(
             optimizer.zero_grad()
             dtb = time.perf_counter() - t1
             if step % log_freq == 0 and step > warmup:
+                metrics = {
+                    "iter": step,
+                    "loss": loss.item(),
+                    "dt": dtf + dtb,
+                    "dtf": dtf,
+                    "dtb": dtb,
+                }
+                if _model_flops > 0 and device_type not in ("cpu", "mps"):
+                    from ezpz.flops import compute_mfu
+                    metrics["mfu"] = compute_mfu(
+                        _model_flops, dtf + dtb,
+                        world_size=ezpz.get_world_size(),
+                    )
                 summary = history.update(
-                    {
-                        "iter": step,
-                        "loss": loss.item(),
-                        "dt": dtf + dtb,
-                        "dtf": dtf,
-                        "dtb": dtb,
-                    }
+                    metrics
                 )
             if step % print_freq == 0 and step > warmup:
                 logger.info(summary)

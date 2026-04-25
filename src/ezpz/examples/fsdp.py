@@ -386,6 +386,20 @@ def fsdp_main(args: argparse.Namespace) -> None:
             1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
         ),
     )
+    # Estimate model FLOPS for MFU calculation
+    _model_flops = 0
+    device_type = ezpz.get_torch_device_type()
+    try:
+        from ezpz.flops import estimate_model_flops
+        # FSDP models need the underlying module for FLOPS counting
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, 1, 28, 28),  # MNIST input shape
+        )
+        if rank == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception:
+        pass
+
     start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):
         train_metrics = train(
@@ -397,7 +411,14 @@ def fsdp_main(args: argparse.Namespace) -> None:
         )
         test_metrics = test(model, test_loader)
         scheduler.step()
-        logger.info(history.update({**train_metrics, **test_metrics}))
+        merged = {**train_metrics, **test_metrics}
+        if _model_flops > 0 and device_type not in ("cpu", "mps"):
+            from ezpz.flops import compute_mfu
+            dt = merged.get("dt", 1.0)
+            merged["mfu"] = compute_mfu(
+                _model_flops, dt, world_size=ezpz.get_world_size(),
+            )
+        logger.info(history.update(merged))
 
     train_end = time.perf_counter()
     logger.info(
