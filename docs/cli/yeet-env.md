@@ -71,7 +71,7 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
 ### Overview
 
 ```mermaid
-graph LR
+graph TD
     A["ezpz yeet-env"] --> B["Detect source env"]
     B --> C["Discover nodes"]
     C --> D["rsync to local /tmp/"]
