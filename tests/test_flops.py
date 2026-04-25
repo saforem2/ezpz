@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import torch
 
 from ezpz.flops import compute_mfu, estimate_model_flops, get_peak_flops

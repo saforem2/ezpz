@@ -31,7 +31,6 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Sequence
 
 import torch
 
@@ -80,7 +79,7 @@ def get_device_name() -> str:
     """
     if torch.cuda.is_available():
         return torch.cuda.get_device_name(0)
-    if torch.xpu.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
         props = torch.xpu.get_device_properties(0)
         return getattr(props, "name", str(props))
     return "cpu"
@@ -88,14 +87,12 @@ def get_device_name() -> str:
 
 def get_peak_flops(
     device_name: str | None = None,
-    dtype: str = "bf16",
 ) -> float:
     """Return peak BF16 FLOPS for the given device.
 
     Args:
         device_name: GPU name string (e.g. ``"NVIDIA A100-SXM4-80GB"``).
             If ``None``, auto-detected from the current device.
-        dtype: Precision type. Currently only ``"bf16"`` is supported.
 
     Returns:
         Peak FLOPS as a float. Falls back to A100 (312 TFLOPS) if the
@@ -132,7 +129,7 @@ def _compute_pvc_peak_flops() -> float:
     Formula: 512 ops/cycle × max_compute_units × 1300 MHz
     """
     try:
-        max_cu = torch.xpu.get_device_properties("xpu").max_compute_units
+        max_cu = torch.xpu.get_device_properties(0).max_compute_units
         return 512 * max_cu * 1300 * 10**6
     except Exception:
         # Fallback: assume full-EU mode (512 CUs)
@@ -144,7 +141,7 @@ def _compute_pvc_peak_flops() -> float:
 
 def estimate_model_flops(
     model: torch.nn.Module,
-    input_shape: Sequence[int],
+    input_shape: tuple[int, ...] | list[int],
     *,
     device: torch.device | str | None = None,
     backward: bool = True,
@@ -180,6 +177,7 @@ def estimate_model_flops(
         dtype = torch.float32
 
     dummy = torch.randn(*input_shape, device=device, dtype=dtype)
+    was_training = model.training
     model.eval()
 
     with FlopCounterMode(display=False) as counter:
@@ -188,7 +186,12 @@ def estimate_model_flops(
             loss = output.sum()
             loss.backward()
 
-    model.train()
+    # Restore original mode and clean up accumulated grads
+    if was_training:
+        model.train()
+    if backward:
+        model.zero_grad()
+
     return counter.get_total_flops()
 
 
