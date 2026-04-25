@@ -516,19 +516,7 @@ def train_fn(
         ),
     )
     model.to(device)
-    num_params = sum(
-        [
-            sum(
-                [
-                    getattr(p, "ds_numel", 0)
-                    if hasattr(p, "ds_id")
-                    else p.nelement()
-                    for p in model_module.parameters()
-                ]
-            )
-            for model_module in model.modules()
-        ]
-    )
+    num_params = sum(p.numel() for p in model.parameters())
     model_size_in_billions = num_params / 1e9
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
@@ -539,6 +527,19 @@ def train_fn(
     #     dtype=args.dtype,
     #     # device_id=int(ezpz.get_local_rank())
     # )
+    # Estimate model FLOPS before wrapping (FlopCounterMode can't
+    # run through FSDP/DDP wrappers)
+    _model_flops = 0
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, in_chans, args.img_size, args.img_size),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
+
     if world_size > 1:
         reshard = ezpz.distributed.resolve_fsdp_strategy(
             args.fsdp_sharding_strategy
@@ -584,18 +585,6 @@ def train_fn(
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
-
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, in_chans, args.img_size, args.img_size),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
 
     model.train()  # type:ignore
 

@@ -259,6 +259,17 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
         fc_dim=args.fc_dim,
     ).to(device)
     logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
+    # Estimate FLOPS before FSDP wrapping
+    _model_flops = 0
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, 1, img_size, img_size),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
     dtypes = {
         "fp16": torch.float16,
         "bf16": torch.bfloat16,
@@ -281,6 +292,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
         "model": model,
         "optimizer": optimizer,
         "scheduler": scheduler,
+        "model_flops": _model_flops,
     }
 
 
@@ -371,6 +383,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
     model = tmp["model"]
     optimizer = tmp["optimizer"]
     scheduler = tmp["scheduler"]
+    _model_flops = tmp.get("model_flops", 0)
 
     outdir = get_example_outdir(WBPROJ_NAME)
     logger.info("Outputs will be saved to %s", outdir)
@@ -386,19 +399,6 @@ def fsdp_main(args: argparse.Namespace) -> None:
             1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
         ),
     )
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    device_type = ezpz.get_torch_device_type()
-    try:
-        from ezpz.flops import estimate_model_flops
-        # FSDP models need the underlying module for FLOPS counting
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, 1, 28, 28),  # MNIST input shape
-        )
-        if rank == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
 
     start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):

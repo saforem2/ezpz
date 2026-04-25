@@ -762,6 +762,22 @@ def train(
     )
     logger.info(f"\n{mstr}")
     model.to(device)
+
+    # Estimate model FLOPS before parallelization (FlopCounterMode
+    # can't run through FSDP/TP wrappers)
+    _model_flops = 0
+    device_type = ezpz.get_torch_device_type()
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (args.batch_size, args.seq_length),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
+        _model_flops = 0
+
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
         mp_config = MixedPrecision(
@@ -858,19 +874,6 @@ def train(
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
 
     # ezpz.breakpoint(0)
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    device_type = ezpz.get_torch_device_type()
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, args.seq_length),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
-        _model_flops = 0
 
     logger.info("Starting 2D training...")
     model.train()
