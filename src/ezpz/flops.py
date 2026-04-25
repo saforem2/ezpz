@@ -173,7 +173,13 @@ def estimate_model_flops(
         except StopIteration:
             device = "cpu"
 
-    dummy = torch.randn(*input_shape, device=device)
+    # Match the model's dtype to avoid dtype mismatch errors
+    try:
+        dtype = next(model.parameters()).dtype
+    except StopIteration:
+        dtype = torch.float32
+
+    dummy = torch.randn(*input_shape, device=device, dtype=dtype)
     model.eval()
 
     with FlopCounterMode(display=False) as counter:

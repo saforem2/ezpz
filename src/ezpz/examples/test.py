@@ -194,6 +194,7 @@ class Trainer:
         field(init=False, default=None)
     )
     _feature_dim: int = field(init=False, default=0)
+    _model_flops: int = field(init=False, default=0)
 
     def __post_init__(self):
         """Move the model to the target device and register logging hooks."""
@@ -201,6 +202,20 @@ class Trainer:
         self.dtype = self.config.get_torch_dtype()
         self.model.to(self.device_id)
         self.model.to(self.dtype)
+        # Estimate model FLOPS for MFU calculation
+        try:
+            from ezpz.flops import estimate_model_flops
+            self._model_flops = estimate_model_flops(
+                self.model,
+                input_shape=(self.config.batch_size, self.config.input_size),
+            )
+            if self.rank == 0:
+                logger.info(
+                    "Model FLOPS (fwd+bwd): %.2e", self._model_flops
+                )
+        except Exception as exc:
+            logger.warning("FLOPS estimation failed: %s", exc)
+            self._model_flops = 0
         metrics_path = self.config.outdir.joinpath("metrics.jsonl")
         self.history: ezpz.history.History = ezpz.history.History(
             report_dir=self.config.outdir,
@@ -326,6 +341,13 @@ class Trainer:
         metrics, loss = self._forward_step()
         metrics["dtb"] = self._backward_step(loss)
         self.optimizer.zero_grad()
+        # Compute MFU if FLOPS were estimated and we're on a GPU
+        if self._model_flops > 0 and self.device_type not in ("cpu", "mps"):
+            dt = metrics["dtf"] + metrics["dtb"]
+            from ezpz.flops import compute_mfu
+            metrics["mfu"] = compute_mfu(
+                self._model_flops, dt, world_size=self.world_size,
+            )
         if self.train_iter == self.config.train_iters:
             return metrics
         if (
