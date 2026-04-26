@@ -403,6 +403,21 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
+
+    # Estimate model FLOPS before wrapping (FSDP/DDP breaks FlopCounterMode)
+    _model_flops = 0
+    device_type = ezpz.get_torch_device_type()
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model,
+            (args.batch_size, args.seq_length),
+        )
+        if ezpz.get_rank() == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
+
     reshard = ezpz.distributed.resolve_fsdp_strategy(
         args.fsdp_sharding_strategy
     )
@@ -418,27 +433,8 @@ def train(
         wrapped_model,
         verbose=False,
         depth=2,
-        # input_size=(
-        #     torch.tensor((int(args.batch_size), int(args.seq_length))).to(
-        #         torch.long
-        #     )
-        # ).shape,
     )
     logger.info("Model summary:\n%s", mstr)
-
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    device_type = ezpz.get_torch_device_type()
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            wrapped_model,
-            (args.batch_size, args.seq_length),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
 
     # outdir = Path(os.getcwd()) if outdir is None else outdir
     # outdir_parent = Path(outdir).joinpath(ezpz.utils.get_timestamp())
