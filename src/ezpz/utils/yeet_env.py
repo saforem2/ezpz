@@ -491,7 +491,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print()  # newline so progress has its own line
         _local_progress()
         _, local_elapsed, local_rc = _rsync_to_node(
-            src, dst, current, local=True, progress_callback=_local_progress,
+            src, dst, current, local=True,
+            progress_callback=_local_progress,
         )
         sys.stdout.write("\r\033[K")  # clear progress line
         if local_rc == 0:
