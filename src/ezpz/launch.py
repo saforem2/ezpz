@@ -400,9 +400,17 @@ def build_executable(
     if include_python:
         found_python = any("python" in str(p) for p in cmd_to_launch_list)
         if not found_python:
-            # Use whichever python3 is on PATH (respects activated venvs)
-            # rather than sys.executable (frozen at interpreter startup).
-            python = shutil.which("python3") or sys.executable
+            # Resolve the python3 to use for launching.
+            # sys.executable is frozen at interpreter startup and may point
+            # to the original venv (e.g. on Lustre) even after activating
+            # a /tmp/ copy.  Prefer VIRTUAL_ENV (set by activate scripts),
+            # then PATH lookup, then sys.executable as last resort.
+            venv = os.environ.get("VIRTUAL_ENV")
+            if venv:
+                candidate = os.path.join(venv, "bin", "python3")
+                python = candidate if os.path.isfile(candidate) else sys.executable
+            else:
+                python = shutil.which("python3") or sys.executable
             cmd_to_launch_list.insert(0, python)
 
     cmd_to_launch_str = shlex.join(cmd_to_launch_list)
