@@ -33,6 +33,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Disable \r / ANSI escape progress when stdout is not a terminal
+# (e.g. redirected to a file or pipe).
+_IS_TTY = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
 
 # ── Environment detection ────────────────────────────────────────────────────
 
@@ -164,6 +168,8 @@ class _AggregateProgress:
 
     def update(self, pct: str = "", speed: str = "", eta: str = "") -> None:
         """Called by any node's rsync thread with progress info."""
+        if not _IS_TTY:
+            return
         with self._lock:
             if pct:
                 self._pct = pct
@@ -174,15 +180,18 @@ class _AggregateProgress:
     def mark_done(self, node: str, elapsed: float, rc: int) -> None:
         """Called when a node finishes. Prints result on its own line."""
         with self._lock:
-            sys.stdout.write("\r\033[K")
+            if _IS_TTY:
+                sys.stdout.write("\r\033[K")
             self._done += 1
             icon = "\u2713" if rc == 0 else "\u2717"
             print(f"    {icon} {node} \u2014 {elapsed:.1f}s")
-            if self._done < self._total:
+            if _IS_TTY and self._done < self._total:
                 self._redraw()
 
     def clear(self) -> None:
         """Clear the progress line."""
+        if not _IS_TTY:
+            return
         with self._lock:
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
@@ -533,6 +542,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
         def _spinner(label: str) -> None:
             """Reusable spinner that shows label + elapsed time."""
+            if not _IS_TTY:
+                return
             elapsed = time.perf_counter() - _local_t0
             frames = _AggregateProgress._FRAMES
             idx = int(elapsed * 2) % len(frames)
@@ -598,7 +609,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     tarball.unlink()
                 except OSError:
                     pass
-            sys.stdout.write("\r\033[K")
+            if _IS_TTY:
+                sys.stdout.write("\r\033[K")
 
         elif args.copy:
             # cp -a: faster than rsync for large venvs on parallel
@@ -622,11 +634,14 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             stderr = (cp_proc.stderr.read() or b"").decode()
             if local_rc != 0:
                 logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
-            sys.stdout.write("\r\033[K")
+            if _IS_TTY:
+                sys.stdout.write("\r\033[K")
 
         else:
             method = "rsync"
             def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
+                if not _IS_TTY:
+                    return
                 elapsed = time.perf_counter() - _local_t0
                 parts = ["Copying to local /tmp/"]
                 if pct:
@@ -643,7 +658,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 src, dst, current, local=True,
                 progress_callback=_local_progress,
             )
-            sys.stdout.write("\r\033[K")
+            if _IS_TTY:
+                sys.stdout.write("\r\033[K")
         if local_rc == 0:
             _patch_venv_paths_local(dst, src)
             print(f"    \u2713 {current} (local, {method}) \u2014 {local_elapsed:.1f}s")
