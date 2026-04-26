@@ -75,6 +75,7 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
       --src PATH       Source environment (default: active venv/conda)
       --dst PATH       Destination on workers (default: /tmp/<env-name>/)
       --hostfile PATH  Hostfile for node list (default: auto-detect)
+      --copy           Use cp -a for local copy (faster on Lustre)
       --dry-run        Show what would be synced
     """
     from ezpz.utils import yeet_env as yeet_env_module
