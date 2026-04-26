@@ -201,11 +201,15 @@ def estimate_model_flops(
     was_training = model.training
     model.eval()
 
-    with FlopCounterMode(display=False) as counter:
-        output = model(dummy)
-        if backward:
-            loss = output.sum()
-            loss.backward()
+    try:
+        with FlopCounterMode(display=False) as counter:
+            output = model(dummy)
+            if backward:
+                loss = output.sum()
+                loss.backward()
+        flops = counter.get_total_flops()
+    except Exception:
+        flops = 0
 
     # Restore original mode and clean up accumulated grads
     if was_training:
@@ -213,7 +217,28 @@ def estimate_model_flops(
     if backward:
         model.zero_grad()
 
-    return counter.get_total_flops()
+    if flops > 0:
+        return flops
+
+    # FlopCounterMode returned 0 (common on XPU / non-CUDA devices).
+    # Fall back to parameter-based estimate:
+    #   forward ≈ 2 * params * tokens, backward ≈ 4 * params * tokens
+    #   total ≈ 6 * params * tokens  (Kaplan et al.)
+    num_params = sum(p.numel() for p in model.parameters())
+    # For embedding models, last dim is sequence length (tokens per sample)
+    # For vision/MLP, use product of spatial dims as "elements per sample"
+    batch_size = input_shape[0]
+    tokens = (
+        input_shape[-1] if has_embedding
+        else int(torch.tensor(input_shape[1:]).prod().item())
+    )
+    multiplier = 6 if backward else 2
+    fallback = multiplier * num_params * batch_size * tokens
+    logger.info(
+        "FlopCounterMode returned 0 — using parameter-based estimate: %.2e",
+        fallback,
+    )
+    return fallback
 
 
 # ── MFU calculation ──────────────────────────────────────────────────────────
