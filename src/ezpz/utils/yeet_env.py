@@ -406,19 +406,17 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
     # ── Sync ────────────────────────────────────────────────────────
     #
-    # Tree-based distribution: instead of all N nodes pulling from the
-    # source (which saturates the source node's network), we sync in
-    # waves. Each wave, nodes that already have the data become sources
-    # for the next batch.
+    # Greedy tree distribution: instead of all N nodes pulling from the
+    # source (which saturates the source node's NIC), each completed
+    # node immediately becomes a source for others.  A single thread
+    # pool runs for the entire sync — as soon as any rsync finishes,
+    # new rsyncs are submitted using the newly-available source.
     #
-    #   Wave 0: source → seed nodes (up to FANOUT)
-    #   Wave 1: each seed → FANOUT more nodes (from /tmp/)
-    #   Wave 2: each of those → FANOUT more ...
-    #
-    # This gives O(log_K(N)) waves instead of O(N) sequential rsyncs.
+    # Each source has a concurrency cap (MAX_PER_SOURCE) so no single
+    # node is overwhelmed.  The tree grows organically: the first node
+    # seeds a few targets, each of those fans out to more, etc.
 
-    FANOUT = 16    # max concurrent rsyncs per source node
-    SEED_FANOUT = 4  # smaller initial wave from a single source
+    MAX_PER_SOURCE = 8  # max concurrent outbound rsyncs per source node
 
     all_nodes: list[str] = []
     if needs_local_copy:
@@ -429,11 +427,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     progress = _AggregateProgress(total_nodes=total)
     results: list[tuple[str, float, int]] = []
 
-    print(f"  Syncing ({total} nodes, fanout={FANOUT})...")
+    print(f"  Syncing ({total} nodes)...")
     t0 = time.perf_counter()
 
     # Step 1: rsync source to local /tmp/ and patch paths ONCE.
-    # All subsequent tree rsyncs distribute the already-patched copy.
+    # All subsequent rsyncs distribute the already-patched copy.
     if needs_local_copy:
         print(f"    Copying to local /tmp/...")
         _, local_elapsed, local_rc = _rsync_to_node(src, dst, current)
@@ -445,63 +443,68 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             print(f"    \u2717 {current} (local) \u2014 FAILED")
             results.append((current, local_elapsed, local_rc))
 
-    # Nodes that have the data and can serve as sources.
-    # After local copy, the patched /tmp/ copy is the source for all others.
-    sources: list[tuple[str, Path]] = [(current, dst)]
     remaining = [n for n in all_nodes if n != current]
 
-    wave = 0
-    while remaining:
-        wave += 1
-        # Use a smaller fanout for the first wave (single source node)
-        # to avoid saturating one node's outbound network. Once we have
-        # multiple sources, ramp up to full fanout.
-        wave_fanout = SEED_FANOUT if len(sources) == 1 else FANOUT
+    # Track per-source active rsync count to enforce MAX_PER_SOURCE.
+    source_active: dict[str, int] = {current: 0}
+    source_lock = threading.Lock()
 
-        # Assign remaining nodes to available sources (round-robin,
-        # up to wave_fanout per source).
-        batch: list[tuple[str, Path, str]] = []  # (src_node, src_path, dst_node)
-        source_idx = 0
-        while remaining and source_idx < len(sources):
-            src_node, src_path = sources[source_idx]
-            count = 0
-            while remaining and count < wave_fanout:
+    def _pick_source() -> str | None:
+        """Pick the source with the fewest active rsyncs, if under cap."""
+        best: str | None = None
+        best_count = MAX_PER_SOURCE + 1
+        for s, count in source_active.items():
+            if count < MAX_PER_SOURCE and count < best_count:
+                best = s
+                best_count = count
+        return best
+
+    def _submit_work(pool: ThreadPoolExecutor, futures: dict) -> None:  # type: ignore[type-arg]
+        """Submit as many rsyncs as sources allow."""
+        while remaining:
+            with source_lock:
+                src_node = _pick_source()
+                if src_node is None:
+                    break  # all sources at capacity — wait for completions
                 target = remaining.pop(0)
-                batch.append((src_node, src_path, target))
-                count += 1
-            source_idx += 1
-        # If we still have remaining nodes but ran out of sources,
-        # keep going with what we have — next wave will use newly
-        # completed nodes as sources.
+                source_active[src_node] += 1
 
-        if not batch:
-            break  # safety: shouldn't happen
+            remote_src = None if src_node == current else src_node
+            fut = pool.submit(
+                _rsync_to_node,
+                dst,  # always rsync from the /tmp/ copy
+                dst,
+                target,
+                from_node=remote_src,
+                progress_callback=progress.update,
+            )
+            futures[fut] = (target, src_node)
 
-        # Execute this wave's rsyncs in parallel
-        with ThreadPoolExecutor(max_workers=len(batch)) as pool:
-            futures = {}
-            for src_node, src_path, target_node in batch:
-                # If src_node is the current node, rsync locally.
-                # Otherwise, SSH into src_node and rsync from there.
-                remote_src = None if src_node == current else src_node
-                fut = pool.submit(
-                    _rsync_to_node,
-                    src_path,
-                    dst,
-                    target_node,
-                    from_node=remote_src,
-                    progress_callback=progress.update,
-                )
-                futures[fut] = target_node
+    # Step 2: greedy fan-out using a single persistent pool.
+    with ThreadPoolExecutor(max_workers=min(total, 128)) as pool:
+        futures: dict = {}
+        _submit_work(pool, futures)
 
-            for fut in as_completed(futures):
-                n, elapsed, rc = fut.result()
-                label = f"{n} (local)" if n == current else n
-                progress.mark_done(label, elapsed, rc)
-                results.append((n, elapsed, rc))
+        while futures:
+            # Wait for the next completion
+            done_iter = as_completed(futures)
+            fut = next(done_iter)
+            n, elapsed, rc = fut.result()
+            _, src_used = futures.pop(fut)
+
+            with source_lock:
+                source_active[src_used] -= 1
                 if rc == 0:
-                    # This node now has the data — it can source future waves
-                    sources.append((n, dst))
+                    # This node now has the data — register as a source
+                    source_active[n] = 0
+
+            label = f"{n} (local)" if n == current else n
+            progress.mark_done(label, elapsed, rc)
+            results.append((n, elapsed, rc))
+
+            # Submit more work now that a source slot freed up
+            # (and possibly a new source appeared)
+            _submit_work(pool, futures)
 
     progress.clear()
 
