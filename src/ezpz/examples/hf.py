@@ -878,11 +878,22 @@ def main() -> None:
 
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
-    unwrapped_model.save_pretrained(
-        output_dir,
-        is_main_process=accelerator.is_main_process,
-        save_function=accelerator.save,
-    )
+    try:
+        unwrapped_model.save_pretrained(
+            output_dir,
+            is_main_process=accelerator.is_main_process,
+            save_function=accelerator.save,
+        )
+    except Exception as e:
+        # safetensors can fail on some parallel filesystems (e.g. Lustre)
+        # with "Argument list too long" — retry without safe serialization
+        logger.warning("save_pretrained failed (%s), retrying with safe_serialization=False", e)
+        unwrapped_model.save_pretrained(
+            output_dir,
+            is_main_process=accelerator.is_main_process,
+            save_function=accelerator.save,
+            safe_serialization=False,
+        )
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
         if training_args.push_to_hub and api is not None and repo_id is not None:
