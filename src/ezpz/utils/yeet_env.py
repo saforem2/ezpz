@@ -439,9 +439,10 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 parts.append(pct)
             if speed:
                 parts.append(speed)
-            msg = "\r    " + "  ".join(parts)
-            sys.stdout.write(msg + "\033[K")
+            msg = "    " + "  ".join(parts)
+            sys.stdout.write(f"\r\033[K{msg}")
             sys.stdout.flush()
+        print()  # newline so progress has its own line
         _local_progress()
         _, local_elapsed, local_rc = _rsync_to_node(
             src, dst, current, progress_callback=_local_progress,
