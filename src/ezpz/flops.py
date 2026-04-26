@@ -87,7 +87,7 @@ def get_device_name() -> str:
 
 def get_peak_flops(
     device_name: str | None = None,
-) -> float:
+) -> float | None:
     """Return peak BF16 FLOPS for the given device.
 
     Args:
@@ -95,13 +95,17 @@ def get_peak_flops(
             If ``None``, auto-detected from the current device.
 
     Returns:
-        Peak FLOPS as a float. Falls back to A100 (312 TFLOPS) if the
-        device is not recognized.
+        Peak FLOPS as a float, or ``None`` if the device is not
+        recognized (e.g. CPU).
     """
     if device_name is None:
         device_name = get_device_name()
 
     name = device_name.upper()
+
+    # CPU — no meaningful peak FLOPS
+    if name == "CPU":
+        return None
 
     # Check known devices (order matters — specific matches first)
     for key, flops in _PEAK_FLOPS:
@@ -111,12 +115,13 @@ def get_peak_flops(
             # Dynamic computation for Intel PVC
             return _compute_pvc_peak_flops()
 
-    # Fallback
-    logger.warning(
-        "Peak FLOPS unknown for %r, falling back to A100 (312 TFLOPS)",
-        device_name,
+    # Unknown accelerator — warn once and return None
+    import warnings
+    warnings.warn(
+        f"Peak FLOPS unknown for {device_name!r} — MFU tracking disabled",
+        stacklevel=2,
     )
-    return 312e12
+    return None
 
 
 def _compute_pvc_peak_flops() -> float:
@@ -254,6 +259,8 @@ def compute_mfu(
 
     if peak_flops is None:
         peak_flops = get_peak_flops(device_name)
+        if peak_flops is None:
+            return 0.0
 
     achieved_flops = model_flops / step_duration
     theoretical_peak = peak_flops * world_size

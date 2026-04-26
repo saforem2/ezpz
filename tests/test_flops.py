@@ -40,14 +40,18 @@ class TestGetPeakFlops:
     def test_l40s(self):
         assert get_peak_flops("NVIDIA L40S") == 362e12
 
-    def test_unknown_fallback(self):
-        """Unknown devices fall back to A100."""
-        assert get_peak_flops("Unknown GPU 9000") == 312e12
+    def test_unknown_returns_none(self):
+        """Unknown devices return None."""
+        assert get_peak_flops("Unknown GPU 9000") is None
+
+    def test_cpu_returns_none(self):
+        """CPU returns None (no meaningful peak FLOPS)."""
+        assert get_peak_flops("cpu") is None
 
     def test_auto_detect(self):
-        """Auto-detect returns a positive number."""
+        """Auto-detect returns a positive number or None on CPU."""
         result = get_peak_flops()
-        assert result > 0
+        assert result is None or result > 0
 
 
 class TestEstimateModelFlops:
