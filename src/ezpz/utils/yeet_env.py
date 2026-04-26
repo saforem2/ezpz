@@ -458,12 +458,15 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # Step 1: rsync source to local /tmp/ and patch paths ONCE.
     # All subsequent rsyncs distribute the already-patched copy.
     if needs_local_copy:
+        _local_t0 = time.perf_counter()
         def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
+            elapsed = time.perf_counter() - _local_t0
             parts = ["Copying to local /tmp/"]
             if pct:
                 parts.append(pct)
             if speed:
                 parts.append(speed)
+            parts.append(f"[{elapsed:.0f}s]")
             msg = "    " + "  ".join(parts)
             sys.stdout.write(f"\r\033[K{msg}")
             sys.stdout.flush()
