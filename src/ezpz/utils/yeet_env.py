@@ -382,6 +382,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Hostfile to read node list from (default: auto-detect from scheduler).",
     )
     parser.add_argument(
+        "--copy",
+        action="store_true",
+        help=(
+            "Use 'cp -a' instead of rsync for the local copy "
+            "(Lustre → /tmp/). Faster for initial copies of large "
+            "environments with many small files. Remote node "
+            "distribution still uses rsync."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be synced without doing it.",
@@ -473,34 +483,71 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     print(f"  Syncing ({total} nodes)...")
     t0 = time.perf_counter()
 
-    # Step 1: rsync source to local /tmp/ and patch paths ONCE.
+    # Step 1: copy source to local /tmp/ and patch paths ONCE.
     # All subsequent rsyncs distribute the already-patched copy.
     if needs_local_copy:
         _local_t0 = time.perf_counter()
-        def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
-            elapsed = time.perf_counter() - _local_t0
-            parts = ["Copying to local /tmp/"]
-            if pct:
-                parts.append(pct)
-            if speed:
-                parts.append(speed)
-            parts.append(f"[{elapsed:.0f}s]")
-            msg = "    " + "  ".join(parts)
-            sys.stdout.write(f"\r\033[K{msg}")
-            sys.stdout.flush()
-        print()  # newline so progress has its own line
-        _local_progress()
-        _, local_elapsed, local_rc = _rsync_to_node(
-            src, dst, current, local=True,
-            progress_callback=_local_progress,
-        )
-        sys.stdout.write("\r\033[K")  # clear progress line
+        if args.copy:
+            # cp -a: faster than rsync for large venvs on parallel
+            # filesystems (sequential directory walk vs per-file stat).
+            method = "cp"
+            def _cp_spinner() -> None:
+                elapsed = time.perf_counter() - _local_t0
+                frames = _AggregateProgress._FRAMES
+                idx = int(elapsed * 2) % len(frames)
+                sys.stdout.write(
+                    f"\r\033[K    {frames[idx]} cp -a → /tmp/  [{elapsed:.0f}s]"
+                )
+                sys.stdout.flush()
+            print()
+            _cp_spinner()
+            # Run cp in background and update spinner
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                # Remove stale copy so cp doesn't merge into it
+                subprocess.run(
+                    ["rm", "-rf", str(dst)], check=False,
+                )
+            cp_proc = subprocess.Popen(
+                ["cp", "-a", str(src), str(dst)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            while cp_proc.poll() is None:
+                _cp_spinner()
+                time.sleep(0.5)
+            local_elapsed = time.perf_counter() - _local_t0
+            local_rc = cp_proc.returncode or 0
+            stderr = (cp_proc.stderr.read() or b"").decode()
+            if local_rc != 0:
+                logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
+            sys.stdout.write("\r\033[K")
+        else:
+            method = "rsync"
+            def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
+                elapsed = time.perf_counter() - _local_t0
+                parts = ["Copying to local /tmp/"]
+                if pct:
+                    parts.append(pct)
+                if speed:
+                    parts.append(speed)
+                parts.append(f"[{elapsed:.0f}s]")
+                msg = "    " + "  ".join(parts)
+                sys.stdout.write(f"\r\033[K{msg}")
+                sys.stdout.flush()
+            print()
+            _local_progress()
+            _, local_elapsed, local_rc = _rsync_to_node(
+                src, dst, current, local=True,
+                progress_callback=_local_progress,
+            )
+            sys.stdout.write("\r\033[K")
         if local_rc == 0:
             _patch_venv_paths_local(dst, src)
-            print(f"    \u2713 {current} (local) \u2014 {local_elapsed:.1f}s")
+            print(f"    \u2713 {current} (local, {method}) \u2014 {local_elapsed:.1f}s")
             results.append((current, local_elapsed, local_rc))
         else:
-            print(f"    \u2717 {current} (local) \u2014 FAILED")
+            print(f"    \u2717 {current} (local, {method}) \u2014 FAILED")
             results.append((current, local_elapsed, local_rc))
 
     remaining = [n for n in all_nodes if n != current]
