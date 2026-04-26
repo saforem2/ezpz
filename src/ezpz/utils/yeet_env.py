@@ -433,8 +433,20 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # Step 1: rsync source to local /tmp/ and patch paths ONCE.
     # All subsequent rsyncs distribute the already-patched copy.
     if needs_local_copy:
-        print(f"    Copying to local /tmp/...")
-        _, local_elapsed, local_rc = _rsync_to_node(src, dst, current)
+        def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
+            parts = ["Copying to local /tmp/"]
+            if pct:
+                parts.append(pct)
+            if speed:
+                parts.append(speed)
+            msg = "\r    " + "  ".join(parts)
+            sys.stdout.write(msg + "\033[K")
+            sys.stdout.flush()
+        _local_progress()
+        _, local_elapsed, local_rc = _rsync_to_node(
+            src, dst, current, progress_callback=_local_progress,
+        )
+        sys.stdout.write("\r\033[K")  # clear progress line
         if local_rc == 0:
             _patch_venv_paths_local(dst, src)
             print(f"    \u2713 {current} (local) \u2014 {local_elapsed:.1f}s")
