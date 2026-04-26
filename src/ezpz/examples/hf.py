@@ -603,6 +603,18 @@ def main() -> None:
         else training_args.max_steps * accelerator.num_processes,
     )
 
+    # Estimate model FLOPS before wrapping (FSDP/DDP breaks FlopCounterMode)
+    _model_flops = 0
+    try:
+        from ezpz.flops import estimate_model_flops
+        _model_flops = estimate_model_flops(
+            model, (training_args.per_device_train_batch_size, block_size),
+        )
+        if rank == 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
+
     logger.info("[rank %d] calling accelerator.prepare() ...", rank)
     (
         model,
@@ -614,19 +626,6 @@ def main() -> None:
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
     logger.info("[rank %d] accelerator.prepare() complete", rank)
-
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    _device_type = str(accelerator.device.type) if hasattr(accelerator.device, "type") else "cpu"
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (training_args.per_device_train_batch_size, block_size),
-        )
-        if rank == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
 
     try:
         num_update_steps_per_epoch = math.ceil(
@@ -805,7 +804,10 @@ def main() -> None:
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)
-                    logger.info("[train] %s", summary)
+                    logger.info(
+                        "[train] %s",
+                        summary.replace("train/", ""),
+                    )
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
@@ -849,7 +851,7 @@ def main() -> None:
                 "eval/train_loss": avg_train_loss,
             }
             summary = history.update(eval_metrics)
-            logger.info("[eval] %s", summary)
+            logger.info("[eval] %s", summary.replace("eval/", ""))
 
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
