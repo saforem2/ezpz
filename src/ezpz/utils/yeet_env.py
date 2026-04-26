@@ -422,6 +422,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--compress",
+        action="store_true",
+        help=(
+            "Create a .tar.gz archive, copy it to /tmp/, then extract. "
+            "Reduces Lustre I/O from millions of small-file reads to "
+            "one sequential read. Remote distribution still uses rsync."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be synced without doing it.",
@@ -517,34 +526,92 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # All subsequent rsyncs distribute the already-patched copy.
     if needs_local_copy:
         _local_t0 = time.perf_counter()
-        if args.copy:
+
+        def _spinner(label: str) -> None:
+            """Reusable spinner that shows label + elapsed time."""
+            elapsed = time.perf_counter() - _local_t0
+            frames = _AggregateProgress._FRAMES
+            idx = int(elapsed * 2) % len(frames)
+            sys.stdout.write(f"\r\033[K    {frames[idx]} {label}  [{elapsed:.0f}s]")
+            sys.stdout.flush()
+
+        if args.compress:
+            # tar.gz: compress on Lustre (sequential write), copy one
+            # file to /tmp/ (sequential read), extract locally.
+            # Much less Lustre metadata pressure than per-file rsync/cp.
+            method = "tar.gz"
+            tarball = Path(f"/tmp/{env_name}.tar.gz")
+            print()
+
+            # Step 1: create archive from source on Lustre
+            _spinner(f"tar -czf {tarball.name} (compressing)")
+            tar_create = subprocess.Popen(
+                [
+                    "tar", "-czf", str(tarball),
+                    "--exclude=__pycache__",
+                    "-C", str(src.parent), src.name,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            while tar_create.poll() is None:
+                _spinner(f"tar -czf {tarball.name} (compressing)")
+                time.sleep(0.5)
+            if tar_create.returncode != 0:
+                stderr = (tar_create.stderr.read() or b"").decode()
+                logger.warning("tar create failed: %s", stderr.strip())
+                local_elapsed = time.perf_counter() - _local_t0
+                local_rc = tar_create.returncode or 1
+            else:
+                # Show tarball size
+                try:
+                    tb_size = tarball.stat().st_size / (1024**3)
+                    _spinner(f"tar.gz: {tb_size:.1f}G")
+                except OSError:
+                    pass
+
+                # Step 2: extract into /tmp/
+                if dst.exists():
+                    subprocess.run(["rm", "-rf", str(dst)], check=False)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                _spinner(f"extracting {tarball.name} → /tmp/")
+                tar_extract = subprocess.Popen(
+                    ["tar", "-xzf", str(tarball), "-C", str(dst.parent)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                )
+                while tar_extract.poll() is None:
+                    _spinner(f"extracting {tarball.name} → /tmp/")
+                    time.sleep(0.5)
+                local_elapsed = time.perf_counter() - _local_t0
+                local_rc = tar_extract.returncode or 0
+                if local_rc != 0:
+                    stderr = (tar_extract.stderr.read() or b"").decode()
+                    logger.warning("tar extract failed: %s", stderr.strip())
+
+                # Clean up tarball
+                try:
+                    tarball.unlink()
+                except OSError:
+                    pass
+            sys.stdout.write("\r\033[K")
+
+        elif args.copy:
             # cp -a: faster than rsync for large venvs on parallel
             # filesystems (sequential directory walk vs per-file stat).
             method = "cp"
-            def _cp_spinner() -> None:
-                elapsed = time.perf_counter() - _local_t0
-                frames = _AggregateProgress._FRAMES
-                idx = int(elapsed * 2) % len(frames)
-                sys.stdout.write(
-                    f"\r\033[K    {frames[idx]} cp -a → /tmp/  [{elapsed:.0f}s]"
-                )
-                sys.stdout.flush()
             print()
-            _cp_spinner()
-            # Run cp in background and update spinner
+            _spinner("cp -a → /tmp/")
             dst.parent.mkdir(parents=True, exist_ok=True)
             if dst.exists():
-                # Remove stale copy so cp doesn't merge into it
-                subprocess.run(
-                    ["rm", "-rf", str(dst)], check=False,
-                )
+                subprocess.run(["rm", "-rf", str(dst)], check=False)
             cp_proc = subprocess.Popen(
                 ["cp", "-a", str(src), str(dst)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
             while cp_proc.poll() is None:
-                _cp_spinner()
+                _spinner("cp -a → /tmp/")
                 time.sleep(0.5)
             local_elapsed = time.perf_counter() - _local_t0
             local_rc = cp_proc.returncode or 0
@@ -552,6 +619,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             if local_rc != 0:
                 logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
             sys.stdout.write("\r\033[K")
+
         else:
             method = "rsync"
             def _local_progress(pct: str = "", speed: str = "", eta: str = "") -> None:
