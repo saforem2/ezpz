@@ -64,7 +64,7 @@ Explicitly, these are `ezpz <command>`:
 - ??? question "Experimental"
 
         - 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
-        - 🚀 [`ezpz yeet-env`](./yeet-env.md): Broadcast environment tarball to all worker nodes via MPI
+        - 🚀 [`ezpz yeet-env`](./yeet-env.md): Distribute environment to all worker nodes via parallel rsync
 
 - ??? tip "`ezpz --help`"
 
