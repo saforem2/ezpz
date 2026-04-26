@@ -29,9 +29,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Sequence
 
-import ezpz
+import logging
 
-logger = ezpz.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # ── Environment detection ────────────────────────────────────────────────────
@@ -79,22 +79,52 @@ def _get_env_size(path: Path) -> str:
 def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
     """Get unique worker node hostnames from the job allocation.
 
-    Uses ``get_hostfile_with_fallback`` and ``get_nodes_from_hostfile``
-    from ``ezpz.distributed`` to discover nodes from PBS, SLURM, or
-    a user-provided hostfile.
+    Reads nodes from PBS_NODEFILE, SLURM_NODELIST, or a user-provided
+    hostfile.  Avoids importing heavy ezpz modules (torch, numpy, etc.)
+    so the CLI starts fast even on slow filesystems.
     """
-    from ezpz.distributed import (
-        get_hostfile_with_fallback,
-        get_nodes_from_hostfile,
-    )
+    import os
 
-    hf = get_hostfile_with_fallback(hostfile=hostfile)
-    nodes = get_nodes_from_hostfile(hf)
+    # Resolve hostfile path
+    hf: str | None = hostfile
+    if hf is None:
+        for var in ("PBS_NODEFILE", "HOSTFILE"):
+            val = os.environ.get(var)
+            if val and Path(val).is_file():
+                hf = val
+                break
+
+    # SLURM: expand nodelist with scontrol
+    if hf is None:
+        slurm_nodelist = os.environ.get("SLURM_NODELIST")
+        if slurm_nodelist:
+            try:
+                result = subprocess.run(
+                    ["scontrol", "show", "hostnames", slurm_nodelist],
+                    capture_output=True, text=True, check=True,
+                )
+                nodes = result.stdout.strip().splitlines()
+                if nodes:
+                    hf_path = Path("/tmp/_ezpz_hostfile")
+                    hf_path.write_text("\n".join(nodes) + "\n")
+                    hf = str(hf_path)
+            except Exception:
+                pass
+
+    if hf is None:
+        logger.warning("No hostfile found — using localhost only")
+        return [_get_current_hostname()]
+
+    # Read nodes from hostfile
+    nodes = [
+        line.strip() for line in Path(hf).read_text().splitlines()
+        if line.strip()
+    ]
+
     # Deduplicate while preserving order
     seen: set[str] = set()
     unique: list[str] = []
     for node in nodes:
-        # Normalize: strip FQDN suffixes
         short = node.split(".")[0]
         if short not in seen:
             seen.add(short)
