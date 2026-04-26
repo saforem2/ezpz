@@ -871,6 +871,9 @@ def main() -> None:
             output_dir = os.path.join(output_dir, output_dir)
             accelerator.save_state(output_dir)
 
+        if completed_steps >= training_args.max_steps:
+            break
+
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
     try:
