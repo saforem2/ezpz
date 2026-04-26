@@ -10,6 +10,7 @@ By default, the command to be executed will be launched across _all_ nodes.
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -397,14 +398,12 @@ def build_executable(
         else (cmd_to_launch if cmd_to_launch is not None else [])
     )
     if include_python:
-        # and "python" not in str(cmd_to_launch_list[0]):
-        found_python = False
-        for part in cmd_to_launch_list:
-            if "python" in str(part):
-                found_python = True
+        found_python = any("python" in str(p) for p in cmd_to_launch_list)
         if not found_python:
-            cmd_to_launch_list.insert(0, sys.executable)
-        # cmd_to_launch_list = [sys.executable] + cmd_to_launch_list
+            # Use whichever python3 is on PATH (respects activated venvs)
+            # rather than sys.executable (frozen at interpreter startup).
+            python = shutil.which("python3") or sys.executable
+            cmd_to_launch_list.insert(0, python)
 
     cmd_to_launch_str = shlex.join(cmd_to_launch_list)
     logger.info("Building command to execute by piecing together:")
