@@ -406,7 +406,6 @@ def train(
 
     # Estimate model FLOPS before wrapping (FSDP/DDP breaks FlopCounterMode)
     _model_flops = 0
-    device_type = ezpz.get_torch_device_type()
     try:
         from ezpz.flops import estimate_model_flops
         _model_flops = estimate_model_flops(

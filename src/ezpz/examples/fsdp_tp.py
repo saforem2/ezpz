@@ -766,7 +766,6 @@ def train(
     # Estimate model FLOPS before parallelization (FlopCounterMode
     # can't run through FSDP/TP wrappers)
     _model_flops = 0
-    device_type = ezpz.get_torch_device_type()
     try:
         from ezpz.flops import estimate_model_flops
         _model_flops = estimate_model_flops(

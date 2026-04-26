@@ -506,11 +506,12 @@ rank = ezpz.setup_torch()
 device = ezpz.get_torch_device()
 
 model = torch.nn.Linear(4096, 4096).to(device)
+
+# Count FLOPS once before wrapping (FSDP/DDP breaks FlopCounterMode)
+model_flops = estimate_model_flops(model, input_shape=(32, 4096))
+
 model = ezpz.wrap_model(model)
 optimizer = torch.optim.Adam(model.parameters())
-
-# Count FLOPS once before training
-model_flops = estimate_model_flops(model, input_shape=(32, 4096))
 if rank == 0:
     print(f"Model FLOPS (fwd+bwd): {model_flops:.2e}")
 
