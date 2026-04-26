@@ -56,7 +56,7 @@ ezpz launch python3 -m your_app.train
 ## CLI Options
 
 ```
-ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
+ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--copy] [--dry-run]
 ```
 
 | Flag | Default | Description |
@@ -64,7 +64,25 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
 | `--src` | Active venv/conda env | Source environment path |
 | `--dst` | `/tmp/<env-name>/` | Destination on each node |
 | `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
+| `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--dry-run` | — | Preview without transferring |
+
+!!! tip "`--copy` for faster initial transfers"
+
+    On parallel filesystems like Lustre, `rsync` is slow for the
+    initial local copy because it stats every file individually.
+    Use `--copy` to use `cp -a` instead — it does a sequential
+    directory walk which is much faster for large environments
+    with many small files. Remote node distribution still uses
+    rsync regardless of this flag.
+
+    ```bash
+    # First time (no /tmp/.venv yet): use --copy
+    ezpz yeet-env --copy
+
+    # Subsequent runs (after pip install, etc.): rsync is faster
+    ezpz yeet-env
+    ```
 
 ## How It Works
 
