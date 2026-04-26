@@ -2709,7 +2709,9 @@ class History:
                     link_path.symlink_to(json_log.resolve())
                 except OSError:
                     pass
-            paths["JSON Log"] = str(json_log)
+            # Report the symlink inside the output dir (co-located)
+            reported = link_path if link_path.exists() else json_log
+            paths["JSON Log"] = str(reported)
             output_files["JSON Log"] = paths["JSON Log"]
         if self._jsonl_path is not None:
             paths["Metrics JSONL"] = str(self._jsonl_path)
