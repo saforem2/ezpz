@@ -264,7 +264,13 @@ def try_estimate(
     try:
         flops = estimate_model_flops(model, input_shape, **kwargs)  # type: ignore[arg-type]
         if flops > 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", flops)
+            try:
+                from ezpz.distributed import get_rank
+                rank = get_rank()
+            except Exception:
+                rank = 0
+            if rank == 0:
+                logger.info("Model FLOPS (fwd+bwd): %.2e", flops)
         return flops
     except Exception as exc:
         logger.warning("FLOPS estimation failed: %s", exc)
