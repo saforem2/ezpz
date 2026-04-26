@@ -487,7 +487,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     if needs_local_copy:
         print(f"    local:  {current} (rsync to {dst}/)")
     if remote_nodes:
-        print(f"    remote: {', '.join(remote_nodes)}")
+        if len(remote_nodes) <= 6:
+            print(f"    remote: {', '.join(remote_nodes)}")
+        else:
+            shown = ', '.join(remote_nodes[:3])
+            print(f"    remote: {shown}, ... ({len(remote_nodes)} nodes)")
     if args.dry_run:
         print(f"  [dry-run] No files transferred.")
         return 0
