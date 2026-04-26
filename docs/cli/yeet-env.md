@@ -272,42 +272,43 @@ ezpz yeet-env --dst /local/scratch/myenv
 ezpz yeet-env --dry-run
 ```
 
-### Real-world example: 64 nodes on Sunspot
+### Real-world example: 72 nodes on Sunspot
 
-??? example "9.1 GB venv → 65 nodes in ~5 minutes"
+??? example "9.1 GB venv → 73 nodes in ~3 minutes"
 
     ```bash
     $ ezpz yeet-env
       Source: /lus/tegu/.../torchtitan/.venv (9.1G)
-      Target: /tmp/.venv/ on 65 node(s)
-        local:  x1922c3s6b0n0 (rsync to /tmp/.venv/)
-        remote: x1921c1s2b0n0-hsn0, x1921c2s7b0n0-hsn0, ... (64 nodes)
-      Syncing (65 nodes)...
-        Copying to local /tmp/...
-        ✓ x1922c3s6b0n0 (local) — 213.3s
-        ✓ x1921c2s7b0n0-hsn0 — 21.6s
-        ✓ x1921c3s1b0n0-hsn0 — 22.0s
-        ✓ x1921c1s2b0n0-hsn0 — 22.2s
-        ✓ x1921c3s0b0n0-hsn0 — 22.4s
-        ✓ x1922c3s6b0n0-hsn0 — 1.2s
-        ✓ x1922c3s2b0n0-hsn0 — 38.0s
-        ✓ x1922c0s5b0n0-hsn0 — 38.9s
+      Target: /tmp/.venv/ on 73 node(s)
+        local:  x1921c1s2b0n0 (rsync to /tmp/.venv/)
+        remote: x1921c1s2b0n0-hsn0, x1921c2s7b0n0-hsn0, ... (72 nodes)
+      Syncing (73 nodes)...
+        ✓ x1921c1s2b0n0 (local) — 99.0s
+        ✓ x1921c1s2b0n0-hsn0 — 0.8s
+        ✓ x1921c4s1b0n0-hsn0 — 22.5s
+        ✓ x1921c4s5b0n0-hsn0 — 23.0s
+        ✓ x1921c3s7b0n0-hsn0 — 23.0s
+        ✓ x1921c3s6b0n0-hsn0 — 23.2s
+        ✓ x1921c4s2b0n0-hsn0 — 23.7s
+        ✓ x1921c4s0b0n0-hsn0 — 24.0s
+        ✓ x1921c3s0b0n0-hsn0 — 24.9s
         ...
-        ✓ x1921c5s2b0n0-hsn0 — 58.1s
-      Done in 293.8s
+        ✓ x1922c2s7b0n0-hsn0 — 47.7s
+      Done in 171.2s
     ```
 
     **Timing breakdown:**
 
     | Phase | Time | Notes |
     |-------|------|-------|
-    | Local copy (Lustre → `/tmp/`) | 213s | One-time, includes path patching |
-    | Fan-out to 64 remote nodes | ~80s | Greedy, nodes become sources as they finish |
-    | **Total** | **~294s** | 9.1 GB to 65 nodes |
+    | Local copy (Lustre → `/tmp/`) | 99s | One-time, includes path patching |
+    | Fan-out to 72 remote nodes | ~72s | Greedy, nodes become sources as they finish |
+    | **Total** | **~171s** | 9.1 GB to 73 nodes |
 
-    After the first few nodes complete (~22s), they immediately
-    start serving as sources for the remaining nodes — no waiting
-    for a full wave to finish.
+    The first 8 nodes complete in ~23s, then immediately start
+    serving as sources for the remaining 64 nodes. No node waits
+    for others to finish — the tree grows as fast as individual
+    rsyncs complete.
 
 ### Complete workflow
 
