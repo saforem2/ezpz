@@ -252,6 +252,7 @@ def _rsync_to_node(
     node: str,
     *,
     from_node: str | None = None,
+    local: bool = False,
     progress_callback: object | None = None,
 ) -> tuple[str, float, int]:
     """Rsync *src* to *node*:*dst*, optionally from a remote source.
@@ -260,22 +261,39 @@ def _rsync_to_node(
         from_node: If set, SSH into this node and run rsync from there.
             This enables tree distribution where completed nodes become
             sources. If ``None``, rsync runs locally.
+        local: If ``True``, destination is a local path (no SSH).
+            Uses optimized flags: skip metadata sync, use whole-file
+            transfer, exclude ``__pycache__``.
         progress_callback: If provided, called with ``(pct, speed, eta)``
             strings parsed from ``rsync --info=progress2`` output.
 
     Returns ``(node, elapsed_seconds, returncode)``.
     """
     src_str = str(src).rstrip("/") + "/"
-    dst_str = f"{node}:{dst}/"
     t0 = time.perf_counter()
 
-    rsync_cmd = [
-        "rsync",
-        "-a",               # archive mode
-        "--info=progress2",  # single overall progress line
-        src_str,
-        dst_str,
-    ]
+    if local:
+        # Local copy: skip metadata sync (-t, -p, -g, -o are slow),
+        # use whole-file (no delta algorithm), exclude __pycache__.
+        rsync_cmd = [
+            "rsync",
+            "-rlD",              # recursive, symlinks, devices (no -tpgo)
+            "--whole-file",      # skip delta algorithm for local copies
+            "--info=progress2",
+            "--exclude=__pycache__",
+            src_str,
+            str(dst) + "/",
+        ]
+    else:
+        dst_str = f"{node}:{dst}/"
+        rsync_cmd = [
+            "rsync",
+            "-rlD",              # skip expensive metadata sync
+            "--info=progress2",
+            "--exclude=__pycache__",
+            src_str,
+            dst_str,
+        ]
 
     # If source is a remote node, wrap the rsync in an SSH call
     if from_node is not None:
@@ -473,7 +491,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print()  # newline so progress has its own line
         _local_progress()
         _, local_elapsed, local_rc = _rsync_to_node(
-            src, dst, current, progress_callback=_local_progress,
+            src, dst, current, local=True, progress_callback=_local_progress,
         )
         sys.stdout.write("\r\033[K")  # clear progress line
         if local_rc == 0:

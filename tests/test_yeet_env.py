@@ -89,7 +89,7 @@ class TestRsyncToNode:
         assert elapsed >= 0
         call_args = mock_run.call_args[0][0]
         assert call_args[0] == "rsync"
-        assert "-a" in call_args
+        assert "-rlD" in call_args
         assert call_args[-1] == "node01:/tmp/env/"
 
     @patch("ezpz.utils.yeet_env.subprocess.run")
