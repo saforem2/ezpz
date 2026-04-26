@@ -16,7 +16,7 @@ dependencies = [
     "rich",
     "seaborn",
     "sh",
-    "transformers==4.50.1",
+    "transformers>=4.50",
     "torchinfo",
     "wandb",
     "xarray",
