@@ -377,6 +377,11 @@ def _rsync_to_node(
         returncode = result.returncode
         stderr = result.stderr
 
+    # rsync exit 24 = "some files vanished before they could be transferred"
+    # This is normal when concurrent rsyncs read from the same /tmp/ source
+    # while temporary files (e.g. triton plugin builds) come and go.
+    if returncode == 24:
+        returncode = 0
     if returncode != 0:
         logger.warning(
             "rsync to %s failed (exit %d): %s",
