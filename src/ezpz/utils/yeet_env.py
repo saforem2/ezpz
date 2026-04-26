@@ -190,7 +190,7 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
     """
     src_str = str(src)
     dst_str = str(dst)
-    # Patch activate scripts and pyvenv.cfg via sed
+    # Patch activate scripts and pyvenv.cfg
     for fname in ("bin/activate", "bin/activate.csh", "bin/activate.fish",
                    "pyvenv.cfg"):
         fpath = dst / fname
@@ -200,25 +200,50 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
                 fpath.write_text(text.replace(src_str, dst_str))
             except OSError:
                 pass
-    # Re-link python binaries
     bin_dir = dst / "bin"
-    if bin_dir.is_dir():
-        # Read base python dir from pyvenv.cfg
-        cfg = dst / "pyvenv.cfg"
-        base_python = None
-        if cfg.is_file():
-            for line in cfg.read_text().splitlines():
-                if line.startswith("home"):
-                    base_python = line.split("=", 1)[1].strip()
-                    break
-        for link in bin_dir.iterdir():
-            if link.is_symlink() and link.name.startswith("python"):
-                target = str(link.resolve())
-                if src_str in target and base_python:
-                    py3 = Path(base_python) / "python3"
-                    if py3.exists():
-                        link.unlink()
-                        link.symlink_to(py3)
+    if not bin_dir.is_dir():
+        return
+    # Read base python dir from pyvenv.cfg
+    cfg = dst / "pyvenv.cfg"
+    base_python = None
+    if cfg.is_file():
+        for line in cfg.read_text().splitlines():
+            if line.startswith("home"):
+                base_python = line.split("=", 1)[1].strip()
+                break
+    # Re-link python binaries
+    for link in bin_dir.iterdir():
+        if link.is_symlink() and link.name.startswith("python"):
+            target = str(link.resolve())
+            if src_str in target and base_python:
+                py3 = Path(base_python) / "python3"
+                if py3.exists():
+                    link.unlink()
+                    link.symlink_to(py3)
+    # Patch shebangs in entry-point scripts (ezpz, pip, torchrun, etc.)
+    # These are regular files with a first line like:
+    #   #!/path/to/original/.venv/bin/python3
+    for script in bin_dir.iterdir():
+        if script.is_symlink() or not script.is_file():
+            continue
+        try:
+            with open(script, "rb") as f:
+                first_line = f.readline()
+            if not first_line.startswith(b"#!"):
+                continue
+            shebang = first_line.decode("utf-8", errors="replace")
+            if src_str not in shebang:
+                continue
+            # Replace the old path in the shebang
+            with open(script, "rb") as f:
+                content = f.read()
+            content = content.replace(
+                src_str.encode(), dst_str.encode(), 1,
+            )
+            with open(script, "wb") as f:
+                f.write(content)
+        except (OSError, UnicodeDecodeError):
+            pass
 
 
 def _rsync_to_node(
