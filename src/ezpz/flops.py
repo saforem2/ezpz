@@ -205,7 +205,15 @@ def estimate_model_flops(
         with FlopCounterMode(display=False) as counter:
             output = model(dummy)
             if backward:
-                loss = output.sum()
+                # HF models return dataclass/dict — extract the tensor
+                if hasattr(output, "loss") and output.loss is not None:
+                    loss = output.loss
+                elif hasattr(output, "logits"):
+                    loss = output.logits.sum()
+                elif isinstance(output, torch.Tensor):
+                    loss = output.sum()
+                else:
+                    loss = output[0].sum()
                 loss.backward()
         flops = counter.get_total_flops()
     except Exception:
