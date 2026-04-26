@@ -136,6 +136,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
@@ -763,19 +764,7 @@ def train(
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    # Estimate model FLOPS before parallelization (FlopCounterMode
-    # can't run through FSDP/TP wrappers)
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, args.seq_length),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
-        _model_flops = 0
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
@@ -1055,7 +1044,6 @@ def train(
                 dt = metrics.get("dt", metrics.get("dtf", 0) + metrics.get("dtb", 0))
                 if dt > 0:
                     metrics["tflops"] = _model_flops / dt / 1e12
-                    from ezpz.flops import compute_mfu
                     metrics["mfu"] = compute_mfu(
                         _model_flops, dt, world_size=world_size,
                     )

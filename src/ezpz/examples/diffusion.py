@@ -79,6 +79,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -404,18 +405,7 @@ def train(
     model.to(device)
     model.train()
 
-    # Estimate model FLOPS before wrapping (FSDP/DDP breaks FlopCounterMode)
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model,
-            (args.batch_size, args.seq_length),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
 
     reshard = ezpz.distributed.resolve_fsdp_strategy(
         args.fsdp_sharding_strategy
@@ -507,7 +497,6 @@ def train(
             }
             if _model_flops > 0 and (t3 - t0) > 0:
                 train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
-                from ezpz.flops import compute_mfu
                 train_metrics["train/mfu"] = compute_mfu(
                     _model_flops, t3 - t0,
                     world_size=ezpz.get_world_size(),

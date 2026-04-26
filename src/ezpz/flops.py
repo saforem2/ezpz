@@ -41,6 +41,7 @@ __all__ = [
     "estimate_model_flops",
     "get_device_name",
     "get_peak_flops",
+    "try_estimate",
 ]
 
 
@@ -247,6 +248,27 @@ def estimate_model_flops(
         fallback,
     )
     return fallback
+
+
+def try_estimate(
+    model: torch.nn.Module,
+    input_shape: tuple[int, ...] | list[int],
+    **kwargs: object,
+) -> int:
+    """Estimate model FLOPS, returning 0 on failure.
+
+    Convenience wrapper around :func:`estimate_model_flops` that catches
+    exceptions and logs a warning instead of propagating.  Intended to
+    replace the repeated try/except/log boilerplate in example scripts.
+    """
+    try:
+        flops = estimate_model_flops(model, input_shape, **kwargs)  # type: ignore[arg-type]
+        if flops > 0:
+            logger.info("Model FLOPS (fwd+bwd): %.2e", flops)
+        return flops
+    except Exception as exc:
+        logger.warning("FLOPS estimation failed: %s", exc)
+        return 0
 
 
 # ── MFU calculation ──────────────────────────────────────────────────────────

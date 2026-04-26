@@ -85,6 +85,7 @@ import ezpz.distributed
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
@@ -527,18 +528,9 @@ def train_fn(
     #     dtype=args.dtype,
     #     # device_id=int(ezpz.get_local_rank())
     # )
-    # Estimate model FLOPS before wrapping (FlopCounterMode can't
-    # run through FSDP/DDP wrappers)
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, in_chans, args.img_size, args.img_size),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
+    _model_flops = try_estimate(
+        model, (args.batch_size, in_chans, args.img_size, args.img_size),
+    )
 
     if world_size > 1:
         reshard = ezpz.distributed.resolve_fsdp_strategy(
@@ -669,7 +661,6 @@ def train_fn(
             }
             if _model_flops > 0 and (t4 - t0) > 0:
                 train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
-                from ezpz.flops import compute_mfu
                 train_metrics["train/mfu"] = compute_mfu(
                     _model_flops, t4 - t0,
                     world_size=world_size,

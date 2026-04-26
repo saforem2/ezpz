@@ -23,6 +23,7 @@ import ezpz
 import ezpz.distributed
 from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.profile import get_profiling_context
 
 START_TIME = time.perf_counter()  # start time
@@ -202,20 +203,10 @@ class Trainer:
         self.dtype = self.config.get_torch_dtype()
         self.model.to(self.device_id)
         self.model.to(self.dtype)
-        # Estimate model FLOPS for MFU calculation
-        try:
-            from ezpz.flops import estimate_model_flops
-            self._model_flops = estimate_model_flops(
-                self.model,
-                input_shape=(self.config.batch_size, self.config.input_size),
-            )
-            if self.rank == 0:
-                logger.info(
-                    "Model FLOPS (fwd+bwd): %.2e", self._model_flops
-                )
-        except Exception as exc:
-            logger.warning("FLOPS estimation failed: %s", exc)
-            self._model_flops = 0
+        self._model_flops = try_estimate(
+            self.model,
+            (self.config.batch_size, self.config.input_size),
+        )
         metrics_path = self.config.outdir.joinpath("metrics.jsonl")
         self.history: ezpz.history.History = ezpz.history.History(
             report_dir=self.config.outdir,
@@ -346,7 +337,6 @@ class Trainer:
             dt = metrics["dtf"] + metrics["dtb"]
             if dt > 0:
                 metrics["tflops"] = self._model_flops / dt / 1e12
-            from ezpz.flops import compute_mfu
             metrics["mfu"] = compute_mfu(
                 self._model_flops, dt, world_size=self.world_size,
             )

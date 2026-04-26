@@ -40,6 +40,7 @@ from transformers.utils.versions import require_version
 
 import ezpz
 from ezpz.configs import HfDataTrainingArguments, HfModelArguments
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -603,17 +604,9 @@ def main() -> None:
         else training_args.max_steps * accelerator.num_processes,
     )
 
-    # Estimate model FLOPS before wrapping (FSDP/DDP breaks FlopCounterMode)
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (training_args.per_device_train_batch_size, block_size),
-        )
-        if rank == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
+    _model_flops = try_estimate(
+        model, (training_args.per_device_train_batch_size, block_size),
+    )
 
     logger.info("[rank %d] calling accelerator.prepare() ...", rank)
     (
@@ -796,7 +789,6 @@ def main() -> None:
                 }
                 if _model_flops > 0 and t1step > 0:
                     metrics["train/tflops"] = _model_flops / t1step / 1e12
-                    from ezpz.flops import compute_mfu
                     metrics["train/mfu"] = compute_mfu(
                         _model_flops, t1step,
                         world_size=accelerator.num_processes,

@@ -20,6 +20,7 @@ import torch
 
 import ezpz
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -59,15 +60,7 @@ def train(
     dtype = unwrapped_model.layers[0].weight.dtype
     bsize = int(os.environ.get("BATCH_SIZE", 64))
     isize = unwrapped_model.layers[0].in_features
-    # Estimate model FLOPS for MFU calculation
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(model, (bsize, isize))
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
+    _model_flops = try_estimate(model, (bsize, isize))
     warmup = int(os.environ.get("WARMUP_ITERS", 10))
     log_freq = int(os.environ.get("LOG_FREQ", 1))
     print_freq = int(os.environ.get("PRINT_FREQ", 10))
@@ -96,7 +89,6 @@ def train(
                     "dtb": dtb,
                 }
                 if _model_flops > 0:
-                    from ezpz.flops import compute_mfu
                     dt_total = dtf + dtb
                     if dt_total > 0:
                         metrics["tflops"] = _model_flops / dt_total / 1e12

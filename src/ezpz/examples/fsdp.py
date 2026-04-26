@@ -51,6 +51,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
@@ -259,17 +260,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
         fc_dim=args.fc_dim,
     ).to(device)
     logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
-    # Estimate FLOPS before FSDP wrapping
-    _model_flops = 0
-    try:
-        from ezpz.flops import estimate_model_flops
-        _model_flops = estimate_model_flops(
-            model, (args.batch_size, 1, img_size, img_size),
-        )
-        if ezpz.get_rank() == 0:
-            logger.info("Model FLOPS (fwd+bwd): %.2e", _model_flops)
-    except Exception as exc:
-        logger.warning("FLOPS estimation failed: %s", exc)
+    _model_flops = try_estimate(model, (args.batch_size, 1, img_size, img_size))
     dtypes = {
         "fp16": torch.float16,
         "bf16": torch.bfloat16,
@@ -416,7 +407,6 @@ def fsdp_main(args: argparse.Namespace) -> None:
             dt = merged.get("dt", 1.0)
             if dt > 0:
                 merged["tflops"] = _model_flops / dt / 1e12
-                from ezpz.flops import compute_mfu
                 merged["mfu"] = compute_mfu(
                     _model_flops, dt, world_size=ezpz.get_world_size(),
                 )
