@@ -21,15 +21,16 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import logging
+import shlex
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Sequence
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,8 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                 )
                 nodes = result.stdout.strip().splitlines()
                 if nodes:
-                    hf_path = Path("/tmp/_ezpz_hostfile")
+                    job_id = os.environ.get("SLURM_JOB_ID", "unknown")
+                    hf_path = Path(f"/tmp/_ezpz_hostfile_{job_id}")
                     hf_path.write_text("\n".join(nodes) + "\n")
                     hf = str(hf_path)
             except Exception:
@@ -142,9 +144,6 @@ def _get_current_hostname() -> str:
 
 
 # ── Progress indicator ────────────────────────────────────────────────────────
-
-
-import threading
 
 
 class _AggregateProgress:
@@ -215,6 +214,27 @@ class _AggregateProgress:
 # ── Rsync ────────────────────────────────────────────────────────────────────
 
 
+def _safe_rmtree(path: Path) -> bool:
+    """Remove a directory only if it's under /tmp/.
+
+    Returns True if removed, False if refused.
+    """
+    path_str = str(path)
+    resolved = str(path.resolve())
+    # Check both the literal path and the resolved path (macOS /tmp →
+    # /private/tmp) to handle symlinked temp directories.
+    tmp_prefixes = ("/tmp/", "/private/tmp/")
+    is_safe = (
+        any(path_str.startswith(p) for p in tmp_prefixes)
+        or any(resolved.startswith(p) for p in tmp_prefixes)
+    ) and path_str not in ("/tmp", "/tmp/", "/private/tmp", "/private/tmp/")
+    if not is_safe:
+        logger.error("Refusing to rm -rf outside /tmp/: %s", path)
+        return False
+    subprocess.run(["rm", "-rf", str(path)], check=False)
+    return True
+
+
 def _patch_venv_paths_local(dst: Path, src: Path) -> None:
     """Rewrite hardcoded paths in a *local* venv copy so it works from *dst*.
 
@@ -277,7 +297,7 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
             with open(script, "rb") as f:
                 content = f.read()
             content = content.replace(
-                src_str.encode(), dst_str.encode(), 1,
+                src_str.encode(), dst_str.encode(),
             )
             with open(script, "wb") as f:
                 f.write(content)
@@ -336,7 +356,7 @@ def _rsync_to_node(
 
     # If source is a remote node, wrap the rsync in an SSH call
     if from_node is not None:
-        cmd = ["ssh", from_node, " ".join(rsync_cmd)]
+        cmd = ["ssh", from_node, shlex.join(rsync_cmd)]
     else:
         cmd = rsync_cmd
 
@@ -591,23 +611,25 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     pass
 
                 # Step 2: extract into /tmp/
-                if dst.exists():
-                    subprocess.run(["rm", "-rf", str(dst)], check=False)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                _spinner(f"extracting {tarball.name} → /tmp/")
-                tar_extract = subprocess.Popen(
-                    ["tar", "-xzf", str(tarball), "-C", str(dst.parent)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                )
-                while tar_extract.poll() is None:
+                if dst.exists() and not _safe_rmtree(dst):
+                    local_elapsed = time.perf_counter() - _local_t0
+                    local_rc = 1
+                else:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
                     _spinner(f"extracting {tarball.name} → /tmp/")
-                    time.sleep(0.5)
-                local_elapsed = time.perf_counter() - _local_t0
-                local_rc = tar_extract.returncode or 0
-                if local_rc != 0:
-                    stderr = (tar_extract.stderr.read() or b"").decode()
-                    logger.warning("tar extract failed: %s", stderr.strip())
+                    tar_extract = subprocess.Popen(
+                        ["tar", "-xzf", str(tarball), "-C", str(dst.parent)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                    )
+                    while tar_extract.poll() is None:
+                        _spinner(f"extracting {tarball.name} → /tmp/")
+                        time.sleep(0.5)
+                    local_elapsed = time.perf_counter() - _local_t0
+                    local_rc = tar_extract.returncode or 0
+                    if local_rc != 0:
+                        stderr = (tar_extract.stderr.read() or b"").decode()
+                        logger.warning("tar extract failed: %s", stderr.strip())
 
                 # Clean up tarball
                 try:
@@ -624,21 +646,23 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             print()
             _spinner("cp -a → /tmp/")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if dst.exists():
-                subprocess.run(["rm", "-rf", str(dst)], check=False)
-            cp_proc = subprocess.Popen(
-                ["cp", "-a", str(src), str(dst)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-            )
-            while cp_proc.poll() is None:
-                _spinner("cp -a → /tmp/")
-                time.sleep(0.5)
-            local_elapsed = time.perf_counter() - _local_t0
-            local_rc = cp_proc.returncode or 0
-            stderr = (cp_proc.stderr.read() or b"").decode()
-            if local_rc != 0:
-                logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
+            if dst.exists() and not _safe_rmtree(dst):
+                local_elapsed = time.perf_counter() - _local_t0
+                local_rc = 1
+            else:
+                cp_proc = subprocess.Popen(
+                    ["cp", "-a", str(src), str(dst)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                )
+                while cp_proc.poll() is None:
+                    _spinner("cp -a → /tmp/")
+                    time.sleep(0.5)
+                local_elapsed = time.perf_counter() - _local_t0
+                local_rc = cp_proc.returncode or 0
+                stderr = (cp_proc.stderr.read() or b"").decode()
+                if local_rc != 0:
+                    logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
 

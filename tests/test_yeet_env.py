@@ -74,6 +74,29 @@ class TestGetWorkerNodes:
 # ===================================================================
 
 
+class TestSafeRmtree:
+    """Tests for ``_safe_rmtree``."""
+
+    @patch("ezpz.utils.yeet_env.subprocess.run")
+    def test_allows_tmp_path(self, mock_run):
+        """Paths under /tmp/ are allowed."""
+        dst = Path("/tmp/test-venv")
+        # Mock resolve to return the same path
+        result = yeet._safe_rmtree(dst)
+        assert result is True
+        mock_run.assert_called_once()
+
+    def test_refuses_non_tmp_path(self):
+        """Paths outside /tmp/ are refused."""
+        result = yeet._safe_rmtree(Path("/home/user/.venv"))
+        assert result is False
+
+    def test_refuses_tmp_root(self):
+        """Refuses /tmp/ itself."""
+        result = yeet._safe_rmtree(Path("/tmp"))
+        assert result is False
+
+
 class TestRsyncToNode:
     """Tests for ``_rsync_to_node``."""
 
@@ -144,6 +167,18 @@ class TestParseArgs:
         assert args.dst == "/tmp/myenv"
         assert args.hostfile == "/path/to/hostfile"
         assert args.dry_run is True
+
+    def test_copy_flag(self):
+        """--copy flag is parsed."""
+        args = yeet.parse_args(["--copy"])
+        assert args.copy is True
+        assert args.compress is False
+
+    def test_compress_flag(self):
+        """--compress flag is parsed."""
+        args = yeet.parse_args(["--compress"])
+        assert args.compress is True
+        assert args.copy is False
 
 
 # ===================================================================

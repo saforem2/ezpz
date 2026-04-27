@@ -138,7 +138,8 @@ def _compute_pvc_peak_flops() -> float:
         max_cu = torch.xpu.get_device_properties(0).max_compute_units
         return 512 * max_cu * 1300 * 10**6
     except Exception:
-        # Fallback: assume full-EU mode (512 CUs)
+        # Fallback: assume full-EU mode (512 CUs = 340.8 TFLOPS)
+        logger.info("Cannot read XPU compute units — assuming 512 CUs (full-EU)")
         return 512 * 512 * 1300 * 10**6
 
 
@@ -217,7 +218,8 @@ def estimate_model_flops(
                     loss = output[0].sum()
                 loss.backward()
         flops = counter.get_total_flops()
-    except Exception:
+    except Exception as exc:
+        logger.debug("FlopCounterMode failed: %s", exc)
         flops = 0
 
     # Restore original mode and clean up accumulated grads
@@ -295,9 +297,18 @@ def compute_mfu(
 
         MFU = model_flops / (peak_flops_per_device × world_size × step_duration)
 
+    For **data-parallel** training (DDP/FSDP), each device performs
+    the same ``model_flops`` of work, so the numerator is per-device
+    while the denominator is the cluster total.  This gives the
+    per-device utilization relative to the full cluster's peak —
+    the standard definition used in the Chinchilla / PaLM papers.
+    To get per-device MFU relative to a single device's peak, pass
+    ``world_size=1``.
+
     Args:
         model_flops: FLOPS per forward+backward pass (from
-            :func:`estimate_model_flops`).
+            :func:`estimate_model_flops`).  This is the per-device
+            workload — the same value on every rank.
         step_duration: Wall-clock time for one training step (seconds).
         world_size: Number of devices. Auto-detected if ``None``.
         device_name: Device name for peak FLOPS lookup. Auto-detected
