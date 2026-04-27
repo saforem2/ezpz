@@ -2652,12 +2652,16 @@ class History:
         # Redirect JSONL to base_dir so all output is co-located
         if self._jsonl_enabled and self._jsonl_path is not None:
             old_jsonl = self._jsonl_path
-            self._jsonl_path = base_dir / old_jsonl.name
-            if old_jsonl.exists() and old_jsonl != self._jsonl_path:
+            new_jsonl = base_dir / old_jsonl.name
+            if old_jsonl.exists() and old_jsonl != new_jsonl:
                 try:
-                    old_jsonl.rename(self._jsonl_path)
+                    import shutil
+                    shutil.move(str(old_jsonl), str(new_jsonl))
+                    self._jsonl_path = new_jsonl
                 except OSError:
-                    pass
+                    pass  # keep self._jsonl_path pointing to old location
+            else:
+                self._jsonl_path = new_jsonl
         dataset_label = (
             dataset_fname if dataset_fname is not None else "dataset"
         )

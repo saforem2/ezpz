@@ -405,7 +405,7 @@ def train(
     model.to(device)
     model.train()
 
-    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_len))
 
     reshard = ezpz.distributed.resolve_fsdp_strategy(
         args.fsdp_sharding_strategy

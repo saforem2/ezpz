@@ -177,6 +177,7 @@ def train(
         sampler.set_epoch(epoch)
     ezpz.distributed.synchronize()
     t0 = time.perf_counter()
+    num_batches = 0
     batch, target = next(iter(train_loader))
     for _, (batch, target) in enumerate(train_loader):
         batch, target = batch.to(device), target.to(device)
@@ -187,12 +188,15 @@ def train(
         optimizer.step()
         ddp_loss[0] += loss.item()
         ddp_loss[1] += len(batch)
+        num_batches += 1
     ezpz.distributed.synchronize()
     t1 = time.perf_counter()
+    epoch_dt = t1 - t0
     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
     return {
         "epoch": epoch,
-        "dt": t1 - t0,
+        "dt": epoch_dt,
+        "dt_per_step": epoch_dt / max(num_batches, 1),
         "train_loss": ddp_loss[0] / ddp_loss[1],
     }
 
@@ -404,11 +408,11 @@ def fsdp_main(args: argparse.Namespace) -> None:
         scheduler.step()
         merged = {**train_metrics, **test_metrics}
         if _model_flops > 0:
-            dt = merged.get("dt", 1.0)
-            if dt > 0:
-                merged["tflops"] = _model_flops / dt / 1e12
+            dt_step = merged.get("dt_per_step", 0.0)
+            if dt_step > 0:
+                merged["tflops"] = _model_flops / dt_step / 1e12
                 merged["mfu"] = compute_mfu(
-                    _model_flops, dt,
+                    _model_flops, dt_step,
                 )
         logger.info(history.update(merged))
 

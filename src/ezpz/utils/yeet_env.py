@@ -615,10 +615,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     local_elapsed = time.perf_counter() - _local_t0
                     local_rc = 1
                 else:
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    _spinner(f"extracting {tarball.name} → /tmp/")
+                    dst.mkdir(parents=True, exist_ok=True)
+                    _spinner(f"extracting {tarball.name} → {dst}/")
                     tar_extract = subprocess.Popen(
-                        ["tar", "-xzf", str(tarball), "-C", str(dst.parent)],
+                        ["tar", "-xzf", str(tarball),
+                         "--strip-components=1", "-C", str(dst)],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.PIPE,
                     )
@@ -696,6 +697,9 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         else:
             print(f"    \u2717 {current} (local, {method}) \u2014 FAILED")
             results.append((current, local_elapsed, local_rc))
+            # No valid local copy — abort, don't distribute a broken env
+            print(f"  Local copy failed — aborting distribution.")
+            return 1
 
     remaining = [n for n in all_nodes if n != current]
 
