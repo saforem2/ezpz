@@ -2,7 +2,7 @@
 
 On large HPC clusters, Python environments on shared filesystems
 create I/O contention and slow startup times. `ezpz yeet-env` solves
-this by rsyncing your environment to node-local `/tmp/` storage on
+this by copying your environment to node-local `/tmp/` storage on
 every worker node in your job.
 
 ## Quick Start
@@ -16,8 +16,9 @@ That's it. By default, `yeet-env`:
 
 1. Detects the active Python environment (`sys.prefix`)
 2. Discovers all nodes from the job's hostfile (PBS/SLURM)
-3. Distributes the environment to `/tmp/<env-name>/` on every node
-4. Patches the activate scripts so they work from the new location
+3. Copies the environment to `/tmp/<env-name>/` on the current node
+4. Patches activate scripts, shebangs, and symlinks for the new location
+5. Distributes the patched copy to all remote nodes via greedy rsync fan-out
 
 ```
   Source: /path/to/project/.venv (3.2 GB)
@@ -25,7 +26,8 @@ That's it. By default, `yeet-env`:
     local:  node01 (rsync to /tmp/.venv/)
     remote: node02, node03, node04
   Syncing (4 nodes)...
-    ✓ node01 (local) — 12.3s
+
+    ✓ node01 (local, rsync) — 12.3s
     ✓ node02 — 11.8s
     ✓ node03 — 12.1s
     ✓ node04 — 11.9s
@@ -79,8 +81,8 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
     | Method | Best for | How it works |
     |--------|----------|--------------|
     | `--copy` | Fast initial copy | `cp -a` — sequential dir walk, no checksums |
-    | `--compress` | Slowest Lustre / largest envs | tar.gz on Lustre → copy 1 file → extract locally |
-    | *(default)* | Incremental updates | `rsync` — only transfers changed files |
+    | `--compress` | Slowest Lustre / largest envs | tar.gz → copy 1 file → extract locally |
+    | *(default)* | Incremental updates | `rsync -rlD` — only transfers changed files |
 
     ```bash
     # First time: compress for minimal Lustre I/O
@@ -103,24 +105,33 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
 ```mermaid
 graph TD
     A["ezpz yeet-env"] --> B["Detect source env"]
-    B --> C["Discover nodes"]
-    C --> D["rsync to local /tmp/"]
-    D --> E["Patch venv paths (once)"]
-    E --> F["Greedy fan-out"]
+    B --> C["Discover nodes<br/>(PBS_NODEFILE / SLURM_NODELIST)"]
+    C --> D["Copy to local /tmp/<br/>(rsync, cp -a, or tar.gz)"]
+    D --> E["Patch paths + shebangs"]
+    E --> F["Greedy rsync fan-out"]
     F --> G["Print instructions"]
 ```
 
 ### Step 1: Local copy + patch
 
-First, `yeet-env` rsyncs the source environment to `/tmp/<env>/` on
-the current node and patches the venv paths **once**:
+First, `yeet-env` copies the source environment to `/tmp/<env>/` on
+the current node using rsync (default), `cp -a` (`--copy`), or
+tar.gz (`--compress`). If the local copy fails, distribution is
+aborted immediately — no broken environment gets distributed.
+
+After copying, the venv is patched **once** in place:
 
 - Replaces hardcoded `VIRTUAL_ENV` paths in activate scripts
+  (`bin/activate`, `bin/activate.csh`, `bin/activate.fish`)
 - Re-links `python3` symlinks to the system Python
 - Updates `pyvenv.cfg`
+- **Rewrites shebangs** in all entry-point scripts (`ezpz`, `pip`,
+  `torchrun`, etc.) — pip bakes absolute paths into these at install
+  time, so they'd still point to the original Lustre location without
+  this step
 
 This patched copy in `/tmp/` becomes the source for all subsequent
-rsyncs — no per-node patching needed.
+rsyncs — no per-node patching or SSH needed.
 
 ### Step 2: Greedy fan-out
 
@@ -142,7 +153,7 @@ The tree grows organically — no synchronized rounds:
 ```mermaid
 graph TD
     subgraph "Local copy + patch"
-        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on node00"]
+        S["Source<br/>(shared filesystem)"] -->|"rsync / cp / tar.gz"| L["/tmp/ on node00"]
     end
 
     subgraph "Fan-out (greedy, up to 8 per source)"
@@ -205,17 +216,17 @@ starts serving new targets — it doesn't wait for node08.
     Step 0: Local copy + patch
     ══════════════════════════
 
-    Lustre ──rsync──▶ /tmp/.venv (node00)
-                          │
-                      [patch paths]
-                          │
+    Lustre ──rsync/cp/tar──▶ /tmp/.venv (node00)
+                                │
+                            [patch paths + shebangs]
+                                │
     Step 1: Fan-out (greedy, max 8 per source)
     ═══════════════════════════════════════════
-                          │
-          ┌───┬───┬───┬───┼───┬───┬───┬───┐
-          ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼   │
-         n01 n02 n03 n04 n05 n06 n07 n08   │
-          │   │                             │
+                                │
+          ┌───┬───┬───┬───┬───┬┴──┬───┬───┐
+          ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼
+         n01 n02 n03 n04 n05 n06 n07 n08
+          │   │
           │   └─── (n02 finishes, starts serving) ──▶ n09, n10, ...
           │
           └─── (n01 finishes, starts serving) ──▶ n11, n12, ...
@@ -250,30 +261,46 @@ starts serving new targets — it doesn't wait for node08.
 
 ### Node discovery
 
-`yeet-env` uses the same node discovery as `ezpz launch`:
+`yeet-env` discovers nodes directly from scheduler environment
+variables, without importing heavy Python packages (torch, numpy,
+etc.) — so the CLI starts in seconds even on slow filesystems:
 
-1. Checks `PBS_NODEFILE` or `SLURM_NODELIST` env vars
-2. Falls back to scheduler-specific queries (qstat, scontrol)
+1. Checks `PBS_NODEFILE` or `HOSTFILE` environment variables
+2. For SLURM: expands `SLURM_NODELIST` via `scontrol show hostnames`
 3. Deduplicates hostnames (PBS nodefiles repeat per-GPU)
 
 ### Path patching
 
-Venv activate scripts and Python symlinks contain hardcoded absolute
-paths. `yeet-env` patches these **once** on the local `/tmp/` copy
-(step 1) before any distribution:
+Venv activate scripts, Python symlinks, and **entry-point script
+shebangs** contain hardcoded absolute paths. `yeet-env` patches
+these **once** on the local `/tmp/` copy before any distribution:
 
 - Replaces the old `VIRTUAL_ENV` path in activate scripts
 - Re-links `python3` symlinks to the system Python
 - Updates `pyvenv.cfg` to point to the correct base Python
+- Rewrites shebangs in all `bin/` scripts (e.g. `#!/old/path/.venv/bin/python3`
+  → `#!/tmp/.venv/bin/python3`)
 
 Since patching happens before fan-out, all distributed copies
 arrive already patched — no per-node SSH needed.
 
 ### Incremental syncs
 
-Because `yeet-env` uses `rsync -a`, subsequent runs are fast — only
-changed files are transferred. This makes it practical to re-run
-after installing new packages.
+The default rsync mode uses `-rlD` (recursive, symlinks, devices —
+skipping expensive timestamp/permission sync). Subsequent runs only
+transfer changed files, making it practical to re-run after
+installing new packages.
+
+### Error handling
+
+- **Failed local copy**: distribution is aborted immediately — no
+  broken environment gets sent to remote nodes
+- **rsync exit 24** (vanished files): treated as success. This
+  happens when concurrent rsyncs read from the same `/tmp/` source
+  while temporary files (e.g. triton plugin builds) come and go.
+- **TTY-aware progress**: spinner and `\r` carriage returns are
+  suppressed when stdout is not a terminal (e.g. redirected to a
+  file), preventing garbled output in logs.
 
 ## Examples
 
