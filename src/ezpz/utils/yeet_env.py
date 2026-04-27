@@ -219,15 +219,15 @@ def _safe_rmtree(path: Path) -> bool:
 
     Returns True if removed, False if refused.
     """
-    path_str = str(path)
     resolved = str(path.resolve())
-    # Check both the literal path and the resolved path (macOS /tmp →
-    # /private/tmp) to handle symlinked temp directories.
+    # Only check the resolved path to prevent traversal attacks
+    # (e.g. /tmp/../home/user resolves to /home/user).
+    # macOS /tmp → /private/tmp is handled by resolve().
     tmp_prefixes = ("/tmp/", "/private/tmp/")
     is_safe = (
-        any(path_str.startswith(p) for p in tmp_prefixes)
-        or any(resolved.startswith(p) for p in tmp_prefixes)
-    ) and path_str not in ("/tmp", "/tmp/", "/private/tmp", "/private/tmp/")
+        any(resolved.startswith(p) for p in tmp_prefixes)
+        and resolved not in ("/tmp", "/tmp/", "/private/tmp", "/private/tmp/")
+    )
     if not is_safe:
         logger.error("Refusing to rm -rf outside /tmp/: %s", path)
         return False

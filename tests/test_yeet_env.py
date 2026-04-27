@@ -91,6 +91,11 @@ class TestSafeRmtree:
         result = yeet._safe_rmtree(Path("/home/user/.venv"))
         assert result is False
 
+    def test_refuses_traversal(self):
+        """Refuses paths that traverse out of /tmp/ via '..'."""
+        result = yeet._safe_rmtree(Path("/tmp/../home/user"))
+        assert result is False
+
     def test_refuses_tmp_root(self):
         """Refuses /tmp/ itself."""
         result = yeet._safe_rmtree(Path("/tmp"))
