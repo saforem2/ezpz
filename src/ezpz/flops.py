@@ -286,31 +286,26 @@ def compute_mfu(
     model_flops: int | float,
     step_duration: float,
     *,
-    world_size: int | None = None,
     device_name: str | None = None,
     peak_flops: float | None = None,
+    **kwargs: object,
 ) -> float:
-    """Calculate Model FLOPS Utilization (MFU) as a percentage.
+    """Calculate per-device Model FLOPS Utilization (MFU) as a percentage.
 
-    MFU measures what fraction of the hardware's theoretical peak
+    MFU measures what fraction of a single device's theoretical peak
     compute is used by the model's actual operations::
 
-        MFU = model_flops / (peak_flops_per_device × world_size × step_duration)
+        MFU = model_flops / (peak_flops_per_device × step_duration)
 
-    For **data-parallel** training (DDP/FSDP), each device performs
-    the same ``model_flops`` of work, so the numerator is per-device
-    while the denominator is the cluster total.  This gives the
-    per-device utilization relative to the full cluster's peak —
-    the standard definition used in the Chinchilla / PaLM papers.
-    To get per-device MFU relative to a single device's peak, pass
-    ``world_size=1``.
+    Both ``model_flops`` and ``peak_flops`` are per-device quantities,
+    so ``world_size`` is not needed.  In data-parallel training
+    (DDP/FSDP), every device performs the same forward+backward work.
 
     Args:
         model_flops: FLOPS per forward+backward pass (from
             :func:`estimate_model_flops`).  This is the per-device
             workload — the same value on every rank.
         step_duration: Wall-clock time for one training step (seconds).
-        world_size: Number of devices. Auto-detected if ``None``.
         device_name: Device name for peak FLOPS lookup. Auto-detected
             if ``None``.
         peak_flops: Override the peak FLOPS value directly (skips
@@ -319,25 +314,16 @@ def compute_mfu(
     Returns:
         MFU as a percentage (0–100). Returns 0.0 if inputs are invalid.
     """
+    # Accept (and ignore) world_size for backward compatibility
     if step_duration <= 0 or model_flops <= 0:
         return 0.0
-
-    if world_size is None:
-        try:
-            from ezpz.distributed import get_world_size
-            world_size = get_world_size()
-        except Exception:
-            world_size = 1
 
     if peak_flops is None:
         peak_flops = get_peak_flops(device_name)
         if peak_flops is None:
             return 0.0
 
-    achieved_flops = model_flops / step_duration
-    theoretical_peak = peak_flops * world_size
-
-    if theoretical_peak <= 0:
+    if peak_flops <= 0:
         return 0.0
 
-    return (achieved_flops / theoretical_peak) * 100.0
+    return (model_flops / step_duration / peak_flops) * 100.0

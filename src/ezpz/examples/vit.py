@@ -663,7 +663,6 @@ def train_fn(
                 train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
                 train_metrics["train/mfu"] = compute_mfu(
                     _model_flops, t4 - t0,
-                    world_size=world_size,
                 )
             train_msg = history.update(train_metrics).replace("train/", "")
             logger.info("[train] %s", train_msg)

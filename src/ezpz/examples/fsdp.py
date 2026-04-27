@@ -408,7 +408,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
             if dt > 0:
                 merged["tflops"] = _model_flops / dt / 1e12
                 merged["mfu"] = compute_mfu(
-                    _model_flops, dt, world_size=ezpz.get_world_size(),
+                    _model_flops, dt,
                 )
         logger.info(history.update(merged))
 

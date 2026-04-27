@@ -499,7 +499,6 @@ def train(
                 train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
                 train_metrics["train/mfu"] = compute_mfu(
                     _model_flops, t3 - t0,
-                    world_size=ezpz.get_world_size(),
                 )
             logger.info(
                 history.update(train_metrics).replace("train/", "")

@@ -794,7 +794,6 @@ def main() -> None:
                     metrics["train/tflops"] = _model_flops / t1step / 1e12
                     metrics["train/mfu"] = compute_mfu(
                         _model_flops, t1step,
-                        world_size=accelerator.num_processes,
                     )
 
                 if completed_steps % logging_steps == 0:

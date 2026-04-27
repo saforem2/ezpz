@@ -104,25 +104,23 @@ class TestComputeMfu:
     """Tests for ``compute_mfu``."""
 
     def test_basic_calculation(self):
-        """MFU = model_flops / (peak × world_size × dt) × 100."""
-        # 100 TFLOPS model, 1 second step, 1 device with 200 TFLOPS peak
+        """MFU = model_flops / (peak × dt) × 100."""
+        # 100 TFLOPS model, 1 second step, device with 200 TFLOPS peak
         mfu = compute_mfu(
             model_flops=100e12,
             step_duration=1.0,
-            world_size=1,
             peak_flops=200e12,
         )
         assert abs(mfu - 50.0) < 0.01  # 50% MFU
 
-    def test_multi_device(self):
-        """World size scales the theoretical peak."""
+    def test_per_device(self):
+        """MFU is per-device — world_size is irrelevant."""
         mfu = compute_mfu(
             model_flops=100e12,
             step_duration=1.0,
-            world_size=4,
             peak_flops=100e12,
         )
-        assert abs(mfu - 25.0) < 0.01  # 100T / (100T × 4) = 25%
+        assert abs(mfu - 100.0) < 0.01  # 100% of one device's peak
 
     def test_zero_duration(self):
         """Zero duration returns 0 (not infinity)."""
@@ -132,12 +130,12 @@ class TestComputeMfu:
         """Zero model FLOPS returns 0."""
         assert compute_mfu(0, 1.0, peak_flops=200e12) == 0.0
 
-    def test_auto_detect_world_size(self):
-        """Falls back to world_size=1 when not in distributed mode."""
+    def test_backward_compat_world_size(self):
+        """Passing world_size= is accepted but ignored."""
         mfu = compute_mfu(
             model_flops=100e12,
             step_duration=1.0,
-            world_size=1,
             peak_flops=200e12,
+            world_size=4,  # should be silently ignored
         )
         assert abs(mfu - 50.0) < 0.01

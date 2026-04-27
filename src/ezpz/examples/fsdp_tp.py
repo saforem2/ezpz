@@ -1045,7 +1045,7 @@ def train(
                 if dt > 0:
                     metrics["tflops"] = _model_flops / dt / 1e12
                     metrics["mfu"] = compute_mfu(
-                        _model_flops, dt, world_size=world_size,
+                        _model_flops, dt,
                     )
             history.update(metrics, summarize=False)
             history.log_metrics(

@@ -94,7 +94,6 @@ def train(
                         metrics["tflops"] = _model_flops / dt_total / 1e12
                     metrics["mfu"] = compute_mfu(
                         _model_flops, dtf + dtb,
-                        world_size=ezpz.get_world_size(),
                     )
                 summary = history.update(
                     metrics
