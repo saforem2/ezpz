@@ -112,29 +112,49 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                     hf = path
                     logger.info("Found PBS hostfile: %s", hf)
                     break
-        # 2. Scan /var/spool/pbs/aux/ for files owned by current user
+        # 2. Query qstat for active job → look up aux file
+        # qstat -fn1wru $USER lists running jobs with their nodelists
         if hf is None:
             try:
-                uid = os.getuid()
-                for aux_dir in ("/var/spool/pbs/aux", "/var/spool/PBS/aux"):
-                    aux_path = Path(aux_dir)
-                    if not aux_path.is_dir():
-                        continue
-                    candidates = []
-                    for entry in aux_path.iterdir():
-                        try:
-                            if entry.is_file() and entry.stat().st_uid == uid:
-                                candidates.append(entry)
-                        except OSError:
-                            continue
-                    if candidates:
-                        # Pick the most recently modified (latest job)
-                        latest = max(candidates, key=lambda p: p.stat().st_mtime)
-                        hf = str(latest)
-                        logger.info("Found PBS hostfile by uid scan: %s", hf)
-                        break
+                user = os.environ.get("USER", "")
+                if user:
+                    qstat = subprocess.run(
+                        ["qstat", "-fn1wru", user],
+                        capture_output=True, text=True, check=False,
+                    )
+                    if qstat.returncode == 0:
+                        my_host = socket.getfqdn().split(".")[0]
+                        # Each running job line ends with the nodelist
+                        for line in qstat.stdout.splitlines():
+                            if " R " not in line:
+                                continue
+                            parts = [p for p in line.split(" ") if p]
+                            if not parts:
+                                continue
+                            jobid = parts[0].split(".")[0]
+                            nodelist = parts[-1]
+                            # nodelist format: host1/cpu+host2/cpu+...
+                            hosts = [h.split("/")[0] for h in nodelist.split("+")]
+                            if my_host in hosts:
+                                # Found our job — look up its aux file
+                                for aux_dir in ("/var/spool/pbs/aux",
+                                                 "/var/spool/PBS/aux"):
+                                    aux_path = Path(aux_dir)
+                                    if not aux_path.is_dir():
+                                        continue
+                                    for entry in aux_path.iterdir():
+                                        if jobid in entry.name:
+                                            hf = str(entry)
+                                            logger.info(
+                                                "Found PBS hostfile via qstat: %s",
+                                                hf,
+                                            )
+                                            break
+                                    if hf:
+                                        break
+                                break
             except Exception as exc:
-                logger.debug("PBS aux scan failed: %s", exc)
+                logger.debug("qstat lookup failed: %s", exc)
 
     # SLURM: expand nodelist with scontrol
     if hf is None:
