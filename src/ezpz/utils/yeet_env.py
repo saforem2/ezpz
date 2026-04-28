@@ -99,6 +99,39 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                 hf = val
                 break
 
+    # PBS: query qstat for the hostfile if env var isn't set/valid
+    if hf is None:
+        pbs_jobid = os.environ.get("PBS_JOBID")
+        if not pbs_jobid:
+            # Try to find an active job for this user
+            try:
+                user = os.environ.get("USER", "")
+                qstat = subprocess.run(
+                    ["qstat", "-u", user, "-f", "-F", "json"],
+                    capture_output=True, text=True, check=False,
+                )
+                if qstat.returncode == 0:
+                    import json
+                    data = json.loads(qstat.stdout)
+                    jobs = data.get("Jobs", {})
+                    # Pick the first running job
+                    for jid, info in jobs.items():
+                        if info.get("job_state") == "R":
+                            pbs_jobid = jid
+                            break
+            except Exception:
+                pass
+        if pbs_jobid:
+            # Standard PBS path: /var/spool/pbs/aux/<jobid>
+            for path in (
+                f"/var/spool/pbs/aux/{pbs_jobid}",
+                f"/var/spool/PBS/aux/{pbs_jobid}",
+            ):
+                if Path(path).is_file():
+                    hf = path
+                    logger.info("Found PBS hostfile via qstat: %s", hf)
+                    break
+
     # SLURM: expand nodelist with scontrol
     if hf is None:
         slurm_nodelist = os.environ.get("SLURM_NODELIST")
@@ -118,7 +151,10 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                 pass
 
     if hf is None:
-        logger.warning("No hostfile found — using localhost only")
+        logger.warning(
+            "No hostfile found — using localhost only. "
+            "Set PBS_NODEFILE or pass --hostfile."
+        )
         return [_get_current_hostname()]
 
     # Read nodes from hostfile
