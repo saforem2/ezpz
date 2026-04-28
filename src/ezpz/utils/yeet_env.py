@@ -99,38 +99,42 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                 hf = val
                 break
 
-    # PBS: query qstat for the hostfile if env var isn't set/valid
+    # PBS: try standard PBS hostfile locations
     if hf is None:
         pbs_jobid = os.environ.get("PBS_JOBID")
-        if not pbs_jobid:
-            # Try to find an active job for this user
-            try:
-                user = os.environ.get("USER", "")
-                qstat = subprocess.run(
-                    ["qstat", "-u", user, "-f", "-F", "json"],
-                    capture_output=True, text=True, check=False,
-                )
-                if qstat.returncode == 0:
-                    import json
-                    data = json.loads(qstat.stdout)
-                    jobs = data.get("Jobs", {})
-                    # Pick the first running job
-                    for jid, info in jobs.items():
-                        if info.get("job_state") == "R":
-                            pbs_jobid = jid
-                            break
-            except Exception:
-                pass
+        # 1. If PBS_JOBID is set, try the standard aux paths
         if pbs_jobid:
-            # Standard PBS path: /var/spool/pbs/aux/<jobid>
             for path in (
                 f"/var/spool/pbs/aux/{pbs_jobid}",
                 f"/var/spool/PBS/aux/{pbs_jobid}",
             ):
                 if Path(path).is_file():
                     hf = path
-                    logger.info("Found PBS hostfile via qstat: %s", hf)
+                    logger.info("Found PBS hostfile: %s", hf)
                     break
+        # 2. Scan /var/spool/pbs/aux/ for files owned by current user
+        if hf is None:
+            try:
+                uid = os.getuid()
+                for aux_dir in ("/var/spool/pbs/aux", "/var/spool/PBS/aux"):
+                    aux_path = Path(aux_dir)
+                    if not aux_path.is_dir():
+                        continue
+                    candidates = []
+                    for entry in aux_path.iterdir():
+                        try:
+                            if entry.is_file() and entry.stat().st_uid == uid:
+                                candidates.append(entry)
+                        except OSError:
+                            continue
+                    if candidates:
+                        # Pick the most recently modified (latest job)
+                        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+                        hf = str(latest)
+                        logger.info("Found PBS hostfile by uid scan: %s", hf)
+                        break
+            except Exception as exc:
+                logger.debug("PBS aux scan failed: %s", exc)
 
     # SLURM: expand nodelist with scontrol
     if hf is None:
