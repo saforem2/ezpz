@@ -586,7 +586,10 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # Copy locally first (current node), then rsync to remote nodes.
     # The local copy is needed because /tmp is node-local.
     needs_local_copy = not str(src).startswith("/tmp")
-    remote_nodes = [n for n in nodes if n != current]
+    # Filter out the current node — also handle the HSN variant
+    # (current node may appear as "node01" while nodes contain "node01-hsn0").
+    current_variants = {current, current + "-hsn0", current.removesuffix("-hsn0")}
+    remote_nodes = [n for n in nodes if n not in current_variants]
 
     # ── Print summary ───────────────────────────────────────────────
     env_size = _get_env_size(src)
