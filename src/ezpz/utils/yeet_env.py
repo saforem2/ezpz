@@ -195,6 +195,21 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
         if short not in seen:
             seen.add(short)
             unique.append(short)
+
+    # If hostnames don't already have -hsn0, check if the HSN
+    # (high-speed network) interface resolves and prefer it.
+    # On Aurora the hostfile has bare names but ssh works much
+    # faster via the HSN interface (Slingshot vs management network).
+    if unique and not unique[0].endswith("-hsn0"):
+        sample = unique[0] + "-hsn0"
+        try:
+            socket.gethostbyname(sample)
+            # HSN resolves — append -hsn0 to all hostnames
+            unique = [n + "-hsn0" for n in unique]
+            logger.info("Using HSN interface (-hsn0 suffix)")
+        except (socket.gaierror, OSError):
+            pass  # HSN not available, use bare names
+
     return unique
 
 
