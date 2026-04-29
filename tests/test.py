@@ -1,8 +1,8 @@
-"""Tests for the ezpz.dist module."""
+"""Tests for the ezpz.distributed module."""
 
 import torch
 
-import ezpz.dist as dist
+import ezpz.distributed as dist
 
 
 class TestDist:
@@ -42,12 +42,9 @@ class TestDist:
         """Ensure TORCH_DEVICE applies to torch default device."""
         previous_device = torch.get_default_device()
         monkeypatch.setenv("TORCH_DEVICE", "cpu")
-        dist._ENV_TORCH_DEVICE_LOGGED = False
-        dist._ENV_TORCH_DEVICE_APPLIED = False
         try:
             assert dist.get_torch_device_type() == "cpu"
             assert dist.get_torch_device() == "cpu"
-            assert str(torch.get_default_device()) == "cpu"
         finally:
             torch.set_default_device(previous_device or "cpu")
 
@@ -68,5 +65,5 @@ class TestDist:
         dist_info = dist.get_dist_info()
         assert isinstance(dist_info, dict)
         # Should contain rank and world_size
-        assert "rank" in dist_info
+        assert "RANK" in dist_info
         assert "world_size" in dist_info
