@@ -327,9 +327,35 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
     - ``bin/python*``: re-link to the system python if they're symlinks
       pointing back to the original location
     - ``pyvenv.cfg``: update ``home`` to point to the system python dir
+
+    When ``src`` doesn't match the actual hardcoded path inside the
+    venv (e.g. ``src`` was a tarball file), the original path is
+    discovered by reading ``VIRTUAL_ENV=`` from ``bin/activate`` and
+    used for the find/replace.
     """
     src_str = str(src)
     dst_str = str(dst)
+
+    # If src looks like a file (not a directory) or doesn't appear in
+    # the activate script, discover the real original path.
+    activate = dst / "bin" / "activate"
+    if activate.is_file():
+        try:
+            text = activate.read_text()
+            if src_str not in text:
+                # Look for VIRTUAL_ENV='...' line
+                import re
+                m = re.search(r"^VIRTUAL_ENV=['\"]?([^'\"\n]+)", text, re.M)
+                if m:
+                    discovered = m.group(1).strip()
+                    if discovered and discovered != dst_str:
+                        logger.info(
+                            "Discovered original venv path from activate: %s",
+                            discovered,
+                        )
+                        src_str = discovered
+        except OSError:
+            pass
     # Patch activate scripts and pyvenv.cfg
     for fname in ("bin/activate", "bin/activate.csh", "bin/activate.fish",
                    "pyvenv.cfg"):
@@ -512,7 +538,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--src",
         type=str,
         default=None,
-        help="Source environment path (default: active venv/conda env).",
+        help=(
+            "Source environment path (default: active venv/conda env). "
+            "May be a directory OR a .tar.gz/.tgz file — in the latter "
+            "case the tarball is copied to /tmp/ and extracted there, "
+            "skipping the create step that --compress does."
+        ),
     )
     parser.add_argument(
         "--dst",
@@ -573,7 +604,20 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     else:
         src = _detect_env_source()
 
-    env_name = src.name
+    # If --src is a .tar.gz / .tgz file, treat it as a pre-built
+    # archive: skip the "tar create" step and just copy + extract.
+    src_is_tarball = src.is_file() and (
+        src.name.endswith(".tar.gz") or src.name.endswith(".tgz")
+    )
+    if src_is_tarball:
+        # Strip .tar.gz / .tgz suffix to derive the destination name
+        env_name = src.name
+        for suffix in (".tar.gz", ".tgz"):
+            if env_name.endswith(suffix):
+                env_name = env_name[: -len(suffix)]
+                break
+    else:
+        env_name = src.name
 
     # ── Resolve destination ─────────────────────────────────────────
     if args.dst is not None:
@@ -659,7 +703,66 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             sys.stdout.write(f"\r\033[K    {frames[idx]} {label}  [{elapsed:.0f}s]")
             sys.stdout.flush()
 
-        if args.compress:
+        if src_is_tarball:
+            # Source is already a .tar.gz/.tgz: copy it to /tmp/ and
+            # extract there. Skips the "tar create" step that --compress
+            # does. Useful when you already have a pre-built tarball
+            # (e.g. from `ezpz tar-env`) on a shared filesystem.
+            method = "tar.gz (pre-built)"
+            local_tarball = Path("/tmp") / src.name
+            print()
+            try:
+                tb_size_gb = src.stat().st_size / (1024**3)
+            except OSError:
+                tb_size_gb = 0.0
+
+            # Step 1: copy tarball Lustre → /tmp/
+            _spinner(f"copying {src.name} ({tb_size_gb:.1f}G) → /tmp/")
+            cp_proc = subprocess.Popen(
+                ["cp", str(src), str(local_tarball)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            while cp_proc.poll() is None:
+                _spinner(f"copying {src.name} ({tb_size_gb:.1f}G) → /tmp/")
+                time.sleep(0.5)
+            if cp_proc.returncode != 0:
+                stderr = (cp_proc.stderr.read() or b"").decode()
+                logger.warning("cp tarball failed: %s", stderr.strip())
+                local_elapsed = time.perf_counter() - _local_t0
+                local_rc = cp_proc.returncode or 1
+            else:
+                # Step 2: extract into dst
+                if dst.exists() and not _safe_rmtree(dst):
+                    local_elapsed = time.perf_counter() - _local_t0
+                    local_rc = 1
+                else:
+                    dst.mkdir(parents=True, exist_ok=True)
+                    _spinner(f"extracting {local_tarball.name} → {dst}/")
+                    tar_extract = subprocess.Popen(
+                        ["tar", "-xzf", str(local_tarball),
+                         "--strip-components=1", "-C", str(dst)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                    )
+                    while tar_extract.poll() is None:
+                        _spinner(f"extracting {local_tarball.name} → {dst}/")
+                        time.sleep(0.5)
+                    local_elapsed = time.perf_counter() - _local_t0
+                    local_rc = tar_extract.returncode or 0
+                    if local_rc != 0:
+                        stderr = (tar_extract.stderr.read() or b"").decode()
+                        logger.warning("tar extract failed: %s", stderr.strip())
+
+                # Clean up the local tarball copy
+                try:
+                    local_tarball.unlink()
+                except OSError:
+                    pass
+            if _IS_TTY:
+                sys.stdout.write("\r\033[K")
+
+        elif args.compress:
             # tar.gz: compress on Lustre (sequential write), copy one
             # file to /tmp/ (sequential read), extract locally.
             # Much less Lustre metadata pressure than per-file rsync/cp.

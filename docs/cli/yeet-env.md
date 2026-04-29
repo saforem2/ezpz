@@ -64,7 +64,7 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--src` | Active venv/conda env | Source environment path |
+| `--src` | Active venv/conda env | Source environment path. May also be a `.tar.gz`/`.tgz` file — see [tarball source](#tarball-source) |
 | `--dst` | `/tmp/<env-name>/` | Destination on each node (e.g. `/tmp/.venv/` for a venv named `.venv`) |
 | `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
@@ -97,6 +97,29 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
 
     All three methods only affect the **local** Lustre → `/tmp/` copy.
     Remote node distribution always uses rsync.
+
+### Tarball source
+
+If you already have a `.tar.gz` of your environment (e.g. one you
+built earlier with [`ezpz tar-env`](./tar-env.md), or one shipped
+with a project), you can pass it directly:
+
+```bash
+ezpz yeet-env --src /lus/.../my-env.tar.gz
+```
+
+This is similar to `--compress` but **skips the create step** —
+the tarball is copied to `/tmp/` and extracted there:
+
+1. `cp /lus/.../my-env.tar.gz /tmp/my-env.tar.gz`
+2. `tar -xzf /tmp/my-env.tar.gz --strip-components=1 -C /tmp/my-env/`
+3. Patch shebangs/activate scripts (auto-detects original venv path
+   from `bin/activate`)
+4. Delete the tarball
+5. Fan-out `/tmp/my-env/` to all worker nodes via rsync
+
+Both `.tar.gz` and `.tgz` extensions are recognized. The destination
+defaults to `/tmp/<basename-without-suffix>/`.
 
 ## How It Works
 

@@ -186,6 +186,33 @@ class TestParseArgs:
         assert args.copy is False
 
 
+class TestTarballSrc:
+    """Tests for the .tar.gz / .tgz source-detection logic in run()."""
+
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
+    def test_tarball_strips_suffix_for_dst(self, _nodes, _host, tmp_path, capsys):
+        """A .tar.gz src derives env_name by stripping the suffix."""
+        tarball = tmp_path / "myenv.tar.gz"
+        tarball.write_bytes(b"fake")
+        rc = yeet.run(["--src", str(tarball), "--dry-run"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        # Default dst should be /tmp/myenv/ (suffix stripped)
+        assert "/tmp/myenv/" in out
+
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
+    def test_tgz_also_recognized(self, _nodes, _host, tmp_path, capsys):
+        """A .tgz src is also recognized."""
+        tarball = tmp_path / "myenv.tgz"
+        tarball.write_bytes(b"fake")
+        rc = yeet.run(["--src", str(tarball), "--dry-run"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "/tmp/myenv/" in out
+
+
 # ===================================================================
 # run (integration)
 # ===================================================================
