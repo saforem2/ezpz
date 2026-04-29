@@ -307,6 +307,23 @@ All configuration is via environment variables:
 | `PRINT_FREQ` | `10` | Print summary every N steps |
 | `WARMUP_ITERS` | `10` | Steps to skip before recording metrics |
 
+## Example Output (Sunspot, 2 nodes × 12 ranks = 24 total)
+
+```text
+[2026-04-29 18:03:57][I][ezpz/distributed:1536:_setup_ddp] init_process_group: master_addr=x1921c6s0b0n0, master_port=53741, world_size=24, rank=0, backend=xccl, timeout=1:00:00
+[2026-04-29 18:04:27][I][examples/minimal:150:main] Outputs will be saved to /tmp/outputs/ezpz.examples.minimal/2026-04-29-180355
+[2026-04-29 18:04:37][I][examples/minimal:102:train] iter=20 loss=708.216064 dt=0.004312 dtf=0.000920 dtb=0.003391 tflops=0.496617 mfu=0.166545 ...
+[2026-04-29 18:04:38][I][examples/minimal:102:train] iter=40 loss=676.927185 dt=0.004310 dtf=0.000922 dtb=0.003388 tflops=0.496832 mfu=0.166616 ...
+[2026-04-29 18:04:38][I][examples/minimal:102:train] iter=60 loss=687.406372 dt=0.004286 dtf=0.000918 dtb=0.003368 tflops=0.499541 mfu=0.167525 ...
+...
+[2026-04-29 18:04:39][I][examples/minimal:102:train] iter=180 loss=676.073486 dt=0.004343 dtf=0.000921 dtb=0.003422 tflops=0.492990 mfu=0.165328 ...
+```
+
+Notice each step takes ~4 ms (forward `dtf=0.9 ms` + backward `dtb=3.4 ms`),
+giving ~0.5 TFLOPS per device — about 0.17% MFU on PVC. This is a tiny
+synthetic MLP, so MFU is dominated by collective overhead and kernel
+launch latency rather than compute.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
