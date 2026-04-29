@@ -172,6 +172,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     import logging as _logging
     for _noisy in ("httpx", "huggingface_hub", "filelock", "urllib3"):
         _logging.getLogger(_noisy).setLevel(_logging.WARNING)
+    # Silence noisy transformers messages (e.g. the BPE
+    # clean_up_tokenization_spaces warning fired on every decode call)
+    try:
+        import transformers as _transformers
+        _transformers.logging.set_verbosity_error()
+        _transformers.logging.disable_progress_bar()
+    except Exception:
+        pass
 
     args = parse_args(argv)
 
@@ -186,7 +194,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         logger.info("Loading model: %s", args.model)
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        clean_up_tokenization_spaces=False,
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     # Left-pad so that generation continues from the end of each prompt
@@ -317,7 +328,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             n_in = int(enc.attention_mask.sum().item())
 
             decoded = tokenizer.batch_decode(
-                new_token_ids, skip_special_tokens=True,
+                new_token_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
             )
 
             total_samples += len(batch_prompts)
