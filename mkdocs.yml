@@ -242,6 +242,7 @@ nav:
           - <code>ezpz.dist</code>: python/Code-Reference/dist.md
           - <code>ezpz.distributed</code>: python/Code-Reference/distributed.md
           - <code>ezpz.doctor</code>: python/Code-Reference/doctor.md
+          - <code>ezpz.flops</code>: python/Code-Reference/flops.md
           - <code>ezpz.history</code>: python/Code-Reference/history.md
           - <code>ezpz.integrations</code>: python/Code-Reference/integrations.md
           - <code>ezpz.jobs</code>: python/Code-Reference/jobs.md

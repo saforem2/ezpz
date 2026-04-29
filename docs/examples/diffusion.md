@@ -682,6 +682,21 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+Model FLOPS are estimated via [`try_estimate`](../recipes.md#mfu-tracking)
+on the unwrapped model before FSDP wrapping. Per-step **TFLOPS** and
+**MFU** are reported under `train/tflops` and `train/mfu`.
+
+```python
+_model_flops = try_estimate(model, (args.batch_size, args.seq_len))
+# ... per step:
+train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
+train_metrics["train/mfu"] = compute_mfu(_model_flops, t3 - t0)
+```
+
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

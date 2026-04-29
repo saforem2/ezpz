@@ -273,6 +273,23 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+This example reports per-step **TFLOPS** and **MFU** (Model FLOPS
+Utilization) alongside loss/timing metrics. The model FLOPS are
+counted once at startup via [`try_estimate`](../recipes.md#mfu-tracking),
+and `compute_mfu` divides by the device's peak BF16 throughput
+(see [`ezpz.flops`](../python/Code-Reference/flops.md) for details).
+
+```python
+from ezpz.flops import compute_mfu, try_estimate
+
+_model_flops = try_estimate(model, (bsize, isize))
+# ...
+metrics["tflops"] = _model_flops / dt / 1e12
+metrics["mfu"] = compute_mfu(_model_flops, dt)
+```
+
 ## Configuration
 
 All configuration is via environment variables:

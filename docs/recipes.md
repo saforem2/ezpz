@@ -500,20 +500,20 @@ peak compute your model actually uses.
 import time
 import torch
 import ezpz
-from ezpz.flops import estimate_model_flops, compute_mfu
+from ezpz.flops import try_estimate, compute_mfu
 
 rank = ezpz.setup_torch()
 device = ezpz.get_torch_device()
 
 model = torch.nn.Linear(4096, 4096).to(device)
 
-# Count FLOPS once before wrapping (FSDP/DDP breaks FlopCounterMode)
-model_flops = estimate_model_flops(model, input_shape=(32, 4096))
+# Count FLOPS once before wrapping (FSDP/DDP breaks FlopCounterMode).
+# try_estimate is the recommended wrapper — it handles errors and
+# logs the FLOPS count on rank 0.
+model_flops = try_estimate(model, input_shape=(32, 4096))
 
 model = ezpz.wrap_model(model)
 optimizer = torch.optim.Adam(model.parameters())
-if rank == 0:
-    print(f"Model FLOPS (fwd+bwd): {model_flops:.2e}")
 
 for step in range(100):
     ezpz.synchronize()
@@ -526,16 +526,22 @@ for step in range(100):
     ezpz.synchronize()
     dt = time.perf_counter() - t0
 
-    mfu = compute_mfu(model_flops, dt)
+    mfu = compute_mfu(model_flops, dt)  # per-device MFU
     if step % 10 == 0 and rank == 0:
         print(f"step={step} loss={loss.item():.4f} mfu={mfu:.2f}%")
 
 ezpz.cleanup()
 ```
 
-`compute_mfu` auto-detects the device and world size. Supported
-accelerators: NVIDIA (A100, H100, H200, B200, L40S), AMD (MI250X,
-MI300X, MI325X, MI355X), and Intel PVC.
+`compute_mfu` returns **per-device** MFU — both `model_flops` and
+`peak_flops` are per-device quantities, so `world_size` isn't needed.
+The device's peak FLOPS is auto-detected. Supported accelerators:
+
+- **NVIDIA**: A100, H100 (SXM/NVL/PCIe), H200, B200, L40S
+- **AMD**: MI250X, MI300X, MI325X, MI355X
+- **Intel**: Data Center GPU Max 1550 (PVC, computed dynamically)
+
+For unrecognized devices `compute_mfu` returns `0.0` (with a warning).
 
 !!! tip "When to use MFU"
 

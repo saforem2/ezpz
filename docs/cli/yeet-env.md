@@ -263,11 +263,31 @@ starts serving new targets — it doesn't wait for node08.
 
 `yeet-env` discovers nodes directly from scheduler environment
 variables, without importing heavy Python packages (torch, numpy,
-etc.) — so the CLI starts in seconds even on slow filesystems:
+etc.) — so the CLI starts in seconds even on slow filesystems.
 
-1. Checks `PBS_NODEFILE` or `HOSTFILE` environment variables
-2. For SLURM: expands `SLURM_NODELIST` via `scontrol show hostnames`
-3. Deduplicates hostnames (PBS nodefiles repeat per-GPU)
+The discovery order is:
+
+1. **`--hostfile` flag** if explicitly passed
+2. **`PBS_NODEFILE`** / **`HOSTFILE`** environment variables
+3. **PBS aux lookup via `PBS_JOBID`** — checks `/var/spool/pbs/aux/<jobid>`
+4. **PBS `qstat` fallback** — when env vars aren't set (e.g. after
+   `ssh`-ing to a compute node), runs `qstat -fn1wru $USER` to find
+   the running job whose nodelist contains this hostname, then looks
+   up its aux file by jobid
+5. **SLURM** — expands `SLURM_NODELIST` via `scontrol show hostnames`
+6. **Localhost fallback** — single-node mode with a warning
+
+After loading the hostfile, hostnames are deduplicated (PBS nodefiles
+repeat once per-GPU) and FQDN suffixes are stripped.
+
+### HSN (high-speed network) auto-detection
+
+On Aurora, the PBS hostfile contains bare hostnames (`x4717c0s2b0n0`),
+but the Slingshot HSN interface is reachable via the `-hsn0` suffix
+at much higher bandwidth than the management network. `yeet-env`
+probes whether `<hostname>-hsn0` resolves and prefers it for all
+remote rsyncs if so. On Sunspot the hostfile already contains `-hsn0`
+suffixes, so this is a no-op.
 
 ### Path patching
 
@@ -385,5 +405,7 @@ ezpz launch python3 -m your_app.train
 ## See Also
 
 - [`ezpz launch`](./launch/index.md) — launch distributed training
+  (respects `$VIRTUAL_ENV` so it Just Works after yeet-env + activate)
 - [`ezpz.utils.yeet_env`](../python/Code-Reference/utils/yeet_env.md) — Python API reference
-- [Shell Environment](../notes/shell-environment.md) — legacy shell setup utilities
+- [Shell Environment](../notes/shell-environment.md) — `ezpz_setup_*`
+  helper functions (including `ezpz_setup_xpu` for Intel GPUs)

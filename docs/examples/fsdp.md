@@ -537,6 +537,24 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+`prepare_model_optimizer_and_scheduler()` estimates model FLOPS via
+[`try_estimate`](../recipes.md#mfu-tracking) **before** the FSDP
+wrap (FlopCounterMode can't see through the wrapper). The per-epoch
+`train()` returns both the total wall-clock (`dt`) and a per-step
+average (`dt_per_step`) so that MFU is computed against the true
+per-step duration, not the epoch total.
+
+```python
+_model_flops = try_estimate(model, (args.batch_size, 1, img_size, img_size))
+# ... after wrapping + training:
+merged["tflops"] = _model_flops / dt_step / 1e12
+merged["mfu"] = compute_mfu(_model_flops, dt_step)
+```
+
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

@@ -575,6 +575,24 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+The ViT example reports per-step **TFLOPS** and **MFU**. Model FLOPS
+are estimated via [`try_estimate`](../recipes.md#mfu-tracking) before
+the FSDP wrap, since `FlopCounterMode` can't run through wrapped
+modules.
+
+```python
+_model_flops = try_estimate(
+    model, (args.batch_size, in_chans, args.img_size, args.img_size),
+)
+# ... per step:
+train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
+train_metrics["train/mfu"] = compute_mfu(_model_flops, t4 - t0)
+```
+
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

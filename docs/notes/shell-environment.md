@@ -130,6 +130,7 @@ source <(curl -fsSL https://bit.ly/ezpz-utils)
     ezpz_setup_uv_venv
     ezpz_setup_venv_from_conda
     ezpz_setup_venv_from_pythonuserbase
+    ezpz_setup_xpu
     ezpz_show_env
     ezpz_tail_n_from_pbs_nodefile
     ezpz_timeit
@@ -263,6 +264,34 @@ On PBS systems, the hostfile is found by:
 
 On SLURM systems, the hostfile is generated from `$SLURM_NODELIST` using
 `scontrol show hostnames` and written to a local file.
+
+## Intel XPU Setup (`ezpz_setup_xpu`)
+
+For Intel GPU training (Aurora, Sunspot), `ezpz_setup_xpu` loads the
+oneAPI software stack and sets the runtime environment:
+
+```bash
+ezpz_setup_xpu
+```
+
+This is equivalent to:
+
+```bash
+module load oneapi/release/2025.3.1 hdf5 pti-gpu
+export ZE_FLAT_DEVICE_HIERARCHY=FLAT
+export CCL_PROCESS_LAUNCHER=pmix
+export CCL_OP_SYNC=1
+export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
+export TORCH_CPP_LOG_LEVEL=ERROR
+```
+
+| Variable | Purpose |
+|----------|---------|
+| `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | Expose each PVC tile as a separate device |
+| `CCL_PROCESS_LAUNCHER=pmix` | Use PMIx for oneCCL bootstrap (matches `mpiexec`) |
+| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads) |
+| `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
+| `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
 
 [^1]:
     System-dependent. See

@@ -749,6 +749,24 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+The `Trainer` estimates model FLOPS once in `__post_init__` via
+[`try_estimate`](../recipes.md#mfu-tracking) and reports per-step
+**TFLOPS** and **MFU** (Model FLOPS Utilization) alongside loss.
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for the
+peak-FLOPS database and per-device MFU formula.
+
+```python
+self._model_flops = try_estimate(
+    self.model,
+    (self.config.batch_size, self.config.input_size),
+)
+# in train_step:
+metrics["tflops"] = self._model_flops / dt / 1e12
+metrics["mfu"] = compute_mfu(self._model_flops, dt)
+```
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>

@@ -933,6 +933,55 @@ if __name__ == "__main__":
 
 </details>
 
+## MFU Tracking
+
+`hf.py` estimates model FLOPS via [`try_estimate`](../recipes.md#mfu-tracking)
+**before** `accelerator.prepare()` (FlopCounterMode can't run through
+DDP/FSDP wrappers). Per-step **TFLOPS** and **MFU** are reported as
+`train/tflops` and `train/mfu`.
+
+```python
+_model_flops = try_estimate(
+    model, (training_args.per_device_train_batch_size, block_size),
+)
+# ... per step:
+metrics["train/tflops"] = _model_flops / t1step / 1e12
+metrics["train/mfu"] = compute_mfu(_model_flops, t1step)
+```
+
+For HF causal LMs, `estimate_model_flops` extracts `output.logits.sum()`
+as the backward target since `output.loss` is `None` without labels.
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
+## Metric Keys, Logging, and Output
+
+- **Prefixed keys** — Train metrics use `train/` prefix (`train/loss`,
+  `train/perplexity`, `train/tflops`, `train/mfu`); eval metrics use
+  `eval/` prefix. This makes `History.finalize()` produce separate
+  `train.h5` / `eval.h5` datasets and grouped plots, instead of
+  flattening everything into one column-shared table.
+- **Log line cleanup** — Each log line is tagged `[train]` or `[eval]`,
+  so the prefix is stripped from the per-line summary to reduce noise:
+  ```python
+  logger.info("[train] %s", summary.replace("train/", ""))
+  ```
+- **HTTP log suppression** — `httpx`, `huggingface_hub`, and `filelock`
+  are silenced to `WARNING` at startup. Without this, every Hub HEAD/GET
+  produced an `INFO` log line per rank — hundreds of lines on multi-rank
+  jobs.
+
+## Robustness
+
+- **Safetensors fallback** — On some parallel filesystems (Lustre),
+  `safetensors` raises `Argument list too long` (OS error 7) during
+  `save_pretrained`. The example catches this and retries with
+  `safe_serialization=False` to write `.bin` instead — the model still
+  gets saved.
+- **`max_steps` exits early** — The HF training loop's `completed_steps`
+  is global across epochs. Without an outer-loop break, epoch 1 would
+  run a single wasted step before hitting `max_steps`. The example
+  breaks out of the epoch loop too.
+
 ## Comparison with `hf_trainer.py`
 
 This example (`hf.py`) uses an **explicit training loop** — you control the

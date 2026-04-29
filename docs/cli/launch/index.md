@@ -80,6 +80,22 @@ allocated to your job.
         --hostfile HOSTFILE   Hostfile to use for launching.
         ```
 
+## Python interpreter resolution
+
+When `ezpz launch` needs to invoke `python3` (e.g. `ezpz launch -m my.module`),
+it picks the interpreter in this order:
+
+1. **`$VIRTUAL_ENV/bin/python3`** if `$VIRTUAL_ENV` is set and exists
+2. **`shutil.which("python3")`** — first python3 on `$PATH`
+3. **`sys.executable`** as a last resort
+
+Why not just `sys.executable`? It's frozen at interpreter startup. If
+you ran [`ezpz yeet-env`](../yeet-env.md) to copy your env to `/tmp/`
+and then `source /tmp/.venv/bin/activate`, `sys.executable` would still
+point to the original Lustre path because the `ezpz` CLI script's
+shebang is baked in at install time. Reading `$VIRTUAL_ENV` (set by
+`activate`) lets the launcher follow the user's actual current venv.
+
 ## Examples
 
 Use it to launch:
