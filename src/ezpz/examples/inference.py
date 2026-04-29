@@ -190,38 +190,66 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     dtype = _torch_dtype(args.dtype)
 
     # ── Model + tokenizer ──────────────────────────────────────────
+    # Load on rank 0 first to populate the HF cache, then let other
+    # ranks read from cache. Avoids thundering-herd downloads on first
+    # run from a clean cache.
     if rank == 0:
         logger.info("Loading model: %s", args.model)
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model,
-        clean_up_tokenization_spaces=False,
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    # Left-pad so that generation continues from the end of each prompt
-    tokenizer.padding_side = "left"
+    def _load_tokenizer_and_model():
+        tok = AutoTokenizer.from_pretrained(
+            args.model,
+            clean_up_tokenization_spaces=False,
+        )
+        # Resolve a usable pad id: prefer pad → eos → 0 (defensive,
+        # so n_new computation later never hits None).
+        if tok.pad_token_id is None:
+            if tok.eos_token_id is not None:
+                tok.pad_token = tok.eos_token
+            else:
+                tok.add_special_tokens({"pad_token": "<pad>"})
+        # Left-pad so generation continues from the end of each prompt
+        tok.padding_side = "left"
+        m = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=dtype,
+        ).to(device)
+        m.eval()
+        return tok, m
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=dtype,
-    ).to(device)
-    model.eval()
+    if rank == 0:
+        tokenizer, model = _load_tokenizer_and_model()
+        if world_size > 1:
+            ezpz.synchronize()
+    else:
+        if world_size > 1:
+            ezpz.synchronize()
+        tokenizer, model = _load_tokenizer_and_model()
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
 
     if rank == 0:
         n_params = sum(p.numel() for p in model.parameters())
         logger.info("Model loaded: %.2fB parameters", n_params / 1e9)
 
     # Estimate model FLOPS once for MFU/throughput tracking.
-    # Inference is forward-only — FLOPS ≈ (1/3) of fwd+bwd, but we
-    # let try_estimate report fwd+bwd and divide for the inference path.
+    #
+    # NOTE: this is a coarse approximation — try_estimate reports
+    # fwd+bwd FLOPS for a single forward pass on max_input_tokens
+    # context. Inference is forward-only (~1/3 of fwd+bwd), but
+    # autoregressive generation has growing context: token i sees
+    # context_len + i tokens. We treat each generated token as one
+    # forward pass at max_input_tokens length, which:
+    #   - over-estimates the early tokens (smaller context with KV cache)
+    #   - under-estimates the late tokens (longer context)
+    # Reasonable for an example; not a substitute for real profiling.
     _model_flops_fwd_bwd = try_estimate(
         model, (args.batch_size, args.max_input_tokens),
     )
     _model_flops_fwd = _model_flops_fwd_bwd / 3 if _model_flops_fwd_bwd > 0 else 0
 
     # ── Dataset ────────────────────────────────────────────────────
+    # Same rank-0-first pattern to avoid concurrent downloads.
     if rank == 0:
         logger.info(
             "Loading dataset: %s [%s] split=%s",
@@ -229,19 +257,42 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     from datasets import load_dataset
 
-    ds = load_dataset(
-        args.dataset,
-        args.dataset_config,
-        split=args.dataset_split,
-    )
-    # Filter out empty rows and cap to --max-samples
+    def _load_ds():
+        return load_dataset(
+            args.dataset, args.dataset_config, split=args.dataset_split,
+        )
+
+    if rank == 0:
+        ds = _load_ds()
+        if world_size > 1:
+            ezpz.synchronize()
+    else:
+        if world_size > 1:
+            ezpz.synchronize()
+        ds = _load_ds()
+
+    # Filter out empty rows and cap to --max-samples.  Dataset rows are
+    # dict-like; defensively handle non-dict rows by skipping them.
     prompts: list[str] = []
     for row in ds:
-        text = row.get(args.text_column, "")
+        if isinstance(row, dict):
+            text = row.get(args.text_column, "")
+        else:
+            text = ""
         if isinstance(text, str) and text.strip():
             prompts.append(text.strip())
         if len(prompts) >= args.max_samples:
             break
+
+    if not prompts:
+        if rank == 0:
+            logger.error(
+                "No prompts found in column %r of %s/%s split=%s — aborting.",
+                args.text_column, args.dataset, args.dataset_config,
+                args.dataset_split,
+            )
+        ezpz.cleanup()
+        return 1
 
     my_indices = shard_indices(len(prompts), rank, world_size)
     my_prompts = [prompts[i] for i in my_indices]
@@ -287,7 +338,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     gen_kwargs: dict[str, Any] = {
         "max_new_tokens": args.max_new_tokens,
         "do_sample": args.do_sample,
-        "pad_token_id": tokenizer.pad_token_id,
+        "pad_token_id": pad_id,
     }
     if args.do_sample:
         gen_kwargs["temperature"] = args.temperature
@@ -324,7 +375,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # Slice off the prompt portion so we report only new tokens
             input_len = enc.input_ids.shape[1]
             new_token_ids = output_ids[:, input_len:]
-            n_new = int((new_token_ids != tokenizer.pad_token_id).sum().item())
+            n_new = int((new_token_ids != pad_id).sum().item())
             n_in = int(enc.attention_mask.sum().item())
 
             decoded = tokenizer.batch_decode(
