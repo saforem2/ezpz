@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shlex
 import socket
 import subprocess
@@ -88,8 +89,6 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
     hostfile.  Avoids importing heavy ezpz modules (torch, numpy, etc.)
     so the CLI starts fast even on slow filesystems.
     """
-    import os
-
     # Resolve hostfile path
     hf: str | None = hostfile
     if hf is None:
@@ -124,6 +123,10 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                     )
                     if qstat.returncode == 0:
                         my_host = socket.getfqdn().split(".")[0]
+                        # Strip -hsn0 suffix in case getfqdn returned the
+                        # HSN form but qstat lists bare hostnames.
+                        if my_host.endswith("-hsn0"):
+                            my_host = my_host[: -len("-hsn0")]
                         # Each running job line ends with the nodelist
                         for line in qstat.stdout.splitlines():
                             if " R " not in line:
@@ -136,14 +139,17 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                             # nodelist format: host1/cpu+host2/cpu+...
                             hosts = [h.split("/")[0] for h in nodelist.split("+")]
                             if my_host in hosts:
-                                # Found our job — look up its aux file
+                                # Found our job — look up its aux file.
+                                # PBS aux files are named "<jobid>" or
+                                # "<jobid>.<server>" — match exact or prefix.
                                 for aux_dir in ("/var/spool/pbs/aux",
                                                  "/var/spool/PBS/aux"):
                                     aux_path = Path(aux_dir)
                                     if not aux_path.is_dir():
                                         continue
                                     for entry in aux_path.iterdir():
-                                        if jobid in entry.name:
+                                        if (entry.name == jobid
+                                                or entry.name.startswith(jobid + ".")):
                                             hf = str(entry)
                                             logger.info(
                                                 "Found PBS hostfile via qstat: %s",
