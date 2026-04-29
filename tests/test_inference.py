@@ -94,6 +94,12 @@ class TestParseArgsModes:
         assert args.mode == "eval"
         assert args.label_column == "answer"
 
+    def test_eval_mode_without_label_column_is_allowed(self):
+        """Without --label-column, eval falls back to next-token scoring."""
+        args = parse_args(["--mode", "eval"])
+        assert args.mode == "eval"
+        assert args.label_column is None
+
     def test_invalid_mode_rejected(self):
         with pytest.raises(SystemExit):
             parse_args(["--mode", "nonsense"])

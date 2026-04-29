@@ -286,8 +286,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # ── Prompts (and optional labels) ──────────────────────────────
     # In benchmark mode we synthesize random tokens — no dataset load.
     # In generate / eval mode we pull from a HuggingFace dataset.
+    # eval_unlabeled = True means we'll score next-token prediction
+    # directly (no labels, no generation).
     prompts: list[str]
     labels: list[Optional[str]]
+    eval_unlabeled = args.mode == "eval" and not args.label_column
 
     if args.mode == "benchmark":
         if rank == 0:
@@ -302,14 +305,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prompts = [""] * args.benchmark_iters * args.batch_size
         labels = [None] * len(prompts)
     else:
-        if args.mode == "eval" and not args.label_column:
-            if rank == 0:
-                logger.error(
-                    "--mode eval requires --label-column to specify the "
-                    "gold answer column."
-                )
-            ezpz.cleanup()
-            return 1
+        if rank == 0 and eval_unlabeled:
+            logger.info(
+                "--mode eval without --label-column: scoring next-token "
+                "prediction (accuracy + perplexity) on the prompt itself"
+            )
 
         if rank == 0:
             logger.info(
@@ -413,8 +413,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     total_samples = 0
     total_new_tokens = 0
-    n_correct = 0  # only meaningful in --mode eval
+    n_correct = 0  # only meaningful in --mode eval (labeled)
     n_with_label = 0
+    # For unlabeled --mode eval (next-token prediction):
+    n_token_correct = 0
+    n_tokens_scored = 0
+    nll_sum = 0.0  # sum of -log p(next token); perplexity = exp(nll/n)
     benchmark_warmup = (
         args.benchmark_warmup if args.mode == "benchmark" else 0
     )
@@ -451,38 +455,65 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 input_ids = enc.input_ids
                 attention_mask = enc.attention_mask
 
-            output_ids = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                **gen_kwargs,
-            )
+            # Unlabeled eval path: forward pass + score next-token
+            # prediction. No autoregressive generation.
+            decoded: list[str] = []
+            batch_token_correct = 0
+            batch_token_scored = 0
+            batch_nll_sum = 0.0
+            n_new = 0
+            if eval_unlabeled:
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                )
+                logits = outputs.logits  # [B, T, V]
+                # Predict token i+1 from logits at position i
+                shift_logits = logits[:, :-1, :].contiguous()
+                shift_targets = input_ids[:, 1:].contiguous()
+                # Mask padded positions out of the score
+                shift_mask = attention_mask[:, 1:].to(torch.bool)
+                preds = shift_logits.argmax(dim=-1)
+                correct = (preds == shift_targets) & shift_mask
+                batch_token_correct = int(correct.sum().item())
+                batch_token_scored = int(shift_mask.sum().item())
+                # Cross-entropy in float32 for numerical stability
+                ce = torch.nn.functional.cross_entropy(
+                    shift_logits.float().reshape(-1, shift_logits.size(-1)),
+                    shift_targets.reshape(-1),
+                    reduction="none",
+                ).reshape(shift_targets.shape)
+                batch_nll_sum = float((ce * shift_mask).sum().item())
+                ezpz.synchronize()
+                dt = time.perf_counter() - t0
+            else:
+                output_ids = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    **gen_kwargs,
+                )
+                ezpz.synchronize()
+                dt = time.perf_counter() - t0
+                # Slice off the prompt portion so we report only new tokens
+                input_len = input_ids.shape[1]
+                new_token_ids = output_ids[:, input_len:]
+                n_new = int((new_token_ids != pad_id).sum().item())
+                # Decode (skip in benchmark mode — random tokens aren't useful)
+                if args.mode != "benchmark":
+                    decoded = tokenizer.batch_decode(
+                        new_token_ids,
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False,
+                    )
 
-            ezpz.synchronize()
-            dt = time.perf_counter() - t0
-
-            # Slice off the prompt portion so we report only new tokens
-            input_len = input_ids.shape[1]
-            new_token_ids = output_ids[:, input_len:]
-            n_new = int((new_token_ids != pad_id).sum().item())
             n_in = int(attention_mask.sum().item())
             batch_num = batch_idx // args.batch_size
             is_warmup = batch_num < benchmark_warmup
 
-            # Decode (skip in benchmark mode — random tokens aren't useful)
-            decoded: list[str] = []
-            if args.mode != "benchmark":
-                decoded = tokenizer.batch_decode(
-                    new_token_ids,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=False,
-                )
-
-            # Eval: compare each completion to its gold label.  Use a
-            # simple "exact-match after normalizing case + whitespace"
-            # check — the canonical eval-harness style metric.
+            # Labeled-eval string match (only when we have labels)
             batch_correct = 0
             batch_with_label = 0
-            if args.mode == "eval":
+            if args.mode == "eval" and not eval_unlabeled:
                 for completion, label in zip(decoded, batch_labels):
                     if label is None:
                         continue
@@ -493,6 +524,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         batch_correct += 1
                 n_correct += batch_correct
                 n_with_label += batch_with_label
+
+            if eval_unlabeled:
+                n_token_correct += batch_token_correct
+                n_tokens_scored += batch_token_scored
+                nll_sum += batch_nll_sum
 
             if not is_warmup:
                 total_samples += len(batch_prompts)
@@ -513,6 +549,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 metrics["mfu"] = compute_mfu(step_flops, dt)
             if args.mode == "eval" and batch_with_label > 0:
                 metrics["accuracy"] = batch_correct / batch_with_label
+            if eval_unlabeled and batch_token_scored > 0:
+                metrics["next_token_accuracy"] = (
+                    batch_token_correct / batch_token_scored
+                )
+                metrics["perplexity"] = float(
+                    torch.exp(
+                        torch.tensor(batch_nll_sum / batch_token_scored)
+                    ).item()
+                )
 
             if not is_warmup:
                 history.update(metrics)
@@ -552,11 +597,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             t_total,
             total_new_tokens / t_total if t_total > 0 else 0.0,
         )
-        if args.mode == "eval" and n_with_label > 0:
+        if args.mode == "eval" and not eval_unlabeled and n_with_label > 0:
             logger.info(
                 "Accuracy [rank 0]: %d/%d = %.2f%%",
                 n_correct, n_with_label,
                 100.0 * n_correct / n_with_label,
+            )
+        if eval_unlabeled and n_tokens_scored > 0:
+            avg_nll = nll_sum / n_tokens_scored
+            ppl = float(torch.exp(torch.tensor(avg_nll)).item())
+            logger.info(
+                "Next-token [rank 0]: accuracy=%d/%d=%.2f%%  perplexity=%.3f  (NLL/token=%.4f)",
+                n_token_correct, n_tokens_scored,
+                100.0 * n_token_correct / n_tokens_scored,
+                ppl, avg_nll,
             )
 
     if rank == 0:
