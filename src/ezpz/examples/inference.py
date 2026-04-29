@@ -534,17 +534,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 total_samples += len(batch_prompts)
                 total_new_tokens += n_new
 
+            # In unlabeled-eval mode there are no generated tokens —
+            # we ran a single forward pass and scored prompt tokens.
+            # Report tokens/sec and MFU based on tokens *scored*
+            # (one forward pass per token), not generated.
+            if eval_unlabeled:
+                tokens_for_throughput = batch_token_scored
+            else:
+                tokens_for_throughput = n_new
+
             metrics: dict[str, Any] = {
                 "batch": batch_num,
                 "samples": len(batch_prompts),
                 "input_tokens": n_in,
                 "new_tokens": n_new,
                 "dt": dt,
-                "tokens_per_sec": n_new / dt if dt > 0 else 0.0,
+                "tokens_per_sec": (
+                    tokens_for_throughput / dt if dt > 0 else 0.0
+                ),
                 "warmup": is_warmup,
             }
+            if eval_unlabeled:
+                metrics["tokens_scored"] = batch_token_scored
             if _model_flops_fwd > 0 and dt > 0:
-                step_flops = _model_flops_fwd * max(n_new, 1)
+                step_flops = _model_flops_fwd * max(tokens_for_throughput, 1)
                 metrics["tflops"] = step_flops / dt / 1e12
                 metrics["mfu"] = compute_mfu(step_flops, dt)
             if args.mode == "eval" and batch_with_label > 0:
@@ -575,16 +588,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             if rank == 0:
                 tag = " [warmup]" if is_warmup else ""
-                # Build a human-friendly log line including any
-                # mode-specific metrics (accuracy / next_token_accuracy
-                # / perplexity) that were attached to this batch.
                 parts = [
                     f"batch={batch_num}{tag}",
                     f"samples={metrics['samples']}",
-                    f"new_tokens={metrics['new_tokens']}",
+                ]
+                # In unlabeled-eval mode there are no generated
+                # tokens — show what was *scored* instead.
+                if "tokens_scored" in metrics:
+                    parts.append(f"tokens_scored={metrics['tokens_scored']}")
+                else:
+                    parts.append(f"new_tokens={metrics['new_tokens']}")
+                parts.extend([
                     f"dt={dt:.3f}s",
                     f"tps={metrics['tokens_per_sec']:.1f}",
-                ]
+                ])
                 if "tflops" in metrics:
                     parts.append(f"tflops={metrics['tflops']:.2f}")
                 if "mfu" in metrics:
@@ -593,7 +610,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     parts.append(f"accuracy={metrics['accuracy']:.3f}")
                 if "next_token_accuracy" in metrics:
                     parts.append(
-                        f"next_token_accuracy={metrics['next_token_accuracy']:.3f}"
+                        f"next_token_acc={metrics['next_token_accuracy']:.3f}"
                     )
                 if "perplexity" in metrics:
                     parts.append(f"perplexity={metrics['perplexity']:.2f}")
