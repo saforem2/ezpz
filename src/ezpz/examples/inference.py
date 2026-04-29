@@ -575,14 +575,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             if rank == 0:
                 tag = " [warmup]" if is_warmup else ""
-                logger.info(
-                    "batch=%d%s samples=%d new_tokens=%d dt=%.3fs tps=%.1f",
-                    batch_num, tag,
-                    metrics["samples"],
-                    metrics["new_tokens"],
-                    dt,
-                    metrics["tokens_per_sec"],
-                )
+                # Build a human-friendly log line including any
+                # mode-specific metrics (accuracy / next_token_accuracy
+                # / perplexity) that were attached to this batch.
+                parts = [
+                    f"batch={batch_num}{tag}",
+                    f"samples={metrics['samples']}",
+                    f"new_tokens={metrics['new_tokens']}",
+                    f"dt={dt:.3f}s",
+                    f"tps={metrics['tokens_per_sec']:.1f}",
+                ]
+                if "tflops" in metrics:
+                    parts.append(f"tflops={metrics['tflops']:.2f}")
+                if "mfu" in metrics:
+                    parts.append(f"mfu={metrics['mfu']:.2f}%")
+                if "accuracy" in metrics:
+                    parts.append(f"accuracy={metrics['accuracy']:.3f}")
+                if "next_token_accuracy" in metrics:
+                    parts.append(
+                        f"next_token_accuracy={metrics['next_token_accuracy']:.3f}"
+                    )
+                if "perplexity" in metrics:
+                    parts.append(f"perplexity={metrics['perplexity']:.2f}")
+                logger.info(" ".join(parts))
 
     if pred_file is not None:
         pred_file.close()
