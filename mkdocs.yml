@@ -233,6 +233,7 @@ nav:
       - <code>ezpz.examples.hf_trainer</code>:
           - examples/hf-trainer/index.md
           - HF Trainer Comparison: examples/hf-trainer/comparison.md
+      - <code>ezpz.examples.inference</code>: examples/inference.md
 
   - 🐍 Python API:
       - python/index.md
