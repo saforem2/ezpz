@@ -41,7 +41,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         prog="ezpz.examples.inference",
         description=(
             "Distributed inference over a HuggingFace model + dataset. "
+            "Three modes: --mode benchmark (throughput), generate "
+            "(synthetic data corpus), eval (accuracy on labeled data). "
             "Each rank processes a disjoint shard of prompts."
+        ),
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="generate",
+        choices=["benchmark", "generate", "eval"],
+        help=(
+            "Inference mode: "
+            "'benchmark' = synthetic random tokens, no dataset, focus "
+            "on tokens/sec/MFU. "
+            "'generate' = dataset prompts → completions, save to JSONL "
+            "(synthetic data / distillation use case). "
+            "'eval' = dataset prompts + gold labels, compare generated "
+            "text to label, report accuracy."
         ),
     )
     parser.add_argument(
@@ -54,7 +71,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--dataset",
         type=str,
         default="wikitext",
-        help="HuggingFace dataset name or local path",
+        help="HuggingFace dataset name or local path (ignored in --mode benchmark)",
     )
     parser.add_argument(
         "--dataset-config",
@@ -73,6 +90,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=str,
         default="text",
         help="Dataset column containing the prompt text",
+    )
+    parser.add_argument(
+        "--label-column",
+        type=str,
+        default=None,
+        help="Dataset column containing the gold label (required for --mode eval)",
+    )
+    parser.add_argument(
+        "--benchmark-iters",
+        type=int,
+        default=20,
+        help="Number of benchmark iterations (only with --mode benchmark)",
+    )
+    parser.add_argument(
+        "--benchmark-warmup",
+        type=int,
+        default=3,
+        help="Warmup iterations to skip when reporting (only with --mode benchmark)",
     )
     parser.add_argument(
         "--max-samples",
@@ -248,54 +283,85 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     _model_flops_fwd = _model_flops_fwd_bwd / 3 if _model_flops_fwd_bwd > 0 else 0
 
-    # ── Dataset ────────────────────────────────────────────────────
-    # Same rank-0-first pattern to avoid concurrent downloads.
-    if rank == 0:
-        logger.info(
-            "Loading dataset: %s [%s] split=%s",
-            args.dataset, args.dataset_config, args.dataset_split,
-        )
-    from datasets import load_dataset
+    # ── Prompts (and optional labels) ──────────────────────────────
+    # In benchmark mode we synthesize random tokens — no dataset load.
+    # In generate / eval mode we pull from a HuggingFace dataset.
+    prompts: list[str]
+    labels: list[Optional[str]]
 
-    def _load_ds():
-        return load_dataset(
-            args.dataset, args.dataset_config, split=args.dataset_split,
-        )
-
-    if rank == 0:
-        ds = _load_ds()
-        if world_size > 1:
-            ezpz.synchronize()
-    else:
-        if world_size > 1:
-            ezpz.synchronize()
-        ds = _load_ds()
-
-    # Filter out empty rows and cap to --max-samples.  Dataset rows are
-    # dict-like; defensively handle non-dict rows by skipping them.
-    prompts: list[str] = []
-    for row in ds:
-        if isinstance(row, dict):
-            text = row.get(args.text_column, "")
-        else:
-            text = ""
-        if isinstance(text, str) and text.strip():
-            prompts.append(text.strip())
-        if len(prompts) >= args.max_samples:
-            break
-
-    if not prompts:
+    if args.mode == "benchmark":
         if rank == 0:
-            logger.error(
-                "No prompts found in column %r of %s/%s split=%s — aborting.",
-                args.text_column, args.dataset, args.dataset_config,
-                args.dataset_split,
+            logger.info(
+                "Benchmark mode: %d iterations × batch_size=%d at "
+                "max_input_tokens=%d, max_new_tokens=%d",
+                args.benchmark_iters, args.batch_size,
+                args.max_input_tokens, args.max_new_tokens,
             )
-        ezpz.cleanup()
-        return 1
+        # Synthesize random token IDs as "prompts" — we'll skip the
+        # tokenizer in the loop and feed input_ids directly.
+        prompts = [""] * args.benchmark_iters * args.batch_size
+        labels = [None] * len(prompts)
+    else:
+        if args.mode == "eval" and not args.label_column:
+            if rank == 0:
+                logger.error(
+                    "--mode eval requires --label-column to specify the "
+                    "gold answer column."
+                )
+            ezpz.cleanup()
+            return 1
+
+        if rank == 0:
+            logger.info(
+                "Loading dataset: %s [%s] split=%s",
+                args.dataset, args.dataset_config, args.dataset_split,
+            )
+        from datasets import load_dataset
+
+        def _load_ds():
+            return load_dataset(
+                args.dataset, args.dataset_config, split=args.dataset_split,
+            )
+
+        if rank == 0:
+            ds = _load_ds()
+            if world_size > 1:
+                ezpz.synchronize()
+        else:
+            if world_size > 1:
+                ezpz.synchronize()
+            ds = _load_ds()
+
+        prompts = []
+        labels = []
+        for row in ds:
+            if not isinstance(row, dict):
+                continue
+            text = row.get(args.text_column, "")
+            if not (isinstance(text, str) and text.strip()):
+                continue
+            prompts.append(text.strip())
+            if args.label_column:
+                lbl = row.get(args.label_column)
+                labels.append(str(lbl) if lbl is not None else None)
+            else:
+                labels.append(None)
+            if len(prompts) >= args.max_samples:
+                break
+
+        if not prompts:
+            if rank == 0:
+                logger.error(
+                    "No prompts found in column %r of %s/%s split=%s — aborting.",
+                    args.text_column, args.dataset, args.dataset_config,
+                    args.dataset_split,
+                )
+            ezpz.cleanup()
+            return 1
 
     my_indices = shard_indices(len(prompts), rank, world_size)
     my_prompts = [prompts[i] for i in my_indices]
+    my_labels = [labels[i] for i in my_indices]
 
     if rank == 0:
         logger.info(
@@ -327,9 +393,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         distributed_history=(1 < world_size <= 384),
     )
 
-    pred_path: Optional[Path] = None
+    # Predictions file: only useful for generate / eval.  Disable in
+    # benchmark mode (the "completions" are random-token noise).
     pred_file = None
-    if args.save_predictions:
+    if args.save_predictions and args.mode != "benchmark":
         pred_path = Path(outdir) / f"predictions-rank{rank}.jsonl"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         pred_file = pred_path.open("w", encoding="utf-8")
@@ -346,76 +413,126 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     total_samples = 0
     total_new_tokens = 0
+    n_correct = 0  # only meaningful in --mode eval
+    n_with_label = 0
+    benchmark_warmup = (
+        args.benchmark_warmup if args.mode == "benchmark" else 0
+    )
     t_start = time.perf_counter()
 
     with torch.inference_mode():
         for batch_idx in range(0, len(my_prompts), args.batch_size):
             batch_prompts = my_prompts[batch_idx : batch_idx + args.batch_size]
+            batch_labels = my_labels[batch_idx : batch_idx + args.batch_size]
             if not batch_prompts:
                 continue
 
             ezpz.synchronize()
             t0 = time.perf_counter()
 
-            enc = tokenizer(
-                batch_prompts,
-                padding=True,
-                truncation=True,
-                max_length=args.max_input_tokens,
-                return_tensors="pt",
-            ).to(device)
+            if args.mode == "benchmark":
+                # Synthesize random input_ids — skip tokenizer entirely
+                input_ids = torch.randint(
+                    0,
+                    int(getattr(tokenizer, "vocab_size", 32000)),
+                    (len(batch_prompts), args.max_input_tokens),
+                    device=device,
+                    dtype=torch.long,
+                )
+                attention_mask = torch.ones_like(input_ids)
+            else:
+                enc = tokenizer(
+                    batch_prompts,
+                    padding=True,
+                    truncation=True,
+                    max_length=args.max_input_tokens,
+                    return_tensors="pt",
+                ).to(device)
+                input_ids = enc.input_ids
+                attention_mask = enc.attention_mask
 
-            output_ids = model.generate(input_ids=enc.input_ids,
-                                        attention_mask=enc.attention_mask,
-                                        **gen_kwargs)
+            output_ids = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                **gen_kwargs,
+            )
 
             ezpz.synchronize()
             dt = time.perf_counter() - t0
 
             # Slice off the prompt portion so we report only new tokens
-            input_len = enc.input_ids.shape[1]
+            input_len = input_ids.shape[1]
             new_token_ids = output_ids[:, input_len:]
             n_new = int((new_token_ids != pad_id).sum().item())
-            n_in = int(enc.attention_mask.sum().item())
+            n_in = int(attention_mask.sum().item())
+            batch_num = batch_idx // args.batch_size
+            is_warmup = batch_num < benchmark_warmup
 
-            decoded = tokenizer.batch_decode(
-                new_token_ids,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False,
-            )
+            # Decode (skip in benchmark mode — random tokens aren't useful)
+            decoded: list[str] = []
+            if args.mode != "benchmark":
+                decoded = tokenizer.batch_decode(
+                    new_token_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )
 
-            total_samples += len(batch_prompts)
-            total_new_tokens += n_new
+            # Eval: compare each completion to its gold label.  Use a
+            # simple "exact-match after normalizing case + whitespace"
+            # check — the canonical eval-harness style metric.
+            batch_correct = 0
+            batch_with_label = 0
+            if args.mode == "eval":
+                for completion, label in zip(decoded, batch_labels):
+                    if label is None:
+                        continue
+                    batch_with_label += 1
+                    if _normalize(completion) == _normalize(label) or (
+                        _normalize(label) and _normalize(label) in _normalize(completion)
+                    ):
+                        batch_correct += 1
+                n_correct += batch_correct
+                n_with_label += batch_with_label
 
-            metrics = {
-                "batch": batch_idx // args.batch_size,
+            if not is_warmup:
+                total_samples += len(batch_prompts)
+                total_new_tokens += n_new
+
+            metrics: dict[str, Any] = {
+                "batch": batch_num,
                 "samples": len(batch_prompts),
                 "input_tokens": n_in,
                 "new_tokens": n_new,
                 "dt": dt,
                 "tokens_per_sec": n_new / dt if dt > 0 else 0.0,
+                "warmup": is_warmup,
             }
             if _model_flops_fwd > 0 and dt > 0:
-                # Each generated token requires one forward pass on the
-                # current sequence. Approximate as n_new × per-step fwd flops.
                 step_flops = _model_flops_fwd * max(n_new, 1)
                 metrics["tflops"] = step_flops / dt / 1e12
                 metrics["mfu"] = compute_mfu(step_flops, dt)
+            if args.mode == "eval" and batch_with_label > 0:
+                metrics["accuracy"] = batch_correct / batch_with_label
 
-            history.update(metrics)
+            if not is_warmup:
+                history.update(metrics)
 
             if pred_file is not None:
-                for prompt, completion in zip(batch_prompts, decoded):
-                    pred_file.write(json.dumps({
+                for i, (prompt, completion) in enumerate(zip(batch_prompts, decoded)):
+                    row = {
                         "rank": rank,
                         "prompt": prompt,
                         "completion": completion,
-                    }) + "\n")
+                    }
+                    if args.mode == "eval":
+                        row["label"] = batch_labels[i]
+                    pred_file.write(json.dumps(row) + "\n")
 
             if rank == 0:
+                tag = " [warmup]" if is_warmup else ""
                 logger.info(
-                    "batch=%d samples=%d new_tokens=%d dt=%.3fs tps=%.1f",
-                    metrics["batch"],
+                    "batch=%d%s samples=%d new_tokens=%d dt=%.3fs tps=%.1f",
+                    batch_num, tag,
                     metrics["samples"],
                     metrics["new_tokens"],
                     dt,
@@ -428,12 +545,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     t_total = time.perf_counter() - t_start
     if rank == 0:
         logger.info(
-            "Done — %d samples, %d new tokens in %.1fs (%.1f tok/s aggregate per rank)",
+            "Done [%s] — %d samples, %d new tokens in %.1fs (%.1f tok/s aggregate per rank)",
+            args.mode,
             total_samples,
             total_new_tokens,
             t_total,
             total_new_tokens / t_total if t_total > 0 else 0.0,
         )
+        if args.mode == "eval" and n_with_label > 0:
+            logger.info(
+                "Accuracy [rank 0]: %d/%d = %.2f%%",
+                n_correct, n_with_label,
+                100.0 * n_correct / n_with_label,
+            )
 
     if rank == 0:
         history.finalize(
@@ -445,6 +569,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     ezpz.cleanup()
     return 0
+
+
+def _normalize(text: str) -> str:
+    """Lowercase + collapse whitespace + strip — used for eval matching."""
+    if text is None:
+        return ""
+    return " ".join(str(text).lower().split())
 
 
 if __name__ == "__main__":

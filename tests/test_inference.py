@@ -7,7 +7,9 @@ real hardware — see docs/examples/inference.md.
 
 from __future__ import annotations
 
-from ezpz.examples.inference import shard_indices
+import pytest
+
+from ezpz.examples.inference import _normalize, parse_args, shard_indices
 
 
 class TestShardIndices:
@@ -53,3 +55,45 @@ class TestShardIndices:
     def test_invalid_world_size(self):
         """Non-positive world_size returns empty."""
         assert shard_indices(10, 0, 0) == []
+
+
+class TestNormalize:
+    """Tests for the eval-mode text normalization helper."""
+
+    def test_lowercases(self):
+        assert _normalize("Hello World") == "hello world"
+
+    def test_collapses_whitespace(self):
+        assert _normalize("foo   bar\t\nbaz") == "foo bar baz"
+
+    def test_strips_edges(self):
+        assert _normalize("  spaced  ") == "spaced"
+
+    def test_empty(self):
+        assert _normalize("") == ""
+
+    def test_none_returns_empty(self):
+        assert _normalize(None) == ""  # type: ignore[arg-type]
+
+
+class TestParseArgsModes:
+    """Tests for the --mode argument."""
+
+    def test_default_is_generate(self):
+        args = parse_args([])
+        assert args.mode == "generate"
+
+    def test_benchmark_mode(self):
+        args = parse_args(["--mode", "benchmark"])
+        assert args.mode == "benchmark"
+        assert args.benchmark_iters == 20  # default
+        assert args.benchmark_warmup == 3  # default
+
+    def test_eval_mode(self):
+        args = parse_args(["--mode", "eval", "--label-column", "answer"])
+        assert args.mode == "eval"
+        assert args.label_column == "answer"
+
+    def test_invalid_mode_rejected(self):
+        with pytest.raises(SystemExit):
+            parse_args(["--mode", "nonsense"])
