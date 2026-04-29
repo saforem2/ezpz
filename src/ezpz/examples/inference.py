@@ -168,6 +168,11 @@ def _torch_dtype(name: str) -> torch.dtype:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point for distributed HF inference."""
+    # Silence noisy per-request HTTP logs from HF Hub clients
+    import logging as _logging
+    for _noisy in ("httpx", "huggingface_hub", "filelock", "urllib3"):
+        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
+
     args = parse_args(argv)
 
     # ── Distributed setup ──────────────────────────────────────────
