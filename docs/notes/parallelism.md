@@ -78,8 +78,8 @@ The `ezpz.tp` package provides Megatron-style tensor-parallel primitives
 
 | Path       | Wrapper | When |
 |------------|---------|------|
-| DDP        | `torch.nn.parallel.DistributedDataParallel` | Default (`use_fsdp=False`) |
-| FSDP       | `torch.distributed.fsdp.FullyShardedDataParallel` | `use_fsdp=True` |
+| FSDP       | `torch.distributed.fsdp.FullyShardedDataParallel` | Default (`use_fsdp=True`) |
+| DDP        | `torch.nn.parallel.DistributedDataParallel` | `use_fsdp=False` |
 | DeepSpeed  | `deepspeed.initialize()` | Used directly in user code (bypasses `wrap_model`) |
 | FSDP + TP  | `parallelize_module()` + FSDP on the DP mesh dimension | See the [`fsdp_tp` example](../examples/fsdp-tp.md) |
 

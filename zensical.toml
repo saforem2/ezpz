@@ -55,6 +55,8 @@ nav = [
         "history.md",
         "configuration.md",
         "architecture.md",
+        { "🕸️ Parallelism" = "notes/parallelism.md" },
+        { "🤖 Supported Systems" = "notes/systems.md" },
         "troubleshooting.md",
         "notes/faq.md",
         # { "Quick Start" = "quickstart.md" },
@@ -195,12 +197,8 @@ nav = [
         "notes/index.md",
         { "🖍️ Overview" = "notes/diagrams.md" },
         { "🏔️ Perlmutter" = "notes/perlmutter.md" },
-
         { "🧤 Hands-On Slides" = "notes/slides-2025-05-07.md" },
-
-        { "🕸️ Parallelism" = "notes/parallelism.md" },
         { "🏖️ Shell Environment" = "notes/shell-environment.md" },
-        { "🤖 Systems" = "notes/systems.md" },
 
         # { "WIP" = [
         #     { "🧪 Tests" = [

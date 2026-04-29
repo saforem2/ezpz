@@ -65,7 +65,7 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--src` | Active venv/conda env | Source environment path |
-| `--dst` | `/tmp/<env-name>/` | Destination on each node |
+| `--dst` | `/tmp/<env-name>/` | Destination on each node (e.g. `/tmp/.venv/` for a venv named `.venv`) |
 | `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |

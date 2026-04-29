@@ -343,7 +343,5 @@ nav:
           - tplot: python/tests/test-tplot.md
           - utils: python/tests/test-utils.md
           - utils-improved: python/tests/test-utils-improved.md
-      - 🕸️ Parallelism: notes/parallelism.md
       - 🏖️ Shell Environment: notes/shell-environment.md
-      - 🤖 Systems: notes/systems.md
       - 📦 Yeet Environment: notes/yeet-env.md

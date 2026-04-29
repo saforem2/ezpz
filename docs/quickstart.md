@@ -53,13 +53,7 @@ uv pip install git+https://github.com/saforem2/ezpz
 
     1. [**Shell Environment and Setup**](./notes/shell-environment.md):
 
-        ??? warning "Deprecation Notice"
-
-            I plan to deprecate `utils.sh` in favor of a uv native approach.
-            This shell script was originally developed for personal use, and I
-            don't plan to officially support this script in the long term.
-
-        - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/utils/utils.sh):
+        - [ezpz/bin/`utils.sh`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh):
         Shell script containing a collection of functions that I've accumulated
         over time and found to be useful.
         To use these, we can source the file directly from the command line:

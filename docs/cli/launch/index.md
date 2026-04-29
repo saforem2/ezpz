@@ -82,8 +82,9 @@ allocated to your job.
 
 ## Python interpreter resolution
 
-When `ezpz launch` needs to invoke `python3` (e.g. `ezpz launch -m my.module`),
-it picks the interpreter in this order:
+When `ezpz launch` needs to invoke `python3` (e.g.
+`ezpz launch python3 -m my.module`), it picks the interpreter in this
+order:
 
 1. **`$VIRTUAL_ENV/bin/python3`** if `$VIRTUAL_ENV` is set and exists
 2. **`shutil.which("python3")`** — first python3 on `$PATH`
