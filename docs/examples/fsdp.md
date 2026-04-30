@@ -304,28 +304,37 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 ```bash
 $ python3 -m ezpz.examples.fsdp --help
 usage: fsdp.py [-h] [--num-workers N]
-            [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
-            [--batch-size N] [--dtype D] [--test-batch-size N] [--epochs N]
-            [--lr LR] [--gamma M] [--seed S] [--save-model]
-            [--data-prefix DATA_PREFIX]
+               [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
+               [--batch-size N] [--model {debug,large,medium,small}]
+               [--conv1-channels N] [--conv2-channels N] [--fc-dim N]
+               [--dtype D] [--test-batch-size N] [--epochs N] [--lr LR]
+               [--gamma M] [--seed S] [--save-model]
+               [--data-prefix DATA_PREFIX]
 
 PyTorch MNIST Example using FSDP
 
 options:
--h, --help            show this help message and exit
---num-workers N       number of data loading workers (default: 4)
---dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
+  -h, --help            show this help message and exit
+  --num-workers N       number of data loading workers (default: 0)
+  --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
                         Dataset to use (default: MNIST)
---batch-size N        input batch size for training (default: 64)
---dtype D             Datatype for training (default=bf16).
---test-batch-size N   input batch size for testing (default: 1000)
---epochs N            number of epochs to train (default: 10)
---lr LR               learning rate (default: 1e-3)
---gamma M             Learning rate step gamma (default: 0.7)
---seed S              random seed (default: 1)
---save-model          For Saving the current Model
---data-prefix DATA_PREFIX
-                        data directory prefix
+  --batch-size N        input batch size for training (default: 64)
+  --model {debug,large,medium,small}
+                        Model size preset (overrides conv/fc defaults)
+                        (default: None)
+  --conv1-channels N    Number of output channels in conv1 (default: 32)
+  --conv2-channels N    Number of output channels in conv2 (default: 64)
+  --fc-dim N            Hidden dimension for the first linear layer (default:
+                        128)
+  --dtype D             Datatype for training (default: bf16)
+  --test-batch-size N   input batch size for testing (default: 1000)
+  --epochs N            number of epochs to train (default: 10)
+  --lr LR               learning rate (default: 0.001)
+  --gamma M             Learning rate step gamma (default: 0.7)
+  --seed S              random seed (default: None)
+  --save-model          For Saving the current Model (default: False)
+  --data-prefix DATA_PREFIX
+                        data directory prefix (default: None)
 ```
 
 </details>

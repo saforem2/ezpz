@@ -324,44 +324,56 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 $ python3 -m ezpz.examples.diffusion --help
 usage: diffusion.py [-h] [--batch-size BATCH_SIZE] [--dtype DTYPE]
                     [--extra-text [EXTRA_TEXT ...]] [--fsdp]
+                    [--fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}]
                     [--fsdp-mixed-precision] [--hidden HIDDEN]
                     [--hf-dataset HF_DATASET] [--hf-split HF_SPLIT]
                     [--hf-text-column HF_TEXT_COLUMN] [--hf-limit HF_LIMIT]
                     [--log_freq LOG_FREQ] [--outdir OUTDIR]
                     [--samples SAMPLES] [--seed SEED] [--seq-len SEQ_LEN]
                     [--timesteps TIMESTEPS] [--train-steps TRAIN_STEPS]
-                    [--lr LR]
+                    [--lr LR] [--model {debug,large,medium,small}]
+                    [--n-layers N_LAYERS] [--n-heads N_HEADS]
 
 Tiny diffusion example for text generation.
 
 options:
--h, --help            show this help message and exit
---batch-size BATCH_SIZE
---dtype DTYPE
---extra-text [EXTRA_TEXT ...]
+  -h, --help            show this help message and exit
+  --batch-size BATCH_SIZE
+  --dtype DTYPE
+  --extra-text [EXTRA_TEXT ...]
                         Additional sentences to add to the tiny corpus.
---fsdp                Enable FSDP wrapping (requires WORLD_SIZE>1 and
-                        torch.distributed init).
---fsdp-mixed-precision
+                        (default: None)
+  --fsdp                Enable FSDP wrapping (requires WORLD_SIZE>1 and
+                        torch.distributed init). (default: False)
+  --fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}
+                        FSDP sharding strategy (default: full-shard)
+  --fsdp-mixed-precision
                         Use bfloat16 parameters with FSDP for speed (defaults
-                        to float32).
---hidden HIDDEN
---hf-dataset HF_DATASET
+                        to float32). (default: False)
+  --hidden HIDDEN
+  --hf-dataset HF_DATASET, --dataset HF_DATASET
                         Optional Hugging Face dataset name (e.g., 'ag_news').
-                        When set, replaces the toy corpus.
---hf-split HF_SPLIT   Dataset split to load.
---hf-text-column HF_TEXT_COLUMN
-                        Column containing raw text in the dataset.
---hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick
-                        experiments.
---log_freq LOG_FREQ
---outdir OUTDIR
---samples SAMPLES
---seed SEED
---seq-len SEQ_LEN
---timesteps TIMESTEPS
---train-steps TRAIN_STEPS
---lr LR
+                        When set, replaces the toy corpus. (default: None)
+  --hf-split HF_SPLIT, --split HF_SPLIT
+                        Dataset split to load. (default: train)
+  --hf-text-column HF_TEXT_COLUMN, --text-column HF_TEXT_COLUMN
+                        Column containing raw text in the dataset. (default:
+                        text)
+  --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick
+                        experiments. (default: 512)
+  --log_freq LOG_FREQ
+  --outdir OUTDIR
+  --samples SAMPLES
+  --seed SEED
+  --seq-len SEQ_LEN
+  --timesteps TIMESTEPS
+  --train-steps TRAIN_STEPS
+  --lr LR
+  --model {debug,large,medium,small}
+                        Model size preset (overrides hidden/layer/head
+                        defaults). (default: None)
+  --n-layers N_LAYERS
+  --n-heads N_HEADS
 ```
 
 </details>

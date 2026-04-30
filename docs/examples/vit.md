@@ -274,58 +274,63 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 ```bash
 $ python3 -m ezpz.examples.vit --help
 usage: ezpz.examples.vit [-h] [--img_size IMG_SIZE] [--batch_size BATCH_SIZE]
-                        [--num_heads NUM_HEADS] [--head_dim HEAD_DIM]
-                        [--hidden-dim HIDDEN_DIM] [--mlp-dim MLP_DIM]
-                        [--dropout DROPOUT]
-                        [--attention-dropout ATTENTION_DROPOUT]
-                        [--num_classes NUM_CLASSES] [--dataset {fake,mnist}]
-                        [--depth DEPTH] [--patch_size PATCH_SIZE]
-                        [--dtype DTYPE] [--compile]
-                        [--num_workers NUM_WORKERS] [--max_iters MAX_ITERS]
-                        [--warmup WARMUP] [--attn_type {native,sdpa}]
-                        [--cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}]
-                        [--fsdp]
+                         [--num_heads NUM_HEADS] [--head_dim HEAD_DIM]
+                         [--hidden-dim HIDDEN_DIM] [--mlp-dim MLP_DIM]
+                         [--dropout DROPOUT]
+                         [--attention-dropout ATTENTION_DROPOUT]
+                         [--num_classes NUM_CLASSES] [--dataset {fake,mnist}]
+                         [--model {debug,large,med,medium,small}]
+                         [--depth DEPTH] [--patch_size PATCH_SIZE]
+                         [--dtype DTYPE] [--compile]
+                         [--num_workers NUM_WORKERS] [--max_iters MAX_ITERS]
+                         [--warmup WARMUP] [--attn_type {native,sdpa}]
+                         [--cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}]
+                         [--fsdp]
+                         [--fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}]
 
 Train a simple ViT
 
 options:
-    -h, --help            show this help message and exit
-    --img_size IMG_SIZE, --img-size IMG_SIZE
-                        Image size
-    --batch_size BATCH_SIZE, --batch-size BATCH_SIZE
-                        Batch size
-    --num_heads NUM_HEADS, --num-heads NUM_HEADS
-                        Number of heads
-    --head_dim HEAD_DIM, --head-dim HEAD_DIM
-                        Hidden Dimension
-    --hidden-dim HIDDEN_DIM, --hidden_dim HIDDEN_DIM
-                        Hidden Dimension
-    --mlp-dim MLP_DIM, --mlp_dim MLP_DIM
-                        MLP Dimension
-    --dropout DROPOUT     Dropout rate
-    --attention-dropout ATTENTION_DROPOUT, --attention_dropout ATTENTION_DROPOUT
-                        Attention Dropout rate
-    --num_classes NUM_CLASSES, --num-classes NUM_CLASSES
-                        Number of classes
-    --dataset {fake,mnist}
-                        Dataset to use
-    --depth DEPTH         Depth
-    --patch_size PATCH_SIZE, --patch-size PATCH_SIZE
-                        Patch size
-    --dtype DTYPE         Data type
-    --compile             Compile model
-    --num_workers NUM_WORKERS, --num-workers NUM_WORKERS
-                        Number of workers
-    --max_iters MAX_ITERS, --max-iters MAX_ITERS
-                        Maximum iterations
-    --warmup WARMUP       Warmup iterations (or fraction) before starting to
-                        collect metrics.
-    --attn_type {native,sdpa}, --attn-type {native,sdpa}
-                        Attention function to use.
-    --cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}, --cuda-sdpa-backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}
-                        CUDA SDPA backend to use.
-    --fsdp                Use FSDP
-
+  -h, --help            show this help message and exit
+  --img_size IMG_SIZE, --img-size IMG_SIZE
+                        Image size (default: 224)
+  --batch_size BATCH_SIZE, --batch-size BATCH_SIZE
+                        Batch size (default: 128)
+  --num_heads NUM_HEADS, --num-heads NUM_HEADS
+                        Number of heads (default: 16)
+  --head_dim HEAD_DIM, --head-dim HEAD_DIM
+                        Hidden Dimension (default: 64)
+  --hidden-dim HIDDEN_DIM, --hidden_dim HIDDEN_DIM
+                        Hidden Dimension (default: 1024)
+  --mlp-dim MLP_DIM, --mlp_dim MLP_DIM
+                        MLP Dimension (default: 2048)
+  --dropout DROPOUT     Dropout rate (default: 0.1)
+  --attention-dropout ATTENTION_DROPOUT, --attention_dropout ATTENTION_DROPOUT
+                        Attention Dropout rate (default: 0.0)
+  --num_classes NUM_CLASSES, --num-classes NUM_CLASSES
+                        Number of classes (default: 1000)
+  --dataset {fake,mnist}
+                        Dataset to use (default: mnist)
+  --model {debug,large,med,medium,small}
+                        Model size preset (overrides defaults) (default: None)
+  --depth DEPTH         Depth (default: 24)
+  --patch_size PATCH_SIZE, --patch-size PATCH_SIZE
+                        Patch size (default: 16)
+  --dtype DTYPE         Data type (default: bf16)
+  --compile             Compile model (default: False)
+  --num_workers NUM_WORKERS, --num-workers NUM_WORKERS
+                        Number of workers (default: 0)
+  --max_iters MAX_ITERS, --max-iters MAX_ITERS
+                        Maximum iterations (default: 100)
+  --warmup WARMUP       Warmup iterations (or fraction) before starting to
+                        collect metrics. (default: 0.1)
+  --attn_type {native,sdpa}, --attn-type {native,sdpa}
+                        Attention function to use. (default: native)
+  --cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}, --cuda-sdpa-backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}
+                        CUDA SDPA backend to use. (default: all)
+  --fsdp                Use FSDP (default: False)
+  --fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}
+                        FSDP sharding strategy (default: full-shard)
 ```
 
 </details>

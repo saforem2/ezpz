@@ -786,23 +786,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Source environment path (default: active venv/conda env). "
-            "May be a directory OR a .tar.gz/.tgz file — in the latter "
-            "case the tarball is copied to /tmp/ and extracted there, "
-            "skipping the create step that --compress does."
+            "Source environment path (defaults to the active "
+            "venv/conda env). May be a directory OR a .tar.gz/.tgz "
+            "file — in the latter case the tarball is copied to "
+            "/tmp/ and extracted there, skipping the create step "
+            "that --compress does."
         ),
     )
     parser.add_argument(
         "--dst",
         type=str,
         default=None,
-        help="Destination path on worker nodes (default: /tmp/<env-name>/).",
+        help="Destination path on worker nodes (defaults to /tmp/<env-name>/).",
     )
     parser.add_argument(
         "--hostfile",
         type=str,
         default=None,
-        help="Hostfile to read node list from (default: auto-detect from scheduler).",
+        help="Hostfile to read node list from (auto-detected from scheduler when omitted).",
     )
     parser.add_argument(
         "--copy",

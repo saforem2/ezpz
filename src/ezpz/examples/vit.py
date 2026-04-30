@@ -412,7 +412,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=str,
         default="full-shard",
         choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
-        help="FSDP sharding strategy (default: full-shard)",
+        help="FSDP sharding strategy",
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)

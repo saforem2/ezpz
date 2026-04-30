@@ -481,21 +481,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=0,
         metavar="N",
-        help="number of data loading workers (default: 4)",
+        help="number of data loading workers",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         default="MNIST",
         choices=["MNIST", "OpenImages", "ImageNet", "ImageNet1k"],
-        help="Dataset to use (default: MNIST)",
+        help="Dataset to use",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=64,
         metavar="N",
-        help="input batch size for training (default: 64)",
+        help="input batch size for training",
     )
     parser.add_argument(
         "--model",
@@ -530,42 +530,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default="bf16",
         metavar="D",
-        help="Datatype for training (default=bf16).",
+        help="Datatype for training",
     )
     parser.add_argument(
         "--test-batch-size",
         type=int,
         default=1000,
         metavar="N",
-        help="input batch size for testing (default: 1000)",
+        help="input batch size for testing",
     )
     parser.add_argument(
         "--epochs",
         type=int,
         default=10,
         metavar="N",
-        help="number of epochs to train (default: 10)",
+        help="number of epochs to train",
     )
     parser.add_argument(
         "--lr",
         type=float,
         default=1e-3,
         metavar="LR",
-        help="learning rate (default: 1e-3)",
+        help="learning rate",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         default=0.7,
         metavar="M",
-        help="Learning rate step gamma (default: 0.7)",
+        help="Learning rate step gamma",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
         metavar="S",
-        help="random seed (default: 1)",
+        help="random seed",
     )
     parser.add_argument(
         "--save-model",

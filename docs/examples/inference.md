@@ -290,53 +290,59 @@ options:
                         dataset prompts → completions, save to JSONL
                         (synthetic data / distillation use case). 'eval' =
                         dataset prompts + gold labels, compare generated text
-                        to label, report accuracy.
-  --model MODEL         HuggingFace model name or local path
+                        to label, report accuracy. (default: generate)
+  --model MODEL         HuggingFace model name or local path (default: meta-
+                        llama/Llama-3.2-1B)
   --dataset DATASET     HuggingFace dataset name or local path (ignored in
-                        --mode benchmark)
+                        --mode benchmark) (default: wikitext)
   --dataset-config DATASET_CONFIG
-                        Dataset configuration (subset name)
+                        Dataset configuration (subset name) (default:
+                        wikitext-2-raw-v1)
   --dataset-split DATASET_SPLIT
-                        Dataset split (train/validation/test)
+                        Dataset split (train/validation/test) (default: test)
   --text-column TEXT_COLUMN
-                        Dataset column containing the prompt text
+                        Dataset column containing the prompt text (default:
+                        text)
   --label-column LABEL_COLUMN
                         Dataset column containing the gold label (required for
-                        --mode eval)
+                        --mode eval) (default: None)
   --benchmark-iters BENCHMARK_ITERS
                         Number of benchmark iterations (only with --mode
-                        benchmark)
+                        benchmark) (default: 20)
   --benchmark-warmup BENCHMARK_WARMUP
                         Warmup iterations to skip when reporting (only with
-                        --mode benchmark)
+                        --mode benchmark) (default: 3)
   --max-samples MAX_SAMPLES
                         Maximum number of samples to process across all ranks
+                        (default: 128)
   --batch-size BATCH_SIZE
-                        Per-rank batch size
+                        Per-rank batch size (default: 4)
   --max-input-tokens MAX_INPUT_TOKENS
-                        Truncate prompts to this many tokens
+                        Truncate prompts to this many tokens (default: 512)
   --max-new-tokens MAX_NEW_TOKENS
-                        Maximum tokens to generate per sample
+                        Maximum tokens to generate per sample (default: 64)
   --dtype {float32,float16,bfloat16}
-                        Model dtype
+                        Model dtype (default: bfloat16)
   --flops               Measure exact per-batch FLOPS via FlopCounterMode and
                         report tflops + mfu in metrics. Off by default —
                         without this flag, MFU/TFLOPS columns are simply
                         omitted (rather than reporting approximated values).
-                        Adds ~15-40% overhead per step.
+                        Adds ~15-40% overhead per step. (default: False)
   --flops-every-n-steps FLOPS_EVERY_N_STEPS
                         When --flops is set, measure FLOPS every N steps
                         (default 1 = every step). Use a higher value to
-                        amortize the overhead across batches.
-  --do-sample           Use sampling instead of greedy decoding
+                        amortize the overhead across batches. (default: 1)
+  --do-sample           Use sampling instead of greedy decoding (default:
+                        False)
   --temperature TEMPERATURE
                         Sampling temperature (only used with --do-sample)
+                        (default: 1.0)
   --top-p TOP_P         Nucleus sampling threshold (only used with --do-
-                        sample)
-  --seed SEED           Random seed
-  --save-predictions    Write per-sample predictions to JSONL
+                        sample) (default: 1.0)
+  --seed SEED           Random seed (default: 0)
+  --save-predictions    Write per-sample predictions to JSONL (default: True)
   --no-save-predictions
-                        Skip writing per-sample predictions
+                        Skip writing per-sample predictions (default: True)
 ```
 
 </details>
