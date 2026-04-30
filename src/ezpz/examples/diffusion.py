@@ -496,10 +496,9 @@ def train(
                 "train/dtb": t3 - t2,
             }
             if _model_flops > 0 and (t3 - t0) > 0:
+                # Step time: data + forward + backward (no optimizer).
                 train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
-                train_metrics["train/mfu"] = compute_mfu(
-                    _model_flops, t3 - t0,
-                )
+                train_metrics["train/mfu"] = compute_mfu(_model_flops, t3 - t0)
             logger.info(
                 history.update(train_metrics).replace("train/", "")
             )

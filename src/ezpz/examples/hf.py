@@ -791,10 +791,10 @@ def main() -> None:
                     "train/tokens_per_sec": tps,
                 }
                 if _model_flops > 0 and t1step > 0:
+                    # t1step covers the full optimizer step (data load
+                    # + forward + backward + optimizer.step + sync).
                     metrics["train/tflops"] = _model_flops / t1step / 1e12
-                    metrics["train/mfu"] = compute_mfu(
-                        _model_flops, t1step,
-                    )
+                    metrics["train/mfu"] = compute_mfu(_model_flops, t1step)
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)

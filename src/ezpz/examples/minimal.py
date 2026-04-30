@@ -92,9 +92,7 @@ def train(
                     dt_total = dtf + dtb
                     if dt_total > 0:
                         metrics["tflops"] = _model_flops / dt_total / 1e12
-                    metrics["mfu"] = compute_mfu(
-                        _model_flops, dtf + dtb,
-                    )
+                        metrics["mfu"] = compute_mfu(_model_flops, dt_total)
                 summary = history.update(
                     metrics
                 )

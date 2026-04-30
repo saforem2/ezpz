@@ -660,10 +660,12 @@ def train_fn(
                     "train/dtb": t4 - t3,
             }
             if _model_flops > 0 and (t4 - t0) > 0:
+                # Full step: data load + forward + optimizer + backward.
+                # MFU here is the most "honest" number — the step time
+                # the user feels — but is not directly comparable with
+                # examples that exclude data loading (fsdp_tp, minimal).
                 train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
-                train_metrics["train/mfu"] = compute_mfu(
-                    _model_flops, t4 - t0,
-                )
+                train_metrics["train/mfu"] = compute_mfu(_model_flops, t4 - t0)
             train_msg = history.update(train_metrics).replace("train/", "")
             logger.info("[train] %s", train_msg)
 

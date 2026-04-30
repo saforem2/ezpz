@@ -337,9 +337,7 @@ class Trainer:
             dt = metrics["dtf"] + metrics["dtb"]
             if dt > 0:
                 metrics["tflops"] = self._model_flops / dt / 1e12
-            metrics["mfu"] = compute_mfu(
-                self._model_flops, dt,
-            )
+                metrics["mfu"] = compute_mfu(self._model_flops, dt)
         if self.train_iter == self.config.train_iters:
             return metrics
         if (

@@ -1040,11 +1040,13 @@ def train(
                         _wandb_log_histograms(
                             metrics, step=global_step, enabled=track_hist
                         )
-            if _model_flops > 0 and (t2 - t0) > 0:
-                metrics["train/tflops"] = _model_flops / (t2 - t0) / 1e12
-                metrics["train/mfu"] = compute_mfu(
-                    _model_flops, t2 - t0,
-                )
+            # Reuse the train/dt we already computed above so the MFU
+            # denominator can never silently drift from the reported
+            # step time.
+            dt_step = float(metrics["train/dt"])  # type: ignore[arg-type]
+            if _model_flops > 0 and dt_step > 0:
+                metrics["train/tflops"] = _model_flops / dt_step / 1e12
+                metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,

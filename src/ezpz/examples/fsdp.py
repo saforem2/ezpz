@@ -408,12 +408,15 @@ def fsdp_main(args: argparse.Namespace) -> None:
         scheduler.step()
         merged = {**train_metrics, **test_metrics}
         if _model_flops > 0:
+            # FSDP epoch loop reports per-epoch averages, so MFU here
+            # is averaged over the whole epoch (epoch_dt / num_batches),
+            # not per-step.  Smooths out warmup spikes but obscures
+            # straggler effects compared to the per-step MFU other
+            # examples report.
             dt_step = merged.get("dt_per_step", 0.0)
             if dt_step > 0:
                 merged["tflops"] = _model_flops / dt_step / 1e12
-                merged["mfu"] = compute_mfu(
-                    _model_flops, dt_step,
-                )
+                merged["mfu"] = compute_mfu(_model_flops, dt_step)
         logger.info(history.update(merged))
 
     train_end = time.perf_counter()
