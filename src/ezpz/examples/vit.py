@@ -128,14 +128,29 @@ MODEL_PRESET_FLAGS = {
     "depth": ["--depth"],
 }
 MNIST_DEFAULTS = {
+    # 28×28 single-channel images, 10 classes — patch=4 gives 49 tokens.
     "img_size": 28,
     "num_classes": 10,
     "patch_size": 4,
+    # MNIST is tiny.  The ViT-Large-ish defaults (depth=24, heads=16,
+    # head_dim=64 → embed_dim=1024, ~73M params) overfit before they
+    # learn anything useful.  Use a smaller, faster model by default
+    # so a single run actually trains.
+    "num_heads": 4,
+    "head_dim": 32,
+    "depth": 4,
+    # 100 iters × bs=128 = ~0.2 epochs of MNIST.  Bump so a default
+    # run gets through enough data to see the loss move.
+    "max_iters": 2000,
 }
 MNIST_DEFAULT_FLAGS = {
     "img_size": ["--img_size", "--img-size"],
     "num_classes": ["--num_classes", "--num-classes"],
     "patch_size": ["--patch_size", "--patch-size"],
+    "num_heads": ["--num_heads", "--num-heads"],
+    "head_dim": ["--head_dim", "--head-dim"],
+    "depth": ["--depth"],
+    "max_iters": ["--max_iters", "--max-iters"],
 }
 
 
@@ -410,6 +425,44 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Warmup iterations (or fraction) before starting to collect metrics.",
     )
     parser.add_argument(
+        "--lr",
+        type=float,
+        default=3e-4,
+        help=(
+            "Peak learning rate.  AdamW's stdlib default of 1e-3 is too "
+            "aggressive for from-scratch ViTs and tends to either diverge "
+            "or stall on the trivial constant prediction."
+        ),
+    )
+    parser.add_argument(
+        "--weight-decay",
+        "--weight_decay",
+        type=float,
+        default=0.05,
+        help="AdamW weight decay (matches the standard ViT recipe).",
+    )
+    parser.add_argument(
+        "--lr-warmup-iters",
+        "--lr_warmup_iters",
+        type=float,
+        default=0.05,
+        help=(
+            "Linear LR warmup duration. Integer = iterations; float in "
+            "(0, 1) = fraction of --max_iters.  Distinct from --warmup, "
+            "which only gates metric collection."
+        ),
+    )
+    parser.add_argument(
+        "--min-lr-ratio",
+        "--min_lr_ratio",
+        type=float,
+        default=0.1,
+        help=(
+            "End-of-cosine LR as a fraction of --lr (e.g. 0.1 = decay "
+            "to 10%% of peak by --max_iters)."
+        ),
+    )
+    parser.add_argument(
         "--attn_type",
         "--attn-type",
         default="native",
@@ -600,7 +653,53 @@ def train_fn(
 
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
+    # Use the standard ViT recipe explicitly: AdamW(lr, weight_decay,
+    # betas=(0.9, 0.999)) — defaults gave us lr=1e-3 which routinely
+    # diverges or stalls a from-scratch ViT.
+    optimizer = torch.optim.AdamW(  # type:ignore[arg-type]
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        betas=(0.9, 0.999),
+    )
+    # Linear warmup → cosine decay to args.lr * args.min_lr_ratio over
+    # max_iters.  Lets us crank --lr without blowing up the early steps.
+    if args.max_iters is not None and args.max_iters > 0:
+        total_iters = int(args.max_iters)
+        if 0.0 < args.lr_warmup_iters < 1.0:
+            lr_warmup_iters = max(1, int(args.lr_warmup_iters * total_iters))
+        else:
+            lr_warmup_iters = max(1, int(args.lr_warmup_iters))
+        min_lr_ratio = max(0.0, min(1.0, args.min_lr_ratio))
+
+        def _lr_lambda(step: int) -> float:
+            if step < lr_warmup_iters:
+                # Linear warmup from 0 → 1 over the first lr_warmup_iters
+                return float(step + 1) / float(lr_warmup_iters)
+            # Cosine decay from 1 → min_lr_ratio over the remainder
+            decay_steps = max(1, total_iters - lr_warmup_iters)
+            progress = (step - lr_warmup_iters) / decay_steps
+            cosine = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+            return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+        lr_scheduler: Optional[torch.optim.lr_scheduler.LambdaLR] = (
+            torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
+        )
+        logger.info(
+            "LR schedule: linear warmup %d steps → cosine decay to %.2g "
+            "(peak lr=%.2g, weight_decay=%.2g)",
+            lr_warmup_iters,
+            args.lr * min_lr_ratio,
+            args.lr,
+            args.weight_decay,
+        )
+    else:
+        # No max_iters → no schedule.  Constant LR for streaming runs.
+        lr_scheduler = None
+        logger.info(
+            "Constant LR (no --max_iters cap): peak lr=%.2g, weight_decay=%.2g",
+            args.lr, args.weight_decay,
+        )
 
     model.train()  # type:ignore
 
@@ -663,6 +762,8 @@ def train_fn(
         ezpz.distributed.synchronize()
         t3 = time.perf_counter()
         optimizer.step()
+        if lr_scheduler is not None:
+            lr_scheduler.step()
         ezpz.distributed.synchronize()
         t4 = time.perf_counter()
         if step >= warmup_iters:
@@ -677,6 +778,7 @@ def train_fn(
                     "train/iter": step,
                     "train/loss": loss_value,
                     "train/acc": acc_value,
+                    "train/lr": float(optimizer.param_groups[0]["lr"]),
                     "train/dt": t4 - t0,
                     "train/dtd": t1 - t0,
                     "train/dtf": t2 - t1,
