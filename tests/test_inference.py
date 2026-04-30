@@ -104,11 +104,17 @@ class TestParseArgsModes:
         with pytest.raises(SystemExit):
             parse_args(["--mode", "nonsense"])
 
-    def test_flops_every_n_steps_default_off(self):
-        """--flops-every-n-steps defaults to 0 (use estimate, no profiling)."""
+    def test_flops_default_off(self):
+        """--flops is opt-in; without it MFU/TFLOPS are not reported."""
         args = parse_args([])
-        assert args.flops_every_n_steps == 0
+        assert args.flops is False
+        assert args.flops_every_n_steps == 1  # only used when --flops set
+
+    def test_flops_enabled(self):
+        args = parse_args(["--flops"])
+        assert args.flops is True
 
     def test_flops_every_n_steps_custom(self):
-        args = parse_args(["--flops-every-n-steps", "10"])
+        args = parse_args(["--flops", "--flops-every-n-steps", "10"])
+        assert args.flops is True
         assert args.flops_every_n_steps == 10

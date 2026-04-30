@@ -140,7 +140,8 @@ inference framework (vLLM, DeepSpeed-Inference) instead.
 | `--top-p` | `1.0` | Nucleus sampling cutoff (with `--do-sample`) |
 | `--benchmark-iters` | `20` | Iterations (only `--mode benchmark`) |
 | `--benchmark-warmup` | `3` | Warmup iters excluded from totals |
-| `--flops-every-n-steps` | `0` (off) | Profile real per-batch FLOPS via `FlopCounterMode` every N steps |
+| `--flops` | off | Measure real per-batch FLOPS via `FlopCounterMode`. Without this flag, `tflops` and `mfu` are not reported (rather than reporting approximated values). |
+| `--flops-every-n-steps` | `1` | When `--flops` is set, measure every N steps to amortize the overhead |
 | `--no-save-predictions` | save on | Skip writing per-sample JSONL |
 
 ## Outputs
@@ -165,38 +166,39 @@ Each `predictions-rank<N>.jsonl` row:
 {"rank": 0, "prompt": "...", "completion": "...", "label": "42"}
 ```
 
-## MFU Tracking
+## MFU Tracking (opt-in)
 
-Per-batch MFU is approximated as `n_tokens × forward_flops / dt`,
-where `forward_flops` is `1/3` of the `try_estimate` fwd+bwd estimate
-(rule-of-thumb: backward is ~2× forward). See
-[`ezpz.flops`](../python/Code-Reference/flops.md) for the per-device
-MFU formula.
+`tflops` and `mfu` are **off by default** because the only honest
+measurement is via `FlopCounterMode`, which adds ~15-40% per-step
+overhead. Approximated values (linear-scaled startup estimates,
+`n_tokens × forward_flops`, etc.) tend to be misleading — they ignore
+attention's `O(seq²)` cost and KV-cache savings, and have produced
+MFU values >100% in practice.
 
-### Approximation caveats
-
-The default fast path uses a startup FLOPS estimate computed once at
-`(batch_size, max_input_tokens)` shape and **scales linearly** with
-the actual input size on each batch. Two limitations:
-
-1. **Attention is `O(seq²)`** but linear scaling assumes `O(seq)`.
-   For short sequences in long-context models, MFU may be over-reported.
-2. **Generation FLOPS** are approximated as `n_new_tokens × forward_flops`,
-   ignoring KV-cache savings (over-counts) and growing context (under-counts).
-
-For accurate per-batch numbers, use `--flops-every-n-steps N`
-(e.g. `10`) — measures real FLOPS via `FlopCounterMode` every N
-steps. Adds ~15-40% overhead **on the measured step only**, so
-amortizes across N batches. Other batches still use the fast estimate.
+To opt in:
 
 ```bash
-# Profile every 10th batch for accurate MFU
+# Measure real FLOPS on every batch
+ezpz launch python3 -m ezpz.examples.inference --mode eval --flops
+
+# Or amortize the overhead — measure every 10th batch
 ezpz launch python3 -m ezpz.examples.inference \
-    --mode eval --flops-every-n-steps 10
+    --mode eval --flops --flops-every-n-steps 10
 ```
 
-When a batch was profiled, its History row gets `flops_measured=true`
-so you can filter to the trustworthy data points in post-analysis.
+Behavior:
+
+- **Without `--flops`**: `tflops` and `mfu` keys are absent from
+  `metrics`. Per-batch logs show timing/throughput/eval metrics only.
+- **With `--flops` and `--flops-every-n-steps 1`** (default): every
+  batch is profiled. ~15-40% slower overall, exact MFU on every step.
+- **With `--flops` and `--flops-every-n-steps N` (N > 1)**: every Nth
+  batch is profiled, others run normally. Profiled batches get
+  `metrics["flops_measured"] = True` so post-analysis can filter
+  to the trustworthy points.
+
+See [`ezpz.flops`](../python/Code-Reference/flops.md) for the
+per-device MFU formula.
 
 ## See Also
 

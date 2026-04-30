@@ -30,7 +30,7 @@ import torch
 
 import ezpz
 from ezpz.examples import get_example_outdir
-from ezpz.flops import compute_mfu, try_estimate
+from ezpz.flops import compute_mfu
 
 logger = ezpz.get_logger(__name__)
 
@@ -141,15 +141,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Model dtype",
     )
     parser.add_argument(
+        "--flops",
+        action="store_true",
+        help=(
+            "Measure exact per-batch FLOPS via FlopCounterMode and "
+            "report tflops + mfu in metrics. Off by default — without "
+            "this flag, MFU/TFLOPS columns are simply omitted (rather "
+            "than reporting approximated values). Adds ~15-40%% "
+            "overhead per step."
+        ),
+    )
+    parser.add_argument(
         "--flops-every-n-steps",
         type=int,
-        default=0,
+        default=1,
         help=(
-            "Measure exact per-batch FLOPS via FlopCounterMode every "
-            "N steps (0 = never, fall back to a startup estimate "
-            "scaled linearly by actual input size). Adds ~15-40%% "
-            "overhead on the measured step but corrects for variable "
-            "sequence length and the O(seq^2) attention cost."
+            "When --flops is set, measure FLOPS every N steps "
+            "(default 1 = every step). Use a higher value to amortize "
+            "the overhead across batches."
         ),
     )
     parser.add_argument(
@@ -286,21 +295,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         n_params = sum(p.numel() for p in model.parameters())
         logger.info("Model loaded: %.2fB parameters", n_params / 1e9)
 
-    # Estimate model FLOPS once for MFU/throughput tracking.
-    #
-    # NOTE: this is a coarse approximation — try_estimate reports
-    # fwd+bwd FLOPS for a single forward pass on max_input_tokens
-    # context. Inference is forward-only (~1/3 of fwd+bwd), but
-    # autoregressive generation has growing context: token i sees
-    # context_len + i tokens. We treat each generated token as one
-    # forward pass at max_input_tokens length, which:
-    #   - over-estimates the early tokens (smaller context with KV cache)
-    #   - under-estimates the late tokens (longer context)
-    # Reasonable for an example; not a substitute for real profiling.
-    _model_flops_fwd_bwd = try_estimate(
-        model, (args.batch_size, args.max_input_tokens),
-    )
-    _model_flops_fwd = _model_flops_fwd_bwd / 3 if _model_flops_fwd_bwd > 0 else 0
+    # FLOPS / MFU tracking is opt-in via --flops.  Without that flag
+    # the metrics are simply omitted — better than reporting
+    # approximated numbers that can be misleading (linear scaling
+    # under-counts attention's O(seq^2) cost; fixed-shape startup
+    # estimates over-count short batches).  When --flops is set, we
+    # measure exact per-batch FLOPS via FlopCounterMode every
+    # --flops-every-n-steps batches.
 
     # ── Prompts (and optional labels) ──────────────────────────────
     # In benchmark mode we synthesize random tokens — no dataset load.
@@ -484,7 +485,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             measured_flops = 0  # only set when this step runs FlopCounterMode
             batch_num = batch_idx // args.batch_size
             measure_flops_now = (
-                args.flops_every_n_steps > 0
+                args.flops
+                and args.flops_every_n_steps > 0
                 and batch_num % args.flops_every_n_steps == 0
             )
             if eval_unlabeled:
@@ -524,11 +526,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ezpz.synchronize()
                 dt = time.perf_counter() - t0
             else:
-                output_ids = model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    **gen_kwargs,
-                )
+                if measure_flops_now:
+                    from torch.utils.flop_counter import FlopCounterMode
+                    with FlopCounterMode(display=False) as _fc:
+                        output_ids = model.generate(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            **gen_kwargs,
+                        )
+                    try:
+                        measured_flops = int(_fc.get_total_flops())
+                    except Exception:
+                        measured_flops = 0
+                else:
+                    output_ids = model.generate(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        **gen_kwargs,
+                    )
                 ezpz.synchronize()
                 dt = time.perf_counter() - t0
                 # Slice off the prompt portion so we report only new tokens
@@ -592,30 +607,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             }
             if eval_unlabeled:
                 metrics["tokens_scored"] = batch_token_scored
-            if _model_flops_fwd > 0 and dt > 0:
-                # FLOPS accounting differs between modes:
-                # - eval_unlabeled: ONE forward pass over the actual
-                #   batch.  Prefer the exact count from FlopCounterMode
-                #   if --flops-every-n-steps fired this step; otherwise
-                #   fall back to the startup estimate scaled linearly
-                #   by actual input size.  The linear scaling
-                #   under-counts attention's O(seq^2) cost — set
-                #   --flops-every-n-steps for accurate per-batch numbers.
-                # - generate / benchmark: ONE forward pass per generated
-                #   token (autoregressive), so multiply by n_new.
-                if eval_unlabeled:
-                    if measured_flops > 0:
-                        step_flops = measured_flops
-                    else:
-                        max_in = max(args.batch_size * args.max_input_tokens, 1)
-                        actual_in = max(n_in, 1)
-                        step_flops = _model_flops_fwd * (actual_in / max_in)
-                else:
-                    step_flops = _model_flops_fwd * max(n_new, 1)
-                metrics["tflops"] = step_flops / dt / 1e12
-                metrics["mfu"] = compute_mfu(step_flops, dt)
-                if eval_unlabeled and measured_flops > 0:
-                    metrics["flops_measured"] = True
+            # FLOPS / MFU only when --flops was set AND this step
+            # actually ran FlopCounterMode.  Skip on the in-between
+            # batches when --flops-every-n-steps > 1.  No approximation
+            # is reported — the metrics are simply absent on unmeasured
+            # steps (you can filter on flops_measured == True downstream).
+            if measured_flops > 0 and dt > 0:
+                metrics["tflops"] = measured_flops / dt / 1e12
+                metrics["mfu"] = compute_mfu(measured_flops, dt)
+                metrics["flops_measured"] = True
             if args.mode == "eval" and batch_with_label > 0:
                 metrics["accuracy"] = batch_correct / batch_with_label
             if eval_unlabeled and batch_token_scored > 0:
