@@ -1,34 +1,11 @@
 """FSDP training example on MNIST/OpenImages/ImageNet-style datasets.
 
-Launch with:
+Launch with::
 
     ezpz launch -m ezpz.examples.fsdp --dataset MNIST --batch-size 128
 
-Help output (``python3 -m ezpz.examples.fsdp --help``):
-
-    usage: fsdp.py [-h] [--num-workers N]
-                   [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
-                   [--batch-size N] [--dtype D] [--test-batch-size N] [--epochs N]
-                   [--lr LR] [--gamma M] [--seed S] [--save-model]
-                   [--data-prefix DATA_PREFIX]
-
-    PyTorch MNIST Example using FSDP
-
-    options:
-      -h, --help            show this help message and exit
-      --num-workers N       number of data loading workers (default: 4)
-      --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
-                            Dataset to use (default: MNIST)
-      --batch-size N        input batch size for training (default: 64)
-      --dtype D             Datatype for training (default=bf16).
-      --test-batch-size N   input batch size for testing (default: 1000)
-      --epochs N            number of epochs to train (default: 10)
-      --lr LR               learning rate (default: 1e-3)
-      --gamma M             Learning rate step gamma (default: 0.7)
-      --seed S              random seed (default: 1)
-      --save-model          For Saving the current Model
-      --data-prefix DATA_PREFIX
-                            data directory prefix
+Run ``python3 -m ezpz.examples.fsdp --help`` for the full list of
+flags and their current defaults.
 """
 
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py

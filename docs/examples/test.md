@@ -265,68 +265,90 @@ metrics["mfu"] = compute_mfu(self._model_flops, dt)
 <details closed><summary><code>--help</code></summary>
 
 ```bash
-$ python3 -m ezpz.examples.test --help
-usage: test.py [-h] [--warmup WARMUP] [--tp TP] [--pp PP] [--deepspeed_config DEEPSPEED_CONFIG] [--cp CP] [--backend BACKEND]
-                    [--pyinstrument-profiler] [-p] [--rank-zero-only] [--pytorch-profiler-wait PYTORCH_PROFILER_WAIT]
-                    [--pytorch-profiler-warmup PYTORCH_PROFILER_WARMUP] [--pytorch-profiler-active PYTORCH_PROFILER_ACTIVE]
-                    [--pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT] [--profile-memory] [--record-shapes] [--with-stack]
-                    [--with-flops] [--with-modules] [--acc-events] [--train-iters TRAIN_ITERS] [--log-freq LOG_FREQ]
-                    [--print-freq PRINT_FREQ] [--batch-size BATCH_SIZE] [--input-size INPUT_SIZE] [--output-size OUTPUT_SIZE]
-                    [--layer-sizes LAYER_SIZES] [--dtype DTYPE] [--dataset DATASET] [--dataset-root DATASET_ROOT]
-                    [--num-workers NUM_WORKERS] [--no-distributed-history]
+$ ezpz test --help
+usage: ezpz test [-h] [--warmup WARMUP] [--tp TP] [--pp PP]
+                 [--deepspeed_config DEEPSPEED_CONFIG] [--cp CP]
+                 [--backend BACKEND] [--pyinstrument-profiler] [-p]
+                 [--rank-zero-only]
+                 [--pytorch-profiler-wait PYTORCH_PROFILER_WAIT]
+                 [--pytorch-profiler-warmup PYTORCH_PROFILER_WARMUP]
+                 [--pytorch-profiler-active PYTORCH_PROFILER_ACTIVE]
+                 [--pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT]
+                 [--profile-memory] [--record-shapes] [--save-datasets]
+                 [--with-stack] [--with-flops] [--with-modules] [--acc-events]
+                 [--train-iters TRAIN_ITERS]
+                 [--model {debug,small,medium,large}] [--log-freq LOG_FREQ]
+                 [--print-freq PRINT_FREQ] [--batch-size BATCH_SIZE]
+                 [--input-size INPUT_SIZE] [--output-size OUTPUT_SIZE]
+                 [--layer-sizes LAYER_SIZES] [--dtype DTYPE]
+                 [--dataset DATASET] [--dataset-root DATASET_ROOT]
+                 [--num-workers NUM_WORKERS] [--no-distributed-history]
 
-ezpz test: A simple PyTorch distributed smoke test Trains a simple MLP on MNIST dataset using DDP. NOTE: `ezpz test` is a lightweight
-wrapper around: `ezpz launch python3 -m ezpz.examples.test`
+ezpz test: A simple PyTorch distributed smoke test Trains a simple MLP on
+MNIST dataset using DDP. NOTE: `ezpz test` is a lightweight wrapper around:
+```bash ezpz launch python3 -m ezpz.examples.test ```
 
 options:
-    -h, --help            show this help message and exit
-    --warmup WARMUP       Warmup iterations
-    --tp TP               Tensor parallel size
-    --pp PP               Pipeline length
-    --deepspeed_config DEEPSPEED_CONFIG
-                        Deepspeed config file
-    --cp CP               Context parallel size
-    --backend BACKEND     Backend (DDP, DeepSpeed, etc.)
-    --pyinstrument-profiler
-                        Profile the training loop
-    -p, --profile         Use PyTorch profiler
-    --rank-zero-only      Run profiler only on rank 0
-    --pytorch-profiler-wait PYTORCH_PROFILER_WAIT
+  -h, --help            show this help message and exit
+  --warmup WARMUP       Warmup iterations (default: 5)
+  --tp TP               Tensor parallel size (default: 1)
+  --pp PP               Pipeline length (default: 1)
+  --deepspeed_config DEEPSPEED_CONFIG
+                        Deepspeed config file (default: deepspeed_config.json)
+  --cp CP               Context parallel size (default: 1)
+  --backend BACKEND     Backend (DDP, DeepSpeed, etc.) (default: DDP)
+  --pyinstrument-profiler
+                        Profile the training loop (default: False)
+  -p, --profile         Use PyTorch profiler (default: False)
+  --rank-zero-only      Run profiler only on rank 0 (default: False)
+  --pytorch-profiler-wait PYTORCH_PROFILER_WAIT
                         Wait time before starting the PyTorch profiler
-    --pytorch-profiler-warmup PYTORCH_PROFILER_WARMUP
-                        Warmup iterations for the PyTorch profiler
-    --pytorch-profiler-active PYTORCH_PROFILER_ACTIVE
-                        Active iterations for the PyTorch profiler
-    --pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT
-                        Repeat iterations for the PyTorch profiler
-    --profile-memory      Profile memory usage
-    --record-shapes       Record shapes in the profiler
-    --with-stack          Include stack traces in the profiler
-    --with-flops          Include FLOPs in the profiler
-    --with-modules        Include module information in the profiler
-    --acc-events          Accumulate events in the profiler
-    --train-iters TRAIN_ITERS, --train_iters TRAIN_ITERS
-                        Number of training iterations
-    --log-freq LOG_FREQ, --log_freq LOG_FREQ
-                        Logging frequency
-    --print-freq PRINT_FREQ, --print_freq PRINT_FREQ
-                        Printing frequency
-    --batch-size BATCH_SIZE
-                        Batch size
-    --input-size INPUT_SIZE
-                        Input size
-    --output-size OUTPUT_SIZE
-                        Output size
-    --layer-sizes LAYER_SIZES
-                        Comma-separated list of layer sizes
-    --dtype DTYPE         Data type (fp16, float16, bfloat16, bf16, float32, etc.)
-    --dataset DATASET     Dataset to use for training (e.g., mnist).
-    --dataset-root DATASET_ROOT
-                        Directory to cache dataset downloads.
-    --num-workers NUM_WORKERS
-                        Number of dataloader workers to use.
-    --no-distributed-history
-                        Disable distributed history aggregation
+                        (default: 1)
+  --pytorch-profiler-warmup PYTORCH_PROFILER_WARMUP
+                        Warmup iterations for the PyTorch profiler (default:
+                        2)
+  --pytorch-profiler-active PYTORCH_PROFILER_ACTIVE
+                        Active iterations for the PyTorch profiler (default:
+                        3)
+  --pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT
+                        Repeat iterations for the PyTorch profiler (default:
+                        5)
+  --profile-memory      Profile memory usage (default: True)
+  --record-shapes       Record shapes in the profiler (default: True)
+  --save-datasets       Save datasets (default: False)
+  --with-stack          Include stack traces in the profiler (default: True)
+  --with-flops          Include FLOPs in the profiler (default: True)
+  --with-modules        Include module information in the profiler (default:
+                        True)
+  --acc-events          Accumulate events in the profiler (default: False)
+  --train-iters TRAIN_ITERS, --train_iters TRAIN_ITERS
+                        Number of training iterations (default: 200)
+  --model {debug,small,medium,large}
+                        Model size preset for the smoke test. (default: None)
+  --log-freq LOG_FREQ, --log_freq LOG_FREQ
+                        Logging frequency (default: 1)
+  --print-freq PRINT_FREQ, --print_freq PRINT_FREQ
+                        Printing frequency (default: 10)
+  --batch-size BATCH_SIZE
+                        Batch size (default: 128)
+  --input-size INPUT_SIZE
+                        Input size (default: 784)
+  --output-size OUTPUT_SIZE
+                        Output size (default: 10)
+  --layer-sizes LAYER_SIZES
+                        Comma-separated list of layer sizes (default: [512,
+                        256, 128])
+  --dtype DTYPE         Data type (fp16, float16, bfloat16, bf16, float32,
+                        etc.) (default: bf16)
+  --dataset DATASET     Dataset to use for training (e.g., mnist). (default:
+                        mnist)
+  --dataset-root DATASET_ROOT
+                        Directory to cache dataset downloads. (default: None)
+  --num-workers NUM_WORKERS
+                        Number of dataloader workers to use. (default: 0)
+  --no-distributed-history
+                        Disable distributed history aggregation (default:
+                        False)
 ```
 
 </details>
