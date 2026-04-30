@@ -47,7 +47,9 @@ allocated to your job.
 
         ```bash
         ezpz launch --help
-        usage: ezpz launch [-h] [--print-source] [--filter FILTER [FILTER ...]] [-n NPROC] [-ppn NPROC_PER_NODE] [-nh NHOSTS] [--hostfile HOSTFILE] ...
+        usage: ezpz launch [-h] [--print-source] [--filter FILTER [FILTER ...]]
+                           [-n NPROC] [-ppn NPROC_PER_NODE] [-nh NHOSTS]
+                           [--hostfile HOSTFILE] [--cpu-bind CPU_BIND] ...
 
         Launch a command on the current PBS/SLURM job.
 
@@ -70,7 +72,7 @@ allocated to your job.
         -h, --help            show this help message and exit
         --print-source        Print the location of the launch CLI source and exit.
         --filter FILTER [FILTER ...]
-                                Filter output lines by these strings.
+                                Deprecated: output filtering has been removed. This flag is ignored.
         -n NPROC, -np NPROC, --n NPROC, --np NPROC, --nproc NPROC, --world_size NPROC, --nprocs NPROC
                                 Number of processes.
         -ppn NPROC_PER_NODE, --ppn NPROC_PER_NODE, --nproc_per_node NPROC_PER_NODE
@@ -78,6 +80,8 @@ allocated to your job.
         -nh NHOSTS, --nh NHOSTS, --nhost NHOSTS, --nnode NHOSTS, --nnodes NHOSTS, --nhosts NHOSTS, --nhosts NHOSTS
                                 Number of nodes to use.
         --hostfile HOSTFILE   Hostfile to use for launching.
+        --cpu-bind CPU_BIND   CPU binding value to pass to the launcher.
+                                Takes precedence over CPU_BIND when both are specified.
         ```
 
 ## Python interpreter resolution

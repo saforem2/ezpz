@@ -155,6 +155,7 @@ nav = [
                 { "<code>ezpz.examples.generate_tui</code>" = "python/Code-Reference/examples/generate_tui.md" },
                 { "<code>ezpz.examples.hf</code>" = "python/Code-Reference/examples/hf.md" },
                 { "<code>ezpz.examples.hf_trainer</code>" = "python/Code-Reference/examples/hf_trainer.md" },
+                { "<code>ezpz.examples.inference</code>" = "python/Code-Reference/examples/inference.md" },
                 { "<code>ezpz.examples.minimal</code>" = "python/Code-Reference/examples/minimal.md" },
                 { "<code>ezpz.examples.vit</code>" = "python/Code-Reference/examples/vit.md" },
             ] },

@@ -282,6 +282,7 @@ nav:
               - <code>ezpz.examples.hf</code>: python/Code-Reference/examples/hf.md
               - <code>ezpz.examples.hf_trainer</code>: python/Code-Reference/examples/hf_trainer.md
               # - <code>ezpz.examples.hf_trainer_alt</code>: python/Code-Reference/examples/hf_trainer_alt.md
+              - <code>ezpz.examples.inference</code>: python/Code-Reference/examples/inference.md
               - <code>ezpz.examples.minimal</code>: python/Code-Reference/examples/minimal.md
               - <code>ezpz.examples.vit</code>: python/Code-Reference/examples/vit.md
               # - <code>ezpz.examples.vit_timm</code>: python/Code-Reference/examples/vit_timm.md
@@ -345,4 +346,3 @@ nav:
           - utils: python/tests/test-utils.md
           - utils-improved: python/tests/test-utils-improved.md
       - 🏖️ Shell Environment: notes/shell-environment.md
-      - 📦 Yeet Environment: notes/yeet-env.md

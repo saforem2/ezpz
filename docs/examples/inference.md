@@ -8,6 +8,16 @@ Each rank loads the model and processes a disjoint shard of inputs
 TFLOPS, and MFU are tracked through `ezpz.History`. With `--mode eval`
 an accuracy metric is added.
 
+## Source
+
+<details closed><summary><code>src/ezpz/examples/inference.py</code></summary>
+
+```python title="src/ezpz/examples/inference.py"
+--8<-- "src/ezpz/examples/inference.py"
+```
+
+</details>
+
 ## Modes
 
 ```bash
@@ -52,7 +62,7 @@ writes them to `predictions-rank<N>.jsonl`. Useful for:
 - **Distillation** — generate teacher completions to train a student
 - **Spot-checking** model behavior on a known corpus
 
-### `--mode eval`
+### `--mode eval` (with `--label-column`)
 
 Same as `generate`, but also extracts a gold label from
 `--label-column` and compares the completion. The match rule is
@@ -63,6 +73,32 @@ completion (handles "the answer is 42" vs gold "42").
 
 Reports `accuracy = correct / labeled` per batch (in `History`)
 and overall (in the final log line).
+
+### `--mode eval` (without `--label-column`)
+
+If you omit `--label-column`, eval falls back to **next-token
+prediction scoring** — useful on any text dataset, no labels needed:
+
+```bash
+ezpz launch python3 -m ezpz.examples.inference --mode eval \
+    --dataset wikitext --dataset-config wikitext-2-raw-v1
+```
+
+This path:
+
+- Runs **one forward pass** over the full prompt batch (not generation)
+- Computes argmax accuracy at each position (token `i+1` predicted
+  from logits at position `i`)
+- Computes per-token cross-entropy → **perplexity** = `exp(NLL/token)`
+- Reports `next_token_accuracy` and `perplexity` per batch + overall
+
+Much faster than the labeled path (one forward pass vs autoregressive
+generation), and gives the standard "language modeling perplexity"
+metric you'd see in eval-harness tools — without needing a labeled
+dataset.
+
+The per-batch log line shows `tokens_scored=` instead of `new_tokens=`
+to make the difference obvious.
 
 ## How sharding works
 
@@ -93,7 +129,7 @@ inference framework (vLLM, DeepSpeed-Inference) instead.
 | `--dataset-config` | `wikitext-2-raw-v1` | Dataset configuration / subset |
 | `--dataset-split` | `test` | Split (`train`/`validation`/`test`) |
 | `--text-column` | `text` | Column containing the prompt |
-| `--label-column` | — | Gold label column (required for `--mode eval`) |
+| `--label-column` | — | Gold label column (optional for `--mode eval`; without it, scores next-token prediction) |
 | `--max-samples` | `128` | Total samples across all ranks |
 | `--batch-size` | `4` | Per-rank batch size |
 | `--max-input-tokens` | `512` | Truncate prompts to this many tokens |

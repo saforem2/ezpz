@@ -43,6 +43,7 @@ scheduler is auto-detected.
 | [:lucide-book:][ex-diffusion] · [:lucide-file-code:][api-diffusion] · [:fontawesome-brands-github:][gh-diffusion] | `diffusion` | Diffusion model training with FSDP | Intermediate |
 | [:lucide-book:][ex-hf] · [:lucide-file-code:][api-hf] · [:fontawesome-brands-github:][gh-hf] | `hf` | Fine-tune causal LM with Accelerate + FSDP | Intermediate |
 | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:fontawesome-brands-github:][gh-hf-trainer] | `hf_trainer` | Using HF Trainer with ezpz's launcher | Beginner |
+| [:lucide-book:][ex-inference] · [:lucide-file-code:][api-inference] · [:fontawesome-brands-github:][gh-inference] | `inference` | Distributed HF inference (benchmark / generate / eval modes) | Intermediate |
 
 [ex-test]: test.md "Example"
 [api-test]: ../python/Code-Reference/examples/test.md "API Reference"
@@ -65,3 +66,6 @@ scheduler is auto-detected.
 [ex-hf-trainer]: hf-trainer/index.md "Example"
 [api-hf-trainer]: ../python/Code-Reference/examples/hf_trainer.md "API Reference"
 [gh-hf-trainer]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/hf_trainer.py "GitHub Source"
+[ex-inference]: inference.md "Example"
+[api-inference]: ../python/Code-Reference/examples/inference.md "API Reference"
+[gh-inference]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/inference.py "GitHub Source"

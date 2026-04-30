@@ -9,16 +9,14 @@ source <(curl -fsSL https://bit.ly/ezpz-utils)
 ezpz_setup_env      # sets up python + job in one shot
 ```
 
-/// tip | Already have a working environment?
+!!! tip "Already have a working environment?"
 
-If you already have a Python environment with `torch` and `mpi4py`, you can
-skip the shell helpers entirely and run:
+    If you already have a Python environment with `torch` and `mpi4py`, you can
+    skip the shell helpers entirely and run:
 
-```bash
-uv run --with "git+https://github.com/saforem2/ezpz" ezpz test
-```
-
-///
+    ```bash
+    uv run --with "git+https://github.com/saforem2/ezpz" ezpz test
+    ```
 
 ## Sourcing `utils.sh`
 
