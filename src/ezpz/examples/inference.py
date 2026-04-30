@@ -557,7 +557,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if eval_unlabeled:
                 metrics["tokens_scored"] = batch_token_scored
             if _model_flops_fwd > 0 and dt > 0:
-                step_flops = _model_flops_fwd * max(tokens_for_throughput, 1)
+                # FLOPS accounting differs between modes:
+                # - eval_unlabeled: ONE forward pass over the full batch
+                #   (try_estimate was called with (batch_size, max_input_tokens),
+                #   so _model_flops_fwd already represents that single pass)
+                # - generate / benchmark: ONE forward pass per generated
+                #   token (autoregressive), so multiply by n_new
+                if eval_unlabeled:
+                    step_flops = _model_flops_fwd
+                else:
+                    step_flops = _model_flops_fwd * max(n_new, 1)
                 metrics["tflops"] = step_flops / dt / 1e12
                 metrics["mfu"] = compute_mfu(step_flops, dt)
             if args.mode == "eval" and batch_with_label > 0:
