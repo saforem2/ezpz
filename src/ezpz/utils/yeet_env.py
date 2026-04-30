@@ -21,10 +21,12 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import atexit
 import logging
 import os
 import random
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -39,6 +41,11 @@ logger = logging.getLogger(__name__)
 # Disable \r / ANSI escape progress when stdout is not a terminal
 # (e.g. redirected to a file or pipe).
 _IS_TTY = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+# Tracks the SLURM-derived /tmp hostfiles we've already registered an
+# atexit handler for, so repeat invocations of _get_worker_nodes (in
+# tests, embedded use, etc.) don't register a fresh handler each time.
+_REGISTERED_CLEANUPS: set[str] = set()
 
 
 # ── Environment detection ────────────────────────────────────────────────────
@@ -178,10 +185,11 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                     hf_path = Path(f"/tmp/_ezpz_hostfile_{job_id}")
                     hf_path.write_text("\n".join(nodes) + "\n")
                     hf = str(hf_path)
-                    # Register cleanup so we don't leave per-job
-                    # hostfiles littering /tmp across runs.
-                    import atexit
-                    atexit.register(_cleanup_path, hf_path)
+                    # Register cleanup once per unique path so repeated
+                    # _get_worker_nodes calls don't accumulate handlers.
+                    if hf not in _REGISTERED_CLEANUPS:
+                        _REGISTERED_CLEANUPS.add(hf)
+                        atexit.register(_cleanup_path, hf_path)
             except Exception:
                 pass
 
@@ -268,6 +276,57 @@ def _cleanup_path(path: Path) -> None:
             path.unlink()
     except OSError:
         pass
+
+
+def pick_source(
+    source_active: dict[str, int],
+    max_per_source: int,
+    *,
+    rng: random.Random | None = None,
+) -> str | None:
+    """Pick a least-loaded source under the per-source cap.
+
+    Ties are broken with the supplied ``rng`` (defaults to a fresh
+    ``random.Random()`` per call) so the greedy fan-out actually fans
+    out — without randomization, ``dict.items()`` order would always
+    pick the same source first, pinning all early traffic to one node
+    and defeating the tree distribution.
+
+    Returns ``None`` if every source is at capacity (the caller should
+    wait for an in-flight sync to finish, freeing a slot).
+
+    Pulled out of run() so tests can exercise the algorithm directly
+    instead of reconstructing it inline.
+    """
+    candidates = [
+        s for s, count in source_active.items() if count < max_per_source
+    ]
+    if not candidates:
+        return None
+    min_count = min(source_active[s] for s in candidates)
+    least_loaded = [s for s in candidates if source_active[s] == min_count]
+    if rng is None:
+        rng = random.Random()
+    return rng.choice(least_loaded)
+
+
+def _remove_partial_dst(dst: Path) -> None:
+    """Remove a half-written destination directory we just created.
+
+    ``_safe_rmtree`` deliberately refuses paths outside ``/tmp`` to
+    block callers from blowing away pre-existing user data.  But the
+    failure-cleanup paths in run() *just* wrote into ``dst`` — the
+    pre-extraction guard already verified ``dst`` was nonexistent or
+    removable, so the contents we're deleting are exclusively what we
+    put there moments ago.  Allow the removal regardless of where
+    ``--dst`` points.
+    """
+    if not dst.exists():
+        return
+    try:
+        shutil.rmtree(dst, ignore_errors=True)
+    except OSError as exc:
+        logger.warning("Failed to remove partial dst %s: %s", dst, exc)
 
 
 # ── Progress indicator ────────────────────────────────────────────────────────
@@ -597,14 +656,32 @@ def _rsync_to_node(
                     break
         except Exception as exc:
             logger.debug("rsync stdout reader for %s aborted: %s", node, exc)
+        # If we already broke out of the read loop on the deadline,
+        # SIGKILL the child and reap it with a *short* grace timeout —
+        # the wait should complete in milliseconds, not the full
+        # original budget.  Reserving the full timeout would mask any
+        # surprise hang in the wait itself.
         if timed_out:
             proc.kill()
-        try:
-            proc.wait(timeout=timeout if timeout else None)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            timed_out = True
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "rsync subprocess for %s did not exit after SIGKILL", node,
+                )
+        else:
+            try:
+                proc.wait(timeout=timeout if timeout else None)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    logger.warning(
+                        "rsync subprocess for %s did not exit after SIGKILL",
+                        node,
+                    )
+                timed_out = True
         stderr_thread.join(timeout=5)
         # Best-effort cleanup of pipes — Popen would normally do this
         # via its context manager, but we abandoned that pattern in
@@ -896,8 +973,10 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     if local_rc != 0:
                         stderr = (tar_extract.stderr.read() or b"").decode()
                         logger.warning("tar extract failed: %s", stderr.strip())
-                        # Half-extracted dst is unusable — drop it
-                        _safe_rmtree(dst)
+                        # Half-extracted dst is unusable — drop it.
+                        # We just wrote it ourselves, so skip the
+                        # /tmp-only safety guard.
+                        _remove_partial_dst(dst)
 
                     # Always clean up the local tarball copy whether
                     # extraction succeeded or failed.
@@ -965,7 +1044,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                         stderr = (tar_extract.stderr.read() or b"").decode()
                         logger.warning("tar extract failed: %s", stderr.strip())
                         # Half-extracted dst is unusable — drop it
-                        _safe_rmtree(dst)
+                        _remove_partial_dst(dst)
                     _cleanup_path(tarball)
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
@@ -995,7 +1074,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 if local_rc != 0:
                     logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
                     # Half-copied dst is unusable — drop it
-                    _safe_rmtree(dst)
+                    _remove_partial_dst(dst)
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
 
@@ -1038,30 +1117,17 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # Track per-source active rsync count to enforce MAX_PER_SOURCE.
     source_active: dict[str, int] = {current: 0}
     source_lock = threading.Lock()
-
-    def _pick_source() -> str | None:
-        """Pick a least-loaded source under the per-source cap.
-
-        Ties broken randomly so the greedy fan-out actually fans out
-        — without this, ``dict.items()`` order would always pick the
-        same source first, pinning all early traffic to ``current``
-        and defeating the tree distribution.
-        """
-        candidates = [
-            s for s, count in source_active.items()
-            if count < MAX_PER_SOURCE
-        ]
-        if not candidates:
-            return None
-        min_count = min(source_active[s] for s in candidates)
-        least_loaded = [s for s in candidates if source_active[s] == min_count]
-        return random.choice(least_loaded)
+    # Function-scoped RNG so we don't disturb the global random state
+    # of any caller that has seeded it for their own reasons.
+    pick_rng = random.Random()
 
     def _submit_work(pool: ThreadPoolExecutor, futures: dict) -> None:  # type: ignore[type-arg]
         """Submit as many rsyncs as sources allow."""
         while remaining:
             with source_lock:
-                src_node = _pick_source()
+                src_node = pick_source(
+                    source_active, MAX_PER_SOURCE, rng=pick_rng,
+                )
                 if src_node is None:
                     break  # all sources at capacity — wait for completions
                 target = remaining.pop(0)

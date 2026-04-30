@@ -318,48 +318,157 @@ class TestHsnSuffix:
 
 
 class TestPickSource:
-    """Tests that validate the greedy fan-out chooses sources sanely.
+    """Tests for the module-level ``pick_source`` function.
 
-    These exercise the in-function ``_pick_source`` indirectly by
-    reconstructing the same logic so we can check tie-break behavior
-    without standing up a full pool.
+    Exercises the actual algorithm used by ``run()`` instead of
+    reconstructing it, so a future refactor of the production code
+    cannot drift away from these expectations.
     """
 
     def test_least_loaded_wins(self):
-        """Among multiple sources, pick the one with fewest active syncs."""
         active = {"a": 5, "b": 1, "c": 3}
-        cap = 8
-        # Inline copy of _pick_source semantics
-        candidates = [s for s, c in active.items() if c < cap]
-        min_count = min(active[s] for s in candidates)
-        least = [s for s in candidates if active[s] == min_count]
-        assert least == ["b"]
+        # 'b' is uniquely least-loaded — no tie-break needed
+        assert yeet.pick_source(active, max_per_source=8) == "b"
 
     def test_capped_sources_excluded(self):
         active = {"a": 8, "b": 8, "c": 2}  # a, b at cap
-        cap = 8
-        candidates = [s for s, c in active.items() if c < cap]
-        assert candidates == ["c"]
+        assert yeet.pick_source(active, max_per_source=8) == "c"
 
-    def test_random_tie_break_eventually_picks_both(self):
-        """Ties should be broken randomly so fan-out actually fans out.
+    def test_all_at_cap_returns_none(self):
+        active = {"a": 8, "b": 8}
+        assert yeet.pick_source(active, max_per_source=8) is None
 
-        With deterministic tie-breaking (the old bug), source 'a' would
-        be picked every iteration until its cap was hit, defeating the
-        whole point of the tree distribution.
+    def test_empty_returns_none(self):
+        assert yeet.pick_source({}, max_per_source=8) is None
+
+    def test_random_tie_break_visits_all_candidates(self):
+        """All zero-loaded candidates must eventually be picked.
+
+        With the old deterministic tie-break, 'a' was picked every
+        iteration until its cap was hit, defeating the whole point of
+        the tree distribution.
         """
         import random as _random
         active = {"a": 0, "b": 0, "c": 0}
-        cap = 8
-        seen = set()
-        # Seed for reproducibility, then sample many picks
-        _random.seed(42)
-        for _ in range(100):
-            candidates = [s for s, c in active.items() if c < cap]
-            min_count = min(active[s] for s in candidates)
-            least = [s for s in candidates if active[s] == min_count]
-            seen.add(_random.choice(least))
+        rng = _random.Random(42)  # seeded for determinism
+        seen = {
+            yeet.pick_source(active, max_per_source=8, rng=rng)
+            for _ in range(100)
+        }
         assert seen == {"a", "b", "c"}
+
+    def test_does_not_disturb_global_random_state(self):
+        """A fresh module-internal Random() must not consume the
+        process-global random sequence the caller may have seeded."""
+        import random as _random
+        _random.seed(1234)
+        before = _random.random()
+
+        _random.seed(1234)
+        yeet.pick_source({"a": 0, "b": 0}, max_per_source=8)
+        after = _random.random()
+
+        # The pick_source call should not have advanced the global RNG.
+        assert before == after
+
+    def test_uses_supplied_rng_for_determinism(self):
+        import random as _random
+        active = {"a": 0, "b": 0, "c": 0}
+        rng1 = _random.Random(42)
+        rng2 = _random.Random(42)
+        picks_1 = [
+            yeet.pick_source(active, max_per_source=8, rng=rng1)
+            for _ in range(20)
+        ]
+        picks_2 = [
+            yeet.pick_source(active, max_per_source=8, rng=rng2)
+            for _ in range(20)
+        ]
+        assert picks_1 == picks_2
+
+
+class TestSlurmHostfileCleanupRegistration:
+    """Tests that the SLURM hostfile atexit registration de-dupes."""
+
+    def test_registers_once_per_path(self, tmp_path, monkeypatch):
+        """Repeated _get_worker_nodes calls in a SLURM env should
+        register the cleanup handler exactly once per unique path,
+        not once per call.
+        """
+        from unittest.mock import MagicMock
+
+        # Pretend we're in SLURM with no scheduler-discoverable hostfile.
+        monkeypatch.delenv("PBS_NODEFILE", raising=False)
+        monkeypatch.delenv("HOSTFILE", raising=False)
+        monkeypatch.delenv("PBS_JOBID", raising=False)
+        monkeypatch.setenv("SLURM_NODELIST", "node[01-02]")
+        monkeypatch.setenv("SLURM_JOB_ID", "test123")
+
+        # Reset the de-dupe set for a clean test
+        yeet._REGISTERED_CLEANUPS.clear()
+
+        # Mock scontrol to produce two hostnames
+        result = MagicMock(returncode=0, stdout="node01\nnode02\n")
+        monkeypatch.setattr(
+            yeet.subprocess, "run", lambda *a, **kw: result,
+        )
+        # Stub atexit.register to count calls
+        registered: list[object] = []
+        monkeypatch.setattr(
+            yeet.atexit, "register",
+            lambda fn, *args: registered.append((fn, args)),
+        )
+        # Stub HSN suffix probe so we don't hit DNS in the test
+        monkeypatch.setattr(
+            yeet, "_maybe_apply_hsn_suffix", lambda nodes: nodes,
+        )
+
+        # Pre-create the path so write_text / unlink work cleanly
+        hf_path = Path("/tmp/_ezpz_hostfile_test123")
+
+        try:
+            yeet._get_worker_nodes()
+            yeet._get_worker_nodes()
+            yeet._get_worker_nodes()
+        finally:
+            if hf_path.exists():
+                hf_path.unlink()
+            yeet._REGISTERED_CLEANUPS.discard(str(hf_path))
+
+        # Three calls but only one registration
+        assert len(registered) == 1
+
+
+class TestRemovePartialDst:
+    """Tests for ``_remove_partial_dst`` — works regardless of /tmp."""
+
+    def test_removes_directory(self, tmp_path):
+        dst = tmp_path / "venv-half-written"
+        dst.mkdir()
+        (dst / "file.txt").write_text("partial")
+        yeet._remove_partial_dst(dst)
+        assert not dst.exists()
+
+    def test_silent_on_missing(self, tmp_path):
+        # Should not raise
+        yeet._remove_partial_dst(tmp_path / "does-not-exist")
+
+    def test_works_outside_tmp(self, tmp_path):
+        """Unlike _safe_rmtree, this helper accepts non-/tmp paths.
+
+        The failure-cleanup paths only invoke it on dst directories
+        the command itself just wrote, so the /tmp safety guard is
+        unnecessary and harmful (it left half-written custom dsts
+        behind in the prior implementation).
+        """
+        # tmp_path is typically /var/folders/... on macOS — definitely
+        # not under /tmp/ — so this proves the no-prefix-restriction
+        # behavior.
+        dst = tmp_path / "custom-dst"
+        dst.mkdir()
+        (dst / "data").write_bytes(b"x")
+        yeet._remove_partial_dst(dst)
+        assert not dst.exists()
 
 
 # ===================================================================
