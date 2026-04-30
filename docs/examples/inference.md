@@ -260,9 +260,84 @@ per-device MFU formula.
 
 ```bash
 $ ezpz launch python3 -m ezpz.examples.inference --help
-```
+usage: ezpz.examples.inference [-h] [--mode {benchmark,generate,eval}]
+                               [--model MODEL] [--dataset DATASET]
+                               [--dataset-config DATASET_CONFIG]
+                               [--dataset-split DATASET_SPLIT]
+                               [--text-column TEXT_COLUMN]
+                               [--label-column LABEL_COLUMN]
+                               [--benchmark-iters BENCHMARK_ITERS]
+                               [--benchmark-warmup BENCHMARK_WARMUP]
+                               [--max-samples MAX_SAMPLES]
+                               [--batch-size BATCH_SIZE]
+                               [--max-input-tokens MAX_INPUT_TOKENS]
+                               [--max-new-tokens MAX_NEW_TOKENS]
+                               [--dtype {float32,float16,bfloat16}] [--flops]
+                               [--flops-every-n-steps FLOPS_EVERY_N_STEPS]
+                               [--do-sample] [--temperature TEMPERATURE]
+                               [--top-p TOP_P] [--seed SEED]
+                               [--save-predictions] [--no-save-predictions]
 
-The full flag list is in the [CLI options](#cli-options) table above.
+Distributed inference over a HuggingFace model + dataset. Three modes: --mode
+benchmark (throughput), generate (synthetic data corpus), eval (accuracy on
+labeled data). Each rank processes a disjoint shard of prompts.
+
+options:
+  -h, --help            show this help message and exit
+  --mode {benchmark,generate,eval}
+                        Inference mode: 'benchmark' = synthetic random tokens,
+                        no dataset, focus on tokens/sec/MFU. 'generate' =
+                        dataset prompts → completions, save to JSONL
+                        (synthetic data / distillation use case). 'eval' =
+                        dataset prompts + gold labels, compare generated text
+                        to label, report accuracy.
+  --model MODEL         HuggingFace model name or local path
+  --dataset DATASET     HuggingFace dataset name or local path (ignored in
+                        --mode benchmark)
+  --dataset-config DATASET_CONFIG
+                        Dataset configuration (subset name)
+  --dataset-split DATASET_SPLIT
+                        Dataset split (train/validation/test)
+  --text-column TEXT_COLUMN
+                        Dataset column containing the prompt text
+  --label-column LABEL_COLUMN
+                        Dataset column containing the gold label (required for
+                        --mode eval)
+  --benchmark-iters BENCHMARK_ITERS
+                        Number of benchmark iterations (only with --mode
+                        benchmark)
+  --benchmark-warmup BENCHMARK_WARMUP
+                        Warmup iterations to skip when reporting (only with
+                        --mode benchmark)
+  --max-samples MAX_SAMPLES
+                        Maximum number of samples to process across all ranks
+  --batch-size BATCH_SIZE
+                        Per-rank batch size
+  --max-input-tokens MAX_INPUT_TOKENS
+                        Truncate prompts to this many tokens
+  --max-new-tokens MAX_NEW_TOKENS
+                        Maximum tokens to generate per sample
+  --dtype {float32,float16,bfloat16}
+                        Model dtype
+  --flops               Measure exact per-batch FLOPS via FlopCounterMode and
+                        report tflops + mfu in metrics. Off by default —
+                        without this flag, MFU/TFLOPS columns are simply
+                        omitted (rather than reporting approximated values).
+                        Adds ~15-40% overhead per step.
+  --flops-every-n-steps FLOPS_EVERY_N_STEPS
+                        When --flops is set, measure FLOPS every N steps
+                        (default 1 = every step). Use a higher value to
+                        amortize the overhead across batches.
+  --do-sample           Use sampling instead of greedy decoding
+  --temperature TEMPERATURE
+                        Sampling temperature (only used with --do-sample)
+  --top-p TOP_P         Nucleus sampling threshold (only used with --do-
+                        sample)
+  --seed SEED           Random seed
+  --save-predictions    Write per-sample predictions to JSONL
+  --no-save-predictions
+                        Skip writing per-sample predictions
+```
 
 </details>
 
