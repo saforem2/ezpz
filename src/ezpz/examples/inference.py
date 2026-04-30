@@ -39,6 +39,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse inference command-line arguments."""
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.inference",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
             "Distributed inference over a HuggingFace model + dataset. "
             "Three modes: --mode benchmark (throughput), generate "

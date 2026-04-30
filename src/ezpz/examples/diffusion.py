@@ -581,7 +581,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the diffusion text example."""
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
-        description="Tiny diffusion example for text generation."
+        description="Tiny diffusion example for text generation.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--batch-size", type=int, default=int(os.environ.get("BATCH_SIZE", 8))

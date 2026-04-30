@@ -445,7 +445,10 @@ def parse_args(argv: Optional[list[str]] = None):
     """CLI parser for 2D parallel (TP/SP + FSDP) training."""
     if argv is None:
         argv = sys.argv[1:]
-    parser = argparse.ArgumentParser(description="2D Parallel Training")
+    parser = argparse.ArgumentParser(
+        description="2D Parallel Training",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--dim", type=int, default=256)
     parser.add_argument("--n-layers", type=int, default=32)
     parser.add_argument("--n-heads", type=int, default=32)

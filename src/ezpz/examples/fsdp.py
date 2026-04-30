@@ -473,7 +473,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if argv is None:
         argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
-        description="PyTorch MNIST Example using FSDP"
+        description="PyTorch MNIST Example using FSDP",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--num-workers",

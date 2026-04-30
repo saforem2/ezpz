@@ -774,6 +774,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse yeet-env command-line arguments."""
     parser = argparse.ArgumentParser(
         prog="ezpz yeet-env",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
             "Distribute a Python environment to worker nodes via parallel rsync. "
             "By default, rsyncs the active venv/conda env to /tmp/<env-name>/ "
