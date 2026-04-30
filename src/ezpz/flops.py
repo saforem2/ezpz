@@ -31,8 +31,11 @@ Usage::
 from __future__ import annotations
 
 import logging
+import math
+import warnings
 
 import torch
+from torch.utils.flop_counter import FlopCounterMode
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +62,9 @@ _PEAK_FLOPS: list[tuple[str, float | None]] = [
     ("H200", 989e12),          # https://www.nvidia.com/en-us/data-center/h200/
     ("B200", 2.25e15),         # https://nvdam.widen.net/s/wwnsxrhm2w
     ("A100", 312e12),          # https://www.nvidia.com/en-us/data-center/a100/
-    ("L40S", 362e12),          # https://resources.nvidia.com/en-us-l40s
+    ("L40S", 183e12),          # BF16 dense; 366 TFLOPS w/ sparsity
     # AMD
-    ("MI355X", 2500e12),       # https://www.amd.com/.../mi355x
+    ("MI355X", 5000e12),       # 5.0 PF BF16 dense per AMD MI355X brochure
     ("MI325X", 1300e12),       # https://www.amd.com/.../mi325x
     ("MI300X", 1300e12),       # https://www.amd.com/.../mi300x
     ("MI250X", 191.5e12),      # per GCD, https://www.amd.com/.../mi250x
@@ -69,6 +72,12 @@ _PEAK_FLOPS: list[tuple[str, float | None]] = [
     ("1550", None),            # PVC — computed dynamically
     ("MAX", None),             # "Data Center GPU Max" variants
 ]
+
+
+# Set of device names we've already warned about, so we don't flood
+# logs with the same message every time get_peak_flops is called for
+# an unrecognized accelerator.
+_WARNED_UNKNOWN_DEVICES: set[str] = set()
 
 
 def get_device_name() -> str:
@@ -116,12 +125,13 @@ def get_peak_flops(
             # Dynamic computation for Intel PVC
             return _compute_pvc_peak_flops()
 
-    # Unknown accelerator — warn once and return None
-    import warnings
-    warnings.warn(
-        f"Peak FLOPS unknown for {device_name!r} — MFU tracking disabled",
-        stacklevel=2,
-    )
+    # Unknown accelerator — warn once per device and return None
+    if device_name not in _WARNED_UNKNOWN_DEVICES:
+        _WARNED_UNKNOWN_DEVICES.add(device_name)
+        warnings.warn(
+            f"Peak FLOPS unknown for {device_name!r} — MFU tracking disabled",
+            stacklevel=2,
+        )
     return None
 
 
@@ -144,6 +154,38 @@ def _compute_pvc_peak_flops() -> float:
 
 
 # ── Model FLOPS estimation ──────────────────────────────────────────────────
+
+
+def _extract_loss(output: object) -> torch.Tensor | None:
+    """Extract a scalar loss tensor from an arbitrary model output.
+
+    Handles HF dataclass outputs (loss/logits attrs), plain tensors,
+    tuples, lists, and dicts.  Returns ``None`` if no usable tensor
+    can be found — in which case the caller should skip backward.
+    """
+    if isinstance(output, torch.Tensor):
+        return output.sum()
+    loss = getattr(output, "loss", None)
+    if isinstance(loss, torch.Tensor):
+        return loss
+    logits = getattr(output, "logits", None)
+    if isinstance(logits, torch.Tensor):
+        return logits.sum()
+    if isinstance(output, dict):
+        for key in ("loss", "logits"):
+            v = output.get(key)
+            if isinstance(v, torch.Tensor):
+                return v.sum() if key == "logits" else v
+        for v in output.values():
+            if isinstance(v, torch.Tensor):
+                return v.sum()
+        return None
+    if isinstance(output, (list, tuple)):
+        for v in output:
+            if isinstance(v, torch.Tensor):
+                return v.sum()
+        return None
+    return None
 
 
 def estimate_model_flops(
@@ -169,8 +211,6 @@ def estimate_model_flops(
     Returns:
         Total FLOPS (forward + backward if requested).
     """
-    from torch.utils.flop_counter import FlopCounterMode
-
     if device is None:
         try:
             device = next(model.parameters()).device
@@ -200,33 +240,31 @@ def estimate_model_flops(
         except StopIteration:
             dtype = torch.float32
         dummy = torch.randn(*input_shape, device=device, dtype=dtype)
-    was_training = model.training
-    model.eval()
 
+    # Stay in training mode so dropout/BN paths are counted realistically.
+    # FlopCounterMode is a measurement, not a forward pass we want to
+    # ship — flipping to eval() would under-count BN-heavy models.
+    flops = 0
+    backward_ran = False
     try:
         with FlopCounterMode(display=False) as counter:
             output = model(dummy)
             if backward:
-                # HF models return dataclass/dict — extract the tensor
-                if hasattr(output, "loss") and output.loss is not None:
-                    loss = output.loss
-                elif hasattr(output, "logits"):
-                    loss = output.logits.sum()
-                elif isinstance(output, torch.Tensor):
-                    loss = output.sum()
-                else:
-                    loss = output[0].sum()
-                loss.backward()
+                loss = _extract_loss(output)
+                if loss is not None:
+                    loss.backward()
+                    backward_ran = True
         flops = counter.get_total_flops()
     except Exception as exc:
         logger.debug("FlopCounterMode failed: %s", exc)
         flops = 0
-
-    # Restore original mode and clean up accumulated grads
-    if was_training:
-        model.train()
-    if backward:
-        model.zero_grad()
+    finally:
+        # Only clear gradients if backward actually ran — otherwise
+        # we'd clobber caller-set grads even though we never touched
+        # them.  This matters for the parameter-fallback path, which
+        # never executes loss.backward() and must leave grads alone.
+        if backward_ran:
+            model.zero_grad(set_to_none=True)
 
     if flops > 0:
         return flops
@@ -241,7 +279,7 @@ def estimate_model_flops(
     batch_size = input_shape[0]
     tokens = (
         input_shape[-1] if has_embedding
-        else int(torch.tensor(input_shape[1:]).prod().item())
+        else math.prod(input_shape[1:])
     )
     multiplier = 6 if backward else 2
     fallback = multiplier * num_params * batch_size * tokens
@@ -255,7 +293,9 @@ def estimate_model_flops(
 def try_estimate(
     model: torch.nn.Module,
     input_shape: tuple[int, ...] | list[int],
-    **kwargs: object,
+    *,
+    device: torch.device | str | None = None,
+    backward: bool = True,
 ) -> int:
     """Estimate model FLOPS, returning 0 on failure.
 
@@ -264,7 +304,9 @@ def try_estimate(
     replace the repeated try/except/log boilerplate in example scripts.
     """
     try:
-        flops = estimate_model_flops(model, input_shape, **kwargs)  # type: ignore[arg-type]
+        flops = estimate_model_flops(
+            model, input_shape, device=device, backward=backward,
+        )
         if flops > 0:
             try:
                 from ezpz.distributed import get_rank
@@ -288,7 +330,6 @@ def compute_mfu(
     *,
     device_name: str | None = None,
     peak_flops: float | None = None,
-    **kwargs: object,
 ) -> float:
     """Calculate per-device Model FLOPS Utilization (MFU) as a percentage.
 
@@ -314,7 +355,6 @@ def compute_mfu(
     Returns:
         MFU as a percentage (0–100). Returns 0.0 if inputs are invalid.
     """
-    # Accept (and ignore) world_size for backward compatibility
     if step_duration <= 0 or model_flops <= 0:
         return 0.0
 
