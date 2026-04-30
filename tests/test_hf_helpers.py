@@ -50,3 +50,29 @@ class TestStripMetricPrefix:
             "eval/loss=0.5 eval/perplexity=2.5", "eval/",
         )
         assert result == "loss=0.5 perplexity=2.5"
+
+
+class TestSafetensorsSaveErrors:
+    """Tests for ``_safetensors_save_errors``."""
+
+    def test_includes_oserror_runtimeerror_valueerror(self, hf_module):
+        errors = hf_module._safetensors_save_errors()
+        assert OSError in errors
+        assert RuntimeError in errors
+        assert ValueError in errors
+
+    def test_includes_safetensor_error_when_installed(self, hf_module):
+        """When safetensors is importable, its native error type is added.
+
+        Skip if safetensors is not installed in this environment.
+        """
+        try:
+            from safetensors import SafetensorError
+        except ImportError:
+            pytest.skip("safetensors not installed")
+        errors = hf_module._safetensors_save_errors()
+        assert SafetensorError in errors
+
+    def test_module_constant_matches_function(self, hf_module):
+        """The cached _SAFETENSORS_SAVE_ERRORS matches a fresh call."""
+        assert hf_module._SAFETENSORS_SAVE_ERRORS == hf_module._safetensors_save_errors()

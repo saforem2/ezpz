@@ -59,6 +59,27 @@ require_version(
 )
 
 
+def _safetensors_save_errors() -> tuple[type[BaseException], ...]:
+    """Exception types we accept as triggers for the safetensors retry.
+
+    Always includes (OSError, RuntimeError, ValueError) — those cover
+    the common parallel-filesystem failures (E2BIG "Argument list too
+    long" on Lustre, RuntimeError from torch save shims).  When the
+    optional ``safetensors`` library is installed we also include its
+    native ``SafetensorError`` because the rust core raises that
+    directly for header/metadata/shared-tensor failures, not OSError.
+    """
+    errors: tuple[type[BaseException], ...] = (OSError, RuntimeError, ValueError)
+    try:
+        from safetensors import SafetensorError
+    except ImportError:
+        return errors
+    return errors + (SafetensorError,)
+
+
+_SAFETENSORS_SAVE_ERRORS = _safetensors_save_errors()
+
+
 def _strip_metric_prefix(summary: str, prefix: str) -> str:
     """Drop *prefix* from metric tokens in a History summary string.
 
@@ -896,13 +917,15 @@ def main() -> None:
             is_main_process=accelerator.is_main_process,
             save_function=accelerator.save,
         )
-    except (OSError, RuntimeError, ValueError) as e:
-        # safetensors hits OSError "Argument list too long" or
-        # RuntimeError on some parallel filesystems (Lustre with
-        # large state dicts).  Narrow the catch so genuine bugs
-        # (TypeError, attribute errors, OOM-derived exceptions) keep
-        # propagating instead of being silently retried under a
-        # different serializer that may then fail too.
+    except _SAFETENSORS_SAVE_ERRORS as e:
+        # safetensors fails on some parallel filesystems (Lustre with
+        # large state dicts) — usually OSError "Argument list too
+        # long", sometimes RuntimeError from torch save shims, and
+        # SafetensorError for header/metadata/shared-tensor errors
+        # raised directly by the rust core.  Narrow the catch so
+        # genuine bugs (TypeError, attribute errors, OOM-derived
+        # exceptions) keep propagating instead of being silently
+        # retried under a different serializer that may then fail too.
         logger.warning(
             "save_pretrained with safetensors failed (%s: %s); "
             "retrying with safe_serialization=False",
