@@ -4,9 +4,11 @@ Distributed inference over a HuggingFace model + dataset, with three
 distinct modes: **benchmark**, **generate**, and **eval**.
 
 Each rank loads the model and processes a disjoint shard of inputs
-(data parallelism). Per-batch latency, throughput (tokens/sec),
-TFLOPS, and MFU are tracked through `ezpz.History`. With `--mode eval`
-an accuracy metric is added.
+(data parallelism). Per-batch latency and throughput (tokens/sec)
+are tracked through `ezpz.History`. With `--mode eval` an accuracy
+metric is added. **TFLOPS and MFU are opt-in via `--flops`** —
+without that flag the columns are simply absent rather than
+approximated (see [MFU Tracking (opt-in)](#mfu-tracking-opt-in)).
 
 ## Source
 
@@ -15,6 +17,57 @@ an accuracy metric is added.
 ```python title="src/ezpz/examples/inference.py"
 --8<-- "src/ezpz/examples/inference.py"
 ```
+
+</details>
+
+## Code Walkthrough
+
+<details closed markdown><summary><strong><code>shard_indices</code> — data-parallel input partitioning</strong></summary>
+
+Each rank computes its slice of the input array; the helper handles
+uneven splits and the "more ranks than samples" edge case.
+
+```python title="src/ezpz/examples/inference.py:202:215"
+--8<-- "src/ezpz/examples/inference.py:202:215"
+```
+
+</details>
+
+<details closed markdown><summary><strong><code>_run_with_optional_flops</code> — opt-in FLOPS measurement</strong></summary>
+
+The eval-unlabeled forward path and the `model.generate` path share
+this wrapper.  When `measure=False` (the default — no `--flops`),
+the call is a passthrough; otherwise it runs inside `FlopCounterMode`
+and returns the measured FLOP count alongside the result.
+
+```python title="src/ezpz/examples/inference.py:232:254"
+--8<-- "src/ezpz/examples/inference.py:232:254"
+```
+
+</details>
+
+<details closed markdown><summary><strong>Per-batch metrics — measured vs absent</strong></summary>
+
+`tflops` and `mfu` are only added to the metrics dict when the step
+actually ran `FlopCounterMode`.  No approximation is reported on
+unmeasured batches; downstream filters can rely on
+`flops_measured == True` to identify trustworthy points.
+
+The unlabeled-eval path emits `tokens_scored` (one forward pass over
+the prompt batch); the generate path emits `new_tokens` (one forward
+per autoregressive token).  Never both.
+
+</details>
+
+<details closed markdown><summary><strong>Eval-unlabeled scoring — perplexity from logits</strong></summary>
+
+Without `--label-column`, eval mode runs a single forward pass per
+batch and scores next-token prediction at every position.  Argmax
+accuracy and per-token cross-entropy go into the metrics; perplexity
+= `exp(NLL/token)` is reported per batch and overall.
+
+This is much cheaper than autoregressive generation and matches the
+"language modeling perplexity" you'd get from eval-harness tools.
 
 </details>
 
@@ -140,6 +193,7 @@ inference framework (vLLM, DeepSpeed-Inference) instead.
 | `--top-p` | `1.0` | Nucleus sampling cutoff (with `--do-sample`) |
 | `--benchmark-iters` | `20` | Iterations (only `--mode benchmark`) |
 | `--benchmark-warmup` | `3` | Warmup iters excluded from totals |
+| `--seed` | `0` | Random seed for token sampling and shard generation |
 | `--flops` | off | Measure real per-batch FLOPS via `FlopCounterMode`. Without this flag, `tflops` and `mfu` are not reported (rather than reporting approximated values). |
 | `--flops-every-n-steps` | `1` | When `--flops` is set, measure every N steps to amortize the overhead |
 | `--no-save-predictions` | save on | Skip writing per-sample JSONL |
@@ -199,6 +253,18 @@ Behavior:
 
 See [`ezpz.flops`](../python/Code-Reference/flops.md) for the
 per-device MFU formula.
+
+## Help
+
+<details closed><summary><code>--help</code></summary>
+
+```bash
+$ ezpz launch python3 -m ezpz.examples.inference --help
+```
+
+The full flag list is in the [CLI options](#cli-options) table above.
+
+</details>
 
 ## See Also
 

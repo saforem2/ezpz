@@ -543,6 +543,28 @@ The device's peak FLOPS is auto-detected. Supported accelerators:
 
 For unrecognized devices `compute_mfu` returns `0.0` (with a warning).
 
+!!! warning "When `try_estimate` is *not* enough"
+
+    The recipe above measures FLOPS once at startup with a fixed
+    `(batch_size, seq_len)` shape and re-uses that count for every
+    step.  This is fine for the recipe (a fixed-shape `nn.Linear`
+    workload) but **breaks for two important cases**:
+
+    1. **Variable sequence length** — attention is `O(seq²)` but the
+       startup count is for a single shape; a batch of shorter
+       sequences will report MFU that's too high, longer sequences
+       too low.
+    2. **Autoregressive generation** — multiplying by `n_new_tokens`
+       ignores KV-cache savings (over-counts) and growing context
+       (under-counts).  In practice this routinely produces MFU
+       values >100%.
+
+    For these cases, measure exact FLOPS per step via
+    `FlopCounterMode`.  See [`ezpz.examples.inference`'s
+    `--flops` flag](examples/inference.md#mfu-tracking-opt-in) for
+    the pattern: opt-in measurement, ~15-40% per-step overhead,
+    optional `--flops-every-n-steps N` to amortize the cost.
+
 !!! tip "When to use MFU"
 
     MFU measures compute efficiency, not communication efficiency.
