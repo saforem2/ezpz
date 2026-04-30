@@ -125,6 +125,26 @@ For each scalar metric `"loss"`, distributed history creates:
 | `loss/min` | Minimum across all ranks |
 | `loss/std` | Standard deviation across ranks |
 
+!!! tip "Tracking throughput and MFU"
+
+    To report **TFLOPS** and **MFU** (Model FLOPS Utilization) alongside
+    loss, use [`ezpz.flops`](./python/Code-Reference/flops.md):
+
+    ```python
+    from ezpz.flops import compute_mfu, try_estimate
+
+    model_flops = try_estimate(model, input_shape=(batch, seq))
+    # ... per step:
+    history.update({
+        "loss": loss.item(),
+        "tflops": model_flops / dt / 1e12,
+        "mfu": compute_mfu(model_flops, dt),
+    })
+    ```
+
+    See the [MFU Tracking recipe](./recipes.md#mfu-tracking) for the
+    full pattern.
+
 ## Backends
 
 Backends control where metrics are dispatched when `update()` is called.

@@ -85,6 +85,7 @@ import ezpz.distributed
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
 
@@ -286,6 +287,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.vit",
         description="Train a simple ViT",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--img_size",
@@ -410,7 +412,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=str,
         default="full-shard",
         choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
-        help="FSDP sharding strategy (default: full-shard)",
+        help="FSDP sharding strategy",
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
@@ -516,19 +518,7 @@ def train_fn(
         ),
     )
     model.to(device)
-    num_params = sum(
-        [
-            sum(
-                [
-                    getattr(p, "ds_numel", 0)
-                    if hasattr(p, "ds_id")
-                    else p.nelement()
-                    for p in model_module.parameters()
-                ]
-            )
-            for model_module in model.modules()
-        ]
-    )
+    num_params = sum(p.numel() for p in model.parameters())
     model_size_in_billions = num_params / 1e9
     logger.info(f"\n{mstr}")
     logger.info(f"Model size: nparams={model_size_in_billions:.2f} B")
@@ -539,6 +529,10 @@ def train_fn(
     #     dtype=args.dtype,
     #     # device_id=int(ezpz.get_local_rank())
     # )
+    _model_flops = try_estimate(
+        model, (args.batch_size, in_chans, args.img_size, args.img_size),
+    )
+
     if world_size > 1:
         reshard = ezpz.distributed.resolve_fsdp_strategy(
             args.fsdp_sharding_strategy
@@ -584,6 +578,7 @@ def train_fn(
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
+
     model.train()  # type:ignore
 
     outdir = get_example_outdir(WBPROJ_NAME)
@@ -655,8 +650,7 @@ def train_fn(
                     "Skipping non-finite train metrics at step=%s", step
                 )
                 continue
-            train_msg = history.update(
-                {
+            train_metrics = {
                     "train/iter": step,
                     "train/loss": loss_value,
                     "train/acc": acc_value,
@@ -665,8 +659,15 @@ def train_fn(
                     "train/dtf": t2 - t1,
                     "train/dto": t3 - t2,
                     "train/dtb": t4 - t3,
-                }
-            ).replace("train/", "")
+            }
+            if _model_flops > 0 and (t4 - t0) > 0:
+                # Full step: data load + forward + optimizer + backward.
+                # MFU here is the most "honest" number — the step time
+                # the user feels — but is not directly comparable with
+                # examples that exclude data loading (fsdp_tp, minimal).
+                train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
+                train_metrics["train/mfu"] = compute_mfu(_model_flops, t4 - t0)
+            train_msg = history.update(train_metrics).replace("train/", "")
             logger.info("[train] %s", train_msg)
 
     if "test" in dataset_dict:

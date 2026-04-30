@@ -79,6 +79,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -403,6 +404,9 @@ def train(
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
     model.train()
+
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_len))
+
     reshard = ezpz.distributed.resolve_fsdp_strategy(
         args.fsdp_sharding_strategy
     )
@@ -418,11 +422,6 @@ def train(
         wrapped_model,
         verbose=False,
         depth=2,
-        # input_size=(
-        #     torch.tensor((int(args.batch_size), int(args.seq_length))).to(
-        #         torch.long
-        #     )
-        # ).shape,
     )
     logger.info("Model summary:\n%s", mstr)
 
@@ -488,17 +487,20 @@ def train(
         ezpz.distributed.synchronize()
 
         if step % args.log_freq == 0 or step == steps - 1:
+            train_metrics = {
+                "train/step": step,
+                "train/loss": loss.item(),
+                "train/dt": t3 - t0,
+                "train/dtd": t1 - t0,
+                "train/dtf": t2 - t1,
+                "train/dtb": t3 - t2,
+            }
+            if _model_flops > 0 and (t3 - t0) > 0:
+                # Step time: data + forward + backward (no optimizer).
+                train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
+                train_metrics["train/mfu"] = compute_mfu(_model_flops, t3 - t0)
             logger.info(
-                history.update(
-                    {
-                        "train/step": step,
-                        "train/loss": loss.item(),
-                        "train/dt": t3 - t0,
-                        "train/dtd": t1 - t0,
-                        "train/dtf": t2 - t1,
-                        "train/dtb": t3 - t2,
-                    }
-                ).replace("train/", "")
+                history.update(train_metrics).replace("train/", "")
             )
 
     # loader_iter = iter(loader)
@@ -579,7 +581,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the diffusion text example."""
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
-        description="Tiny diffusion example for text generation."
+        description="Tiny diffusion example for text generation.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--batch-size", type=int, default=int(os.environ.get("BATCH_SIZE", 8))
@@ -604,12 +607,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default="full-shard",
         choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
-        help="FSDP sharding strategy (default: full-shard)",
+        help="FSDP sharding strategy",
     )
     parser.add_argument(
         "--fsdp-mixed-precision",
         action="store_true",
-        help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
+        help="Use bfloat16 parameters with FSDP for speed (otherwise float32).",
     )
     parser.add_argument(
         "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))

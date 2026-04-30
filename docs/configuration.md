@@ -207,4 +207,3 @@ These are set automatically and don't typically need to be configured by users.
 |----------|---------|
 | `EZPZ_VERSION` | Auto-set to package version at import time. |
 | `PYTHONHASHSEED` | Fix Python hash seed for reproducibility. |
-| `MAKE_TARBALL` | Trigger tarball creation in `ezpz yeet-env`. |

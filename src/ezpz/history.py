@@ -11,6 +11,7 @@ import os
 import platform
 import shutil
 import sys
+import threading
 import time
 import warnings
 from contextlib import ContextDecorator
@@ -262,6 +263,11 @@ class History:
                     self._jsonl_path,
                 )
         self._jsonl_enabled = True
+        # Serializes JSONL writes against the finalize() move so a
+        # background update() can't race the cross-FS shutil.move
+        # and either (a) write to a half-moved file or (b) lose the
+        # in-flight record altogether.
+        self._jsonl_lock = threading.Lock()
         self._dist = torch.distributed
         self._environment_written = False
         self._metric_summary_written = False
@@ -1232,17 +1238,22 @@ class History:
         }
         if aggregated and self._rank == 0:
             payload["aggregated"] = aggregated
-        try:
-            self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._jsonl_path.open("a", encoding="utf-8") as handle:
-                handle.write(
-                    json.dumps(payload, default=self._to_serializable)
+        # Hold the JSONL lock for the open/write/close cycle so a
+        # concurrent finalize() can't move the file out from under us.
+        # Each call still does its own open/close so the lock is held
+        # for microseconds — no contention in practice.
+        with self._jsonl_lock:
+            try:
+                self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+                with self._jsonl_path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(payload, default=self._to_serializable)
+                    )
+                    handle.write("\n")
+            except OSError:
+                logger.warning(
+                    "Unable to write JSONL metrics to %s", self._jsonl_path
                 )
-                handle.write("\n")
-        except OSError:
-            logger.warning(
-                "Unable to write JSONL metrics to %s", self._jsonl_path
-            )
 
     @classmethod
     def _to_serializable(cls, value: Any) -> Any:
@@ -2649,6 +2660,44 @@ class History:
                     old_csv.unlink()
                 except OSError:
                     pass
+        # Redirect JSONL to base_dir so all output is co-located.
+        #
+        # Hold the JSONL lock for the entire move so a concurrent
+        # _write_jsonl_record() either appends to the old path before
+        # the move (and we relocate that record) or to the new path
+        # after the swap.  Without this lock the writer could open a
+        # handle to old_jsonl, the move could complete between
+        # open/write, and the record would land in the deleted inode.
+        if self._jsonl_enabled and self._jsonl_path is not None:
+            with self._jsonl_lock:
+                old_jsonl = self._jsonl_path
+                new_jsonl = base_dir / old_jsonl.name
+                if old_jsonl != new_jsonl:
+                    if old_jsonl.exists():
+                        try:
+                            new_jsonl.parent.mkdir(
+                                parents=True, exist_ok=True,
+                            )
+                            # shutil.move falls back to copy+remove on
+                            # cross-filesystem moves (e.g. /tmp →
+                            # Lustre), which is non-atomic.  That's
+                            # OK because the lock prevents writers
+                            # from racing it.  We swap the path
+                            # *only after* the move succeeds so a
+                            # mid-move failure leaves the writer
+                            # pointing at the still-valid old file.
+                            shutil.move(str(old_jsonl), str(new_jsonl))
+                            self._jsonl_path = new_jsonl
+                        except OSError as exc:
+                            logger.warning(
+                                "Failed to relocate JSONL %s -> %s: %s",
+                                old_jsonl, new_jsonl, exc,
+                            )
+                    else:
+                        # Nothing to move (no metrics ever logged).
+                        # Still update the path so future writes go
+                        # to the co-located location.
+                        self._jsonl_path = new_jsonl
         dataset_label = (
             dataset_fname if dataset_fname is not None else "dataset"
         )
@@ -2700,7 +2749,9 @@ class History:
                     link_path.symlink_to(json_log.resolve())
                 except OSError:
                     pass
-            paths["JSON Log"] = str(json_log)
+            # Report the symlink inside the output dir (co-located)
+            reported = link_path if link_path.exists() else json_log
+            paths["JSON Log"] = str(reported)
             output_files["JSON Log"] = paths["JSON Log"]
         if self._jsonl_path is not None:
             paths["Metrics JSONL"] = str(self._jsonl_path)

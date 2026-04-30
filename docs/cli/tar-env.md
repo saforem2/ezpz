@@ -7,9 +7,11 @@ ezpz tar-env
 Check for (and create if missing) a tarball of the current Python environment
 for distribution to compute nodes.
 
-This is the first step in the two-step environment distribution workflow: ensure
-a tarball exists with `ezpz tar-env`, then broadcast it to all worker nodes with
-[`ezpz yeet-env`](./yeet-env.md).
+`ezpz tar-env` is a standalone tarball-creation utility. For end-to-end
+environment distribution, use [`ezpz yeet-env`](./yeet-env.md) instead —
+it handles the full Lustre → `/tmp/` copy, path patching, and parallel
+fan-out to all worker nodes (with `--compress` providing similar
+compression benefits as a separate `tar-env` step).
 
 ## What it does
 
@@ -47,5 +49,6 @@ ezpz tar-env
 
 ## See Also
 
-- [`ezpz yeet-env`](./yeet-env.md) — broadcast the tarball to all worker nodes
+- [`ezpz yeet-env`](./yeet-env.md) — distribute a Python environment to
+  all worker nodes via parallel rsync (recommended for end-to-end use)
 - [`ezpz.utils.tar_env`](../python/Code-Reference/utils/tar_env.md) — Python API reference

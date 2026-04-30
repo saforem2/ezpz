@@ -44,17 +44,8 @@ ezpz launch python3 -m ezpz.examples.minimal
 
 Standard imports plus `ezpz` for distributed training utilities. The rank-aware logger ensures only rank 0 prints by default.
 
-```python title="src/ezpz/examples/minimal.py" linenums="15"
-import os
-import time
-from pathlib import Path
-
-import torch
-
-import ezpz
-from ezpz.examples import get_example_outdir
-
-logger = ezpz.get_logger(__name__)
+```python title="src/ezpz/examples/minimal.py:15:25"
+--8<-- "src/ezpz/examples/minimal.py:15:25"
 ```
 
 </details>
@@ -63,76 +54,14 @@ logger = ezpz.get_logger(__name__)
 
 The `@ezpz.timeitlogit` decorator logs wall-clock time for the entire function. Inside, the model is unwrapped if DDP-wrapped, and an `ezpz.History` is created to track metrics to a JSONL file.
 
-```python title="src/ezpz/examples/minimal.py" linenums="27"
-@ezpz.timeitlogit(rank=ezpz.get_rank())
-def train(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    outdir: os.PathLike | str,
-) -> ezpz.History:
-    """Run a synthetic training loop on random data.
-
-    Args:
-        model: Model to train (wrapped or unwrapped).
-        optimizer: Optimizer configured for the model.
-
-    Returns:
-        Training history with timing and loss metrics.
-    """
-    unwrapped_model = (
-        model.module
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel)
-        else model
-    )
-    metrics_path = Path(outdir).joinpath("metrics.jsonl")
-    history = ezpz.History(
-        report_dir=outdir,
-        report_enabled=True,
-        jsonl_path=metrics_path,
-        jsonl_overwrite=True,
-        distributed_history=(1 < ezpz.get_world_size() <= 384),
-    )
-    device_type = ezpz.get_torch_device_type()
-    dtype = unwrapped_model.layers[0].weight.dtype
-    bsize = int(os.environ.get("BATCH_SIZE", 64))
-    isize = unwrapped_model.layers[0].in_features
-    warmup = int(os.environ.get("WARMUP_ITERS", 10))
-    log_freq = int(os.environ.get("LOG_FREQ", 1))
-    print_freq = int(os.environ.get("PRINT_FREQ", 10))
-    model.train()
+```python title="src/ezpz/examples/minimal.py:28:67"
+--8<-- "src/ezpz/examples/minimal.py:28:67"
 ```
 
 The training loop generates random input, computes a reconstruction loss, and records forward/backward timings separately. Metrics are logged via `history.update()` after a warmup period.
 
-```python title="src/ezpz/examples/minimal.py" linenums="63"
-    summary = ""
-    for step in range(int(os.environ.get("TRAIN_ITERS", 500))):
-        with torch.autocast(
-            device_type=device_type,
-            dtype=dtype,
-        ):
-            t0 = time.perf_counter()
-            x = torch.rand((bsize, isize), dtype=dtype).to(device_type)
-            y = model(x)
-            loss = ((y - x) ** 2).sum()
-            dtf = (t1 := time.perf_counter()) - t0
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            dtb = time.perf_counter() - t1
-            if step % log_freq == 0 and step > warmup:
-                summary = history.update(
-                    {
-                        "iter": step,
-                        "loss": loss.item(),
-                        "dt": dtf + dtb,
-                        "dtf": dtf,
-                        "dtb": dtb,
-                    }
-                )
-            if step % print_freq == 0 and step > warmup:
-                logger.info(summary)
-    return history
+```python title="src/ezpz/examples/minimal.py:68:103"
+--8<-- "src/ezpz/examples/minimal.py:68:103"
 ```
 
 </details>
@@ -243,35 +172,28 @@ def main():
 
 Prints a usage message on `--help`, otherwise calls `main()`.
 
-```python title="src/ezpz/examples/minimal.py" linenums="181"
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]:
-        print(
-            "\n".join(
-                [
-                    "Usage: ",
-                    " ".join(
-                        [
-                            "PRINT_ITERS=100",
-                            "TRAIN_ITERS=1000",
-                            "INPUT_SIZE=128",
-                            "OUTPUT_SIZE=128",
-                            "LAYER_SIZES=\"'128,256,128'\"",
-                            "ezpz launch",
-                            "-m ezpz.examples.minimal",
-                        ]
-                    ),
-                ]
-            )
-        )
-        exit(0)
-    else:
-        main()
+```python title="src/ezpz/examples/minimal.py:179:203"
+--8<-- "src/ezpz/examples/minimal.py:179:203"
 ```
 
 </details>
+
+## MFU Tracking
+
+This example reports per-step **TFLOPS** and **MFU** (Model FLOPS
+Utilization) alongside loss/timing metrics. The model FLOPS are
+counted once at startup via [`try_estimate`](../recipes.md#mfu-tracking),
+and `compute_mfu` divides by the device's peak BF16 throughput
+(see [`ezpz.flops`](../python/Code-Reference/flops.md) for details).
+
+```python
+from ezpz.flops import compute_mfu, try_estimate
+
+_model_flops = try_estimate(model, (bsize, isize))
+# ...
+metrics["tflops"] = _model_flops / dt / 1e12
+metrics["mfu"] = compute_mfu(_model_flops, dt)
+```
 
 ## Configuration
 
@@ -290,6 +212,23 @@ All configuration is via environment variables:
 | `PRINT_FREQ` | `10` | Print summary every N steps |
 | `WARMUP_ITERS` | `10` | Steps to skip before recording metrics |
 
+## Example Output (Sunspot, 2 nodes × 12 ranks = 24 total)
+
+```text
+[2026-04-29 18:03:57][I][ezpz/distributed:1536:_setup_ddp] init_process_group: master_addr=x1921c6s0b0n0, master_port=53741, world_size=24, rank=0, backend=xccl, timeout=1:00:00
+[2026-04-29 18:04:27][I][examples/minimal:150:main] Outputs will be saved to /tmp/outputs/ezpz.examples.minimal/2026-04-29-180355
+[2026-04-29 18:04:37][I][examples/minimal:102:train] iter=20 loss=708.216064 dt=0.004312 dtf=0.000920 dtb=0.003391 tflops=0.496617 mfu=0.166545 ...
+[2026-04-29 18:04:38][I][examples/minimal:102:train] iter=40 loss=676.927185 dt=0.004310 dtf=0.000922 dtb=0.003388 tflops=0.496832 mfu=0.166616 ...
+[2026-04-29 18:04:38][I][examples/minimal:102:train] iter=60 loss=687.406372 dt=0.004286 dtf=0.000918 dtb=0.003368 tflops=0.499541 mfu=0.167525 ...
+...
+[2026-04-29 18:04:39][I][examples/minimal:102:train] iter=180 loss=676.073486 dt=0.004343 dtf=0.000921 dtb=0.003422 tflops=0.492990 mfu=0.165328 ...
+```
+
+Notice each step takes ~4 ms (forward `dtf=0.9 ms` + backward `dtb=3.4 ms`),
+giving ~0.5 TFLOPS per device — about 0.17% MFU on PVC. This is a tiny
+synthetic MLP, so MFU is dominated by collective overhead and kernel
+launch latency rather than compute.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
@@ -297,7 +236,7 @@ All configuration is via environment variables:
 ```bash
 $ python3 -m ezpz.examples.minimal --help
 Usage:
-PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES="'128,256,128'" ezpz launch -m ezpz.examples.minimal
+PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES="'128,256,128'" ezpz launch python3 -m ezpz.examples.minimal
 ```
 
 </details>

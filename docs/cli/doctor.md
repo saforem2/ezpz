@@ -10,18 +10,6 @@ Health-check your environment and ensure that everything is ready to go!
 Checks MPI, scheduler detection, Torch import + accelerators, and `wandb`
 readiness, returning non-zero on errors.
 
-<!-- Health-check your environment and ensure that `ezpz` is installed correctly -->
-<!---->
-<!-- `ezpz doctor` inspects the active environment and reports whether common launch -->
-<!-- prerequisites are satisfied before you submit a distributed job. -->
-<!---->
-<!-- The command is available from the main CLI group: -->
-<!---->
-<!-- ```bash -->
-<!-- ezpz doctor -->
-<!-- ezpz doctor --json   # machine-friendly output for CI -->
-<!-- ``` -->
-
 ## What gets checked?
 
 Explicitly, this checks:
@@ -59,7 +47,7 @@ Machine: arm64
 Hostname: Sams-MacBook-Pro-2.local
 PBS_JOBID: N/A
 PBS_NODEFILE: N/A
-ezpz: 0.9.0 (/Users/samforeman/vibes/saforem2/ezpz/src/ezpz/__init__.py)
+ezpz: 0.12.4 (/Users/samforeman/vibes/saforem2/ezpz/src/ezpz/__init__.py)
 
 Module list:
   bash: line 1: module: command not found
@@ -91,7 +79,7 @@ Machine: x86_64
 Hostname: x4712c1s0b0n0
 PBS_JOBID: 8227686.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
 PBS_NODEFILE: /var/spool/pbs/aux/8227686.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
-ezpz: v0.9.0 (/lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/ezpz-distributed-metrics/src/ezpz/__init__.py)
+ezpz: v0.12.4 (/lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/ezpz-distributed-metrics/src/ezpz/__init__.py)
 
 Module list:
   gcc-runtime/13.3.0-ghotoln <H>

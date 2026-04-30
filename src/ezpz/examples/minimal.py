@@ -20,6 +20,7 @@ import torch
 
 import ezpz
 from ezpz.examples import get_example_outdir
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -59,6 +60,7 @@ def train(
     dtype = unwrapped_model.layers[0].weight.dtype
     bsize = int(os.environ.get("BATCH_SIZE", 64))
     isize = unwrapped_model.layers[0].in_features
+    _model_flops = try_estimate(model, (bsize, isize))
     warmup = int(os.environ.get("WARMUP_ITERS", 10))
     log_freq = int(os.environ.get("LOG_FREQ", 1))
     print_freq = int(os.environ.get("PRINT_FREQ", 10))
@@ -79,14 +81,20 @@ def train(
             optimizer.zero_grad()
             dtb = time.perf_counter() - t1
             if step % log_freq == 0 and step > warmup:
+                metrics = {
+                    "iter": step,
+                    "loss": loss.item(),
+                    "dt": dtf + dtb,
+                    "dtf": dtf,
+                    "dtb": dtb,
+                }
+                if _model_flops > 0:
+                    dt_total = dtf + dtb
+                    if dt_total > 0:
+                        metrics["tflops"] = _model_flops / dt_total / 1e12
+                        metrics["mfu"] = compute_mfu(_model_flops, dt_total)
                 summary = history.update(
-                    {
-                        "iter": step,
-                        "loss": loss.item(),
-                        "dt": dtf + dtb,
-                        "dtf": dtf,
-                        "dtb": dtb,
-                    }
+                    metrics
                 )
             if step % print_freq == 0 and step > warmup:
                 logger.info(summary)

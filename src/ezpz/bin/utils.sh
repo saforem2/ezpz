@@ -2222,6 +2222,24 @@ ezpz_print_job_env() {
 }
 
 # @description: ezpz_setup_alcf
+###############################################
+# Load Intel XPU software stack and set runtime
+# environment variables for Intel GPU training.
+#
+# @example
+#    ezpz_setup_xpu
+#
+# @stdout Prints loaded module names
+###############################################
+ezpz_setup_xpu() {
+	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
+	export CCL_PROCESS_LAUNCHER=pmix
+	export CCL_OP_SYNC=1
+	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
+	export TORCH_CPP_LOG_LEVEL=ERROR
+}
+
 # Setups the environment for ALCF systems
 #
 # @example

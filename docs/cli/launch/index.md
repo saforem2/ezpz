@@ -47,7 +47,9 @@ allocated to your job.
 
         ```bash
         ezpz launch --help
-        usage: ezpz launch [-h] [--print-source] [--filter FILTER [FILTER ...]] [-n NPROC] [-ppn NPROC_PER_NODE] [-nh NHOSTS] [--hostfile HOSTFILE] ...
+        usage: ezpz launch [-h] [--print-source] [--filter FILTER [FILTER ...]]
+                           [-n NPROC] [-ppn NPROC_PER_NODE] [-nh NHOSTS]
+                           [--hostfile HOSTFILE] [--cpu-bind CPU_BIND] ...
 
         Launch a command on the current PBS/SLURM job.
 
@@ -70,7 +72,7 @@ allocated to your job.
         -h, --help            show this help message and exit
         --print-source        Print the location of the launch CLI source and exit.
         --filter FILTER [FILTER ...]
-                                Filter output lines by these strings.
+                                Deprecated: output filtering has been removed. This flag is ignored.
         -n NPROC, -np NPROC, --n NPROC, --np NPROC, --nproc NPROC, --world_size NPROC, --nprocs NPROC
                                 Number of processes.
         -ppn NPROC_PER_NODE, --ppn NPROC_PER_NODE, --nproc_per_node NPROC_PER_NODE
@@ -78,7 +80,26 @@ allocated to your job.
         -nh NHOSTS, --nh NHOSTS, --nhost NHOSTS, --nnode NHOSTS, --nnodes NHOSTS, --nhosts NHOSTS, --nhosts NHOSTS
                                 Number of nodes to use.
         --hostfile HOSTFILE   Hostfile to use for launching.
+        --cpu-bind CPU_BIND   CPU binding value to pass to the launcher.
+                                Takes precedence over CPU_BIND when both are specified.
         ```
+
+## Python interpreter resolution
+
+When `ezpz launch` needs to invoke `python3` (e.g.
+`ezpz launch python3 -m my.module`), it picks the interpreter in this
+order:
+
+1. **`$VIRTUAL_ENV/bin/python3`** if `$VIRTUAL_ENV` is set and exists
+2. **`shutil.which("python3")`** — first python3 on `$PATH`
+3. **`sys.executable`** as a last resort
+
+Why not just `sys.executable`? It's frozen at interpreter startup. If
+you ran [`ezpz yeet-env`](../yeet-env.md) to copy your env to `/tmp/`
+and then `source /tmp/.venv/bin/activate`, `sys.executable` would still
+point to the original Lustre path because the `ezpz` CLI script's
+shebang is baked in at install time. Reading `$VIRTUAL_ENV` (set by
+`activate`) lets the launcher follow the user's actual current venv.
 
 ## Examples
 

@@ -136,6 +136,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
@@ -444,7 +445,10 @@ def parse_args(argv: Optional[list[str]] = None):
     """CLI parser for 2D parallel (TP/SP + FSDP) training."""
     if argv is None:
         argv = sys.argv[1:]
-    parser = argparse.ArgumentParser(description="2D Parallel Training")
+    parser = argparse.ArgumentParser(
+        description="2D Parallel Training",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--dim", type=int, default=256)
     parser.add_argument("--n-layers", type=int, default=32)
     parser.add_argument("--n-heads", type=int, default=32)
@@ -762,6 +766,9 @@ def train(
     )
     logger.info(f"\n{mstr}")
     model.to(device)
+
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
         mp_config = MixedPrecision(
@@ -858,6 +865,7 @@ def train(
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
 
     # ezpz.breakpoint(0)
+
     logger.info("Starting 2D training...")
     model.train()
 
@@ -1035,6 +1043,13 @@ def train(
                         _wandb_log_histograms(
                             metrics, step=global_step, enabled=track_hist
                         )
+            # Reuse the train/dt we already computed above so the MFU
+            # denominator can never silently drift from the reported
+            # step time.
+            dt_step = float(metrics["train/dt"])  # type: ignore[arg-type]
+            if _model_flops > 0 and dt_step > 0:
+                metrics["train/tflops"] = _model_flops / dt_step / 1e12
+                metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,

@@ -1,34 +1,11 @@
 """FSDP training example on MNIST/OpenImages/ImageNet-style datasets.
 
-Launch with:
+Launch with::
 
     ezpz launch -m ezpz.examples.fsdp --dataset MNIST --batch-size 128
 
-Help output (``python3 -m ezpz.examples.fsdp --help``):
-
-    usage: fsdp.py [-h] [--num-workers N]
-                   [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
-                   [--batch-size N] [--dtype D] [--test-batch-size N] [--epochs N]
-                   [--lr LR] [--gamma M] [--seed S] [--save-model]
-                   [--data-prefix DATA_PREFIX]
-
-    PyTorch MNIST Example using FSDP
-
-    options:
-      -h, --help            show this help message and exit
-      --num-workers N       number of data loading workers (default: 4)
-      --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
-                            Dataset to use (default: MNIST)
-      --batch-size N        input batch size for training (default: 64)
-      --dtype D             Datatype for training (default=bf16).
-      --test-batch-size N   input batch size for testing (default: 1000)
-      --epochs N            number of epochs to train (default: 10)
-      --lr LR               learning rate (default: 1e-3)
-      --gamma M             Learning rate step gamma (default: 0.7)
-      --seed S              random seed (default: 1)
-      --save-model          For Saving the current Model
-      --data-prefix DATA_PREFIX
-                            data directory prefix
+Run ``python3 -m ezpz.examples.fsdp --help`` for the full list of
+flags and their current defaults.
 """
 
 # Based on: https://github.com/pytorch/examples/blob/master/mnist/main.py
@@ -51,6 +28,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
@@ -176,6 +154,7 @@ def train(
         sampler.set_epoch(epoch)
     ezpz.distributed.synchronize()
     t0 = time.perf_counter()
+    num_batches = 0
     batch, target = next(iter(train_loader))
     for _, (batch, target) in enumerate(train_loader):
         batch, target = batch.to(device), target.to(device)
@@ -186,12 +165,15 @@ def train(
         optimizer.step()
         ddp_loss[0] += loss.item()
         ddp_loss[1] += len(batch)
+        num_batches += 1
     ezpz.distributed.synchronize()
     t1 = time.perf_counter()
+    epoch_dt = t1 - t0
     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
     return {
         "epoch": epoch,
-        "dt": t1 - t0,
+        "dt": epoch_dt,
+        "dt_per_step": epoch_dt / max(num_batches, 1),
         "train_loss": ddp_loss[0] / ddp_loss[1],
     }
 
@@ -259,6 +241,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
         fc_dim=args.fc_dim,
     ).to(device)
     logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
+    _model_flops = try_estimate(model, (args.batch_size, 1, img_size, img_size))
     dtypes = {
         "fp16": torch.float16,
         "bf16": torch.bfloat16,
@@ -281,6 +264,7 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
         "model": model,
         "optimizer": optimizer,
         "scheduler": scheduler,
+        "model_flops": _model_flops,
     }
 
 
@@ -371,6 +355,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
     model = tmp["model"]
     optimizer = tmp["optimizer"]
     scheduler = tmp["scheduler"]
+    _model_flops = tmp.get("model_flops", 0)
 
     outdir = get_example_outdir(WBPROJ_NAME)
     logger.info("Outputs will be saved to %s", outdir)
@@ -386,6 +371,7 @@ def fsdp_main(args: argparse.Namespace) -> None:
             1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
         ),
     )
+
     start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):
         train_metrics = train(
@@ -397,7 +383,18 @@ def fsdp_main(args: argparse.Namespace) -> None:
         )
         test_metrics = test(model, test_loader)
         scheduler.step()
-        logger.info(history.update({**train_metrics, **test_metrics}))
+        merged = {**train_metrics, **test_metrics}
+        if _model_flops > 0:
+            # FSDP epoch loop reports per-epoch averages, so MFU here
+            # is averaged over the whole epoch (epoch_dt / num_batches),
+            # not per-step.  Smooths out warmup spikes but obscures
+            # straggler effects compared to the per-step MFU other
+            # examples report.
+            dt_step = merged.get("dt_per_step", 0.0)
+            if dt_step > 0:
+                merged["tflops"] = _model_flops / dt_step / 1e12
+                merged["mfu"] = compute_mfu(_model_flops, dt_step)
+        logger.info(history.update(merged))
 
     train_end = time.perf_counter()
     logger.info(
@@ -453,28 +450,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if argv is None:
         argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
-        description="PyTorch MNIST Example using FSDP"
+        description="PyTorch MNIST Example using FSDP",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--num-workers",
         type=int,
         default=0,
         metavar="N",
-        help="number of data loading workers (default: 4)",
+        help="number of data loading workers",
     )
     parser.add_argument(
         "--dataset",
         type=str,
         default="MNIST",
         choices=["MNIST", "OpenImages", "ImageNet", "ImageNet1k"],
-        help="Dataset to use (default: MNIST)",
+        help="Dataset to use",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=64,
         metavar="N",
-        help="input batch size for training (default: 64)",
+        help="input batch size for training",
     )
     parser.add_argument(
         "--model",
@@ -509,42 +507,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default="bf16",
         metavar="D",
-        help="Datatype for training (default=bf16).",
+        help="Datatype for training",
     )
     parser.add_argument(
         "--test-batch-size",
         type=int,
         default=1000,
         metavar="N",
-        help="input batch size for testing (default: 1000)",
+        help="input batch size for testing",
     )
     parser.add_argument(
         "--epochs",
         type=int,
         default=10,
         metavar="N",
-        help="number of epochs to train (default: 10)",
+        help="number of epochs to train",
     )
     parser.add_argument(
         "--lr",
         type=float,
         default=1e-3,
         metavar="LR",
-        help="learning rate (default: 1e-3)",
+        help="learning rate",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         default=0.7,
         metavar="M",
-        help="Learning rate step gamma (default: 0.7)",
+        help="Learning rate step gamma",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
         metavar="S",
-        help="random seed (default: 1)",
+        help="random seed",
     )
     parser.add_argument(
         "--save-model",

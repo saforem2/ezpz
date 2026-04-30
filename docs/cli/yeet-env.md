@@ -2,7 +2,7 @@
 
 On large HPC clusters, Python environments on shared filesystems
 create I/O contention and slow startup times. `ezpz yeet-env` solves
-this by rsyncing your environment to node-local `/tmp/` storage on
+this by copying your environment to node-local `/tmp/` storage on
 every worker node in your job.
 
 ## Quick Start
@@ -16,16 +16,18 @@ That's it. By default, `yeet-env`:
 
 1. Detects the active Python environment (`sys.prefix`)
 2. Discovers all nodes from the job's hostfile (PBS/SLURM)
-3. Distributes the environment to `/tmp/<env-name>/` on every node
-4. Patches the activate scripts so they work from the new location
+3. Copies the environment to `/tmp/<env-name>/` on the current node
+4. Patches activate scripts, shebangs, and symlinks for the new location
+5. Distributes the patched copy to all remote nodes via greedy rsync fan-out
 
 ```
   Source: /path/to/project/.venv (3.2 GB)
   Target: /tmp/.venv/ on 4 node(s)
     local:  node01 (rsync to /tmp/.venv/)
     remote: node02, node03, node04
-  Syncing (4 nodes, fanout=16)...
-    ✓ node01 (local) — 12.3s
+  Syncing (4 nodes)...
+
+    ✓ node01 (local, rsync) — 12.3s
     ✓ node02 — 11.8s
     ✓ node03 — 12.1s
     ✓ node04 — 11.9s
@@ -56,15 +58,68 @@ ezpz launch python3 -m your_app.train
 ## CLI Options
 
 ```
-ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
+ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
+              [--copy | --compress] [--dry-run]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--src` | Active venv/conda env | Source environment path |
-| `--dst` | `/tmp/<env-name>/` | Destination on each node |
+| `--src` | Active venv/conda env | Source environment path. May also be a `.tar.gz`/`.tgz` file — see [tarball source](#tarball-source) |
+| `--dst` | `/tmp/<env-name>/` | Destination on each node (e.g. `/tmp/.venv/` for a venv named `.venv`) |
 | `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
+| `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
+| `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |
 | `--dry-run` | — | Preview without transferring |
+
+!!! tip "Choosing a local copy method"
+
+    The default `rsync` is best for **incremental updates** (after
+    `pip install`, etc.) but slow for initial copies on Lustre because
+    it stats every file individually. For the first transfer, use one
+    of the faster methods:
+
+    | Method | Best for | How it works |
+    |--------|----------|--------------|
+    | `--copy` | Fast initial copy | `cp -a` — sequential dir walk, no checksums |
+    | `--compress` | Slowest Lustre / largest envs | tar.gz → copy 1 file → extract locally |
+    | *(default)* | Incremental updates | `rsync -rlD` — only transfers changed files |
+
+    ```bash
+    # First time: compress for minimal Lustre I/O
+    ezpz yeet-env --compress
+
+    # Or: cp for simpler fast copy
+    ezpz yeet-env --copy
+
+    # After pip install: rsync only sends diffs
+    ezpz yeet-env
+    ```
+
+    All three methods only affect the **local** Lustre → `/tmp/` copy.
+    Remote node distribution always uses rsync.
+
+### Tarball source
+
+If you already have a `.tar.gz` of your environment (e.g. one you
+built earlier with [`ezpz tar-env`](./tar-env.md), or one shipped
+with a project), you can pass it directly:
+
+```bash
+ezpz yeet-env --src /lus/.../my-env.tar.gz
+```
+
+This is similar to `--compress` but **skips the create step** —
+the tarball is copied to `/tmp/` and extracted there:
+
+1. `cp /lus/.../my-env.tar.gz /tmp/my-env.tar.gz`
+2. `tar -xzf /tmp/my-env.tar.gz --strip-components=1 -C /tmp/my-env/`
+3. Patch shebangs/activate scripts (auto-detects original venv path
+   from `bin/activate`)
+4. Delete the tarball
+5. Fan-out `/tmp/my-env/` to all worker nodes via rsync
+
+Both `.tar.gz` and `.tgz` extensions are recognized. The destination
+defaults to `/tmp/<basename-without-suffix>/`.
 
 ## How It Works
 
@@ -73,82 +128,110 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH] [--dry-run]
 ```mermaid
 graph TD
     A["ezpz yeet-env"] --> B["Detect source env"]
-    B --> C["Discover nodes"]
-    C --> D["rsync to local /tmp/"]
-    D --> E["Patch venv paths (once)"]
-    E --> F["Tree-based fan-out"]
+    B --> C["Discover nodes<br/>(PBS_NODEFILE / SLURM_NODELIST)"]
+    C --> D["Copy to local /tmp/<br/>(rsync, cp -a, or tar.gz)"]
+    D --> E["Patch paths + shebangs"]
+    E --> F["Greedy rsync fan-out"]
     F --> G["Print instructions"]
 ```
 
 ### Step 1: Local copy + patch
 
-First, `yeet-env` rsyncs the source environment to `/tmp/<env>/` on
-the current node and patches the venv paths **once**:
+First, `yeet-env` copies the source environment to `/tmp/<env>/` on
+the current node using rsync (default), `cp -a` (`--copy`), or
+tar.gz (`--compress`). If the local copy fails, distribution is
+aborted immediately — no broken environment gets distributed.
 
-- `sed` replaces hardcoded `VIRTUAL_ENV` paths in activate scripts
+After copying, the venv is patched **once** in place:
+
+- Replaces hardcoded `VIRTUAL_ENV` paths in activate scripts
+  (`bin/activate`, `bin/activate.csh`, `bin/activate.fish`)
 - Re-links `python3` symlinks to the system Python
 - Updates `pyvenv.cfg`
+- **Rewrites shebangs** in all entry-point scripts (`ezpz`, `pip`,
+  `torchrun`, etc.) — pip bakes absolute paths into these at install
+  time, so they'd still point to the original Lustre location without
+  this step
 
 This patched copy in `/tmp/` becomes the source for all subsequent
-rsyncs — no per-node patching needed.
+rsyncs — no per-node patching or SSH needed.
 
-### Step 2: Tree-based fan-out
+### Step 2: Greedy fan-out
 
 Instead of syncing from one source to all N nodes (which saturates
-the source node's network), `yeet-env` distributes the
-already-patched `/tmp/` copy in waves. Nodes that finish become
-sources for the next wave.
+the source node's NIC), `yeet-env` uses a **greedy streaming
+fan-out**: each node that finishes immediately becomes a source for
+others, without waiting for any "wave" to complete.
 
-The first wave uses a smaller seed fanout (4) since there's only
-one source node. Once those 4 seeds complete, there are now 5
-sources (original + 4 seeds), and subsequent waves fan out at 16
-per source:
+A single thread pool manages all rsyncs. Each source node is capped
+at `MAX_PER_SOURCE=8` concurrent outbound rsyncs to avoid
+overwhelming any single NIC. As soon as any rsync completes:
+
+1. That node is registered as a new source
+2. New rsyncs are submitted using whichever source has the
+   fewest active transfers (load balancing)
+
+The tree grows organically — no synchronized rounds:
 
 ```mermaid
 graph TD
     subgraph "Local copy + patch"
-        S["Source<br/>(shared filesystem)"] -->|"rsync + patch"| L["/tmp/ on node00"]
+        S["Source<br/>(shared filesystem)"] -->|"rsync / cp / tar.gz"| L["/tmp/ on node00"]
     end
 
-    subgraph "Wave 1 — seed (fanout=4)"
+    subgraph "Fan-out (greedy, up to 8 per source)"
         L --> A1["node01"]
         L --> A2["node02"]
         L --> A3["node03"]
         L --> A4["node04"]
+        L --> A5["node05"]
+        L --> A6["node06"]
+        L --> A7["node07"]
+        L --> A8["node08"]
+
+        A1 -->|"immediately<br/>becomes source"| B1["node09"]
+        A1 --> B2["node10"]
+        A2 --> B3["node11"]
+        A2 --> B4["node12"]
+        A3 --> B5["node13"]
     end
 
-    subgraph "Wave 2 — 5 sources × 16 each = 80 nodes"
-        L --> B0["node05–20"]
-        A1 --> B1["node21–36"]
-        A2 --> B2["node37–52"]
-        A3 --> B3["node53–68"]
-        A4 --> B4["node69–84"]
-    end
-
-    subgraph "Wave 3 — 85 sources × 16 each = 1,360 nodes"
-        B0 --> C0["node85–100"]
-        B1 --> C1["..."]
-        B4 --> C4["node1,269–1,284"]
-    end
-
-    subgraph "Wave 4 — 1,445 sources × 16 each"
-        C0 --> D0["..."]
-        C4 --> D4["up to 24,165 nodes"]
+    subgraph "...continues until all nodes served"
+        B1 --> C1["node17"]
+        B2 --> C2["node18"]
+        B3 --> C3["..."]
     end
 ```
 
-| Nodes | Waves | Sources after wave |
-|-------|-------|--------------------|
-| 1–4 | 1 | 1 → 5 |
-| 5–84 | 2 | 5 → 85 |
-| 85–1,444 | 3 | 85 → 1,445 |
-| 1,445–24,165 | 4 | 1,445 → 24,165 |
+The key difference from a wave-based approach: if node01 finishes
+in 15 seconds but node08 takes 30 seconds, node01 immediately
+starts serving new targets — it doesn't wait for node08.
 
-All waves rsync from `/tmp/` (node-local storage), not the shared
-filesystem. Path patching happens only once on the local copy —
-all distributed copies arrive already patched.
+??? info "Scaling behavior"
 
-??? info "ASCII diagram: full tree distribution"
+    The greedy fan-out gives approximately O(log N) wall-clock time:
+
+    - After the local copy, the first 8 rsyncs start from node00
+    - As each completes (~15–20s), it starts serving others
+    - With 8 initial targets completing, there are 9 sources
+    - Those 9 sources can each serve 8 more = 72 concurrent rsyncs
+    - After ~2 "generations", 500+ nodes are reachable
+
+    For a 512-node job with a 5 GB venv:
+
+    | Phase | Approx time | Sources |
+    |-------|-------------|---------|
+    | Local copy (Lustre → `/tmp/`) | ~60s | 1 |
+    | First 8 targets complete | ~20s | 9 |
+    | Next ~72 targets complete | ~20s | 81 |
+    | Remaining ~431 targets | ~20s | 500+ |
+    | **Total** | **~2 min** | — |
+
+    Single-source approach for comparison: 512 × 5 GB from one NIC
+    at 200 Gbps = **~100s** theoretical minimum, worse in practice
+    due to TCP congestion with 512 concurrent connections.
+
+??? info "ASCII diagram: greedy fan-out"
 
     ```
                        ezpz yeet-env
@@ -156,98 +239,111 @@ all distributed copies arrive already patched.
     Step 0: Local copy + patch
     ══════════════════════════
 
-    Lustre ──rsync──▶ /tmp/.venv (node00)
-                          │
-                      [patch paths]
-                          │
-    Step 1: Seed wave (fanout=4)
-    ════════════════════════════
-                          │
-          ┌───────┬───────┼───────┬───────┐
-          ▼       ▼       ▼       ▼       │
-       node01  node02  node03  node04     │
-          │       │       │       │       │
-    Step 2: Fan-out (fanout=16 per source)│
-    ══════════════════════════════════════╧══
-          │       │       │       │       │
-          ▼       ▼       ▼       ▼       ▼
-       ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐ ┌──┴──┐  5 sources
-       │ ×16 │ │ ×16 │ │ ×16 │ │ ×16 │ │ ×16 │  × 16 each
-       └──┬──┘ └──┬──┘ └──┬──┘ └──┬──┘ └──┬──┘  = 80 nodes
-          │       │       │       │       │
-       n05-20  n21-36  n37-52  n53-68  n69-84
-          │       │       │       │       │
-    Step 3: Fan-out (85 sources × 16 each)
-    ══════════════════════════════════════
-          ▼       ▼               ▼       ▼
-       ┌──┴──┐ ┌──┴──┐         ┌──┴──┐ ┌──┴──┐  85 sources
-       │ ×16 │ │ ×16 │  · · ·  │ ×16 │ │ ×16 │  × 16 each
-       └──┬──┘ └──┬──┘         └──┬──┘ └──┬──┘  = 1,360 nodes
-          │       │               │       │
-       n85-100   ...          n1269-84  n1285-1300
+    Lustre ──rsync/cp/tar──▶ /tmp/.venv (node00)
+                                │
+                            [patch paths + shebangs]
+                                │
+    Step 1: Fan-out (greedy, max 8 per source)
+    ═══════════════════════════════════════════
+                                │
+          ┌───┬───┬───┬───┬───┬┴──┬───┬───┐
+          ▼   ▼   ▼   ▼   ▼   ▼   ▼   ▼
+         n01 n02 n03 n04 n05 n06 n07 n08
+          │   │
+          │   └─── (n02 finishes, starts serving) ──▶ n09, n10, ...
           │
-    Step 4: 1,445 sources × 16 = up to 24,165 nodes
-    ═════════════════════════════════════════════════
-          ▼
-       · · ·
+          └─── (n01 finishes, starts serving) ──▶ n11, n12, ...
+
+    No waiting for "waves" — each node starts serving
+    the moment its rsync completes.
 
     Key:
-      • All rsyncs within a wave run in parallel
-      • Each source reads from its local /tmp/ (fast SSD)
-      • Completed nodes become sources for the next wave
+      • Each source limited to 8 concurrent outbound rsyncs
+      • New sources pick up work immediately (no wave barriers)
+      • Load-balanced: new targets assigned to least-busy source
+      • All rsyncs from /tmp/ (fast node-local storage)
       • Path patching happens ONCE (step 0), not per-node
     ```
 
-??? info "Detail: what a single wave looks like"
+??? info "Detail: how source selection works"
 
-    Each source node rsyncs to up to 16 targets in parallel.
-    Here's wave 2 in detail, showing all 5 sources fanning out:
-
-    Each source node does up to 16 parallel rsyncs from its local
-    `/tmp/.venv`. Here's what one source looks like in wave 2:
+    The thread pool picks the source with the fewest active
+    outbound rsyncs. This naturally load-balances across the tree:
 
     ```
-    node01 (/tmp/.venv)
-     ├─ rsync → node21
-     ├─ rsync → node22
-     ├─ rsync → node23
-     ├─ rsync → node24
-     ├─ rsync → node25     ← all 16 run in parallel
-     ├─ rsync → node26
-     ├─ rsync → ...
-     └─ rsync → node36
+    Sources:          Active rsyncs:
+    node00            ████████ (8/8 — at cap, skip)
+    node01            ████·· (4/8 — available)      ← picked
+    node02            ██████ (6/8 — available)
+    node03            ████████ (8/8 — at cap, skip)
     ```
 
-    In wave 2, all 5 sources (node00–node04) do this simultaneously,
-    giving 5 × 16 = 80 parallel rsyncs. Each reads from local SSD
-    and writes to the target node's `/tmp/.venv` via SSH.
+    When node01 is selected, one of its remaining slots is used.
+    If all sources are at capacity, the pool waits for any rsync
+    to complete before submitting more work.
 
 ### Node discovery
 
-`yeet-env` uses the same node discovery as `ezpz launch`:
+`yeet-env` discovers nodes directly from scheduler environment
+variables, without importing heavy Python packages (torch, numpy,
+etc.) — so the CLI starts in seconds even on slow filesystems.
 
-1. Checks `PBS_NODEFILE` or `SLURM_NODELIST` env vars
-2. Falls back to scheduler-specific queries (qstat, scontrol)
-3. Deduplicates hostnames (PBS nodefiles repeat per-GPU)
+The discovery order is:
+
+1. **`--hostfile` flag** if explicitly passed
+2. **`PBS_NODEFILE`** / **`HOSTFILE`** environment variables
+3. **PBS aux lookup via `PBS_JOBID`** — checks `/var/spool/pbs/aux/<jobid>`
+4. **PBS `qstat` fallback** — when env vars aren't set (e.g. after
+   `ssh`-ing to a compute node), runs `qstat -fn1wru $USER` to find
+   the running job whose nodelist contains this hostname, then looks
+   up its aux file by jobid
+5. **SLURM** — expands `SLURM_NODELIST` via `scontrol show hostnames`
+6. **Localhost fallback** — single-node mode with a warning
+
+After loading the hostfile, hostnames are deduplicated (PBS nodefiles
+repeat once per-GPU) and FQDN suffixes are stripped.
+
+### HSN (high-speed network) auto-detection
+
+On Aurora, the PBS hostfile contains bare hostnames (`x4717c0s2b0n0`),
+but the Slingshot HSN interface is reachable via the `-hsn0` suffix
+at much higher bandwidth than the management network. `yeet-env`
+probes whether `<hostname>-hsn0` resolves and prefers it for all
+remote rsyncs if so. On Sunspot the hostfile already contains `-hsn0`
+suffixes, so this is a no-op.
 
 ### Path patching
 
-Venv activate scripts and Python symlinks contain hardcoded absolute
-paths. `yeet-env` patches these **once** on the local `/tmp/` copy
-(step 1) before any distribution:
+Venv activate scripts, Python symlinks, and **entry-point script
+shebangs** contain hardcoded absolute paths. `yeet-env` patches
+these **once** on the local `/tmp/` copy before any distribution:
 
-- `sed` replaces the old `VIRTUAL_ENV` path in activate scripts
+- Replaces the old `VIRTUAL_ENV` path in activate scripts
 - Re-links `python3` symlinks to the system Python
 - Updates `pyvenv.cfg` to point to the correct base Python
+- Rewrites shebangs in all `bin/` scripts (e.g. `#!/old/path/.venv/bin/python3`
+  → `#!/tmp/.venv/bin/python3`)
 
 Since patching happens before fan-out, all distributed copies
 arrive already patched — no per-node SSH needed.
 
 ### Incremental syncs
 
-Because `yeet-env` uses `rsync -a`, subsequent runs are fast — only
-changed files are transferred. This makes it practical to re-run
-after installing new packages.
+The default rsync mode uses `-rlD` (recursive, symlinks, devices —
+skipping expensive timestamp/permission sync). Subsequent runs only
+transfer changed files, making it practical to re-run after
+installing new packages.
+
+### Error handling
+
+- **Failed local copy**: distribution is aborted immediately — no
+  broken environment gets sent to remote nodes
+- **rsync exit 24** (vanished files): treated as success. This
+  happens when concurrent rsyncs read from the same `/tmp/` source
+  while temporary files (e.g. triton plugin builds) come and go.
+- **TTY-aware progress**: spinner and `\r` carriage returns are
+  suppressed when stdout is not a terminal (e.g. redirected to a
+  file), preventing garbled output in logs.
 
 ## Examples
 
@@ -278,41 +374,38 @@ ezpz yeet-env --dry-run
 
 ### Real-world example: 64 nodes on Sunspot
 
-??? example "9.1 GB venv → 65 nodes in ~5 minutes"
+??? example "8.3 GB venv → 65 nodes in ~2 minutes"
 
     ```bash
     $ ezpz yeet-env
-      Source: /lus/tegu/.../torchtitan/.venv (9.1G)
+      Source: /lus/tegu/.../torchtitan-213/.venv (8.3G)
       Target: /tmp/.venv/ on 65 node(s)
-        local:  x1922c3s6b0n0 (rsync to /tmp/.venv/)
-        remote: x1921c1s2b0n0-hsn0, x1921c2s7b0n0-hsn0, ... (64 nodes)
-      Syncing (65 nodes, fanout=16)...
-        Copying to local /tmp/...
-        ✓ x1922c3s6b0n0 (local) — 213.3s
-        ✓ x1921c2s7b0n0-hsn0 — 21.6s      ← wave 1 seeds (4 nodes)
-        ✓ x1921c3s1b0n0-hsn0 — 22.0s
-        ✓ x1921c1s2b0n0-hsn0 — 22.2s
-        ✓ x1921c3s0b0n0-hsn0 — 22.4s
-        ✓ x1922c3s6b0n0-hsn0 — 1.2s
-        ✓ x1922c3s2b0n0-hsn0 — 38.0s      ← wave 2 fan-out (60 nodes)
-        ✓ x1922c0s5b0n0-hsn0 — 38.9s
+        local:  x1921c0s2b0n0 (rsync to /tmp/.venv/)
+        remote: x1921c0s2b0n0-hsn0, x1921c0s3b0n0-hsn0, x1921c0s4b0n0-hsn0, ... (64 nodes)
+      Syncing (65 nodes)...
+
+        ✓ x1921c0s2b0n0 (local, rsync) — 49.6s
+        ✓ x1921c0s2b0n0-hsn0 — 0.8s
+        ✓ x1921c0s6b0n0-hsn0 — 19.6s
+        ✓ x1921c1s5b0n0-hsn0 — 20.1s
+        ✓ x1921c1s7b0n0-hsn0 — 20.2s
         ...
-        ✓ x1921c5s2b0n0-hsn0 — 58.1s
-      Done in 293.8s
+        ✓ x1921c7s6b0n0-hsn0 — 21.2s
+      Done in 91.2s
     ```
 
     **Timing breakdown:**
 
     | Phase | Time | Notes |
     |-------|------|-------|
-    | Local copy (Lustre → `/tmp/`) | 213s | One-time, includes path patching |
-    | Wave 1 seed (4 nodes) | ~22s | rsync from local `/tmp/` |
-    | Wave 2 fan-out (60 nodes) | ~58s | 5 sources × 16 targets each |
-    | **Total** | **~294s** | 9.1 GB to 65 nodes |
+    | Local copy (Lustre → `/tmp/`) | 50s | One-time, includes path patching |
+    | Fan-out to 64 remote nodes | ~42s | Greedy, nodes become sources as they finish |
+    | **Total** | **~91s** | 8.3 GB to 65 nodes |
 
-    After wave 1, the 4 seed nodes + the original become 5 sources.
-    Wave 2 distributes to the remaining 60 nodes from all 5 sources
-    in parallel — each reading from fast node-local `/tmp/`.
+    The first 8 nodes complete in ~20s, then immediately start
+    serving as sources for the remaining nodes. No node waits
+    for others to finish — the tree grows as fast as individual
+    rsyncs complete.
 
 ### Complete workflow
 
@@ -335,5 +428,7 @@ ezpz launch python3 -m your_app.train
 ## See Also
 
 - [`ezpz launch`](./launch/index.md) — launch distributed training
+  (respects `$VIRTUAL_ENV` so it Just Works after yeet-env + activate)
 - [`ezpz.utils.yeet_env`](../python/Code-Reference/utils/yeet_env.md) — Python API reference
-- [Shell Environment](../notes/shell-environment.md) — legacy shell setup utilities
+- [Shell Environment](../notes/shell-environment.md) — `ezpz_setup_*`
+  helper functions (including `ezpz_setup_xpu` for Intel GPUs)

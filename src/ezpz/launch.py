@@ -10,6 +10,7 @@ By default, the command to be executed will be launched across _all_ nodes.
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -32,6 +33,35 @@ def _split_launch_and_command(
         idx = list(argv).index("--")
         return list(argv[:idx]), list(argv[idx + 1 :])
     return list(argv), []
+
+
+def _resolve_launch_python() -> str:
+    """Pick the python interpreter to prefix into the launch command.
+
+    Resolution order:
+
+    1. ``$VIRTUAL_ENV/bin/python3`` if it exists
+    2. ``$VIRTUAL_ENV/bin/python`` if it exists (some envs lack the
+       versioned symlink)
+    3. ``shutil.which("python3")`` — picks up conda envs and pyenv
+       shims via PATH
+    4. ``sys.executable`` — last resort
+
+    ``sys.executable`` is *intentionally* the last fallback: it's
+    frozen at interpreter startup and on HPC clusters often points
+    to a Lustre-resident venv that the user has since copied to
+    ``/tmp`` (via ``ezpz yeet-env``).  Returning that stale path
+    re-imports modules from Lustre and defeats the whole point of
+    the local copy.  Both ``$VIRTUAL_ENV/bin/python*`` and a fresh
+    ``shutil.which`` reflect the current ``activate``-d environment.
+    """
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        for name in ("python3", "python"):
+            candidate = os.path.join(venv, "bin", name)
+            if os.path.isfile(candidate):
+                return candidate
+    return shutil.which("python3") or sys.executable
 
 
 def command_exists(cmd: str) -> bool:
@@ -397,14 +427,9 @@ def build_executable(
         else (cmd_to_launch if cmd_to_launch is not None else [])
     )
     if include_python:
-        # and "python" not in str(cmd_to_launch_list[0]):
-        found_python = False
-        for part in cmd_to_launch_list:
-            if "python" in str(part):
-                found_python = True
+        found_python = any("python" in str(p) for p in cmd_to_launch_list)
         if not found_python:
-            cmd_to_launch_list.insert(0, sys.executable)
-        # cmd_to_launch_list = [sys.executable] + cmd_to_launch_list
+            cmd_to_launch_list.insert(0, _resolve_launch_python())
 
     cmd_to_launch_str = shlex.join(cmd_to_launch_list)
     logger.info("Building command to execute by piecing together:")

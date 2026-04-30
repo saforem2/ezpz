@@ -5,10 +5,18 @@ from __future__ import annotations
 import argparse
 
 
+class _RawDescAndDefaultsFormatter(
+    argparse.ArgumentDefaultsHelpFormatter,
+    argparse.RawDescriptionHelpFormatter,
+):
+    """Combine raw multi-line descriptions with auto-appended defaults."""
+
+
 def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
         prog=prog,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
             """
             ezpz test: A simple PyTorch distributed smoke test
@@ -103,16 +111,21 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default=5,
         help="Repeat iterations for the PyTorch profiler",
     )
+    # The next five flags default to True and were declared as
+    # `action="store_true"`, which made them unreachable as False —
+    # passing the flag and not passing it both produced True.
+    # BooleanOptionalAction generates the matching --no-* form so users
+    # can actually disable each one (e.g. `--no-with-stack`).
     parser.add_argument(
         "--profile-memory",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Profile memory usage",
     )
     parser.add_argument(
         "--record-shapes",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Record shapes in the profiler",
     )
     parser.add_argument(
@@ -124,19 +137,19 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument(
         "--with-stack",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include stack traces in the profiler",
     )
     parser.add_argument(
         "--with-flops",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include FLOPs in the profiler",
     )
     parser.add_argument(
         "--with-modules",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include module information in the profiler",
     )
     parser.add_argument(
@@ -263,7 +276,7 @@ def build_launch_parser(
         #         "\t$ ezpz launch --nproc 8 -x EZPZ_LOG_LEVEL=DEBUG -- python3 my_script.py --my-arg val",
         #     ]
         # )
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=_RawDescAndDefaultsFormatter,
     )
     parser.add_argument(
         "--print-source",
@@ -341,6 +354,7 @@ def build_doctor_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz doctor``."""
     parser = argparse.ArgumentParser(
         prog=prog,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Inspect the current environment for ezpz launch readiness.",
     )
     parser.add_argument(
@@ -357,6 +371,7 @@ def build_generate_parser(
     """Build the CLI argument parser for ``ezpz generate``."""
     parser = argparse.ArgumentParser(
         prog=prog,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Generate text using a model.",
     )
     parser.add_argument(

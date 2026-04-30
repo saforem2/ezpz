@@ -23,6 +23,7 @@ import ezpz
 import ezpz.distributed
 from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
+from ezpz.flops import compute_mfu, try_estimate
 from ezpz.profile import get_profiling_context
 
 START_TIME = time.perf_counter()  # start time
@@ -194,6 +195,7 @@ class Trainer:
         field(init=False, default=None)
     )
     _feature_dim: int = field(init=False, default=0)
+    _model_flops: int = field(init=False, default=0)
 
     def __post_init__(self):
         """Move the model to the target device and register logging hooks."""
@@ -201,6 +203,10 @@ class Trainer:
         self.dtype = self.config.get_torch_dtype()
         self.model.to(self.device_id)
         self.model.to(self.dtype)
+        self._model_flops = try_estimate(
+            self.model,
+            (self.config.batch_size, self.config.input_size),
+        )
         metrics_path = self.config.outdir.joinpath("metrics.jsonl")
         self.history: ezpz.history.History = ezpz.history.History(
             report_dir=self.config.outdir,
@@ -326,6 +332,12 @@ class Trainer:
         metrics, loss = self._forward_step()
         metrics["dtb"] = self._backward_step(loss)
         self.optimizer.zero_grad()
+        # Compute throughput and MFU if FLOPS were estimated
+        if self._model_flops > 0:
+            dt = metrics["dtf"] + metrics["dtb"]
+            if dt > 0:
+                metrics["tflops"] = self._model_flops / dt / 1e12
+                metrics["mfu"] = compute_mfu(self._model_flops, dt)
         if self.train_iter == self.config.train_iters:
             return metrics
         if (

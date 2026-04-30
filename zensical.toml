@@ -55,6 +55,8 @@ nav = [
         "history.md",
         "configuration.md",
         "architecture.md",
+        { "🕸️ Parallelism" = "notes/parallelism.md" },
+        { "🤖 Supported Systems" = "notes/systems.md" },
         "troubleshooting.md",
         "notes/faq.md",
         # { "Quick Start" = "quickstart.md" },
@@ -97,6 +99,7 @@ nav = [
             "examples/hf-trainer/index.md",
             { "🤗 HF Trainer Comparison" = "examples/hf-trainer/comparison.md" },
         ] },
+        { "<code>ezpz.examples.inference</code>" = "examples/inference.md" },
         { "Minimal (Synthetic) [deprecated]" = "examples/minimal.md" },
     ] },
     # ] },
@@ -109,6 +112,7 @@ nav = [
             { "<code>ezpz.configs</code>" = "python/Code-Reference/configs.md" },
             { "<code>ezpz.dist</code>" = "python/Code-Reference/dist.md" },
             { "<code>ezpz.doctor</code>" = "python/Code-Reference/doctor.md" },
+            { "<code>ezpz.flops</code>" = "python/Code-Reference/flops.md" },
             { "<code>ezpz.history</code>" = "python/Code-Reference/history.md" },
             { "<code>ezpz.integrations</code>" = "python/Code-Reference/integrations.md" },
             { "<code>ezpz.jobs</code>" = "python/Code-Reference/jobs.md" },
@@ -151,6 +155,7 @@ nav = [
                 { "<code>ezpz.examples.generate_tui</code>" = "python/Code-Reference/examples/generate_tui.md" },
                 { "<code>ezpz.examples.hf</code>" = "python/Code-Reference/examples/hf.md" },
                 { "<code>ezpz.examples.hf_trainer</code>" = "python/Code-Reference/examples/hf_trainer.md" },
+                { "<code>ezpz.examples.inference</code>" = "python/Code-Reference/examples/inference.md" },
                 { "<code>ezpz.examples.minimal</code>" = "python/Code-Reference/examples/minimal.md" },
                 { "<code>ezpz.examples.vit</code>" = "python/Code-Reference/examples/vit.md" },
             ] },
@@ -194,12 +199,8 @@ nav = [
         "notes/index.md",
         { "🖍️ Overview" = "notes/diagrams.md" },
         { "🏔️ Perlmutter" = "notes/perlmutter.md" },
-
         { "🧤 Hands-On Slides" = "notes/slides-2025-05-07.md" },
-
-        { "🕸️ Parallelism" = "notes/parallelism.md" },
         { "🏖️ Shell Environment" = "notes/shell-environment.md" },
-        { "🤖 Systems" = "notes/systems.md" },
 
         # { "WIP" = [
         #     { "🧪 Tests" = [

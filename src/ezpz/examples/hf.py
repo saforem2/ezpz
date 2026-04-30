@@ -40,6 +40,7 @@ from transformers.utils.versions import require_version
 
 import ezpz
 from ezpz.configs import HfDataTrainingArguments, HfModelArguments
+from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
 
@@ -56,6 +57,85 @@ require_version(
     "datasets>=2.14.0",
     "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt",
 )
+
+
+def _safetensors_save_errors() -> tuple[type[Exception], ...]:
+    """Exception types we accept as triggers for the safetensors retry.
+
+    Always includes (OSError, RuntimeError, ValueError) — those cover
+    the common parallel-filesystem failures (E2BIG "Argument list too
+    long" on Lustre, RuntimeError from torch save shims).  When the
+    optional ``safetensors`` library is installed we also include its
+    native ``SafetensorError`` because the rust core raises that
+    directly for header/metadata/shared-tensor failures, not OSError.
+
+    Return type is narrowed to ``Exception`` (not ``BaseException``) so
+    a future addition can't accidentally include ``SystemExit`` or
+    ``KeyboardInterrupt`` and turn the retry into an interrupt swallow.
+    """
+    errors: tuple[type[Exception], ...] = (OSError, RuntimeError, ValueError)
+    try:
+        from safetensors import SafetensorError
+    except ImportError:
+        return errors
+    return errors + (SafetensorError,)
+
+
+_SAFETENSORS_SAVE_ERRORS = _safetensors_save_errors()
+
+
+def _save_pretrained_with_fallback(
+    model: object,
+    output_dir: str,
+    *,
+    is_main_process: bool,
+    save_function: object,
+) -> None:
+    """``model.save_pretrained`` with a safetensors fallback.
+
+    First tries the default safetensors serializer; on a parallel-FS
+    failure (OSError "Argument list too long", RuntimeError from torch
+    save shims, or safetensors.SafetensorError from the rust core)
+    retries with ``safe_serialization=False``.  Genuine bugs (TypeError,
+    attribute errors, OOM) are not caught.
+
+    Used at both the mid-training epoch save and the end-of-training
+    save so a Lustre/safetensors failure mid-run doesn't crash the
+    whole job.
+    """
+    try:
+        model.save_pretrained(  # type: ignore[attr-defined]
+            output_dir,
+            is_main_process=is_main_process,
+            save_function=save_function,
+        )
+    except _SAFETENSORS_SAVE_ERRORS as e:
+        logger.warning(
+            "save_pretrained with safetensors failed (%s: %s); "
+            "retrying with safe_serialization=False",
+            type(e).__name__, e,
+        )
+        model.save_pretrained(  # type: ignore[attr-defined]
+            output_dir,
+            is_main_process=is_main_process,
+            save_function=save_function,
+            safe_serialization=False,
+        )
+
+
+def _strip_metric_prefix(summary: str, prefix: str) -> str:
+    """Drop *prefix* from metric tokens in a History summary string.
+
+    History.update() returns a space-separated string like
+    ``"train/loss=0.5 train/dt=0.1"``.  The previous implementation
+    used ``str.replace(prefix, "")`` which would mangle a metric
+    whose name contains the prefix as a substring (e.g.
+    ``cosine_train/x``).  This helper splits on whitespace and
+    only strips the prefix when it actually anchors a token.
+    """
+    return " ".join(
+        token.removeprefix(prefix) for token in summary.split()
+    )
 
 
 def parse_args(
@@ -183,6 +263,9 @@ def split_dataset(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> None:
     """Entrypoint for standalone HF causal LM fine-tuning without Trainer."""
+    import logging as _logging
+    for _noisy in ("httpx", "huggingface_hub", "filelock"):
+        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
     t0 = time.perf_counter()
     rank = ezpz.setup_torch()
     model_args, data_args, training_args = parse_args()
@@ -603,6 +686,10 @@ def main() -> None:
         else training_args.max_steps * accelerator.num_processes,
     )
 
+    _model_flops = try_estimate(
+        model, (training_args.per_device_train_batch_size, block_size),
+    )
+
     logger.info("[rank %d] calling accelerator.prepare() ...", rank)
     (
         model,
@@ -774,18 +861,26 @@ def main() -> None:
                     step_ppl = float("inf")
 
                 metrics = {
-                    "step": completed_steps,
-                    "epoch": epoch,
-                    "loss": step_loss,
-                    "perplexity": step_ppl,
-                    "learning_rate": lr_scheduler.get_last_lr()[0],
-                    "dts": t1step,
-                    "tokens_per_sec": tps,
+                    "train/step": completed_steps,
+                    "train/epoch": epoch,
+                    "train/loss": step_loss,
+                    "train/perplexity": step_ppl,
+                    "train/lr": lr_scheduler.get_last_lr()[0],
+                    "train/dt": t1step,
+                    "train/tokens_per_sec": tps,
                 }
+                if _model_flops > 0 and t1step > 0:
+                    # t1step covers the full optimizer step (data load
+                    # + forward + backward + optimizer.step + sync).
+                    metrics["train/tflops"] = _model_flops / t1step / 1e12
+                    metrics["train/mfu"] = compute_mfu(_model_flops, t1step)
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)
-                    logger.info(summary)
+                    logger.info(
+                        "[train] %s",
+                        _strip_metric_prefix(summary, "train/"),
+                    )
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
@@ -822,19 +917,20 @@ def main() -> None:
 
             avg_train_loss = float(total_loss) / max(completed_steps, 1)
             eval_metrics = {
-                "step": completed_steps,
-                "epoch": epoch,
-                "eval_loss": float(eval_loss),
-                "eval_perplexity": perplexity,
-                "train_loss": avg_train_loss,
+                "eval/step": completed_steps,
+                "eval/epoch": epoch,
+                "eval/loss": float(eval_loss),
+                "eval/perplexity": perplexity,
+                "eval/train_loss": avg_train_loss,
             }
             summary = history.update(eval_metrics)
-            logger.info(summary)
+            logger.info("[eval] %s", _strip_metric_prefix(summary, "eval/"))
 
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
             unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(
+            _save_pretrained_with_fallback(
+                unwrapped_model,
                 output_dir,
                 is_main_process=accelerator.is_main_process,
                 save_function=accelerator.save,
@@ -854,9 +950,13 @@ def main() -> None:
             output_dir = os.path.join(output_dir, output_dir)
             accelerator.save_state(output_dir)
 
+        if completed_steps >= training_args.max_steps:
+            break
+
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
-    unwrapped_model.save_pretrained(
+    _save_pretrained_with_fallback(
+        unwrapped_model,
         output_dir,
         is_main_process=accelerator.is_main_process,
         save_function=accelerator.save,

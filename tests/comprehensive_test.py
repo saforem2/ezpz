@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 def test_basic_imports():
     """Test that we can import the basic modules without environment issues."""
     # Mock the problematic imports
-    with patch("ezpz.dist.get_hostname", return_value="test-host"), patch(
+    with patch("ezpz.distributed.get_hostname", return_value="test-host"), patch(
         "ezpz.configs.get_scheduler", return_value="UNKNOWN"
     ), patch("ezpz.jobs.SCHEDULER", "UNKNOWN"):
         import ezpz
@@ -26,7 +26,7 @@ def test_basic_imports():
         assert ezpz is not None
 
 
-@patch("ezpz.dist.get_hostname", return_value="test-host")
+@patch("ezpz.distributed.get_hostname", return_value="test-host")
 @patch("ezpz.configs.get_scheduler", return_value="UNKNOWN")
 @patch("ezpz.jobs.SCHEDULER", "UNKNOWN")
 def test_version(mock_get_scheduler, mock_get_hostname):
@@ -38,7 +38,7 @@ def test_version(mock_get_scheduler, mock_get_hostname):
     assert len(ezpz.__version__) > 0
 
 
-@patch("ezpz.dist.get_hostname", return_value="test-host")
+@patch("ezpz.distributed.get_hostname", return_value="test-host")
 @patch("ezpz.configs.get_scheduler", return_value="UNKNOWN")
 @patch("ezpz.jobs.SCHEDULER", "UNKNOWN")
 def test_logger(mock_get_scheduler, mock_get_hostname):
@@ -52,7 +52,7 @@ def test_logger(mock_get_scheduler, mock_get_hostname):
     assert hasattr(logger, "debug")
 
 
-@patch("ezpz.dist.get_hostname", return_value="test-host")
+@patch("ezpz.distributed.get_hostname", return_value="test-host")
 @patch("ezpz.configs.get_scheduler", return_value="UNKNOWN")
 @patch("ezpz.jobs.SCHEDULER", "UNKNOWN")
 def test_configs_module(mock_get_scheduler, mock_get_hostname):
@@ -74,12 +74,12 @@ def test_configs_module(mock_get_scheduler, mock_get_hostname):
     assert "version" in config
 
 
-@patch("ezpz.dist.get_hostname", return_value="test-host")
+@patch("ezpz.distributed.get_hostname", return_value="test-host")
 @patch("ezpz.configs.get_scheduler", return_value="UNKNOWN")
 @patch("ezpz.jobs.SCHEDULER", "UNKNOWN")
 def test_dist_module(mock_get_scheduler, mock_get_hostname):
-    """Test dist module functionality."""
-    import ezpz.dist as dist
+    """Test distributed module functionality."""
+    import ezpz.distributed as dist
 
     # Test basic functions
     rank = dist.get_rank()
@@ -103,7 +103,7 @@ def test_dist_module(mock_get_scheduler, mock_get_hostname):
     assert device is not None
 
 
-@patch("ezpz.dist.get_hostname", return_value="test-host")
+@patch("ezpz.distributed.get_hostname", return_value="test-host")
 @patch("ezpz.configs.get_scheduler", return_value="UNKNOWN")
 @patch("ezpz.jobs.SCHEDULER", "UNKNOWN")
 def test_utils_module(mock_get_scheduler, mock_get_hostname):

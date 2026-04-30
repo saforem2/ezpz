@@ -133,7 +133,7 @@ If `NGPU_PER_HOST` is not set, these are checked in order:
 | Variable          | Default     | Description                          |
 |-------------------|-------------|--------------------------------------|
 | `WANDB_DISABLED`  | _unset_     | Disable wandb entirely               |
-| `WANDB_MODE`      | `"offline"` | `online`, `offline`, `disabled`, `shared` |
+| `WANDB_MODE`      | _unset_     | `online`, `offline`, `disabled`, `shared` (defaults to W&B's own behavior — typically `online`) |
 | `WANDB_API_KEY`   | _unset_     | API authentication key               |
 | `WANDB_PROJECT`   | _unset_     | Project name (also checks `WB_PROJECT`, `WB_PROJECT_NAME`) |
 

@@ -490,3 +490,89 @@ ezpz.cleanup()
             loss.backward()
     optimizer.step()
     ```
+
+## MFU Tracking
+
+Track Model FLOPS Utilization — what fraction of the hardware's
+peak compute your model actually uses.
+
+```python title="recipe_mfu.py"
+import time
+import torch
+import ezpz
+from ezpz.flops import try_estimate, compute_mfu
+
+rank = ezpz.setup_torch()
+device = ezpz.get_torch_device()
+
+model = torch.nn.Linear(4096, 4096).to(device)
+
+# Count FLOPS once before wrapping (FSDP/DDP breaks FlopCounterMode).
+# try_estimate is the recommended wrapper — it handles errors and
+# logs the FLOPS count on rank 0.
+model_flops = try_estimate(model, input_shape=(32, 4096))
+
+model = ezpz.wrap_model(model)
+optimizer = torch.optim.Adam(model.parameters())
+
+for step in range(100):
+    ezpz.synchronize()
+    t0 = time.perf_counter()
+    x = torch.randn(32, 4096, device=device)
+    loss = model(x).sum()
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    ezpz.synchronize()
+    dt = time.perf_counter() - t0
+
+    mfu = compute_mfu(model_flops, dt)  # per-device MFU
+    if step % 10 == 0 and rank == 0:
+        print(f"step={step} loss={loss.item():.4f} mfu={mfu:.2f}%")
+
+ezpz.cleanup()
+```
+
+`compute_mfu` returns **per-device** MFU — both `model_flops` and
+`peak_flops` are per-device quantities, so `world_size` isn't needed.
+The device's peak FLOPS is auto-detected. Supported accelerators:
+
+- **NVIDIA**: A100, H100 (SXM/NVL/PCIe), H200, B200, L40S
+- **AMD**: MI250X, MI300X, MI325X, MI355X
+- **Intel**: Data Center GPU Max 1550 (PVC, computed dynamically)
+
+For unrecognized devices `compute_mfu` returns `0.0` (with a warning).
+
+!!! warning "When `try_estimate` is *not* enough"
+
+    The recipe above measures FLOPS once at startup with a fixed
+    `(batch_size, seq_len)` shape and re-uses that count for every
+    step.  This is fine for the recipe (a fixed-shape `nn.Linear`
+    workload) but **breaks for two important cases**:
+
+    1. **Variable sequence length** — attention is `O(seq²)` but the
+       startup count is for a single shape; a batch of shorter
+       sequences will report MFU that's too high, longer sequences
+       too low.
+    2. **Autoregressive generation** — multiplying by `n_new_tokens`
+       ignores KV-cache savings (over-counts) and growing context
+       (under-counts).  In practice this routinely produces MFU
+       values >100%.
+
+    For these cases, measure exact FLOPS per step via
+    `FlopCounterMode`.  See [`ezpz.examples.inference`'s
+    `--flops` flag](examples/inference.md#mfu-tracking-opt-in) for
+    the pattern: opt-in measurement, ~15-40% per-step overhead,
+    optional `--flops-every-n-steps N` to amortize the cost.
+
+!!! tip "When to use MFU"
+
+    MFU measures compute efficiency, not communication efficiency.
+    Low MFU can mean:
+
+    - **Memory-bound model** — the model doesn't have enough compute
+      per byte of data movement (e.g. small batch size)
+    - **Communication overhead** — gradient all-reduce takes too long
+      (try FSDP or reduce world size)
+    - **Kernel launch overhead** — too many small ops (try
+      `torch.compile`)

@@ -392,3 +392,62 @@ class TestKillExistingProcesses:
         rc = launch.kill_existing_processes(filters=["some_filter"])
         capsys.readouterr()
         assert rc == 1  # reflects pkill's non-zero exit, but no exception
+
+
+class TestResolveLaunchPython:
+    """Tests for ``_resolve_launch_python``.
+
+    sys.executable is intentionally the last fallback because on
+    HPC clusters it tends to be a stale Lustre path even after a
+    yeet-env copy to /tmp.
+    """
+
+    def test_uses_virtual_env_python3(self, tmp_path, monkeypatch):
+        venv = tmp_path / "venv"
+        bin_dir = venv / "bin"
+        bin_dir.mkdir(parents=True)
+        py3 = bin_dir / "python3"
+        py3.touch()
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+        result = launch._resolve_launch_python()
+        assert result == str(py3)
+
+    def test_falls_back_to_python_when_python3_missing(
+        self, tmp_path, monkeypatch,
+    ):
+        """Some venvs only have `python`, not `python3`."""
+        venv = tmp_path / "venv"
+        bin_dir = venv / "bin"
+        bin_dir.mkdir(parents=True)
+        py = bin_dir / "python"
+        py.touch()
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+        result = launch._resolve_launch_python()
+        assert result == str(py)
+
+    def test_does_not_return_sys_executable_when_venv_broken(
+        self, tmp_path, monkeypatch,
+    ):
+        """If $VIRTUAL_ENV is set but bin/ is empty, prefer PATH lookup
+        over sys.executable (the latter may be the stale Lustre path).
+        """
+        venv = tmp_path / "venv"
+        (venv / "bin").mkdir(parents=True)  # empty
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+
+        sentinel = "/usr/local/bin/python3-from-path"
+        monkeypatch.setattr(launch.shutil, "which", lambda _: sentinel)
+        result = launch._resolve_launch_python()
+        assert result == sentinel
+
+    def test_unset_virtual_env_uses_path(self, monkeypatch):
+        monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+        sentinel = "/usr/local/bin/python3-from-path"
+        monkeypatch.setattr(launch.shutil, "which", lambda _: sentinel)
+        assert launch._resolve_launch_python() == sentinel
+
+    def test_last_resort_sys_executable(self, monkeypatch):
+        """No VIRTUAL_ENV and no PATH match → sys.executable."""
+        monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+        monkeypatch.setattr(launch.shutil, "which", lambda _: None)
+        assert launch._resolve_launch_python() == launch.sys.executable
