@@ -565,13 +565,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 metrics["tokens_scored"] = batch_token_scored
             if _model_flops_fwd > 0 and dt > 0:
                 # FLOPS accounting differs between modes:
-                # - eval_unlabeled: ONE forward pass over the full batch
-                #   (try_estimate was called with (batch_size, max_input_tokens),
-                #   so _model_flops_fwd already represents that single pass)
+                # - eval_unlabeled: ONE forward pass over the actual
+                #   batch.  try_estimate was called with the *max* shape
+                #   (batch_size, max_input_tokens), so we scale down by
+                #   the actual input-token count to avoid overstating
+                #   work on shorter sequences (which would push MFU
+                #   above 100%).
                 # - generate / benchmark: ONE forward pass per generated
-                #   token (autoregressive), so multiply by n_new
+                #   token (autoregressive), so multiply by n_new.
                 if eval_unlabeled:
-                    step_flops = _model_flops_fwd
+                    max_in = max(args.batch_size * args.max_input_tokens, 1)
+                    actual_in = max(n_in, 1)
+                    step_flops = _model_flops_fwd * (actual_in / max_in)
                 else:
                     step_flops = _model_flops_fwd * max(n_new, 1)
                 metrics["tflops"] = step_flops / dt / 1e12
