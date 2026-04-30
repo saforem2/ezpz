@@ -59,6 +59,21 @@ require_version(
 )
 
 
+def _strip_metric_prefix(summary: str, prefix: str) -> str:
+    """Drop *prefix* from metric tokens in a History summary string.
+
+    History.update() returns a space-separated string like
+    ``"train/loss=0.5 train/dt=0.1"``.  The previous implementation
+    used ``str.replace(prefix, "")`` which would mangle a metric
+    whose name contains the prefix as a substring (e.g.
+    ``cosine_train/x``).  This helper splits on whitespace and
+    only strips the prefix when it actually anchors a token.
+    """
+    return " ".join(
+        token.removeprefix(prefix) for token in summary.split()
+    )
+
+
 def parse_args(
     ) -> tuple[HfModelArguments, HfDataTrainingArguments, TrainingArguments]:
     """Parse Hugging Face model, data, and training arguments.
@@ -800,7 +815,7 @@ def main() -> None:
                     summary = history.update(metrics)
                     logger.info(
                         "[train] %s",
-                        summary.replace("train/", ""),
+                        _strip_metric_prefix(summary, "train/"),
                     )
 
             if isinstance(checkpointing_steps, int):
@@ -845,7 +860,7 @@ def main() -> None:
                 "eval/train_loss": avg_train_loss,
             }
             summary = history.update(eval_metrics)
-            logger.info("[eval] %s", summary.replace("eval/", ""))
+            logger.info("[eval] %s", _strip_metric_prefix(summary, "eval/"))
 
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
@@ -881,10 +896,18 @@ def main() -> None:
             is_main_process=accelerator.is_main_process,
             save_function=accelerator.save,
         )
-    except Exception as e:
-        # safetensors can fail on some parallel filesystems (e.g. Lustre)
-        # with "Argument list too long" — retry without safe serialization
-        logger.warning("save_pretrained failed (%s), retrying with safe_serialization=False", e)
+    except (OSError, RuntimeError, ValueError) as e:
+        # safetensors hits OSError "Argument list too long" or
+        # RuntimeError on some parallel filesystems (Lustre with
+        # large state dicts).  Narrow the catch so genuine bugs
+        # (TypeError, attribute errors, OOM-derived exceptions) keep
+        # propagating instead of being silently retried under a
+        # different serializer that may then fail too.
+        logger.warning(
+            "save_pretrained with safetensors failed (%s: %s); "
+            "retrying with safe_serialization=False",
+            type(e).__name__, e,
+        )
         unwrapped_model.save_pretrained(
             output_dir,
             is_main_process=accelerator.is_main_process,
