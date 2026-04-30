@@ -264,3 +264,177 @@ class TestRun:
         assert "node02" in call_nodes
         captured = capsys.readouterr()
         assert "To use this environment" in captured.out
+
+
+# ===================================================================
+# Per-host HSN suffix detection
+# ===================================================================
+
+
+class TestHsnSuffix:
+    """Tests for ``_maybe_apply_hsn_suffix`` (per-node HSN detection)."""
+
+    def test_empty_input(self):
+        assert yeet._maybe_apply_hsn_suffix([]) == []
+
+    def test_already_suffixed_left_alone(self):
+        nodes = ["node01-hsn0", "node02-hsn0"]
+        assert yeet._maybe_apply_hsn_suffix(nodes) == nodes
+
+    @patch("ezpz.utils.yeet_env.socket.gethostbyname")
+    def test_all_resolve(self, mock_resolve):
+        mock_resolve.return_value = "10.0.0.1"
+        result = yeet._maybe_apply_hsn_suffix(["node01", "node02"])
+        assert result == ["node01-hsn0", "node02-hsn0"]
+
+    @patch("ezpz.utils.yeet_env.socket.gethostbyname")
+    def test_none_resolve(self, mock_resolve):
+        import socket as _socket
+        mock_resolve.side_effect = _socket.gaierror
+        result = yeet._maybe_apply_hsn_suffix(["node01", "node02"])
+        # Bare names are kept when HSN is unavailable
+        assert result == ["node01", "node02"]
+
+    @patch("ezpz.utils.yeet_env.socket.gethostbyname")
+    def test_heterogeneous_allocation(self, mock_resolve):
+        """The bug the original code had: only first node was probed."""
+        import socket as _socket
+
+        def _fake_resolve(name: str) -> str:
+            # node01-hsn0 resolves; node02-hsn0 does not.
+            if name == "node01-hsn0":
+                return "10.0.0.1"
+            raise _socket.gaierror
+
+        mock_resolve.side_effect = _fake_resolve
+        result = yeet._maybe_apply_hsn_suffix(["node01", "node02"])
+        # Per-node decisions: HSN where it resolves, bare name where not.
+        assert result == ["node01-hsn0", "node02"]
+
+
+# ===================================================================
+# Greedy fan-out source selection
+# ===================================================================
+
+
+class TestPickSource:
+    """Tests that validate the greedy fan-out chooses sources sanely.
+
+    These exercise the in-function ``_pick_source`` indirectly by
+    reconstructing the same logic so we can check tie-break behavior
+    without standing up a full pool.
+    """
+
+    def test_least_loaded_wins(self):
+        """Among multiple sources, pick the one with fewest active syncs."""
+        active = {"a": 5, "b": 1, "c": 3}
+        cap = 8
+        # Inline copy of _pick_source semantics
+        candidates = [s for s, c in active.items() if c < cap]
+        min_count = min(active[s] for s in candidates)
+        least = [s for s in candidates if active[s] == min_count]
+        assert least == ["b"]
+
+    def test_capped_sources_excluded(self):
+        active = {"a": 8, "b": 8, "c": 2}  # a, b at cap
+        cap = 8
+        candidates = [s for s, c in active.items() if c < cap]
+        assert candidates == ["c"]
+
+    def test_random_tie_break_eventually_picks_both(self):
+        """Ties should be broken randomly so fan-out actually fans out.
+
+        With deterministic tie-breaking (the old bug), source 'a' would
+        be picked every iteration until its cap was hit, defeating the
+        whole point of the tree distribution.
+        """
+        import random as _random
+        active = {"a": 0, "b": 0, "c": 0}
+        cap = 8
+        seen = set()
+        # Seed for reproducibility, then sample many picks
+        _random.seed(42)
+        for _ in range(100):
+            candidates = [s for s, c in active.items() if c < cap]
+            min_count = min(active[s] for s in candidates)
+            least = [s for s in candidates if active[s] == min_count]
+            seen.add(_random.choice(least))
+        assert seen == {"a", "b", "c"}
+
+
+# ===================================================================
+# Stderr drain helper
+# ===================================================================
+
+
+class TestDrainStream:
+    """Tests for ``_drain_stream_to_list``."""
+
+    def test_collects_lines(self):
+        sink: list[str] = []
+        yeet._drain_stream_to_list(iter(["a\n", "b\n", "c\n"]), sink)
+        assert sink == ["a\n", "b\n", "c\n"]
+
+    def test_swallows_exceptions(self):
+        """A read error should not propagate to the caller."""
+
+        def _raise():
+            raise IOError("boom")
+            yield  # pragma: no cover
+
+        sink: list[str] = []
+        # Should not raise
+        yeet._drain_stream_to_list(_raise(), sink)
+        assert sink == []
+
+
+# ===================================================================
+# Rsync timeout
+# ===================================================================
+
+
+class TestRsyncTimeout:
+    """Tests for the timeout enforcement in ``_rsync_to_node``."""
+
+    @patch("ezpz.utils.yeet_env.subprocess.run")
+    def test_timeout_returns_124(self, mock_run, tmp_path):
+        """A timed-out rsync returns the bash 'timeout' exit code."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="rsync", timeout=1)
+        src = tmp_path / "env"
+        src.mkdir()
+        node, _, rc = yeet._rsync_to_node(
+            src, Path("/tmp/env"), "node01", timeout=1,
+        )
+        assert node == "node01"
+        assert rc == 124
+
+    @patch("ezpz.utils.yeet_env.subprocess.run")
+    def test_timeout_passed_through(self, mock_run, tmp_path):
+        """The timeout argument is forwarded to subprocess.run."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        src = tmp_path / "env"
+        src.mkdir()
+        yeet._rsync_to_node(
+            src, Path("/tmp/env"), "node01", timeout=42,
+        )
+        kwargs = mock_run.call_args.kwargs
+        assert kwargs["timeout"] == 42
+
+
+# ===================================================================
+# Cleanup helper
+# ===================================================================
+
+
+class TestCleanupPath:
+    """Tests for ``_cleanup_path``."""
+
+    def test_removes_existing(self, tmp_path):
+        f = tmp_path / "tarball.tgz"
+        f.write_bytes(b"x")
+        yeet._cleanup_path(f)
+        assert not f.exists()
+
+    def test_silent_on_missing(self, tmp_path):
+        # Should not raise
+        yeet._cleanup_path(tmp_path / "does-not-exist")

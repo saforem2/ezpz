@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import random
 import shlex
 import socket
 import subprocess
@@ -177,6 +178,10 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                     hf_path = Path(f"/tmp/_ezpz_hostfile_{job_id}")
                     hf_path.write_text("\n".join(nodes) + "\n")
                     hf = str(hf_path)
+                    # Register cleanup so we don't leave per-job
+                    # hostfiles littering /tmp across runs.
+                    import atexit
+                    atexit.register(_cleanup_path, hf_path)
             except Exception:
                 pass
 
@@ -203,25 +208,66 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
             unique.append(short)
 
     # If hostnames don't already have -hsn0, check if the HSN
-    # (high-speed network) interface resolves and prefer it.
-    # On Aurora the hostfile has bare names but ssh works much
-    # faster via the HSN interface (Slingshot vs management network).
-    if unique and not unique[0].endswith("-hsn0"):
-        sample = unique[0] + "-hsn0"
-        try:
-            socket.gethostbyname(sample)
-            # HSN resolves — append -hsn0 to all hostnames
-            unique = [n + "-hsn0" for n in unique]
-            logger.info("Using HSN interface (-hsn0 suffix)")
-        except (socket.gaierror, OSError):
-            pass  # HSN not available, use bare names
+    # (high-speed network) interface resolves per-node.  On Aurora
+    # the hostfile has bare names but ssh works much faster via the
+    # HSN interface (Slingshot vs management network).
+    #
+    # Probe each node individually rather than trusting the first
+    # one — a heterogeneous allocation could mix HSN-equipped and
+    # non-HSN nodes, and we'd otherwise route everyone through a
+    # nonexistent -hsn0 NIC.  Use a small thread pool so DNS
+    # resolution doesn't dominate startup at scale.
+    return _maybe_apply_hsn_suffix(unique)
 
-    return unique
+
+def _maybe_apply_hsn_suffix(nodes: list[str]) -> list[str]:
+    """Per-node: append ``-hsn0`` to each node whose HSN NIC resolves.
+
+    Nodes that already carry the suffix are left alone.  Nodes that
+    don't have an HSN entry in DNS keep their bare name — mixing both
+    forms is fine because the rsync/ssh pipeline addresses each node
+    independently.
+    """
+    if not nodes:
+        return nodes
+
+    def _probe(name: str) -> str:
+        if name.endswith("-hsn0"):
+            return name
+        try:
+            socket.gethostbyname(name + "-hsn0")
+            return name + "-hsn0"
+        except (socket.gaierror, OSError):
+            return name
+
+    # Cap the probe pool so we don't spawn a thread per host on a
+    # 1000-node allocation.  DNS is fast; 16 threads are plenty.
+    with ThreadPoolExecutor(max_workers=min(16, len(nodes))) as pool:
+        resolved = list(pool.map(_probe, nodes))
+
+    upgraded = sum(
+        1 for orig, new in zip(nodes, resolved) if new != orig
+    )
+    if upgraded:
+        logger.info(
+            "HSN interface available on %d/%d nodes (-hsn0 suffix)",
+            upgraded, len(nodes),
+        )
+    return resolved
 
 
 def _get_current_hostname() -> str:
     """Return the short hostname of the current node."""
     return socket.getfqdn().split(".")[0]
+
+
+def _cleanup_path(path: Path) -> None:
+    """Best-effort unlink; swallow errors (used from atexit/finally)."""
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
 
 
 # ── Progress indicator ────────────────────────────────────────────────────────
@@ -412,6 +458,28 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
             pass
 
 
+# Per-rsync wallclock cap.  A single dead/unreachable node should not
+# block the whole pool slot indefinitely — if a sync exceeds this, the
+# subprocess is killed and the node reported as failed.  3600s (1h)
+# accommodates large envs over slow links; bump via env var if needed.
+_DEFAULT_RSYNC_TIMEOUT = float(os.environ.get("EZPZ_YEET_RSYNC_TIMEOUT", "3600"))
+
+
+def _drain_stream_to_list(stream: object, sink: list[str]) -> None:
+    """Read *stream* line-by-line into *sink* until EOF.
+
+    Used to drain a child's stderr in a background thread so the
+    child can never block on a full pipe buffer (default ~64KB on
+    Linux).  Errors during read are swallowed: we'd rather lose
+    diagnostic output than crash the parent.
+    """
+    try:
+        for line in stream:  # type: ignore[attr-defined]
+            sink.append(line)
+    except Exception:
+        pass
+
+
 def _rsync_to_node(
     src: Path,
     dst: Path,
@@ -420,6 +488,7 @@ def _rsync_to_node(
     from_node: str | None = None,
     local: bool = False,
     progress_callback: object | None = None,
+    timeout: float | None = None,
 ) -> tuple[str, float, int]:
     """Rsync *src* to *node*:*dst*, optionally from a remote source.
 
@@ -432,11 +501,15 @@ def _rsync_to_node(
             transfer, exclude ``__pycache__``.
         progress_callback: If provided, called with ``(pct, speed, eta)``
             strings parsed from ``rsync --info=progress2`` output.
+        timeout: Wallclock cap (seconds).  Defaults to
+            ``EZPZ_YEET_RSYNC_TIMEOUT`` (3600).  Pass ``0`` to disable.
 
     Returns ``(node, elapsed_seconds, returncode)``.
     """
     src_str = str(src).rstrip("/") + "/"
     t0 = time.perf_counter()
+    if timeout is None:
+        timeout = _DEFAULT_RSYNC_TIMEOUT
 
     if local:
         # Local copy: skip metadata sync (-t, -p, -g, -o are slow),
@@ -461,28 +534,52 @@ def _rsync_to_node(
             dst_str,
         ]
 
-    # If source is a remote node, wrap the rsync in an SSH call
+    # If source is a remote node, wrap the rsync in an SSH call.
+    # ConnectTimeout gives us a fast fail when a node is unreachable;
+    # ServerAliveInterval probes for hung sessions on long transfers.
     if from_node is not None:
-        cmd = ["ssh", from_node, shlex.join(rsync_cmd)]
+        ssh_cmd = [
+            "ssh",
+            "-o", "ConnectTimeout=10",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=3",
+            from_node,
+            shlex.join(rsync_cmd),
+        ]
+        cmd = ssh_cmd
     else:
         cmd = rsync_cmd
 
+    stderr_lines: list[str] = []
+    timed_out = False
+
     if progress_callback is not None:
-        # Stream output line-by-line to parse progress
-        with subprocess.Popen(
+        # Stream stdout line-by-line to parse progress.  Critically,
+        # stderr must be drained on a separate thread — otherwise a
+        # noisy rsync can fill the pipe buffer and deadlock both
+        # processes (the child blocks on stderr write, the parent
+        # blocks waiting for stdout to close).
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-        ) as proc:
-            assert proc.stdout is not None
+        )
+        assert proc.stdout is not None and proc.stderr is not None
+        stderr_thread = threading.Thread(
+            target=_drain_stream_to_list,
+            args=(proc.stderr, stderr_lines),
+            daemon=True,
+        )
+        stderr_thread.start()
+        try:
             for line in proc.stdout:
                 # rsync --info=progress2 output looks like:
                 #   1.23G  14%   45.67MB/s    0:03:12
-                line = line.strip()
-                if "%" in line:
-                    parts = line.split()
+                stripped = line.strip()
+                if "%" in stripped:
+                    parts = stripped.split()
                     pct = ""
                     speed = ""
                     eta = ""
@@ -494,22 +591,63 @@ def _rsync_to_node(
                         elif ":" in p and p[0].isdigit():
                             eta = p
                     progress_callback(pct, speed, eta)  # type: ignore[operator]
-            # Read stderr before the context manager closes it
-            stderr = proc.stderr.read() if proc.stderr else ""
-        returncode = proc.returncode or 0
+                # Bail early if the deadline passed mid-transfer
+                if timeout and (time.perf_counter() - t0) > timeout:
+                    timed_out = True
+                    break
+        except Exception as exc:
+            logger.debug("rsync stdout reader for %s aborted: %s", node, exc)
+        if timed_out:
+            proc.kill()
+        try:
+            proc.wait(timeout=timeout if timeout else None)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            timed_out = True
+        stderr_thread.join(timeout=5)
+        # Best-effort cleanup of pipes — Popen would normally do this
+        # via its context manager, but we abandoned that pattern in
+        # favor of explicit timeout handling.
+        for stream in (proc.stdout, proc.stderr):
+            try:
+                stream.close()  # type: ignore[union-attr]
+            except Exception:
+                pass
+        returncode = proc.returncode if proc.returncode is not None else 1
     else:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=False,
-        )
-        returncode = result.returncode
-        stderr = result.stderr
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout if timeout else None,
+            )
+            returncode = result.returncode
+            if result.stderr:
+                stderr_lines.append(result.stderr)
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            returncode = 124  # bash convention for "timed out"
+            if exc.stderr:
+                if isinstance(exc.stderr, bytes):
+                    stderr_lines.append(exc.stderr.decode(errors="replace"))
+                else:
+                    stderr_lines.append(exc.stderr)
+
+    stderr = "".join(stderr_lines)
 
     # rsync exit 24 = "some files vanished before they could be transferred"
     # This is normal when concurrent rsyncs read from the same /tmp/ source
     # while temporary files (e.g. triton plugin builds) come and go.
     if returncode == 24:
         returncode = 0
-    if returncode != 0:
+    if timed_out:
+        logger.warning(
+            "rsync to %s timed out after %.0fs", node, timeout,
+        )
+    elif returncode != 0:
         logger.warning(
             "rsync to %s failed (exit %d): %s",
             node,
@@ -731,11 +869,16 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 logger.warning("cp tarball failed: %s", stderr.strip())
                 local_elapsed = time.perf_counter() - _local_t0
                 local_rc = cp_proc.returncode or 1
+                # Partial copy may have left a truncated tarball behind
+                _cleanup_path(local_tarball)
             else:
                 # Step 2: extract into dst
                 if dst.exists() and not _safe_rmtree(dst):
                     local_elapsed = time.perf_counter() - _local_t0
                     local_rc = 1
+                    # We never started extracting, but the local
+                    # tarball still needs cleanup.
+                    _cleanup_path(local_tarball)
                 else:
                     dst.mkdir(parents=True, exist_ok=True)
                     _spinner(f"extracting {local_tarball.name} → {dst}/")
@@ -753,12 +896,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     if local_rc != 0:
                         stderr = (tar_extract.stderr.read() or b"").decode()
                         logger.warning("tar extract failed: %s", stderr.strip())
+                        # Half-extracted dst is unusable — drop it
+                        _safe_rmtree(dst)
 
-                # Clean up the local tarball copy
-                try:
-                    local_tarball.unlink()
-                except OSError:
-                    pass
+                    # Always clean up the local tarball copy whether
+                    # extraction succeeded or failed.
+                    _cleanup_path(local_tarball)
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
 
@@ -789,6 +932,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 logger.warning("tar create failed: %s", stderr.strip())
                 local_elapsed = time.perf_counter() - _local_t0
                 local_rc = tar_create.returncode or 1
+                # Partial archive: don't ship a corrupt tarball.
+                _cleanup_path(tarball)
             else:
                 # Show tarball size
                 try:
@@ -801,6 +946,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 if dst.exists() and not _safe_rmtree(dst):
                     local_elapsed = time.perf_counter() - _local_t0
                     local_rc = 1
+                    _cleanup_path(tarball)
                 else:
                     dst.mkdir(parents=True, exist_ok=True)
                     _spinner(f"extracting {tarball.name} → {dst}/")
@@ -818,12 +964,9 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     if local_rc != 0:
                         stderr = (tar_extract.stderr.read() or b"").decode()
                         logger.warning("tar extract failed: %s", stderr.strip())
-
-                # Clean up tarball
-                try:
-                    tarball.unlink()
-                except OSError:
-                    pass
+                        # Half-extracted dst is unusable — drop it
+                        _safe_rmtree(dst)
+                    _cleanup_path(tarball)
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
 
@@ -851,6 +994,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 stderr = (cp_proc.stderr.read() or b"").decode()
                 if local_rc != 0:
                     logger.warning("cp failed (exit %d): %s", local_rc, stderr.strip())
+                    # Half-copied dst is unusable — drop it
+                    _safe_rmtree(dst)
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
 
@@ -895,14 +1040,22 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     source_lock = threading.Lock()
 
     def _pick_source() -> str | None:
-        """Pick the source with the fewest active rsyncs, if under cap."""
-        best: str | None = None
-        best_count = MAX_PER_SOURCE + 1
-        for s, count in source_active.items():
-            if count < MAX_PER_SOURCE and count < best_count:
-                best = s
-                best_count = count
-        return best
+        """Pick a least-loaded source under the per-source cap.
+
+        Ties broken randomly so the greedy fan-out actually fans out
+        — without this, ``dict.items()`` order would always pick the
+        same source first, pinning all early traffic to ``current``
+        and defeating the tree distribution.
+        """
+        candidates = [
+            s for s, count in source_active.items()
+            if count < MAX_PER_SOURCE
+        ]
+        if not candidates:
+            return None
+        min_count = min(source_active[s] for s in candidates)
+        least_loaded = [s for s in candidates if source_active[s] == min_count]
+        return random.choice(least_loaded)
 
     def _submit_work(pool: ThreadPoolExecutor, futures: dict) -> None:  # type: ignore[type-arg]
         """Submit as many rsyncs as sources allow."""
