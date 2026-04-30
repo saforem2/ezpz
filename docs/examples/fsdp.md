@@ -87,29 +87,8 @@ compare FSDP overhead at different model sizes without manually tuning
 individual flags. Any CLI flag the user passes explicitly overrides the
 preset value.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="71"
-MODEL_PRESETS = {
-    "debug": {
-        "conv1_channels": 8,
-        "conv2_channels": 16,
-        "fc_dim": 64,
-    },
-    "small": {
-        "conv1_channels": 16,
-        "conv2_channels": 32,
-        "fc_dim": 128,
-    },
-    "medium": {
-        "conv1_channels": 32,
-        "conv2_channels": 64,
-        "fc_dim": 256,
-    },
-    "large": {
-        "conv1_channels": 64,
-        "conv2_channels": 128,
-        "fc_dim": 512,
-    },
-}
+```python title="src/ezpz/examples/fsdp.py:66:87"
+--8<-- "src/ezpz/examples/fsdp.py:66:87"
 ```
 
 </details>
@@ -120,58 +99,8 @@ A two-layer convolutional network with dropout and two fully connected
 layers. `_feature_size` computes the flattened dimension after convolutions
 and pooling so the first linear layer is sized correctly.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="100"
-class Net(nn.Module):
-    """Simple CNN classifier used in the FSDP example."""
-
-    def __init__(
-        self,
-        num_classes: int = 10,
-        img_size: int = 28,
-        conv1_channels: int = 32,
-        conv2_channels: int = 64,
-        fc_dim: int = 128,
-    ):
-        """Initialize convolutional and fully connected layers.
-
-        Args:
-            num_classes: Number of output classes for the classifier.
-            img_size: Input image size (assumes square inputs).
-            conv1_channels: Number of output channels for conv1.
-            conv2_channels: Number of output channels for conv2.
-            fc_dim: Hidden dimension for the first fully connected layer.
-        """
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, conv1_channels, 3, 1)
-        self.conv2 = nn.Conv2d(conv1_channels, conv2_channels, 3, 1)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
-        feature_size = self._feature_size(img_size, conv2_channels)
-        self.fc1 = nn.Linear(feature_size, fc_dim)
-        self.fc2 = nn.Linear(fc_dim, num_classes)
-
-    @staticmethod
-    def _feature_size(img_size: int, conv2_channels: int) -> int:
-        conv1_size = img_size - 2
-        conv2_size = conv1_size - 2
-        pooled_size = conv2_size // 2
-        return conv2_channels * pooled_size * pooled_size
-
-    def forward(self, x):
-        """Compute logits for input images."""
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2)
-        x = self.dropout1(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.dropout2(x)
-        x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output
+```python title="src/ezpz/examples/fsdp.py:95:145"
+--8<-- "src/ezpz/examples/fsdp.py:95:145"
 ```
 
 </details>
@@ -182,57 +111,8 @@ Runs one training epoch, accumulating loss across batches. After the loop,
 `dist.all_reduce` sums the loss and sample count across all ranks so every
 worker sees the global average.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="153"
-@ezpz.timeitlogit(rank=ezpz.get_rank())
-def train(
-    model: nn.Module | DistributedDataParallel | FSDP,
-    train_loader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    epoch: int,
-    sampler: DistributedSampler | None = None,
-) -> dict:
-    """One epoch of training and loss aggregation across ranks.
-
-    Args:
-        model: Wrapped model (DDP/FSDP).
-        train_loader: Dataloader for training set.
-        optimizer: Optimizer instance.
-        epoch: Current epoch index.
-        sampler: Optional distributed sampler to set epoch.
-
-    Returns:
-        Dict with epoch, wall-clock duration, and averaged train loss.
-    """
-    device_type = ezpz.distributed.get_torch_device_type()
-    device = (
-        torch.device("cpu")
-        if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
-    )
-    model.train()
-    ddp_loss = torch.zeros(2).to(device)
-    if sampler:
-        sampler.set_epoch(epoch)
-    ezpz.distributed.synchronize()
-    t0 = time.perf_counter()
-    batch, target = next(iter(train_loader))
-    for _, (batch, target) in enumerate(train_loader):
-        batch, target = batch.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(batch)
-        loss = F.nll_loss(output, target, reduction="sum")
-        loss.backward()
-        optimizer.step()
-        ddp_loss[0] += loss.item()
-        ddp_loss[1] += len(batch)
-    ezpz.distributed.synchronize()
-    t1 = time.perf_counter()
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
-    return {
-        "epoch": epoch,
-        "dt": t1 - t0,
-        "train_loss": ddp_loss[0] / ddp_loss[1],
-    }
+```python title="src/ezpz/examples/fsdp.py:148:201"
+--8<-- "src/ezpz/examples/fsdp.py:148:201"
 ```
 
 </details>
@@ -243,38 +123,8 @@ Evaluates the model on validation data with gradients disabled. Tracks
 loss, correct predictions, and total samples, then all-reduces across
 ranks.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="205"
-@ezpz.timeitlogit(rank=ezpz.get_rank())
-def test(model, test_loader):
-    """Evaluate model on validation data and gather metrics."""
-    device_type = ezpz.distributed.get_torch_device_type()
-    device = (
-        torch.device("cpu")
-        if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
-    )
-    model.eval()
-    # correct = 0
-    ddp_loss = torch.zeros(3).to(device)
-    with torch.no_grad():
-        for batch, target in test_loader:
-            batch, target = batch.to(device), target.to(device)
-            output = model(batch)
-            ddp_loss[0] += F.nll_loss(output, target, reduction="sum")
-            pred = output.argmax(
-                dim=1, keepdim=True
-            )  # get the index of the max log-probability
-            ddp_loss[1] += pred.eq(target.view_as(pred)).sum()
-            ddp_loss[2] += len(batch)
-
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
-
-    test_loss = ddp_loss[0] / ddp_loss[2]
-
-    return {
-        "test_loss": test_loss,
-        "test_acc": 100.0 * ddp_loss[1] / ddp_loss[2],
-    }
+```python title="src/ezpz/examples/fsdp.py:204:234"
+--8<-- "src/ezpz/examples/fsdp.py:204:234"
 ```
 
 </details>
@@ -285,60 +135,8 @@ Creates the `Net` model, wraps it with `FullyShardedDataParallel` using
 mixed-precision settings, and returns the model, optimizer, and LR
 scheduler.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="238"
-def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
-    """Create the FSDP-wrapped model, optimizer, and LR scheduler."""
-    device_type = ezpz.distributed.get_torch_device_type()
-    device = (
-        torch.device("cpu")
-        if device_type == "cpu"
-        else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
-    )
-    if args.dataset == "MNIST":
-        num_classes = 10
-        img_size = 28
-    elif args.dataset == "OpenImages":
-        num_classes = 600
-        img_size = 224
-    elif args.dataset == "ImageNet":
-        num_classes = 1000
-        img_size = 224
-    elif args.dataset == "ImageNet1k":
-        num_classes = 1000
-        img_size = 224
-    else:
-        raise ValueError(f"Unsupported dataset: {args.dataset}")
-    model = Net(
-        num_classes=num_classes,
-        img_size=img_size,
-        conv1_channels=args.conv1_channels,
-        conv2_channels=args.conv2_channels,
-        fc_dim=args.fc_dim,
-    ).to(device)
-    logger.info(f"\n{summarize_model(model, verbose=False, depth=2)}")
-    dtypes = {
-        "fp16": torch.float16,
-        "bf16": torch.bfloat16,
-        "bfloat16": torch.bfloat16,
-        "fp32": torch.float32,
-    }
-    dtype = dtypes[args.dtype]
-    model = FSDP(
-        model,
-        device_id=device,
-        mixed_precision=MixedPrecision(
-            param_dtype=dtype,
-            cast_forward_inputs=True,
-        ),
-    )
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    logger.info(f"{model=}")
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
-    return {
-        "model": model,
-        "optimizer": optimizer,
-        "scheduler": scheduler,
-    }
+```python title="src/ezpz/examples/fsdp.py:237:291"
+--8<-- "src/ezpz/examples/fsdp.py:237:291"
 ```
 
 </details>
@@ -349,61 +147,8 @@ Dispatches to dataset-specific loaders (`get_mnist`, `get_imagenet1k`,
 `get_openimages`, `get_imagenet`) from `ezpz.data.vision` based on the
 `--dataset` flag.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="293"
-def get_data(args: argparse.Namespace) -> dict:
-    """Load train/test datasets according to args.dataset."""
-    data_prefix_fallback = Path(os.getcwd()).joinpath(
-        ".cache", "ezpz", "data", f"{args.dataset.lower()}"
-    )
-    data_prefix = args.data_prefix or data_prefix_fallback
-    if args.dataset == "MNIST":
-        from ezpz.data.vision import get_mnist
-
-        data = get_mnist(
-            outdir=Path(data_prefix),
-            train_batch_size=args.batch_size,
-            test_batch_size=args.test_batch_size,
-            pin_memory=True,
-            num_workers=args.num_workers,
-        )
-
-    elif args.dataset == "ImageNet1k":
-        from ezpz.data.vision import get_imagenet1k
-
-        data = get_imagenet1k(
-            outdir=Path(data_prefix),
-            train_batch_size=args.batch_size,
-            test_batch_size=args.test_batch_size,
-            pin_memory=True,
-            num_workers=args.num_workers,
-        )
-
-    elif args.dataset == "OpenImages":
-        from ezpz.data.vision import get_openimages
-
-        data = get_openimages(
-            outdir=Path(data_prefix),
-            train_batch_size=args.batch_size,
-            test_batch_size=args.test_batch_size,
-            shuffle=False,
-            pin_memory=True,
-            num_workers=args.num_workers,
-        )
-    elif args.dataset == "ImageNet":
-        from ezpz.data.vision import get_imagenet
-
-        data = get_imagenet(
-            outdir=Path(data_prefix),
-            train_batch_size=args.batch_size,
-            test_batch_size=args.test_batch_size,
-            shuffle=False,
-            pin_memory=True,
-            num_workers=args.num_workers,
-        )
-    else:
-        raise ValueError(f"Unsupported dataset: {args.dataset}")
-
-    return data
+```python title="src/ezpz/examples/fsdp.py:294:363"
+--8<-- "src/ezpz/examples/fsdp.py:294:363"
 ```
 
 </details>
@@ -528,11 +273,8 @@ the model checkpoint is saved if `--save-model` was passed, and
 Parses CLI arguments, runs `fsdp_main`, and calls `ezpz.cleanup()` to tear
 down the process group.
 
-```python title="src/ezpz/examples/fsdp.py" linenums="589"
-if __name__ == "__main__":
-    args = parse_args()
-    fsdp_main(args=args)
-    ezpz.cleanup()
+```python title="src/ezpz/examples/fsdp.py:584:587"
+--8<-- "src/ezpz/examples/fsdp.py:584:587"
 ```
 
 </details>

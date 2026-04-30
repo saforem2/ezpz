@@ -45,30 +45,8 @@ works with randomly generated tensors (for quick smoke tests) or real MNIST
 data. `summarize_model` prints a parameter-count breakdown useful for
 verifying FSDP sharding.
 
-```python title="src/ezpz/examples/vit.py" linenums="72"
-import argparse
-import functools
-import math
-from pathlib import Path
-import sys
-import time
-from typing import Any, Optional
-
-import torch
-
-import ezpz
-import ezpz.distributed
-
-# from TORCH_DTYPES_MAP
-from ezpz.data.vision import get_fake_data, get_mnist
-from ezpz.examples import get_example_outdir
-from ezpz.models import summarize_model
-from ezpz.models.vit.attention import AttentionBlock
-
-logger = ezpz.get_logger(__name__)
-
-fp = Path(__file__)
-WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
+```python title="src/ezpz/examples/vit.py:72:95"
+--8<-- "src/ezpz/examples/vit.py:72:95"
 ```
 
 </details>
@@ -80,50 +58,8 @@ Four named presets (`debug`, `small`, `medium`, `large`) bundle
 alias maps to `medium`. MNIST-specific defaults override `img_size`,
 `num_classes`, and `patch_size` when `--dataset mnist` is used.
 
-```python title="src/ezpz/examples/vit.py" linenums="96"
-MODEL_PRESETS = {
-    "debug": {
-        "batch_size": 4,
-        "num_heads": 2,
-        "head_dim": 16,
-        "depth": 2,
-    },
-    "small": {
-        "batch_size": 128,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 24,
-    },
-    "medium": {
-        "batch_size": 64,
-        "num_heads": 12,
-        "head_dim": 64,
-        "depth": 16,
-    },
-    "large": {
-        "batch_size": 32,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 32,
-    },
-}
-MODEL_ALIASES = {"med": "medium"}
-MODEL_PRESET_FLAGS = {
-    "batch_size": ["--batch_size", "--batch-size"],
-    "num_heads": ["--num_heads", "--num-heads"],
-    "head_dim": ["--head_dim", "--head-dim"],
-    "depth": ["--depth"],
-}
-MNIST_DEFAULTS = {
-    "img_size": 28,
-    "num_classes": 10,
-    "patch_size": 4,
-}
-MNIST_DEFAULT_FLAGS = {
-    "img_size": ["--img_size", "--img-size"],
-    "num_classes": ["--num_classes", "--num-classes"],
-    "patch_size": ["--patch_size", "--patch-size"],
-}
+```python title="src/ezpz/examples/vit.py:97:139"
+--8<-- "src/ezpz/examples/vit.py:97:139"
 ```
 
 </details>
@@ -133,34 +69,8 @@ MNIST_DEFAULT_FLAGS = {
 Converts an image into a sequence of patch embeddings using a strided
 `Conv2d`. The kernel size and stride both equal `patch_size`.
 
-```python title="src/ezpz/examples/vit.py" linenums="148"
-class PatchEmbed(torch.nn.Module):
-    """Convert images into patch embeddings."""
-
-    def __init__(
-        self,
-        img_size: int,
-        patch_size: int,
-        in_chans: int,
-        embed_dim: int,
-    ) -> None:
-        super().__init__()
-        if img_size % patch_size != 0:
-            raise ValueError("img_size must be divisible by patch_size")
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.num_patches = (img_size // patch_size) ** 2
-        self.proj = torch.nn.Conv2d(
-            in_chans,
-            embed_dim,
-            kernel_size=patch_size,
-            stride=patch_size,
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.proj(x)
-        x = x.flatten(2).transpose(1, 2)
-        return x
+```python title="src/ezpz/examples/vit.py:142:168"
+--8<-- "src/ezpz/examples/vit.py:142:168"
 ```
 
 </details>
@@ -171,90 +81,22 @@ Standard ViT: patch embedding, optional class token, learnable positional
 embeddings, a stack of `AttentionBlock` layers, layer norm, and a linear
 classification head.
 
-```python title="src/ezpz/examples/vit.py" linenums="177"
-class SimpleVisionTransformer(torch.nn.Module):
-    """Minimal Vision Transformer implementation without timm."""
-
-    def __init__(
-        self,
-        img_size: int,
-        patch_size: int,
-        in_chans: int,
-        embed_dim: int,
-        depth: int,
-        num_heads: int,
-        num_classes: int,
-        block_fn: Any,
-        class_token: bool = False,
-        global_pool: str = "avg",
-        dropout: float = 0.0,
-    ) -> None:
-        super().__init__()
-        self.patch_embed = PatchEmbed(
-            img_size=img_size,
-            patch_size=patch_size,
-            in_chans=in_chans,
-            embed_dim=embed_dim,
-        )
-        num_patches = self.patch_embed.num_patches
-        self.class_token = class_token
-        self.global_pool = global_pool
-        if class_token:
-            self.cls_token = torch.nn.Parameter(torch.zeros(1, 1, embed_dim))
-            num_patches += 1
-        else:
-            self.cls_token = None
-        self.pos_embed = torch.nn.Parameter(
-            torch.zeros(1, num_patches, embed_dim)
-        )
-        self.pos_drop = torch.nn.Dropout(p=dropout)
-        self.blocks = torch.nn.ModuleList(
-            [
-                block_fn(dim=embed_dim, num_heads=num_heads)
-                for _ in range(depth)
-            ]
-        )
-        self.norm = torch.nn.LayerNorm(embed_dim)
-        self.head = (
-            torch.nn.Linear(embed_dim, num_classes)
-            if num_classes > 0
-            else torch.nn.Identity()
-        )
-        self._init_weights()
+```python title="src/ezpz/examples/vit.py:171:219"
+--8<-- "src/ezpz/examples/vit.py:171:219"
 ```
 
 Weight initialization uses truncated normal for positional and class-token
 embeddings.
 
-```python title="src/ezpz/examples/vit.py" linenums="227"
-    def _init_weights(self) -> None:
-        torch.nn.init.trunc_normal_(self.pos_embed, std=0.02)
-        if self.cls_token is not None:
-            torch.nn.init.trunc_normal_(self.cls_token, std=0.02)
+```python title="src/ezpz/examples/vit.py:221:224"
+--8<-- "src/ezpz/examples/vit.py:221:224"
 ```
 
 The forward pass embeds patches, adds positional encodings, runs through
 transformer blocks, and pools to a single vector for classification.
 
-```python title="src/ezpz/examples/vit.py" linenums="232"
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.patch_embed(x)
-        if self.cls_token is not None:
-            cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
-            x = torch.cat((cls_tokens, x), dim=1)
-        x = self.pos_drop(x + self.pos_embed)
-        for block in self.blocks:
-            x = block(x)
-        x = self.norm(x)
-        if self.global_pool == "avg":
-            if self.cls_token is not None:
-                x = x[:, 1:]
-            x = x.mean(dim=1)
-        elif self.cls_token is not None:
-            x = x[:, 0]
-        else:
-            x = x.mean(dim=1)
-        return self.head(x)
+```python title="src/ezpz/examples/vit.py:226:243"
+--8<-- "src/ezpz/examples/vit.py:226:243"
 ```
 
 </details>
@@ -265,32 +107,8 @@ transformer blocks, and pools to a single vector for classification.
 MNIST-specific defaults for any flags that were not explicitly provided by
 the user.
 
-```python title="src/ezpz/examples/vit.py" linenums="252"
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
-
-
-def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
-    if args.model is None:
-        return
-    model_name = args.model
-    model_key = MODEL_ALIASES.get(model_name)
-    if model_key is None:
-        model_key = model_name
-    preset = MODEL_PRESETS[model_key]
-    for field_name, value in preset.items():
-        flags = MODEL_PRESET_FLAGS.get(field_name, [])
-        if not _arg_provided(argv, flags):
-            setattr(args, field_name, value)
-
-
-def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
-    if args.dataset != "mnist":
-        return
-    for field_name, value in MNIST_DEFAULTS.items():
-        flags = MNIST_DEFAULT_FLAGS.get(field_name, [])
-        if not _arg_provided(argv, flags):
-            setattr(args, field_name, value)
+```python title="src/ezpz/examples/vit.py:246:270"
+--8<-- "src/ezpz/examples/vit.py:246:270"
 ```
 
 </details>
@@ -301,36 +119,8 @@ def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
 distributed environment for `world_size`, `local_rank`, and device, then
 loads either fake or MNIST data.
 
-```python title="src/ezpz/examples/vit.py" linenums="436"
-@ezpz.timeitlogit(rank=ezpz.get_rank())
-def train_fn(
-    block_fn: Any,
-    args: argparse.Namespace,
-    dataset: Optional[str] = "fake",
-) -> ezpz.History:
-    """Train the Vision Transformer on fake or MNIST data."""
-    world_size = ezpz.distributed.get_world_size()
-    local_rank = ezpz.distributed.get_local_rank()
-    device_type = ezpz.distributed.get_torch_device_type()
-    device = torch.device(f"{device_type}:{local_rank}")
-    logger.info("train_args=%s", vars(args))
-
-    if dataset == "fake":
-        dataset_dict = get_fake_data(
-            img_size=args.img_size,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-        )
-    elif dataset == "mnist":
-        dataset_dict = get_mnist(
-            train_batch_size=args.batch_size,
-            test_batch_size=args.batch_size,
-            download=(ezpz.distributed.get_rank() == 0),
-        )
-    else:
-        raise ValueError(
-            f"Unknown dataset: {dataset}. Expected 'fake' or 'mnist'."
-        )
+```python title="src/ezpz/examples/vit.py:437:469"
+--8<-- "src/ezpz/examples/vit.py:437:469"
 ```
 
 </details>
@@ -341,39 +131,16 @@ The `SimpleVisionTransformer` is instantiated, moved to the target device,
 then wrapped with DDP or FSDP via `ezpz.distributed.wrap_model` when
 running multi-GPU. Optional `torch.compile` follows.
 
-```python title="src/ezpz/examples/vit.py" linenums="492"
-    in_chans = 1 if dataset == "mnist" else 3
-    model = SimpleVisionTransformer(
-        img_size=args.img_size,
-        patch_size=args.patch_size,
-        in_chans=in_chans,
-        embed_dim=(args.num_heads * args.head_dim),
-        depth=args.depth,
-        num_heads=args.num_heads,
-        num_classes=args.num_classes,
-        class_token=False,
-        global_pool="avg",
-        block_fn=block_fn,
-        dropout=args.dropout,
-    )
+```python title="src/ezpz/examples/vit.py:493:506"
+--8<-- "src/ezpz/examples/vit.py:493:506"
 ```
 
-```python title="src/ezpz/examples/vit.py" linenums="518"
-    model.to(device)
+```python title="src/ezpz/examples/vit.py:519:519"
+--8<-- "src/ezpz/examples/vit.py:519:519"
 ```
 
-```python title="src/ezpz/examples/vit.py" linenums="554"
-    if world_size > 1:
-        model = ezpz.distributed.wrap_model(
-            model=model,
-            use_fsdp=args.fsdp,
-            dtype=args.dtype,
-            device_id=int(ezpz.get_local_rank()),
-        )
-
-    if args.compile:
-        logger.info("Compiling model")
-        model = torch.compile(model)
+```python title="src/ezpz/examples/vit.py:535:575"
+--8<-- "src/ezpz/examples/vit.py:535:575"
 ```
 
 </details>
@@ -385,38 +152,12 @@ period. Each step runs a forward pass under `torch.autocast`, computes
 cross-entropy loss and accuracy, then backpropagates. Timing is recorded
 for data-transfer, forward, backward, and optimizer phases.
 
-```python title="src/ezpz/examples/vit.py" linenums="592"
-    torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters())  # type:ignore
-    model.train()  # type:ignore
+```python title="src/ezpz/examples/vit.py:577:581"
+--8<-- "src/ezpz/examples/vit.py:577:581"
 ```
 
-```python title="src/ezpz/examples/vit.py" linenums="632"
-    for step, batch in enumerate(dataset_dict["train"]["loader"]):
-        last_step = step
-        if args.max_iters is not None and step > int(args.max_iters):
-            break
-        if step < warmup_iters:
-            logger.info("warmup step %d / %d", step, warmup_iters)
-        t0 = time.perf_counter()
-        inputs = batch[0].to(device=device, non_blocking=True)
-        label = batch[1].to(device=device, non_blocking=True)
-        ezpz.distributed.synchronize()
-        with torch.autocast(device_type=device_type, dtype=torch_dtype):
-            t1 = time.perf_counter()
-            outputs = model(inputs)
-            loss = criterion(outputs, label)
-            acc = (outputs.argmax(dim=-1) == label).float().mean()
-            t2 = time.perf_counter()
-        ezpz.distributed.synchronize()
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        ezpz.distributed.synchronize()
-        t3 = time.perf_counter()
-        optimizer.step()
-        ezpz.distributed.synchronize()
-        t4 = time.perf_counter()
+```python title="src/ezpz/examples/vit.py:620:643"
+--8<-- "src/ezpz/examples/vit.py:620:643"
 ```
 
 </details>
@@ -428,49 +169,12 @@ to an `ezpz.History` object. After training, if a test split exists, the
 model is evaluated and per-batch eval metrics are accumulated and
 all-reduced across ranks.
 
-```python title="src/ezpz/examples/vit.py" linenums="656"
-        if step >= warmup_iters:
-            loss_value = float(loss.detach().item())
-            acc_value = float(acc.detach().item())
-            if not math.isfinite(loss_value) or not math.isfinite(acc_value):
-                logger.warning(
-                    "Skipping non-finite train metrics at step=%s", step
-                )
-                continue
-            train_msg = history.update(
-                {
-                    "train/iter": step,
-                    "train/loss": loss_value,
-                    "train/acc": acc_value,
-                    "train/dt": t4 - t0,
-                    "train/dtd": t1 - t0,
-                    "train/dtf": t2 - t1,
-                    "train/dto": t3 - t2,
-                    "train/dtb": t4 - t3,
-                }
-            ).replace("train/", "")
-            logger.info("[train] %s", train_msg)
+```python title="src/ezpz/examples/vit.py:644:668"
+--8<-- "src/ezpz/examples/vit.py:644:668"
 ```
 
-```python title="src/ezpz/examples/vit.py" linenums="678"
-    if "test" in dataset_dict:
-        model.eval()  # type:ignore
-        eval_loss = 0.0
-        eval_acc = 0.0
-        eval_count = 0
-        eval_step = 0
-        with torch.no_grad():
-            for batch in dataset_dict["test"]["loader"]:
-                inputs = batch[0].to(device=device, non_blocking=True)
-                labels = batch[1].to(device=device, non_blocking=True)
-                with torch.autocast(device_type=device_type, dtype=torch_dtype):
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    correct = (outputs.argmax(dim=-1) == labels).sum()
-                batch_size = labels.numel()
-                eval_loss += loss.item() * batch_size
-                eval_acc += correct.item()
-                eval_count += batch_size
+```python title="src/ezpz/examples/vit.py:670:687"
+--8<-- "src/ezpz/examples/vit.py:670:687"
 ```
 
 On rank 0, `history.finalize()` persists training and eval metrics to disk
@@ -521,43 +225,15 @@ The attention function closure is defined inline and injected into
 `AttentionBlock` via `functools.partial`. When `--attn_type sdpa` is used,
 CUDA SDPA backends are selectively enabled.
 
-```python title="src/ezpz/examples/vit.py" linenums="791"
-    def attn_fn(
-        q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-    ) -> torch.Tensor:
-        """Scaled dot-product attention with configurable backend."""
-        scale = args.head_dim ** (-0.5)
-        q = q * scale
-        attn = q @ k.transpose(-2, -1)
-        attn = attn.softmax(dim=-1)
-        if args.attention_dropout > 0.0:
-            attn = torch.nn.functional.dropout(
-                attn,
-                p=args.attention_dropout,
-                training=torch.is_grad_enabled(),
-            )
-        x = attn @ v
-        return x
-
-    logger.info(f"Using {args.attn_type} for SDPA backend")
-    if args.attn_type == "native":
-        block_fn = functools.partial(AttentionBlock, attn_fn=attn_fn)
+```python title="src/ezpz/examples/vit.py:746:765"
+--8<-- "src/ezpz/examples/vit.py:746:765"
 ```
 
 Finally, `train_fn` is called and wall-clock timings for setup and training
 are logged (and sent to W&B if available).
 
-```python title="src/ezpz/examples/vit.py" linenums="842"
-    train_start = time.perf_counter()
-    train_fn(block_fn, args=args, dataset=args.dataset)
-    train_end = time.perf_counter()
-    t1 = time.perf_counter()
-    timings = {
-        "main/setup_torch": t_setup - t0,
-        "main/train": train_end - train_start,
-        "main/total": t1 - t0,
-    }
-    logger.info("Timings: %s", timings)
+```python title="src/ezpz/examples/vit.py:797:806"
+--8<-- "src/ezpz/examples/vit.py:797:806"
 ```
 
 </details>
@@ -567,10 +243,8 @@ are logged (and sent to W&B if available).
 When run as a module (`python -m ezpz.examples.vit`), arguments are parsed
 and `main` is called.
 
-```python title="src/ezpz/examples/vit.py" linenums="870"
-if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+```python title="src/ezpz/examples/vit.py:825:827"
+--8<-- "src/ezpz/examples/vit.py:825:827"
 ```
 
 </details>

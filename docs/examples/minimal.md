@@ -44,17 +44,8 @@ ezpz launch python3 -m ezpz.examples.minimal
 
 Standard imports plus `ezpz` for distributed training utilities. The rank-aware logger ensures only rank 0 prints by default.
 
-```python title="src/ezpz/examples/minimal.py" linenums="15"
-import os
-import time
-from pathlib import Path
-
-import torch
-
-import ezpz
-from ezpz.examples import get_example_outdir
-
-logger = ezpz.get_logger(__name__)
+```python title="src/ezpz/examples/minimal.py:15:25"
+--8<-- "src/ezpz/examples/minimal.py:15:25"
 ```
 
 </details>
@@ -63,76 +54,14 @@ logger = ezpz.get_logger(__name__)
 
 The `@ezpz.timeitlogit` decorator logs wall-clock time for the entire function. Inside, the model is unwrapped if DDP-wrapped, and an `ezpz.History` is created to track metrics to a JSONL file.
 
-```python title="src/ezpz/examples/minimal.py" linenums="27"
-@ezpz.timeitlogit(rank=ezpz.get_rank())
-def train(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    outdir: os.PathLike | str,
-) -> ezpz.History:
-    """Run a synthetic training loop on random data.
-
-    Args:
-        model: Model to train (wrapped or unwrapped).
-        optimizer: Optimizer configured for the model.
-
-    Returns:
-        Training history with timing and loss metrics.
-    """
-    unwrapped_model = (
-        model.module
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel)
-        else model
-    )
-    metrics_path = Path(outdir).joinpath("metrics.jsonl")
-    history = ezpz.History(
-        report_dir=outdir,
-        report_enabled=True,
-        jsonl_path=metrics_path,
-        jsonl_overwrite=True,
-        distributed_history=(1 < ezpz.get_world_size() <= 384),
-    )
-    device_type = ezpz.get_torch_device_type()
-    dtype = unwrapped_model.layers[0].weight.dtype
-    bsize = int(os.environ.get("BATCH_SIZE", 64))
-    isize = unwrapped_model.layers[0].in_features
-    warmup = int(os.environ.get("WARMUP_ITERS", 10))
-    log_freq = int(os.environ.get("LOG_FREQ", 1))
-    print_freq = int(os.environ.get("PRINT_FREQ", 10))
-    model.train()
+```python title="src/ezpz/examples/minimal.py:28:67"
+--8<-- "src/ezpz/examples/minimal.py:28:67"
 ```
 
 The training loop generates random input, computes a reconstruction loss, and records forward/backward timings separately. Metrics are logged via `history.update()` after a warmup period.
 
-```python title="src/ezpz/examples/minimal.py" linenums="63"
-    summary = ""
-    for step in range(int(os.environ.get("TRAIN_ITERS", 500))):
-        with torch.autocast(
-            device_type=device_type,
-            dtype=dtype,
-        ):
-            t0 = time.perf_counter()
-            x = torch.rand((bsize, isize), dtype=dtype).to(device_type)
-            y = model(x)
-            loss = ((y - x) ** 2).sum()
-            dtf = (t1 := time.perf_counter()) - t0
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            dtb = time.perf_counter() - t1
-            if step % log_freq == 0 and step > warmup:
-                summary = history.update(
-                    {
-                        "iter": step,
-                        "loss": loss.item(),
-                        "dt": dtf + dtb,
-                        "dtf": dtf,
-                        "dtb": dtb,
-                    }
-                )
-            if step % print_freq == 0 and step > warmup:
-                logger.info(summary)
-    return history
+```python title="src/ezpz/examples/minimal.py:68:103"
+--8<-- "src/ezpz/examples/minimal.py:68:103"
 ```
 
 </details>
@@ -243,32 +172,8 @@ def main():
 
 Prints a usage message on `--help`, otherwise calls `main()`.
 
-```python title="src/ezpz/examples/minimal.py" linenums="181"
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]:
-        print(
-            "\n".join(
-                [
-                    "Usage: ",
-                    " ".join(
-                        [
-                            "PRINT_ITERS=100",
-                            "TRAIN_ITERS=1000",
-                            "INPUT_SIZE=128",
-                            "OUTPUT_SIZE=128",
-                            "LAYER_SIZES=\"'128,256,128'\"",
-                            "ezpz launch",
-                            "-m ezpz.examples.minimal",
-                        ]
-                    ),
-                ]
-            )
-        )
-        exit(0)
-    else:
-        main()
+```python title="src/ezpz/examples/minimal.py:179:203"
+--8<-- "src/ezpz/examples/minimal.py:179:203"
 ```
 
 </details>
