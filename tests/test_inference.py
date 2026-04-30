@@ -8,8 +8,14 @@ real hardware — see docs/examples/inference.md.
 from __future__ import annotations
 
 import pytest
+import torch
 
-from ezpz.examples.inference import _normalize, parse_args, shard_indices
+from ezpz.examples.inference import (
+    _normalize,
+    _run_with_optional_flops,
+    parse_args,
+    shard_indices,
+)
 
 
 class TestShardIndices:
@@ -118,3 +124,63 @@ class TestParseArgsModes:
         args = parse_args(["--flops", "--flops-every-n-steps", "10"])
         assert args.flops is True
         assert args.flops_every_n_steps == 10
+
+
+class TestRunWithOptionalFlops:
+    """Tests for ``_run_with_optional_flops``."""
+
+    def test_measure_false_skips_counter(self):
+        """When measure=False, returns the result and 0 flops."""
+        called = []
+
+        def _fn(x):
+            called.append(x)
+            return x * 2
+
+        result, flops = _run_with_optional_flops(_fn, 21, measure=False)
+        assert result == 42
+        assert flops == 0
+        assert called == [21]
+
+    def test_measure_true_counts_real_flops(self):
+        """When measure=True, FlopCounterMode reports nonzero FLOPS."""
+        model = torch.nn.Linear(8, 4)
+        x = torch.randn(2, 8)
+        result, flops = _run_with_optional_flops(model, x, measure=True)
+        assert result.shape == (2, 4)
+        assert flops > 0
+
+    def test_passes_through_kwargs(self):
+        """**kwargs are forwarded to the wrapped callable."""
+
+        def _fn(*, a, b):
+            return a + b
+
+        result, flops = _run_with_optional_flops(
+            _fn, measure=False, a=1, b=2,
+        )
+        assert result == 3
+        assert flops == 0
+
+    def test_counter_failure_returns_zero_flops(self, monkeypatch):
+        """A FlopCounterMode that raises returns flops=0 but keeps the result."""
+        from ezpz.examples import inference as _inf
+
+        # Patch the import inside the helper to a counter that
+        # successfully runs the body but fails to report total flops.
+        class _FailingCounter:
+            def __init__(self, *_a, **_kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *_a): pass
+            def get_total_flops(self): raise RuntimeError("xpu has no flops")
+
+        # Inject via the torch.utils.flop_counter module.
+        import torch.utils.flop_counter as _fc_mod
+        monkeypatch.setattr(_fc_mod, "FlopCounterMode", _FailingCounter)
+
+        result, flops = _run_with_optional_flops(
+            lambda: "ok", measure=True,
+        )
+        assert result == "ok"
+        assert flops == 0
+        del _inf  # silence unused-import warning

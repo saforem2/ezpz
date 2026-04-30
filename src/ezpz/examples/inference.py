@@ -222,6 +222,38 @@ def _torch_dtype(name: str) -> torch.dtype:
     }[name]
 
 
+def _normalize(text: str) -> str:
+    """Lowercase + collapse whitespace + strip — used for eval matching."""
+    if text is None:
+        return ""
+    return " ".join(str(text).lower().split())
+
+
+def _run_with_optional_flops(
+    fn,
+    *args,
+    measure: bool,
+    **kwargs,
+):
+    """Run *fn(*args, **kwargs)* under FlopCounterMode if *measure* is True.
+
+    Returns ``(result, measured_flops)``.  When *measure* is False or
+    when the counter raises (XPU, etc.), ``measured_flops`` is ``0``.
+    Pulled out of the hot loop so the eval-unlabeled forward path and
+    the generate path share one wrapper instead of duplicating the
+    enter/exit/try plumbing.
+    """
+    if not measure:
+        return fn(*args, **kwargs), 0
+    from torch.utils.flop_counter import FlopCounterMode
+    with FlopCounterMode(display=False) as fc:
+        result = fn(*args, **kwargs)
+    try:
+        return result, int(fc.get_total_flops())
+    except Exception:
+        return result, 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point for distributed HF inference."""
     # Silence noisy per-request HTTP logs from HF Hub clients
@@ -490,22 +522,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 and batch_num % args.flops_every_n_steps == 0
             )
             if eval_unlabeled:
-                if measure_flops_now:
-                    from torch.utils.flop_counter import FlopCounterMode
-                    with FlopCounterMode(display=False) as _fc:
-                        outputs = model(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask,
-                        )
-                    try:
-                        measured_flops = int(_fc.get_total_flops())
-                    except Exception:
-                        measured_flops = 0
-                else:
-                    outputs = model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                    )
+                outputs, measured_flops = _run_with_optional_flops(
+                    model,
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    measure=measure_flops_now,
+                )
                 logits = outputs.logits  # [B, T, V]
                 # Predict token i+1 from logits at position i
                 shift_logits = logits[:, :-1, :].contiguous()
@@ -526,24 +548,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ezpz.synchronize()
                 dt = time.perf_counter() - t0
             else:
-                if measure_flops_now:
-                    from torch.utils.flop_counter import FlopCounterMode
-                    with FlopCounterMode(display=False) as _fc:
-                        output_ids = model.generate(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask,
-                            **gen_kwargs,
-                        )
-                    try:
-                        measured_flops = int(_fc.get_total_flops())
-                    except Exception:
-                        measured_flops = 0
-                else:
-                    output_ids = model.generate(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        **gen_kwargs,
-                    )
+                output_ids, measured_flops = _run_with_optional_flops(
+                    model.generate,
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    measure=measure_flops_now,
+                    **gen_kwargs,
+                )
                 ezpz.synchronize()
                 dt = time.perf_counter() - t0
                 # Slice off the prompt portion so we report only new tokens
@@ -598,15 +609,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "batch": batch_num,
                 "samples": len(batch_prompts),
                 "input_tokens": n_in,
-                "new_tokens": n_new,
                 "dt": dt,
                 "tokens_per_sec": (
                     tokens_for_throughput / dt if dt > 0 else 0.0
                 ),
                 "warmup": is_warmup,
             }
+            # In unlabeled-eval mode there are no generated tokens —
+            # only scored tokens.  Reporting "new_tokens=0" on every
+            # row would be noise in the JSONL/CSV; emit one or the
+            # other based on the mode.
             if eval_unlabeled:
                 metrics["tokens_scored"] = batch_token_scored
+            else:
+                metrics["new_tokens"] = n_new
             # FLOPS / MFU only when --flops was set AND this step
             # actually ran FlopCounterMode.  Skip on the in-between
             # batches when --flops-every-n-steps > 1.  No approximation
@@ -711,13 +727,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     ezpz.cleanup()
     return 0
-
-
-def _normalize(text: str) -> str:
-    """Lowercase + collapse whitespace + strip — used for eval matching."""
-    if text is None:
-        return ""
-    return " ".join(str(text).lower().split())
 
 
 if __name__ == "__main__":
