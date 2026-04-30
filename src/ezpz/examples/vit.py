@@ -300,12 +300,88 @@ def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
 
 
 def apply_dataset_overrides(args: argparse.Namespace, argv: list[str]) -> None:
+    """Apply dataset-specific defaults that the user hasn't overridden.
+
+    Two layers of "user intent" already win over MNIST defaults:
+
+    1. **Explicit CLI flag** (e.g., ``--depth 8``) — checked via
+       ``_arg_provided``.
+    2. **Model preset** (e.g., ``--model small``) — handled by
+       ``apply_model_preset`` which runs first.  We must respect those
+       values too, otherwise ``--model small`` on MNIST silently
+       reverts to the tiny MNIST default and the preset is a no-op.
+
+    We treat (2) by skipping any MNIST override whose field is in the
+    chosen preset.
+    """
     if args.dataset != "mnist":
         return
+    preset_fields: set[str] = set()
+    model_name = args.model
+    if model_name is not None:
+        model_key = MODEL_ALIASES.get(model_name, model_name)
+        preset_fields = set(MODEL_PRESETS.get(model_key, {}).keys())
     for field_name, value in MNIST_DEFAULTS.items():
         flags = MNIST_DEFAULT_FLAGS.get(field_name, [])
-        if not _arg_provided(argv, flags):
-            setattr(args, field_name, value)
+        if _arg_provided(argv, flags):
+            continue  # user passed it explicitly
+        if field_name in preset_fields:
+            continue  # model preset already set it
+        setattr(args, field_name, value)
+
+
+def _compute_lr_warmup_iters(max_iters: int, lr_warmup_iters: float) -> int:
+    """Resolve ``--lr-warmup-iters`` to a concrete step count.
+
+    Semantics:
+
+    - ``<= 0``  → no warmup (returns ``0``).
+    - ``(0, 1)`` → fraction of ``max_iters``.
+    - ``>= 1``  → absolute step count.
+
+    The result is clamped to ``[0, max_iters - 1]`` so that warmup
+    can never consume the entire run (which would leave zero steps
+    for cosine decay and produce a negative ``progress`` value).
+    """
+    if lr_warmup_iters <= 0:
+        return 0
+    if 0.0 < lr_warmup_iters < 1.0:
+        warmup = max(1, int(lr_warmup_iters * max_iters))
+    else:
+        warmup = max(1, int(lr_warmup_iters))
+    # Always leave at least one step for the decay phase.
+    return min(warmup, max(0, max_iters - 1))
+
+
+def build_lr_scheduler(
+    optimizer: torch.optim.Optimizer,
+    max_iters: Optional[int],
+    lr_warmup_iters: float,
+    min_lr_ratio: float,
+) -> Optional[torch.optim.lr_scheduler.LambdaLR]:
+    """Build a linear-warmup → cosine-decay LR scheduler.
+
+    Returns ``None`` when ``max_iters`` is unset (constant LR for
+    streaming runs).  ``min_lr_ratio`` is clamped to ``[0, 1]``.
+    Warmup duration is resolved via :func:`_compute_lr_warmup_iters`,
+    which also enforces the warmup-shorter-than-run invariant so
+    ``decay_steps`` is always positive.
+    """
+    if max_iters is None or max_iters <= 0:
+        return None
+    total_iters = int(max_iters)
+    warmup_iters = _compute_lr_warmup_iters(total_iters, lr_warmup_iters)
+    min_lr_ratio = max(0.0, min(1.0, min_lr_ratio))
+
+    def _lr_lambda(step: int) -> float:
+        if warmup_iters > 0 and step < warmup_iters:
+            return float(step + 1) / float(warmup_iters)
+        decay_steps = max(1, total_iters - warmup_iters)
+        progress = (step - warmup_iters) / decay_steps
+        cosine = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+        return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
 
 
 def validate_dataset_args(args: argparse.Namespace) -> None:
@@ -663,42 +739,32 @@ def train_fn(
         betas=(0.9, 0.999),
     )
     # Linear warmup → cosine decay to args.lr * args.min_lr_ratio over
-    # max_iters.  Lets us crank --lr without blowing up the early steps.
-    if args.max_iters is not None and args.max_iters > 0:
-        total_iters = int(args.max_iters)
-        if 0.0 < args.lr_warmup_iters < 1.0:
-            lr_warmup_iters = max(1, int(args.lr_warmup_iters * total_iters))
-        else:
-            lr_warmup_iters = max(1, int(args.lr_warmup_iters))
-        min_lr_ratio = max(0.0, min(1.0, args.min_lr_ratio))
-
-        def _lr_lambda(step: int) -> float:
-            if step < lr_warmup_iters:
-                # Linear warmup from 0 → 1 over the first lr_warmup_iters
-                return float(step + 1) / float(lr_warmup_iters)
-            # Cosine decay from 1 → min_lr_ratio over the remainder
-            decay_steps = max(1, total_iters - lr_warmup_iters)
-            progress = (step - lr_warmup_iters) / decay_steps
-            cosine = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
-            return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
-
-        lr_scheduler: Optional[torch.optim.lr_scheduler.LambdaLR] = (
-            torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
-        )
-        logger.info(
-            "LR schedule: linear warmup %d steps → cosine decay to %.2g "
-            "(peak lr=%.2g, weight_decay=%.2g)",
-            lr_warmup_iters,
-            args.lr * min_lr_ratio,
-            args.lr,
-            args.weight_decay,
-        )
-    else:
-        # No max_iters → no schedule.  Constant LR for streaming runs.
-        lr_scheduler = None
+    # max_iters.  Construction lives in build_lr_scheduler() so the
+    # numeric edge cases (warmup as fraction vs steps, warmup > total,
+    # disable via 0) are testable in isolation.
+    lr_scheduler = build_lr_scheduler(
+        optimizer=optimizer,
+        max_iters=args.max_iters,
+        lr_warmup_iters=args.lr_warmup_iters,
+        min_lr_ratio=args.min_lr_ratio,
+    )
+    if lr_scheduler is None:
         logger.info(
             "Constant LR (no --max_iters cap): peak lr=%.2g, weight_decay=%.2g",
             args.lr, args.weight_decay,
+        )
+    else:
+        warmup_resolved = _compute_lr_warmup_iters(
+            int(args.max_iters), args.lr_warmup_iters,
+        )
+        min_lr_ratio_clamped = max(0.0, min(1.0, args.min_lr_ratio))
+        logger.info(
+            "LR schedule: linear warmup %d steps → cosine decay to %.2g "
+            "(peak lr=%.2g, weight_decay=%.2g)",
+            warmup_resolved,
+            args.lr * min_lr_ratio_clamped,
+            args.lr,
+            args.weight_decay,
         )
 
     model.train()  # type:ignore
@@ -761,6 +827,11 @@ def train_fn(
         loss.backward()
         ezpz.distributed.synchronize()
         t3 = time.perf_counter()
+        # Capture the LR that was *applied* to this step (i.e. the value
+        # in optimizer.param_groups *before* lr_scheduler.step() advances
+        # to the next step's value).  Otherwise the metric is off-by-one
+        # and shows the next step's LR alongside this step's loss.
+        current_lr = float(optimizer.param_groups[0]["lr"])
         optimizer.step()
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -778,7 +849,7 @@ def train_fn(
                     "train/iter": step,
                     "train/loss": loss_value,
                     "train/acc": acc_value,
-                    "train/lr": float(optimizer.param_groups[0]["lr"]),
+                    "train/lr": current_lr,
                     "train/dt": t4 - t0,
                     "train/dtd": t1 - t0,
                     "train/dtf": t2 - t1,
