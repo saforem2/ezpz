@@ -22,6 +22,9 @@ class AttentionBlock(nn.Module):
         attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
         dim: Token embedding dimension.
         num_heads: Number of attention heads.
+        qkv_bias: Whether the QKV projection has a bias term.  Defaults
+            to ``True`` to match the standard ViT recipe; bias-free
+            attention slightly hurts trainability on small datasets.
         format: QKV permutation format.  Use ``"bshd"`` for batch-first
             layouts; defaults to the standard ``(heads, seq, dim)`` order.
         **kwargs: Ignored (accepted for API compatibility).
@@ -32,6 +35,7 @@ class AttentionBlock(nn.Module):
         attn_fn,
         dim: int = 768,
         num_heads: int = 12,
+        qkv_bias: bool = True,
         format: str | None = None,
         **kwargs,
     ) -> None:
@@ -41,7 +45,7 @@ class AttentionBlock(nn.Module):
         self.head_dim = dim // num_heads
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
-        self.qkv = nn.Linear(dim, dim * 3, bias=False)
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.proj = nn.Linear(dim, dim)
         from torchvision.ops import MLP
 
@@ -84,6 +88,8 @@ class timmAttentionBlock(nn.Module):
         attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
         dim: Token embedding dimension.
         num_heads: Number of attention heads.
+        qkv_bias: Whether the QKV projection has a bias term.  Defaults
+            to ``True`` to match the standard ViT recipe.
         format: QKV permutation format (see :class:`AttentionBlock`).
         **kwargs: Ignored (accepted for API compatibility).
     """
@@ -93,6 +99,7 @@ class timmAttentionBlock(nn.Module):
         attn_fn,
         dim: int = 768,
         num_heads: int = 12,
+        qkv_bias: bool = True,
         format: str | None = None,
         **kwargs,
     ) -> None:
@@ -102,7 +109,7 @@ class timmAttentionBlock(nn.Module):
         self.head_dim = dim // num_heads
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
-        self.qkv = nn.Linear(dim, dim * 3, bias=False)
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.proj = nn.Linear(dim, dim)
         from timm.models.layers import Mlp
 

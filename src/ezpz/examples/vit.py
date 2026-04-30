@@ -219,9 +219,32 @@ class SimpleVisionTransformer(torch.nn.Module):
         self._init_weights()
 
     def _init_weights(self) -> None:
+        # Standard ViT init recipe (per the original An Image is Worth 16x16
+        # Words paper and timm's vision_transformer.py):
+        # - positional embedding and class token: trunc_normal(std=0.02)
+        # - all Linear weights: trunc_normal(std=0.02), bias zeroed
+        # - LayerNorm: weight=1, bias=0 (PyTorch default already, kept
+        #   explicit so the recipe is self-contained)
+        # - patch-embed Conv2d: xavier_uniform (treats it as a Linear over
+        #   the patch, which is what it functionally is)
+        # PyTorch's default Linear init (kaiming_uniform) is calibrated for
+        # ReLU-MLPs and produces visibly worse loss curves on ViTs.
         torch.nn.init.trunc_normal_(self.pos_embed, std=0.02)
         if self.cls_token is not None:
             torch.nn.init.trunc_normal_(self.cls_token, std=0.02)
+        # Patch-embed Conv2d: a Linear over flattened patches in disguise.
+        torch.nn.init.xavier_uniform_(self.patch_embed.proj.weight)
+        if self.patch_embed.proj.bias is not None:
+            torch.nn.init.zeros_(self.patch_embed.proj.bias)
+        # Walk every Linear / LayerNorm in the transformer stack
+        for m in self.modules():
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    torch.nn.init.zeros_(m.bias)
+            elif isinstance(m, torch.nn.LayerNorm):
+                torch.nn.init.ones_(m.weight)
+                torch.nn.init.zeros_(m.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embed(x)
