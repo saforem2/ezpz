@@ -59,7 +59,7 @@ require_version(
 )
 
 
-def _safetensors_save_errors() -> tuple[type[BaseException], ...]:
+def _safetensors_save_errors() -> tuple[type[Exception], ...]:
     """Exception types we accept as triggers for the safetensors retry.
 
     Always includes (OSError, RuntimeError, ValueError) — those cover
@@ -68,8 +68,12 @@ def _safetensors_save_errors() -> tuple[type[BaseException], ...]:
     optional ``safetensors`` library is installed we also include its
     native ``SafetensorError`` because the rust core raises that
     directly for header/metadata/shared-tensor failures, not OSError.
+
+    Return type is narrowed to ``Exception`` (not ``BaseException``) so
+    a future addition can't accidentally include ``SystemExit`` or
+    ``KeyboardInterrupt`` and turn the retry into an interrupt swallow.
     """
-    errors: tuple[type[BaseException], ...] = (OSError, RuntimeError, ValueError)
+    errors: tuple[type[Exception], ...] = (OSError, RuntimeError, ValueError)
     try:
         from safetensors import SafetensorError
     except ImportError:
@@ -78,6 +82,45 @@ def _safetensors_save_errors() -> tuple[type[BaseException], ...]:
 
 
 _SAFETENSORS_SAVE_ERRORS = _safetensors_save_errors()
+
+
+def _save_pretrained_with_fallback(
+    model: object,
+    output_dir: str,
+    *,
+    is_main_process: bool,
+    save_function: object,
+) -> None:
+    """``model.save_pretrained`` with a safetensors fallback.
+
+    First tries the default safetensors serializer; on a parallel-FS
+    failure (OSError "Argument list too long", RuntimeError from torch
+    save shims, or safetensors.SafetensorError from the rust core)
+    retries with ``safe_serialization=False``.  Genuine bugs (TypeError,
+    attribute errors, OOM) are not caught.
+
+    Used at both the mid-training epoch save and the end-of-training
+    save so a Lustre/safetensors failure mid-run doesn't crash the
+    whole job.
+    """
+    try:
+        model.save_pretrained(  # type: ignore[attr-defined]
+            output_dir,
+            is_main_process=is_main_process,
+            save_function=save_function,
+        )
+    except _SAFETENSORS_SAVE_ERRORS as e:
+        logger.warning(
+            "save_pretrained with safetensors failed (%s: %s); "
+            "retrying with safe_serialization=False",
+            type(e).__name__, e,
+        )
+        model.save_pretrained(  # type: ignore[attr-defined]
+            output_dir,
+            is_main_process=is_main_process,
+            save_function=save_function,
+            safe_serialization=False,
+        )
 
 
 def _strip_metric_prefix(summary: str, prefix: str) -> str:
@@ -886,7 +929,8 @@ def main() -> None:
         if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
             unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(
+            _save_pretrained_with_fallback(
+                unwrapped_model,
                 output_dir,
                 is_main_process=accelerator.is_main_process,
                 save_function=accelerator.save,
@@ -911,32 +955,12 @@ def main() -> None:
 
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
-    try:
-        unwrapped_model.save_pretrained(
-            output_dir,
-            is_main_process=accelerator.is_main_process,
-            save_function=accelerator.save,
-        )
-    except _SAFETENSORS_SAVE_ERRORS as e:
-        # safetensors fails on some parallel filesystems (Lustre with
-        # large state dicts) — usually OSError "Argument list too
-        # long", sometimes RuntimeError from torch save shims, and
-        # SafetensorError for header/metadata/shared-tensor errors
-        # raised directly by the rust core.  Narrow the catch so
-        # genuine bugs (TypeError, attribute errors, OOM-derived
-        # exceptions) keep propagating instead of being silently
-        # retried under a different serializer that may then fail too.
-        logger.warning(
-            "save_pretrained with safetensors failed (%s: %s); "
-            "retrying with safe_serialization=False",
-            type(e).__name__, e,
-        )
-        unwrapped_model.save_pretrained(
-            output_dir,
-            is_main_process=accelerator.is_main_process,
-            save_function=accelerator.save,
-            safe_serialization=False,
-        )
+    _save_pretrained_with_fallback(
+        unwrapped_model,
+        output_dir,
+        is_main_process=accelerator.is_main_process,
+        save_function=accelerator.save,
+    )
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
         if training_args.push_to_hub and api is not None and repo_id is not None:
