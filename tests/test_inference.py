@@ -103,3 +103,12 @@ class TestParseArgsModes:
     def test_invalid_mode_rejected(self):
         with pytest.raises(SystemExit):
             parse_args(["--mode", "nonsense"])
+
+    def test_flops_every_n_steps_default_off(self):
+        """--flops-every-n-steps defaults to 0 (use estimate, no profiling)."""
+        args = parse_args([])
+        assert args.flops_every_n_steps == 0
+
+    def test_flops_every_n_steps_custom(self):
+        args = parse_args(["--flops-every-n-steps", "10"])
+        assert args.flops_every_n_steps == 10

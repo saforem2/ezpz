@@ -141,6 +141,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Model dtype",
     )
     parser.add_argument(
+        "--flops-every-n-steps",
+        type=int,
+        default=0,
+        help=(
+            "Measure exact per-batch FLOPS via FlopCounterMode every "
+            "N steps (0 = never, fall back to a startup estimate "
+            "scaled linearly by actual input size). Adds ~15-40%% "
+            "overhead on the measured step but corrects for variable "
+            "sequence length and the O(seq^2) attention cost."
+        ),
+    )
+    parser.add_argument(
         "--do-sample",
         action="store_true",
         help="Use sampling instead of greedy decoding",
@@ -469,11 +481,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             batch_token_scored = 0
             batch_nll_sum = 0.0
             n_new = 0
+            measured_flops = 0  # only set when this step runs FlopCounterMode
+            batch_num = batch_idx // args.batch_size
+            measure_flops_now = (
+                args.flops_every_n_steps > 0
+                and batch_num % args.flops_every_n_steps == 0
+            )
             if eval_unlabeled:
-                outputs = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                )
+                if measure_flops_now:
+                    from torch.utils.flop_counter import FlopCounterMode
+                    with FlopCounterMode(display=False) as _fc:
+                        outputs = model(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                        )
+                    try:
+                        measured_flops = int(_fc.get_total_flops())
+                    except Exception:
+                        measured_flops = 0
+                else:
+                    outputs = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                    )
                 logits = outputs.logits  # [B, T, V]
                 # Predict token i+1 from logits at position i
                 shift_logits = logits[:, :-1, :].contiguous()
@@ -514,7 +544,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
 
             n_in = int(attention_mask.sum().item())
-            batch_num = batch_idx // args.batch_size
             is_warmup = batch_num < benchmark_warmup
 
             # Labeled-eval string match (only when we have labels)
@@ -566,21 +595,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if _model_flops_fwd > 0 and dt > 0:
                 # FLOPS accounting differs between modes:
                 # - eval_unlabeled: ONE forward pass over the actual
-                #   batch.  try_estimate was called with the *max* shape
-                #   (batch_size, max_input_tokens), so we scale down by
-                #   the actual input-token count to avoid overstating
-                #   work on shorter sequences (which would push MFU
-                #   above 100%).
+                #   batch.  Prefer the exact count from FlopCounterMode
+                #   if --flops-every-n-steps fired this step; otherwise
+                #   fall back to the startup estimate scaled linearly
+                #   by actual input size.  The linear scaling
+                #   under-counts attention's O(seq^2) cost — set
+                #   --flops-every-n-steps for accurate per-batch numbers.
                 # - generate / benchmark: ONE forward pass per generated
                 #   token (autoregressive), so multiply by n_new.
                 if eval_unlabeled:
-                    max_in = max(args.batch_size * args.max_input_tokens, 1)
-                    actual_in = max(n_in, 1)
-                    step_flops = _model_flops_fwd * (actual_in / max_in)
+                    if measured_flops > 0:
+                        step_flops = measured_flops
+                    else:
+                        max_in = max(args.batch_size * args.max_input_tokens, 1)
+                        actual_in = max(n_in, 1)
+                        step_flops = _model_flops_fwd * (actual_in / max_in)
                 else:
                     step_flops = _model_flops_fwd * max(n_new, 1)
                 metrics["tflops"] = step_flops / dt / 1e12
                 metrics["mfu"] = compute_mfu(step_flops, dt)
+                if eval_unlabeled and measured_flops > 0:
+                    metrics["flops_measured"] = True
             if args.mode == "eval" and batch_with_label > 0:
                 metrics["accuracy"] = batch_correct / batch_with_label
             if eval_unlabeled and batch_token_scored > 0:
