@@ -274,8 +274,11 @@ usage: ezpz test [-h] [--warmup WARMUP] [--tp TP] [--pp PP]
                  [--pytorch-profiler-warmup PYTORCH_PROFILER_WARMUP]
                  [--pytorch-profiler-active PYTORCH_PROFILER_ACTIVE]
                  [--pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT]
-                 [--profile-memory] [--record-shapes] [--save-datasets]
-                 [--with-stack] [--with-flops] [--with-modules] [--acc-events]
+                 [--profile-memory | --no-profile-memory]
+                 [--record-shapes | --no-record-shapes] [--save-datasets]
+                 [--with-stack | --no-with-stack]
+                 [--with-flops | --no-with-flops]
+                 [--with-modules | --no-with-modules] [--acc-events]
                  [--train-iters TRAIN_ITERS]
                  [--model {debug,small,medium,large}] [--log-freq LOG_FREQ]
                  [--print-freq PRINT_FREQ] [--batch-size BATCH_SIZE]
@@ -313,12 +316,17 @@ options:
   --pytorch-profiler-repeat PYTORCH_PROFILER_REPEAT
                         Repeat iterations for the PyTorch profiler (default:
                         5)
-  --profile-memory      Profile memory usage (default: True)
-  --record-shapes       Record shapes in the profiler (default: True)
+  --profile-memory, --no-profile-memory
+                        Profile memory usage (default: True)
+  --record-shapes, --no-record-shapes
+                        Record shapes in the profiler (default: True)
   --save-datasets       Save datasets (default: False)
-  --with-stack          Include stack traces in the profiler (default: True)
-  --with-flops          Include FLOPs in the profiler (default: True)
-  --with-modules        Include module information in the profiler (default:
+  --with-stack, --no-with-stack
+                        Include stack traces in the profiler (default: True)
+  --with-flops, --no-with-flops
+                        Include FLOPs in the profiler (default: True)
+  --with-modules, --no-with-modules
+                        Include module information in the profiler (default:
                         True)
   --acc-events          Accumulate events in the profiler (default: False)
   --train-iters TRAIN_ITERS, --train_iters TRAIN_ITERS

@@ -111,16 +111,21 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default=5,
         help="Repeat iterations for the PyTorch profiler",
     )
+    # The next five flags default to True and were declared as
+    # `action="store_true"`, which made them unreachable as False —
+    # passing the flag and not passing it both produced True.
+    # BooleanOptionalAction generates the matching --no-* form so users
+    # can actually disable each one (e.g. `--no-with-stack`).
     parser.add_argument(
         "--profile-memory",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Profile memory usage",
     )
     parser.add_argument(
         "--record-shapes",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Record shapes in the profiler",
     )
     parser.add_argument(
@@ -132,19 +137,19 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument(
         "--with-stack",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include stack traces in the profiler",
     )
     parser.add_argument(
         "--with-flops",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include FLOPs in the profiler",
     )
     parser.add_argument(
         "--with-modules",
         default=True,
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="Include module information in the profiler",
     )
     parser.add_argument(

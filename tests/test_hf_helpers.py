@@ -104,32 +104,55 @@ class TestSavePretrainedWithFallback:
     def test_success_no_retry(self, hf_module, tmp_path):
         """First call succeeds → no retry, no safe_serialization=False."""
         model = self._FakeModel()
+        save_fn = lambda *a, **kw: None
+        out = str(tmp_path / "out")
         hf_module._save_pretrained_with_fallback(
-            model, str(tmp_path / "out"),
+            model, out,
             is_main_process=True,
-            save_function=lambda *a, **kw: None,
+            save_function=save_fn,
         )
         assert len(model.calls) == 1
         # First (and only) call should NOT pass safe_serialization
         assert "safe_serialization" not in model.calls[0]
+        # All other kwargs are forwarded verbatim
+        assert model.calls[0]["output_dir"] == out
+        assert model.calls[0]["is_main_process"] is True
+        assert model.calls[0]["save_function"] is save_fn
 
     def test_retries_on_oserror_with_safe_serialization_false(
-        self, hf_module, tmp_path,
+        self, hf_module, tmp_path, caplog,
     ):
         """OSError 'Argument list too long' triggers retry with
-        safe_serialization=False.
+        safe_serialization=False, and a warning is logged.
         """
+        import logging
+
         # Simulate Lustre E2BIG failure
         e2big = OSError(7, "Argument list too long")
+        save_fn = lambda *a, **kw: None
+        out = str(tmp_path / "out")
         model = self._FakeModel(raises_on=[e2big, None])
-        hf_module._save_pretrained_with_fallback(
-            model, str(tmp_path / "out"),
-            is_main_process=True,
-            save_function=lambda *a, **kw: None,
-        )
+        with caplog.at_level(logging.WARNING, logger="ezpz.examples.hf"):
+            hf_module._save_pretrained_with_fallback(
+                model, out,
+                is_main_process=True,
+                save_function=save_fn,
+            )
         assert len(model.calls) == 2
+        # First attempt — no safe_serialization arg
         assert "safe_serialization" not in model.calls[0]
+        # Retry — safe_serialization=False, all other kwargs forwarded
         assert model.calls[1]["safe_serialization"] is False
+        assert model.calls[1]["output_dir"] == out
+        assert model.calls[1]["is_main_process"] is True
+        assert model.calls[1]["save_function"] is save_fn
+        # Warning identifies the exception type and mentions retrying
+        retry_warnings = [
+            r for r in caplog.records
+            if "safetensors" in r.message and "retrying" in r.message
+        ]
+        assert len(retry_warnings) == 1
+        assert "OSError" in retry_warnings[0].message
 
     def test_retries_on_safetensor_error_when_available(
         self, hf_module, tmp_path,
