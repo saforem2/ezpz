@@ -22,11 +22,14 @@ class AttentionBlock(nn.Module):
         attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
         dim: Token embedding dimension.
         num_heads: Number of attention heads.
+        format: QKV permutation format.  Use ``"bshd"`` for batch-first
+            layouts; defaults to the standard ``(heads, seq, dim)`` order.
         qkv_bias: Whether the QKV projection has a bias term.  Defaults
             to ``True`` to match the standard ViT recipe; bias-free
             attention slightly hurts trainability on small datasets.
-        format: QKV permutation format.  Use ``"bshd"`` for batch-first
-            layouts; defaults to the standard ``(heads, seq, dim)`` order.
+            Keyword-only so that adding it doesn't break existing
+            positional callers like ``AttentionBlock(attn_fn, 768, 12,
+            "bshd")``.
         **kwargs: Ignored (accepted for API compatibility).
     """
 
@@ -35,8 +38,9 @@ class AttentionBlock(nn.Module):
         attn_fn,
         dim: int = 768,
         num_heads: int = 12,
-        qkv_bias: bool = True,
         format: str | None = None,
+        *,
+        qkv_bias: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -88,9 +92,10 @@ class timmAttentionBlock(nn.Module):
         attn_fn: Callable implementing ``(q, k, v) -> out`` attention.
         dim: Token embedding dimension.
         num_heads: Number of attention heads.
-        qkv_bias: Whether the QKV projection has a bias term.  Defaults
-            to ``True`` to match the standard ViT recipe.
         format: QKV permutation format (see :class:`AttentionBlock`).
+        qkv_bias: Whether the QKV projection has a bias term.  Defaults
+            to ``True`` to match the standard ViT recipe.  Keyword-only
+            (see :class:`AttentionBlock` for rationale).
         **kwargs: Ignored (accepted for API compatibility).
     """
 
@@ -99,8 +104,9 @@ class timmAttentionBlock(nn.Module):
         attn_fn,
         dim: int = 768,
         num_heads: int = 12,
-        qkv_bias: bool = True,
         format: str | None = None,
+        *,
+        qkv_bias: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
