@@ -237,19 +237,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.model,
             clean_up_tokenization_spaces=False,
         )
-        # Resolve a usable pad id: prefer pad → eos → 0 (defensive,
-        # so n_new computation later never hits None).
+        # Resolve a usable pad id: prefer existing pad → reuse eos →
+        # add a new <pad> token (last-resort, requires resizing the
+        # model embedding table to match — done below after model load).
+        added_pad_token = False
         if tok.pad_token_id is None:
             if tok.eos_token_id is not None:
                 tok.pad_token = tok.eos_token
             else:
                 tok.add_special_tokens({"pad_token": "<pad>"})
+                added_pad_token = True
         # Left-pad so generation continues from the end of each prompt
         tok.padding_side = "left"
         m = AutoModelForCausalLM.from_pretrained(
             args.model,
             torch_dtype=dtype,
         ).to(device)
+        # If we extended the vocab, resize the embedding table so the
+        # new pad id doesn't index out of bounds.
+        if added_pad_token:
+            m.resize_token_embeddings(len(tok))
         m.eval()
         return tok, m
 
