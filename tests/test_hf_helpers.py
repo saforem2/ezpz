@@ -76,3 +76,99 @@ class TestSafetensorsSaveErrors:
     def test_module_constant_matches_function(self, hf_module):
         """The cached _SAFETENSORS_SAVE_ERRORS matches a fresh call."""
         assert hf_module._SAFETENSORS_SAVE_ERRORS == hf_module._safetensors_save_errors()
+
+
+class TestSavePretrainedWithFallback:
+    """Tests for ``_save_pretrained_with_fallback``.
+
+    Uses a fake model whose ``save_pretrained`` we control, so we can
+    drive the success / retry / no-catch paths without touching disk
+    or pulling in real HF model weights.
+    """
+
+    class _FakeModel:
+        """Minimal stand-in for an HF model with save_pretrained."""
+
+        def __init__(self, raises_on=None):
+            # Tuple of exception instances to raise on successive calls.
+            self.raises_on = list(raises_on or [])
+            self.calls: list[dict] = []
+
+        def save_pretrained(self, output_dir, **kwargs):
+            self.calls.append({"output_dir": output_dir, **kwargs})
+            if self.raises_on:
+                exc = self.raises_on.pop(0)
+                if exc is not None:
+                    raise exc
+
+    def test_success_no_retry(self, hf_module, tmp_path):
+        """First call succeeds → no retry, no safe_serialization=False."""
+        model = self._FakeModel()
+        hf_module._save_pretrained_with_fallback(
+            model, str(tmp_path / "out"),
+            is_main_process=True,
+            save_function=lambda *a, **kw: None,
+        )
+        assert len(model.calls) == 1
+        # First (and only) call should NOT pass safe_serialization
+        assert "safe_serialization" not in model.calls[0]
+
+    def test_retries_on_oserror_with_safe_serialization_false(
+        self, hf_module, tmp_path,
+    ):
+        """OSError 'Argument list too long' triggers retry with
+        safe_serialization=False.
+        """
+        # Simulate Lustre E2BIG failure
+        e2big = OSError(7, "Argument list too long")
+        model = self._FakeModel(raises_on=[e2big, None])
+        hf_module._save_pretrained_with_fallback(
+            model, str(tmp_path / "out"),
+            is_main_process=True,
+            save_function=lambda *a, **kw: None,
+        )
+        assert len(model.calls) == 2
+        assert "safe_serialization" not in model.calls[0]
+        assert model.calls[1]["safe_serialization"] is False
+
+    def test_retries_on_safetensor_error_when_available(
+        self, hf_module, tmp_path,
+    ):
+        """SafetensorError from the rust core triggers retry."""
+        try:
+            from safetensors import SafetensorError
+        except ImportError:
+            pytest.skip("safetensors not installed")
+        model = self._FakeModel(raises_on=[SafetensorError("rust boom"), None])
+        hf_module._save_pretrained_with_fallback(
+            model, str(tmp_path / "out"),
+            is_main_process=True,
+            save_function=lambda *a, **kw: None,
+        )
+        assert len(model.calls) == 2
+        assert model.calls[1]["safe_serialization"] is False
+
+    def test_does_not_catch_genuine_bugs(self, hf_module, tmp_path):
+        """TypeError / AttributeError must propagate, not be silently retried."""
+        model = self._FakeModel(raises_on=[TypeError("genuine bug")])
+        with pytest.raises(TypeError, match="genuine bug"):
+            hf_module._save_pretrained_with_fallback(
+                model, str(tmp_path / "out"),
+                is_main_process=True,
+                save_function=lambda *a, **kw: None,
+            )
+        # Only the first call happened — we did not retry under
+        # safe_serialization=False after a non-Lustre failure.
+        assert len(model.calls) == 1
+
+    def test_does_not_catch_keyboard_interrupt(self, hf_module, tmp_path):
+        """KeyboardInterrupt must propagate even though the previous
+        BaseException-typed signature could have caught it."""
+        model = self._FakeModel(raises_on=[KeyboardInterrupt()])
+        with pytest.raises(KeyboardInterrupt):
+            hf_module._save_pretrained_with_fallback(
+                model, str(tmp_path / "out"),
+                is_main_process=True,
+                save_function=lambda *a, **kw: None,
+            )
+        assert len(model.calls) == 1
