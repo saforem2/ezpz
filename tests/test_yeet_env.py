@@ -395,17 +395,22 @@ class TestSlurmHostfileCleanupRegistration:
         register the cleanup handler exactly once per unique path,
         not once per call.
         """
+        import os as _os
+        import uuid
         from unittest.mock import MagicMock
+
+        # Use a per-process-unique SLURM_JOB_ID so this test doesn't
+        # collide with itself under pytest-xdist (which runs tests in
+        # parallel worker processes that share /tmp).  Also include
+        # the worker pid for extra safety.
+        unique_id = f"yeet-test-{_os.getpid()}-{uuid.uuid4().hex[:8]}"
 
         # Pretend we're in SLURM with no scheduler-discoverable hostfile.
         monkeypatch.delenv("PBS_NODEFILE", raising=False)
         monkeypatch.delenv("HOSTFILE", raising=False)
         monkeypatch.delenv("PBS_JOBID", raising=False)
         monkeypatch.setenv("SLURM_NODELIST", "node[01-02]")
-        monkeypatch.setenv("SLURM_JOB_ID", "test123")
-
-        # Reset the de-dupe set for a clean test
-        yeet._REGISTERED_CLEANUPS.clear()
+        monkeypatch.setenv("SLURM_JOB_ID", unique_id)
 
         # Mock scontrol to produce two hostnames
         result = MagicMock(returncode=0, stdout="node01\nnode02\n")
@@ -423,14 +428,17 @@ class TestSlurmHostfileCleanupRegistration:
             yeet, "_maybe_apply_hsn_suffix", lambda nodes: nodes,
         )
 
-        # Pre-create the path so write_text / unlink work cleanly
-        hf_path = Path("/tmp/_ezpz_hostfile_test123")
+        # The path the production code will try to write
+        hf_path = Path(f"/tmp/_ezpz_hostfile_{unique_id}")
 
         try:
             yeet._get_worker_nodes()
             yeet._get_worker_nodes()
             yeet._get_worker_nodes()
         finally:
+            # Best-effort cleanup: unique path means no other test or
+            # process could have created this file, so removing it is
+            # safe even on shared /tmp.
             if hf_path.exists():
                 hf_path.unlink()
             yeet._REGISTERED_CLEANUPS.discard(str(hf_path))

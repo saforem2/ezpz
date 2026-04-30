@@ -45,7 +45,12 @@ _IS_TTY = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 # Tracks the SLURM-derived /tmp hostfiles we've already registered an
 # atexit handler for, so repeat invocations of _get_worker_nodes (in
 # tests, embedded use, etc.) don't register a fresh handler each time.
+# Guarded by _REGISTERED_CLEANUPS_LOCK because the check-then-add
+# sequence is non-atomic — concurrent calls (multi-threaded embeddings,
+# parallel pytest workers) could otherwise both pass the membership
+# check and double-register.
 _REGISTERED_CLEANUPS: set[str] = set()
+_REGISTERED_CLEANUPS_LOCK = threading.Lock()
 
 
 # ── Environment detection ────────────────────────────────────────────────────
@@ -187,8 +192,13 @@ def _get_worker_nodes(hostfile: str | None = None) -> list[str]:
                     hf = str(hf_path)
                     # Register cleanup once per unique path so repeated
                     # _get_worker_nodes calls don't accumulate handlers.
-                    if hf not in _REGISTERED_CLEANUPS:
-                        _REGISTERED_CLEANUPS.add(hf)
+                    # Lock around the check-then-add so concurrent
+                    # callers can't both pass the membership check.
+                    with _REGISTERED_CLEANUPS_LOCK:
+                        newly_registered = hf not in _REGISTERED_CLEANUPS
+                        if newly_registered:
+                            _REGISTERED_CLEANUPS.add(hf)
+                    if newly_registered:
                         atexit.register(_cleanup_path, hf_path)
             except Exception:
                 pass
@@ -320,13 +330,34 @@ def _remove_partial_dst(dst: Path) -> None:
     removable, so the contents we're deleting are exclusively what we
     put there moments ago.  Allow the removal regardless of where
     ``--dst`` points.
+
+    Skips the ``dst.exists()`` pre-check because ``rmtree`` is
+    already tolerant of missing paths via the error callback (and a
+    pre-check would just open a TOCTOU window).  Uses an error
+    callback instead of ``ignore_errors=True`` so failures are
+    visible in the log instead of silently dropped.
     """
-    if not dst.exists():
-        return
-    try:
-        shutil.rmtree(dst, ignore_errors=True)
-    except OSError as exc:
-        logger.warning("Failed to remove partial dst %s: %s", dst, exc)
+    def _on_rm_error(fn: object, path: str, exc_info: object) -> None:
+        # Unpack tuple form (Python 3.11 onerror) or bare exception
+        # form (Python 3.12+ onexc) — both shapes are passed through
+        # depending on which kwarg the rmtree supports.
+        if isinstance(exc_info, tuple):
+            exc = exc_info[1]
+        else:
+            exc = exc_info
+        # FileNotFoundError = dst was already gone; not worth logging.
+        if isinstance(exc, FileNotFoundError):
+            return
+        logger.warning(
+            "Failed to remove %s during partial-dst cleanup: %s", path, exc,
+        )
+
+    # onexc replaced onerror in 3.12; the older keyword still works
+    # via deprecation shim but emits a DeprecationWarning under 3.12.
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(dst, onexc=_on_rm_error)
+    else:
+        shutil.rmtree(dst, onerror=_on_rm_error)
 
 
 # ── Progress indicator ────────────────────────────────────────────────────────
