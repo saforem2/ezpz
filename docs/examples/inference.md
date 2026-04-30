@@ -276,7 +276,7 @@ usage: ezpz.examples.inference [-h] [--mode {benchmark,generate,eval}]
                                [--flops-every-n-steps FLOPS_EVERY_N_STEPS]
                                [--do-sample] [--temperature TEMPERATURE]
                                [--top-p TOP_P] [--seed SEED]
-                               [--save-predictions] [--no-save-predictions]
+                               [--save-predictions | --no-save-predictions]
 
 Distributed inference over a HuggingFace model + dataset. Three modes: --mode
 benchmark (throughput), generate (synthetic data corpus), eval (accuracy on
@@ -329,9 +329,9 @@ options:
                         omitted (rather than reporting approximated values).
                         Adds ~15-40% overhead per step. (default: False)
   --flops-every-n-steps FLOPS_EVERY_N_STEPS
-                        When --flops is set, measure FLOPS every N steps
-                        (default 1 = every step). Use a higher value to
-                        amortize the overhead across batches. (default: 1)
+                        When --flops is set, measure FLOPS every N steps. Use
+                        a higher value to amortize the overhead across
+                        batches. (default: 1)
   --do-sample           Use sampling instead of greedy decoding (default:
                         False)
   --temperature TEMPERATURE
@@ -340,9 +340,8 @@ options:
   --top-p TOP_P         Nucleus sampling threshold (only used with --do-
                         sample) (default: 1.0)
   --seed SEED           Random seed (default: 0)
-  --save-predictions    Write per-sample predictions to JSONL (default: True)
-  --no-save-predictions
-                        Skip writing per-sample predictions (default: True)
+  --save-predictions, --no-save-predictions
+                        Write per-sample predictions to JSONL (default: True)
 ```
 
 </details>

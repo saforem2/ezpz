@@ -348,8 +348,8 @@ options:
   --fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}
                         FSDP sharding strategy (default: full-shard)
   --fsdp-mixed-precision
-                        Use bfloat16 parameters with FSDP for speed (defaults
-                        to float32). (default: False)
+                        Use bfloat16 parameters with FSDP for speed. (default:
+                        False)
   --hidden HIDDEN
   --hf-dataset HF_DATASET, --dataset HF_DATASET
                         Optional Hugging Face dataset name (e.g., 'ag_news').

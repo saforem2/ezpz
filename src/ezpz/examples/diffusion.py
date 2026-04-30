@@ -612,7 +612,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fsdp-mixed-precision",
         action="store_true",
-        help="Use bfloat16 parameters with FSDP for speed (defaults to float32).",
+        help="Use bfloat16 parameters with FSDP for speed.",
     )
     parser.add_argument(
         "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))

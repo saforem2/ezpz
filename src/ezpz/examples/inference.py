@@ -157,9 +157,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=1,
         help=(
-            "When --flops is set, measure FLOPS every N steps "
-            "(default 1 = every step). Use a higher value to amortize "
-            "the overhead across batches."
+            "When --flops is set, measure FLOPS every N steps. "
+            "Use a higher value to amortize the overhead across batches."
         ),
     )
     parser.add_argument(
@@ -186,16 +185,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Random seed",
     )
     parser.add_argument(
+        # BooleanOptionalAction generates both --save-predictions and
+        # --no-save-predictions automatically.  The previous hand-rolled
+        # store_true/store_false pair rendered as
+        #   --no-save-predictions ... (default: True)
+        # which read as if the *flag* defaulted to True instead of the
+        # underlying behavior.  BooleanOptionalAction shows
+        #   --save-predictions, --no-save-predictions ... (default: True)
+        # which is the standard argparse way to express this and reads
+        # correctly under ArgumentDefaultsHelpFormatter.
         "--save-predictions",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Write per-sample predictions to JSONL",
-    )
-    parser.add_argument(
-        "--no-save-predictions",
-        dest="save_predictions",
-        action="store_false",
-        help="Skip writing per-sample predictions",
     )
     return parser.parse_args(argv)
 
