@@ -50,8 +50,11 @@ class TestGetPeakFlops:
         assert get_peak_flops("NVIDIA L40S") == 183e12
 
     def test_unknown_returns_none(self):
-        """Unknown devices return None."""
-        assert get_peak_flops("Unknown GPU 9000") is None
+        """Unknown devices return None — and emit one warning."""
+        # Use a unique name so the warn-once cache doesn't suppress
+        # the warning we want to assert on.
+        with pytest.warns(UserWarning, match="MFU tracking disabled"):
+            assert get_peak_flops("Unknown GPU 9000-suite-test") is None
 
     def test_cpu_returns_none(self):
         """CPU returns None (no meaningful peak FLOPS)."""

@@ -30,6 +30,7 @@ src/ezpz/logs/*
 *.cobaltlog
 outputs/*
 src/ezpz/outputs/*
+tests/outputs/*
 venvs/*
 *old*
 *.DS_Store

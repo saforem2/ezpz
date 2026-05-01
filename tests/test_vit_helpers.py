@@ -6,8 +6,6 @@ imported lazily so we can skip cleanly if those aren't available.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 
@@ -59,7 +57,22 @@ class TestComputeLrWarmupIters:
 
 
 class TestBuildLrScheduler:
-    """Tests for ``build_lr_scheduler``."""
+    """Tests for ``build_lr_scheduler``.
+
+    These tests step the scheduler without first running an
+    ``optimizer.step()`` because we're verifying the LR-vs-step
+    function in isolation, not training a real model.  PyTorch
+    emits a UserWarning when this ordering is detected, suggesting
+    the step might be skipped — but for a freshly-constructed
+    scheduler that warning fires on the *first* ``sch.step()`` even
+    in correct production code (because no optimizer.step has run
+    yet).  Suppress it here so it doesn't pollute the suite output.
+    """
+
+    pytestmark = pytest.mark.filterwarnings(
+        "ignore:Detected call of `lr_scheduler.step\\(\\)`"
+        " before `optimizer.step\\(\\)`:UserWarning"
+    )
 
     def _make_optimizer(self, lr: float = 1e-3):
         import torch
@@ -133,24 +146,96 @@ class TestBuildLrScheduler:
         # ~0.1003 by step 99 (progress=89/90 ≈ 0.989, cosine ≈ 0.0003)
         assert 0.1 <= opt2.param_groups[0]["lr"] < 0.11
 
-    def test_warmup_longer_than_run_is_clamped(self, vit):
-        """Warmup > max_iters used to make decay_steps = max(1, neg) → 1
-        and progress went negative → cosine returned values > 1.
+    def test_warmup_longer_than_run_reaches_peak_within_run(self, vit):
+        """Warmup > max_iters used to leave the run never reaching peak.
+
+        Concrete contrast with the pre-clamp behavior, using
+        warmup=200, max_iters=100, peak=1.0:
+
+        Old code (no clamp):
+          - step 0..99 stays in warmup branch: lr = (step+1)/200
+          - max LR over the 100-step run = 100/200 = 0.5
+          - Peak LR is never seen — the run ends mid-warmup.
+
+        New code (clamped to total_iters - 1 = 99):
+          - step 0..98 in warmup: lr = (step+1)/99 → reaches peak by step 98
+          - step 99 enters the cosine branch at progress=0 → lr=peak
+          - Peak IS reached within the user's run.
+
+        This is the user-visible regression: passing a warmup longer
+        than your run silently destroyed the LR sweep.
         """
         peak = 1.0
         opt = self._make_optimizer(lr=peak)
-        # warmup=200, max_iters=100 → clamped to 99
         sch = vit.build_lr_scheduler(
             opt, max_iters=100, lr_warmup_iters=200, min_lr_ratio=0.0,
         )
         assert sch is not None
-        # Walk through every step; LR must always stay in [0, peak]
-        seen_lrs = []
+        seen_lrs: list[float] = []
         for _ in range(100):
             seen_lrs.append(opt.param_groups[0]["lr"])
             sch.step()
+        max_lr = max(seen_lrs)
+        # Old code maxed out at ~0.5; new clamp must reach peak.
+        assert max_lr == pytest.approx(peak, rel=1e-6), (
+            f"warmup-clamp regression: max LR {max_lr} should equal peak "
+            f"{peak} (old broken code stopped at ~0.5)"
+        )
+        # And LR must never exceed peak (sanity)
         for lr in seen_lrs:
             assert 0.0 <= lr <= peak + 1e-6, f"lr {lr} out of range"
+
+    def test_lr_bounded_when_walking_past_total_iters(self, vit):
+        """Walking past total_iters must keep cosine progress saturated
+        at 1, so the LR never blows up above peak (and the cosine
+        component never goes below 0, capping the floor at min_lr_ratio
+        once warmup completes).
+
+        This is the cosine-branch invariant directly: even with a
+        misconfigured warmup (e.g. larger than max_iters) and the
+        outer loop continuing past max_iters, LR stays in
+        [warmup_floor, peak] during warmup and in [peak * min_lr_ratio,
+        peak] thereafter.
+        """
+        import math as _math
+
+        peak = 1.0
+        min_lr_ratio = 0.1
+        max_iters = 100
+        lr_warmup_iters = 200  # > max_iters, will be clamped to 99
+        opt = self._make_optimizer(lr=peak)
+        sch = vit.build_lr_scheduler(
+            opt,
+            max_iters=max_iters,
+            lr_warmup_iters=lr_warmup_iters,
+            min_lr_ratio=min_lr_ratio,
+        )
+        assert sch is not None
+        # Resolve the actual warmup the helper picked so the bounds
+        # check matches what the schedule does.
+        warmup = vit._compute_lr_warmup_iters(max_iters, lr_warmup_iters)
+        warmup_floor = peak * (1.0 / max(1, warmup))  # lambda(0)
+        post_warmup_floor = peak * min_lr_ratio
+        # Walk well past total_iters and check bounds at each step.
+        for step in range(500):
+            lr = opt.param_groups[0]["lr"]
+            assert lr <= peak + 1e-6, f"step {step}: lr {lr} > peak"
+            if step < warmup:
+                assert lr >= warmup_floor - 1e-9, (
+                    f"step {step}: warmup lr {lr} < warmup_floor "
+                    f"{warmup_floor}"
+                )
+            else:
+                assert lr >= post_warmup_floor - 1e-6, (
+                    f"step {step}: cosine lr {lr} < min_lr_ratio*peak "
+                    f"{post_warmup_floor}"
+                )
+            sch.step()
+        # Should have settled at the cosine floor by now.
+        final_lr = opt.param_groups[0]["lr"]
+        assert _math.isclose(
+            final_lr, post_warmup_floor, rel_tol=1e-6,
+        ), f"final lr {final_lr} should equal min_lr_ratio*peak"
 
     def test_min_lr_ratio_clamped_to_unit_interval(self, vit):
         """min_lr_ratio outside [0, 1] is silently clamped."""
