@@ -1,24 +1,37 @@
-# Distributing Python Environments
+# Distributing Files to Worker Nodes
 
-On large HPC clusters, Python environments on shared filesystems
-create I/O contention and slow startup times. `ezpz yeet-env` solves
-this by copying your environment to node-local `/tmp/` storage on
-every worker node in your job.
+On large HPC clusters, files on shared filesystems create I/O
+contention and slow startup times. `ezpz yeet` copies any directory
+or tarball to node-local `/tmp/` storage on every worker node in your
+job — Python environments, model checkpoints, datasets, configs,
+anything that benefits from being node-local before a large run.
+
+!!! note "Renamed from `ezpz yeet-env`"
+
+    `ezpz yeet-env` still works as a deprecated alias and dispatches
+    to the same logic. Update your scripts to `ezpz yeet` when
+    convenient.
 
 ## Quick Start
 
 ```bash
 # Inside an interactive job allocation:
-ezpz yeet-env
+ezpz yeet                            # no args → syncs the active venv
+ezpz yeet .venv.tar.gz               # positional shorthand for --src
+ezpz yeet --src /path/to/dataset     # any directory or tarball
 ```
 
-That's it. By default, `yeet-env`:
+By default (no args), `yeet`:
 
 1. Detects the active Python environment (`sys.prefix`)
 2. Discovers all nodes from the job's hostfile (PBS/SLURM)
 3. Copies the environment to `/tmp/<env-name>/` on the current node
 4. Patches activate scripts, shebangs, and symlinks for the new location
 5. Distributes the patched copy to all remote nodes via greedy rsync fan-out
+
+For non-venv sources (datasets, models, generic directories), step 4
+is skipped and the footer prints a generic "Synced to {dst} on N
+node(s)" message instead of the venv activation guidance.
 
 ```
   Source: /path/to/project/.venv (3.2 GB)
@@ -58,14 +71,15 @@ ezpz launch python3 -m your_app.train
 ## CLI Options
 
 ```
-ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
+ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
               [--copy | --compress] [--dry-run]
 ```
 
-| Flag | Default | Description |
+| Arg / Flag | Default | Description |
 |------|---------|-------------|
-| `--src` | Active venv/conda env | Source environment path. May also be a `.tar.gz`/`.tgz` file — see [tarball source](#tarball-source) |
-| `--dst` | `/tmp/<env-name>/` | Destination on each node (e.g. `/tmp/.venv/` for a venv named `.venv`) |
+| `SRC` (positional) | — | Source path. Shorthand for `--src`. Mutually exclusive with `--src` |
+| `--src` | Active venv/conda env | Source path. May also be a `.tar.gz`/`.tgz` file — see [tarball source](#tarball-source) |
+| `--dst` | `/tmp/<basename>/` | Destination on each node (e.g. `/tmp/.venv/` for a venv named `.venv`) |
 | `--hostfile` | Auto-detect from scheduler | Hostfile for node list |
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |
@@ -86,13 +100,13 @@ ezpz yeet-env [--src PATH] [--dst PATH] [--hostfile PATH]
 
     ```bash
     # First time: compress for minimal Lustre I/O
-    ezpz yeet-env --compress
+    ezpz yeet --compress
 
     # Or: cp for simpler fast copy
-    ezpz yeet-env --copy
+    ezpz yeet --copy
 
     # After pip install: rsync only sends diffs
-    ezpz yeet-env
+    ezpz yeet
     ```
 
     All three methods only affect the **local** Lustre → `/tmp/` copy.
@@ -105,7 +119,7 @@ built earlier with [`ezpz tar-env`](./tar-env.md), or one shipped
 with a project), you can pass it directly:
 
 ```bash
-ezpz yeet-env --src /lus/.../my-env.tar.gz
+ezpz yeet --src /lus/.../my-env.tar.gz
 ```
 
 This is similar to `--compress` but **skips the create step** —
@@ -121,13 +135,32 @@ the tarball is copied to `/tmp/` and extracted there:
 Both `.tar.gz` and `.tgz` extensions are recognized. The destination
 defaults to `/tmp/<basename-without-suffix>/`.
 
+### Generic (non-venv) sources
+
+`yeet` works on any directory, not just Python environments. Pass a
+positional path or use `--src` to yeet datasets, model checkpoints,
+configs — anything that benefits from being node-local:
+
+```bash
+# Distribute a pre-downloaded HF model checkpoint to /tmp/ on every node
+ezpz yeet ~/models/Llama-3.1-8B
+
+# Or a dataset shard
+ezpz yeet --src /lus/datasets/imagenet-shard-0
+```
+
+When the source isn't a venv (no `bin/activate`) and isn't a conda env
+(no `conda-meta/`), the venv path-patching step is skipped and the
+trailing guidance is replaced with a generic "Synced to {dst}/ on N
+node(s)" footer.
+
 ## How It Works
 
 ### Overview
 
 ```mermaid
 graph TD
-    A["ezpz yeet-env"] --> B["Detect source env"]
+    A["ezpz yeet"] --> B["Detect source env"]
     B --> C["Discover nodes<br/>(PBS_NODEFILE / SLURM_NODELIST)"]
     C --> D["Copy to local /tmp/<br/>(rsync, cp -a, or tar.gz)"]
     D --> E["Patch paths + shebangs"]
@@ -137,7 +170,7 @@ graph TD
 
 ### Step 1: Local copy + patch
 
-First, `yeet-env` copies the source environment to `/tmp/<env>/` on
+First, `yeet` copies the source environment to `/tmp/<env>/` on
 the current node using rsync (default), `cp -a` (`--copy`), or
 tar.gz (`--compress`). If the local copy fails, distribution is
 aborted immediately — no broken environment gets distributed.
@@ -159,7 +192,7 @@ rsyncs — no per-node patching or SSH needed.
 ### Step 2: Greedy fan-out
 
 Instead of syncing from one source to all N nodes (which saturates
-the source node's NIC), `yeet-env` uses a **greedy streaming
+the source node's NIC), `yeet` uses a **greedy streaming
 fan-out**: each node that finishes immediately becomes a source for
 others, without waiting for any "wave" to complete.
 
@@ -234,7 +267,7 @@ starts serving new targets — it doesn't wait for node08.
 ??? info "ASCII diagram: greedy fan-out"
 
     ```
-                       ezpz yeet-env
+                       ezpz yeet
 
     Step 0: Local copy + patch
     ══════════════════════════
@@ -284,7 +317,7 @@ starts serving new targets — it doesn't wait for node08.
 
 ### Node discovery
 
-`yeet-env` discovers nodes directly from scheduler environment
+`yeet` discovers nodes directly from scheduler environment
 variables, without importing heavy Python packages (torch, numpy,
 etc.) — so the CLI starts in seconds even on slow filesystems.
 
@@ -307,7 +340,7 @@ repeat once per-GPU) and FQDN suffixes are stripped.
 
 On Aurora, the PBS hostfile contains bare hostnames (`x4717c0s2b0n0`),
 but the Slingshot HSN interface is reachable via the `-hsn0` suffix
-at much higher bandwidth than the management network. `yeet-env`
+at much higher bandwidth than the management network. `yeet`
 probes whether `<hostname>-hsn0` resolves and prefers it for all
 remote rsyncs if so. On Sunspot the hostfile already contains `-hsn0`
 suffixes, so this is a no-op.
@@ -315,7 +348,7 @@ suffixes, so this is a no-op.
 ### Path patching
 
 Venv activate scripts, Python symlinks, and **entry-point script
-shebangs** contain hardcoded absolute paths. `yeet-env` patches
+shebangs** contain hardcoded absolute paths. `yeet` patches
 these **once** on the local `/tmp/` copy before any distribution:
 
 - Replaces the old `VIRTUAL_ENV` path in activate scripts
@@ -351,25 +384,25 @@ installing new packages.
 
 ```bash
 # Inside an interactive job on Polaris:
-ezpz yeet-env
+ezpz yeet
 ```
 
 ### Sync a specific environment
 
 ```bash
-ezpz yeet-env --src /path/to/my-conda-env
+ezpz yeet --src /path/to/my-conda-env
 ```
 
 ### Custom destination
 
 ```bash
-ezpz yeet-env --dst /local/scratch/myenv
+ezpz yeet --dst /local/scratch/myenv
 ```
 
 ### Preview without syncing
 
 ```bash
-ezpz yeet-env --dry-run
+ezpz yeet --dry-run
 ```
 
 ### Real-world example: 64 nodes on Sunspot
@@ -377,7 +410,7 @@ ezpz yeet-env --dry-run
 ??? example "8.3 GB venv → 65 nodes in ~2 minutes"
 
     ```bash
-    $ ezpz yeet-env
+    $ ezpz yeet
       Source: /lus/tegu/.../torchtitan-213/.venv (8.3G)
       Target: /tmp/.venv/ on 65 node(s)
         local:  x1921c0s2b0n0 (rsync to /tmp/.venv/)
@@ -414,7 +447,7 @@ ezpz yeet-env --dry-run
 qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
 
 # 2. Distribute the environment
-ezpz yeet-env
+ezpz yeet
 
 # 3. Activate the local copy
 deactivate 2>/dev/null
@@ -428,7 +461,7 @@ ezpz launch python3 -m your_app.train
 ## See Also
 
 - [`ezpz launch`](./launch/index.md) — launch distributed training
-  (respects `$VIRTUAL_ENV` so it Just Works after yeet-env + activate)
+  (respects `$VIRTUAL_ENV` so it Just Works after yeet + activate)
 - [`ezpz.utils.yeet_env`](../python/Code-Reference/utils/yeet_env.md) — Python API reference
 - [Shell Environment](../notes/shell-environment.md) — `ezpz_setup_*`
   helper functions (including `ezpz_setup_xpu` for Intel GPUs)

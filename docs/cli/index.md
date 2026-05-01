@@ -64,7 +64,7 @@ Explicitly, these are `ezpz <command>`:
 - ??? question "Experimental"
 
         - 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
-        - 🚀 [`ezpz yeet-env`](./yeet-env.md): Distribute environment to all worker nodes via parallel rsync
+        - 🚀 [`ezpz yeet`](./yeet.md): Distribute files (envs, models, datasets, etc.) to all worker nodes via parallel rsync
 
 - ??? tip "`ezpz --help`"
 
@@ -87,5 +87,5 @@ Explicitly, these are `ezpz <command>`:
         submit     Submit a job to the active scheduler (PBS/SLURM).
         tar-env    Create (or locate) a tarball for the current environment.
         test       Run the distributed smoke test.
-        yeet-env   Distribute an environment tarball across worker nodes.
+        yeet       Distribute files (envs, models, datasets, etc.) to worker nodes.
         ```
