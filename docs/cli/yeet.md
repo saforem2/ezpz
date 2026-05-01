@@ -234,6 +234,19 @@ graph TD
         B2 --> C2["node18"]
         B3 --> C3["..."]
     end
+
+    %% Color by generation: source → gen 1 → gen 2 → gen 3.
+    %% Each gen N node becomes a source for gen N+1, so the gradient
+    %% reads as the tree growing outward in time.
+    classDef genSrc fill:#6a1b9a,stroke:#4a148c,color:#fff
+    classDef gen1   fill:#1976d2,stroke:#0d47a1,color:#fff
+    classDef gen2   fill:#0097a7,stroke:#006064,color:#fff
+    classDef gen3   fill:#388e3c,stroke:#1b5e20,color:#fff
+
+    class S,L genSrc
+    class A1,A2,A3,A4,A5,A6,A7,A8 gen1
+    class B1,B2,B3,B4,B5 gen2
+    class C1,C2,C3 gen3
 ```
 
 The key difference from a wave-based approach: if node01 finishes
