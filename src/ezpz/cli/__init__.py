@@ -142,3 +142,33 @@ def doctor_cmd(args: tuple[str, ...]) -> None:
 
     rc = doctor_module.run(_ensure_sequence(args))
     _handle_exit_code(rc)
+
+
+@main.command(name="kill", context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def kill_cmd(args: tuple[str, ...]) -> None:
+    """Kill ezpz-launched python processes (or any matching pattern).
+
+    Without arguments, kills processes on the local node whose
+    environment contains EZPZ_RUN_COMMAND (set automatically by
+    `ezpz launch`).
+
+    \b
+    Examples:
+      ezpz kill                       # local node, ezpz-launched procs only
+      ezpz kill train.py              # local node, anything matching `train.py`
+      ezpz kill --all-nodes           # fan out across the job's hostfile
+      ezpz kill --dry-run             # list matches, don't kill
+      ezpz kill --signal KILL train   # SIGKILL anything matching `train`
+
+    \b
+    Options (passed through):
+      --all-nodes      SSH into every node in the hostfile and kill there too
+      --hostfile PATH  Hostfile for --all-nodes (default: auto-detect)
+      --signal NAME    Signal to send (TERM, KILL, INT, HUP, QUIT)
+      --dry-run        List matches without signaling
+    """
+    from ezpz.utils import kill as kill_module
+
+    rc = kill_module.run(list(args) if args else None)
+    _handle_exit_code(rc)
