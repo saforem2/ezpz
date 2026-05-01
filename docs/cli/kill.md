@@ -1,6 +1,6 @@
 # Killing Stuck Processes
 
-`ezpz kill` cleans up python processes that ezpz launched, on the
+`ezpz kill` cleans up Python processes that ezpz launched, on the
 local node or fanned out across the whole job allocation. Useful when
 a distributed run hangs, crashes mid-shutdown and leaves stragglers,
 or when you want to clear the deck before re-launching.
