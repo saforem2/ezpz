@@ -440,6 +440,56 @@ ezpz yeet --dry-run
     for others to finish — the tree grows as fast as individual
     rsyncs complete.
 
+### Scaling: Aurora, 8 → 4096 nodes
+
+Full 10-point sweep using the tarball broadcast mode
+(`ezpz yeet --src .venv.tar.gz`) on Aurora, measured 2026-04-30 to
+2026-05-01. The benchmark harness lives in
+[`saforem2/torchtitan@ezpz`](https://github.com/saforem2/torchtitan/tree/ezpz/torchtitan/experiments/ezpz/docs/scaling/yeet_env)
+along with the raw CSV and the plotting script.
+
+| Nodes | yeet wall-clock (s) | Per-node (ms) |
+|------:|--------------------:|--------------:|
+| 8 | 69.7 | 8,712 |
+| 16 | 89.7 | 5,606 |
+| 32 | 89.2 | 2,788 |
+| 64 | 91.2 | 1,425 |
+| 128 | 110.4 | 862 |
+| 256 | 132.9 | 519 |
+| 512 | 174.5 | 341 |
+| 1024 | 255.4 | 249 |
+| 2048 | 421.4 | 206 |
+| 4096 | 750.6 | 183 |
+
+![Total wall-clock](./assets/yeet/yeet_env_seconds.png)
+
+![Per-node amortized](./assets/yeet/yeet_env_per_node.png)
+
+**Two regimes show up in the data:**
+
+- **8–64 nodes is extract-bound.** Total wall-clock is roughly flat
+  at 70–91 s; per-node cost falls 8.7 s → 1.4 s as more nodes share
+  the fixed-cost local extraction.
+- **≥128 nodes is broadcast-bound.** Total wall-clock grows
+  super-linearly. Each 2× in nodes adds ~1.5–1.8× wall-clock
+  (256→512: 1.31×, 512→1024: 1.46×, 1024→2048: 1.65×, 2048→4096:
+  1.78×) — the broadcast tree depth and per-leaf bandwidth
+  contention both grow with scale.
+
+**Per-node amortized cost** drops monotonically from 8.7 s/node at
+N=8 to 0.18 s/node at N=4096 — a **48× efficiency gain** over the
+sweep. Even at the full-Aurora 4096-node scale, the pre-launch
+overhead is under 13 minutes.
+
+!!! info "Why tarball broadcast scales so much better than per-file rsync"
+
+    The pre-tarball `yeet` mode (per-file rsync) was projected to
+    take 1–2 hours at 256+ nodes — the per-file metadata cost
+    dominates over Lustre. Switching to a single compressed tarball
+    (`--compress` or pre-built `--src foo.tar.gz`) reduces the
+    Lustre side to one sequential read regardless of node count, so
+    the broadcast itself is the only thing that scales with N.
+
 ### Complete workflow
 
 ```bash
