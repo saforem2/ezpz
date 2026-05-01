@@ -783,15 +783,25 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "src_positional",
+        nargs="?",
+        default=None,
+        metavar="SRC",
+        help=(
+            "Source path (positional shorthand for --src). Mutually "
+            "exclusive with --src. May be a directory OR a .tar.gz/.tgz "
+            "file."
+        ),
+    )
+    parser.add_argument(
         "--src",
         type=str,
         default=None,
         help=(
-            "Source environment path (defaults to the active "
-            "venv/conda env). May be a directory OR a .tar.gz/.tgz "
-            "file — in the latter case the tarball is copied to "
-            "/tmp/ and extracted there, skipping the create step "
-            "that --compress does."
+            "Source path (defaults to the active venv/conda env). May "
+            "be a directory OR a .tar.gz/.tgz file — in the latter "
+            "case the tarball is copied to /tmp/ and extracted there, "
+            "skipping the create step that --compress does."
         ),
     )
     parser.add_argument(
@@ -832,11 +842,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     args, unknown = parser.parse_known_args(argv)
     if unknown:
-        # Filter out stray positional args (e.g. "yeet-env" leaked from
-        # click's UNPROCESSED dispatch or deprecated entry points).
-        real_unknown = [a for a in unknown if a.startswith("-")]
-        if real_unknown:
-            parser.error(f"unrecognized arguments: {' '.join(real_unknown)}")
+        # Tolerate one stray "yeet-env"/"yeet" token leaked from old
+        # entry points; reject anything else.
+        leftover = [a for a in unknown if a not in ("yeet", "yeet-env")]
+        if leftover:
+            parser.error(
+                f"unrecognized arguments: {' '.join(leftover)}"
+            )
+    # Mutex: positional SRC and --src can't both be set.
+    if args.src_positional is not None and args.src is not None:
+        parser.error(
+            "--src and positional SRC are mutually exclusive; "
+            "pick one"
+        )
+    if args.src is None:
+        args.src = args.src_positional
     return args
 
 

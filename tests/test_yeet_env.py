@@ -185,6 +185,23 @@ class TestParseArgs:
         assert args.compress is True
         assert args.copy is False
 
+    def test_positional_src(self):
+        """Positional SRC populates args.src."""
+        args = yeet.parse_args(["/path/to/env"])
+        assert args.src == "/path/to/env"
+
+    def test_positional_with_flags(self):
+        """Positional SRC works alongside other flags."""
+        args = yeet.parse_args(["/path/to/env", "--dry-run", "--copy"])
+        assert args.src == "/path/to/env"
+        assert args.dry_run is True
+        assert args.copy is True
+
+    def test_positional_and_src_flag_conflict(self):
+        """Passing both positional SRC and --src exits with usage error."""
+        with pytest.raises(SystemExit):
+            yeet.parse_args(["/path/a", "--src", "/path/b"])
+
 
 class TestTarballSrc:
     """Tests for the .tar.gz / .tgz source-detection logic in run()."""
