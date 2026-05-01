@@ -448,18 +448,24 @@ Full 10-point sweep using the tarball broadcast mode
 [`saforem2/torchtitan@ezpz`](https://github.com/saforem2/torchtitan/tree/ezpz/torchtitan/experiments/ezpz/docs/scaling/yeet_env)
 along with the raw CSV and the plotting script.
 
-| Nodes | yeet wall-clock (s) | Per-node (ms) |
-|------:|--------------------:|--------------:|
-| 8 | 69.7 | 8,712 |
-| 16 | 89.7 | 5,606 |
-| 32 | 89.2 | 2,788 |
-| 64 | 91.2 | 1,425 |
-| 128 | 110.4 | 862 |
-| 256 | 132.9 | 519 |
-| 512 | 174.5 | 341 |
-| 1024 | 255.4 | 249 |
-| 2048 | 421.4 | 206 |
-| 4096 | 750.6 | 183 |
+Each job: `ezpz yeet --src .venv.tar.gz`, then 10 training steps of
+`agpt_2b` to verify the broadcast venv was functional.
+`first_step_seconds` is the wall-clock from job start of the first
+training step (a useful proxy for total time-to-train) and includes
+import + initialization overhead on top of the yeet itself.
+
+| Nodes | yeet (s) | First-step (s) | Per-node (ms) |
+|------:|---------:|---------------:|--------------:|
+| 8 | 69.7 | 29.3 | 8,712 |
+| 16 | 89.7 | 31.6 | 5,606 |
+| 32 | 89.2 | 20.9 | 2,788 |
+| 64 | 91.2 | 34.6 | 1,425 |
+| 128 | 110.4 | 30.5 | 862 |
+| 256 | 132.9 | 37.6 | 519 |
+| 512 | 174.5 | 44.5 | 341 |
+| 1024 | 255.4 | 60.8 | 249 |
+| 2048 | 421.4 | 94.8 | 206 |
+| 4096 | 750.6 | 194.0 | 183 |
 
 ![Total wall-clock](./assets/yeet/yeet_env_seconds.png)
 
@@ -480,6 +486,12 @@ along with the raw CSV and the plotting script.
 N=8 to 0.18 s/node at N=4096 — a **48× efficiency gain** over the
 sweep. Even at the full-Aurora 4096-node scale, the pre-launch
 overhead is under 13 minutes.
+
+**First-step latency** (time from job start to step 1 logged) stays
+under 1 minute through 1024 nodes and only really starts to climb at
+2048+ — consistent with `init_process_group` overhead growing with
+world size. At 4096 nodes the first step lands in 3 min 14 s, so
+total time-to-train (yeet + first step) is about 16 minutes.
 
 !!! info "Why tarball broadcast scales so much better than per-file rsync"
 
