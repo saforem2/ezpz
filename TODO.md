@@ -229,3 +229,54 @@ and should land as its own commit.
   `bin/utils-2025-12-17-163108.sh` are timestamped backups of `utils.sh`.
   Git is the source of truth — delete them (or move out of the package
   if they need to be preserved for reference).
+
+---
+
+## 15. `wrap_model` Coverage of ZeRO Stages [LOW]
+
+Today `wrap_model` (in `src/ezpz/distributed.py:747`) covers DDP,
+ZeRO-2 (`reshard_after_forward=False`), ZeRO-3 (`True`), and
+HYBRID_SHARD (`int`), but not ZeRO-1 (shard optimizer states only).
+
+PyTorch FSDP doesn't have a native ZeRO-1 mode. The closest path is
+`torch.distributed.optim.ZeroRedundancyOptimizer` wrapping a
+DDP-wrapped model — params and grads stay replicated, optim state
+gets sharded.
+
+**Resolution sketch**: add a new value to `FSDP_SHARDING_STRATEGIES`
+(e.g. `"shard-optim"`) that takes the DDP path in `wrap_model`, and
+expose a thin helper `wrap_optimizer_for_zero1(opt)` that wraps it
+with `ZeroRedundancyOptimizer`. Document the trade-off in
+`docs/guides/distributed-training.md` (only saves optimizer memory;
+params + grads still replicated; useful only when optimizer state is
+the bottleneck — e.g. Adam at scale where it's 2× param size).
+
+---
+
+## 16. Explicit DeepSpeed Wrapper [LOW]
+
+`ezpz` already has plumbing for DeepSpeed — `_init_deepspeed`
+(`distributed.py:1570`), config builders in `utils/__init__.py:692`
+and `841`, and example scripts under `examples/deepspeed/`. What's
+missing is a `wrap_model_for_deepspeed(model, optimizer, zero_stage,
+...)` sibling to `wrap_model_for_ddp` / `wrap_model_for_fsdp2`.
+
+**Why a sibling, not a `wrap_model(use_deepspeed=True)` flag**:
+`deepspeed.initialize(...)` returns `(engine, optimizer, _,
+scheduler)` — a fundamentally different API shape than the FSDP path
+which returns just the wrapped model. A unifying wrapper would either
+lie about the return type or force callers to handle two APIs. Better
+to be explicit.
+
+**What to build**:
+
+- `wrap_model_for_deepspeed(model, optimizer, *, zero_stage=2,
+  config=None, ...) -> tuple[engine, optimizer, scheduler]`. Accepts
+  either an explicit DS config dict or builds one from
+  `get_deepspeed_config_json(stage=zero_stage, ...)`.
+- Document in `docs/guides/distributed-training.md` next to the FSDP
+  section, with a comparison table (FSDP2 vs DeepSpeed: when to pick
+  which — DS still wins for ZeRO-Infinity / NVMe offload, MoE expert
+  parallelism, and the HF Trainer ecosystem).
+- Update the FSDP-vs-FSDP chart in the walkthrough to also show the
+  DeepSpeed equivalent of each stage.
