@@ -100,8 +100,12 @@ class TestFindMatchesLinux:
         def fake_read(pid: int, name: str):
             if name == "cmdline":
                 if pid == 1111:
-                    return b"python\0-m\0my.train\0--epochs\0010\0"
-                return b"vim\0/etc/hosts\0"
+                    # NUL-separated argv: python -m my.train --epochs 10
+                    return b"\0".join([
+                        b"python", b"-m", b"my.train",
+                        b"--epochs", b"10", b"",
+                    ])
+                return b"\0".join([b"vim", b"/etc/hosts", b""])
             return b""
 
         with patch("ezpz.utils.kill._read_proc_file", side_effect=fake_read):
@@ -244,3 +248,138 @@ class TestRun:
         # First positional arg = pattern; second = signal
         assert kwargs.args[0] == "myproc"
         assert kwargs.args[1] == signal.SIGTERM
+
+
+# ===================================================================
+# match logic — macOS ps fallback
+# ===================================================================
+
+
+class TestFindMatchesMacos:
+    """Tests for the macOS ps-based match path."""
+
+    def test_no_pattern_prints_unsupported_message(self, capsys):
+        """Without a pattern, _find_matches_macos returns [] and warns to stderr."""
+        matches = kill_mod._find_matches_macos(None)
+        assert matches == []
+        err = capsys.readouterr().err
+        assert "macOS" in err
+        # mention the workaround so users know what to do
+        assert "ezpz kill" in err
+
+    @patch("ezpz.utils.kill.subprocess.run")
+    def test_pattern_filters_ps_output(self, mock_run):
+        """With a pattern, only ps lines whose command contains it match."""
+        from subprocess import CompletedProcess
+        mock_run.return_value = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                "1234 /usr/bin/python -m my.train --epochs 10\n"
+                "5678 vim /etc/hosts\n"
+                "9999 /usr/bin/python other.py\n"
+            ),
+            stderr="",
+        )
+        matches = kill_mod._find_matches_macos("my.train")
+        pids = [m[0] for m in matches]
+        assert pids == [1234]
+
+    @patch("ezpz.utils.kill.subprocess.run")
+    def test_skips_self_and_parent(self, mock_run):
+        """Self-pid and parent-pid are filtered out even if they match."""
+        from subprocess import CompletedProcess
+        self_pid = os.getpid()
+        parent_pid = os.getppid()
+        mock_run.return_value = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                f"{self_pid} python my.train\n"
+                f"{parent_pid} python my.train\n"
+                "12345 python my.train\n"
+            ),
+            stderr="",
+        )
+        matches = kill_mod._find_matches_macos("my.train")
+        pids = [m[0] for m in matches]
+        assert self_pid not in pids
+        assert parent_pid not in pids
+        assert 12345 in pids
+
+
+# ===================================================================
+# kill_remote — multi-node fan-out
+# ===================================================================
+
+
+class TestKillRemote:
+    """Tests for kill_remote (hostfile discovery + SSH fan-out)."""
+
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node00")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=[])
+    def test_no_nodes_returns_zero_zero(self, _nodes, _host, capsys):
+        succeeded, total = kill_mod.kill_remote(None, signal.SIGTERM)
+        assert (succeeded, total) == (0, 0)
+        assert "no worker nodes" in capsys.readouterr().out
+
+    @patch("ezpz.utils.kill._ssh_kill")
+    @patch("ezpz.utils.kill.kill_local", return_value=(0, 0))
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node00")
+    @patch(
+        "ezpz.utils.yeet_env._get_worker_nodes",
+        return_value=["node00", "node01", "node02"],
+    )
+    def test_local_only_then_ssh_to_others(
+        self, _nodes, _host, mock_local, mock_ssh, capsys,
+    ):
+        """Local node runs in-process; remote nodes go via SSH."""
+        mock_ssh.return_value = ("nodeX", 0, "")
+        succeeded, total = kill_mod.kill_remote("foo", signal.SIGTERM)
+        # 3 nodes total: 1 local + 2 remote
+        assert total == 3
+        # kill_local called once for the local node
+        mock_local.assert_called_once()
+        # _ssh_kill called once per remote node (not for the local one)
+        ssh_targets = [c.args[0] for c in mock_ssh.call_args_list]
+        assert sorted(ssh_targets) == ["node01", "node02"]
+        # all nodes succeeded → succeeded == total
+        assert succeeded == total
+
+    @patch("ezpz.utils.kill._ssh_kill")
+    @patch("ezpz.utils.kill.kill_local", return_value=(2, 2))
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node00")
+    @patch(
+        "ezpz.utils.yeet_env._get_worker_nodes",
+        return_value=["node00", "node01", "node02"],
+    )
+    def test_partial_remote_failure_reflected_in_count(
+        self, _nodes, _host, _local, mock_ssh, capsys,
+    ):
+        """Remote SSH failure decreases succeeded; local success counts."""
+        # node01 fails, node02 succeeds
+        def fake_ssh(node, *_args, **_kw):
+            return (node, 0 if node == "node02" else 255, "boom" if node != "node02" else "")
+        mock_ssh.side_effect = fake_ssh
+        succeeded, total = kill_mod.kill_remote("foo", signal.SIGTERM)
+        # 1 (local OK) + 1 (node02 OK) = 2; total = 3
+        assert (succeeded, total) == (2, 3)
+
+    @patch("ezpz.utils.kill.kill_local", return_value=(1, 2))
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node00")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node00"])
+    def test_local_partial_kill_is_failure(self, _nodes, _host, _local, capsys):
+        """When local matches > local kills, the local node counts as failed."""
+        # No remote nodes: total=1, succeeded=0 because local was partial
+        succeeded, total = kill_mod.kill_remote("foo", signal.SIGTERM)
+        assert (succeeded, total) == (0, 1)
+
+    @patch("ezpz.utils.kill._ssh_kill", return_value=("node01", 0, ""))
+    @patch("ezpz.utils.kill.kill_local", return_value=(0, 0))
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node00")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes")
+    def test_hostfile_passthrough(
+        self, mock_nodes, _host, _local, _ssh, capsys,
+    ):
+        """The hostfile kwarg is forwarded to _get_worker_nodes."""
+        mock_nodes.return_value = ["node00", "node01"]
+        kill_mod.kill_remote(None, signal.SIGTERM, hostfile="/tmp/myhosts")
+        mock_nodes.assert_called_once_with(hostfile="/tmp/myhosts")

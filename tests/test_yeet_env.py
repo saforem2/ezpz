@@ -280,11 +280,12 @@ class TestRun:
         assert "node01" in call_nodes
         assert "node02" in call_nodes
 
+    @patch("ezpz.utils.yeet_env._patch_venv_paths_local")
     @patch("ezpz.utils.yeet_env._rsync_to_node")
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
     def test_generic_source_skips_venv_footer(
-        self, _nodes, _host, mock_rsync, tmp_path, capsys,
+        self, _nodes, _host, mock_rsync, mock_patch_venv, tmp_path, capsys,
     ):
         """A non-venv directory source uses the generic 'Synced to ...' footer."""
         # Make a plain dir source (no bin/activate, no conda-meta)
@@ -300,6 +301,8 @@ class TestRun:
         out = capsys.readouterr().out
         assert "Synced to" in out
         assert "To use this environment" not in out
+        # The venv-patching step should NOT run for a non-venv source.
+        mock_patch_venv.assert_not_called()
 
     @patch("ezpz.utils.yeet_env._rsync_to_node")
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
