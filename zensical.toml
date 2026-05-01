@@ -77,6 +77,7 @@ nav = [
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "📦 <code>ezpz yeet</code>" = "cli/yeet.md" },
+        { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },

@@ -65,6 +65,7 @@ Explicitly, these are `ezpz <command>`:
 
         - 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
         - 🚀 [`ezpz yeet`](./yeet.md): Distribute files (envs, models, datasets, etc.) to all worker nodes via parallel rsync
+        - 💀 [`ezpz kill`](./kill.md): Kill ezpz-launched python processes (local node or `--all-nodes`)
 
 - ??? tip "`ezpz --help`"
 
@@ -83,6 +84,7 @@ Explicitly, these are `ezpz <command>`:
         Commands:
         benchmark  Run all ezpz examples sequentially and generate a report.
         doctor     Inspect the environment for ezpz launch readiness.
+        kill       Kill ezpz-launched python processes (or any matching pattern).
         launch     Launch a command across the active scheduler.
         submit     Submit a job to the active scheduler (PBS/SLURM).
         tar-env    Create (or locate) a tarball for the current environment.

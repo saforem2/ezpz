@@ -216,6 +216,7 @@ nav:
       - 🩺 <code>ezpz doctor</code>: cli/doctor.md
       - 📦 <code>ezpz tar-env</code>: cli/tar-env.md
       - 🚀 <code>ezpz yeet</code>: cli/yeet.md
+      - 💀 <code>ezpz kill</code>: cli/kill.md
       - 📘 References:
           - 📄 Test Report: cli/test-report.md
           - 🗓️ PBS: notes/pbs.md
