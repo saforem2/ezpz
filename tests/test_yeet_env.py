@@ -279,8 +279,48 @@ class TestRun:
         call_nodes = [c.args[2] for c in mock_rsync.call_args_list]
         assert "node01" in call_nodes
         assert "node02" in call_nodes
-        captured = capsys.readouterr()
-        assert "To use this environment" in captured.out
+
+    @patch("ezpz.utils.yeet_env._rsync_to_node")
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
+    def test_generic_source_skips_venv_footer(
+        self, _nodes, _host, mock_rsync, tmp_path, capsys,
+    ):
+        """A non-venv directory source uses the generic 'Synced to ...' footer."""
+        # Make a plain dir source (no bin/activate, no conda-meta)
+        src = tmp_path / "data"
+        src.mkdir()
+        (src / "file.bin").write_bytes(b"x")
+        # Use a fresh dst that definitely doesn't have venv markers
+        dst = tmp_path / "out"
+        mock_rsync.return_value = ("node01", 0.1, 0)
+
+        rc = yeet.run(["--src", str(src), "--dst", str(dst)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Synced to" in out
+        assert "To use this environment" not in out
+
+    @patch("ezpz.utils.yeet_env._rsync_to_node")
+    @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
+    @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
+    def test_venv_source_uses_venv_footer(
+        self, _nodes, _host, mock_rsync, tmp_path, capsys,
+    ):
+        """A directory with bin/activate triggers the venv footer."""
+        src = tmp_path / "myenv"
+        (src / "bin").mkdir(parents=True)
+        (src / "bin" / "activate").write_text("# fake venv")
+        dst = tmp_path / "out"
+        (dst / "bin").mkdir(parents=True)
+        (dst / "bin" / "activate").write_text("# fake venv")
+        mock_rsync.return_value = ("node01", 0.1, 0)
+
+        rc = yeet.run(["--src", str(src), "--dst", str(dst)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "To use this environment" in out
+        assert f"source {dst}/bin/activate" in out
 
 
 # ===================================================================

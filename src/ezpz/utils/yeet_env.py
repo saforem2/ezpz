@@ -1156,7 +1156,10 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
         if local_rc == 0:
-            _patch_venv_paths_local(dst, src)
+            # Patching only applies to venvs \u2014 it's a no-op for other
+            # sources, but skip explicitly to avoid noise.
+            if (dst / "bin" / "activate").exists():
+                _patch_venv_paths_local(dst, src)
             print(f"    \u2713 {current} (local, {method}) \u2014 {local_elapsed:.1f}s")
             results.append((current, local_elapsed, local_rc))
         else:
@@ -1234,26 +1237,45 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  Done in {total_elapsed:.1f}s")
 
     # ── Guidance ────────────────────────────────────────────────────
-    is_venv = (src / "bin" / "activate").exists()
-    is_conda = (src / "conda-meta").is_dir()
+    # Detect from `dst` so tarball sources (where the directory only
+    # exists after extraction) are classified correctly.
+    is_venv = (dst / "bin" / "activate").exists()
+    is_conda = (dst / "conda-meta").is_dir()
+    has_bin = (dst / "bin").is_dir()
     print()
-    print(f"  To use this environment:")
     if is_venv:
+        print(f"  To use this environment:")
         print(f"    deactivate 2>/dev/null")
         print(f"    source {dst}/bin/activate")
+        print()
+        print(f"  Then launch your training (from a shared filesystem path):")
+        print(f"    cd /path/to/your/project")
+        print(f"    ezpz launch python3 -m your_app.train")
+        print()
+        print(f"  Note: /tmp is node-local. Make sure your working directory")
+        print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
+        print(f"  so all ranks can access data and outputs.")
     elif is_conda:
+        print(f"  To use this environment:")
         print(f"    conda deactivate")
         print(f"    conda activate {dst}")
+        print()
+        print(f"  Then launch your training (from a shared filesystem path):")
+        print(f"    cd /path/to/your/project")
+        print(f"    ezpz launch python3 -m your_app.train")
+        print()
+        print(f"  Note: /tmp is node-local. Make sure your working directory")
+        print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
+        print(f"  so all ranks can access data and outputs.")
     else:
-        print(f"    export PATH={dst}/bin:$PATH")
-    print()
-    print(f"  Then launch your training (from a shared filesystem path):")
-    print(f"    cd /path/to/your/project")
-    print(f"    ezpz launch python3 -m your_app.train")
-    print()
-    print(f"  Note: /tmp is node-local. Make sure your working directory")
-    print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
-    print(f"  so all ranks can access data and outputs.")
+        print(f"  Synced to {dst}/ on {len(results)} node(s).")
+        if has_bin:
+            print(f"    (looks like a tool directory — add to PATH if needed:")
+            print(f"     export PATH={dst}/bin:$PATH)")
+        print()
+        print(f"  Note: /tmp is node-local. Reference the synced path on each")
+        print(f"  worker (e.g. {dst}) — the shared-filesystem source path will")
+        print(f"  not see writes from worker nodes.")
 
     return 1 if failed else 0
 
