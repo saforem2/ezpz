@@ -771,7 +771,7 @@ def _rsync_to_node(
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    """Parse yeet-env command-line arguments."""
+    """Parse ezpz yeet command-line arguments."""
     parser = argparse.ArgumentParser(
         prog="ezpz yeet",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -1268,7 +1268,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
         print(f"  so all ranks can access data and outputs.")
     else:
-        print(f"  Synced to {dst}/ on {len(results)} node(s).")
+        successful = len(results) - failed
+        print(f"  Synced to {dst}/ on {successful} node(s).")
         if has_bin:
             print(f"    (looks like a tool directory — add to PATH if needed:")
             print(f"     export PATH={dst}/bin:$PATH)")
