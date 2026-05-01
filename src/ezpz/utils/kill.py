@@ -235,7 +235,7 @@ def _ssh_kill(node: str, pattern: Optional[str], sig_name: str, dry_run: bool) -
         "ssh",
         "-o", "ConnectTimeout=10",
         "-o", "ServerAliveInterval=30",
-        "-o", "StrictHostKeyChecking=no",
+        "-o", "ServerAliveCountMax=3",
         "-o", "BatchMode=yes",
         node,
         shlex.join(remote_cmd),
@@ -284,12 +284,18 @@ def kill_remote(
     if local_matched == 0:
         print("  no matches")
 
+    # A node "succeeded" only when every matched process was killed
+    # (or there were no matches). Use the same predicate here and in
+    # the multi-node branch below — the previous `local_killed > 0`
+    # form treated a partial kill as full success and made `run()`
+    # report exit 0 with stragglers still alive.
+    local_ok = local_matched == 0 or local_killed == local_matched
     if not remote_nodes:
-        return 1 if local_matched == 0 or local_killed > 0 else 0, 1
+        return (1 if local_ok else 0), 1
 
     # Bound concurrency — DNS/SSH on a 1000-node alloc shouldn't fork a
     # thread per node.
-    succeeded = 1 if local_matched == 0 or local_killed == local_matched else 0
+    succeeded = 1 if local_ok else 0
     with ThreadPoolExecutor(max_workers=min(16, len(remote_nodes))) as pool:
         futures = {
             pool.submit(_ssh_kill, n, pattern, sig_name, dry_run): n
@@ -372,12 +378,15 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
     killed, total = kill_local(args.pattern, sig, dry_run=args.dry_run)
     if total == 0:
-        # Friendly hint when the no-arg default returns nothing
+        # Friendly hint when nothing matched.  On macOS without a
+        # pattern, _find_matches_macos has already printed an
+        # "unsupported on macOS" message — don't double up.
         if args.pattern is None:
-            print(
-                "  no processes with EZPZ_RUN_COMMAND env var found "
-                f"on {socket.gethostname()}"
-            )
+            if Path("/proc").is_dir():
+                print(
+                    "  no processes with EZPZ_RUN_COMMAND env var found "
+                    f"on {socket.gethostname()}"
+                )
         else:
             print(f"  no processes matching {args.pattern!r}")
         return 0
