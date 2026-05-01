@@ -773,12 +773,13 @@ def _rsync_to_node(
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse yeet-env command-line arguments."""
     parser = argparse.ArgumentParser(
-        prog="ezpz yeet-env",
+        prog="ezpz yeet",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
-            "Distribute a Python environment to worker nodes via parallel rsync. "
-            "By default, rsyncs the active venv/conda env to /tmp/<env-name>/ "
-            "on all nodes in the current job allocation."
+            "Distribute files (envs, models, datasets, etc.) to worker nodes "
+            "via parallel rsync. By default (no args), rsyncs the active "
+            "venv/conda env to /tmp/<env-name>/ on all nodes in the current "
+            "job allocation. Pass any path to yeet arbitrary content."
         ),
     )
     parser.add_argument(
@@ -1239,6 +1240,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point."""
+    if Path(sys.argv[0]).name == "ezpz-yeet-env":
+        print(
+            "ezpz-yeet-env is deprecated; use 'ezpz yeet' as a drop-in "
+            "replacement",
+            file=sys.stderr,
+        )
     return run(argv)
 
 

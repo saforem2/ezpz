@@ -54,31 +54,51 @@ def tar_env_cmd(args: tuple[str, ...]) -> None:
 
 
 @main.command(
-    name="yeet-env", context_settings={"ignore_unknown_options": True}
+    name="yeet", context_settings={"ignore_unknown_options": True}
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def yeet_env_cmd(args: tuple[str, ...]) -> None:
-    """Distribute a Python environment to worker nodes via parallel rsync.
+def yeet_cmd(args: tuple[str, ...]) -> None:
+    """Distribute files (envs, models, datasets, etc.) to worker nodes via parallel rsync.
 
-    By default, rsyncs the active venv/conda env to /tmp/<env-name>/
-    on all nodes in the current job allocation.
+    By default (no args), rsyncs the active venv/conda env to
+    /tmp/<env-name>/ on all nodes in the current job allocation.
+    Pass any path (positional or via --src) to yeet arbitrary content.
 
     \b
     Examples:
-      ezpz yeet-env                        # sync active env to all nodes
-      ezpz yeet-env --src /path/to/env     # sync a specific environment
-      ezpz yeet-env --dst /local/scratch    # custom destination
-      ezpz yeet-env --dry-run              # preview without syncing
+      ezpz yeet                            # sync active env to all nodes
+      ezpz yeet .venv.tar.gz               # positional shorthand for --src
+      ezpz yeet --src /path/to/env         # sync a specific environment
+      ezpz yeet --src /path/to/dataset     # sync a dataset / model / etc.
+      ezpz yeet --dst /local/scratch       # custom destination
+      ezpz yeet --dry-run                  # preview without syncing
 
     \b
     Options (passed through):
-      --src PATH       Source environment (default: active venv/conda)
-      --dst PATH       Destination on workers (default: /tmp/<env-name>/)
+      --src PATH       Source path (default: active venv/conda)
+      --dst PATH       Destination on workers (default: /tmp/<basename>/)
       --hostfile PATH  Hostfile for node list (default: auto-detect)
       --copy           Use cp -a for local copy (faster on Lustre)
       --compress       tar.gz → copy → extract (least Lustre I/O)
       --dry-run        Show what would be synced
     """
+    from ezpz.utils import yeet_env as yeet_env_module
+
+    rc = yeet_env_module.run(list(args) if args else None)
+    _handle_exit_code(rc)
+
+
+@main.command(
+    name="yeet-env", context_settings={"ignore_unknown_options": True},
+    hidden=True,
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def yeet_env_cmd(args: tuple[str, ...]) -> None:
+    """Deprecated alias for ``ezpz yeet``."""
+    click.secho(
+        "ezpz yeet-env is deprecated; use 'ezpz yeet' as a drop-in replacement",
+        fg="yellow", err=True,
+    )
     from ezpz.utils import yeet_env as yeet_env_module
 
     rc = yeet_env_module.run(list(args) if args else None)
