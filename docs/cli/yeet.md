@@ -1,10 +1,13 @@
 # Distributing Files to Worker Nodes
 
-On large HPC clusters, files on shared filesystems create I/O
-contention and slow startup times. `ezpz yeet` copies any directory
-or tarball to node-local `/tmp/` storage on every worker node in your
-job — Python environments, model checkpoints, datasets, configs,
-anything that benefits from being node-local before a large run.
+On large HPC clusters, every Python import that touches the shared
+filesystem is a small tax — and at scale, a small tax paid by every
+rank turns into minutes of dead time before training even starts.
+`ezpz yeet` copies any directory or tarball to node-local `/tmp/`
+storage on every worker in your job, so subsequent imports, checkpoint
+loads, and config reads hit local SSD instead of Lustre. Works for
+Python environments, model checkpoints, datasets, configs — anything
+that benefits from being node-local before a large run.
 
 !!! note "Renamed from `ezpz yeet-env`"
 
@@ -237,13 +240,15 @@ graph TD
 
     %% Color by generation: source → gen 1 → gen 2 → gen 3.
     %% Each gen N node becomes a source for gen N+1, so the gradient
-    %% reads as the tree growing outward in time.
-    classDef genSrc fill:#6a1b9a,stroke:#4a148c,color:#fff
-    classDef gen1   fill:#1976d2,stroke:#0d47a1,color:#fff
-    classDef gen2   fill:#0097a7,stroke:#006064,color:#fff
-    classDef gen3   fill:#388e3c,stroke:#1b5e20,color:#fff
+    %% reads as the tree growing outward in time. Translucent fills
+    %% (Catppuccin palette) so the colors register against either
+    %% light or dark page backgrounds.
+    classDef src  fill:#fab38730,stroke:#fab387,color:#fab387
+    classDef gen1 fill:#89b4fa30,stroke:#89b4fa,color:#89b4fa
+    classDef gen2 fill:#a6e3a130,stroke:#a6e3a1,color:#a6e3a1
+    classDef gen3 fill:#cba6f730,stroke:#cba6f7,color:#cba6f7
 
-    class S,L genSrc
+    class S,L src
     class A1,A2,A3,A4,A5,A6,A7,A8 gen1
     class B1,B2,B3,B4,B5 gen2
     class C1,C2,C3 gen3
@@ -468,21 +473,19 @@ training step (a useful proxy for total time-to-train) and includes
 import + initialization overhead on top of the yeet itself.
 
 | Nodes | yeet (s) | First-step (s) | Per-node (ms) |
-|------:|---------:|---------------:|--------------:|
-| 8 | 69.7 | 29.3 | 8,712 |
-| 16 | 89.7 | 31.6 | 5,606 |
-| 32 | 89.2 | 20.9 | 2,788 |
-| 64 | 91.2 | 34.6 | 1,425 |
-| 128 | 110.4 | 30.5 | 862 |
-| 256 | 132.9 | 37.6 | 519 |
-| 512 | 174.5 | 44.5 | 341 |
-| 1024 | 255.4 | 60.8 | 249 |
-| 2048 | 421.4 | 94.8 | 206 |
-| 4096 | 750.6 | 194.0 | 183 |
+| ----: | -------: | -------------: | ------------: |
+|     8 |     69.7 |           29.3 |         8,712 |
+|    16 |     89.7 |           31.6 |         5,606 |
+|    32 |     89.2 |           20.9 |         2,788 |
+|    64 |     91.2 |           34.6 |         1,425 |
+|   128 |    110.4 |           30.5 |           862 |
+|   256 |    132.9 |           37.6 |           519 |
+|   512 |    174.5 |           44.5 |           341 |
+|  1024 |    255.4 |           60.8 |           249 |
+|  2048 |    421.4 |           94.8 |           206 |
+|  4096 |    750.6 |          194.0 |           183 |
 
-![Total wall-clock](./assets/yeet/yeet_env_seconds.png)
-
-![Per-node amortized](./assets/yeet/yeet_env_per_node.png)
+![Total wall-clock and per-node amortized cost](./assets/yeet/yeet_env_scaling.svg)
 
 **Two regimes show up in the data:**
 
