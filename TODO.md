@@ -188,3 +188,44 @@ runner already strips ANSI for its log files as a targeted fix.
 - Retry logic for `scontrol`/`qstat` (transient failures on loaded login
   nodes).
 - `cleanup()` that covers all backends (MPI finalize in all paths).
+
+---
+
+## 14. `bin/utils.sh` Cleanup [MEDIUM]
+
+Audit findings from the yeet-refactor branch. Each item is independent
+and should land as its own commit.
+
+- **Dead-code logging wrappers** (`utils.sh:103-116`): `log_info`,
+  `log_warn`, `log_error` are defined but never called anywhere in the
+  codebase. Only `log_message` is used. Remove the three unused wrappers
+  (~14 lines).
+- **`EZPZ_LOG_LEVEL` is never honored as a threshold** (`utils.sh:118-138`):
+  The variable is read at line 124 only as a fallback default for when
+  the caller passes nothing — it's never used to filter output. Setting
+  `EZPZ_LOG_LEVEL=ERROR` does not suppress `log_message INFO` calls. Add
+  a numeric-rank comparison early in `log_message` so the env var
+  actually filters by severity.
+- **`ezpz_kill_mpi` overlaps with `ezpz kill`** (`utils.sh:162-167`):
+  Once `ezpz kill` is in (see yeet-refactor spec), `ezpz_kill_mpi` is a
+  less-precise alternative — it matches `pals|mpi|python` substring
+  with no env-var marker. Replace its body with a one-liner that calls
+  `ezpz kill --all-nodes` (or deprecate with a warning).
+- **`ezpz_check_and_kill_if_running` hardcodes port 29500**
+  (`utils.sh:730-738`): That's the default torch DDP rendezvous port,
+  but only the default. Should accept an optional port arg:
+  `ezpz_check_and_kill_if_running [port]`.
+- **One file, 2,931 lines**: Biggest architectural smell. Natural split
+  points exist in the function-name prefixes: `_setup_python_*`,
+  `_setup_conda_*`, `_save_*_env`, `_get_pbs_*` / `_get_slurm_*`.
+  Split into ~5–6 sourced files (`utils-logging.sh`, `utils-pbs.sh`,
+  `utils-slurm.sh`, `utils-python.sh`, `utils-conda.sh`, with `utils.sh`
+  as the entry point that sources them). Real refactor with regression
+  risk — deserves its own spec.
+- **Dead zsh branch** (`utils.sh:22-27`): The `# elif [[ ${EZPZ_SHELL_TYPE}
+  == "zsh" ]]` block is fully commented out. Either implement zsh
+  support or delete the dead branch.
+- **Stale snapshot files**: `bin/utils-2025-12-12-093630.sh` and
+  `bin/utils-2025-12-17-163108.sh` are timestamped backups of `utils.sh`.
+  Git is the source of truth — delete them (or move out of the package
+  if they need to be preserved for reference).
