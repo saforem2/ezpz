@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="563.393497pt" height="310.983375pt" viewBox="0 0 563.393497 310.983375" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="564.03375pt" height="310.584pt" viewBox="0 0 564.03375 310.584" xmlns="http://www.w3.org/2000/svg" version="1.1">
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-05-03T11:05:07.692250</dc:date>
+    <dc:date>2026-05-03T13:59:01.056876</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -21,35 +21,35 @@
  </defs>
  <g id="figure_1">
   <g id="patch_1">
-   <path d="M 0 310.983375 
-L 563.393497 310.983375 
-L 563.393497 0 
+   <path d="M 0 310.584 
+L 564.03375 310.584 
+L 564.03375 0 
 L 0 0 
-L 0 310.983375 
+L 0 310.584 
 z
 " style="fill: none"/>
   </g>
   <g id="axes_1">
    <g id="patch_2">
-    <path d="M 44.146875 272.1165 
-L 556.193497 272.1165 
-L 556.193497 23.784 
-L 44.146875 23.784 
-L 44.146875 272.1165 
+    <path d="M 45.37125 273.084 
+L 556.83375 273.084 
+L 556.83375 23.784 
+L 45.37125 23.784 
+L 45.37125 273.084 
 z
 " style="fill: none"/>
    </g>
    <g id="matplotlib.axis_1">
     <g id="xtick_1">
      <g id="line2d_1">
-      <path d="M 67.421721 272.1165 
-L 67.421721 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 68.619545 273.084 
+L 68.619545 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_2"/>
      <g id="text_1">
       <!-- 8 -->
-      <g style="fill: #838383" transform="translate(64.421721 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(65.619545 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-38" d="M 1600 -51 
 Q 1446 -51 1289 -28 
@@ -137,14 +137,14 @@ z
     </g>
     <g id="xtick_2">
      <g id="line2d_3">
-      <path d="M 119.143602 272.1165 
-L 119.143602 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 69.529459 273.084 
+L 69.529459 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_4"/>
      <g id="text_2">
       <!-- 16 -->
-      <g style="fill: #838383" transform="translate(113.143602 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(63.529459 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-31" d="M 1542 0 
 L 1542 4134 
@@ -224,14 +224,14 @@ z
     </g>
     <g id="xtick_3">
      <g id="line2d_5">
-      <path d="M 170.865483 272.1165 
-L 170.865483 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 71.349287 273.084 
+L 71.349287 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_6"/>
      <g id="text_3">
       <!-- 32 -->
-      <g style="fill: #838383" transform="translate(164.865483 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(65.349287 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-33" d="M 1619 -51 
 Q 1453 -51 1289 -25 
@@ -362,14 +362,14 @@ z
     </g>
     <g id="xtick_4">
      <g id="line2d_7">
-      <path d="M 222.587364 272.1165 
-L 222.587364 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 74.988941 273.084 
+L 74.988941 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_8"/>
      <g id="text_4">
       <!-- 64 -->
-      <g style="fill: #838383" transform="translate(216.587364 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(68.988941 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-34" d="M 1882 0 
 L 1882 1242 
@@ -397,14 +397,14 @@ z
     </g>
     <g id="xtick_5">
      <g id="line2d_9">
-      <path d="M 274.309245 272.1165 
-L 274.309245 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 82.268251 273.084 
+L 82.268251 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_10"/>
      <g id="text_5">
       <!-- 128 -->
-      <g style="fill: #838383" transform="translate(265.309245 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(73.268251 285.404) scale(0.12 -0.12)">
        <use xlink:href="#IosevkaTermNF-31"/>
        <use xlink:href="#IosevkaTermNF-32" transform="translate(49.999985 0)"/>
        <use xlink:href="#IosevkaTermNF-38" transform="translate(99.999969 0)"/>
@@ -413,14 +413,14 @@ L 274.309245 23.784
     </g>
     <g id="xtick_6">
      <g id="line2d_11">
-      <path d="M 326.031126 272.1165 
-L 326.031126 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 96.826871 273.084 
+L 96.826871 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_12"/>
      <g id="text_6">
       <!-- 256 -->
-      <g style="fill: #838383" transform="translate(317.031126 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(87.826871 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-35" d="M 1613 -51 
 Q 1459 -51 1305 -22 
@@ -483,14 +483,14 @@ z
     </g>
     <g id="xtick_7">
      <g id="line2d_13">
-      <path d="M 377.753007 272.1165 
-L 377.753007 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 125.94411 273.084 
+L 125.94411 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_14"/>
      <g id="text_7">
       <!-- 512 -->
-      <g style="fill: #838383" transform="translate(368.753007 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(116.94411 285.404) scale(0.12 -0.12)">
        <use xlink:href="#IosevkaTermNF-35"/>
        <use xlink:href="#IosevkaTermNF-31" transform="translate(49.999985 0)"/>
        <use xlink:href="#IosevkaTermNF-32" transform="translate(99.999969 0)"/>
@@ -499,14 +499,14 @@ L 377.753007 23.784
     </g>
     <g id="xtick_8">
      <g id="line2d_15">
-      <path d="M 429.474889 272.1165 
-L 429.474889 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 184.178587 273.084 
+L 184.178587 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_16"/>
      <g id="text_8">
       <!-- 1024 -->
-      <g style="fill: #838383" transform="translate(417.474889 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(172.178587 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-30" d="M 1600 -51 
 Q 1427 -51 1254 -16 
@@ -581,14 +581,14 @@ z
     </g>
     <g id="xtick_9">
      <g id="line2d_17">
-      <path d="M 481.19677 272.1165 
-L 481.19677 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 300.647543 273.084 
+L 300.647543 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_18"/>
      <g id="text_9">
       <!-- 2048 -->
-      <g style="fill: #838383" transform="translate(469.19677 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(288.647543 285.404) scale(0.12 -0.12)">
        <use xlink:href="#IosevkaTermNF-32"/>
        <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
        <use xlink:href="#IosevkaTermNF-34" transform="translate(99.999969 0)"/>
@@ -598,14 +598,14 @@ L 481.19677 23.784
     </g>
     <g id="xtick_10">
      <g id="line2d_19">
-      <path d="M 532.918651 272.1165 
-L 532.918651 23.784 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 533.585455 273.084 
+L 533.585455 23.784 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_20"/>
      <g id="text_10">
       <!-- 4096 -->
-      <g style="fill: #838383" transform="translate(520.918651 284.4365) scale(0.12 -0.12)">
+      <g style="fill: #838383" transform="translate(521.585455 285.404) scale(0.12 -0.12)">
        <defs>
         <path id="IosevkaTermNF-39" d="M 1062 0 
 L 1715 1293 
@@ -676,8 +676,8 @@ z
      </g>
     </g>
     <g id="text_11">
-     <!-- nodes (log2) -->
-     <g style="fill: #838383" transform="translate(264.170186 301.10775) scale(0.12 -0.12)">
+     <!-- nodes -->
+     <g style="fill: #838383" transform="translate(286.1025 300.804) scale(0.12 -0.12)">
       <defs>
        <path id="IosevkaTermNF-6e" d="M 410 0 
 L 410 3328 
@@ -959,401 +959,174 @@ Q 2016 -19 1875 -35
 Q 1734 -51 1594 -51 
 z
 " transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-20" transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-28" d="M 2381 -1030 
-Q 2106 -877 1866 -669 
-Q 1626 -461 1434 -208 
-Q 1242 45 1107 333 
-Q 973 621 889 925 
-Q 806 1229 771 1545 
-Q 736 1862 736 2176 
-Q 736 2490 771 2806 
-Q 806 3123 889 3427 
-Q 973 3731 1107 4019 
-Q 1242 4307 1434 4560 
-Q 1626 4813 1866 5021 
-Q 2106 5229 2381 5382 
-L 2624 4992 
-Q 2272 4787 1993 4473 
-Q 1715 4160 1542 3785 
-Q 1370 3411 1302 2998 
-Q 1235 2586 1235 2176 
-Q 1235 1766 1302 1353 
-Q 1370 941 1542 566 
-Q 1715 192 1993 -121 
-Q 2272 -435 2624 -640 
-L 2381 -1030 
-z
-" transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-6c" d="M 480 0 
-L 480 448 
-L 1395 448 
-L 1395 4256 
-L 570 4256 
-L 570 4704 
-L 1894 4704 
-L 1894 448 
-L 2720 448 
-L 2720 0 
-L 480 0 
-z
-" transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-67" d="M 1581 -1427 
-Q 1434 -1427 1290 -1404 
-Q 1146 -1382 1011 -1328 
-Q 877 -1274 761 -1181 
-Q 646 -1088 566 -966 
-Q 486 -845 444 -704 
-Q 403 -563 397 -416 
-L 896 -416 
-Q 902 -544 956 -656 
-Q 1011 -768 1110 -845 
-Q 1210 -922 1331 -950 
-Q 1453 -979 1581 -979 
-Q 1690 -979 1795 -953 
-Q 1901 -928 1987 -864 
-Q 2074 -800 2134 -710 
-Q 2195 -621 2230 -518 
-Q 2266 -416 2278 -310 
-Q 2291 -205 2291 -96 
-L 2291 582 
-Q 2240 448 2157 323 
-Q 2074 198 1955 112 
-Q 1837 26 1693 -12 
-Q 1549 -51 1402 -51 
-Q 1242 -51 1085 -6 
-Q 928 38 800 134 
-Q 672 230 585 364 
-Q 499 499 448 649 
-Q 397 800 377 960 
-Q 358 1120 358 1280 
-L 358 2048 
-Q 358 2208 377 2368 
-Q 397 2528 448 2678 
-Q 499 2829 585 2963 
-Q 672 3098 800 3194 
-Q 928 3290 1085 3334 
-Q 1242 3379 1402 3379 
-Q 1549 3379 1693 3340 
-Q 1837 3302 1955 3216 
-Q 2074 3130 2157 3005 
-Q 2240 2880 2291 2746 
-L 2291 3328 
-L 2790 3328 
-L 2790 -96 
-Q 2790 -269 2764 -438 
-Q 2739 -608 2672 -765 
-Q 2605 -922 2493 -1053 
-Q 2381 -1184 2233 -1270 
-Q 2086 -1357 1916 -1392 
-Q 1747 -1427 1581 -1427 
-z
-M 1594 397 
-Q 1702 397 1808 422 
-Q 1914 448 1997 512 
-Q 2080 576 2141 669 
-Q 2202 762 2234 861 
-Q 2266 960 2278 1065 
-Q 2291 1171 2291 1280 
-L 2291 2048 
-Q 2291 2157 2278 2262 
-Q 2266 2368 2234 2467 
-Q 2202 2566 2141 2659 
-Q 2080 2752 1997 2816 
-Q 1914 2880 1808 2905 
-Q 1702 2931 1594 2931 
-Q 1485 2931 1379 2905 
-Q 1274 2880 1184 2819 
-Q 1094 2758 1027 2668 
-Q 960 2579 921 2476 
-Q 883 2374 870 2265 
-Q 858 2157 858 2048 
-L 858 1280 
-Q 858 1171 870 1062 
-Q 883 954 921 851 
-Q 960 749 1027 659 
-Q 1094 570 1184 509 
-Q 1274 448 1379 422 
-Q 1485 397 1594 397 
-z
-" transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-29" d="M 819 -1030 
-L 576 -640 
-Q 928 -435 1206 -121 
-Q 1485 192 1657 566 
-Q 1830 941 1897 1353 
-Q 1965 1766 1965 2176 
-Q 1965 2586 1897 2998 
-Q 1830 3411 1657 3785 
-Q 1485 4160 1206 4473 
-Q 928 4787 576 4992 
-L 819 5382 
-Q 1094 5229 1334 5021 
-Q 1574 4813 1766 4560 
-Q 1958 4307 2092 4019 
-Q 2227 3731 2310 3427 
-Q 2394 3123 2429 2806 
-Q 2464 2490 2464 2176 
-Q 2464 1862 2429 1545 
-Q 2394 1229 2310 925 
-Q 2227 621 2092 333 
-Q 1958 45 1766 -208 
-Q 1574 -461 1334 -669 
-Q 1094 -877 819 -1030 
-z
-" transform="scale(0.015625)"/>
       </defs>
       <use xlink:href="#IosevkaTermNF-6e"/>
       <use xlink:href="#IosevkaTermNF-6f" transform="translate(49.999985 0)"/>
       <use xlink:href="#IosevkaTermNF-64" transform="translate(99.999969 0)"/>
       <use xlink:href="#IosevkaTermNF-65" transform="translate(149.999954 0)"/>
       <use xlink:href="#IosevkaTermNF-73" transform="translate(199.999939 0)"/>
-      <use xlink:href="#IosevkaTermNF-20" transform="translate(249.999924 0)"/>
-      <use xlink:href="#IosevkaTermNF-28" transform="translate(299.999908 0)"/>
-      <use xlink:href="#IosevkaTermNF-6c" transform="translate(349.999893 0)"/>
-      <use xlink:href="#IosevkaTermNF-6f" transform="translate(399.999878 0)"/>
-      <use xlink:href="#IosevkaTermNF-67" transform="translate(449.999863 0)"/>
-      <use xlink:href="#IosevkaTermNF-32" transform="translate(499.999847 0)"/>
-      <use xlink:href="#IosevkaTermNF-29" transform="translate(549.999832 0)"/>
      </g>
     </g>
    </g>
    <g id="matplotlib.axis_2">
     <g id="ytick_1">
      <g id="line2d_21">
-      <path d="M 44.146875 247.765631 
-L 556.193497 247.765631 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 273.084 
+L 556.83375 273.084 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_22"/>
      <g id="text_12">
-      <!-- $\mathdefault{10^{2}}$ -->
-      <g style="fill: #838383" transform="translate(23.966875 252.175631) scale(0.12 -0.12)">
-       <use xlink:href="#IosevkaTermNF-31" transform="translate(0 0.592187)"/>
-       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0.592187)"/>
-       <use xlink:href="#IosevkaTermNF-32" transform="translate(100.909969 36.992187) scale(0.7)"/>
+      <!-- 0 -->
+      <g style="fill: #838383" transform="translate(35.87125 277.494) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-30"/>
       </g>
      </g>
     </g>
     <g id="ytick_2">
      <g id="line2d_23">
-      <path d="M 44.146875 164.438085 
-L 556.193497 164.438085 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 244.937026 
+L 556.83375 244.937026 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_24"/>
      <g id="text_13">
-      <!-- $\mathdefault{10^{3}}$ -->
-      <g style="fill: #838383" transform="translate(23.966875 168.848085) scale(0.12 -0.12)">
-       <use xlink:href="#IosevkaTermNF-31" transform="translate(0 0.592187)"/>
-       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0.592187)"/>
-       <use xlink:href="#IosevkaTermNF-33" transform="translate(100.909969 36.992187) scale(0.7)"/>
+      <!-- 100 -->
+      <g style="fill: #838383" transform="translate(23.87125 249.347026) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-31"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
       </g>
      </g>
     </g>
     <g id="ytick_3">
      <g id="line2d_25">
-      <path d="M 44.146875 81.110538 
-L 556.193497 81.110538 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 216.790052 
+L 556.83375 216.790052 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_26"/>
      <g id="text_14">
-      <!-- $\mathdefault{10^{4}}$ -->
-      <g style="fill: #838383" transform="translate(23.966875 85.520538) scale(0.12 -0.12)">
-       <use xlink:href="#IosevkaTermNF-31" transform="translate(0 0.15)"/>
-       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0.15)"/>
-       <use xlink:href="#IosevkaTermNF-34" transform="translate(100.909969 36.55) scale(0.7)"/>
+      <!-- 200 -->
+      <g style="fill: #838383" transform="translate(23.87125 221.200052) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-32"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
       </g>
      </g>
     </g>
     <g id="ytick_4">
      <g id="line2d_27">
-      <path d="M 44.146875 266.251743 
-L 556.193497 266.251743 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 188.643078 
+L 556.83375 188.643078 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_28"/>
+     <g id="text_15">
+      <!-- 300 -->
+      <g style="fill: #838383" transform="translate(23.87125 193.053078) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-33"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
+     </g>
     </g>
     <g id="ytick_5">
      <g id="line2d_29">
-      <path d="M 44.146875 260.673231 
-L 556.193497 260.673231 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 160.496104 
+L 556.83375 160.496104 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_30"/>
+     <g id="text_16">
+      <!-- 400 -->
+      <g style="fill: #838383" transform="translate(23.87125 164.906104) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-34"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
+     </g>
     </g>
     <g id="ytick_6">
      <g id="line2d_31">
-      <path d="M 44.146875 255.840905 
-L 556.193497 255.840905 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 132.34913 
+L 556.83375 132.34913 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_32"/>
+     <g id="text_17">
+      <!-- 500 -->
+      <g style="fill: #838383" transform="translate(23.87125 136.75913) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-35"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
+     </g>
     </g>
     <g id="ytick_7">
      <g id="line2d_33">
-      <path d="M 44.146875 251.578491 
-L 556.193497 251.578491 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 104.202156 
+L 556.83375 104.202156 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_34"/>
+     <g id="text_18">
+      <!-- 600 -->
+      <g style="fill: #838383" transform="translate(23.87125 108.612156) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-36"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
+     </g>
     </g>
     <g id="ytick_8">
      <g id="line2d_35">
-      <path d="M 44.146875 222.68154 
-L 556.193497 222.68154 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 76.055182 
+L 556.83375 76.055182 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_36"/>
+     <g id="text_19">
+      <!-- 700 -->
+      <g style="fill: #838383" transform="translate(23.87125 80.465182) scale(0.12 -0.12)">
+       <defs>
+        <path id="IosevkaTermNF-37" d="M 934 0 
+L 2272 4256 
+L 410 4256 
+L 410 4704 
+L 2790 4704 
+L 2790 4256 
+L 2214 2432 
+L 1446 0 
+L 934 0 
+z
+" transform="scale(0.015625)"/>
+       </defs>
+       <use xlink:href="#IosevkaTermNF-37"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
+     </g>
     </g>
     <g id="ytick_9">
      <g id="line2d_37">
-      <path d="M 44.146875 208.008288 
-L 556.193497 208.008288 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+      <path d="M 45.37125 47.908208 
+L 556.83375 47.908208 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
      </g>
      <g id="line2d_38"/>
-    </g>
-    <g id="ytick_10">
-     <g id="line2d_39">
-      <path d="M 44.146875 197.597449 
-L 556.193497 197.597449 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
+     <g id="text_20">
+      <!-- 800 -->
+      <g style="fill: #838383" transform="translate(23.87125 52.318208) scale(0.12 -0.12)">
+       <use xlink:href="#IosevkaTermNF-38"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
+       <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
+      </g>
      </g>
-     <g id="line2d_40"/>
     </g>
-    <g id="ytick_11">
-     <g id="line2d_41">
-      <path d="M 44.146875 189.522176 
-L 556.193497 189.522176 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_42"/>
-    </g>
-    <g id="ytick_12">
-     <g id="line2d_43">
-      <path d="M 44.146875 182.924197 
-L 556.193497 182.924197 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_44"/>
-    </g>
-    <g id="ytick_13">
-     <g id="line2d_45">
-      <path d="M 44.146875 177.345685 
-L 556.193497 177.345685 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_46"/>
-    </g>
-    <g id="ytick_14">
-     <g id="line2d_47">
-      <path d="M 44.146875 172.513358 
-L 556.193497 172.513358 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_48"/>
-    </g>
-    <g id="ytick_15">
-     <g id="line2d_49">
-      <path d="M 44.146875 168.250944 
-L 556.193497 168.250944 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_50"/>
-    </g>
-    <g id="ytick_16">
-     <g id="line2d_51">
-      <path d="M 44.146875 139.353994 
-L 556.193497 139.353994 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_52"/>
-    </g>
-    <g id="ytick_17">
-     <g id="line2d_53">
-      <path d="M 44.146875 124.680741 
-L 556.193497 124.680741 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_54"/>
-    </g>
-    <g id="ytick_18">
-     <g id="line2d_55">
-      <path d="M 44.146875 114.269903 
-L 556.193497 114.269903 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_56"/>
-    </g>
-    <g id="ytick_19">
-     <g id="line2d_57">
-      <path d="M 44.146875 106.194629 
-L 556.193497 106.194629 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_58"/>
-    </g>
-    <g id="ytick_20">
-     <g id="line2d_59">
-      <path d="M 44.146875 99.59665 
-L 556.193497 99.59665 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_60"/>
-    </g>
-    <g id="ytick_21">
-     <g id="line2d_61">
-      <path d="M 44.146875 94.018139 
-L 556.193497 94.018139 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_62"/>
-    </g>
-    <g id="ytick_22">
-     <g id="line2d_63">
-      <path d="M 44.146875 89.185812 
-L 556.193497 89.185812 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_64"/>
-    </g>
-    <g id="ytick_23">
-     <g id="line2d_65">
-      <path d="M 44.146875 84.923398 
-L 556.193497 84.923398 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_66"/>
-    </g>
-    <g id="ytick_24">
-     <g id="line2d_67">
-      <path d="M 44.146875 56.026448 
-L 556.193497 56.026448 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_68"/>
-    </g>
-    <g id="ytick_25">
-     <g id="line2d_69">
-      <path d="M 44.146875 41.353195 
-L 556.193497 41.353195 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_70"/>
-    </g>
-    <g id="ytick_26">
-     <g id="line2d_71">
-      <path d="M 44.146875 30.942357 
-L 556.193497 30.942357 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1.48,0.64; stroke-dashoffset: 0; stroke: #838383; stroke-opacity: 0.25; stroke-width: 0.4"/>
-     </g>
-     <g id="line2d_72"/>
-    </g>
-    <g id="text_15">
-     <!-- yeet-env wall-clock (seconds, log) -->
-     <g style="fill: #838383" transform="translate(17.29125 249.95025) rotate(-90) scale(0.12 -0.12)">
+    <g id="text_21">
+     <!-- yeet-env wall-clock (seconds) -->
+     <g style="fill: #838383" transform="translate(17.29125 235.434) rotate(-90) scale(0.12 -0.12)">
       <defs>
        <path id="IosevkaTermNF-79" d="M 966 -1376 
 Q 1024 -1184 1081 -989 
@@ -1430,6 +1203,7 @@ L 1888 0
 L 1312 0 
 z
 " transform="scale(0.015625)"/>
+       <path id="IosevkaTermNF-20" transform="scale(0.015625)"/>
        <path id="IosevkaTermNF-77" d="M 749 0 
 L 205 3328 
 L 710 3328 
@@ -1507,6 +1281,19 @@ Q 1126 454 1244 425
 Q 1363 397 1485 397 
 z
 " transform="scale(0.015625)"/>
+       <path id="IosevkaTermNF-6c" d="M 480 0 
+L 480 448 
+L 1395 448 
+L 1395 4256 
+L 570 4256 
+L 570 4704 
+L 1894 4704 
+L 1894 448 
+L 2720 448 
+L 2720 0 
+L 480 0 
+z
+" transform="scale(0.015625)"/>
        <path id="IosevkaTermNF-63" d="M 1581 -51 
 Q 1414 -51 1241 -16 
 Q 1069 19 921 105 
@@ -1577,27 +1364,54 @@ L 1005 0
 L 512 0 
 z
 " transform="scale(0.015625)"/>
-       <path id="IosevkaTermNF-2c" d="M 1376 -1376 
-L 998 -1088 
-Q 1203 -858 1372 -602 
-Q 1542 -346 1626 -51 
-L 1594 -51 
-Q 1498 -51 1398 -19 
-Q 1299 13 1228 83 
-Q 1158 154 1129 250 
-Q 1101 346 1101 448 
-Q 1101 550 1129 646 
-Q 1158 742 1232 816 
-Q 1306 890 1402 918 
-Q 1498 947 1600 947 
-Q 1702 947 1804 915 
-Q 1907 883 1977 809 
-Q 2048 736 2073 633 
-Q 2099 531 2099 429 
-Q 2099 179 2041 -64 
-Q 1984 -307 1888 -534 
-Q 1792 -762 1661 -973 
-Q 1530 -1184 1376 -1376 
+       <path id="IosevkaTermNF-28" d="M 2381 -1030 
+Q 2106 -877 1866 -669 
+Q 1626 -461 1434 -208 
+Q 1242 45 1107 333 
+Q 973 621 889 925 
+Q 806 1229 771 1545 
+Q 736 1862 736 2176 
+Q 736 2490 771 2806 
+Q 806 3123 889 3427 
+Q 973 3731 1107 4019 
+Q 1242 4307 1434 4560 
+Q 1626 4813 1866 5021 
+Q 2106 5229 2381 5382 
+L 2624 4992 
+Q 2272 4787 1993 4473 
+Q 1715 4160 1542 3785 
+Q 1370 3411 1302 2998 
+Q 1235 2586 1235 2176 
+Q 1235 1766 1302 1353 
+Q 1370 941 1542 566 
+Q 1715 192 1993 -121 
+Q 2272 -435 2624 -640 
+L 2381 -1030 
+z
+" transform="scale(0.015625)"/>
+       <path id="IosevkaTermNF-29" d="M 819 -1030 
+L 576 -640 
+Q 928 -435 1206 -121 
+Q 1485 192 1657 566 
+Q 1830 941 1897 1353 
+Q 1965 1766 1965 2176 
+Q 1965 2586 1897 2998 
+Q 1830 3411 1657 3785 
+Q 1485 4160 1206 4473 
+Q 928 4787 576 4992 
+L 819 5382 
+Q 1094 5229 1334 5021 
+Q 1574 4813 1766 4560 
+Q 1958 4307 2092 4019 
+Q 2227 3731 2310 3427 
+Q 2394 3123 2429 2806 
+Q 2464 2490 2464 2176 
+Q 2464 1862 2429 1545 
+Q 2394 1229 2310 925 
+Q 2227 621 2092 333 
+Q 1958 45 1766 -208 
+Q 1574 -461 1334 -669 
+Q 1094 -877 819 -1030 
 z
 " transform="scale(0.015625)"/>
       </defs>
@@ -1629,75 +1443,65 @@ z
       <use xlink:href="#IosevkaTermNF-6e" transform="translate(1249.999619 0)"/>
       <use xlink:href="#IosevkaTermNF-64" transform="translate(1299.999603 0)"/>
       <use xlink:href="#IosevkaTermNF-73" transform="translate(1349.999588 0)"/>
-      <use xlink:href="#IosevkaTermNF-2c" transform="translate(1399.999573 0)"/>
-      <use xlink:href="#IosevkaTermNF-20" transform="translate(1449.999557 0)"/>
-      <use xlink:href="#IosevkaTermNF-6c" transform="translate(1499.999542 0)"/>
-      <use xlink:href="#IosevkaTermNF-6f" transform="translate(1549.999527 0)"/>
-      <use xlink:href="#IosevkaTermNF-67" transform="translate(1599.999512 0)"/>
-      <use xlink:href="#IosevkaTermNF-29" transform="translate(1649.999496 0)"/>
+      <use xlink:href="#IosevkaTermNF-29" transform="translate(1399.999573 0)"/>
      </g>
     </g>
    </g>
-   <g id="line2d_73">
-    <path d="M 67.421721 260.828659 
-L 119.143602 235.744568 
-L 170.865483 210.660477 
-L 222.587364 185.576386 
-L 274.309245 160.492295 
-L 326.031126 135.408205 
-L 377.753007 110.324114 
-L 429.474889 85.240023 
-L 481.19677 60.155932 
-L 532.918651 35.071841 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 3.7,1.6; stroke-dashoffset: 0; stroke: #838383"/>
+   <g id="line2d_39">
+    <path d="M 68.619545 253.465559 
+L 69.529459 233.847118 
+L 71.349287 194.610237 
+L 74.988941 116.136473 
+L 80.421793 -1 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 3.7,1.6; stroke-dashoffset: 0; stroke: #838383"/>
    </g>
-   <g id="line2d_74">
-    <path d="M 67.421721 260.828659 
-L 119.143602 250.417821 
-L 170.865483 242.342547 
-L 222.587364 235.744568 
-L 274.309245 230.166056 
-L 326.031126 225.33373 
-L 377.753007 221.071316 
-L 429.474889 217.258456 
-L 481.19677 213.809305 
-L 532.918651 210.660477 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke-dasharray: 1,1.65; stroke-dashoffset: 0; stroke: #838383"/>
+   <g id="line2d_40">
+    <path d="M 68.619545 253.465559 
+L 69.529459 246.926079 
+L 71.349287 240.386599 
+L 74.988941 233.847118 
+L 82.268251 227.307638 
+L 96.826871 220.768158 
+L 125.94411 214.228677 
+L 184.178587 207.689197 
+L 300.647543 201.149717 
+L 533.585455 194.610237 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke-dasharray: 1,1.65; stroke-dashoffset: 0; stroke: #838383"/>
    </g>
    <g id="patch_3">
-    <path d="M 44.146875 272.1165 
-L 44.146875 23.784 
+    <path d="M 45.37125 273.084 
+L 45.37125 23.784 
 " style="fill: none"/>
    </g>
    <g id="patch_4">
-    <path d="M 556.193497 272.1165 
-L 556.193497 23.784 
+    <path d="M 556.83375 273.084 
+L 556.83375 23.784 
 " style="fill: none"/>
    </g>
    <g id="patch_5">
-    <path d="M 44.146875 272.1165 
-L 556.193497 272.1165 
+    <path d="M 45.37125 273.084 
+L 556.83375 273.084 
 " style="fill: none"/>
    </g>
    <g id="patch_6">
-    <path d="M 44.146875 23.784 
-L 556.193497 23.784 
+    <path d="M 45.37125 23.784 
+L 556.83375 23.784 
 " style="fill: none"/>
    </g>
-   <g id="line2d_75">
-    <path d="M 67.421721 260.828659 
-L 119.143602 251.699321 
-L 170.865483 251.901606 
-L 222.587364 251.099163 
-L 274.309245 244.185124 
-L 326.031126 237.472598 
-L 377.753007 227.617411 
-L 429.474889 213.832913 
-L 481.19677 195.711369 
-L 532.918651 174.819984 
-" clip-path="url(#pb939d46b4a)" style="fill: none; stroke: #2196f3; stroke-width: 1.8; stroke-linecap: round"/>
+   <g id="line2d_41">
+    <path d="M 68.619545 253.465559 
+L 69.529459 247.836164 
+L 71.349287 247.976899 
+L 74.988941 247.41396 
+L 82.268251 242.009741 
+L 96.826871 235.676672 
+L 125.94411 223.96753 
+L 184.178587 201.196629 
+L 300.647543 154.472652 
+L 533.585455 61.812814 
+" clip-path="url(#p1da320eb36)" style="fill: none; stroke: #2196f3; stroke-width: 1.8; stroke-linecap: round"/>
     <defs>
-     <path id="mfcadb41195" d="M 0 3 
+     <path id="m3f84ec829b" d="M 0 3 
 C 0.795609 3 1.55874 2.683901 2.12132 2.12132 
 C 2.683901 1.55874 3 0.795609 3 0 
 C 3 -0.795609 2.683901 -1.55874 2.12132 -2.12132 
@@ -1709,22 +1513,22 @@ C -1.55874 2.683901 -0.795609 3 0 3
 z
 " style="stroke: #1565c0"/>
     </defs>
-    <g clip-path="url(#pb939d46b4a)">
-     <use xlink:href="#mfcadb41195" x="67.421721" y="260.828659" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="119.143602" y="251.699321" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="170.865483" y="251.901606" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="222.587364" y="251.099163" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="274.309245" y="244.185124" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="326.031126" y="237.472598" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="377.753007" y="227.617411" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="429.474889" y="213.832913" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="481.19677" y="195.711369" style="fill: #2196f3; stroke: #1565c0"/>
-     <use xlink:href="#mfcadb41195" x="532.918651" y="174.819984" style="fill: #2196f3; stroke: #1565c0"/>
+    <g clip-path="url(#p1da320eb36)">
+     <use xlink:href="#m3f84ec829b" x="68.619545" y="253.465559" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="69.529459" y="247.836164" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="71.349287" y="247.976899" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="74.988941" y="247.41396" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="82.268251" y="242.009741" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="96.826871" y="235.676672" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="125.94411" y="223.96753" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="184.178587" y="201.196629" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="300.647543" y="154.472652" style="fill: #2196f3; stroke: #1565c0"/>
+     <use xlink:href="#m3f84ec829b" x="533.585455" y="61.812814" style="fill: #2196f3; stroke: #1565c0"/>
     </g>
    </g>
-   <g id="text_16">
+   <g id="text_22">
     <!-- total wall-clock -->
-    <g style="fill: #838383" transform="translate(242.570186 17.784) scale(0.144 -0.144)">
+    <g style="fill: #838383" transform="translate(243.5025 17.784) scale(0.144 -0.144)">
      <use xlink:href="#IosevkaTermNF-74"/>
      <use xlink:href="#IosevkaTermNF-6f" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-74" transform="translate(99.999969 0)"/>
@@ -1743,99 +1547,86 @@ z
      <use xlink:href="#IosevkaTermNF-6b" transform="translate(749.999771 0)"/>
     </g>
    </g>
-   <g id="text_17">
+   <g id="text_23">
     <!-- 70s -->
-    <g style="fill: #1565c0" transform="translate(60.671721 252.828659) scale(0.09 -0.09)">
-     <defs>
-      <path id="IosevkaTermNF-37" d="M 934 0 
-L 2272 4256 
-L 410 4256 
-L 410 4704 
-L 2790 4704 
-L 2790 4256 
-L 2214 2432 
-L 1446 0 
-L 934 0 
-z
-" transform="scale(0.015625)"/>
-     </defs>
+    <g style="fill: #1565c0" transform="translate(61.869545 245.465559) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-37"/>
      <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(99.999969 0)"/>
     </g>
    </g>
-   <g id="text_18">
+   <g id="text_24">
     <!-- 90s -->
-    <g style="fill: #1565c0" transform="translate(112.393602 243.699321) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(62.779459 239.836164) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-39"/>
      <use xlink:href="#IosevkaTermNF-30" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(99.999969 0)"/>
     </g>
    </g>
-   <g id="text_19">
+   <g id="text_25">
     <!-- 89s -->
-    <g style="fill: #1565c0" transform="translate(164.115483 243.901606) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(64.599287 239.976899) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-38"/>
      <use xlink:href="#IosevkaTermNF-39" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(99.999969 0)"/>
     </g>
    </g>
-   <g id="text_20">
+   <g id="text_26">
     <!-- 91s -->
-    <g style="fill: #1565c0" transform="translate(215.837364 243.099163) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(68.238941 239.41396) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-39"/>
      <use xlink:href="#IosevkaTermNF-31" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(99.999969 0)"/>
     </g>
    </g>
-   <g id="text_21">
+   <g id="text_27">
     <!-- 110s -->
-    <g style="fill: #1565c0" transform="translate(265.309245 236.185124) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(73.268251 234.009741) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-31"/>
      <use xlink:href="#IosevkaTermNF-31" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-30" transform="translate(99.999969 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(149.999954 0)"/>
     </g>
    </g>
-   <g id="text_22">
+   <g id="text_28">
     <!-- 133s -->
-    <g style="fill: #1565c0" transform="translate(317.031126 229.472598) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(87.826871 227.676672) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-31"/>
      <use xlink:href="#IosevkaTermNF-33" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-33" transform="translate(99.999969 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(149.999954 0)"/>
     </g>
    </g>
-   <g id="text_23">
+   <g id="text_29">
     <!-- 174s -->
-    <g style="fill: #1565c0" transform="translate(368.753007 219.617411) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(116.94411 215.96753) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-31"/>
      <use xlink:href="#IosevkaTermNF-37" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-34" transform="translate(99.999969 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(149.999954 0)"/>
     </g>
    </g>
-   <g id="text_24">
+   <g id="text_30">
     <!-- 255s -->
-    <g style="fill: #1565c0" transform="translate(420.474889 205.832913) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(175.178587 193.196629) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-32"/>
      <use xlink:href="#IosevkaTermNF-35" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-35" transform="translate(99.999969 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(149.999954 0)"/>
     </g>
    </g>
-   <g id="text_25">
+   <g id="text_31">
     <!-- 421s -->
-    <g style="fill: #1565c0" transform="translate(472.19677 187.711369) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(291.647543 146.472652) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-34"/>
      <use xlink:href="#IosevkaTermNF-32" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-31" transform="translate(99.999969 0)"/>
      <use xlink:href="#IosevkaTermNF-73" transform="translate(149.999954 0)"/>
     </g>
    </g>
-   <g id="text_26">
+   <g id="text_32">
     <!-- 751s -->
-    <g style="fill: #1565c0" transform="translate(523.918651 166.819984) scale(0.09 -0.09)">
+    <g style="fill: #1565c0" transform="translate(524.585455 53.812814) scale(0.09 -0.09)">
      <use xlink:href="#IosevkaTermNF-37"/>
      <use xlink:href="#IosevkaTermNF-35" transform="translate(49.999985 0)"/>
      <use xlink:href="#IosevkaTermNF-31" transform="translate(99.999969 0)"/>
@@ -1843,15 +1634,15 @@ z
     </g>
    </g>
    <g id="legend_1">
-    <g id="line2d_76">
-     <path d="M 51.346875 34.479 
-L 59.346875 34.479 
-L 67.346875 34.479 
+    <g id="line2d_42">
+     <path d="M 52.57125 34.479 
+L 60.57125 34.479 
+L 68.57125 34.479 
 " style="fill: none; stroke-dasharray: 3.7,1.6; stroke-dashoffset: 0; stroke: #838383"/>
     </g>
-    <g id="text_27">
+    <g id="text_33">
      <!-- linear (~N) -->
-     <g style="fill: #838383" transform="translate(73.746875 37.279) scale(0.08 -0.08)">
+     <g style="fill: #838383" transform="translate(74.97125 37.279) scale(0.08 -0.08)">
       <defs>
        <path id="IosevkaTermNF-69" d="M 480 0 
 L 480 448 
@@ -2040,16 +1831,95 @@ z
       <use xlink:href="#IosevkaTermNF-29" transform="translate(499.999847 0)"/>
      </g>
     </g>
-    <g id="line2d_77">
-     <path d="M 51.346875 46.9265 
-L 59.346875 46.9265 
-L 67.346875 46.9265 
+    <g id="line2d_43">
+     <path d="M 52.57125 46.9265 
+L 60.57125 46.9265 
+L 68.57125 46.9265 
 " style="fill: none; stroke-dasharray: 1,1.65; stroke-dashoffset: 0; stroke: #838383"/>
     </g>
-    <g id="text_28">
+    <g id="text_34">
      <!-- log₂(N) -->
-     <g style="fill: #838383" transform="translate(73.746875 49.7265) scale(0.08 -0.08)">
+     <g style="fill: #838383" transform="translate(74.97125 49.7265) scale(0.08 -0.08)">
       <defs>
+       <path id="IosevkaTermNF-67" d="M 1581 -1427 
+Q 1434 -1427 1290 -1404 
+Q 1146 -1382 1011 -1328 
+Q 877 -1274 761 -1181 
+Q 646 -1088 566 -966 
+Q 486 -845 444 -704 
+Q 403 -563 397 -416 
+L 896 -416 
+Q 902 -544 956 -656 
+Q 1011 -768 1110 -845 
+Q 1210 -922 1331 -950 
+Q 1453 -979 1581 -979 
+Q 1690 -979 1795 -953 
+Q 1901 -928 1987 -864 
+Q 2074 -800 2134 -710 
+Q 2195 -621 2230 -518 
+Q 2266 -416 2278 -310 
+Q 2291 -205 2291 -96 
+L 2291 582 
+Q 2240 448 2157 323 
+Q 2074 198 1955 112 
+Q 1837 26 1693 -12 
+Q 1549 -51 1402 -51 
+Q 1242 -51 1085 -6 
+Q 928 38 800 134 
+Q 672 230 585 364 
+Q 499 499 448 649 
+Q 397 800 377 960 
+Q 358 1120 358 1280 
+L 358 2048 
+Q 358 2208 377 2368 
+Q 397 2528 448 2678 
+Q 499 2829 585 2963 
+Q 672 3098 800 3194 
+Q 928 3290 1085 3334 
+Q 1242 3379 1402 3379 
+Q 1549 3379 1693 3340 
+Q 1837 3302 1955 3216 
+Q 2074 3130 2157 3005 
+Q 2240 2880 2291 2746 
+L 2291 3328 
+L 2790 3328 
+L 2790 -96 
+Q 2790 -269 2764 -438 
+Q 2739 -608 2672 -765 
+Q 2605 -922 2493 -1053 
+Q 2381 -1184 2233 -1270 
+Q 2086 -1357 1916 -1392 
+Q 1747 -1427 1581 -1427 
+z
+M 1594 397 
+Q 1702 397 1808 422 
+Q 1914 448 1997 512 
+Q 2080 576 2141 669 
+Q 2202 762 2234 861 
+Q 2266 960 2278 1065 
+Q 2291 1171 2291 1280 
+L 2291 2048 
+Q 2291 2157 2278 2262 
+Q 2266 2368 2234 2467 
+Q 2202 2566 2141 2659 
+Q 2080 2752 1997 2816 
+Q 1914 2880 1808 2905 
+Q 1702 2931 1594 2931 
+Q 1485 2931 1379 2905 
+Q 1274 2880 1184 2819 
+Q 1094 2758 1027 2668 
+Q 960 2579 921 2476 
+Q 883 2374 870 2265 
+Q 858 2157 858 2048 
+L 858 1280 
+Q 858 1171 870 1062 
+Q 883 954 921 851 
+Q 960 749 1027 659 
+Q 1094 570 1184 509 
+Q 1274 448 1379 422 
+Q 1485 397 1594 397 
+z
+" transform="scale(0.015625)"/>
        <path id="IosevkaTermNF-2082" d="M 698 -685 
 Q 698 -538 704 -394 
 Q 710 -250 739 -109 
@@ -2103,18 +1973,18 @@ z
       <use xlink:href="#IosevkaTermNF-29" transform="translate(299.999908 0)"/>
      </g>
     </g>
-    <g id="line2d_78">
-     <path d="M 51.346875 58.59025 
-L 59.346875 58.59025 
-L 67.346875 58.59025 
+    <g id="line2d_44">
+     <path d="M 52.57125 58.59025 
+L 60.57125 58.59025 
+L 68.57125 58.59025 
 " style="fill: none; stroke: #2196f3; stroke-width: 1.8; stroke-linecap: round"/>
      <g>
-      <use xlink:href="#mfcadb41195" x="59.346875" y="58.59025" style="fill: #2196f3; stroke: #1565c0"/>
+      <use xlink:href="#m3f84ec829b" x="60.57125" y="58.59025" style="fill: #2196f3; stroke: #1565c0"/>
      </g>
     </g>
-    <g id="text_29">
+    <g id="text_35">
      <!-- measured -->
-     <g style="fill: #838383" transform="translate(73.746875 61.39025) scale(0.08 -0.08)">
+     <g style="fill: #838383" transform="translate(74.97125 61.39025) scale(0.08 -0.08)">
       <defs>
        <path id="IosevkaTermNF-6d" d="M 307 0 
 L 307 3328 
@@ -2212,8 +2082,8 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="pb939d46b4a">
-   <rect x="44.146875" y="23.784" width="512.046622" height="248.3325"/>
+  <clipPath id="p1da320eb36">
+   <rect x="45.37125" y="23.784" width="511.4625" height="249.3"/>
   </clipPath>
  </defs>
 </svg>
