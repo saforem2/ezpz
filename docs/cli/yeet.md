@@ -485,7 +485,9 @@ import + initialization overhead on top of the yeet itself.
 |  2048 |    421.4 |           94.8 |           206 |
 |  4096 |    750.6 |          194.0 |           183 |
 
-![Total wall-clock and per-node amortized cost](./assets/yeet/yeet_env_scaling.svg)
+![Total wall-clock vs node count](./assets/yeet/yeet_env_seconds.svg)
+
+![Per-node amortized cost vs node count](./assets/yeet/yeet_env_per_node.svg)
 
 **Two regimes show up in the data:**
 
