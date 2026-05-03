@@ -13,6 +13,12 @@ Explicitly, these are `ezpz <command>`:
 - 📊 [`ezpz benchmark`](./benchmark.md): Run all examples and generate a
   report
 - 🩺 [`ezpz doctor`](./doctor.md): Health check your environment
+- 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment
+  as a tarball
+- 🚀 [`ezpz yeet`](./yeet.md): Distribute files (envs, models, datasets,
+  etc.) to all worker nodes via parallel rsync
+- 💀 [`ezpz kill`](./kill.md): Kill ezpz-launched python processes
+  (local node or `--all-nodes`)
 - 📝 [`ezpz.examples`](../examples/index.md): Collection of distributed
   training examples
     - ??? note "Distributed Training Examples"
@@ -60,12 +66,6 @@ Explicitly, these are `ezpz <command>`:
                 ```bash
                 ezpz launch python3 -m ezpz.examples.hf_trainer
                 ```
-
-- ??? question "Experimental"
-
-        - 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment as a tarball
-        - 🚀 [`ezpz yeet`](./yeet.md): Distribute files (envs, models, datasets, etc.) to all worker nodes via parallel rsync
-        - 💀 [`ezpz kill`](./kill.md): Kill ezpz-launched python processes (local node or `--all-nodes`)
 
 - ??? tip "`ezpz --help`"
 
