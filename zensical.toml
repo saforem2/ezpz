@@ -73,11 +73,11 @@ nav = [
     { "🧰 CLI" = [
         "cli/index.md",
         { "🚀 <code>ezpz launch</code>" = "cli/launch/index.md" },
-        { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
-        { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
+        { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "📦 <code>ezpz yeet</code>" = "cli/yeet.md" },
+        { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
@@ -293,6 +293,19 @@ extra_javascript = [
     "https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js",
     "javascripts/mermaid-init.js",
 ]
+
+# ----------------------------------------------------------------------------
+# Section for configuring validation options
+# ----------------------------------------------------------------------------
+[project.validation]
+unresolved_references = true
+unresolved_footnotes = true
+unused_definitions = true
+unused_footnotes = true
+shadowed_definitions = true
+shadowed_footnotes = true
+invalid_links = true
+invalid_link_anchors = true
 
 
 # ----------------------------------------------------------------------------
