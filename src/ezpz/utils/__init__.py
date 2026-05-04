@@ -8,6 +8,7 @@ import logging
 import os
 import pdb
 import re
+import subprocess
 import sys
 import tqdm
 from typing import Any
@@ -574,19 +575,25 @@ def make_tarfile(
     output_filename: str,
     source_dir: str | os.PathLike | Path,
 ) -> str:
+    """Create a gzipped tar archive of *source_dir* at *output_filename*.
+
+    Normalizes the output to end in `.tar.gz`, then runs
+    ``tar -czf <out> -C <parent> <dirname>``. Uses subprocess (not
+    os.system + f-string) so paths with spaces or shell-meta characters
+    don't break or get reinterpreted.
+    """
     output_filename = (
         output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
     )
     srcfp = Path(source_dir).absolute().resolve()
     dirname = srcfp.name
+    cmd = [
+        "tar", "-czf", output_filename,
+        "--directory", str(srcfp.parent), dirname,
+    ]
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
-    logger.info(
-        f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
-    )
-    os.system(
-        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
-    )
-
+    logger.info("Executing: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True)
     return output_filename
 
 
