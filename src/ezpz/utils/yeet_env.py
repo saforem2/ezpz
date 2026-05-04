@@ -76,6 +76,53 @@ def _detect_env_source() -> Path:
     return prefix
 
 
+def _suggest_tarball_if_present(src: Path) -> None:
+    """Print a one-line hint if a same-named tarball exists nearby.
+
+    Tarball broadcast (`ezpz yeet foo.tar.gz`) is ~10× faster at
+    scale than per-file rsync of `foo/` because it reduces the Lustre
+    side to one sequential read. Users who run plain `ezpz yeet`
+    without realizing they have a pre-built tarball pay the per-file
+    cost unnecessarily.
+
+    This only fires when the user did NOT pass --src (handled by the
+    caller) — if they explicitly chose a source, don't second-guess
+    them. Stale tarballs (older than the env's pyvenv.cfg) are
+    skipped so the hint doesn't push users toward an outdated copy.
+    """
+    if not src.is_dir():
+        return  # src is already a file (e.g. tarball passed explicitly)
+    name = src.name  # ".venv" / "myenv" / etc.
+    candidates = []
+    # Look next to the env, then in $cwd. Same-named first; .tgz second.
+    for parent in (src.parent, Path.cwd()):
+        for suffix in (".tar.gz", ".tgz"):
+            candidate = parent / f"{name}{suffix}"
+            if candidate.is_file():
+                candidates.append(candidate)
+    if not candidates:
+        return
+    tarball = candidates[0]
+    # Skip if the tarball is older than the venv's pyvenv.cfg (stale).
+    cfg = src / "pyvenv.cfg"
+    if cfg.is_file():
+        try:
+            if tarball.stat().st_mtime < cfg.stat().st_mtime:
+                return
+        except OSError:
+            pass
+    try:
+        size_gb = tarball.stat().st_size / (1024 ** 3)
+        size_str = f" ({size_gb:.1f}G)"
+    except OSError:
+        size_str = ""
+    print(
+        f"  Tip: found {tarball}{size_str} — pass it explicitly for "
+        f"~10× faster local copy at scale:\n"
+        f"    ezpz yeet {tarball}"
+    )
+
+
 def _get_env_size(path: Path) -> str:
     """Return a human-readable size string for a directory."""
     try:
@@ -903,6 +950,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             return 1
     else:
         src = _detect_env_source()
+        # Convenience hint: if a fresher same-named tarball exists
+        # next to the env or in cwd, point it out — tarball broadcast
+        # is ~10× faster at scale than per-file rsync. Don't auto-pick
+        # it; explicit is safer (the tarball might be stale).
+        _suggest_tarball_if_present(src)
 
     # If --src is a .tar.gz / .tgz file, treat it as a pre-built
     # archive: skip the "tar create" step and just copy + extract.

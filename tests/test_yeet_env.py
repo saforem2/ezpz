@@ -160,6 +160,54 @@ class TestParseArgs:
         assert args.hostfile is None
         assert args.dry_run is False
 
+    def test_tarball_hint_fires_when_present(self, tmp_path, capsys):
+        """A same-named tarball next to the env triggers the hint."""
+        env = tmp_path / "myenv"
+        env.mkdir()
+        (env / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        tarball = tmp_path / "myenv.tar.gz"
+        tarball.write_bytes(b"x" * 100)
+        # Make tarball newer than pyvenv.cfg (otherwise it's stale).
+        import os
+        os.utime(tarball, (1700000000, 1700000000))
+        os.utime(env / "pyvenv.cfg", (1600000000, 1600000000))
+
+        yeet._suggest_tarball_if_present(env)
+        out = capsys.readouterr().out
+        assert "Tip: found" in out
+        assert "myenv.tar.gz" in out
+        assert "ezpz yeet" in out
+
+    def test_tarball_hint_silent_when_stale(self, tmp_path, capsys):
+        """Don't suggest a tarball older than the venv's pyvenv.cfg."""
+        env = tmp_path / "myenv"
+        env.mkdir()
+        cfg = env / "pyvenv.cfg"
+        cfg.write_text("home = /usr/bin\n")
+        tarball = tmp_path / "myenv.tar.gz"
+        tarball.write_bytes(b"x" * 100)
+        import os
+        # Tarball is older than cfg.
+        os.utime(tarball, (1600000000, 1600000000))
+        os.utime(cfg, (1700000000, 1700000000))
+
+        yeet._suggest_tarball_if_present(env)
+        assert "Tip:" not in capsys.readouterr().out
+
+    def test_tarball_hint_silent_when_absent(self, tmp_path, capsys):
+        """No tarball nearby, no hint."""
+        env = tmp_path / "myenv"
+        env.mkdir()
+        yeet._suggest_tarball_if_present(env)
+        assert "Tip:" not in capsys.readouterr().out
+
+    def test_tarball_hint_silent_when_src_is_file(self, tmp_path, capsys):
+        """If src is itself a file (not a directory), don't search."""
+        f = tmp_path / "something.tar.gz"
+        f.write_bytes(b"x")
+        yeet._suggest_tarball_if_present(f)
+        assert "Tip:" not in capsys.readouterr().out
+
     def test_via_click_no_args_does_not_grab_argv(self):
         """`ezpz yeet` (no args) used to leak `sys.argv[1:]` into argparse.
 
