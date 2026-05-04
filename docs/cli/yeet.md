@@ -24,6 +24,49 @@ ezpz yeet .venv.tar.gz               # positional shorthand for --src
 ezpz yeet --src /path/to/dataset     # any directory or tarball
 ```
 
+!!! warning "Build your venv with `uv venv --copies` (or use the system Python)"
+
+    **`yeet` only copies what's inside the venv.** If the venv was
+    created with plain `uv venv`, the Python interpreter and stdlib
+    live outside the venv — under
+    `~/.local/share/uv/python/cpython-X.Y.Z-...` — and `bin/python3`
+    is just a symlink. After `ezpz yeet`, the symlink is rewritten,
+    but **every `import asyncio` / `import threading` / etc. still
+    hits your home filesystem** instead of `/tmp/`. At 4k+ ranks all
+    importing the stdlib at startup, this defeats half the point of
+    yeeting in the first place.
+
+    Two ways to avoid it:
+
+    === "Recommended: `--copies`"
+
+        ```bash
+        uv venv --python 3.14 --copies       # copies python3 + stdlib into .venv/bin/
+        ```
+
+        The `--copies` flag tells uv to copy the interpreter into the
+        venv instead of symlinking, so `yeet` ships everything.
+
+    === "Alternative: system Python"
+
+        ```bash
+        uv venv --python /usr/bin/python3.14
+        ```
+
+        Use whichever Python is installed on every worker node
+        already. The venv still doesn't bundle the interpreter, but
+        the stdlib path it points at exists on every node, so
+        post-yeet imports stay node-local (via the system Python on
+        each node).
+
+    **Skip this and at 4k nodes the stdlib import storm will dominate
+    job startup.** The first symptom is a wandb/asyncio thread
+    traceback showing paths under `~/.local/share/uv/...` even though
+    your venv is in `/tmp/.venv/`.
+
+    Conda envs and venvs created via `python -m venv /usr/bin/python3`
+    are unaffected — they already bundle their own interpreter.
+
 !!! tip "Recommended at scale: build a tarball first"
 
     For anything beyond a few nodes, **build a tarball once** with

@@ -280,3 +280,42 @@ to be explicit.
   parallelism, and the HF Trainer ecosystem).
 - Update the FSDP-vs-FSDP chart in the walkthrough to also show the
   DeepSpeed equivalent of each stage.
+
+---
+
+## 17. `ezpz yeet` Should Handle uv-Managed Python [MEDIUM]
+
+`uv venv` (default mode, no `--copies`) builds a venv whose
+`bin/python3` is a symlink into uv's interpreter cache at
+`~/.local/share/uv/python/cpython-X.Y.Z-.../`. The stdlib lives in
+that cache directory, NOT inside the venv.
+
+After `ezpz yeet`:
+- The venv contents land in `/tmp/.venv/`.
+- `bin/python3`'s symlink target still points at the home-filesystem
+  cache.
+- Every `import` of a stdlib module (asyncio, threading, json,
+  selectors, etc.) hits `~/.local/share/uv/...` over the network FS.
+- At 4k+ ranks, this becomes the same import-storm tax that yeet was
+  supposed to eliminate.
+
+We currently document this as a user footgun in `docs/cli/yeet.md`
+('Build your venv with `uv venv --copies`'), but the proper fix is
+for yeet itself to handle it.
+
+**Resolution sketch**:
+
+1. Detect when the venv's `pyvenv.cfg` `home =` points under
+   `~/.local/share/uv/python/`.
+2. In that case, also yeet the uv Python directory:
+   `~/.local/share/uv/python/cpython-X.Y.Z-.../` →
+   `/tmp/cpython-X.Y.Z-.../`.
+3. After local copy, rewrite `pyvenv.cfg`'s `home =` line to point
+   at the new `/tmp/` location.
+4. Re-link `.venv/bin/python3` to `/tmp/cpython-.../bin/python3`.
+
+About 50-80 lines of changes to `_patch_venv_paths_local` plus a
+second broadcast pass for the Python directory. Worth its own spec.
+A `--include-python` flag on the CLI would let users opt in
+explicitly while we shake out edge cases (uv venvs that share an
+interpreter across multiple environments, etc.).
