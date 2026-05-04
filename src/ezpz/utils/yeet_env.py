@@ -555,6 +555,37 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
 _DEFAULT_RSYNC_TIMEOUT = float(os.environ.get("EZPZ_YEET_RSYNC_TIMEOUT", "3600"))
 
 
+def _detect_rsync_progress_flag() -> list[str]:
+    """Pick the right rsync progress flag for the local rsync binary.
+
+    GNU rsync >= 3.1 supports ``--info=progress2`` (single aggregated
+    progress line — what the streaming progress callback parses).
+    macOS ships ``openrsync`` (advertised as ``rsync version 2.6.9
+    compatible``) which only supports the older ``--progress`` flag
+    (per-file granularity, no aggregation).
+
+    Probe by checking whether ``--info=`` appears in ``rsync --help``;
+    fall back to ``--progress`` if not, and to no flag at all if even
+    ``rsync --help`` fails.
+    """
+    try:
+        result = subprocess.run(
+            ["rsync", "--help"], capture_output=True, text=True,
+            check=False, timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+        if any(line.lstrip().startswith("--info=") for line in result.stdout.splitlines()):
+            return ["--info=progress2"]
+        return ["--progress"]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
+# Cached at module load — rsync version doesn't change at runtime.
+_RSYNC_PROGRESS_FLAGS = _detect_rsync_progress_flag()
+
+
 def _drain_stream_to_list(stream: object, sink: list[str]) -> None:
     """Read *stream* line-by-line into *sink* until EOF.
 
@@ -608,7 +639,7 @@ def _rsync_to_node(
             "rsync",
             "-rlD",              # recursive, symlinks, devices (no -tpgo)
             "--whole-file",      # skip delta algorithm for local copies
-            "--info=progress2",
+            *_RSYNC_PROGRESS_FLAGS,
             "--exclude=__pycache__",
             src_str,
             str(dst) + "/",
@@ -618,7 +649,7 @@ def _rsync_to_node(
         rsync_cmd = [
             "rsync",
             "-rlD",              # skip expensive metadata sync
-            "--info=progress2",
+            *_RSYNC_PROGRESS_FLAGS,
             "--exclude=__pycache__",
             src_str,
             dst_str,
