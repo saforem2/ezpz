@@ -1,27 +1,31 @@
 # 🧰 `ezpz` CLI
 
-Once installed, `ezpz` provides a CLI with a few useful utilities
-to help launch distributed PyTorch applications.
+Once installed, `ezpz` provides a CLI with a few useful utilities to help launch
+distributed PyTorch applications.
 
 Explicitly, these are `ezpz <command>`:
 
-- 🚀 [`ezpz launch`](./launch/index.md): Launch commands with _automatic
-  **job scheduler** detection_ (PBS, Slurm)
-- 📮 [`ezpz submit`](./submit.md): Submit jobs to PBS (`qsub`) or SLURM
-  (`sbatch`) — generates job scripts automatically
-- 💯 [`ezpz test`](./test.md): Run simple distributed smoke test
-- 📊 [`ezpz benchmark`](./benchmark.md): Run all examples and generate a
-  report
-- 🩺 [`ezpz doctor`](./doctor.md): Health check your environment
-- 📦 [`ezpz tar-env`](./tar-env.md): Package current Python environment
-  as a tarball
-- 🚀 [`ezpz yeet`](./yeet.md): Distribute files (envs, models, datasets,
-  etc.) to all worker nodes via parallel rsync
-- 💀 [`ezpz kill`](./kill.md): Kill ezpz-launched python processes
-  (local node or `--all-nodes`)
-- 📝 [`ezpz.examples`](../examples/index.md): Collection of distributed
-  training examples (DDP, FSDP, ViT, FSDP+TP, diffusion, HF, HF Trainer,
-  inference)
+- 🚀 [`ezpz launch`](./launch/index.md):
+  Launch commands with _automatic **job scheduler** detection_ (PBS, Slurm)
+    - 💯 [`ezpz test`](./test.md):
+      Run simple distributed smoke test[^wrapper].
+    - 📊 [`ezpz benchmark`](./benchmark.md):
+      Run all examples and generate a report
+    - 📮 [`ezpz submit`](./submit.md):
+      Submit jobs to PBS (`qsub`) or SLURM (`sbatch`); generates job scripts
+      automatically
+- 📦 [`ezpz yeet`](./yeet.md):
+  Distribute files (envs, models, datasets, etc.) to all worker nodes via
+  parallel rsync
+    - 🗜️ [`ezpz tar-env`](./tar-env.md):
+      Package current Python environment as a tarball
+- 🩺 [`ezpz doctor`](./doctor.md):
+  Health check your environment
+- 💀 [`ezpz kill`](./kill.md):
+  Kill ezpz-launched python processes (local node or `--all-nodes`)
+- 📝 [`ezpz.examples`](../examples/index.md):
+  Collection of distributed training examples (DDP, FSDP, ViT, FSDP+TP,
+  diffusion, HF, HF Trainer, inference)
 
 - ??? tip "`ezpz --help`"
 
@@ -47,3 +51,9 @@ Explicitly, these are `ezpz <command>`:
         test       Run the distributed smoke test.
         yeet       Distribute files (envs, models, datasets, etc.) to worker nodes.
         ```
+
+[^wrapper]: This is really just a wrapper around:
+
+    ```bash
+    ezpz launch python3 -m ezpz.examples.test
+    ```
