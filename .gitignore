@@ -161,6 +161,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv.tar.gz
+*.venv.tar.gz
 env/
 venv/
 ENV/
