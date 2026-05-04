@@ -24,37 +24,42 @@ ezpz yeet .venv.tar.gz               # positional shorthand for --src
 ezpz yeet --src /path/to/dataset     # any directory or tarball
 ```
 
-!!! warning "Build your venv against a Python that exists on every node"
+??? warning "Heads up: build your venv against a Python that exists on every node"
 
     **`yeet` only copies what's inside the venv directory.** If the
     venv was created with plain `uv venv` (no `--python` flag, or
     `--python 3.X` pointing at a uv-managed interpreter), then
     `bin/python3` is a symlink into uv's interpreter cache at
-    `~/.local/share/uv/python/cpython-X.Y.Z-...`. The stdlib lives
-    in that cache too. After `ezpz yeet` ships `/tmp/.venv/`,
-    **every `import asyncio` / `import threading` / `import json`
-    still hits your home filesystem** through the symlinked
-    interpreter. At 4k+ ranks all importing the stdlib at startup,
-    this re-creates the import storm yeet was supposed to eliminate.
+    `~/.local/share/uv/python/cpython-X.Y.Z-...`, where the stdlib
+    also lives. After `ezpz yeet` ships `/tmp/.venv/`, every
+    `import asyncio` / `import threading` / `import json` still
+    hits the home filesystem through that symlink. At 4k+ ranks
+    importing the stdlib at startup, this re-creates the import
+    storm yeet was supposed to eliminate.
 
-    **Workaround: build the venv against a Python that exists at
-    the same path on every worker node.** Three options, in order
-    of preference on HPC systems:
+    **Symptom**: a wandb/asyncio thread traceback (or any library
+    that spawns threads) showing paths under
+    `~/.local/share/uv/...` even though your venv lives at
+    `/tmp/.venv/`.
+
+    **Workaround**: build the venv against a Python that exists at
+    the same path on every worker node. Three options:
 
     === "HPC module (Aurora, Polaris, etc.)"
 
-        Most HPC systems ship a Python via Lmod modules. The module
-        binary lives under `/opt/...` or `/sw/...` and is part of
-        the system image — guaranteed to be at the same path on
-        every node.
+        Most HPC systems ship a Python via Lmod modules. The
+        module binary lives under `/opt/...` or `/sw/...` and is
+        part of the system image — guaranteed to be at the same
+        path on every node.
 
         ```bash
         module load python/3.12.12              # check `module avail python`
         uv venv --python $(which python3.12) --relocatable
         ```
 
-        Add the same `module load` to your job script so each
-        worker has the module loaded before training starts.
+        Make sure the same `module load` runs on each worker
+        before training (put it in your job script or sourced
+        env file).
 
     === "System Python"
 
@@ -65,41 +70,25 @@ ezpz yeet --src /path/to/dataset     # any directory or tarball
         Use whichever `python3.X` is in `/usr/bin/` on the cluster's
         worker image.
 
-    === "No system Python at the version you need"
+    === "Standalone (no system Python at your version)"
 
         Build a self-contained venv that includes the interpreter:
 
         ```bash
-        # Download a python-build-standalone tarball (same kind uv uses):
+        # Download python-build-standalone (same kind uv uses):
         curl -L https://github.com/astral-sh/python-build-standalone/releases/download/<DATE>/cpython-3.14.0+...-x86_64-unknown-linux-gnu-install_only.tar.gz \
-          | tar -xz                              # creates ./python/
+          | tar -xz
 
-        # Use stdlib venv (NOT uv venv — uv has no --copies flag) with --copies:
+        # Use stdlib venv with --copies (uv venv has no --copies flag):
         ./python/bin/python3.14 -m venv .venv --copies
-        # .venv/bin/ now contains a real python3.14 binary + stdlib copy
-        # — yeet will ship the whole thing as one self-contained directory.
         ```
 
-        Trade-off: ~150 MB larger venv, and you give up `uv pip
-        install`'s fast cache (use `pip` directly inside the venv,
-        or install uv into the venv first and use it from there).
+        Trade-off: ~150 MB larger venv; lose `uv pip install`'s
+        cache (use `pip` directly, or install uv into the venv).
 
-    All three avoid the symlink-into-uv-cache problem because
-    `bin/python3` either points at a path that exists on every
-    node, or is a real binary copy that yeet ships.
-
-    **Symptom you'll see if you skip this**: a wandb/asyncio thread
-    traceback (or any other library that spawns threads) showing
-    paths under `~/.local/share/uv/...` even though your venv lives
-    at `/tmp/.venv/`. That's stdlib imports leaking back to the
-    home filesystem.
-
-    Conda envs and venvs created via `python -m venv` against a
-    system Python are unaffected — they reference paths that exist
-    on every worker node.
-
-    A proper fix (yeet detects uv-managed Python and copies the
-    interpreter cache too) is tracked in
+    Conda envs and venvs from `python -m venv` against a system
+    Python are unaffected. A proper fix (yeet detects uv-managed
+    Python and copies the interpreter cache too) is tracked in
     [TODO §17](https://github.com/saforem2/ezpz/blob/main/TODO.md#17-ezpz-yeet-should-handle-uv-managed-python-medium).
 
 !!! tip "Recommended at scale: build a tarball first"
@@ -133,14 +122,45 @@ For non-venv sources (datasets, models, generic directories), step 4
 is skipped and the footer prints a generic "Synced to {dst} on N
 node(s)" message instead of the venv activation guidance.
 
-After the transfer, activate the local copy and launch:
+## Complete workflow
+
+The full sequence from `qsub` to a launched training job, including
+the venv-creation step that's easy to miss:
 
 ```bash
-deactivate 2>/dev/null           # leave the current env
-source /tmp/.venv/bin/activate   # activate the local copy
-cd /path/to/your/project         # shared filesystem for data/outputs
+# 1. Get an interactive allocation
+qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
+
+# 2. Set up a venv. Use a Python that exists at the same path on
+#    every worker node — see the warning callout above for why.
+module load python                           # e.g. python/3.12.12 on Aurora
+uv venv --relocatable --system-site-packages \
+        --no-cache --link-mode=copy \
+        --python=$(which python3)
+source .venv/bin/activate
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+# ...plus your project's other deps (torch, etc.)
+
+# 3. Build a tarball (one-time, ~3-5 min for ~8 GB) — recommended at scale
+ezpz tar-env
+
+# 4. Distribute it to every node's /tmp/
+ezpz yeet .venv.tar.gz
+
+# 5. Activate the local copy
+deactivate
+source /tmp/.venv/bin/activate
+
+# 6. Launch from a shared filesystem path
+cd /path/to/your/project
 ezpz launch python3 -m your_app.train
 ```
+
+For small allocations (< ~16 nodes) you can skip step 3 and just run
+`ezpz yeet` (no args) directly — it'll detect the active venv and
+rsync each file. At larger scale, the `tar-env` + `yeet .tar.gz` pair
+is significantly faster (see [scaling
+section](#scaling-aurora-8--4096-nodes)).
 
 ## CLI Options
 
@@ -614,32 +634,6 @@ under 1 minute through 1024 nodes and only really starts to climb at
 2048+ — consistent with `init_process_group` overhead growing with
 world size. At 4096 nodes the first step lands in 3 min 14 s, so
 total time-to-train (yeet + first step) is about 16 minutes.
-
-### Complete workflow
-
-```bash
-# 1. Get an interactive allocation
-qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
-
-# 2. Build a tarball (one-time, ~3-5 min for ~8 GB) — recommended at scale
-ezpz tar-env
-
-# 3. Distribute it to every node's /tmp/
-ezpz yeet .venv.tar.gz
-
-# 4. Activate the local copy
-deactivate 2>/dev/null
-source /tmp/.venv/bin/activate
-
-# 5. Launch from a shared filesystem path
-cd /path/to/your/project
-ezpz launch python3 -m your_app.train
-```
-
-For small allocations (< ~16 nodes) you can skip the `tar-env` step
-and just run `ezpz yeet` (no args) directly — it'll detect the
-active venv and rsync each file. Above that, the tarball pair is
-significantly faster.
 
 ## See Also
 
