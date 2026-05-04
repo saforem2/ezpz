@@ -55,32 +55,6 @@ For non-venv sources (datasets, models, generic directories), step 4
 is skipped and the footer prints a generic "Synced to {dst} on N
 node(s)" message instead of the venv activation guidance.
 
-```
-  Source: /path/to/project/.venv (3.2 GB)
-  Target: /tmp/.venv/ on 4 node(s)
-    local:  node01 (rsync to /tmp/.venv/)
-    remote: node02, node03, node04
-  Syncing (4 nodes)...
-
-    ✓ node01 (local, rsync) — 12.3s
-    ✓ node02 — 11.8s
-    ✓ node03 — 12.1s
-    ✓ node04 — 11.9s
-  Done in 24.2s
-
-  To use this environment:
-    deactivate 2>/dev/null
-    source /tmp/.venv/bin/activate
-
-  Then launch your training (from a shared filesystem path):
-    cd /path/to/your/project
-    ezpz launch python3 -m your_app.train
-
-  Note: /tmp is node-local. Make sure your working directory
-  is on a shared filesystem (e.g. Lustre) before launching,
-  so all ranks can access data and outputs.
-```
-
 After the transfer, activate the local copy and launch:
 
 ```bash
