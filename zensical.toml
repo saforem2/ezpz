@@ -54,6 +54,7 @@ nav = [
         "reference.md",
         "history.md",
         "configuration.md",
+        { "⚖️ vs. alternatives" = "compare.md" },
         "architecture.md",
         { "🕸️ Parallelism" = "notes/parallelism.md" },
         { "🤖 Supported Systems" = "notes/systems.md" },

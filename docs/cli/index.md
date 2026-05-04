@@ -20,52 +20,8 @@ Explicitly, these are `ezpz <command>`:
 - 💀 [`ezpz kill`](./kill.md): Kill ezpz-launched python processes
   (local node or `--all-nodes`)
 - 📝 [`ezpz.examples`](../examples/index.md): Collection of distributed
-  training examples
-    - ??? note "Distributed Training Examples"
-
-            See the [Examples](../examples/index.md) page for full details.
-
-            - [`test`](../examples/test.md): Simplest DDP training loop
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.test
-                ```
-
-            - [`fsdp`](../examples/fsdp.md): FSDP for memory-efficient training
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.fsdp
-                ```
-
-            - [`vit`](../examples/vit.md): Vision Transformer with FSDP + optional `torch.compile`
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.vit
-                ```
-
-            - [`fsdp_tp`](../examples/fsdp-tp.md): 2D parallelism (FSDP + Tensor Parallel)
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.fsdp_tp
-                ```
-
-            - [`diffusion`](../examples/diffusion.md): Diffusion model training with FSDP
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.diffusion
-                ```
-
-            - [`hf`](../examples/hf.md): Fine-tune causal LM with explicit training loop (Accelerate + FSDP)
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.hf
-                ```
-
-            - [`hf_trainer`](../examples/hf-trainer/index.md): Hugging Face Trainer integration
-
-                ```bash
-                ezpz launch python3 -m ezpz.examples.hf_trainer
-                ```
+  training examples (DDP, FSDP, ViT, FSDP+TP, diffusion, HF, HF Trainer,
+  inference)
 
 - ??? tip "`ezpz --help`"
 
