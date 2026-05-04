@@ -371,12 +371,26 @@ these **once** on the local `/tmp/` copy before any distribution:
 Since patching happens before fan-out, all distributed copies
 arrive already patched — no per-node SSH needed.
 
-### Incremental syncs
+### Re-running yeet
 
-The default rsync mode uses `-rlD` (recursive, symlinks, devices —
-skipping expensive timestamp/permission sync). Subsequent runs only
-transfer changed files, making it practical to re-run after
-installing new packages.
+`yeet` is optimized for **first-time** distribution, not for true
+incremental sync:
+
+- The local Lustre → `/tmp/` copy uses `--whole-file`, which
+  explicitly disables rsync's delta-transfer algorithm — full files
+  are re-copied every time.
+- The remote fan-out uses `-rlD` (recursive, symlinks, devices) but
+  drops `-t` (modification-time preservation), so rsync's quick
+  check (same size + same mtime → skip) can't reliably detect
+  "unchanged" between runs. Files may re-transfer even when the
+  contents haven't changed.
+
+In practice this is fine: re-running `yeet` after `pip install` is
+still much faster than restarting from scratch (the local extract
+on the source node is cached in page cache; the remote fan-out
+overlaps), but don't expect it to be free. For workflows where
+you're iterating on a venv between runs, the `--copy` (`cp -a`)
+mode skips rsync entirely on the local step and is often a win.
 
 ### Error handling
 
