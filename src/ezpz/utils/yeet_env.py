@@ -36,7 +36,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Sequence
 
-logger = logging.getLogger(__name__)
+def _get_ezpz_logger() -> logging.Logger:
+    """Use ezpz.get_logger (timestamped, colored) when available.
+
+    Falls back to a plain stdlib logger when ezpz.log isn't importable
+    yet (avoids a circular import during early module setup or when
+    yeet_env is imported standalone for testing).
+    """
+    try:
+        import ezpz
+        return ezpz.get_logger(__name__)
+    except (ImportError, AttributeError):
+        return logging.getLogger(__name__)
+
+
+logger = _get_ezpz_logger()
 
 # Disable \r / ANSI escape progress when stdout is not a terminal
 # (e.g. redirected to a file or pipe).
@@ -116,10 +130,10 @@ def _suggest_tarball_if_present(src: Path) -> None:
         size_str = f" ({size_gb:.1f}G)"
     except OSError:
         size_str = ""
-    print(
-        f"  Tip: found {tarball}{size_str} — pass it explicitly for "
-        f"~10× faster local copy at scale:\n"
-        f"    ezpz yeet {tarball}"
+    logger.warning(
+        "Tip: found %s%s — pass it explicitly for ~10x faster local "
+        "copy at scale:  ezpz yeet %s",
+        tarball, size_str, tarball,
     )
 
 
@@ -982,7 +996,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     current = _get_current_hostname()
 
     if not nodes:
-        print(f"  No worker nodes found.")
+        logger.error("No worker nodes found.")
         return 1
 
     # Copy locally first (current node), then rsync to remote nodes.
@@ -996,22 +1010,22 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # ── Print summary ───────────────────────────────────────────────
     env_size = _get_env_size(src)
     total_nodes = (1 if needs_local_copy else 0) + len(remote_nodes)
-    print(f"  Source: {src} ({env_size})")
-    print(f"  Target: {dst}/ on {total_nodes} node(s)")
+    logger.info("Source: %s (%s)", src, env_size)
+    logger.info("Target: %s/ on %d node(s)", dst, total_nodes)
     if needs_local_copy:
-        print(f"    local:  {current} (rsync to {dst}/)")
+        logger.info("  local:  %s (rsync to %s/)", current, dst)
     if remote_nodes:
         if len(remote_nodes) <= 6:
-            print(f"    remote: {', '.join(remote_nodes)}")
+            logger.info("  remote: %s", ", ".join(remote_nodes))
         else:
             shown = ', '.join(remote_nodes[:3])
-            print(f"    remote: {shown}, ... ({len(remote_nodes)} nodes)")
+            logger.info("  remote: %s, ... (%d nodes)", shown, len(remote_nodes))
     if args.dry_run:
-        print(f"  [dry-run] No files transferred.")
+        logger.info("[dry-run] No files transferred.")
         return 0
 
     if total_nodes == 0:
-        print(f"  Nothing to sync (source is already in {dst}).")
+        logger.info("Nothing to sync (source is already in %s).", dst)
         return 0
 
     # ── Sync ────────────────────────────────────────────────────────
@@ -1037,7 +1051,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     progress = _AggregateProgress(total_nodes=total)
     results: list[tuple[str, float, int]] = []
 
-    print(f"  Syncing ({total} nodes)...")
+    logger.info("Syncing (%d nodes)...", total)
     t0 = time.perf_counter()
 
     # Step 1: copy source to local /tmp/ and patch paths ONCE.
@@ -1249,7 +1263,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             print(f"    \u2717 {current} (local, {method}) \u2014 FAILED")
             results.append((current, local_elapsed, local_rc))
             # No valid local copy — abort, don't distribute a broken env
-            print(f"  Local copy failed — aborting distribution.")
+            logger.error("Local copy failed — aborting distribution.")
             return 1
 
     remaining = [n for n in all_nodes if n != current]
@@ -1315,9 +1329,9 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
     if failed:
-        print(f"  {failed}/{total_nodes} node(s) failed!")
+        logger.warning("%d/%d node(s) failed!", failed, total_nodes)
     else:
-        print(f"  Done in {total_elapsed:.1f}s")
+        logger.info("Done in %.1fs", total_elapsed)
 
     # ── Guidance ────────────────────────────────────────────────────
     # Detect from `dst` so tarball sources (where the directory only

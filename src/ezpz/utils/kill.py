@@ -31,7 +31,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Sequence
 
-logger = logging.getLogger(__name__)
+def _get_ezpz_logger() -> logging.Logger:
+    """Use ezpz.get_logger when available; fall back on import error."""
+    try:
+        import ezpz
+        return ezpz.get_logger(__name__)
+    except (ImportError, AttributeError):
+        return logging.getLogger(__name__)
+
+
+logger = _get_ezpz_logger()
 
 EZPZ_MARKER = "EZPZ_RUN_COMMAND"
 

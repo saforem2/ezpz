@@ -160,7 +160,7 @@ class TestParseArgs:
         assert args.hostfile is None
         assert args.dry_run is False
 
-    def test_tarball_hint_fires_when_present(self, tmp_path, capsys):
+    def test_tarball_hint_fires_when_present(self, tmp_path, caplog):
         """A same-named tarball next to the env triggers the hint."""
         env = tmp_path / "myenv"
         env.mkdir()
@@ -172,13 +172,15 @@ class TestParseArgs:
         os.utime(tarball, (1700000000, 1700000000))
         os.utime(env / "pyvenv.cfg", (1600000000, 1600000000))
 
-        yeet._suggest_tarball_if_present(env)
-        out = capsys.readouterr().out
-        assert "Tip: found" in out
-        assert "myenv.tar.gz" in out
-        assert "ezpz yeet" in out
+        with caplog.at_level("WARNING", logger=yeet.logger.name):
+            yeet._suggest_tarball_if_present(env)
+        records = [r.getMessage() for r in caplog.records]
+        joined = " ".join(records)
+        assert "Tip: found" in joined
+        assert "myenv.tar.gz" in joined
+        assert "ezpz yeet" in joined
 
-    def test_tarball_hint_silent_when_stale(self, tmp_path, capsys):
+    def test_tarball_hint_silent_when_stale(self, tmp_path, caplog):
         """Don't suggest a tarball older than the venv's pyvenv.cfg."""
         env = tmp_path / "myenv"
         env.mkdir()
@@ -191,22 +193,25 @@ class TestParseArgs:
         os.utime(tarball, (1600000000, 1600000000))
         os.utime(cfg, (1700000000, 1700000000))
 
-        yeet._suggest_tarball_if_present(env)
-        assert "Tip:" not in capsys.readouterr().out
+        with caplog.at_level("WARNING", logger=yeet.logger.name):
+            yeet._suggest_tarball_if_present(env)
+        assert not any("Tip:" in r.getMessage() for r in caplog.records)
 
-    def test_tarball_hint_silent_when_absent(self, tmp_path, capsys):
+    def test_tarball_hint_silent_when_absent(self, tmp_path, caplog):
         """No tarball nearby, no hint."""
         env = tmp_path / "myenv"
         env.mkdir()
-        yeet._suggest_tarball_if_present(env)
-        assert "Tip:" not in capsys.readouterr().out
+        with caplog.at_level("WARNING", logger=yeet.logger.name):
+            yeet._suggest_tarball_if_present(env)
+        assert not any("Tip:" in r.getMessage() for r in caplog.records)
 
-    def test_tarball_hint_silent_when_src_is_file(self, tmp_path, capsys):
+    def test_tarball_hint_silent_when_src_is_file(self, tmp_path, caplog):
         """If src is itself a file (not a directory), don't search."""
         f = tmp_path / "something.tar.gz"
         f.write_bytes(b"x")
-        yeet._suggest_tarball_if_present(f)
-        assert "Tip:" not in capsys.readouterr().out
+        with caplog.at_level("WARNING", logger=yeet.logger.name):
+            yeet._suggest_tarball_if_present(f)
+        assert not any("Tip:" in r.getMessage() for r in caplog.records)
 
     def test_via_click_no_args_does_not_grab_argv(self):
         """`ezpz yeet` (no args) used to leak `sys.argv[1:]` into argparse.
@@ -271,26 +276,28 @@ class TestTarballSrc:
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
-    def test_tarball_strips_suffix_for_dst(self, _nodes, _host, tmp_path, capsys):
+    def test_tarball_strips_suffix_for_dst(self, _nodes, _host, tmp_path, caplog):
         """A .tar.gz src derives env_name by stripping the suffix."""
         tarball = tmp_path / "myenv.tar.gz"
         tarball.write_bytes(b"fake")
-        rc = yeet.run(["--src", str(tarball), "--dry-run"])
+        with caplog.at_level("INFO", logger=yeet.logger.name):
+            rc = yeet.run(["--src", str(tarball), "--dry-run"])
         assert rc == 0
-        out = capsys.readouterr().out
         # Default dst should be /tmp/myenv/ (suffix stripped)
-        assert "/tmp/myenv/" in out
+        joined = " ".join(r.getMessage() for r in caplog.records)
+        assert "/tmp/myenv/" in joined
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
-    def test_tgz_also_recognized(self, _nodes, _host, tmp_path, capsys):
+    def test_tgz_also_recognized(self, _nodes, _host, tmp_path, caplog):
         """A .tgz src is also recognized."""
         tarball = tmp_path / "myenv.tgz"
         tarball.write_bytes(b"fake")
-        rc = yeet.run(["--src", str(tarball), "--dry-run"])
+        with caplog.at_level("INFO", logger=yeet.logger.name):
+            rc = yeet.run(["--src", str(tarball), "--dry-run"])
         assert rc == 0
-        out = capsys.readouterr().out
-        assert "/tmp/myenv/" in out
+        joined = " ".join(r.getMessage() for r in caplog.records)
+        assert "/tmp/myenv/" in joined
 
 
 # ===================================================================
@@ -303,26 +310,28 @@ class TestRun:
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
-    def test_single_node_dry_run(self, _nodes, _host, capsys):
+    def test_single_node_dry_run(self, _nodes, _host, caplog):
         """Single node dry-run shows local copy plan."""
-        rc = yeet.run(["--dry-run"])
+        with caplog.at_level("INFO", logger=yeet.logger.name):
+            rc = yeet.run(["--dry-run"])
         assert rc == 0
-        captured = capsys.readouterr()
-        assert "dry-run" in captured.out
-        assert "local:" in captured.out
+        joined = " ".join(r.getMessage() for r in caplog.records)
+        assert "dry-run" in joined
+        assert "local:" in joined
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01", "node02", "node03"])
-    def test_dry_run_shows_nodes(self, _nodes, _host, capsys):
+    def test_dry_run_shows_nodes(self, _nodes, _host, caplog):
         """Dry run prints source, target, and node list."""
-        rc = yeet.run(["--dry-run"])
+        with caplog.at_level("INFO", logger=yeet.logger.name):
+            rc = yeet.run(["--dry-run"])
         assert rc == 0
-        captured = capsys.readouterr()
-        assert "Source:" in captured.out
-        assert "Target:" in captured.out
-        assert "node02" in captured.out
-        assert "node03" in captured.out
-        assert "dry-run" in captured.out
+        joined = " ".join(r.getMessage() for r in caplog.records)
+        assert "Source:" in joined
+        assert "Target:" in joined
+        assert "node02" in joined
+        assert "node03" in joined
+        assert "dry-run" in joined
 
     def test_nonexistent_src(self):
         """Returns 1 when --src path doesn't exist."""
