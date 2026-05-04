@@ -76,6 +76,7 @@ nav = [
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
         { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
+        { "📦 <code>ezpz tar-env</code>" = "cli/tar-env.md" },
         { "📦 <code>ezpz yeet</code>" = "cli/yeet.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
