@@ -16,10 +16,20 @@ compression benefits as a separate `tar-env` step).
 ## What it does
 
 1. Detects the active Python environment (conda or virtual environment) from
-   `sys.executable`
-2. Checks whether a `.tar.gz` archive already exists for that environment
-3. If no tarball is found, creates one alongside the environment directory
-4. Logs the path to the tarball
+   `sys.executable`.
+2. Checks for an existing `.tar.gz` in three locations, in order:
+   `<env-parent>/<env-name>.tar.gz` → `/tmp/<env-name>.tar.gz` →
+   `<cwd>/<env-name>.tar.gz`. If found (and `overwrite=False`), reuses it.
+3. If none exist, creates a new gzipped tarball **next to the
+   environment** (e.g. `/path/to/.venv` → `/path/to/.venv.tar.gz`).
+4. Returns the absolute path to the tarball.
+
+This is the canonical location for the tarball: subsequent `ezpz yeet`
+(no args) invocations will see the same-named `.tar.gz` next to the
+detected venv and print a hint suggesting the tarball-broadcast form,
+which scales much better than per-file rsync (see the
+[scaling section](./yeet.md#scaling-aurora-8--4096-nodes) on the yeet
+page).
 
 This is particularly useful on HPC systems where shared filesystems can become
 bottlenecks when many nodes simultaneously read Python packages. By packing the

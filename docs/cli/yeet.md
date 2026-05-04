@@ -123,9 +123,9 @@ the tarball is copied to `/tmp/` and extracted there:
 
 1. `cp /lus/.../my-env.tar.gz /tmp/my-env.tar.gz`
 2. `tar -xzf /tmp/my-env.tar.gz --strip-components=1 -C /tmp/my-env/`
-3. Patch shebangs/activate scripts (auto-detects original venv path
-   from `bin/activate`)
-4. Delete the tarball
+3. Delete the local tarball copy
+4. Patch shebangs / activate scripts in `/tmp/my-env/` (auto-detects
+   original venv path from `bin/activate`)
 5. Fan-out `/tmp/my-env/` to all worker nodes via rsync
 
 Both `.tar.gz` and `.tgz` extensions are recognized. The destination
@@ -364,7 +364,9 @@ these **once** on the local `/tmp/` copy before any distribution:
 
 - Replaces the old `VIRTUAL_ENV` path in activate scripts
 - Re-links `python3` symlinks to the system Python
-- Updates `pyvenv.cfg` to point to the correct base Python
+- Updates any old paths in `pyvenv.cfg` (the `home = ...` line
+  typically points at the system Python's bin dir and is left alone;
+  `prompt` and other path-bearing keys get rewritten)
 - Rewrites shebangs in all `bin/` scripts (e.g. `#!/old/path/.venv/bin/python3`
   → `#!/tmp/.venv/bin/python3`)
 
