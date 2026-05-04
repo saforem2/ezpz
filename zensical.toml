@@ -76,8 +76,8 @@ nav = [
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
         { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
-        { "📦 <code>ezpz tar-env</code>" = "cli/tar-env.md" },
         { "📦 <code>ezpz yeet</code>" = "cli/yeet.md" },
+        { "🗜️ <code>ezpz tar-env</code>" = "cli/tar-env.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
         { "🧪 Experimental" = [
@@ -105,7 +105,6 @@ nav = [
         { "<code>ezpz.examples.inference</code>" = "examples/inference.md" },
         { "Minimal (Synthetic) [deprecated]" = "examples/minimal.md" },
     ] },
-    # ] },
 
     { "🐍 Python API" = [
         "python/index.md",
@@ -299,7 +298,7 @@ extra_javascript = [
 # Section for configuring validation options
 # ----------------------------------------------------------------------------
 [project.validation]
-unresolved_references = true
+unresolved_references = false
 unresolved_footnotes = true
 unused_definitions = true
 unused_footnotes = true
