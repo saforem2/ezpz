@@ -24,48 +24,45 @@ ezpz yeet .venv.tar.gz               # positional shorthand for --src
 ezpz yeet --src /path/to/dataset     # any directory or tarball
 ```
 
-!!! warning "Build your venv with `uv venv --copies` (or use the system Python)"
+!!! warning "Build your venv against a Python that exists on every node"
 
-    **`yeet` only copies what's inside the venv.** If the venv was
-    created with plain `uv venv`, the Python interpreter and stdlib
-    live outside the venv — under
-    `~/.local/share/uv/python/cpython-X.Y.Z-...` — and `bin/python3`
-    is just a symlink. After `ezpz yeet`, the symlink is rewritten,
-    but **every `import asyncio` / `import threading` / etc. still
-    hits your home filesystem** instead of `/tmp/`. At 4k+ ranks all
-    importing the stdlib at startup, this defeats half the point of
-    yeeting in the first place.
+    **`yeet` only copies what's inside the venv directory.** If the
+    venv was created with plain `uv venv` (no `--python` flag, or
+    `--python 3.X` pointing at a uv-managed interpreter), then
+    `bin/python3` is a symlink into uv's interpreter cache at
+    `~/.local/share/uv/python/cpython-X.Y.Z-...`. The stdlib lives
+    in that cache too. After `ezpz yeet` ships `/tmp/.venv/`,
+    **every `import asyncio` / `import threading` / `import json`
+    still hits your home filesystem** through the symlinked
+    interpreter. At 4k+ ranks all importing the stdlib at startup,
+    this re-creates the import storm yeet was supposed to eliminate.
 
-    Two ways to avoid it:
+    **Workaround: build the venv against a system Python that's
+    installed on every worker node.**
 
-    === "Recommended: `--copies`"
+    ```bash
+    uv venv --python /usr/bin/python3.14
+    # or whichever python3.X is installed on the cluster's worker image
+    ```
 
-        ```bash
-        uv venv --python 3.14 --copies       # copies python3 + stdlib into .venv/bin/
-        ```
+    The venv still doesn't bundle the interpreter, but the path
+    `bin/python3` resolves to (`/usr/bin/python3.14`) exists on
+    every node, so post-yeet imports stay node-local via each
+    node's own system Python.
 
-        The `--copies` flag tells uv to copy the interpreter into the
-        venv instead of symlinking, so `yeet` ships everything.
+    **Symptom you'll see if you skip this**: a wandb/asyncio thread
+    traceback (or any other library that spawns threads) showing
+    paths under `~/.local/share/uv/...` even though your venv lives
+    at `/tmp/.venv/`. That's stdlib imports leaking back to the
+    home filesystem.
 
-    === "Alternative: system Python"
+    Conda envs and venvs created via `python -m venv` against a
+    system Python are unaffected — they reference paths that exist
+    on every worker node.
 
-        ```bash
-        uv venv --python /usr/bin/python3.14
-        ```
-
-        Use whichever Python is installed on every worker node
-        already. The venv still doesn't bundle the interpreter, but
-        the stdlib path it points at exists on every node, so
-        post-yeet imports stay node-local (via the system Python on
-        each node).
-
-    **Skip this and at 4k nodes the stdlib import storm will dominate
-    job startup.** The first symptom is a wandb/asyncio thread
-    traceback showing paths under `~/.local/share/uv/...` even though
-    your venv is in `/tmp/.venv/`.
-
-    Conda envs and venvs created via `python -m venv /usr/bin/python3`
-    are unaffected — they already bundle their own interpreter.
+    A proper fix (yeet detects uv-managed Python and copies the
+    interpreter cache too) is tracked in
+    [TODO §17](https://github.com/saforem2/ezpz/blob/main/TODO.md#17-ezpz-yeet-should-handle-uv-managed-python-medium).
 
 !!! tip "Recommended at scale: build a tarball first"
 
