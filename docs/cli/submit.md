@@ -304,8 +304,8 @@ took: 5s
 
 ## Account Fallback
 
-If `--account` is not provided, `ezpz submit` checks these environment
-variables in order:
+If `--account` is not provided, `ezpz submit` checks these environment variables
+in order:
 
 - `PBS_ACCOUNT` (PBS)
 - `SLURM_ACCOUNT` (SLURM)

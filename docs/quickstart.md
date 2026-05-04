@@ -63,7 +63,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     [W&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)
     for example output.
 
-??? question "[Optional] Shell Environment and Setup"
+??? question "\[Optional] Shell Environment and Setup"
 
     1. [**Shell Environment and Setup**](./notes/shell-environment.md):
 
