@@ -24,6 +24,25 @@ ezpz yeet .venv.tar.gz               # positional shorthand for --src
 ezpz yeet --src /path/to/dataset     # any directory or tarball
 ```
 
+!!! tip "Recommended at scale: build a tarball first"
+
+    For anything beyond a few nodes, **build a tarball once** with
+    [`ezpz tar-env`](./tar-env.md), then yeet that tarball:
+
+    ```bash
+    ezpz tar-env                     # one-time: builds .venv.tar.gz next to .venv
+    ezpz yeet .venv.tar.gz           # broadcast — ~10× faster than per-file rsync
+    ```
+
+    The Lustre side becomes a single sequential read instead of
+    millions of `stat()`s, so the local-copy step stays flat as
+    `N` grows. See the [scaling section](#scaling-aurora-8--4096-nodes)
+    for measured numbers (8 → 4096 nodes on Aurora).
+
+    `ezpz yeet` (no args) will print a hint when it sees a same-named
+    `.tar.gz` sitting nearby, so you don't accidentally pay the per-file
+    cost.
+
 By default (no args), `yeet`:
 
 1. Detects the active Python environment (`sys.prefix`)
@@ -460,9 +479,26 @@ ezpz yeet --dry-run
 
 ### Scaling: Aurora, 8 → 4096 nodes
 
-Full 10-point sweep using the tarball broadcast mode
-(`ezpz yeet --src .venv.tar.gz`) on Aurora, measured 2026-04-30 to
-2026-05-01. The benchmark harness lives in
+!!! tip "Use the tarball broadcast for scale"
+
+    The numbers below are all from the **tarball broadcast** mode —
+    `ezpz tar-env` to build the archive, then `ezpz yeet
+    .venv.tar.gz` to distribute it. This is the path that scales:
+
+    - The Lustre side becomes one sequential read regardless of
+      node count, instead of millions of `stat()`s.
+    - The pre-tarball per-file rsync mode was projected to take
+      **1–2 hours** at 256+ nodes; the tarball mode below stays
+      under 13 minutes even at 4096 nodes.
+    - The cost of `ezpz tar-env` (3-5 min for a typical 8 GB venv)
+      is paid **once**; every subsequent yeet reuses the tarball.
+
+    `ezpz yeet` (no args) prints a hint when it finds a same-named
+    tarball nearby, so you don't need to remember to pass it
+    explicitly after building once.
+
+Full 10-point sweep using the tarball broadcast mode on Aurora,
+measured 2026-04-30 to 2026-05-01. The benchmark harness lives in
 [`saforem2/torchtitan@ezpz`](https://github.com/saforem2/torchtitan/tree/ezpz/torchtitan/experiments/ezpz/docs/scaling/yeet_env)
 along with the raw CSV and the plotting script.
 
@@ -511,32 +547,31 @@ under 1 minute through 1024 nodes and only really starts to climb at
 world size. At 4096 nodes the first step lands in 3 min 14 s, so
 total time-to-train (yeet + first step) is about 16 minutes.
 
-!!! info "Why tarball broadcast scales so much better than per-file rsync"
-
-    The pre-tarball `yeet` mode (per-file rsync) was projected to
-    take 1–2 hours at 256+ nodes — the per-file metadata cost
-    dominates over Lustre. Switching to a single compressed tarball
-    (`--compress` or pre-built `--src foo.tar.gz`) reduces the
-    Lustre side to one sequential read regardless of node count, so
-    the broadcast itself is the only thing that scales with N.
-
 ### Complete workflow
 
 ```bash
 # 1. Get an interactive allocation
 qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
 
-# 2. Distribute the environment
-ezpz yeet
+# 2. Build a tarball (one-time, ~3-5 min for ~8 GB) — recommended at scale
+ezpz tar-env
 
-# 3. Activate the local copy
+# 3. Distribute it to every node's /tmp/
+ezpz yeet .venv.tar.gz
+
+# 4. Activate the local copy
 deactivate 2>/dev/null
-source /tmp/<env-name>/bin/activate
+source /tmp/.venv/bin/activate
 
-# 4. Launch from a shared filesystem path
+# 5. Launch from a shared filesystem path
 cd /path/to/your/project
 ezpz launch python3 -m your_app.train
 ```
+
+For small allocations (< ~16 nodes) you can skip the `tar-env` step
+and just run `ezpz yeet` (no args) directly — it'll detect the
+active venv and rsync each file. Above that, the tarball pair is
+significantly faster.
 
 ## See Also
 
