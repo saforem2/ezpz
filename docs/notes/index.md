@@ -16,4 +16,4 @@ Supplementary notes and reference material.
 
     - **Parallelism** — [parallelism.md](parallelism.md)
     - **Supported Systems** — [systems.md](systems.md)
-    - **Yeet Environment** → [CLI › `ezpz yeet-env`](../cli/yeet-env.md)
+    - **Yeet** → [CLI › `ezpz yeet`](../cli/yeet.md)

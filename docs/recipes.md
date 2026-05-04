@@ -38,7 +38,7 @@ Set up FSDP with a single flag change from DDP.
     [I][ezpz/launch] Executing finished in 2.97 seconds.
     ```
 
-=== "Output: Polaris 8 [=2x4] GPUs"
+=== "Output: Polaris 8 \[=2x4] GPUs"
 
     ```bash
     $ ezpz launch -np 8 -- python3 recipe_fsdp.py
@@ -102,7 +102,7 @@ Set up FSDP with a single flag change from DDP.
     [I][ezpz/launch] Executing finished in 2.76 seconds.
     ```
 
-=== "Output: Polaris 8 [=2x4] GPUs"
+=== "Output: Polaris 8 \[=2x4] GPUs"
 
     ```bash
     $ ezpz launch -np 8 -- python3 recipe_wandb.py
@@ -211,7 +211,7 @@ Use `ezpz.synchronize()` for correct cross-backend timing that works on CUDA, XP
     [I][ezpz/launch] Executing finished in 2.41 seconds.
     ```
 
-=== "Output: Polaris 8 [=2x4] GPUs"
+=== "Output: Polaris 8 \[=2x4] GPUs"
 
     ```bash
     $ ezpz launch -np 8 -- python3 recipe_timing.py
@@ -288,7 +288,7 @@ EZPZ_NO_DISTRIBUTED_HISTORY=1 ezpz launch -np 512 -- python3 train.py
     [I][ezpz/launch] Executing finished in 2.95 seconds.
     ```
 
-=== "Output: Polaris 8 [=2x4] GPUs"
+=== "Output: Polaris 8 \[=2x4] GPUs"
 
     ```bash
     $ ezpz launch -np 8 -- python3 recipe_no_dist_history.py

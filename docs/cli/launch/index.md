@@ -95,7 +95,7 @@ order:
 3. **`sys.executable`** as a last resort
 
 Why not just `sys.executable`? It's frozen at interpreter startup. If
-you ran [`ezpz yeet-env`](../yeet-env.md) to copy your env to `/tmp/`
+you ran [`ezpz yeet`](../yeet.md) to copy your env to `/tmp/`
 and then `source /tmp/.venv/bin/activate`, `sys.executable` would still
 point to the original Lustre path because the `ezpz` CLI script's
 shebang is baked in at install time. Reading `$VIRTUAL_ENV` (set by

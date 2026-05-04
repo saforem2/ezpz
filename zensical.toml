@@ -54,6 +54,7 @@ nav = [
         "reference.md",
         "history.md",
         "configuration.md",
+        { "⚖️ vs. alternatives" = "compare.md" },
         "architecture.md",
         { "🕸️ Parallelism" = "notes/parallelism.md" },
         { "🤖 Supported Systems" = "notes/systems.md" },
@@ -72,11 +73,13 @@ nav = [
     { "🧰 CLI" = [
         "cli/index.md",
         { "🚀 <code>ezpz launch</code>" = "cli/launch/index.md" },
-        { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "💯 <code>ezpz test</code>" = "cli/test.md" },
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
+        { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
+        { "📦 <code>ezpz yeet</code>" = "cli/yeet.md" },
+        { "🗜️ <code>ezpz tar-env</code>" = "cli/tar-env.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
-        { "📦 <code>ezpz yeet-env</code>" = "cli/yeet-env.md" },
+        { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
@@ -102,7 +105,6 @@ nav = [
         { "<code>ezpz.examples.inference</code>" = "examples/inference.md" },
         { "Minimal (Synthetic) [deprecated]" = "examples/minimal.md" },
     ] },
-    # ] },
 
     { "🐍 Python API" = [
         "python/index.md",
@@ -291,6 +293,19 @@ extra_javascript = [
     "https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js",
     "javascripts/mermaid-init.js",
 ]
+
+# ----------------------------------------------------------------------------
+# Section for configuring validation options
+# ----------------------------------------------------------------------------
+[project.validation]
+unresolved_references = false
+unresolved_footnotes = true
+unused_definitions = true
+unused_footnotes = true
+shadowed_definitions = true
+shadowed_footnotes = true
+invalid_links = true
+invalid_link_anchors = true
 
 
 # ----------------------------------------------------------------------------

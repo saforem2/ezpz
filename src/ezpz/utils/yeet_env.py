@@ -36,7 +36,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Sequence
 
-logger = logging.getLogger(__name__)
+def _get_ezpz_logger() -> logging.Logger:
+    """Use ezpz.get_logger (timestamped, colored) when available.
+
+    Falls back to a plain stdlib logger when ezpz.log isn't importable
+    yet (avoids a circular import during early module setup or when
+    yeet_env is imported standalone for testing).
+    """
+    try:
+        import ezpz
+        return ezpz.get_logger(__name__)
+    except (ImportError, AttributeError):
+        return logging.getLogger(__name__)
+
+
+logger = _get_ezpz_logger()
 
 # Disable \r / ANSI escape progress when stdout is not a terminal
 # (e.g. redirected to a file or pipe).
@@ -74,6 +88,53 @@ def _detect_env_source() -> Path:
         )
         return Path(sys.executable).parent.parent.resolve()
     return prefix
+
+
+def _suggest_tarball_if_present(src: Path) -> None:
+    """Print a one-line hint if a same-named tarball exists nearby.
+
+    Tarball broadcast (`ezpz yeet foo.tar.gz`) is ~10× faster at
+    scale than per-file rsync of `foo/` because it reduces the Lustre
+    side to one sequential read. Users who run plain `ezpz yeet`
+    without realizing they have a pre-built tarball pay the per-file
+    cost unnecessarily.
+
+    This only fires when the user did NOT pass --src (handled by the
+    caller) — if they explicitly chose a source, don't second-guess
+    them. Stale tarballs (older than the env's pyvenv.cfg) are
+    skipped so the hint doesn't push users toward an outdated copy.
+    """
+    if not src.is_dir():
+        return  # src is already a file (e.g. tarball passed explicitly)
+    name = src.name  # ".venv" / "myenv" / etc.
+    candidates = []
+    # Look next to the env, then in $cwd. Same-named first; .tgz second.
+    for parent in (src.parent, Path.cwd()):
+        for suffix in (".tar.gz", ".tgz"):
+            candidate = parent / f"{name}{suffix}"
+            if candidate.is_file():
+                candidates.append(candidate)
+    if not candidates:
+        return
+    tarball = candidates[0]
+    # Skip if the tarball is older than the venv's pyvenv.cfg (stale).
+    cfg = src / "pyvenv.cfg"
+    if cfg.is_file():
+        try:
+            if tarball.stat().st_mtime < cfg.stat().st_mtime:
+                return
+        except OSError:
+            pass
+    try:
+        size_gb = tarball.stat().st_size / (1024 ** 3)
+        size_str = f" ({size_gb:.1f}G)"
+    except OSError:
+        size_str = ""
+    logger.warning(
+        "Tip: found %s%s — pass it explicitly for ~10x faster local "
+        "copy at scale:  ezpz yeet %s",
+        tarball, size_str, tarball,
+    )
 
 
 def _get_env_size(path: Path) -> str:
@@ -555,6 +616,37 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
 _DEFAULT_RSYNC_TIMEOUT = float(os.environ.get("EZPZ_YEET_RSYNC_TIMEOUT", "3600"))
 
 
+def _detect_rsync_progress_flag() -> list[str]:
+    """Pick the right rsync progress flag for the local rsync binary.
+
+    GNU rsync >= 3.1 supports ``--info=progress2`` (single aggregated
+    progress line — what the streaming progress callback parses).
+    macOS ships ``openrsync`` (advertised as ``rsync version 2.6.9
+    compatible``) which only supports the older ``--progress`` flag
+    (per-file granularity, no aggregation).
+
+    Probe by checking whether ``--info=`` appears in ``rsync --help``;
+    fall back to ``--progress`` if not, and to no flag at all if even
+    ``rsync --help`` fails.
+    """
+    try:
+        result = subprocess.run(
+            ["rsync", "--help"], capture_output=True, text=True,
+            check=False, timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+        if any(line.lstrip().startswith("--info=") for line in result.stdout.splitlines()):
+            return ["--info=progress2"]
+        return ["--progress"]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
+# Cached at module load — rsync version doesn't change at runtime.
+_RSYNC_PROGRESS_FLAGS = _detect_rsync_progress_flag()
+
+
 def _drain_stream_to_list(stream: object, sink: list[str]) -> None:
     """Read *stream* line-by-line into *sink* until EOF.
 
@@ -608,7 +700,7 @@ def _rsync_to_node(
             "rsync",
             "-rlD",              # recursive, symlinks, devices (no -tpgo)
             "--whole-file",      # skip delta algorithm for local copies
-            "--info=progress2",
+            *_RSYNC_PROGRESS_FLAGS,
             "--exclude=__pycache__",
             src_str,
             str(dst) + "/",
@@ -618,7 +710,7 @@ def _rsync_to_node(
         rsync_cmd = [
             "rsync",
             "-rlD",              # skip expensive metadata sync
-            "--info=progress2",
+            *_RSYNC_PROGRESS_FLAGS,
             "--exclude=__pycache__",
             src_str,
             dst_str,
@@ -771,14 +863,26 @@ def _rsync_to_node(
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    """Parse yeet-env command-line arguments."""
+    """Parse ezpz yeet command-line arguments."""
     parser = argparse.ArgumentParser(
-        prog="ezpz yeet-env",
+        prog="ezpz yeet",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
-            "Distribute a Python environment to worker nodes via parallel rsync. "
-            "By default, rsyncs the active venv/conda env to /tmp/<env-name>/ "
-            "on all nodes in the current job allocation."
+            "Distribute files (envs, models, datasets, etc.) to worker nodes "
+            "via parallel rsync. By default (no args), rsyncs the active "
+            "venv/conda env to /tmp/<env-name>/ on all nodes in the current "
+            "job allocation. Pass any path to yeet arbitrary content."
+        ),
+    )
+    parser.add_argument(
+        "src_positional",
+        nargs="?",
+        default=None,
+        metavar="SRC",
+        help=(
+            "Source path (positional shorthand for --src). Mutually "
+            "exclusive with --src. May be a directory OR a .tar.gz/.tgz "
+            "file."
         ),
     )
     parser.add_argument(
@@ -786,11 +890,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Source environment path (defaults to the active "
-            "venv/conda env). May be a directory OR a .tar.gz/.tgz "
-            "file — in the latter case the tarball is copied to "
-            "/tmp/ and extracted there, skipping the create step "
-            "that --compress does."
+            "Source path (defaults to the active venv/conda env). May "
+            "be a directory OR a .tar.gz/.tgz file — in the latter "
+            "case the tarball is copied to /tmp/ and extracted there, "
+            "skipping the create step that --compress does."
         ),
     )
     parser.add_argument(
@@ -831,11 +934,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     args, unknown = parser.parse_known_args(argv)
     if unknown:
-        # Filter out stray positional args (e.g. "yeet-env" leaked from
-        # click's UNPROCESSED dispatch or deprecated entry points).
-        real_unknown = [a for a in unknown if a.startswith("-")]
-        if real_unknown:
-            parser.error(f"unrecognized arguments: {' '.join(real_unknown)}")
+        # Tolerate one stray "yeet-env"/"yeet" token leaked from old
+        # entry points; reject anything else.
+        leftover = [a for a in unknown if a not in ("yeet", "yeet-env")]
+        if leftover:
+            parser.error(
+                f"unrecognized arguments: {' '.join(leftover)}"
+            )
+    # Mutex: positional SRC and --src can't both be set.
+    if args.src_positional is not None and args.src is not None:
+        parser.error(
+            "--src and positional SRC are mutually exclusive; "
+            "pick one"
+        )
+    if args.src is None:
+        args.src = args.src_positional
     return args
 
 
@@ -851,6 +964,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             return 1
     else:
         src = _detect_env_source()
+        # Convenience hint: if a fresher same-named tarball exists
+        # next to the env or in cwd, point it out — tarball broadcast
+        # is ~10× faster at scale than per-file rsync. Don't auto-pick
+        # it; explicit is safer (the tarball might be stale).
+        _suggest_tarball_if_present(src)
 
     # If --src is a .tar.gz / .tgz file, treat it as a pre-built
     # archive: skip the "tar create" step and just copy + extract.
@@ -878,7 +996,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     current = _get_current_hostname()
 
     if not nodes:
-        print(f"  No worker nodes found.")
+        logger.error("No worker nodes found.")
         return 1
 
     # Copy locally first (current node), then rsync to remote nodes.
@@ -892,22 +1010,22 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # ── Print summary ───────────────────────────────────────────────
     env_size = _get_env_size(src)
     total_nodes = (1 if needs_local_copy else 0) + len(remote_nodes)
-    print(f"  Source: {src} ({env_size})")
-    print(f"  Target: {dst}/ on {total_nodes} node(s)")
+    logger.info("Source: %s (%s)", src, env_size)
+    logger.info("Target: %s/ on %d node(s)", dst, total_nodes)
     if needs_local_copy:
-        print(f"    local:  {current} (rsync to {dst}/)")
+        logger.info("  local:  %s (rsync to %s/)", current, dst)
     if remote_nodes:
         if len(remote_nodes) <= 6:
-            print(f"    remote: {', '.join(remote_nodes)}")
+            logger.info("  remote: %s", ", ".join(remote_nodes))
         else:
             shown = ', '.join(remote_nodes[:3])
-            print(f"    remote: {shown}, ... ({len(remote_nodes)} nodes)")
+            logger.info("  remote: %s, ... (%d nodes)", shown, len(remote_nodes))
     if args.dry_run:
-        print(f"  [dry-run] No files transferred.")
+        logger.info("[dry-run] No files transferred.")
         return 0
 
     if total_nodes == 0:
-        print(f"  Nothing to sync (source is already in {dst}).")
+        logger.info("Nothing to sync (source is already in %s).", dst)
         return 0
 
     # ── Sync ────────────────────────────────────────────────────────
@@ -933,7 +1051,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     progress = _AggregateProgress(total_nodes=total)
     results: list[tuple[str, float, int]] = []
 
-    print(f"  Syncing ({total} nodes)...")
+    logger.info("Syncing (%d nodes)...", total)
     t0 = time.perf_counter()
 
     # Step 1: copy source to local /tmp/ and patch paths ONCE.
@@ -1135,14 +1253,17 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             if _IS_TTY:
                 sys.stdout.write("\r\033[K")
         if local_rc == 0:
-            _patch_venv_paths_local(dst, src)
+            # Patching only applies to venvs \u2014 it's a no-op for other
+            # sources, but skip explicitly to avoid noise.
+            if (dst / "bin" / "activate").exists():
+                _patch_venv_paths_local(dst, src)
             print(f"    \u2713 {current} (local, {method}) \u2014 {local_elapsed:.1f}s")
             results.append((current, local_elapsed, local_rc))
         else:
             print(f"    \u2717 {current} (local, {method}) \u2014 FAILED")
             results.append((current, local_elapsed, local_rc))
             # No valid local copy — abort, don't distribute a broken env
-            print(f"  Local copy failed — aborting distribution.")
+            logger.error("Local copy failed — aborting distribution.")
             return 1
 
     remaining = [n for n in all_nodes if n != current]
@@ -1208,37 +1329,63 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     total_elapsed = time.perf_counter() - t0
     failed = sum(1 for _, _, rc in results if rc != 0)
     if failed:
-        print(f"  {failed}/{total_nodes} node(s) failed!")
+        logger.warning("%d/%d node(s) failed!", failed, total_nodes)
     else:
-        print(f"  Done in {total_elapsed:.1f}s")
+        logger.info("Done in %.1fs", total_elapsed)
 
     # ── Guidance ────────────────────────────────────────────────────
-    is_venv = (src / "bin" / "activate").exists()
-    is_conda = (src / "conda-meta").is_dir()
+    # Detect from `dst` so tarball sources (where the directory only
+    # exists after extraction) are classified correctly.
+    is_venv = (dst / "bin" / "activate").exists()
+    is_conda = (dst / "conda-meta").is_dir()
+    has_bin = (dst / "bin").is_dir()
     print()
-    print(f"  To use this environment:")
     if is_venv:
+        print(f"  To use this environment:")
         print(f"    deactivate 2>/dev/null")
         print(f"    source {dst}/bin/activate")
+        print()
+        print(f"  Then launch your training (from a shared filesystem path):")
+        print(f"    cd /path/to/your/project")
+        print(f"    ezpz launch python3 -m your_app.train")
+        print()
+        print(f"  Note: /tmp is node-local. Make sure your working directory")
+        print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
+        print(f"  so all ranks can access data and outputs.")
     elif is_conda:
+        print(f"  To use this environment:")
         print(f"    conda deactivate")
         print(f"    conda activate {dst}")
+        print()
+        print(f"  Then launch your training (from a shared filesystem path):")
+        print(f"    cd /path/to/your/project")
+        print(f"    ezpz launch python3 -m your_app.train")
+        print()
+        print(f"  Note: /tmp is node-local. Make sure your working directory")
+        print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
+        print(f"  so all ranks can access data and outputs.")
     else:
-        print(f"    export PATH={dst}/bin:$PATH")
-    print()
-    print(f"  Then launch your training (from a shared filesystem path):")
-    print(f"    cd /path/to/your/project")
-    print(f"    ezpz launch python3 -m your_app.train")
-    print()
-    print(f"  Note: /tmp is node-local. Make sure your working directory")
-    print(f"  is on a shared filesystem (e.g. Lustre) before launching,")
-    print(f"  so all ranks can access data and outputs.")
+        successful = len(results) - failed
+        print(f"  Synced to {dst}/ on {successful} node(s).")
+        if has_bin:
+            print(f"    (looks like a tool directory — add to PATH if needed:")
+            print(f"     export PATH={dst}/bin:$PATH)")
+        print()
+        print(f"  Note: /tmp is node-local. Reference the synced path on each")
+        print(f"  worker (e.g. {dst}) — the shared-filesystem source path will")
+        print(f"  not see writes from worker nodes.")
 
     return 1 if failed else 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point."""
+    if Path(sys.argv[0]).name == "ezpz-yeet-env":
+        print(
+            "ezpz-yeet-env is deprecated; use 'ezpz yeet' as a drop-in "
+            "replacement",
+            file=sys.stderr,
+        )
     return run(argv)
 
 

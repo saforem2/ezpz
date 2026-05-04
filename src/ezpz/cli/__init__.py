@@ -54,26 +54,29 @@ def tar_env_cmd(args: tuple[str, ...]) -> None:
 
 
 @main.command(
-    name="yeet-env", context_settings={"ignore_unknown_options": True}
+    name="yeet", context_settings={"ignore_unknown_options": True}
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def yeet_env_cmd(args: tuple[str, ...]) -> None:
-    """Distribute a Python environment to worker nodes via parallel rsync.
+def yeet_cmd(args: tuple[str, ...]) -> None:
+    """Distribute files (envs, models, datasets, etc.) to worker nodes via parallel rsync.
 
-    By default, rsyncs the active venv/conda env to /tmp/<env-name>/
-    on all nodes in the current job allocation.
+    By default (no args), rsyncs the active venv/conda env to
+    /tmp/<env-name>/ on all nodes in the current job allocation.
+    Pass any path (positional or via --src) to yeet arbitrary content.
 
     \b
     Examples:
-      ezpz yeet-env                        # sync active env to all nodes
-      ezpz yeet-env --src /path/to/env     # sync a specific environment
-      ezpz yeet-env --dst /local/scratch    # custom destination
-      ezpz yeet-env --dry-run              # preview without syncing
+      ezpz yeet                            # sync active env to all nodes
+      ezpz yeet .venv.tar.gz               # positional shorthand for --src
+      ezpz yeet --src /path/to/env         # sync a specific environment
+      ezpz yeet --src /path/to/dataset     # sync a dataset / model / etc.
+      ezpz yeet --dst /local/scratch       # custom destination
+      ezpz yeet --dry-run                  # preview without syncing
 
     \b
     Options (passed through):
-      --src PATH       Source environment (default: active venv/conda)
-      --dst PATH       Destination on workers (default: /tmp/<env-name>/)
+      --src PATH       Source path (default: active venv/conda)
+      --dst PATH       Destination on workers (default: /tmp/<basename>/)
       --hostfile PATH  Hostfile for node list (default: auto-detect)
       --copy           Use cp -a for local copy (faster on Lustre)
       --compress       tar.gz → copy → extract (least Lustre I/O)
@@ -81,7 +84,27 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
     """
     from ezpz.utils import yeet_env as yeet_env_module
 
-    rc = yeet_env_module.run(list(args) if args else None)
+    # Always pass a list (even empty) so argparse doesn't fall back to
+    # sys.argv[1:] — which on `ezpz yeet` (no args) would contain
+    # ["yeet"], picked up as a positional SRC == "yeet".
+    rc = yeet_env_module.run(list(args))
+    _handle_exit_code(rc)
+
+
+@main.command(
+    name="yeet-env", context_settings={"ignore_unknown_options": True},
+    hidden=True,
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def yeet_env_cmd(args: tuple[str, ...]) -> None:
+    """Deprecated alias for ``ezpz yeet``."""
+    click.secho(
+        "ezpz yeet-env is deprecated; use 'ezpz yeet' as a drop-in replacement",
+        fg="yellow", err=True,
+    )
+    from ezpz.utils import yeet_env as yeet_env_module
+
+    rc = yeet_env_module.run(list(args))
     _handle_exit_code(rc)
 
 
@@ -121,4 +144,34 @@ def doctor_cmd(args: tuple[str, ...]) -> None:
     from ezpz import doctor as doctor_module
 
     rc = doctor_module.run(_ensure_sequence(args))
+    _handle_exit_code(rc)
+
+
+@main.command(name="kill", context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def kill_cmd(args: tuple[str, ...]) -> None:
+    """Kill ezpz-launched python processes (or any matching pattern).
+
+    Without arguments, kills processes on the local node whose
+    environment contains EZPZ_RUN_COMMAND (set automatically by
+    `ezpz launch`).
+
+    \b
+    Examples:
+      ezpz kill                       # local node, ezpz-launched procs only
+      ezpz kill train.py              # local node, anything matching `train.py`
+      ezpz kill --all-nodes           # fan out across the job's hostfile
+      ezpz kill --dry-run             # list matches, don't kill
+      ezpz kill --signal KILL train   # SIGKILL anything matching `train`
+
+    \b
+    Options (passed through):
+      --all-nodes      SSH into every node in the hostfile and kill there too
+      --hostfile PATH  Hostfile for --all-nodes (default: auto-detect)
+      --signal NAME    Signal to send (TERM, KILL, INT, HUP, QUIT)
+      --dry-run        List matches without signaling
+    """
+    from ezpz.utils import kill as kill_module
+
+    rc = kill_module.run(list(args) if args else None)
     _handle_exit_code(rc)

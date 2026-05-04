@@ -43,9 +43,10 @@ ezpz = "ezpz.cli:main"
 # XXX: DEPRECATED
 ezpz-test = "ezpz.cli.test_cmd:main"                  # XXX: Use `ezpz test`
 ezpz-launch = "ezpz.cli.launch_cmd:main"              # XXX: Use `ezpz launch`
-ezpz-yeet-env = "ezpz.utils.yeet_env:main"            # XXX: Use `ezpz yeet-env`
+ezpz-yeet-env = "ezpz.utils.yeet_env:main"            # XXX: Use `ezpz yeet`
 ezpz-tar-env = "ezpz.utils.tar_env:main"              # XXX: Use `ezpz tar-env`
 ezpz-doctor = "ezpz.doctor:main"                      # XXX: Use `ezpz doctor`
+ezpz-kill = "ezpz.utils.kill:main"                    # XXX: Use `ezpz kill`
 ezpz-generate = "ezpz.examples.generate:main"         # XXX: Use `ezpz generate`
 ezpz-generate-tui = "ezpz.examples.generate_tui:main" # XXX: Use `ezpz generate --tui`
 

@@ -8,6 +8,7 @@ import logging
 import os
 import pdb
 import re
+import subprocess
 import sys
 import tqdm
 from typing import Any
@@ -540,6 +541,20 @@ def check_for_tarball(
     env_prefix: Optional[str | os.PathLike | Path] = None,
     overwrite: Optional[bool] = False,
 ):
+    """Locate or create a `.tar.gz` of *env_prefix*; return its absolute path.
+
+    Search order (first hit wins, unless ``overwrite=True``):
+
+    1. ``<env_prefix.parent>/<env_name>.tar.gz`` — alongside the env.
+       This is where ``_suggest_tarball_if_present`` (in
+       ``ezpz.utils.yeet_env``) looks first, so co-locating here means
+       a subsequent ``ezpz yeet`` (no args) will see and suggest it.
+    2. ``/tmp/<env_name>.tar.gz`` — node-local fallback.
+    3. ``<cwd>/<env_name>.tar.gz`` — current-directory fallback.
+
+    If none exist (or ``overwrite=True``), creates a new tarball at
+    location #1 (next to the env).
+    """
     if env_prefix is None:
         # NOTE:
         # - `sys.executable` looks like:
@@ -547,46 +562,55 @@ def check_for_tarball(
         fpl = sys.executable.split("/")
         # `env_prefix` looks like `/path/to/some/envs/env_name`
         env_prefix = "/".join(fpl[:-2])
-        # `env_name` looks like `env_name`
-        env_name = fpl[-3]
-    else:
-        env_name = Path(env_prefix).name
-    # tarball will be `env_name.tar.gz`
-    tarball = f"{env_name}.tar.gz"
-    tar_on_tmp = Path("/tmp") / tarball
-    if overwrite and tar_on_tmp.exists():
-        logger.info(f"Removing existing tarball at {tar_on_tmp}")
+    env_path = Path(env_prefix).resolve()
+    env_name = env_path.name
+    tarball_name = f"{env_name}.tar.gz"
 
-    if not tar_on_tmp.exists():
-        if not os.path.exists(tarball):
-            logger.info(f"Creating tarball {tarball} from {env_prefix}")
-            make_tarfile(tarball, env_prefix)
-        else:
-            logger.info(
-                f"Tarball {tarball} already exists in current directory"
-            )
+    candidates = [
+        env_path.parent / tarball_name,    # next to the venv (canonical)
+        Path("/tmp") / tarball_name,
+        Path.cwd() / tarball_name,
+    ]
+    if overwrite:
+        for c in candidates:
+            if c.exists():
+                logger.info(f"Removing existing tarball at {c}")
+                c.unlink()
     else:
-        logger.info(f"Tarball {tarball} already exists, skipping creation")
-    return tar_on_tmp if tar_on_tmp.exists() else Path(tarball)
+        for c in candidates:
+            if c.exists():
+                logger.info(f"Tarball {c} already exists, skipping creation")
+                return c
+
+    target = candidates[0]
+    logger.info(f"Creating tarball {target} from {env_prefix}")
+    make_tarfile(str(target), str(env_prefix))
+    return target
 
 
 def make_tarfile(
     output_filename: str,
     source_dir: str | os.PathLike | Path,
 ) -> str:
+    """Create a gzipped tar archive of *source_dir* at *output_filename*.
+
+    Normalizes the output to end in `.tar.gz`, then runs
+    ``tar -czvf <out> -C <parent> <dirname>``. Uses subprocess (not
+    os.system + f-string) so paths with spaces or shell-meta characters
+    don't break or get reinterpreted.
+    """
     output_filename = (
         output_filename.replace(".tar", "").replace(".gz", "") + ".tar.gz"
     )
     srcfp = Path(source_dir).absolute().resolve()
     dirname = srcfp.name
+    cmd = [
+        "tar", "-czvf", output_filename,
+        "--directory", str(srcfp.parent), dirname,
+    ]
     logger.info(f"Creating tarball at {output_filename} from {source_dir}")
-    logger.info(
-        f"Executing: 'tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}'"
-    )
-    os.system(
-        f"tar -cvf {output_filename} --directory  {srcfp.parent} {dirname}"
-    )
-
+    logger.info("Executing: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True)
     return output_filename
 
 

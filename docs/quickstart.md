@@ -12,6 +12,20 @@ For a full walkthrough with real terminal output, see the
 uv pip install git+https://github.com/saforem2/ezpz
 ```
 
+??? tip "Don't have `uv`?"
+
+    Install it first (one-liner, no Python needed):
+
+    ```bash linenums='0'
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+    Or use plain `pip`:
+
+    ```bash linenums='0'
+    pip install git+https://github.com/saforem2/ezpz
+    ```
+
 !!! tip "Editable install for development"
 
     ```bash linenums='0'
@@ -49,7 +63,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     [W&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)
     for example output.
 
-??? question "[Optional] Shell Environment and Setup"
+??? question "\[Optional] Shell Environment and Setup"
 
     1. [**Shell Environment and Setup**](./notes/shell-environment.md):
 
@@ -285,17 +299,24 @@ For the full History API — distributed aggregation, environment variables,
 
 ## 🔗 Next Steps
 
-- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive
-  tutorial from hello world to production
-- **[Recipes](./recipes.md)** — copy-pasteable patterns (data loading, checkpointing,
-  gradient accumulation)
-- **[End-to-End Walkthrough](./reference.md)** — full runnable example with real
-  terminal output
-- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats,
-  multi-backend logging, plots
-- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT,
-  Diffusion, etc.)
-- **[CLI Reference](./cli/index.md)** — `ezpz launch`, `ezpz submit`, and more
-- **[Configuration](./configuration.md)** — environment variables and config
-  dataclasses
-- **[Architecture](./architecture.md)** — how `ezpz` works under the hood
+**Read next →** [Distributed Training Guide](./guides/distributed-training.md):
+the progressive tutorial that takes the hello-world above through
+to production-grade FSDP + tensor parallelism.
+
+??? note "Other references"
+
+    - **[Recipes](./recipes.md)** — copy-pasteable patterns (data loading,
+      checkpointing, gradient accumulation)
+    - **[End-to-End Walkthrough](./reference.md)** — full runnable example
+      with real terminal output
+    - **[Experiment Tracking](./history.md)** — `History` guide:
+      distributed stats, multi-backend logging, plots
+    - **[Examples](./examples/index.md)** — end-to-end training scripts
+      (FSDP, ViT, Diffusion, etc.)
+    - **[CLI Reference](./cli/index.md)** — `ezpz launch`, `ezpz submit`,
+      and more
+    - **[Configuration](./configuration.md)** — environment variables and
+      config dataclasses
+    - **[Comparison vs. alternatives](./compare.md)** — vs. raw torchrun,
+      Accelerate, DeepSpeed
+    - **[Architecture](./architecture.md)** — how `ezpz` works under the hood

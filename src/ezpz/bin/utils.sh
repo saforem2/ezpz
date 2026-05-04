@@ -1631,13 +1631,13 @@ ezpz_save_pbs_env() {
 		depth=$((num_cpus_per_host / num_gpus_per_host))
 		dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
 
-		printf "    to calculate:\n"
-		printf "      - num_hosts: ${BLUE}%s${RESET}\n" "${num_hosts}"
-		printf "      - num_cores_per_host: ${BLUE}%s${RESET}\n" "${num_cores_per_host}"
-		printf "      - num_cpus_per_host: ${BLUE}%s${RESET}\n" "${num_cpus_per_host}"
-		printf "      - num_gpus_per_host: ${BLUE}%s${RESET}\n" "${num_gpus_per_host}"
-		printf "      - depth: ${BLUE}%s${RESET}\n" "${depth}"
-		printf "      - num_gpus: ${BLUE}%s${RESET}\n" "${num_gpus}"
+		log_message INFO "    to calculate:"
+		log_message INFO "      - num_hosts: ${BLUE}${num_hosts}${RESET}"
+		log_message INFO "      - num_cores_per_host: ${BLUE}${num_cores_per_host}${RESET}"
+		log_message INFO "      - num_cpus_per_host: ${BLUE}${num_cpus_per_host}${RESET}"
+		log_message INFO "      - num_gpus_per_host: ${BLUE}${num_gpus_per_host}${RESET}"
+		log_message INFO "      - depth: ${BLUE}${depth}${RESET}"
+		log_message INFO "      - num_gpus: ${BLUE}${num_gpus}${RESET}"
 		export DIST_LAUNCH="${dist_launch_cmd}"
 		export ezlaunch="${DIST_LAUNCH}"
 		# printf "      - DIST_LAUNCH: ${BLUE}%s${RESET}\n" "${DIST_LAUNCH}"

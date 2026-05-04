@@ -193,11 +193,24 @@ These can be broken down (~roughly) into:
 
 ## 🔗 Next Steps
 
-- **[Quick Start](./quickstart.md)** — install, write a script, launch it
-- **[Distributed Training Guide](./guides/distributed-training.md)** — progressive tutorial from hello world to production
-- **[Recipes](./recipes.md)** — copy-pasteable patterns for common tasks
-- **[End-to-End Walkthrough](./reference.md)** — full runnable example with real terminal output
-- **[Experiment Tracking](./history.md)** — `History` guide: distributed stats, multi-backend logging, plots
-- **[Examples](./examples/index.md)** — end-to-end training scripts (FSDP, ViT, Diffusion, etc.)
-- **[FAQ](./notes/faq.md)** — common questions and troubleshooting
-- **[Architecture](./architecture.md)** — how `ezpz` works under the hood
+**Start here →** [Quick Start](./quickstart.md): install, write a
+script, launch it. (~5 minutes.)
+
+??? note "Other entry points"
+
+    Once you've worked through the Quick Start, pick whichever of
+    these matches what you're trying to do:
+
+    - **[Distributed Training Guide](./guides/distributed-training.md)** —
+      progressive tutorial from hello world to production
+    - **[Recipes](./recipes.md)** — copy-pasteable patterns for common tasks
+    - **[End-to-End Walkthrough](./reference.md)** — full runnable example
+      with real terminal output
+    - **[Experiment Tracking](./history.md)** — `History` guide:
+      distributed stats, multi-backend logging, plots
+    - **[Examples](./examples/index.md)** — end-to-end training scripts
+      (FSDP, ViT, Diffusion, etc.)
+    - **[Comparison vs. alternatives](./compare.md)** — vs. raw torchrun,
+      Accelerate, DeepSpeed
+    - **[FAQ](./notes/faq.md)** — common questions and troubleshooting
+    - **[Architecture](./architecture.md)** — how `ezpz` works under the hood

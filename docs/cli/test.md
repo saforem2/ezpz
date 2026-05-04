@@ -154,10 +154,10 @@ ezpz launch python3 -m ezpz.examples.test
         (ezpz)
         #[12/26/25 @ 14:59:27][~/v/s/ezpz][distributed-metrics][$✘»!?] [20s]
         ; ezpz test
-        [2025-12-26 14:59:36,627513][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936
-        [2025-12-26 14:59:36,629251][I][ezpz/dist:1506:setup_torch_distributed] Using fw='ddp' with torch_{device,backend}= {mps, gloo}
-        [2025-12-26 14:59:36,635161][I][ezpz/dist:1371:setup_torch_DDP] Caught MASTER_PORT=58309 from environment!
-        [2025-12-26 14:59:36,635780][I][ezpz/dist:1387:setup_torch_DDP] Using torch.distributed.init_process_group with
+        [2025-12-26 14:59:36,627513][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936
+        [2025-12-26 14:59:36,629251][I][ezpz/distributed:569:setup_torch] Using device='mps' with backend='gloo' for distributed training.
+        [2025-12-26 14:59:36,635161][I][ezpz/distributed:1525:_setup_ddp] Caught MASTER_PORT=58309 from environment!
+        [2025-12-26 14:59:36,635780][I][ezpz/distributed:1530:_setup_ddp] Using torch.distributed.init_process_group with
         - master_addr='Sams-MacBook-Pro-2.local'
         - master_port='58309'
         - world_size=2
@@ -165,11 +165,11 @@ ezpz launch python3 -m ezpz.examples.test
         - local_rank=0
         - timeout=datetime.timedelta(seconds=3600)
         - backend='gloo'
-        [2025-12-26 14:59:36,636493][I][ezpz/dist:1019:init_process_group] Calling torch.distributed.init_process_group_with: rank=0 world_size=2 backend=gloo
-        [2025-12-26 14:59:36,753207][I][ezpz/dist:1732:setup_torch] Using device='mps' with backend='gloo' + 'gloo' for distributed training.
-        [2025-12-26 14:59:36,781940][I][ezpz/dist:1779:setup_torch] ['Sams-MacBook-Pro-2.local'][device='mps'][node=0/0][rank=1/1][local_rank=1/1]
-        [2025-12-26 14:59:36,806242][W][ezpz/dist:544:print_dist_setup] Using [2 / 2] available "mps" devices !!
-        [2025-12-26 14:59:36,806669][I][ezpz/dist:1779:setup_torch] ['Sams-MacBook-Pro-2.local'][device='mps'][node=0/0][rank=0/1][local_rank=0/1]
+        [2025-12-26 14:59:36,636493][I][ezpz/distributed:1536:_setup_ddp] init_process_group: rank=0 world_size=2 backend=gloo
+        [2025-12-26 14:59:36,753207][I][ezpz/distributed:569:setup_torch] Using device='mps' with backend='gloo' + 'gloo' for distributed training.
+        [2025-12-26 14:59:36,781940][I][ezpz/distributed:578:setup_torch] ['Sams-MacBook-Pro-2.local'][device='mps'][node=0/0][rank=1/1][local_rank=1/1]
+        [2025-12-26 14:59:36,806242][W][ezpz/distributed:1043:print_dist_setup] Using [2 / 2] available "mps" devices !!
+        [2025-12-26 14:59:36,806669][I][ezpz/distributed:578:setup_torch] ['Sams-MacBook-Pro-2.local'][device='mps'][node=0/0][rank=0/1][local_rank=0/1]
         [2025-12-26 14:59:36,807024][I][ezpz/examples.test:678:main] Took: 0.18 seconds to setup torch
         [2025-12-26 14:59:36,816995][I][ezpz/examples.test:461:train] Model size: 567434 parameters
         [2025-12-26 14:59:36,817813][I][ezpz/examples.test:465:train]
@@ -197,20 +197,20 @@ ezpz launch python3 -m ezpz.examples.test
             (6): Linear(in_features=128, out_features=10, bias=True)
           )
         )
-        [2025-12-26 14:59:37,383487][I][ezpz/dist:685:wrap_model] Wrapping model with: ddp
+        [2025-12-26 14:59:37,383487][I][ezpz/distributed:784:wrap_model] Wrapping model with ddp
         [2025-12-26 14:59:37,402510][I][ezpz/examples.test:479:train] Took: 0.58 seconds to build optimizer
         [2025-12-26 14:59:37,586325][I][ezpz/history:220:__init__] Using History with distributed_history=True
-        [2025-12-26 14:59:37,668674][I][ezpz/dist:2044:setup_wandb] Setting up wandb from rank=0
-        [2025-12-26 14:59:37,669043][I][ezpz/dist:2045:setup_wandb] Using WB_PROJECT=ezpz.test_dist
+        [2025-12-26 14:59:37,668674][I][ezpz/distributed:1183:setup_wandb] Setting up wandb from rank=0
+        [2025-12-26 14:59:37,669043][I][ezpz/distributed:1184:setup_wandb] Using WB_PROJECT=ezpz.examples.test
         wandb: Currently logged in as: foremans (aurora_gpt) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
         wandb: Tracking run with wandb version 0.23.1
         wandb: Run data is saved locally in /Users/samforeman/vibes/saforem2/ezpz/wandb/run-20251226_145937-rj4d7rus
         wandb: Run `wandb offline` to turn off syncing.
         wandb: Syncing run soft-grass-6851
-        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.test_dist
-        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/rj4d7rus
-        [2025-12-26 14:59:39,090331][I][ezpz/dist:2074:setup_wandb] wandb.run=[soft-grass-6851](https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/rj4d7rus)
-        [2025-12-26 14:59:39,218933][I][ezpz/dist:2117:setup_wandb] Running on machine='localhost'
+        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.examples.test
+        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/rj4d7rus
+        [2025-12-26 14:59:39,090331][I][ezpz/distributed:1213:setup_wandb] wandb.run=[soft-grass-6851](https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/rj4d7rus)
+        [2025-12-26 14:59:39,218933][I][ezpz/distributed:1256:setup_wandb] Running on machine='localhost'
         [2025-12-26 14:59:39,479361][I][ezpz/examples.test:482:train] Took: 2.08 seconds to build trainer
         [2025-12-26 14:59:39,480013][I][ezpz/examples.test:486:train] config:
         {
@@ -219,7 +219,7 @@ ezpz launch python3 -m ezpz.examples.test
           "batch_size": 128,
           "cp": 1,
           "dataset": "mnist",
-          "dataset_root": "/Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/datasets/mnist",
+          "dataset_root": "/Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/datasets/mnist",
           "dtype": "bf16",
           "input_size": 784,
           "layer_sizes": [
@@ -270,7 +270,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 14:59:42,889920][I][ezpz/examples.test:325:train_step] iter=170 loss=0.325840 accuracy=0.867188 dtf=0.007486 dtb=0.002018 loss/mean=0.304081 loss/max=0.325840 loss/min=0.282321 loss/std=0.021760 accuracy/mean=0.882812 accuracy/max=0.898438 accuracy/min=0.867188 accuracy/std=0.015625 dtf/mean=0.007106 dtf/max=0.007486 dtf/min=0.006727 dtf/std=0.000380 dtb/mean=0.002002 dtb/max=0.002018 dtb/min=0.001986 dtb/std=0.000016
         [2025-12-26 14:59:43,052496][I][ezpz/examples.test:325:train_step] iter=180 loss=0.146518 accuracy=0.945312 dtf=0.007811 dtb=0.001911 loss/mean=0.152537 loss/max=0.158556 loss/min=0.146518 loss/std=0.006019 accuracy/mean=0.945312 accuracy/max=0.945312 accuracy/min=0.945312 accuracy/std=0.000000 dtf/mean=0.007945 dtf/max=0.008078 dtf/min=0.007811 dtf/std=0.000133 dtb/mean=0.001863 dtb/max=0.001911 dtb/min=0.001816 dtb/std=0.000048
         [2025-12-26 14:59:43,202332][I][ezpz/examples.test:325:train_step] iter=190 loss=0.141739 accuracy=0.953125 dtf=0.009768 dtb=0.002052 loss/mean=0.185415 loss/max=0.229091 loss/min=0.141739 loss/std=0.043676 accuracy/mean=0.953125 accuracy/max=0.953125 accuracy/min=0.953125 accuracy/std=0.000000 dtf/mean=0.009895 dtf/max=0.010022 dtf/min=0.009768 dtf/std=0.000127 dtb/mean=0.002053 dtb/max=0.002054 dtb/min=0.002052 dtb/std=0.000001
-        [2025-12-26 14:59:43,943497][I][ezpz/history:2385:finalize] Saving plots to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/mplot (matplotlib) and /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot (tplot)
+        [2025-12-26 14:59:43,943497][I][ezpz/history:2385:finalize] Saving plots to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/mplot (matplotlib) and /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot (tplot)
                           accuracy                              accuracy/min
              ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
         0.984┤            ▗      ▗▙▖▖▗ ▌▖▖▄▟▗▙▄│0.961┤        -------------------------│
@@ -300,7 +300,7 @@ ezpz launch python3 -m ezpz.examples.test
              └┬───────┬───────┬───────┬───────┬┘     └┬───────┬───────┬───────┬───────┬┘
              1.0    49.2    97.5    145.8 194.0      1.0    49.2    97.5    145.8 194.0
         accuracy/mean       iter                accuracy/max        iter
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/accuracy.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/accuracy.txt
              ┌─────────────────────────────────────────────────────────────────────────┐
         0.984┤ ++ accuracy/max                            ▗▌         ▟  +      ▗▌ ▗▟+  │
              │ -- accuracy/min        +                  ▖▐▌▟  ▗   ▖ █  ▖    ▟ ▐▌ ▐█▗++│
@@ -330,7 +330,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.586┤-▝                                                                       │
              └┬─────────────────┬─────────────────┬─────────────────┬─────────────────┬┘
              1.0              49.2              97.5              145.8           194.0
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/accuracy_summary.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/accuracy_summary.txt
                      accuracy/mean hist                       accuracy/max hist
             ┌──────────────────────────────────┐    ┌──────────────────────────────────┐
         74.0┤                           ████   │71.0┤                           ████   │
@@ -360,7 +360,7 @@ ezpz launch python3 -m ezpz.examples.test
          0┤████████████████████████████████████│ 0.0┤████████████████████    ██████████│
           └┬────────┬────────┬───────┬────────┬┘    └┬───────┬────────┬───────┬───────┬┘
          0.57     0.67     0.77    0.88    0.98   -0.005   0.024    0.053   0.081 0.110
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/accuracy_hist.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/accuracy_hist.txt
                               dtb                                   dtb/min
               ┌────────────────────────────────┐      ┌────────────────────────────────┐
         0.0083┤  ▟  ▗                         ▐│0.0081┤  -  -                         -│
@@ -390,7 +390,7 @@ ezpz launch python3 -m ezpz.examples.test
               └┬───────┬───────┬──────┬───────┬┘      └┬───────┬───────┬──────┬───────┬┘
               1.0    49.2    97.5   145.8 194.0       1.0    49.2    97.5   145.8 194.0
         dtb/mean             iter               dtb/max              iter
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtb.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtb.txt
               ┌────────────────────────────────────────────────────────────────────────┐
         0.0090┤ ++ dtb/max                                                             │
               │ -- dtb/min                                                             │
@@ -420,7 +420,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.0016┤                 ▘  ▘▘▝  ▀   -  ▘ - ▝ ▘-   ▀▘▜▝- -  ▝▌ ▝  ▘   ▝▝  ▀  ▝  │
               └┬─────────────────┬─────────────────┬────────────────┬─────────────────┬┘
               1.0              49.2              97.5             145.8           194.0
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtb_summary.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtb_summary.txt
                         dtb/mean hist                           dtb/max hist
              ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
         107.0┤████                             │105.0┤████                             │
@@ -450,7 +450,7 @@ ezpz launch python3 -m ezpz.examples.test
           0┤████████████████████████████   ████│  0.0┤██████████████████████████   ████│
            └┬────────┬───────┬────────┬────────┘     └┬───────┬───────┬───────┬────────┘
           0.0013  0.0031  0.0049   0.0066          -0.00015 0.00074 0.00163 0.00252
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtb_hist.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtb_hist.txt
                               dtf                                   dtf/min
               ┌────────────────────────────────┐      ┌────────────────────────────────┐
         0.0155┤  ▌ ▐                     ▐     │0.0153┤    -                     -     │
@@ -480,7 +480,7 @@ ezpz launch python3 -m ezpz.examples.test
               └┬───────┬───────┬──────┬───────┬┘     └┬───────┬───────┬───────┬───────┬┘
               1.0    49.2    97.5   145.8 194.0      1.0    49.2    97.5    145.8 194.0
         dtf/mean             iter               dtf/max             iter
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtf.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtf.txt
              ┌─────────────────────────────────────────────────────────────────────────┐
         0.089┤ ++ dtf/max                                                              │
              │ -- dtf/min                                                              │
@@ -510,7 +510,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.006┤▚▘   ▀▘▝▝    ▘ ▀▚▀▝ ▝▝▜▐▀▌▀▚▀▜▜ ▚▘▘▜▀▀▀▚▜▐▜▛▀▘▘▝▘▘▝ ▝▀▌ ▜▀▀▟▜▝▝·▀▝▞▀▟▝▙▟▀│
              └┬─────────────────┬─────────────────┬─────────────────┬─────────────────┬┘
              1.0              49.2              97.5              145.8           194.0
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtf_summary.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtf_summary.txt
                        dtf/mean hist                            dtf/max hist
            ┌───────────────────────────────────┐     ┌─────────────────────────────────┐
         168┤████                               │189.0┤████                             │
@@ -540,7 +540,7 @@ ezpz launch python3 -m ezpz.examples.test
          0.0┤██████████████████████████████████│  0.0┤███                          ████│
             └┬───────┬────────┬───────┬────────┘     └┬───────┬───────┬───────┬───────┬┘
           0.0056  0.0081   0.0106  0.0132          -0.002   0.009   0.019   0.030 0.040
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/dtf_hist.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/dtf_hist.txt
                             loss                                  loss/min
             ┌──────────────────────────────────┐    ┌──────────────────────────────────┐
         1.75┤▌                                 │1.75┤-                                 │
@@ -570,7 +570,7 @@ ezpz launch python3 -m ezpz.examples.test
             └┬───────┬────────┬───────┬───────┬┘    └┬───────┬────────┬───────┬───────┬┘
             1.0    49.2     97.5    145.8 194.0     1.0    49.2     97.5    145.8 194.0
         loss/mean           iter                loss/max            iter
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/loss.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/loss.txt
             ┌──────────────────────────────────────────────────────────────────────────┐
         1.76┤ ++ loss/max                                                              │
             │ -- loss/min                                                              │
@@ -600,7 +600,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.08┤                                                        ▜  -   ▘▝ ▝▌ ▝▜▜  │
             └┬─────────────────┬──────────────────┬─────────────────┬─────────────────┬┘
             1.0              49.2               97.5              145.8           194.0
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/loss_summary.txt
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/loss_summary.txt
                        loss/mean hist                           loss/max hist
             ┌──────────────────────────────────┐    ┌──────────────────────────────────┐
         98.0┤████                              │76.0┤███████                           │
@@ -630,8 +630,8 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤████████████████    ███   ███████│ 0.0┤████████████████████████   ███████│
              └┬───────┬───────┬───────┬───────┬┘    └┬───────┬────────┬───────┬───────┬┘
             0.01    0.46    0.92    1.37   1.82   -0.009   0.047    0.104   0.160 0.216
-        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/plots/tplot/loss_hist.txt
-        [2025-12-26 14:59:47,081689][I][ezpz/history:2433:finalize] Saving history report to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.test_dist/2025-12-26-145936/report.md
+        text saved in /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/plots/tplot/loss_hist.txt
+        [2025-12-26 14:59:47,081689][I][ezpz/history:2433:finalize] Saving history report to /Users/samforeman/vibes/saforem2/ezpz/outputs/ezpz.examples.test/2025-12-26-145936/report.md
         [2025-12-26 14:59:47,085092][I][ezpz/examples.test:348:finalize] dataset=<xarray.Dataset> Size: 39kB
         Dimensions:        (draw: 194)
         Coordinates:
@@ -682,7 +682,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 12:57:01,231960][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [24/24] GPUs [2 hosts] x [12 GPU/host]
         [2025-12-26 12:57:01,233271][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
         [2025-12-26 12:57:01,233694][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8234998.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
-        [2025-12-26 12:57:01,234378][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: /home/foremans/datascience/foremans/.cache/builds-v0/.tmpCcpdMz/bin/python -m ezpz.test_dist
+        [2025-12-26 12:57:01,234378][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: /home/foremans/datascience/foremans/.cache/builds-v0/.tmpCcpdMz/bin/python -m ezpz.examples.test
         [2025-12-26 12:57:01,235161][I][ezpz/launch:433:launch] Took: 1.24 seconds to build command.
         [2025-12-26 12:57:01,235513][I][ezpz/launch:436:launch] Executing:
         mpiexec
@@ -694,12 +694,12 @@ ezpz launch python3 -m ezpz.examples.test
           --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96
           /home/foremans/datascience/foremans/.cache/builds-v0/.tmpCcpdMz/bin/python
           -m
-          ezpz.test_dist
+          ezpz.examples.test
         [2025-12-26 12:57:01,236843][I][ezpz/launch:220:get_aurora_filters] Filtering for Aurora-specific messages. To view list of filters, run with EZPZ_LOG_LEVEL=DEBUG
         [2025-12-26 12:57:01,237331][I][ezpz/launch:443:launch] Execution started @ 2025-12-26-125701...
         [2025-12-26 12:57:01,237728][I][ezpz/launch:138:run_command] Caught 24 filters
         [2025-12-26 12:57:01,238051][I][ezpz/launch:139:run_command] Running command:
-         mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8234998.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 /home/foremans/datascience/foremans/.cache/builds-v0/.tmpCcpdMz/bin/python -m ezpz.test_dist
+         mpiexec --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/8234998.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96 /home/foremans/datascience/foremans/.cache/builds-v0/.tmpCcpdMz/bin/python -m ezpz.examples.test
         cpubind:list x4310c1s1b0n0 pid 147083 rank 12 0: mask 0x1c
         cpubind:list x4310c1s1b0n0 pid 147084 rank 13 1: mask 0x1c00
         cpubind:list x4310c1s1b0n0 pid 147085 rank 14 2: mask 0x1c0000
@@ -724,10 +724,10 @@ ezpz launch python3 -m ezpz.examples.test
         cpubind:list x4310c1s0b0n0 pid 114701 rank 9 9: mask 0x1c0000000000000000000
         cpubind:list x4310c1s0b0n0 pid 114702 rank 10 10: mask 0x1c000000000000000000000
         cpubind:list x4310c1s0b0n0 pid 114703 rank 11 11: mask 0x1c00000000000000000000000
-        [2025-12-26 12:57:09,319444][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709
-        [2025-12-26 12:57:09,322179][I][ezpz/dist:1506:setup_torch_distributed] Using fw='ddp' with torch_{device,backend}= {xpu, xccl}
-        [2025-12-26 12:57:09,323025][I][ezpz/dist:1371:setup_torch_DDP] Caught MASTER_PORT=57733 from environment!
-        [2025-12-26 12:57:09,323626][I][ezpz/dist:1387:setup_torch_DDP] Using torch.distributed.init_process_group with
+        [2025-12-26 12:57:09,319444][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709
+        [2025-12-26 12:57:09,322179][I][ezpz/distributed:569:setup_torch] Using device='xpu' with backend='xccl' for distributed training.
+        [2025-12-26 12:57:09,323025][I][ezpz/distributed:1525:_setup_ddp] Caught MASTER_PORT=57733 from environment!
+        [2025-12-26 12:57:09,323626][I][ezpz/distributed:1530:_setup_ddp] Using torch.distributed.init_process_group with
         - master_addr='x4310c1s0b0n0.hsn.cm.aurora.alcf.anl.gov'
         - master_port='57733'
         - world_size=24
@@ -735,34 +735,34 @@ ezpz launch python3 -m ezpz.examples.test
         - local_rank=0
         - timeout=datetime.timedelta(seconds=3600)
         - backend='xccl'
-        [2025-12-26 12:57:09,324720][I][ezpz/dist:1019:init_process_group] Calling torch.distributed.init_process_group_with: rank=0 world_size=24 backend=xccl
-        [2025-12-26 12:57:11,367607][I][ezpz/dist:1732:setup_torch] Using device='xpu' with backend='xccl' + 'xccl' for distributed training.
-        [2025-12-26 12:57:11,369584][W][ezpz/dist:544:print_dist_setup] Using [24 / 24] available "xpu" devices !!
-        [2025-12-26 12:57:11,370083][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=00/23][local_rank=00/11]
-        [2025-12-26 12:57:11,369426][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=02/23][local_rank=02/11]
-        [2025-12-26 12:57:11,369554][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=05/23][local_rank=05/11]
-        [2025-12-26 12:57:11,369558][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=06/23][local_rank=06/11]
-        [2025-12-26 12:57:11,369660][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=07/23][local_rank=07/11]
-        [2025-12-26 12:57:11,369585][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=08/23][local_rank=08/11]
-        [2025-12-26 12:57:11,369597][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=09/23][local_rank=09/11]
-        [2025-12-26 12:57:11,369637][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=10/23][local_rank=10/11]
-        [2025-12-26 12:57:11,369590][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=11/23][local_rank=11/11]
-        [2025-12-26 12:57:11,369710][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=01/23][local_rank=01/11]
-        [2025-12-26 12:57:11,369715][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=03/23][local_rank=03/11]
-        [2025-12-26 12:57:11,369129][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=14/23][local_rank=02/11]
-        [2025-12-26 12:57:11,369276][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=12/23][local_rank=00/11]
-        [2025-12-26 12:57:11,369686][I][ezpz/dist:1779:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=04/23][local_rank=04/11]
-        [2025-12-26 12:57:11,369570][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=13/23][local_rank=01/11]
-        [2025-12-26 12:57:11,369439][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=15/23][local_rank=03/11]
+        [2025-12-26 12:57:09,324720][I][ezpz/distributed:1536:_setup_ddp] init_process_group: rank=0 world_size=24 backend=xccl
+        [2025-12-26 12:57:11,367607][I][ezpz/distributed:569:setup_torch] Using device='xpu' with backend='xccl' + 'xccl' for distributed training.
+        [2025-12-26 12:57:11,369584][W][ezpz/distributed:1043:print_dist_setup] Using [24 / 24] available "xpu" devices !!
+        [2025-12-26 12:57:11,370083][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=00/23][local_rank=00/11]
+        [2025-12-26 12:57:11,369426][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=02/23][local_rank=02/11]
+        [2025-12-26 12:57:11,369554][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=05/23][local_rank=05/11]
+        [2025-12-26 12:57:11,369558][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=06/23][local_rank=06/11]
+        [2025-12-26 12:57:11,369660][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=07/23][local_rank=07/11]
+        [2025-12-26 12:57:11,369585][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=08/23][local_rank=08/11]
+        [2025-12-26 12:57:11,369597][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=09/23][local_rank=09/11]
+        [2025-12-26 12:57:11,369637][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=10/23][local_rank=10/11]
+        [2025-12-26 12:57:11,369590][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=11/23][local_rank=11/11]
+        [2025-12-26 12:57:11,369710][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=01/23][local_rank=01/11]
+        [2025-12-26 12:57:11,369715][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=1/1][rank=03/23][local_rank=03/11]
+        [2025-12-26 12:57:11,369129][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=14/23][local_rank=02/11]
+        [2025-12-26 12:57:11,369276][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=12/23][local_rank=00/11]
+        [2025-12-26 12:57:11,369686][I][ezpz/distributed:578:setup_torch] ['x4310c1s0b0n0'][device='xpu'][node=0/1][rank=04/23][local_rank=04/11]
+        [2025-12-26 12:57:11,369570][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=13/23][local_rank=01/11]
+        [2025-12-26 12:57:11,369439][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=15/23][local_rank=03/11]
         [2025-12-26 12:57:11,372392][I][ezpz/examples.test:678:main] Took: 2.07 seconds to setup torch
-        [2025-12-26 12:57:11,369272][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=16/23][local_rank=04/11]
-        [2025-12-26 12:57:11,369296][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=17/23][local_rank=05/11]
-        [2025-12-26 12:57:11,369515][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=18/23][local_rank=06/11]
-        [2025-12-26 12:57:11,369551][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=19/23][local_rank=07/11]
-        [2025-12-26 12:57:11,369556][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=20/23][local_rank=08/11]
-        [2025-12-26 12:57:11,369524][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=21/23][local_rank=09/11]
-        [2025-12-26 12:57:11,369569][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=22/23][local_rank=10/11]
-        [2025-12-26 12:57:11,369353][I][ezpz/dist:1779:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=23/23][local_rank=11/11]
+        [2025-12-26 12:57:11,369272][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=16/23][local_rank=04/11]
+        [2025-12-26 12:57:11,369296][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=17/23][local_rank=05/11]
+        [2025-12-26 12:57:11,369515][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=18/23][local_rank=06/11]
+        [2025-12-26 12:57:11,369551][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=19/23][local_rank=07/11]
+        [2025-12-26 12:57:11,369556][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=20/23][local_rank=08/11]
+        [2025-12-26 12:57:11,369524][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=21/23][local_rank=09/11]
+        [2025-12-26 12:57:11,369569][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=0/1][rank=22/23][local_rank=10/11]
+        [2025-12-26 12:57:11,369353][I][ezpz/distributed:578:setup_torch] ['x4310c1s1b0n0'][device='xpu'][node=1/1][rank=23/23][local_rank=11/11]
         [2025-12-26 12:57:11,386631][I][ezpz/examples.test:461:train] Model size: 567434 parameters
         [2025-12-26 12:57:11,388753][I][ezpz/examples.test:465:train]
         =================================================================
@@ -788,22 +788,22 @@ ezpz launch python3 -m ezpz.examples.test
             (6): Linear(in_features=128, out_features=10, bias=True)
           )
         )
-        [2025-12-26 12:57:11,394462][I][ezpz/dist:685:wrap_model] Wrapping model with: ddp
+        [2025-12-26 12:57:11,394462][I][ezpz/distributed:784:wrap_model] Wrapping model with ddp
         2025:12:26-12:57:11:(114692) |CCL_WARN| value of CCL_OP_SYNC changed to be 1 (default:0)
         2025:12:26-12:57:11:(114692) |CCL_WARN| value of CCL_PROCESS_LAUNCHER changed to be pmix (default:hydra)
         [2025-12-26 12:57:24,214420][I][ezpz/examples.test:479:train] Took: 12.82 seconds to build optimizer
         [2025-12-26 12:57:24,257102][I][ezpz/history:220:__init__] Using History with distributed_history=True
-        [2025-12-26 12:57:24,262059][I][ezpz/dist:2044:setup_wandb] Setting up wandb from rank=0
-        [2025-12-26 12:57:24,262600][I][ezpz/dist:2045:setup_wandb] Using WB_PROJECT=ezpz.test_dist
+        [2025-12-26 12:57:24,262059][I][ezpz/distributed:1183:setup_wandb] Setting up wandb from rank=0
+        [2025-12-26 12:57:24,262600][I][ezpz/distributed:1184:setup_wandb] Using WB_PROJECT=ezpz.examples.test
         wandb: Currently logged in as: foremans (aurora_gpt) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
         wandb: Tracking run with wandb version 0.21.3
         wandb: Run data is saved locally in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/wandb/run-20251226_125724-adhgoy9j
         wandb: Run `wandb offline` to turn off syncing.
         wandb: Syncing run winter-salad-6843
-        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.test_dist
-        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/adhgoy9j
-        [2025-12-26 12:57:30,839972][I][ezpz/dist:2074:setup_wandb] wandb.run=[winter-salad-6843](https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/adhgoy9j)
-        [2025-12-26 12:57:30,846065][I][ezpz/dist:2117:setup_wandb] Running on machine='Aurora'
+        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.examples.test
+        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/adhgoy9j
+        [2025-12-26 12:57:30,839972][I][ezpz/distributed:1213:setup_wandb] wandb.run=[winter-salad-6843](https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/adhgoy9j)
+        [2025-12-26 12:57:30,846065][I][ezpz/distributed:1256:setup_wandb] Running on machine='Aurora'
         [2025-12-26 12:57:32,361320][I][ezpz/examples.test:482:train] Took: 8.15 seconds to build trainer
         [2025-12-26 12:57:32,362820][I][ezpz/examples.test:486:train] config:
         {
@@ -812,7 +812,7 @@ ezpz launch python3 -m ezpz.examples.test
           "batch_size": 128,
           "cp": 1,
           "dataset": "mnist",
-          "dataset_root": "/lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/datasets/mnist",
+          "dataset_root": "/lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/datasets/mnist",
           "dtype": "bf16",
           "input_size": 784,
           "layer_sizes": [
@@ -863,7 +863,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 12:57:59,277568][I][ezpz/examples.test:325:train_step] iter=170 loss=0.060540 accuracy=0.984375 dtf=0.010029 dtb=0.001871 loss/mean=0.067327 loss/max=0.170805 loss/min=0.035560 loss/std=0.030100 accuracy/mean=0.982096 accuracy/max=1.000000 accuracy/min=0.937500 accuracy/std=0.013047 dtf/mean=0.010218 dtf/max=0.012835 dtf/min=0.009561 dtf/std=0.000796 dtb/mean=0.001831 dtb/max=0.002365 dtb/min=0.001390 dtb/std=0.000244
         [2025-12-26 12:57:59,752142][I][ezpz/examples.test:325:train_step] iter=180 loss=0.039758 accuracy=0.985294 dtf=0.006253 dtb=0.001701 loss/mean=0.034456 loss/max=0.081928 loss/min=0.009000 loss/std=0.020232 accuracy/mean=0.990809 accuracy/max=1.000000 accuracy/min=0.955882 accuracy/std=0.012603 dtf/mean=0.006565 dtf/max=0.007686 dtf/min=0.005779 dtf/std=0.000649 dtb/mean=0.001519 dtb/max=0.002028 dtb/min=0.001091 dtb/std=0.000251
         [2025-12-26 12:58:00,304971][I][ezpz/examples.test:325:train_step] iter=190 loss=0.086260 accuracy=0.953125 dtf=0.011277 dtb=0.001865 loss/mean=0.054108 loss/max=0.114451 loss/min=0.015817 loss/std=0.026246 accuracy/mean=0.985026 accuracy/max=1.000000 accuracy/min=0.953125 accuracy/std=0.013514 dtf/mean=0.010987 dtf/max=0.011464 dtf/min=0.010086 dtf/std=0.000501 dtb/mean=0.001754 dtb/max=0.002030 dtb/min=0.001315 dtb/std=0.000212
-        [2025-12-26 12:58:02,269674][I][ezpz/history:2385:finalize] Saving plots to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/mplot (matplotlib) and /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot (tplot)
+        [2025-12-26 12:58:02,269674][I][ezpz/history:2385:finalize] Saving plots to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/mplot (matplotlib) and /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot (tplot)
                           accuracy                              accuracy/min
              ┌─────────────────────────────────┐    ┌──────────────────────────────────┐
         1.000┤              ▟ ▄▖▄▄▄▟▄▄█▙▙██▙█▞▛│0.99┤         -------------------------│
@@ -893,7 +893,7 @@ ezpz launch python3 -m ezpz.examples.test
              └┬───────┬───────┬───────┬───────┬┘     └┬───────┬───────┬───────┬───────┬┘
              1.0    49.2    97.5    145.8 194.0      1.0    49.2    97.5    145.8 194.0
         accuracy/mean       iter                accuracy/max        iter
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/accuracy.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/accuracy.txt
             ┌──────────────────────────────────────────────────────────────────────────┐
         1.00┤ ++ accuracy/max    +       + ++ ▖+++++++++▗+++▖▟+▗▖▖▄▚▗▄+▟+▞▙▚▟▗▗▗+▙▚·▙▗▄│
             │ -- accuracy/min  ++++++++++·++▙+▌+ ▖▄▗▌▞▖▗█▗▟▀▙▀▟▌▌▛▝▝▌▝▟▝▄▌█·▘▘▘▜▞█▐▐·▘·│
@@ -923,7 +923,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.44┤-                                                                         │
             └┬─────────────────┬──────────────────┬─────────────────┬─────────────────┬┘
             1.0              49.2               97.5              145.8           194.0
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/accuracy_summary.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/accuracy_summary.txt
                     accuracy/mean hist                        accuracy/max hist
            ┌───────────────────────────────────┐     ┌─────────────────────────────────┐
         114┤                               ████│134.0┤                             ████│
@@ -953,7 +953,7 @@ ezpz launch python3 -m ezpz.examples.test
          0.0┤██████████████████████████████████│ 0.0┤██████████████████████████████████│
             └┬───────┬────────┬───────┬───────┬┘    └┬───────┬────────┬───────┬───────┬┘
            0.41    0.56     0.71    0.86   1.01    0.004   0.021    0.038   0.054 0.071
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/accuracy_hist.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/accuracy_hist.txt
                              dtb                                   dtb/min
              ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
         0.233┤  ▟                              │0.176┤  -                              │
@@ -983,7 +983,7 @@ ezpz launch python3 -m ezpz.examples.test
              └┬───────┬───────┬───────┬───────┬┘     └┬───────┬───────┬───────┬───────┬┘
              1.0    49.2    97.5    145.8 194.0      1.0    49.2    97.5    145.8 194.0
         dtb/mean            iter                dtb/max             iter
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtb.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtb.txt
              ┌─────────────────────────────────────────────────────────────────────────┐
         0.239┤ ++ dtb/max                                                              │
              │ -- dtb/min                                                              │
@@ -1013,7 +1013,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.001┤▄▄▄▄▄█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄│
              └┬─────────────────┬─────────────────┬─────────────────┬─────────────────┬┘
              1.0              49.2              97.5              145.8           194.0
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtb_summary.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtb_summary.txt
                         dtb/mean hist                           dtb/max hist
              ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
         193.0┤████                             │193.0┤████                             │
@@ -1043,7 +1043,7 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤███                          ████│  0.0┤███                          ████│
              └┬───────┬───────┬───────┬───────┬┘     └┬───────┬───────┬───────┬────────┘
            -0.007   0.041   0.089   0.136 0.184    -0.0008  0.0048  0.0103  0.0159
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtb_hist.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtb_hist.txt
                               dtf                                   dtf/min
               ┌────────────────────────────────┐      ┌────────────────────────────────┐
         0.0188┤            ▖         ▖     ▐   │0.0129┤  -            -  -   -  -  -   │
@@ -1073,7 +1073,7 @@ ezpz launch python3 -m ezpz.examples.test
               └┬───────┬───────┬──────┬───────┬┘      └┬───────┬───────┬──────┬───────┬┘
               1.0    49.2    97.5   145.8 194.0       1.0    49.2    97.5   145.8 194.0
         dtf/mean             iter               dtf/max              iter
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtf.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtf.txt
               ┌────────────────────────────────────────────────────────────────────────┐
         0.0188┤ ++ dtf/max                                                     ▗▌      │
               │ -- dtf/min                 ▖                     ▖             ▐▌      │
@@ -1103,7 +1103,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.0058┤                           ▝              -              -      -       │
               └┬─────────────────┬─────────────────┬────────────────┬─────────────────┬┘
               1.0              49.2              97.5             145.8           194.0
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtf_summary.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtf_summary.txt
                         dtf/mean hist                           dtf/max hist
             ┌──────────────────────────────────┐    ┌──────────────────────────────────┐
         87.0┤                 ████             │89.0┤             ████                 │
@@ -1133,7 +1133,7 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤███████         █████████████████│ 0.0┤██████████████████████████████████│
              └┬───────┬───────┬───────┬────────┘    └┬───────┬────────┬───────┬────────┘
            0.0055  0.0074  0.0094  0.0113         0.00005  0.00040  0.00076 0.00112
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/dtf_hist.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/dtf_hist.txt
                             loss                                  loss/min
             ┌──────────────────────────────────┐    ┌──────────────────────────────────┐
         1.75┤▌                                 │1.62┤-                                 │
@@ -1163,7 +1163,7 @@ ezpz launch python3 -m ezpz.examples.test
             └┬───────┬────────┬───────┬───────┬┘    └┬───────┬────────┬───────┬───────┬┘
             1.0    49.2     97.5    145.8 194.0     1.0    49.2     97.5    145.8 194.0
         loss/mean           iter                loss/max            iter
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/loss.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/loss.txt
             ┌──────────────────────────────────────────────────────────────────────────┐
         1.76┤ ++ loss/max                                                              │
             │ -- loss/min                                                              │
@@ -1193,7 +1193,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.01┤                                          ---- ----▘-▘▀-▀-▀-▝▀▀▀▀▝▀▝▘▀·▀▀▀│
             └┬─────────────────┬──────────────────┬─────────────────┬─────────────────┬┘
             1.0              49.2               97.5              145.8           194.0
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/loss_summary.txt
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/loss_summary.txt
                        loss/mean hist                          loss/max hist
              ┌─────────────────────────────────┐   ┌───────────────────────────────────┐
         127.0┤████                             │102┤████                               │
@@ -1223,8 +1223,8 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤█████████████████████████████████│ 0┤████████████████████████████████████│
              └┬───────┬───────┬───────┬───────┬┘  └┬────────┬────────┬───────┬────────┬┘
             -0.06   0.38    0.81    1.25   1.69  0.006    0.040    0.074   0.109  0.143
-        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/plots/tplot/loss_hist.txt
-        [2025-12-26 12:58:07,565854][I][ezpz/history:2433:finalize] Saving history report to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.test_dist/2025-12-26-125709/report.md
+        text saved in /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/plots/tplot/loss_hist.txt
+        [2025-12-26 12:58:07,565854][I][ezpz/history:2433:finalize] Saving history report to /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/outputs/ezpz.examples.test/2025-12-26-125709/report.md
         [2025-12-26 12:58:07,571828][I][ezpz/examples.test:348:finalize] dataset=<xarray.Dataset> Size: 39kB
         Dimensions:        (draw: 194)
         Coordinates:
@@ -1246,7 +1246,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 12:58:08,256424][I][ezpz/examples.test:500:train] Took: 35.89 seconds to finish training
         [2025-12-26 12:58:08,257557][I][ezpz/examples.test:695:main] Took: 64.73 seconds
         wandb:
-        wandb: 🚀 View run winter-salad-6843 at: https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/adhgoy9j
+        wandb: 🚀 View run winter-salad-6843 at: https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/adhgoy9j
         wandb: Find logs at: ../../../../../../../../../lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/saforem2/tmp/2025-12-26-124007/wandb/run-20251226_125724-adhgoy9j/logs
         [2025-12-26 12:58:10,167355][I][ezpz/launch:447:launch] ----[🍋 ezpz.launch][stop][2025-12-26-125810]----
         [2025-12-26 12:58:10,168735][I][ezpz/launch:448:launch] Execution finished with 0.
@@ -1286,7 +1286,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 13:21:32,595323][I][ezpz/pbs:264:get_pbs_launch_cmd] ✅ Using [8/8] GPUs [2 hosts] x [4 GPU/host]
         [2025-12-26 13:21:32,596845][I][ezpz/launch:367:build_executable] Building command to execute by piecing together:
         [2025-12-26 13:21:32,597234][I][ezpz/launch:368:build_executable] (1.) launch_cmd: mpiexec --envall --np=8 --ppn=4 --hostfile=/var/spool/pbs/aux/6826897.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov --cpu-bind=depth --depth=8
-        [2025-12-26 13:21:32,597798][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: /home/foremans/.cache/uv/builds-v0/.tmpwG7Oyq/bin/python -m ezpz.test_dist
+        [2025-12-26 13:21:32,597798][I][ezpz/launch:369:build_executable] (2.) cmd_to_launch: /home/foremans/.cache/uv/builds-v0/.tmpwG7Oyq/bin/python -m ezpz.examples.test
         [2025-12-26 13:21:32,598339][I][ezpz/launch:433:launch] Took: 0.68 seconds to build command.
         [2025-12-26 13:21:32,598684][I][ezpz/launch:436:launch] Executing:
         mpiexec
@@ -1298,14 +1298,14 @@ ezpz launch python3 -m ezpz.examples.test
           --depth=8
           /home/foremans/.cache/uv/builds-v0/.tmpwG7Oyq/bin/python
           -m
-          ezpz.test_dist
+          ezpz.examples.test
         [2025-12-26 13:21:32,600442][I][ezpz/launch:443:launch] Execution started @ 2025-12-26-132132...
         [2025-12-26 13:21:32,600884][I][ezpz/launch:139:run_command] Running command:
-         mpiexec --envall --np=8 --ppn=4 --hostfile=/var/spool/pbs/aux/6826897.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov --cpu-bind=depth --depth=8 /home/foremans/.cache/uv/builds-v0/.tmpwG7Oyq/bin/python -m ezpz.test_dist
-        [2025-12-26 13:21:41,009597][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141
-        [2025-12-26 13:21:41,011757][I][ezpz/dist:1506:setup_torch_distributed] Using fw='ddp' with torch_{device,backend}= {cuda, nccl}
-        [2025-12-26 13:21:41,013713][I][ezpz/dist:1371:setup_torch_DDP] Caught MASTER_PORT=49717 from environment!
-        [2025-12-26 13:21:41,014243][I][ezpz/dist:1387:setup_torch_DDP] Using torch.distributed.init_process_group with
+         mpiexec --envall --np=8 --ppn=4 --hostfile=/var/spool/pbs/aux/6826897.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov --cpu-bind=depth --depth=8 /home/foremans/.cache/uv/builds-v0/.tmpwG7Oyq/bin/python -m ezpz.examples.test
+        [2025-12-26 13:21:41,009597][I][ezpz/examples.test:132:__post_init__] Outputs will be saved to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141
+        [2025-12-26 13:21:41,011757][I][ezpz/distributed:569:setup_torch] Using device='cuda' with backend='nccl' for distributed training.
+        [2025-12-26 13:21:41,013713][I][ezpz/distributed:1525:_setup_ddp] Caught MASTER_PORT=49717 from environment!
+        [2025-12-26 13:21:41,014243][I][ezpz/distributed:1530:_setup_ddp] Using torch.distributed.init_process_group with
         - master_addr='x3102c0s13b0n0.hsn.cm.polaris.alcf.anl.gov'
         - master_port='49717'
         - world_size=8
@@ -1313,17 +1313,17 @@ ezpz launch python3 -m ezpz.examples.test
         - local_rank=0
         - timeout=datetime.timedelta(seconds=3600)
         - backend='nccl'
-        [2025-12-26 13:21:41,015130][I][ezpz/dist:1019:init_process_group] Calling torch.distributed.init_process_group_with: rank=0 world_size=8 backend=nccl
-        [2025-12-26 13:21:48,305115][I][ezpz/dist:1732:setup_torch] Using device='cuda' with backend='nccl' + 'nccl' for distributed training.
-        [2025-12-26 13:21:48,306060][W][ezpz/dist:544:print_dist_setup] Using [8 / 8] available "cuda" devices !!
-        [2025-12-26 13:21:48,306511][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=0/1][rank=0/7][local_rank=0/3]
-        [2025-12-26 13:21:48,305536][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=1/1][rank=3/7][local_rank=3/3]
-        [2025-12-26 13:21:48,305529][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=1/1][rank=1/7][local_rank=1/3]
-        [2025-12-26 13:21:48,305423][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=0/1][rank=4/7][local_rank=0/3]
-        [2025-12-26 13:21:48,305537][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=0/1][rank=2/7][local_rank=2/3]
-        [2025-12-26 13:21:48,305414][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=1/1][rank=5/7][local_rank=1/3]
-        [2025-12-26 13:21:48,305415][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=0/1][rank=6/7][local_rank=2/3]
-        [2025-12-26 13:21:48,305412][I][ezpz/dist:1779:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=1/1][rank=7/7][local_rank=3/3]
+        [2025-12-26 13:21:41,015130][I][ezpz/distributed:1536:_setup_ddp] init_process_group: rank=0 world_size=8 backend=nccl
+        [2025-12-26 13:21:48,305115][I][ezpz/distributed:569:setup_torch] Using device='cuda' with backend='nccl' + 'nccl' for distributed training.
+        [2025-12-26 13:21:48,306060][W][ezpz/distributed:1043:print_dist_setup] Using [8 / 8] available "cuda" devices !!
+        [2025-12-26 13:21:48,306511][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=0/1][rank=0/7][local_rank=0/3]
+        [2025-12-26 13:21:48,305536][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=1/1][rank=3/7][local_rank=3/3]
+        [2025-12-26 13:21:48,305529][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=1/1][rank=1/7][local_rank=1/3]
+        [2025-12-26 13:21:48,305423][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=0/1][rank=4/7][local_rank=0/3]
+        [2025-12-26 13:21:48,305537][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b0n0'][device='cuda'][node=0/1][rank=2/7][local_rank=2/3]
+        [2025-12-26 13:21:48,305414][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=1/1][rank=5/7][local_rank=1/3]
+        [2025-12-26 13:21:48,305415][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=0/1][rank=6/7][local_rank=2/3]
+        [2025-12-26 13:21:48,305412][I][ezpz/distributed:578:setup_torch] ['x3102c0s13b1n0'][device='cuda'][node=1/1][rank=7/7][local_rank=3/3]
         [2025-12-26 13:21:48,308064][I][ezpz/examples.test:678:main] Took: 7.31 seconds to setup torch
         [2025-12-26 13:21:48,321964][I][ezpz/examples.test:461:train] Model size: 567434 parameters
         [2025-12-26 13:21:48,323195][I][ezpz/examples.test:465:train]
@@ -1350,21 +1350,21 @@ ezpz launch python3 -m ezpz.examples.test
             (6): Linear(in_features=128, out_features=10, bias=True)
           )
         )
-        [2025-12-26 13:21:48,327959][I][ezpz/dist:685:wrap_model] Wrapping model with: ddp
+        [2025-12-26 13:21:48,327959][I][ezpz/distributed:784:wrap_model] Wrapping model with ddp
         [2025-12-26 13:21:48,691473][I][ezpz/examples.test:479:train] Took: 0.37 seconds to build optimizer
         [2025-12-26 13:21:48,734475][I][ezpz/history:220:__init__] Using History with distributed_history=True
-        [2025-12-26 13:21:48,738296][I][ezpz/dist:2044:setup_wandb] Setting up wandb from rank=0
-        [2025-12-26 13:21:48,738722][I][ezpz/dist:2045:setup_wandb] Using WB_PROJECT=ezpz.test_dist
+        [2025-12-26 13:21:48,738296][I][ezpz/distributed:1183:setup_wandb] Setting up wandb from rank=0
+        [2025-12-26 13:21:48,738722][I][ezpz/distributed:1184:setup_wandb] Using WB_PROJECT=ezpz.examples.test
         wandb: Currently logged in as: foremans (aurora_gpt) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
         wandb: setting up run 01zkj7vc
         wandb: Tracking run with wandb version 0.22.1
         wandb: Run data is saved locally in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/wandb/run-20251226_132148-01zkj7vc
         wandb: Run `wandb offline` to turn off syncing.
         wandb: Syncing run smart-breeze-6848
-        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.test_dist
-        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/01zkj7vc
-        [2025-12-26 13:21:55,570075][I][ezpz/dist:2074:setup_wandb] wandb.run=[smart-breeze-6848](https://wandb.ai/aurora_gpt/ezpz.test_dist/runs/01zkj7vc)
-        [2025-12-26 13:21:55,577966][I][ezpz/dist:2117:setup_wandb] Running on machine='Polaris'
+        wandb:  View project at https://wandb.ai/aurora_gpt/ezpz.examples.test
+        wandb:  View run at https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/01zkj7vc
+        [2025-12-26 13:21:55,570075][I][ezpz/distributed:1213:setup_wandb] wandb.run=[smart-breeze-6848](https://wandb.ai/aurora_gpt/ezpz.examples.test/runs/01zkj7vc)
+        [2025-12-26 13:21:55,577966][I][ezpz/distributed:1256:setup_wandb] Running on machine='Polaris'
         [2025-12-26 13:21:56,263208][I][ezpz/examples.test:482:train] Took: 7.57 seconds to build trainer
         [2025-12-26 13:21:56,264200][I][ezpz/examples.test:486:train] config:
         {
@@ -1373,7 +1373,7 @@ ezpz launch python3 -m ezpz.examples.test
           "batch_size": 128,
           "cp": 1,
           "dataset": "mnist",
-          "dataset_root": "/lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/datasets/mnist",
+          "dataset_root": "/lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/datasets/mnist",
           "dtype": "bf16",
           "input_size": 784,
           "layer_sizes": [
@@ -1424,7 +1424,7 @@ ezpz launch python3 -m ezpz.examples.test
         [2025-12-26 13:22:00,525172][I][ezpz/examples.test:325:train_step] iter=170 loss=0.232940 accuracy=0.921875 dtf=0.017109 dtb=0.000773 loss/mean=0.198723 loss/max=0.269332 loss/min=0.122802 loss/std=0.053061 accuracy/mean=0.940430 accuracy/max=0.968750 accuracy/min=0.906250 accuracy/std=0.020647 dtf/mean=0.017133 dtf/max=0.017396 dtf/min=0.016898 dtf/std=0.000146 dtb/mean=0.000757 dtb/max=0.000773 dtb/min=0.000743 dtb/std=0.000008
         [2025-12-26 13:22:00,741349][I][ezpz/examples.test:325:train_step] iter=180 loss=0.051174 accuracy=0.992188 dtf=0.016878 dtb=0.000779 loss/mean=0.142097 loss/max=0.257418 loss/min=0.051174 loss/std=0.076244 accuracy/mean=0.966797 accuracy/max=0.992188 accuracy/min=0.929688 accuracy/std=0.022011 dtf/mean=0.017102 dtf/max=0.017473 dtf/min=0.016812 dtf/std=0.000194 dtb/mean=0.000762 dtb/max=0.000779 dtb/min=0.000750 dtb/std=0.000008
         [2025-12-26 13:22:00,962154][I][ezpz/examples.test:325:train_step] iter=190 loss=0.105810 accuracy=0.945312 dtf=0.016914 dtb=0.000775 loss/mean=0.152862 loss/max=0.230180 loss/min=0.094466 loss/std=0.049649 accuracy/mean=0.951172 accuracy/max=0.976562 accuracy/min=0.937500 accuracy/std=0.012807 dtf/mean=0.017123 dtf/max=0.017377 dtf/min=0.016858 dtf/std=0.000202 dtb/mean=0.000761 dtb/max=0.000775 dtb/min=0.000752 dtb/std=0.000007
-        [2025-12-26 13:22:04,963504][I][ezpz/history:2385:finalize] Saving plots to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/mplot (matplotlib) and /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot (tplot)
+        [2025-12-26 13:22:04,963504][I][ezpz/history:2385:finalize] Saving plots to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/mplot (matplotlib) and /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot (tplot)
                                     accuracy                                                  accuracy/min
              ┌─────────────────────────────────────────────────────┐     ┌─────────────────────────────────────────────────────┐
         0.992┤               ▖       ▖▄▖ ▗▖▗▗▗▗▄▗▟▄▄▄ ▞▄▟▄▖▄▄▟▗▛▄▄▄│0.953┤   --------------------------------------------------│
@@ -1448,7 +1448,7 @@ ezpz launch python3 -m ezpz.examples.test
              └┬────────────┬────────────┬────────────┬────────────┬┘     └┬────────────┬────────────┬────────────┬────────────┬┘
              1.0         49.2         97.5         145.8      194.0      1.0         49.2         97.5         145.8      194.0
         accuracy/mean                 iter                          accuracy/max                  iter
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/accuracy.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/accuracy.txt
              ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
         1.000┤ ++ accuracy/max                                 +                               +   +       + +   + ▗ + ++ +    │
              │ -- accuracy/min                ▟ +    +  ++  + ++++▟▗  ++ ++++ +++▖++ ++++▗▀▙▌+▖+▖++▗▞▚▌▖+▟+·+··+▟▞▄█++▗▙▚+▖▟·▟▞│
@@ -1472,7 +1472,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.484┤-                                                                                                                │
              └┬───────────────────────────┬───────────────────────────┬───────────────────────────┬───────────────────────────┬┘
              1.0                        49.2                        97.5                        145.8                     194.0
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/accuracy_summary.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/accuracy_summary.txt
                               accuracy/mean hist                                            accuracy/max hist
           ┌────────────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────────┐
         96┤                                                   █████│79.0┤                                                 █████│
@@ -1496,7 +1496,7 @@ ezpz launch python3 -m ezpz.examples.test
          0.0┤██████████████████████████████████████████████████████│ 0.0┤███████████████████████████████████████████      █████│
             └┬────────────┬─────────────┬────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘
            0.46         0.59          0.72         0.85        0.97    0.004        0.021         0.038        0.055      0.072
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/accuracy_hist.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/accuracy_hist.txt
                                          dtb                                                       dtb/min
                 ┌──────────────────────────────────────────────────┐        ┌──────────────────────────────────────────────────┐
         0.000923┤             ▐                                    │0.000880┤             -                                    │
@@ -1520,7 +1520,7 @@ ezpz launch python3 -m ezpz.examples.test
                 └┬───────────┬────────────┬───────────┬───────────┬┘        └┬───────────┬────────────┬───────────┬───────────┬┘
                 1.0        49.2         97.5        145.8     194.0         1.0        49.2         97.5        145.8     194.0
         dtb/mean                        iter                        dtb/max                         iter
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtb.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtb.txt
                 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
         0.000923┤ ++ dtb/max                  ▗▌                                                                               │
                 │ -- dtb/min                  ▐▌                                                                               │
@@ -1544,7 +1544,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.000714┤-                                                                                                             │
                 └┬──────────────────────────┬───────────────────────────┬──────────────────────────┬──────────────────────────┬┘
                 1.0                       49.2                        97.5                       145.8                    194.0
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtb_summary.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtb_summary.txt
                                   dtb/mean hist                                               dtb/max hist
              ┌─────────────────────────────────────────────────────┐     ┌─────────────────────────────────────────────────────┐
         130.0┤█████                                                │104.0┤█████                                                │
@@ -1568,7 +1568,7 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤█████████████████████                           █████│ 0┤█████ ████████████████████████████████████████████ █████│
              └┬────────────┬────────────┬────────────┬────────────┬┘  └┬─────────────┬─────────────┬────────────┬─────────────┬┘
            0.000707    0.000752     0.000797     0.000842  0.000887  0.000003    0.000011      0.000019     0.000027   0.000035
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtb_hist.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtb_hist.txt
                                         dtf                                                       dtf/min
               ┌────────────────────────────────────────────────────┐      ┌────────────────────────────────────────────────────┐
         0.0188┤              ▟          ▗    ▖              ▗▌     │0.0183┤----------------------------------------------------│
@@ -1592,7 +1592,7 @@ ezpz launch python3 -m ezpz.examples.test
               └┬────────────┬────────────┬───────────┬────────────┬┘      └┬────────────┬────────────┬───────────┬────────────┬┘
               1.0         49.2         97.5        145.8      194.0       1.0         49.2         97.5        145.8      194.0
         dtf/mean                       iter                         dtf/max                        iter
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtf.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtf.txt
               ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
         0.0190┤ ++ dtf/max                    +                                                                   ▗            │
               │ -- dtf/min                   +▖                 +               ·                                +█            │
@@ -1616,7 +1616,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.0104┤                              ▜                                 ▜                                 ·▘            │
               └┬───────────────────────────┬───────────────────────────┬──────────────────────────┬───────────────────────────┬┘
               1.0                        49.2                        97.5                       145.8                     194.0
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtf_summary.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtf_summary.txt
                                   dtf/mean hist                                              dtf/max hist
              ┌─────────────────────────────────────────────────────┐  ┌────────────────────────────────────────────────────────┐
         100.0┤                                          ██████     │96┤                                       ███████████      │
@@ -1640,7 +1640,7 @@ ezpz launch python3 -m ezpz.examples.test
           0┤█████                                  ██████████ █████│ 0.0┤███████████████████████████     ██████     ███████████│
            └┬─────────────┬────────────┬─────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘
           0.0101       0.0122       0.0144        0.0165     0.0187   0.00007      0.00017       0.00027      0.00037   0.00047
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/dtf_hist.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/dtf_hist.txt
                                       loss                                                      loss/min
             ┌──────────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────────┐
         1.76┤▚                                                     │1.76┤--                                                    │
@@ -1664,7 +1664,7 @@ ezpz launch python3 -m ezpz.examples.test
             └┬────────────┬─────────────┬────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘
             1.0         49.2          97.5         145.8      194.0     1.0         49.2          97.5         145.8      194.0
         loss/mean                     iter                          loss/max                      iter
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/loss.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/loss.txt
             ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
         1.92┤ ++ loss/max                                                                                                      │
             │ -- loss/min                                                                                                      │
@@ -1688,7 +1688,7 @@ ezpz launch python3 -m ezpz.examples.test
         0.05┤                                                 -                 ▝--    -      --▘- -▀▝▘----▘- --▝▝-▜---▘▘▀-▝▘▀-│
             └┬───────────────────────────┬────────────────────────────┬───────────────────────────┬───────────────────────────┬┘
             1.0                        49.2                         97.5                        145.8                     194.0
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/loss_summary.txt
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/loss_summary.txt
                                 loss/mean hist                                                loss/max hist
            ┌───────────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────────┐
         126┤█████                                                  │85.0┤█████                                                 │
@@ -1712,8 +1712,8 @@ ezpz launch python3 -m ezpz.examples.test
           0.0┤██████████████████████████ ██████████████████████████│ 0.0┤██████████████████████████████████████████████████████│
              └┬────────────┬────────────┬────────────┬────────────┬┘    └┬────────────┬─────────────┬────────────┬────────────┬┘
             -0.03        0.44         0.91         1.37        1.84    0.015        0.045         0.074        0.103      0.132
-        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/plots/tplot/loss_hist.txt
-        [2025-12-26 13:22:10,673046][I][ezpz/history:2433:finalize] Saving history report to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.test_dist/2025-12-26-132141/report.md
+        text saved in /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/plots/tplot/loss_hist.txt
+        [2025-12-26 13:22:10,673046][I][ezpz/history:2433:finalize] Saving history report to /lus/eagle/projects/AuroraGPT/foremans/projects/saforem2/tmp/2025-12-26-130131/outputs/ezpz.examples.test/2025-12-26-132141/report.md
         [2025-12-26 13:22:10,684947][I][ezpz/examples.test:348:finalize] dataset=<xarray.Dataset> Size: 39kB
         Dimensions:        (draw: 194)
         Coordinates:
