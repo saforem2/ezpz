@@ -160,6 +160,21 @@ class TestParseArgs:
         assert args.hostfile is None
         assert args.dry_run is False
 
+    def test_via_click_no_args_does_not_grab_argv(self):
+        """`ezpz yeet` (no args) used to leak `sys.argv[1:]` into argparse.
+
+        Regression: when cli/__init__.py called
+        ``yeet_env.run(list(args) if args else None)`` with empty
+        ``args``, ``run()`` saw ``argv=None`` and argparse fell back to
+        ``sys.argv[1:]`` — which contained ``["yeet"]`` from the
+        invoking process, picked up as a positional SRC = "yeet".
+        """
+        # Simulate the harness invocation when no positional/flag args are present.
+        args = yeet.parse_args([])
+        # src must be None — NOT "yeet" or any sys.argv leakage.
+        assert args.src is None
+        assert args.src_positional is None
+
     def test_all_flags(self):
         """Parses all flags explicitly."""
         args = yeet.parse_args([

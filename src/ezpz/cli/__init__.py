@@ -84,7 +84,10 @@ def yeet_cmd(args: tuple[str, ...]) -> None:
     """
     from ezpz.utils import yeet_env as yeet_env_module
 
-    rc = yeet_env_module.run(list(args) if args else None)
+    # Always pass a list (even empty) so argparse doesn't fall back to
+    # sys.argv[1:] — which on `ezpz yeet` (no args) would contain
+    # ["yeet"], picked up as a positional SRC == "yeet".
+    rc = yeet_env_module.run(list(args))
     _handle_exit_code(rc)
 
 
@@ -101,7 +104,7 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
     )
     from ezpz.utils import yeet_env as yeet_env_module
 
-    rc = yeet_env_module.run(list(args) if args else None)
+    rc = yeet_env_module.run(list(args))
     _handle_exit_code(rc)
 
 
