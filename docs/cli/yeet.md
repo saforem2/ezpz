@@ -37,18 +37,56 @@ ezpz yeet --src /path/to/dataset     # any directory or tarball
     interpreter. At 4k+ ranks all importing the stdlib at startup,
     this re-creates the import storm yeet was supposed to eliminate.
 
-    **Workaround: build the venv against a system Python that's
-    installed on every worker node.**
+    **Workaround: build the venv against a Python that exists at
+    the same path on every worker node.** Three options, in order
+    of preference on HPC systems:
 
-    ```bash
-    uv venv --python /usr/bin/python3.14
-    # or whichever python3.X is installed on the cluster's worker image
-    ```
+    === "HPC module (Aurora, Polaris, etc.)"
 
-    The venv still doesn't bundle the interpreter, but the path
-    `bin/python3` resolves to (`/usr/bin/python3.14`) exists on
-    every node, so post-yeet imports stay node-local via each
-    node's own system Python.
+        Most HPC systems ship a Python via Lmod modules. The module
+        binary lives under `/opt/...` or `/sw/...` and is part of
+        the system image — guaranteed to be at the same path on
+        every node.
+
+        ```bash
+        module load python/3.12.12              # check `module avail python`
+        uv venv --python $(which python3.12) --relocatable
+        ```
+
+        Add the same `module load` to your job script so each
+        worker has the module loaded before training starts.
+
+    === "System Python"
+
+        ```bash
+        uv venv --python /usr/bin/python3.X
+        ```
+
+        Use whichever `python3.X` is in `/usr/bin/` on the cluster's
+        worker image.
+
+    === "No system Python at the version you need"
+
+        Build a self-contained venv that includes the interpreter:
+
+        ```bash
+        # Download a python-build-standalone tarball (same kind uv uses):
+        curl -L https://github.com/astral-sh/python-build-standalone/releases/download/<DATE>/cpython-3.14.0+...-x86_64-unknown-linux-gnu-install_only.tar.gz \
+          | tar -xz                              # creates ./python/
+
+        # Use stdlib venv (NOT uv venv — uv has no --copies flag) with --copies:
+        ./python/bin/python3.14 -m venv .venv --copies
+        # .venv/bin/ now contains a real python3.14 binary + stdlib copy
+        # — yeet will ship the whole thing as one self-contained directory.
+        ```
+
+        Trade-off: ~150 MB larger venv, and you give up `uv pip
+        install`'s fast cache (use `pip` directly inside the venv,
+        or install uv into the venv first and use it from there).
+
+    All three avoid the symlink-into-uv-cache problem because
+    `bin/python3` either points at a path that exists on every
+    node, or is a real binary copy that yeet ships.
 
     **Symptom you'll see if you skip this**: a wandb/asyncio thread
     traceback (or any other library that spawns threads) showing
