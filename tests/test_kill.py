@@ -182,6 +182,7 @@ class TestKillLocal:
 
 
 class TestSshKill:
+    @patch("sys.argv", ["/path/to/.venv/bin/ezpz"])
     @patch("subprocess.run")
     def test_default_pattern_omitted(self, mock_run):
         """Without a pattern, the remote `ezpz kill` runs with no positional."""
@@ -197,6 +198,7 @@ class TestSshKill:
         assert "--signal TERM" in remote_cmd
         assert "--dry-run" not in remote_cmd
 
+    @patch("sys.argv", ["/path/to/.venv/bin/ezpz"])
     @patch("subprocess.run")
     def test_pattern_appended_after_flags(self, mock_run):
         """Positional pattern is appended after --signal/--dry-run."""
@@ -209,6 +211,23 @@ class TestSshKill:
         assert "train.py" in remote_cmd
         # --all-nodes must NOT appear (avoid recursive fan-out)
         assert "--all-nodes" not in remote_cmd
+
+    @patch("sys.argv", ["/lus/.../venv/bin/ezpz"])
+    @patch("subprocess.run")
+    def test_remote_uses_absolute_path_to_local_ezpz(self, mock_run):
+        """Remote command uses sys.argv[0] (absolute path), not bare 'ezpz'.
+
+        SSH command-mode invocations don't source the user's shell rc,
+        so the venv's bin/ isn't on the remote PATH. The bare-name
+        form fails with 'command not found: ezpz' even when the venv
+        is mounted at the same path on the remote node.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert "/lus/.../venv/bin/ezpz" in remote_cmd
+        # And does NOT lead with the bare name.
+        assert not remote_cmd.startswith("ezpz ")
 
     @patch("subprocess.run", side_effect=__import__("subprocess").TimeoutExpired(cmd=[], timeout=60))
     def test_timeout_returns_124(self, _):

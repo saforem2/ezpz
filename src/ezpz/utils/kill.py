@@ -235,7 +235,15 @@ def kill_local(
 
 def _ssh_kill(node: str, pattern: Optional[str], sig_name: str, dry_run: bool) -> tuple[str, int, str]:
     """SSH into *node* and run `ezpz kill`. Returns (node, returncode, stderr)."""
-    remote_cmd = ["ezpz", "kill", "--signal", sig_name]
+    # Use the absolute path to the locally-running ezpz binary instead
+    # of the bare name `ezpz`. SSH command execution doesn't run an
+    # interactive shell, so the user's .zshrc/.bashrc PATH additions
+    # (e.g. the venv's bin/) aren't loaded — bare `ezpz` would resolve
+    # only if it's on the system PATH, which it usually isn't.  The
+    # absolute path works because every worker mounts the same venv
+    # filesystem (Lustre/NFS) at the same path.
+    ezpz_bin = sys.argv[0] if sys.argv and sys.argv[0] else "ezpz"
+    remote_cmd = [ezpz_bin, "kill", "--signal", sig_name]
     if dry_run:
         remote_cmd.append("--dry-run")
     if pattern is not None:
