@@ -247,6 +247,25 @@ class TestSshKill:
         assert "/some/venv/bin/ezpz" in remote_cmd
         assert not remote_cmd.startswith("ezpz ")
 
+    @patch.dict("os.environ", {"EZPZ_REMOTE_BIN": "/custom/path/to/ezpz"})
+    @patch("sys.argv", ["/some/other/path/ezpz"])
+    @patch("subprocess.run")
+    def test_remote_bin_env_var_overrides_resolution(self, mock_run):
+        """EZPZ_REMOTE_BIN env var short-circuits the resolution chain.
+
+        Use case: heterogeneous nodes where the head node and workers
+        have different ezpz install paths (e.g. node-local venvs at
+        different absolute paths). The env var lets the user point at
+        whatever ezpz binary actually exists on the workers without
+        depending on path-mirror assumptions.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert "/custom/path/to/ezpz" in remote_cmd
+        # The (otherwise valid) sys.argv[0] is NOT used.
+        assert "/some/other/path/ezpz" not in remote_cmd
+
     @patch("sys.argv", [])
     @patch("shutil.which", return_value=None)
     @patch("subprocess.run")

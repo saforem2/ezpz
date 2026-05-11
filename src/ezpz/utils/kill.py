@@ -244,13 +244,16 @@ def _resolve_ezpz_bin() -> str:
 
     Resolution order:
 
-    1. ``sys.argv[0]`` if it's an existing absolute path (the common
+    1. ``$EZPZ_REMOTE_BIN`` — explicit override, used as-is. Set this
+       when workers have a different ezpz install (or path) than the
+       head node — e.g. heterogeneous node-local venvs.
+    2. ``sys.argv[0]`` if it's an existing absolute path (the common
        case — POSIX execve typically passes the resolved path here
        even for PATH-discovered invocations).
-    2. ``shutil.which(sys.argv[0])`` if argv[0] is a bare name we can
+    3. ``shutil.which(sys.argv[0])`` if argv[0] is a bare name we can
        look up locally.
-    3. ``shutil.which("ezpz")`` as a generic fallback.
-    4. Bare ``"ezpz"`` if everything above fails — preserves the old
+    4. ``shutil.which("ezpz")`` as a generic fallback.
+    5. Bare ``"ezpz"`` if everything above fails — preserves the old
        behavior on the off chance ezpz IS on the worker's PATH (e.g.
        a system-wide install).
 
@@ -259,6 +262,9 @@ def _resolve_ezpz_bin() -> str:
     """
     import shutil
 
+    override = os.environ.get("EZPZ_REMOTE_BIN")
+    if override:
+        return override
     argv0 = sys.argv[0] if sys.argv else ""
     if argv0 and Path(argv0).is_absolute() and Path(argv0).exists():
         return argv0

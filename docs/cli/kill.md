@@ -90,13 +90,14 @@ thread per node.
 !!! info "Why the absolute path matters"
 
     `ezpz kill --all-nodes` ships the **absolute path** to the local
-    `ezpz` binary in the SSH command (resolved via `sys.argv[0]`,
-    `shutil.which(argv[0])`, or `shutil.which("ezpz")`, in that
-    order). SSH command-mode invocations (`ssh node "<cmd>"`) don't
-    source the user's `.bashrc` / `.zshrc`, so PATH additions from
-    a venv's activate script aren't loaded on the remote side. A
-    bare `ezpz` would fail with `command not found` even when the
-    venv is mounted at the same path on the worker.
+    `ezpz` binary in the SSH command (resolved via the `EZPZ_REMOTE_BIN`
+    env var, then `sys.argv[0]`, then `shutil.which(argv[0])`, then
+    `shutil.which("ezpz")`, in that order). SSH command-mode
+    invocations (`ssh node "<cmd>"`) don't source the user's
+    `.bashrc` / `.zshrc`, so PATH additions from a venv's activate
+    script aren't loaded on the remote side. A bare `ezpz` would
+    fail with `command not found` even when the venv is mounted at
+    the same path on the worker.
 
     **Implicit assumption**: the same `ezpz` binary at the same
     absolute path exists on every worker node. This is true by
@@ -104,9 +105,19 @@ thread per node.
     every node mounts your venv at the same mount point. It's
     *also* true after `ezpz yeet` when you've broadcast the venv to
     `/tmp/.venv/` on every node (`/tmp/.venv/bin/ezpz` exists
-    everywhere). If neither is true (e.g. nodes have entirely
-    different venvs), `--all-nodes` falls back to bare `ezpz` on
-    workers and depends on a system-wide install being on PATH.
+    everywhere).
+
+    **If neither is true** (e.g. nodes have entirely different
+    venvs at different paths), set `EZPZ_REMOTE_BIN` to the path
+    that resolves on the worker:
+
+    ```bash
+    EZPZ_REMOTE_BIN=/tmp/.venv/bin/ezpz ezpz kill --all-nodes
+    ```
+
+    With no override and no resolvable path, `--all-nodes` falls
+    back to bare `ezpz` on workers and depends on a system-wide
+    install being on `PATH`.
 
 Output from each node is prefixed with `[hostname]`:
 
