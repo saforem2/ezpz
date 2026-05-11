@@ -81,10 +81,32 @@ ezpz kill --signal KILL
 5. SLURM `scontrol show hostnames`
 6. Localhost fallback (single-node mode)
 
-For each remote node, `ezpz kill` SSHes in and runs `ezpz kill
-<STRING>` (without `--all-nodes`, to avoid recursion). SSH connections
-are bounded at 16 concurrent — DNS / SSH on a 1000-node allocation
-shouldn't fork a thread per node.
+For each remote node, `ezpz kill` SSHes in and runs the same `ezpz`
+binary it was launched as — but with the bare `--all-nodes` flag
+stripped (to avoid recursion). SSH connections are bounded at 16
+concurrent — DNS / SSH on a 1000-node allocation shouldn't fork a
+thread per node.
+
+!!! info "Why the absolute path matters"
+
+    `ezpz kill --all-nodes` ships the **absolute path** to the local
+    `ezpz` binary in the SSH command (resolved via `sys.argv[0]`,
+    `shutil.which(argv[0])`, or `shutil.which("ezpz")`, in that
+    order). SSH command-mode invocations (`ssh node "<cmd>"`) don't
+    source the user's `.bashrc` / `.zshrc`, so PATH additions from
+    a venv's activate script aren't loaded on the remote side. A
+    bare `ezpz` would fail with `command not found` even when the
+    venv is mounted at the same path on the worker.
+
+    **Implicit assumption**: the same `ezpz` binary at the same
+    absolute path exists on every worker node. This is true by
+    default on shared-filesystem HPC setups (Lustre, NFS) where
+    every node mounts your venv at the same mount point. It's
+    *also* true after `ezpz yeet` when you've broadcast the venv to
+    `/tmp/.venv/` on every node (`/tmp/.venv/bin/ezpz` exists
+    everywhere). If neither is true (e.g. nodes have entirely
+    different venvs), `--all-nodes` falls back to bare `ezpz` on
+    workers and depends on a system-wide install being on PATH.
 
 Output from each node is prefixed with `[hostname]`:
 
