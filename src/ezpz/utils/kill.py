@@ -233,16 +233,48 @@ def kill_local(
     return killed, len(matches)
 
 
+def _resolve_ezpz_bin() -> str:
+    """Best-effort resolve of an absolute path to the ezpz binary.
+
+    SSH command-mode (``ssh node "<cmd>"``) doesn't source the user's
+    shell rc, so PATH additions from a venv's activate script aren't
+    loaded on the remote side.  A bare ``ezpz`` in the remote command
+    fails with ``command not found: ezpz`` even when the venv is
+    mounted at the same path on the worker.
+
+    Resolution order:
+
+    1. ``sys.argv[0]`` if it's an existing absolute path (the common
+       case — POSIX execve typically passes the resolved path here
+       even for PATH-discovered invocations).
+    2. ``shutil.which(sys.argv[0])`` if argv[0] is a bare name we can
+       look up locally.
+    3. ``shutil.which("ezpz")`` as a generic fallback.
+    4. Bare ``"ezpz"`` if everything above fails — preserves the old
+       behavior on the off chance ezpz IS on the worker's PATH (e.g.
+       a system-wide install).
+
+    Returns a string suitable for shlex.join'ing into the remote
+    command.
+    """
+    import shutil
+
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and Path(argv0).is_absolute() and Path(argv0).exists():
+        return argv0
+    if argv0:
+        resolved = shutil.which(argv0)
+        if resolved:
+            return resolved
+    resolved = shutil.which("ezpz")
+    if resolved:
+        return resolved
+    return "ezpz"
+
+
 def _ssh_kill(node: str, pattern: Optional[str], sig_name: str, dry_run: bool) -> tuple[str, int, str]:
     """SSH into *node* and run `ezpz kill`. Returns (node, returncode, stderr)."""
-    # Use the absolute path to the locally-running ezpz binary instead
-    # of the bare name `ezpz`. SSH command execution doesn't run an
-    # interactive shell, so the user's .zshrc/.bashrc PATH additions
-    # (e.g. the venv's bin/) aren't loaded — bare `ezpz` would resolve
-    # only if it's on the system PATH, which it usually isn't.  The
-    # absolute path works because every worker mounts the same venv
-    # filesystem (Lustre/NFS) at the same path.
-    ezpz_bin = sys.argv[0] if sys.argv and sys.argv[0] else "ezpz"
+    ezpz_bin = _resolve_ezpz_bin()
     remote_cmd = [ezpz_bin, "kill", "--signal", sig_name]
     if dry_run:
         remote_cmd.append("--dry-run")

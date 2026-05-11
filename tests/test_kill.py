@@ -213,9 +213,10 @@ class TestSshKill:
         assert "--all-nodes" not in remote_cmd
 
     @patch("sys.argv", ["/lus/.../venv/bin/ezpz"])
+    @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
-    def test_remote_uses_absolute_path_to_local_ezpz(self, mock_run):
-        """Remote command uses sys.argv[0] (absolute path), not bare 'ezpz'.
+    def test_remote_uses_absolute_path_to_local_ezpz(self, mock_run, _exists):
+        """Remote command uses sys.argv[0] when it's an existing absolute path.
 
         SSH command-mode invocations don't source the user's shell rc,
         so the venv's bin/ isn't on the remote PATH. The bare-name
@@ -226,8 +227,40 @@ class TestSshKill:
         kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
         remote_cmd = mock_run.call_args[0][0][-1]
         assert "/lus/.../venv/bin/ezpz" in remote_cmd
-        # And does NOT lead with the bare name.
         assert not remote_cmd.startswith("ezpz ")
+
+    @patch("sys.argv", ["ezpz"])
+    @patch("shutil.which", return_value="/some/venv/bin/ezpz")
+    @patch("subprocess.run")
+    def test_remote_resolves_bare_argv0_via_which(self, mock_run, mock_which):
+        """When argv[0] is the bare name, fall through to shutil.which.
+
+        This is the actually-real-world failing case: when a user runs
+        `ezpz kill --all-nodes`, argv[0] CAN be just "ezpz" depending
+        on the shell + how the executable was installed. The previous
+        fix only worked for absolute argv[0]; this asserts the
+        resolution path actually finds the venv binary.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert "/some/venv/bin/ezpz" in remote_cmd
+        assert not remote_cmd.startswith("ezpz ")
+
+    @patch("sys.argv", [])
+    @patch("shutil.which", return_value=None)
+    @patch("subprocess.run")
+    def test_remote_falls_back_to_bare_ezpz_when_unresolvable(self, mock_run, _which):
+        """When sys.argv is empty AND shutil.which fails, fall back to bare 'ezpz'.
+
+        Defensive — should never happen in practice. Preserves the old
+        behavior so a system-wide ezpz install on the worker still
+        works.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
+        remote_cmd = mock_run.call_args[0][0][-1]
+        assert remote_cmd.startswith("ezpz ")
 
     @patch("subprocess.run", side_effect=__import__("subprocess").TimeoutExpired(cmd=[], timeout=60))
     def test_timeout_returns_124(self, _):
