@@ -958,6 +958,10 @@ ezpz_load_modules_aurora() {
 # @stdout Prints loaded module names
 ###############################################
 ezpz_load_modules_sunspot() {
+	# NOTE: Currently identical to ezpz_load_modules_aurora's XPU stack
+	# (minus FI_MR_CACHE_MONITOR, which is Aurora-specific). Kept as a
+	# separate function for grep-ability and so the two stacks can
+	# diverge independently if Sunspot's oneAPI version ever differs.
 	module load oneapi/release/2025.3.1 hdf5 pti-gpu
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
