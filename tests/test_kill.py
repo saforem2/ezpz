@@ -247,6 +247,30 @@ class TestSshKill:
         assert "/some/venv/bin/ezpz" in remote_cmd
         assert not remote_cmd.startswith("ezpz ")
 
+    @patch("sys.argv", ["python"])
+    @patch("subprocess.run")
+    def test_remote_prefers_which_argv0_over_which_ezpz(self, mock_run):
+        """Branch 3 (`shutil.which(argv[0])`) wins over branch 4 (`shutil.which("ezpz")`).
+
+        Regression guard: if someone collapses the two `which` branches
+        or swaps their order, the existing bare-name test still passes
+        because both `which` calls resolve to the same path under that
+        mock. This test sets up distinct returns and asserts the
+        argv[0]-derived path wins.
+        """
+        # which("python") → path A; which("ezpz") → path B; argv[0]=="python".
+        def fake_which(name):
+            return {"python": "/path/A/python", "ezpz": "/path/B/ezpz"}.get(name)
+
+        with patch("shutil.which", side_effect=fake_which):
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            kill_mod._ssh_kill("node01", None, "TERM", dry_run=False)
+        remote_cmd = mock_run.call_args[0][0][-1]
+        # Branch 3 hit: which(argv[0]="python") → /path/A/python is used.
+        assert "/path/A/python" in remote_cmd
+        # Branch 4 was NOT consulted.
+        assert "/path/B/ezpz" not in remote_cmd
+
     @patch.dict("os.environ", {"EZPZ_REMOTE_BIN": "/custom/path/to/ezpz"})
     @patch("sys.argv", ["/some/other/path/ezpz"])
     @patch("subprocess.run")

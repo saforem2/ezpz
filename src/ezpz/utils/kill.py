@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -260,8 +261,6 @@ def _resolve_ezpz_bin() -> str:
     Returns a string suitable for shlex.join'ing into the remote
     command.
     """
-    import shutil
-
     override = os.environ.get("EZPZ_REMOTE_BIN")
     if override:
         return override
