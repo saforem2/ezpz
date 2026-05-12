@@ -1004,15 +1004,28 @@ ezpz_load_modules_polaris() {
 	export CUDA_PATH="${CUDA_HOME}"
 	export CUDA_TOOLKIT_BASE="${CUDA_HOME}"
 	export PATH="${CUDA_HOME}/bin:${PATH}"
-	export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64:${LD_LIBRARY_PATH:-}"
+	# Build LD_LIBRARY_PATH conditionally — `${VAR:+:${VAR}}` only emits
+	# `:VAR` when VAR is non-empty, so we never produce a trailing colon
+	# (which the dynamic loader interprets as "search cwd" — real footgun
+	# on a clean shell).
+	LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+	export LD_LIBRARY_PATH
 	export TORCH_CUDA_ARCH_LIST="8.0"
 	export FLASHINFER_CUDA_ARCH_LIST="8.0"
 
 	# NCCL and TensorRT — keep the same versions the conda module pins.
 	local _nccl="/soft/libraries/nccl/nccl_2.28.3-1+cuda12.9_x86_64"
 	local _trt="/soft/libraries/trt/TensorRT-10.13.3.9.Linux.x86_64-gnu.cuda-12.9"
+	# NOTE: putting an include/ dir on PATH is unusual (it's for headers,
+	# not executables). Kept here for bug-compatible parity with the
+	# canonical Polaris conda module, which does the same in
+	# /soft/modulefiles/conda/2025-09-25.lua. Don't "fix" without also
+	# updating the conda module — divergence here would be more
+	# confusing than the original quirk.
 	export PATH="${_nccl}/include:${PATH}"
-	export LD_LIBRARY_PATH="${_nccl}/lib:${_trt}/lib:${LD_LIBRARY_PATH}"
+	# Same trailing-colon guard pattern as above.
+	LD_LIBRARY_PATH="${_nccl}/lib:${_trt}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+	export LD_LIBRARY_PATH
 
 	# ALCF HTTP proxy (compute nodes can't reach the internet otherwise).
 	export http_proxy="http://proxy.alcf.anl.gov:3128"
