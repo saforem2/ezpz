@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -233,9 +234,53 @@ def kill_local(
     return killed, len(matches)
 
 
+def _resolve_ezpz_bin() -> str:
+    """Best-effort resolve of an absolute path to the ezpz binary.
+
+    SSH command-mode (``ssh node "<cmd>"``) doesn't source the user's
+    shell rc, so PATH additions from a venv's activate script aren't
+    loaded on the remote side.  A bare ``ezpz`` in the remote command
+    fails with ``command not found: ezpz`` even when the venv is
+    mounted at the same path on the worker.
+
+    Resolution order:
+
+    1. ``$EZPZ_REMOTE_BIN`` — explicit override, used as-is. Set this
+       when workers have a different ezpz install (or path) than the
+       head node — e.g. heterogeneous node-local venvs.
+    2. ``sys.argv[0]`` if it's an existing absolute path (the common
+       case — POSIX execve typically passes the resolved path here
+       even for PATH-discovered invocations).
+    3. ``shutil.which(sys.argv[0])`` if argv[0] is a bare name we can
+       look up locally.
+    4. ``shutil.which("ezpz")`` as a generic fallback.
+    5. Bare ``"ezpz"`` if everything above fails — preserves the old
+       behavior on the off chance ezpz IS on the worker's PATH (e.g.
+       a system-wide install).
+
+    Returns a string suitable for shlex.join'ing into the remote
+    command.
+    """
+    override = os.environ.get("EZPZ_REMOTE_BIN")
+    if override:
+        return override
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and Path(argv0).is_absolute() and Path(argv0).exists():
+        return argv0
+    if argv0:
+        resolved = shutil.which(argv0)
+        if resolved:
+            return resolved
+    resolved = shutil.which("ezpz")
+    if resolved:
+        return resolved
+    return "ezpz"
+
+
 def _ssh_kill(node: str, pattern: Optional[str], sig_name: str, dry_run: bool) -> tuple[str, int, str]:
     """SSH into *node* and run `ezpz kill`. Returns (node, returncode, stderr)."""
-    remote_cmd = ["ezpz", "kill", "--signal", sig_name]
+    ezpz_bin = _resolve_ezpz_bin()
+    remote_cmd = [ezpz_bin, "kill", "--signal", sig_name]
     if dry_run:
         remote_cmd.append("--dry-run")
     if pattern is not None:
