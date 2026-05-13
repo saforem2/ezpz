@@ -291,6 +291,38 @@ export TORCH_CPP_LOG_LEVEL=ERROR
 | `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
 | `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
 
+## ALCF System Module Loaders (`ezpz_load_modules_*`)
+
+When you want to bring up your **own** Python / venv on top of an
+ALCF system stack — instead of using the prebuilt `frameworks`
+(Aurora/Sunspot) or `conda` (Polaris) module — use the matching
+`ezpz_load_modules_*` helper. Each loads everything the canonical
+environment module would have pulled in **except** the framework /
+conda module itself:
+
+```bash
+ezpz_load_modules_aurora      # or _sunspot / _polaris
+uv venv --python=$(which python3)
+source .venv/bin/activate
+uv pip install ...
+```
+
+| Function | Loads | Excludes |
+|---|---|---|
+| `ezpz_load_modules_aurora` | `oneapi`, `hdf5`, `pti-gpu` + XPU runtime env + `FI_MR_CACHE_MONITOR=userfaultfd` | `frameworks` |
+| `ezpz_load_modules_sunspot` | `oneapi`, `hdf5`, `pti-gpu` + XPU runtime env | `frameworks` |
+| `ezpz_load_modules_polaris` | `PrgEnv-gnu`, `craype-x86-milan`, `cray-hdf5-parallel`, `cudnn`, `gcc-native` + CUDA paths, NCCL/TensorRT, ALCF proxy, MPI/JAX hints | `conda` |
+
+The Polaris helper reverse-engineers the env vars the canonical
+conda module sets (`/soft/modulefiles/conda/<DATE>.lua`) — CUDA
+paths, NCCL/TensorRT lib paths, ALCF HTTP proxy, MPI/JAX hints —
+so the resulting environment matches what the conda module would
+have produced, just without the prebuilt PyTorch/Python.
+
+Pairs naturally with [`ezpz tar-env`](../cli/tar-env.md) +
+[`ezpz yeet`](../cli/yeet.md) for distributing the venv to all
+worker nodes.
+
 [^1]:
     System-dependent. See
     [`ezpz_setup_conda`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/utils.sh)

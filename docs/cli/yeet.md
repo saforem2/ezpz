@@ -131,7 +131,16 @@ the venv-creation step that's easy to miss:
 # 1. Get an interactive allocation
 qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
 
-# 2. Set up a venv. Use a Python that exists at the same path on
+# 2. Load the system module stack (CUDA / oneAPI / MPI / etc.) WITHOUT
+#    the prebuilt frameworks/conda module. See the matching helper for
+#    your system in src/ezpz/bin/utils.sh:
+#      ezpz_load_modules_aurora      # Aurora
+#      ezpz_load_modules_sunspot     # Sunspot
+#      ezpz_load_modules_polaris     # Polaris
+source <(curl -fsSL https://bit.ly/ezpz-utils)
+ezpz_load_modules_polaris            # or _aurora / _sunspot
+
+# 3. Set up a venv against a Python that exists at the same path on
 #    every worker node — see the warning callout above for why.
 module load python                           # e.g. python/3.12.12 on Aurora
 uv venv --relocatable --system-site-packages \
@@ -141,22 +150,22 @@ source .venv/bin/activate
 uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
 # ...plus your project's other deps (torch, etc.)
 
-# 3. Build a tarball (one-time, ~3-5 min for ~8 GB) — recommended at scale
+# 4. Build a tarball (one-time, ~3-5 min for ~8 GB) — recommended at scale
 ezpz tar-env
 
-# 4. Distribute it to every node's /tmp/
+# 5. Distribute it to every node's /tmp/
 ezpz yeet .venv.tar.gz
 
-# 5. Activate the local copy
+# 6. Activate the local copy
 deactivate
 source /tmp/.venv/bin/activate
 
-# 6. Launch from a shared filesystem path
+# 7. Launch from a shared filesystem path
 cd /path/to/your/project
 ezpz launch python3 -m your_app.train
 ```
 
-For small allocations (< ~16 nodes) you can skip step 3 and just run
+For small allocations (< ~16 nodes) you can skip step 4 and just run
 `ezpz yeet` (no args) directly — it'll detect the active venv and
 rsync each file. At larger scale, the `tar-env` + `yeet .tar.gz` pair
 is significantly faster (see [scaling
