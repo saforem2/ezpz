@@ -137,7 +137,7 @@ qsub -A <project> -q debug -l select=2 -l walltime=01:00:00 -I
 #      ezpz_load_modules_aurora      # Aurora
 #      ezpz_load_modules_sunspot     # Sunspot
 #      ezpz_load_modules_polaris     # Polaris
-source <(curl -fsSL https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh)
+source <(curl -fsSL https://bit.ly/ezpz-utils)
 ezpz_load_modules_polaris            # or _aurora / _sunspot
 
 # 3. Set up a venv against a Python that exists at the same path on

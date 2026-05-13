@@ -994,6 +994,14 @@ ezpz_load_modules_sunspot() {
 # @stdout Prints loaded module names
 ###############################################
 ezpz_load_modules_polaris() {
+	# Defensive: bail early on the wrong system. /soft/modulefiles is a
+	# Polaris-only path; without this guard, `module use` silently no-ops
+	# on (e.g.) Aurora and the subsequent module load fails with a
+	# less-informative error.
+	if [[ ! -d /soft/modulefiles ]]; then
+		log_message ERROR "/soft/modulefiles not found — are you on Polaris?"
+		return 1
+	fi
 	module use /soft/modulefiles
 	# Same module deps as the Polaris conda module, in the same order.
 	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel/1.14.3.5 \
@@ -1032,8 +1040,12 @@ ezpz_load_modules_polaris() {
 	export LD_LIBRARY_PATH
 
 	# ALCF HTTP proxy (compute nodes can't reach the internet otherwise).
-	export http_proxy="http://proxy.alcf.anl.gov:3128"
-	export https_proxy="${http_proxy}"
+	# Same `${VAR:-default}` pattern as FI_MR_CACHE_MONITOR — defer to
+	# whatever the login env already set, only fall back to the hard-
+	# coded value when unset. Avoids silent regressions if ALCF ever
+	# changes the proxy.
+	export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+	export https_proxy="${https_proxy:-${http_proxy}}"
 
 	# MPI + GPU enablement, JAX hints (kept for parity with conda module).
 	export MPICH_GPU_SUPPORT_ENABLED=1
