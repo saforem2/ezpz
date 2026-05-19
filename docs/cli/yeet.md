@@ -103,7 +103,7 @@ ezpz yeet --src /path/to/dataset     # any directory or tarball
 
     The Lustre side becomes a single sequential read instead of
     millions of `stat()`s, so the local-copy step stays flat as
-    `N` grows. See the [scaling section](#scaling-aurora-8--4096-nodes)
+    `N` grows. See the [scaling section](#scaling-aurora-8-4096-nodes)
     for measured numbers (8 → 4096 nodes on Aurora).
 
     `ezpz yeet` (no args) will print a hint when it sees a same-named
@@ -169,7 +169,7 @@ For small allocations (< ~16 nodes) you can skip step 4 and just run
 `ezpz yeet` (no args) directly — it'll detect the active venv and
 rsync each file. At larger scale, the `tar-env` + `yeet .tar.gz` pair
 is significantly faster (see [scaling
-section](#scaling-aurora-8--4096-nodes)).
+section](#scaling-aurora-8-4096-nodes)).
 
 ## CLI Options
 
