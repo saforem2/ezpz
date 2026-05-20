@@ -1618,11 +1618,10 @@ class History:
                     return True
             return False
 
-        info_msg = summarize_dict(info_metrics, precision=precision).replace(
-            "train/", ""
-        )
-        if info_msg:
-            log.info(info_msg)
+        # Merge distributed min/max/std stats INTO the base info dict so
+        # format_compact_summary can collapse them into `key=value(±std)`
+        # form instead of emitting a second verbose line.
+        merged_for_summary: dict[str, Any] = dict(info_metrics)
         if include_summary:
             summary_input = info_metrics
             if omit_counter_metrics:
@@ -1635,11 +1634,33 @@ class History:
                 summary_input
             )
             if summary_stats and (not rank0_only_summary or self._rank == 0):
-                summary_msg = summarize_dict(
-                    summary_stats, precision=precision
-                ).replace("train/", "")
-                if summary_msg:
-                    log.info(summary_msg)
+                merged_for_summary.update(summary_stats)
+
+        from ezpz.utils import (
+            format_compact_summary,
+            format_memory_summary,
+        )
+
+        # format_compact_summary handles the noise reduction:
+        #   - collapses base + */std into `key=value(±std)`
+        #   - drops */mean /min /max /avg companions
+        #   - strips memory keys (formatted separately below)
+        #   - leaves counter keys (iter/step/epoch/...) bare
+        base = format_compact_summary(
+            merged_for_summary, precision=precision
+        ).replace("train/", "")
+        memory_str = format_memory_summary(info_metrics, prefix="train/")
+        if not memory_str:
+            memory_str = format_memory_summary(info_metrics, prefix="")
+        parts = [
+            p
+            for p in (base, f"memory={memory_str}" if memory_str else "")
+            if p
+        ]
+        info_msg = " ".join(parts)
+        if info_msg:
+            log.info(info_msg)
+
         debug_msg = summarize_dict(debug_metrics, precision=precision).replace(
             "train/", ""
         )
