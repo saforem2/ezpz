@@ -197,7 +197,7 @@ __all__ = [
     "__version__",
     *sorted(_LAZY_MODULES.keys()),
     *_STATIC_REEXPORTS,
-]  # type:ignore
+]  # type: ignore
 
 _IMPORT_CACHE: Dict[str, ModuleType] = {}
 

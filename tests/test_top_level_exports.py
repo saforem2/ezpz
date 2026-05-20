@@ -32,39 +32,54 @@ import ezpz
 # submodule it actually lives in (so we can verify both ends).
 EXPECTED_STATIC_REEXPORTS = [
     # -- distributed --
-    ("setup_torch", "ezpz.distributed"),
-    ("get_rank", "ezpz.distributed"),
+    ("all_reduce", "ezpz.distributed"),
+    ("barrier", "ezpz.distributed"),
+    ("broadcast", "ezpz.distributed"),
+    ("cleanup", "ezpz.distributed"),
+    ("get_cpus_per_node", "ezpz.distributed"),
+    ("get_device_properties", "ezpz.distributed"),
+    ("get_dist_info", "ezpz.distributed"),
+    ("get_gpus_per_node", "ezpz.distributed"),
+    ("get_hostname", "ezpz.distributed"),
     ("get_local_rank", "ezpz.distributed"),
-    ("get_world_size", "ezpz.distributed"),
+    ("get_machine", "ezpz.distributed"),
+    ("get_node_index", "ezpz.distributed"),
+    ("get_num_nodes", "ezpz.distributed"),
+    ("get_rank", "ezpz.distributed"),
+    ("get_torch_backend", "ezpz.distributed"),
     ("get_torch_device", "ezpz.distributed"),
     ("get_torch_device_type", "ezpz.distributed"),
-    ("get_torch_backend", "ezpz.distributed"),
+    ("get_world_size", "ezpz.distributed"),
+    ("get_world_size_in_use", "ezpz.distributed"),
+    ("get_world_size_total", "ezpz.distributed"),
+    ("log_dict_as_bulleted_list", "ezpz.distributed"),
+    ("print_dist_setup", "ezpz.distributed"),
+    ("query_environment", "ezpz.distributed"),
+    ("seed_everything", "ezpz.distributed"),
+    ("setup_mlflow", "ezpz.distributed"),
+    ("setup_torch", "ezpz.distributed"),
+    ("setup_wandb", "ezpz.distributed"),
+    ("synchronize", "ezpz.distributed"),
+    ("timeitlogit", "ezpz.distributed"),
+    ("verify_wandb", "ezpz.distributed"),
     ("wrap_model", "ezpz.distributed"),
     ("wrap_model_for_ddp", "ezpz.distributed"),
     ("wrap_model_for_fsdp", "ezpz.distributed"),
     ("wrap_model_for_fsdp2", "ezpz.distributed"),
-    ("synchronize", "ezpz.distributed"),
-    ("barrier", "ezpz.distributed"),
-    ("broadcast", "ezpz.distributed"),
-    ("all_reduce", "ezpz.distributed"),
-    ("cleanup", "ezpz.distributed"),
-    ("timeitlogit", "ezpz.distributed"),
-    ("setup_wandb", "ezpz.distributed"),
-    ("setup_mlflow", "ezpz.distributed"),
-    ("get_hostname", "ezpz.distributed"),
-    ("get_device_properties", "ezpz.distributed"),
-    ("seed_everything", "ezpz.distributed"),
     # -- utils --
-    ("get_timestamp", "ezpz.utils"),
+    ("Color", "ezpz.utils"),
+    ("DistributedPdb", "ezpz.utils"),
+    ("ForkedPdb", "ezpz.utils"),
+    ("NoColor", "ezpz.utils"),
+    ("check_for_tarball", "ezpz.utils"),
     ("format_pair", "ezpz.utils"),
-    ("summarize_dict", "ezpz.utils"),
-    ("model_summary", "ezpz.utils"),
     ("get_max_memory_allocated", "ezpz.utils"),
     ("get_max_memory_reserved", "ezpz.utils"),
-    ("check_for_tarball", "ezpz.utils"),
+    ("get_timestamp", "ezpz.utils"),
+    ("grab_tensor", "ezpz.utils"),
     ("make_tarfile", "ezpz.utils"),
-    ("Color", "ezpz.utils"),
-    ("NoColor", "ezpz.utils"),
+    ("model_summary", "ezpz.utils"),
+    ("summarize_dict", "ezpz.utils"),
     # -- log --
     ("get_logger", "ezpz.log"),
     # -- history --
@@ -93,12 +108,40 @@ class TestStaticReexports:
         hit `AttributeError` at runtime.
         """
         missing = []
-        for name, expected_module in EXPECTED_STATIC_REEXPORTS:
+        for name, _expected_module in EXPECTED_STATIC_REEXPORTS:
             if not hasattr(ezpz, name):
                 missing.append(name)
         assert not missing, (
             f"Statically re-exported but not resolvable at runtime: "
             f"{missing}"
+        )
+
+    def test_expected_list_matches_runtime_static_reexports(self):
+        """Drift guard: EXPECTED_STATIC_REEXPORTS must cover every name
+        in ezpz._STATIC_REEXPORTS.
+
+        Without this, adding a name to _STATIC_REEXPORTS (and the
+        TYPE_CHECKING block) without also updating this test file
+        would silently pass — but a regression where the name doesn't
+        actually resolve at runtime wouldn't be caught for THAT name.
+        Sourcery / Copilot flagged this as the main drift risk in the
+        PR review.
+        """
+        expected_names = {name for name, _ in EXPECTED_STATIC_REEXPORTS}
+        runtime_names = set(ezpz._STATIC_REEXPORTS)
+        missing_from_test = runtime_names - expected_names
+        extra_in_test = expected_names - runtime_names
+        assert not missing_from_test, (
+            f"ezpz._STATIC_REEXPORTS has names not covered by this test "
+            f"file's EXPECTED_STATIC_REEXPORTS: {sorted(missing_from_test)}. "
+            f"Add them to EXPECTED_STATIC_REEXPORTS so the per-symbol "
+            f"resolution test runs against the full set."
+        )
+        assert not extra_in_test, (
+            f"EXPECTED_STATIC_REEXPORTS lists names not in "
+            f"ezpz._STATIC_REEXPORTS: {sorted(extra_in_test)}. "
+            f"Either add them to _STATIC_REEXPORTS or remove from the "
+            f"test file."
         )
 
     def test_every_reexport_comes_from_advertised_submodule(self):
@@ -130,11 +173,54 @@ class TestStaticReexports:
         TYPE_CHECKING blocks.
         """
         missing_from_all = [
-            name for name, _ in EXPECTED_STATIC_REEXPORTS
+            name for name, _expected_module in EXPECTED_STATIC_REEXPORTS
             if name not in ezpz.__all__
         ]
         assert not missing_from_all, (
             f"Re-exports not in __all__: {missing_from_all}"
+        )
+
+    def test_type_checking_block_matches_static_reexports(self):
+        """Drift guard between the TYPE_CHECKING import block and
+        ezpz._STATIC_REEXPORTS.
+
+        Parses ezpz/__init__.py and extracts every name imported
+        inside `if TYPE_CHECKING:`. That set must equal
+        ezpz._STATIC_REEXPORTS — otherwise type checkers and
+        `from ezpz import *` consumers see different surfaces.
+        """
+        import ast
+
+        source = Path(ezpz.__file__).read_text()
+        tree = ast.parse(source)
+
+        # Find the `if TYPE_CHECKING:` block at module scope.
+        type_checking_imports: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, ast.If):
+                # The guard is `if TYPE_CHECKING:` — match by name.
+                test = node.test
+                if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+                    for stmt in node.body:
+                        if isinstance(stmt, ast.ImportFrom):
+                            for alias in stmt.names:
+                                # Use the alias if present, else the name
+                                type_checking_imports.add(
+                                    alias.asname or alias.name
+                                )
+
+        static_reexports = set(ezpz._STATIC_REEXPORTS)
+        only_in_typecheck = type_checking_imports - static_reexports
+        only_in_static = static_reexports - type_checking_imports
+        assert not only_in_typecheck, (
+            f"Imported in TYPE_CHECKING block but missing from "
+            f"_STATIC_REEXPORTS (won't appear in __all__): "
+            f"{sorted(only_in_typecheck)}"
+        )
+        assert not only_in_static, (
+            f"In _STATIC_REEXPORTS but missing from TYPE_CHECKING "
+            f"imports (type checkers won't see them): "
+            f"{sorted(only_in_static)}"
         )
 
 
