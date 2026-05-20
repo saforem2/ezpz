@@ -48,22 +48,96 @@ class TestUnsupportedDevices:
         """String form like 'cpu' should also short-circuit cleanly."""
         assert get_memory_metrics("cpu") == {}
 
+    def test_get_memory_metrics_accepts_torch_device_mps(self):
+        """torch.device('mps') instance should short-circuit too."""
+        assert get_memory_metrics(torch.device("mps")) == {}
+
+    def test_get_memory_metrics_accepts_indexed_cpu_string(self):
+        """Indexed CPU strings like 'cpu:0' should also short-circuit."""
+        assert get_memory_metrics("cpu:0") == {}
+
+    def test_cpu_helpers_not_routed_to_cuda_when_cuda_available(self, monkeypatch):
+        """Regression: previously, helpers branched on `torch.cuda.is_available()`
+        before the device type, so passing a CPU device on a CUDA box would
+        route into `torch.cuda.max_memory_allocated('cpu')` and raise.
+        Now they dispatch on `torch.device(device).type` first.
+
+        This was the central bug from the PR #134 review (sourcery,
+        copilot, and codex all flagged it independently).
+        """
+        # Simulate "we're on a CUDA box."
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        # And give `torch.cuda.*` implementations that would BLOW UP if
+        # called with a CPU device — proves the fix routes correctly.
+        def _cuda_should_not_be_called(d):
+            raise RuntimeError(
+                f"BUG: torch.cuda.* called with non-cuda device {d!r}"
+            )
+        monkeypatch.setattr(torch.cuda, "max_memory_allocated", _cuda_should_not_be_called)
+        monkeypatch.setattr(torch.cuda, "max_memory_reserved", _cuda_should_not_be_called)
+        monkeypatch.setattr(torch.cuda, "memory_allocated", _cuda_should_not_be_called)
+        monkeypatch.setattr(torch.cuda, "memory_reserved", _cuda_should_not_be_called)
+        monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", _cuda_should_not_be_called)
+
+        cpu = torch.device("cpu")
+        assert get_max_memory_allocated(cpu) == 0.0
+        assert get_max_memory_reserved(cpu) == 0.0
+        assert get_current_memory_allocated(cpu) == 0.0
+        assert get_current_memory_reserved(cpu) == 0.0
+        reset_peak_memory_stats(cpu)  # no exception = pass
+        assert get_memory_metrics(cpu) == {}
+
 
 class TestEnvVarOptOut:
     """EZPZ_TRACK_MEMORY=0 disables the feature even on supported devices."""
 
-    def test_env_var_zero_returns_empty(self):
+    def test_env_var_zero_returns_empty_on_cuda(self, monkeypatch):
+        """`EZPZ_TRACK_MEMORY=0` short-circuits even on a working CUDA device."""
+        # Make CUDA appear available + functional so we know the env-var
+        # check is what's returning {} (not a "device unsupported" path).
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda d: None)
         with patch.dict(os.environ, {"EZPZ_TRACK_MEMORY": "0"}):
-            # Even with a device that would normally work, no keys.
             assert get_memory_metrics("cuda:0") == {}
 
-    def test_env_var_unset_or_one_returns_metrics(self):
-        """Default (no env var) or '1' should NOT short-circuit."""
+    def test_env_var_unset_returns_metrics_on_cuda(self, monkeypatch):
+        """Env var unset (default) should NOT short-circuit on a supported device."""
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda d: None)
+        # Use clear=True to genuinely simulate "env var not set"
+        with patch.dict(os.environ, {}, clear=True):
+            result = get_memory_metrics("cuda:0")
+            assert set(result.keys()) == {
+                "mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved",
+            }
+
+    def test_env_var_one_returns_metrics_on_cuda(self, monkeypatch):
+        """`EZPZ_TRACK_MEMORY=1` should NOT short-circuit on a supported device."""
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda d: 1024**3)
+        monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda d: None)
         with patch.dict(os.environ, {"EZPZ_TRACK_MEMORY": "1"}):
-            # CPU still returns {} for a different reason (unsupported device);
-            # the point is that the env-var check didn't fire.
-            result = get_memory_metrics("cpu")
-            assert result == {}  # empty for device-reason, not env-reason
+            result = get_memory_metrics("cuda:0")
+            assert len(result) == 4
+
+    def test_default_device_resolution(self, monkeypatch):
+        """`device=None` calls ezpz.get_torch_device() and routes correctly."""
+        import ezpz
+        # Make the resolver return CPU — should short-circuit to {}.
+        monkeypatch.setattr(ezpz, "get_torch_device", lambda: "cpu")
+        with patch.dict(os.environ, {}, clear=True):
+            assert get_memory_metrics() == {}
 
 
 class TestKeyShape:
@@ -131,6 +205,70 @@ class TestKeyShape:
 
         get_memory_metrics("cuda:0", reset_peak=False)
         assert called == []
+
+
+class TestXPUBackend:
+    """XPU-specific code paths (Intel GPU; Aurora / Sunspot)."""
+
+    def test_xpu_routes_to_xpu_apis(self, monkeypatch):
+        """When CUDA is unavailable and XPU is available, helpers route to torch.xpu.*."""
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        # Skip if torch.xpu doesn't exist in this build (pre-2.4-ish)
+        if not hasattr(torch, "xpu"):
+            import pytest
+            pytest.skip("torch.xpu not present in this torch build")
+
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+        _GIB = 1024 ** 3
+        monkeypatch.setattr(torch.xpu, "memory_allocated", lambda d: 5 * _GIB)
+        monkeypatch.setattr(torch.xpu, "max_memory_allocated", lambda d: 6 * _GIB)
+        monkeypatch.setattr(torch.xpu, "memory_reserved", lambda d: 7 * _GIB)
+        monkeypatch.setattr(torch.xpu, "max_memory_reserved", lambda d: 8 * _GIB)
+        monkeypatch.setattr(torch.xpu, "reset_peak_memory_stats", lambda d: None)
+
+        m = get_memory_metrics("xpu:0")
+        assert m["mem_alloc"] == 5.0
+        assert m["mem_peak_alloc"] == 6.0
+        assert m["mem_reserved"] == 7.0
+        assert m["mem_peak_reserved"] == 8.0
+
+    def test_xpu_helpers_fallback_to_zero_on_attribute_error(self, monkeypatch):
+        """Older torch.xpu builds may be missing some attrs — return 0.0."""
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        if not hasattr(torch, "xpu"):
+            import pytest
+            pytest.skip("torch.xpu not present in this torch build")
+
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+
+        def _raise_attr_error(d):
+            raise AttributeError("simulated: this torch.xpu build lacks the API")
+
+        monkeypatch.setattr(torch.xpu, "memory_allocated", _raise_attr_error)
+        monkeypatch.setattr(torch.xpu, "max_memory_allocated", _raise_attr_error)
+        monkeypatch.setattr(torch.xpu, "memory_reserved", _raise_attr_error)
+        monkeypatch.setattr(torch.xpu, "max_memory_reserved", _raise_attr_error)
+
+        # Each helper should swallow the AttributeError and return 0.0.
+        assert get_max_memory_allocated("xpu:0") == 0.0
+        assert get_max_memory_reserved("xpu:0") == 0.0
+        assert get_current_memory_allocated("xpu:0") == 0.0
+        assert get_current_memory_reserved("xpu:0") == 0.0
+
+    def test_xpu_reset_peak_swallows_attribute_error(self, monkeypatch):
+        """reset_peak_memory_stats on a too-old torch.xpu shouldn't raise."""
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        if not hasattr(torch, "xpu"):
+            import pytest
+            pytest.skip("torch.xpu not present in this torch build")
+
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+
+        def _raise(d):
+            raise AttributeError("simulated")
+
+        monkeypatch.setattr(torch.xpu, "reset_peak_memory_stats", _raise)
+        reset_peak_memory_stats("xpu:0")  # no exception = pass
 
 
 class TestTopLevelReexport:

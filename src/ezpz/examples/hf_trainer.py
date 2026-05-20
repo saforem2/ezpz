@@ -978,10 +978,13 @@ def main() -> int:
             if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
-        # Inject ezpz device-memory metrics into the Trainer's `logs` dict
-        # on every logging step. No-op on CPU/MPS.
-        callbacks=[MemoryMetricsCallback()],
     )
+    # Inject ezpz device-memory metrics into the Trainer's `logs` dict on
+    # every logging step. No-op on CPU/MPS. Use add_callback rather than
+    # the `callbacks=` constructor kwarg so we don't clobber whatever
+    # callbacks the Trainer already added by default (or that a forked
+    # version of this script might want to layer on top).
+    trainer.add_callback(MemoryMetricsCallback())
 
     # if wandb is not None and getattr(wandb, "run", None) is not None:
     #     # from transformers.integrations.integration_utils import W

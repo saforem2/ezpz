@@ -377,15 +377,48 @@ def normalize(name: str) -> str:
     return name.strip("-")
 
 
+def _device_type(device: "torch.device | int | str | None") -> str:
+    """Return the canonical device type for routing memory APIs.
+
+    Accepts the same input shapes as torch.device(). Maps:
+        - int           → "cuda" or "xpu" based on availability (ambiguous;
+                          we prefer CUDA when both are present, matching torch's
+                          own convention).
+        - "cuda:0", torch.device("cuda", 0), etc. → "cuda"
+        - "cpu", "cpu:0", torch.device("cpu") → "cpu"
+        - "mps" → "mps"
+        - None → resolved via ezpz.get_torch_device()
+
+    Branching on this string lets us call the right backend instead of
+    routing every call to torch.cuda.* whenever CUDA happens to be
+    available — which previously raised when a CPU/MPS device was passed
+    on a CUDA-capable box (issue caught in PR #134 review).
+    """
+    if device is None:
+        import ezpz
+        device = ezpz.get_torch_device()
+    if isinstance(device, int):
+        # Bare int is ambiguous between cuda:N and xpu:N. Mirror torch's
+        # default by preferring CUDA when available; otherwise XPU.
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu"
+        return "cpu"
+    return torch.device(device).type
+
+
 def get_max_memory_allocated(device: "torch.device | int | str") -> float:
+    """Peak allocated memory in bytes on ``device``. 0.0 on CPU/MPS.
+
+    Routes to the backend matching ``device``'s type, not whichever
+    accelerator happens to be globally available. So
+    ``get_max_memory_allocated("cpu")`` returns 0.0 even on a CUDA box.
     """
-    Get the peak (max) memory allocated on the specified device since the
-    last reset. Bytes. Returns 0.0 on devices without memory tracking
-    (CPU, MPS).
-    """
-    if torch.cuda.is_available():
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.max_memory_allocated(device)
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.max_memory_allocated(device)
         except (ImportError, AttributeError):
@@ -394,10 +427,11 @@ def get_max_memory_allocated(device: "torch.device | int | str") -> float:
 
 
 def get_max_memory_reserved(device: "torch.device | int | str") -> float:
-    """Peak reserved memory in bytes. 0.0 on CPU/MPS."""
-    if torch.cuda.is_available():
+    """Peak reserved memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.max_memory_reserved(device)
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.max_memory_reserved(device)
         except (ImportError, AttributeError):
@@ -406,10 +440,11 @@ def get_max_memory_reserved(device: "torch.device | int | str") -> float:
 
 
 def get_current_memory_allocated(device: "torch.device | int | str") -> float:
-    """Currently allocated memory in bytes. 0.0 on CPU/MPS."""
-    if torch.cuda.is_available():
+    """Currently allocated memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.memory_allocated(device)
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.memory_allocated(device)
         except (ImportError, AttributeError):
@@ -418,10 +453,11 @@ def get_current_memory_allocated(device: "torch.device | int | str") -> float:
 
 
 def get_current_memory_reserved(device: "torch.device | int | str") -> float:
-    """Currently reserved memory in bytes. 0.0 on CPU/MPS."""
-    if torch.cuda.is_available():
+    """Currently reserved memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.memory_reserved(device)
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.memory_reserved(device)
         except (ImportError, AttributeError):
@@ -430,11 +466,12 @@ def get_current_memory_reserved(device: "torch.device | int | str") -> float:
 
 
 def reset_peak_memory_stats(device: "torch.device | int | str") -> None:
-    """Reset peak-memory counters on the device. No-op on CPU/MPS."""
-    if torch.cuda.is_available():
+    """Reset peak-memory counters on ``device``. No-op on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
         return
-    if hasattr(torch, "xpu") and torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             torch.xpu.reset_peak_memory_stats(device)
         except (ImportError, AttributeError):
@@ -478,21 +515,17 @@ def get_memory_metrics(
         device = ezpz.get_torch_device()
     assert device is not None  # type narrowing for pyright
 
-    # On CPU/MPS, all four helpers return 0.0 — short-circuit to avoid
-    # emitting a row of zeros. Probe device type via string form so we
-    # handle torch.device('cpu'), 'cpu', 'cpu:0', etc. uniformly.
-    _dev_str = str(device).lower()
-    if _dev_str.startswith(("cpu", "mps")):
+    # On CPU/MPS, all four helpers return 0.0. Short-circuit to avoid
+    # emitting a row of zeros. Route via the canonical device type so
+    # the check works for torch.device('cpu'), 'cpu', 'cpu:0', etc.
+    if _device_type(device) not in ("cuda", "xpu"):
         return {}
-    # Some callers pass torch.device('cuda', 0) which stringifies as
-    # 'cuda:0' — falls through. Others pass plain int; let the helpers
-    # handle device-coercion.
 
     _GIB = 1024 ** 3
     metrics = {
-        f"{prefix}mem_alloc":         get_current_memory_allocated(device) / _GIB,
-        f"{prefix}mem_peak_alloc":    get_max_memory_allocated(device) / _GIB,
-        f"{prefix}mem_reserved":      get_current_memory_reserved(device) / _GIB,
+        f"{prefix}mem_alloc": get_current_memory_allocated(device) / _GIB,
+        f"{prefix}mem_peak_alloc": get_max_memory_allocated(device) / _GIB,
+        f"{prefix}mem_reserved": get_current_memory_reserved(device) / _GIB,
         f"{prefix}mem_peak_reserved": get_max_memory_reserved(device) / _GIB,
     }
     if reset_peak:
