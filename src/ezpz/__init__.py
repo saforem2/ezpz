@@ -103,7 +103,7 @@ if TYPE_CHECKING:
         summarize_dict,
     )
     # -- log: structured logging --
-    from .log import get_logger  # noqa: F401
+    from .log import get_logger, silence_noisy_loggers  # noqa: F401
     # -- history: distributed metric tracking --
     from .history import History  # noqa: F401
     # -- flops: MFU + peak FLOPS database --
@@ -187,7 +187,7 @@ _STATIC_REEXPORTS: tuple[str, ...] = (
     "is_memory_metric_key", "make_tarfile",
     "model_summary", "reset_peak_memory_stats", "summarize_dict",
     # log
-    "get_logger",
+    "get_logger", "silence_noisy_loggers",
     # history
     "History",
     # flops

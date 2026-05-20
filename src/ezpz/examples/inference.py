@@ -259,18 +259,7 @@ def _run_with_optional_flops(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point for distributed HF inference."""
-    # Silence noisy per-request HTTP logs from HF Hub clients
-    import logging as _logging
-    for _noisy in ("httpx", "huggingface_hub", "filelock", "urllib3"):
-        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
-    # Silence noisy transformers messages (e.g. the BPE
-    # clean_up_tokenization_spaces warning fired on every decode call)
-    try:
-        import transformers as _transformers
-        _transformers.logging.set_verbosity_error()
-        _transformers.logging.disable_progress_bar()
-    except Exception:
-        pass
+    ezpz.silence_noisy_loggers()
 
     args = parse_args(argv)
 

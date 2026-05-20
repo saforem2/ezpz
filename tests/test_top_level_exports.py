@@ -89,6 +89,7 @@ EXPECTED_STATIC_REEXPORTS = [
     ("summarize_dict", "ezpz.utils"),
     # -- log --
     ("get_logger", "ezpz.log"),
+    ("silence_noisy_loggers", "ezpz.log"),
     # -- history --
     ("History", "ezpz.history"),
     # -- flops --

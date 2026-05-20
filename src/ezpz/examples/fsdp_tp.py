@@ -1073,6 +1073,7 @@ def train(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
+    ezpz.silence_noisy_loggers()
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()

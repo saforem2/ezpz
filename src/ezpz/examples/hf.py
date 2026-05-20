@@ -263,9 +263,7 @@ def split_dataset(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> None:
     """Entrypoint for standalone HF causal LM fine-tuning without Trainer."""
-    import logging as _logging
-    for _noisy in ("httpx", "huggingface_hub", "filelock"):
-        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
+    ezpz.silence_noisy_loggers()
     t0 = time.perf_counter()
     rank = ezpz.setup_torch()
     model_args, data_args, training_args = parse_args()
