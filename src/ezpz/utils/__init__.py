@@ -50,6 +50,10 @@ __all__ = [
     "normalize",
     "get_max_memory_allocated",
     "get_max_memory_reserved",
+    "get_current_memory_allocated",
+    "get_current_memory_reserved",
+    "reset_peak_memory_stats",
+    "get_memory_metrics",
     "grab_tensor",
     "check_for_tarball",
     "make_tarfile",
@@ -371,32 +375,127 @@ def normalize(name: str) -> str:
     return name.strip("-")
 
 
-def get_max_memory_allocated(device: torch.device) -> float:
+def get_max_memory_allocated(device: "torch.device | int | str") -> float:
     """
-    Get the maximum memory allocated on the specified device.
-
-    Args:
-        device (torch.device): The device to check memory allocation for.
+    Get the peak (max) memory allocated on the specified device since the
+    last reset. Bytes. Returns 0.0 on devices without memory tracking
+    (CPU, MPS).
     """
     if torch.cuda.is_available():
         return torch.cuda.max_memory_allocated(device)
-    elif torch.xpu.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
         try:
             return torch.xpu.max_memory_allocated(device)
-        except ImportError:
-            return -1.0
-    raise RuntimeError(f"Memory allocation not available for {device=}")
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
 
 
-def get_max_memory_reserved(device: torch.device) -> float:
+def get_max_memory_reserved(device: "torch.device | int | str") -> float:
+    """Peak reserved memory in bytes. 0.0 on CPU/MPS."""
     if torch.cuda.is_available():
         return torch.cuda.max_memory_reserved(device)
-    elif torch.xpu.is_available():
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
         try:
             return torch.xpu.max_memory_reserved(device)
-        except ImportError:
-            return -1.0
-    raise RuntimeError(f"Memory allocation not available for {device=}")
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def get_current_memory_allocated(device: "torch.device | int | str") -> float:
+    """Currently allocated memory in bytes. 0.0 on CPU/MPS."""
+    if torch.cuda.is_available():
+        return torch.cuda.memory_allocated(device)
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        try:
+            return torch.xpu.memory_allocated(device)
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def get_current_memory_reserved(device: "torch.device | int | str") -> float:
+    """Currently reserved memory in bytes. 0.0 on CPU/MPS."""
+    if torch.cuda.is_available():
+        return torch.cuda.memory_reserved(device)
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        try:
+            return torch.xpu.memory_reserved(device)
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def reset_peak_memory_stats(device: "torch.device | int | str") -> None:
+    """Reset peak-memory counters on the device. No-op on CPU/MPS."""
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+        return
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        try:
+            torch.xpu.reset_peak_memory_stats(device)
+        except (ImportError, AttributeError):
+            pass
+
+
+def get_memory_metrics(
+    device: "torch.device | int | str | None" = None,
+    *,
+    reset_peak: bool = True,
+    prefix: str = "",
+) -> dict[str, float]:
+    """Return device memory metrics in GiB.
+
+    Returns 4 keys when supported (CUDA, XPU):
+
+        {prefix}mem_alloc          currently allocated
+        {prefix}mem_peak_alloc     peak allocated since last reset
+        {prefix}mem_reserved       currently reserved by the allocator
+        {prefix}mem_peak_reserved  peak reserved since last reset
+
+    Returns ``{}`` on CPU / MPS (silent — caller's metrics dict simply
+    doesn't gain these keys), and unconditionally when the env var
+    ``EZPZ_TRACK_MEMORY=0`` is set.
+
+    Args:
+        device: device to query. If None, uses ``ezpz.get_torch_device()``.
+        reset_peak: if True (default), reset peak counters AFTER reading.
+            Next call's ``mem_peak_*`` then reflect only what happened
+            between calls — the standard per-step pattern.
+        prefix: optional string prepended to every key. Useful for the
+            examples that namespace their metrics (e.g. ``"train/"``).
+    """
+    if os.environ.get("EZPZ_TRACK_MEMORY", "1") == "0":
+        return {}
+
+    # Lazy default device resolution — only pay the cost when caller
+    # didn't pass one explicitly.
+    if device is None:
+        import ezpz
+        device = ezpz.get_torch_device()
+    assert device is not None  # type narrowing for pyright
+
+    # On CPU/MPS, all four helpers return 0.0 — short-circuit to avoid
+    # emitting a row of zeros. Probe device type via string form so we
+    # handle torch.device('cpu'), 'cpu', 'cpu:0', etc. uniformly.
+    _dev_str = str(device).lower()
+    if _dev_str.startswith(("cpu", "mps")):
+        return {}
+    # Some callers pass torch.device('cuda', 0) which stringifies as
+    # 'cuda:0' — falls through. Others pass plain int; let the helpers
+    # handle device-coercion.
+
+    _GIB = 1024 ** 3
+    metrics = {
+        f"{prefix}mem_alloc":         get_current_memory_allocated(device) / _GIB,
+        f"{prefix}mem_peak_alloc":    get_max_memory_allocated(device) / _GIB,
+        f"{prefix}mem_reserved":      get_current_memory_reserved(device) / _GIB,
+        f"{prefix}mem_peak_reserved": get_max_memory_reserved(device) / _GIB,
+    }
+    if reset_peak:
+        reset_peak_memory_stats(device)
+    return metrics
 
 
 # hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC
