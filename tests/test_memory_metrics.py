@@ -346,6 +346,134 @@ class TestFormatMemorySummary:
         out = format_memory_summary({"mem_alloc": 1.5})
         assert out == "1.50GiB"
 
+    def test_peak_only_uses_GiB_suffix_not_legacy_format(self, monkeypatch):
+        """When only mem_peak_alloc is present, output should be
+        `X.XXGiB` (matching the alloc-only branch), not the legacy
+        `peak X.XXGiB` form. Regression: the old code returned a
+        different prefix for this rare case, breaking the documented
+        contract."""
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        out = format_memory_summary({"mem_peak_alloc": 2.5})
+        assert out == "2.50GiB"
+        # Must NOT use the legacy "peak X.XXGiB" wording.
+        assert "peak" not in out
+
+    def test_peak_only_includes_percentage_when_total_known(self, monkeypatch):
+        """The peak-only branch should still include the percentage,
+        consistent with the alloc-only and alloc+peak branches."""
+        import ezpz.distributed
+        total_bytes = 16 * (1024 ** 3)
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": total_bytes},
+        )
+        # alloc is missing entirely; with no alloc to %-of, pct_str should
+        # remain empty (pct is computed against `alloc`, not `peak`).
+        out = format_memory_summary({"mem_peak_alloc": 2.0})
+        # Format matches the consistent `X.XXGiB` shape — no percent
+        # (we'd need alloc to compute it).
+        assert out == "2.00GiB"
+
+    def test_prefix_auto_detected_from_keys(self, monkeypatch):
+        """When prefix is None (default), it's inferred from the keys."""
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        # train/ prefix
+        out = format_memory_summary(
+            {"train/mem_alloc": 1.5, "train/mem_peak_alloc": 2.0}
+        )
+        assert out == "1.50/2.00GiB"
+        # eval/ prefix
+        out = format_memory_summary(
+            {"eval/mem_alloc": 3.0, "eval/mem_peak_alloc": 4.0}
+        )
+        assert out == "3.00/4.00GiB"
+        # No prefix
+        out = format_memory_summary({"mem_alloc": 5.0, "mem_peak_alloc": 6.0})
+        assert out == "5.00/6.00GiB"
+
+    def test_explicit_prefix_overrides_auto_detect(self, monkeypatch):
+        """If caller passes a prefix, it should win over inference."""
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        # Dict has BOTH train/ and eval/ keys. Explicit prefix='eval/'
+        # picks the eval values, not train.
+        out = format_memory_summary(
+            {
+                "train/mem_alloc": 1.0, "train/mem_peak_alloc": 2.0,
+                "eval/mem_alloc": 7.0, "eval/mem_peak_alloc": 8.0,
+            },
+            prefix="eval/",
+        )
+        assert out == "7.00/8.00GiB"
+
+    def test_device_int_passed_to_get_device_properties(self, monkeypatch):
+        """`device=1` should be forwarded as the int index, not None."""
+        import ezpz.distributed
+        captured: list = []
+
+        def _capture(d=None):
+            captured.append(d)
+            return {"name": "x", "total_memory": -1}
+
+        monkeypatch.setattr(
+            ezpz.distributed, "get_device_properties", _capture
+        )
+        format_memory_summary(
+            {"mem_alloc": 1.5, "mem_peak_alloc": 2.0}, device=1
+        )
+        assert captured == [1]
+
+    def test_device_torch_device_with_index_resolved_to_int(self, monkeypatch):
+        """`torch.device('cuda:1')` should be normalized to `1`."""
+        import ezpz.distributed
+        captured: list = []
+
+        def _capture(d=None):
+            captured.append(d)
+            return {"name": "x", "total_memory": -1}
+
+        monkeypatch.setattr(
+            ezpz.distributed, "get_device_properties", _capture
+        )
+        format_memory_summary(
+            {"mem_alloc": 1.5, "mem_peak_alloc": 2.0},
+            device=torch.device("cuda", 1),
+        )
+        assert captured == [1]
+
+    def test_device_torch_device_without_index_passes_none(self, monkeypatch):
+        """`torch.device('cuda')` (no index) → None (fall back to local rank)."""
+        import ezpz.distributed
+        captured: list = []
+
+        def _capture(d=None):
+            captured.append(d)
+            return {"name": "x", "total_memory": -1}
+
+        monkeypatch.setattr(
+            ezpz.distributed, "get_device_properties", _capture
+        )
+        format_memory_summary(
+            {"mem_alloc": 1.5, "mem_peak_alloc": 2.0},
+            device=torch.device("cuda"),
+        )
+        assert captured == [None]
+
     def test_swallows_get_device_properties_errors(self, monkeypatch):
         """A broken get_device_properties shouldn't crash the format call."""
         import ezpz.distributed

@@ -537,7 +537,7 @@ def format_memory_summary(
     metrics: dict[str, float],
     *,
     device: "torch.device | int | str | None" = None,
-    prefix: str = "",
+    prefix: "str | None" = None,
 ) -> str:
     """Condense the four mem_* keys into a single console-friendly string.
 
@@ -551,19 +551,54 @@ def format_memory_summary(
     (omitted when device total isn't available — e.g. unknown XPU, CPU
     fallback).
 
+    Args:
+        metrics: dict that may contain mem_* keys.
+        device: optional device for total-memory lookup. ``int`` index
+            or ``torch.device('cuda:N')`` honored; ``None`` uses the
+            local rank's device.
+        prefix: explicit prefix (e.g. ``"train/"``). When ``None``
+            (default), the prefix is inferred by scanning ``metrics`` for
+            ``*mem_alloc`` / ``*mem_peak_alloc`` keys — so callers that
+            don't know whether their metrics are namespaced don't have
+            to probe twice.
+
     Returns an empty string if no mem_* keys are present (CPU/MPS) — so
     callers can ``" ".join(filter(None, [...]))`` without checking.
     """
+    if prefix is None:
+        prefix = ""
+        for key in metrics:
+            if key.endswith("mem_alloc") or key.endswith("mem_peak_alloc"):
+                # Strip the suffix to recover whatever namespace the
+                # caller used (e.g. "train/", "eval/", or "").
+                if key.endswith("mem_peak_alloc"):
+                    prefix = key[: -len("mem_peak_alloc")]
+                else:
+                    prefix = key[: -len("mem_alloc")]
+                break
     alloc = metrics.get(f"{prefix}mem_alloc")
     peak = metrics.get(f"{prefix}mem_peak_alloc")
     if alloc is None and peak is None:
         return ""
     # Total device VRAM for the percentage. Lazy-resolve to avoid the
     # import cost when caller has no memory keys to format anyway.
+    # Normalize `device` → int index where possible, so callers passing
+    # `torch.device('cuda:1')` get the right device's total (not rank 0's
+    # device by way of get_local_rank()).
     pct_str = ""
     try:
         import ezpz
-        idx = device if isinstance(device, int) else None
+        idx: int | None
+        if isinstance(device, int):
+            idx = device
+        elif device is None:
+            idx = None
+        else:
+            # torch.device('cuda:1').index == 1; torch.device('cuda').index is None
+            try:
+                idx = torch.device(device).index
+            except (TypeError, RuntimeError):
+                idx = None
         props = ezpz.distributed.get_device_properties(idx)
         total_bytes = props.get("total_memory", -1)
         if total_bytes and total_bytes > 0 and alloc is not None:
@@ -579,7 +614,9 @@ def format_memory_summary(
         return f"{alloc:.2f}/{peak:.2f}GiB{pct_str}"
     if alloc is not None:
         return f"{alloc:.2f}GiB{pct_str}"
-    return f"peak {peak:.2f}GiB"
+    # Only peak is present (rare — caller passed `mem_peak_alloc` without
+    # `mem_alloc`). Format matches the alloc-only branch for consistency.
+    return f"{peak:.2f}GiB{pct_str}"
 
 
 # Base names for the 4 memory metrics produced by get_memory_metrics().

@@ -1649,9 +1649,9 @@ class History:
         base = format_compact_summary(
             merged_for_summary, precision=precision
         ).replace("train/", "")
-        memory_str = format_memory_summary(info_metrics, prefix="train/")
-        if not memory_str:
-            memory_str = format_memory_summary(info_metrics, prefix="")
+        # prefix=None lets format_memory_summary auto-detect "train/" /
+        # "eval/" / "" from the keys, so we don't have to probe twice.
+        memory_str = format_memory_summary(info_metrics)
         parts = [
             p
             for p in (base, f"memory={memory_str}" if memory_str else "")
