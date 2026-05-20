@@ -909,6 +909,151 @@ ezpz_setup_conda_perlmutter() {
     module load cudatoolkit/12.9 nccl/2.24.3 pytorch cray-mpich
 }
 
+###############################################
+# Load the ALCF Aurora module stack — everything
+# `module load frameworks` would pull in EXCEPT
+# the framework module itself.
+#
+# Use this when you want to bring up your own
+# Python/venv on top of the system stack instead
+# of using the prebuilt frameworks env.
+#
+# Sets the same XPU runtime env vars as
+# `ezpz_setup_xpu` so collectives and oneAPI
+# device selection work the same way.
+#
+# @example
+#    ezpz_load_modules_aurora
+#    uv venv --python=$(which python3)
+#    source .venv/bin/activate
+#
+# @stdout Prints loaded module names
+###############################################
+ezpz_load_modules_aurora() {
+	# oneAPI runtime + HDF5 + PTI profiler. Same as ezpz_setup_xpu;
+	# kept here so the function is self-contained / discoverable.
+	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
+	export CCL_PROCESS_LAUNCHER=pmix
+	export CCL_OP_SYNC=1
+	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
+	export TORCH_CPP_LOG_LEVEL=ERROR
+	# Aurora-specific MR cache monitor (matches ezpz_setup_conda_aurora).
+	export FI_MR_CACHE_MONITOR="${FI_MR_CACHE_MONITOR:-userfaultfd}"
+}
+
+###############################################
+# Load the ALCF Sunspot module stack — everything
+# `module load frameworks` would pull in EXCEPT
+# the framework module itself.
+#
+# Sunspot ships the same Intel XPU runtime as
+# Aurora, so this is the same set of modules.
+#
+# @example
+#    ezpz_load_modules_sunspot
+#    uv venv --python=$(which python3)
+#    source .venv/bin/activate
+#
+# @stdout Prints loaded module names
+###############################################
+ezpz_load_modules_sunspot() {
+	# NOTE: Currently identical to ezpz_load_modules_aurora's XPU stack
+	# (minus FI_MR_CACHE_MONITOR, which is Aurora-specific). Kept as a
+	# separate function for grep-ability and so the two stacks can
+	# diverge independently if Sunspot's oneAPI version ever differs.
+	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
+	export CCL_PROCESS_LAUNCHER=pmix
+	export CCL_OP_SYNC=1
+	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
+	export TORCH_CPP_LOG_LEVEL=ERROR
+}
+
+###############################################
+# Load the ALCF Polaris module stack — everything
+# `module load conda/<DATE>` would pull in EXCEPT
+# the conda module itself.
+#
+# Use this when you want to bring up your own
+# Python/venv on top of the CUDA + MPICH + cuDNN
+# stack instead of using the prebuilt conda env.
+#
+# Pulls the deps documented by
+# `/soft/modulefiles/conda/2025-09-25.lua` —
+# PrgEnv-gnu, craype-x86-milan, cray-hdf5-parallel,
+# cudnn, gcc-native — and exports the same set of
+# envvars (CUDA paths, NCCL/TensorRT lib paths,
+# ALCF proxy, MPICH GPU support).
+#
+# @example
+#    ezpz_load_modules_polaris
+#    uv venv --python=$(which python3)
+#    source .venv/bin/activate
+#
+# @stdout Prints loaded module names
+###############################################
+ezpz_load_modules_polaris() {
+	# Defensive: bail early on the wrong system. /soft/modulefiles is a
+	# Polaris-only path; without this guard, `module use` silently no-ops
+	# on (e.g.) Aurora and the subsequent module load fails with a
+	# less-informative error.
+	if [[ ! -d /soft/modulefiles ]]; then
+		log_message ERROR "/soft/modulefiles not found — are you on Polaris?"
+		return 1
+	fi
+	module use /soft/modulefiles
+	# Same module deps as the Polaris conda module, in the same order.
+	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel/1.14.3.5 \
+		cudnn/9.13.0 gcc-native/14.2
+
+	# Compiler shims expected by C/C++ extensions (matches conda module).
+	export CC="/usr/bin/gcc-14"
+	export CXX="/usr/bin/g++-14"
+
+	# CUDA toolkit paths — used by torch, flash-attn, etc.
+	export CUDA_HOME="/soft/compilers/cudatoolkit/cuda-12.9.1/"
+	export CUDA_PATH="${CUDA_HOME}"
+	export CUDA_TOOLKIT_BASE="${CUDA_HOME}"
+	export PATH="${CUDA_HOME}/bin:${PATH}"
+	# Build LD_LIBRARY_PATH conditionally — `${VAR:+:${VAR}}` only emits
+	# `:VAR` when VAR is non-empty, so we never produce a trailing colon
+	# (which the dynamic loader interprets as "search cwd" — real footgun
+	# on a clean shell).
+	LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${CUDA_HOME}/extras/CUPTI/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+	export LD_LIBRARY_PATH
+	export TORCH_CUDA_ARCH_LIST="8.0"
+	export FLASHINFER_CUDA_ARCH_LIST="8.0"
+
+	# NCCL and TensorRT — keep the same versions the conda module pins.
+	local _nccl="/soft/libraries/nccl/nccl_2.28.3-1+cuda12.9_x86_64"
+	local _trt="/soft/libraries/trt/TensorRT-10.13.3.9.Linux.x86_64-gnu.cuda-12.9"
+	# NOTE: putting an include/ dir on PATH is unusual (it's for headers,
+	# not executables). Kept here for bug-compatible parity with the
+	# canonical Polaris conda module, which does the same in
+	# /soft/modulefiles/conda/2025-09-25.lua. Don't "fix" without also
+	# updating the conda module — divergence here would be more
+	# confusing than the original quirk.
+	export PATH="${_nccl}/include:${PATH}"
+	# Same trailing-colon guard pattern as above.
+	LD_LIBRARY_PATH="${_nccl}/lib:${_trt}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+	export LD_LIBRARY_PATH
+
+	# ALCF HTTP proxy (compute nodes can't reach the internet otherwise).
+	# Same `${VAR:-default}` pattern as FI_MR_CACHE_MONITOR — defer to
+	# whatever the login env already set, only fall back to the hard-
+	# coded value when unset. Avoids silent regressions if ALCF ever
+	# changes the proxy.
+	export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+	export https_proxy="${https_proxy:-${http_proxy}}"
+
+	# MPI + GPU enablement, JAX hints (kept for parity with conda module).
+	export MPICH_GPU_SUPPORT_ENABLED=1
+	export MPI4JAX_USE_CUDA_MPI=1
+	export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=1 --xla_gpu_cuda_data_dir=${CUDA_HOME}"
+	export XLA_PYTHON_CLIENT_PREALLOCATE="false"
+}
+
 ezpz_install_and_setup_micromamba() {
 	ezpz_install_micromamba
 }

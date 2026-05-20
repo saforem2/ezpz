@@ -28,7 +28,7 @@ This is the canonical location for the tarball: subsequent `ezpz yeet`
 (no args) invocations will see the same-named `.tar.gz` next to the
 detected venv and print a hint suggesting the tarball-broadcast form,
 which scales much better than per-file rsync (see the
-[scaling section](./yeet.md#scaling-aurora-8--4096-nodes) on the yeet
+[scaling section](./yeet.md#scaling-aurora-8-4096-nodes) on the yeet
 page).
 
 This is particularly useful on HPC systems where shared filesystems can become
