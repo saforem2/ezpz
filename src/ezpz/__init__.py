@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from importlib import import_module
 from types import ModuleType
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from .__about__ import __version__  # re-exported symbol
 
@@ -20,7 +20,102 @@ if socket.getfqdn().startswith("x3"):
     import torch  # noqa
 
 # ---------------------------------------------------------------------------
-# Public re-exports
+# Static re-exports for type checkers and editor tooling
+# ---------------------------------------------------------------------------
+#
+# At runtime, attribute access on `ezpz.foo` flows through `__getattr__`
+# below — it walks `_MODULE_SEARCH_ORDER` to find which submodule
+# defines `foo` and imports lazily.  That preserves the "import ezpz
+# stays fast" property (no eager torch/mpi4py import).
+#
+# But Pyright / Pylance / Jedi / LSP servers can't follow `__getattr__`
+# resolution.  Users reported (issue #133) that `ezpz.setup_torch` and
+# friends don't show up in completion, auto-import, or symbol search —
+# even though they work at runtime.
+#
+# Fix: a `TYPE_CHECKING` block with explicit re-exports.  Type checkers
+# evaluate this branch (TYPE_CHECKING is True at analysis time), so
+# they see real `from .module import name` statements and can resolve
+# everything statically.  At runtime, TYPE_CHECKING is False and the
+# imports are skipped — `__getattr__` still does the lazy work.
+#
+# Standard pattern; same shape pandas/numpy/sqlalchemy use.
+# noqa: F401  — these imports are pure re-exports for static analysis.
+if TYPE_CHECKING:
+    # -- distributed: rank / topology / device / lifecycle / collectives --
+    from .distributed import (  # noqa: F401
+        all_reduce,
+        barrier,
+        broadcast,
+        cleanup,
+        get_cpus_per_node,
+        get_device_properties,
+        get_dist_info,
+        get_gpus_per_node,
+        get_hostname,
+        get_local_rank,
+        get_machine,
+        get_node_index,
+        get_num_nodes,
+        get_rank,
+        get_torch_backend,
+        get_torch_device,
+        get_torch_device_type,
+        get_world_size,
+        get_world_size_in_use,
+        get_world_size_total,
+        log_dict_as_bulleted_list,
+        print_dist_setup,
+        query_environment,
+        seed_everything,
+        setup_mlflow,
+        setup_torch,
+        setup_wandb,
+        synchronize,
+        timeitlogit,
+        verify_wandb,
+        wrap_model,
+        wrap_model_for_ddp,
+        wrap_model_for_fsdp,
+        wrap_model_for_fsdp2,
+    )
+    # -- utils: helpers + memory + tarball plumbing --
+    #
+    # NOTE: the memory-tracking helpers (`get_memory_metrics`,
+    # `get_current_memory_*`, `reset_peak_memory_stats`,
+    # `format_memory_summary`, `is_memory_metric_key`) land in PR #134
+    # — they'll be added to this block by that PR's own merge.
+    from .utils import (  # noqa: F401
+        Color,
+        DistributedPdb,
+        ForkedPdb,
+        NoColor,
+        check_for_tarball,
+        format_pair,
+        get_max_memory_allocated,
+        get_max_memory_reserved,
+        get_timestamp,
+        grab_tensor,
+        make_tarfile,
+        model_summary,
+        summarize_dict,
+    )
+    # -- log: structured logging --
+    from .log import get_logger  # noqa: F401
+    # -- history: distributed metric tracking --
+    from .history import History  # noqa: F401
+    # -- flops: MFU + peak FLOPS database --
+    from .flops import compute_mfu, try_estimate  # noqa: F401
+    # -- configs: scheduler / machine detection --
+    from .configs import get_scheduler  # noqa: F401
+    # -- launch: scheduler-aware launcher --
+    from .launch import (  # noqa: F401
+        get_active_jobid,
+        get_nodelist_of_active_job,
+    )
+
+# ---------------------------------------------------------------------------
+# Lazy module loading (runtime path)
 # ---------------------------------------------------------------------------
 
 _LAZY_MODULES: Dict[str, str] = {
@@ -63,7 +158,46 @@ _MODULE_SEARCH_ORDER: tuple[str, ...] = (
     # "ezpz.test",
 )
 
-__all__ = ["__version__", *sorted(_LAZY_MODULES.keys())]  # type:ignore
+# Symbols re-exported via the TYPE_CHECKING block above.  Listing them
+# in __all__ makes them discoverable to `dir(ezpz)`, `from ezpz import *`,
+# and stub-aware tools.  The runtime resolution is unchanged — these all
+# come from the lazy __getattr__ walker below.
+_STATIC_REEXPORTS: tuple[str, ...] = (
+    # distributed
+    "all_reduce", "barrier", "broadcast", "cleanup",
+    "get_cpus_per_node", "get_device_properties", "get_dist_info",
+    "get_gpus_per_node", "get_hostname", "get_local_rank",
+    "get_machine", "get_node_index", "get_num_nodes", "get_rank",
+    "get_torch_backend", "get_torch_device", "get_torch_device_type",
+    "get_world_size", "get_world_size_in_use", "get_world_size_total",
+    "log_dict_as_bulleted_list", "print_dist_setup", "query_environment",
+    "seed_everything", "setup_mlflow", "setup_torch", "setup_wandb",
+    "synchronize", "timeitlogit", "verify_wandb",
+    "wrap_model", "wrap_model_for_ddp",
+    "wrap_model_for_fsdp", "wrap_model_for_fsdp2",
+    # utils (memory-tracking helpers added by PR #134)
+    "Color", "DistributedPdb", "ForkedPdb", "NoColor",
+    "check_for_tarball", "format_pair",
+    "get_max_memory_allocated", "get_max_memory_reserved",
+    "get_timestamp", "grab_tensor", "make_tarfile",
+    "model_summary", "summarize_dict",
+    # log
+    "get_logger",
+    # history
+    "History",
+    # flops
+    "compute_mfu", "try_estimate",
+    # configs
+    "get_scheduler",
+    # launch
+    "get_active_jobid", "get_nodelist_of_active_job",
+)
+
+__all__ = [
+    "__version__",
+    *sorted(_LAZY_MODULES.keys()),
+    *_STATIC_REEXPORTS,
+]  # type: ignore
 
 _IMPORT_CACHE: Dict[str, ModuleType] = {}
 
