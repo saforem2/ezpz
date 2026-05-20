@@ -55,6 +55,7 @@ __all__ = [
     "reset_peak_memory_stats",
     "get_memory_metrics",
     "format_memory_summary",
+    "format_compact_summary",
     "grab_tensor",
     "check_for_tarball",
     "make_tarfile",
@@ -548,16 +549,129 @@ def format_memory_summary(
     return f"peak {peak:.2f}GiB"
 
 
-# Set of memory keys that should be removed from console summary
-# before formatting (callers use this to filter scalar_summary).
-_MEMORY_METRIC_SUFFIXES = (
+# Base names for the 4 memory metrics produced by get_memory_metrics().
+_MEMORY_METRIC_BASES = (
     "mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved",
 )
+# History._compute_distributed_metrics appends these suffixes to every
+# numeric key it aggregates across ranks. We need to strip the aggregated
+# forms too — not just the raw bases — or the console summary still
+# shows 16 noisy `mem_alloc/mean=...` style lines.
+_AGGREGATION_SUFFIXES = ("", "/mean", "/max", "/min", "/std", "/avg")
+
+
+def format_compact_summary(
+    metrics: dict[str, float],
+    precision: int = 6,
+    keys_to_skip: Iterable | None = None,
+) -> str:
+    """Render *metrics* as a compact ``key=value(±std)`` summary line.
+
+    Designed to replace the noisy per-step summary that looks like:
+
+        loss=0.047 loss/mean=0.030 loss/max=0.120 loss/min=0.011 loss/std=0.022
+        accuracy=1.000 accuracy/mean=0.997 accuracy/max=1.000 ...
+
+    with the much tighter:
+
+        loss=0.047(±0.022) accuracy=1.000(±0.006) ...
+
+    Rules:
+      - For each base metric ``X``, look up ``X/std`` in *metrics* and
+        append it inline as ``X=val(±std)``. Other aggregation suffixes
+        (``/mean``, ``/min``, ``/max``, ``/avg``) are dropped entirely
+        from the console line — trackers still get them.
+      - Memory keys (handled by :func:`format_memory_summary`) are
+        skipped here. The caller is expected to append the compact
+        memory token separately at the end of the line.
+      - Counter-like base names (``iter``, ``step``, ``epoch``, ``batch``,
+        ``idx``) suppress the ``(±std)`` suffix even if std is present
+        — a counter's std is meaningless noise.
+
+    Aggregation values (``X/mean``, ``X/std``, etc.) that have NO
+    corresponding base value in *metrics* are still emitted as
+    standalone keys, so we don't silently lose data.
+    """
+    skip = set(keys_to_skip or ())
+    # Pre-build a lookup of std values keyed by base name so we can
+    # match them onto bases in a single pass.
+    std_lookup: dict[str, float] = {}
+    aggregation_suffixes = ("/mean", "/min", "/max", "/std", "/avg")
+    aggregation_keys: set[str] = set()
+    for k, v in metrics.items():
+        for suffix in aggregation_suffixes:
+            if k.endswith(suffix):
+                aggregation_keys.add(k)
+                if suffix == "/std":
+                    std_lookup[k[: -len(suffix)]] = float(v)
+                break
+
+    # Counter-like bases for which (±std) is meaningless.
+    _counter_bases = ("iter", "step", "epoch", "batch", "idx")
+
+    def _is_counter(base: str) -> bool:
+        # Match exact name AND prefixed forms (e.g. "train/iter").
+        return base.rsplit("/", 1)[-1] in _counter_bases
+
+    tokens: list[str] = []
+    seen_bases: set[str] = set()
+    for k, v in metrics.items():
+        if k in skip:
+            continue
+        if is_memory_metric_key(k):
+            continue
+        if k in aggregation_keys:
+            continue  # handled inline (via std_lookup) or skipped
+        seen_bases.add(k)
+        base_token = format_pair(k, v, precision=precision)
+        std = std_lookup.get(k)
+        if std is not None and not _is_counter(k):
+            tokens.append(f"{base_token}(±{std:.{precision}f})")
+        else:
+            tokens.append(base_token)
+
+    # Emit aggregation keys whose base wasn't present in the dict — so
+    # we don't silently drop them. (Rare; happens when caller passes
+    # only an aggregated metric, e.g. ``loss/mean`` without ``loss``.)
+    for k in aggregation_keys:
+        base = next(
+            k[: -len(s)] for s in aggregation_suffixes if k.endswith(s)
+        )
+        if base in seen_bases or k in skip:
+            continue
+        # Memory-metric aggregations are handled by format_memory_summary;
+        # never emit them as standalone tokens here.
+        if is_memory_metric_key(k):
+            continue
+        # /std for a base we already showed inline → drop. Other
+        # aggregations without a base → keep (visible debug info).
+        if k.endswith("/std") and base in std_lookup and base in seen_bases:
+            continue
+        tokens.append(format_pair(k, metrics[k], precision=precision))
+
+    return " ".join(tokens)
 
 
 def is_memory_metric_key(key: str) -> bool:
-    """True if *key* is one of the 4 mem_* keys (with any prefix)."""
-    return any(key.endswith(suffix) for suffix in _MEMORY_METRIC_SUFFIXES)
+    """True if *key* is one of the 4 mem_* metrics (raw OR aggregated).
+
+    Matches both:
+      - raw: ``mem_alloc``, ``train/mem_peak_reserved``, etc.
+      - aggregated: ``mem_alloc/mean``, ``train/mem_alloc/max``, etc.
+        (History._compute_distributed_metrics emits these per rank.)
+
+    Does NOT match unrelated keys that happen to contain ``mem_`` —
+    e.g. ``mem_loss`` or ``memo_field`` — because we anchor on the
+    full base name + aggregation suffix.
+    """
+    for base in _MEMORY_METRIC_BASES:
+        for suffix in _AGGREGATION_SUFFIXES:
+            target = f"{base}{suffix}"
+            # endswith() catches both 'mem_alloc' and 'train/mem_alloc';
+            # the explicit base+suffix list keeps 'mem_loss' from matching.
+            if key == target or key.endswith(f"/{target}"):
+                return True
+    return False
 
 
 # hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC

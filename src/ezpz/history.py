@@ -1473,67 +1473,24 @@ class History:
         self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
             from ezpz.utils import (
+                format_compact_summary,
                 format_memory_summary,
-                is_memory_metric_key,
             )
 
-            scalar_summary = {
-                key: value
-                for key, value in summary_source.items()
-                # skip keys like "train/iter/min", "eval/step/std", etc.,
-                if not any(
-                    count_str in key
-                    for count_str in [
-                        "iter/min",
-                        "iter/max",
-                        "iter/std",
-                        "iter/avg",
-                        "iter/mean",
-                        "step/min",
-                        "step/max",
-                        "step/std",
-                        "step/avg",
-                        "step/mean",
-                        "epoch/min",
-                        "epoch/max",
-                        "epoch/std",
-                        "epoch/avg",
-                        "epoch/mean",
-                        "batch/min",
-                        "batch/max",
-                        "batch/std",
-                        "batch/avg",
-                        "batch/mean",
-                        "idx/min",
-                        "idx/max",
-                        "idx/std",
-                        "idx/avg",
-                        "idx/mean",
-                    ]
-                )
-                # Memory keys get condensed to a single 'memory:' token
-                # at the end of the line — strip them from the verbose
-                # scalar_summary so they don't double-print.
-                and not is_memory_metric_key(key)
-            }
+            # format_compact_summary handles all the noise reduction:
+            #   - collapses base + */std into `key=value(±std)`
+            #   - drops the */mean /min /max /avg companions
+            #   - strips memory keys (handled separately below)
+            #   - leaves counter-like keys (iter/step/epoch/...) bare
+            base = format_compact_summary(
+                summary_source, precision=precision
+            )
             # Build the compact memory string from the RAW metrics dict
-            # (which still has the 4 keys even after we filter the
-            # console summary). Empty string when no memory keys are
-            # present, e.g. on CPU/MPS.
+            # (which still has the 4 keys even after the filter above).
+            # Empty string when no memory keys, e.g. on CPU/MPS.
             memory_str = format_memory_summary(metrics, prefix=prefix or "")
-            # _ss = {"max", "min", "std"}
-            # _sk = {"iter", "step", "epoch", "batch", "idx"}
-            # keys_to_skip = [
-            #     f"{i}/{s}" for s in _ss for i in _sk
-            # ]
-            if scalar_summary:
-                base = summarize_dict(scalar_summary, precision=precision)
-                if memory_str:
-                    return f"{base} memory={memory_str}"
-                return base
-            if memory_str:
-                return f"memory={memory_str}"
-            return ""
+            parts = [p for p in (base, f"memory={memory_str}" if memory_str else "") if p]
+            return " ".join(parts)
         return ""
 
     @staticmethod

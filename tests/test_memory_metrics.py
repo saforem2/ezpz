@@ -234,7 +234,111 @@ class TestIsMemoryMetricKey:
         for k in ("train/mem_alloc", "eval/mem_peak_alloc"):
             assert is_memory_metric_key(k), f"{k} should match"
 
+    def test_recognizes_aggregated_forms(self):
+        """History._compute_distributed_metrics adds /mean, /max, /min, /std,
+        /avg suffixes per rank. The predicate has to catch these too or
+        the console summary still shows 16 noisy `mem_alloc/mean=...`
+        style lines. This was a real bug — caught in dogfooding."""
+        for base in ("mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved"):
+            for suffix in ("/mean", "/max", "/min", "/std", "/avg"):
+                k = f"{base}{suffix}"
+                assert is_memory_metric_key(k), f"{k} should match"
+                # prefixed variants too
+                k_prefixed = f"train/{base}{suffix}"
+                assert is_memory_metric_key(k_prefixed), f"{k_prefixed} should match"
+
     def test_rejects_non_memory(self):
-        for k in ("loss", "accuracy", "train/loss", "dtf", "mem_loss"):
-            # "mem_loss" is a false-positive trap — only ends with mem_alloc etc.
+        for k in (
+            "loss", "accuracy", "train/loss", "dtf",
+            "mem_loss",          # ends in `loss`, not a base
+            "memo_field",        # `memo_*` is not `mem_*`
+            "mem_alloc_extra",   # base substring isn't enough; must be whole word
+        ):
             assert not is_memory_metric_key(k), f"{k} should NOT match"
+
+
+class TestFormatCompactSummary:
+    """The ``key=value(±std)`` console renderer."""
+
+    def test_collapses_base_and_std_into_inline_format(self):
+        """`loss=0.5` + `loss/std=0.02` → `loss=0.5(±0.02)`."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"loss": 0.5, "loss/std": 0.02}, precision=2,
+        )
+        assert out == "loss=0.50(±0.02)"
+
+    def test_drops_other_aggregation_suffixes(self):
+        """`/mean`, `/min`, `/max`, `/avg` are dropped (W&B has them)."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {
+                "loss": 0.5,
+                "loss/mean": 0.4, "loss/min": 0.1, "loss/max": 0.9,
+                "loss/std": 0.02, "loss/avg": 0.4,
+            },
+            precision=2,
+        )
+        # All four aggregation suffixes drop; only the inline std survives.
+        assert out == "loss=0.50(±0.02)"
+        assert "/mean" not in out and "/max" not in out and "/min" not in out
+
+    def test_skips_memory_keys_entirely(self):
+        """Memory keys are handled by format_memory_summary; never appear here."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {
+                "loss": 0.5,
+                "mem_alloc": 1.5, "mem_peak_alloc": 2.0,
+                "mem_alloc/mean": 1.5, "mem_alloc/std": 0.0,
+            },
+            precision=2,
+        )
+        assert out == "loss=0.50"
+        assert "mem" not in out
+
+    def test_counter_keys_omit_std(self):
+        """`iter`, `step`, `epoch`, `batch`, `idx` don't get (±std)."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"iter": 100, "iter/std": 5.0, "loss": 0.5, "loss/std": 0.02},
+            precision=2,
+        )
+        # iter has NO ±std even though iter/std was provided
+        assert "iter=100" in out
+        assert "iter=100(" not in out  # not "iter=100(±5.00)"
+        # loss still has its inline std
+        assert "loss=0.50(±0.02)" in out
+
+    def test_no_std_no_parenthetical(self):
+        """When `/std` is absent, the metric prints as-is — no (±0) noise."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary({"loss": 0.5}, precision=2)
+        assert out == "loss=0.50"
+
+    def test_aggregated_without_base_still_emitted(self):
+        """`loss/mean=0.4` without `loss` itself → emit `loss/mean=0.4`."""
+        from ezpz.utils import format_compact_summary
+        # No base `loss` — pure aggregate. Should still appear so we don't
+        # silently drop data.
+        out = format_compact_summary({"loss/mean": 0.4}, precision=2)
+        assert "loss/mean=0.40" in out
+
+    def test_realistic_log_shape(self):
+        """End-to-end: the actual shape from a 22-token line collapses to ~8."""
+        from ezpz.utils import format_compact_summary
+        metrics = {
+            "iter": 180,
+            "loss": 0.047, "loss/std": 0.023, "loss/mean": 0.030,
+            "loss/max": 0.120, "loss/min": 0.011,
+            "accuracy": 1.0, "accuracy/std": 0.007, "accuracy/mean": 0.997,
+            "accuracy/max": 1.0, "accuracy/min": 0.970,
+            "dtf": 0.009, "dtf/std": 0.000,
+        }
+        out = format_compact_summary(metrics, precision=3)
+        # 4 tokens: iter, loss(±std), accuracy(±std), dtf(±std)
+        assert out.count("=") == 4
+        assert "iter=180" in out
+        assert "loss=0.047(±0.023)" in out
+        assert "accuracy=1.000(±0.007)" in out
+        assert "dtf=0.009(±0.000)" in out
