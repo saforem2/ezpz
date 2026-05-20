@@ -863,6 +863,8 @@ def train_fn(
                 # examples that exclude data loading (fsdp_tp, minimal).
                 train_metrics["train/tflops"] = _model_flops / (t4 - t0) / 1e12
                 train_metrics["train/mfu"] = compute_mfu(_model_flops, t4 - t0)
+            # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+            train_metrics |= ezpz.get_memory_metrics(device, prefix="train/")
             train_msg = history.update(train_metrics).replace("train/", "")
             logger.info("[train] %s", train_msg)
 

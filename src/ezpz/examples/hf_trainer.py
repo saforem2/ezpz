@@ -30,12 +30,33 @@ from transformers import (
     AutoTokenizer,
     HfArgumentParser,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
     default_data_collator,
     is_torch_xla_available,
     # set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
+
+
+class MemoryMetricsCallback(TrainerCallback):
+    """Inject ezpz device-memory metrics into HF Trainer's `logs` dict.
+
+    HF Trainer owns its metric dict — there's no `metrics |= ...` seam
+    like the other ezpz.examples scripts have. The standard extension
+    point is `on_log`, which fires once per Trainer logging step with
+    the dict that's about to be sent to all loggers (wandb, mlflow,
+    tensorboard, etc.). We merge the 4 memory keys in place so every
+    logger gets them.
+
+    Empty dict from `get_memory_metrics()` on CPU/MPS is a no-op:
+    `logs.update({})` doesn't add any keys.
+    """
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+        logs.update(ezpz.get_memory_metrics(prefix="train/"))
 
 import ezpz
 import ezpz.configs
@@ -957,6 +978,9 @@ def main() -> int:
             if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
+        # Inject ezpz device-memory metrics into the Trainer's `logs` dict
+        # on every logging step. No-op on CPU/MPS.
+        callbacks=[MemoryMetricsCallback()],
     )
 
     # if wandb is not None and getattr(wandb, "run", None) is not None:

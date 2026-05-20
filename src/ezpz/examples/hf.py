@@ -874,6 +874,8 @@ def main() -> None:
                     # + forward + backward + optimizer.step + sync).
                     metrics["train/tflops"] = _model_flops / t1step / 1e12
                     metrics["train/mfu"] = compute_mfu(_model_flops, t1step)
+                # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+                metrics |= ezpz.get_memory_metrics(prefix="train/")
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)

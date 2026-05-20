@@ -394,6 +394,10 @@ def fsdp_main(args: argparse.Namespace) -> None:
             if dt_step > 0:
                 merged["tflops"] = _model_flops / dt_step / 1e12
                 merged["mfu"] = compute_mfu(_model_flops, dt_step)
+        # Device memory: per-EPOCH peak (we don't reset between batches),
+        # so mem_peak_* here captures the high-water mark across the
+        # whole training+eval epoch.
+        merged |= ezpz.get_memory_metrics()
         logger.info(history.update(merged))
 
     train_end = time.perf_counter()
