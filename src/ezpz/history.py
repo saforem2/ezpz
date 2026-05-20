@@ -1472,6 +1472,11 @@ class History:
         self._tracker.log(sanitized_metrics, step=step, commit=commit)
         self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
+            from ezpz.utils import (
+                format_memory_summary,
+                is_memory_metric_key,
+            )
+
             scalar_summary = {
                 key: value
                 for key, value in summary_source.items()
@@ -1506,16 +1511,28 @@ class History:
                         "idx/mean",
                     ]
                 )
+                # Memory keys get condensed to a single 'memory:' token
+                # at the end of the line — strip them from the verbose
+                # scalar_summary so they don't double-print.
+                and not is_memory_metric_key(key)
             }
+            # Build the compact memory string from the RAW metrics dict
+            # (which still has the 4 keys even after we filter the
+            # console summary). Empty string when no memory keys are
+            # present, e.g. on CPU/MPS.
+            memory_str = format_memory_summary(metrics, prefix=prefix or "")
             # _ss = {"max", "min", "std"}
             # _sk = {"iter", "step", "epoch", "batch", "idx"}
             # keys_to_skip = [
             #     f"{i}/{s}" for s in _ss for i in _sk
             # ]
             if scalar_summary:
-                return summarize_dict(
-                    scalar_summary, precision=precision
-                ).replace("/", "/")
+                base = summarize_dict(scalar_summary, precision=precision)
+                if memory_str:
+                    return f"{base} memory={memory_str}"
+                return base
+            if memory_str:
+                return f"memory={memory_str}"
             return ""
         return ""
 

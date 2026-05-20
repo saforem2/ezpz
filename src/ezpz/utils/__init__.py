@@ -54,6 +54,7 @@ __all__ = [
     "get_current_memory_reserved",
     "reset_peak_memory_stats",
     "get_memory_metrics",
+    "format_memory_summary",
     "grab_tensor",
     "check_for_tarball",
     "make_tarfile",
@@ -496,6 +497,67 @@ def get_memory_metrics(
     if reset_peak:
         reset_peak_memory_stats(device)
     return metrics
+
+
+def format_memory_summary(
+    metrics: dict[str, float],
+    *,
+    device: "torch.device | int | str | None" = None,
+    prefix: str = "",
+) -> str:
+    """Condense the four mem_* keys into a single console-friendly string.
+
+    Input: a dict that contains (some subset of) the keys produced by
+    :func:`get_memory_metrics` — ``{prefix}mem_alloc``,
+    ``{prefix}mem_peak_alloc``, ``{prefix}mem_reserved``,
+    ``{prefix}mem_peak_reserved``.
+
+    Output: ``"X.XX/Y.YYGiB (Z%)"`` where X is current alloc, Y is peak
+    alloc, and Z is current alloc as a percent of device total memory
+    (omitted when device total isn't available — e.g. unknown XPU, CPU
+    fallback).
+
+    Returns an empty string if no mem_* keys are present (CPU/MPS) — so
+    callers can ``" ".join(filter(None, [...]))`` without checking.
+    """
+    alloc = metrics.get(f"{prefix}mem_alloc")
+    peak = metrics.get(f"{prefix}mem_peak_alloc")
+    if alloc is None and peak is None:
+        return ""
+    # Total device VRAM for the percentage. Lazy-resolve to avoid the
+    # import cost when caller has no memory keys to format anyway.
+    pct_str = ""
+    try:
+        import ezpz
+        idx = device if isinstance(device, int) else None
+        props = ezpz.distributed.get_device_properties(idx)
+        total_bytes = props.get("total_memory", -1)
+        if total_bytes and total_bytes > 0 and alloc is not None:
+            total_gib = total_bytes / (1024 ** 3)
+            pct = 100.0 * alloc / total_gib
+            pct_str = f" ({pct:.0f}%)"
+    except Exception:
+        # Any failure resolving total memory: omit the percentage rather
+        # than break logging. Raw numbers still print.
+        pct_str = ""
+
+    if alloc is not None and peak is not None:
+        return f"{alloc:.2f}/{peak:.2f}GiB{pct_str}"
+    if alloc is not None:
+        return f"{alloc:.2f}GiB{pct_str}"
+    return f"peak {peak:.2f}GiB"
+
+
+# Set of memory keys that should be removed from console summary
+# before formatting (callers use this to filter scalar_summary).
+_MEMORY_METRIC_SUFFIXES = (
+    "mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved",
+)
+
+
+def is_memory_metric_key(key: str) -> bool:
+    """True if *key* is one of the 4 mem_* keys (with any prefix)."""
+    return any(key.endswith(suffix) for suffix in _MEMORY_METRIC_SUFFIXES)
 
 
 # hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC

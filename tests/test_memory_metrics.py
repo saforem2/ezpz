@@ -9,11 +9,13 @@ import torch
 
 import ezpz
 from ezpz.utils import (
+    format_memory_summary,
     get_current_memory_allocated,
     get_current_memory_reserved,
     get_max_memory_allocated,
     get_max_memory_reserved,
     get_memory_metrics,
+    is_memory_metric_key,
     reset_peak_memory_stats,
 )
 
@@ -140,3 +142,99 @@ class TestTopLevelReexport:
     def test_attribute_is_same_function(self):
         from ezpz.utils import get_memory_metrics as direct
         assert ezpz.get_memory_metrics is direct
+
+
+class TestFormatMemorySummary:
+    """The condensed console-formatter."""
+
+    def test_empty_when_no_keys(self):
+        """No mem_* keys → empty string (caller can filter)."""
+        assert format_memory_summary({"loss": 0.5, "iter": 1}) == ""
+
+    def test_basic_format_without_total(self, monkeypatch):
+        """alloc + peak, no device total → 'X.XX/Y.YYGiB' with no percent."""
+        # Stub get_device_properties to return total_memory=-1 (unknown).
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        out = format_memory_summary(
+            {"mem_alloc": 1.5, "mem_peak_alloc": 2.25}
+        )
+        assert out == "1.50/2.25GiB"
+        # Specifically: no parenthetical percentage when total unknown.
+        assert "%" not in out
+
+    def test_includes_percentage_when_total_known(self, monkeypatch):
+        """With total_memory in bytes, the percent of current/total appears."""
+        import ezpz.distributed
+        # 16 GiB total VRAM
+        total_bytes = 16 * (1024 ** 3)
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": total_bytes},
+        )
+        out = format_memory_summary(
+            {"mem_alloc": 8.0, "mem_peak_alloc": 10.0}
+        )
+        # 8 / 16 = 50%
+        assert out == "8.00/10.00GiB (50%)"
+
+    def test_handles_prefix(self, monkeypatch):
+        """The prefix kwarg should match the keys in the dict."""
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        out = format_memory_summary(
+            {"train/mem_alloc": 1.5, "train/mem_peak_alloc": 2.0},
+            prefix="train/",
+        )
+        assert out == "1.50/2.00GiB"
+
+    def test_alloc_only_when_peak_missing(self, monkeypatch):
+        """If only alloc is present (e.g. partial dict), format that alone."""
+        import ezpz.distributed
+        monkeypatch.setattr(
+            ezpz.distributed,
+            "get_device_properties",
+            lambda d=None: {"name": "x", "total_memory": -1},
+        )
+        out = format_memory_summary({"mem_alloc": 1.5})
+        assert out == "1.50GiB"
+
+    def test_swallows_get_device_properties_errors(self, monkeypatch):
+        """A broken get_device_properties shouldn't crash the format call."""
+        import ezpz.distributed
+
+        def boom(d=None):
+            raise RuntimeError("simulated failure")
+
+        monkeypatch.setattr(ezpz.distributed, "get_device_properties", boom)
+        # Should still return the GiB part, just no percent.
+        out = format_memory_summary(
+            {"mem_alloc": 1.5, "mem_peak_alloc": 2.0}
+        )
+        assert out == "1.50/2.00GiB"
+
+
+class TestIsMemoryMetricKey:
+    """Helper used by History.update to strip mem_* from scalar_summary."""
+
+    def test_recognizes_all_four(self):
+        for k in ("mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved"):
+            assert is_memory_metric_key(k), f"{k} should match"
+
+    def test_recognizes_prefixed(self):
+        for k in ("train/mem_alloc", "eval/mem_peak_alloc"):
+            assert is_memory_metric_key(k), f"{k} should match"
+
+    def test_rejects_non_memory(self):
+        for k in ("loss", "accuracy", "train/loss", "dtf", "mem_loss"):
+            # "mem_loss" is a false-positive trap — only ends with mem_alloc etc.
+            assert not is_memory_metric_key(k), f"{k} should NOT match"

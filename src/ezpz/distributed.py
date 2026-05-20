@@ -393,7 +393,10 @@ def get_device_properties(device: int | None = None) -> dict[str, Any]:
     idx = device if device is not None else get_local_rank()
     if device_type == "cuda":
         props = torch.cuda.get_device_properties(idx)
-        return {"name": props.name, "total_memory": props.total_mem}
+        # torch.cuda.DeviceProperties uses `total_memory` (in bytes),
+        # not `total_mem`. The old name silently AttributeError'd to a
+        # plain `props.total_mem` call that doesn't exist.
+        return {"name": props.name, "total_memory": props.total_memory}
     if device_type == "xpu" and hasattr(torch, "xpu"):
         props = torch.xpu.get_device_properties(idx)
         return {
