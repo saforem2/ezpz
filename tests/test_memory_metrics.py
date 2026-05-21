@@ -626,6 +626,44 @@ class TestFormatCompactSummary:
         assert out == "loss=0.50"
         assert "mem" not in out
 
+    def test_known_constant_hyperparams_omit_std_and_padding(self):
+        """Hyperparameters that are replicated across ranks (lr, momentum,
+        beta1, weight_decay, ...) always have std=0, so they should emit
+        as bare `key=value` with no `(±...)` and no 9-char pad gap.
+
+        This is the visual fix for log lines like
+            ... acc=0.5(±  0.12) lr=0.000059          dt=...
+        where the `lr` token's wide trailing whitespace gap was reserving
+        space for a (±std) parenthetical that will never appear.
+        """
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"loss": 0.5, "loss/std": 0.02, "lr": 0.000059, "lr/std": 0.0},
+            precision=6,
+        )
+        # lr: bare, no parenthetical, no trailing padding before next token.
+        assert "lr=0.000059 " in out or out.endswith("lr=0.000059")
+        assert "lr=0.000059(" not in out
+        # No 9-char gap (the old behavior would emit "lr=0.000059         ").
+        assert "lr=0.000059  " not in out
+        # loss still gets its inline std as before.
+        assert "(±" in out  # loss=0.500000(± 0.020)
+
+    def test_constant_keys_kwarg_extends_set(self):
+        """Callers can mark extra metrics as known-constant via
+        `constant_keys` so they also skip `(±std)` padding."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"my_const": 42.0, "my_const/std": 0.0,
+             "loss": 0.5, "loss/std": 0.02},
+            precision=6,
+            constant_keys=["my_const"],
+        )
+        # my_const treated as a hyperparameter — bare, no padding gap.
+        assert "my_const=42.000000 " in out or out.endswith("my_const=42.000000")
+        assert "my_const=42.000000(" not in out
+        assert "my_const=42.000000  " not in out
+
     def test_counter_keys_omit_std(self):
         """`iter`, `step`, `epoch`, `batch`, `idx` don't get (±std)."""
         from ezpz.utils import format_compact_summary

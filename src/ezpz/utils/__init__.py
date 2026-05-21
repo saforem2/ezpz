@@ -716,6 +716,7 @@ def format_compact_summary(
     precision: int = 6,
     keys_to_skip: Iterable | None = None,
     min_widths: "dict[str, int] | None" = None,
+    constant_keys: Iterable[str] | None = None,
 ) -> str:
     """Render *metrics* as a compact ``key=value(±std)`` summary line.
 
@@ -739,6 +740,10 @@ def format_compact_summary(
       - Counter-like base names (``iter``, ``step``, ``epoch``, ``batch``,
         ``idx``) suppress the ``(±std)`` suffix even if std is present
         — a counter's std is meaningless noise.
+      - Hyperparameters that are replicated across ranks (``lr``,
+        ``momentum``, ``weight_decay``, ``beta1``, ``beta2``, …) also
+        suppress ``(±std)`` because their per-step std is always 0.
+        Extend the recognised set via ``constant_keys``.
       - Counter tokens are right-padded so successive lines align at
         the left edge: ``iter=8     loss=...`` lines up under
         ``iter=180   loss=...``. Override widths via ``min_widths``.
@@ -782,6 +787,28 @@ def format_compact_summary(
         # Match exact name AND prefixed forms (e.g. "train/iter").
         return base.rsplit("/", 1)[-1] in _counter_bases
 
+    # Hyperparameters that are replicated identically across ranks —
+    # their /std is always 0, so emitting `(±0)` or padding a 9-char
+    # gap to "reserve" space for a future non-zero std is pure noise.
+    # Treat them like counters: bare `key=value`, no parenthetical,
+    # no padding. Caller can extend via `constant_keys` kwarg.
+    _known_constant_bases = frozenset((
+        "lr", "learning_rate",
+        "momentum",
+        "beta1", "beta2",
+        "weight_decay", "wd",
+        "eps", "epsilon",
+        "clip_grad", "grad_clip", "clip_norm", "max_grad_norm",
+        "warmup_steps", "warmup_iters", "warmup",
+    ))
+    extra_constants = (
+        frozenset(constant_keys) if constant_keys is not None else frozenset()
+    )
+
+    def _is_known_constant(base: str) -> bool:
+        leaf = base.rsplit("/", 1)[-1]
+        return leaf in _known_constant_bases or leaf in extra_constants
+
     tokens: list[str] = []
     seen_bases: set[str] = set()
     for k, v in metrics.items():
@@ -794,14 +821,16 @@ def format_compact_summary(
         seen_bases.add(k)
         base_token = format_pair(k, v, precision=precision)
         std = std_lookup.get(k)
-        if std is not None and not _is_counter(k):
+        if std is not None and not _is_counter(k) and not _is_known_constant(k):
             std_token = _format_std(std, precision=precision)
             if std_token is None:
                 # std rounds to zero at the chosen precision (e.g.
                 # `lr/std=1e-12` with precision=2). `(±0)` adds no
                 # signal; drop it. Pad with spaces matching the width
                 # of a full `(±XXXXXX)` parenthetical so this token's
-                # successor still aligns with its neighbors above/below.
+                # successor still aligns with its neighbors above/below
+                # — important for metrics that swing between zero and
+                # non-zero std across rows (e.g. small/sporadic noise).
                 pad = " " * (_STD_TOKEN_MAX_WIDTH + 3)
                 tokens.append(f"{base_token}{pad}")
             else:
@@ -810,7 +839,9 @@ def format_compact_summary(
                 padded = std_token.rjust(_STD_TOKEN_MAX_WIDTH)
                 tokens.append(f"{base_token}(±{padded})")
         else:
-            # Pad counter tokens so the next field aligns across rows.
+            # Counters and known-constant hyperparameters: no padding,
+            # no parenthetical. Counters still get left-edge padding so
+            # the *next* field aligns across rows.
             tokens.append(_pad(k, base_token))
 
     # Emit aggregation keys whose base wasn't present in the dict — so
