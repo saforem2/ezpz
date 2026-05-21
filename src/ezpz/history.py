@@ -1378,8 +1378,19 @@ class History:
             dtype=dtype,
             device=metric_device,
         )
-        sum_vals = values.clone()
-        sq_vals = values.square()
+        # Promote to fp64 *before* squaring so the variance arithmetic
+        # `E[X^2] - E[X]^2` doesn't lose its signal to fp32 cancellation.
+        # For typical training metrics (`tokens_per_sec ≈ 1e5`,
+        # `tflops ≈ 40`, etc.) the squared values are 8-10 orders of
+        # magnitude larger than the across-rank variance, and the
+        # subtraction collapses to exactly 0.0 in fp32 — `tflops/std=0.0`
+        # is then indistinguishable from "all ranks identical" and the
+        # console summary drops the `(±std)` parenthetical entirely.
+        # fp64 has ~16 sig digits of headroom which covers any realistic
+        # training metric. Cost: one extra cast + ~2x bandwidth on the
+        # squared-sum all-reduce, negligible vs. the metric collection.
+        sum_vals = values.to(torch.float64)
+        sq_vals = sum_vals.square()
         max_vals = values.clone()
         min_vals = values.clone()
         # world_size = ezpz.distributed.get_world_size()

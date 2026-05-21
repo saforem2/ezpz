@@ -189,6 +189,110 @@ class TestHistory:
         warmed = hist.to_DataArray([1, 2, 3], warmup=1.0)
         assert warmed.shape == (0,)
 
+    def test_distributed_std_survives_fp32_cancellation(
+        self, monkeypatch
+    ):
+        """Distributed std for large-magnitude metrics survives the
+        ``E[X^2] - E[X]^2`` variance formula.
+
+        Regression: when per-rank values are ~1e5 (e.g. ``tokens_per_sec``)
+        and their across-rank variance is small (~hundreds), the
+        variance subtraction loses its entire signal to fp32
+        catastrophic cancellation — the squared values are ~1e10 and
+        the variance is 8 orders of magnitude smaller than mantissa
+        precision allows. Pre-fix, ``std`` came back as exactly 0.0
+        and the console summary dropped the ``(±std)`` parenthetical
+        entirely, making it look like every rank measured the same
+        value.
+
+        Fix: promote to fp64 before squaring (commit message has the
+        full numerical analysis).
+        """
+        # Per-rank values mirroring a real training-log signature:
+        # tokens_per_sec ≈ 124k across 6 ranks with ~20 std.
+        per_rank_values = [
+            123880.0, 123920.0, 123870.0, 123890.0, 123900.0, 123860.0,
+        ]
+        world_size = len(per_rank_values)
+
+        # `History.__init__` short-circuits `distributed_history` to
+        # False unless `get_world_size() > 1`. Patch BEFORE constructing
+        # so the flag survives, and again later for the actual call.
+        monkeypatch.setattr(
+            "ezpz.distributed.get_world_size", lambda: world_size
+        )
+        monkeypatch.setattr(
+            torch.distributed,
+            "is_initialized",
+            lambda: True,
+            raising=False,
+        )
+        # Also patch is_available — checked inside _compute_distributed_metrics.
+        monkeypatch.setattr(
+            torch.distributed, "is_available", lambda: True, raising=False
+        )
+
+        hist = history.History(distributed_history=True)
+        hist._rank = 0
+        # Force _select_metric_device to return CPU so we don't try to
+        # allocate on a GPU that doesn't exist in CI.
+        monkeypatch.setattr(
+            hist, "_select_metric_device", lambda: torch.device("cpu")
+        )
+        # Each rank only sees its own value; the all-reduce here
+        # simulates the global SUM/MAX/MIN by replacing the local
+        # tensor's contents in-place with the across-rank aggregate.
+        def _fake_all_reduce(tensor, op=None, **_kw):
+            ops = torch.distributed.ReduceOp
+            arr = torch.tensor(
+                per_rank_values, dtype=tensor.dtype, device=tensor.device
+            )
+            if op == ops.SUM:
+                # Local tensor is rank 0's contribution; we want the
+                # sum of all rank contributions. The first time we
+                # see SUM the tensor is the rank-0 value; for the
+                # squared sum it's the rank-0 squared value. Re-derive
+                # from `arr` to keep this test agnostic of which call.
+                if torch.allclose(tensor.squeeze(), arr[0:1].to(tensor.dtype)):
+                    tensor.copy_(arr.sum().to(tensor.dtype).view_as(tensor))
+                else:
+                    tensor.copy_(
+                        arr.square().sum().to(tensor.dtype).view_as(tensor)
+                    )
+            elif op == ops.MAX:
+                tensor.copy_(arr.max().to(tensor.dtype).view_as(tensor))
+            elif op == ops.MIN:
+                tensor.copy_(arr.min().to(tensor.dtype).view_as(tensor))
+
+        monkeypatch.setattr(
+            torch.distributed, "all_reduce", _fake_all_reduce
+        )
+
+        # The History helper enters with this rank's local value.
+        stats = hist._compute_distributed_metrics(
+            {"tokens_per_sec": per_rank_values[0]}
+        )
+
+        # Sanity: mean is approximately correct. With fp64 promotion
+        # we get full precision; pre-fix the fp32 mean also worked but
+        # only to ~7 sig digits for ~1e5 values. The bug is in std,
+        # not mean.
+        true_mean = sum(per_rank_values) / world_size
+        assert stats["tokens_per_sec/mean"] == pytest.approx(true_mean, abs=0.01)
+        # The point of the regression: std MUST be non-zero. Pre-fix
+        # this was exactly 0.0 due to fp32 cancellation.
+        assert stats["tokens_per_sec/std"] > 0.0, (
+            "Distributed std collapsed to 0.0 — fp32 cancellation regressed "
+            "(see history.py:_compute_distributed_metrics)"
+        )
+        # Verify the std is close to the actual population std (~20)
+        # — not just non-zero by accident.
+        import statistics
+        expected_std = statistics.pstdev(per_rank_values)
+        assert stats["tokens_per_sec/std"] == pytest.approx(
+            expected_std, rel=1e-3
+        )
+
     def test_history_finalize_report_contains_environment(self, tmp_path):
         """Finalized report lives alongside outputs with environment context."""
 
