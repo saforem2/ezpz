@@ -225,9 +225,11 @@ repr_styles = {
     # identically.
     "repr.call": Style(color="cyan", bold=True),
     # Custom style for the `(±std)` parenthetical added by
-    # `format_compact_summary`. Highlighter is `EzpzReprHighlighter`
-    # in ezpz.log.highlighter.
-    "repr.ezpz_std": Style(color=ORANGE_),
+    # `format_compact_summary`. Muted blue-grey from the ezpz palette
+    # — distinct enough to scan as a separate token but quiet enough
+    # to fade behind the value it modifies. Highlighter is
+    # `EzpzReprHighlighter` in ezpz.log.highlighter.
+    "repr.ezpz_std": Style(color=DARK["blue_grey"]),
 }
 
 # 4) assemble in one shot
