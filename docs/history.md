@@ -112,7 +112,59 @@ Each call to `update()`:
 2. Computes **min, max, mean, std** across all ranks (when distributed)
 3. Dispatches metrics to all configured backends
 4. Writes a JSONL entry to disk
-5. Returns a summary string: `"loss=0.420000 lr=0.001000"`
+5. Returns a compact summary string suitable for the console
+
+### Console summary format
+
+`update()` returns a column-aligned `key=value(±std)` string designed to
+collapse the noisy `loss=…  loss/mean=…  loss/max=…  loss/min=…  loss/std=…`
+shape into a single scannable line:
+
+```
+iter=180   loss=0.078(± 0.026) accuracy=0.984(±9.9e-3) dtf=0.014(±7.4e-4) lr=0.000059 memory=0.01/0.01GiB (0%)
+```
+
+Format rules (all handled by [`ezpz.utils.format_compact_summary`][ezpz.utils.format_compact_summary]):
+
+- For each base metric `X` with a sibling `X/std` (auto-computed when
+  distributed history is on), the std is appended inline as
+  `X=value(±std)`. The `/mean`, `/min`, `/max`, `/avg` companions are
+  dropped from the console — trackers still receive them.
+- **Std values are right-aligned in a 6-char column** so a row with
+  `(±0.070)` lines up under one with `(±5.1e-4)` or `(±  0.12)`.
+- **Counter-like keys** (`iter`, `step`, `epoch`, `batch`, `idx`) are
+  bare (no `(±std)`) and left-edge padded so the next field aligns
+  across rows: `iter=8     loss=…` lines up under `iter=180   loss=…`.
+- **Replicated hyperparameters** (`lr`, `momentum`, `weight_decay`,
+  `beta1`, `beta2`, `eps`, `clip_grad`, `warmup_steps`, …) are bare —
+  their per-step std is always 0 across ranks, so no parenthetical and
+  no padding gap is emitted.
+- **Std formatting**: 2 sig figs, fixed-point for magnitudes ≥ 0.01
+  (`0.16`, `0.020`, `1.3`), scientific for magnitudes < 0.01 with the
+  leading exponent zero stripped (`5.1e-4`, not `5.1e-04`). Bounded
+  width keeps columns stable across runs.
+
+### Device memory tracking
+
+To include per-step GPU memory in the same line, merge in
+[`ezpz.get_memory_metrics`][ezpz.get_memory_metrics] before calling
+`update()`:
+
+```python
+import ezpz
+
+metrics = {"loss": loss.item(), "dtf": t_forward}
+metrics |= ezpz.get_memory_metrics(device, prefix="train/")
+summary = history.update(metrics)
+```
+
+The helper returns 4 keys when supported (CUDA, XPU): `mem_alloc`,
+`mem_peak_alloc`, `mem_reserved`, `mem_peak_reserved` (units: GiB).
+Returns `{}` on CPU / MPS so the laptop smoke path stays clean. Opt
+out on supported devices via `EZPZ_TRACK_MEMORY=0`. The 4 memory keys
+are auto-collapsed in the console line into a single
+`memory=alloc/reserved (peak%)` token — full per-rank aggregations
+still flow to the trackers.
 
 ### Distributed statistics
 
@@ -541,6 +593,7 @@ profiling individual phases within your training loop.
 | `EZPZ_NO_DISTRIBUTED_HISTORY` | Disable distributed aggregation |
 | `EZPZ_LOCAL_HISTORY` | Alias for above |
 | `EZPZ_TRACKER_BACKENDS` | Fallback backend list when `backends` arg is `None` |
+| `EZPZ_TRACK_MEMORY` | Set to `0` to suppress per-step device memory keys emitted by `ezpz.get_memory_metrics`. Default: `1` (enabled on CUDA/XPU, no-op on CPU/MPS) |
 | `WANDB_MODE` | Controls wandb mode (`disabled`, `offline`, `online`) |
 | `WANDB_DISABLED` | Set to `1` to disable wandb entirely |
 | `WB_PROJECT` / `WANDB_PROJECT` | Default wandb project name |
