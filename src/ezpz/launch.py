@@ -42,26 +42,42 @@ _RETRY_BACKOFF_CAP_S = 60.0
 def _run_with_watchdog(
     cmd: Sequence[str], idle_timeout_s: Optional[int]
 ) -> int:
-    """Run *cmd* with an optional idle-stdout watchdog.
+    """Run *cmd* with an optional idle-output watchdog.
 
-    When ``idle_timeout_s is None`` this is a thin pass-through to
-    ``subprocess.run`` — no threading, no overhead.
+    When ``idle_timeout_s is None`` (or ``<= 0``) this is a thin
+    pass-through to ``subprocess.run`` — no threading, no overhead.
 
-    Otherwise: spawn the process, stream its stdout/stderr to this
-    process's stdout in real time, and SIGTERM it (then SIGKILL after
-    ``_WATCHDOG_KILL_GRACE_S``) if no output appears for
-    ``idle_timeout_s`` consecutive seconds. Returns the process's
+    Otherwise: spawn the process, stream its combined stdout+stderr
+    to this process's stdout in real time, and SIGTERM it (then
+    SIGKILL after ``_WATCHDOG_KILL_GRACE_S``) if no output appears
+    for ``idle_timeout_s`` consecutive seconds. Returns the process's
     exit code, or ``_WATCHDOG_EXIT_CODE`` (124) if the watchdog fired.
 
-    Idle = stdout silence. The process can run indefinitely as long
-    as it keeps emitting at least one line per ``idle_timeout_s``.
-    Designed for catching collective hangs (xccl, NCCL, etc.) where
-    the process is alive but every rank is blocked in the same
-    collective and nothing reaches stdout.
+    Idle = silence on *both* stdout and stderr (stderr is merged into
+    stdout). The process can run indefinitely as long as it keeps
+    emitting at least one line per ``idle_timeout_s`` on either
+    stream. Designed for catching collective hangs (xccl, NCCL, etc.)
+    where the process is alive but every rank is blocked in the same
+    collective and nothing reaches either stream.
+
+    **Buffering note**: forces ``PYTHONUNBUFFERED=1`` in the child
+    environment. CPython block-buffers stdout when it isn't attached
+    to a TTY (which it isn't here — we attached a pipe), and a healthy
+    Python training script can easily produce zero bytes for minutes
+    while accumulating a fat buffer. Without this nudge the watchdog
+    would routinely kill perfectly-healthy jobs. The variable is
+    benign for non-Python children: they ignore it.
     """
     if idle_timeout_s is None or idle_timeout_s <= 0:
         proc = subprocess.run(cmd, check=False)
         return proc.returncode
+
+    # Force unbuffered stdout in the child. See the buffering note in
+    # the docstring — without this, Python children that go through
+    # `print()` get block-buffered (4-8KB) and emit nothing for long
+    # stretches even while actively running, fooling the watchdog.
+    child_env = os.environ.copy()
+    child_env.setdefault("PYTHONUNBUFFERED", "1")
 
     # Merge stderr into stdout so a single reader thread covers both.
     process = subprocess.Popen(
@@ -69,15 +85,16 @@ def _run_with_watchdog(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1,  # line-buffered
+        bufsize=1,  # line-buffered on our side; child uses PYTHONUNBUFFERED
+        env=child_env,
     )
 
     last_activity = time.monotonic()
     activity_lock = threading.Lock()
     reader_done = threading.Event()
 
-    def _drain_stdout() -> None:
-        """Pump child stdout to ours, updating the activity timestamp."""
+    def _drain_output() -> None:
+        """Pump child output to ours, updating the activity timestamp."""
         nonlocal last_activity
         assert process.stdout is not None
         try:
@@ -89,48 +106,51 @@ def _run_with_watchdog(
         finally:
             reader_done.set()
 
-    reader = threading.Thread(target=_drain_stdout, daemon=True)
-    reader.start()
+    threading.Thread(target=_drain_output, daemon=True).start()
 
-    # Poll the process and the activity deadline.
-    while True:
-        rc = process.poll()
-        if rc is not None:
-            # Process exited on its own. Wait briefly for the reader
-            # to flush any final lines before returning.
-            reader_done.wait(timeout=2.0)
-            return rc
+    # Poll the process and the activity deadline. `try/finally`
+    # ensures the reader thread gets one final chance to flush
+    # whichever way we exit (clean exit, watchdog kill, exception).
+    try:
+        while True:
+            rc = process.poll()
+            if rc is not None:
+                return rc
 
-        with activity_lock:
-            idle_for = time.monotonic() - last_activity
+            with activity_lock:
+                idle_for = time.monotonic() - last_activity
 
-        if idle_for >= idle_timeout_s:
-            logger.error(
-                "Watchdog: no stdout for %.1fs (timeout=%ds). "
-                "Sending SIGTERM to PID %d.",
-                idle_for,
-                idle_timeout_s,
-                process.pid,
-            )
-            process.terminate()
-            try:
-                process.wait(timeout=_WATCHDOG_KILL_GRACE_S)
-            except subprocess.TimeoutExpired:
+            if idle_for >= idle_timeout_s:
                 logger.error(
-                    "Watchdog: PID %d still alive %ds after SIGTERM. "
-                    "Sending SIGKILL.",
+                    "Watchdog: no output for %.1fs (timeout=%ds). "
+                    "Sending SIGTERM to PID %d.",
+                    idle_for,
+                    idle_timeout_s,
                     process.pid,
-                    int(_WATCHDOG_KILL_GRACE_S),
                 )
-                process.kill()
-                process.wait()
-            reader_done.wait(timeout=2.0)
-            return _WATCHDOG_EXIT_CODE
+                process.terminate()
+                try:
+                    process.wait(timeout=_WATCHDOG_KILL_GRACE_S)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "Watchdog: PID %d still alive %ds after SIGTERM. "
+                        "Sending SIGKILL.",
+                        process.pid,
+                        int(_WATCHDOG_KILL_GRACE_S),
+                    )
+                    process.kill()
+                    process.wait()
+                return _WATCHDOG_EXIT_CODE
 
-        # Sleep until the soonest of (process exit, idle deadline).
-        # Cap sleep so we still notice process exit promptly.
-        sleep_for = min(1.0, max(0.1, idle_timeout_s - idle_for))
-        time.sleep(sleep_for)
+            # Sleep until the soonest of (process exit, idle deadline).
+            # Cap sleep so we still notice process exit promptly.
+            sleep_for = min(1.0, max(0.1, idle_timeout_s - idle_for))
+            time.sleep(sleep_for)
+    finally:
+        # Always give the reader thread a chance to flush remaining
+        # buffered output — covers normal exit, watchdog kill, and any
+        # unexpected exception out of the poll loop.
+        reader_done.wait(timeout=2.0)
 
 
 def _run_with_retries(
