@@ -225,11 +225,18 @@ repr_styles = {
     # identically.
     "repr.call": Style(color="cyan", bold=True),
     # Custom style for the `(±std)` parenthetical added by
-    # `format_compact_summary`. Muted blue-grey from the ezpz palette
-    # — distinct enough to scan as a separate token but quiet enough
-    # to fade behind the value it modifies. Highlighter is
-    # `EzpzReprHighlighter` in ezpz.log.highlighter.
-    "repr.ezpz_std": Style(color=DARK["blue_grey"]),
+    # `format_compact_summary`. Explicit `color="default"` + `dim`
+    # so the whole parenthetical reads as faded default-foreground
+    # text. We force `color="default"` (not just omit it) because
+    # rich's regex highlighter would otherwise *also* match the
+    # inner digits via `repr.number` and overlay bold-cyan on top of
+    # our dim — producing a dim-cyan number wrapped in dim-default
+    # brackets. Setting `color="default"` here wins the merge so the
+    # full `(±X)` token recedes uniformly. Also `bold=False` to
+    # override `repr.number`'s bold. Adapts to whatever terminal
+    # theme the user has (light/dark, solarized, gruvbox, etc.).
+    # Highlighter is `EzpzReprHighlighter` in ezpz.log.highlighter.
+    "repr.ezpz_std": Style(color="default", dim=True, bold=False),
 }
 
 # 4) assemble in one shot
