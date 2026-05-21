@@ -299,6 +299,7 @@ def tplot(
     append: bool = True,
     verbose: bool = False,
     figsize: Optional[tuple[int, int]] = None,
+    quiet: bool = False,
 ):
     # if isinstance(y, list):
     #     if len(y) > 0 and isinstance(y[0], torch.Tensor):
@@ -382,8 +383,9 @@ def tplot(
         if x is not None:
             assert len(x.shape) == 1
             plotext.xticks(x.tolist())
-    print()  # ensure plot starts on a new line
-    plotext.show()
+    if not quiet:
+        print()  # ensure plot starts on a new line
+        plotext.show()
     if outfile is not None:
         if verbose:
             if append:

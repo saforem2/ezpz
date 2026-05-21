@@ -1168,38 +1168,48 @@ class History:
                     marker=_metric_marker(key),
                     logfreq=(1 if logfreq is None else logfreq),
                     record_report=False,
+                    # The per-stat raw/mean/min/max/std panes are what
+                    # used to spam stdout — gate them behind the same
+                    # opt-in. Files still written to `tplot/<metric>.txt`.
+                    quiet=not _show_grids,
                 )
                 append_flag = True
                 wrote_any = True
 
             if stats_present:
                 overlay_order = [
-                    ("raw", name),
-                    ("mean", f"{name}/mean"),
-                    ("max", f"{name}/max"),
-                    ("min", f"{name}/min"),
+                    ("max", f"{name}/max", "red"),
+                    ("min", f"{name}/min", "cyan"),
+                    ("mean", f"{name}/mean", "green"),
+                    ("raw", name, None),
                 ]
+                # Build a SINGLE combined overlay (one show, one savefig)
+                # — not 4 sequential _tplot(append=True) calls, which
+                # would print 4 separate panes to stdout. This matches
+                # the use_subplots branch's behavior.
+                overlay_plt = plotext_prepare_figure(theme="clear")
+                plotext_set_size(overlay_plt, min_height=40)
                 overlay_points = 0
-                overlay_append = False
-                for key, label in overlay_order:
+                for key, label, color in overlay_order:
                     data_array = metric_vars.get(key)
                     if data_array is None:
                         continue
                     series = self._series_from_dataarray(data_array)
                     overlay_points = max(overlay_points, len(series))
-                    self._tplot(
-                        y=series,
-                        xlabel="step",
-                        ylabel=label,
-                        append=overlay_append,
-                        outfile=summary_path.as_posix(),
-                        verbose=verbose,
-                        plot_type=resolved_plot_type,
+                    plotext_plot_series(
+                        overlay_plt,
+                        series,
+                        label=label,
+                        color=color,
                         marker=_metric_marker(key),
-                        logfreq=(1 if logfreq is None else logfreq),
-                        record_report=False,
                     )
-                    overlay_append = True
+                if overlay_points > 0:
+                    overlay_plt.show()
+                    overlay_plt.savefig(
+                        summary_path.as_posix(),
+                        append=False,
+                        keep_colors=True,
+                    )
                 if (
                     overlay_points > 0
                     and self.report_enabled
@@ -1694,6 +1704,7 @@ class History:
         plot_type: Optional[str] = None,
         marker: Optional[str] = None,
         record_report: bool = True,
+        quiet: bool = False,
     ):
         """
         Create a text plot of the given data.
@@ -1738,6 +1749,7 @@ class History:
                 plot_type=plot_type,
                 marker=marker,
                 title=title,
+                quiet=quiet,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
             if (
@@ -1765,6 +1777,7 @@ class History:
                 outfile=(of if of is not None else None),
                 plot_type="hist",
                 marker=marker,
+                quiet=quiet,
             )
             if record_report and self.report_enabled and of is not None:
                 self._write_plot_report(
