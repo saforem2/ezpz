@@ -1222,7 +1222,7 @@ class History:
                         metadata={
                             "components": ", ".join(
                                 key
-                                for key, _ in overlay_order
+                                for key, _, _ in overlay_order
                                 if key in metric_vars
                             ),
                             "points": overlay_points,

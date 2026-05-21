@@ -332,10 +332,13 @@ def tplot(
     plotext.plot_size(*_clamp_size(*figsize))
     # marker = "braille" if (marker is None and type == 'scatter') else marker
     marker = _resolve_marker(marker, plot_type=plot_type)
+    # These were fired at INFO every single tplot() call — spammy when
+    # finalize() loops over many metrics. Dropped to DEBUG so they're
+    # available with EZPZ_LOG_LEVEL=DEBUG but don't clutter normal runs.
     if plot_type is not None:
-        logger.info(f"Using plot type: {plot_type}")
+        logger.debug(f"Using plot type: {plot_type}")
     if marker is not None:
-        logger.info(f"Using plot marker: {marker}")
+        logger.debug(f"Using plot marker: {marker}")
     # if len(y.shape) == 2:
     if (yshape := getattr(y, "shape")) and yshape and len(yshape) == 2:
         plotext.hist(np.asarray(y).reshape(-1), bins=bins, label=label)
