@@ -341,6 +341,33 @@ def build_launch_parser(
             "Takes precedence over CPU_BIND when both are specified."
         ),
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        dest="idle_timeout_s",
+        help=(
+            "Idle-stdout watchdog timeout in seconds. If the launched "
+            "process produces no stdout for this many seconds, send "
+            "SIGTERM (then SIGKILL after a 10s grace period) and exit "
+            "with code 124. NOT a total walltime — the process can run "
+            "indefinitely as long as it keeps emitting output. Off by "
+            "default. Useful for catching collective hangs (e.g. xccl "
+            "silent deadlock on XPU) that would otherwise consume the "
+            "full PBS walltime."
+        ),
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=0,
+        dest="retries",
+        help=(
+            "Re-execute the launched command up to N times on non-zero "
+            "exit. Applies exponential backoff between attempts "
+            "(5s, 10s, 20s, ..., capped at 60s). Default: 0 (no retry)."
+        ),
+    )
     if include_command:
         parser.add_argument(
             "command",
