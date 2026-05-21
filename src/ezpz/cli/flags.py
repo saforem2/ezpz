@@ -12,6 +12,27 @@ class _RawDescAndDefaultsFormatter(
     """Combine raw multi-line descriptions with auto-appended defaults."""
 
 
+def _non_negative_int(value: str) -> int:
+    """argparse type validator that rejects negative integers.
+
+    Used by `--timeout` and `--retries` on `ezpz launch` — both treat
+    `0` as a meaningful value (off / no-retry) but negative numbers
+    have no sensible semantics. Reject them at parse time with a
+    clear message instead of silently coercing them away.
+    """
+    try:
+        as_int = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected an integer, got {value!r}"
+        ) from exc
+    if as_int < 0:
+        raise argparse.ArgumentTypeError(
+            f"must be >= 0 (got {as_int})"
+        )
+    return as_int
+
+
 def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
@@ -343,29 +364,31 @@ def build_launch_parser(
     )
     parser.add_argument(
         "--timeout",
-        type=int,
+        type=_non_negative_int,
         default=None,
         dest="idle_timeout_s",
         help=(
-            "Idle-stdout watchdog timeout in seconds. If the launched "
-            "process produces no stdout for this many seconds, send "
-            "SIGTERM (then SIGKILL after a 10s grace period) and exit "
-            "with code 124. NOT a total walltime — the process can run "
-            "indefinitely as long as it keeps emitting output. Off by "
-            "default. Useful for catching collective hangs (e.g. xccl "
-            "silent deadlock on XPU) that would otherwise consume the "
-            "full PBS walltime."
+            "Idle-output watchdog timeout in seconds. If the launched "
+            "process produces no output (on stdout OR stderr — they "
+            "are merged) for this many seconds, send SIGTERM (then "
+            "SIGKILL after a 10s grace period) and exit with code 124. "
+            "NOT a total walltime — the process can run indefinitely "
+            "as long as it keeps emitting output on either stream. "
+            "Off by default; pass 0 explicitly to disable. Useful for "
+            "catching collective hangs (e.g. xccl silent deadlock on "
+            "XPU) that would otherwise consume the full PBS walltime."
         ),
     )
     parser.add_argument(
         "--retries",
-        type=int,
+        type=_non_negative_int,
         default=0,
         dest="retries",
         help=(
             "Re-execute the launched command up to N times on non-zero "
-            "exit. Applies exponential backoff between attempts "
-            "(5s, 10s, 20s, ..., capped at 60s). Default: 0 (no retry)."
+            "exit (including a watchdog kill, exit 124). Applies "
+            "exponential backoff between attempts (5s, 10s, 20s, ..., "
+            "capped at 60s). Default: 0 (no retry)."
         ),
     )
     if include_command:

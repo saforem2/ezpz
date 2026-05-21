@@ -83,19 +83,21 @@ allocated to your job.
         --cpu-bind CPU_BIND   CPU binding value to pass to the launcher.
                                 Takes precedence over CPU_BIND when both are specified.
         --timeout IDLE_TIMEOUT_S
-                                Idle-stdout watchdog timeout in seconds. Off by default.
+                                Idle-output watchdog timeout in seconds. Off by default.
         --retries RETRIES     Re-execute on non-zero exit, up to N times. Default: 0.
         ```
 
-## Idle-stdout watchdog (`--timeout`)
+## Idle-output watchdog (`--timeout`)
 
 `--timeout SECONDS` arms a watchdog that monitors the launched
-process's stdout. If no output appears for `SECONDS` consecutive
-seconds, the watchdog sends `SIGTERM`, waits up to 10 seconds for a
-clean shutdown, then sends `SIGKILL`. The exit code returned by
+process's output. If no output appears (on **stdout or stderr** —
+they are merged at the watchdog) for `SECONDS` consecutive seconds,
+the watchdog sends `SIGTERM`, waits up to 10 seconds for a clean
+shutdown, then sends `SIGKILL`. The exit code returned by
 `ezpz launch` is `124` (matching GNU `timeout(1)` convention) so
 shell wrappers can distinguish "killed for going silent" from
-"command failed".
+"command failed". Passing `--timeout 0` disables the watchdog (same
+as omitting the flag).
 
 ```bash
 # Abort if the training script goes silent for 10 minutes.
@@ -103,11 +105,18 @@ ezpz launch --timeout 600 -- python3 -m my_app.train
 ```
 
 **Idle, not walltime.** The process can run indefinitely as long as
-it keeps emitting at least one line per `SECONDS`. This is the right
-semantics for catching *collective hangs* (e.g. xccl on XPU silently
-deadlocking) where the process is alive but every rank is blocked in
-the same collective and nothing reaches stdout. For a hard walltime
-limit, use the scheduler's existing mechanism (`#PBS -l walltime=...`).
+it keeps emitting at least one line per `SECONDS` on either stream.
+This is the right semantics for catching *collective hangs* (e.g.
+xccl on XPU silently deadlocking) where the process is alive but
+every rank is blocked in the same collective and nothing reaches
+either stream. For a hard walltime limit, use the scheduler's
+existing mechanism (`#PBS -l walltime=...`).
+
+**Python buffering.** The watchdog sets `PYTHONUNBUFFERED=1` in the
+child environment so Python's default block-buffering (which kicks
+in when stdout isn't a TTY) doesn't fool the watchdog into killing a
+healthy job that's accumulating output in a 4-8 KB buffer. The
+variable is benign for non-Python children: they ignore it.
 
 **Scope caveat.** The watchdog only watches the process `ezpz launch`
 spawns directly. If you `qsub` a job script that internally invokes
