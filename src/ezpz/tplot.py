@@ -73,7 +73,24 @@ def _require_plotext():
 
 def plotext_prepare_figure(theme: str = "clear"):
     plotext = _require_plotext()
-    if hasattr(plotext, "clear_figure"):
+    # IMPORTANT: reset the MAIN figure, not _active. After a previous
+    # call to plotext.subplots(rows, cols), `plotext._active` is set to
+    # one of the sub-panes, and `plotext.clear_figure()` then only
+    # resets that sub-pane — leaving the parent figure's subplot grid
+    # configuration intact. So a subsequent single-pane plot.show()
+    # renders inside one of the old grid panes, with stale neighbor
+    # panes still visible. Calling main().clear_figure() resets the
+    # top-level _figure_class and clears the nested layout.
+    if hasattr(plotext, "main"):
+        try:
+            plotext.main().clear_figure()
+        except Exception:
+            # Fallback for plotext versions without main()
+            if hasattr(plotext, "clear_figure"):
+                plotext.clear_figure()
+            elif hasattr(plotext, "clf"):
+                plotext.clf()
+    elif hasattr(plotext, "clear_figure"):
         plotext.clear_figure()
     elif hasattr(plotext, "clf"):
         plotext.clf()
