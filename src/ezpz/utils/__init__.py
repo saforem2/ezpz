@@ -633,38 +633,57 @@ _AGGREGATION_SUFFIXES = ("", "/mean", "/max", "/min", "/std", "/avg")
 def _format_std(std: float, *, precision: int) -> "str | None":
     """Format a std value for the inline ``(±X)`` console suffix.
 
-    Returns:
-        - ``None`` when the std rounds to 0 at the chosen precision —
-          the caller should drop the parenthetical entirely (``(±0)``
-          adds no signal; e.g. LR with `lr/std=0`).
-        - A trimmed string otherwise. We use lower precision than the
-          base value (std is a noise-band hint, not a measurement)
-          and strip trailing zeros: `0.157124` → `0.16`, `0.000` → None.
+    Policy: **2 significant digits, fixed-point for "human" magnitudes
+    (>= 0.01), scientific notation below**. Both forms fit in 4-6 chars
+    so column widths stay uniform across training-log rows:
 
-    The std-precision policy: ``min(precision, 2)`` keeps the visual
-    weight of `(±0.16)` proportional to `loss=0.289993` without
-    drowning the actual value in trailing digits.
+        0.157124  →  "0.16"      (4 chars)
+        0.003686  →  "3.7e-3"    (6 chars)
+        0.000279  →  "2.8e-4"    (6 chars)
+        12.97     →  "13"        (2 chars)
+        0.0       →  None        (drop the entire `(±0)` parenthetical)
+
+    Scientific notation below 0.01 is intentional: it gives a built-in
+    magnitude indicator (`e-3` vs `e-4` is immediately legible), it
+    avoids zero-counting (`0.00028` vs `0.0037` requires counting), and
+    crucially it keeps the std width *bounded* — fixed-point at small
+    magnitudes blows past any reasonable column budget (`0.000028` is
+    8 chars and growing).
+
+    Statistical convention is to report uncertainty at 1-2 sig figs (more
+    is false precision). The ``precision`` arg is ignored: this function
+    deliberately uses a fixed std policy regardless of the caller's
+    value-precision, since the std is a hint not a measurement. Kept in
+    the signature for backwards compatibility.
     """
+    del precision  # unused, kept for API stability
     if std == 0:
         return None
-    std_precision = min(precision, 2)
-    formatted = f"{std:.{std_precision}f}"
-    # After truncation, the value might be 0.00 — same "no signal" case.
-    if float(formatted) == 0:
-        # Try one more precision step before giving up, in case caller
-        # asked for precision=6 and we have std=1e-5: 0.00 → 0.00001.
-        if precision > std_precision:
-            formatted = f"{std:.{precision}f}"
-            if float(formatted) == 0:
-                return None
-        else:
-            return None
-    # Strip trailing zeros (`0.10` → `0.1`, `1.00` → `1`). Keep at
-    # least one digit after the decimal if there is one.
-    if "." in formatted:
-        formatted = formatted.rstrip("0").rstrip(".")
-        if not formatted or formatted == "-":
-            formatted = "0"
+
+    import math
+    abs_std = abs(std)
+
+    # Fixed-point for "human" magnitudes (>= 0.01). 2 sig figs:
+    #   std=12.97 → "13"     (0 decimals, magnitude=1)
+    #   std=1.297 → "1.3"    (1 decimal,  magnitude=0)
+    #   std=0.157 → "0.16"   (2 decimals, magnitude=-1)
+    #   std=0.012 → "0.012"  (3 decimals, magnitude=-2)
+    if abs_std >= 0.01:
+        magnitude = math.floor(math.log10(abs_std))
+        decimals = max(0, 1 - magnitude)
+        formatted = f"{std:.{decimals}f}"
+        if float(formatted) != 0:  # sanity guard for rounding edges
+            return formatted
+
+    # Scientific notation for small stds. `f"{0.000279:.1e}"` →
+    # "2.8e-04"; strip the leading zero from the exponent for a more
+    # compact, readable form.
+    formatted = f"{std:.1e}"
+    if "e" in formatted:
+        mantissa, exp = formatted.split("e")
+        sign = exp[0] if exp[0] in "+-" else ""
+        digits = exp.lstrip("+-").lstrip("0") or "0"
+        formatted = f"{mantissa}e{sign}{digits}"
     return formatted
 
 
