@@ -701,6 +701,15 @@ _DEFAULT_MIN_WIDTHS: dict[str, int] = {
     "bidx": 10,
 }
 
+# Max width of the std token produced by `_format_std` (see its
+# docstring for the bounds proof: fixed-point >= 0.01 caps at ~5 chars,
+# scientific notation < 0.01 caps at 6 chars like "5.1e-4"). Right-
+# aligning std tokens to this width makes every `(±X)` parenthetical
+# exactly `_STD_TOKEN_MAX_WIDTH + 3` chars wide ("(±" + token + ")"), so
+# columns align across log rows even when stds swing between fixed and
+# scientific forms.
+_STD_TOKEN_MAX_WIDTH = 6
+
 
 def format_compact_summary(
     metrics: dict[str, float],
@@ -790,10 +799,16 @@ def format_compact_summary(
             if std_token is None:
                 # std rounds to zero at the chosen precision (e.g.
                 # `lr/std=1e-12` with precision=2). `(±0)` adds no
-                # signal; drop it.
-                tokens.append(base_token)
+                # signal; drop it. Pad with spaces matching the width
+                # of a full `(±XXXXXX)` parenthetical so this token's
+                # successor still aligns with its neighbors above/below.
+                pad = " " * (_STD_TOKEN_MAX_WIDTH + 3)
+                tokens.append(f"{base_token}{pad}")
             else:
-                tokens.append(f"{base_token}(±{std_token})")
+                # Right-align the std token so `(±0.070)`, `(±0.12)`,
+                # and `(±5.1e-4)` all occupy the same number of columns.
+                padded = std_token.rjust(_STD_TOKEN_MAX_WIDTH)
+                tokens.append(f"{base_token}(±{padded})")
         else:
             # Pad counter tokens so the next field aligns across rows.
             tokens.append(_pad(k, base_token))
@@ -817,7 +832,10 @@ def format_compact_summary(
             continue
         tokens.append(format_pair(k, metrics[k], precision=precision))
 
-    return " ".join(tokens)
+    # rstrip trailing whitespace introduced by std-None padding on the
+    # last token — interior padding (between tokens) is preserved by
+    # the join, so column alignment across rows still works.
+    return " ".join(tokens).rstrip()
 
 
 def is_memory_metric_key(key: str) -> bool:
