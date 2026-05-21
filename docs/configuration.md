@@ -142,6 +142,7 @@ still override after the preset is applied.
 | `AMSC_API_KEY` | API key for AMSC MLflow server. Automatically sent as `X-API-Key` header. | API key string. |
 | `EZPZ_LOCAL_HISTORY` | Enable local-only history (skip distributed aggregation). | Set to any truthy value (e.g. `1`). |
 | `EZPZ_NO_DISTRIBUTED_HISTORY` | Disable distributed history aggregation. | Set to any truthy value. Auto-enabled at 384+ ranks. |
+| `EZPZ_TRACK_MEMORY` | Gate per-step device-memory tracking by [`ezpz.get_memory_metrics`][ezpz.get_memory_metrics]. Set to `0` to suppress the `mem_alloc` / `mem_peak_alloc` / `mem_reserved` / `mem_peak_reserved` keys even on supported devices. | `1` (default) / `0`. Returns `{}` on CPU/MPS regardless. |
 
 #### MLflow Credential Files
 

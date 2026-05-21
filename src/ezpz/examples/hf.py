@@ -263,9 +263,7 @@ def split_dataset(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main() -> None:
     """Entrypoint for standalone HF causal LM fine-tuning without Trainer."""
-    import logging as _logging
-    for _noisy in ("httpx", "huggingface_hub", "filelock"):
-        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
+    ezpz.silence_noisy_loggers()
     t0 = time.perf_counter()
     rank = ezpz.setup_torch()
     model_args, data_args, training_args = parse_args()
@@ -874,6 +872,8 @@ def main() -> None:
                     # + forward + backward + optimizer.step + sync).
                     metrics["train/tflops"] = _model_flops / t1step / 1e12
                     metrics["train/mfu"] = compute_mfu(_model_flops, t1step)
+                # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+                metrics |= ezpz.get_memory_metrics(prefix="train/")
 
                 if completed_steps % logging_steps == 0:
                     summary = history.update(metrics)

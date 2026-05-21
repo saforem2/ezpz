@@ -80,28 +80,30 @@ if TYPE_CHECKING:
         wrap_model_for_fsdp2,
     )
     # -- utils: helpers + memory + tarball plumbing --
-    #
-    # NOTE: the memory-tracking helpers (`get_memory_metrics`,
-    # `get_current_memory_*`, `reset_peak_memory_stats`,
-    # `format_memory_summary`, `is_memory_metric_key`) land in PR #134
-    # — they'll be added to this block by that PR's own merge.
     from .utils import (  # noqa: F401
         Color,
         DistributedPdb,
         ForkedPdb,
         NoColor,
         check_for_tarball,
+        format_compact_summary,
+        format_memory_summary,
         format_pair,
+        get_current_memory_allocated,
+        get_current_memory_reserved,
         get_max_memory_allocated,
         get_max_memory_reserved,
+        get_memory_metrics,
         get_timestamp,
         grab_tensor,
+        is_memory_metric_key,
         make_tarfile,
         model_summary,
+        reset_peak_memory_stats,
         summarize_dict,
     )
     # -- log: structured logging --
-    from .log import get_logger  # noqa: F401
+    from .log import get_logger, silence_noisy_loggers  # noqa: F401
     # -- history: distributed metric tracking --
     from .history import History  # noqa: F401
     # -- flops: MFU + peak FLOPS database --
@@ -175,14 +177,17 @@ _STATIC_REEXPORTS: tuple[str, ...] = (
     "synchronize", "timeitlogit", "verify_wandb",
     "wrap_model", "wrap_model_for_ddp",
     "wrap_model_for_fsdp", "wrap_model_for_fsdp2",
-    # utils (memory-tracking helpers added by PR #134)
+    # utils
     "Color", "DistributedPdb", "ForkedPdb", "NoColor",
-    "check_for_tarball", "format_pair",
+    "check_for_tarball",
+    "format_compact_summary", "format_memory_summary", "format_pair",
+    "get_current_memory_allocated", "get_current_memory_reserved",
     "get_max_memory_allocated", "get_max_memory_reserved",
-    "get_timestamp", "grab_tensor", "make_tarfile",
-    "model_summary", "summarize_dict",
+    "get_memory_metrics", "get_timestamp", "grab_tensor",
+    "is_memory_metric_key", "make_tarfile",
+    "model_summary", "reset_peak_memory_stats", "summarize_dict",
     # log
-    "get_logger",
+    "get_logger", "silence_noisy_loggers",
     # history
     "History",
     # flops

@@ -421,3 +421,95 @@ class TestHistoryGroups:
         assert isinstance(ds, xr.Dataset)
         # Flat dataset has both metrics (padded to max length)
         assert "train_loss" in ds.data_vars or "train/loss" in str(ds)
+
+
+class TestLogMetricsCondensation:
+    """log_metrics should produce a single condensed line (matching the
+    History.update path), not the legacy two-line dump."""
+
+    def _capture(self, hist, metrics, **kw):
+        """Run log_metrics with a logger that captures messages."""
+        import logging
+        records: list[str] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record.getMessage())
+
+        log = logging.getLogger(f"_test_capture_{id(records)}")
+        log.setLevel(logging.DEBUG)
+        log.handlers = [_Capture()]
+        log.propagate = False
+        hist.log_metrics(metrics, logger=log, **kw)
+        return records
+
+    def test_single_info_line_when_summary_included(self, monkeypatch):
+        """The two-line layout (base + distributed stats) should collapse
+        into ONE info line with inline ±std markers and no mean/min/max
+        spam."""
+        hist = history.History(backends=[])
+        # Stub the distributed summary so we can verify the merge works
+        # without needing a real torch distributed group.
+        monkeypatch.setattr(
+            hist, "_rank", 0, raising=False
+        )
+        monkeypatch.setattr(
+            hist,
+            "summarize_distributed_min_max_std",
+            lambda d: {
+                f"{k}/{suf}": v * mult
+                for k, v in d.items()
+                if isinstance(v, (int, float))
+                for suf, mult in (
+                    ("mean", 1.01), ("min", 0.95),
+                    ("max", 1.05), ("std", 0.02),
+                )
+            },
+        )
+        metrics = {
+            "iter": 1, "epoch": 0,
+            "loss": 10.0, "dt": 1.0,
+            "mem_alloc": 0.18, "mem_peak_alloc": 0.68,
+            "mem_reserved": 1.1, "mem_peak_reserved": 1.1,
+        }
+        records = self._capture(hist, metrics)
+        # Exactly one info line (was two before — base + dist-stats).
+        assert len(records) == 1
+        msg = records[0]
+        # Counters bare; non-counter metrics have inline (±std).
+        assert "iter=1" in msg
+        assert "epoch=0" in msg
+        assert "loss=10" in msg and "(±" in msg
+        # Memory keys do NOT appear as `mem_alloc=0.18` in the base flow;
+        # they're summarized as `memory=0.18/0.68GiB`.
+        assert "mem_alloc=" not in msg
+        assert "mem_peak_alloc=" not in msg
+        assert "memory=" in msg
+        # No more `/mean`, `/min`, `/max` spam.
+        assert "/mean" not in msg
+        assert "/min" not in msg
+        assert "/max" not in msg
+
+    def test_no_distributed_stats_still_one_line(self):
+        """include_summary=False: still one line, just the bare metrics."""
+        hist = history.History(backends=[])
+        records = self._capture(
+            hist,
+            {"iter": 1, "loss": 0.5},
+            include_summary=False,
+        )
+        assert len(records) == 1
+        assert "iter=1" in records[0]
+        assert "loss=0.5" in records[0]
+        # No std markers when summary disabled.
+        assert "(±" not in records[0]
+
+    def test_memory_suffix_omitted_when_no_mem_keys(self):
+        """CPU/MPS runs: metrics have no mem_* keys → no `memory=` tail."""
+        hist = history.History(backends=[])
+        records = self._capture(
+            hist,
+            {"iter": 1, "loss": 0.5},
+            include_summary=False,
+        )
+        assert "memory=" not in records[0]

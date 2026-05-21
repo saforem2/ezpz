@@ -1050,6 +1050,8 @@ def train(
             if _model_flops > 0 and dt_step > 0:
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
+            # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+            metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,
@@ -1071,6 +1073,7 @@ def train(
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
+    ezpz.silence_noisy_loggers()
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()

@@ -216,6 +216,23 @@ repr_styles = {
     "repr.attrib_name": Style(color="bright_blue", bold=False, italic=False),
     # "repr.attrib_value": Style(color="magenta"),
     "repr.ellipsis": Style(color="bright_yellow"),
+    # Override rich's default `repr.call` (bold magenta) to match
+    # `repr.number` (rich default: bold cyan). Rich's call regex
+    # matches `NUM(`, so the value in `acc=0.390625(± 0.059)` was
+    # rendering magenta — a false positive (it's not a function call)
+    # that broke column-wise color scanning. Match `repr.number`'s
+    # exact rich-default style so bare numbers and `NUM(` render
+    # identically.
+    "repr.call": Style(color="cyan", bold=True),
+    # Custom style for the `(±std)` parenthetical added by
+    # `format_compact_summary`. Use ANSI color 8 ("bright_black",
+    # the standard terminal "muted grey" slot) so the token recedes
+    # without fighting the user's color scheme — every terminal
+    # theme provides a sensible value for ANSI 8 calibrated to its
+    # own contrast. `bold=False` overrides `repr.number`'s bold so
+    # the inner digits also recede uniformly with the brackets.
+    # Highlighter is `EzpzReprHighlighter` in ezpz.log.highlighter.
+    "repr.ezpz_std": Style(color="bright_black", bold=False),
 }
 
 # 4) assemble in one shot

@@ -93,6 +93,8 @@ def train(
                     if dt_total > 0:
                         metrics["tflops"] = _model_flops / dt_total / 1e12
                         metrics["mfu"] = compute_mfu(_model_flops, dt_total)
+                # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+                metrics |= ezpz.get_memory_metrics()
                 summary = history.update(
                     metrics
                 )

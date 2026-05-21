@@ -73,7 +73,24 @@ def _require_plotext():
 
 def plotext_prepare_figure(theme: str = "clear"):
     plotext = _require_plotext()
-    if hasattr(plotext, "clear_figure"):
+    # IMPORTANT: reset the MAIN figure, not _active. After a previous
+    # call to plotext.subplots(rows, cols), `plotext._active` is set to
+    # one of the sub-panes, and `plotext.clear_figure()` then only
+    # resets that sub-pane — leaving the parent figure's subplot grid
+    # configuration intact. So a subsequent single-pane plot.show()
+    # renders inside one of the old grid panes, with stale neighbor
+    # panes still visible. Calling main().clear_figure() resets the
+    # top-level _figure_class and clears the nested layout.
+    if hasattr(plotext, "main"):
+        try:
+            plotext.main().clear_figure()
+        except Exception:
+            # Fallback for plotext versions without main()
+            if hasattr(plotext, "clear_figure"):
+                plotext.clear_figure()
+            elif hasattr(plotext, "clf"):
+                plotext.clf()
+    elif hasattr(plotext, "clear_figure"):
         plotext.clear_figure()
     elif hasattr(plotext, "clf"):
         plotext.clf()
@@ -299,6 +316,7 @@ def tplot(
     append: bool = True,
     verbose: bool = False,
     figsize: Optional[tuple[int, int]] = None,
+    quiet: bool = False,
 ):
     # if isinstance(y, list):
     #     if len(y) > 0 and isinstance(y[0], torch.Tensor):
@@ -331,10 +349,13 @@ def tplot(
     plotext.plot_size(*_clamp_size(*figsize))
     # marker = "braille" if (marker is None and type == 'scatter') else marker
     marker = _resolve_marker(marker, plot_type=plot_type)
+    # These were fired at INFO every single tplot() call — spammy when
+    # finalize() loops over many metrics. Dropped to DEBUG so they're
+    # available with EZPZ_LOG_LEVEL=DEBUG but don't clutter normal runs.
     if plot_type is not None:
-        logger.info(f"Using plot type: {plot_type}")
+        logger.debug(f"Using plot type: {plot_type}")
     if marker is not None:
-        logger.info(f"Using plot marker: {marker}")
+        logger.debug(f"Using plot marker: {marker}")
     # if len(y.shape) == 2:
     if (yshape := getattr(y, "shape")) and yshape and len(yshape) == 2:
         plotext.hist(np.asarray(y).reshape(-1), bins=bins, label=label)
@@ -382,8 +403,9 @@ def tplot(
         if x is not None:
             assert len(x.shape) == 1
             plotext.xticks(x.tolist())
-    print()  # ensure plot starts on a new line
-    plotext.show()
+    if not quiet:
+        print()  # ensure plot starts on a new line
+        plotext.show()
     if outfile is not None:
         if verbose:
             if append:

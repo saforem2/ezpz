@@ -75,6 +75,13 @@ class RichHandler(OriginalRichHandler):
             self.__console = console
         else:
             self.__console = kwargs["console"]
+        # Use ezpz's custom highlighter so `(±std)` tokens emitted by
+        # `format_compact_summary` get the orange `repr.ezpz_std` style
+        # instead of being swallowed by rich's defaults.
+        if "highlighter" not in kwargs:
+            from ezpz.log.highlighter import EzpzReprHighlighter
+
+            kwargs["highlighter"] = EzpzReprHighlighter()
         super().__init__(*args, **kwargs)
         # RichHandler constructor does not allow custom renderer
         # https://github.com/willmcgugan/rich/issues/438

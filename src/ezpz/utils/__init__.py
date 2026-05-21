@@ -50,6 +50,12 @@ __all__ = [
     "normalize",
     "get_max_memory_allocated",
     "get_max_memory_reserved",
+    "get_current_memory_allocated",
+    "get_current_memory_reserved",
+    "reset_peak_memory_stats",
+    "get_memory_metrics",
+    "format_memory_summary",
+    "format_compact_summary",
     "grab_tensor",
     "check_for_tarball",
     "make_tarfile",
@@ -371,32 +377,520 @@ def normalize(name: str) -> str:
     return name.strip("-")
 
 
-def get_max_memory_allocated(device: torch.device) -> float:
-    """
-    Get the maximum memory allocated on the specified device.
+def _device_type(device: "torch.device | int | str | None") -> str:
+    """Return the canonical device type for routing memory APIs.
 
-    Args:
-        device (torch.device): The device to check memory allocation for.
+    Accepts the same input shapes as torch.device(). Maps:
+        - int           → "cuda" or "xpu" based on availability (ambiguous;
+                          we prefer CUDA when both are present, matching torch's
+                          own convention).
+        - "cuda:0", torch.device("cuda", 0), etc. → "cuda"
+        - "cpu", "cpu:0", torch.device("cpu") → "cpu"
+        - "mps" → "mps"
+        - None → resolved via ezpz.get_torch_device()
+
+    Branching on this string lets us call the right backend instead of
+    routing every call to torch.cuda.* whenever CUDA happens to be
+    available — which previously raised when a CPU/MPS device was passed
+    on a CUDA-capable box (issue caught in PR #134 review).
     """
-    if torch.cuda.is_available():
+    if device is None:
+        import ezpz
+        device = ezpz.get_torch_device()
+    if isinstance(device, int):
+        # Bare int is ambiguous between cuda:N and xpu:N. Mirror torch's
+        # default by preferring CUDA when available; otherwise XPU.
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu"
+        return "cpu"
+    return torch.device(device).type
+
+
+def get_max_memory_allocated(device: "torch.device | int | str") -> float:
+    """Peak allocated memory in bytes on ``device``. 0.0 on CPU/MPS.
+
+    Routes to the backend matching ``device``'s type, not whichever
+    accelerator happens to be globally available. So
+    ``get_max_memory_allocated("cpu")`` returns 0.0 even on a CUDA box.
+    """
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.max_memory_allocated(device)
-    elif torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.max_memory_allocated(device)
-        except ImportError:
-            return -1.0
-    raise RuntimeError(f"Memory allocation not available for {device=}")
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
 
 
-def get_max_memory_reserved(device: torch.device) -> float:
-    if torch.cuda.is_available():
+def get_max_memory_reserved(device: "torch.device | int | str") -> float:
+    """Peak reserved memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
         return torch.cuda.max_memory_reserved(device)
-    elif torch.xpu.is_available():
+    if dtype == "xpu":
         try:
             return torch.xpu.max_memory_reserved(device)
-        except ImportError:
-            return -1.0
-    raise RuntimeError(f"Memory allocation not available for {device=}")
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def get_current_memory_allocated(device: "torch.device | int | str") -> float:
+    """Currently allocated memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
+        return torch.cuda.memory_allocated(device)
+    if dtype == "xpu":
+        try:
+            return torch.xpu.memory_allocated(device)
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def get_current_memory_reserved(device: "torch.device | int | str") -> float:
+    """Currently reserved memory in bytes on ``device``. 0.0 on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
+        return torch.cuda.memory_reserved(device)
+    if dtype == "xpu":
+        try:
+            return torch.xpu.memory_reserved(device)
+        except (ImportError, AttributeError):
+            return 0.0
+    return 0.0
+
+
+def reset_peak_memory_stats(device: "torch.device | int | str") -> None:
+    """Reset peak-memory counters on ``device``. No-op on CPU/MPS."""
+    dtype = _device_type(device)
+    if dtype == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+        return
+    if dtype == "xpu":
+        try:
+            torch.xpu.reset_peak_memory_stats(device)
+        except (ImportError, AttributeError):
+            pass
+
+
+def get_memory_metrics(
+    device: "torch.device | int | str | None" = None,
+    *,
+    reset_peak: bool = True,
+    prefix: str = "",
+) -> dict[str, float]:
+    """Return device memory metrics in GiB.
+
+    Returns 4 keys when supported (CUDA, XPU):
+
+        {prefix}mem_alloc          currently allocated
+        {prefix}mem_peak_alloc     peak allocated since last reset
+        {prefix}mem_reserved       currently reserved by the allocator
+        {prefix}mem_peak_reserved  peak reserved since last reset
+
+    Returns ``{}`` on CPU / MPS (silent — caller's metrics dict simply
+    doesn't gain these keys), and unconditionally when the env var
+    ``EZPZ_TRACK_MEMORY=0`` is set.
+
+    Args:
+        device: device to query. If None, uses ``ezpz.get_torch_device()``.
+        reset_peak: if True (default), reset peak counters AFTER reading.
+            Next call's ``mem_peak_*`` then reflect only what happened
+            between calls — the standard per-step pattern.
+        prefix: optional string prepended to every key. Useful for the
+            examples that namespace their metrics (e.g. ``"train/"``).
+    """
+    if os.environ.get("EZPZ_TRACK_MEMORY", "1") == "0":
+        return {}
+
+    # Lazy default device resolution — only pay the cost when caller
+    # didn't pass one explicitly.
+    if device is None:
+        import ezpz
+        device = ezpz.get_torch_device()
+    assert device is not None  # type narrowing for pyright
+
+    # On CPU/MPS, all four helpers return 0.0. Short-circuit to avoid
+    # emitting a row of zeros. Route via the canonical device type so
+    # the check works for torch.device('cpu'), 'cpu', 'cpu:0', etc.
+    if _device_type(device) not in ("cuda", "xpu"):
+        return {}
+
+    _GIB = 1024 ** 3
+    metrics = {
+        f"{prefix}mem_alloc": get_current_memory_allocated(device) / _GIB,
+        f"{prefix}mem_peak_alloc": get_max_memory_allocated(device) / _GIB,
+        f"{prefix}mem_reserved": get_current_memory_reserved(device) / _GIB,
+        f"{prefix}mem_peak_reserved": get_max_memory_reserved(device) / _GIB,
+    }
+    if reset_peak:
+        reset_peak_memory_stats(device)
+    return metrics
+
+
+def format_memory_summary(
+    metrics: dict[str, float],
+    *,
+    device: "torch.device | int | str | None" = None,
+    prefix: "str | None" = None,
+) -> str:
+    """Condense the four mem_* keys into a single console-friendly string.
+
+    Input: a dict that contains (some subset of) the keys produced by
+    :func:`get_memory_metrics` — ``{prefix}mem_alloc``,
+    ``{prefix}mem_peak_alloc``, ``{prefix}mem_reserved``,
+    ``{prefix}mem_peak_reserved``.
+
+    Output: ``"X.XX/Y.YYGiB (Z%)"`` where X is current alloc, Y is peak
+    alloc, and Z is current alloc as a percent of device total memory
+    (omitted when device total isn't available — e.g. unknown XPU, CPU
+    fallback).
+
+    Args:
+        metrics: dict that may contain mem_* keys.
+        device: optional device for total-memory lookup. ``int`` index
+            or ``torch.device('cuda:N')`` honored; ``None`` uses the
+            local rank's device.
+        prefix: explicit prefix (e.g. ``"train/"``). When ``None``
+            (default), the prefix is inferred by scanning ``metrics`` for
+            ``*mem_alloc`` / ``*mem_peak_alloc`` keys — so callers that
+            don't know whether their metrics are namespaced don't have
+            to probe twice.
+
+    Returns an empty string if no mem_* keys are present (CPU/MPS) — so
+    callers can ``" ".join(filter(None, [...]))`` without checking.
+    """
+    if prefix is None:
+        prefix = ""
+        for key in metrics:
+            if key.endswith("mem_alloc") or key.endswith("mem_peak_alloc"):
+                # Strip the suffix to recover whatever namespace the
+                # caller used (e.g. "train/", "eval/", or "").
+                if key.endswith("mem_peak_alloc"):
+                    prefix = key[: -len("mem_peak_alloc")]
+                else:
+                    prefix = key[: -len("mem_alloc")]
+                break
+    alloc = metrics.get(f"{prefix}mem_alloc")
+    peak = metrics.get(f"{prefix}mem_peak_alloc")
+    if alloc is None and peak is None:
+        return ""
+    # Total device VRAM for the percentage. Lazy-resolve to avoid the
+    # import cost when caller has no memory keys to format anyway.
+    # Normalize `device` → int index where possible, so callers passing
+    # `torch.device('cuda:1')` get the right device's total (not rank 0's
+    # device by way of get_local_rank()).
+    pct_str = ""
+    try:
+        import ezpz
+        idx: int | None
+        if isinstance(device, int):
+            idx = device
+        elif device is None:
+            idx = None
+        else:
+            # torch.device('cuda:1').index == 1; torch.device('cuda').index is None
+            try:
+                idx = torch.device(device).index
+            except (TypeError, RuntimeError):
+                idx = None
+        props = ezpz.distributed.get_device_properties(idx)
+        total_bytes = props.get("total_memory", -1)
+        if total_bytes and total_bytes > 0 and alloc is not None:
+            total_gib = total_bytes / (1024 ** 3)
+            pct = 100.0 * alloc / total_gib
+            pct_str = f" ({pct:.0f}%)"
+    except Exception:
+        # Any failure resolving total memory: omit the percentage rather
+        # than break logging. Raw numbers still print.
+        pct_str = ""
+
+    if alloc is not None and peak is not None:
+        return f"{alloc:.2f}/{peak:.2f}GiB{pct_str}"
+    if alloc is not None:
+        return f"{alloc:.2f}GiB{pct_str}"
+    # Only peak is present (rare — caller passed `mem_peak_alloc` without
+    # `mem_alloc`). Format matches the alloc-only branch for consistency.
+    return f"{peak:.2f}GiB{pct_str}"
+
+
+# Base names for the 4 memory metrics produced by get_memory_metrics().
+_MEMORY_METRIC_BASES = (
+    "mem_alloc", "mem_peak_alloc", "mem_reserved", "mem_peak_reserved",
+)
+# History._compute_distributed_metrics appends these suffixes to every
+# numeric key it aggregates across ranks. We need to strip the aggregated
+# forms too — not just the raw bases — or the console summary still
+# shows 16 noisy `mem_alloc/mean=...` style lines.
+_AGGREGATION_SUFFIXES = ("", "/mean", "/max", "/min", "/std", "/avg")
+
+
+def _format_std(std: float, *, precision: int) -> "str | None":
+    """Format a std value for the inline ``(±X)`` console suffix.
+
+    Policy: **2 significant digits, fixed-point for "human" magnitudes
+    (>= 0.01), scientific notation below**. Both forms fit in 4-6 chars
+    so column widths stay uniform across training-log rows:
+
+        0.157124  →  "0.16"      (4 chars)
+        0.003686  →  "3.7e-3"    (6 chars)
+        0.000279  →  "2.8e-4"    (6 chars)
+        12.97     →  "13"        (2 chars)
+        0.0       →  None        (drop the entire `(±0)` parenthetical)
+
+    Scientific notation below 0.01 is intentional: it gives a built-in
+    magnitude indicator (`e-3` vs `e-4` is immediately legible), it
+    avoids zero-counting (`0.00028` vs `0.0037` requires counting), and
+    crucially it keeps the std width *bounded* — fixed-point at small
+    magnitudes blows past any reasonable column budget (`0.000028` is
+    8 chars and growing).
+
+    Statistical convention is to report uncertainty at 1-2 sig figs (more
+    is false precision). The ``precision`` arg is ignored: this function
+    deliberately uses a fixed std policy regardless of the caller's
+    value-precision, since the std is a hint not a measurement. Kept in
+    the signature for backwards compatibility.
+    """
+    del precision  # unused, kept for API stability
+    if std == 0:
+        return None
+
+    import math
+    abs_std = abs(std)
+
+    # Fixed-point for "human" magnitudes (>= 0.01). 2 sig figs:
+    #   std=12.97 → "13"     (0 decimals, magnitude=1)
+    #   std=1.297 → "1.3"    (1 decimal,  magnitude=0)
+    #   std=0.157 → "0.16"   (2 decimals, magnitude=-1)
+    #   std=0.012 → "0.012"  (3 decimals, magnitude=-2)
+    if abs_std >= 0.01:
+        magnitude = math.floor(math.log10(abs_std))
+        decimals = max(0, 1 - magnitude)
+        formatted = f"{std:.{decimals}f}"
+        if float(formatted) != 0:  # sanity guard for rounding edges
+            return formatted
+
+    # Scientific notation for small stds. `f"{0.000279:.1e}"` →
+    # "2.8e-04"; strip the leading zero from the exponent for a more
+    # compact, readable form.
+    formatted = f"{std:.1e}"
+    if "e" in formatted:
+        mantissa, exp = formatted.split("e")
+        sign = exp[0] if exp[0] in "+-" else ""
+        digits = exp.lstrip("+-").lstrip("0") or "0"
+        formatted = f"{mantissa}e{sign}{digits}"
+    return formatted
+
+
+_DEFAULT_MIN_WIDTHS: dict[str, int] = {
+    # Counters whose value width grows over the run. Pad so the eye can
+    # scan down the left edge — `iter=8    ` aligns under `iter=1200`.
+    # Widths include the `iter=` prefix; chosen for typical training-run
+    # upper bounds (4-digit iters/steps, 3-digit epochs). Override
+    # per-call via the `min_widths` kwarg if you need more for long
+    # 10k+ step runs — exceeding the width is harmless, it just stops
+    # padding and the next field shifts one column right.
+    "iter": 9,    # supports up to 9999 iters
+    "step": 9,
+    "epoch": 7,   # supports up to 999 epochs
+    "batch": 9,
+    "idx": 9,
+    "bidx": 9,
+}
+
+# Max width of the std token produced by `_format_std` (see its
+# docstring for the bounds proof: fixed-point >= 0.01 caps at ~5 chars,
+# scientific notation < 0.01 caps at 6 chars like "5.1e-4"). Right-
+# aligning std tokens to this width makes every `(±X)` parenthetical
+# exactly `_STD_TOKEN_MAX_WIDTH + 3` chars wide ("(±" + token + ")"), so
+# columns align across log rows even when stds swing between fixed and
+# scientific forms.
+_STD_TOKEN_MAX_WIDTH = 6
+
+
+def format_compact_summary(
+    metrics: dict[str, float],
+    precision: int = 6,
+    keys_to_skip: Iterable | None = None,
+    min_widths: "dict[str, int] | None" = None,
+    constant_keys: Iterable[str] | None = None,
+) -> str:
+    """Render *metrics* as a compact ``key=value(±std)`` summary line.
+
+    Designed to replace the noisy per-step summary that looks like:
+
+        loss=0.047 loss/mean=0.030 loss/max=0.120 loss/min=0.011 loss/std=0.022
+        accuracy=1.000 accuracy/mean=0.997 accuracy/max=1.000 ...
+
+    with the much tighter:
+
+        loss=0.047(±0.022) accuracy=1.000(±0.006) ...
+
+    Rules:
+      - For each base metric ``X``, look up ``X/std`` in *metrics* and
+        append it inline as ``X=val(±std)``. Other aggregation suffixes
+        (``/mean``, ``/min``, ``/max``, ``/avg``) are dropped entirely
+        from the console line — trackers still get them.
+      - Memory keys (handled by :func:`format_memory_summary`) are
+        skipped here. The caller is expected to append the compact
+        memory token separately at the end of the line.
+      - Counter-like base names (``iter``, ``step``, ``epoch``, ``batch``,
+        ``idx``) suppress the ``(±std)`` suffix even if std is present
+        — a counter's std is meaningless noise.
+      - Hyperparameters that are replicated across ranks (``lr``,
+        ``momentum``, ``weight_decay``, ``beta1``, ``beta2``, …) also
+        suppress ``(±std)`` because their per-step std is always 0.
+        Extend the recognised set via ``constant_keys``.
+      - Counter tokens are right-padded so successive lines align at
+        the left edge: ``iter=8     loss=...`` lines up under
+        ``iter=180   loss=...``. Override widths via ``min_widths``.
+
+    Aggregation values (``X/mean``, ``X/std``, etc.) that have NO
+    corresponding base value in *metrics* are still emitted as
+    standalone keys, so we don't silently lose data.
+    """
+    skip = set(keys_to_skip or ())
+    # Merge caller-supplied widths over the defaults.
+    widths: dict[str, int] = dict(_DEFAULT_MIN_WIDTHS)
+    if min_widths:
+        widths.update(min_widths)
+
+    def _pad(base_name: str, token: str) -> str:
+        """Right-pad ``token`` so each line's counter aligns with prior
+        lines. ``base_name`` strips any namespace prefix (``train/iter``
+        → ``iter``) before looking up the configured width."""
+        leaf = base_name.rsplit("/", 1)[-1]
+        target = widths.get(leaf)
+        if target is None or len(token) >= target:
+            return token
+        return token + " " * (target - len(token))
+    # Pre-build a lookup of std values keyed by base name so we can
+    # match them onto bases in a single pass.
+    std_lookup: dict[str, float] = {}
+    aggregation_suffixes = ("/mean", "/min", "/max", "/std", "/avg")
+    aggregation_keys: set[str] = set()
+    for k, v in metrics.items():
+        for suffix in aggregation_suffixes:
+            if k.endswith(suffix):
+                aggregation_keys.add(k)
+                if suffix == "/std":
+                    std_lookup[k[: -len(suffix)]] = float(v)
+                break
+
+    # Counter-like bases for which (±std) is meaningless.
+    _counter_bases = ("iter", "step", "epoch", "batch", "idx")
+
+    def _is_counter(base: str) -> bool:
+        # Match exact name AND prefixed forms (e.g. "train/iter").
+        return base.rsplit("/", 1)[-1] in _counter_bases
+
+    # Hyperparameters that are replicated identically across ranks —
+    # their /std is always 0, so emitting `(±0)` or padding a 9-char
+    # gap to "reserve" space for a future non-zero std is pure noise.
+    # Treat them like counters: bare `key=value`, no parenthetical,
+    # no padding. Caller can extend via `constant_keys` kwarg.
+    _known_constant_bases = frozenset((
+        "lr", "learning_rate",
+        "momentum",
+        "beta1", "beta2",
+        "weight_decay", "wd",
+        "eps", "epsilon",
+        "clip_grad", "grad_clip", "clip_norm", "max_grad_norm",
+        "warmup_steps", "warmup_iters", "warmup",
+    ))
+    extra_constants = (
+        frozenset(constant_keys) if constant_keys is not None else frozenset()
+    )
+
+    def _is_known_constant(base: str) -> bool:
+        leaf = base.rsplit("/", 1)[-1]
+        return leaf in _known_constant_bases or leaf in extra_constants
+
+    tokens: list[str] = []
+    seen_bases: set[str] = set()
+    for k, v in metrics.items():
+        if k in skip:
+            continue
+        if is_memory_metric_key(k):
+            continue
+        if k in aggregation_keys:
+            continue  # handled inline (via std_lookup) or skipped
+        seen_bases.add(k)
+        base_token = format_pair(k, v, precision=precision)
+        std = std_lookup.get(k)
+        if std is not None and not _is_counter(k) and not _is_known_constant(k):
+            std_token = _format_std(std, precision=precision)
+            if std_token is None:
+                # std rounds to zero at the chosen precision (e.g.
+                # `lr/std=1e-12` with precision=2). `(±0)` adds no
+                # signal; drop it. Pad with spaces matching the width
+                # of a full `(±XXXXXX)` parenthetical so this token's
+                # successor still aligns with its neighbors above/below
+                # — important for metrics that swing between zero and
+                # non-zero std across rows (e.g. small/sporadic noise).
+                pad = " " * (_STD_TOKEN_MAX_WIDTH + 3)
+                tokens.append(f"{base_token}{pad}")
+            else:
+                # Right-align the std token so `(±0.070)`, `(±0.12)`,
+                # and `(±5.1e-4)` all occupy the same number of columns.
+                padded = std_token.rjust(_STD_TOKEN_MAX_WIDTH)
+                tokens.append(f"{base_token}(±{padded})")
+        else:
+            # Counters and known-constant hyperparameters: no padding,
+            # no parenthetical. Counters still get left-edge padding so
+            # the *next* field aligns across rows.
+            tokens.append(_pad(k, base_token))
+
+    # Emit aggregation keys whose base wasn't present in the dict — so
+    # we don't silently drop them. (Rare; happens when caller passes
+    # only an aggregated metric, e.g. ``loss/mean`` without ``loss``.)
+    for k in aggregation_keys:
+        base = next(
+            k[: -len(s)] for s in aggregation_suffixes if k.endswith(s)
+        )
+        if base in seen_bases or k in skip:
+            continue
+        # Memory-metric aggregations are handled by format_memory_summary;
+        # never emit them as standalone tokens here.
+        if is_memory_metric_key(k):
+            continue
+        # /std for a base we already showed inline → drop. Other
+        # aggregations without a base → keep (visible debug info).
+        if k.endswith("/std") and base in std_lookup and base in seen_bases:
+            continue
+        tokens.append(format_pair(k, metrics[k], precision=precision))
+
+    # rstrip trailing whitespace introduced by std-None padding on the
+    # last token — interior padding (between tokens) is preserved by
+    # the join, so column alignment across rows still works.
+    return " ".join(tokens).rstrip()
+
+
+def is_memory_metric_key(key: str) -> bool:
+    """True if *key* is one of the 4 mem_* metrics (raw OR aggregated).
+
+    Matches both:
+      - raw: ``mem_alloc``, ``train/mem_peak_reserved``, etc.
+      - aggregated: ``mem_alloc/mean``, ``train/mem_alloc/max``, etc.
+        (History._compute_distributed_metrics emits these per rank.)
+
+    Does NOT match unrelated keys that happen to contain ``mem_`` —
+    e.g. ``mem_loss`` or ``memo_field`` — because we anchor on the
+    full base name + aggregation suffix.
+    """
+    for base in _MEMORY_METRIC_BASES:
+        for suffix in _AGGREGATION_SUFFIXES:
+            target = f"{base}{suffix}"
+            # endswith() catches both 'mem_alloc' and 'train/mem_alloc';
+            # the explicit base+suffix list keeps 'mem_loss' from matching.
+            if key == target or key.endswith(f"/{target}"):
+                return True
+    return False
 
 
 # hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC

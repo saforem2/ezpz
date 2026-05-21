@@ -7,7 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import logging.config
 import os
-from typing import Optional
+from typing import Optional, Sequence
 
 from ezpz.configs import get_logging_config
 
@@ -262,6 +262,59 @@ def getLogger(
         rank=rank,
         colored_logs=colored_logs,
     )
+
+
+_DEFAULT_NOISY_LOGGERS: tuple[str, ...] = (
+    "httpx",
+    "huggingface_hub",
+    "filelock",
+    "urllib3",
+)
+
+
+def silence_noisy_loggers(
+    *,
+    extra: Optional[Sequence[str]] = None,
+    level: int = logging.WARNING,
+    silence_transformers: bool = True,
+) -> None:
+    """Quiet third-party loggers that spam INFO during ML workloads.
+
+    By default raises the following loggers to ``WARNING``:
+
+        - ``httpx`` (one INFO line per HF Hub request)
+        - ``huggingface_hub`` (resolve/redirect chatter)
+        - ``filelock`` (acquire/release on every cache hit)
+        - ``urllib3`` (connection pool diagnostics)
+
+    These are noisy enough to dominate the console output for any
+    example that touches ``AutoTokenizer.from_pretrained`` or similar
+    Hub calls (see fsdp_tp, hf, hf_trainer, inference). Each example
+    used to duplicate this block locally — call this once at the top
+    of ``main()`` instead.
+
+    Args:
+        extra: additional logger names to also quiet. Useful for
+            workload-specific spam (e.g. ``("matplotlib.font_manager",)``).
+        level: target level (default ``logging.WARNING``).
+        silence_transformers: also raise transformers logging to ERROR
+            and disable its progress bar. ``transformers`` is imported
+            lazily inside the function so this is safe when the package
+            isn't installed.
+
+    Idempotent — safe to call multiple times.
+    """
+    names = tuple(_DEFAULT_NOISY_LOGGERS) + tuple(extra or ())
+    for name in names:
+        logging.getLogger(name).setLevel(level)
+    if silence_transformers:
+        try:
+            import transformers as _transformers
+            _transformers.logging.set_verbosity_error()
+            _transformers.logging.disable_progress_bar()
+        except Exception:
+            # transformers not installed; nothing to silence.
+            pass
 
 
 def get_console_from_logger(logger: logging.Logger) -> Console:

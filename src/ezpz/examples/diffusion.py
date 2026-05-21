@@ -499,6 +499,8 @@ def train(
                 # Step time: data + forward + backward (no optimizer).
                 train_metrics["train/tflops"] = _model_flops / (t3 - t0) / 1e12
                 train_metrics["train/mfu"] = compute_mfu(_model_flops, t3 - t0)
+            # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
+            train_metrics |= ezpz.get_memory_metrics(prefix="train/")
             logger.info(
                 history.update(train_metrics).replace("train/", "")
             )

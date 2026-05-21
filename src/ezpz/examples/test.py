@@ -310,6 +310,8 @@ class Trainer:
             "accuracy": accuracy.detach(),
             "dtf": time.perf_counter() - t0,
         }
+        # Device memory: empty dict on CPU/MPS, 4 keys on CUDA/XPU.
+        metrics |= ezpz.get_memory_metrics(self.device_id)
         return metrics, loss
 
     @ezpz.timeitlogit(rank=ezpz.get_rank())

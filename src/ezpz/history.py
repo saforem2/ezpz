@@ -981,6 +981,14 @@ class History:
         wrote_any = False
         points = 0
 
+        # Whether to also print the multi-pane grid (raw/mean | min/std/max)
+        # and the 2x2 histogram grid to stdout. Off by default — these
+        # take ~30 lines of console real estate each and the same data
+        # is in the saved .txt file. Set EZPZ_TPLOT_STDOUT=1 to restore
+        # the legacy behavior. The single-pane overlay (mean/max/min/raw
+        # on one chart) IS always printed — it's the useful summary.
+        _show_grids = os.environ.get("EZPZ_TPLOT_STDOUT", "0") == "1"
+
         if use_subplots:
             assert plt is not None and left is not None and right is not None
             left_slots = [
@@ -1042,7 +1050,10 @@ class History:
                 wrote_any = True
 
             if wrote_any:
-                plt.show()
+                if _show_grids:
+                    plt.show()
+                # File is saved either way — `tplot/<metric>.txt` still
+                # has the multi-pane grid for later inspection.
                 plt.savefig(
                     asset_path.as_posix(), append=False, keep_colors=True
                 )
@@ -1116,7 +1127,9 @@ class History:
                     if hasattr(plt, "title"):
                         plt.title(f"{label} hist")
                 if hist_points > 0:
-                    plt.show()
+                    if _show_grids:
+                        plt.show()
+                    # Saved to `tplot/<metric>_hist.txt` either way.
                     plt.savefig(
                         hist_path.as_posix(),
                         append=False,
@@ -1155,38 +1168,48 @@ class History:
                     marker=_metric_marker(key),
                     logfreq=(1 if logfreq is None else logfreq),
                     record_report=False,
+                    # The per-stat raw/mean/min/max/std panes are what
+                    # used to spam stdout — gate them behind the same
+                    # opt-in. Files still written to `tplot/<metric>.txt`.
+                    quiet=not _show_grids,
                 )
                 append_flag = True
                 wrote_any = True
 
             if stats_present:
                 overlay_order = [
-                    ("raw", name),
-                    ("mean", f"{name}/mean"),
-                    ("max", f"{name}/max"),
-                    ("min", f"{name}/min"),
+                    ("max", f"{name}/max", "red"),
+                    ("min", f"{name}/min", "cyan"),
+                    ("mean", f"{name}/mean", "green"),
+                    ("raw", name, None),
                 ]
+                # Build a SINGLE combined overlay (one show, one savefig)
+                # — not 4 sequential _tplot(append=True) calls, which
+                # would print 4 separate panes to stdout. This matches
+                # the use_subplots branch's behavior.
+                overlay_plt = plotext_prepare_figure(theme="clear")
+                plotext_set_size(overlay_plt, min_height=40)
                 overlay_points = 0
-                overlay_append = False
-                for key, label in overlay_order:
+                for key, label, color in overlay_order:
                     data_array = metric_vars.get(key)
                     if data_array is None:
                         continue
                     series = self._series_from_dataarray(data_array)
                     overlay_points = max(overlay_points, len(series))
-                    self._tplot(
-                        y=series,
-                        xlabel="step",
-                        ylabel=label,
-                        append=overlay_append,
-                        outfile=summary_path.as_posix(),
-                        verbose=verbose,
-                        plot_type=resolved_plot_type,
+                    plotext_plot_series(
+                        overlay_plt,
+                        series,
+                        label=label,
+                        color=color,
                         marker=_metric_marker(key),
-                        logfreq=(1 if logfreq is None else logfreq),
-                        record_report=False,
                     )
-                    overlay_append = True
+                if overlay_points > 0:
+                    overlay_plt.show()
+                    overlay_plt.savefig(
+                        summary_path.as_posix(),
+                        append=False,
+                        keep_colors=True,
+                    )
                 if (
                     overlay_points > 0
                     and self.report_enabled
@@ -1199,7 +1222,7 @@ class History:
                         metadata={
                             "components": ", ".join(
                                 key
-                                for key, _ in overlay_order
+                                for key, _, _ in overlay_order
                                 if key in metric_vars
                             ),
                             "points": overlay_points,
@@ -1472,51 +1495,25 @@ class History:
         self._tracker.log(sanitized_metrics, step=step, commit=commit)
         self._write_jsonl_entry(sanitized_metrics, aggregated_metrics)
         if summarize:
-            scalar_summary = {
-                key: value
-                for key, value in summary_source.items()
-                # skip keys like "train/iter/min", "eval/step/std", etc.,
-                if not any(
-                    count_str in key
-                    for count_str in [
-                        "iter/min",
-                        "iter/max",
-                        "iter/std",
-                        "iter/avg",
-                        "iter/mean",
-                        "step/min",
-                        "step/max",
-                        "step/std",
-                        "step/avg",
-                        "step/mean",
-                        "epoch/min",
-                        "epoch/max",
-                        "epoch/std",
-                        "epoch/avg",
-                        "epoch/mean",
-                        "batch/min",
-                        "batch/max",
-                        "batch/std",
-                        "batch/avg",
-                        "batch/mean",
-                        "idx/min",
-                        "idx/max",
-                        "idx/std",
-                        "idx/avg",
-                        "idx/mean",
-                    ]
-                )
-            }
-            # _ss = {"max", "min", "std"}
-            # _sk = {"iter", "step", "epoch", "batch", "idx"}
-            # keys_to_skip = [
-            #     f"{i}/{s}" for s in _ss for i in _sk
-            # ]
-            if scalar_summary:
-                return summarize_dict(
-                    scalar_summary, precision=precision
-                ).replace("/", "/")
-            return ""
+            from ezpz.utils import (
+                format_compact_summary,
+                format_memory_summary,
+            )
+
+            # format_compact_summary handles all the noise reduction:
+            #   - collapses base + */std into `key=value(±std)`
+            #   - drops the */mean /min /max /avg companions
+            #   - strips memory keys (handled separately below)
+            #   - leaves counter-like keys (iter/step/epoch/...) bare
+            base = format_compact_summary(
+                summary_source, precision=precision
+            )
+            # Build the compact memory string from the RAW metrics dict
+            # (which still has the 4 keys even after the filter above).
+            # Empty string when no memory keys, e.g. on CPU/MPS.
+            memory_str = format_memory_summary(metrics, prefix=prefix or "")
+            parts = [p for p in (base, f"memory={memory_str}" if memory_str else "") if p]
+            return " ".join(parts)
         return ""
 
     @staticmethod
@@ -1644,11 +1641,10 @@ class History:
                     return True
             return False
 
-        info_msg = summarize_dict(info_metrics, precision=precision).replace(
-            "train/", ""
-        )
-        if info_msg:
-            log.info(info_msg)
+        # Merge distributed min/max/std stats INTO the base info dict so
+        # format_compact_summary can collapse them into `key=value(±std)`
+        # form instead of emitting a second verbose line.
+        merged_for_summary: dict[str, Any] = dict(info_metrics)
         if include_summary:
             summary_input = info_metrics
             if omit_counter_metrics:
@@ -1661,11 +1657,33 @@ class History:
                 summary_input
             )
             if summary_stats and (not rank0_only_summary or self._rank == 0):
-                summary_msg = summarize_dict(
-                    summary_stats, precision=precision
-                ).replace("train/", "")
-                if summary_msg:
-                    log.info(summary_msg)
+                merged_for_summary.update(summary_stats)
+
+        from ezpz.utils import (
+            format_compact_summary,
+            format_memory_summary,
+        )
+
+        # format_compact_summary handles the noise reduction:
+        #   - collapses base + */std into `key=value(±std)`
+        #   - drops */mean /min /max /avg companions
+        #   - strips memory keys (formatted separately below)
+        #   - leaves counter keys (iter/step/epoch/...) bare
+        base = format_compact_summary(
+            merged_for_summary, precision=precision
+        ).replace("train/", "")
+        # prefix=None lets format_memory_summary auto-detect "train/" /
+        # "eval/" / "" from the keys, so we don't have to probe twice.
+        memory_str = format_memory_summary(info_metrics)
+        parts = [
+            p
+            for p in (base, f"memory={memory_str}" if memory_str else "")
+            if p
+        ]
+        info_msg = " ".join(parts)
+        if info_msg:
+            log.info(info_msg)
+
         debug_msg = summarize_dict(debug_metrics, precision=precision).replace(
             "train/", ""
         )
@@ -1686,6 +1704,7 @@ class History:
         plot_type: Optional[str] = None,
         marker: Optional[str] = None,
         record_report: bool = True,
+        quiet: bool = False,
     ):
         """
         Create a text plot of the given data.
@@ -1730,6 +1749,7 @@ class History:
                 plot_type=plot_type,
                 marker=marker,
                 title=title,
+                quiet=quiet,
                 # plot_type=('scatter' if 'dt' in ylabel else None),
             )
             if (
@@ -1757,6 +1777,7 @@ class History:
                 outfile=(of if of is not None else None),
                 plot_type="hist",
                 marker=marker,
+                quiet=quiet,
             )
             if record_report and self.report_enabled and of is not None:
                 self._write_plot_report(
