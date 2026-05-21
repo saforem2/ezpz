@@ -242,18 +242,22 @@ class TestHistory:
         # Each rank only sees its own value; the all-reduce here
         # simulates the global SUM/MAX/MIN by replacing the local
         # tensor's contents in-place with the across-rank aggregate.
+        # Dispatch by call order, not tensor contents — the source
+        # always issues reduces in the same order (SUM sum, SUM sq,
+        # MAX, MIN), and content-comparison would break for inputs
+        # where x ≈ x² (e.g. small floats or values near 0 or 1).
+        sum_call_count = [0]  # nonlocal-effective via list
+
         def _fake_all_reduce(tensor, op=None, **_kw):
             ops = torch.distributed.ReduceOp
             arr = torch.tensor(
                 per_rank_values, dtype=tensor.dtype, device=tensor.device
             )
             if op == ops.SUM:
-                # Local tensor is rank 0's contribution; we want the
-                # sum of all rank contributions. The first time we
-                # see SUM the tensor is the rank-0 value; for the
-                # squared sum it's the rank-0 squared value. Re-derive
-                # from `arr` to keep this test agnostic of which call.
-                if torch.allclose(tensor.squeeze(), arr[0:1].to(tensor.dtype)):
+                sum_call_count[0] += 1
+                # First SUM is for `sum_vals` (Σx), second is for
+                # `sq_vals` (Σx²). Source code never reorders these.
+                if sum_call_count[0] == 1:
                     tensor.copy_(arr.sum().to(tensor.dtype).view_as(tensor))
                 else:
                     tensor.copy_(
@@ -292,6 +296,92 @@ class TestHistory:
         assert stats["tokens_per_sec/std"] == pytest.approx(
             expected_std, rel=1e-3
         )
+
+    def test_distributed_std_falls_back_when_fp64_unsupported(
+        self, monkeypatch, caplog
+    ):
+        """If the fp64 promotion or probe raises (e.g. some Intel XPU
+        devices don't support fp64), the helper should fall back to
+        fp32 with a logged warning rather than crashing the run.
+
+        Losing precision on ``/std`` for large-magnitude metrics is
+        bad, but losing the entire training run because metric
+        collection threw is much worse.
+        """
+        # Smaller-magnitude values so fp32 cancellation isn't an
+        # issue here — this test is about the fallback path firing,
+        # not about std accuracy on the fallback.
+        per_rank_values = [0.5, 0.6, 0.4, 0.55, 0.45, 0.5]
+        world_size = len(per_rank_values)
+
+        monkeypatch.setattr(
+            "ezpz.distributed.get_world_size", lambda: world_size
+        )
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True, raising=False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "is_available", lambda: True, raising=False
+        )
+
+        hist = history.History(distributed_history=True)
+        hist._rank = 0
+        monkeypatch.setattr(
+            hist, "_select_metric_device", lambda: torch.device("cpu")
+        )
+
+        # Patch the Tensor.to method so any fp64 promotion raises.
+        # Simulates an XPU device that doesn't support fp64.
+        orig_to = torch.Tensor.to
+
+        def _no_fp64(self, *args, **kwargs):
+            dtype = kwargs.get("dtype")
+            if not dtype and args and isinstance(args[0], torch.dtype):
+                dtype = args[0]
+            if dtype == torch.float64:
+                raise RuntimeError(
+                    "Simulated: device does not support fp64"
+                )
+            return orig_to(self, *args, **kwargs)
+
+        monkeypatch.setattr(torch.Tensor, "to", _no_fp64)
+
+        sum_call_count = [0]
+
+        def _fake_all_reduce(tensor, op=None, **_kw):
+            ops = torch.distributed.ReduceOp
+            arr = torch.tensor(
+                per_rank_values, dtype=tensor.dtype, device=tensor.device
+            )
+            if op == ops.SUM:
+                sum_call_count[0] += 1
+                if sum_call_count[0] == 1:
+                    tensor.copy_(arr.sum().to(tensor.dtype).view_as(tensor))
+                else:
+                    tensor.copy_(
+                        arr.square().sum().to(tensor.dtype).view_as(tensor)
+                    )
+            elif op == ops.MAX:
+                tensor.copy_(arr.max().to(tensor.dtype).view_as(tensor))
+            elif op == ops.MIN:
+                tensor.copy_(arr.min().to(tensor.dtype).view_as(tensor))
+
+        monkeypatch.setattr(
+            torch.distributed, "all_reduce", _fake_all_reduce
+        )
+
+        # Should not raise — the source's try/except catches the
+        # fp64 RuntimeError and falls back to fp32.
+        stats = hist._compute_distributed_metrics(
+            {"loss": per_rank_values[0]}
+        )
+
+        # Stats should still be computed (in fp32). Mean is exact for
+        # these small values; std is non-zero because the magnitudes
+        # are small enough that fp32 cancellation doesn't bite.
+        true_mean = sum(per_rank_values) / world_size
+        assert stats["loss/mean"] == pytest.approx(true_mean, abs=1e-5)
+        assert stats["loss/std"] > 0.0
 
     def test_history_finalize_report_contains_environment(self, tmp_path):
         """Finalized report lives alongside outputs with environment context."""

@@ -1387,10 +1387,34 @@ class History:
         # is then indistinguishable from "all ranks identical" and the
         # console summary drops the `(±std)` parenthetical entirely.
         # fp64 has ~16 sig digits of headroom which covers any realistic
-        # training metric. Cost: one extra cast + ~2x bandwidth on the
-        # squared-sum all-reduce, negligible vs. the metric collection.
-        sum_vals = values.to(torch.float64)
-        sq_vals = sum_vals.square()
+        # training metric. Cost: two casts + ~2x bandwidth on both the
+        # sum and squared-sum all-reduces (max/min stay in the original
+        # dtype since they don't suffer cancellation). Negligible vs.
+        # the metric collection itself.
+        #
+        # Some accelerator backends (notably some Intel XPU devices)
+        # don't support fp64 natively. We probe the cast + a trivial
+        # fp64 op BEFORE starting any collectives — if it fails, we
+        # commit to the original dtype for the whole reduce so we
+        # don't leave half the ranks in fp64 and half in fp32 (which
+        # would deadlock the all_reduce). `copy=True` on the cast
+        # also defends against aliasing when `values` is already fp64
+        # (otherwise the in-place all_reduce below would mutate it).
+        try:
+            sum_vals = values.to(torch.float64, copy=True)
+            _ = sum_vals.square().sum().item()  # probe fp64 arithmetic
+            sq_vals = sum_vals.square()
+        except RuntimeError as exc:
+            logger.warning(
+                "fp64 promotion failed on %s (%s); falling back to "
+                "%s for distributed std. `/std` for large-magnitude "
+                "metrics may collapse to 0.0 due to fp32 cancellation.",
+                metric_device,
+                exc,
+                dtype,
+            )
+            sum_vals = values.clone()
+            sq_vals = values.square()
         max_vals = values.clone()
         min_vals = values.clone()
         # world_size = ezpz.distributed.get_world_size()
