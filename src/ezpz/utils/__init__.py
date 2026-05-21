@@ -668,10 +668,26 @@ def _format_std(std: float, *, precision: int) -> "str | None":
     return formatted
 
 
+_DEFAULT_MIN_WIDTHS: dict[str, int] = {
+    # Counters whose value width grows over the run. Pad so the eye can
+    # scan down the left edge — `iter=8     ` aligns under `iter=12000`.
+    # Widths include the `iter=` prefix; chosen for typical training-run
+    # upper bounds (5-digit iters/steps, 4-digit epochs). Override
+    # per-call via the `min_widths` kwarg if you need more or less.
+    "iter": 10,   # supports up to 99999 iters
+    "step": 10,
+    "epoch": 8,   # supports up to 999 epochs
+    "batch": 10,
+    "idx": 10,
+    "bidx": 10,
+}
+
+
 def format_compact_summary(
     metrics: dict[str, float],
     precision: int = 6,
     keys_to_skip: Iterable | None = None,
+    min_widths: "dict[str, int] | None" = None,
 ) -> str:
     """Render *metrics* as a compact ``key=value(±std)`` summary line.
 
@@ -695,12 +711,29 @@ def format_compact_summary(
       - Counter-like base names (``iter``, ``step``, ``epoch``, ``batch``,
         ``idx``) suppress the ``(±std)`` suffix even if std is present
         — a counter's std is meaningless noise.
+      - Counter tokens are right-padded so successive lines align at
+        the left edge: ``iter=8     loss=...`` lines up under
+        ``iter=180   loss=...``. Override widths via ``min_widths``.
 
     Aggregation values (``X/mean``, ``X/std``, etc.) that have NO
     corresponding base value in *metrics* are still emitted as
     standalone keys, so we don't silently lose data.
     """
     skip = set(keys_to_skip or ())
+    # Merge caller-supplied widths over the defaults.
+    widths: dict[str, int] = dict(_DEFAULT_MIN_WIDTHS)
+    if min_widths:
+        widths.update(min_widths)
+
+    def _pad(base_name: str, token: str) -> str:
+        """Right-pad ``token`` so each line's counter aligns with prior
+        lines. ``base_name`` strips any namespace prefix (``train/iter``
+        → ``iter``) before looking up the configured width."""
+        leaf = base_name.rsplit("/", 1)[-1]
+        target = widths.get(leaf)
+        if target is None or len(token) >= target:
+            return token
+        return token + " " * (target - len(token))
     # Pre-build a lookup of std values keyed by base name so we can
     # match them onto bases in a single pass.
     std_lookup: dict[str, float] = {}
@@ -743,7 +776,8 @@ def format_compact_summary(
             else:
                 tokens.append(f"{base_token}(±{std_token})")
         else:
-            tokens.append(base_token)
+            # Pad counter tokens so the next field aligns across rows.
+            tokens.append(_pad(k, base_token))
 
     # Emit aggregation keys whose base wasn't present in the dict — so
     # we don't silently drop them. (Rare; happens when caller passes

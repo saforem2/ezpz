@@ -637,6 +637,57 @@ class TestFormatCompactSummary:
         out = format_compact_summary({"loss/mean": 0.4}, precision=2)
         assert "loss/mean=0.40" in out
 
+    def test_counter_tokens_padded_for_alignment(self):
+        """`iter=N` tokens should be right-padded so successive lines'
+        next field aligns at the left edge — what you want when
+        scanning a long training log column-wise."""
+        from ezpz.utils import format_compact_summary
+        out_0 = format_compact_summary({"iter": 0, "loss": 0.5}, precision=6)
+        out_1k = format_compact_summary({"iter": 1234, "loss": 0.5}, precision=6)
+        # Both lines: next field should start at the same column.
+        loss_pos_0 = out_0.find("loss=")
+        loss_pos_1k = out_1k.find("loss=")
+        assert loss_pos_0 == loss_pos_1k, (
+            f"loss= aligned to {loss_pos_0} (short iter) vs "
+            f"{loss_pos_1k} (long iter)"
+        )
+
+    def test_min_widths_override(self):
+        """`min_widths` kwarg should override the per-key default."""
+        from ezpz.utils import format_compact_summary
+        # Force iter to a tiny width — value blows past it, no padding
+        out_small = format_compact_summary(
+            {"iter": 5, "loss": 0.5},
+            min_widths={"iter": 4},
+        )
+        # iter=5 is 6 chars; min_width=4 means no padding (value longer)
+        assert out_small == "iter=5 loss=0.500000"
+
+        # Force iter to a huge width — pad heavily
+        out_big = format_compact_summary(
+            {"iter": 5, "loss": 0.5},
+            min_widths={"iter": 20},
+        )
+        # iter=5 padded to 20 chars
+        assert "iter=5" + " " * 14 in out_big
+
+    def test_namespaced_counter_picks_up_default_width(self):
+        """`train/iter` should match the same width budget as `iter`."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary({"train/iter": 5, "loss": 0.5}, precision=6)
+        # Default width for iter=10 → "train/iter=5" is 12 chars,
+        # already > 10 → no padding. But still no crash, and uses the
+        # leaf-name lookup correctly.
+        assert "train/iter=5" in out
+
+    def test_non_counter_keys_not_padded(self):
+        """Padding should only apply to keys in `min_widths`; everything
+        else stays untouched (no trailing whitespace surprises)."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary({"loss": 0.5, "acc": 0.9})
+        # No double spaces between tokens.
+        assert "  " not in out
+
     def test_realistic_log_shape(self):
         """End-to-end: the actual shape from a 22-token line collapses to ~8."""
         from ezpz.utils import format_compact_summary
