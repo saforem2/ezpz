@@ -630,6 +630,44 @@ _MEMORY_METRIC_BASES = (
 _AGGREGATION_SUFFIXES = ("", "/mean", "/max", "/min", "/std", "/avg")
 
 
+def _format_std(std: float, *, precision: int) -> "str | None":
+    """Format a std value for the inline ``(±X)`` console suffix.
+
+    Returns:
+        - ``None`` when the std rounds to 0 at the chosen precision —
+          the caller should drop the parenthetical entirely (``(±0)``
+          adds no signal; e.g. LR with `lr/std=0`).
+        - A trimmed string otherwise. We use lower precision than the
+          base value (std is a noise-band hint, not a measurement)
+          and strip trailing zeros: `0.157124` → `0.16`, `0.000` → None.
+
+    The std-precision policy: ``min(precision, 2)`` keeps the visual
+    weight of `(±0.16)` proportional to `loss=0.289993` without
+    drowning the actual value in trailing digits.
+    """
+    if std == 0:
+        return None
+    std_precision = min(precision, 2)
+    formatted = f"{std:.{std_precision}f}"
+    # After truncation, the value might be 0.00 — same "no signal" case.
+    if float(formatted) == 0:
+        # Try one more precision step before giving up, in case caller
+        # asked for precision=6 and we have std=1e-5: 0.00 → 0.00001.
+        if precision > std_precision:
+            formatted = f"{std:.{precision}f}"
+            if float(formatted) == 0:
+                return None
+        else:
+            return None
+    # Strip trailing zeros (`0.10` → `0.1`, `1.00` → `1`). Keep at
+    # least one digit after the decimal if there is one.
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+        if not formatted or formatted == "-":
+            formatted = "0"
+    return formatted
+
+
 def format_compact_summary(
     metrics: dict[str, float],
     precision: int = 6,
@@ -696,7 +734,14 @@ def format_compact_summary(
         base_token = format_pair(k, v, precision=precision)
         std = std_lookup.get(k)
         if std is not None and not _is_counter(k):
-            tokens.append(f"{base_token}(±{std:.{precision}f})")
+            std_token = _format_std(std, precision=precision)
+            if std_token is None:
+                # std rounds to zero at the chosen precision (e.g.
+                # `lr/std=1e-12` with precision=2). `(±0)` adds no
+                # signal; drop it.
+                tokens.append(base_token)
+            else:
+                tokens.append(f"{base_token}(±{std_token})")
         else:
             tokens.append(base_token)
 

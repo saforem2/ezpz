@@ -527,7 +527,7 @@ class TestFormatCompactSummary:
     """The ``key=value(±std)`` console renderer."""
 
     def test_collapses_base_and_std_into_inline_format(self):
-        """`loss=0.5` + `loss/std=0.02` → `loss=0.5(±0.02)`."""
+        """`loss=0.5` + `loss/std=0.02` → `loss=0.50(±0.02)`."""
         from ezpz.utils import format_compact_summary
         out = format_compact_summary(
             {"loss": 0.5, "loss/std": 0.02}, precision=2,
@@ -548,6 +548,53 @@ class TestFormatCompactSummary:
         # All four aggregation suffixes drop; only the inline std survives.
         assert out == "loss=0.50(±0.02)"
         assert "/mean" not in out and "/max" not in out and "/min" not in out
+
+    def test_std_uses_lower_precision_than_value(self):
+        """Std is a noise-band hint — display with min(precision, 2) sig
+        digits so it doesn't drown out the actual value.
+
+        `loss=0.289993` is interesting at 6 digits; `loss/std=0.157124`
+        rounded to 2 places (`0.16`) loses nothing meaningful and is
+        much easier to scan.
+        """
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"loss": 0.289993, "loss/std": 0.157124}, precision=6,
+        )
+        # value retains precision=6; std drops to 2 places.
+        assert out == "loss=0.289993(±0.16)"
+
+    def test_zero_std_drops_parenthetical(self):
+        """`(±0.0)` adds no signal — drop it entirely. Common for
+        constant metrics like LR within a single step."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"lr": 0.000234, "lr/std": 0.0}, precision=6,
+        )
+        assert out == "lr=0.000234"
+        # Specifically: no (± ... ) at all.
+        assert "(±" not in out
+
+    def test_std_rounding_to_zero_falls_back_to_precision(self):
+        """Tiny std (e.g. `1e-5` at precision=2 → `0.00`) should fall
+        back to the requested precision rather than disappear. Only when
+        the std is truly zero at every precision do we drop it."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"dtb": 0.027595, "dtb/std": 0.000302}, precision=6,
+        )
+        # `0.00` at min(6,2)=2 → fall back to precision=6 → `0.000302`.
+        # Trailing zeros stripped to keep things tight.
+        assert out == "dtb=0.027595(±0.000302)"
+
+    def test_std_trailing_zeros_stripped(self):
+        """`1.30` should display as `1.3`; `0.10` as `0.1`."""
+        from ezpz.utils import format_compact_summary
+        out = format_compact_summary(
+            {"tflops": 16.778491, "tflops/std": 1.297581}, precision=6,
+        )
+        # min(6,2)=2 → `1.30` → strip → `1.3`.
+        assert out == "tflops=16.778491(±1.3)"
 
     def test_skips_memory_keys_entirely(self):
         """Memory keys are handled by format_memory_summary; never appear here."""
@@ -602,9 +649,13 @@ class TestFormatCompactSummary:
             "dtf": 0.009, "dtf/std": 0.000,
         }
         out = format_compact_summary(metrics, precision=3)
-        # 4 tokens: iter, loss(±std), accuracy(±std), dtf(±std)
+        # 4 tokens: iter, loss(±std), accuracy(±std), dtf (no std — it's 0)
         assert out.count("=") == 4
         assert "iter=180" in out
-        assert "loss=0.047(±0.023)" in out
-        assert "accuracy=1.000(±0.007)" in out
-        assert "dtf=0.009(±0.000)" in out
+        # std at min(3,2)=2, trailing zeros stripped.
+        assert "loss=0.047(±0.02)" in out
+        # 0.007 at precision=2 → `0.01` (rounds up).
+        assert "accuracy=1.000(±0.01)" in out
+        # dtf/std=0.000 → drop the parenthetical entirely.
+        assert "dtf=0.009" in out
+        assert "dtf=0.009(" not in out
