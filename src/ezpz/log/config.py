@@ -216,6 +216,18 @@ repr_styles = {
     "repr.attrib_name": Style(color="bright_blue", bold=False, italic=False),
     # "repr.attrib_value": Style(color="magenta"),
     "repr.ellipsis": Style(color="bright_yellow"),
+    # Override rich's default `repr.call` (bold magenta) to match
+    # `repr.number` (rich default: bold cyan). Rich's call regex
+    # matches `NUM(`, so the value in `acc=0.390625(± 0.059)` was
+    # rendering magenta — a false positive (it's not a function call)
+    # that broke column-wise color scanning. Match `repr.number`'s
+    # exact rich-default style so bare numbers and `NUM(` render
+    # identically.
+    "repr.call": Style(color="cyan", bold=True),
+    # Custom style for the `(±std)` parenthetical added by
+    # `format_compact_summary`. Highlighter is `EzpzReprHighlighter`
+    # in ezpz.log.highlighter.
+    "repr.ezpz_std": Style(color=ORANGE_),
 }
 
 # 4) assemble in one shot
