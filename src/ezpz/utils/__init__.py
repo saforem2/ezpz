@@ -689,16 +689,18 @@ def _format_std(std: float, *, precision: int) -> "str | None":
 
 _DEFAULT_MIN_WIDTHS: dict[str, int] = {
     # Counters whose value width grows over the run. Pad so the eye can
-    # scan down the left edge — `iter=8     ` aligns under `iter=12000`.
+    # scan down the left edge — `iter=8    ` aligns under `iter=1200`.
     # Widths include the `iter=` prefix; chosen for typical training-run
-    # upper bounds (5-digit iters/steps, 4-digit epochs). Override
-    # per-call via the `min_widths` kwarg if you need more or less.
-    "iter": 10,   # supports up to 99999 iters
-    "step": 10,
-    "epoch": 8,   # supports up to 999 epochs
-    "batch": 10,
-    "idx": 10,
-    "bidx": 10,
+    # upper bounds (4-digit iters/steps, 3-digit epochs). Override
+    # per-call via the `min_widths` kwarg if you need more for long
+    # 10k+ step runs — exceeding the width is harmless, it just stops
+    # padding and the next field shifts one column right.
+    "iter": 9,    # supports up to 9999 iters
+    "step": 9,
+    "epoch": 7,   # supports up to 999 epochs
+    "batch": 9,
+    "idx": 9,
+    "bidx": 9,
 }
 
 # Max width of the std token produced by `_format_std` (see its
