@@ -981,6 +981,14 @@ class History:
         wrote_any = False
         points = 0
 
+        # Whether to also print the multi-pane grid (raw/mean | min/std/max)
+        # and the 2x2 histogram grid to stdout. Off by default — these
+        # take ~30 lines of console real estate each and the same data
+        # is in the saved .txt file. Set EZPZ_TPLOT_STDOUT=1 to restore
+        # the legacy behavior. The single-pane overlay (mean/max/min/raw
+        # on one chart) IS always printed — it's the useful summary.
+        _show_grids = os.environ.get("EZPZ_TPLOT_STDOUT", "0") == "1"
+
         if use_subplots:
             assert plt is not None and left is not None and right is not None
             left_slots = [
@@ -1042,7 +1050,10 @@ class History:
                 wrote_any = True
 
             if wrote_any:
-                plt.show()
+                if _show_grids:
+                    plt.show()
+                # File is saved either way — `tplot/<metric>.txt` still
+                # has the multi-pane grid for later inspection.
                 plt.savefig(
                     asset_path.as_posix(), append=False, keep_colors=True
                 )
@@ -1116,7 +1127,9 @@ class History:
                     if hasattr(plt, "title"):
                         plt.title(f"{label} hist")
                 if hist_points > 0:
-                    plt.show()
+                    if _show_grids:
+                        plt.show()
+                    # Saved to `tplot/<metric>_hist.txt` either way.
                     plt.savefig(
                         hist_path.as_posix(),
                         append=False,
