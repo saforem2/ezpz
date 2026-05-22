@@ -1,0 +1,289 @@
+#!/bin/bash -l
+#PBS -A AuroraGPT
+#PBS -q debug
+#PBS -l select=2
+#PBS -l walltime=00:30:00
+#PBS -l filesystems=flare:home
+#PBS -N ezpz-launch-watchdog-test
+#PBS -j oe
+#PBS -o logs/ezpz-launch-watchdog-test.${PBS_JOBID}.log
+#
+# PBS test driver for `ezpz launch --timeout` / `--retries` on Aurora.
+#
+# Exercises BOTH dispatch paths in `ezpz.launch.run()`:
+#   - The scheduler-detected path (`launch()` → mpiexec with topology)
+#   - The local-mpirun fallback path (`subprocess.run` direct)
+#
+# Submit with:
+#   cd ~/ezpz  # (or wherever your checkout is)
+#   qsub src/ezpz/bin/test_launch_timeout_retries_aurora.pbs
+#
+# Inspect:
+#   tail -f logs/ezpz-launch-watchdog-test.*.log
+#
+# Walltime budget: 30 minutes. Six scenarios + the existing local-mode
+# test driver should complete in well under 10 minutes; the rest is
+# headroom for queue-time variance.
+
+set -u
+unset CDPATH
+
+cd "${PBS_O_WORKDIR}" || { echo "PBS_O_WORKDIR unset; aborting"; exit 1; }
+
+# ---- Environment setup (Aurora module stack + venv) -----------------------
+#
+# `utils.sh` lookup order, so the script works whether you submitted
+# from an ezpz checkout OR curled it into /tmp and submitted from
+# anywhere:
+#   1. ${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh  (you're in a checkout)
+#   2. The currently-installed ezpz package's bin dir, located via
+#      `python3 -c 'import ezpz; print(ezpz.configs.BIN_DIR)'`. Requires
+#      the modules already be set up enough that `python3` resolves to
+#      a venv with ezpz installed — works on Aurora because
+#      `module load frameworks` is always there as a fallback.
+#   3. Fetch utils.sh from main on github (last resort, no internet
+#      from compute nodes without the ALCF proxy already exported).
+UTILS=""
+if [[ -f "${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh" ]]; then
+    UTILS="${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh"
+    log_message_fallback() { echo "[$(date '+%F %T')] $*"; }
+    log_message_fallback INFO "Found utils.sh in checkout: ${UTILS}"
+elif command -v python3 >/dev/null 2>&1; then
+    BIN_DIR_TRY="$(python3 -c 'import ezpz; print(ezpz.configs.BIN_DIR)' 2>/dev/null || true)"
+    if [[ -n "${BIN_DIR_TRY}" && -f "${BIN_DIR_TRY}/utils.sh" ]]; then
+        UTILS="${BIN_DIR_TRY}/utils.sh"
+        echo "[INFO] Found utils.sh in installed ezpz: ${UTILS}"
+    fi
+fi
+if [[ -z "${UTILS}" ]]; then
+    # Last resort. Requires the proxy already in env or curl will hang
+    # for the full TCP timeout on a compute node. Aurora compute nodes
+    # CAN reach github once the http_proxy var is set, but `module load
+    # frameworks` is what normally sets it — chicken-and-egg here.
+    echo "[WARN] utils.sh not found locally; falling back to github fetch."
+    echo "[WARN] This requires http_proxy to be set, or you'll hang."
+    export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+    export https_proxy="${https_proxy:-${http_proxy}}"
+    UTILS="$(mktemp -t ezpz-utils-XXXXXX).sh"
+    if ! curl -fsSL --max-time 30 \
+        https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
+        -o "${UTILS}"; then
+        echo "[FATAL] Could not fetch utils.sh from github. Aborting."
+        echo "[FATAL] Submit from an ezpz checkout, or ensure python3 -c"
+        echo "[FATAL] 'import ezpz' works in your current env first."
+        exit 1
+    fi
+fi
+# shellcheck disable=SC1090
+source "${UTILS}"
+
+if [[ -d "${PBS_O_WORKDIR}/.venv" ]]; then
+    log_message INFO "Found .venv; using bare-modules flow."
+    ezpz_setup .venv || { log_message ERROR "ezpz_setup .venv failed"; exit 1; }
+else
+    log_message INFO "No .venv; using frameworks/conda flow."
+    ezpz_setup || { log_message ERROR "ezpz_setup failed"; exit 1; }
+fi
+
+# Sanity check that the new flags are actually present in this `ezpz` install.
+if ! ezpz launch --help 2>&1 | grep -q -- "--timeout"; then
+    log_message ERROR "--timeout flag NOT present in ezpz launch --help."
+    log_message ERROR "Is this the post-#136 version? Try:"
+    log_message ERROR "    pip install -U git+https://github.com/saforem2/ezpz.git"
+    exit 1
+fi
+
+# ---- Test runner setup ----------------------------------------------------
+
+TMP="$(mktemp -d -t ezpz-aurora-watchdog-XXXXXX)"
+log_message INFO "Scratch dir: ${TMP}"
+LOG="${TMP}/scenario.log"
+SUMMARY="${TMP}/summary.txt"
+: > "${SUMMARY}"
+
+PASS=0
+FAIL=0
+
+hdr() {
+    local n="$1" desc="$2"
+    printf "\n"
+    printf "========================================================================\n"
+    printf "Scenario %s: %s\n" "${n}" "${desc}"
+    printf "========================================================================\n"
+}
+
+record() {
+    local n="$1" verdict="$2" detail="$3"
+    if [[ "${verdict}" == "PASS" ]]; then
+        PASS=$((PASS + 1))
+    else
+        FAIL=$((FAIL + 1))
+    fi
+    printf "[Scenario %s] %-4s  %s\n" "${n}" "${verdict}" "${detail}" | tee -a "${SUMMARY}"
+}
+
+# ---- Part 1: existing local-mode test driver ------------------------------
+#
+# The `test_launch_timeout_retries.sh` driver exercises the LOCAL-MPIRUN
+# fallback path inside `run()` — i.e. the `subprocess.run(fallback_cmd)`
+# call at the bottom. Verifies the core watchdog/retry mechanics work
+# end-to-end with the new env-stack on Aurora compute nodes.
+hdr "A" "Local-mode driver (mpirun fallback path)"
+START=$(date +%s)
+bash src/ezpz/bin/test_launch_timeout_retries.sh > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+tail -25 "${LOG}"
+if [[ ${RC} -eq 0 ]]; then
+    record A PASS "6/6 sub-scenarios passed in ${ELAPSED}s"
+else
+    record A FAIL "exit=${RC} elapsed=${ELAPSED}s — see ${LOG} for sub-scenario detail"
+fi
+
+# ---- Part 2: PBS-detected path (mpiexec via `launch()`) -------------------
+#
+# Inside an active PBS allocation, `ezpz launch` takes the `launch()`
+# code path (scheduler detected → real mpiexec). The local-mode driver
+# above can't exercise this path; these scenarios do.
+#
+# All use --nproc 1 --nhosts 1 --nproc_per_node 1 so the launcher's
+# topology inference accepts the layout regardless of how many nodes
+# PBS handed us (we have 2 here per #PBS -l select=2). See
+# test_launch_timeout_retries.sh for the reasoning.
+NP=(--nproc 1 --nhosts 1 --nproc_per_node 1)
+
+# B: Happy path under PBS — chatty job emits a line/sec for 5s.
+hdr "B" "PBS path: chatty job under --timeout 30 → exit 0"
+START=$(date +%s)
+ezpz launch "${NP[@]}" --timeout 30 \
+    -- bash -c 'for i in 1 2 3 4 5; do echo "B step $i"; sleep 1; done; exit 0' \
+    > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+echo "exit=${RC}  elapsed=${ELAPSED}s"
+grep -E "B step|launch.*started|launch.*stop" "${LOG}" | head -10
+if [[ ${RC} -eq 0 && ${ELAPSED} -lt 60 ]]; then
+    record B PASS "exit=0 in ${ELAPSED}s"
+else
+    record B FAIL "exit=${RC} elapsed=${ELAPSED}s (wanted exit=0, elapsed<60s)"
+fi
+
+# C: PBS path watchdog kill — silent sleep, --timeout 5.
+hdr "C" "PBS path: silent sleep 60 + --timeout 5 → exit 124 at ~5-15s"
+START=$(date +%s)
+ezpz launch "${NP[@]}" --timeout 5 -- sleep 60 > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+echo "exit=${RC}  elapsed=${ELAPSED}s"
+grep -E "Watchdog|SIGTERM|SIGKILL" "${LOG}" || echo "(no watchdog log lines)"
+if [[ ${RC} -eq 124 && ${ELAPSED} -lt 30 ]]; then
+    record C PASS "exit=124 in ${ELAPSED}s"
+else
+    record C FAIL "exit=${RC} elapsed=${ELAPSED}s (wanted exit=124, elapsed<30s)"
+fi
+
+# D: PBS path retry → success. Counter file lives on flare (shared FS) so
+# both ranks see the same view; with --nproc 1 only one rank writes anyway.
+hdr "D" "PBS path: --retries 5, fail twice then succeed → exit 0, 3 attempts"
+COUNTER="${TMP}/counter_d"
+echo 0 > "${COUNTER}"
+START=$(date +%s)
+ezpz launch "${NP[@]}" --retries 5 -- bash -c "
+    n=\$(cat '${COUNTER}')
+    n=\$((n + 1))
+    echo \$n > '${COUNTER}'
+    echo \"D attempt \$n\"
+    if [ \$n -ge 3 ]; then exit 0; else exit 1; fi
+" > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+ATTEMPTS=$(cat "${COUNTER}")
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
+grep -E "Retry|attempt|succeeded" "${LOG}" | head -10
+if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 3 ]]; then
+    record D PASS "exit=0 after ${ATTEMPTS} attempts in ${ELAPSED}s"
+else
+    record D FAIL "exit=${RC} attempts=${ATTEMPTS} (wanted exit=0, attempts=3)"
+fi
+
+# E: PBS path compose — watchdog kill + retry. counter shows 2 attempts.
+hdr "E" "PBS path: --timeout 3 --retries 1 + hang → exit 124, 2 attempts"
+COUNTER="${TMP}/counter_e"
+echo 0 > "${COUNTER}"
+START=$(date +%s)
+ezpz launch "${NP[@]}" --timeout 3 --retries 1 -- bash -c "
+    n=\$(cat '${COUNTER}')
+    n=\$((n + 1))
+    echo \$n > '${COUNTER}'
+    echo \"E attempt \$n starting\"
+    sleep 30
+" > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+ATTEMPTS=$(cat "${COUNTER}")
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
+grep -E "Watchdog|Retry|attempt" "${LOG}" | head -10
+if [[ ${RC} -eq 124 && ${ATTEMPTS} -eq 2 ]]; then
+    record E PASS "exit=124 after ${ATTEMPTS} attempts in ${ELAPSED}s"
+else
+    record E FAIL "exit=${RC} attempts=${ATTEMPTS} (wanted exit=124, attempts=2)"
+fi
+
+# F: PYTHONUNBUFFERED check on real Python (motivated by codex P1).
+#    Spawn a Python process that writes its own PYTHONUNBUFFERED to a
+#    file. If the env var isn't being propagated, the watchdog logic
+#    is fundamentally broken on Python jobs.
+hdr "F" "PBS path: PYTHONUNBUFFERED=1 propagated to Python child"
+OUT="${TMP}/pyunbuf.txt"
+ezpz launch "${NP[@]}" --timeout 30 \
+    -- python3 -c "
+import os
+open('${OUT}', 'w').write(os.environ.get('PYTHONUNBUFFERED', '<unset>'))
+print('python child wrote PYTHONUNBUFFERED=' + os.environ.get('PYTHONUNBUFFERED', '<unset>'))
+" > "${LOG}" 2>&1
+RC=$?
+echo "exit=${RC}"
+tail -10 "${LOG}"
+if [[ ${RC} -eq 0 && -f "${OUT}" && "$(cat "${OUT}")" == "1" ]]; then
+    record F PASS "PYTHONUNBUFFERED=1 reached the Python child"
+else
+    record F FAIL "exit=${RC} pyunbuf_seen='$(cat "${OUT}" 2>/dev/null)' (wanted '1')"
+fi
+
+# G: A more realistic shape — run ezpz.examples.test for a few iters and
+#    verify it completes under --timeout. This is the integration check:
+#    a real training script using real distributed setup with the watchdog
+#    armed. If this passes, the flags are safe to drop into production
+#    torchtitan runs.
+hdr "G" "PBS path: realistic — ezpz.examples.test under --timeout 300"
+START=$(date +%s)
+ezpz launch --timeout 300 \
+    -- python3 -m ezpz.examples.test --model debug --train-iters 30 \
+    > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+echo "exit=${RC}  elapsed=${ELAPSED}s"
+tail -20 "${LOG}"
+# A successful debug-model run takes <5min; if it took longer something's off.
+if [[ ${RC} -eq 0 && ${ELAPSED} -lt 600 ]]; then
+    record G PASS "exit=0 in ${ELAPSED}s"
+else
+    record G FAIL "exit=${RC} elapsed=${ELAPSED}s — see ${LOG}"
+fi
+
+# ---- Final report ---------------------------------------------------------
+
+printf "\n========================================================================\n"
+printf "Aurora launch-watchdog summary  (PASS=%d  FAIL=%d)\n" "${PASS}" "${FAIL}"
+printf "========================================================================\n"
+cat "${SUMMARY}"
+
+if [[ ${FAIL} -eq 0 ]]; then
+    printf "\nAll scenarios passed. ✅\n"
+    rm -rf "${TMP}"
+    exit 0
+else
+    printf "\n%d scenario(s) failed. ❌  Scratch dir preserved: %s\n" \
+        "${FAIL}" "${TMP}"
+    exit 1
+fi
