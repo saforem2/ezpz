@@ -65,11 +65,18 @@ else
     exit 1
 fi
 
-# All scenarios below force --nproc 1 so each "attempt" runs ONE child
-# process (mpirun -np 1) and our counter files measure launch-wrapper
-# attempts, not rank fan-out. The watchdog/retry logic lives in the
-# launcher itself, so single-rank is the right granularity here.
-NP=(--nproc 1)
+# All scenarios below pin the launcher to ONE process on ONE host so:
+#  (a) each "attempt" runs a single child and our counter files measure
+#      launch-wrapper attempts, not rank fan-out; and
+#  (b) the launcher's PBS topology inference accepts the layout on
+#      multi-node allocations. Pinning only --nproc=1 fails inside a
+#      multi-node PBS job with `ngpus=1 must be divisible by nhosts=2`
+#      because PBS handed us 2 hosts and the launcher tries to spread
+#      one process across both. Explicit --nhosts=1 --nproc_per_node=1
+#      sidesteps that math entirely.
+# The watchdog/retry logic lives in the launcher itself, so single-rank
+# on a single host is the right granularity for exercising it.
+NP=(--nproc 1 --nproc_per_node 1 --nhosts 1)
 
 # ---- Scenario 1: happy path — chatty job under a generous timeout ---------
 #
