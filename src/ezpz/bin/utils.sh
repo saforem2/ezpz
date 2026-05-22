@@ -2646,10 +2646,17 @@ ezpz_setup_job() {
 	log_message INFO "  - Hostname: ${YELLOW}${hn}${RESET}"
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		ezpz_setup_job_alcf "$@"
+		return $?
 	elif [[ "${scheduler_type}" == "slurm" ]]; then
 		ezpz_setup_job_slurm "$@"
+		return $?
 	else
+		# Was previously silent (function returned the exit of `log_message`
+		# itself, almost always 0), which let callers like `ezpz_setup_env`
+		# and the new `ezpz_setup` proceed past a real configuration error.
+		# Now return 1 so the wrapper chain can short-circuit cleanly.
 		log_message ERROR "Unknown scheduler: ${scheduler_type} on ${mn}"
+		return 1
 	fi
 }
 
