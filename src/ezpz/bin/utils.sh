@@ -1054,6 +1054,61 @@ ezpz_load_modules_polaris() {
 	export XLA_PYTHON_CLIENT_PREALLOCATE="false"
 }
 
+###############################################
+# Dispatcher: load the bare module stack for
+# the detected machine without bringing in the
+# `frameworks` (Aurora/Sunspot) or `conda`
+# (Polaris) prebuilt Python env.
+#
+# Use this when you want to bring your own venv
+# (e.g. `uv venv`) on top of the system's module
+# stack. The complementary path is
+# `ezpz_setup_python`, which DOES load frameworks
+# /conda and gives you the prebuilt Python env.
+# **Don't combine the two** — that would either
+# double-load modules or, worse, load incompatible
+# versions in the wrong order.
+#
+# Machine detection uses `ezpz_get_machine_name`,
+# which keys off `hostname`. Sirius routes to a
+# no-op (it uses micromamba via
+# `ezpz_setup_conda_sirius` and has no bare-
+# modules equivalent).
+#
+# @example
+#    ezpz_load_modules
+#    uv venv --python=$(which python3)
+#    source .venv/bin/activate
+#
+# @stdout Machine-specific module load output.
+# @exitcode 0 on success, 1 on unsupported machine.
+###############################################
+ezpz_load_modules() {
+	local machine
+	machine=$(ezpz_get_machine_name)
+	case "${machine}" in
+	aurora)
+		ezpz_load_modules_aurora
+		;;
+	sunspot)
+		ezpz_load_modules_sunspot
+		;;
+	polaris)
+		ezpz_load_modules_polaris
+		;;
+	sirius)
+		# Sirius is a polaris-adjacent system that uses micromamba
+		# (see ezpz_setup_conda_sirius); no bare-modules path.
+		log_message WARN "ezpz_load_modules: sirius uses micromamba, not modules; skipping."
+		return 0
+		;;
+	*)
+		log_message ERROR "ezpz_load_modules: no loader for machine='${machine}'. Supported: aurora, sunspot, polaris."
+		return 1
+		;;
+	esac
+}
+
 ezpz_install_and_setup_micromamba() {
 	ezpz_install_micromamba
 }
@@ -2767,6 +2822,93 @@ ezpz_setup_env() {
 		fi
 	fi
 	log_message INFO "${GREEN}[✓]${RESET} Finished [${BRIGHT_GREEN}ezpz_setup_env${RESET}]"
+	return 0
+}
+
+# -----------------------------------------------------------------------------
+# Top-level setup shortcut with two distinct flows depending on whether a
+# venv path is passed.
+#
+# Flow A — no argument:
+#   Calls `ezpz_setup_env`, which does `ezpz_setup_python && ezpz_setup_job`.
+#   This is the "do everything for me" path: it loads `frameworks` (Aurora/
+#   Sunspot) or `conda` (Polaris), activates the prebuilt Python env, and
+#   sets up the job.
+#
+# Flow B — venv path argument:
+#   Calls `ezpz_setup_job && ezpz_load_modules && source <venv>/bin/activate`.
+#   This is the "I have my own venv" path: it loads the BARE module stack
+#   (no frameworks/conda) and activates the venv you point at. The venv
+#   must already exist — this function will NOT create one for you
+#   (use `uv venv` after `ezpz_load_modules` if you need to bootstrap).
+#
+# The two flows are mutually exclusive. Flow A's `ezpz_setup_python` would
+# load `frameworks`/`conda` on top of Flow B's bare modules, which double-
+# loads modules and risks version mismatches. Pick one based on intent.
+#
+# Args:
+#   $1 (optional): path to an existing venv to activate. Resolved to an
+#                  absolute path via `ezpz_realpath` so the activated venv
+#                  survives a later `cd` (the activate script exports
+#                  VIRTUAL_ENV, and many tools key off that).
+# Returns: 0 on success, 1 on failure (missing venv, module load failed, etc).
+# -----------------------------------------------------------------------------
+ezpz_setup() {
+	local venv_path="${1:-}"
+
+	if [[ -z "${venv_path}" ]]; then
+		# Flow A: no venv → defer entirely to the existing all-in-one
+		# helper, which handles frameworks/conda + venv-on-top.
+		log_message INFO "[${BRIGHT_GREEN}ezpz_setup${RESET}] No venv arg; using ${CYAN}ezpz_setup_env${RESET} flow (frameworks/conda + auto-venv)."
+		ezpz_setup_env
+		return $?
+	fi
+
+	# Flow B: venv path supplied → bare-modules + activate.
+	log_message INFO "[${BRIGHT_GREEN}ezpz_setup${RESET}] Venv arg supplied; using bare-modules flow."
+
+	# Resolve to absolute BEFORE checking existence: a relative path that
+	# resolves to a non-existent file is the user's bug to fix, not ours
+	# to silently rewrite.
+	local venv_abs
+	if ! venv_abs=$(ezpz_realpath "${venv_path}" 2>/dev/null); then
+		# ezpz_realpath fails when the parent dir doesn't exist; fall back
+		# to a plain abs-path computation that doesn't require the target
+		# to exist, so the error message below can name the path the user
+		# typed (in absolute form, which is easier to debug than `.venv`).
+		venv_abs="$(cd "$(dirname "${venv_path}")" 2>/dev/null && pwd)/$(basename "${venv_path}")"
+	fi
+	local activate="${venv_abs}/bin/activate"
+	if [[ ! -f "${activate}" ]]; then
+		log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} (no ${activate})."
+		log_message ERROR "  - Create one first, e.g.:"
+		log_message ERROR "        ezpz_load_modules && uv venv ${venv_path}"
+		return 1
+	fi
+
+	if ! ezpz_setup_job; then
+		log_message ERROR "  - Job setup failed. Aborting."
+		return 1
+	fi
+	if ! ezpz_load_modules; then
+		log_message ERROR "  - Module load failed. Aborting."
+		return 1
+	fi
+	# shellcheck source=/dev/null
+	if ! source "${activate}"; then
+		log_message ERROR "  - Failed to activate venv at ${venv_abs}."
+		return 1
+	fi
+	log_message INFO "  - Activated venv: ${CYAN}${VIRTUAL_ENV:-${venv_abs}}${RESET}"
+	local python_exec
+	python_exec="$(command -v python3)"
+	if [[ -z "${python_exec}" ]]; then
+		log_message ERROR "  - python3 not found on PATH after activating venv."
+		return 1
+	fi
+	log_message INFO "  - Using python from: ${CYAN}${python_exec}${RESET}"
+	export PYTHON_EXEC="${python_exec}"
+	log_message INFO "${GREEN}[✓]${RESET} Finished [${BRIGHT_GREEN}ezpz_setup${RESET}]"
 	return 0
 }
 
