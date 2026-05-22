@@ -1546,7 +1546,16 @@ class History:
             # Build the compact memory string from the RAW metrics dict
             # (which still has the 4 keys even after the filter above).
             # Empty string when no memory keys, e.g. on CPU/MPS.
-            memory_str = format_memory_summary(metrics, prefix=prefix or "")
+            #
+            # `prefix` here came from `_split_prefix(metrics)` and is the
+            # bare namespace WITHOUT a trailing slash (e.g. "train").
+            # `format_memory_summary` expects either a full prefix WITH
+            # slash ("train/") or None for auto-detection. Passing
+            # "train" directly would make the lookup miss
+            # ("trainmem_alloc" — no key matches) and silently drop the
+            # memory= token from the line. Use None and let the helper
+            # infer the prefix from the *mem_alloc keys it scans.
+            memory_str = format_memory_summary(metrics, prefix=None)
             parts = [p for p in (base, f"memory={memory_str}" if memory_str else "") if p]
             return " ".join(parts)
         return ""
