@@ -637,6 +637,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
 
             if not is_warmup:
+                # Merge in per-step device memory (mem_alloc/peak/reserved/
+                # peak_reserved) so console + JSONL + tracker backends all
+                # see GPU memory alongside the throughput metrics. Returns
+                # {} on CPU/MPS or when EZPZ_TRACK_MEMORY=0, so this is a
+                # safe no-op on unsupported devices.
+                metrics |= ezpz.get_memory_metrics()
                 history.update(metrics)
 
             if pred_file is not None:
