@@ -82,7 +82,64 @@ allocated to your job.
         --hostfile HOSTFILE   Hostfile to use for launching.
         --cpu-bind CPU_BIND   CPU binding value to pass to the launcher.
                                 Takes precedence over CPU_BIND when both are specified.
+        --timeout IDLE_TIMEOUT_S
+                                Idle-output watchdog timeout in seconds. Off by default.
+        --retries RETRIES     Re-execute on non-zero exit, up to N times. Default: 0.
         ```
+
+## Idle-output watchdog (`--timeout`)
+
+`--timeout SECONDS` arms a watchdog that monitors the launched
+process's output. If no output appears (on **stdout or stderr** —
+they are merged at the watchdog) for `SECONDS` consecutive seconds,
+the watchdog sends `SIGTERM`, waits up to 10 seconds for a clean
+shutdown, then sends `SIGKILL`. The exit code returned by
+`ezpz launch` is `124` (matching GNU `timeout(1)` convention) so
+shell wrappers can distinguish "killed for going silent" from
+"command failed". Passing `--timeout 0` disables the watchdog (same
+as omitting the flag).
+
+```bash
+# Abort if the training script goes silent for 10 minutes.
+ezpz launch --timeout 600 -- python3 -m my_app.train
+```
+
+**Idle, not walltime.** The process can run indefinitely as long as
+it keeps emitting at least one line per `SECONDS` on either stream.
+This is the right semantics for catching *collective hangs* (e.g.
+xccl on XPU silently deadlocking) where the process is alive but
+every rank is blocked in the same collective and nothing reaches
+either stream. For a hard walltime limit, use the scheduler's
+existing mechanism (`#PBS -l walltime=...`).
+
+**Python buffering.** The watchdog sets `PYTHONUNBUFFERED=1` in the
+child environment so Python's default block-buffering (which kicks
+in when stdout isn't a TTY) doesn't fool the watchdog into killing a
+healthy job that's accumulating output in a 4-8 KB buffer. The
+variable is benign for non-Python children: they ignore it.
+
+**Scope caveat.** The watchdog only watches the process `ezpz launch`
+spawns directly. If you `qsub` a job script that internally invokes
+`python train.py`, the watchdog needs to live inside *that* script
+(or call `ezpz launch` from inside it), not the outer `qsub`.
+
+## Retry on non-zero exit (`--retries`)
+
+`--retries N` re-executes the command up to `N` additional times
+whenever the previous attempt returns a non-zero exit code, including
+the watchdog's `124`. Exponential backoff is applied between attempts
+(5s, 10s, 20s, 40s, then capped at 60s).
+
+```bash
+# Up to 3 retries with watchdog protection. Useful for flaky fabrics
+# or transient EC2 spot interruptions.
+ezpz launch --timeout 600 --retries 3 -- python3 -m my_app.train
+```
+
+A clean exit on any attempt short-circuits the loop and returns 0.
+If every attempt fails, the final attempt's exit code is returned.
+Combine with `--timeout` to convert silent hangs into retryable
+failures.
 
 ## Python interpreter resolution
 

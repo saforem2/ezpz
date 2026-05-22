@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -23,6 +24,171 @@ from ezpz.cli.flags import build_launch_parser
 from ezpz.configs import get_json_log_file
 
 logger = ezpz.get_logger(__name__)
+
+# Exit code returned when the idle-stdout watchdog kills a process.
+# Matches GNU coreutils `timeout(1)` convention so users can `$? == 124`
+# to detect "killed because it went silent".
+_WATCHDOG_EXIT_CODE = 124
+
+# Grace period between SIGTERM and SIGKILL when the watchdog fires.
+# Gives well-behaved processes a chance to flush logs and shut down
+# cleanly; SIGKILL is the hammer for anything stuck.
+_WATCHDOG_KILL_GRACE_S = 10.0
+
+# Backoff cap between retry attempts (5s, 10s, 20s, 40s, then capped).
+_RETRY_BACKOFF_CAP_S = 60.0
+
+
+def _run_with_watchdog(
+    cmd: Sequence[str], idle_timeout_s: Optional[int]
+) -> int:
+    """Run *cmd* with an optional idle-output watchdog.
+
+    When ``idle_timeout_s is None`` (or ``<= 0``) this is a thin
+    pass-through to ``subprocess.run`` — no threading, no overhead.
+
+    Otherwise: spawn the process, stream its combined stdout+stderr
+    to this process's stdout in real time, and SIGTERM it (then
+    SIGKILL after ``_WATCHDOG_KILL_GRACE_S``) if no output appears
+    for ``idle_timeout_s`` consecutive seconds. Returns the process's
+    exit code, or ``_WATCHDOG_EXIT_CODE`` (124) if the watchdog fired.
+
+    Idle = silence on *both* stdout and stderr (stderr is merged into
+    stdout). The process can run indefinitely as long as it keeps
+    emitting at least one line per ``idle_timeout_s`` on either
+    stream. Designed for catching collective hangs (xccl, NCCL, etc.)
+    where the process is alive but every rank is blocked in the same
+    collective and nothing reaches either stream.
+
+    **Buffering note**: forces ``PYTHONUNBUFFERED=1`` in the child
+    environment. CPython block-buffers stdout when it isn't attached
+    to a TTY (which it isn't here — we attached a pipe), and a healthy
+    Python training script can easily produce zero bytes for minutes
+    while accumulating a fat buffer. Without this nudge the watchdog
+    would routinely kill perfectly-healthy jobs. The variable is
+    benign for non-Python children: they ignore it.
+    """
+    if idle_timeout_s is None or idle_timeout_s <= 0:
+        proc = subprocess.run(cmd, check=False)
+        return proc.returncode
+
+    # Force unbuffered stdout in the child. See the buffering note in
+    # the docstring — without this, Python children that go through
+    # `print()` get block-buffered (4-8KB) and emit nothing for long
+    # stretches even while actively running, fooling the watchdog.
+    child_env = os.environ.copy()
+    child_env.setdefault("PYTHONUNBUFFERED", "1")
+
+    # Merge stderr into stdout so a single reader thread covers both.
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,  # line-buffered on our side; child uses PYTHONUNBUFFERED
+        env=child_env,
+    )
+
+    last_activity = time.monotonic()
+    activity_lock = threading.Lock()
+    reader_done = threading.Event()
+
+    def _drain_output() -> None:
+        """Pump child output to ours, updating the activity timestamp."""
+        nonlocal last_activity
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                with activity_lock:
+                    last_activity = time.monotonic()
+        finally:
+            reader_done.set()
+
+    threading.Thread(target=_drain_output, daemon=True).start()
+
+    # Poll the process and the activity deadline. `try/finally`
+    # ensures the reader thread gets one final chance to flush
+    # whichever way we exit (clean exit, watchdog kill, exception).
+    try:
+        while True:
+            rc = process.poll()
+            if rc is not None:
+                return rc
+
+            with activity_lock:
+                idle_for = time.monotonic() - last_activity
+
+            if idle_for >= idle_timeout_s:
+                logger.error(
+                    "Watchdog: no output for %.1fs (timeout=%ds). "
+                    "Sending SIGTERM to PID %d.",
+                    idle_for,
+                    idle_timeout_s,
+                    process.pid,
+                )
+                process.terminate()
+                try:
+                    process.wait(timeout=_WATCHDOG_KILL_GRACE_S)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "Watchdog: PID %d still alive %ds after SIGTERM. "
+                        "Sending SIGKILL.",
+                        process.pid,
+                        int(_WATCHDOG_KILL_GRACE_S),
+                    )
+                    process.kill()
+                    process.wait()
+                return _WATCHDOG_EXIT_CODE
+
+            # Sleep until the soonest of (process exit, idle deadline).
+            # Cap sleep so we still notice process exit promptly.
+            sleep_for = min(1.0, max(0.1, idle_timeout_s - idle_for))
+            time.sleep(sleep_for)
+    finally:
+        # Always give the reader thread a chance to flush remaining
+        # buffered output — covers normal exit, watchdog kill, and any
+        # unexpected exception out of the poll loop.
+        reader_done.wait(timeout=2.0)
+
+
+def _run_with_retries(
+    cmd: Sequence[str],
+    idle_timeout_s: Optional[int],
+    retries: int,
+) -> int:
+    """Wrap :func:`_run_with_watchdog` in a non-zero-exit retry loop.
+
+    Re-executes *cmd* up to ``retries`` additional times when the
+    previous attempt returns a non-zero exit code (including the
+    watchdog's 124). Applies exponential backoff between attempts:
+    5s, 10s, 20s, 40s, then capped at ``_RETRY_BACKOFF_CAP_S``.
+    """
+    max_attempts = max(1, retries + 1)
+    last_rc = 0
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            backoff = min(_RETRY_BACKOFF_CAP_S, 5.0 * (2 ** (attempt - 2)))
+            logger.warning(
+                "Retry %d/%d (prior exit=%d). Waiting %.0fs before relaunch...",
+                attempt - 1,
+                max_attempts - 1,
+                last_rc,
+                backoff,
+            )
+            time.sleep(backoff)
+            logger.info("Retry attempt %d/%d", attempt, max_attempts)
+        last_rc = _run_with_watchdog(cmd, idle_timeout_s)
+        if last_rc == 0:
+            if attempt > 1:
+                logger.info(
+                    "Retry attempt %d succeeded after %d prior failure(s).",
+                    attempt,
+                    attempt - 1,
+                )
+            return 0
+    return last_rc
 
 
 def _split_launch_and_command(
@@ -458,6 +624,8 @@ def launch(
     cpu_bind: Optional[str] = None,
     filters: Optional[list[str]] = None,
     launcher_args: Optional[Sequence[str]] = None,
+    idle_timeout_s: Optional[int] = None,
+    retries: int = 0,
 ) -> int:
     """Launch a command on the current {PBS, SLURM} job."""
     start = time.perf_counter()
@@ -510,8 +678,9 @@ def launch(
     os.environ["EZPZ_RUN_COMMAND"] = str(cmd)
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    proc = subprocess.run(cmd, check=False)
-    retcode = proc.returncode
+    retcode = _run_with_retries(
+        cmd, idle_timeout_s=idle_timeout_s, retries=retries
+    )
     cmd_finish = time.perf_counter()
     _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
@@ -563,7 +732,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 launcher_args.extend(
                     _cpu_bind_launcher_args(selected_cpu_bind)
                 )
-            launch(
+            rc = launch(
                 cmd_to_launch=command_parts,
                 include_python=False,
                 ngpus=(args.nproc if args.nproc > -1 else None),
@@ -575,9 +744,11 @@ def run(argv: Sequence[str] | None = None) -> int:
                 cpu_bind=cli_cpu_bind if scheduler == "pbs" else None,
                 filters=args.filter,
                 launcher_args=launcher_args,
+                idle_timeout_s=getattr(args, "idle_timeout_s", None),
+                retries=getattr(args, "retries", 0),
             )
             ezpz.distributed.cleanup()
-            return 0
+            return rc
 
     requested_nproc = args.nproc if args.nproc > -1 else None
     requested_ppn = args.nproc_per_node if args.nproc_per_node > -1 else None
@@ -610,8 +781,11 @@ def run(argv: Sequence[str] | None = None) -> int:
     os.environ["EZPZ_RUN_COMMAND"] = " ".join(fallback_cmd)
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    proc = subprocess.run(fallback_cmd, check=False)
-    retcode = proc.returncode
+    retcode = _run_with_retries(
+        fallback_cmd,
+        idle_timeout_s=getattr(args, "idle_timeout_s", None),
+        retries=getattr(args, "retries", 0),
+    )
     cmd_finish = time.perf_counter()
     _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
