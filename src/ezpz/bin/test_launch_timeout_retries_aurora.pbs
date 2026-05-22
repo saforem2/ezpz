@@ -32,18 +32,50 @@ cd "${PBS_O_WORKDIR}" || { echo "PBS_O_WORKDIR unset; aborting"; exit 1; }
 
 # ---- Environment setup (Aurora module stack + venv) -----------------------
 #
-# Two paths supported, matching the new `ezpz_setup` wrapper from #138:
-#   a) Source utils.sh and run `ezpz_setup .venv` (preferred — exercises
-#      the new helper end-to-end on top of everything else).
-#   b) If `.venv` doesn't exist yet, fall back to `ezpz_setup` (no arg),
-#      which uses the `frameworks` module + auto-venv-on-top path.
-if [[ ! -f "src/ezpz/bin/utils.sh" ]]; then
-    echo "FATAL: src/ezpz/bin/utils.sh not found in ${PBS_O_WORKDIR}"
-    echo "Are you submitting from the ezpz checkout root?"
-    exit 1
+# `utils.sh` lookup order, so the script works whether you submitted
+# from an ezpz checkout OR curled it into /tmp and submitted from
+# anywhere:
+#   1. ${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh  (you're in a checkout)
+#   2. The currently-installed ezpz package's bin dir, located via
+#      `python3 -c 'import ezpz; print(ezpz.configs.BIN_DIR)'`. Requires
+#      the modules already be set up enough that `python3` resolves to
+#      a venv with ezpz installed — works on Aurora because
+#      `module load frameworks` is always there as a fallback.
+#   3. Fetch utils.sh from main on github (last resort, no internet
+#      from compute nodes without the ALCF proxy already exported).
+UTILS=""
+if [[ -f "${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh" ]]; then
+    UTILS="${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh"
+    log_message_fallback() { echo "[$(date '+%F %T')] $*"; }
+    log_message_fallback INFO "Found utils.sh in checkout: ${UTILS}"
+elif command -v python3 >/dev/null 2>&1; then
+    BIN_DIR_TRY="$(python3 -c 'import ezpz; print(ezpz.configs.BIN_DIR)' 2>/dev/null || true)"
+    if [[ -n "${BIN_DIR_TRY}" && -f "${BIN_DIR_TRY}/utils.sh" ]]; then
+        UTILS="${BIN_DIR_TRY}/utils.sh"
+        echo "[INFO] Found utils.sh in installed ezpz: ${UTILS}"
+    fi
 fi
-# shellcheck disable=SC1091
-source src/ezpz/bin/utils.sh
+if [[ -z "${UTILS}" ]]; then
+    # Last resort. Requires the proxy already in env or curl will hang
+    # for the full TCP timeout on a compute node. Aurora compute nodes
+    # CAN reach github once the http_proxy var is set, but `module load
+    # frameworks` is what normally sets it — chicken-and-egg here.
+    echo "[WARN] utils.sh not found locally; falling back to github fetch."
+    echo "[WARN] This requires http_proxy to be set, or you'll hang."
+    export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+    export https_proxy="${https_proxy:-${http_proxy}}"
+    UTILS="$(mktemp -t ezpz-utils-XXXXXX).sh"
+    if ! curl -fsSL --max-time 30 \
+        https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
+        -o "${UTILS}"; then
+        echo "[FATAL] Could not fetch utils.sh from github. Aborting."
+        echo "[FATAL] Submit from an ezpz checkout, or ensure python3 -c"
+        echo "[FATAL] 'import ezpz' works in your current env first."
+        exit 1
+    fi
+fi
+# shellcheck disable=SC1090
+source "${UTILS}"
 
 if [[ -d "${PBS_O_WORKDIR}/.venv" ]]; then
     log_message INFO "Found .venv; using bare-modules flow."
