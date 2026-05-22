@@ -707,3 +707,62 @@ class TestLogMetricsCondensation:
             include_summary=False,
         )
         assert "memory=" not in records[0]
+
+
+@pytest.mark.skipif(not HISTORY_AVAILABLE, reason="ezpz.history not available")
+class TestUpdateSummaryMemoryToken:
+    """`History.update` must emit the `memory=…GiB` token in its summary
+    string regardless of whether metric keys use a namespace prefix."""
+
+    def test_memory_token_present_with_prefix(self):
+        """Regression: when metrics are namespaced (``train/loss``,
+        ``train/mem_alloc``, etc.), the summary string returned by
+        ``History.update`` must still contain the collapsed
+        ``memory=…GiB`` token.
+
+        Pre-fix, ``History.update`` passed ``prefix="train"`` (no
+        trailing slash) to ``format_memory_summary``, which then looked
+        up ``trainmem_alloc`` and never found the key, so the memory
+        token was silently dropped from the line. Every example with a
+        ``"train/"`` prefix (vit, fsdp_tp, diffusion, hf) lost its
+        memory readout in the console summary as a result.
+
+        Fix: pass ``prefix=None`` and let the helper auto-detect from
+        the keys it scans.
+        """
+        hist = history.History(backends=[])
+        hist._rank = 0
+        metrics = {
+            "train/loss": 2.94,
+            "train/mem_alloc": 1.5,
+            "train/mem_peak_alloc": 2.0,
+            "train/mem_reserved": 3.0,
+            "train/mem_peak_reserved": 4.0,
+        }
+        summary = hist.update(metrics)
+        # The point of the regression: `memory=` MUST appear in the
+        # summary string.
+        assert "memory=" in summary, (
+            f"memory=...GiB token dropped from summary for prefixed metrics — "
+            f"got: {summary!r}"
+        )
+        # And the values should be the actual alloc/peak (1.5/2.0),
+        # not zeros — proves the prefix-aware lookup found the keys.
+        assert "1.50/2.00GiB" in summary
+
+    def test_memory_token_present_without_prefix(self):
+        """Bare (no-prefix) metrics also produce the ``memory=`` token —
+        verifies the fix didn't regress the non-prefixed case that was
+        accidentally working before."""
+        hist = history.History(backends=[])
+        hist._rank = 0
+        metrics = {
+            "loss": 2.94,
+            "mem_alloc": 1.5,
+            "mem_peak_alloc": 2.0,
+            "mem_reserved": 3.0,
+            "mem_peak_reserved": 4.0,
+        }
+        summary = hist.update(metrics)
+        assert "memory=" in summary
+        assert "1.50/2.00GiB" in summary
