@@ -26,7 +26,6 @@ succeeded, only that the patterns couldn't pinpoint a culprit.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 from ezpz.failover.patterns import (
     get_hostname_normalizer,
@@ -47,6 +46,20 @@ def _detect_machine() -> str:
         return ezpz.get_machine().lower()
     except Exception:
         return ""
+
+
+def _resolve_machine_key(machine: "str | None") -> str:
+    """Pick the registry lookup key from an optional caller override.
+
+    Registry keys are always lowercase (Aurora's module registers
+    itself as ``"aurora"``). The auto-detect path already lowercases
+    the result of ``ezpz.get_machine()``, but an explicit override
+    arrives verbatim — so ``scrape_bad_nodes(log, machine="Aurora")``
+    would silently miss every pattern unless we normalize here too.
+    """
+    if machine is None:
+        return _detect_machine()
+    return machine.lower()
 
 
 def scrape_bad_nodes(
@@ -83,8 +96,7 @@ def scrape_bad_nodes(
     if not log_path.is_file():
         raise FileNotFoundError(f"log file not found: {log_path}")
 
-    if machine is None:
-        machine = _detect_machine()
+    machine = _resolve_machine_key(machine)
     patterns = get_patterns_for_machine(machine)
     if not patterns:
         # No registered patterns → nothing to do. Returning [] (rather
@@ -93,6 +105,11 @@ def scrape_bad_nodes(
         return []
 
     normalize = get_hostname_normalizer(machine)
+    # NOTE: this reads the entire log into memory. In practice
+    # postmortem logs we've handled (multi-rank Aurora training,
+    # hundreds of MB to a couple GB) fit fine on the head node where
+    # failover runs. If you hit a 10+ GB log, pre-trim it with
+    # `tail -c 1G` or similar before passing to this function.
     text = log_path.read_text(errors="replace")
 
     seen_order: list[str] = []
@@ -122,17 +139,23 @@ def _collect_all_matches_for_debug(
     fired, not just that *some* pattern fired.
     """
     log_path = Path(log_path)
-    if machine is None:
-        machine = _detect_machine()
+    machine = _resolve_machine_key(machine)
     patterns = get_patterns_for_machine(machine)
     text = log_path.read_text(errors="replace")
     normalize = get_hostname_normalizer(machine)
     out: dict[str, list[str]] = {}
     for pattern in patterns:
+        # Track seen separately so dedup is O(1) per check; otherwise
+        # `host not in matches` is O(n) and the whole loop quadratic
+        # on patterns that fire across many ranks (gloo peer-closed
+        # routinely emits dozens of copies of the same host).
         matches: list[str] = []
+        seen: set[str] = set()
         for raw_host in pattern.extractor(text):
             host = normalize(raw_host) if normalize else raw_host
-            if host is not None and host not in matches:
-                matches.append(host)
+            if host is None or host in seen:
+                continue
+            seen.add(host)
+            matches.append(host)
         out[pattern.name] = matches
     return out

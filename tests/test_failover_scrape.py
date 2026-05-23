@@ -357,3 +357,263 @@ class TestPatternRegistry:
                 "x4002c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
             ],
         }
+
+    def test_re_register_without_normalizer_clears_old_normalizer(
+        self, tmp_path
+    ):
+        """REGRESSION: re-registering a machine with
+        ``hostname_normalizer=None`` must clear any previously-
+        registered normalizer. Without this, tests (and real plugin
+        callers) that re-register the same key with raw hostnames
+        would silently keep applying the old normalizer and either
+        rewrite or drop the new pattern's outputs.
+        """
+        from ezpz.failover.patterns import get_hostname_normalizer
+
+        # First registration: WITH a normalizer.
+        register_patterns(
+            "test-clear-norm",
+            [BadNodePattern("p1", lambda _t: ["x"], "")],
+            hostname_normalizer=lambda h: f"normalized-{h}",
+        )
+        assert get_hostname_normalizer("test-clear-norm") is not None
+
+        # Re-register WITHOUT a normalizer.
+        register_patterns(
+            "test-clear-norm",
+            [BadNodePattern("p2", lambda _t: ["y"], "")],
+        )
+        assert get_hostname_normalizer("test-clear-norm") is None, (
+            "Old normalizer must be cleared on re-registration without one"
+        )
+
+    def test_import_error_inside_known_module_surfaces(
+        self, tmp_path, monkeypatch
+    ):
+        """REGRESSION: if a per-machine pattern module exists but has
+        a real import problem inside it (missing dep, syntax error,
+        circular import), the registry should re-raise rather than
+        silently behaving as "unknown machine". Otherwise debugging
+        why "aurora" suddenly returns [] becomes a nightmare.
+        """
+        from ezpz.failover.patterns import get_patterns_for_machine
+
+        # Make importlib.import_module raise an ImportError that names
+        # a DIFFERENT module than the one we're asking for — that's the
+        # signature of "module exists but fails to load some dep".
+        def _import_fail(name):
+            raise ImportError(
+                "No module named 'unrelated_dep'",
+                name="unrelated_dep",
+            )
+
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.importlib.import_module", _import_fail
+        )
+        # Use an unregistered machine so the lookup falls through to
+        # the import path.
+        with pytest.raises(ImportError, match="unrelated_dep"):
+            get_patterns_for_machine("never-registered-machine")
+
+    def test_import_error_for_unknown_machine_silent(self, monkeypatch):
+        """Counterpoint to the above: if the per-machine module simply
+        doesn't exist, that's the "unknown machine" case and should
+        return [] silently."""
+        from ezpz.failover.patterns import get_patterns_for_machine
+
+        def _import_fail(name):
+            raise ImportError(
+                f"No module named '{name}'",
+                name=name,
+            )
+
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.importlib.import_module", _import_fail
+        )
+        # Pattern registry lookup for a genuinely unknown machine →
+        # silent empty list, no exception.
+        assert get_patterns_for_machine("definitely-not-a-machine") == []
+
+
+# ---------------------------------------------------------------------------
+# Auto-detection path (machine=None)
+# ---------------------------------------------------------------------------
+
+class TestAutoDetectMachine:
+    """Coverage for the ``machine=None`` code path that pulls machine
+    name from ``ezpz.get_machine()``. The rest of the suite passes
+    an explicit ``machine="aurora"`` and skips this dispatch."""
+
+    def test_auto_detect_uses_lowercased_ezpz_machine(
+        self, tmp_path, monkeypatch
+    ):
+        """``ezpz.get_machine()`` returns title-case (``"Aurora"``);
+        registry keys are lowercase. The auto-detect path must
+        lowercase the result before lookup."""
+        import ezpz
+        monkeypatch.setattr(ezpz, "get_machine", lambda: "Aurora")
+        log = _make_log(tmp_path, (
+            "x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        hosts = scrape_bad_nodes(log)  # no machine= arg
+        assert hosts == ["x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov"]
+
+    def test_explicit_machine_arg_also_normalized(self, tmp_path):
+        """Explicit override is also lowercased — passing ``"Aurora"``
+        (matching the casing of ``ezpz.get_machine()``'s output)
+        should find the registered ``"aurora"`` patterns. Pre-fix this
+        silently returned []."""
+        log = _make_log(tmp_path, (
+            "x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="Aurora")
+        assert hosts == ["x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov"]
+
+    def test_auto_detect_handles_get_machine_raising(
+        self, tmp_path, monkeypatch
+    ):
+        """If ``ezpz.get_machine()`` itself raises (unlikely but
+        possible — e.g. called before distributed setup), the scraper
+        falls back to an empty-string machine name, which means
+        "no patterns" → empty list, NOT a crash."""
+        import ezpz
+
+        def _raise():
+            raise RuntimeError("get_machine failed")
+
+        monkeypatch.setattr(ezpz, "get_machine", _raise)
+        log = _make_log(tmp_path, (
+            "x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        # No crash; empty list because no patterns registered for "".
+        assert scrape_bad_nodes(log) == []
+
+
+# ---------------------------------------------------------------------------
+# Helper: reverse_resolve_ip
+# ---------------------------------------------------------------------------
+
+class TestReverseResolveIp:
+    """The other suites all monkeypatch this away. Cover the real
+    implementation here against mocked ``subprocess.check_output``."""
+
+    def test_success_returns_first_hostname(self, monkeypatch):
+        from ezpz.failover.patterns import reverse_resolve_ip
+        # `getent hosts <ip>` shape:
+        #   "10.0.0.42  some-host.example.com other-host.example.com"
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output",
+            lambda *a, **kw: (
+                "10.0.0.42  primary.example.com secondary.example.com\n"
+            ),
+        )
+        assert reverse_resolve_ip("10.0.0.42") == "primary.example.com"
+
+    def test_called_process_error_returns_none(self, monkeypatch):
+        """Non-zero exit (IP not in any name service) → None."""
+        import subprocess
+        from ezpz.failover.patterns import reverse_resolve_ip
+
+        def _raise(*a, **kw):
+            raise subprocess.CalledProcessError(2, ["getent"])
+
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output", _raise
+        )
+        assert reverse_resolve_ip("10.0.0.42") is None
+
+    def test_timeout_returns_none(self, monkeypatch):
+        """Slow name service → don't hang failover; return None."""
+        import subprocess
+        from ezpz.failover.patterns import reverse_resolve_ip
+
+        def _raise(*a, **kw):
+            raise subprocess.TimeoutExpired(["getent"], 5)
+
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output", _raise
+        )
+        assert reverse_resolve_ip("10.0.0.42", timeout_s=0.1) is None
+
+    def test_getent_missing_returns_none(self, monkeypatch):
+        """No `getent` binary on PATH (e.g. macOS dev box, alpine
+        container) → None, not crash."""
+        from ezpz.failover.patterns import reverse_resolve_ip
+
+        def _raise(*a, **kw):
+            raise FileNotFoundError("getent")
+
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output", _raise
+        )
+        assert reverse_resolve_ip("10.0.0.42") is None
+
+    def test_empty_output_returns_none(self, monkeypatch):
+        """`getent hosts <ip>` exits 0 with empty output on some
+        systems when there's no PTR. Treat as miss."""
+        from ezpz.failover.patterns import reverse_resolve_ip
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output",
+            lambda *a, **kw: "\n",
+        )
+        assert reverse_resolve_ip("10.0.0.42") is None
+
+    def test_malformed_output_returns_none(self, monkeypatch):
+        """Output with only the IP and no hostnames after it (some
+        getent implementations) → None."""
+        from ezpz.failover.patterns import reverse_resolve_ip
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.subprocess.check_output",
+            lambda *a, **kw: "10.0.0.42\n",
+        )
+        assert reverse_resolve_ip("10.0.0.42") is None
+
+
+# ---------------------------------------------------------------------------
+# Aurora normalizer (tightened to known suffixes only)
+# ---------------------------------------------------------------------------
+
+class TestNormalizeAuroraHostname:
+    """The normalizer must reject hostnames whose suffix we haven't
+    explicitly seen — even if they start with the `xNc.s.b.n.` prefix.
+    Otherwise a stale `/etc/hosts` entry or a cross-cluster name could
+    silently get rewritten to a fake Aurora hostname and end up in
+    the bad-nodes list."""
+
+    def test_canonical_hsn_passes_through(self):
+        from ezpz.failover.patterns.aurora import normalize_aurora_hostname
+        host = "x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
+        assert normalize_aurora_hostname(host) == host
+
+    def test_hostmgmt_rewrites_to_hsn(self):
+        from ezpz.failover.patterns.aurora import normalize_aurora_hostname
+        in_ = "x1234c0s0b0n0.hostmgmt2042.cm.aurora.alcf.anl.gov"
+        out = "x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
+        assert normalize_aurora_hostname(in_) == out
+
+    def test_unknown_suffix_with_aurora_like_prefix_dropped(self):
+        """REGRESSION: an Aurora-like prefix on a non-Aurora suffix
+        must NOT be rewritten — that would tag a wrong node. Before
+        the fix, this rewrote ANY ``x...n0.<anything>`` to the HSN
+        form, including stale /etc/hosts entries from other clusters.
+        """
+        from ezpz.failover.patterns.aurora import normalize_aurora_hostname
+        # Same xNcNsNbNnN prefix, different/unknown suffix.
+        cases = [
+            "x1234c0s0b0n0.something-else.example.com",
+            "x1234c0s0b0n0.staging-cluster.foo.bar",
+            "x1234c0s0b0n0.local",
+        ]
+        for host in cases:
+            assert normalize_aurora_hostname(host) is None, (
+                f"Unknown suffix '{host}' should be rejected, got rewrite"
+            )
+
+    def test_completely_unrelated_host_dropped(self):
+        from ezpz.failover.patterns.aurora import normalize_aurora_hostname
+        assert normalize_aurora_hostname("some-other-host") is None
+        assert normalize_aurora_hostname("nid001234") is None
+        assert normalize_aurora_hostname("polaris-login-1") is None

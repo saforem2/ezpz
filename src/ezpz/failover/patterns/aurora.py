@@ -65,7 +65,9 @@ def _extract_shepherd_sig9(log_text: str) -> Iterable[str]:
 # Gloo errors typically point at a single peer IP across many
 # "Connection closed" lines (every rank that was talking to the dead
 # node logs its own copy), so deduplication usually collapses to one
-# node. We yield IPs here; the caller resolves them.
+# node. We reverse-resolve the IP to a hostname here (using the
+# shared `reverse_resolve_ip` helper) and yield hostnames; the
+# scraper's downstream normalizer canonicalizes the suffix.
 # ---------------------------------------------------------------------------
 _GLOO_PEER_RX = compile_multiline(
     r"Connection closed by peer\s+\[([0-9.]+)\]:\d+",
@@ -92,7 +94,14 @@ def _extract_gloo_peer(log_text: str) -> Iterable[str]:
 _AURORA_HSN_RX = re.compile(
     r"^x\d+c\d+s\d+b\d+n\d+\.hsn\.cm\.aurora\.alcf\.anl\.gov$"
 )
-_AURORA_NODE_PREFIX_RX = re.compile(r"^(x\d+c\d+s\d+b\d+n\d+)\.")
+# The .hostmgmtNNNN.cm.aurora.alcf.anl.gov form is the management
+# interface; we know it maps 1:1 to the HSN interface and is safe to
+# rewrite. Any OTHER suffix on a `x...n0.` host is something we
+# haven't seen and shouldn't speculatively rewrite — better to drop
+# (return None) than risk tagging a wrong node.
+_AURORA_HOSTMGMT_RX = re.compile(
+    r"^(x\d+c\d+s\d+b\d+n\d+)\.hostmgmt\d+\.cm\.aurora\.alcf\.anl\.gov$"
+)
 
 
 def normalize_aurora_hostname(host: str) -> "str | None":
@@ -100,13 +109,14 @@ def normalize_aurora_hostname(host: str) -> "str | None":
     None if *host* doesn't look like a valid Aurora compute hostname.
 
     Examples (in → out):
-      ``x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov`` → unchanged
-      ``x1234c0s0b0n0.hostmgmt2042.cm.aurora.alcf.anl.gov`` → HSN form
-      ``some-other-host``                          → None
+      ``x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov``           → unchanged
+      ``x1234c0s0b0n0.hostmgmt2042.cm.aurora.alcf.anl.gov``  → HSN form
+      ``x1234c0s0b0n0.something-else.example.com``           → None
+      ``some-other-host``                                    → None
     """
     if _AURORA_HSN_RX.match(host):
         return host
-    m = _AURORA_NODE_PREFIX_RX.match(host)
+    m = _AURORA_HOSTMGMT_RX.match(host)
     if m:
         return f"{m.group(1)}.hsn.cm.aurora.alcf.anl.gov"
     return None

@@ -41,8 +41,13 @@ class BadNodePattern:
             Used in log messages so postmortem reviewers know which
             pattern fired.
         extractor: Callable that takes the full log text and yields
-            hostnames or IPs. Yielding IPs is fine — the registry's
-            ``resolve_to_hostname`` step handles reverse-resolution.
+            hostnames (and only hostnames). If the underlying log
+            shape gives you IPs (e.g. the gloo "Connection closed by
+            peer [IP]:port" line), the extractor is responsible for
+            doing the IP→hostname conversion itself — the registry
+            does NOT do a resolve step. Use :func:`reverse_resolve_ip`
+            from this module to handle the lookup the same way the
+            Aurora patterns do.
         description: One-line plain-English summary for help text +
             postmortem notes.
     """
@@ -64,25 +69,48 @@ def register_patterns(
     hostname_normalizer: "Callable[[str], str | None] | None" = None,
 ) -> None:
     """Register a set of patterns + an optional hostname normalizer for
-    a machine. Idempotent — calling twice with the same machine replaces
-    the previous registration (lets tests inject mock patterns)."""
+    a machine. Idempotent — calling twice with the same machine
+    replaces the previous registration (lets tests inject mocks).
+
+    Re-registration FULLY replaces the previous state, including the
+    normalizer slot: passing ``hostname_normalizer=None`` clears any
+    previously-registered normalizer for this machine. Otherwise the
+    old normalizer would silently apply to the new pattern set, which
+    bit us in early development.
+    """
     _PATTERNS[machine] = list(patterns)
     if hostname_normalizer is not None:
         _HOSTNAME_NORMALIZERS[machine] = hostname_normalizer
+    else:
+        # Clear any prior registration. This makes re-registration
+        # truly idempotent regardless of whether the new caller
+        # supplied a normalizer.
+        _HOSTNAME_NORMALIZERS.pop(machine, None)
 
 
 def get_patterns_for_machine(machine: str) -> list[BadNodePattern]:
     """Return the patterns registered for *machine*. Lazy-imports the
     per-machine module on first access so we don't pay the import cost
-    for machines that aren't being used."""
+    for machines that aren't being used.
+
+    Only "no such per-machine module" is silently treated as "unknown
+    machine"; any OTHER ImportError (a missing dep, a syntax error,
+    etc. INSIDE a known machine module) is re-raised so it surfaces
+    instead of looking like an unsupported cluster.
+    """
     if machine not in _PATTERNS:
-        # Try to import the per-machine module; it should register itself
-        # at import time. Swallow ImportError for unknown machines so the
-        # caller gets an empty list (and can decide whether to warn).
+        module_name = f"ezpz.failover.patterns.{machine}"
         try:
-            importlib.import_module(f"ezpz.failover.patterns.{machine}")
-        except ImportError:
-            pass
+            importlib.import_module(module_name)
+        except ImportError as exc:
+            # `name` on ImportError tells us which module the import
+            # machinery couldn't find. If it matches the one we asked
+            # for, the machine genuinely doesn't have a pattern module
+            # → return [] silently. If it matches some OTHER module
+            # (e.g. the machine module exists but imports a missing
+            # dep), re-raise so the failure isn't swallowed.
+            if getattr(exc, "name", None) != module_name:
+                raise
     return _PATTERNS.get(machine, [])
 
 
