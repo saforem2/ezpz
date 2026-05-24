@@ -192,14 +192,17 @@ flowchart TD
     CheckStuck -->|no| CheckSpares{"spares left?"}
     CheckSpares -->|no| Exhausted(["FAILOVER STOP:<br/>exhausted<br/>return rc"])
     CheckSpares -->|yes| CheckScraper{"scraper found<br/>named host(s)?"}
-    CheckScraper -->|yes| SwapIn["swap_in<br/>named hosts"]
-    CheckScraper -->|no| SwapBlind["swap_one_blind"]
-    SwapIn --> CheckSwapped{"actually swapped<br/>any host?"}
-    CheckSwapped -->|"no<br/>(all already<br/>replaced)"| SwapBlind
-    CheckSwapped -->|yes| Backoff
-    SwapBlind --> Backoff["Backoff sleep:<br/>5/10/20/40/60s"]
+    CheckScraper -->|yes| Swap["Swap bad host(s)<br/>for spare(s),<br/>rewrite active.hostfile"]
+    CheckScraper -->|no| Swap
+    Swap --> Backoff["Backoff sleep:<br/>5/10/20/40/60s"]
     Backoff --> Attempt
 ```
+
+The single `Swap` node above is `swap_in` when the scraper named
+hosts and `swap_one_blind` when it didn't — see the
+[empty-`swap_in` fallback](#termination-matrix) note for the
+edge case where `swap_in` finds no live hosts to replace and
+falls through to a blind rotation.
 
 ### Required: explicit `--nproc`
 
