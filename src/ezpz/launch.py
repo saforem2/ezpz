@@ -279,6 +279,27 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     # Unknown flags that precede the ``--`` separator are forwarded to the
     # underlying launcher (e.g., mpirun -x FOO=bar -- python ...).
     args.launcher_args = unknown if command_from_sep else []
+
+    # Cross-flag validation. argparse mutex groups can't express
+    # "--auto-retry vs --retries with a non-zero value" (since
+    # --retries defaults to 0), so do it here. Same for --auto-retry
+    # requiring an explicit --nproc — the value depends on whether
+    # the user passed -n at all, which argparse can't observe from
+    # inside the parser.
+    if getattr(args, "auto_retry", False):
+        if getattr(args, "retries", 0):
+            raise SystemExit(
+                "--auto-retry is mutually exclusive with --retries. "
+                "--retries is bounded per-process retry; --auto-retry "
+                "is unbounded node-level failover. Pick one."
+            )
+        if getattr(args, "nproc", -1) <= 0:
+            raise SystemExit(
+                "--auto-retry requires --nproc (-n/--np) to be set "
+                "explicitly. The auto-retry loop needs the training "
+                "rank count to split the PBS allocation into active "
+                "+ spare hosts."
+            )
     return args
 
 
@@ -613,6 +634,82 @@ def build_executable(
     return executable
 
 
+def _resolve_auto_retry_allocation(
+    full_nodelist: Sequence[str],
+    nproc_active_hosts: int,
+    spare_nodes: "int | str | None",
+    log_dir: Path,
+):
+    """Build a :class:`NodeAllocation` for ``--auto-retry``.
+
+    Validates the spare-node policy against the actual PBS allocation
+    and persists the active hostfile so the launcher (re-spawned each
+    attempt with the same path) sees the current active set.
+
+    ``spare_nodes`` semantics match the CLI flag:
+      * ``"auto"``  → derive ``total - nproc_active_hosts``
+      * ``int``     → explicit count (must fit in spare pool)
+      * ``None``    → also ``auto`` (default when --auto-retry is set)
+    """
+    from ezpz.launch_autoretry import NodeAllocation, derive_spare_count
+
+    total = len(full_nodelist)
+    if nproc_active_hosts > total:
+        raise SystemExit(
+            f"--auto-retry: need {nproc_active_hosts} active hosts but "
+            f"PBS allocation only has {total}"
+        )
+
+    spare_default = derive_spare_count(total, nproc_active_hosts)
+    if spare_nodes is None or spare_nodes == "auto":
+        resolved_spare = spare_default
+    else:
+        resolved_spare = int(spare_nodes)
+        if resolved_spare > spare_default:
+            raise SystemExit(
+                f"--auto-retry: requested {resolved_spare} spare nodes "
+                f"but allocation only has {spare_default} unused "
+                f"(total={total}, active={nproc_active_hosts})"
+            )
+
+    # We slice the nodelist active-first, spare-second — only the
+    # first nproc+resolved_spare hosts get used. Beyond that, the
+    # PBS-allocated hosts just sit idle (consistent with how
+    # failover.sh's `failover_init` truncates).
+    slice_len = nproc_active_hosts + resolved_spare
+    relevant_nodes = list(full_nodelist[:slice_len])
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    hostfile_path = log_dir / "active.hostfile"
+    bad_nodes_path = log_dir / "bad_nodes.txt"
+
+    allocation = NodeAllocation.from_full_nodelist(
+        relevant_nodes,
+        nproc_active_hosts,
+        hostfile_path,
+        bad_nodes_path,
+    )
+    logger.info(
+        "[auto-retry] %d total / %d active / %d spare. Active hostfile: %s",
+        total,
+        len(allocation.active),
+        len(allocation.spare),
+        hostfile_path,
+    )
+    return allocation, hostfile_path
+
+
+def _auto_retry_log_dir(jobid: str) -> Path:
+    """Per-job log directory for attempt-N.log + bad_nodes.txt.
+
+    Matches the bash lib's ``$FAILOVER_LOG_DIR`` shape
+    (``$(pwd)/logs/failover-<short_jobid>``) so users grepping
+    postmortems don't need to learn a second convention.
+    """
+    short = jobid.split(".", 1)[0]
+    return Path.cwd() / "logs" / f"failover-{short}"
+
+
 def launch(
     launch_cmd: Optional[str] = None,
     cmd_to_launch: Optional[str | list[str]] = None,
@@ -626,6 +723,9 @@ def launch(
     launcher_args: Optional[Sequence[str]] = None,
     idle_timeout_s: Optional[int] = None,
     retries: int = 0,
+    auto_retry: bool = False,
+    spare_nodes: "int | str | None" = None,
+    max_failover_retries: Optional[int] = None,
 ) -> int:
     """Launch a command on the current {PBS, SLURM} job."""
     start = time.perf_counter()
@@ -651,6 +751,43 @@ def launch(
             selected_hostfile,
         )
         selected_hostfile = None
+
+    # --auto-retry path: split the full nodelist into active + spare
+    # BEFORE building the launcher command, so the launcher's
+    # topology inference sees the (smaller) active hostfile and we
+    # don't trip _infer_topology's "ngpus > N_active*ppn" check on
+    # the unused spare hosts.
+    autoretry_allocation = None
+    autoretry_log_dir: Optional[Path] = None
+    if auto_retry:
+        if ngpus is None:
+            raise SystemExit(
+                "--auto-retry requires --nproc (-n/--np) to be set "
+                "explicitly. We need to know the training rank count "
+                "to split the PBS allocation into active + spare."
+            )
+        if nodelist is None or not nodelist:
+            raise SystemExit(
+                "--auto-retry: failed to read the PBS nodelist (no "
+                "active job?). Cannot split into active + spare."
+            )
+        gpus_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
+        # Round-up division: 12 ranks on 4-gpu nodes → 3 nodes.
+        nhosts_active = (ngpus + gpus_per_node - 1) // gpus_per_node
+        autoretry_log_dir = _auto_retry_log_dir(jobid)
+        autoretry_allocation, autoretry_hostfile = (
+            _resolve_auto_retry_allocation(
+                nodelist,
+                nhosts_active,
+                spare_nodes,
+                autoretry_log_dir,
+            )
+        )
+        # Override: subsequent build_executable + topology inference
+        # see the smaller active hostfile, not the full PBS aux file.
+        selected_hostfile = autoretry_hostfile
+        nhosts = nhosts_active
+
     logger.info(f"Job ID: {jobid}")
     logger.info(f"nodelist: {nodelist}")
     logger.info(f"hostfile: {selected_hostfile}")
@@ -678,9 +815,37 @@ def launch(
     os.environ["EZPZ_RUN_COMMAND"] = str(cmd)
     logger.info(f"Execution started @ {ezpz.get_timestamp()}...")
     cmd_start = time.perf_counter()
-    retcode = _run_with_retries(
-        cmd, idle_timeout_s=idle_timeout_s, retries=retries
-    )
+    if autoretry_allocation is not None:
+        from ezpz.launch_autoretry import (
+            AutoRetryConfig,
+            DEFAULT_AUTO_RETRY_IDLE_TIMEOUT_S,
+            run_with_auto_retry,
+        )
+
+        assert autoretry_log_dir is not None  # set above when auto_retry
+        # Default --auto-retry's idle watchdog to 30min if the caller
+        # didn't pass --timeout — matches FAILOVER_IDLE_TIMEOUT in
+        # failover.sh and prevents 5h xccl hangs from burning the
+        # full PBS walltime.
+        effective_timeout = (
+            idle_timeout_s
+            if idle_timeout_s is not None
+            else DEFAULT_AUTO_RETRY_IDLE_TIMEOUT_S
+        )
+        ar_config = AutoRetryConfig(
+            cmd=list(cmd),
+            hostfile=Path(selected_hostfile)
+            if selected_hostfile is not None
+            else Path(),
+            log_dir=autoretry_log_dir,
+            idle_timeout_s=effective_timeout,
+            max_failover_retries=max_failover_retries,
+        )
+        retcode = run_with_auto_retry(ar_config, autoretry_allocation)
+    else:
+        retcode = _run_with_retries(
+            cmd, idle_timeout_s=idle_timeout_s, retries=retries
+        )
     cmd_finish = time.perf_counter()
     _log_json_log_file(logger)
     logger.info(f"----[🍋 ezpz.launch][stop][{ezpz.get_timestamp()}]----")
@@ -746,6 +911,11 @@ def run(argv: Sequence[str] | None = None) -> int:
                 launcher_args=launcher_args,
                 idle_timeout_s=getattr(args, "idle_timeout_s", None),
                 retries=getattr(args, "retries", 0),
+                auto_retry=getattr(args, "auto_retry", False),
+                spare_nodes=getattr(args, "spare_nodes", None),
+                max_failover_retries=getattr(
+                    args, "max_failover_retries", None
+                ),
             )
             ezpz.distributed.cleanup()
             return rc
