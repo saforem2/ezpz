@@ -83,8 +83,15 @@ record 0 PASS "ezpz=${EZPZ_VERSION} at ${EZPZ_LOC}"
 # ---- Test A: unit suite ----------------------------------------------------
 
 hdr "A: unit suite (36 tests downloaded from GitHub)"
-TEST_FILE=/tmp/test_failover_scrape.$$.py
-trap 'rm -f "${TEST_FILE}" /tmp/sample_failure.$$.log /tmp/old_scraper.$$.txt /tmp/new_scraper.$$.txt' EXIT
+# Use an underscore (not a dot) before $$ — pytest treats dots in filenames as
+# package-path separators during collection, so `test_failover_scrape.1234.py`
+# triggers `ModuleNotFoundError: No module named 'test_failover_scrape.1234'`
+# even though the file exists.
+TEST_FILE="/tmp/test_failover_scrape_$$.py"
+SAMPLE="/tmp/sample_failure_$$.log"
+OLD_OUT="/tmp/old_scraper_$$.txt"
+NEW_OUT="/tmp/new_scraper_$$.txt"
+trap 'rm -f "${TEST_FILE}" "${SAMPLE}" "${OLD_OUT}" "${NEW_OUT}"' EXIT
 
 # Use curl if available, else fall back to urllib via Python — many Sunspot
 # users don't have a working curl proxy until ezpz_setup runs, but Python's
@@ -108,17 +115,25 @@ fi
 if [[ -n "${TEST_FILE}" && -f "${TEST_FILE}" ]]; then
     if ! python3 -m pytest --version >/dev/null 2>&1; then
         record A SKIP "pytest not available in this env"
-    elif python3 -m pytest "${TEST_FILE}" -q 2>&1 | tail -5; then
-        record A PASS "all 36 unit tests pass"
     else
-        record A FAIL "pytest reported failures — see output above"
+        # Run pytest; print its tail-5 for context but check pytest's
+        # OWN exit code via PIPESTATUS, not tail's. `if cmd | tail` would
+        # always be "true" because tail always exits 0 even when cmd fails
+        # (which is how a collection error got reported as PASS earlier).
+        python3 -m pytest "${TEST_FILE}" -q 2>&1 | tail -5
+        pytest_rc=${PIPESTATUS[0]}
+        if (( pytest_rc == 0 )); then
+            record A PASS "all unit tests pass"
+        else
+            record A FAIL "pytest exit ${pytest_rc} — see output above"
+        fi
     fi
 fi
 
 # ---- Test B: CLI smoke -----------------------------------------------------
 
 hdr "B: CLI smoke — synthetic log + --explain"
-SAMPLE=/tmp/sample_failure.$$.log
+# ${SAMPLE} declared above in the trap.
 cat > "${SAMPLE}" <<'EOF'
 [2026-05-23 12:34:56] training step=42 loss=2.4
 x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov: shepherd died from signal 9
@@ -175,13 +190,21 @@ else
 
     if [[ -z "${REAL_LOG}" ]]; then
         printf "    searching for a log with real failure patterns (this may take a few seconds)...\n"
-        # Search the current directory for .log files containing either
-        # pattern. Use `fd` if available (much faster), else `find`.
-        # Limit search to the first 200 files to keep it bounded.
+        # Search the current directory for files that COULD contain the
+        # failure patterns. We can't filter by .log extension only —
+        # PBS sometimes writes to .out/.err and ezpz uses .jsonl/.log
+        # interchangeably. But explicitly EXCLUDE source files / build
+        # artifacts so we don't accidentally "find" the test fixture
+        # files that contain the patterns as string literals.
+        # Bounded to 2000 files; on Sunspot's lustre this is ~5s
+        # worst-case, well within the prompt-iteration budget.
+        EXCLUDE_RE='\.(py|pyc|so|pyi|ipynb|md|rst|toml|yaml|yml|json|sh)$|/(\.git|node_modules|__pycache__|\.venv|\.pytest_cache)/'
         if command -v fd >/dev/null 2>&1; then
-            CANDIDATES=$(fd -HI -e log 2>/dev/null | head -200)
+            CANDIDATES=$(fd -HI --type=file . 2>/dev/null \
+                | grep -Ev "${EXCLUDE_RE}" | head -2000)
         else
-            CANDIDATES=$(find . -name '*.log' 2>/dev/null | head -200)
+            CANDIDATES=$(find . -type f 2>/dev/null \
+                | grep -Ev "${EXCLUDE_RE}" | head -2000)
         fi
         BEST_LOG=""
         BEST_COUNT=0
@@ -213,16 +236,15 @@ else
     if [[ -z "${REAL_LOG}" ]]; then
         record C SKIP "no log with bad-node patterns found in cwd. Set \$LOG=/path/to/postmortem.log to override."
     else
-        OLD=/tmp/old_scraper.$$.txt
-        NEW=/tmp/new_scraper.$$.txt
-        python3 "${UPSTREAM}"                       "${REAL_LOG}" > "${OLD}" 2>/dev/null
-        python3 -m ezpz.failover --machine aurora   "${REAL_LOG}" > "${NEW}" 2>/dev/null
+        # ${OLD_OUT} / ${NEW_OUT} declared above in the trap.
+        python3 "${UPSTREAM}"                       "${REAL_LOG}" > "${OLD_OUT}" 2>/dev/null
+        python3 -m ezpz.failover --machine aurora   "${REAL_LOG}" > "${NEW_OUT}" 2>/dev/null
 
         # `wc -l <file` pads with whitespace on some systems; strip it
         # so the printf %d works and the eventual `(${NEW_LINES} hostname(s))`
         # message isn't misaligned.
-        OLD_LINES=$(wc -l < "${OLD}" | tr -d ' ')
-        NEW_LINES=$(wc -l < "${NEW}" | tr -d ' ')
+        OLD_LINES=$(wc -l < "${OLD_OUT}" | tr -d ' ')
+        NEW_LINES=$(wc -l < "${NEW_OUT}" | tr -d ' ')
         printf "    upstream emitted: %d hostname(s)\n" "${OLD_LINES}"
         printf "    ezpz emitted:     %d hostname(s)\n" "${NEW_LINES}"
 
@@ -231,11 +253,11 @@ else
             # which case both being empty is correct) or "both scrapers are
             # broken". Report as a soft pass with a clear caveat.
             record C PASS "both scrapers emitted nothing — consistent, but log may have no patterns"
-        elif diff -q "${OLD}" "${NEW}" >/dev/null 2>&1; then
+        elif diff -q "${OLD_OUT}" "${NEW_OUT}" >/dev/null 2>&1; then
             record C PASS "behavior-identical on real log (${NEW_LINES} hostname(s))"
         else
             record C FAIL "scrapers DISAGREE on real log — diff:"
-            diff "${OLD}" "${NEW}" | sed 's/^/        /'
+            diff "${OLD_OUT}" "${NEW_OUT}" | sed 's/^/        /'
         fi
     fi
 fi
