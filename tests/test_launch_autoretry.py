@@ -146,6 +146,27 @@ class TestPureHelpers:
         log = "rank 4 died from signal 6\n"
         assert _has_crash_patterns(log)
 
+    def test_crash_patterns_real_ur_oom_with_cascade_regression(self):
+        # Regression for an actual Aurora torchtitan log shape (job
+        # 2026-05-12): 18 successful training steps, then a real
+        # level_zero UR_RESULT_ERROR_OUT_OF_RESOURCES, then mpiexec
+        # tore down the job and emitted a `rank 14 died from signal 15`
+        # cascade line as part of the teardown. The strip should
+        # remove the cascade but preserve the OOM signal so the loop
+        # correctly retries on a different node.
+        log = (
+            "step:  1  loss: 12.94587  ...\n"
+            "step: 18  loss: 10.27772  ...\n"
+            "[rank7]: RuntimeError: level_zero backend failed with "
+            "error: 40 (UR_RESULT_ERROR_OUT_OF_RESOURCES)\n"
+            "x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov: rank 7 exited "
+            "with code 1\n"
+            "x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov: rank 14 died "
+            "from signal 15\n"
+            "Execution finished with 143.\n"
+        )
+        assert _has_crash_patterns(log)
+
     def test_progress_markers_step_equals(self):
         assert _has_progress_markers("iter=10 step=5 loss=0.1")
 
