@@ -172,6 +172,35 @@ that re-launches the same command on the same nodes. `--auto-retry`
 is an unbounded *node-level* failover that swaps bad hosts out
 between attempts.
 
+### Decision flow at a glance
+
+```mermaid
+flowchart TD
+    Start(["ezpz launch --auto-retry --np N"]) --> Validate{"nproc set<br/>explicitly?"}
+    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nproc"]
+    Validate -->|yes| Split["Split PBS nodelist<br/>into active + spare,<br/>write active.hostfile"]
+    Split --> Attempt["Run attempt i<br/>tee to attempt-i.log,<br/>watchdog armed<br/>(default 1800s)"]
+    Attempt -->|"SIGINT<br/>(Ctrl-C)"| Interrupted(["FAILOVER STOP:<br/>interrupted<br/>return 130"])
+    Attempt --> GotRC["rc = child exit<br/>124 if watchdog fired"]
+    GotRC --> Strip["Strip ANSI codes,<br/>strip innocent<br/>rank-cascade lines"]
+    Strip --> CheckSuccess{"rc==0 AND<br/>no crash patterns<br/>AND inner_rc==0?"}
+    CheckSuccess -->|yes| Success(["FAILOVER STOP:<br/>success<br/>return 0"])
+    CheckSuccess -->|no| CheckWalltime{"rc==143 AND<br/>no crash patterns?"}
+    CheckWalltime -->|yes| Walltime(["FAILOVER STOP:<br/>walltime<br/>return 143"])
+    CheckWalltime -->|no| CheckStuck{"prior AND current<br/>attempt both have<br/>0 step= markers?"}
+    CheckStuck -->|yes| Stuck(["FAILOVER STOP:<br/>stuck_pre_training<br/>return rc"])
+    CheckStuck -->|no| CheckSpares{"spares left?"}
+    CheckSpares -->|no| Exhausted(["FAILOVER STOP:<br/>exhausted<br/>return rc"])
+    CheckSpares -->|yes| CheckScraper{"scraper found<br/>named host(s)?"}
+    CheckScraper -->|yes| SwapIn["swap_in<br/>named hosts"]
+    CheckScraper -->|no| SwapBlind["swap_one_blind"]
+    SwapIn --> CheckSwapped{"actually swapped<br/>any host?"}
+    CheckSwapped -->|"no<br/>(all already<br/>replaced)"| SwapBlind
+    CheckSwapped -->|yes| Backoff
+    SwapBlind --> Backoff["Backoff sleep:<br/>5/10/20/40/60s"]
+    Backoff --> Attempt
+```
+
 ### Required: explicit `--nproc`
 
 `--auto-retry` needs to know how many ranks are training so it can
@@ -228,6 +257,84 @@ blind rotations" cap. The intent is to catch broken configs / missing
 datasets / pre-training-loop bugs before they burn the entire spare
 pool — if two attempts in a row die before `History.update` prints
 its first `step=N` line, no amount of node-swapping will help.
+
+### Worked example — real Aurora `UR_RESULT_ERROR_OUT_OF_RESOURCES`
+
+Here's an excerpt from a real Aurora torchtitan job that the
+classifier handles correctly. The relevant signals from
+`attempt-1.log`:
+
+```
+[2026-05-12 08:04:23][I][components/metrics:526:log] step:  1  loss: 12.94587  ...
+[2026-05-12 08:04:30][I][components/metrics:526:log] step:  2  loss: 12.90856  ...
+... (16 more clean training steps) ...
+[2026-05-12 08:06:24][I][components/metrics:526:log] step: 18  loss: 10.27772  ...
+[rank7]: RuntimeError: level_zero backend failed with error: 40 (UR_RESULT_ERROR_OUT_OF_RESOURCES)
+x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov: rank 7 exited with code 1
+x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov: rank 14 died from signal 15
+[ezpz/launch] Execution finished with 143.
+```
+
+What the classifier does step by step:
+
+1. `rc=143` from the shell (mpiexec teardown after the GPU OOM).
+2. Strip ANSI codes from the log.
+3. Strip innocent rank-cascade lines: `rank 14 died from signal 15`
+   is a **downstream cascade** from the primary kill on
+   `x4610c4s3b0n0`, not a bad-node indicator on `x4610c4s5b0n0`.
+   This line is excluded *before* the crash-pattern match runs
+   (job 8466848 postmortem — tagging cascade victims as bad nodes
+   burns spares for nothing).
+4. Run the crash-pattern grep on the stripped text:
+   `UR_RESULT_ERROR_OUT_OF_RESOURCES` matches → there IS a real
+   hardware failure in the log.
+5. `rc==143 AND crash_patterns` → **bad-node retry path**, not
+   `WALLTIME`. Without the strip we'd still get to bad-node retry
+   (the cascade lines also contain `died from signal`), but we'd
+   reach it via the *wrong* condition — and we'd be at risk of
+   tagging `x4610c4s5b0n0` as a bad node when only
+   `x4610c4s3b0n0` is the actual culprit.
+6. Scraper picks up the hostname from the
+   `x4610c4s3b0n0.hsn...: rank 7 exited with code 1` line (or, if
+   the scraper missed it because it's not in the explicit pattern
+   set, falls through to `swap_one_blind`).
+7. `bad_nodes.txt` gets `x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov`.
+   `active.hostfile` is rewritten with that host replaced by the
+   next spare.
+8. Backoff 5 seconds, run `attempt-2.log`. The retry uses the
+   updated active set; the bad GPU is no longer in the training
+   pool.
+
+This exact log shape is pinned as a regression test in both code
+paths:
+[`test_crash_patterns_real_ur_oom_with_cascade_regression`](https://github.com/saforem2/ezpz/blob/main/tests/test_launch_autoretry.py)
+(Python) and
+[`test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade`](https://github.com/saforem2/ezpz/blob/main/tests/test_failover_lib.sh)
+(bash).
+
+### Reading the postmortem log
+
+After a run finishes (success, walltime, or exhausted), the
+`logs/failover-<jobid>/` directory is the postmortem entry point.
+A few one-liners:
+
+```bash
+# What was the final verdict?
+grep "FAILOVER STOP" logs/failover-*/attempt-*.log
+
+# Which nodes were swapped out across all attempts?
+cat logs/failover-*/bad_nodes.txt
+
+# Which step did each attempt reach before dying?
+for f in logs/failover-*/attempt-*.log; do
+  echo "=== $f ==="
+  grep -oE "step:[[:space:]]+[0-9]+" "$f" | tail -1
+done
+
+# Was the failure a real hardware death or just a walltime hit?
+grep -E "OutOfMemoryError|UR_RESULT_ERROR|gloo.*Connection closed|shepherd died" \
+  logs/failover-*/attempt-*.log
+```
 
 ### Default idle-output watchdog
 
