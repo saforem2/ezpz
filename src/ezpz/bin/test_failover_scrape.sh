@@ -189,53 +189,28 @@ else
     fi
 
     if [[ -z "${REAL_LOG}" ]]; then
-        printf "    searching for a log with real failure patterns (this may take a few seconds)...\n"
-        # Search the current directory for files that COULD contain the
-        # failure patterns. We can't filter by .log extension only —
-        # PBS sometimes writes to .out/.err and ezpz uses .jsonl/.log
-        # interchangeably. But explicitly EXCLUDE source files / build
-        # artifacts so we don't accidentally "find" the test fixture
-        # files that contain the patterns as string literals.
-        # Bounded to 2000 files; on Sunspot's lustre this is ~5s
-        # worst-case, well within the prompt-iteration budget.
-        EXCLUDE_RE='\.(py|pyc|so|pyi|ipynb|md|rst|toml|yaml|yml|json|sh)$|/(\.git|node_modules|__pycache__|\.venv|\.pytest_cache)/'
-        if command -v fd >/dev/null 2>&1; then
-            CANDIDATES=$(fd -HI --type=file . 2>/dev/null \
-                | grep -Ev "${EXCLUDE_RE}" | head -2000)
-        else
-            CANDIDATES=$(find . -type f 2>/dev/null \
-                | grep -Ev "${EXCLUDE_RE}" | head -2000)
-        fi
-        BEST_LOG=""
-        BEST_COUNT=0
-        for f in ${CANDIDATES}; do
-            # `grep -c` prints to stdout AND `|| echo 0` adds its own line
-            # when grep matches nothing — combine both into one integer.
-            count=$(grep -cE "shepherd died from signal 9|Connection closed by peer" "${f}" 2>/dev/null | head -1)
-            count=${count:-0}
-            if (( count > BEST_COUNT )); then
-                BEST_LOG="${f}"
-                BEST_COUNT=${count}
-            fi
-        done
-        if [[ -n "${BEST_LOG}" && ${BEST_COUNT} -gt 0 ]]; then
-            REAL_LOG="${BEST_LOG}"
-            printf "    %sfound%s: %s (%d matching lines)\n" "${G}" "${N}" "${REAL_LOG}" "${BEST_COUNT}"
-        fi
+        # Auto-search across an HPC user's home / lustre is a tarpit —
+        # millions of files, slow stat()s, lazy globbing through fd
+        # doesn't help because `grep -c` per candidate is the real
+        # cost. We tried this; it hung for 90+ seconds and got
+        # Ctrl-C'd. Make this an explicit opt-in instead: user knows
+        # where their logs are, point us at the file.
+        record C SKIP "no \$LOG supplied. Re-run with:
+        LOG=/path/to/known-bad-postmortem.log bash \"\$(python3 -c \\
+            'import ezpz, pathlib; print(pathlib.Path(ezpz.configs.BIN_DIR) / \"test_failover_scrape.sh\")')\"
+    Good candidates: jobs 8459818, 8460301, 8463659, 8470102, 8470103,
+    8479581, 8466848 (cited in scrape_bad_nodes.py docstring as having
+    real shepherd-9 or gloo-peer-closed patterns)."
     else
-        # User-supplied $LOG; report match count so they know whether the
-        # diff will be meaningful. Same single-integer extraction as above.
+        # User-supplied $LOG; report match count so they know whether
+        # the diff will be meaningful.
         match_count=$(grep -cE "shepherd died from signal 9|Connection closed by peer" "${REAL_LOG}" 2>/dev/null | head -1)
         match_count=${match_count:-0}
         printf "    user-supplied log: %s (%d matching lines)\n" "${REAL_LOG}" "${match_count}"
         if (( match_count == 0 )); then
             printf "    %swarning: log has 0 failure patterns; diff being empty proves nothing%s\n" "${Y}" "${N}"
         fi
-    fi
 
-    if [[ -z "${REAL_LOG}" ]]; then
-        record C SKIP "no log with bad-node patterns found in cwd. Set \$LOG=/path/to/postmortem.log to override."
-    else
         # ${OLD_OUT} / ${NEW_OUT} declared above in the trap.
         python3 "${UPSTREAM}"                       "${REAL_LOG}" > "${OLD_OUT}" 2>/dev/null
         python3 -m ezpz.failover --machine aurora   "${REAL_LOG}" > "${NEW_OUT}" 2>/dev/null
@@ -249,9 +224,10 @@ else
         printf "    ezpz emitted:     %d hostname(s)\n" "${NEW_LINES}"
 
         if (( OLD_LINES == 0 && NEW_LINES == 0 )); then
-            # Both empty. This could mean either "log has no patterns" (in
-            # which case both being empty is correct) or "both scrapers are
-            # broken". Report as a soft pass with a clear caveat.
+            # Both empty. This could mean either "log has no patterns"
+            # (in which case both being empty is correct) or "both
+            # scrapers are broken". Report as a soft pass with a clear
+            # caveat.
             record C PASS "both scrapers emitted nothing — consistent, but log may have no patterns"
         elif diff -q "${OLD_OUT}" "${NEW_OUT}" >/dev/null 2>&1; then
             record C PASS "behavior-identical on real log (${NEW_LINES} hostname(s))"
