@@ -244,7 +244,16 @@ failover_run() {
         _failover_log "attempt ${attempt}/${max} — active=$(wc -l < "$FAILOVER_ACTIVE") nodes, spare=$(wc -l < "$FAILOVER_SPARE") nodes"
         _failover_log "logging to $logf"
 
-        # Use stdbuf to keep tee'd output unbuffered, redirect both stderr and stdout.
+        # Merge stderr into stdout so tee captures everything the child
+        # emits on either stream. ${PIPESTATUS[0]} recovers the child's
+        # exit code (tee always exits 0 in normal operation).
+        #
+        # No stdbuf here: ezpz launch already sets PYTHONUNBUFFERED=1
+        # in the child env (see _run_with_watchdog), and the inner
+        # mpiexec children inherit that. Tee itself is line-buffered
+        # when its stdout is a TTY and block-buffered when redirected,
+        # but we don't gate any timing decisions on tee's flush
+        # cadence — only on $PIPESTATUS at process exit.
         "${cmd[@]}" 2>&1 | tee "$logf"
         rc=${PIPESTATUS[0]}
 
@@ -258,7 +267,10 @@ failover_run() {
         # and a naive regex extracts '1' from the [1;36m prefix instead of
         # the real exit code (127). Pre-filter with sed.
         local inner_rc
-        inner_rc=$(sed -r 's/\x1b\[[0-9;]*m//g' "$logf" 2>/dev/null | grep -oE "Execution finished with [0-9]+" | tail -1 | grep -oE "[0-9]+$")
+        # `sed -E` (extended regex) is POSIX-portable; `sed -r` is a GNU
+        # alias that BSD sed (macOS dev boxes) doesn't accept. Same
+        # treatment as the `sed -i.bak` portability fix elsewhere.
+        inner_rc=$(sed -E 's/\x1b\[[0-9;]*m//g' "$logf" 2>/dev/null | grep -oE "Execution finished with [0-9]+" | tail -1 | grep -oE "[0-9]+$")
         if [[ -n "$inner_rc" && "$inner_rc" != "0" ]]; then
             if (( rc == 0 )); then
                 _failover_log "WARNING: shell exit 0 but log shows 'Execution finished with $inner_rc'; treating as failure"
@@ -278,7 +290,28 @@ failover_run() {
             # - Added EOFError (blendcorpus shuffle_idx mmap of a
             #   zero-length file) — fired in 8485515 80B 522N.
             local crash_lines
-            crash_lines=$(grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|EOFError: No data left in file" "$logf" 2>/dev/null)
+            # IMPORTANT: keep this regex (and the bad_crash_lines one
+            # below) in sync with src/ezpz/launch_autoretry.py's
+            # _CRASH_PATTERNS_RX. Match ANY hardware-style death — OOM,
+            # gloo TCP, shepherd kills, segfaults, EOFError on
+            # zero-length mmaps, etc. — but EXCLUDE the innocent
+            # cascading-rank lines first.
+            #
+            # `rank N died from signal {11,15}` is what mpiexec prints
+            # when ANOTHER node's primary failure took down ranks on
+            # this node downstream — the cascade is from a SIGTERM
+            # raining outward, not a local hardware problem. Tagging
+            # those as bad-node indicators would burn spares chasing
+            # innocent ranks instead of the actual culprit. See
+            # tests/test_failover_scrape.py::test_innocent_rank_signal_11_not_matched
+            # (job 8466848 postmortem) for the scraper-side analog.
+            #
+            # `grep -v` strips the innocent rank-N lines BEFORE the
+            # crash-pattern match runs, so `died from signal 9`
+            # (real shepherd kill), `died from signal 6` (SIGABRT
+            # from a real assert), etc. still count.
+            crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
+                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|EOFError: No data left in file")
             if (( crash_lines >= 1 )); then
                 _failover_log "WARNING: shell exit 0 but log has $crash_lines crash-pattern line(s); treating as failure (rc=1)"
                 rc=1
@@ -302,7 +335,16 @@ failover_run() {
         # and the wrapper bails without retrying.
         if (( rc == 143 )); then
             local bad_crash_lines
-            bad_crash_lines=$(grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|EOFError: No data left in file" "$logf" 2>/dev/null)
+            # Same regex as crash_lines above — strip the innocent
+            # `rank N died from signal {11,15}` cascade lines first,
+            # then match the broad hardware-death set. Critical for
+            # the walltime path: without the strip, a normal walltime
+            # SIGTERM (which fires SIGTERM at every rank, generating
+            # dozens of `rank N died from signal 15` lines) would
+            # override the clean rc=143 into a bad-node retry and
+            # burn spares for nothing.
+            bad_crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
+                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|EOFError: No data left in file")
             if (( bad_crash_lines == 0 )); then
                 _failover_log "attempt ${attempt} exited 143 (walltime / SIGTERM) — not a bad-node failure, no retry"
                 return "$rc"

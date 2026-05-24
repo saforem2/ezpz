@@ -418,6 +418,79 @@ EOF
     assert_file_contents "${FAILOVER_BAD}" "host1"
 }
 
+test_run_walltime_143_no_retry_when_only_innocent_rank_signals() {
+    # Regression for the Codex P2 review on PR #143: walltime SIGTERM
+    # cascades to ranks as `rank N died from signal {11,15}`. Those
+    # lines are NOT bad-node indicators (the cascade originated on a
+    # DIFFERENT node — see scraper's test_innocent_rank_signal_11_not_matched).
+    # The walltime path must NOT treat them as a reason to retry.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/walltime_with_cascade_cmd" <<'EOF'
+#!/usr/bin/env bash
+# Real walltime kill: SIGTERM cascade emits rank-signal lines but
+# NO shepherd-died-9 and no gloo Connection-closed.
+echo "rank 0 died from signal 15"
+echo "rank 1 died from signal 11"
+echo "rank 2 died from signal 15"
+exit 143
+EOF
+    chmod +x "${bindir}/walltime_with_cascade_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # scraper finds nothing either
+
+    export FAILOVER_MAX_RETRIES=2
+    local rc=0
+    failover_run walltime_with_cascade_cmd || rc=$?
+    assert_eq "${rc}" "143" "rc"
+    # Critical: no swap happened — bad_nodes.txt is empty.
+    assert_eq "$(wc -l < "${FAILOVER_BAD}" | tr -d ' ')" "0" "bad_nodes_count"
+}
+
+test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade() {
+    # Companion to the prior test: even when the log has innocent
+    # rank-cascade lines, a REAL hardware death (gloo, OOM, shepherd-9,
+    # etc.) elsewhere in the same log must still trigger a retry. The
+    # `grep -v` of innocent ranks should only strip the cascade lines,
+    # not the genuine signal.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/real_death_with_cascade_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" == "1" ]]; then
+    # Real failure + innocent downstream cascades. The cascade lines
+    # would have masked the real OOM under the old regex; the new one
+    # strips the cascades first.
+    echo "rank 0 died from signal 15"
+    echo "rank 1 died from signal 11"
+    echo "torch.cuda.OutOfMemoryError: CUDA out of memory"
+    exit 143
+else
+    exit 0
+fi
+EOF
+    chmod +x "${bindir}/real_death_with_cascade_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # blind rotation
+
+    export FAILOVER_MAX_RETRIES=2
+    failover_run real_death_with_cascade_cmd || exit 1
+    # Verifies we DID retry — host1 got swapped out.
+    assert_file_contents "${FAILOVER_BAD}" "host1"
+}
+
 test_run_swaps_named_bad_node_when_scraper_finds_one() {
     setup_pbs_nodefile "host1
 host2
@@ -565,6 +638,8 @@ run_test "run succeeds on first attempt (no retry)"           test_run_succeeds_
 run_test "run retries on failure, succeeds on attempt 2"      test_run_retries_on_failure_then_succeeds
 run_test "run does NOT retry on walltime (143) when clean"    test_run_walltime_143_no_retry_when_clean
 run_test "run DOES retry on 143 when log has bad-node pattern" test_run_walltime_143_retries_when_bad_node_pattern_in_log
+run_test "run does NOT retry on 143 with only innocent rank-signal lines" test_run_walltime_143_no_retry_when_only_innocent_rank_signals
+run_test "run DOES retry on 143 when real hw death is mixed with cascade"  test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade
 run_test "run swaps named bad node (from scraper)"            test_run_swaps_named_bad_node_when_scraper_finds_one
 run_test "run exhausts max retries, returns final rc"         test_run_exhausts_max_retries
 run_test "run detects inner_rc through ANSI escapes"          test_run_ansi_stripping_in_inner_rc_detection
