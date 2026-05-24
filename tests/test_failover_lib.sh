@@ -451,6 +451,48 @@ EOF
     assert_eq "$(wc -l < "${FAILOVER_BAD}" | tr -d ' ')" "0" "bad_nodes_count"
 }
 
+test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade() {
+    # Regression for actual Aurora torchtitan log shape (2026-05-12):
+    # 18 training steps complete cleanly, then a real level_zero
+    # UR_RESULT_ERROR_OUT_OF_RESOURCES on one rank, then mpiexec
+    # teardown emits `rank N died from signal 15` as a cascade
+    # alongside `rank N exited with code 1`. Without the innocent-
+    # cascade strip, this log would silently be misclassified as
+    # walltime — losing the bad-node signal.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/aurora_ur_oom_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" == "1" ]]; then
+    # Verbatim shape from the real postmortem.
+    echo "step:  1  loss: 12.94587  ..."
+    echo "step: 18  loss: 10.27772  ..."
+    echo "[rank7]: RuntimeError: level_zero backend failed with error: 40 (UR_RESULT_ERROR_OUT_OF_RESOURCES)"
+    echo "x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov: rank 7 exited with code 1"
+    echo "x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov: rank 14 died from signal 15"
+    exit 143
+else
+    exit 0
+fi
+EOF
+    chmod +x "${bindir}/aurora_ur_oom_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # blind rotation
+
+    export FAILOVER_MAX_RETRIES=2
+    failover_run aurora_ur_oom_cmd || exit 1
+    # Verifies we DID retry (cascade didn't mask the real OOM).
+    assert_file_contents "${FAILOVER_BAD}" "host1"
+}
+
 test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade() {
     # Companion to the prior test: even when the log has innocent
     # rank-cascade lines, a REAL hardware death (gloo, OOM, shepherd-9,
@@ -640,6 +682,7 @@ run_test "run does NOT retry on walltime (143) when clean"    test_run_walltime_
 run_test "run DOES retry on 143 when log has bad-node pattern" test_run_walltime_143_retries_when_bad_node_pattern_in_log
 run_test "run does NOT retry on 143 with only innocent rank-signal lines" test_run_walltime_143_no_retry_when_only_innocent_rank_signals
 run_test "run DOES retry on 143 when real hw death is mixed with cascade"  test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade
+run_test "run handles real Aurora UR_OOM + cascade regression"             test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade
 run_test "run swaps named bad node (from scraper)"            test_run_swaps_named_bad_node_when_scraper_finds_one
 run_test "run exhausts max retries, returns final rc"         test_run_exhausts_max_retries
 run_test "run detects inner_rc through ANSI escapes"          test_run_ansi_stripping_in_inner_rc_detection
