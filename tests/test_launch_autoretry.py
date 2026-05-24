@@ -101,6 +101,51 @@ class TestPureHelpers:
     def test_crash_patterns_negative(self):
         assert not _has_crash_patterns("Training complete\nFinal loss: 0.5")
 
+    def test_crash_patterns_excludes_innocent_rank_11_cascade(self):
+        # `rank N died from signal 11` is a downstream cascade from a
+        # primary kill on a different node — NOT a bad-node indicator.
+        # Same exclusion the scraper applies (job 8466848 postmortem).
+        log = (
+            "rank 0 died from signal 11\n"
+            "rank 1 died from signal 11\n"
+            "rank 2 died from signal 11\n"
+        )
+        assert not _has_crash_patterns(log)
+
+    def test_crash_patterns_excludes_innocent_rank_15_cascade(self):
+        # Same for SIGTERM (15) cascading from a primary walltime kill.
+        log = (
+            "rank 0 died from signal 15\n"
+            "rank 1 died from signal 15\n"
+        )
+        assert not _has_crash_patterns(log)
+
+    def test_crash_patterns_preserves_real_death_among_cascades(self):
+        # Critical regression: a real OOM mixed with innocent rank
+        # cascades MUST still register as a crash. The strip should
+        # only remove the cascade lines, not the real signal.
+        log = (
+            "rank 0 died from signal 15\n"
+            "rank 1 died from signal 11\n"
+            "torch.OutOfMemoryError: CUDA OOM\n"
+            "rank 2 died from signal 15\n"
+        )
+        assert _has_crash_patterns(log)
+
+    def test_crash_patterns_preserves_shepherd_9(self):
+        # `shepherd died from signal 9` is a PALS daemon kill — real
+        # hardware failure, never an innocent cascade. Must still match.
+        log = "x4502.hsn: shepherd died from signal 9\n"
+        assert _has_crash_patterns(log)
+
+    def test_crash_patterns_preserves_died_from_signal_other_than_11_15(
+        self,
+    ):
+        # Signal 6 = SIGABRT (assertion failures, etc.). Not a cascade
+        # signal — still counts.
+        log = "rank 4 died from signal 6\n"
+        assert _has_crash_patterns(log)
+
     def test_progress_markers_step_equals(self):
         assert _has_progress_markers("iter=10 step=5 loss=0.1")
 
@@ -158,6 +203,39 @@ class TestClassifyAttempt:
         log = _write(
             tmp_path / "log",
             "Execution finished with 0\nOutOfMemoryError on rank 5\n",
+        )
+        assert (
+            classify_attempt(143, log, [])
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_walltime_with_only_innocent_rank_cascade_is_walltime(
+        self, tmp_path
+    ):
+        # rc=143 + log full of `rank N died from signal 15` (cascade
+        # from the walltime SIGTERM raining outward). Without the
+        # innocent-cascade strip, the loose `died from signal` would
+        # override into a bad-node retry — burning spares for nothing.
+        # Must stay WALLTIME.
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 0\n"
+            "rank 0 died from signal 15\n"
+            "rank 1 died from signal 15\n"
+            "rank 2 died from signal 15\n",
+        )
+        assert classify_attempt(143, log, []) is TerminationReason.WALLTIME
+
+    def test_walltime_with_cascade_and_real_death_is_bad_node(
+        self, tmp_path
+    ):
+        # Mixed log: cascade lines AND a real OOM. The real signal
+        # survives the strip → bad-node retry, not walltime.
+        log = _write(
+            tmp_path / "log",
+            "rank 0 died from signal 15\n"
+            "torch.OutOfMemoryError: CUDA out of memory\n"
+            "rank 1 died from signal 11\n",
         )
         assert (
             classify_attempt(143, log, [])

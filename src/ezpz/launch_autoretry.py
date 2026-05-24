@@ -72,6 +72,22 @@ _CRASH_PATTERNS_RX = re.compile(
     r"|EOFError: No data left in file"
 )
 
+# Innocent rank-cascade lines. These are emitted by mpiexec when a
+# PRIMARY kill on one node propagates SIGTERM/SIGSEGV outward to
+# every other rank — the named rank wasn't the culprit, it's just
+# a downstream victim. Matching these as bad-node indicators would
+# tag innocent ranks and (worse) override a clean walltime exit
+# into a node-swap retry that burns spares for nothing. Strip
+# these lines BEFORE the crash match runs.
+#
+# Mirrors the `grep -v "rank N died from signal (11|15)"` strip in
+# src/ezpz/bin/failover.sh and the scraper-side exclusion
+# documented in tests/test_failover_scrape.py
+# ::test_innocent_rank_signal_11_not_matched (job 8466848 postmortem).
+_INNOCENT_RANK_CASCADE_RX = re.compile(
+    r"rank \d+ died from signal (?:11|15)"
+)
+
 # Strip ANSI color codes before parsing the "Execution finished with N"
 # trailer. The trailer is logged with color (the rc digits are wrapped
 # in \x1b[1;36m...\x1b[0m); a naive regex on the colored form pulls
@@ -281,7 +297,27 @@ def _strip_ansi(text: str) -> str:
 
 
 def _has_crash_patterns(log_text: str) -> bool:
-    return _CRASH_PATTERNS_RX.search(log_text) is not None
+    """Return True iff the log contains a real hardware-style death.
+
+    Strips innocent rank-cascade lines BEFORE matching so a clean
+    walltime kill (which fires SIGTERM at every rank, generating
+    dozens of `rank N died from signal 15` lines) doesn't get
+    misclassified as a bad-node failure. See _INNOCENT_RANK_CASCADE_RX
+    for the postmortem context.
+
+    The strip preserves real signals: `shepherd died from signal 9`
+    (PALS shepherd kill), `died from signal 6` (SIGABRT from a real
+    assert), `died from signal 9` on a process other than `rank N`,
+    etc. all still match.
+    """
+    if not log_text:
+        return False
+    filtered = "\n".join(
+        line
+        for line in log_text.splitlines()
+        if not _INNOCENT_RANK_CASCADE_RX.search(line)
+    )
+    return _CRASH_PATTERNS_RX.search(filtered) is not None
 
 
 def _has_progress_markers(log_text: str) -> bool:
