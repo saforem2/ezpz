@@ -216,6 +216,13 @@ post-mortem `grep` is reliable.
 | 8 | bad-node verdict but no spares left                    | **EXHAUSTED** → return rc |
 | 9 | SIGINT (Ctrl-C)                                        | **INTERRUPTED** → return 130 |
 
+**Empty-`swap_in` fallback.** Row 5's `swap_in` skips any host that
+isn't currently in the active set (the named host was already
+replaced on a prior attempt, the scraper picked up stale lines from
+an older log, etc.). If `swap_in` ends up swapping zero hosts, the
+loop falls through to row 6's `swap_one_blind` so it still makes
+forward progress instead of looping on the same bad set.
+
 The `step=` marker guard (#7) replaces a numeric "max consecutive
 blind rotations" cap. The intent is to catch broken configs / missing
 datasets / pre-training-loop bugs before they burn the entire spare
@@ -248,6 +255,15 @@ Per-job, in `$(pwd)/logs/failover-<jobid>/`:
 - `bad_nodes.txt` — every host that's been swapped out (named
   swap_in *and* blind rotations). Append-only.
 - `attempt-N.log` — combined stdout+stderr of attempt N.
+
+> **Note on `active.hostfile` mutation.** The file is rewritten in
+> place between attempts. If you `cat` it from a second shell
+> mid-run, you'll see the *current* active set, not the original
+> PBS allocation. The launcher reads it fresh at each attempt — no
+> re-launch of `ezpz launch` itself is needed for the new contents
+> to take effect, since the launcher subprocess re-resolves the
+> hostfile path's contents per spawn. To inspect the *original*
+> PBS allocation, look at `$PBS_NODEFILE` (unmodified) instead.
 
 ### Relationship to `src/ezpz/bin/failover.sh`
 
