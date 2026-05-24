@@ -388,9 +388,12 @@ def build_launch_parser(
             "SIGKILL after a 10s grace period) and exit with code 124. "
             "NOT a total walltime — the process can run indefinitely "
             "as long as it keeps emitting output on either stream. "
-            "Off by default; pass 0 explicitly to disable. Useful for "
-            "catching collective hangs (e.g. xccl silent deadlock on "
-            "XPU) that would otherwise consume the full PBS walltime."
+            "Off by default, BUT defaults to 1800 (30 min) when "
+            "--auto-retry is set (matches FAILOVER_IDLE_TIMEOUT in "
+            "src/ezpz/bin/failover.sh — silent xccl hangs otherwise "
+            "burn the full PBS walltime). Pass 0 explicitly to disable "
+            "even under --auto-retry. Useful for catching collective "
+            "hangs (e.g. xccl silent deadlock on XPU)."
         ),
     )
     parser.add_argument(

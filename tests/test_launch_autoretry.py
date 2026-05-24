@@ -22,7 +22,12 @@ from typing import Callable
 
 import pytest
 
-from ezpz.launch import parse_args
+from ezpz.launch import (
+    _auto_retry_log_dir,
+    _ranks_to_hosts,
+    _resolve_auto_retry_allocation,
+    parse_args,
+)
 from ezpz.launch_autoretry import (
     AutoRetryConfig,
     NodeAllocation,
@@ -512,7 +517,7 @@ def _run(
     monkeypatch,
     config,
     allocation,
-    fake_runner: _FakeRunner,
+    fake_runner,  # duck-typed: any callable (cmd, log_path, idle_timeout_s) -> int
     scrape_fn: Callable[[Path], list[str]] = lambda _: [],
     sleep_capture: list | None = None,
 ):
@@ -667,6 +672,58 @@ class TestRunWithAutoRetry:
         assert rc == 0
         assert len(runner.calls) == 3
 
+    def test_sigint_during_attempt_returns_interrupted(
+        self, tmp_path, monkeypatch
+    ):
+        # Row 9 of the termination matrix: a KeyboardInterrupt raised
+        # by _run_attempt_with_tee (Ctrl-C from the user, or any
+        # SIGINT-equivalent during the child's lifetime) propagates
+        # up through run_with_auto_retry as INTERRUPTED. Returns
+        # 128 + SIGINT (130 on POSIX), logs FAILOVER STOP: interrupted,
+        # does not retry.
+        import signal as _signal
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path)
+
+        sigint_raiser_calls = []
+
+        def _raises_sigint(cmd, log_path: Path, idle_timeout_s: int) -> int:
+            # Simulate Ctrl-C: write a partial log (the child got
+            # killed mid-attempt) then raise KeyboardInterrupt as
+            # the real _run_attempt_with_tee would after SIGINT
+            # reaches it.
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("starting...\nkilled by user\n")
+            sigint_raiser_calls.append(log_path)
+            raise KeyboardInterrupt()
+
+        rc = _run(monkeypatch, config, allocation, _raises_sigint)
+        assert rc == 128 + _signal.SIGINT
+        # Exactly one attempt before the interrupt — NO retry.
+        assert len(sigint_raiser_calls) == 1
+        # No nodes swapped — the interrupt short-circuited before
+        # the classifier ran.
+        assert allocation.bad_nodes_path.read_text() == ""
+
+    def test_sigint_on_first_attempt_doesnt_consume_spares(
+        self, tmp_path, monkeypatch
+    ):
+        # Specifically: Ctrl-C on the very first attempt must not
+        # touch the spare pool. Catches a regression where the
+        # interrupt handler somehow falls through into the swap
+        # logic.
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path)
+        original_spare = list(allocation.spare)
+
+        def _raises_sigint(cmd, log_path: Path, idle_timeout_s: int) -> int:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("")
+            raise KeyboardInterrupt()
+
+        _run(monkeypatch, config, allocation, _raises_sigint)
+        assert list(allocation.spare) == original_spare
+
     def test_unbounded_default_runs_until_exhaustion(
         self, tmp_path, monkeypatch
     ):
@@ -762,3 +819,143 @@ class TestArgparseValidation:
         assert args.auto_retry is False
         assert args.retries == 3
         assert args.idle_timeout_s == 600
+
+
+# ---------------------------------------------------------------------------
+# Helpers in launch.py — the bridge between CLI args and the loop
+# ---------------------------------------------------------------------------
+
+
+class TestRanksToHosts:
+    """Ceiling-divide rank counts to host counts."""
+
+    def test_exact_division(self):
+        # 24 ranks on 12-GPU nodes → 2 hosts cleanly.
+        assert _ranks_to_hosts(24, 12) == 2
+
+    def test_single_host(self):
+        # 8 ranks on 12-GPU nodes → 1 host (everything fits).
+        assert _ranks_to_hosts(8, 12) == 1
+
+    def test_round_up_on_overflow(self):
+        # 13 ranks on 12-GPU nodes → 2 hosts. The point: a partial
+        # host still needs to be reserved or rank 12 has nowhere to
+        # land. The opposite (`13 // 12 = 1`) would drop a rank.
+        assert _ranks_to_hosts(13, 12) == 2
+
+    def test_polaris_4_gpu_nodes(self):
+        # Realistic Polaris example: 12 ranks on 4-GPU nodes.
+        assert _ranks_to_hosts(12, 4) == 3
+        assert _ranks_to_hosts(13, 4) == 4
+
+    def test_one_rank(self):
+        # Edge case: 1 rank always needs 1 host regardless of ppn.
+        assert _ranks_to_hosts(1, 12) == 1
+        assert _ranks_to_hosts(1, 1) == 1
+
+
+class TestAutoRetryLogDir:
+    def test_strips_pbs_jobid_suffix(self, tmp_path, monkeypatch):
+        # PBS jobids on Aurora are formatted as `<num>.aurora-pbs-...`;
+        # the log dir name uses only the leading numeric segment so
+        # ls'ing logs/ doesn't get a wall of hostnames.
+        monkeypatch.chdir(tmp_path)
+        result = _auto_retry_log_dir("12345.aurora-pbs-0001.alcf.anl.gov")
+        assert result == tmp_path / "logs" / "failover-12345"
+
+    def test_handles_bare_numeric_jobid(self, tmp_path, monkeypatch):
+        # SLURM-style bare numeric jobids — no `.` to split on.
+        monkeypatch.chdir(tmp_path)
+        result = _auto_retry_log_dir("987654")
+        assert result == tmp_path / "logs" / "failover-987654"
+
+
+class TestResolveAutoRetryAllocation:
+    """The bridge: full PBS nodelist → NodeAllocation with active/spare split."""
+
+    def test_auto_default_uses_full_spare_pool(self, tmp_path):
+        # 10 nodes, 8 active → "auto" = 2 spares
+        nodelist = [f"h{i}" for i in range(10)]
+        alloc, hf = _resolve_auto_retry_allocation(
+            nodelist, 8, "auto", tmp_path
+        )
+        assert len(alloc.active) == 8
+        assert list(alloc.spare) == ["h8", "h9"]
+        assert hf == tmp_path / "active.hostfile"
+        # Persisted on disk so the launcher's hostfile arg picks it up.
+        assert hf.read_text().splitlines() == alloc.active
+
+    def test_none_treated_as_auto(self, tmp_path):
+        # spare_nodes=None (the CLI default when --auto-retry is set
+        # but --spare-nodes is omitted) behaves the same as "auto".
+        nodelist = [f"h{i}" for i in range(5)]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 3, None, tmp_path
+        )
+        assert list(alloc.spare) == ["h3", "h4"]
+
+    def test_explicit_int_caps_spare_pool(self, tmp_path):
+        # 10 nodes, 8 active, --spare-nodes 1 → use only 1 spare,
+        # ignore the other available host. The 10th node sits idle.
+        nodelist = [f"h{i}" for i in range(10)]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 8, 1, tmp_path
+        )
+        assert len(alloc.active) == 8
+        assert list(alloc.spare) == ["h8"]
+
+    def test_explicit_int_exceeds_available_errors(self, tmp_path):
+        # 10 nodes, 8 active → only 2 spare available. Asking for
+        # 5 must error at parse-time-equivalent (SystemExit) rather
+        # than silently using 2.
+        nodelist = [f"h{i}" for i in range(10)]
+        with pytest.raises(SystemExit, match="spare nodes"):
+            _resolve_auto_retry_allocation(nodelist, 8, 5, tmp_path)
+
+    def test_nproc_exceeds_allocation_errors(self, tmp_path):
+        # 3 nodes, 8 active requested → impossible.
+        nodelist = [f"h{i}" for i in range(3)]
+        with pytest.raises(SystemExit, match="active hosts"):
+            _resolve_auto_retry_allocation(nodelist, 8, "auto", tmp_path)
+
+    def test_single_host_no_spares_succeeds(self, tmp_path):
+        # 1 node, 1 active, 0 spare. Legal — the loop will just
+        # surface EXHAUSTED on the first failure. We don't refuse
+        # at allocation time (user might be debugging on a 1-node job).
+        nodelist = ["h0"]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 1, "auto", tmp_path
+        )
+        assert alloc.active == ["h0"]
+        assert list(alloc.spare) == []
+        assert not alloc.has_spares
+
+    def test_explicit_zero_spares(self, tmp_path):
+        # --spare-nodes 0 explicitly: caller wants the failover loop
+        # WITHOUT a swap pool. Useful for testing the classifier
+        # paths in isolation. EXHAUSTED on the first failure.
+        nodelist = [f"h{i}" for i in range(5)]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 3, 0, tmp_path
+        )
+        assert len(alloc.active) == 3
+        assert list(alloc.spare) == []
+
+    def test_bad_nodes_file_initialized_empty(self, tmp_path):
+        nodelist = [f"h{i}" for i in range(5)]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 3, "auto", tmp_path
+        )
+        assert alloc.bad_nodes_path == tmp_path / "bad_nodes.txt"
+        assert alloc.bad_nodes_path.read_text() == ""
+
+    def test_idle_nodes_beyond_active_plus_spare_truncated(self, tmp_path):
+        # 20 nodes, 8 active, --spare-nodes 2 → only 10 hosts used.
+        # The other 10 sit idle. Mirrors failover_init's truncation.
+        nodelist = [f"h{i}" for i in range(20)]
+        alloc, _ = _resolve_auto_retry_allocation(
+            nodelist, 8, 2, tmp_path
+        )
+        assert len(alloc.active) == 8
+        assert list(alloc.spare) == ["h8", "h9"]
+        # h10..h19 are NOT in the allocation.

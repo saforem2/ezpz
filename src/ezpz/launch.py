@@ -634,6 +634,19 @@ def build_executable(
     return executable
 
 
+def _ranks_to_hosts(nranks: int, ranks_per_host: int) -> int:
+    """Ceiling-divide ranks → hosts.
+
+    Example: 13 ranks on 12-GPU nodes → 2 hosts (not 1). We need
+    enough hosts to fit every rank, not "as many as fit cleanly."
+
+    Both args must be positive; the auto-retry wrapper validates
+    at call time. Extracted so the auto-retry resolver and tests
+    share a single canonical formula.
+    """
+    return (nranks + ranks_per_host - 1) // ranks_per_host
+
+
 def _resolve_auto_retry_allocation(
     full_nodelist: Sequence[str],
     nproc_active_hosts: int,
@@ -772,8 +785,7 @@ def launch(
                 "active job?). Cannot split into active + spare."
             )
         gpus_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
-        # Round-up division: 12 ranks on 4-gpu nodes → 3 nodes.
-        nhosts_active = (ngpus + gpus_per_node - 1) // gpus_per_node
+        nhosts_active = _ranks_to_hosts(ngpus, gpus_per_node)
         autoretry_log_dir = _auto_retry_log_dir(jobid)
         autoretry_allocation, autoretry_hostfile = (
             _resolve_auto_retry_allocation(
