@@ -634,6 +634,47 @@ def build_executable(
     return executable
 
 
+def _resolve_auto_retry_node_pool(
+    hostfile: Optional[Path],
+    scheduler_nodelist: Optional[Sequence[str]],
+) -> list[str]:
+    """Pick the node pool for ``--auto-retry`` to split into active + spare.
+
+    Priority:
+
+    1. ``hostfile`` if the user passed one — they might have pre-
+       filtered the scheduler's list (e.g. dropped known-bad nodes
+       from a previous job) and silently switching back would undo
+       that work.
+    2. ``scheduler_nodelist`` from PBS/SLURM otherwise.
+
+    Raises :class:`SystemExit` if neither source yields a non-empty
+    list — auto-retry can't split a pool of zero hosts.
+    """
+    if hostfile is not None:
+        try:
+            lines = hostfile.read_text().splitlines()
+        except OSError as exc:
+            raise SystemExit(
+                f"--auto-retry: failed to read --hostfile {hostfile}: "
+                f"{exc}"
+            ) from exc
+        pool = [ln.strip() for ln in lines if ln.strip()]
+        if not pool:
+            raise SystemExit(
+                f"--auto-retry: --hostfile {hostfile} is empty. "
+                "Cannot split into active + spare."
+            )
+        return pool
+    if scheduler_nodelist:
+        return list(scheduler_nodelist)
+    raise SystemExit(
+        "--auto-retry: failed to read the PBS nodelist (no active "
+        "job?). Pass --hostfile explicitly or run inside a PBS/SLURM "
+        "job. Cannot split into active + spare."
+    )
+
+
 def _ranks_to_hosts(nranks: int, ranks_per_host: int) -> int:
     """Ceiling-divide ranks → hosts.
 
@@ -779,24 +820,26 @@ def launch(
                 "explicitly. We need to know the training rank count "
                 "to split the PBS allocation into active + spare."
             )
-        if nodelist is None or not nodelist:
-            raise SystemExit(
-                "--auto-retry: failed to read the PBS nodelist (no "
-                "active job?). Cannot split into active + spare."
-            )
+        # Source the candidate node pool. Explicit --hostfile beats
+        # the scheduler nodelist — see _resolve_auto_retry_node_pool.
+        autoretry_pool = _resolve_auto_retry_node_pool(
+            selected_hostfile, nodelist
+        )
         gpus_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
         nhosts_active = _ranks_to_hosts(ngpus, gpus_per_node)
         autoretry_log_dir = _auto_retry_log_dir(jobid)
         autoretry_allocation, autoretry_hostfile = (
             _resolve_auto_retry_allocation(
-                nodelist,
+                autoretry_pool,
                 nhosts_active,
                 spare_nodes,
                 autoretry_log_dir,
             )
         )
         # Override: subsequent build_executable + topology inference
-        # see the smaller active hostfile, not the full PBS aux file.
+        # see the smaller active hostfile, not the full PBS aux file
+        # (or the user-supplied --hostfile — both have been split into
+        # active + spare and only the active subset goes to the launcher).
         selected_hostfile = autoretry_hostfile
         nhosts = nhosts_active
 

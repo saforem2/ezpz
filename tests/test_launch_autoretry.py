@@ -26,6 +26,7 @@ from ezpz.launch import (
     _auto_retry_log_dir,
     _ranks_to_hosts,
     _resolve_auto_retry_allocation,
+    _resolve_auto_retry_node_pool,
     parse_args,
 )
 from ezpz.launch_autoretry import (
@@ -852,6 +853,65 @@ class TestRanksToHosts:
         # Edge case: 1 rank always needs 1 host regardless of ppn.
         assert _ranks_to_hosts(1, 12) == 1
         assert _ranks_to_hosts(1, 1) == 1
+
+
+class TestResolveAutoRetryNodePool:
+    """--hostfile beats scheduler nodelist; either-empty errors."""
+
+    def test_hostfile_takes_priority_over_scheduler_nodelist(
+        self, tmp_path
+    ):
+        # User pre-filtered their nodelist (e.g. dropped known-bad
+        # nodes from a previous job). Silently switching to the
+        # scheduler's larger list would undo that work.
+        hf = tmp_path / "filtered.hostfile"
+        hf.write_text("good1\ngood2\ngood3\n")
+        scheduler = ["bad1", "good1", "bad2", "good2", "bad3", "good3"]
+        pool = _resolve_auto_retry_node_pool(hf, scheduler)
+        assert pool == ["good1", "good2", "good3"]
+
+    def test_hostfile_strips_whitespace_and_blank_lines(self, tmp_path):
+        hf = tmp_path / "messy.hostfile"
+        # PBS_NODEFILE-style files can have trailing whitespace and
+        # an EOF newline; we tolerate both rather than splitting and
+        # producing empty hostnames.
+        hf.write_text("  host1  \n\nhost2\n   \nhost3\n\n")
+        assert _resolve_auto_retry_node_pool(hf, None) == [
+            "host1",
+            "host2",
+            "host3",
+        ]
+
+    def test_falls_back_to_scheduler_nodelist_when_no_hostfile(self):
+        pool = _resolve_auto_retry_node_pool(None, ["h1", "h2", "h3"])
+        assert pool == ["h1", "h2", "h3"]
+
+    def test_empty_hostfile_errors(self, tmp_path):
+        hf = tmp_path / "empty.hostfile"
+        hf.write_text("")
+        with pytest.raises(SystemExit, match="empty"):
+            _resolve_auto_retry_node_pool(hf, ["h1", "h2"])
+
+    def test_hostfile_with_only_whitespace_errors(self, tmp_path):
+        # `\n\n   \n\n` is "empty" by the same logic as a truly
+        # empty file — all candidate lines were blank.
+        hf = tmp_path / "blank.hostfile"
+        hf.write_text("\n\n   \n\n")
+        with pytest.raises(SystemExit, match="empty"):
+            _resolve_auto_retry_node_pool(hf, ["h1"])
+
+    def test_missing_hostfile_errors(self, tmp_path):
+        hf = tmp_path / "nonexistent.hostfile"
+        with pytest.raises(SystemExit, match="failed to read"):
+            _resolve_auto_retry_node_pool(hf, ["h1"])
+
+    def test_no_hostfile_no_scheduler_nodelist_errors(self):
+        with pytest.raises(SystemExit, match="failed to read"):
+            _resolve_auto_retry_node_pool(None, None)
+
+    def test_no_hostfile_empty_scheduler_nodelist_errors(self):
+        with pytest.raises(SystemExit, match="failed to read"):
+            _resolve_auto_retry_node_pool(None, [])
 
 
 class TestAutoRetryLogDir:
