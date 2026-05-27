@@ -85,6 +85,15 @@ allocated to your job.
         --timeout IDLE_TIMEOUT_S
                                 Idle-output watchdog timeout in seconds. Off by default.
         --retries RETRIES     Re-execute on non-zero exit, up to N times. Default: 0.
+        --auto-retry          Unbounded bad-node failover loop. Mutually
+                                exclusive with --retries. Requires explicit --nproc.
+        --spare-nodes SPARE_NODES
+                                Spare-node pool for --auto-retry. "auto" (default)
+                                derives from total_pbs_nodes - ceil($nproc / $ppn);
+                                pass an int for an explicit cap.
+        --max-failover-retries MAX_FAILOVER_RETRIES
+                                Optional upper bound on --auto-retry attempts.
+                                Default: unbounded (see termination matrix).
         ```
 
 ## Idle-output watchdog (`--timeout`)
@@ -140,6 +149,248 @@ A clean exit on any attempt short-circuits the loop and returns 0.
 If every attempt fails, the final attempt's exit code is returned.
 Combine with `--timeout` to convert silent hangs into retryable
 failures.
+
+## Auto-retry on bad-node failure (`--auto-retry`)
+
+`--auto-retry` engages the failover loop. On every non-zero exit,
+ezpz scrapes the log for known bad-node signatures (Aurora PALS
+shepherd-9, gloo TCP peer-closed), swaps each named host out for a
+spare from the rest of the PBS allocation, and re-runs the command.
+Unlike `--retries N`, the loop is *unbounded* by default — it
+continues until one of the conditions in the **termination matrix**
+below fires.
+
+```bash
+# 50 nodes allocated by PBS on Aurora (12 ranks/node = 600 GPUs).
+# Train on 512 ranks (= ceil(512/12) = 43 hosts), reserve the
+# remaining 7 hosts as spares. Loop until success / walltime /
+# spare exhaustion.
+ezpz launch --auto-retry --np 512 -- python3 -m ezpz.examples.test
+```
+
+`--auto-retry` is **mutually exclusive** with `--retries`. They model
+different things: `--retries N` is a bounded *process-level* retry
+that re-launches the same command on the same nodes. `--auto-retry`
+is an unbounded *node-level* failover that swaps bad hosts out
+between attempts.
+
+### Decision flow at a glance
+
+```mermaid
+flowchart TD
+    Start(["ezpz launch --auto-retry --np N"]) --> Validate{"nproc set<br/>explicitly?"}
+    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nproc"]
+    Validate -->|yes| Split["Split PBS nodelist<br/>into active + spare,<br/>write active.hostfile"]
+    Split --> Attempt["Run attempt i<br/>tee to attempt-i.log,<br/>watchdog armed<br/>(default 1800s)"]
+    Attempt -->|"SIGINT<br/>(Ctrl-C)"| Interrupted(["FAILOVER STOP:<br/>interrupted<br/>return 130"])
+    Attempt --> GotRC["rc = child exit<br/>124 if watchdog fired"]
+    GotRC --> Strip["Strip ANSI codes,<br/>strip innocent<br/>rank-cascade lines"]
+    Strip --> CheckSuccess{"rc==0 AND<br/>no crash patterns<br/>AND inner_rc==0?"}
+    CheckSuccess -->|yes| Success(["FAILOVER STOP:<br/>success<br/>return 0"])
+    CheckSuccess -->|no| CheckWalltime{"rc==143 AND<br/>no crash patterns?"}
+    CheckWalltime -->|yes| Walltime(["FAILOVER STOP:<br/>walltime<br/>return 143"])
+    CheckWalltime -->|no| CheckStuck{"prior AND current<br/>attempt both have<br/>0 step= markers?"}
+    CheckStuck -->|yes| Stuck(["FAILOVER STOP:<br/>stuck_pre_training<br/>return rc"])
+    CheckStuck -->|no| CheckSpares{"spares left?"}
+    CheckSpares -->|no| Exhausted(["FAILOVER STOP:<br/>exhausted<br/>return rc"])
+    CheckSpares -->|yes| CheckScraper{"scraper found<br/>named host(s)?"}
+    CheckScraper -->|yes| Swap["Swap bad host(s)<br/>for spare(s),<br/>rewrite active.hostfile"]
+    CheckScraper -->|no| Swap
+    Swap --> Backoff["Backoff sleep:<br/>5/10/20/40/60s"]
+    Backoff --> Attempt
+```
+
+The single `Swap` node above is `swap_in` when the scraper named
+hosts and `swap_one_blind` when it didn't — see the
+[empty-`swap_in` fallback](#termination-matrix) note for the
+edge case where `swap_in` finds no live hosts to replace and
+falls through to a blind rotation.
+
+### Required: explicit `--nproc`
+
+`--auto-retry` needs to know how many ranks are training so it can
+split the PBS allocation into active + spare. We **do not guess**
+the active-host count — pass `--nproc N` (or `-n N` / `--np N`)
+explicitly. The CLI errors out at parse time otherwise:
+
+```text
+$ ezpz launch --auto-retry -- python3 train.py
+--auto-retry requires --nproc (-n/--np) to be set explicitly. ...
+```
+
+### Spare-node policy (`--spare-nodes`)
+
+By default (`--spare-nodes auto`), the spare pool is
+`total_pbs_nodes - ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
+`--np`) flag counts *ranks*, not nodes; we ceiling-divide by the
+ranks-per-node (`--ppn` or the cluster's `get_gpus_per_node()`) to
+get the number of *hosts* actually needed for training. Any
+allocated nodes beyond that go into the spare pool.
+
+So if PBS gave you 50 nodes on Aurora (12 GPUs/node) and you ask
+for 512 training ranks, the active set is `ceil(512/12) = 43`
+hosts and the spare pool is `50 - 43 = 7`. Pass `--spare-nodes N`
+to cap the pool explicitly (useful when you'd rather not use the
+full leftover slice):
+
+```bash
+# Cap the spare pool at 5, regardless of how many nodes PBS gave us.
+ezpz launch --auto-retry --np 512 --spare-nodes 5 -- ...
+```
+
+### Termination matrix
+
+Every termination logs a single `FAILOVER STOP: <reason>` line so
+post-mortem `grep` is reliable.
+
+| # | Condition                                              | Result                |
+|---|--------------------------------------------------------|-----------------------|
+| 1 | exit 0 (clean inner trailer, no crash patterns)        | **SUCCESS** → return 0|
+| 2 | exit 143 (walltime SIGTERM), no crash patterns         | **WALLTIME** → return rc|
+| 3 | exit 143 *with* crash patterns in log                  | bad-node retry (real failure raced the walltime kill) |
+| 4 | exit 124 (idle-output watchdog tripped)                | bad-node retry (silent hang → blind rotation) |
+| 5 | any other non-zero, scraper found named host(s)        | **swap_in** named → retry |
+| 6 | any other non-zero, scraper found nothing              | **swap_one_blind** → retry |
+| 7 | two consecutive attempts with zero `step=` markers     | **STUCK_PRE_TRAINING** → return rc |
+| 8 | bad-node verdict but no spares left                    | **EXHAUSTED** → return rc |
+| 9 | SIGINT (Ctrl-C)                                        | **INTERRUPTED** → return 130 |
+
+**Empty-`swap_in` fallback.** Row 5's `swap_in` skips any host that
+isn't currently in the active set (the named host was already
+replaced on a prior attempt, the scraper picked up stale lines from
+an older log, etc.). If `swap_in` ends up swapping zero hosts, the
+loop falls through to row 6's `swap_one_blind` so it still makes
+forward progress instead of looping on the same bad set.
+
+The `step=` marker guard (#7) replaces a numeric "max consecutive
+blind rotations" cap. The intent is to catch broken configs / missing
+datasets / pre-training-loop bugs before they burn the entire spare
+pool — if two attempts in a row die before `History.update` prints
+its first `step=N` line, no amount of node-swapping will help.
+
+### Worked example — real Aurora `UR_RESULT_ERROR_OUT_OF_RESOURCES`
+
+Here's an excerpt from a real Aurora torchtitan job that the
+classifier handles correctly. The relevant signals from
+`attempt-1.log`:
+
+```
+[2026-05-12 08:04:23][I][components/metrics:526:log] step:  1  loss: 12.94587  ...
+[2026-05-12 08:04:30][I][components/metrics:526:log] step:  2  loss: 12.90856  ...
+... (16 more clean training steps) ...
+[2026-05-12 08:06:24][I][components/metrics:526:log] step: 18  loss: 10.27772  ...
+[rank7]: RuntimeError: level_zero backend failed with error: 40 (UR_RESULT_ERROR_OUT_OF_RESOURCES)
+x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov: rank 7 exited with code 1
+x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov: rank 14 died from signal 15
+[ezpz/launch] Execution finished with 143.
+```
+
+What the classifier does step by step:
+
+1. `rc=143` from the shell (mpiexec teardown after the GPU OOM).
+2. Strip ANSI codes from the log.
+3. Strip innocent rank-cascade lines: `rank 14 died from signal 15`
+   is a **downstream cascade** from the primary kill on
+   `x4610c4s3b0n0`, not a bad-node indicator on `x4610c4s5b0n0`.
+   This line is excluded *before* the crash-pattern match runs
+   (job 8466848 postmortem — tagging cascade victims as bad nodes
+   burns spares for nothing).
+4. Run the crash-pattern grep on the stripped text:
+   `UR_RESULT_ERROR_OUT_OF_RESOURCES` matches → there IS a real
+   hardware failure in the log.
+5. `rc==143 AND crash_patterns` → **bad-node retry path**, not
+   `WALLTIME`. Without the strip we'd still get to bad-node retry
+   (the cascade lines also contain `died from signal`), but we'd
+   reach it via the *wrong* condition — and we'd be at risk of
+   tagging `x4610c4s5b0n0` as a bad node when only
+   `x4610c4s3b0n0` is the actual culprit.
+6. Scraper picks up the hostname from the
+   `x4610c4s3b0n0.hsn...: rank 7 exited with code 1` line (or, if
+   the scraper missed it because it's not in the explicit pattern
+   set, falls through to `swap_one_blind`).
+7. `bad_nodes.txt` gets `x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov`.
+   `active.hostfile` is rewritten with that host replaced by the
+   next spare.
+8. Backoff 5 seconds, run `attempt-2.log`. The retry uses the
+   updated active set; the bad GPU is no longer in the training
+   pool.
+
+This exact log shape is pinned as a regression test in both code
+paths:
+[`test_crash_patterns_real_ur_oom_with_cascade_regression`](https://github.com/saforem2/ezpz/blob/main/tests/test_launch_autoretry.py)
+(Python) and
+[`test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade`](https://github.com/saforem2/ezpz/blob/main/tests/test_failover_lib.sh)
+(bash).
+
+### Reading the postmortem log
+
+After a run finishes (success, walltime, or exhausted), the
+`logs/failover-<jobid>/` directory is the postmortem entry point.
+A few one-liners:
+
+```bash
+# What was the final verdict?
+grep "FAILOVER STOP" logs/failover-*/attempt-*.log
+
+# Which nodes were swapped out across all attempts?
+cat logs/failover-*/bad_nodes.txt
+
+# Which step did each attempt reach before dying?
+for f in logs/failover-*/attempt-*.log; do
+  echo "=== $f ==="
+  grep -oE "step:[[:space:]]+[0-9]+" "$f" | tail -1
+done
+
+# Was the failure a real hardware death or just a walltime hit?
+grep -E "OutOfMemoryError|UR_RESULT_ERROR|gloo.*Connection closed|shepherd died" \
+  logs/failover-*/attempt-*.log
+```
+
+### Default idle-output watchdog
+
+When `--auto-retry` is set, `--timeout` defaults to **1800 seconds**
+(30 minutes) instead of being off. This matches the
+`FAILOVER_IDLE_TIMEOUT` default in `src/ezpz/bin/failover.sh` and
+prevents silent xccl hangs from burning the full PBS walltime
+before the loop can intervene. Pass `--timeout 0` to disable, or
+`--timeout N` to override.
+
+### Optional cap (`--max-failover-retries`)
+
+`--max-failover-retries N` is an additional belt-and-suspenders
+cap. Default is unbounded — terminate only via the matrix above.
+Useful for short jobs where you'd rather give up than retry 100
+times.
+
+### Files written
+
+Per-job, in `$(pwd)/logs/failover-<jobid>/`:
+
+- `active.hostfile` — the *current* active node set, mutated in
+  place as nodes are swapped. Always reflects what the next attempt
+  will run on.
+- `bad_nodes.txt` — every host that's been swapped out (named
+  swap_in *and* blind rotations). Append-only.
+- `attempt-N.log` — combined stdout+stderr of attempt N.
+
+> **Note on `active.hostfile` mutation.** The file is rewritten in
+> place between attempts. If you `cat` it from a second shell
+> mid-run, you'll see the *current* active set, not the original
+> PBS allocation. The launcher reads it fresh at each attempt — no
+> re-launch of `ezpz launch` itself is needed for the new contents
+> to take effect, since the launcher subprocess re-resolves the
+> hostfile path's contents per spawn. To inspect the *original*
+> PBS allocation, look at `$PBS_NODEFILE` (unmodified) instead.
+
+### Relationship to `src/ezpz/bin/failover.sh`
+
+`failover.sh` is the bash equivalent for users who can't put
+`ezpz launch` at the top of their job script — for example,
+`qsub`'ing a wrapper that already invokes `python` directly. The
+scrape source is identical (`ezpz.failover.scrape_bad_nodes`); the
+retry/swap mechanics are independent re-implementations because the
+classifier is much easier to test in Python. Prefer `--auto-retry`
+when you can, fall back to sourcing the bash lib when you can't.
 
 ## Python interpreter resolution
 

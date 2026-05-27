@@ -33,6 +33,21 @@ def _non_negative_int(value: str) -> int:
     return as_int
 
 
+def _spare_nodes_value(value: str) -> "int | str":
+    """argparse type for ``--spare-nodes``.
+
+    Accepts either the literal string ``"auto"`` (derive from
+    ``total_pbs_nodes - ceil($nproc / $ppn)``) or a non-negative
+    integer. Returning
+    a union here keeps the auto/explicit distinction visible to the
+    downstream resolver — `launch.py` checks for the string before
+    treating the value as a count.
+    """
+    if value == "auto":
+        return "auto"
+    return _non_negative_int(value)
+
+
 def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
@@ -374,9 +389,12 @@ def build_launch_parser(
             "SIGKILL after a 10s grace period) and exit with code 124. "
             "NOT a total walltime — the process can run indefinitely "
             "as long as it keeps emitting output on either stream. "
-            "Off by default; pass 0 explicitly to disable. Useful for "
-            "catching collective hangs (e.g. xccl silent deadlock on "
-            "XPU) that would otherwise consume the full PBS walltime."
+            "Off by default, BUT defaults to 1800 (30 min) when "
+            "--auto-retry is set (matches FAILOVER_IDLE_TIMEOUT in "
+            "src/ezpz/bin/failover.sh — silent xccl hangs otherwise "
+            "burn the full PBS walltime). Pass 0 explicitly to disable "
+            "even under --auto-retry. Useful for catching collective "
+            "hangs (e.g. xccl silent deadlock on XPU)."
         ),
     )
     parser.add_argument(
@@ -389,6 +407,49 @@ def build_launch_parser(
             "exit (including a watchdog kill, exit 124). Applies "
             "exponential backoff between attempts (5s, 10s, 20s, ..., "
             "capped at 60s). Default: 0 (no retry)."
+        ),
+    )
+    parser.add_argument(
+        "--auto-retry",
+        action="store_true",
+        dest="auto_retry",
+        help=(
+            "Run with automatic bad-node failover. On every non-zero "
+            "exit (including watchdog kill, exit 124, and walltime-"
+            "racing crashes that surface as 143), scrape the log for "
+            "known bad-node signatures (Aurora PALS shepherd-9, gloo "
+            "peer-closed) and either swap the named hosts for spares "
+            "or rotate one spare blindly. Loops until success, a real "
+            "walltime hit, spare exhaustion, two consecutive attempts "
+            "with zero training progress, or SIGINT. "
+            "Requires --nproc to be set explicitly. "
+            "Mutually exclusive with --retries."
+        ),
+    )
+    parser.add_argument(
+        "--spare-nodes",
+        type=_spare_nodes_value,
+        default=None,
+        dest="spare_nodes",
+        help=(
+            "Number of spare nodes to reserve for --auto-retry "
+            "swap-ins. Pass 'auto' (the default when --auto-retry is "
+            "set) to derive from total_pbs_nodes - ceil($nproc / $ppn) "
+            "(ranks → hosts, since --nproc counts ranks). Pass an "
+            "integer for an explicit count. Ignored when --auto-retry "
+            "is not set."
+        ),
+    )
+    parser.add_argument(
+        "--max-failover-retries",
+        type=_non_negative_int,
+        default=None,
+        dest="max_failover_retries",
+        help=(
+            "Upper bound on --auto-retry attempts. Default: unbounded "
+            "— termination is governed by the matrix in "
+            "docs/cli/launch/index.md (success, walltime, exhaustion, "
+            "stuck-pre-training, or SIGINT)."
         ),
     )
     if include_command:
