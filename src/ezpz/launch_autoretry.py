@@ -110,17 +110,18 @@ _PROGRESS_MARKER_RX = re.compile(r"\bstep=\d+", re.MULTILINE)
 
 
 class TerminationReason(Enum):
-    """Outcomes of :func:`classify_attempt`.
+    """Outcomes that drive :func:`run_with_auto_retry`'s next step.
 
     Each value is the verb after ``FAILOVER STOP:`` in the postmortem
     log line, so grep'ing the log for ``FAILOVER STOP`` always lands
     on the final classifier verdict.
 
-    The first four (SUCCESS, WALLTIME, INTERRUPTED, plus the explicit
-    EXHAUSTED) are terminal — :func:`run_with_auto_retry` returns
-    immediately. The two BAD_NODE values trigger a swap-and-retry.
-    STUCK_PRE_TRAINING is the "two attempts with zero training
-    steps" guard; that's also terminal.
+    SUCCESS / WALLTIME / STUCK_PRE_TRAINING / EXHAUSTED are terminal:
+    :func:`run_with_auto_retry` returns immediately. The two BAD_NODE
+    values trigger a swap-and-retry. INTERRUPTED is produced by the
+    loop's SIGINT handler — :func:`classify_attempt` never returns it,
+    since the classifier never sees the interrupt path (we re-raise
+    KeyboardInterrupt before reaching the classifier).
     """
 
     SUCCESS = "success"
@@ -130,6 +131,20 @@ class TerminationReason(Enum):
     STUCK_PRE_TRAINING = "stuck_pre_training"
     EXHAUSTED = "exhausted"
     INTERRUPTED = "interrupted"
+
+
+@dataclass(frozen=True)
+class ClassificationResult:
+    """What the classifier decided + the progress flag for next-iter use.
+
+    Returning both in one struct lets the loop avoid a second read
+    of the same log to recompute ``has_progress`` (the previous
+    implementation re-read the log right after the classifier had
+    already parsed it once).
+    """
+
+    reason: TerminationReason
+    has_progress: bool
 
 
 @dataclass
@@ -357,11 +372,13 @@ def classify_attempt(
     *,
     prior_attempt_had_progress: Optional[bool] = None,
     has_spares: bool = True,
-) -> TerminationReason:
+) -> ClassificationResult:
     """Decide what the auto-retry loop should do after an attempt.
 
-    Pure function — no side effects, no I/O beyond reading the log.
-    The full termination matrix from PR #3's handoff doc lives here:
+    Pure function — no side effects, single log read. Returns both
+    the termination reason and the ``has_progress`` flag so the loop
+    can thread the latter through to the next call without re-reading
+    the log. The full termination matrix from PR #3's handoff doc:
 
     | rc       | log signals                                 | result               |
     |----------|---------------------------------------------|----------------------|
@@ -382,14 +399,18 @@ def classify_attempt(
     otherwise burn the entire spare pool. The current attempt's
     progress status is checked against ``prior_attempt_had_progress``;
     the caller is responsible for tracking the prior value across
-    iterations.
+    iterations (use the ``has_progress`` field of the returned
+    :class:`ClassificationResult`).
 
-    Caller still owns the SIGINT path — see :func:`run_with_auto_retry`.
+    INTERRUPTED is produced by the loop itself in the SIGINT handler,
+    not here — the classifier never sees the interrupt path because
+    KeyboardInterrupt is re-raised before we reach it.
     """
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
 
     inner_rc = _extract_inner_rc(log_text)
     crash = _has_crash_patterns(log_text)
+    has_progress = _has_progress_markers(log_text)
     # Effective rc: trust the inner trailer over a clean shell exit
     # when the wrapper lied (mpiexec teardown raced a SIGTERM, etc.)
     effective_rc = shell_rc
@@ -401,43 +422,44 @@ def classify_attempt(
         # between named vs blind.
         effective_rc = 1
 
+    def _result(reason: TerminationReason) -> ClassificationResult:
+        return ClassificationResult(reason=reason, has_progress=has_progress)
+
     # Success: shell exit 0, no contrary inner_rc, no crash patterns.
     if effective_rc == 0:
-        return TerminationReason.SUCCESS
+        return _result(TerminationReason.SUCCESS)
 
     # Walltime guard. Real walltime: no point swapping nodes.
     # Walltime races: a true bad-node failure can land here when
     # mpiexec teardown races the wallclock kill. Use the crash
     # patterns to disambiguate.
     if effective_rc == _WALLTIME_RC and not crash:
-        return TerminationReason.WALLTIME
+        return _result(TerminationReason.WALLTIME)
 
     # The progress guard applies BEFORE we decide which swap path to
     # take — there's no point swapping nodes if the run is dying
     # before training starts. Note: we only check this on actual
     # failure paths; success already returned above.
-    if prior_attempt_had_progress is False and not _has_progress_markers(
-        log_text
-    ):
-        return TerminationReason.STUCK_PRE_TRAINING
+    if prior_attempt_had_progress is False and not has_progress:
+        return _result(TerminationReason.STUCK_PRE_TRAINING)
 
     # Watchdog kill: launch.py couldn't see output for `idle_timeout_s`.
     # The hang IS the silence, so the scraper rarely finds anything
     # — blind-rotate a spare.
     if effective_rc == _WATCHDOG_RC:
         if not has_spares:
-            return TerminationReason.EXHAUSTED
-        return TerminationReason.BAD_NODE_BLIND
+            return _result(TerminationReason.EXHAUSTED)
+        return _result(TerminationReason.BAD_NODE_BLIND)
 
     # General failure path. Scraper-named hosts win over blind.
     if scraped_bad_nodes:
         if not has_spares:
-            return TerminationReason.EXHAUSTED
-        return TerminationReason.BAD_NODE_KNOWN
+            return _result(TerminationReason.EXHAUSTED)
+        return _result(TerminationReason.BAD_NODE_KNOWN)
 
     if not has_spares:
-        return TerminationReason.EXHAUSTED
-    return TerminationReason.BAD_NODE_BLIND
+        return _result(TerminationReason.EXHAUSTED)
+    return _result(TerminationReason.BAD_NODE_BLIND)
 
 
 def _run_attempt_with_tee(
@@ -672,22 +694,17 @@ def run_with_auto_retry(
             return 128 + signal.SIGINT
 
         scraped = scrape_fn(log_path)
-        reason = classify_attempt(
+        result = classify_attempt(
             last_rc,
             log_path,
             scraped,
             prior_attempt_had_progress=prior_attempt_had_progress,
             has_spares=allocation.has_spares,
         )
-
-        # Track progress for next iteration. Read once more rather
-        # than threading the result out of classify_attempt — keeps
-        # the classifier signature clean.
-        try:
-            log_text = log_path.read_text(errors="replace")
-        except FileNotFoundError:
-            log_text = ""
-        prior_attempt_had_progress = _has_progress_markers(log_text)
+        reason = result.reason
+        # Thread the progress flag through to the next iteration —
+        # classifier already parsed the log, no need to re-read.
+        prior_attempt_had_progress = result.has_progress
 
         if reason is TerminationReason.SUCCESS:
             logger.info(

@@ -31,6 +31,7 @@ from ezpz.launch import (
 )
 from ezpz.launch_autoretry import (
     AutoRetryConfig,
+    ClassificationResult,
     NodeAllocation,
     TerminationReason,
     _backoff_for_attempt,
@@ -217,12 +218,12 @@ class TestClassifyAttempt:
 
     def test_success_clean_exit(self, tmp_path):
         log = _write(tmp_path / "log", "Execution finished with 0\n")
-        assert classify_attempt(0, log, []) is TerminationReason.SUCCESS
+        assert classify_attempt(0, log, []).reason is TerminationReason.SUCCESS
 
     def test_walltime_no_crash_patterns(self, tmp_path):
         log = _write(tmp_path / "log", "Execution finished with 0\n")
         # rc=143 (walltime SIGTERM), no crash signatures in the log
-        assert classify_attempt(143, log, []) is TerminationReason.WALLTIME
+        assert classify_attempt(143, log, []).reason is TerminationReason.WALLTIME
 
     def test_walltime_with_crash_patterns_is_bad_node(self, tmp_path):
         # Real bad-node failure that races the walltime kill: we DO
@@ -232,7 +233,7 @@ class TestClassifyAttempt:
             "Execution finished with 0\nOutOfMemoryError on rank 5\n",
         )
         assert (
-            classify_attempt(143, log, [])
+            classify_attempt(143, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
@@ -251,7 +252,7 @@ class TestClassifyAttempt:
             "rank 1 died from signal 15\n"
             "rank 2 died from signal 15\n",
         )
-        assert classify_attempt(143, log, []) is TerminationReason.WALLTIME
+        assert classify_attempt(143, log, []).reason is TerminationReason.WALLTIME
 
     def test_walltime_with_cascade_and_real_death_is_bad_node(
         self, tmp_path
@@ -265,14 +266,14 @@ class TestClassifyAttempt:
             "rank 1 died from signal 11\n",
         )
         assert (
-            classify_attempt(143, log, [])
+            classify_attempt(143, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
     def test_watchdog_124_triggers_blind(self, tmp_path):
         log = _write(tmp_path / "log", "starting...\n")
         assert (
-            classify_attempt(124, log, [])
+            classify_attempt(124, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
@@ -282,7 +283,7 @@ class TestClassifyAttempt:
             "Execution finished with 1\nx4502: shepherd died from signal 9\n",
         )
         assert (
-            classify_attempt(1, log, ["x4502.hsn.cm.aurora.alcf.anl.gov"])
+            classify_attempt(1, log, ["x4502.hsn.cm.aurora.alcf.anl.gov"]).reason
             is TerminationReason.BAD_NODE_KNOWN
         )
 
@@ -291,7 +292,7 @@ class TestClassifyAttempt:
             tmp_path / "log", "Execution finished with 1\nrandom error\n"
         )
         assert (
-            classify_attempt(1, log, [])
+            classify_attempt(1, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
@@ -304,7 +305,7 @@ class TestClassifyAttempt:
         assert (
             classify_attempt(
                 1, log, [], prior_attempt_had_progress=False
-            )
+            ).reason
             is TerminationReason.STUCK_PRE_TRAINING
         )
 
@@ -319,28 +320,28 @@ class TestClassifyAttempt:
         assert (
             classify_attempt(
                 1, log, ["x4502"], prior_attempt_had_progress=False
-            )
+            ).reason
             is TerminationReason.BAD_NODE_KNOWN
         )
 
     def test_exhausted_when_no_spares_left_known(self, tmp_path):
         log = _write(tmp_path / "log", "Execution finished with 1\n")
         assert (
-            classify_attempt(1, log, ["host"], has_spares=False)
+            classify_attempt(1, log, ["host"], has_spares=False).reason
             is TerminationReason.EXHAUSTED
         )
 
     def test_exhausted_when_no_spares_left_blind(self, tmp_path):
         log = _write(tmp_path / "log", "Execution finished with 1\n")
         assert (
-            classify_attempt(1, log, [], has_spares=False)
+            classify_attempt(1, log, [], has_spares=False).reason
             is TerminationReason.EXHAUSTED
         )
 
     def test_exhausted_when_no_spares_left_watchdog(self, tmp_path):
         log = _write(tmp_path / "log", "hang\n")
         assert (
-            classify_attempt(124, log, [], has_spares=False)
+            classify_attempt(124, log, [], has_spares=False).reason
             is TerminationReason.EXHAUSTED
         )
 
@@ -351,7 +352,7 @@ class TestClassifyAttempt:
         # lied. Treat as failure.
         log = _write(tmp_path / "log", "Execution finished with 7\n")
         assert (
-            classify_attempt(0, log, [])
+            classify_attempt(0, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
@@ -363,7 +364,7 @@ class TestClassifyAttempt:
             "training...\nUR_RESULT_ERROR_OUT_OF_RESOURCES on rank 4\n",
         )
         assert (
-            classify_attempt(0, log, [])
+            classify_attempt(0, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
         )
 
@@ -374,7 +375,28 @@ class TestClassifyAttempt:
         log = tmp_path / "nonexistent.log"
         result = classify_attempt(1, log, [])
         # rc=1, no scraper, no log → blind rotation.
-        assert result is TerminationReason.BAD_NODE_BLIND
+        assert result.reason is TerminationReason.BAD_NODE_BLIND
+        # Empty log → no progress markers either.
+        assert result.has_progress is False
+
+    def test_returns_classification_result_with_progress_flag(
+        self, tmp_path
+    ):
+        # The classifier returns ClassificationResult so the loop
+        # doesn't need a second log read to recompute has_progress.
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 0\niter step=42 loss=0.1\n",
+        )
+        result = classify_attempt(0, log, [])
+        assert isinstance(result, ClassificationResult)
+        assert result.reason is TerminationReason.SUCCESS
+        assert result.has_progress is True
+
+    def test_classification_result_no_progress_flag(self, tmp_path):
+        log = _write(tmp_path / "log", "Execution finished with 1\n")
+        result = classify_attempt(1, log, [])
+        assert result.has_progress is False
 
 
 # ---------------------------------------------------------------------------
