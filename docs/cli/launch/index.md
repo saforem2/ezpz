@@ -89,8 +89,8 @@ allocated to your job.
                                 exclusive with --retries. Requires explicit --nproc.
         --spare-nodes SPARE_NODES
                                 Spare-node pool for --auto-retry. "auto" (default)
-                                derives from total_pbs_nodes - $nproc; pass an int
-                                for an explicit cap.
+                                derives from total_pbs_nodes - ceil($nproc / $ppn);
+                                pass an int for an explicit cap.
         --max-failover-retries MAX_FAILOVER_RETRIES
                                 Optional upper bound on --auto-retry attempts.
                                 Default: unbounded (see termination matrix).
@@ -161,8 +161,10 @@ continues until one of the conditions in the **termination matrix**
 below fires.
 
 ```bash
-# 522 nodes allocated by PBS; use 512 for training, reserve 10 as
-# spares. Loop until success / walltime / spare exhaustion.
+# 50 nodes allocated by PBS on Aurora (12 ranks/node = 600 GPUs).
+# Train on 512 ranks (= ceil(512/12) = 43 hosts), reserve the
+# remaining 7 hosts as spares. Loop until success / walltime /
+# spare exhaustion.
 ezpz launch --auto-retry --np 512 -- python3 -m ezpz.examples.test
 ```
 
@@ -219,16 +221,21 @@ $ ezpz launch --auto-retry -- python3 train.py
 ### Spare-node policy (`--spare-nodes`)
 
 By default (`--spare-nodes auto`), the spare pool is
-`total_pbs_nodes - $nproc/$ppn`. So if PBS gave you 522 nodes and
-you ask for 512 training ranks on 12-GPU nodes, the spare pool is
-`522 - 43 = 479` — though you'll usually want to reserve fewer in
-practice (a node typically isn't worth using if 50 others failed
-on it first).
+`total_pbs_nodes - ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
+`--np`) flag counts *ranks*, not nodes; we ceiling-divide by the
+ranks-per-node (`--ppn` or the cluster's `get_gpus_per_node()`) to
+get the number of *hosts* actually needed for training. Any
+allocated nodes beyond that go into the spare pool.
 
-Pass `--spare-nodes N` to cap the pool explicitly:
+So if PBS gave you 50 nodes on Aurora (12 GPUs/node) and you ask
+for 512 training ranks, the active set is `ceil(512/12) = 43`
+hosts and the spare pool is `50 - 43 = 7`. Pass `--spare-nodes N`
+to cap the pool explicitly (useful when you'd rather not use the
+full leftover slice):
 
 ```bash
-ezpz launch --auto-retry --np 512 --spare-nodes 10 -- ...
+# Cap the spare pool at 5, regardless of how many nodes PBS gave us.
+ezpz launch --auto-retry --np 512 --spare-nodes 5 -- ...
 ```
 
 ### Termination matrix

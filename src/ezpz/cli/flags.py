@@ -37,7 +37,8 @@ def _spare_nodes_value(value: str) -> "int | str":
     """argparse type for ``--spare-nodes``.
 
     Accepts either the literal string ``"auto"`` (derive from
-    ``total_pbs_nodes - $nproc``) or a non-negative integer. Returning
+    ``total_pbs_nodes - ceil($nproc / $ppn)``) or a non-negative
+    integer. Returning
     a union here keeps the auto/explicit distinction visible to the
     downstream resolver — `launch.py` checks for the string before
     treating the value as a count.
@@ -433,7 +434,8 @@ def build_launch_parser(
         help=(
             "Number of spare nodes to reserve for --auto-retry "
             "swap-ins. Pass 'auto' (the default when --auto-retry is "
-            "set) to derive from total_pbs_nodes - $nproc. Pass an "
+            "set) to derive from total_pbs_nodes - ceil($nproc / $ppn) "
+            "(ranks → hosts, since --nproc counts ranks). Pass an "
             "integer for an explicit count. Ignored when --auto-retry "
             "is not set."
         ),
