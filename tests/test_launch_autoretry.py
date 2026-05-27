@@ -1074,3 +1074,74 @@ class TestResolveAutoRetryAllocation:
         assert len(alloc.active) == 8
         assert list(alloc.spare) == ["h8", "h9"]
         # h10..h19 are NOT in the allocation.
+
+
+# ---------------------------------------------------------------------------
+# _run_attempt_with_tee — the real subprocess path
+# ---------------------------------------------------------------------------
+
+
+class TestRunAttemptWithTee:
+    """The real tee+watchdog path, not the fake-runner test double.
+
+    These exercise the actual subprocess + threading machinery. Skip
+    on non-POSIX because the test scripts use `sh -c`.
+    """
+
+    def test_full_log_captured_after_child_exit(self, tmp_path):
+        # Regression for the Copilot review on PR #144: the reader
+        # thread may still be draining stdout when proc.poll() shows
+        # an exit code. Previously _run_attempt_with_tee returned
+        # immediately on poll, with only a 2s best-effort drain in
+        # `finally`. Now it does a 30s explicit drain BEFORE return
+        # so the classifier sees the full log.
+        #
+        # The child writes a large burst right before exit (more
+        # than a typical 4-8KB pipe buffer can hold) and we verify
+        # every line landed in the log file.
+        from ezpz.launch_autoretry import _run_attempt_with_tee
+
+        log_path = tmp_path / "burst.log"
+        # 1000 lines of ~50 chars each = ~50KB, well beyond a pipe
+        # buffer's instantaneous capacity. The exit comes immediately
+        # after the last write, so this is exactly the "child gone
+        # but pipe still draining" race.
+        script = (
+            "for i in $(seq 1 1000); do "
+            "echo \"line $i with extra padding to push past buffer ${i}\"; "
+            "done"
+        )
+        rc = _run_attempt_with_tee(
+            ["sh", "-c", script],
+            log_path,
+            idle_timeout_s=0,
+        )
+        assert rc == 0
+        lines = log_path.read_text().splitlines()
+        assert len(lines) == 1000, f"got {len(lines)} lines"
+        # Specifically: the LAST line — most vulnerable to truncation.
+        assert "line 1000" in lines[-1]
+
+    def test_short_program_log_captured(self, tmp_path):
+        from ezpz.launch_autoretry import _run_attempt_with_tee
+
+        log_path = tmp_path / "short.log"
+        rc = _run_attempt_with_tee(
+            ["sh", "-c", "echo hello; echo world"],
+            log_path,
+            idle_timeout_s=0,
+        )
+        assert rc == 0
+        assert log_path.read_text().splitlines() == ["hello", "world"]
+
+    def test_nonzero_exit_still_drains(self, tmp_path):
+        # The drain path runs on any exit, not just success.
+        from ezpz.launch_autoretry import _run_attempt_with_tee
+
+        log_path = tmp_path / "fail.log"
+        script = "echo before-exit; exit 7"
+        rc = _run_attempt_with_tee(
+            ["sh", "-c", script], log_path, idle_timeout_s=0
+        )
+        assert rc == 7
+        assert "before-exit" in log_path.read_text()

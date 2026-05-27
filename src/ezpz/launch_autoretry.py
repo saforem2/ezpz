@@ -492,10 +492,35 @@ def _run_attempt_with_tee(
     reader = threading.Thread(target=_drain, daemon=True)
     reader.start()
 
+    # _drain_remaining: block until the reader thread fully consumes
+    # the stdout pipe and flushes attempt-N.log to disk. Caller
+    # (classify_attempt) reads the log immediately after we return —
+    # if we exit before the reader's last fh.write() lands, the
+    # classifier sees a truncated log and can misclassify the final
+    # outcome (Copilot review on PR #144).
+    #
+    # The reader exits naturally once the child closes its stdout
+    # (which the OS guarantees on process exit), so a generous join
+    # without a hard cap is safe — the child has already terminated,
+    # there's no scenario where the reader runs forever. We do bound
+    # it to a sane upper limit so a stuck kernel pipe doesn't hang
+    # the whole loop, and log a warning if we hit it.
+    _DRAIN_TIMEOUT_S = 30.0
+
+    def _drain_remaining() -> None:
+        reader_done.wait(timeout=_DRAIN_TIMEOUT_S)
+        if not reader_done.is_set():
+            logger.warning(
+                "[auto-retry] reader thread did not drain within %.0fs "
+                "after child exit; log file may be truncated",
+                _DRAIN_TIMEOUT_S,
+            )
+
     try:
         while True:
             rc = proc.poll()
             if rc is not None:
+                _drain_remaining()
                 return rc
             if idle_timeout_s > 0:
                 with activity_lock:
@@ -514,6 +539,7 @@ def _run_attempt_with_tee(
                     except subprocess.TimeoutExpired:
                         proc.kill()
                         proc.wait()
+                    _drain_remaining()
                     return _WATCHDOG_RC
                 sleep_for = min(1.0, max(0.1, idle_timeout_s - idle_for))
             else:
@@ -532,9 +558,10 @@ def _run_attempt_with_tee(
                 proc.kill()
             except ProcessLookupError:
                 pass
+        # No _drain_remaining on the SIGINT path: the caller throws
+        # the partial log away and exits with INTERRUPTED. Spending
+        # 30s on a doomed drain is worse than losing the tail.
         raise
-    finally:
-        reader_done.wait(timeout=2.0)
 
 
 def _backoff_for_attempt(attempt: int) -> float:
