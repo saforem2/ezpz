@@ -652,6 +652,61 @@ class TestRunWithAutoRetry:
         assert rc == 1
         assert len(runner.calls) == 2
 
+    def test_max_failover_retries_zero_no_retry(
+        self, tmp_path, monkeypatch
+    ):
+        # Codex P2 regression: cap=0 means "no retries", just the
+        # initial attempt. Previously the loop would sleep for
+        # backoff before checking the cap, burning 5s on the way
+        # to immediate exit.
+        config = _config(tmp_path, max_failover_retries=0)
+        allocation = _alloc(tmp_path)
+        runner = _FakeRunner(
+            [(1, "Execution finished with 1\niter step=1\n")]
+        )
+        sleeps: list[float] = []
+        rc = _run(
+            monkeypatch,
+            config,
+            allocation,
+            runner,
+            sleep_capture=sleeps,
+        )
+        assert rc == 1
+        assert len(runner.calls) == 1
+        # Critical: no backoff sleep was issued on the way to giving
+        # up. The runner's first (and only) attempt happens before
+        # any sleep call.
+        assert sleeps == [], f"unexpected sleeps: {sleeps}"
+
+    def test_max_failover_retries_one_sleeps_once(
+        self, tmp_path, monkeypatch
+    ):
+        # Companion to the cap=0 test: cap=1 means "one retry", so
+        # we DO sleep once (before attempt 2) but NOT a second time
+        # on the way to the cap-exhausted exit.
+        config = _config(tmp_path, max_failover_retries=1)
+        allocation = _alloc(
+            tmp_path, full=("h1", "h2", "h3", "h4"), active=2
+        )
+        runner = _FakeRunner(
+            [
+                (1, "Execution finished with 1\niter step=1\n"),
+                (1, "Execution finished with 1\niter step=2\n"),
+            ]
+        )
+        sleeps: list[float] = []
+        _run(
+            monkeypatch,
+            config,
+            allocation,
+            runner,
+            sleep_capture=sleeps,
+        )
+        # Exactly one backoff sleep (between attempt 1 and 2), none
+        # before the cap-exit.
+        assert len(sleeps) == 1, f"unexpected sleeps: {sleeps}"
+
     def test_progress_clears_stuck_guard_for_next_attempt(
         self, tmp_path, monkeypatch
     ):

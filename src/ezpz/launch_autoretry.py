@@ -597,16 +597,11 @@ def run_with_auto_retry(
         attempt += 1
         log_path = config.log_dir / f"attempt-{attempt}.log"
 
-        if attempt > 1:
-            backoff = _backoff_for_attempt(attempt - 1)
-            logger.warning(
-                "[auto-retry] attempt %d (prior rc=%d, sleeping %.0fs)...",
-                attempt,
-                last_rc,
-                backoff,
-            )
-            time.sleep(backoff)
-
+        # Cap check fires BEFORE backoff sleep — otherwise
+        # --max-failover-retries 0 would sleep 5s only to immediately
+        # exit, and even a non-zero cap would burn a backoff for the
+        # final exit decision. Cap counts retries, not attempts:
+        # attempt 1 is the initial run, attempt N+1 is the Nth retry.
         if (
             config.max_failover_retries is not None
             and attempt > config.max_failover_retries + 1
@@ -618,6 +613,16 @@ def run_with_auto_retry(
                 last_rc,
             )
             return last_rc
+
+        if attempt > 1:
+            backoff = _backoff_for_attempt(attempt - 1)
+            logger.warning(
+                "[auto-retry] attempt %d (prior rc=%d, sleeping %.0fs)...",
+                attempt,
+                last_rc,
+                backoff,
+            )
+            time.sleep(backoff)
 
         logger.info(
             "[auto-retry] attempt %d — active=%d hosts, spare=%d hosts",
