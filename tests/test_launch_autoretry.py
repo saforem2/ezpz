@@ -520,7 +520,6 @@ def _config(tmp_path: Path, **overrides) -> AutoRetryConfig:
     """Test-friendly default AutoRetryConfig (no real cmd)."""
     base = dict(
         cmd=["echo", "x"],
-        hostfile=tmp_path / "active.hostfile",
         log_dir=tmp_path / "logs",
         idle_timeout_s=0,  # disable watchdog for tests
         max_failover_retries=None,

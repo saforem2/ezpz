@@ -814,11 +814,16 @@ def launch(
     autoretry_allocation = None
     autoretry_log_dir: Optional[Path] = None
     if auto_retry:
+        # CLI entrypoints (parse_args) already enforce this; the
+        # check here is the library-level precondition for direct
+        # `launch(auto_retry=True, ngpus=None)` callers. Same
+        # invariant, different audience.
         if ngpus is None:
-            raise SystemExit(
-                "--auto-retry requires --nproc (-n/--np) to be set "
-                "explicitly. We need to know the training rank count "
-                "to split the PBS allocation into active + spare."
+            raise ValueError(
+                "launch(auto_retry=True) requires ngpus to be set "
+                "explicitly. The auto-retry loop needs the training "
+                "rank count to split the node pool into active + "
+                "spare. (CLI: pass --nproc / -n / --np.)"
             )
         # Source the candidate node pool. Explicit --hostfile beats
         # the scheduler nodelist — see _resolve_auto_retry_node_pool.
@@ -893,9 +898,6 @@ def launch(
         )
         ar_config = AutoRetryConfig(
             cmd=list(cmd),
-            hostfile=Path(selected_hostfile)
-            if selected_hostfile is not None
-            else Path(),
             log_dir=autoretry_log_dir,
             idle_timeout_s=effective_timeout,
             max_failover_retries=max_failover_retries,

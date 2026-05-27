@@ -152,20 +152,20 @@ class AutoRetryConfig:
     """Caller-supplied policy for :func:`run_with_auto_retry`.
 
     ``cmd`` is the full launcher command line *as already assembled*
-    (mpiexec + topology + user command). The auto-retry loop does
-    NOT re-assemble it between attempts — instead, it patches the
-    hostfile arg in place to point at the active hostfile, which
-    changes contents as nodes are swapped.
+    (mpiexec + topology + user command), with the ``--hostfile``
+    argument already pointing at :attr:`NodeAllocation.hostfile_path`.
+    The auto-retry loop does NOT re-assemble ``cmd`` between attempts
+    — :class:`NodeAllocation` mutates the file at that path in place
+    as nodes are swapped, and the launcher (re-spawned per attempt)
+    reads the fresh contents on each re-launch.
     """
 
     cmd: list[str]
-    """Full launcher command line (mpiexec + user command)."""
+    """Full launcher command line (mpiexec + user command).
 
-    hostfile: Path
-    """Path to the active hostfile. Re-read at every attempt — the
-    same path, with its contents mutated by ``NodeAllocation.swap_in``
-    / ``swap_one_blind``. Pointing the launcher at this path means
-    the launcher always sees the current active set."""
+    Must already contain ``--hostfile=<path>`` where ``<path>``
+    matches :attr:`NodeAllocation.hostfile_path`. The active hostfile
+    is what mutates between attempts; this command is constant."""
 
     log_dir: Path
     """Directory for ``attempt-N.log`` files and ``bad_nodes.txt``."""
@@ -483,7 +483,17 @@ def _run_attempt_with_tee(
     child_env = os.environ.copy()
     child_env.setdefault("PYTHONUNBUFFERED", "1")
 
-    proc = subprocess.Popen(
+    # Safety note (Sourcery security warning): Popen with a dynamic
+    # argv is fine here because:
+    #   1. shell=False (the default) — no shell metacharacter
+    #      expansion, every list element becomes a direct argv slot.
+    #   2. cmd originates from `ezpz launch`'s argparse REMAINDER,
+    #      which is the user's own shell already past their own
+    #      shell expansion. Equivalent to typing the command into
+    #      a terminal — no privilege boundary is crossed here.
+    # Sourcery's lint can't distinguish "user-runs-their-own-code"
+    # from "untrusted-input-to-shell"; this is the former.
+    proc = subprocess.Popen(  # noqa: S603 — see comment above
         list(cmd),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
