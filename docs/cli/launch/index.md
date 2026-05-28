@@ -392,6 +392,73 @@ retry/swap mechanics are independent re-implementations because the
 classifier is much easier to test in Python. Prefer `--auto-retry`
 when you can, fall back to sourcing the bash lib when you can't.
 
+### Testing on real Aurora / Sunspot allocations
+
+Two ready-to-submit PBS drivers ship with the package, both
+following the same scenario-runner pattern (each scenario writes
+`PASS|FAIL` to a summary at the end):
+
+```bash
+# In an ezpz checkout on Aurora:
+qsub src/ezpz/bin/test_launch_auto_retry_aurora.pbs
+
+# Or for the pre-#144 watchdog/retries (PR #136):
+qsub src/ezpz/bin/test_launch_timeout_retries_aurora.pbs
+```
+
+The `--auto-retry` driver requests 4 nodes and runs 7 scenarios
+(~30 min walltime budget):
+
+| Scenario | What it covers |
+|----------|----------------|
+| A | Happy path — succeeds first attempt, 0 swaps |
+| B | Blind rotation — scraper finds nothing, swap_one_blind, succeed |
+| C | Named swap — emit a PALS `shepherd died from signal 9` line; verify the named host (not a blind one) gets swapped out |
+| D | `--max-failover-retries 2` cap — always-fail, exactly 3 attempts before bail |
+| E | `STUCK_PRE_TRAINING` guard — 2 consecutive zero-step attempts, bail at attempt 2 |
+| F | Realistic — `ezpz.examples.test --model debug --train-iters 20` under `--auto-retry` |
+| G | `--hostfile` honored — pass a 2-node filtered hostfile, verify the loop splits THAT (not the full PBS allocation) |
+
+The driver works on **Sunspot too** — swap `-A AuroraGPT` → `-A datascience`
+and `filesystems=flare:home` → `filesystems=tegu:home` in the PBS header
+(everything else is identical: same scrape patterns, same workflow).
+
+Inspect after the run:
+
+```bash
+tail -f logs/ezpz-launch-auto-retry-test.*.log   # scenario summary
+ls /tmp/ezpz-aurora-auto-retry-*/scen-*/logs/   # per-scenario failover dirs
+```
+
+For a one-off manual test against your own workload (no scenario
+harness, just `--auto-retry` on a job you'd be running anyway):
+
+```bash
+# Inside any PBS allocation with .venv set up:
+ezpz launch --auto-retry --np <N> --timeout 600 -- python3 -m your.module
+```
+
+If you want to force-trigger a swap to validate the loop end-to-end,
+make your script emit one of the recognized Aurora crash signatures
+on rank 0 of the first attempt — e.g.:
+
+```bash
+ezpz launch --auto-retry --np 12 -ppn 12 --timeout 60 -- bash -c '
+  if [[ ! -f /tmp/attempt2 ]]; then
+    touch /tmp/attempt2
+    hostname
+    echo "$(hostname): shepherd died from signal 9"
+    exit 1
+  fi
+  echo "iter step=1 loss=0.5"
+  exit 0
+'
+# Should produce 2 attempts, the first hostname swapped into bad_nodes.txt.
+# After: `cat logs/failover-*/bad_nodes.txt` shows the swapped host;
+# `cat logs/failover-*/active.hostfile` shows the replacement.
+# Clean up: rm /tmp/attempt2
+```
+
 ## Python interpreter resolution
 
 When `ezpz launch` needs to invoke `python3` (e.g.

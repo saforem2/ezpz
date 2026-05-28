@@ -1,0 +1,338 @@
+#!/bin/bash -l
+#PBS -A AuroraGPT
+#PBS -q debug
+#PBS -l select=4
+#PBS -l walltime=00:30:00
+#PBS -l filesystems=flare:home
+#PBS -N ezpz-launch-auto-retry-test
+#PBS -j oe
+#PBS -o logs/ezpz-launch-auto-retry-test.${PBS_JOBID}.log
+#
+# PBS test driver for `ezpz launch --auto-retry` on Aurora.
+#
+# Companion to test_launch_timeout_retries_aurora.pbs (which covers
+# --timeout / --retries from PR #136). This driver exercises the
+# --auto-retry loop end-to-end against a real PBS allocation —
+# verifies the bad-node split + swap_in + swap_one_blind + spare
+# exhaustion logic all behave on real mpiexec/PALS, not just under
+# the test-harness fakes.
+#
+# Requires 4 nodes: 2 active + 2 spare per scenario. Smaller would
+# work for the trivial scenarios but exhausts spares too fast for
+# the rotation tests.
+#
+# Submit with:
+#   cd ~/ezpz  # (or wherever your checkout is)
+#   qsub src/ezpz/bin/test_launch_auto_retry_aurora.pbs
+#
+# Inspect:
+#   tail -f logs/ezpz-launch-auto-retry-test.*.log
+#   ls logs/failover-*/   # per-scenario attempt-N.log + bad_nodes.txt
+#
+# Sunspot users: change `-A AuroraGPT` → `-A datascience`,
+# `filesystems=flare:home` → `filesystems=tegu:home`. Everything
+# else is identical (same scrape patterns, same workflow).
+
+set -u
+unset CDPATH
+
+cd "${PBS_O_WORKDIR}" || { echo "PBS_O_WORKDIR unset; aborting"; exit 1; }
+
+# ---- Environment setup (identical to timeout/retries driver) --------------
+UTILS=""
+if [[ -f "${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh" ]]; then
+    UTILS="${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh"
+elif command -v python3 >/dev/null 2>&1; then
+    BIN_DIR_TRY="$(python3 -c 'import ezpz; print(ezpz.configs.BIN_DIR)' 2>/dev/null || true)"
+    if [[ -n "${BIN_DIR_TRY}" && -f "${BIN_DIR_TRY}/utils.sh" ]]; then
+        UTILS="${BIN_DIR_TRY}/utils.sh"
+    fi
+fi
+if [[ -z "${UTILS}" ]]; then
+    export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+    export https_proxy="${https_proxy:-${http_proxy}}"
+    UTILS="$(mktemp -t ezpz-utils-XXXXXX).sh"
+    curl -fsSL --max-time 30 \
+        https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
+        -o "${UTILS}" || { echo "[FATAL] could not fetch utils.sh"; exit 1; }
+fi
+# shellcheck disable=SC1090
+source "${UTILS}"
+
+if [[ -d "${PBS_O_WORKDIR}/.venv" ]]; then
+    ezpz_setup .venv || { log_message ERROR "ezpz_setup .venv failed"; exit 1; }
+else
+    ezpz_setup || { log_message ERROR "ezpz_setup failed"; exit 1; }
+fi
+
+# Sanity: --auto-retry must be present (post-#144 / >= v0.17.1).
+if ! ezpz launch --help 2>&1 | grep -q -- "--auto-retry"; then
+    log_message ERROR "--auto-retry NOT present in ezpz launch --help."
+    log_message ERROR "Is this >= v0.17.1 (PR #144)? Try:"
+    log_message ERROR "    pip install -U git+https://github.com/saforem2/ezpz.git"
+    exit 1
+fi
+
+# ---- Allocation sanity ----------------------------------------------------
+TOTAL_NODES=$(wc -l < "${PBS_NODEFILE}")
+if (( TOTAL_NODES < 4 )); then
+    log_message ERROR "Need at least 4 nodes for the rotation scenarios; PBS gave us ${TOTAL_NODES}."
+    log_message ERROR "Bump #PBS -l select=4 in this script."
+    exit 1
+fi
+log_message INFO "PBS allocation: ${TOTAL_NODES} nodes"
+log_message INFO "First node: $(head -1 "${PBS_NODEFILE}")"
+
+# ---- Test runner setup ----------------------------------------------------
+TMP="$(mktemp -d -t ezpz-aurora-auto-retry-XXXXXX)"
+log_message INFO "Scratch dir: ${TMP}"
+LOG="${TMP}/scenario.log"
+SUMMARY="${TMP}/summary.txt"
+: > "${SUMMARY}"
+
+PASS=0
+FAIL=0
+
+hdr() {
+    printf "\n========================================================================\n"
+    printf "Scenario %s: %s\n" "$1" "$2"
+    printf "========================================================================\n"
+}
+
+record() {
+    local n="$1" verdict="$2" detail="$3"
+    if [[ "${verdict}" == "PASS" ]]; then
+        PASS=$((PASS + 1))
+    else
+        FAIL=$((FAIL + 1))
+    fi
+    printf "[Scenario %s] %-4s  %s\n" "${n}" "${verdict}" "${detail}" | tee -a "${SUMMARY}"
+}
+
+# Each scenario writes its failover dir under $TMP/scen-X so we don't
+# collide with the default $(pwd)/logs/failover-<jobid>/ from the
+# real launch (which would still get used by --auto-retry if we
+# didn't cd into per-scenario dirs).
+scen_dir() {
+    local n="$1"
+    local d="${TMP}/scen-${n}"
+    mkdir -p "${d}"
+    echo "${d}"
+}
+
+# Use --nproc 12 -ppn 12 (matches Aurora's 12 GPUs/node) so the
+# topology inference is unambiguous. With 4 allocated nodes →
+# ceil(12/12) = 1 active host, 3 spares.
+NP=(--nproc 12 --nproc_per_node 12)
+
+# ---- A: happy path — succeeds first attempt, no retry ----------------------
+hdr "A" "Happy path: --auto-retry, succeeds first attempt → 1 attempt, rc=0"
+D=$(scen_dir A)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
+    -- bash -c 'echo "iter step=1 loss=0.5"; exit 0' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+BAD_LINES=$(wc -l < "${D}"/logs/failover-*/bad_nodes.txt 2>/dev/null || echo 0)
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}  bad_nodes=${BAD_LINES}"
+grep -E "FAILOVER STOP" "${LOG}" | head -5
+if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 1 && ${BAD_LINES} -eq 0 ]]; then
+    record A PASS "rc=0, 1 attempt, 0 swaps in ${ELAPSED}s"
+else
+    record A FAIL "rc=${RC} attempts=${ATTEMPTS} bad=${BAD_LINES}"
+fi
+
+# ---- B: blind rotation — first attempt crashes, scraper finds nothing -----
+hdr "B" "Blind rotation: fail rc=1 once, scraper empty, succeed attempt 2 → 1 swap"
+D=$(scen_dir B)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+COUNTER="${D}/counter_b"
+echo 0 > "${COUNTER}"
+START=$(date +%s)
+# First attempt: print no recognized crash signature, exit 1 → blind rotation
+# Second attempt: succeed
+ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
+    -- bash -c "
+        n=\$(cat '${COUNTER}')
+        n=\$((n + 1))
+        echo \$n > '${COUNTER}'
+        echo \"B attempt \$n iter step=\$n\"
+        if [ \$n -eq 1 ]; then
+            echo 'random non-recognized error'
+            exit 1
+        fi
+        exit 0
+    " > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+BAD_LINES=$(wc -l < "${D}"/logs/failover-*/bad_nodes.txt 2>/dev/null || echo 0)
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}  bad_nodes=${BAD_LINES}"
+grep -E "FAILOVER STOP|blind rotation|swap" "${LOG}" | head -10
+if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 2 && ${BAD_LINES} -eq 1 ]]; then
+    record B PASS "rc=0 after blind rotation, 1 swap in ${ELAPSED}s"
+else
+    record B FAIL "rc=${RC} attempts=${ATTEMPTS} bad=${BAD_LINES}"
+fi
+
+# ---- C: named-host swap — scraper picks up shepherd-died-9 line ------------
+hdr "C" "Named swap: emit shepherd-died-9 from rank 0 host, succeed attempt 2"
+D=$(scen_dir C)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+COUNTER="${D}/counter_c"
+echo 0 > "${COUNTER}"
+# Find the FIRST active host (= the one the failover loop would use as
+# nproc/ppn=12 → 1 active host = head -n 1 of PBS_NODEFILE)
+ACTIVE_HOST=$(head -n 1 "${PBS_NODEFILE}")
+log_message INFO "Active host for scenario C: ${ACTIVE_HOST}"
+START=$(date +%s)
+ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
+    -- bash -c "
+        n=\$(cat '${COUNTER}')
+        n=\$((n + 1))
+        echo \$n > '${COUNTER}'
+        echo \"C attempt \$n iter step=\$n\"
+        if [ \$n -eq 1 ]; then
+            # Emit the exact Aurora PALS shepherd-9 signature that
+            # scrape_bad_nodes recognizes. Must include hostname-like
+            # prefix matching the .hsn.cm.aurora pattern (so the
+            # registered Aurora scraper regex fires).
+            echo '${ACTIVE_HOST}: shepherd died from signal 9'
+            exit 1
+        fi
+        exit 0
+    " > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+# Glob-then-pick: there's exactly one failover-<jobid> subdir per
+# scenario, so head -1 picks it deterministically. Avoids the
+# trap of storing an unquoted glob in a variable then re-expanding it.
+BAD_NODES_FILE=$(ls "${D}"/logs/failover-*/bad_nodes.txt 2>/dev/null | head -1)
+SWAPPED_HOST=$(head -1 "${BAD_NODES_FILE}" 2>/dev/null || echo "")
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}  swapped_host='${SWAPPED_HOST}'"
+grep -E "FAILOVER STOP|bad nodes detected|swapped:" "${LOG}" | head -10
+# We want: 2 attempts, the SWAPPED host == ACTIVE_HOST (named swap, not blind).
+if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 2 && "${SWAPPED_HOST}" == "${ACTIVE_HOST}" ]]; then
+    record C PASS "named swap of ${SWAPPED_HOST}, rc=0 in ${ELAPSED}s"
+else
+    record C FAIL "rc=${RC} attempts=${ATTEMPTS} swapped='${SWAPPED_HOST}' wanted='${ACTIVE_HOST}'"
+fi
+
+# ---- D: --max-failover-retries cap — fail forever, cap at 2 ----------------
+hdr "D" "Cap exhaustion: --max-failover-retries 2, always-fail → 3 attempts, rc=1"
+D=$(scen_dir D)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+ezpz launch "${NP[@]}" --auto-retry --max-failover-retries 2 --timeout 60 \
+    -- bash -c 'echo "D iter step=1"; echo "transient error"; exit 1' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
+grep -E "FAILOVER STOP|max_failover_retries" "${LOG}" | head -5
+# cap=2 means 1 initial + 2 retries = 3 attempts total.
+if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 3 ]]; then
+    record D PASS "cap exhausted after ${ATTEMPTS} attempts, rc=${RC} in ${ELAPSED}s"
+else
+    record D FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=3)"
+fi
+
+# ---- E: stuck_pre_training — 2 consecutive 0-progress attempts ------------
+hdr "E" "Stuck guard: 2 attempts with NO step= markers → STUCK_PRE_TRAINING"
+D=$(scen_dir E)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
+    -- bash -c 'echo "config parse error"; exit 1' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
+grep -E "FAILOVER STOP|stuck_pre_training" "${LOG}" | head -5
+# stuck guard fires on attempt 2 (prior=no progress, current=no progress).
+# So exactly 2 attempts before bail.
+if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 2 ]]; then
+    record E PASS "stuck_pre_training after ${ATTEMPTS} attempts in ${ELAPSED}s"
+else
+    record E FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=2)"
+fi
+
+# ---- F: realistic — ezpz.examples.test under --auto-retry -----------------
+hdr "F" "Realistic: ezpz.examples.test under --auto-retry → exit 0"
+D=$(scen_dir F)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+ezpz launch "${NP[@]}" --auto-retry --timeout 300 \
+    -- python3 -m ezpz.examples.test --model debug --train-iters 20 \
+    > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
+echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
+tail -10 "${LOG}"
+if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 1 && ${ELAPSED} -lt 600 ]]; then
+    record F PASS "rc=0 after ${ATTEMPTS} attempt in ${ELAPSED}s"
+else
+    record F FAIL "rc=${RC} attempts=${ATTEMPTS} elapsed=${ELAPSED}s"
+fi
+
+# ---- G: --hostfile override — user's pre-filtered hostfile is honored -----
+hdr "G" "Hostfile honored: --hostfile with 2 nodes, --auto-retry splits THAT"
+D=$(scen_dir G)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+# Take the first 2 nodes from PBS_NODEFILE → user-filtered hostfile
+head -n 2 "${PBS_NODEFILE}" > "${D}/user.hostfile"
+log_message INFO "User hostfile (2 nodes): $(tr '\n' ' ' < "${D}/user.hostfile")"
+START=$(date +%s)
+# --np 12 -ppn 12 → 1 active host → 1 spare from the user's 2-host file
+# (NOT 3 spares from the full PBS allocation).
+ezpz launch "${NP[@]}" --hostfile "${D}/user.hostfile" \
+    --auto-retry --timeout 60 \
+    -- bash -c 'echo "iter step=1"; exit 0' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+# active.hostfile + 1 spare on disk in the failover-* dir.
+# Glob-then-pick (see scenario C's BAD_NODES_FILE for the same pattern).
+ACTIVE_FILE=$(ls "${D}"/logs/failover-*/active.hostfile 2>/dev/null | head -1)
+ACTIVE_COUNT=$(wc -l < "${ACTIVE_FILE}" 2>/dev/null || echo 0)
+echo "exit=${RC}  elapsed=${ELAPSED}s  active_hostfile_count=${ACTIVE_COUNT}"
+grep -E "active hostfile|spare hostfile|active=" "${LOG}" | head -5
+if [[ ${RC} -eq 0 && ${ACTIVE_COUNT} -eq 1 ]]; then
+    record G PASS "user --hostfile honored, 1 active node in ${ELAPSED}s"
+else
+    record G FAIL "rc=${RC} active_count=${ACTIVE_COUNT} (wanted 1)"
+fi
+
+# ---- Final report ---------------------------------------------------------
+printf "\n========================================================================\n"
+printf "Aurora --auto-retry summary  (PASS=%d  FAIL=%d)\n" "${PASS}" "${FAIL}"
+printf "========================================================================\n"
+cat "${SUMMARY}"
+
+if [[ ${FAIL} -eq 0 ]]; then
+    printf "\nAll scenarios passed. ✅\n"
+    rm -rf "${TMP}"
+    exit 0
+else
+    printf "\n%d scenario(s) failed. ❌  Scratch dir preserved: %s\n" \
+        "${FAIL}" "${TMP}"
+    printf "Inspect per-scenario failover/ dirs under \${TMP}/scen-*/logs/\n"
+    exit 1
+fi
