@@ -233,15 +233,34 @@ class TestWandbBackendBehavior:
 
     @pytest.fixture()
     def mock_wandb(self):
-        """Fully mocked wandb module."""
+        """Fully mocked wandb module.
+
+        Real wandb: wandb.init() returns a Run object AND sets
+        wandb.run to the same object. WandbBackend now reads
+        wandb.run (via setup_wandb's `return wandb.run`), so the
+        mock has to wire them to the SAME MagicMock — otherwise
+        `backend.run` and `mock_wandb.init.return_value` are two
+        different auto-generated mocks.
+        """
         wandb = MagicMock()
-        wandb.init.return_value = MagicMock()
+        run = MagicMock()
+        wandb.init.return_value = run
+        wandb.run = run
         return wandb
 
     @pytest.fixture()
     def backend(self, mock_wandb, monkeypatch):
-        """WandbBackend wired to the mocked wandb module."""
+        """WandbBackend wired to the mocked wandb module.
+
+        WandbBackend now delegates to ezpz.distributed.setup_wandb,
+        which gates on verify_wandb() (real API-key check). For a
+        mocked-wandb test we need to bypass that gate so the mocked
+        wandb.init is actually called.
+        """
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         return WandbBackend(rank=0)
 
     def test_run_property(self, backend, mock_wandb):
@@ -292,6 +311,11 @@ class TestWandbBackendBehavior:
         """wandb.init() failure ⇒ _run is None ⇒ all methods are silent."""
         mock_wandb.init.side_effect = RuntimeError("boom")
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        # Bypass verify_wandb so we actually get to the wandb.init
+        # call we want to make fail.
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         backend = WandbBackend(rank=0)
         assert backend._run is None
         # None of these should raise
@@ -313,12 +337,56 @@ class TestWandbBackendBehavior:
         assert "ezpz_version" in all_keys
 
     def test_init_config_applied(self, mock_wandb, monkeypatch):
-        """Explicit config dict is applied to the run."""
+        """Explicit config dict is applied to the run at the TOP level.
+
+        Asserts the user-config-at-top-level contract — we deliberately
+        bypass setup_wandb's `{"config": config}` nest so callers can
+        still read run.config.lr (not run.config.config.lr) for keys
+        they passed via WandbBackend(config=...).
+        """
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         backend = WandbBackend(config={"lr": 0.01}, rank=0)
         update_calls = backend._run.config.update.call_args_list
         configs = [c.args[0] for c in update_calls if c.args]
         assert {"lr": 0.01} in configs
+
+    def test_env_fields_from_setup_wandb_applied(
+        self, mock_wandb, monkeypatch
+    ):
+        """The whole point of delegating: setup_wandb's env-tracking
+        fields (hostname, pytorch_backend, world_size, machine,
+        ezpz_version, working_directory, tstamp, year/month/day) all
+        land in run.config. Catches drift if a future refactor
+        accidentally bypasses setup_wandb again.
+        """
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
+        backend = WandbBackend(rank=0)
+        update_calls = backend._run.config.update.call_args_list
+        all_keys: set[str] = set()
+        for call in update_calls:
+            if call.args:
+                all_keys.update(call.args[0].keys())
+        # These are the goodies setup_wandb adds that the old
+        # WandbBackend.__init__ never did. Keep this list aligned
+        # with the run.config.update({...}) block in
+        # ezpz.distributed.setup_wandb — if you add a key there,
+        # add it here too so the contract stays pinned.
+        for required in [
+            "hostname",
+            "pytorch_backend",
+            "world_size",
+            "machine",
+            "ezpz_version",
+            "working_directory",
+            "torch_version",
+        ]:
+            assert required in all_keys, f"missing {required!r}"
 
 
 # ── MLflowBackend (mocked) ──────────────────────────────────────────────────
