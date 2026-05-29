@@ -1634,16 +1634,32 @@ def _setup_ddp(
             "world_size": world_size,
             "init_method": "env://",
         }
-        device = None
-        if device_id is None:
+        # Resolve device for init_process_group's `device_id=` arg.
+        # When the caller passes an explicit device_id (int or
+        # torch.device), use it verbatim. Otherwise, on CUDA build
+        # one from local_rank so torch can bind the process group
+        # to a specific GPU and avoid the
+        #   "barrier(): using the device under current context.
+        #    You can specify `device_id` in `init_process_group`
+        #    to mute this warning."
+        # warning that fires on every collective op.
+        #
+        # Intentionally skipped for xpu/xccl — that backend doesn't
+        # support split_group (which DeviceMesh._unflatten needs
+        # when process groups are device-bound).
+        resolved_device: Any = None
+        if device_id is not None:
+            resolved_device = (
+                torch.device(f"cuda:{device_id}")
+                if isinstance(device_id, int)
+                else device_id
+            )
+        else:
             device_type = get_torch_device_type()
             if device_type == "cuda":
-                device = torch.device(f"{device_type}:{local_rank}")
-            # Don't pass device_id for xpu/xccl — the backend doesn't
-            # support split_group which DeviceMesh._unflatten requires
-            # when process groups are device-bound.
-        if device_id is not None:
-            init_kwargs["device_id"] = device
+                resolved_device = torch.device(f"cuda:{local_rank}")
+        if resolved_device is not None:
+            init_kwargs["device_id"] = resolved_device
         torch.distributed.init_process_group(**init_kwargs)
 
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
