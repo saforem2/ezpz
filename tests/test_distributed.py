@@ -1404,3 +1404,43 @@ class TestGetFreePort:
         ports = {dist._get_free_port() for _ in range(10)}
         # While not guaranteed, we should get at least a few unique ports
         assert len(ports) >= 2
+
+
+# ===================================================================
+# _get_ezpz_git_sha
+# ===================================================================
+
+
+class TestGetEzpzGitSha:
+    """Tests for the best-effort git-sha lookup used by setup_wandb."""
+
+    def test_returns_short_sha_or_none(self):
+        # Real call against the actual checkout. On a dev machine this
+        # returns the short SHA; in a pip-install / non-git context
+        # returns None. Either is fine — we just verify the type.
+        sha = dist._get_ezpz_git_sha()
+        assert sha is None or (isinstance(sha, str) and 7 <= len(sha) <= 40)
+        if sha is not None:
+            # short sha is hex-only (no newlines, no whitespace)
+            assert sha.isalnum()
+
+    def test_handles_subprocess_failure_safely(self, monkeypatch):
+        # Simulate `git` not on PATH / non-zero exit: must return None,
+        # not raise. setup_wandb is allowed to keep going even when we
+        # can't compute the SHA.
+        import subprocess
+
+        def _explode(*_args, **_kwargs):
+            raise FileNotFoundError("git: command not found")
+
+        monkeypatch.setattr(subprocess, "run", _explode)
+        assert dist._get_ezpz_git_sha() is None
+
+    def test_handles_timeout_safely(self, monkeypatch):
+        import subprocess
+
+        def _timeout(*_args, **_kwargs):
+            raise subprocess.TimeoutExpired(cmd="git", timeout=2.0)
+
+        monkeypatch.setattr(subprocess, "run", _timeout)
+        assert dist._get_ezpz_git_sha() is None

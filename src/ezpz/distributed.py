@@ -19,6 +19,7 @@ Design principles:
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import socket
@@ -751,9 +752,9 @@ def wrap_model(
     model: torch.nn.Module,
     use_fsdp: bool = True,
     dtype: str = "bfloat16",
-    device_id: torch.device | int | None = None,
     device_mesh: Any = None,
     reshard_after_forward: bool | int = True,
+    device_id: torch.device | int | None = None,
 ) -> torch.nn.Module:
     """Wrap *model* with DDP or FSDP for distributed training.
 
@@ -1183,6 +1184,36 @@ def verify_wandb() -> bool:
     return False
 
 
+def _get_ezpz_git_sha() -> str | None:
+    """Return the short SHA of the ezpz checkout, or ``None`` if not a git repo.
+
+    Useful for distinguishing wandb runs from feature branches vs main
+    when ``ezpz_version`` alone is ambiguous (e.g. dev installs from a
+    branch that has not been version-bumped yet).
+
+    Returns ``None`` on any failure mode — pip-installed packages aren't
+    git repos, ``git`` may not be on PATH, the call could time out, etc.
+    Logging is silenced; this helper is best-effort by design.
+    """
+    try:
+        import subprocess  # noqa: PLC0415 — only needed here
+
+        ezpz_dir = Path(__file__).resolve().parent
+        proc = subprocess.run(
+            ["git", "-C", str(ezpz_dir), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        sha = proc.stdout.strip()
+        return sha or None
+    except Exception:
+        return None
+
+
 def setup_wandb(
     project_name: str | None = None,
     entity: str | None = None,
@@ -1295,13 +1326,37 @@ def setup_wandb(
         )
         if run is not None:
             logger.info("wandb.run=[%s](%s)", run.name, run.url)
-            import torch
+            import sys  # noqa: PLC0415
+            import torch  # noqa: PLC0415
 
-            import ezpz
+            import ezpz  # noqa: PLC0415
+            from ezpz.configs import get_scheduler  # noqa: PLC0415
 
+            now = datetime.datetime.now()
+
+            # Best-effort resolution of the active scheduler jobid.
+            # ezpz.launch.get_active_jobid imports ezpz.pbs / ezpz.slurm
+            # lazily and returns None when no job is detected. Wrapped
+            # in try/except because the launch module pulls a non-
+            # trivial chain on first import — any failure here should
+            # NOT block the wandb run from being created.
+            jobid: str | None = None
+            try:
+                from ezpz.launch import (
+                    get_active_jobid,
+                )  # noqa: PLC0415
+
+                jobid = get_active_jobid()
+            except Exception:
+                pass
+
+            # num_nodes / gpus_per_node have their own getters that
+            # already swallow failures internally (return 1 / fall
+            # back). Safe to call directly.
             run.config.update(
                 {
                     # "DIST_INFO": get_dist_info(),
+                    # --- existing fields (unchanged) ---
                     "hostname": get_hostname(),
                     "pytorch_backend": get_torch_backend(),
                     "torch_version": torch.__version__,
@@ -1309,6 +1364,30 @@ def setup_wandb(
                     "ezpz_version": ezpz.__version__,
                     "machine": get_machine(),
                     "working_directory": os.getcwd(),
+                    "year": now.year,
+                    "month": now.month,
+                    "day": now.day,
+                    "tstamp": now.isoformat(),
+                    # --- new dimensions for filtering / grouping ---
+                    # Pivot from a wandb run → the cluster job that
+                    # ran it. None when not inside a PBS/SLURM job.
+                    "jobid": jobid,
+                    # "pbs" / "slurm" / "" — useful when you have
+                    # runs from both systems in the same project.
+                    "scheduler": get_scheduler(),
+                    # Distinct from world_size: same world_size can be
+                    # 8x8 or 4x16, lets you separate the two.
+                    "num_nodes": get_num_nodes(),
+                    "ranks_per_node": get_gpus_per_node(),
+                    # "cuda" / "xpu" / "mps" / "cpu" — at-a-glance
+                    # distinction between Aurora vs NVIDIA vs CPU runs.
+                    "device_type": get_torch_device_type(),
+                    # --- debugging / postmortems ---
+                    "python_version": sys.version.split()[0],
+                    # None when ezpz is a pip-install, not a git
+                    # checkout. Disambiguates dev branches sharing the
+                    # same ezpz_version.
+                    "ezpz_git_sha": _get_ezpz_git_sha(),
                 }
             )
             if config is not None:

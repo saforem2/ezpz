@@ -378,6 +378,7 @@ class TestWandbBackendBehavior:
         # ezpz.distributed.setup_wandb — if you add a key there,
         # add it here too so the contract stays pinned.
         for required in [
+            # Original set
             "hostname",
             "pytorch_backend",
             "world_size",
@@ -385,6 +386,20 @@ class TestWandbBackendBehavior:
             "ezpz_version",
             "working_directory",
             "torch_version",
+            # Timestamp fields
+            "year",
+            "month",
+            "day",
+            "tstamp",
+            # Filtering / grouping dimensions
+            "jobid",  # None when not in a PBS/SLURM job, but key present
+            "scheduler",
+            "num_nodes",
+            "ranks_per_node",
+            "device_type",
+            # Debugging / postmortems
+            "python_version",
+            "ezpz_git_sha",  # None for pip installs, but key present
         ]:
             assert required in all_keys, f"missing {required!r}"
 
