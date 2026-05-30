@@ -1551,3 +1551,47 @@ class TestSetupDdpDeviceId:
         dist._setup_ddp(backend="gloo", device_id=2)
         kwargs = mock_init.call_args.kwargs
         assert kwargs["device_id"] == torch.device("cuda:2")
+
+    def test_explicit_xpu_device_id_currently_passes_through(
+        self, monkeypatch
+    ):
+        # Documents CURRENT behavior, not desired behavior: when the
+        # caller explicitly passes a torch.device("xpu:0") as
+        # device_id, the resolver forwards it to init_process_group
+        # even though the auto-detect path (device_id=None) correctly
+        # skips device_id on xpu. This is the P1 from the PR #147
+        # review — the comment block in _setup_ddp claims we skip
+        # device_id on xpu/xccl, but the skip only fires when the
+        # caller didn't pass anything.
+        #
+        # If/when this is fixed (resolved_device should be set to None
+        # when device_type == "xpu", regardless of how device_id was
+        # passed), this test should flip to:
+        #   assert "device_id" not in kwargs
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
+        import torch
+        from unittest.mock import MagicMock
+
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "4")
+
+        xpu_device = torch.device("xpu", 0)
+        dist._setup_ddp(backend="gloo", device_id=xpu_device)  # type: ignore[arg-type]
+        kwargs = mock_init.call_args.kwargs
+        # CURRENT (potentially buggy) behavior: xpu device passes through.
+        assert kwargs.get("device_id") == xpu_device, (
+            "If this assertion fails, the P1 from PR #147 was likely "
+            "fixed — flip to `assert 'device_id' not in kwargs` and "
+            "delete this comment."
+        )
