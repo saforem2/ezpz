@@ -111,7 +111,27 @@ def get_pbs_nodelist_from_jobid(jobid: int | str) -> list[str]:
 
 
 def get_pbs_jobid_of_active_job() -> str | None:
-    """Get the jobid of the currently active job."""
+    """Get the jobid of the currently active job.
+
+    Short-circuits on ``$PBS_JOBID`` if set, which is the case in any
+    job spawned via ``qsub`` (PBS exports it into the script's
+    environment). Falling back to ``qstat`` is only needed when this
+    function is called outside of a job context — and that fallback
+    requires the ``qstat`` binary on ``PATH``, which is NOT available
+    on compute nodes on systems like Aurora where PBS server binaries
+    live under ``/opt/pbs/bin`` on login nodes only. Without this
+    short-circuit, ``ezpz launch`` raises
+    ``ImportError: cannot import name 'qstat' from 'sh'`` from any
+    compute-node Python subprocess.
+    """
+    # 0. Short-circuit on the standard PBS env var. Set by qsub for
+    #    any script-launched job, and propagated by mpiexec --envall.
+    pbs_jobid = os.environ.get("PBS_JOBID")
+    if pbs_jobid:
+        # PBS_JOBID is of the form "12345.aurora-pbs-0001..." — strip
+        # the server suffix to match the rest of ezpz's jobid handling.
+        return pbs_jobid.split(".")[0]
+
     # 1. Find all of users' currently running jobs
     #
     #    ```python
