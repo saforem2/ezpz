@@ -172,12 +172,15 @@ class WandbBackend(TrackerBackend):
             except Exception:
                 rank = 0
 
-        # Non-rank-0 → force disabled BEFORE calling setup_wandb so
-        # downstream wandb.init bypasses any network calls. setup_wandb
-        # always reads the live get_rank() and applies its OWN resolution
-        # on top, so passing mode="disabled" is the clean override here.
+        # Hard rank gate. setup_wandb ALSO short-circuits on non-zero
+        # ranks (as of v0.18.x) so this is belt-and-suspenders — but
+        # the gate here lets us skip the import + cross-module call
+        # entirely on N-1 ranks, which on a 96-rank job is the
+        # difference between 0 and 96 noisy "Setting up wandb..."
+        # log lines.
         if rank != 0:
-            kwargs["mode"] = "disabled"
+            self._run = None
+            return
 
         # Translate WandbBackend's `outdir` → setup_wandb's `dir`. Done
         # explicitly (rather than via **kwargs) so the contract stays

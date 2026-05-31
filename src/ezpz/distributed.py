@@ -1245,22 +1245,42 @@ def setup_wandb(
     settings: dict[str, Any] | None = None,
     **kwargs,
 ) -> Any:
-    """Initialise a wandb run (rank 0 only logs, others get disabled mode).
+    """Initialise a wandb run (rank 0 only — non-zero ranks return ``None``).
 
     Most parameters are forwarded directly to :func:`wandb.init`.  See
     the `wandb docs <https://docs.wandb.ai/ref/python/init/>`_ for
     details.
 
     Returns:
-        The :obj:`wandb.run` object, or ``None`` if wandb is unavailable.
+        The :obj:`wandb.run` object, ``None`` if called from a non-zero
+        rank, or ``None`` if wandb is unavailable.
+
+    .. note::
+       Returns ``None`` on every rank other than 0. Previously
+       non-zero ranks got a ``mode="disabled"`` wandb.run back — that
+       still meant verify_wandb(), wandb.init(), and full
+       run.config.update() ran on every rank, which on a 96-rank job
+       produced 96 dummy runs and a wall of "Setting up wandb from
+       rank=N" log spam. Callers that need a no-op tracker on
+       non-zero ranks should test for ``None`` and use
+       :class:`ezpz.tracker.NullTracker` (or just ignore the return —
+       ``log()`` calls against ``None`` should be guarded by the
+       caller anyway).
     """
+    # Hard rank gate: non-zero ranks skip all wandb work entirely.
+    # verify_wandb() and wandb.init() each take real time and produce
+    # log spam; on a 96-rank job that's 95x wasted work + a 96x
+    # multiplier on every log line in this function.
+    rank = get_rank()
+    if rank != 0:
+        return None
+
     import wandb
 
     if not verify_wandb():
         logger.warning("verify_wandb() failed; not initialising run")
         return None
 
-    rank = get_rank()
     outdir_str = Path(outdir).as_posix() if outdir else os.getcwd()
 
     # Resolve project name

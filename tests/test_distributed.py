@@ -1451,6 +1451,73 @@ class TestGetEzpzGitSha:
 # ===================================================================
 
 
+class TestSetupWandbRankGate:
+    """setup_wandb must short-circuit on non-zero ranks.
+
+    Regression for the 96-rank Sunspot incident: previously setup_wandb
+    ran verify_wandb() + wandb.init() + logger.info() on every rank,
+    relying on _resolve_wandb_mode("disabled") for non-zero ranks to
+    produce a "dummy" wandb.run. Result: 95 dummy runs + a wall of
+    "Setting up wandb from rank=N" log spam on a 96-rank job.
+    """
+
+    def test_rank_nonzero_returns_none_immediately(self, monkeypatch):
+        # Mock get_rank to return 17. Then mock wandb so that if
+        # setup_wandb DID try to call wandb.init, we'd see it.
+        monkeypatch.setattr(dist, "get_rank", lambda: 17)
+
+        wandb_init_calls = []
+        verify_calls = []
+
+        import sys
+        from unittest.mock import MagicMock
+
+        mock_wandb = MagicMock()
+        mock_wandb.init = MagicMock(
+            side_effect=lambda *a, **kw: wandb_init_calls.append((a, kw))
+        )
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            dist,
+            "verify_wandb",
+            lambda: (verify_calls.append(1), True)[1],
+        )
+
+        result = dist.setup_wandb(project_name="test")
+
+        assert result is None, "non-zero rank must return None"
+        assert wandb_init_calls == [], (
+            "setup_wandb called wandb.init from a non-zero rank — "
+            "the rank gate regressed. This is the 96-dummy-runs bug."
+        )
+        assert verify_calls == [], (
+            "setup_wandb called verify_wandb from a non-zero rank — "
+            "the rank gate should short-circuit BEFORE verify_wandb."
+        )
+
+    def test_rank_zero_proceeds_normally(self, monkeypatch):
+        # Companion: rank 0 must still call verify_wandb + wandb.init.
+        monkeypatch.setattr(dist, "get_rank", lambda: 0)
+
+        import sys
+        from unittest.mock import MagicMock
+
+        mock_wandb = MagicMock()
+        mock_wandb.init.return_value = MagicMock()
+        mock_wandb.run = mock_wandb.init.return_value
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(dist, "verify_wandb", lambda: True)
+
+        result = dist.setup_wandb(project_name="test")
+
+        assert result is not None, (
+            "rank 0 should get a wandb.run, not None"
+        )
+        assert mock_wandb.init.called, (
+            "rank 0 should call wandb.init"
+        )
+
+
 class TestSetupDdpDeviceId:
     """Regression for the device_id-never-set-on-CUDA bug.
 

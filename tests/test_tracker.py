@@ -207,22 +207,60 @@ class TestWandbBackendRankGating:
         # mode="disabled" from env, but should not be overridden
         assert backend._run is not None or True  # init succeeds or is disabled
 
-    @patch.dict(os.environ, {}, clear=False)
-    def test_rank_nonzero_gets_disabled(self):
+    def test_rank_nonzero_returns_none_without_calling_wandb(
+        self, monkeypatch
+    ):
+        # As of v0.18.x WandbBackend short-circuits on rank != 0 BEFORE
+        # importing wandb or calling setup_wandb. Previously it forwarded
+        # mode="disabled" and got back a no-op wandb.run; on a 96-rank
+        # job that meant 95 dummy runs + a wall of "Setting up wandb
+        # from rank=N" log spam from setup_wandb.
+        #
+        # Mock setup_wandb to assert it is NEVER called from rank != 0.
+        called = []
+
+        def _should_not_be_called(*args, **kwargs):
+            called.append((args, kwargs))
+            return None
+
+        monkeypatch.setattr(
+            "ezpz.distributed.setup_wandb", _should_not_be_called
+        )
+
         backend = WandbBackend(rank=1)
-        # rank != 0 should force mode="disabled"
-        # The run should exist but in disabled mode (no network calls)
-        if backend._run is not None:
-            assert backend._run.disabled
+        assert backend._run is None, "non-zero rank must have _run=None"
+        assert called == [], (
+            f"setup_wandb was called from rank=1: {called}. "
+            "Rank gate regressed — every rank now does wandb init work."
+        )
+
+    def test_rank_zero_does_call_setup_wandb(self, monkeypatch):
+        # Companion to the above: rank 0 SHOULD reach setup_wandb. Same
+        # mock, opposite assertion.
+        called = []
+
+        def _capture(*args, **kwargs):
+            called.append((args, kwargs))
+            # Return None so we don't try to update config on a mock.
+            return None
+
+        monkeypatch.setattr(
+            "ezpz.distributed.setup_wandb", _capture
+        )
+
+        WandbBackend(rank=0)
+        assert len(called) == 1, (
+            f"rank 0 should call setup_wandb exactly once, got {len(called)}"
+        )
 
     @patch.dict(os.environ, {"WANDB_MODE": "disabled"})
-    def test_mode_kwarg_popped_on_all_ranks(self):
-        """mode= should be consumed even on non-rank-0 to avoid leaking."""
-        # If mode leaks into **kwargs, wandb.init gets it twice (via
-        # init_kwargs["mode"] and **kwargs), which would be wrong.
-        # This test verifies no TypeError from duplicate 'mode'.
+    def test_mode_kwarg_does_not_break_rank_nonzero(self):
+        """Passing mode= from a non-zero rank should not raise."""
+        # Used to test that mode= didn't get duplicated in init_kwargs;
+        # with the hard rank gate it's now testing that the gate fires
+        # cleanly even when extra kwargs are present.
         backend = WandbBackend(rank=1, mode="online")
-        assert backend._run is not None or True  # should not raise
+        assert backend._run is None
 
 
 # ── WandbBackend behavior (mocked wandb) ────────────────────────────────────
