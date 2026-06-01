@@ -272,10 +272,18 @@ class TestGetPbsRunningJobsForUser:
 
 
 class TestGetPbsJobidOfActiveJob:
-    """Tests for ``get_pbs_jobid_of_active_job``."""
+    """Tests for ``get_pbs_jobid_of_active_job``.
+
+    All tests in this class must clear ``$PBS_JOBID`` first so the
+    qstat-based slow path is actually exercised. Without that
+    delenv, a CI runner (or login-node) with ``PBS_JOBID`` set
+    would short-circuit on the fast path and silently bypass the
+    qstat mocks.
+    """
 
     def test_hostname_matching(self, monkeypatch):
         """Returns jobid when socket.getfqdn() hostname matches a node."""
+        monkeypatch.delenv("PBS_JOBID", raising=False)
         monkeypatch.setattr(
             pbs,
             "get_pbs_running_jobs_for_user",
@@ -293,6 +301,7 @@ class TestGetPbsJobidOfActiveJob:
 
     def test_hostname_matching_first_job(self, monkeypatch):
         """Returns the first matching jobid when hostname is in that job's nodelist."""
+        monkeypatch.delenv("PBS_JOBID", raising=False)
         monkeypatch.setattr(
             pbs,
             "get_pbs_running_jobs_for_user",
@@ -310,6 +319,7 @@ class TestGetPbsJobidOfActiveJob:
 
     def test_no_match_returns_none(self, monkeypatch):
         """Returns None when hostname does not match any running job."""
+        monkeypatch.delenv("PBS_JOBID", raising=False)
         monkeypatch.setattr(
             pbs,
             "get_pbs_running_jobs_for_user",
@@ -327,6 +337,7 @@ class TestGetPbsJobidOfActiveJob:
 
     def test_no_running_jobs_returns_none(self, monkeypatch):
         """Returns None when there are no running jobs at all."""
+        monkeypatch.delenv("PBS_JOBID", raising=False)
         monkeypatch.setattr(
             pbs,
             "get_pbs_running_jobs_for_user",
@@ -338,6 +349,164 @@ class TestGetPbsJobidOfActiveJob:
         )
         result = pbs.get_pbs_jobid_of_active_job()
         assert result is None
+
+    # --- Fast path: $PBS_JOBID short-circuit -----------------------------
+
+    def test_pbs_jobid_env_short_circuits_qstat(self, monkeypatch):
+        """Setting $PBS_JOBID must bypass the qstat lookup entirely.
+
+        Regression for the Aurora compute-node bug where the qstat
+        fallback failed with ImportError because the qstat binary
+        isn't on $PATH on compute nodes. Mocking the slow path to
+        explode proves we never reach it.
+        """
+        monkeypatch.setenv(
+            "PBS_JOBID", "12345.aurora-pbs-0001.head.cm.aurora.alcf.anl.gov"
+        )
+        monkeypatch.delenv("PBS_NODEFILE", raising=False)
+
+        def _explode():
+            raise ImportError(
+                "qstat not on PATH — fast path failed to short-circuit"
+            )
+
+        monkeypatch.setattr(
+            pbs, "get_pbs_running_jobs_for_user", _explode
+        )
+        result = pbs.get_pbs_jobid_of_active_job()
+        # Server suffix stripped to match the rest of ezpz's jobid handling.
+        assert result == "12345"
+
+    def test_pbs_jobid_env_empty_string_falls_back(self, monkeypatch):
+        """Empty $PBS_JOBID must fall through to qstat (truthy check).
+
+        Pins the ``if pbs_jobid:`` truthy semantics so future "code
+        cleanup" can't silently change it to ``is not None`` (which
+        would short-circuit on an empty string and return ``""``).
+        """
+        monkeypatch.setenv("PBS_JOBID", "")
+        monkeypatch.delenv("PBS_NODEFILE", raising=False)
+        called = []
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: (called.append(1), {})[1],
+        )
+        monkeypatch.setattr("socket.getfqdn", lambda: "no-match.local")
+        result = pbs.get_pbs_jobid_of_active_job()
+        assert called, (
+            "Empty PBS_JOBID must NOT short-circuit; qstat fallback "
+            "should still run."
+        )
+        assert result is None
+
+    def test_pbs_jobid_unset_falls_back_to_qstat(self, monkeypatch):
+        """When $PBS_JOBID is absent we must walk the qstat path."""
+        monkeypatch.delenv("PBS_JOBID", raising=False)
+        monkeypatch.delenv("PBS_NODEFILE", raising=False)
+        called = []
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: (called.append(1), {"99999": ["host-a"]})[1],
+        )
+        monkeypatch.setattr("socket.getfqdn", lambda: "host-a.local")
+        result = pbs.get_pbs_jobid_of_active_job()
+        assert called == [1]
+        assert result == "99999"
+
+    def test_pbs_jobid_with_no_dot_returned_as_is(self, monkeypatch):
+        """SLURM-style bare numeric jobid (no `.suffix`) shouldn't error.
+
+        ``.split(".")[0]`` on a string without ``.`` returns the
+        whole string — pin this so a future refactor to
+        ``.split(".", 1)[0]`` etc. doesn't quietly break.
+        """
+        monkeypatch.setenv("PBS_JOBID", "987654")
+        monkeypatch.delenv("PBS_NODEFILE", raising=False)
+        # Slow path mocked away — fast path should win.
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: pytest.fail("must not reach qstat path"),
+        )
+        assert pbs.get_pbs_jobid_of_active_job() == "987654"
+
+    # --- Fast-path hostname cross-check ----------------------------------
+
+    def test_nodefile_hostname_match_returns_jobid(self, monkeypatch, tmp_path):
+        """When PBS_NODEFILE is present AND contains our hostname, trust $PBS_JOBID."""
+        nodefile = tmp_path / "nodefile"
+        nodefile.write_text("x3005c0s7b0n0\nx3005c0s7b1n0\n")
+        monkeypatch.setenv("PBS_JOBID", "55555.foo.bar")
+        monkeypatch.setenv("PBS_NODEFILE", str(nodefile))
+        monkeypatch.setattr(
+            "socket.getfqdn",
+            lambda: "x3005c0s7b1n0.cm.aurora.alcf.anl.gov",
+        )
+        # Slow path mocked to fail — proves we returned via fast path.
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: pytest.fail("must not reach qstat path"),
+        )
+        assert pbs.get_pbs_jobid_of_active_job() == "55555"
+
+    def test_nodefile_hostname_mismatch_falls_through_to_qstat(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """When PBS_NODEFILE doesn't contain our hostname, $PBS_JOBID is
+        lying — log a warning and fall through to qstat.
+
+        Defends against the (rare) case of a stale PBS_JOBID export
+        or running ezpz from an ssh-into-compute-node shell of a
+        different job.
+        """
+        nodefile = tmp_path / "nodefile"
+        nodefile.write_text("x9999c0s0b0n0\n")  # Some other host
+        monkeypatch.setenv("PBS_JOBID", "11111.foo.bar")
+        monkeypatch.setenv("PBS_NODEFILE", str(nodefile))
+        monkeypatch.setattr(
+            "socket.getfqdn",
+            lambda: "x3005c0s7b1n0.cm.aurora.alcf.anl.gov",
+        )
+        # Slow path returns the actually-correct jobid for our host.
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: {"22222": ["x3005c0s7b1n0"]},
+        )
+        with caplog.at_level(logging.WARNING, logger=pbs.logger.name):
+            result = pbs.get_pbs_jobid_of_active_job()
+        assert result == "22222"
+        assert any(
+            "is not in $PBS_NODEFILE" in rec.message
+            for rec in caplog.records
+        ), "Expected a warning about the hostname mismatch."
+
+    def test_nodefile_unreadable_falls_through_silently(
+        self, monkeypatch, tmp_path
+    ):
+        """If PBS_NODEFILE is set but unreadable (deleted, permissions),
+        treat it as 'no cross-check available' and trust $PBS_JOBID.
+
+        Don't bail or fall through to qstat — the file's absence
+        doesn't prove $PBS_JOBID is wrong; it usually just means we're
+        in a subprocess that lost the file descriptor or the file got
+        cleaned up. The original motivation for the fast path was
+        compute-node subprocesses; making them THIS sensitive to
+        filesystem state defeats the point.
+        """
+        monkeypatch.setenv("PBS_JOBID", "77777.foo.bar")
+        monkeypatch.setenv(
+            "PBS_NODEFILE", str(tmp_path / "does-not-exist")
+        )
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: pytest.fail("must not reach qstat path"),
+        )
+        assert pbs.get_pbs_jobid_of_active_job() == "77777"
 
 
 # ===================================================================
