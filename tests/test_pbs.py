@@ -452,6 +452,42 @@ class TestGetPbsJobidOfActiveJob:
         )
         assert pbs.get_pbs_jobid_of_active_job() == "55555"
 
+    def test_nodefile_fqdn_match_aurora_compute_node(
+        self, monkeypatch, tmp_path
+    ):
+        """Aurora-shaped FQDNs in PBS_NODEFILE + short local hostname.
+
+        Regression for the false-positive caught on Aurora job 8518207:
+        PBS_NODEFILE on Aurora contains
+        `x4114c1s7b0n0.hostmgmt2.cm.aurora.alcf.anl.gov` (FQDN with
+        the hostmgmt2 suffix) while `socket.getfqdn()` on compute
+        nodes returns just `x4114c1s7b0n0` (reverse DNS doesn't
+        include the hostmgmt suffix inside a job). The check must
+        strip both sides to the short hostname before membership.
+
+        Without the fix: every Aurora call logs a misleading
+        "hostname not in PBS_NODEFILE" warning and burns a qstat
+        round-trip on every rank, even though the job is correct.
+        """
+        nodefile = tmp_path / "nodefile"
+        nodefile.write_text(
+            "x4114c1s0b0n0.hostmgmt2.cm.aurora.alcf.anl.gov\n"
+            "x4114c1s7b0n0.hostmgmt2.cm.aurora.alcf.anl.gov\n"
+        )
+        monkeypatch.setenv(
+            "PBS_JOBID",
+            "8518207.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov",
+        )
+        monkeypatch.setenv("PBS_NODEFILE", str(nodefile))
+        # On compute nodes inside a job, getfqdn returns the SHORT name.
+        monkeypatch.setattr("socket.getfqdn", lambda: "x4114c1s7b0n0")
+        monkeypatch.setattr(
+            pbs,
+            "get_pbs_running_jobs_for_user",
+            lambda: pytest.fail("must not reach qstat path"),
+        )
+        assert pbs.get_pbs_jobid_of_active_job() == "8518207"
+
     def test_nodefile_hostname_mismatch_falls_through_to_qstat(
         self, monkeypatch, tmp_path, caplog
     ):

@@ -151,15 +151,24 @@ def get_pbs_jobid_of_active_job() -> str | None:
         # through to the qstat-based lookup. Skip silently when
         # PBS_NODEFILE is absent — that's the compute-node-subprocess
         # case the fast path was built for.
+        #
+        # IMPORTANT: PBS_NODEFILE on Aurora contains FQDNs like
+        # `x4114c1s7b0n0.hostmgmt2.cm.aurora.alcf.anl.gov` while
+        # `socket.getfqdn()` returns the SHORT name `x4114c1s7b0n0` on
+        # compute nodes (because reverse DNS doesn't include the
+        # hostmgmt suffix from inside a job). Compare on short names
+        # only — strip the first `.`-separated segment from BOTH
+        # sides before membership check.
         pbs_nodefile = os.environ.get("PBS_NODEFILE")
         if pbs_nodefile:
             try:
-                nodes = Path(pbs_nodefile).read_text().split()
+                raw_nodes = Path(pbs_nodefile).read_text().split()
             except OSError:
-                nodes = None
-            if nodes is not None:
-                local = socket.getfqdn().split(".")[0]
-                if local not in nodes:
+                raw_nodes = None
+            if raw_nodes is not None:
+                nodes_short = {n.split(".", 1)[0] for n in raw_nodes}
+                local = socket.getfqdn().split(".", 1)[0]
+                if local not in nodes_short:
                     logger.warning(
                         "$PBS_JOBID=%s but local hostname %s is not "
                         "in $PBS_NODEFILE=%s; falling through to qstat.",
