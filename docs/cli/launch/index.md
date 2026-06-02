@@ -443,20 +443,29 @@ make your script emit one of the recognized Aurora crash signatures
 on rank 0 of the first attempt — e.g.:
 
 ```bash
-ezpz launch --auto-retry --np 12 -ppn 12 --timeout 60 -- bash -c '
-  if [[ ! -f /tmp/attempt2 ]]; then
-    touch /tmp/attempt2
-    hostname
-    echo "$(hostname): shepherd died from signal 9"
+# Sentinel must live on SHARED filesystem (PBS_O_WORKDIR is your
+# submit dir, on Lustre/GPFS); /tmp would be per-node and the
+# sentinel would vanish after the failover swaps the active host out.
+SENTINEL="${PBS_O_WORKDIR}/.ezpz-attempt2-$$"
+
+# Aurora scraper recognizes the .hsn.cm.aurora.alcf.anl.gov FQDN
+# form; `hostname` on compute nodes returns just the short name. Use
+# the first PBS_NODEFILE entry — those entries are always in HSN form.
+ACTIVE_HOST=$(head -n 1 "${PBS_NODEFILE}")
+
+ezpz launch --auto-retry --np 12 -ppn 12 --timeout 60 -- bash -c "
+  if [[ ! -f '${SENTINEL}' ]]; then
+    touch '${SENTINEL}'
+    echo '${ACTIVE_HOST}: shepherd died from signal 9'
     exit 1
   fi
-  echo "iter step=1 loss=0.5"
+  echo 'iter step=1 loss=0.5'
   exit 0
-'
-# Should produce 2 attempts, the first hostname swapped into bad_nodes.txt.
+"
+# Should produce 2 attempts, ${ACTIVE_HOST} swapped into bad_nodes.txt.
 # After: `cat logs/failover-*/bad_nodes.txt` shows the swapped host;
 # `cat logs/failover-*/active.hostfile` shows the replacement.
-# Clean up: rm /tmp/attempt2
+# Clean up: rm "${SENTINEL}"
 ```
 
 ## Python interpreter resolution

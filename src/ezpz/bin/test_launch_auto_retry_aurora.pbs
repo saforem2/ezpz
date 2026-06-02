@@ -84,8 +84,15 @@ log_message INFO "PBS allocation: ${TOTAL_NODES} nodes"
 log_message INFO "First node: $(head -1 "${PBS_NODEFILE}")"
 
 # ---- Test runner setup ----------------------------------------------------
-TMP="$(mktemp -d -t ezpz-aurora-auto-retry-XXXXXX)"
-log_message INFO "Scratch dir: ${TMP}"
+# IMPORTANT: scratch must live on SHARED filesystem (Lustre/GPFS),
+# not node-local /tmp. Scenarios B/C swap the active host between
+# attempts via --auto-retry's blind rotation; if counter files +
+# failover output dirs live on /tmp they vanish from the new host's
+# point of view and scenario B/C fail spuriously. PBS_O_WORKDIR is
+# the user's submit-time CWD — Lustre on Aurora, GPFS on Polaris —
+# always visible from every compute node in the allocation.
+TMP="$(mktemp -d -p "${PBS_O_WORKDIR}" ezpz-aurora-auto-retry-XXXXXX)"
+log_message INFO "Scratch dir (shared FS): ${TMP}"
 LOG="${TMP}/scenario.log"
 SUMMARY="${TMP}/summary.txt"
 : > "${SUMMARY}"
