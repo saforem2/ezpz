@@ -54,6 +54,11 @@ def _main_process_first() -> Iterator[None]:
     if not torch.distributed.is_available() or not torch.distributed.is_initialized():
         yield
         return
+    # NOTE: gates on GLOBAL rank 0, which is correct ONLY for a
+    # shared cache dir (the ALCF default — /home, /lus). If you
+    # set a node-local HF_DATASETS_CACHE (e.g. $TMPDIR), every
+    # node needs its own rank-0 to populate the cache; switch to
+    # `ezpz.get_local_rank() == 0` in that case.
     rank = torch.distributed.get_rank()
     if rank != 0:
         torch.distributed.barrier()

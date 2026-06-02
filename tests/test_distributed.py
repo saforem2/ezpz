@@ -1829,3 +1829,226 @@ class TestSetupDdpDeviceId:
         dist._setup_ddp(backend="gloo", device_id=xpu_device)  # type: ignore[arg-type]
         kwargs = mock_init.call_args.kwargs
         assert kwargs.get("device_id") == xpu_device
+
+
+# ===================================================================
+# init_device_mesh_safe
+# ===================================================================
+
+
+class TestInitDeviceMeshSafe:
+    """``init_device_mesh_safe`` round-trips ``bound_device_id`` on the
+    default PG so torch's ``DeviceMesh._init_one_process_group`` takes
+    the ``new_group`` fallback path (which xccl supports) instead of
+    ``split_group`` (which it doesn't).
+
+    Pre-fix, 2D meshes (``ezpz.examples.fsdp_tp``) raised
+        RuntimeError: No backend for the parent process group or its
+                      backend does not support splitting
+    on XPU + xccl.
+
+    These tests mock the default PG and the torch ``init_device_mesh``
+    entry-point to verify (a) the workaround fires only on xpu when
+    the PG actually has a ``bound_device_id``, (b) the original value
+    is restored, and (c) silent disablement (e.g. a future torch making
+    the attr read-only) doesn't break the call.
+    """
+
+    def _fake_pg(self, bound_device_id):
+        """Build a stand-in for ``torch.distributed.ProcessGroup`` that
+        carries a mutable ``bound_device_id`` like the real C++ object
+        does today."""
+        pg = MagicMock()
+        pg.bound_device_id = bound_device_id
+        return pg
+
+    def test_xpu_clears_and_restores_bound_device_id(self, monkeypatch):
+        """On xpu with a bound default PG: clear → call → restore."""
+        sentinel = torch.device("xpu:3")
+        pg = self._fake_pg(sentinel)
+
+        observed: dict[str, Any] = {}
+
+        def _fake_init_device_mesh(device_type, mesh_shape, *, mesh_dim_names=None):
+            # During the inner call, bound_device_id must be None.
+            observed["mid_call_bound_device_id"] = pg.bound_device_id
+            return MagicMock(name="DeviceMesh")
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+        # Patch torch's init_device_mesh at the source the shim
+        # imports it from.
+        import torch.distributed.device_mesh as _dm
+
+        monkeypatch.setattr(_dm, "init_device_mesh", _fake_init_device_mesh)
+
+        result = dist.init_device_mesh_safe(
+            "xpu", (2, 4), mesh_dim_names=("dp", "tp")
+        )
+
+        assert result is not None
+        assert observed["mid_call_bound_device_id"] is None, (
+            "Workaround failed: bound_device_id was not cleared "
+            "during init_device_mesh. Torch's DeviceMesh._init_one_"
+            "process_group will take the split_group branch and "
+            "raise on xccl."
+        )
+        assert pg.bound_device_id == sentinel, (
+            "bound_device_id was not restored after the call. "
+            "Subsequent FSDP2 collectives need a device-bound PG."
+        )
+
+    def test_xpu_with_unbound_pg_is_pass_through(self, monkeypatch):
+        """When ``bound_device_id`` is already None, no swap happens."""
+        pg = self._fake_pg(None)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("xpu", (4,))
+
+        called.assert_called_once()
+        # No mutation — still None.
+        assert pg.bound_device_id is None
+
+    def test_non_xpu_skips_workaround_entirely(self, monkeypatch):
+        """CUDA path must NOT touch ``bound_device_id``.
+
+        Torch's NCCL backend supports split_group natively; this
+        helper should be a pure pass-through there.
+        """
+        sentinel = torch.device("cuda:0")
+        pg = self._fake_pg(sentinel)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        # If the CUDA path ever tries to fetch the default PG, blow up
+        # — we want a true no-op.
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            MagicMock(side_effect=AssertionError("CUDA must not touch the default PG")),
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("cuda", (8,))
+
+        called.assert_called_once_with("cuda", (8,), mesh_dim_names=None)
+        # bound_device_id still untouched.
+        assert pg.bound_device_id == sentinel
+
+    def test_no_default_pg_is_pass_through(self, monkeypatch):
+        """If ``torch.distributed`` isn't initialised, fall through."""
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("xpu", (2, 2))
+        called.assert_called_once()
+
+    def test_restores_bound_device_id_when_inner_raises(self, monkeypatch):
+        """If ``init_device_mesh`` raises, the original value MUST be
+        restored — otherwise downstream FSDP2 silently routes to the
+        wrong device.
+        """
+        sentinel = torch.device("xpu:5")
+        pg = self._fake_pg(sentinel)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        def _boom(*_a, **_kw):
+            raise RuntimeError("simulated split_group failure")
+
+        monkeypatch.setattr(_dm, "init_device_mesh", _boom)
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            dist.init_device_mesh_safe("xpu", (4,))
+
+        assert pg.bound_device_id == sentinel, (
+            "Workaround leaked: bound_device_id stayed cleared after "
+            "an inner failure. FSDP2 will silently route collectives "
+            "to the wrong XPU device on the next all_gather."
+        )
+
+    def test_silent_disablement_when_attr_setattr_fails(self, monkeypatch):
+        """If a future torch makes ``bound_device_id`` read-only, the
+        shim should fail-open: the inner call still runs (and will
+        raise the original ``RuntimeError`` from torch if applicable),
+        rather than the shim itself crashing in an obscure place.
+
+        This pins the try/except behavior in init_device_mesh_safe.
+        """
+
+        class _LockedAttr:
+            """PG-like object where ``bound_device_id`` is read-only."""
+
+            def __init__(self):
+                # Use object.__setattr__ to bypass our own override
+                # for the initial value.
+                object.__setattr__(
+                    self, "_bdi", torch.device("xpu:0")
+                )
+
+            @property
+            def bound_device_id(self):
+                return self._bdi
+
+            @bound_device_id.setter
+            def bound_device_id(self, _value):
+                raise AttributeError("read-only in future torch")
+
+        pg = _LockedAttr()
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        # Must not raise from the shim itself; inner call still fires.
+        dist.init_device_mesh_safe("xpu", (4,))
+        called.assert_called_once()
