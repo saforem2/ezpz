@@ -2639,11 +2639,14 @@ ezpz_setup_job() {
 	mn="$(ezpz_get_machine_name)"
 	local hn
 	hn="$(hostname)"
+
 	log_message INFO "[${YELLOW}JOB${RESET}]"
 	log_message INFO "  - Parsing job env for ${YELLOW}${USER}${RESET}"
 	log_message INFO "  - Detected ${YELLOW}${scheduler_type}${RESET} scheduler"
 	log_message INFO "  - Machine: ${YELLOW}${mn}${RESET}"
 	log_message INFO "  - Hostname: ${YELLOW}${hn}${RESET}"
+    ezpz_check_working_dir || log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
+
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		ezpz_setup_job_alcf "$@"
 		return $?
@@ -3150,6 +3153,17 @@ ezpz_check_working_dir() {
 	WORKING_DIR=$(ezpz_get_working_dir)
 	export WORKING_DIR="${WORKING_DIR}"
 
+	# The function's invariant: WORKING_DIR is set and non-empty on
+	# success. ezpz_get_working_dir shells out to python3, which can
+	# fail silently in a stripped environment (python3 not on PATH,
+	# import error, etc.) — the command substitution returns empty
+	# without raising. Catch that here so callers can `|| log_message
+	# ERROR ...` and not be lied to.
+	if [[ -z "${WORKING_DIR}" ]]; then
+		log_message ERROR "Unable to determine WORKING_DIR (ezpz_get_working_dir returned empty)."
+		return 1
+	fi
+
 	if [[ -d .git ]]; then
 		GIT_COMMIT_HASH=$(git rev-parse HEAD) && export GIT_COMMIT_HASH
 		GIT_BRANCH=$(git branch --show-current) && export GIT_BRANCH
@@ -3157,19 +3171,23 @@ ezpz_check_working_dir() {
 		log_message WARN "No .git directory found in WORKING_DIR (${GREEN}${WORKING_DIR}${RESET}). Skipping Git info export."
 	fi
 
+	local scheduler_rc=0
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
 		log_message INFO "Detected PBS scheduler environment."
 		ezpz_check_working_dir_pbs
+		scheduler_rc=$?
 	elif [[ "${scheduler_type}" == "slurm" ]]; then
 		log_message INFO "Detected SLURM scheduler environment."
 		ezpz_check_working_dir_slurm
+		scheduler_rc=$?
 	else
 		log_message INFO "No PBS or SLURM scheduler environment detected."
 		log_message INFO "Unable to detect PBS or SLURM working directory info..."
 		log_message INFO "Using current working directory (${GREEN}${WORKING_DIR}${RESET}) as working directory..."
 	fi
 
+	return "${scheduler_rc}"
 }
 
 # -----------------------------------------------------------------------------
