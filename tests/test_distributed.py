@@ -1056,6 +1056,28 @@ class TestVerifyWandb:
         with patch.dict("sys.modules", {"wandb": mock_wandb}):
             assert dist.verify_wandb() is True
 
+    def test_wandb_mode_offline_no_api_key(self, fake_comm, monkeypatch):
+        """Regression: WANDB_MODE=offline must NOT require an API key.
+
+        Offline runs write locally and never touch the network — that's
+        the whole point of the mode, and it's the documented compute-node
+        workflow (docs/troubleshooting.md). Pre-fix verify_wandb()
+        returned False here, which caused setup_wandb() to silently
+        skip wandb init on every compute-node offline run.
+        """
+        monkeypatch.delenv("WANDB_DISABLED", raising=False)
+        monkeypatch.delenv("WANDB_API_KEY", raising=False)
+        monkeypatch.setenv("WANDB_MODE", "offline")
+        mock_wandb = MagicMock()
+        mock_wandb.api.api_key = None
+        # Make sure netrc check would also fail so we're exercising
+        # the offline-exception branch, not the netrc fallback.
+        monkeypatch.setattr(
+            "pathlib.Path.is_file", lambda self: False
+        )
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            assert dist.verify_wandb() is True
+
 
 class TestResolveWandbMode:
     """Tests for ``_resolve_wandb_mode``."""
@@ -1404,3 +1426,307 @@ class TestGetFreePort:
         ports = {dist._get_free_port() for _ in range(10)}
         # While not guaranteed, we should get at least a few unique ports
         assert len(ports) >= 2
+
+
+# ===================================================================
+# _get_ezpz_git_sha
+# ===================================================================
+
+
+class TestGetEzpzGitSha:
+    """Tests for the best-effort git-sha lookup used by setup_wandb."""
+
+    def test_returns_short_sha_or_none(self):
+        # Real call against the actual checkout. On a dev machine this
+        # returns the short SHA; in a pip-install / non-git context
+        # returns None. Either is fine — we just verify the type.
+        sha = dist._get_ezpz_git_sha()
+        assert sha is None or (isinstance(sha, str) and 7 <= len(sha) <= 40)
+        if sha is not None:
+            # short sha is hex-only (no newlines, no whitespace)
+            assert sha.isalnum()
+
+    def test_handles_subprocess_failure_safely(self, monkeypatch):
+        # Simulate `git` not on PATH / non-zero exit: must return None,
+        # not raise. setup_wandb is allowed to keep going even when we
+        # can't compute the SHA.
+        import subprocess
+
+        def _explode(*_args, **_kwargs):
+            raise FileNotFoundError("git: command not found")
+
+        monkeypatch.setattr(subprocess, "run", _explode)
+        assert dist._get_ezpz_git_sha() is None
+
+    def test_handles_timeout_safely(self, monkeypatch):
+        import subprocess
+
+        def _timeout(*_args, **_kwargs):
+            raise subprocess.TimeoutExpired(cmd="git", timeout=2.0)
+
+        monkeypatch.setattr(subprocess, "run", _timeout)
+        assert dist._get_ezpz_git_sha() is None
+
+
+# ===================================================================
+# _setup_ddp: device_id resolution
+# ===================================================================
+
+
+class TestSetupWandbRankGate:
+    """setup_wandb must short-circuit on non-zero ranks.
+
+    Regression for the 96-rank Sunspot incident: previously setup_wandb
+    ran verify_wandb() + wandb.init() + logger.info() on every rank,
+    relying on _resolve_wandb_mode("disabled") for non-zero ranks to
+    produce a "dummy" wandb.run. Result: 95 dummy runs + a wall of
+    "Setting up wandb from rank=N" log spam on a 96-rank job.
+    """
+
+    def test_rank_nonzero_returns_none_immediately(self, monkeypatch):
+        # Mock get_rank to return 17. Then mock wandb so that if
+        # setup_wandb DID try to call wandb.init, we'd see it.
+        monkeypatch.setattr(dist, "get_rank", lambda: 17)
+
+        wandb_init_calls = []
+        verify_calls = []
+
+        import sys
+        from unittest.mock import MagicMock
+
+        mock_wandb = MagicMock()
+        mock_wandb.init = MagicMock(
+            side_effect=lambda *a, **kw: wandb_init_calls.append((a, kw))
+        )
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            dist,
+            "verify_wandb",
+            lambda: (verify_calls.append(1), True)[1],
+        )
+
+        result = dist.setup_wandb(project_name="test")
+
+        assert result is None, "non-zero rank must return None"
+        assert wandb_init_calls == [], (
+            "setup_wandb called wandb.init from a non-zero rank — "
+            "the rank gate regressed. This is the 96-dummy-runs bug."
+        )
+        assert verify_calls == [], (
+            "setup_wandb called verify_wandb from a non-zero rank — "
+            "the rank gate should short-circuit BEFORE verify_wandb."
+        )
+
+    def test_rank_zero_proceeds_normally(self, monkeypatch):
+        # Companion: rank 0 must still call verify_wandb + wandb.init.
+        monkeypatch.setattr(dist, "get_rank", lambda: 0)
+
+        import sys
+        from unittest.mock import MagicMock
+
+        mock_wandb = MagicMock()
+        mock_wandb.init.return_value = MagicMock()
+        mock_wandb.run = mock_wandb.init.return_value
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(dist, "verify_wandb", lambda: True)
+
+        result = dist.setup_wandb(project_name="test")
+
+        assert result is not None, (
+            "rank 0 should get a wandb.run, not None"
+        )
+        assert mock_wandb.init.called, (
+            "rank 0 should call wandb.init"
+        )
+
+
+class TestSetupDdpDeviceId:
+    """Regression for the device_id-never-set-on-CUDA bug.
+
+    Before the fix, _setup_ddp built a torch.device("cuda:N") when the
+    caller didn't pass device_id but then NEVER added it to init_kwargs
+    (the guard checked the original device_id parameter, not the locally-
+    constructed device). Result: every CUDA run got
+        "barrier(): using the device under current context.
+         You can specify `device_id` in `init_process_group` to mute
+         this warning."
+    on every collective op.
+
+    These tests inspect the init_kwargs that _setup_ddp would pass to
+    torch.distributed.init_process_group, without actually initing a
+    real process group.
+    """
+
+    def _capture_init_kwargs(self, monkeypatch, **env):
+        """Call _setup_ddp with mocked torch.distributed and return the
+        kwargs it would have passed to init_process_group."""
+        import torch
+        from unittest.mock import MagicMock
+
+        for k, v in env.items():
+            monkeypatch.setenv(k, str(v))
+
+        # Patch is_initialized → False so we hit the init path, and
+        # init_process_group → MagicMock so we can inspect its args.
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        # No-op the env-broadcasting helpers — they need real MPI.
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        # Force MASTER_ADDR/PORT so we skip the resolution branch.
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+
+        dist._setup_ddp(backend="gloo")
+        assert mock_init.call_count == 1
+        return mock_init.call_args.kwargs
+
+    def test_cuda_default_device_id_built_from_local_rank(
+        self, monkeypatch
+    ):
+        # CUDA + no explicit device_id → must pass device_id=cuda:LOCAL_RANK
+        # so torch can bind the PG to a specific GPU and skip the warning.
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "cuda")
+        kwargs = self._capture_init_kwargs(
+            monkeypatch,
+            RANK=0,
+            LOCAL_RANK=3,
+            WORLD_SIZE=4,
+        )
+        import torch
+
+        assert "device_id" in kwargs, (
+            "Regression: _setup_ddp dropped device_id when caller didn't pass "
+            "one; init_process_group will emit barrier()-warning spam."
+        )
+        assert kwargs["device_id"] == torch.device("cuda:3")
+
+    def test_xpu_skips_device_id(self, monkeypatch):
+        # XCCL doesn't support split_group → DeviceMesh._unflatten breaks
+        # when PGs are device-bound. Intentional: device_id stays absent.
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
+        kwargs = self._capture_init_kwargs(
+            monkeypatch,
+            RANK=0,
+            LOCAL_RANK=2,
+            WORLD_SIZE=4,
+        )
+        assert "device_id" not in kwargs
+
+    def test_explicit_int_device_id_resolves_to_active_device_type(
+        self, monkeypatch
+    ):
+        """An int device_id resolves to "{get_torch_device_type()}:N".
+
+        Pre-fix this hardcoded "cuda:N" regardless of the active device
+        type — same bug class as the barrier()-warning fix above, just
+        on the explicit-caller path instead of the auto-detect path.
+        On a CUDA system the result is unchanged ("cuda:2"); the
+        regression target is XPU (see test_explicit_int_device_id_on_xpu).
+        """
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "cuda")
+        import torch
+        from unittest.mock import MagicMock
+
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "4")
+
+        dist._setup_ddp(backend="gloo", device_id=2)
+        kwargs = mock_init.call_args.kwargs
+        assert kwargs["device_id"] == torch.device("cuda:2")
+
+    def test_explicit_int_device_id_on_xpu_resolves_to_xpu(
+        self, monkeypatch
+    ):
+        """Regression: int device_id on XPU must NOT become "cuda:N".
+
+        Pre-fix `_setup_ddp(device_id=2)` on Aurora would have built
+        torch.device("cuda:2") and forwarded it to xccl
+        init_process_group — would have either errored or silently
+        bound to a non-existent device. This test pins the corrected
+        behavior: same int, different device_type, correct device
+        family.
+        """
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
+        import torch
+        from unittest.mock import MagicMock
+
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "4")
+
+        dist._setup_ddp(backend="gloo", device_id=2)
+        kwargs = mock_init.call_args.kwargs
+        assert kwargs["device_id"] == torch.device("xpu:2"), (
+            "Regression: explicit int device_id on XPU resolved to "
+            "the wrong device family. Was likely hardcoded `cuda:N`."
+        )
+
+    def test_explicit_xpu_device_id_currently_passes_through(
+        self, monkeypatch
+    ):
+        # Documents CURRENT behavior, not desired behavior: when the
+        # caller explicitly passes a torch.device("xpu:0") as
+        # device_id, the resolver forwards it to init_process_group
+        # even though the auto-detect path (device_id=None) correctly
+        # skips device_id on xpu. This is the P1 from the PR #147
+        # review — the comment block in _setup_ddp claims we skip
+        # device_id on xpu/xccl, but the skip only fires when the
+        # caller didn't pass anything.
+        #
+        # If/when this is fixed (resolved_device should be set to None
+        # when device_type == "xpu", regardless of how device_id was
+        # passed), this test should flip to:
+        #   assert "device_id" not in kwargs
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
+        import torch
+        from unittest.mock import MagicMock
+
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "4")
+
+        xpu_device = torch.device("xpu", 0)
+        dist._setup_ddp(backend="gloo", device_id=xpu_device)  # type: ignore[arg-type]
+        kwargs = mock_init.call_args.kwargs
+        # CURRENT (potentially buggy) behavior: xpu device passes through.
+        assert kwargs.get("device_id") == xpu_device, (
+            "If this assertion fails, the P1 from PR #147 was likely "
+            "fixed — flip to `assert 'device_id' not in kwargs` and "
+            "delete this comment."
+        )

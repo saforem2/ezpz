@@ -125,15 +125,37 @@ class TrackerBackend(ABC):
 class WandbBackend(TrackerBackend):
     """Backend that delegates to `Weights & Biases <https://wandb.ai>`_.
 
-    Wraps ``wandb.init`` with the same rank-aware, env-var-respecting logic
-    used by :func:`ezpz.distributed.setup_wandb`.
+    Thin adapter over :func:`ezpz.distributed.setup_wandb` — that's the
+    single canonical W&B-init entry point in ezpz, so this backend
+    automatically inherits its environment-tracking goodies. As of
+    v0.18.x those include: ``hostname``, ``pytorch_backend``,
+    ``torch_version``, ``world_size``, ``ezpz_version``, ``machine``,
+    ``working_directory``, ``year``/``month``/``day``/``tstamp``,
+    ``jobid``, ``scheduler``, ``num_nodes``, ``ranks_per_node``,
+    ``device_type``, ``python_version``, ``ezpz_git_sha``. Any future
+    fields added to ``setup_wandb`` automatically reach
+    ``WandbBackend``-instantiated runs.
 
     Args:
-        project_name: W&B project name.
-        config: Run-level config dict passed to ``wandb.init``.
-        outdir: Directory for local wandb files.
-        rank: Distributed rank (non-0 gets ``mode="disabled"``).
-        **kwargs: Forwarded to ``wandb.init``.
+        project_name: W&B project name. Falls back to ``$WB_PROJECT`` /
+            ``$WANDB_PROJECT`` / ``$WB_PROJECT_NAME`` / the calling
+            script's filename (in that order) via
+            :func:`~ezpz.distributed.setup_wandb`.
+        config: Run-level config dict. Keys land at the **top level** of
+            ``run.config`` (we deliberately bypass ``setup_wandb``'s
+            ``{"config": config}`` wrap so existing
+            ``WandbBackend(config={"lr": 0.01})`` users still see
+            ``run.config.lr``).
+        outdir: Directory for local wandb files. Forwarded as ``dir=``
+            to ``wandb.init``.
+        rank: Distributed rank override. ``None`` → auto-detect via
+            ``get_rank()``. Non-zero ranks short-circuit immediately:
+            ``self._run = None``, no wandb import, no
+            ``setup_wandb`` call. Callers should null-check
+            ``backend.run`` rather than expect a disabled wandb run
+            object.
+        **kwargs: Forwarded to :func:`~ezpz.distributed.setup_wandb`
+            (which forwards them to ``wandb.init``).
     """
 
     name: str = "wandb"
@@ -158,67 +180,58 @@ class WandbBackend(TrackerBackend):
             except Exception:
                 rank = 0
 
-        # Resolve project name from args / env / script name
-        _project = project_name
-        if _project is None:
-            _project = os.environ.get(
-                "WB_PROJECT",
-                os.environ.get(
-                    "WANDB_PROJECT",
-                    os.environ.get("WB_PROJECT_NAME"),
-                ),
-            )
-        if _project is None:
-            _project = _default_project_name()
-
-        # Resolve mode — disable on non-rank-0 processes
-        from ezpz.distributed import _resolve_wandb_mode
-
-        _mode_arg = kwargs.pop("mode", None)
+        # Hard rank gate. setup_wandb ALSO short-circuits on non-zero
+        # ranks (as of v0.18.x) so this is belt-and-suspenders — but
+        # the gate here lets us skip the import + cross-module call
+        # entirely on N-1 ranks, which on a 96-rank job is the
+        # difference between 0 and 96 noisy "Setting up wandb..."
+        # log lines.
         if rank != 0:
-            _mode = "disabled"
-        else:
-            _mode = _resolve_wandb_mode(_mode_arg)
+            self._run = None
+            return
 
-        outdir_str = Path(outdir).as_posix() if outdir else os.getcwd()
+        # Translate WandbBackend's `outdir` → setup_wandb's `dir`. Done
+        # explicitly (rather than via **kwargs) so the contract stays
+        # obvious to readers.
+        if outdir is not None:
+            kwargs.setdefault("dir", Path(outdir).as_posix())
 
-        init_kwargs: dict[str, Any] = {
-            "project": _project,
-            "dir": outdir_str,
-            "mode": _mode,
-            **kwargs,
-        }
-        # Remove None values so wandb.init uses its own defaults
-        init_kwargs = {k: v for k, v in init_kwargs.items() if v is not None}
+        # Resolve project name HERE rather than letting setup_wandb
+        # infer it via sys._getframe(). setup_wandb's frame walk
+        # would land on tracker.py (our caller) and group every
+        # default-project WandbBackend run under "ezpz.tracker"
+        # instead of the user's training script. _default_project_name
+        # walks sys.modules['__main__'] which gives the right answer
+        # regardless of how deep the call chain is.
+        _project = (
+            project_name
+            or os.environ.get("WB_PROJECT")
+            or os.environ.get("WANDB_PROJECT")
+            or os.environ.get("WB_PROJECT_NAME")
+            or _default_project_name()
+        )
+
+        # NOTE: we do NOT pass config= to setup_wandb. That helper nests
+        # the dict under run.config["config"]; WandbBackend has always
+        # exposed user keys at the top level (run.config.lr, not
+        # run.config.config.lr). Preserve that contract by updating the
+        # config dict ourselves after init.
+        from ezpz.distributed import setup_wandb
 
         try:
-            self._run = wandb.init(**init_kwargs)
+            self._run = setup_wandb(
+                project_name=_project,
+                **kwargs,
+            )
         except Exception as exc:
             logger.warning(
-                "wandb.init() failed: %s — continuing without wandb", exc
+                "setup_wandb() failed: %s — continuing without wandb", exc
             )
             self._run = None
             return
 
         if self._run is not None and config is not None:
             self._run.config.update(config)
-
-        # Auto-populate system info
-        if self._run is not None:
-            try:
-                import torch
-                import ezpz
-
-                self._run.config.update(
-                    {
-                        "hostname": os.environ.get("HOSTNAME", ""),
-                        "torch_version": torch.__version__,
-                        "ezpz_version": ezpz.__version__,
-                        "working_directory": os.getcwd(),
-                    }
-                )
-            except Exception:
-                pass
 
     @property
     def run(self) -> Any:

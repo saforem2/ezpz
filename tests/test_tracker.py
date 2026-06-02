@@ -207,22 +207,60 @@ class TestWandbBackendRankGating:
         # mode="disabled" from env, but should not be overridden
         assert backend._run is not None or True  # init succeeds or is disabled
 
-    @patch.dict(os.environ, {}, clear=False)
-    def test_rank_nonzero_gets_disabled(self):
+    def test_rank_nonzero_returns_none_without_calling_wandb(
+        self, monkeypatch
+    ):
+        # As of v0.18.x WandbBackend short-circuits on rank != 0 BEFORE
+        # importing wandb or calling setup_wandb. Previously it forwarded
+        # mode="disabled" and got back a no-op wandb.run; on a 96-rank
+        # job that meant 95 dummy runs + a wall of "Setting up wandb
+        # from rank=N" log spam from setup_wandb.
+        #
+        # Mock setup_wandb to assert it is NEVER called from rank != 0.
+        called = []
+
+        def _should_not_be_called(*args, **kwargs):
+            called.append((args, kwargs))
+            return None
+
+        monkeypatch.setattr(
+            "ezpz.distributed.setup_wandb", _should_not_be_called
+        )
+
         backend = WandbBackend(rank=1)
-        # rank != 0 should force mode="disabled"
-        # The run should exist but in disabled mode (no network calls)
-        if backend._run is not None:
-            assert backend._run.disabled
+        assert backend._run is None, "non-zero rank must have _run=None"
+        assert called == [], (
+            f"setup_wandb was called from rank=1: {called}. "
+            "Rank gate regressed — every rank now does wandb init work."
+        )
+
+    def test_rank_zero_does_call_setup_wandb(self, monkeypatch):
+        # Companion to the above: rank 0 SHOULD reach setup_wandb. Same
+        # mock, opposite assertion.
+        called = []
+
+        def _capture(*args, **kwargs):
+            called.append((args, kwargs))
+            # Return None so we don't try to update config on a mock.
+            return None
+
+        monkeypatch.setattr(
+            "ezpz.distributed.setup_wandb", _capture
+        )
+
+        WandbBackend(rank=0)
+        assert len(called) == 1, (
+            f"rank 0 should call setup_wandb exactly once, got {len(called)}"
+        )
 
     @patch.dict(os.environ, {"WANDB_MODE": "disabled"})
-    def test_mode_kwarg_popped_on_all_ranks(self):
-        """mode= should be consumed even on non-rank-0 to avoid leaking."""
-        # If mode leaks into **kwargs, wandb.init gets it twice (via
-        # init_kwargs["mode"] and **kwargs), which would be wrong.
-        # This test verifies no TypeError from duplicate 'mode'.
+    def test_mode_kwarg_does_not_break_rank_nonzero(self):
+        """Passing mode= from a non-zero rank should not raise."""
+        # Used to test that mode= didn't get duplicated in init_kwargs;
+        # with the hard rank gate it's now testing that the gate fires
+        # cleanly even when extra kwargs are present.
         backend = WandbBackend(rank=1, mode="online")
-        assert backend._run is not None or True  # should not raise
+        assert backend._run is None
 
 
 # ── WandbBackend behavior (mocked wandb) ────────────────────────────────────
@@ -233,15 +271,34 @@ class TestWandbBackendBehavior:
 
     @pytest.fixture()
     def mock_wandb(self):
-        """Fully mocked wandb module."""
+        """Fully mocked wandb module.
+
+        Real wandb: wandb.init() returns a Run object AND sets
+        wandb.run to the same object. WandbBackend now reads
+        wandb.run (via setup_wandb's `return wandb.run`), so the
+        mock has to wire them to the SAME MagicMock — otherwise
+        `backend.run` and `mock_wandb.init.return_value` are two
+        different auto-generated mocks.
+        """
         wandb = MagicMock()
-        wandb.init.return_value = MagicMock()
+        run = MagicMock()
+        wandb.init.return_value = run
+        wandb.run = run
         return wandb
 
     @pytest.fixture()
     def backend(self, mock_wandb, monkeypatch):
-        """WandbBackend wired to the mocked wandb module."""
+        """WandbBackend wired to the mocked wandb module.
+
+        WandbBackend now delegates to ezpz.distributed.setup_wandb,
+        which gates on verify_wandb() (real API-key check). For a
+        mocked-wandb test we need to bypass that gate so the mocked
+        wandb.init is actually called.
+        """
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         return WandbBackend(rank=0)
 
     def test_run_property(self, backend, mock_wandb):
@@ -292,6 +349,11 @@ class TestWandbBackendBehavior:
         """wandb.init() failure ⇒ _run is None ⇒ all methods are silent."""
         mock_wandb.init.side_effect = RuntimeError("boom")
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        # Bypass verify_wandb so we actually get to the wandb.init
+        # call we want to make fail.
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         backend = WandbBackend(rank=0)
         assert backend._run is None
         # None of these should raise
@@ -313,12 +375,71 @@ class TestWandbBackendBehavior:
         assert "ezpz_version" in all_keys
 
     def test_init_config_applied(self, mock_wandb, monkeypatch):
-        """Explicit config dict is applied to the run."""
+        """Explicit config dict is applied to the run at the TOP level.
+
+        Asserts the user-config-at-top-level contract — we deliberately
+        bypass setup_wandb's `{"config": config}` nest so callers can
+        still read run.config.lr (not run.config.config.lr) for keys
+        they passed via WandbBackend(config=...).
+        """
         monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
         backend = WandbBackend(config={"lr": 0.01}, rank=0)
         update_calls = backend._run.config.update.call_args_list
         configs = [c.args[0] for c in update_calls if c.args]
         assert {"lr": 0.01} in configs
+
+    def test_env_fields_from_setup_wandb_applied(
+        self, mock_wandb, monkeypatch
+    ):
+        """The whole point of delegating: setup_wandb's env-tracking
+        fields (hostname, pytorch_backend, world_size, machine,
+        ezpz_version, working_directory, tstamp, year/month/day) all
+        land in run.config. Catches drift if a future refactor
+        accidentally bypasses setup_wandb again.
+        """
+        monkeypatch.setitem(sys.modules, "wandb", mock_wandb)
+        monkeypatch.setattr(
+            "ezpz.distributed.verify_wandb", lambda: True
+        )
+        backend = WandbBackend(rank=0)
+        update_calls = backend._run.config.update.call_args_list
+        all_keys: set[str] = set()
+        for call in update_calls:
+            if call.args:
+                all_keys.update(call.args[0].keys())
+        # These are the goodies setup_wandb adds that the old
+        # WandbBackend.__init__ never did. Keep this list aligned
+        # with the run.config.update({...}) block in
+        # ezpz.distributed.setup_wandb — if you add a key there,
+        # add it here too so the contract stays pinned.
+        for required in [
+            # Original set
+            "hostname",
+            "pytorch_backend",
+            "world_size",
+            "machine",
+            "ezpz_version",
+            "working_directory",
+            "torch_version",
+            # Timestamp fields
+            "year",
+            "month",
+            "day",
+            "tstamp",
+            # Filtering / grouping dimensions
+            "jobid",  # None when not in a PBS/SLURM job, but key present
+            "scheduler",
+            "num_nodes",
+            "ranks_per_node",
+            "device_type",
+            # Debugging / postmortems
+            "python_version",
+            "ezpz_git_sha",  # None for pip installs, but key present
+        ]:
+            assert required in all_keys, f"missing {required!r}"
 
 
 # ── MLflowBackend (mocked) ──────────────────────────────────────────────────
