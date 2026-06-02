@@ -843,6 +843,58 @@ class TestSetupTorch:
             # seed * (rank + 1) * (local_rank + 1) = 42 * 1 * 1 = 42
             mock_seed.assert_called_once_with(42)
 
+    def test_xpu_set_device_called_before_setup_ddp(
+        self, fake_comm, monkeypatch
+    ):
+        """Regression: xpu.set_device(local_rank) MUST run before _setup_ddp.
+
+        Pre-fix the order was reversed — _setup_ddp ran first, then
+        set_device. On XPU that meant init_process_group constructed
+        the PG with current_device == xpu:0 on every rank (because
+        set_device hadn't happened yet); subsequent collectives
+        routed to different XPU queues per rank and FSDP2 deadlocked.
+
+        Use a shared `calls` list to record the order of relevant
+        events, then assert set_device fires BEFORE _setup_ddp.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "3")  # pre_local_rank == 3
+        calls: list[str] = []
+        dsetup = {"rank": 0, "world_size": 4, "local_rank": 3}
+
+        def _record_setup_ddp(*args, **kwargs):
+            calls.append("_setup_ddp")
+            return dsetup
+
+        def _record_xpu_set_device(rank):
+            calls.append(f"xpu.set_device({rank})")
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", side_effect=_record_setup_ddp),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu, "set_device", side_effect=_record_xpu_set_device
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch()
+
+        # Exactly one set_device call (the pre-init one); local_rank
+        # didn't change after _setup_ddp so the post-init re-set
+        # short-circuits.
+        assert calls == ["xpu.set_device(3)", "_setup_ddp"], (
+            f"Wrong call order: {calls}. xpu.set_device MUST run "
+            "BEFORE _setup_ddp so the process group binds to the "
+            "right XPU device. Without this, FSDP2 deadlocks on the "
+            "first all_gather_into_tensor (caught on Aurora job 8518207)."
+        )
+
 
 # ===================================================================
 # cleanup
@@ -1473,6 +1525,48 @@ class TestGetEzpzGitSha:
 # ===================================================================
 
 
+class TestBuildWandbSettings:
+    """_build_wandb_settings must not forward ``start_method`` by default.
+
+    Regression for the wandb deprecation noise: every default run
+    used to emit
+        wandb: WARNING `start_method` is deprecated and will be
+        removed in a future version of wandb. This setting is
+        currently non-functional and safely ignored.
+    because we always passed ``start_method="fork"`` to
+    ``wandb.Settings``. The fix: only forward ``start_method`` when
+    the caller explicitly asked for one.
+    """
+
+    def test_omits_start_method_when_unset(self):
+        from unittest.mock import MagicMock
+
+        wandb = MagicMock()
+        _ = dist._build_wandb_settings(
+            wandb=wandb, init_timeout=None, start_method=None
+        )
+        wandb.Settings.assert_called_once()
+        kwargs = wandb.Settings.call_args.kwargs
+        assert "start_method" not in kwargs, (
+            "_build_wandb_settings forwarded start_method=None to "
+            "wandb.Settings; wandb emits a deprecation warning even "
+            "for `None`, so every run gets the noise back."
+        )
+        # init_timeout still defaults to 60
+        assert kwargs.get("init_timeout") == 60
+
+    def test_forwards_start_method_when_set(self):
+        from unittest.mock import MagicMock
+
+        wandb = MagicMock()
+        _ = dist._build_wandb_settings(
+            wandb=wandb, init_timeout=120, start_method="spawn"
+        )
+        kwargs = wandb.Settings.call_args.kwargs
+        assert kwargs["start_method"] == "spawn"
+        assert kwargs["init_timeout"] == 120
+
+
 class TestSetupWandbRankGate:
     """setup_wandb must short-circuit on non-zero ranks.
 
@@ -1605,9 +1699,20 @@ class TestSetupDdpDeviceId:
         )
         assert kwargs["device_id"] == torch.device("cuda:3")
 
-    def test_xpu_skips_device_id(self, monkeypatch):
-        # XCCL doesn't support split_group → DeviceMesh._unflatten breaks
-        # when PGs are device-bound. Intentional: device_id stays absent.
+    def test_xpu_auto_detect_binds_device_id_from_local_rank(
+        self, monkeypatch
+    ):
+        """XPU + no explicit device_id → device_id=xpu:LOCAL_RANK.
+
+        Regression for the Aurora torchtitan FSDP2 hang (job 8518207).
+        Pre-fix _setup_ddp skipped device_id for xpu (citing a
+        DeviceMesh._unflatten / split_group concern), but without a
+        device-bound PG xccl/foreach_all_gather routed some ranks'
+        collectives to xpu:0 and others to xpu:LOCAL_RANK — they
+        never met up and FSDP2 silently deadlocked on the first
+        all_gather_into_tensor. Caller (setup_torch) is responsible
+        for calling xpu.set_device(local_rank) BEFORE _setup_ddp.
+        """
         monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
         kwargs = self._capture_init_kwargs(
             monkeypatch,
@@ -1615,7 +1720,13 @@ class TestSetupDdpDeviceId:
             LOCAL_RANK=2,
             WORLD_SIZE=4,
         )
-        assert "device_id" not in kwargs
+        import torch
+
+        assert "device_id" in kwargs, (
+            "Regression: XPU dropped device_id; FSDP2 will deadlock "
+            "on the first all_gather_into_tensor."
+        )
+        assert kwargs["device_id"] == torch.device("xpu:2")
 
     def test_explicit_int_device_id_resolves_to_active_device_type(
         self, monkeypatch
@@ -1687,22 +1798,15 @@ class TestSetupDdpDeviceId:
             "the wrong device family. Was likely hardcoded `cuda:N`."
         )
 
-    def test_explicit_xpu_device_id_currently_passes_through(
-        self, monkeypatch
-    ):
-        # Documents CURRENT behavior, not desired behavior: when the
-        # caller explicitly passes a torch.device("xpu:0") as
-        # device_id, the resolver forwards it to init_process_group
-        # even though the auto-detect path (device_id=None) correctly
-        # skips device_id on xpu. This is the P1 from the PR #147
-        # review — the comment block in _setup_ddp claims we skip
-        # device_id on xpu/xccl, but the skip only fires when the
-        # caller didn't pass anything.
-        #
-        # If/when this is fixed (resolved_device should be set to None
-        # when device_type == "xpu", regardless of how device_id was
-        # passed), this test should flip to:
-        #   assert "device_id" not in kwargs
+    def test_explicit_xpu_device_id_passes_through(self, monkeypatch):
+        """Explicit torch.device("xpu:N") is honored verbatim.
+
+        Used to document a quirk where the explicit-caller path
+        bypassed the "skip on xpu" guard; that quirk is now the
+        correct behavior. The auto-detect XPU path ALSO binds
+        device_id now (see test_xpu_auto_detect_binds_device_id_from_local_rank
+        above), so both paths agree.
+        """
         monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
         import torch
         from unittest.mock import MagicMock
@@ -1724,9 +1828,4 @@ class TestSetupDdpDeviceId:
         xpu_device = torch.device("xpu", 0)
         dist._setup_ddp(backend="gloo", device_id=xpu_device)  # type: ignore[arg-type]
         kwargs = mock_init.call_args.kwargs
-        # CURRENT (potentially buggy) behavior: xpu device passes through.
-        assert kwargs.get("device_id") == xpu_device, (
-            "If this assertion fails, the P1 from PR #147 was likely "
-            "fixed — flip to `assert 'device_id' not in kwargs` and "
-            "delete this comment."
-        )
+        assert kwargs.get("device_id") == xpu_device
