@@ -169,7 +169,13 @@ def get_pbs_jobid_of_active_job() -> str | None:
                 nodes_short = {n.split(".", 1)[0] for n in raw_nodes}
                 local = socket.getfqdn().split(".", 1)[0]
                 if local not in nodes_short:
-                    logger.warning(
+                    # Demoted from warning to debug: on 96-rank jobs
+                    # this previously produced 96 identical lines of
+                    # yellow output, and the function self-recovers
+                    # via qstat. Keep the message so it's visible
+                    # under EZPZ_LOG_LEVEL=debug when actually
+                    # debugging a stale-jobid case.
+                    logger.debug(
                         "$PBS_JOBID=%s but local hostname %s is not "
                         "in $PBS_NODEFILE=%s; falling through to qstat.",
                         pbs_jobid,

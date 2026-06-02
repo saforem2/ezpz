@@ -492,11 +492,16 @@ class TestGetPbsJobidOfActiveJob:
         self, monkeypatch, tmp_path, caplog
     ):
         """When PBS_NODEFILE doesn't contain our hostname, $PBS_JOBID is
-        lying — log a warning and fall through to qstat.
+        lying — log a debug message and fall through to qstat.
 
         Defends against the (rare) case of a stale PBS_JOBID export
         or running ezpz from an ssh-into-compute-node shell of a
         different job.
+
+        Logged at DEBUG (not WARNING) because the function
+        self-recovers via qstat — surfacing the message at WARNING
+        on 96-rank jobs would produce 96 lines of yellow output for
+        a condition that's already handled.
         """
         nodefile = tmp_path / "nodefile"
         nodefile.write_text("x9999c0s0b0n0\n")  # Some other host
@@ -512,13 +517,16 @@ class TestGetPbsJobidOfActiveJob:
             "get_pbs_running_jobs_for_user",
             lambda: {"22222": ["x3005c0s7b1n0"]},
         )
-        with caplog.at_level(logging.WARNING, logger=pbs.logger.name):
+        # Capture at DEBUG so we see the message — it was at WARNING
+        # before, demoted because of 96-rank spam.
+        with caplog.at_level(logging.DEBUG, logger=pbs.logger.name):
             result = pbs.get_pbs_jobid_of_active_job()
         assert result == "22222"
         assert any(
             "is not in $PBS_NODEFILE" in rec.message
+            and rec.levelname == "DEBUG"
             for rec in caplog.records
-        ), "Expected a warning about the hostname mismatch."
+        ), "Expected a DEBUG message about the hostname mismatch."
 
     def test_nodefile_unreadable_falls_through_silently(
         self, monkeypatch, tmp_path
