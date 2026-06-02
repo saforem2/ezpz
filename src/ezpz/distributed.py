@@ -76,6 +76,7 @@ __all__ = [
     "wrap_model_for_ddp",
     "wrap_model_for_fsdp",
     "wrap_model_for_fsdp2",
+    "init_device_mesh_safe",
     # -- diagnostics --
     "get_dist_info",
     "get_hostname",
@@ -459,6 +460,41 @@ def _configure_rank_warnings(rank: int) -> None:
         warnings.filterwarnings("ignore")
 
 
+def _set_local_device(device_type: str, device_index: int) -> None:
+    """Set the per-process current accelerator device, guarded.
+
+    Single source of truth for "make ``torch.{cuda,xpu}.current_device()``
+    return ``device_index``". Used in two places by ``setup_torch``:
+
+      1. Pre-``init_process_group``, so the PG binds to the right device
+         on XPU (without this, xccl/foreach_all_gather routes collectives
+         to the wrong device and FSDP2 silently hangs).
+      2. Post-``init_process_group``, only if the resolved device
+         differs from what we pre-bound.
+
+    Both call sites must use the same resolution rule (caller-provided
+    ``device_id`` if any, else ``local_rank``) so the current device and
+    the PG's ``device_id=`` always agree. Centralising the dispatch here
+    keeps that contract intact across future refactors.
+
+    Guards:
+
+    * ``torch.xpu`` doesn't exist on every torch build (CPU-only, CUDA-
+      only nightlies, ROCm). ``hasattr(torch, "xpu")`` short-circuits
+      before ``torch.xpu.is_available()`` would AttributeError.
+    * ``device_type`` not in ``{"cuda", "xpu"}`` is a no-op — there's
+      nothing to bind for ``cpu``/``mps``/``hip``.
+    """
+    import torch
+
+    if device_type == "cuda":
+        if torch.cuda.is_available():
+            torch.cuda.set_device(device_index)
+    elif device_type == "xpu":
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            torch.xpu.set_device(device_index)
+
+
 def setup_torch(
     port: str | int | None = None,
     seed: int | None = None,
@@ -523,6 +559,30 @@ def setup_torch(
         return 0
 
     # -- Multi-device init --
+    #
+    # Set the per-process local device BEFORE init_process_group so
+    # that whatever "current device" the process group binds to is
+    # actually the same device. Without this, every rank's PG would
+    # bind to the default device (e.g. xpu:0 on Aurora) at
+    # construction time; later `set_device(...)` switches the current
+    # device but the PG remains stuck on xpu:0. xccl/foreach_all_gather
+    # then routes collectives to two different XPU queues and they
+    # never meet up — FSDP2 deadlocks on the very first
+    # all_gather_into_tensor.
+    #
+    # CUDA tends to mask this by being more forgiving about
+    # current-device-at-init-time, but on XPU it's load-bearing.
+    #
+    # IMPORTANT: the device we set here must match whatever `_setup_ddp`
+    # will bind via `device_id=` in init_process_group. That's the
+    # caller-provided `device_id` if given, otherwise `local_rank`.
+    # Using `LOCAL_RANK` unconditionally would reintroduce the wrong-
+    # device hang on XPU whenever a caller passes an explicit
+    # `device_id` (e.g. `setup_torch(device_id=2)` on local_rank 5).
+    pre_local_rank = get_local_rank()
+    pre_device_index = device_id if device_id is not None else pre_local_rank
+    _set_local_device(get_torch_device_type(), pre_device_index)
+
     dsetup = _setup_ddp(
         port=str(port) if port is not None else "1234",
         timeout=timedelta(seconds=timeout_s),
@@ -534,11 +594,14 @@ def setup_torch(
     world_size = dsetup["world_size"]
     local_rank = dsetup["local_rank"]
 
-    # Set local device
-    if torch.cuda.is_available():
-        torch.cuda.set_device(local_rank)
-    if torch.xpu.is_available():
-        torch.xpu.set_device(local_rank)
+    # Re-set in case `_setup_ddp` resolved a different device than we
+    # pre-bound (rare — happens if `get_local_rank()`'s pre-init guess
+    # differs from what `_setup_ddp` saw in env vars). Compare against
+    # the device we ACTUALLY set above, not raw `LOCAL_RANK` — those
+    # diverge whenever `device_id` was passed.
+    post_device_index = device_id if device_id is not None else local_rank
+    if post_device_index != pre_device_index:
+        _set_local_device(get_torch_device_type(), post_device_index)
 
     _set_env_vars(rank=rank, local_rank=local_rank, world_size=world_size)
 
@@ -798,9 +861,7 @@ def wrap_model(
     # Auto-create a 1D DeviceMesh when none is provided so FSDP2
     # (fully_shard) is the default sharding strategy.
     if device_mesh is None:
-        from torch.distributed.device_mesh import init_device_mesh
-
-        device_mesh = init_device_mesh(device_type, (ws,))
+        device_mesh = init_device_mesh_safe(device_type, (ws,))
     return _wrap_fsdp2(
         model,
         dtype=dtype,
@@ -1236,6 +1297,34 @@ def _get_ezpz_git_sha() -> str | None:
         return None
 
 
+def _build_wandb_settings(
+    *,
+    wandb: Any,
+    init_timeout: int | float | None,
+    start_method: str | None,
+) -> Any:
+    """Construct a ``wandb.Settings`` object without spurious deprecation noise.
+
+    Two cleanups vs the previous inline form:
+
+    1. ``start_method`` is only forwarded when the caller explicitly
+       requested one. Default-passing ``start_method="fork"`` triggers
+       wandb's "start_method is deprecated and will be removed in a
+       future version of wandb. This setting is currently
+       non-functional and safely ignored" warning on every run; the
+       intent (defend against the wrong default) is now wandb's
+       responsibility.
+    2. ``init_timeout`` defaults to 60 s only when the caller didn't
+       provide one — same as before, just hoisted out.
+    """
+    kwargs: dict[str, Any] = {
+        "init_timeout": init_timeout if init_timeout is not None else 60,
+    }
+    if start_method is not None:
+        kwargs["start_method"] = start_method
+    return wandb.Settings(**kwargs)
+
+
 def setup_wandb(
     project_name: str | None = None,
     entity: str | None = None,
@@ -1355,13 +1444,10 @@ def setup_wandb(
             settings=(
                 settings
                 if settings is not None
-                else wandb.Settings(
-                    init_timeout=init_timeout
-                    if init_timeout is not None
-                    else 60,
-                    start_method=start_method
-                    if start_method is not None
-                    else "fork",
+                else _build_wandb_settings(
+                    wandb=wandb,
+                    init_timeout=init_timeout,
+                    start_method=start_method,
                 )
             ),
             **kwargs,
@@ -1676,19 +1762,6 @@ def _setup_ddp(
             "world_size": world_size,
             "init_method": "env://",
         }
-        # Resolve device for init_process_group's `device_id=` arg.
-        # When the caller passes an explicit device_id (int or
-        # torch.device), use it verbatim. Otherwise, on CUDA build
-        # one from local_rank so torch can bind the process group
-        # to a specific GPU and avoid the
-        #   "barrier(): using the device under current context.
-        #    You can specify `device_id` in `init_process_group`
-        #    to mute this warning."
-        # warning that fires on every collective op.
-        #
-        # Intentionally skipped for xpu/xccl — that backend doesn't
-        # support split_group (which DeviceMesh._unflatten needs
-        # when process groups are device-bound).
         # Resolve the device the PG should bind to. Two principles:
         #
         #   1. An explicit `device_id` arg (int OR torch.device) wins,
@@ -1697,14 +1770,24 @@ def _setup_ddp(
         #      breaks XPU/MPS/HIP callers — same bug class as the
         #      barrier() warning this code originally fixed.
         #
-        #   2. Auto-detect ONLY binds for CUDA. xpu/xccl historically
-        #      didn't support split_group (which DeviceMesh._unflatten
-        #      needs when PGs are device-bound). NOTE: this leaves XPU
-        #      FSDP2 vulnerable to the wrong-device-binding hang that
-        #      `torch.xpu.set_device(local_rank)` happens AFTER this
-        #      call in setup_torch. Fix tracked separately — do NOT
-        #      reinstate the "skip on xpu" comment without verifying
-        #      the FSDP2 path is actually broken with newer xccl.
+        #   2. Auto-detect binds for CUDA AND XPU. Caller must have
+        #      already called `set_device(local_rank)` BEFORE
+        #      _setup_ddp (setup_torch does this) so that "current
+        #      device" agrees with the device_id we're about to pass.
+        #
+        # XPU note: an earlier comment here said we MUST NOT pass
+        # device_id on xpu because xccl didn't support split_group
+        # (which DeviceMesh._unflatten needs when PGs are
+        # device-bound). That was incorrect for FSDP2: without
+        # device-bound PGs, foreach_all_gather routes some ranks'
+        # collectives to xpu:0 (the current device at PG-construction
+        # time, when set_device(local_rank) hadn't yet run) and
+        # others to xpu:LOCAL_RANK (post-set_device). They never meet
+        # up → silent deadlock on the first all_gather_into_tensor.
+        # Caught on Aurora torchtitan job 8518207 — see PR for the
+        # py-spy stack trace. If DeviceMesh._unflatten regresses on a
+        # newer xccl, we'll see a loud failure (not a silent hang) and
+        # can revisit.
         device_type = get_torch_device_type()
         resolved_device: Any = None
         if device_id is not None:
@@ -1713,13 +1796,67 @@ def _setup_ddp(
             else:
                 # Caller passed a torch.device — honor verbatim.
                 resolved_device = device_id
-        elif device_type == "cuda":
-            resolved_device = torch.device(f"cuda:{local_rank}")
+        elif device_type in ("cuda", "xpu"):
+            resolved_device = torch.device(f"{device_type}:{local_rank}")
         if resolved_device is not None:
             init_kwargs["device_id"] = resolved_device
         torch.distributed.init_process_group(**init_kwargs)
 
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
+
+
+def init_device_mesh_safe(
+    device_type: str,
+    mesh_shape: tuple[int, ...],
+    *,
+    mesh_dim_names: tuple[str, ...] | None = None,
+) -> Any:
+    """Drop-in replacement for ``torch.distributed.init_device_mesh``.
+
+    Works around xccl's missing ``ProcessGroup.split_group`` support.
+
+    For FSDP2 to route ``foreach_all_gather`` correctly on XPU,
+    ``_setup_ddp`` binds the default PG to a device by passing
+    ``device_id=`` to ``init_process_group``. Torch then sees
+    ``default_group.bound_device_id is not None`` and, inside
+    ``DeviceMesh._init_one_process_group``, prefers
+    ``split_group(parent_pg, ...)`` over ``new_group(ranks, ...)``.
+    On the current xccl backend ``parent_backend.supports_splitting``
+    is ``False``, so ``split_group`` raises:
+
+        RuntimeError: No backend for the parent process group or its
+                      backend does not support splitting
+
+    We temporarily clear ``default_group.bound_device_id`` for the
+    duration of the ``init_device_mesh`` call so torch takes the
+    ``new_group`` fallback (which xccl supports), then restore it so
+    FSDP2's per-device PG resolution still works.
+
+    No-op on non-xpu devices and when no default PG exists yet.
+    """
+    import torch
+    from torch.distributed.device_mesh import init_device_mesh as _imd
+
+    default_pg = None
+    saved: Any = None
+    needs_workaround = False
+    if device_type == "xpu" and torch.distributed.is_initialized():
+        try:
+            default_pg = torch.distributed.distributed_c10d._get_default_group()
+            saved = getattr(default_pg, "bound_device_id", None)
+            if saved is not None:
+                default_pg.bound_device_id = None  # type: ignore[attr-defined]
+                needs_workaround = True
+        except (AttributeError, RuntimeError):
+            needs_workaround = False
+    try:
+        return _imd(device_type, mesh_shape, mesh_dim_names=mesh_dim_names)
+    finally:
+        if needs_workaround and default_pg is not None:
+            try:
+                default_pg.bound_device_id = saved  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
 
 
 def _init_deepspeed(timeout: int = 3600) -> None:

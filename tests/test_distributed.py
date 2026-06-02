@@ -843,6 +843,234 @@ class TestSetupTorch:
             # seed * (rank + 1) * (local_rank + 1) = 42 * 1 * 1 = 42
             mock_seed.assert_called_once_with(42)
 
+    def test_xpu_set_device_called_before_setup_ddp(
+        self, fake_comm, monkeypatch
+    ):
+        """Regression: xpu.set_device(local_rank) MUST run before _setup_ddp.
+
+        Pre-fix the order was reversed — _setup_ddp ran first, then
+        set_device. On XPU that meant init_process_group constructed
+        the PG with current_device == xpu:0 on every rank (because
+        set_device hadn't happened yet); subsequent collectives
+        routed to different XPU queues per rank and FSDP2 deadlocked.
+
+        Use a shared `calls` list to record the order of relevant
+        events, then assert set_device fires BEFORE _setup_ddp.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "3")  # pre_local_rank == 3
+        calls: list[str] = []
+        dsetup = {"rank": 0, "world_size": 4, "local_rank": 3}
+
+        def _record_setup_ddp(*args, **kwargs):
+            calls.append("_setup_ddp")
+            return dsetup
+
+        def _record_xpu_set_device(rank):
+            calls.append(f"xpu.set_device({rank})")
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", side_effect=_record_setup_ddp),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu, "set_device", side_effect=_record_xpu_set_device
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch()
+
+        # Exactly one set_device call (the pre-init one); local_rank
+        # didn't change after _setup_ddp so the post-init re-set
+        # short-circuits.
+        assert calls == ["xpu.set_device(3)", "_setup_ddp"], (
+            f"Wrong call order: {calls}. xpu.set_device MUST run "
+            "BEFORE _setup_ddp so the process group binds to the "
+            "right XPU device. Without this, FSDP2 deadlocks on the "
+            "first all_gather_into_tensor (caught on Aurora job 8518207)."
+        )
+
+    def test_setup_torch_with_explicit_device_id_binds_that_device(
+        self, fake_comm, monkeypatch
+    ):
+        """``setup_torch(device_id=N)`` must set xpu:N, not xpu:LOCAL_RANK.
+
+        Regression for PR #149 Copilot comment: if the caller passes
+        an explicit ``device_id``, ``_setup_ddp`` will bind the PG to
+        that device. The pre-init ``set_device`` MUST therefore also
+        use ``device_id`` (not raw ``LOCAL_RANK``); otherwise the
+        current device and the PG's bound device disagree and we
+        reintroduce the exact XPU FSDP2 hang this PR is fixing.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "5")  # raw local_rank
+        seen: list[int] = []
+        dsetup = {"rank": 0, "world_size": 8, "local_rank": 5}
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", return_value=dsetup),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu,
+                "set_device",
+                side_effect=lambda i: seen.append(i),
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch(device_id=2)
+
+        # Exactly one set_device call, to the caller-provided
+        # device_id=2 — NOT to LOCAL_RANK=5. The post-init re-set
+        # short-circuits because pre and post resolved to the same
+        # index (device_id wins both times).
+        assert seen == [2], (
+            f"Expected [2] (caller's explicit device_id), got {seen}. "
+            "Either pre-init or post-init re-set fell back to LOCAL_RANK; "
+            "current device and PG-bound device will disagree and FSDP2 "
+            "will hang on XPU."
+        )
+
+    def test_setup_torch_post_init_resets_only_when_resolved_changes(
+        self, fake_comm, monkeypatch
+    ):
+        """Post-init re-set fires only when the resolved device changed.
+
+        Regression for PR #149 Copilot comment on the post-init path:
+        the comparison MUST be "did the resolved device index change
+        between pre and post-init?", not "did LOCAL_RANK change?".
+
+        Set up a case where ``_setup_ddp`` reports a different
+        ``local_rank`` than ``get_local_rank()`` did pre-init.  With
+        no explicit device_id, both resolutions fall back to local_rank
+        — pre uses the env-var value, post uses the dsetup value — so
+        the indices DIFFER and the post-init re-set must fire.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "3")  # pre_local_rank == 3
+        # _setup_ddp reports local_rank=7 (mismatch — extremely rare
+        # in practice, but the regression we want to pin)
+        dsetup = {"rank": 0, "world_size": 12, "local_rank": 7}
+        seen: list[int] = []
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", return_value=dsetup),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu,
+                "set_device",
+                side_effect=lambda i: seen.append(i),
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch()
+
+        assert seen == [3, 7], (
+            f"Expected [3, 7] (pre-init bound to LOCAL_RANK env var, "
+            f"post-init re-bound to _setup_ddp's resolved local_rank), "
+            f"got {seen}. The post-init path either skipped the re-set "
+            "(comparison against raw LOCAL_RANK lost the divergence) "
+            "or fired unnecessarily."
+        )
+
+
+# ===================================================================
+# _set_local_device
+# ===================================================================
+
+
+class TestSetLocalDevice:
+    """``_set_local_device`` is the single source of truth for setting
+    the per-process current accelerator device. Both pre- and post-
+    ``init_process_group`` paths in ``setup_torch`` route through it.
+
+    Contract:
+      * On ``cuda`` + cuda available → ``torch.cuda.set_device(N)``.
+      * On ``xpu`` + xpu attr present + xpu available →
+        ``torch.xpu.set_device(N)``.
+      * On any other device_type (``cpu``, ``mps``, ``hip``) → no-op.
+      * On builds where ``torch.xpu`` doesn't exist (Sourcery #1
+        regression) → no-op without ``AttributeError``.
+    """
+
+    def test_cuda_when_available(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            torch.cuda, "set_device", lambda i: seen.append(i)
+        )
+        dist._set_local_device("cuda", 3)
+        assert seen == [3]
+
+    def test_cuda_not_available_is_noop(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(
+            torch.cuda,
+            "set_device",
+            MagicMock(side_effect=AssertionError("must not be called")),
+        )
+        dist._set_local_device("cuda", 3)
+        assert seen == []
+
+    def test_xpu_when_available(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+        monkeypatch.setattr(
+            torch.xpu, "set_device", lambda i: seen.append(i)
+        )
+        dist._set_local_device("xpu", 5)
+        assert seen == [5]
+
+    def test_xpu_not_available_is_noop(self, monkeypatch):
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: False)
+        monkeypatch.setattr(
+            torch.xpu,
+            "set_device",
+            MagicMock(side_effect=AssertionError("must not be called")),
+        )
+        dist._set_local_device("xpu", 5)
+        # No exception, no call.
+
+    def test_xpu_attr_missing_is_noop(self, monkeypatch):
+        """Sourcery #1 regression: torch.xpu may not exist on every build.
+
+        CPU-only torch, CUDA-only nightlies, ROCm — none of these
+        define ``torch.xpu``. A naive ``torch.xpu.is_available()``
+        call would AttributeError before the availability check;
+        ``_set_local_device`` must use ``hasattr(torch, "xpu")`` first.
+        """
+        monkeypatch.delattr(torch, "xpu", raising=False)
+        # Must not raise.
+        dist._set_local_device("xpu", 5)
+
+    def test_non_accelerator_device_type_is_noop(self):
+        """``cpu`` / ``mps`` / ``hip`` have nothing to bind.
+
+        No env mocking needed — if the function tries to do anything,
+        it'll AttributeError on ``torch.cpu.set_device`` (which doesn't
+        exist).
+        """
+        dist._set_local_device("cpu", 0)
+        dist._set_local_device("mps", 0)
+        dist._set_local_device("hip", 0)
+
 
 # ===================================================================
 # cleanup
@@ -1473,6 +1701,48 @@ class TestGetEzpzGitSha:
 # ===================================================================
 
 
+class TestBuildWandbSettings:
+    """_build_wandb_settings must not forward ``start_method`` by default.
+
+    Regression for the wandb deprecation noise: every default run
+    used to emit
+        wandb: WARNING `start_method` is deprecated and will be
+        removed in a future version of wandb. This setting is
+        currently non-functional and safely ignored.
+    because we always passed ``start_method="fork"`` to
+    ``wandb.Settings``. The fix: only forward ``start_method`` when
+    the caller explicitly asked for one.
+    """
+
+    def test_omits_start_method_when_unset(self):
+        from unittest.mock import MagicMock
+
+        wandb = MagicMock()
+        _ = dist._build_wandb_settings(
+            wandb=wandb, init_timeout=None, start_method=None
+        )
+        wandb.Settings.assert_called_once()
+        kwargs = wandb.Settings.call_args.kwargs
+        assert "start_method" not in kwargs, (
+            "_build_wandb_settings forwarded start_method=None to "
+            "wandb.Settings; wandb emits a deprecation warning even "
+            "for `None`, so every run gets the noise back."
+        )
+        # init_timeout still defaults to 60
+        assert kwargs.get("init_timeout") == 60
+
+    def test_forwards_start_method_when_set(self):
+        from unittest.mock import MagicMock
+
+        wandb = MagicMock()
+        _ = dist._build_wandb_settings(
+            wandb=wandb, init_timeout=120, start_method="spawn"
+        )
+        kwargs = wandb.Settings.call_args.kwargs
+        assert kwargs["start_method"] == "spawn"
+        assert kwargs["init_timeout"] == 120
+
+
 class TestSetupWandbRankGate:
     """setup_wandb must short-circuit on non-zero ranks.
 
@@ -1605,9 +1875,20 @@ class TestSetupDdpDeviceId:
         )
         assert kwargs["device_id"] == torch.device("cuda:3")
 
-    def test_xpu_skips_device_id(self, monkeypatch):
-        # XCCL doesn't support split_group → DeviceMesh._unflatten breaks
-        # when PGs are device-bound. Intentional: device_id stays absent.
+    def test_xpu_auto_detect_binds_device_id_from_local_rank(
+        self, monkeypatch
+    ):
+        """XPU + no explicit device_id → device_id=xpu:LOCAL_RANK.
+
+        Regression for the Aurora torchtitan FSDP2 hang (job 8518207).
+        Pre-fix _setup_ddp skipped device_id for xpu (citing a
+        DeviceMesh._unflatten / split_group concern), but without a
+        device-bound PG xccl/foreach_all_gather routed some ranks'
+        collectives to xpu:0 and others to xpu:LOCAL_RANK — they
+        never met up and FSDP2 silently deadlocked on the first
+        all_gather_into_tensor. Caller (setup_torch) is responsible
+        for calling xpu.set_device(local_rank) BEFORE _setup_ddp.
+        """
         monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
         kwargs = self._capture_init_kwargs(
             monkeypatch,
@@ -1615,7 +1896,13 @@ class TestSetupDdpDeviceId:
             LOCAL_RANK=2,
             WORLD_SIZE=4,
         )
-        assert "device_id" not in kwargs
+        import torch
+
+        assert "device_id" in kwargs, (
+            "Regression: XPU dropped device_id; FSDP2 will deadlock "
+            "on the first all_gather_into_tensor."
+        )
+        assert kwargs["device_id"] == torch.device("xpu:2")
 
     def test_explicit_int_device_id_resolves_to_active_device_type(
         self, monkeypatch
@@ -1687,22 +1974,15 @@ class TestSetupDdpDeviceId:
             "the wrong device family. Was likely hardcoded `cuda:N`."
         )
 
-    def test_explicit_xpu_device_id_currently_passes_through(
-        self, monkeypatch
-    ):
-        # Documents CURRENT behavior, not desired behavior: when the
-        # caller explicitly passes a torch.device("xpu:0") as
-        # device_id, the resolver forwards it to init_process_group
-        # even though the auto-detect path (device_id=None) correctly
-        # skips device_id on xpu. This is the P1 from the PR #147
-        # review — the comment block in _setup_ddp claims we skip
-        # device_id on xpu/xccl, but the skip only fires when the
-        # caller didn't pass anything.
-        #
-        # If/when this is fixed (resolved_device should be set to None
-        # when device_type == "xpu", regardless of how device_id was
-        # passed), this test should flip to:
-        #   assert "device_id" not in kwargs
+    def test_explicit_xpu_device_id_passes_through(self, monkeypatch):
+        """Explicit torch.device("xpu:N") is honored verbatim.
+
+        Used to document a quirk where the explicit-caller path
+        bypassed the "skip on xpu" guard; that quirk is now the
+        correct behavior. The auto-detect XPU path ALSO binds
+        device_id now (see test_xpu_auto_detect_binds_device_id_from_local_rank
+        above), so both paths agree.
+        """
         monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
         import torch
         from unittest.mock import MagicMock
@@ -1724,9 +2004,227 @@ class TestSetupDdpDeviceId:
         xpu_device = torch.device("xpu", 0)
         dist._setup_ddp(backend="gloo", device_id=xpu_device)  # type: ignore[arg-type]
         kwargs = mock_init.call_args.kwargs
-        # CURRENT (potentially buggy) behavior: xpu device passes through.
-        assert kwargs.get("device_id") == xpu_device, (
-            "If this assertion fails, the P1 from PR #147 was likely "
-            "fixed — flip to `assert 'device_id' not in kwargs` and "
-            "delete this comment."
+        assert kwargs.get("device_id") == xpu_device
+
+
+# ===================================================================
+# init_device_mesh_safe
+# ===================================================================
+
+
+class TestInitDeviceMeshSafe:
+    """``init_device_mesh_safe`` round-trips ``bound_device_id`` on the
+    default PG so torch's ``DeviceMesh._init_one_process_group`` takes
+    the ``new_group`` fallback path (which xccl supports) instead of
+    ``split_group`` (which it doesn't).
+
+    Pre-fix, 2D meshes (``ezpz.examples.fsdp_tp``) raised
+        RuntimeError: No backend for the parent process group or its
+                      backend does not support splitting
+    on XPU + xccl.
+
+    These tests mock the default PG and the torch ``init_device_mesh``
+    entry-point to verify (a) the workaround fires only on xpu when
+    the PG actually has a ``bound_device_id``, (b) the original value
+    is restored, and (c) silent disablement (e.g. a future torch making
+    the attr read-only) doesn't break the call.
+    """
+
+    def _fake_pg(self, bound_device_id):
+        """Build a stand-in for ``torch.distributed.ProcessGroup`` that
+        carries a mutable ``bound_device_id`` like the real C++ object
+        does today."""
+        pg = MagicMock()
+        pg.bound_device_id = bound_device_id
+        return pg
+
+    def test_xpu_clears_and_restores_bound_device_id(self, monkeypatch):
+        """On xpu with a bound default PG: clear → call → restore."""
+        sentinel = torch.device("xpu:3")
+        pg = self._fake_pg(sentinel)
+
+        observed: dict[str, Any] = {}
+
+        def _fake_init_device_mesh(device_type, mesh_shape, *, mesh_dim_names=None):
+            # During the inner call, bound_device_id must be None.
+            observed["mid_call_bound_device_id"] = pg.bound_device_id
+            return MagicMock(name="DeviceMesh")
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
         )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+        # Patch torch's init_device_mesh at the source the shim
+        # imports it from.
+        import torch.distributed.device_mesh as _dm
+
+        monkeypatch.setattr(_dm, "init_device_mesh", _fake_init_device_mesh)
+
+        result = dist.init_device_mesh_safe(
+            "xpu", (2, 4), mesh_dim_names=("dp", "tp")
+        )
+
+        assert result is not None
+        assert observed["mid_call_bound_device_id"] is None, (
+            "Workaround failed: bound_device_id was not cleared "
+            "during init_device_mesh. Torch's DeviceMesh._init_one_"
+            "process_group will take the split_group branch and "
+            "raise on xccl."
+        )
+        assert pg.bound_device_id == sentinel, (
+            "bound_device_id was not restored after the call. "
+            "Subsequent FSDP2 collectives need a device-bound PG."
+        )
+
+    def test_xpu_with_unbound_pg_is_pass_through(self, monkeypatch):
+        """When ``bound_device_id`` is already None, no swap happens."""
+        pg = self._fake_pg(None)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("xpu", (4,))
+
+        called.assert_called_once()
+        # No mutation — still None.
+        assert pg.bound_device_id is None
+
+    def test_non_xpu_skips_workaround_entirely(self, monkeypatch):
+        """CUDA path must NOT touch ``bound_device_id``.
+
+        Torch's NCCL backend supports split_group natively; this
+        helper should be a pure pass-through there.
+        """
+        sentinel = torch.device("cuda:0")
+        pg = self._fake_pg(sentinel)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        # If the CUDA path ever tries to fetch the default PG, blow up
+        # — we want a true no-op.
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            MagicMock(side_effect=AssertionError("CUDA must not touch the default PG")),
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("cuda", (8,))
+
+        called.assert_called_once_with("cuda", (8,), mesh_dim_names=None)
+        # bound_device_id still untouched.
+        assert pg.bound_device_id == sentinel
+
+    def test_no_default_pg_is_pass_through(self, monkeypatch):
+        """If ``torch.distributed`` isn't initialised, fall through."""
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        dist.init_device_mesh_safe("xpu", (2, 2))
+        called.assert_called_once()
+
+    def test_restores_bound_device_id_when_inner_raises(self, monkeypatch):
+        """If ``init_device_mesh`` raises, the original value MUST be
+        restored — otherwise downstream FSDP2 silently routes to the
+        wrong device.
+        """
+        sentinel = torch.device("xpu:5")
+        pg = self._fake_pg(sentinel)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        def _boom(*_a, **_kw):
+            raise RuntimeError("simulated split_group failure")
+
+        monkeypatch.setattr(_dm, "init_device_mesh", _boom)
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            dist.init_device_mesh_safe("xpu", (4,))
+
+        assert pg.bound_device_id == sentinel, (
+            "Workaround leaked: bound_device_id stayed cleared after "
+            "an inner failure. FSDP2 will silently route collectives "
+            "to the wrong XPU device on the next all_gather."
+        )
+
+    def test_silent_disablement_when_attr_setattr_fails(self, monkeypatch):
+        """If a future torch makes ``bound_device_id`` read-only, the
+        shim should fail-open: the inner call still runs (and will
+        raise the original ``RuntimeError`` from torch if applicable),
+        rather than the shim itself crashing in an obscure place.
+
+        This pins the try/except behavior in init_device_mesh_safe.
+        """
+
+        class _LockedAttr:
+            """PG-like object where ``bound_device_id`` is read-only."""
+
+            def __init__(self):
+                # Use object.__setattr__ to bypass our own override
+                # for the initial value.
+                object.__setattr__(
+                    self, "_bdi", torch.device("xpu:0")
+                )
+
+            @property
+            def bound_device_id(self):
+                return self._bdi
+
+            @bound_device_id.setter
+            def bound_device_id(self, _value):
+                raise AttributeError("read-only in future torch")
+
+        pg = _LockedAttr()
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        import torch.distributed.device_mesh as _dm
+
+        called = MagicMock(return_value=MagicMock(name="DeviceMesh"))
+        monkeypatch.setattr(_dm, "init_device_mesh", called)
+
+        # Must not raise from the shim itself; inner call still fires.
+        dist.init_device_mesh_safe("xpu", (4,))
+        called.assert_called_once()
