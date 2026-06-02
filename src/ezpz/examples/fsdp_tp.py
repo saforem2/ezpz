@@ -141,7 +141,7 @@ from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 
 from ezpz.models.llama import Transformer, ModelArgs
-from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
+from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
@@ -690,7 +690,7 @@ def train(
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
-    device_mesh = init_device_mesh(
+    device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
         (dpsize, args.tp),
         mesh_dim_names=("dp", "tp"),

@@ -78,6 +78,7 @@ if TYPE_CHECKING:
         wrap_model_for_ddp,
         wrap_model_for_fsdp,
         wrap_model_for_fsdp2,
+        init_device_mesh_safe,
     )
     # -- utils: helpers + memory + tarball plumbing --
     from .utils import (  # noqa: F401
@@ -177,6 +178,7 @@ _STATIC_REEXPORTS: tuple[str, ...] = (
     "synchronize", "timeitlogit", "verify_wandb",
     "wrap_model", "wrap_model_for_ddp",
     "wrap_model_for_fsdp", "wrap_model_for_fsdp2",
+    "init_device_mesh_safe",
     # utils
     "Color", "DistributedPdb", "ForkedPdb", "NoColor",
     "check_for_tarball",

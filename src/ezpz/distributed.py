@@ -76,6 +76,7 @@ __all__ = [
     "wrap_model_for_ddp",
     "wrap_model_for_fsdp",
     "wrap_model_for_fsdp2",
+    "init_device_mesh_safe",
     # -- diagnostics --
     "get_dist_info",
     "get_hostname",
@@ -820,9 +821,7 @@ def wrap_model(
     # Auto-create a 1D DeviceMesh when none is provided so FSDP2
     # (fully_shard) is the default sharding strategy.
     if device_mesh is None:
-        from torch.distributed.device_mesh import init_device_mesh
-
-        device_mesh = init_device_mesh(device_type, (ws,))
+        device_mesh = init_device_mesh_safe(device_type, (ws,))
     return _wrap_fsdp2(
         model,
         dtype=dtype,
@@ -1764,6 +1763,60 @@ def _setup_ddp(
         torch.distributed.init_process_group(**init_kwargs)
 
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
+
+
+def init_device_mesh_safe(
+    device_type: str,
+    mesh_shape: tuple[int, ...],
+    *,
+    mesh_dim_names: tuple[str, ...] | None = None,
+) -> Any:
+    """Drop-in replacement for ``torch.distributed.init_device_mesh``.
+
+    Works around xccl's missing ``ProcessGroup.split_group`` support.
+
+    For FSDP2 to route ``foreach_all_gather`` correctly on XPU,
+    ``_setup_ddp`` binds the default PG to a device by passing
+    ``device_id=`` to ``init_process_group``. Torch then sees
+    ``default_group.bound_device_id is not None`` and, inside
+    ``DeviceMesh._init_one_process_group``, prefers
+    ``split_group(parent_pg, ...)`` over ``new_group(ranks, ...)``.
+    On the current xccl backend ``parent_backend.supports_splitting``
+    is ``False``, so ``split_group`` raises:
+
+        RuntimeError: No backend for the parent process group or its
+                      backend does not support splitting
+
+    We temporarily clear ``default_group.bound_device_id`` for the
+    duration of the ``init_device_mesh`` call so torch takes the
+    ``new_group`` fallback (which xccl supports), then restore it so
+    FSDP2's per-device PG resolution still works.
+
+    No-op on non-xpu devices and when no default PG exists yet.
+    """
+    import torch
+    from torch.distributed.device_mesh import init_device_mesh as _imd
+
+    default_pg = None
+    saved: Any = None
+    needs_workaround = False
+    if device_type == "xpu" and torch.distributed.is_initialized():
+        try:
+            default_pg = torch.distributed.distributed_c10d._get_default_group()
+            saved = getattr(default_pg, "bound_device_id", None)
+            if saved is not None:
+                default_pg.bound_device_id = None  # type: ignore[attr-defined]
+                needs_workaround = True
+        except (AttributeError, RuntimeError):
+            needs_workaround = False
+    try:
+        return _imd(device_type, mesh_shape, mesh_dim_names=mesh_dim_names)
+    finally:
+        if needs_workaround and default_pg is not None:
+            try:
+                default_pg.bound_device_id = saved  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
 
 
 def _init_deepspeed(timeout: int = 3600) -> None:
