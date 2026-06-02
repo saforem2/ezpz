@@ -21,15 +21,61 @@ See:
 ezpz launch python3 -m ezpz.examples.diffusion --batch_size 1 --hf_dataset stanfordnlp/imdb
 ```
 
-## Source
+## What this example demonstrates
 
-<details closed><summary><code>src/ezpz/examples/diffusion.py</code></summary>
+- The full DDPM training recipe in one file — `DiffusionSchedule` precomputes
+  betas/alphas, `add_noise` runs the forward (`q`) process, and `p_sample`
+  implements the reverse step used by `generate_text` for sampling.
+- Building a tiny transformer denoiser (`DiffusionTextModel`) on top of a token
+  vocabulary built from the input corpus (`build_vocab`) — so the same script
+  works on either a default text bundle or any HuggingFace dataset slice.
+- Switching between DDP and FSDP via `ezpz.distributed.wrap_model(model, use_fsdp=args.fsdp)`,
+  honoring `--fsdp-sharding-strategy` and `--fsdp-mixed-precision`.
+- Loading text data from HuggingFace with `load_hf_texts(args.hf_dataset, ...)`
+  using `--hf-split`, `--hf-text-column`, and `--hf-limit` to slice the corpus.
+- Periodic text generation during training (`--samples N` controls how many
+  prompts to decode) so you can eyeball quality without an external eval script.
 
-```python title="src/ezpz/examples/diffusion.py"
---8<-- "src/ezpz/examples/diffusion.py"
+## Expected output
+
+After launch, you'll see distributed init, vocabulary build, the model
+summary, and per-step diffusion loss:
+
+```bash
+[I][ezpz/dist:setup_torch] Using device='xpu' with backend='xccl' ...
+[I][ezpz/dist:setup_torch] [...][rank=00/23][local_rank=00/11]
+[I][ezpz/dist:setup_wandb] wandb.run=[...](https://wandb.ai/...)
+[I][examples/diffusion:main] vocab_size=...  seq_len=...  timesteps=...
+[I][examples/diffusion:main]
+=================================================================
+Layer (type:depth-idx)                   Param #
+=================================================================
+DiffusionTextModel                       --
+...
+[I][examples/diffusion:train] step=0  loss=...  dt=...
+[I][examples/diffusion:train] step=1  loss=...  dt=...
 ```
 
-</details>
+Toward the end of the run, decoded samples are logged on rank 0 (look for
+`sample 0: ...` lines in the captured [Output](#output) below).
+
+## Common modifications
+
+- **Pick a model size** — `--model {debug,small,medium,large}` sets `hidden`,
+  `n_layers`, `n_heads`, `seq_len`, `timesteps`, and `batch_size` together.
+  Presets live in `MODEL_PRESETS` near the top of
+  `src/ezpz/examples/diffusion.py`.
+- **Tune the diffusion process** — `--timesteps`, `--seq-len`, `--train-steps`
+  control the noise schedule length, sequence length, and total optimizer
+  steps. Explicit flags override the preset.
+- **Train on a different HF corpus** — `--hf-dataset <id> --hf-split <split>
+  --hf-text-column <col> --hf-limit <n>` plumbs straight into `load_hf_texts()`.
+  Omit `--hf-dataset` to fall back to `get_default_texts()`.
+- **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp-sharding-strategy`
+  and `--fsdp-mixed-precision`). The `ezpz.distributed.wrap_model(...)` call in
+  `train()` toggles between DDP and FSDP for you.
+- **Generate more / fewer samples** — `--samples N` controls how many prompts
+  `generate_text()` decodes at the end of each evaluation pass.
 
 ## Code Walkthrough
 
@@ -1367,6 +1413,16 @@ wandb: Find logs at: ../../../../../../lus/tegu/projects/datascience/foremans/pr
 [2025-12-31 12:11:54,604899][I][ezpz/launch:448:launch] Execution finished with 0.
 [2025-12-31 12:11:54,605300][I][ezpz/launch:449:launch] Executing finished in 78.58 seconds.
 [2025-12-31 12:11:54,605658][I][ezpz/launch:450:launch] Took 78.58 seconds to run. Exiting.
+```
+
+</details>
+
+## Source code
+
+<details closed><summary><code>src/ezpz/examples/diffusion.py</code></summary>
+
+```python title="src/ezpz/examples/diffusion.py"
+--8<-- "src/ezpz/examples/diffusion.py"
 ```
 
 </details>
