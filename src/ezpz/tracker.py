@@ -127,9 +127,14 @@ class WandbBackend(TrackerBackend):
 
     Thin adapter over :func:`ezpz.distributed.setup_wandb` — that's the
     single canonical W&B-init entry point in ezpz, so this backend
-    automatically inherits its environment-tracking goodies (hostname,
-    pytorch_backend, world_size, machine, ezpz_version, timestamp,
-    etc.) and any future fields added there.
+    automatically inherits its environment-tracking goodies. As of
+    v0.18.x those include: ``hostname``, ``pytorch_backend``,
+    ``torch_version``, ``world_size``, ``ezpz_version``, ``machine``,
+    ``working_directory``, ``year``/``month``/``day``/``tstamp``,
+    ``jobid``, ``scheduler``, ``num_nodes``, ``ranks_per_node``,
+    ``device_type``, ``python_version``, ``ezpz_git_sha``. Any future
+    fields added to ``setup_wandb`` automatically reach
+    ``WandbBackend``-instantiated runs.
 
     Args:
         project_name: W&B project name. Falls back to ``$WB_PROJECT`` /
@@ -144,8 +149,11 @@ class WandbBackend(TrackerBackend):
         outdir: Directory for local wandb files. Forwarded as ``dir=``
             to ``wandb.init``.
         rank: Distributed rank override. ``None`` → auto-detect via
-            ``get_rank()``. Non-zero ranks get ``mode="disabled"`` so
-            they don't open extra wandb runs.
+            ``get_rank()``. Non-zero ranks short-circuit immediately:
+            ``self._run = None``, no wandb import, no
+            ``setup_wandb`` call. Callers should null-check
+            ``backend.run`` rather than expect a disabled wandb run
+            object.
         **kwargs: Forwarded to :func:`~ezpz.distributed.setup_wandb`
             (which forwards them to ``wandb.init``).
     """
@@ -188,6 +196,21 @@ class WandbBackend(TrackerBackend):
         if outdir is not None:
             kwargs.setdefault("dir", Path(outdir).as_posix())
 
+        # Resolve project name HERE rather than letting setup_wandb
+        # infer it via sys._getframe(). setup_wandb's frame walk
+        # would land on tracker.py (our caller) and group every
+        # default-project WandbBackend run under "ezpz.tracker"
+        # instead of the user's training script. _default_project_name
+        # walks sys.modules['__main__'] which gives the right answer
+        # regardless of how deep the call chain is.
+        _project = (
+            project_name
+            or os.environ.get("WB_PROJECT")
+            or os.environ.get("WANDB_PROJECT")
+            or os.environ.get("WB_PROJECT_NAME")
+            or _default_project_name()
+        )
+
         # NOTE: we do NOT pass config= to setup_wandb. That helper nests
         # the dict under run.config["config"]; WandbBackend has always
         # exposed user keys at the top level (run.config.lr, not
@@ -197,7 +220,7 @@ class WandbBackend(TrackerBackend):
 
         try:
             self._run = setup_wandb(
-                project_name=project_name,
+                project_name=_project,
                 **kwargs,
             )
         except Exception as exc:

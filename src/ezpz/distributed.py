@@ -1151,7 +1151,23 @@ def timeitlogit(
 
 
 def verify_wandb() -> bool:
-    """Return ``True`` if wandb is importable, enabled, and authenticated."""
+    """Return ``True`` if wandb is importable, enabled, and usable.
+
+    "Usable" means one of:
+
+    1. ``WANDB_MODE=offline`` is set — offline runs don't need
+       network or credentials; they write to a local
+       ``wandb/offline-run-*`` directory and can be synced later.
+       This is the documented compute-node workflow (see
+       ``docs/troubleshooting.md`` + ``doctor.py``'s permissive
+       handling of offline mode).
+    2. An API key is reachable (``$WANDB_API_KEY``, ``wandb.api.api_key``,
+       or a ``~/.netrc`` entry for ``api.wandb.ai``).
+
+    Returns ``False`` when wandb is uninstalled, ``WANDB_DISABLED`` is
+    truthy, ``WANDB_MODE=disabled``, or neither offline mode nor any
+    credential source is configured.
+    """
     rank = get_rank()
     try:
         import wandb
@@ -1166,6 +1182,12 @@ def verify_wandb() -> bool:
     wm = os.environ.get("WANDB_MODE", "").lower()
     if wm == "disabled":
         return False
+    # Offline mode is fine without credentials — wandb.init(mode="offline")
+    # writes locally and never touches the network. Return True so callers
+    # (esp. setup_wandb) don't silently no-op on compute nodes that use
+    # the offline-then-sync workflow.
+    if wm == "offline":
+        return True
     if (
         wandb.api.api_key is not None
         or os.environ.get("WANDB_API_KEY") is not None
@@ -1667,17 +1689,32 @@ def _setup_ddp(
         # Intentionally skipped for xpu/xccl — that backend doesn't
         # support split_group (which DeviceMesh._unflatten needs
         # when process groups are device-bound).
+        # Resolve the device the PG should bind to. Two principles:
+        #
+        #   1. An explicit `device_id` arg (int OR torch.device) wins,
+        #      but we must honor get_torch_device_type() to pick the
+        #      right device family. Hardcoding "cuda:N" for an int
+        #      breaks XPU/MPS/HIP callers — same bug class as the
+        #      barrier() warning this code originally fixed.
+        #
+        #   2. Auto-detect ONLY binds for CUDA. xpu/xccl historically
+        #      didn't support split_group (which DeviceMesh._unflatten
+        #      needs when PGs are device-bound). NOTE: this leaves XPU
+        #      FSDP2 vulnerable to the wrong-device-binding hang that
+        #      `torch.xpu.set_device(local_rank)` happens AFTER this
+        #      call in setup_torch. Fix tracked separately — do NOT
+        #      reinstate the "skip on xpu" comment without verifying
+        #      the FSDP2 path is actually broken with newer xccl.
+        device_type = get_torch_device_type()
         resolved_device: Any = None
         if device_id is not None:
-            resolved_device = (
-                torch.device(f"cuda:{device_id}")
-                if isinstance(device_id, int)
-                else device_id
-            )
-        else:
-            device_type = get_torch_device_type()
-            if device_type == "cuda":
-                resolved_device = torch.device(f"cuda:{local_rank}")
+            if isinstance(device_id, int):
+                resolved_device = torch.device(f"{device_type}:{device_id}")
+            else:
+                # Caller passed a torch.device — honor verbatim.
+                resolved_device = device_id
+        elif device_type == "cuda":
+            resolved_device = torch.device(f"cuda:{local_rank}")
         if resolved_device is not None:
             init_kwargs["device_id"] = resolved_device
         torch.distributed.init_process_group(**init_kwargs)

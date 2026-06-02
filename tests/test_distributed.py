@@ -1056,6 +1056,28 @@ class TestVerifyWandb:
         with patch.dict("sys.modules", {"wandb": mock_wandb}):
             assert dist.verify_wandb() is True
 
+    def test_wandb_mode_offline_no_api_key(self, fake_comm, monkeypatch):
+        """Regression: WANDB_MODE=offline must NOT require an API key.
+
+        Offline runs write locally and never touch the network — that's
+        the whole point of the mode, and it's the documented compute-node
+        workflow (docs/troubleshooting.md). Pre-fix verify_wandb()
+        returned False here, which caused setup_wandb() to silently
+        skip wandb init on every compute-node offline run.
+        """
+        monkeypatch.delenv("WANDB_DISABLED", raising=False)
+        monkeypatch.delenv("WANDB_API_KEY", raising=False)
+        monkeypatch.setenv("WANDB_MODE", "offline")
+        mock_wandb = MagicMock()
+        mock_wandb.api.api_key = None
+        # Make sure netrc check would also fail so we're exercising
+        # the offline-exception branch, not the netrc fallback.
+        monkeypatch.setattr(
+            "pathlib.Path.is_file", lambda self: False
+        )
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            assert dist.verify_wandb() is True
+
 
 class TestResolveWandbMode:
     """Tests for ``_resolve_wandb_mode``."""
@@ -1595,8 +1617,17 @@ class TestSetupDdpDeviceId:
         )
         assert "device_id" not in kwargs
 
-    def test_explicit_int_device_id_resolves_to_cuda(self, monkeypatch):
-        # Caller passed device_id=2 (an int). Treat as cuda:2.
+    def test_explicit_int_device_id_resolves_to_active_device_type(
+        self, monkeypatch
+    ):
+        """An int device_id resolves to "{get_torch_device_type()}:N".
+
+        Pre-fix this hardcoded "cuda:N" regardless of the active device
+        type — same bug class as the barrier()-warning fix above, just
+        on the explicit-caller path instead of the auto-detect path.
+        On a CUDA system the result is unchanged ("cuda:2"); the
+        regression target is XPU (see test_explicit_int_device_id_on_xpu).
+        """
         monkeypatch.setattr(dist, "get_torch_device_type", lambda: "cuda")
         import torch
         from unittest.mock import MagicMock
@@ -1618,6 +1649,43 @@ class TestSetupDdpDeviceId:
         dist._setup_ddp(backend="gloo", device_id=2)
         kwargs = mock_init.call_args.kwargs
         assert kwargs["device_id"] == torch.device("cuda:2")
+
+    def test_explicit_int_device_id_on_xpu_resolves_to_xpu(
+        self, monkeypatch
+    ):
+        """Regression: int device_id on XPU must NOT become "cuda:N".
+
+        Pre-fix `_setup_ddp(device_id=2)` on Aurora would have built
+        torch.device("cuda:2") and forwarded it to xccl
+        init_process_group — would have either errored or silently
+        bound to a non-existent device. This test pins the corrected
+        behavior: same int, different device_type, correct device
+        family.
+        """
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "xpu")
+        import torch
+        from unittest.mock import MagicMock
+
+        mock_init = MagicMock()
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", mock_init
+        )
+        monkeypatch.setattr(dist, "broadcast", lambda x, root=0: x)
+        monkeypatch.setenv("MASTER_ADDR", "127.0.0.1")
+        monkeypatch.setenv("MASTER_PORT", "12345")
+        monkeypatch.setenv("RANK", "0")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setenv("WORLD_SIZE", "4")
+
+        dist._setup_ddp(backend="gloo", device_id=2)
+        kwargs = mock_init.call_args.kwargs
+        assert kwargs["device_id"] == torch.device("xpu:2"), (
+            "Regression: explicit int device_id on XPU resolved to "
+            "the wrong device family. Was likely hardcoded `cuda:N`."
+        )
 
     def test_explicit_xpu_device_id_currently_passes_through(
         self, monkeypatch
