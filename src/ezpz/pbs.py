@@ -111,8 +111,88 @@ def get_pbs_nodelist_from_jobid(jobid: int | str) -> list[str]:
 
 
 def get_pbs_jobid_of_active_job() -> str | None:
-    """Get the jobid of the currently active job."""
-    # 1. Find all of users' currently running jobs
+    """Get the jobid of the currently active job.
+
+    Short-circuits on ``$PBS_JOBID`` if set, which is the case in any
+    job spawned via ``qsub`` (PBS exports it into the script's
+    environment). Falling back to ``qstat`` is only needed when this
+    function is called outside of a job context — and that fallback
+    requires the ``qstat`` binary on ``PATH``, which is NOT available
+    on compute nodes on systems like Aurora where PBS server binaries
+    live under ``/opt/pbs/bin`` on login nodes only. Without this
+    short-circuit, ``ezpz launch`` raises
+    ``ImportError: cannot import name 'qstat' from 'sh'`` from any
+    compute-node Python subprocess.
+
+    .. note::
+       When ``$PBS_NODEFILE`` is *also* set and readable, the fast
+       path cross-checks the local hostname against it before
+       trusting ``$PBS_JOBID``. This catches the (rare) case where
+       a user manually exports ``PBS_JOBID=<some-other-job>`` for
+       backwards compatibility or runs ``ezpz`` from an
+       ``ssh``-into-a-compute-node shell of a different job. If the
+       hostname is missing from the nodefile we log a warning and
+       fall through to the ``qstat`` lookup. When ``$PBS_NODEFILE``
+       is absent (e.g. compute-node Python subprocesses that don't
+       inherit the full PBS env) we skip the check and trust
+       ``$PBS_JOBID`` — that's the original motivating case.
+    """
+    # Fast path: $PBS_JOBID is set by qsub and propagated by
+    # mpiexec --envall — skip the qstat shell-out entirely.
+    pbs_jobid = os.environ.get("PBS_JOBID")
+    if pbs_jobid:
+        # PBS_JOBID is of the form "12345.aurora-pbs-0001..." — strip
+        # the server suffix to match the rest of ezpz's jobid handling.
+        short = pbs_jobid.split(".")[0]
+
+        # Sanity check: when PBS_NODEFILE is readable, verify our
+        # hostname is actually in it. If not, $PBS_JOBID is lying
+        # (manual override, stale env, etc.) and we should fall
+        # through to the qstat-based lookup. Skip silently when
+        # PBS_NODEFILE is absent — that's the compute-node-subprocess
+        # case the fast path was built for.
+        #
+        # IMPORTANT: PBS_NODEFILE on Aurora contains FQDNs like
+        # `x4114c1s7b0n0.hostmgmt2.cm.aurora.alcf.anl.gov` while
+        # `socket.getfqdn()` returns the SHORT name `x4114c1s7b0n0` on
+        # compute nodes (because reverse DNS doesn't include the
+        # hostmgmt suffix from inside a job). Compare on short names
+        # only — strip the first `.`-separated segment from BOTH
+        # sides before membership check.
+        pbs_nodefile = os.environ.get("PBS_NODEFILE")
+        if pbs_nodefile:
+            try:
+                raw_nodes = Path(pbs_nodefile).read_text().split()
+            except OSError:
+                raw_nodes = None
+            if raw_nodes is not None:
+                nodes_short = {n.split(".", 1)[0] for n in raw_nodes}
+                local = socket.getfqdn().split(".", 1)[0]
+                if local not in nodes_short:
+                    # Demoted from warning to debug: on 96-rank jobs
+                    # this previously produced 96 identical lines of
+                    # yellow output, and the function self-recovers
+                    # via qstat. Keep the message so it's visible
+                    # under EZPZ_LOG_LEVEL=debug when actually
+                    # debugging a stale-jobid case.
+                    logger.debug(
+                        "$PBS_JOBID=%s but local hostname %s is not "
+                        "in $PBS_NODEFILE=%s; falling through to qstat.",
+                        pbs_jobid,
+                        local,
+                        pbs_nodefile,
+                    )
+                else:
+                    return short
+            else:
+                return short
+        else:
+            return short
+
+    # Slow path: walk the user's running jobs and match by hostname.
+    # Requires the qstat binary on PATH, which is NOT installed on
+    # compute nodes on Aurora/Sunspot/Polaris — keep this confined to
+    # login-node callers (e.g. `ezpz doctor`).
     #
     #    ```python
     #    jobs = {
@@ -122,9 +202,10 @@ def get_pbs_jobid_of_active_job() -> str | None:
     #    }
     #    ```
     #
-    # 2. Loop over {jobid, [hosts]} dictionary.
-    #    At each iteration, look and see if _our_ `hostname` is anywhere in the `[hosts]` list.
-    #    If so, then we know that we are currently participating in the `jobid` of that entry.
+    # Loop over {jobid, [hosts]} dictionary. At each iteration, look
+    # and see if _our_ `hostname` is anywhere in the `[hosts]` list.
+    # If so, then we know that we are currently participating in the
+    # `jobid` of that entry.
     jobs = get_pbs_running_jobs_for_user()
     for jobid, nodelist in jobs.items():
         # NOTE:
