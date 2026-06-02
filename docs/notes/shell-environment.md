@@ -161,6 +161,9 @@ ezpz_setup_env
 | `ezpz_setup_python`          | Wrapper: `ezpz_setup_conda && ezpz_setup_venv_from_conda`                                 |
 | `ezpz_setup_conda`           | Find and activate the appropriate conda module[^1]                                        |
 | `ezpz_setup_venv_from_conda` | From `${CONDA_NAME}`, build or activate the venv in `venvs/${CONDA_NAME}/`                |
+| `ezpz_get_scheduler_type`    | Echo the active scheduler: `pbs`, `slurm`, or empty when neither is detected              |
+| `ezpz_get_working_dir`       | Echo the current working directory (shells out to `python3 -c 'os.getcwd()'`)             |
+| `ezpz_check_working_dir`     | Resolve and export `WORKING_DIR`; returns non-zero on failure (see below)                 |
 
 ### Shell Variables Exported
 
@@ -175,6 +178,39 @@ After `ezpz_setup_env` completes, the following are available in your shell
 | `HOSTFILE`      | `/var/spool/...` | Path to hostfile                  |
 | `DIST_LAUNCH`   | `mpiexec ...`    | Full launch command prefix        |
 | `JOBENV_FILE`   | `.jobenv`        | Saved job environment file        |
+| `WORKING_DIR`   | `/lus/.../proj`  | Resolved working dir (set by `ezpz_check_working_dir`) |
+
+### `ezpz_check_working_dir` — error semantics
+
+`ezpz_check_working_dir` resolves the current working directory (via
+`ezpz_get_working_dir`, which shells out to `python3 -c 'os.getcwd()'`),
+exports it as `WORKING_DIR`, and dispatches to the scheduler-specific
+check (`ezpz_check_working_dir_pbs` / `_slurm`) that reconciles
+`PBS_O_WORKDIR` / `SLURM_SUBMIT_DIR`.
+
+As of **v0.18.4** the function actually returns a non-zero rc when
+resolution fails:
+
+```bash
+if ! ezpz_check_working_dir; then
+    log_message ERROR "Failed to set WORKING_DIR. Please check your environment."
+fi
+```
+
+Two failure modes the function now signals:
+
+- **Empty resolution** (e.g. `python3` not on PATH, stripped env, import
+  error): logs `ERROR Unable to determine WORKING_DIR (ezpz_get_working_dir returned empty)`,
+  leaves `WORKING_DIR` **unset** (not exported as empty — important so
+  that `[[ -n "$WORKING_DIR" ]] && skip-recompute` patterns in caller
+  scripts don't accept the bad value), and returns `1`.
+- **Scheduler-specific check fails**: the exit code from
+  `ezpz_check_working_dir_pbs` / `_slurm` now propagates up (previously
+  discarded).
+
+Pre-v0.18.4 the function had no `return 1` anywhere, so the
+`|| log_message ERROR ...` branch in `ezpz_setup_job` was unreachable
+and a silent empty `WORKING_DIR` could leak through.
 
 ## Setup Python
 
