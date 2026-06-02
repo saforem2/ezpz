@@ -3150,19 +3150,24 @@ ezpz_check_working_dir_slurm() {
 }
 
 ezpz_check_working_dir() {
-	WORKING_DIR=$(ezpz_get_working_dir)
-	export WORKING_DIR="${WORKING_DIR}"
-
 	# The function's invariant: WORKING_DIR is set and non-empty on
 	# success. ezpz_get_working_dir shells out to python3, which can
 	# fail silently in a stripped environment (python3 not on PATH,
 	# import error, etc.) — the command substitution returns empty
-	# without raising. Catch that here so callers can `|| log_message
-	# ERROR ...` and not be lied to.
-	if [[ -z "${WORKING_DIR}" ]]; then
+	# without raising. Catch that BEFORE we export so we never leak
+	# WORKING_DIR="" into the parent shell's env: a downstream caller
+	# that does `[[ -n "$WORKING_DIR" ]] && skip-recompute` would see
+	# "the variable is set" and skip the real resolution, masking the
+	# failure in a way that pre-fix behavior never did.
+	local _resolved
+	_resolved=$(ezpz_get_working_dir)
+	if [[ -z "${_resolved}" ]]; then
+		unset WORKING_DIR
 		log_message ERROR "Unable to determine WORKING_DIR (ezpz_get_working_dir returned empty)."
 		return 1
 	fi
+	WORKING_DIR="${_resolved}"
+	export WORKING_DIR
 
 	if [[ -d .git ]]; then
 		GIT_COMMIT_HASH=$(git rev-parse HEAD) && export GIT_COMMIT_HASH
