@@ -44,7 +44,7 @@ rank = ezpz.setup_torch(
 | `pipeline_parallel_backend`* | `None`    | Backend for PP groups (auto-detected)              |
 | `context_parallel_backend`*  | `None`    | Backend for CP groups (auto-detected)              |
 | `data_parallel_backend`*     | `None`    | Backend for DP groups (auto-detected)              |
-| `device_id`*                 | `None`    | Override local device index                        |
+| `device_id`*                 | `None`    | Override the per-rank device index. Defaults to `LOCAL_RANK`. When set, this is the device the process group binds to (`init_process_group(device_id=...)`) AND the device `setup_torch` activates before init. On XPU this binding is load-bearing — see [Multi-dimensional DeviceMesh](#multi-dimensional-devicemesh-xpu-safe) for why. |
 
 Parameters marked with `*` are keyword-only.
 
@@ -88,6 +88,43 @@ model = ezpz.wrap_model_for_fsdp2(
     device_mesh=my_mesh,  # optional DeviceMesh for multi-dim parallelism
 )
 ```
+
+## Multi-dimensional DeviceMesh (XPU-safe)
+
+Building a `DeviceMesh` directly on Aurora/Sunspot (xccl) requires a small
+workaround — torch's `DeviceMesh._init_one_process_group` prefers the
+`split_group` path when the default PG is device-bound, but the current
+xccl backend reports `supports_splitting=False` and raises:
+
+```
+RuntimeError: No backend for the parent process group or its backend
+              does not support splitting
+```
+
+`ezpz.init_device_mesh_safe()` is a drop-in for `torch.distributed.init_device_mesh`
+that round-trips `bound_device_id` around the call so torch takes the
+`new_group(ranks, ...)` fallback (which xccl supports), then restores the
+binding so FSDP2's per-device PG resolution still works. No-op on CUDA/NCCL
+(which supports `split_group` natively).
+
+```python
+import ezpz
+
+# 1D mesh
+mesh = ezpz.init_device_mesh_safe("xpu", (world_size,))
+
+# 2D (dp, tp) mesh — see ezpz.examples.fsdp_tp
+mesh = ezpz.init_device_mesh_safe(
+    str(ezpz.get_torch_device()),
+    (dp_size, tp_size),
+    mesh_dim_names=("dp", "tp"),
+)
+```
+
+`ezpz.wrap_model`'s auto-created 1D mesh and `ezpz.examples.fsdp_tp` both
+route through this helper, so callers using those paths get the workaround
+for free. Reach for `init_device_mesh_safe` directly when you're building
+your own mesh (TP, PP, CP, EP, 2D/3D combinations).
 
 ## Hostfile Helpers
 
