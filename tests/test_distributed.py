@@ -895,6 +895,182 @@ class TestSetupTorch:
             "first all_gather_into_tensor (caught on Aurora job 8518207)."
         )
 
+    def test_setup_torch_with_explicit_device_id_binds_that_device(
+        self, fake_comm, monkeypatch
+    ):
+        """``setup_torch(device_id=N)`` must set xpu:N, not xpu:LOCAL_RANK.
+
+        Regression for PR #149 Copilot comment: if the caller passes
+        an explicit ``device_id``, ``_setup_ddp`` will bind the PG to
+        that device. The pre-init ``set_device`` MUST therefore also
+        use ``device_id`` (not raw ``LOCAL_RANK``); otherwise the
+        current device and the PG's bound device disagree and we
+        reintroduce the exact XPU FSDP2 hang this PR is fixing.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "5")  # raw local_rank
+        seen: list[int] = []
+        dsetup = {"rank": 0, "world_size": 8, "local_rank": 5}
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", return_value=dsetup),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu,
+                "set_device",
+                side_effect=lambda i: seen.append(i),
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch(device_id=2)
+
+        # Exactly one set_device call, to the caller-provided
+        # device_id=2 — NOT to LOCAL_RANK=5. The post-init re-set
+        # short-circuits because pre and post resolved to the same
+        # index (device_id wins both times).
+        assert seen == [2], (
+            f"Expected [2] (caller's explicit device_id), got {seen}. "
+            "Either pre-init or post-init re-set fell back to LOCAL_RANK; "
+            "current device and PG-bound device will disagree and FSDP2 "
+            "will hang on XPU."
+        )
+
+    def test_setup_torch_post_init_resets_only_when_resolved_changes(
+        self, fake_comm, monkeypatch
+    ):
+        """Post-init re-set fires only when the resolved device changed.
+
+        Regression for PR #149 Copilot comment on the post-init path:
+        the comparison MUST be "did the resolved device index change
+        between pre and post-init?", not "did LOCAL_RANK change?".
+
+        Set up a case where ``_setup_ddp`` reports a different
+        ``local_rank`` than ``get_local_rank()`` did pre-init.  With
+        no explicit device_id, both resolutions fall back to local_rank
+        — pre uses the env-var value, post uses the dsetup value — so
+        the indices DIFFER and the post-init re-set must fire.
+        """
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.setenv("LOCAL_RANK", "3")  # pre_local_rank == 3
+        # _setup_ddp reports local_rank=7 (mismatch — extremely rare
+        # in practice, but the regression we want to pin)
+        dsetup = {"rank": 0, "world_size": 12, "local_rank": 7}
+        seen: list[int] = []
+
+        with (
+            patch.object(dist, "get_torch_device_type", return_value="xpu"),
+            patch.object(dist, "get_torch_backend", return_value="ccl"),
+            patch.object(dist, "_setup_ddp", return_value=dsetup),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(
+                torch.xpu,
+                "set_device",
+                side_effect=lambda i: seen.append(i),
+            ),
+            patch.object(dist, "barrier"),
+            patch.object(dist, "get_dist_info", return_value={}),
+            patch.object(dist, "print_dist_setup", return_value=""),
+            patch.object(dist, "seed_everything"),
+        ):
+            dist.setup_torch()
+
+        assert seen == [3, 7], (
+            f"Expected [3, 7] (pre-init bound to LOCAL_RANK env var, "
+            f"post-init re-bound to _setup_ddp's resolved local_rank), "
+            f"got {seen}. The post-init path either skipped the re-set "
+            "(comparison against raw LOCAL_RANK lost the divergence) "
+            "or fired unnecessarily."
+        )
+
+
+# ===================================================================
+# _set_local_device
+# ===================================================================
+
+
+class TestSetLocalDevice:
+    """``_set_local_device`` is the single source of truth for setting
+    the per-process current accelerator device. Both pre- and post-
+    ``init_process_group`` paths in ``setup_torch`` route through it.
+
+    Contract:
+      * On ``cuda`` + cuda available → ``torch.cuda.set_device(N)``.
+      * On ``xpu`` + xpu attr present + xpu available →
+        ``torch.xpu.set_device(N)``.
+      * On any other device_type (``cpu``, ``mps``, ``hip``) → no-op.
+      * On builds where ``torch.xpu`` doesn't exist (Sourcery #1
+        regression) → no-op without ``AttributeError``.
+    """
+
+    def test_cuda_when_available(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            torch.cuda, "set_device", lambda i: seen.append(i)
+        )
+        dist._set_local_device("cuda", 3)
+        assert seen == [3]
+
+    def test_cuda_not_available_is_noop(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(
+            torch.cuda,
+            "set_device",
+            MagicMock(side_effect=AssertionError("must not be called")),
+        )
+        dist._set_local_device("cuda", 3)
+        assert seen == []
+
+    def test_xpu_when_available(self, monkeypatch):
+        seen: list[int] = []
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+        monkeypatch.setattr(
+            torch.xpu, "set_device", lambda i: seen.append(i)
+        )
+        dist._set_local_device("xpu", 5)
+        assert seen == [5]
+
+    def test_xpu_not_available_is_noop(self, monkeypatch):
+        monkeypatch.setattr(torch.xpu, "is_available", lambda: False)
+        monkeypatch.setattr(
+            torch.xpu,
+            "set_device",
+            MagicMock(side_effect=AssertionError("must not be called")),
+        )
+        dist._set_local_device("xpu", 5)
+        # No exception, no call.
+
+    def test_xpu_attr_missing_is_noop(self, monkeypatch):
+        """Sourcery #1 regression: torch.xpu may not exist on every build.
+
+        CPU-only torch, CUDA-only nightlies, ROCm — none of these
+        define ``torch.xpu``. A naive ``torch.xpu.is_available()``
+        call would AttributeError before the availability check;
+        ``_set_local_device`` must use ``hasattr(torch, "xpu")`` first.
+        """
+        monkeypatch.delattr(torch, "xpu", raising=False)
+        # Must not raise.
+        dist._set_local_device("xpu", 5)
+
+    def test_non_accelerator_device_type_is_noop(self):
+        """``cpu`` / ``mps`` / ``hip`` have nothing to bind.
+
+        No env mocking needed — if the function tries to do anything,
+        it'll AttributeError on ``torch.cpu.set_device`` (which doesn't
+        exist).
+        """
+        dist._set_local_device("cpu", 0)
+        dist._set_local_device("mps", 0)
+        dist._set_local_device("hip", 0)
+
 
 # ===================================================================
 # cleanup

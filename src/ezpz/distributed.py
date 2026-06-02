@@ -460,6 +460,41 @@ def _configure_rank_warnings(rank: int) -> None:
         warnings.filterwarnings("ignore")
 
 
+def _set_local_device(device_type: str, device_index: int) -> None:
+    """Set the per-process current accelerator device, guarded.
+
+    Single source of truth for "make ``torch.{cuda,xpu}.current_device()``
+    return ``device_index``". Used in two places by ``setup_torch``:
+
+      1. Pre-``init_process_group``, so the PG binds to the right device
+         on XPU (without this, xccl/foreach_all_gather routes collectives
+         to the wrong device and FSDP2 silently hangs).
+      2. Post-``init_process_group``, only if the resolved device
+         differs from what we pre-bound.
+
+    Both call sites must use the same resolution rule (caller-provided
+    ``device_id`` if any, else ``local_rank``) so the current device and
+    the PG's ``device_id=`` always agree. Centralising the dispatch here
+    keeps that contract intact across future refactors.
+
+    Guards:
+
+    * ``torch.xpu`` doesn't exist on every torch build (CPU-only, CUDA-
+      only nightlies, ROCm). ``hasattr(torch, "xpu")`` short-circuits
+      before ``torch.xpu.is_available()`` would AttributeError.
+    * ``device_type`` not in ``{"cuda", "xpu"}`` is a no-op — there's
+      nothing to bind for ``cpu``/``mps``/``hip``.
+    """
+    import torch
+
+    if device_type == "cuda":
+        if torch.cuda.is_available():
+            torch.cuda.set_device(device_index)
+    elif device_type == "xpu":
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            torch.xpu.set_device(device_index)
+
+
 def setup_torch(
     port: str | int | None = None,
     seed: int | None = None,
@@ -527,9 +562,9 @@ def setup_torch(
     #
     # Set the per-process local device BEFORE init_process_group so
     # that whatever "current device" the process group binds to is
-    # actually local_rank. Without this, every rank's PG would bind
-    # to the default device (e.g. xpu:0 on Aurora) at construction
-    # time; then later `set_device(local_rank)` switches the current
+    # actually the same device. Without this, every rank's PG would
+    # bind to the default device (e.g. xpu:0 on Aurora) at
+    # construction time; later `set_device(...)` switches the current
     # device but the PG remains stuck on xpu:0. xccl/foreach_all_gather
     # then routes collectives to two different XPU queues and they
     # never meet up — FSDP2 deadlocks on the very first
@@ -537,11 +572,16 @@ def setup_torch(
     #
     # CUDA tends to mask this by being more forgiving about
     # current-device-at-init-time, but on XPU it's load-bearing.
+    #
+    # IMPORTANT: the device we set here must match whatever `_setup_ddp`
+    # will bind via `device_id=` in init_process_group. That's the
+    # caller-provided `device_id` if given, otherwise `local_rank`.
+    # Using `LOCAL_RANK` unconditionally would reintroduce the wrong-
+    # device hang on XPU whenever a caller passes an explicit
+    # `device_id` (e.g. `setup_torch(device_id=2)` on local_rank 5).
     pre_local_rank = get_local_rank()
-    if torch.cuda.is_available():
-        torch.cuda.set_device(pre_local_rank)
-    if torch.xpu.is_available():
-        torch.xpu.set_device(pre_local_rank)
+    pre_device_index = device_id if device_id is not None else pre_local_rank
+    _set_local_device(get_torch_device_type(), pre_device_index)
 
     dsetup = _setup_ddp(
         port=str(port) if port is not None else "1234",
@@ -554,14 +594,14 @@ def setup_torch(
     world_size = dsetup["world_size"]
     local_rank = dsetup["local_rank"]
 
-    # Re-set in case get_local_rank()'s pre-init guess differs from
-    # what _setup_ddp resolved (extremely unlikely — both read the
-    # same env vars — but cheap insurance, and matches the previous
-    # post-init set_device contract).
-    if torch.cuda.is_available() and local_rank != pre_local_rank:
-        torch.cuda.set_device(local_rank)
-    if torch.xpu.is_available() and local_rank != pre_local_rank:
-        torch.xpu.set_device(local_rank)
+    # Re-set in case `_setup_ddp` resolved a different device than we
+    # pre-bound (rare — happens if `get_local_rank()`'s pre-init guess
+    # differs from what `_setup_ddp` saw in env vars). Compare against
+    # the device we ACTUALLY set above, not raw `LOCAL_RANK` — those
+    # diverge whenever `device_id` was passed.
+    post_device_index = device_id if device_id is not None else local_rank
+    if post_device_index != pre_device_index:
+        _set_local_device(get_torch_device_type(), post_device_index)
 
     _set_env_vars(rank=rank, local_rank=local_rank, world_size=world_size)
 
