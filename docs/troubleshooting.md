@@ -64,6 +64,121 @@ communication problem between ranks.
 | Freezes after several steps | Network timeout | Increase timeout: `TORCH_DDP_TIMEOUT=7200` |
 | Only hangs at scale (>1 node) | Mismatched world_size or hostfile | Verify `PBS_NODEFILE` / `SLURM_NODELIST` matches expected node count |
 | Intermittent hangs | Firewall or NIC misconfiguration | Set `NCCL_SOCKET_IFNAME` to the correct interface (check with `ip link show`) |
+| **FSDP2 hangs on FIRST `all_gather_into_tensor`** on Aurora/Sunspot (XPU) | Process group bound to wrong device — fixed in `ezpz>=0.18.4` | See [XPU FSDP2 First-Step Hang](#xpu-fsdp2-first-step-hang) below |
+
+### XPU FSDP2 First-Step Hang
+
+**Symptom:** A `fully_shard`-wrapped model deadlocks on the very first
+`all_gather_into_tensor` call inside `pre_forward`. A `py-spy` dump shows
+rank 0 stuck in `sched_yield → ur::level_zero::urEventWait` and every
+other local rank in `pthread_cond_wait`.
+
+**Root cause (pre-0.18.4):** `setup_torch` called `init_process_group`
+*before* `torch.xpu.set_device(local_rank)`. On XPU the "current device"
+at PG-construction time was `xpu:0` on every rank; later `set_device`
+switched the current device but the PG stayed bound to `xpu:0`.
+`xccl/foreach_all_gather` then routed some ranks' collectives to `xpu:0`
+and others to `xpu:LOCAL_RANK` — they never met up.
+
+**Fix:** Upgrade to `ezpz>=0.18.4`. `setup_torch` now calls
+`set_device(local_rank)` *before* `_setup_ddp` and binds `device_id=` on
+XPU process groups (mirroring CUDA). If you must stay on an older
+version, work around it by calling `torch.xpu.set_device(local_rank)`
+manually before `setup_torch` — but the proper fix is the upgrade.
+
+**Verifying:** an `ezpz>=0.18.4` run will print
+`init_process_group: ... device_id=xpu:N` from `setup_torch`. If you
+see `device_id` *absent* from that log line on XPU, you're on the old
+behavior.
+
+### Custom DeviceMesh on XPU
+
+**Symptom:** Calling `torch.distributed.init_device_mesh(...)` directly
+on Aurora/Sunspot raises:
+
+```
+RuntimeError: No backend for the parent process group or its backend
+              does not support splitting
+```
+
+**Root cause:** When `setup_torch` binds the default PG to a device (via
+`init_process_group(device_id=...)`, required for FSDP2 — see above),
+torch's `DeviceMesh._init_one_process_group` prefers the `split_group`
+code path. The current xccl backend reports `supports_splitting=False`
+and raises.
+
+**Fix:** Use `ezpz.init_device_mesh_safe(...)` instead — same signature
+as torch's, but it round-trips `bound_device_id` around the call so
+torch falls back to the `new_group(ranks, ...)` path (which xccl
+supports). No-op on CUDA. See the [distributed reference](python/Code-Reference/distributed.md#multi-dimensional-devicemesh-xpu-safe)
+for details.
+
+```python
+# Before (raises on XPU):
+from torch.distributed.device_mesh import init_device_mesh
+mesh = init_device_mesh("xpu", (dp, tp), mesh_dim_names=("dp", "tp"))
+
+# After:
+import ezpz
+mesh = ezpz.init_device_mesh_safe(
+    "xpu", (dp, tp), mesh_dim_names=("dp", "tp")
+)
+```
+
+`ezpz.wrap_model`'s auto-created 1D mesh and `ezpz.examples.fsdp_tp`
+already route through `init_device_mesh_safe`, so users on those paths
+get the workaround for free.
+
+### Hugging Face Datasets — `ArrowInvalid` / `FileNotFoundError` in multi-rank loading
+
+**Symptom:** Multi-rank job using `datasets.load_dataset` or
+`Dataset.map` on a shared filesystem (`/home`, `/lus`) crashes with one
+or both of:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+  '/home/.../datasets/.../cache-<hash>.arrow'
+   ── arrow_dataset.py: os.chmod(cache_file_name, ...)
+
+pyarrow.lib.ArrowInvalid: Tried reading schema message, was null or length 0
+   ── opened a partially-written Arrow stream
+```
+
+You may also see N parallel "Tokenizing HF dataset" progress bars, one
+per rank.
+
+**Root cause:** Every rank computes the same fingerprint and races to
+write the same Arrow cache file. One rank's `os.chmod` lands after
+another rank renames the file (`FileNotFoundError`); another rank opens
+a stream the writer hasn't finished (`ArrowInvalid`).
+
+**Fix:** Have rank 0 populate the cache first, then release the others
+to read it. `ezpz.get_hf_text_dataset` does this automatically as of
+`ezpz>=0.18.4` (`_main_process_first()` barrier around both
+`load_dataset` and `Dataset.map`).
+
+For a **custom** data loader, use the same pattern with
+`torch.distributed.barrier()`:
+
+```python
+import torch.distributed as dist
+
+if dist.is_initialized() and dist.get_rank() != 0:
+    dist.barrier()  # non-rank-0 waits
+
+dataset = datasets.load_dataset(name, split=split)
+tokenized = dataset.map(tokenize_fn, batched=True)
+
+if dist.is_initialized() and dist.get_rank() == 0:
+    dist.barrier()  # rank 0 releases everyone
+```
+
+!!! note "Shared vs node-local cache"
+    The pattern above gates on **global** rank 0, which is correct for
+    a shared cache dir (the default on ALCF — `/home`, `/lus`).  If
+    you set a **node-local** `HF_DATASETS_CACHE` (e.g. `$TMPDIR`),
+    every node needs its own rank-0 to populate its local cache —
+    switch the gate to `ezpz.get_local_rank() == 0`.
 
 **Debugging steps:**
 
