@@ -5,7 +5,8 @@ HuggingFace Datasets loading and tokenization.
 """
 
 import os
-from typing import List, Optional, Iterable, Tuple, Dict
+from contextlib import contextmanager
+from typing import List, Optional, Iterable, Iterator, Tuple, Dict
 import ezpz
 
 import torch
@@ -29,6 +30,38 @@ logger = ezpz.get_logger(__name__)
 
 
 from torch.utils.data import get_worker_info
+
+
+@contextmanager
+def _main_process_first() -> Iterator[None]:
+    """Rank-0-first barrier for filesystem-cache writes (load/tokenize).
+
+    HF ``datasets`` writes to a deterministic, fingerprint-named cache
+    file. When N ranks call ``load_dataset`` / ``Dataset.map`` in
+    parallel against the same path on a shared filesystem they race:
+    one rank's ``chmod`` lands after another rank has already moved
+    the file (``FileNotFoundError``), or a reader opens a partially-
+    written Arrow stream (``ArrowInvalid: Tried reading schema
+    message, was null or length 0``).
+
+    Have rank 0 do the work first, then release the others to hit
+    the populated cache. Assumes a **shared** cache dir (the default
+    on ALCF home/lus). For node-local caches, gate on local rank.
+
+    No-op when ``torch.distributed`` isn't initialised — keeps
+    notebooks/tests and single-process callers free of side effects.
+    """
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        yield
+        return
+    rank = torch.distributed.get_rank()
+    if rank != 0:
+        torch.distributed.barrier()
+    try:
+        yield
+    finally:
+        if rank == 0:
+            torch.distributed.barrier()
 
 
 def get_data_parallel_map_dataset(
@@ -158,7 +191,8 @@ def get_hf_text_dataset(
         limit,
         seq_len,
     )
-    dataset = datasets.load_dataset(dataset_name, split=split)
+    with _main_process_first():
+        dataset = datasets.load_dataset(dataset_name, split=split)
     if (
         cnames := getattr(dataset, "column_names")
     ) and text_column not in list(cnames):
@@ -185,12 +219,13 @@ def get_hf_text_dataset(
             return_attention_mask=True,
         )
 
-    tokenized = dataset.map(
-        tokenize_function,
-        batched=True,
-        remove_columns=dataset.column_names,
-        desc="Tokenizing HF dataset",
-    )
+    with _main_process_first():
+        tokenized = dataset.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=dataset.column_names,
+            desc="Tokenizing HF dataset",
+        )
     tokenized.set_format(
         type="torch", columns=["input_ids", "attention_mask"]
     )
