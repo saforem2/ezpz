@@ -34,6 +34,10 @@ rank = ezpz.setup_torch()           # auto-detects device + backend
 device = ezpz.get_torch_device()
 model = torch.nn.Linear(128, 10).to(device)
 model = ezpz.wrap_model(model)       # FSDP (default)
+
+# Multi-dim parallelism (TP/PP/CP) on XPU? Use ezpz.init_device_mesh_safe
+# instead of torch's init_device_mesh — works around xccl's missing
+# split_group on Aurora/Sunspot. See docs/troubleshooting.md.
 ```
 
 ```bash
