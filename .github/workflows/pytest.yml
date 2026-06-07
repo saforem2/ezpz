@@ -1,0 +1,64 @@
+name: pytest
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+# Cancel in-flight runs on new pushes to the same PR/branch — saves
+# CI minutes on rapid pushes.
+concurrency:
+  group: pytest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pytest:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      # Install ezpz + dev deps. The [tool.uv] override-dependencies
+      # block in pyproject.toml pins torch/mpi4py to `sys_platform ==
+      # 'never'` so `uv sync` skips them (avoids accidentally pulling
+      # CUDA wheels). We install torch CPU separately below — several
+      # test files do `import torch` at module top, so they fail
+      # collection if torch is missing.
+      - name: Sync env
+        run: uv sync --no-progress --extra dev
+
+      # Install torch CPU wheel from the PyTorch CPU index. ~200MB.
+      # Skip torchvision/torchaudio — no test currently imports them.
+      - name: Install torch (CPU)
+        run: |
+          uv pip install \
+            --index-strategy unsafe-best-match \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            torch
+
+      - name: Show installed
+        run: |
+          uv pip list
+          .venv/bin/python -c "import ezpz; print('ezpz', ezpz.__version__)"
+          .venv/bin/python -c "import torch; print('torch', torch.__version__)"
+
+      - name: Run pytest
+        run: uv run --no-sync pytest -q --tb=short
