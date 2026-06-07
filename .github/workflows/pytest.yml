@@ -47,10 +47,16 @@ jobs:
 
       # Install torch CPU wheel from the PyTorch CPU index. ~200MB.
       # Skip torchvision/torchaudio — no test currently imports them.
+      #
+      # IMPORTANT: pyproject.toml's [tool.uv] override-dependencies
+      # pins torch to `sys_platform == 'never'` so `uv sync` skips
+      # it on every platform — but uv applies that override on
+      # `uv pip install` too. Bootstrap pip first, then use it to
+      # install torch (bare pip ignores uv config).
       - name: Install torch (CPU)
         run: |
-          uv pip install \
-            --index-strategy unsafe-best-match \
+          uv pip install pip
+          .venv/bin/python -m pip install \
             --extra-index-url https://download.pytorch.org/whl/cpu \
             torch
 
