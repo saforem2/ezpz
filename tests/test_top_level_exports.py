@@ -52,6 +52,7 @@ EXPECTED_STATIC_REEXPORTS = [
     ("get_world_size", "ezpz.distributed"),
     ("get_world_size_in_use", "ezpz.distributed"),
     ("get_world_size_total", "ezpz.distributed"),
+    ("init_device_mesh_safe", "ezpz.distributed"),
     ("log_dict_as_bulleted_list", "ezpz.distributed"),
     ("print_dist_setup", "ezpz.distributed"),
     ("query_environment", "ezpz.distributed"),
