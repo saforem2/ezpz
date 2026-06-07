@@ -81,13 +81,20 @@ def test_get_pbs_launch_cmd_raises_on_inconsistent_topology(patch_topology):
 
 
 def test_get_pbs_launch_cmd_intel_cpu_binding_defaults(patch_topology, monkeypatch):
-    """Intel GPU machines add vendor-specific CPU binding and no-vni flag."""
+    """Intel GPU machines add vendor-specific CPU binding (no longer --no-vni).
+
+    Pre-v0.18.x this also auto-added `--no-vni` for a transient
+    network-interface workaround; that was dropped. Users who still
+    need it can pass it via launcher passthrough or set CPU_BIND.
+    """
     hostfile = patch_topology(machine="aurora")
     monkeypatch.delenv("CPU_BIND", raising=False)
 
     cmd = pbs.get_pbs_launch_cmd(hostfile=hostfile)
 
-    assert "--no-vni" in cmd
+    assert "--no-vni" not in cmd, (
+        "--no-vni should no longer be auto-added on Aurora/Sunspot"
+    )
     assert "--cpu-bind=list:1-8:9-16:17-24:25-32:33-40:41-48:53-60:61-68:69-76:77-84:85-92:93-100" in cmd
 
 

@@ -1771,7 +1771,9 @@ ezpz_get_dist_launch_cmd() {
 		fi
 		if [[ "${mn}" == "aurora" || "${mn}" == "sunspot" ]]; then
 			CPU_BIND="verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
-			dist_launch_cmd="${dist_launch_cmd} --no-vni --cpu-bind=${CPU_BIND}"
+			# Note: --no-vni was auto-added here for a transient
+			# network-interface workaround; dropped as of v0.18.x.
+			dist_launch_cmd="${dist_launch_cmd} --cpu-bind=${CPU_BIND}"
 		else
 			dist_launch_cmd="${dist_launch_cmd} --cpu-bind=depth -d ${depth}"
 		fi
