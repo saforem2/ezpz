@@ -79,7 +79,7 @@ To build a PBS-aware launch command (using the current job’s hostfile when ava
 - Detect your active PBS job (if any) and locate its nodefile.
 - Infer topology (`ngpus`, `nhosts`, `ngpu_per_host`) from the hostfile and machine limits unless you override them.
 - Build the correct launcher (`mpiexec`/`mpirun`) with sensible CPU binding:
-  - Intel GPU machines (`aurora`, `sunspot`) get `--no-vni` and vendor binding lists.
+  - Intel GPU machines (`aurora`, `sunspot`) get a vendor-specific CPU binding list.
   - If `CPU_BIND` is set, its value is forwarded verbatim.
   - Otherwise, a generic `--cpu-bind=depth --depth=8` is applied.
 - Optionally inject PBS environment metadata (`PBS_NODEFILE`, host list, launch command) via `get_pbs_env`.

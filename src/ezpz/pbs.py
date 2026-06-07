@@ -350,10 +350,14 @@ def _maybe_add_cpu_bind(
         cmd.append(f"--cpu-bind={cpu_bind_val}")
         return cmd
 
-    # No explicit CPU_BIND -> set sensible defaults by machine
+    # No explicit CPU_BIND -> set sensible defaults by machine.
+    # NOTE: `--no-vni` used to be auto-added on Aurora/Sunspot for a
+    # transient network-interface workaround; dropped as of v0.18.x.
+    # Users who still need it can pass it via the launcher
+    # passthrough or set their own CPU_BIND.
     machine_name_l = machine_name.lower()
     if machine_name_l in {"aurora", "sunspot"}:
-        cmd.extend(["--no-vni", f"--cpu-bind={_CPU_BIND_AURORA}"])
+        cmd.append(f"--cpu-bind={_CPU_BIND_AURORA}")
     else:
         cmd.extend(["--cpu-bind=depth", "--depth=8"])
 
@@ -468,12 +472,11 @@ def get_pbs_launch_cmd(
     else:
         is_intel_xpu_machine = machine_name in {"aurora", "sunspot"}
         if is_intel_xpu_machine:
-            cmd_list.extend(
-                [
-                    "--no-vni",
-                    f"{cpu_bind_prefix}{_CPU_BIND_AURORA}",
-                ]
-            )
+            # `--no-vni` was previously auto-added here for a
+            # transient network-interface workaround; dropped as of
+            # v0.18.x. Pass via launcher passthrough or set a custom
+            # CPU_BIND if you still need it.
+            cmd_list.append(f"{cpu_bind_prefix}{_CPU_BIND_AURORA}")
         else:
             # generic CPU binding
             cmd_list.extend(["--cpu-bind=depth", "--depth=8"])

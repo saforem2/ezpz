@@ -435,8 +435,8 @@ flowchart TD
 
 Different HPC systems need different MPI flags. `pbs.build_launch_cmd()`
 encodes these per-machine defaults so users don't have to remember them —
-Aurora needs `--no-vni` and `--envall`, Polaris needs `--cpu-bind=depth`, and
-Sophia uses `mpirun` instead of `mpiexec`.
+Aurora/Sunspot get the Intel XPU `--cpu-bind=list:...` mask, Polaris gets
+`--cpu-bind=depth`, and Sophia uses `mpirun` instead of `mpiexec`.
 
 ```mermaid
 flowchart LR
@@ -447,7 +447,7 @@ flowchart LR
     build --> polaris{"Polaris / Other?"}
 
     sophia -- yes --> mpirun["mpirun -n N -N PPn --hostfile=..."]
-    aurora -- yes --> mpiexec_aurora["mpiexec --envall --np N --ppn PPn --no-vni"]
+    aurora -- yes --> mpiexec_aurora["mpiexec --envall --np N --ppn PPn --cpu-bind=list:..."]
     polaris -- yes --> mpiexec_pol["mpiexec --cpu-bind=depth --depth=8"]
 ```
 
