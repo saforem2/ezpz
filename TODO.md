@@ -319,3 +319,25 @@ second broadcast pass for the Python directory. Worth its own spec.
 A `--include-python` flag on the CLI would let users opt in
 explicitly while we shake out edge cases (uv venvs that share an
 interpreter across multiple environments, etc.).
+
+
+## CI: Fix 5 deselected pytest tests [LOW]
+
+PR #158 added a pytest CI workflow that runs on every PR. Five
+tests are currently deselected because they fail in vanilla-CI
+(ubuntu-latest, CPU torch + torchvision only) for environment
+reasons unrelated to test correctness:
+
+| Test | Failure | Proper fix |
+|------|---------|------------|
+| `tests/test_distributed.py::TestAllReduce::test_mpi_default` | `ModuleNotFoundError: No module named 'mpi4py'` | `pytest.importorskip("mpi4py")` at module top (or just on the test). Currently the test mocks via `fake_comm` fixture but the function-under-test does `from mpi4py import MPI` for the `op = MPI.SUM` default — the mock doesn't cover that path. |
+| `tests/test_recipes.py::TestRecipeWandBLogging::test_setup_wandb_with_history` | `ValueError: cannot write NetCDF files because none of the suitable backend libraries (netCDF4, h5netcdf, scipy) are installed` | Either `pytest.importorskip("scipy")` or have `History.finalize()` fall back to JSON when no netCDF backend is available. |
+| `tests/test_recipes.py::TestRecipeTrainingLoop::test_full_training_loop` | Same as above (calls `History.finalize()`) | Same — covered by the same fix |
+| `tests/test_yeet_env.py::TestRun::test_generic_source_skips_venv_footer` | `assert 'Synced to' in ''` — captured stdout is empty | The test uses `capsys` but `yeet.run()` returns before reaching the `print()` footer (likely an exception swallowed somewhere). Needs investigation — not just a missing dep. |
+| `tests/test_yeet_env.py::TestRun::test_venv_source_uses_venv_footer` | `assert 'To use this environment' in ''` — same root cause | Same |
+
+Until fixed, the workflow `.github/workflows/pytest.yml` deselects
+all 5. Remove the `--deselect` flags as each test is fixed.
+
+This is low priority because the 988 remaining tests provide real
+drift / regression coverage (which is what PR #158 was for).
