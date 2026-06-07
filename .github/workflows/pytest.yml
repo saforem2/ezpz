@@ -45,26 +45,30 @@ jobs:
       - name: Sync env
         run: uv sync --no-progress --extra dev
 
-      # Install torch CPU wheel from the PyTorch CPU index. ~200MB.
-      # Skip torchvision/torchaudio — no test currently imports them.
+      # Install torch + torchvision CPU wheels from the PyTorch CPU
+      # index. ~250MB combined. torchvision is needed because
+      # `tests/test_data_vision.py` imports `ezpz.data.vision`,
+      # which does `import torchvision` at module top. torchaudio
+      # is NOT needed (no source or test imports it).
       #
       # IMPORTANT: pyproject.toml's [tool.uv] override-dependencies
-      # pins torch to `sys_platform == 'never'` so `uv sync` skips
-      # it on every platform — but uv applies that override on
-      # `uv pip install` too. Bootstrap pip first, then use it to
-      # install torch (bare pip ignores uv config).
-      - name: Install torch (CPU)
+      # pins torch/torchvision to `sys_platform == 'never'` so
+      # `uv sync` skips them on every platform — but uv applies
+      # that override on `uv pip install` too. Bootstrap pip first,
+      # then use it (bare pip ignores uv config).
+      - name: Install torch + torchvision (CPU)
         run: |
           uv pip install pip
           .venv/bin/python -m pip install \
             --extra-index-url https://download.pytorch.org/whl/cpu \
-            torch
+            torch torchvision
 
       - name: Show installed
         run: |
           uv pip list
           .venv/bin/python -c "import ezpz; print('ezpz', ezpz.__version__)"
           .venv/bin/python -c "import torch; print('torch', torch.__version__)"
+          .venv/bin/python -c "import torchvision; print('torchvision', torchvision.__version__)"
 
       - name: Run pytest
         run: uv run --no-sync pytest -q --tb=short
