@@ -3,12 +3,18 @@
 Use this example when your model is too large to fit on a single GPU, or you
 want to reduce per-GPU memory usage. FSDP shards model parameters, gradients,
 and optimizer states across ranks — enabling training of larger models with the
-same hardware. Switch from DDP to FSDP with a single flag: `use_fsdp=True`.
+same hardware.
+
+This example calls PyTorch's `FullyShardedDataParallel` directly to show what
+ezpz is doing under the hood. For most user code,
+[`ezpz.wrap_model(model, use_fsdp=True)`][ezpz.distributed.wrap_model] is the
+one-line equivalent.
 
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
-    - [`wrap_model()`][ezpz.distributed.wrap_model] — Wrap model for FSDP (with `use_fsdp=True`)
+    - [`FullyShardedDataParallel`][torch.distributed.fsdp.FullyShardedDataParallel] — Raw FSDP wrap (used here)
+    - [`wrap_model(use_fsdp=True)`][ezpz.distributed.wrap_model] — `ezpz`'s one-line equivalent for production code
     - [`TrainConfig`][ezpz.configs.TrainConfig] — Training configuration
 
 See:
@@ -20,15 +26,60 @@ See:
 ezpz launch python3 -m ezpz.examples.fsdp
 ```
 
-## Source
+## What this example demonstrates
 
-<details closed><summary><code>src/ezpz/examples/fsdp.py</code></summary>
+- Wrapping a CNN with PyTorch's [`FullyShardedDataParallel`][torch.distributed.fsdp.FullyShardedDataParallel]
+  + a `MixedPrecision` policy so parameters, gradients, and optimizer states are
+  sharded across ranks while compute stays in `bf16`/`fp16`.
+- Per-rank dataloader sampling with [`DistributedSampler`][torch.utils.data.DistributedSampler]
+  and `sampler.set_epoch(epoch)` so each rank sees a different shuffle every epoch.
+- Cross-rank metric aggregation with `dist.all_reduce` so every worker reports the
+  same global train/test loss and accuracy.
+- Estimating model FLOPS *before* the FSDP wrap (FlopCounterMode can't see through
+  the wrapper) and using the per-step duration to compute TFLOPS / MFU — see
+  [MFU Tracking](#mfu-tracking) below.
+- A portable rank-0 checkpoint save (`torch.save(model.state_dict(), ...)`) gated
+  on `--save-model`.
 
-```python title="src/ezpz/examples/fsdp.py"
---8<-- "src/ezpz/examples/fsdp.py"
+## Expected output
+
+After `ezpz launch` finishes its launch banner you'll see distributed init,
+a parameter-count table, then per-epoch metric lines from `History.update`:
+
+```bash
+[I][ezpz/dist:setup_torch] Using device='xpu' with backend='xccl' ...
+[I][ezpz/dist:setup_torch] [...][rank=00/23][local_rank=00/11]
+[I][ezpz/dist:setup_wandb] wandb.run=[...](https://wandb.ai/...)
+[I][examples/fsdp:prepare_model_optimizer_and_scheduler]
+=================================================================
+Layer (type:depth-idx)                   Param #
+=================================================================
+Net                                      --
+├─Conv2d: 1-1                            ...
+...
+=================================================================
+[I][examples/fsdp:fsdp_main] epoch=1 dt=...  train_loss=...  test_loss=...  test_acc=...
+[I][examples/fsdp:fsdp_main] epoch=2 dt=...  train_loss=...  test_loss=...  test_acc=...
 ```
 
-</details>
+A full run also prints text-mode `tplot` summaries and writes JSONL metrics +
+plots under `outputs/ezpz-fsdp/<timestamp>/` (see [Output](#output) for the real
+log captured on Sunspot).
+
+## Common modifications
+
+- **Pick a different model size** — pass `--model {debug,small,medium,large}` or
+  override `--conv1-channels / --conv2-channels / --fc-dim` directly. Presets
+  live in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
+- **Train on a bigger dataset** — `--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}`
+  routes through `get_data()` to dataset-specific loaders in `ezpz.data.vision`.
+- **Switch the FSDP compute dtype** — pass `--dtype {bf16,fp16,fp32}`. The value
+  flows into `MixedPrecision(param_dtype=...)` in
+  `prepare_model_optimizer_and_scheduler()`.
+- **Change the optimizer / LR schedule** — `optim.AdamW` and `StepLR` are wired
+  in the same function; swap them out without touching the rest of the loop.
+- **Save a checkpoint** — pass `--save-model` to write `mnist_cnn.pt` from rank 0
+  after training completes.
 
 ## Code Walkthrough
 
@@ -876,4 +927,13 @@ wandb: Find logs at: ../../../../../../lus/tegu/projects/datascience/foremans/pr
 
 </details>
 
+## Source code
+
+<details closed><summary><code>src/ezpz/examples/fsdp.py</code></summary>
+
+```python title="src/ezpz/examples/fsdp.py"
+--8<-- "src/ezpz/examples/fsdp.py"
+```
+
+</details>
 

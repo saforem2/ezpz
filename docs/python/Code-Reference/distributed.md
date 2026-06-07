@@ -91,6 +91,14 @@ model = ezpz.wrap_model_for_fsdp2(
 
 ## Multi-dimensional DeviceMesh (XPU-safe)
 
+!!! info "Since v0.18.4"
+
+    `ezpz.init_device_mesh_safe()` was added in
+    [v0.18.4](https://github.com/saforem2/ezpz/releases/tag/v0.18.4)
+    (PR [#149](https://github.com/saforem2/ezpz/pull/149)) — see
+    [troubleshooting](../../troubleshooting.md#custom-devicemesh-on-xpu)
+    for the underlying xccl `split_group` limitation it works around.
+
 Building a `DeviceMesh` directly on Aurora/Sunspot (xccl) requires a small
 workaround — torch's `DeviceMesh._init_one_process_group` prefers the
 `split_group` path when the default PG is device-bound, but the current

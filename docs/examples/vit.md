@@ -22,15 +22,63 @@ See:
 ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
 ```
 
-## Source
+## What this example demonstrates
 
-<details closed><summary><code>src/ezpz/examples/vit.py</code></summary>
+- Building a Vision Transformer from scratch — `PatchEmbed` splits the image into
+  non-overlapping patches via a strided `Conv2d`, then a stack of
+  `AttentionBlock` layers (from `ezpz.models`) plus a class-token classifier head
+  produces logits.
+- Wrapping with `ezpz.distributed.wrap_model(model, use_fsdp=...)` so the same
+  call picks DDP or FSDP based on the `--fsdp` flag (and honors
+  `--fsdp_sharding_strategy`).
+- Mixing in `torch.compile()` for kernel fusion when `--compile` is passed —
+  the first iteration eats the compile cost, every iteration after that benefits.
+- Selecting from pre-baked model presets (`debug / small / medium / large`) via
+  `--model`, with explicit CLI flags always taking precedence over preset values.
+- End-to-end metric tracking via [`ezpz.history.History`][ezpz.history.History]
+  with optional W&B logging, plus MFU computed from the per-step duration (see
+  [MFU Tracking](#mfu-tracking)).
 
-```python title="src/ezpz/examples/vit.py"
---8<-- "src/ezpz/examples/vit.py"
+## Expected output
+
+After launch, you'll see distributed init, a model parameter summary, and
+per-step train metrics:
+
+```bash
+[I][ezpz/dist:setup_torch] Using device='xpu' with backend='xccl' ...
+[I][ezpz/dist:setup_torch] [...][rank=00/23][local_rank=00/11]
+[I][ezpz/dist:setup_wandb] wandb.run=[...](https://wandb.ai/...)
+[I][examples/vit:main] Using AttentionBlock Attention with args.compile=True
+[I][examples/vit:main]
+=================================================================
+Layer (type:depth-idx)                   Param #
+=================================================================
+SimpleVisionTransformer                  --
+├─PatchEmbed: 1-1                        ...
+├─ModuleList: 1-2                        ...
+...
+[I][examples/vit:train_step] iter=0  dt=...  loss=...  dtf=...  dtb=...
+[I][examples/vit:train_step] iter=1  dt=...  loss=...  dtf=...  dtb=...
 ```
 
-</details>
+`torch.compile` makes the first iteration noticeably slower while it
+specializes kernels — subsequent steps drop to the steady-state `dt`. See the
+[Output](#output) section below for a real captured run.
+
+## Common modifications
+
+- **Pick a model size** — pass `--model {debug,small,medium,med,large}`. Presets
+  live in `MODEL_PRESETS` near the top of `src/ezpz/examples/vit.py`; tweak the
+  dict to add your own.
+- **Tune individual architecture knobs** — `--img_size`, `--patch_size`,
+  `--num_heads`, `--head_dim`, `--depth`, `--embed_dim` all override the preset.
+- **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp_sharding_strategy`)
+  to switch from DDP. The call to `ezpz.distributed.wrap_model(..., use_fsdp=...)`
+  in `main()` handles both cases.
+- **Toggle `torch.compile`** — `--compile` enables it. Useful for measuring the
+  fused-kernel speedup vs. eager execution.
+- **Swap the dataset** — `--dataset {mnist,fake}` routes through the helpers
+  in `ezpz.data.vision` (or generates random tensors for quick smoke tests).
 
 ## Code Walkthrough
 
@@ -1140,4 +1188,13 @@ wandb: Find logs at: ../../../../../../lus/tegu/projects/datascience/foremans/pr
 
 </details>
 
+## Source code
+
+<details closed><summary><code>src/ezpz/examples/vit.py</code></summary>
+
+```python title="src/ezpz/examples/vit.py"
+--8<-- "src/ezpz/examples/vit.py"
+```
+
+</details>
 

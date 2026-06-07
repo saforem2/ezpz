@@ -68,6 +68,15 @@ communication problem between ranks.
 
 ### XPU FSDP2 First-Step Hang
 
+!!! info "Fixed in v0.18.4"
+
+    The two-part fix landed in
+    [v0.18.4](https://github.com/saforem2/ezpz/releases/tag/v0.18.4)
+    (PR [#149](https://github.com/saforem2/ezpz/pull/149)): `setup_torch`
+    now calls `set_device(local_rank)` before `_setup_ddp`, and
+    `_setup_ddp` binds `device_id=` for XPU just like CUDA. Upgrade is
+    the recommended action.
+
 **Symptom:** A `fully_shard`-wrapped model deadlocks on the very first
 `all_gather_into_tensor` call inside `pre_forward`. A `py-spy` dump shows
 rank 0 stuck in `sched_yield → ur::level_zero::urEventWait` and every
@@ -92,6 +101,14 @@ see `device_id` *absent* from that log line on XPU, you're on the old
 behavior.
 
 ### Custom DeviceMesh on XPU
+
+!!! info "Helper added in v0.18.4"
+
+    `ezpz.init_device_mesh_safe()` is the drop-in replacement, added in
+    [v0.18.4](https://github.com/saforem2/ezpz/releases/tag/v0.18.4)
+    (PR [#149](https://github.com/saforem2/ezpz/pull/149)). On versions
+    older than this, build the mesh dimensions yourself via
+    `torch.distributed.new_group(ranks=...)`.
 
 **Symptom:** Calling `torch.distributed.init_device_mesh(...)` directly
 on Aurora/Sunspot raises:
@@ -130,6 +147,14 @@ already route through `init_device_mesh_safe`, so users on those paths
 get the workaround for free.
 
 ### Hugging Face Datasets — `ArrowInvalid` / `FileNotFoundError` in multi-rank loading
+
+!!! info "Auto-handled in `get_hf_text_dataset` since v0.18.4"
+
+    The rank-0-first barrier landed in
+    [v0.18.4](https://github.com/saforem2/ezpz/releases/tag/v0.18.4)
+    (PR [#149](https://github.com/saforem2/ezpz/pull/149)). If you're on
+    `ezpz.data.hf.get_hf_text_dataset` you get the fix for free; if
+    you're writing your own data loader, use the pattern below.
 
 **Symptom:** Multi-rank job using `datasets.load_dataset` or
 `Dataset.map` on a shared filesystem (`/home`, `/lus`) crashes with one

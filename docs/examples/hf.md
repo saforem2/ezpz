@@ -30,15 +30,63 @@ ezpz launch python3 -m ezpz.examples.hf \
     --output_dir ./output-hf
 ```
 
-## Source
+## What this example demonstrates
 
-<details closed><summary><code>src/ezpz/examples/hf.py</code></summary>
+- Parsing three dataclass groups (`HfModelArguments`, `HfDataTrainingArguments`,
+  `TrainingArguments`) in a single pass with HuggingFace's `HfArgumentParser`,
+  including the `--config_file foo.json` shortcut for batch jobs.
+- Driving an explicit train/eval loop with HuggingFace `accelerate` — you keep
+  full control over forward/backward/optimizer ordering instead of delegating to
+  `Trainer`.
+- Opt-in FSDP via `ACCELERATE_USE_FSDP=true`. When set, the example builds an
+  explicit `FullyShardedDataParallelPlugin` with a bf16 `MixedPrecision` policy
+  (bypassing Accelerate's env-var defaults that can pick up stale config).
+- Separate `train/` and `eval/` metric namespaces so
+  [`History.finalize()`][ezpz.history.History] produces split `train.h5` /
+  `eval.h5` datasets, distinct plot groups, and per-line summaries tagged
+  `[train]` / `[eval]`.
+- Robustness niceties — a `safetensors` → `.bin` fallback for Lustre's
+  "Argument list too long" failure, and an early break out of the epoch loop
+  once `max_steps` is hit.
 
-```python title="src/ezpz/examples/hf.py"
---8<-- "src/ezpz/examples/hf.py"
+## Expected output
+
+After launch, you'll see distributed init, model + tokenizer loading, and
+prefixed per-step training metrics:
+
+```bash
+[I][ezpz/dist:setup_torch] Using device='xpu' with backend='xccl' ...
+[I][ezpz/dist:setup_torch] [...][rank=00/23][local_rank=00/11]
+[I][ezpz/dist:setup_wandb] wandb.run=[...](https://wandb.ai/...)
+[I][examples/hf:main] Loading model gpt2 ...
+[I][examples/hf:main] Loaded dataset wikitext / wikitext-2-raw-v1
+[I][examples/hf:main] [train] step=0  loss=...  perplexity=...  tflops=...  mfu=...
+[I][examples/hf:main] [train] step=1  loss=...  perplexity=...  tflops=...  mfu=...
+...
+[I][examples/hf:main] [eval]  step=...  loss=...  perplexity=...
 ```
 
-</details>
+`[train]` and `[eval]` tags come from the prefix-stripping helper in
+`_strip_metric_prefix`. Final history is written to `--output_dir`.
+
+## Common modifications
+
+- **Switch the model or dataset** — change `--model_name_or_path`,
+  `--dataset_name`, `--dataset_config_name`. `split_dataset()` handles the
+  train/validation split (including a fallback when split-by-percentage syntax
+  isn't supported).
+- **Turn on FSDP** — `export ACCELERATE_USE_FSDP=true` before launching. The
+  explicit plugin is constructed in `main()` around line ~275 of
+  `src/ezpz/examples/hf.py`.
+- **Tune training schedule** — pass any
+  [`TrainingArguments`](https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainingArguments)
+  flag (`--per_device_train_batch_size`, `--learning_rate`,
+  `--num_train_epochs`, `--max_steps`, `--gradient_accumulation_steps`, ...).
+- **Change the token chunking** — `--block_size` controls how
+  `group_texts()` packs tokens. Default falls back to the tokenizer's
+  `model_max_length`.
+- **Override the W&B project name** — `--wandb_project_name my-experiment` (or
+  unset to use the default derived from the script path).
 
 ## Code Walkthrough
 
@@ -476,6 +524,16 @@ $ python3 -m ezpz.examples.hf --help
 #   --block_size            Token block size for grouping
 #   --wandb_project_name    Custom W&B project name
 # See HfModelArguments and HfDataTrainingArguments for full list.
+```
+
+</details>
+
+## Source code
+
+<details closed><summary><code>src/ezpz/examples/hf.py</code></summary>
+
+```python title="src/ezpz/examples/hf.py"
+--8<-- "src/ezpz/examples/hf.py"
 ```
 
 </details>

@@ -209,10 +209,22 @@ nav:
   - 🍋 ezpz: index.md
   - 🏃‍♂️ Quickstart: quickstart.md
 
+  - 📚 Guides:
+      - 🎓 Distributed Training Tutorial: guides/distributed-training.md
+      - 🍳 Recipes: recipes.md
+      - 📒 End-to-End Walkthrough: reference.md
+      - 📈 Experiment Tracking (<code>History</code>): history.md
+      - ⚙️ Configuration: configuration.md
+      - ⚖️ vs. torchrun / Accelerate / DeepSpeed: compare.md
+      - 🏗️ Architecture: architecture.md
+      - 🔧 Troubleshooting: troubleshooting.md
+
   - 🧰 CLI:
       - cli/index.md
       - 🚀 <code>ezpz launch</code>: cli/launch/index.md
+      - 📤 <code>ezpz submit</code>: cli/submit.md
       - 💯 <code>ezpz test</code>: cli/test.md
+      - 📊 <code>ezpz benchmark</code>: cli/benchmark.md
       - 🩺 <code>ezpz doctor</code>: cli/doctor.md
       - 📦 <code>ezpz tar-env</code>: cli/tar-env.md
       - 🚀 <code>ezpz yeet</code>: cli/yeet.md
