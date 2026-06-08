@@ -196,6 +196,13 @@ class TestRsyncRetry:
         monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
         # Bypass real hostname detection.
         monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        # Force the local-copy path regardless of platform. Without
+        # this, pytest's tmp_path under /tmp on Linux runners makes
+        # run() skip the local-copy step and fan out from `dst`
+        # directly — a different code path than the test claims to
+        # model. On macOS tmp_path is under /var/folders so this is
+        # already True, but pin it for consistency.
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         # Skip the local venv-paths patcher (only relevant after a real copy).
         monkeypatch.setattr(
             yeet, "_patch_venv_paths_local", lambda dst, src: None
@@ -232,6 +239,7 @@ class TestRsyncRetry:
         monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 2)
         monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
         monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         monkeypatch.setattr(
             yeet, "_patch_venv_paths_local", lambda dst, src: None
         )
@@ -242,8 +250,15 @@ class TestRsyncRetry:
             tmp_path, ["node00", "badnode", "goodnode"]
         )
 
-        yeet.run(["--src", str(src), "--dst", str(dst),
-                  "--hostfile", str(hf)])
+        rc = yeet.run(["--src", str(src), "--dst", str(dst),
+                       "--hostfile", str(hf)])
+
+        # run() must report failure (non-zero rc) when any node
+        # exhausts retries — otherwise a regression that silently
+        # returns 0 despite failed nodes would slip through and
+        # downstream training would burn its allocation thinking
+        # yeet succeeded.
+        assert rc != 0, "run() must return non-zero when a node exhausts retries"
 
         # badnode should have been attempted exactly RETRIES + 1 = 3 times
         # (1 initial + 2 retries), then bounded — not infinite.
@@ -267,6 +282,7 @@ class TestRsyncRetry:
         monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 0)
         monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
         monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         monkeypatch.setattr(
             yeet, "_patch_venv_paths_local", lambda dst, src: None
         )
@@ -277,8 +293,13 @@ class TestRsyncRetry:
             tmp_path, ["node00", "flakynode"]
         )
 
-        yeet.run(["--src", str(src), "--dst", str(dst),
-                  "--hostfile", str(hf)])
+        rc = yeet.run(["--src", str(src), "--dst", str(dst),
+                       "--hostfile", str(hf)])
+
+        # With RETRIES=0 and a permanently-failing node, run() must
+        # return non-zero — this pins the fail-fast contract that
+        # `--retries 0` is meant to restore.
+        assert rc != 0, "run() must return non-zero when retries=0 and a node fails"
 
         # flakynode should be attempted exactly once (no retries)
         assert len(call_log["flakynode"]) == 1
