@@ -958,6 +958,43 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Show what would be synced without doing it.",
     )
+
+    # Proceed-with-spares: when set, yeet returns 0 even if some
+    # nodes failed, as long as the success count meets the threshold.
+    # Useful at scale where 1-2 nodes always fail with permanent SSH
+    # issues and the user has spare allocation. The failed-nodes list
+    # is written to $dst/.ezpz-yeet-failed-nodes.txt so downstream
+    # tooling (training scripts, ezpz launch wrappers) can read +
+    # exclude those hosts. Mutually exclusive flags.
+    threshold = parser.add_mutually_exclusive_group()
+    threshold.add_argument(
+        "--min-success-nodes",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Return success (rc=0) as long as at least N nodes "
+            "received the rsync successfully, even if some "
+            "failed. The failed-node list is written to "
+            "$dst/.ezpz-yeet-failed-nodes.txt for downstream "
+            "consumers. Mutually exclusive with "
+            "--min-success-fraction."
+        ),
+    )
+    threshold.add_argument(
+        "--min-success-fraction",
+        type=float,
+        default=None,
+        metavar="F",
+        help=(
+            "Same as --min-success-nodes but expressed as a "
+            "fraction of the total node count (e.g. 0.95 = at "
+            "least 95%% of nodes must succeed). Computed against "
+            "the full node list including the local node. "
+            "Mutually exclusive with --min-success-nodes."
+        ),
+    )
+
     args, unknown = parser.parse_known_args(argv)
     if unknown:
         # Tolerate one stray "yeet-env"/"yeet" token leaked from old
@@ -975,6 +1012,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     if args.src is None:
         args.src = args.src_positional
+
+    # Validate the threshold args (argparse can't easily do range
+    # validation for floats).
+    if args.min_success_nodes is not None and args.min_success_nodes < 1:
+        parser.error(
+            f"--min-success-nodes must be >= 1, got {args.min_success_nodes}"
+        )
+    if args.min_success_fraction is not None and not (
+        0.0 < args.min_success_fraction <= 1.0
+    ):
+        parser.error(
+            f"--min-success-fraction must be in (0, 1], got "
+            f"{args.min_success_fraction}"
+        )
+
     return args
 
 
@@ -1396,11 +1448,70 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     progress.clear()
 
     total_elapsed = time.perf_counter() - t0
-    failed = sum(1 for _, _, rc in results if rc != 0)
+    failed_nodes = [n for n, _, rc in results if rc != 0]
+    failed = len(failed_nodes)
+    ok_nodes = [n for n, _, rc in results if rc == 0]
     if failed:
         logger.warning("%d/%d node(s) failed!", failed, total_nodes)
     else:
         logger.info("Done in %.1fs", total_elapsed)
+
+    # Resolve the proceed-with-spares threshold. If neither flag is
+    # set, the threshold equals total_nodes (i.e. ALL must succeed —
+    # original fail-on-any behavior). If --min-success-fraction is
+    # set, derive an absolute count via ceil (so 0.95 of 100 = 95,
+    # not 95.0 ambiguity). --min-success-nodes wins as-is.
+    if args.min_success_nodes is not None:
+        threshold = args.min_success_nodes
+        threshold_src = f"--min-success-nodes={args.min_success_nodes}"
+    elif args.min_success_fraction is not None:
+        import math
+        threshold = math.ceil(args.min_success_fraction * total_nodes)
+        threshold_src = (
+            f"--min-success-fraction={args.min_success_fraction} "
+            f"× {total_nodes} = {threshold}"
+        )
+    else:
+        threshold = total_nodes
+        threshold_src = "default (all nodes must succeed)"
+
+    proceed_with_spares = (
+        failed > 0 and len(ok_nodes) >= threshold
+    )
+
+    # Write the failed-nodes sentinel file when (a) we have failures
+    # and (b) the threshold is satisfied (i.e. we're proceeding
+    # despite the failures). The path is under `dst` for symmetry
+    # with the rest of the yeeted content. Downstream consumers
+    # (training scripts, ezpz launch wrappers) can read + exclude.
+    if proceed_with_spares:
+        sentinel_path = dst / ".ezpz-yeet-failed-nodes.txt"
+        try:
+            sentinel_path.parent.mkdir(parents=True, exist_ok=True)
+            sentinel_path.write_text(
+                "\n".join(failed_nodes) + "\n"
+            )
+            logger.warning(
+                "Proceeding despite %d failure(s) — threshold met "
+                "(%d/%d nodes ok, need >=%d). Failed nodes (%s) "
+                "written to %s",
+                failed,
+                len(ok_nodes),
+                total_nodes,
+                threshold,
+                threshold_src,
+                sentinel_path,
+            )
+        except OSError as exc:
+            # The threshold IS met — don't fail the run just because
+            # we couldn't write the bookkeeping file. Log loudly so
+            # the user knows the file is missing.
+            logger.warning(
+                "Threshold met (%d/%d ok) but couldn't write "
+                "failed-nodes file at %s: %s. Failed nodes were: %s",
+                len(ok_nodes), total_nodes, sentinel_path, exc,
+                ", ".join(failed_nodes),
+            )
 
     # ── Guidance ────────────────────────────────────────────────────
     # Detect from `dst` so tarball sources (where the directory only
@@ -1444,7 +1555,15 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  worker (e.g. {dst}) — the shared-filesystem source path will")
         print(f"  not see writes from worker nodes.")
 
-    return 1 if failed else 0
+    # rc semantics:
+    #   no failures               → 0 (always)
+    #   failures + threshold met  → 0 (with sentinel file written above)
+    #   failures + threshold miss → 1 (original behavior)
+    if failed == 0:
+        return 0
+    if proceed_with_spares:
+        return 0
+    return 1
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

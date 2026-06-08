@@ -508,9 +508,58 @@ mode skips rsync entirely on the local step and is often a win.
 - **rsync exit 24** (vanished files): treated as success. This
   happens when concurrent rsyncs read from the same `/tmp/` source
   while temporary files (e.g. triton plugin builds) come and go.
+- **Transient rsync failures** (e.g. `Connection reset by ... port
+  22`): per-target retry up to `$EZPZ_YEET_RSYNC_RETRIES` (default 2)
+  times. Set to 0 to restore fail-fast.
 - **TTY-aware progress**: spinner and `\r` carriage returns are
   suppressed when stdout is not a terminal (e.g. redirected to a
   file), preventing garbled output in logs.
+
+### Proceed with spares (`--min-success-nodes` / `--min-success-fraction`)
+
+At scale (256N+ allocations), it's common for 1-2 nodes to fail
+permanently with SSH issues that retries can't recover. Without an
+opt-in, a single bad node fails the whole `yeet` even when the
+caller has spare allocation. Two flags relax this:
+
+```bash
+# Require at least 512 nodes to succeed (out of however many the
+# hostfile contains). Returns rc=0 as long as ≥ 512 ok.
+ezpz yeet --min-success-nodes 512
+
+# Same idea but as a fraction of the total node count:
+ezpz yeet --min-success-fraction 0.95   # ≥ 95% must succeed
+```
+
+The two flags are mutually exclusive. With a fraction, the absolute
+count is `ceil(fraction × total_nodes)`.
+
+When the threshold is met **and** there were failures, yeet:
+
+1. Returns rc=0
+2. Writes the list of failed hostnames to **`$dst/.ezpz-yeet-failed-nodes.txt`**
+   (one host per line) so downstream tooling (training scripts,
+   `ezpz launch` wrappers) can read and exclude those hosts. Example
+   consumer:
+
+   ```bash
+   FAILED=$(cat "$DST"/.ezpz-yeet-failed-nodes.txt 2>/dev/null || true)
+   if [[ -n "$FAILED" ]]; then
+     # Build a hostfile that excludes the yeet failures:
+     grep -vFf <(echo "$FAILED") "$PBS_NODEFILE" > /tmp/hostfile-good
+     ezpz launch --hostfile /tmp/hostfile-good -- python3 -m my.train
+   else
+     ezpz launch -- python3 -m my.train
+   fi
+   ```
+
+When the threshold is NOT met, behavior is unchanged — yeet returns
+rc=1 and no sentinel file is written. The sentinel only appears
+when we're proceeding-despite-failures, so downstream readers can
+treat its presence as definitive: "yeet succeeded but some hosts
+were dropped — here they are."
+
+Without either flag the original fail-on-any behavior is preserved.
 
 ## Examples
 
