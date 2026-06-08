@@ -615,6 +615,32 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
 # accommodates large envs over slow links; bump via env var if needed.
 _DEFAULT_RSYNC_TIMEOUT = float(os.environ.get("EZPZ_YEET_RSYNC_TIMEOUT", "3600"))
 
+# Per-target retry count for transient rsync failures.  At scale (256N+),
+# a small fraction of nodes will fail with `Connection reset by ... port
+# 22` or similar transient SSH errors that succeed on a second attempt.
+# Without retries, a single bad node fails the whole `ezpz yeet`, which
+# in turn fails the downstream training script.  Default 2 retries (3
+# total attempts) catches the vast majority of these without unbounded
+# pile-up on a truly dead node.  Set to 0 to restore the prior
+# fail-fast-after-first-attempt behavior.
+_DEFAULT_RSYNC_RETRIES = int(os.environ.get("EZPZ_YEET_RSYNC_RETRIES", "2"))
+
+
+def _needs_local_copy(src: Path) -> bool:
+    """Return True if `src` needs to be copied to local `/tmp/` first.
+
+    /tmp is node-local on every ALCF system. If src is already there
+    (e.g. a prior yeet copied it, or the user pre-copied), skip the
+    local-copy step and fan out from src directly.
+
+    Extracted from inline logic so tests can monkeypatch the gate
+    deterministically. pytest's `tmp_path` lands under /tmp on Linux
+    runners but `/var/folders/...` on macOS — without this helper,
+    tests using `tmp_path / "fakenv"` as `src` silently exercise
+    different branches on different platforms.
+    """
+    return not str(src).startswith("/tmp")
+
 
 def _detect_rsync_progress_flag() -> list[str]:
     """Pick the right rsync progress flag for the local rsync binary.
@@ -1000,8 +1026,14 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     # Copy locally first (current node), then rsync to remote nodes.
-    # The local copy is needed because /tmp is node-local.
-    needs_local_copy = not str(src).startswith("/tmp")
+    # The local copy is needed because /tmp is node-local — but if
+    # src is ALREADY under /tmp (e.g. user pre-copied or this is a
+    # second invocation), skip the local step and fan out from src
+    # directly. Extracted as a helper so tests can override the
+    # platform-dependent /tmp prefix (pytest tmp_path lands under
+    # /tmp on Linux runners but /var/folders on macOS — which
+    # silently changes which branch the tests exercise).
+    needs_local_copy = _needs_local_copy(src)
     # Filter out the current node — also handle the HSN variant
     # (current node may appear as "node01" while nodes contain "node01-hsn0").
     current_variants = {current, current + "-hsn0", current.removesuffix("-hsn0")}
@@ -1275,6 +1307,18 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # of any caller that has seeded it for their own reasons.
     pick_rng = random.Random()
 
+    # Per-target retry bookkeeping. `retries_done[n]` counts how many
+    # *retries* have been performed against node `n` so far. The
+    # initial attempt is NOT a retry, so this is 0 before the first
+    # try, becomes 1 after the first failure (when we requeue),
+    # becomes 2 after the second failure, etc. Capped at
+    # _DEFAULT_RSYNC_RETRIES so the total attempt count for any node
+    # is at most _DEFAULT_RSYNC_RETRIES + 1.
+    retries_done: dict[str, int] = {n: 0 for n in remaining}
+    # Accumulate per-target elapsed time across attempts so the final
+    # reported wall-clock isn't just the last attempt's duration.
+    elapsed_total: dict[str, float] = {n: 0.0 for n in remaining}
+
     def _submit_work(pool: ThreadPoolExecutor, futures: dict) -> None:  # type: ignore[type-arg]
         """Submit as many rsyncs as sources allow."""
         while remaining:
@@ -1309,6 +1353,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             fut = next(done_iter)
             n, elapsed, rc = fut.result()
             _, src_used = futures.pop(fut)
+            elapsed_total[n] = elapsed_total.get(n, 0.0) + elapsed
 
             with source_lock:
                 source_active[src_used] -= 1
@@ -1316,9 +1361,33 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     # This node now has the data — register as a source
                     source_active[n] = 0
 
+            if rc != 0 and retries_done[n] < _DEFAULT_RSYNC_RETRIES:
+                # Transient failure — requeue for another attempt.
+                # Don't mark_done yet (final outcome still pending) and
+                # don't append to results yet.  Note we *don't* register
+                # this node as a source (rc != 0 branch above).
+                retries_done[n] += 1
+                # Human-readable attempt count: 1 (initial) + retries
+                # done so far. So after the first failure: attempt
+                # 1/(N+1) of N+1 budgeted.
+                attempt_human = retries_done[n]  # we just incremented
+                total_budgeted = _DEFAULT_RSYNC_RETRIES + 1
+                logger.warning(
+                    "rsync to %s failed (attempt %d/%d, rc=%d) — "
+                    "requeueing for retry",
+                    n,
+                    attempt_human,
+                    total_budgeted,
+                    rc,
+                )
+                with source_lock:
+                    remaining.append(n)
+                _submit_work(pool, futures)
+                continue
+
             label = f"{n} (local)" if n == current else n
-            progress.mark_done(label, elapsed, rc)
-            results.append((n, elapsed, rc))
+            progress.mark_done(label, elapsed_total[n], rc)
+            results.append((n, elapsed_total[n], rc))
 
             # Submit more work now that a source slot freed up
             # (and possibly a new source appeared)

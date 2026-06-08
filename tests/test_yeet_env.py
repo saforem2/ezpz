@@ -145,6 +145,167 @@ class TestRsyncToNode:
 
 
 # ===================================================================
+# rsync retry on transient failure
+# ===================================================================
+
+
+class TestRsyncRetry:
+    """Verify the per-target retry loop in the fan-out completion handler.
+
+    The retry block lives inside ``run()`` (an end-to-end orchestrator
+    that does tarball detection, ssh-extracts, etc.) so we can't easily
+    unit-test it in isolation. Instead, mock ``_rsync_to_node`` at the
+    module boundary and drive the full pipeline against a fake hostfile.
+    """
+
+    def _make_hostfile(self, tmp_path, nodes):
+        hf = tmp_path / "hostfile"
+        hf.write_text("\n".join(nodes) + "\n")
+        return hf
+
+    def _make_src(self, tmp_path):
+        """Build a minimal venv-shaped dir so run() recognizes it."""
+        src = tmp_path / "fakenv"
+        (src / "bin").mkdir(parents=True)
+        (src / "bin" / "activate").write_text("# fake activate\n")
+        (src / "pyvenv.cfg").write_text(
+            "home = /usr/bin\nversion = 3.12.0\n"
+        )
+        return src
+
+    def test_retry_succeeds_on_second_attempt(
+        self, tmp_path, monkeypatch
+    ):
+        """One node fails initially then succeeds on retry — final state
+        should record rc=0 for that node, not a failure."""
+        # Fail-then-succeed sequence per target node.
+        # Map: node -> list of returncodes to return on each call.
+        call_log = {"node01": [], "node02": []}
+        flake_count = {"node01": 0}  # node01 fails its first attempt
+
+        def fake_rsync(src, dst, node, **kwargs):
+            call_log.setdefault(node, []).append(node)
+            if node == "node01" and flake_count[node] < 1:
+                flake_count[node] += 1
+                return (node, 0.1, 255)  # transient ssh fail
+            return (node, 0.2, 0)
+
+        # Force retries=2 (default) so we have headroom; ensure rsync
+        # local-copy step succeeds too.
+        monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 2)
+        monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
+        # Bypass real hostname detection.
+        monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        # Force the local-copy path regardless of platform. Without
+        # this, pytest's tmp_path under /tmp on Linux runners makes
+        # run() skip the local-copy step and fan out from `dst`
+        # directly — a different code path than the test claims to
+        # model. On macOS tmp_path is under /var/folders so this is
+        # already True, but pin it for consistency.
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
+        # Skip the local venv-paths patcher (only relevant after a real copy).
+        monkeypatch.setattr(
+            yeet, "_patch_venv_paths_local", lambda dst, src: None
+        )
+
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(tmp_path, ["node00", "node01", "node02"])
+
+        rc = yeet.run(["--src", str(src), "--dst", str(dst),
+                       "--hostfile", str(hf)])
+
+        # The wrapper should have retried node01 and the whole run
+        # should succeed.
+        assert rc == 0, "run() should return 0 when retries recover"
+        # node01 should have been attempted twice (initial + 1 retry);
+        # node02 should have been attempted once.
+        assert len(call_log["node01"]) == 2
+        assert len(call_log["node02"]) == 1
+
+    def test_retry_exhausted_records_failure(
+        self, tmp_path, monkeypatch
+    ):
+        """A persistently failing node should be retried RETRIES extra
+        times, then recorded as a final failure (not infinite loop)."""
+        call_log = {"badnode": []}
+
+        def fake_rsync(src, dst, node, **kwargs):
+            call_log.setdefault(node, []).append(node)
+            if node == "badnode":
+                return (node, 0.1, 255)  # always fails
+            return (node, 0.2, 0)
+
+        monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 2)
+        monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
+        monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
+        monkeypatch.setattr(
+            yeet, "_patch_venv_paths_local", lambda dst, src: None
+        )
+
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "badnode", "goodnode"]
+        )
+
+        rc = yeet.run(["--src", str(src), "--dst", str(dst),
+                       "--hostfile", str(hf)])
+
+        # run() must report failure (non-zero rc) when any node
+        # exhausts retries — otherwise a regression that silently
+        # returns 0 despite failed nodes would slip through and
+        # downstream training would burn its allocation thinking
+        # yeet succeeded.
+        assert rc != 0, "run() must return non-zero when a node exhausts retries"
+
+        # badnode should have been attempted exactly RETRIES + 1 = 3 times
+        # (1 initial + 2 retries), then bounded — not infinite.
+        assert len(call_log["badnode"]) == 3, (
+            f"expected 3 attempts on badnode "
+            f"(1 initial + 2 retries), got {len(call_log['badnode'])}"
+        )
+
+    def test_retries_zero_restores_fail_fast(
+        self, tmp_path, monkeypatch
+    ):
+        """Setting RETRIES=0 should disable retries (one attempt only)."""
+        call_log = {"flakynode": []}
+
+        def fake_rsync(src, dst, node, **kwargs):
+            call_log.setdefault(node, []).append(node)
+            if node == "flakynode":
+                return (node, 0.1, 255)
+            return (node, 0.2, 0)
+
+        monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 0)
+        monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
+        monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
+        monkeypatch.setattr(
+            yeet, "_patch_venv_paths_local", lambda dst, src: None
+        )
+
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "flakynode"]
+        )
+
+        rc = yeet.run(["--src", str(src), "--dst", str(dst),
+                       "--hostfile", str(hf)])
+
+        # With RETRIES=0 and a permanently-failing node, run() must
+        # return non-zero — this pins the fail-fast contract that
+        # `--retries 0` is meant to restore.
+        assert rc != 0, "run() must return non-zero when retries=0 and a node fails"
+
+        # flakynode should be attempted exactly once (no retries)
+        assert len(call_log["flakynode"]) == 1
+
+
+# ===================================================================
 # parse_args
 # ===================================================================
 
