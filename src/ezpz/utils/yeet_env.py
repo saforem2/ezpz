@@ -615,6 +615,16 @@ def _patch_venv_paths_local(dst: Path, src: Path) -> None:
 # accommodates large envs over slow links; bump via env var if needed.
 _DEFAULT_RSYNC_TIMEOUT = float(os.environ.get("EZPZ_YEET_RSYNC_TIMEOUT", "3600"))
 
+# Per-target retry count for transient rsync failures.  At scale (256N+),
+# a small fraction of nodes will fail with `Connection reset by ... port
+# 22` or similar transient SSH errors that succeed on a second attempt.
+# Without retries, a single bad node fails the whole `ezpz yeet`, which
+# in turn fails the downstream training script.  Default 2 retries (3
+# total attempts) catches the vast majority of these without unbounded
+# pile-up on a truly dead node.  Set to 0 to restore the prior
+# fail-fast-after-first-attempt behavior.
+_DEFAULT_RSYNC_RETRIES = int(os.environ.get("EZPZ_YEET_RSYNC_RETRIES", "2"))
+
 
 def _detect_rsync_progress_flag() -> list[str]:
     """Pick the right rsync progress flag for the local rsync binary.
@@ -1275,6 +1285,14 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # of any caller that has seeded it for their own reasons.
     pick_rng = random.Random()
 
+    # Per-target retry bookkeeping.  Each map entry counts how many
+    # attempts have been made against that node so far (initial attempt
+    # = 0; first retry = 1; etc.).  Capped at _DEFAULT_RSYNC_RETRIES.
+    attempts: dict[str, int] = {n: 0 for n in remaining}
+    # Accumulate per-target elapsed time across attempts so the final
+    # reported wall-clock isn't just the last attempt's duration.
+    elapsed_total: dict[str, float] = {n: 0.0 for n in remaining}
+
     def _submit_work(pool: ThreadPoolExecutor, futures: dict) -> None:  # type: ignore[type-arg]
         """Submit as many rsyncs as sources allow."""
         while remaining:
@@ -1309,6 +1327,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             fut = next(done_iter)
             n, elapsed, rc = fut.result()
             _, src_used = futures.pop(fut)
+            elapsed_total[n] = elapsed_total.get(n, 0.0) + elapsed
 
             with source_lock:
                 source_active[src_used] -= 1
@@ -1316,9 +1335,28 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     # This node now has the data — register as a source
                     source_active[n] = 0
 
+            if rc != 0 and attempts[n] < _DEFAULT_RSYNC_RETRIES:
+                # Transient failure — requeue for another attempt.
+                # Don't mark_done yet (final outcome still pending) and
+                # don't append to results yet.  Note we *don't* register
+                # this node as a source (rc != 0 branch above).
+                attempts[n] += 1
+                logger.warning(
+                    "rsync to %s failed (attempt %d/%d, rc=%d) — "
+                    "requeueing for retry",
+                    n,
+                    attempts[n],
+                    _DEFAULT_RSYNC_RETRIES + 1,
+                    rc,
+                )
+                with source_lock:
+                    remaining.append(n)
+                _submit_work(pool, futures)
+                continue
+
             label = f"{n} (local)" if n == current else n
-            progress.mark_done(label, elapsed, rc)
-            results.append((n, elapsed, rc))
+            progress.mark_done(label, elapsed_total[n], rc)
+            results.append((n, elapsed_total[n], rc))
 
             # Submit more work now that a source slot freed up
             # (and possibly a new source appeared)
