@@ -1166,3 +1166,57 @@ class TestRunAttemptWithTee:
         )
         assert rc == 7
         assert "before-exit" in log_path.read_text()
+
+    def test_non_utf8_bytes_do_not_crash_drain(self, tmp_path):
+        """Regression: non-UTF-8 bytes in stdout must NOT crash _drain.
+
+        Caught on Sunspot SFT job 12468338 — a 32-min, 32-node SFT
+        run logged the following thread-crash mid-training:
+
+            Exception in thread Thread-2 (_drain):
+              File ".../launch_autoretry.py", line 514, in _drain
+                for line in proc.stdout:
+              File "<frozen codecs>", line 325, in decode
+            UnicodeDecodeError: 'utf-8' codec can't decode bytes
+              in position 0-1: invalid continuation byte
+
+        Training kept going (tqdm has its own progress writer) but
+        the auto-retry watchdog went deaf — if a real crash hit
+        after that, it wouldn't have triggered a retry.
+
+        Fix: `errors="replace"` on Popen. The bad byte becomes
+        U+FFFD in the log; the drain loop keeps running.
+
+        This test emits a deliberately-broken UTF-8 sequence (a
+        bare 0xff byte, which can never start a valid UTF-8 code
+        point) followed by normal lines. Pre-fix: drain thread
+        dies, log truncates around the bad byte, the post-bad-byte
+        lines never land in the log file. Post-fix: bad byte
+        replaced, all lines captured.
+        """
+        from ezpz.launch_autoretry import _run_attempt_with_tee
+
+        log_path = tmp_path / "bad-utf8.log"
+        # printf '\xff' emits a single bare 0xff byte. Wrap with
+        # ASCII bookends so we can assert lines on either side of
+        # it landed in the log.
+        script = (
+            'echo before-bad-byte; '
+            "printf '\\xff\\n'; "
+            'echo after-bad-byte'
+        )
+        rc = _run_attempt_with_tee(
+            ["sh", "-c", script], log_path, idle_timeout_s=0
+        )
+        assert rc == 0
+        text = log_path.read_text()
+        assert "before-bad-byte" in text, (
+            "log missing pre-bad-byte content — drain may have "
+            "crashed before flushing"
+        )
+        assert "after-bad-byte" in text, (
+            "Regression: drain thread died on the bad UTF-8 byte. "
+            "Without errors='replace' on Popen, the post-bad-byte "
+            "lines never reach the log file because the iterator "
+            "raises UnicodeDecodeError mid-stream."
+        )
