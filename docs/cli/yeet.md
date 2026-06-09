@@ -188,8 +188,8 @@ ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |
 | `--dry-run` | — | Preview without transferring |
-| `--min-success-nodes N` | — | Return rc=0 if at least N nodes succeed (the rest are written to a sentinel file). See [proceed with spares](#proceed-with-spares-min-success-nodes-min-success-fraction). Mutually exclusive with `--min-success-fraction`. |
-| `--min-success-fraction F` | — | Same as `--min-success-nodes` but as a fraction of the total node count (e.g. `0.95` = ≥95%). Computed as `ceil(F × total_nodes)`. |
+| `--min-success-nodes N` | — | Hard lower bound: return rc=0 iff at least N nodes succeed. Failures (if any, up to `total − N`) are written to a sentinel file. See [proceed with spares](#proceed-with-spares-min-success-nodes-min-success-fraction). Mutually exclusive with `--min-success-fraction`. |
+| `--min-success-fraction F` | — | Same as `--min-success-nodes` but as a fraction of the **hostfile node count** (e.g. `0.95` = ≥95%). Resolves to `ceil(F × len(hostfile))`. |
 
 There's also one **environment variable**:
 
@@ -540,8 +540,17 @@ ezpz yeet --min-success-nodes 512
 ezpz yeet --min-success-fraction 0.95   # ≥ 95% must succeed
 ```
 
-The two flags are mutually exclusive. With a fraction, the absolute
-count is `ceil(fraction × total_nodes)`.
+The two flags are mutually exclusive. With a fraction, the
+absolute count is `ceil(fraction × len(hostfile))` — the
+**hostfile node count**, not the number of rsync operations
+(which can be 1 lower when the local-copy step is skipped
+because `src` is already under `/tmp`).
+
+**Hard lower bound.** Either flag enforces a hard floor on the
+success count: even a clean run (zero failures) returns rc=1 if
+fewer than `threshold` nodes were actually synced. Otherwise
+`--min-success-nodes 512` on a 500-node hostfile would silently
+succeed and downstream training would under-provision.
 
 When the threshold is met **and** there were failures, yeet:
 
@@ -562,11 +571,17 @@ When the threshold is met **and** there were failures, yeet:
    fi
    ```
 
+**Stale-sentinel safety.** Yeet always removes any pre-existing
+`$dst/.ezpz-yeet-failed-nodes.txt` at the start of finalization,
+then re-writes it only when proceeding-with-spares. So the file's
+presence is a definitive "yeet just succeeded but here are the
+hosts that didn't make it on this run" — never a stale list from
+a previous invocation that's since been cleaned up. This matters
+when re-running into the same `dst` (common when `src` is already
+under `/tmp` and the local-copy step is skipped on the second run).
+
 When the threshold is NOT met, behavior is unchanged — yeet returns
-rc=1 and no sentinel file is written. The sentinel only appears
-when we're proceeding-despite-failures, so downstream readers can
-treat its presence as definitive: "yeet succeeded but some hosts
-were dropped — here they are."
+rc=1 and no sentinel file is written.
 
 Without either flag the original fail-on-any behavior is preserved.
 
@@ -756,15 +771,19 @@ ezpz launch $HOSTFILE_ARG -- python3 -m my.train
 
 | Scenario | `ezpz yeet` rc | Sentinel file | Outcome |
 |---|---|---|---|
-| All 522 nodes succeed | 0 | not written | Train on 522 nodes |
-| 521 succeed, 1 transient fail recovers via retry | 0 | not written (retry path doesn't write it) | Train on 522 nodes |
-| 520 succeed, 2 permanent fails (threshold 512 met) | 0 | written with the 2 hostnames | Train on 520 nodes |
-| 500 succeed, 22 permanent fails (threshold 512 missed) | 1 | not written | Abort — user investigates |
+| All 522 nodes succeed | 0 | removed if stale, otherwise absent | Train on 522 nodes |
+| 521 succeed, 1 transient fail recovers via retry | 0 | removed if stale (retry path = no failure) | Train on 522 nodes |
+| 520 succeed, 2 permanent fails (threshold 512 met) | 0 | **written with the 2 hostnames** | Train on 520 nodes |
+| 500 succeed, 22 permanent fails (threshold 512 missed) | 1 | removed if stale | Abort — user investigates |
+| 511 succeed, 0 fails but hostfile only has 511 nodes | **1** | not written | Abort — `--min-success-nodes 512` is a hard floor |
 
 The sentinel file is **only** written when `yeet` is exiting
 successfully despite failures, so its presence is a definitive
 "yeet survived but here's who didn't make it" signal — never
-stale data from a previous run that's since been cleaned up.
+stale data from a previous run. Yeet unconditionally removes
+any pre-existing sentinel at the start of finalization, so the
+absence of the file means "no failures to report" regardless of
+what a previous run wrote.
 
 ## See Also
 

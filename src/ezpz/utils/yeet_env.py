@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import logging
+import math
 import os
 import random
 import shlex
@@ -1456,36 +1457,75 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     else:
         logger.info("Done in %.1fs", total_elapsed)
 
-    # Resolve the proceed-with-spares threshold. If neither flag is
-    # set, the threshold equals total_nodes (i.e. ALL must succeed —
-    # original fail-on-any behavior). If --min-success-fraction is
-    # set, derive an absolute count via ceil (so 0.95 of 100 = 95,
-    # not 95.0 ambiguity). --min-success-nodes wins as-is.
+    # Resolve the proceed-with-spares threshold.
+    #
+    # IMPORTANT: --min-success-fraction computes against the FULL
+    # hostfile node count (`len(nodes)`), NOT `total_nodes` (which
+    # is the rsync-op count — smaller by 1 when needs_local_copy is
+    # False because the local node isn't rsync'd to). This matches
+    # the docs' promise that the fraction is "of the total node
+    # count", which is the user-mental-model for a hostfile of N
+    # nodes regardless of which of those N happen to be the
+    # launcher's local host.
+    #
+    # --min-success-nodes is a HARD lower bound: it MUST be met
+    # regardless of whether there were failures. A clean run that
+    # only synced to 500 nodes when the user asked for >= 512
+    # MUST fail loudly, not silently under-provision downstream
+    # experiments (codex P2).
+    hostfile_node_count = len(nodes)
+
     if args.min_success_nodes is not None:
         threshold = args.min_success_nodes
         threshold_src = f"--min-success-nodes={args.min_success_nodes}"
     elif args.min_success_fraction is not None:
-        import math
-        threshold = math.ceil(args.min_success_fraction * total_nodes)
+        threshold = math.ceil(
+            args.min_success_fraction * hostfile_node_count
+        )
         threshold_src = (
             f"--min-success-fraction={args.min_success_fraction} "
-            f"× {total_nodes} = {threshold}"
+            f"× {hostfile_node_count} = {threshold}"
         )
     else:
+        # No flag → threshold equals total rsync ops (original
+        # fail-on-any-failure behavior preserved).
         threshold = total_nodes
         threshold_src = "default (all nodes must succeed)"
 
-    proceed_with_spares = (
-        failed > 0 and len(ok_nodes) >= threshold
-    )
+    # The threshold is met when at least `threshold` rsyncs
+    # succeeded. proceed_with_spares is True iff:
+    #   - we have at least one failure (otherwise sentinel path is
+    #     a no-op even if threshold is met), AND
+    #   - the threshold is met
+    threshold_met = len(ok_nodes) >= threshold
+    proceed_with_spares = failed > 0 and threshold_met
 
-    # Write the failed-nodes sentinel file when (a) we have failures
-    # and (b) the threshold is satisfied (i.e. we're proceeding
-    # despite the failures). The path is under `dst` for symmetry
-    # with the rest of the yeeted content. Downstream consumers
-    # (training scripts, ezpz launch wrappers) can read + exclude.
+    # ── Sentinel cleanup + write ────────────────────────────────────
+    # ALWAYS remove a stale sentinel from a prior run first. Without
+    # this, re-running into the same `dst` (common when `src` is
+    # already under /tmp and the local-copy step is skipped) would
+    # leave behind the previous run's failed-node list, and the
+    # documented downstream snippet would incorrectly exclude hosts
+    # that aren't actually problematic on this run (codex/copilot
+    # P2). Only re-write when proceed_with_spares is True.
+    sentinel_path = dst / ".ezpz-yeet-failed-nodes.txt"
+    try:
+        sentinel_path.unlink(missing_ok=True)
+    except OSError as exc:
+        # We can't proceed safely with a stale sentinel — fail
+        # rather than risk downstream tooling reading wrong data.
+        # Most likely a permissions issue or dst-doesn't-exist
+        # (the latter shouldn't happen since the sync wrote there
+        # successfully, but be defensive).
+        logger.error(
+            "Could not remove possibly-stale sentinel %s: %s. "
+            "Refusing to proceed — fix the permissions then retry.",
+            sentinel_path,
+            exc,
+        )
+        return 1
+
     if proceed_with_spares:
-        sentinel_path = dst / ".ezpz-yeet-failed-nodes.txt"
         try:
             sentinel_path.parent.mkdir(parents=True, exist_ok=True)
             sentinel_path.write_text(
@@ -1493,7 +1533,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             )
             logger.warning(
                 "Proceeding despite %d failure(s) — threshold met "
-                "(%d/%d nodes ok, need >=%d). Failed nodes (%s) "
+                "(%d/%d nodes ok, need >=%d via %s). Failed nodes "
                 "written to %s",
                 failed,
                 len(ok_nodes),
@@ -1507,9 +1547,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             # we couldn't write the bookkeeping file. Log loudly so
             # the user knows the file is missing.
             logger.warning(
-                "Threshold met (%d/%d ok) but couldn't write "
-                "failed-nodes file at %s: %s. Failed nodes were: %s",
-                len(ok_nodes), total_nodes, sentinel_path, exc,
+                "Threshold met (%d/%d ok via %s) but couldn't "
+                "write failed-nodes file at %s: %s. Failed nodes "
+                "were: %s",
+                len(ok_nodes), total_nodes, threshold_src,
+                sentinel_path, exc,
                 ", ".join(failed_nodes),
             )
 
@@ -1556,14 +1598,30 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  not see writes from worker nodes.")
 
     # rc semantics:
-    #   no failures               → 0 (always)
-    #   failures + threshold met  → 0 (with sentinel file written above)
-    #   failures + threshold miss → 1 (original behavior)
-    if failed == 0:
+    #
+    # When --min-success-* is set, the threshold is a HARD lower
+    # bound: it MUST be met regardless of failure count. Otherwise
+    # `yeet --min-success-nodes 512` on a 500-node hostfile with
+    # all 500 ok would return 0 and silently under-provision the
+    # downstream training (codex P2).
+    #
+    #   no flag set:        original behavior — 0 iff no failures
+    #   threshold set:      0 iff threshold met (regardless of `failed`)
+    threshold_explicitly_set = (
+        args.min_success_nodes is not None
+        or args.min_success_fraction is not None
+    )
+    if threshold_explicitly_set:
+        if not threshold_met:
+            logger.error(
+                "Threshold NOT met: only %d/%d nodes succeeded, "
+                "need >=%d via %s",
+                len(ok_nodes), total_nodes, threshold, threshold_src,
+            )
+            return 1
         return 0
-    if proceed_with_spares:
-        return 0
-    return 1
+    # Default path: original fail-on-any behavior.
+    return 1 if failed else 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
