@@ -176,6 +176,7 @@ section](#scaling-aurora-8-4096-nodes)).
 ```
 ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
               [--copy | --compress] [--dry-run]
+              [--min-success-nodes N | --min-success-fraction F]
 ```
 
 | Arg / Flag | Default | Description |
@@ -187,6 +188,14 @@ ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |
 | `--dry-run` | — | Preview without transferring |
+| `--min-success-nodes N` | — | Return rc=0 if at least N nodes succeed (the rest are written to a sentinel file). See [proceed with spares](#proceed-with-spares-min-success-nodes-min-success-fraction). Mutually exclusive with `--min-success-fraction`. |
+| `--min-success-fraction F` | — | Same as `--min-success-nodes` but as a fraction of the total node count (e.g. `0.95` = ≥95%). Computed as `ceil(F × total_nodes)`. |
+
+There's also one **environment variable**:
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `EZPZ_YEET_RSYNC_RETRIES` | `2` | Per-target rsync retry budget for transient SSH/rsync failures (e.g. `Connection reset by ... port 22`). Each failed rsync gets up to N additional attempts before being marked as a final failure. Set to `0` to restore fail-fast-on-first-error. |
 
 !!! tip "Choosing a local copy method"
 
@@ -561,6 +570,13 @@ were dropped — here they are."
 
 Without either flag the original fail-on-any behavior is preserved.
 
+!!! tip "Worked example at scale"
+
+    See [At scale: surviving 1-2 bad nodes per allocation](#at-scale-surviving-1-2-bad-nodes-per-allocation)
+    for a complete end-to-end snippet (522 nodes → train on 520
+    when 2 fail), plus a behavior table covering each
+    success/failure scenario.
+
 ## Examples
 
 ### Default: sync the active env
@@ -692,6 +708,63 @@ under 1 minute through 1024 nodes and only really starts to climb at
 2048+ — consistent with `init_process_group` overhead growing with
 world size. At 4096 nodes the first step lands in 3 min 14 s, so
 total time-to-train (yeet + first step) is about 16 minutes.
+
+### At scale: surviving 1-2 bad nodes per allocation
+
+At 256+ nodes, it's near-certain that 1-2 nodes will fail
+permanently with SSH issues that retries can't recover (cable
+problems, daemon stuck, etc.). Without the proceed-with-spares
+flags from [Error handling](#error-handling), a single bad node
+fails the whole `yeet` even though the user usually has spare
+allocation to absorb the loss.
+
+Worked example: 522 nodes allocated on Aurora, only 512 actually
+needed for training:
+
+```bash
+# 1. Yeet with a threshold matching the actual training need.
+#    Transient failures are auto-retried (PR #160's logic) up to
+#    EZPZ_YEET_RSYNC_RETRIES times per node; the threshold only
+#    fires for nodes that exhaust retries.
+ezpz yeet --src .venv.tar.gz --min-success-nodes 512
+RC=$?
+
+# 2. yeet returns 0 with the failed-node list co-located with dst.
+if [[ $RC -ne 0 ]]; then
+    echo "yeet did not meet the threshold; aborting"
+    exit 1
+fi
+
+DST=/tmp/.venv  # the default --dst
+FAILED=$(cat "$DST"/.ezpz-yeet-failed-nodes.txt 2>/dev/null || true)
+
+# 3. Build a launch hostfile that excludes the failed nodes.
+#    `grep -vFf` filters PBS_NODEFILE against the failures.
+if [[ -n "$FAILED" ]]; then
+    echo "yeet succeeded but $FAILED was unreachable; excluding from launch"
+    grep -vFf <(echo "$FAILED") "$PBS_NODEFILE" > /tmp/hostfile-good
+    HOSTFILE_ARG="--hostfile /tmp/hostfile-good"
+else
+    HOSTFILE_ARG=""  # no failures → use default PBS_NODEFILE
+fi
+
+# 4. Launch training with the (possibly filtered) hostfile.
+ezpz launch $HOSTFILE_ARG -- python3 -m my.train
+```
+
+**What happens in practice:**
+
+| Scenario | `ezpz yeet` rc | Sentinel file | Outcome |
+|---|---|---|---|
+| All 522 nodes succeed | 0 | not written | Train on 522 nodes |
+| 521 succeed, 1 transient fail recovers via retry | 0 | not written (retry path doesn't write it) | Train on 522 nodes |
+| 520 succeed, 2 permanent fails (threshold 512 met) | 0 | written with the 2 hostnames | Train on 520 nodes |
+| 500 succeed, 22 permanent fails (threshold 512 missed) | 1 | not written | Abort — user investigates |
+
+The sentinel file is **only** written when `yeet` is exiting
+successfully despite failures, so its presence is a definitive
+"yeet survived but here's who didn't make it" signal — never
+stale data from a previous run that's since been cleaned up.
 
 ## See Also
 
