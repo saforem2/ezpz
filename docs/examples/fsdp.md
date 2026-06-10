@@ -68,9 +68,14 @@ log captured on Sunspot).
 
 ## Common modifications
 
-- **Pick a different model size** — pass `--model {debug,small,medium,large}` or
-  override `--conv1-channels / --conv2-channels / --fc-dim` directly. Presets
-  live in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
+- **Pick a different model size** — pass
+  `--model {debug,small,medium,large,xl,xxl,xxxl}` or override
+  `--conv1-channels / --conv2-channels / --fc-dim` directly. The `xl/xxl/xxxl`
+  presets follow geometric 2× CNN channel scaling (the model is a toy
+  classifier, so sizes mainly stress-test FSDP wrapping rather than mimicking
+  published architectures). Long-form aliases work too: `--model xlarge` or
+  `--model extra-large` both resolve to `xl`. Presets live in `MODEL_PRESETS`
+  near the top of `src/ezpz/examples/fsdp.py`.
 - **Train on a bigger dataset** — `--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}`
   routes through `get_data()` to dataset-specific loaders in `ezpz.data.vision`.
 - **Switch the FSDP compute dtype** — pass `--dtype {bf16,fp16,fp32}`. The value
@@ -131,12 +136,16 @@ except Exception:
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-Named presets (`debug`, `small`, `medium`, `large`) let users scale the CNN
-architecture from the command line with `--model <preset>`. Each preset
-bundles `conv1_channels`, `conv2_channels`, and `fc_dim` so you can quickly
-compare FSDP overhead at different model sizes without manually tuning
-individual flags. Any CLI flag the user passes explicitly overrides the
-preset value.
+Named presets (`debug`, `small`, `medium`, `large`, `xl`, `xxl`, `xxxl`)
+let users scale the CNN architecture from the command line with
+`--model <preset>`. Each preset bundles `conv1_channels`, `conv2_channels`,
+and `fc_dim` so you can quickly compare FSDP overhead at different model
+sizes without manually tuning individual flags. The three large sizes use
+geometric 2× channel scaling — the model is a toy classifier, so the
+intent is FSDP overhead measurement rather than mirroring published
+architectures. The `MODEL_ALIASES` dict beneath `MODEL_PRESETS` adds
+long-form spellings (e.g. `xlarge`, `extra-large` → `xl`). Any CLI flag
+the user passes explicitly overrides the preset value.
 
 ```python title="src/ezpz/examples/fsdp.py:66:87"
 --8<-- "src/ezpz/examples/fsdp.py:66:87"
@@ -356,7 +365,8 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 $ python3 -m ezpz.examples.fsdp --help
 usage: fsdp.py [-h] [--num-workers N]
                [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
-               [--batch-size N] [--model {debug,large,medium,small}]
+               [--batch-size N]
+               [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                [--conv1-channels N] [--conv2-channels N] [--fc-dim N]
                [--dtype D] [--test-batch-size N] [--epochs N] [--lr LR]
                [--gamma M] [--seed S] [--save-model]
@@ -370,9 +380,11 @@ options:
   --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
                         Dataset to use (default: MNIST)
   --batch-size N        input batch size for training (default: 64)
-  --model {debug,large,medium,small}
-                        Model size preset (overrides conv/fc defaults)
-                        (default: None)
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
+                        Model size preset (overrides conv/fc defaults).
+                        xl/xxl/xxxl accept long-form aliases too:
+                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
+                        etc. (default: None)
   --conv1-channels N    Number of output channels in conv1 (default: 32)
   --conv2-channels N    Number of output channels in conv2 (default: 64)
   --fc-dim N            Hidden dimension for the first linear layer (default:

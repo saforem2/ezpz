@@ -61,10 +61,14 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
 
 ## Common modifications
 
-- **Pick a model size** — `--model {debug,small,medium,large}` sets `hidden`,
-  `n_layers`, `n_heads`, `seq_len`, `timesteps`, and `batch_size` together.
-  Presets live in `MODEL_PRESETS` near the top of
-  `src/ezpz/examples/diffusion.py`.
+- **Pick a model size** — `--model {debug,small,medium,large,xl,xxl,xxxl}` sets
+  `hidden`, `n_layers`, `n_heads`, `seq_len`, `timesteps`, and `batch_size`
+  together. The three large sizes scale toward DiT-XL/2 and SD3-MMDiT
+  configurations (`hidden 768/1024/1280`, `n_layers 12/16/20`,
+  `n_heads 12/16/20`). Each `xN` also accepts the long-form aliases
+  (`xlarge` / `extra-large` → `xl`, `xxlarge` / `extra-extra-large` → `xxl`,
+  `xxxlarge` / `extra-extra-extra-large` → `xxxl`). Presets live in
+  `MODEL_PRESETS` near the top of `src/ezpz/examples/diffusion.py`.
 - **Tune the diffusion process** — `--timesteps`, `--seq-len`, `--train-steps`
   control the noise schedule length, sequence length, and total optimizer
   steps. Explicit flags override the preset.
@@ -98,9 +102,17 @@ clusters.
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-Predefined hyperparameter bundles (`debug`, `small`, `medium`, `large`)
-that can be selected via `--model`. CLI flags that the user passes
-explicitly take priority over preset values.
+Predefined hyperparameter bundles selectable via `--model`:
+
+- Toy / smoke-test sizes: `debug`, `small`, `medium`, `large`.
+- Production-scale sizes: `xl`, `xxl`, `xxxl` — targeting DiT-XL/2 and
+  SD3-MMDiT trajectories. Each accepts long-form aliases through
+  `MODEL_ALIASES` (e.g. `xlarge`, `extra-large` resolve to `xl`;
+  `xxlarge`, `extra-extra-large` → `xxl`; `xxxlarge`,
+  `extra-extra-extra-large` → `xxxl`).
+
+CLI flags that the user passes explicitly take priority over preset
+values.
 
 ```python title="src/ezpz/examples/diffusion.py:89:122"
 --8<-- "src/ezpz/examples/diffusion.py:89:122"
@@ -377,7 +389,8 @@ usage: diffusion.py [-h] [--batch-size BATCH_SIZE] [--dtype DTYPE]
                     [--log_freq LOG_FREQ] [--outdir OUTDIR]
                     [--samples SAMPLES] [--seed SEED] [--seq-len SEQ_LEN]
                     [--timesteps TIMESTEPS] [--train-steps TRAIN_STEPS]
-                    [--lr LR] [--model {debug,large,medium,small}]
+                    [--lr LR]
+                    [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                     [--n-layers N_LAYERS] [--n-heads N_HEADS]
 
 Tiny diffusion example for text generation.
@@ -415,9 +428,11 @@ options:
   --timesteps TIMESTEPS
   --train-steps TRAIN_STEPS
   --lr LR
-  --model {debug,large,medium,small}
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
                         Model size preset (overrides hidden/layer/head
-                        defaults). (default: None)
+                        defaults). xl/xxl/xxxl accept long-form aliases too:
+                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
+                        etc. (default: None)
   --n-layers N_LAYERS
   --n-heads N_HEADS
 ```

@@ -12,8 +12,10 @@ ezpz benchmark
 # Run specific examples
 ezpz benchmark --examples test fsdp vit
 
-# Override model size
+# Override model size (preset is passed through to each example)
 ezpz benchmark --model small
+ezpz benchmark --model xl          # production-scale presets also work
+ezpz benchmark --model extra-large # ...as do long-form aliases
 
 # Custom output directory
 ezpz benchmark --outdir outputs/my-benchmark
@@ -24,7 +26,7 @@ ezpz benchmark --outdir outputs/my-benchmark
 | Flag | Description |
 |------|-------------|
 | `--examples` | Space-separated list of examples to run (default: all) |
-| `--model` | Model size preset (default: `small`) |
+| `--model` | Model size preset passed through to each example (default: `small`). Each example resolves the preset against its own `MODEL_PRESETS`; sizes range `debug → xxxl` with long-form aliases (`xlarge` / `extra-large`, etc.). See each example's docs for per-file parameter scales. |
 | `--outdir` | Output directory (default: `outputs/benchmarks/{timestamp}`) |
 
 ## Available Examples

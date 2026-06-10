@@ -33,8 +33,13 @@ ezpz launch python3 -m ezpz.examples.vit --compile # --fsdp
   `--fsdp_sharding_strategy`).
 - Mixing in `torch.compile()` for kernel fusion when `--compile` is passed —
   the first iteration eats the compile cost, every iteration after that benefits.
-- Selecting from pre-baked model presets (`debug / small / medium / large`) via
-  `--model`, with explicit CLI flags always taking precedence over preset values.
+- Selecting from pre-baked model presets via `--model`. Sizes climb from
+  `debug → small → medium → large → xl → xxl → xxxl`, with `xl / xxl / xxxl`
+  scaled toward published ViT-Huge / ViT-22B trajectories
+  (`head_dim 80/96/128`, `depth 32/48/56`). Each preset has long-form
+  aliases (`xlarge`, `extra-large`, `xxlarge`, `extra-extra-large`,
+  `xxxlarge`, `extra-extra-extra-large`) so spelling them out works too.
+  Explicit CLI flags always take precedence over preset values.
 - End-to-end metric tracking via [`ezpz.history.History`][ezpz.history.History]
   with optional W&B logging, plus MFU computed from the per-step duration (see
   [MFU Tracking](#mfu-tracking)).
@@ -67,9 +72,11 @@ specializes kernels — subsequent steps drop to the steady-state `dt`. See the
 
 ## Common modifications
 
-- **Pick a model size** — pass `--model {debug,small,medium,med,large}`. Presets
-  live in `MODEL_PRESETS` near the top of `src/ezpz/examples/vit.py`; tweak the
-  dict to add your own.
+- **Pick a model size** — pass
+  `--model {debug,small,medium,med,large,xl,xxl,xxxl}`. Presets live in
+  `MODEL_PRESETS` near the top of `src/ezpz/examples/vit.py`; tweak the
+  dict to add your own. Each `xN` size also accepts the long-form aliases
+  (e.g. `--model xlarge` or `--model extra-large` both resolve to `xl`).
 - **Tune individual architecture knobs** — `--img_size`, `--patch_size`,
   `--num_heads`, `--head_dim`, `--depth`, `--embed_dim` all override the preset.
 - **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp_sharding_strategy`)
@@ -101,10 +108,15 @@ verifying FSDP sharding.
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-Four named presets (`debug`, `small`, `medium`, `large`) bundle
-`batch_size`, `num_heads`, `head_dim`, and `depth` together. The `med`
-alias maps to `medium`. MNIST-specific defaults override `img_size`,
-`num_classes`, and `patch_size` when `--dataset mnist` is used.
+Seven named presets — `debug`, `small`, `medium`, `large`, `xl`, `xxl`,
+`xxxl` — bundle `batch_size`, `num_heads`, `head_dim`, and `depth`
+together. The three large sizes target ViT-Huge / ViT-22B-scale
+configurations and each have multiple aliases via `MODEL_ALIASES`
+(`med` → `medium`; `xlarge` / `extra-large` → `xl`;
+`xxlarge` / `extra-extra-large` → `xxl`;
+`xxxlarge` / `extra-extra-extra-large` → `xxxl`). MNIST-specific defaults
+override `img_size`, `num_classes`, and `patch_size` when `--dataset
+mnist` is used.
 
 ```python title="src/ezpz/examples/vit.py:97:139"
 --8<-- "src/ezpz/examples/vit.py:97:139"
@@ -327,11 +339,15 @@ usage: ezpz.examples.vit [-h] [--img_size IMG_SIZE] [--batch_size BATCH_SIZE]
                          [--dropout DROPOUT]
                          [--attention-dropout ATTENTION_DROPOUT]
                          [--num_classes NUM_CLASSES] [--dataset {fake,mnist}]
-                         [--model {debug,large,med,medium,small}]
+                         [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,med,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                          [--depth DEPTH] [--patch_size PATCH_SIZE]
                          [--dtype DTYPE] [--compile]
                          [--num_workers NUM_WORKERS] [--max_iters MAX_ITERS]
-                         [--warmup WARMUP] [--attn_type {native,sdpa}]
+                         [--warmup WARMUP] [--lr LR]
+                         [--weight-decay WEIGHT_DECAY]
+                         [--lr-warmup-iters LR_WARMUP_ITERS]
+                         [--min-lr-ratio MIN_LR_RATIO]
+                         [--attn_type {native,sdpa}]
                          [--cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}]
                          [--fsdp]
                          [--fsdp-sharding-strategy {full-shard,shard-grad-op,no-shard,hybrid-shard}]
@@ -359,8 +375,10 @@ options:
                         Number of classes (default: 1000)
   --dataset {fake,mnist}
                         Dataset to use (default: mnist)
-  --model {debug,large,med,medium,small}
-                        Model size preset (overrides defaults) (default: None)
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,med,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
+                        Model size preset (overrides defaults). xl/xxl/xxxl
+                        accept long-form aliases too: `xlarge`/`extra-large`,
+                        `xxlarge`/`extra-extra-large`, etc. (default: None)
   --depth DEPTH         Depth (default: 24)
   --patch_size PATCH_SIZE, --patch-size PATCH_SIZE
                         Patch size (default: 16)
@@ -372,6 +390,21 @@ options:
                         Maximum iterations (default: 100)
   --warmup WARMUP       Warmup iterations (or fraction) before starting to
                         collect metrics. (default: 0.1)
+  --lr LR               Peak learning rate. AdamW's stdlib default of 1e-3 is
+                        too aggressive for from-scratch ViTs and tends to
+                        either diverge or stall on the trivial constant
+                        prediction. (default: 0.0003)
+  --weight-decay WEIGHT_DECAY, --weight_decay WEIGHT_DECAY
+                        AdamW weight decay (matches the standard ViT recipe).
+                        (default: 0.05)
+  --lr-warmup-iters LR_WARMUP_ITERS, --lr_warmup_iters LR_WARMUP_ITERS
+                        Linear LR warmup duration. Integer = iterations; float
+                        in (0, 1) = fraction of --max_iters. Distinct from
+                        --warmup, which only gates metric collection.
+                        (default: 0.05)
+  --min-lr-ratio MIN_LR_RATIO, --min_lr_ratio MIN_LR_RATIO
+                        End-of-cosine LR as a fraction of --lr (e.g. 0.1 =
+                        decay to 10% of peak by --max_iters). (default: 0.1)
   --attn_type {native,sdpa}, --attn-type {native,sdpa}
                         Attention function to use. (default: native)
   --cuda_sdpa_backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}, --cuda-sdpa-backend {flash_sdp,mem_efficient_sdp,math_sdp,cudnn_sdp,all}

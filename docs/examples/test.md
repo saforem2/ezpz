@@ -50,8 +50,14 @@ can be reported later.
 
 <details closed markdown><summary><strong><code>MODEL_PRESETS</code></strong></summary>
 
-Named presets that bundle batch size, iteration count, logging frequency,
-and layer sizes into a single `--model` flag.
+Named presets that bundle batch size, iteration count, logging
+frequency, and layer sizes into a single `--model` flag. Sizes climb
+from `debug → small → medium → large → xl → xxl → xxxl`; the last three
+use geometric 2× scaling on MLP layer widths (the model is a toy MLP, so
+sizes mainly stress-test distributed init and AllReduce rather than
+mimicking real architectures). `MODEL_ALIASES` makes long-form spellings
+work too — `--model xlarge` or `--model extra-large` both resolve to
+`xl`, and the same pattern applies to `xxl`/`xxxl`.
 
 ```python title="src/ezpz/examples/test.py:38:74"
 --8<-- "src/ezpz/examples/test.py:38:74"
@@ -280,7 +286,8 @@ usage: ezpz test [-h] [--warmup WARMUP] [--tp TP] [--pp PP]
                  [--with-flops | --no-with-flops]
                  [--with-modules | --no-with-modules] [--acc-events]
                  [--train-iters TRAIN_ITERS]
-                 [--model {debug,small,medium,large}] [--log-freq LOG_FREQ]
+                 [--model {debug,small,medium,large,xl,xlarge,extra-large,xxl,xxlarge,extra-extra-large,xxxl,xxxlarge,extra-extra-extra-large}]
+                 [--log-freq LOG_FREQ]
                  [--print-freq PRINT_FREQ] [--batch-size BATCH_SIZE]
                  [--input-size INPUT_SIZE] [--output-size OUTPUT_SIZE]
                  [--layer-sizes LAYER_SIZES] [--dtype DTYPE]
@@ -331,8 +338,10 @@ options:
   --acc-events          Accumulate events in the profiler (default: False)
   --train-iters TRAIN_ITERS, --train_iters TRAIN_ITERS
                         Number of training iterations (default: 200)
-  --model {debug,small,medium,large}
-                        Model size preset for the smoke test. (default: None)
+  --model {debug,small,medium,large,xl,xlarge,extra-large,xxl,xxlarge,extra-extra-large,xxxl,xxxlarge,extra-extra-extra-large}
+                        Model size preset for the smoke test. xl/xxl/xxxl
+                        accept long-form aliases too: `xlarge`/`extra-large`,
+                        `xxlarge`/`extra-extra-large`, etc. (default: None)
   --log-freq LOG_FREQ, --log_freq LOG_FREQ
                         Logging frequency (default: 1)
   --print-freq PRINT_FREQ, --print_freq PRINT_FREQ

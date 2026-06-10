@@ -121,9 +121,18 @@ A logger is set up and W&B is optionally imported.
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-`MODEL_PRESETS` defines canned configurations (`debug`, `small`,
-`medium`, `large`) that override default CLI values for quick
-experimentation.
+`MODEL_PRESETS` defines canned configurations that override default CLI
+values for quick experimentation:
+
+- Toy / smoke-test sizes: `debug`, `small`, `medium`, `large`.
+- Production-scale sizes: `xl`, `xxl`, `xxxl` — chosen to map roughly to
+  Llama-1.5B / Llama-7B / Llama-13B (`dim 2048/4096/5120`,
+  `n_layers 24/32/40`, `n_heads 32/32/40`, `n_kv_heads 8`).
+
+Each `xN` size also accepts long-form aliases via `MODEL_ALIASES`
+(`xlarge` / `extra-large` → `xl`, `xxlarge` / `extra-extra-large` →
+`xxl`, `xxxlarge` / `extra-extra-extra-large` → `xxxl`), so spelling
+them out works too.
 
 ```python title="src/ezpz/examples/fsdp_tp.py:172:213"
 --8<-- "src/ezpz/examples/fsdp_tp.py:172:213"
@@ -329,7 +338,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
                   [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
                   [--batch-size BATCH_SIZE]
-                  [--model {debug,large,medium,small}]
+                  [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
                   [--sharding-strategy SHARDING_STRATEGY]
@@ -357,9 +366,11 @@ options:
   --lr LR
   --epochs EPOCHS
   --batch-size BATCH_SIZE
-  --model {debug,large,medium,small}
-                        Model size preset (overrides dim/layer defaults)
-                        (default: None)
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
+                        Model size preset (overrides dim/layer defaults).
+                        xl/xxl/xxxl accept long-form aliases too:
+                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
+                        etc. (default: None)
   --test-batch-size TEST_BATCH_SIZE
   --num-workers NUM_WORKERS
   --seed SEED

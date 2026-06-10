@@ -10,9 +10,12 @@ Quick smoke test on a laptop:
         --batch_size 4 --img_size 64 --patch_size 8 \
         --num_heads 2 --head_dim 16 --depth 2 --num_classes 10
 
-Model presets:
+Model presets (ascending size, real-CLI names):
 
-    --model debug|small|medium|med|large
+    --model debug|small|medium|med|large|xl|xxl|xxxl
+
+Each of `xl`, `xxl`, `xxxl` also accepts long-form aliases — e.g.
+`--model xlarge` or `--model extra-large` both resolve to `xl`.
 
 Help output (``python3 -m ezpz.examples.vit --help``):
 
@@ -499,7 +502,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--model",
         default=None,
         choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
-        help="Model size preset (overrides defaults)",
+        help=(
+            "Model size preset (overrides defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument("--depth", type=int, default=24, help="Depth")
     parser.add_argument(
