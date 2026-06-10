@@ -493,6 +493,26 @@ def _run_attempt_with_tee(
     #      a terminal — no privilege boundary is crossed here.
     # Sourcery's lint can't distinguish "user-runs-their-own-code"
     # from "untrusted-input-to-shell"; this is the former.
+    #
+    # `errors="replace"` is load-bearing: without it, ANY non-UTF-8
+    # byte in the child's stdout (binary log fragment, terminal
+    # control codes some libraries emit, a partial multibyte
+    # sequence at a buffer boundary) raises UnicodeDecodeError
+    # inside the `for line in proc.stdout` loop in `_drain`. That
+    # crashes the drain thread, leaving the auto-retry monitor
+    # "deaf" — training keeps going (tqdm writes via its own
+    # handler) but the watchdog can no longer see crash
+    # signatures, so a real failure later in the run would not
+    # trigger a retry. Caught on Sunspot SFT job 12468338 — a
+    # 32-min, 32-node run that lost its monitor thread to a
+    # decode error mid-training.
+    #
+    # `replace` substitutes U+FFFD for bad bytes. We lose the
+    # exact original byte in the log, which is fine: this is a
+    # human-readable log + a crash-signature scraper, not a
+    # binary protocol. The crash signatures we scrape for
+    # (`shepherd died from signal 9`, `Connection closed by peer`,
+    # etc.) are pure ASCII so substitution can't corrupt them.
     proc = subprocess.Popen(  # noqa: S603 — see comment above
         list(cmd),
         stdout=subprocess.PIPE,
@@ -500,6 +520,7 @@ def _run_attempt_with_tee(
         text=True,
         bufsize=1,
         env=child_env,
+        errors="replace",
     )
 
     last_activity = time.monotonic()
