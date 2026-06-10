@@ -119,8 +119,39 @@ MODEL_PRESETS = {
         "head_dim": 64,
         "depth": 32,
     },
+    # xl/xxl/xxxl roughly match published ViT scales (Huge ≈ 630M,
+    # ViT-22B-ish trajectory). Batch sizes halve at each step to
+    # keep memory footprint roughly constant on commodity GPUs.
+    "xl": {
+        "batch_size": 16,
+        "num_heads": 16,
+        "head_dim": 80,
+        "depth": 32,
+    },
+    "xxl": {
+        "batch_size": 8,
+        "num_heads": 16,
+        "head_dim": 96,
+        "depth": 48,
+    },
+    "xxxl": {
+        "batch_size": 4,
+        "num_heads": 20,
+        "head_dim": 128,
+        "depth": 56,
+    },
 }
-MODEL_ALIASES = {"med": "medium"}
+MODEL_ALIASES = {
+    "med": "medium",
+    # xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
+    # all resolve to the same preset).
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
+}
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch_size", "--batch-size"],
     "num_heads": ["--num_heads", "--num-heads"],

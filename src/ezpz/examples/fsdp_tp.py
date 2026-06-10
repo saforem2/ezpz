@@ -210,6 +210,51 @@ MODEL_PRESETS = {
         "seq_len": 2048,
         "batch_size": 1,
     },
+    # xl/xxl/xxxl map roughly to Llama-1.5B / Llama-7B / Llama-13B
+    # architectures (dim × layers chosen to hit those parameter
+    # counts). Batch size stays at 1 — at these scales the user is
+    # already past the point where batch tuning matters; FSDP/TP
+    # configuration dominates.
+    "xl": {
+        "dim": 2048,
+        "n_layers": 24,
+        "n_heads": 32,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_length": 2048,
+        "seq_len": 2048,
+        "batch_size": 1,
+    },
+    "xxl": {
+        "dim": 4096,
+        "n_layers": 32,
+        "n_heads": 32,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_length": 4096,
+        "seq_len": 4096,
+        "batch_size": 1,
+    },
+    "xxxl": {
+        "dim": 5120,
+        "n_layers": 40,
+        "n_heads": 40,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_length": 4096,
+        "seq_len": 4096,
+        "batch_size": 1,
+    },
+}
+# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
+# all resolve to the same preset).
+MODEL_ALIASES = {
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "dim": ["--dim"],
@@ -434,7 +479,10 @@ def _arg_provided(argv: list[str], flags: list[str]) -> bool:
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -465,8 +513,12 @@ def parse_args(argv: Optional[list[str]] = None):
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides dim/layer defaults)",
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help=(
+            "Model size preset (overrides dim/layer defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument("--test-batch-size", type=int, default=1000)
     parser.add_argument("--num-workers", type=int, default=0)

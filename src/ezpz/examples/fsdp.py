@@ -61,6 +61,35 @@ MODEL_PRESETS = {
         "conv2_channels": 128,
         "fc_dim": 512,
     },
+    # xl/xxl/xxxl are geometric 2× scales of large. The CNN here is
+    # a toy MNIST classifier — these sizes mainly exist as stress-
+    # test parameters for FSDP wrapping, not as analogues to any
+    # published model.
+    "xl": {
+        "conv1_channels": 128,
+        "conv2_channels": 256,
+        "fc_dim": 1024,
+    },
+    "xxl": {
+        "conv1_channels": 256,
+        "conv2_channels": 512,
+        "fc_dim": 2048,
+    },
+    "xxxl": {
+        "conv1_channels": 512,
+        "conv2_channels": 1024,
+        "fc_dim": 4096,
+    },
+}
+# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
+# all resolve to the same preset).
+MODEL_ALIASES = {
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "conv1_channels": ["--conv1-channels"],
@@ -442,7 +471,10 @@ def _arg_provided(argv: list[str], flags: list[str]) -> bool:
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -482,8 +514,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides conv/fc defaults)",
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help=(
+            "Model size preset (overrides conv/fc defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument(
         "--conv1-channels",

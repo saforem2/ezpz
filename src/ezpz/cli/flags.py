@@ -205,8 +205,22 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--model",
         type=str,
         default=None,
-        choices=["debug", "small", "medium", "large"],
-        help="Model size preset for the smoke test.",
+        # Choices kept in sync with `ezpz.examples.test.MODEL_PRESETS`
+        # and `MODEL_ALIASES`. If you add a size to test.py, add it
+        # here too (this parser is in cli/flags.py, separate module
+        # from test.py — couldn't import MODEL_PRESETS without
+        # creating a circular dep).
+        choices=[
+            "debug", "small", "medium", "large",
+            "xl", "xlarge", "extra-large",
+            "xxl", "xxlarge", "extra-extra-large",
+            "xxxl", "xxxlarge", "extra-extra-extra-large",
+        ],
+        help=(
+            "Model size preset for the smoke test. "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument(
         "--log-freq",

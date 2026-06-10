@@ -119,6 +119,43 @@ MODEL_PRESETS = {
         "timesteps": 256,
         "batch_size": 2,
     },
+    # xl/xxl/xxxl scale toward published diffusion-transformer sizes
+    # (DiT-XL/2 ≈ 675M; SD3-MMDiT ≈ 2-8B). Batch sizes drop with
+    # parameter count to stay within commodity-GPU memory.
+    "xl": {
+        "hidden": 768,
+        "n_layers": 12,
+        "n_heads": 12,
+        "seq_len": 96,
+        "timesteps": 512,
+        "batch_size": 2,
+    },
+    "xxl": {
+        "hidden": 1024,
+        "n_layers": 16,
+        "n_heads": 16,
+        "seq_len": 128,
+        "timesteps": 1024,
+        "batch_size": 1,
+    },
+    "xxxl": {
+        "hidden": 1280,
+        "n_layers": 20,
+        "n_heads": 20,
+        "seq_len": 160,
+        "timesteps": 1024,
+        "batch_size": 1,
+    },
+}
+# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large all
+# resolve to the same preset).
+MODEL_ALIASES = {
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "hidden": ["--hidden"],
@@ -137,7 +174,10 @@ def _arg_provided(argv: list[str], flags: list[str]) -> bool:
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -674,8 +714,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides hidden/layer/head defaults).",
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help=(
+            "Model size preset (overrides hidden/layer/head defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument(
         "--n-layers", type=int, default=2,

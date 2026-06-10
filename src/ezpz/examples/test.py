@@ -64,6 +64,41 @@ MODEL_PRESETS = {
         "print_freq": 10,
         "layer_sizes": [1024, 512, 256],
     },
+    # xl/xxl/xxxl scale the MLP geometrically (2× layer widths per
+    # step) with batch_size halving to keep memory roughly
+    # constant. This MLP is intentionally trivial — these sizes
+    # mainly exist as stress-test parameters for distributed init.
+    "xl": {
+        "batch_size": 128,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [2048, 1024, 512],
+    },
+    "xxl": {
+        "batch_size": 64,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [4096, 2048, 1024],
+    },
+    "xxxl": {
+        "batch_size": 32,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [8192, 4096, 2048],
+    },
+}
+# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
+# all resolve to the same preset).
+MODEL_ALIASES = {
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch-size"],
@@ -540,7 +575,10 @@ def _arg_provided(argv: Sequence[str], flags: Sequence[str]) -> bool:
 def _apply_model_preset(args: argparse.Namespace, argv: Sequence[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS.get(args.model)
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS.get(model_key)
     if preset is None:
         return
     for field_name, value in preset.items():
