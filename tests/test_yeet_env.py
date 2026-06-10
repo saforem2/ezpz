@@ -306,6 +306,340 @@ class TestRsyncRetry:
 
 
 # ===================================================================
+# --min-success-nodes / --min-success-fraction (proceed-with-spares)
+# ===================================================================
+
+
+class TestProceedWithSpares:
+    """Tests for the --min-success-nodes / --min-success-fraction flags.
+
+    When set, yeet returns rc=0 even with some failures, as long as
+    the success count meets the threshold. Writes the failed-nodes
+    list to $dst/.ezpz-yeet-failed-nodes.txt for downstream
+    consumers (training scripts, ezpz launch wrappers).
+    """
+
+    def _make_hostfile(self, tmp_path, nodes):
+        hf = tmp_path / "hostfile"
+        hf.write_text("\n".join(nodes) + "\n")
+        return hf
+
+    def _make_src(self, tmp_path):
+        src = tmp_path / "fakenv"
+        (src / "bin").mkdir(parents=True)
+        (src / "bin" / "activate").write_text("# fake activate\n")
+        (src / "pyvenv.cfg").write_text(
+            "home = /usr/bin\nversion = 3.12.0\n"
+        )
+        return src
+
+    def _setup_common(self, monkeypatch, fail_nodes):
+        """Stub out the heavy machinery so we can drive run() in unit."""
+        def fake_rsync(src, dst, node, **kwargs):
+            if node in fail_nodes:
+                return (node, 0.1, 255)
+            return (node, 0.2, 0)
+
+        # No retries — make the failure permanent so we can test the
+        # threshold logic in isolation from PR #160's retry path.
+        monkeypatch.setattr(yeet, "_DEFAULT_RSYNC_RETRIES", 0)
+        monkeypatch.setattr(yeet, "_rsync_to_node", fake_rsync)
+        monkeypatch.setattr(yeet, "_get_current_hostname", lambda: "node00")
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
+        monkeypatch.setattr(
+            yeet, "_patch_venv_paths_local", lambda dst, src: None
+        )
+
+    def test_threshold_met_returns_zero_and_writes_sentinel(
+        self, tmp_path, monkeypatch
+    ):
+        """When ok_nodes >= --min-success-nodes, return 0 + write file."""
+        self._setup_common(monkeypatch, fail_nodes={"badnode"})
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "node02", "badnode"]
+        )
+
+        # 4 total, 3 succeed, 1 fails. With --min-success-nodes=3,
+        # threshold is met → rc=0.
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "3",
+        ])
+        assert rc == 0, "threshold met (3/4 ok, need >=3); should return 0"
+
+        # Sentinel file should exist and contain just the failed node.
+        sentinel = dst / ".ezpz-yeet-failed-nodes.txt"
+        assert sentinel.exists()
+        assert sentinel.read_text().strip() == "badnode"
+
+    def test_threshold_missed_returns_one_no_sentinel(
+        self, tmp_path, monkeypatch
+    ):
+        """When ok_nodes < threshold, fail like before (no sentinel)."""
+        self._setup_common(monkeypatch, fail_nodes={"bad1", "bad2"})
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "bad1", "bad2"]
+        )
+
+        # 4 total, 2 succeed, 2 fail. With --min-success-nodes=3,
+        # threshold is NOT met → rc=1, no sentinel.
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "3",
+        ])
+        assert rc != 0, "threshold not met (2/4 ok, need >=3); should fail"
+        assert not (dst / ".ezpz-yeet-failed-nodes.txt").exists(), (
+            "sentinel must NOT be written when threshold isn't met — "
+            "otherwise downstream tooling would silently consume a "
+            "stale 'this run partially succeeded' marker."
+        )
+
+    def test_no_failures_no_sentinel_even_with_threshold(
+        self, tmp_path, monkeypatch
+    ):
+        """When ALL nodes succeed, no sentinel written, rc=0."""
+        self._setup_common(monkeypatch, fail_nodes=set())
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "node02"]
+        )
+
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "2",
+        ])
+        assert rc == 0
+        # No failures → no sentinel (avoids stale data confusing
+        # downstream readers next run).
+        assert not (dst / ".ezpz-yeet-failed-nodes.txt").exists()
+
+    def test_fraction_threshold_met(
+        self, tmp_path, monkeypatch
+    ):
+        """--min-success-fraction 0.75 of 4 nodes = ceil(3) → 3 needed."""
+        self._setup_common(monkeypatch, fail_nodes={"badnode"})
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "node02", "badnode"]
+        )
+
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-fraction", "0.75",
+        ])
+        assert rc == 0, "3/4 = 75% ok, threshold = ceil(0.75*4) = 3, met"
+        sentinel = dst / ".ezpz-yeet-failed-nodes.txt"
+        assert sentinel.exists()
+        assert "badnode" in sentinel.read_text()
+
+    def test_flags_mutex_rejects_both(self):
+        """--min-success-nodes and --min-success-fraction are mutex."""
+        with pytest.raises(SystemExit):
+            yeet.parse_args([
+                "--min-success-nodes", "5",
+                "--min-success-fraction", "0.9",
+            ])
+
+    def test_fraction_out_of_range_rejected(self):
+        """--min-success-fraction must be in (0, 1]."""
+        for bad in ["0.0", "-0.5", "1.5", "2.0"]:
+            with pytest.raises(SystemExit):
+                yeet.parse_args(["--min-success-fraction", bad])
+
+    def test_min_success_nodes_zero_rejected(self):
+        """--min-success-nodes < 1 is meaningless and rejected."""
+        with pytest.raises(SystemExit):
+            yeet.parse_args(["--min-success-nodes", "0"])
+
+    def test_default_behavior_unchanged_without_threshold(
+        self, tmp_path, monkeypatch
+    ):
+        """Without --min-success-* flags, any failure → rc=1 + no sentinel."""
+        self._setup_common(monkeypatch, fail_nodes={"badnode"})
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "badnode"]
+        )
+
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            # no --min-success-* flag
+        ])
+        assert rc != 0, "no flag = original fail-on-any behavior"
+        assert not (dst / ".ezpz-yeet-failed-nodes.txt").exists()
+
+    # ── Regressions for review findings ─────────────────────────────
+
+    def test_clean_run_under_threshold_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression (codex P2): --min-success-nodes is a HARD lower bound.
+
+        A clean run (zero failures) that synced fewer nodes than the
+        threshold MUST fail. Otherwise downstream training silently
+        under-provisions: `yeet --min-success-nodes 512` against a
+        500-node hostfile with all 500 successful would return 0
+        and the user would launch on 500 nodes thinking they had 512.
+        """
+        self._setup_common(monkeypatch, fail_nodes=set())
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        # Only 4 nodes available, but caller asks for >=10.
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "node02", "node03"]
+        )
+
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "10",  # > total
+        ])
+        assert rc != 0, (
+            "clean run with too few nodes must fail when threshold "
+            "exceeds the available node count — otherwise the flag "
+            "isn't a real lower bound"
+        )
+        # No sentinel — there are no FAILED nodes to record. The
+        # situation is "we needed 10 but only had 4." That belongs
+        # in the log, not the sentinel file (which is documented as
+        # the list of nodes that failed, not the list of nodes the
+        # user wished they had).
+        assert not (dst / ".ezpz-yeet-failed-nodes.txt").exists()
+
+    def test_stale_sentinel_removed_on_clean_rerun(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression (codex+copilot P2): stale sentinel must not survive.
+
+        Set up: a prior run wrote a sentinel listing badnode. The
+        next run is clean (no failures), so the sentinel from the
+        prior run must be removed. Otherwise downstream tooling
+        would read the stale list and exclude badnode from a launch
+        that should be using it.
+        """
+        self._setup_common(monkeypatch, fail_nodes=set())
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        dst.mkdir()
+        stale_sentinel = dst / ".ezpz-yeet-failed-nodes.txt"
+        stale_sentinel.write_text("badnode-from-prior-run\n")
+        assert stale_sentinel.exists()  # pre-condition
+
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "node02"]
+        )
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "3",
+        ])
+        assert rc == 0
+        assert not stale_sentinel.exists(), (
+            "stale sentinel from prior run must be removed when the "
+            "current run has no failures — otherwise downstream "
+            "tooling reads wrong data"
+        )
+
+    def test_stale_sentinel_removed_when_threshold_missed(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression: stale sentinel removed even on failed run.
+
+        If the threshold isn't met, we return rc=1 (don't write a
+        new sentinel) — but we ALSO must remove any prior sentinel,
+        so downstream tooling doesn't see a "yeet succeeded with
+        these failures" marker from a run that actually failed.
+        """
+        self._setup_common(monkeypatch, fail_nodes={"bad1", "bad2"})
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        dst.mkdir()
+        stale_sentinel = dst / ".ezpz-yeet-failed-nodes.txt"
+        stale_sentinel.write_text("badnode-from-prior-run\n")
+        assert stale_sentinel.exists()  # pre-condition
+
+        hf = self._make_hostfile(
+            tmp_path, ["node00", "node01", "bad1", "bad2"]
+        )
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-nodes", "3",  # 2/4 ok, threshold missed
+        ])
+        assert rc != 0
+        assert not stale_sentinel.exists(), (
+            "stale sentinel must be cleared even when the new run "
+            "fails the threshold — otherwise downstream tooling "
+            "consumes a marker from a previous run that no longer "
+            "describes reality"
+        )
+
+    def test_fraction_uses_hostfile_count_not_rsync_op_count(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression (copilot P2): denominator is len(nodes), not total_nodes.
+
+        When `src` is under /tmp (needs_local_copy = False),
+        `total_nodes` = remote_nodes_count (no +1 for the local
+        node). But the docs promise the fraction is computed
+        against the "full node list including the local node" —
+        which is the HOSTFILE count, not the rsync-op count.
+        Pin the contract.
+
+        Setup: 5-node hostfile, _needs_local_copy returns False
+        (so local rsync skipped, only 4 remote rsyncs run).
+        Fraction 0.6 should round-ceil to 3 against hostfile=5
+        (NOT to 3 against total_nodes=4 — but in this case the
+        threshold value is the same so we have to detect the bug
+        via fraction 0.8 → ceil(0.8*5)=4 vs ceil(0.8*4)=4 …).
+        Easier: use fraction 0.5 → ceil(0.5*5)=3 vs ceil(0.5*4)=2.
+        Make 2 nodes fail; should land below threshold of 3 →
+        fail. (If bug were still present: threshold would be 2,
+        2 nodes ok would meet it, return 0.)
+        """
+        # Override _needs_local_copy → False so total_nodes <
+        # len(nodes). This is the scenario the bug only manifests in.
+        self._setup_common(monkeypatch, fail_nodes={"bad1", "bad2"})
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: False)
+
+        src = self._make_src(tmp_path)
+        dst = tmp_path / "tmp_dst"
+        hf = self._make_hostfile(
+            tmp_path,
+            ["node00", "node01", "node02", "bad1", "bad2"],  # 5 hosts
+        )
+
+        # With the fix: threshold = ceil(0.5 * 5) = 3.
+        # 2 succeed (node01, node02 — node00 is local + skipped),
+        # 2 fail (bad1, bad2). 2 < 3 → fail.
+        #
+        # If bug were still present: threshold = ceil(0.5 * 4) = 2.
+        # 2 >= 2 → return 0. The assertion below would fail.
+        rc = yeet.run([
+            "--src", str(src), "--dst", str(dst),
+            "--hostfile", str(hf),
+            "--min-success-fraction", "0.5",
+        ])
+        assert rc != 0, (
+            "fraction must be computed against the hostfile node "
+            "count (5), not the rsync-op count (4). With 0.5 of 5 "
+            "→ ceil = 3 needed; only 2 succeeded; should fail."
+        )
+
+
+# ===================================================================
 # parse_args
 # ===================================================================
 

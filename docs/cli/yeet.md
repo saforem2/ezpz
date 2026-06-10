@@ -176,6 +176,7 @@ section](#scaling-aurora-8-4096-nodes)).
 ```
 ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
               [--copy | --compress] [--dry-run]
+              [--min-success-nodes N | --min-success-fraction F]
 ```
 
 | Arg / Flag | Default | Description |
@@ -187,6 +188,14 @@ ezpz yeet [SRC] [--src PATH] [--dst PATH] [--hostfile PATH]
 | `--copy` | — | Use `cp -a` for the local copy (faster on Lustre) |
 | `--compress` | — | tar.gz → copy → extract (least Lustre metadata I/O) |
 | `--dry-run` | — | Preview without transferring |
+| `--min-success-nodes N` | — | Hard lower bound: return rc=0 iff at least N nodes succeed. Failures (if any, up to `total − N`) are written to a sentinel file. See [proceed with spares](#proceed-with-spares-min-success-nodes-min-success-fraction). Mutually exclusive with `--min-success-fraction`. |
+| `--min-success-fraction F` | — | Same as `--min-success-nodes` but as a fraction of the **hostfile node count** (e.g. `0.95` = ≥95%). Resolves to `ceil(F × len(hostfile))`. |
+
+There's also one **environment variable**:
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `EZPZ_YEET_RSYNC_RETRIES` | `2` | Per-target rsync retry budget for transient SSH/rsync failures (e.g. `Connection reset by ... port 22`). Each failed rsync gets up to N additional attempts before being marked as a final failure. Set to `0` to restore fail-fast-on-first-error. |
 
 !!! tip "Choosing a local copy method"
 
@@ -508,9 +517,80 @@ mode skips rsync entirely on the local step and is often a win.
 - **rsync exit 24** (vanished files): treated as success. This
   happens when concurrent rsyncs read from the same `/tmp/` source
   while temporary files (e.g. triton plugin builds) come and go.
+- **Transient rsync failures** (e.g. `Connection reset by ... port
+  22`): per-target retry up to `$EZPZ_YEET_RSYNC_RETRIES` (default 2)
+  times. Set to 0 to restore fail-fast.
 - **TTY-aware progress**: spinner and `\r` carriage returns are
   suppressed when stdout is not a terminal (e.g. redirected to a
   file), preventing garbled output in logs.
+
+### Proceed with spares (`--min-success-nodes` / `--min-success-fraction`)
+
+At scale (256N+ allocations), it's common for 1-2 nodes to fail
+permanently with SSH issues that retries can't recover. Without an
+opt-in, a single bad node fails the whole `yeet` even when the
+caller has spare allocation. Two flags relax this:
+
+```bash
+# Require at least 512 nodes to succeed (out of however many the
+# hostfile contains). Returns rc=0 as long as ≥ 512 ok.
+ezpz yeet --min-success-nodes 512
+
+# Same idea but as a fraction of the total node count:
+ezpz yeet --min-success-fraction 0.95   # ≥ 95% must succeed
+```
+
+The two flags are mutually exclusive. With a fraction, the
+absolute count is `ceil(fraction × len(hostfile))` — the
+**hostfile node count**, not the number of rsync operations
+(which can be 1 lower when the local-copy step is skipped
+because `src` is already under `/tmp`).
+
+**Hard lower bound.** Either flag enforces a hard floor on the
+success count: even a clean run (zero failures) returns rc=1 if
+fewer than `threshold` nodes were actually synced. Otherwise
+`--min-success-nodes 512` on a 500-node hostfile would silently
+succeed and downstream training would under-provision.
+
+When the threshold is met **and** there were failures, yeet:
+
+1. Returns rc=0
+2. Writes the list of failed hostnames to **`$dst/.ezpz-yeet-failed-nodes.txt`**
+   (one host per line) so downstream tooling (training scripts,
+   `ezpz launch` wrappers) can read and exclude those hosts. Example
+   consumer:
+
+   ```bash
+   FAILED=$(cat "$DST"/.ezpz-yeet-failed-nodes.txt 2>/dev/null || true)
+   if [[ -n "$FAILED" ]]; then
+     # Build a hostfile that excludes the yeet failures:
+     grep -vFf <(echo "$FAILED") "$PBS_NODEFILE" > /tmp/hostfile-good
+     ezpz launch --hostfile /tmp/hostfile-good -- python3 -m my.train
+   else
+     ezpz launch -- python3 -m my.train
+   fi
+   ```
+
+**Stale-sentinel safety.** Yeet always removes any pre-existing
+`$dst/.ezpz-yeet-failed-nodes.txt` at the start of finalization,
+then re-writes it only when proceeding-with-spares. So the file's
+presence is a definitive "yeet just succeeded but here are the
+hosts that didn't make it on this run" — never a stale list from
+a previous invocation that's since been cleaned up. This matters
+when re-running into the same `dst` (common when `src` is already
+under `/tmp` and the local-copy step is skipped on the second run).
+
+When the threshold is NOT met, behavior is unchanged — yeet returns
+rc=1 and no sentinel file is written.
+
+Without either flag the original fail-on-any behavior is preserved.
+
+!!! tip "Worked example at scale"
+
+    See [At scale: surviving 1-2 bad nodes per allocation](#at-scale-surviving-1-2-bad-nodes-per-allocation)
+    for a complete end-to-end snippet (522 nodes → train on 520
+    when 2 fail), plus a behavior table covering each
+    success/failure scenario.
 
 ## Examples
 
@@ -643,6 +723,67 @@ under 1 minute through 1024 nodes and only really starts to climb at
 2048+ — consistent with `init_process_group` overhead growing with
 world size. At 4096 nodes the first step lands in 3 min 14 s, so
 total time-to-train (yeet + first step) is about 16 minutes.
+
+### At scale: surviving 1-2 bad nodes per allocation
+
+At 256+ nodes, it's near-certain that 1-2 nodes will fail
+permanently with SSH issues that retries can't recover (cable
+problems, daemon stuck, etc.). Without the proceed-with-spares
+flags from [Error handling](#error-handling), a single bad node
+fails the whole `yeet` even though the user usually has spare
+allocation to absorb the loss.
+
+Worked example: 522 nodes allocated on Aurora, only 512 actually
+needed for training:
+
+```bash
+# 1. Yeet with a threshold matching the actual training need.
+#    Transient failures are auto-retried (PR #160's logic) up to
+#    EZPZ_YEET_RSYNC_RETRIES times per node; the threshold only
+#    fires for nodes that exhaust retries.
+ezpz yeet --src .venv.tar.gz --min-success-nodes 512
+RC=$?
+
+# 2. yeet returns 0 with the failed-node list co-located with dst.
+if [[ $RC -ne 0 ]]; then
+    echo "yeet did not meet the threshold; aborting"
+    exit 1
+fi
+
+DST=/tmp/.venv  # the default --dst
+FAILED=$(cat "$DST"/.ezpz-yeet-failed-nodes.txt 2>/dev/null || true)
+
+# 3. Build a launch hostfile that excludes the failed nodes.
+#    `grep -vFf` filters PBS_NODEFILE against the failures.
+if [[ -n "$FAILED" ]]; then
+    echo "yeet succeeded but $FAILED was unreachable; excluding from launch"
+    grep -vFf <(echo "$FAILED") "$PBS_NODEFILE" > /tmp/hostfile-good
+    HOSTFILE_ARG="--hostfile /tmp/hostfile-good"
+else
+    HOSTFILE_ARG=""  # no failures → use default PBS_NODEFILE
+fi
+
+# 4. Launch training with the (possibly filtered) hostfile.
+ezpz launch $HOSTFILE_ARG -- python3 -m my.train
+```
+
+**What happens in practice:**
+
+| Scenario | `ezpz yeet` rc | Sentinel file | Outcome |
+|---|---|---|---|
+| All 522 nodes succeed | 0 | removed if stale, otherwise absent | Train on 522 nodes |
+| 521 succeed, 1 transient fail recovers via retry | 0 | removed if stale (retry path = no failure) | Train on 522 nodes |
+| 520 succeed, 2 permanent fails (threshold 512 met) | 0 | **written with the 2 hostnames** | Train on 520 nodes |
+| 500 succeed, 22 permanent fails (threshold 512 missed) | 1 | removed if stale | Abort — user investigates |
+| 511 succeed, 0 fails but hostfile only has 511 nodes | **1** | not written | Abort — `--min-success-nodes 512` is a hard floor |
+
+The sentinel file is **only** written when `yeet` is exiting
+successfully despite failures, so its presence is a definitive
+"yeet survived but here's who didn't make it" signal — never
+stale data from a previous run. Yeet unconditionally removes
+any pre-existing sentinel at the start of finalization, so the
+absence of the file means "no failures to report" regardless of
+what a previous run wrote.
 
 ## See Also
 
