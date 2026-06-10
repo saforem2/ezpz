@@ -74,6 +74,7 @@ Help output (``python3 -m ezpz.examples.vit --help``):
 
 import argparse
 import functools
+import json
 import math
 from pathlib import Path
 import sys
@@ -981,6 +982,9 @@ def main(args: argparse.Namespace):
     t0 = time.perf_counter()
     _ = ezpz.distributed.setup_torch()
     t_setup = time.perf_counter()
+    if ezpz.get_rank() == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
 
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor

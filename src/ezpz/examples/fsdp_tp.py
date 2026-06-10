@@ -118,6 +118,7 @@ The remaining comments outline the parallel layout used to combine TP/SP with FS
 import os
 import sys
 import argparse
+import json
 import logging
 import time
 from pathlib import Path
@@ -1129,6 +1130,9 @@ def main(args: argparse.Namespace) -> int:
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)

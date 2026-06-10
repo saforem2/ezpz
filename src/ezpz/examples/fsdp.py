@@ -12,6 +12,7 @@ flags and their current defaults.
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DistributedSampler, DataLoader
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
@@ -375,6 +376,9 @@ def fsdp_main(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     data = get_data(args)
     ezpz.distributed.barrier()
     train_loader = data["train"]["loader"]

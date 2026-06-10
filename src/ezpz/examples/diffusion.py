@@ -59,6 +59,7 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
 """
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -738,6 +739,9 @@ def main(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
