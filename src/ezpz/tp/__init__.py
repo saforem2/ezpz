@@ -272,13 +272,29 @@ def get_tensor_parallel_ranks() -> List[int]:
 
 
 def get_tensor_parallel_world_size() -> int:
-    """Return world size for the tensor parallel group."""
-    return tdist.get_world_size(group=get_tensor_parallel_group())
+    """Return world size for the tensor parallel group.
+
+    When TP is not initialized (e.g. the user ran with the default
+    ``tensor_parallel_size=1``, which skips
+    :func:`initialize_tensor_parallel`), return ``1`` — the trivial
+    single-rank TP group. Callers can branch on ``tp_world > 1`` without
+    having to also probe ``tensor_parallel_is_initialized()``.
+    """
+    if _TENSOR_PARALLEL_GROUP is None:
+        return 1
+    return tdist.get_world_size(group=_TENSOR_PARALLEL_GROUP)
 
 
 def get_tensor_parallel_rank() -> int:
-    """Return my rank for the tensor parallel group."""
-    return tdist.get_rank(group=get_tensor_parallel_group())
+    """Return my rank for the tensor parallel group.
+
+    When TP is not initialized, return ``0`` — semantically every rank
+    is rank 0 of its own trivial TP group of size 1. Matches the
+    identity defaults from :func:`get_tensor_parallel_world_size`.
+    """
+    if _TENSOR_PARALLEL_GROUP is None:
+        return 0
+    return tdist.get_rank(group=_TENSOR_PARALLEL_GROUP)
 
 
 def get_tensor_parallel_src_rank() -> int:
