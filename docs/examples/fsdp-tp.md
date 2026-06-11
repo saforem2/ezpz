@@ -318,7 +318,7 @@ Per-step **TFLOPS** and **MFU** are reported under `train/tflops`
 and `train/mfu`.
 
 ```python
-_model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+_model_flops = try_estimate(model, (args.batch_size, args.seq_len))
 # ... per step:
 metrics["train/tflops"] = _model_flops / (t2 - t0) / 1e12
 metrics["train/mfu"] = compute_mfu(_model_flops, t2 - t0)
@@ -336,7 +336,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
                   [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
                   [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
-                  [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
+                  [--lr LR] [--epochs EPOCHS]
                   [--batch-size BATCH_SIZE]
                   [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                   [--test-batch-size TEST_BATCH_SIZE]
@@ -362,7 +362,6 @@ options:
   --ffn-dim-multiplier FFN_DIM_MULTIPLIER
   --norm-eps NORM_EPS
   --vocab-size VOCAB_SIZE
-  --seq-length SEQ_LENGTH
   --lr LR
   --epochs EPOCHS
   --batch-size BATCH_SIZE

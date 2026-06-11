@@ -61,7 +61,7 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                       [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
                       [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
                       [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
-                      [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
+                      [--lr LR] [--epochs EPOCHS]
                       [--batch-size BATCH_SIZE]
                       [--test-batch-size TEST_BATCH_SIZE]
                       [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
@@ -86,7 +86,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --ffn-dim-multiplier FFN_DIM_MULTIPLIER
       --norm-eps NORM_EPS
       --vocab-size VOCAB_SIZE
-      --seq-length SEQ_LENGTH
       --lr LR
       --epochs EPOCHS
       --batch-size BATCH_SIZE
@@ -177,7 +176,6 @@ MODEL_PRESETS = {
         "n_heads": 4,
         "n_kv_heads": 2,
         "multiple_of": 128,
-        "seq_length": 256,
         "seq_len": 256,
         "batch_size": 1,
     },
@@ -187,7 +185,6 @@ MODEL_PRESETS = {
         "n_heads": 8,
         "n_kv_heads": 4,
         "multiple_of": 128,
-        "seq_length": 512,
         "seq_len": 512,
         "batch_size": 2,
     },
@@ -197,7 +194,6 @@ MODEL_PRESETS = {
         "n_heads": 8,
         "n_kv_heads": 4,
         "multiple_of": 256,
-        "seq_length": 1024,
         "seq_len": 1024,
         "batch_size": 2,
     },
@@ -207,7 +203,6 @@ MODEL_PRESETS = {
         "n_heads": 16,
         "n_kv_heads": 8,
         "multiple_of": 256,
-        "seq_length": 2048,
         "seq_len": 2048,
         "batch_size": 1,
     },
@@ -222,7 +217,6 @@ MODEL_PRESETS = {
         "n_heads": 32,
         "n_kv_heads": 8,
         "multiple_of": 256,
-        "seq_length": 2048,
         "seq_len": 2048,
         "batch_size": 1,
     },
@@ -232,7 +226,6 @@ MODEL_PRESETS = {
         "n_heads": 32,
         "n_kv_heads": 8,
         "multiple_of": 256,
-        "seq_length": 4096,
         "seq_len": 4096,
         "batch_size": 1,
     },
@@ -242,7 +235,6 @@ MODEL_PRESETS = {
         "n_heads": 40,
         "n_kv_heads": 8,
         "multiple_of": 256,
-        "seq_length": 4096,
         "seq_len": 4096,
         "batch_size": 1,
     },
@@ -263,7 +255,6 @@ MODEL_PRESET_FLAGS = {
     "n_heads": ["--n-heads"],
     "n_kv_heads": ["--n-kv-heads"],
     "multiple_of": ["--multiple-of"],
-    "seq_length": ["--seq-length"],
     "seq_len": ["--seq-len"],
     "batch_size": ["--batch-size"],
 }
@@ -506,7 +497,6 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--ffn-dim-multiplier", type=float, default=None)
     parser.add_argument("--norm-eps", type=float, default=1e-5)
     parser.add_argument("--vocab-size", type=int, default=32_000)
-    parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -820,7 +810,7 @@ def train(
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+    _model_flops = try_estimate(model, (args.batch_size, args.seq_len))
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
@@ -883,7 +873,7 @@ def train(
         data = get_random_dataset_fsdp_tp(
             batch_size=args.batch_size,
             vocab_size=args.vocab_size,
-            seq_length=args.seq_length,
+            seq_length=args.seq_len,
             dp_group=device_mesh.get_group("dp"),
             tp_group=tp_group,
             broadcast_within_tp=True,
