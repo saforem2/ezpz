@@ -813,6 +813,37 @@ def _apply_activation_checkpointing(
     if mode == "full":
         mode = "block"
 
+    # HF causal-LM models have their own gradient-checkpointing path that
+    # KNOWS about `use_cache`, RNG state, attention-mask plumbing, and
+    # the cache-vs-checkpoint interaction. Use that instead of our
+    # generic per-block wrap — otherwise we hit a hard
+    # `CheckpointError: A different number of tensors was saved during
+    # the original forward and recomputation` because HF's DynamicCache
+    # gets created on the first forward but skipped on the recompute,
+    # producing different saved-tensor counts. Set use_cache=False so
+    # the cache code-path is identical on both passes.
+    base_model = getattr(model, "_fsdp_wrapped_module", model)
+    if hasattr(base_model, "gradient_checkpointing_enable") and hasattr(
+        base_model, "config"
+    ):
+        if getattr(base_model.config, "use_cache", False):
+            base_model.config.use_cache = False  # type: ignore[attr-defined]
+            logger.info(
+                "Disabled use_cache on HF model %s for AC compatibility "
+                "(cache and gradient checkpointing are mutually exclusive).",
+                type(base_model).__name__,
+            )
+        base_model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        logger.info(
+            "Applied activation_checkpoint=%s via HF "
+            "gradient_checkpointing_enable on %s.",
+            mode,
+            type(base_model).__name__,
+        )
+        return model
+
     from torch.utils.checkpoint import checkpoint
 
     def _find_block_list(m: nn.Module) -> Optional[nn.ModuleList]:

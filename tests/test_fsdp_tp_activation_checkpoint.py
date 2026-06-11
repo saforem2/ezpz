@@ -151,6 +151,59 @@ def test_full_is_alias_for_block():
     )
 
 
+def test_hf_path_uses_gradient_checkpointing_enable_and_disables_cache():
+    """For HF-style models (anything with `gradient_checkpointing_enable`
+    + `.config.use_cache`), the AC helper must:
+      1. Set `model.config.use_cache = False`
+      2. Call `model.gradient_checkpointing_enable(...)` with
+         `use_reentrant=False`
+
+    NOT use our generic per-block `torch.utils.checkpoint` wrap — HF's
+    DynamicCache silently allocates different numbers of saved tensors
+    on forward vs. recompute, breaking generic checkpointing with
+    `CheckpointError: A different number of tensors was saved during
+    the original forward and recomputation`.
+    """
+    from unittest.mock import MagicMock
+
+    mod = _import_fsdp_tp()
+
+    fake_hf_model = MagicMock()
+    fake_hf_model.config.use_cache = True  # like a real HF causal-LM
+    # MagicMock doesn't behave like an FSDP-wrapped module by default;
+    # ensure `_fsdp_wrapped_module` lookup falls through to fake_hf_model.
+    fake_hf_model._fsdp_wrapped_module = fake_hf_model
+
+    result = mod._apply_activation_checkpointing(fake_hf_model, "block")
+
+    assert result is fake_hf_model
+    assert fake_hf_model.config.use_cache is False, (
+        "AC must disable use_cache on HF models to avoid "
+        "DynamicCache <-> checkpoint tensor-count mismatch"
+    )
+    fake_hf_model.gradient_checkpointing_enable.assert_called_once_with(
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+    )
+
+
+def test_hf_path_leaves_use_cache_false_alone():
+    """Idempotency: if use_cache is already False, don't log a noisy
+    'disabled use_cache' message; just enable gradient checkpointing."""
+    from unittest.mock import MagicMock
+
+    mod = _import_fsdp_tp()
+
+    fake_hf_model = MagicMock()
+    fake_hf_model.config.use_cache = False
+    fake_hf_model._fsdp_wrapped_module = fake_hf_model
+
+    mod._apply_activation_checkpointing(fake_hf_model, "full")
+
+    # Still False (untouched)
+    assert fake_hf_model.config.use_cache is False
+    fake_hf_model.gradient_checkpointing_enable.assert_called_once()
+
+
 def test_ac_warns_when_no_blocks_found():
     """If the user requests AC on a model with no transformer-block
     ModuleList (e.g. a plain Linear), the helper must log a warning
