@@ -167,6 +167,39 @@ The HF path:
   derived from the HF model's own `ModuleList` children — so each
   decoder layer becomes its own FSDP unit.
 
+### Activation checkpointing
+
+Pass `--activation-checkpoint` (alias `--ac`) to trade compute for
+memory during training:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --ac block
+```
+
+Modes:
+
+- **`none`** (default) — keeps all forward activations in memory.
+  Lowest latency, highest memory.
+- **`block`** — wraps each TransformerBlock's forward with
+  `torch.utils.checkpoint`. The block re-runs its forward during
+  backward instead of caching intermediate activations. Typical
+  **30-40% activation-memory reduction**, **~20% throughput hit**.
+  Matches torchtitan's default for agpt-2b / agpt-20b.
+- **`selective`** — checkpoints only the attention computation
+  inside each block. Smaller memory savings (~15-20%), smaller
+  throughput hit (~10%). Less robust than `block` for arbitrary
+  architectures.
+
+AC is applied **after** the TP/FSDP wrap so the checkpoint envelope
+contains FSDP's unshard/reshard bookkeeping; reversed order would
+double-shard and corrupt grads.
+
+Caveat: AC only helps with **training-time** activation memory. It
+will NOT fix init-time OOMs (every rank holds the full unsharded
+model momentarily during `model.to(device)` before FSDP shards). If
+the model OOMs during init, raise `--tp` (halves per-rank weight
+memory for each doubling) or use a smaller preset.
+
 ```python title="src/ezpz/examples/fsdp_tp.py:172:213"
 --8<-- "src/ezpz/examples/fsdp_tp.py:172:213"
 ```
@@ -374,6 +407,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
                   [--sharding-strategy SHARDING_STRATEGY]
+                  [--activation-checkpoint {none,block,selective}]
                   [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
                   [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
                   [--model_name_or_path MODEL_NAME_OR_PATH]
@@ -422,6 +456,19 @@ options:
   --seed SEED
   --tp TP
   --sharding-strategy SHARDING_STRATEGY
+  --activation-checkpoint {none,block,selective}, --ac {none,block,selective}
+                        Activation checkpointing strategy. `none` (default)
+                        keeps all forward activations in memory. `block` wraps
+                        each TransformerBlock — typical 30-40 pct activation
+                        memory reduction, ~20 pct throughput hit (matches
+                        torchtitan's default for agpt-2b/agpt-20b).
+                        `selective` checkpoints only the attention computation
+                        inside each block — ~15-20 pct memory reduction, ~10
+                        pct throughput hit. Trade activation memory for
+                        recomputation cost — useful when OOM-ing during
+                        training (NOT during init; for init-time OOM consider
+                        increasing --tp or reducing --seq-len). (default:
+                        none)
   --max-grad-norm MAX_GRAD_NORM
   --outdir OUTDIR
   --dataset DATASET
