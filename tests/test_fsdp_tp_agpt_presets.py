@@ -26,6 +26,7 @@ _AGPT_EXPECTED = {
         "vocab_size": 256128,
         "hidden_dim": 11008,
         "rope_theta": 50000.0,
+        "seq_len": 8192,
     },
     "agpt-20b": {
         "dim": 5120,
@@ -120,3 +121,46 @@ def test_agpt_explicit_cli_flag_overrides_preset():
     # Other preset fields still apply
     assert args.dim == 2048
     assert args.hidden_dim == 11008
+
+
+@pytest.mark.parametrize(
+    "argv,expected_seq_len,expected_batch_size",
+    [
+        # space-separated form (already worked before the fix)
+        (
+            ["--model", "agpt-2b", "--seq-len", "512", "--batch-size", "4"],
+            512,
+            4,
+        ),
+        # `=`-fused form. Pre-fix, _arg_provided('--seq-len' in argv)
+        # was False because the actual token is "--seq-len=512", so
+        # the preset's seq_len=8192 clobbered the user's 512.
+        (
+            ["--model", "agpt-2b", "--seq-len=512", "--batch-size=4"],
+            512,
+            4,
+        ),
+        # mixed forms — `--seq-len` space-separated, `--batch-size=` fused
+        (
+            ["--model", "agpt-2b", "--seq-len", "512", "--batch-size=4"],
+            512,
+            4,
+        ),
+    ],
+    ids=["space-separated", "equals-fused", "mixed"],
+)
+def test_explicit_flag_wins_for_both_argv_shapes(
+    argv, expected_seq_len, expected_batch_size
+):
+    """Regression: ``--seq-len=8192`` (with ``=``) was being silently
+    overwritten by the preset's seq_len, because _arg_provided's
+    ``flag in argv`` check fails for ``=``-fused tokens. After the fix,
+    both spellings are honoured."""
+    mod = _import_fsdp_tp()
+    args = mod.parse_args(argv)
+    assert args.seq_len == expected_seq_len, (
+        f"argv {argv}: seq_len = {args.seq_len}, expected {expected_seq_len}"
+    )
+    assert args.batch_size == expected_batch_size, (
+        f"argv {argv}: batch_size = {args.batch_size}, expected {expected_batch_size}"
+    )

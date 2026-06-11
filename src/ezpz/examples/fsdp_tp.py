@@ -254,7 +254,7 @@ MODEL_PRESETS = {
         "vocab_size": 256128,
         "hidden_dim": 11008,
         "rope_theta": 50000.0,
-        "seq_len": 2048,
+        "seq_len": 8192,  # matches torchtitan's agpt-2b production seq_len
         "batch_size": 1,
     },
     "agpt-20b": {
@@ -507,7 +507,22 @@ def _wandb_log_histograms(
 
 
 def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+    """Return True if any of ``flags`` was provided on the command line.
+
+    Matches both the space-separated form (``["--seq-len", "8192"]``,
+    one token per element) and the ``=``-fused form
+    (``"--seq-len=8192"``, single token). Without the prefix check the
+    preset-override logic in :func:`apply_model_preset` would silently
+    clobber any explicit ``--flag=value`` user override with the
+    preset's default — every preset value would "win" against
+    ``=``-style flags.
+    """
+    for flag in flags:
+        prefix = flag + "="
+        for token in argv:
+            if token == flag or token.startswith(prefix):
+                return True
+    return False
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
