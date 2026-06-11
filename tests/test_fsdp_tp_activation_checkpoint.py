@@ -25,14 +25,14 @@ def _import_fsdp_tp():
         pytest.skip(f"could not import ezpz.examples.fsdp_tp: {exc}")
 
 
-@pytest.mark.parametrize("mode", ["none", "block", "selective"])
+@pytest.mark.parametrize("mode", ["none", "block", "full", "selective"])
 def test_parse_accepts_each_mode_long_form(mode):
     mod = _import_fsdp_tp()
     args = mod.parse_args(["--activation-checkpoint", mode])
     assert args.activation_checkpoint == mode
 
 
-@pytest.mark.parametrize("mode", ["none", "block", "selective"])
+@pytest.mark.parametrize("mode", ["none", "block", "full", "selective"])
 def test_parse_accepts_each_mode_short_alias(mode):
     """``--ac`` is the short alias; must round-trip identically."""
     mod = _import_fsdp_tp()
@@ -40,7 +40,7 @@ def test_parse_accepts_each_mode_short_alias(mode):
     assert args.activation_checkpoint == mode
 
 
-@pytest.mark.parametrize("mode", ["none", "block", "selective"])
+@pytest.mark.parametrize("mode", ["none", "block", "full", "selective"])
 def test_parse_accepts_equals_fused(mode):
     """`--ac=block` (one token) must work the same as `--ac block` (two)."""
     mod = _import_fsdp_tp()
@@ -110,6 +110,45 @@ def test_block_ac_preserves_numerics():
             f"AC changed {name}.weight grad (max diff "
             f"{(g_plain - g_ac).abs().max().item()})"
         )
+
+
+def test_full_is_alias_for_block():
+    """`--ac full` is a compatibility alias for `--ac block` (torchtitan
+    uses `full` for what we call `block`). Applying either to identical
+    models must produce bit-identical forward outputs and grads."""
+    pytest.importorskip("torch")
+    import torch
+
+    mod = _import_fsdp_tp()
+    from ezpz.models.llama import ModelArgs, Transformer
+
+    cfg = dict(
+        dim=32, n_layers=2, n_heads=2, vocab_size=100,
+        batch_size=1, max_seq_len=16,
+    )
+
+    torch.manual_seed(0)
+    m_block = Transformer.from_model_args(ModelArgs(**cfg))
+    m_block = mod._apply_activation_checkpointing(m_block, "block")
+
+    torch.manual_seed(0)
+    m_full = Transformer.from_model_args(ModelArgs(**cfg))
+    m_full = mod._apply_activation_checkpointing(m_full, "full")
+
+    inp = torch.randint(0, 100, (1, 8))
+    out_block = m_block(inp)
+    out_full = m_full(inp)
+    assert torch.allclose(out_block, out_full, atol=0), (
+        "full and block produced different forward outputs"
+    )
+
+    out_block.sum().backward()
+    out_full.sum().backward()
+    g_block = m_block.tok_embeddings.weight.grad
+    g_full = m_full.tok_embeddings.weight.grad
+    assert torch.allclose(g_block, g_full, atol=0), (
+        "full and block produced different grads"
+    )
 
 
 def test_ac_warns_when_no_blocks_found():

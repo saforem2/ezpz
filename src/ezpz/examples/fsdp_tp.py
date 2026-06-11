@@ -622,13 +622,17 @@ def parse_args(argv: Optional[list[str]] = None):
         "--ac",
         type=str,
         default="none",
-        choices=["none", "block", "selective"],
+        # `full` is an alias for `block` for compatibility with
+        # torchtitan's CLI surface (their `activation_checkpoint_mode`
+        # uses `full` for what we call `block` — every transformer
+        # block wrapped). Resolved in _apply_activation_checkpointing.
+        choices=["none", "block", "full", "selective"],
         help=(
             "Activation checkpointing strategy. "
             "`none` (default) keeps all forward activations in memory. "
-            "`block` wraps each TransformerBlock — typical 30-40 pct "
-            "activation memory reduction, ~20 pct throughput hit (matches "
-            "torchtitan's default for agpt-2b/agpt-20b). "
+            "`block` (alias: `full`) wraps each TransformerBlock — typical "
+            "30-40 pct activation memory reduction, ~20 pct throughput hit "
+            "(matches torchtitan's default for agpt-2b/agpt-20b). "
             "`selective` checkpoints only the attention computation inside "
             "each block — ~15-20 pct memory reduction, ~10 pct throughput "
             "hit. Trade activation memory for recomputation cost — useful "
@@ -803,6 +807,11 @@ def _apply_activation_checkpointing(
     """
     if mode == "none":
         return model
+    # `full` is a torchtitan-style alias for `block` (both mean "wrap
+    # every transformer block"). Normalize here so downstream branches
+    # only have to think about {block, selective}.
+    if mode == "full":
+        mode = "block"
 
     from torch.utils.checkpoint import checkpoint
 
