@@ -21,7 +21,6 @@ import time
 import ezpz
 
 import torch
-import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 import torch.nn as nn
@@ -179,7 +178,12 @@ def train(
         else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.train()
-    ddp_loss = torch.zeros(2).to(device)
+    # Per-rank running totals; intentionally NOT all-reduced. History's
+    # distributed_history=True reduces across ranks itself and adds `/std`,
+    # so leaving the values per-rank lets the console line show
+    # `train_loss=0.05(±0.003)` instead of a single global scalar with no
+    # cross-rank spread visible.
+    local_loss = torch.zeros(2).to(device)
     if sampler:
         sampler.set_epoch(epoch)
     ezpz.distributed.synchronize()
@@ -193,18 +197,17 @@ def train(
         loss = F.nll_loss(output, target, reduction="sum")
         loss.backward()
         optimizer.step()
-        ddp_loss[0] += loss.item()
-        ddp_loss[1] += len(batch)
+        local_loss[0] += loss.item()
+        local_loss[1] += len(batch)
         num_batches += 1
     ezpz.distributed.synchronize()
     t1 = time.perf_counter()
     epoch_dt = t1 - t0
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
     return {
         "epoch": epoch,
         "dt": epoch_dt,
         "dt_per_step": epoch_dt / max(num_batches, 1),
-        "train_loss": ddp_loss[0] / ddp_loss[1],
+        "train_loss": (local_loss[0] / local_loss[1]).item(),
     }
 
 
@@ -218,26 +221,25 @@ def test(model, test_loader):
         else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.eval()
-    # correct = 0
-    ddp_loss = torch.zeros(3).to(device)
+    # Per-rank totals; left un-reduced for the same reason as train() —
+    # History will reduce across ranks and the printed line will show
+    # `test_loss=0.03(±0.002) test_acc=98.7(±0.4)` instead of a flat
+    # scalar that hides shard-to-shard spread.
+    local_stats = torch.zeros(3).to(device)
     with torch.no_grad():
         for batch, target in test_loader:
             batch, target = batch.to(device), target.to(device)
             output = model(batch)
-            ddp_loss[0] += F.nll_loss(output, target, reduction="sum")
+            local_stats[0] += F.nll_loss(output, target, reduction="sum")
             pred = output.argmax(
                 dim=1, keepdim=True
             )  # get the index of the max log-probability
-            ddp_loss[1] += pred.eq(target.view_as(pred)).sum()
-            ddp_loss[2] += len(batch)
-
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
-
-    test_loss = ddp_loss[0] / ddp_loss[2]
+            local_stats[1] += pred.eq(target.view_as(pred)).sum()
+            local_stats[2] += len(batch)
 
     return {
-        "test_loss": test_loss,
-        "test_acc": 100.0 * ddp_loss[1] / ddp_loss[2],
+        "test_loss": (local_stats[0] / local_stats[2]).item(),
+        "test_acc": (100.0 * local_stats[1] / local_stats[2]).item(),
     }
 
 
