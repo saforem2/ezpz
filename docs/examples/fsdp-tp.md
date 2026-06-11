@@ -128,11 +128,44 @@ values for quick experimentation:
 - Production-scale sizes: `xl`, `xxl`, `xxxl` — chosen to map roughly to
   Llama-1.5B / Llama-7B / Llama-13B (`dim 2048/4096/5120`,
   `n_layers 24/32/40`, `n_heads 32/32/40`, `n_kv_heads 8`).
+- **AuroraGPT (agpt) sizes**: `agpt-2b`, `agpt-20b` — verbatim from
+  torchtitan's `agpt_configs` registry. agpt-2b is
+  `dim=2048, n_layers=12, n_heads=16, n_kv_heads=4, vocab_size=256128, hidden_dim=11008, rope_theta=50000`.
+  agpt-20b is `dim=5120, n_layers=64, n_heads=40, n_kv_heads=8, vocab_size=256128, hidden_dim=14336, rope_theta=500000`.
+  These exist so an ezpz `fsdp_tp` run can be A/B'd against a torchtitan
+  agpt run on the same architecture.
 
 Each `xN` size also accepts long-form aliases via `MODEL_ALIASES`
 (`xlarge` / `extra-large` → `xl`, `xxlarge` / `extra-extra-large` →
 `xxl`, `xxxlarge` / `extra-extra-extra-large` → `xxxl`), so spelling
-them out works too.
+them out works too. agpt presets accept the natural variants
+`agpt2b` / `agpt_2b` / `AGPT-2B` (and the 20b counterparts).
+
+### HuggingFace models
+
+`--model` also accepts a HuggingFace repo id whenever the value contains
+a `/`:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp --model meta-llama/Llama-3.2-1B
+```
+
+The HF path:
+
+- Pulls both the architecture (config) AND the pretrained weights via
+  `AutoModelForCausalLM.from_pretrained(...)`.
+- Auto-defaults `--tokenizer_name` to the same repo id (override with
+  `--tokenizer_name <other>` if you want a different one).
+- Reads `$HF_TOKEN` / `$HUGGING_FACE_HUB_TOKEN` for gated repos; you can
+  also `huggingface-cli login` once and skip the env var.
+- **Forces `--tp 1`** (FSDP-only). The existing TP `parallelize()` plan is
+  hardcoded to ezpz's own `TransformerBlock` module names (`attention.wq`,
+  `feed_forward.w1`, etc.) and won't apply cleanly to HF's
+  `LlamaDecoderLayer` / `GemmaDecoderLayer` / etc. The example logs a
+  warning if you pass `--tp > 1` along with a HF model.
+- Wraps the model with FSDP using a transformer-block auto-wrap policy
+  derived from the HF model's own `ModuleList` children — so each
+  decoder layer becomes its own FSDP unit.
 
 ```python title="src/ezpz/examples/fsdp_tp.py:172:213"
 --8<-- "src/ezpz/examples/fsdp_tp.py:172:213"
@@ -335,10 +368,9 @@ $ python3 -m ezpz.examples.fsdp_tp --help
 usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
                   [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
-                  [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
-                  [--lr LR] [--epochs EPOCHS]
-                  [--batch-size BATCH_SIZE]
-                  [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
+                  [--hidden-dim HIDDEN_DIM] [--rope-theta ROPE_THETA]
+                  [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE] [--lr LR]
+                  [--epochs EPOCHS] [--batch-size BATCH_SIZE] [--model MODEL]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
                   [--sharding-strategy SHARDING_STRATEGY]
@@ -360,16 +392,31 @@ options:
   --n-kv-heads N_KV_HEADS
   --multiple-of MULTIPLE_OF
   --ffn-dim-multiplier FFN_DIM_MULTIPLIER
+  --hidden-dim HIDDEN_DIM
+                        Override SwiGLU FFN hidden dim. When None (default),
+                        TransformerBlock derives it as `4 * dim` and
+                        FeedForward applies the 2/3 + ffn_dim_multiplier +
+                        multiple_of pipeline. Set this to a concrete value
+                        (e.g. 11008 for agpt-2b, 14336 for agpt-20b) to bypass
+                        the formula and hit a published architecture exactly.
+                        (default: None)
+  --rope-theta ROPE_THETA
+                        Base frequency for RoPE positional embeddings.
+                        Llama1/2 used 10000 (the default); Llama3 uses 500000;
+                        agpt-2b uses 50000. (default: 10000.0)
   --norm-eps NORM_EPS
   --vocab-size VOCAB_SIZE
   --lr LR
   --epochs EPOCHS
   --batch-size BATCH_SIZE
-  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
-                        Model size preset (overrides dim/layer defaults).
-                        xl/xxl/xxxl accept long-form aliases too:
-                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
-                        etc. (default: None)
+  --model MODEL         Model size preset (overrides dim/layer defaults).
+                        Presets:
+                        debug/small/medium/large/xl/xxl/xxxl/agpt-2b/agpt-20b.
+                        xl/xxl/xxxl accept long-form aliases (`xlarge`/`extra-
+                        large`, etc). agpt presets accept `agpt2b`/`agpt_2b`
+                        etc. Pass a HuggingFace repo id with a `/` (e.g.
+                        `meta-llama/Llama-3.2-1B`) to load HF weights instead
+                        — that path forces --tp 1 (FSDP-only). (default: None)
   --test-batch-size TEST_BATCH_SIZE
   --num-workers NUM_WORKERS
   --seed SEED
