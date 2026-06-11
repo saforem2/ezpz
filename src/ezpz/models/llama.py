@@ -59,7 +59,17 @@ class ModelArgs:
         256  # make SwiGLU hidden layer size multiple of large power of 2
     )
     ffn_dim_multiplier: Optional[float] = None
+    # Override SwiGLU FFN hidden dim. When None, TransformerBlock falls back
+    # to the standard `4 * dim` pre-multiplier; FeedForward then applies the
+    # 2/3 scaling, `ffn_dim_multiplier`, and `multiple_of` rounding on top.
+    # Set this to bypass the formula entirely for architectures that publish
+    # a concrete hidden_dim (e.g. agpt-2b ⇒ 11008, agpt-20b ⇒ 14336).
+    hidden_dim: Optional[int] = None
     norm_eps: float = 1e-5
+    # Base frequency for RoPE positional embeddings. Defaults to 10000 for
+    # parity with the original Llama1/Llama2 recipe. Llama3 uses 500000,
+    # agpt-2b uses 50000, agpt-20b uses 500000.
+    rope_theta: float = 10000.0
 
     batch_size: int = 32
     max_seq_len: int = 32768
@@ -482,9 +492,19 @@ class TransformerBlock(nn.Module):
         self.n_heads = model_args.n_heads
         self.dim = model_args.dim
         self.attention = Attention(model_args)
+        # FeedForward applies its own `int(2 * hidden_dim / 3)` scaling on top
+        # of whatever we pass. To hit an exact target width (e.g. agpt-2b's
+        # published 11008), pre-multiply by 3/2 so FeedForward's 2/3 reduces
+        # back to the desired value. When `model_args.hidden_dim` is None,
+        # fall through to the historical `4 * dim` pre-multiplier and let
+        # ffn_dim_multiplier + multiple_of do the shaping.
+        if model_args.hidden_dim is not None:
+            ffn_input = (model_args.hidden_dim * 3 + 1) // 2  # ⌈3·H/2⌉
+        else:
+            ffn_input = 4 * model_args.dim
         self.feed_forward = FeedForward(
             dim=model_args.dim,
-            hidden_dim=4 * model_args.dim,
+            hidden_dim=ffn_input,
             multiple_of=model_args.multiple_of,
             ffn_dim_multiplier=model_args.ffn_dim_multiplier,
         )
@@ -564,6 +584,7 @@ class Transformer(nn.Module):
                 # Need to compute until at least the max token limit for generation
                 # (use 2x max sequence length to be safe)
                 model_args.max_seq_len * 2,
+                theta=model_args.rope_theta,
             ),
         )
         self.layers = torch.nn.ModuleList()
@@ -595,6 +616,7 @@ class Transformer(nn.Module):
                 # Need to compute until at least the max token limit for generation
                 # (use 2x max sequence length to be safe)
                 self.model_args.max_seq_len * 2,
+                theta=self.model_args.rope_theta,
             )
         nn.init.normal_(self.tok_embeddings.weight)
         for layer in self.layers:
