@@ -418,8 +418,10 @@ options:
   --hf-text-column HF_TEXT_COLUMN, --text-column HF_TEXT_COLUMN
                         Column containing raw text in the dataset. (default:
                         text)
-  --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick
-                        experiments. (default: 512)
+  --hf-limit HF_LIMIT   Maximum number of rows to sample from the HF dataset.
+                        0 (default) = no limit (use the full dataset). Pass a
+                        positive value (e.g. `--hf-limit 512`) to subsample
+                        for smoke tests. (default: 0)
   --log_freq LOG_FREQ
   --outdir OUTDIR
   --samples SAMPLES

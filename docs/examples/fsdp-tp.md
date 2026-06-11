@@ -433,8 +433,11 @@ options:
                         Column containing raw text in the dataset. (default:
                         text)
   --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
-                        Number of rows to sample from the HF dataset for quick
-                        experiments. (default: 512)
+                        Maximum number of rows to sample from the HF dataset.
+                        0 (default) = no limit (use the full dataset). Pass a
+                        positive value (e.g. `--hf-limit 512`) to subsample
+                        for smoke tests. Subsampling is deterministic given
+                        $EZPZ_HF_SAMPLE_SEED. (default: 0)
   --seq-len SEQ_LEN
   --max-seq-len MAX_SEQ_LEN
   --depth-init DEPTH_INIT

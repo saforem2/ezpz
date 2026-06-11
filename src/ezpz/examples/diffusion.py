@@ -47,7 +47,9 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
       --hf-split HF_SPLIT   Dataset split to load.
       --hf-text-column HF_TEXT_COLUMN
                             Column containing raw text in the dataset.
-      --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick experiments.
+      --hf-limit HF_LIMIT   Max rows from the HF dataset. 0 (default) = no
+                            limit. Pass e.g. `--hf-limit 512` to subsample
+                            for smoke tests.
       --log_freq LOG_FREQ
       --outdir OUTDIR
       --samples SAMPLES
@@ -684,8 +686,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--hf-limit",
         type=int,
-        default=512,
-        help="Number of rows to sample from the HF dataset for quick experiments.",
+        default=0,
+        help=(
+            "Maximum number of rows to sample from the HF dataset. "
+            "0 (default) = no limit (use the full dataset). Pass a "
+            "positive value (e.g. `--hf-limit 512`) to subsample for "
+            "smoke tests."
+        ),
     )
     parser.add_argument(
         "--log_freq", type=int, default=int(os.environ.get("LOG_FREQ", 1))

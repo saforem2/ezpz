@@ -104,8 +104,9 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
                             Column containing raw text in the dataset.
       --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
-                            Number of rows to sample from the HF dataset for quick
-                            experiments.
+                            Max rows from the HF dataset. 0 (default) = no
+                            limit. Pass e.g. `--hf-limit 512` to subsample
+                            for smoke tests.
       --seq-len SEQ_LEN
       --max-seq-len MAX_SEQ_LEN
       --depth-init DEPTH_INIT
@@ -632,8 +633,14 @@ def parse_args(argv: Optional[list[str]] = None):
         "--hf-limit",
         "--hf_limit",
         type=int,
-        default=512,
-        help="Number of rows to sample from the HF dataset for quick experiments.",
+        default=0,
+        help=(
+            "Maximum number of rows to sample from the HF dataset. "
+            "0 (default) = no limit (use the full dataset). Pass a "
+            "positive value (e.g. `--hf-limit 512`) to subsample for "
+            "smoke tests. Subsampling is deterministic given "
+            "$EZPZ_HF_SAMPLE_SEED."
+        ),
     )
     # parser.add_argument('--max_batch_size', type=int, default=None)
     parser.add_argument(
