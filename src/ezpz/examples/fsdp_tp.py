@@ -114,6 +114,7 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
 The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
 """
 
+import functools
 import os
 import sys
 import argparse
@@ -238,6 +239,35 @@ MODEL_PRESETS = {
         "seq_len": 4096,
         "batch_size": 1,
     },
+    # ---- torchtitan AuroraGPT (agpt) flavors ----
+    # Verbatim from torchtitan/experiments/ezpz/agpt/__init__.py at
+    # 0aa404543cd5707d21678f26d1d0dc6a13c9c750 — kept exact (hidden_dim,
+    # rope_theta, vocab_size all match) so this example can be A/B'd against
+    # a real torchtitan agpt run on the same arch.
+    "agpt-2b": {
+        "dim": 2048,
+        "n_layers": 12,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,  # rounds the FFN width up; 11008 % 256 == 0 already
+        "vocab_size": 256128,
+        "hidden_dim": 11008,
+        "rope_theta": 50000.0,
+        "seq_len": 2048,
+        "batch_size": 1,
+    },
+    "agpt-20b": {
+        "dim": 5120,
+        "n_layers": 64,
+        "n_heads": 40,
+        "n_kv_heads": 8,
+        "multiple_of": 1024,  # agpt-20b uses compute_ffn_hidden_dim(5120, multiple_of=1024)
+        "vocab_size": 256128,
+        "hidden_dim": 14336,
+        "rope_theta": 500000.0,
+        "seq_len": 2048,
+        "batch_size": 1,
+    },
 }
 # xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
 # all resolve to the same preset).
@@ -248,6 +278,14 @@ MODEL_ALIASES = {
     "extra-extra-large": "xxl",
     "xxxlarge": "xxxl",
     "extra-extra-extra-large": "xxxl",
+    # agpt aliases — accept the case- and separator-tolerant forms users
+    # naturally write (agpt2b, agpt_2b, AGPT-2B).
+    "agpt2b": "agpt-2b",
+    "agpt_2b": "agpt-2b",
+    "AGPT-2B": "agpt-2b",
+    "agpt20b": "agpt-20b",
+    "agpt_20b": "agpt-20b",
+    "AGPT-20B": "agpt-20b",
 }
 MODEL_PRESET_FLAGS = {
     "dim": ["--dim"],
@@ -255,6 +293,9 @@ MODEL_PRESET_FLAGS = {
     "n_heads": ["--n-heads"],
     "n_kv_heads": ["--n-kv-heads"],
     "multiple_of": ["--multiple-of"],
+    "vocab_size": ["--vocab-size"],
+    "hidden_dim": ["--hidden-dim"],
+    "rope_theta": ["--rope-theta"],
     "seq_len": ["--seq-len"],
     "batch_size": ["--batch-size"],
 }
@@ -471,9 +512,24 @@ def _arg_provided(argv: list[str], flags: list[str]) -> bool:
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
+    # HF repo ID (contains `/`) — leave args.model alone; the model-construction
+    # path branches on this. Default --tokenizer_name to the same repo if the
+    # user didn't override it, since 99% of HF model repos publish a matching
+    # tokenizer at the same path.
+    if "/" in args.model:
+        if not _arg_provided(argv, ["--tokenizer_name", "--tokenizer-name"]):
+            args.tokenizer_name = args.model
+        return
     # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
     # preset. Direct preset keys fall through unchanged.
     model_key = MODEL_ALIASES.get(args.model, args.model)
+    if model_key not in MODEL_PRESETS:
+        valid = sorted({*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()})
+        raise SystemExit(
+            f"unknown --model {args.model!r}: not a preset name "
+            f"(choices: {', '.join(valid)}) and not a HuggingFace "
+            f"repo id (would need a '/' in the name)"
+        )
     preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
@@ -495,6 +551,27 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--n-kv-heads", type=int, default=4)
     parser.add_argument("--multiple-of", type=int, default=360)
     parser.add_argument("--ffn-dim-multiplier", type=float, default=None)
+    parser.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=None,
+        help=(
+            "Override SwiGLU FFN hidden dim. When None (default), TransformerBlock "
+            "derives it as `4 * dim` and FeedForward applies the 2/3 + "
+            "ffn_dim_multiplier + multiple_of pipeline. Set this to a concrete "
+            "value (e.g. 11008 for agpt-2b, 14336 for agpt-20b) to bypass the "
+            "formula and hit a published architecture exactly."
+        ),
+    )
+    parser.add_argument(
+        "--rope-theta",
+        type=float,
+        default=10000.0,
+        help=(
+            "Base frequency for RoPE positional embeddings. Llama1/2 used "
+            "10000 (the default); Llama3 uses 500000; agpt-2b uses 50000."
+        ),
+    )
     parser.add_argument("--norm-eps", type=float, default=1e-5)
     parser.add_argument("--vocab-size", type=int, default=32_000)
     parser.add_argument("--lr", type=float, default=3e-3)
@@ -504,11 +581,18 @@ def parse_args(argv: Optional[list[str]] = None):
         "--model",
         type=str,
         default=None,
-        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        # No `choices=` — accepts both preset names (validated in
+        # apply_model_preset) AND free-form HF repo IDs like
+        # `meta-llama/Llama-3.2-1B`. Disambiguation is by the `/` character:
+        # presence of `/` => HF repo ID; absence => preset/alias lookup.
         help=(
             "Model size preset (overrides dim/layer defaults). "
-            "xl/xxl/xxxl accept long-form aliases too: "
-            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+            "Presets: debug/small/medium/large/xl/xxl/xxxl/agpt-2b/agpt-20b. "
+            "xl/xxl/xxxl accept long-form aliases (`xlarge`/`extra-large`, etc). "
+            "agpt presets accept `agpt2b`/`agpt_2b` etc. "
+            "Pass a HuggingFace repo id with a `/` (e.g. "
+            "`meta-llama/Llama-3.2-1B`) to load HF weights instead — that "
+            "path forces --tp 1 (FSDP-only)."
         ),
     )
     parser.add_argument("--test-batch-size", type=int, default=1000)
@@ -763,6 +847,11 @@ def train(
             )
             args.vocab_size = hf_tokenizer.vocab_size
 
+    # HF repo IDs are forced to the HF code path; the ezpz Transformer
+    # construction below would silently produce a randomly-initialized model
+    # with the wrong architecture for the requested repo.
+    is_hf_model = bool(args.model and "/" in args.model)
+
     config = ModelArgs(
         dim=args.dim,
         n_layers=args.n_layers,
@@ -771,6 +860,11 @@ def train(
         batch_size=args.batch_size,
         vocab_size=args.vocab_size,
         multiple_of=args.multiple_of,
+        hidden_dim=args.hidden_dim,
+        rope_theta=args.rope_theta,
+        ffn_dim_multiplier=args.ffn_dim_multiplier,
+        norm_eps=args.norm_eps,
+        max_seq_len=args.max_seq_len,
     )
     logger.info(f"config:\n{config}")
     metrics_every = int(os.environ.get("EZPZ_METRICS_EVERY", "1"))
@@ -796,16 +890,45 @@ def train(
         if device_type == "cpu"
         else torch.device(f"{device_type}:{ezpz.get_local_rank()}")
     )
-    model = Transformer.from_model_args(config)
+    if is_hf_model:
+        # HF path: pull arch + weights from the hub. The ezpz Transformer
+        # above is skipped entirely. Note we still built `config` above so
+        # downstream logging / wandb.config.update(asdict(config)) doesn't
+        # crash, but it does NOT reflect the real HF architecture — that's
+        # in `model.config` after the load below.
+        from transformers import AutoModelForCausalLM
+
+        if args.tp > 1:
+            logger.warning(
+                "HF model %s requested with --tp=%d; ezpz's TP plan is "
+                "hardcoded to its own Transformer module names and won't "
+                "match HF's LlamaDecoderLayer / GemmaDecoderLayer / ... "
+                "Forcing --tp 1 (FSDP-only).",
+                args.model,
+                args.tp,
+            )
+            args.tp = 1
+        hf_dtype = torch.float32 if args.fp32 else torch.bfloat16
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
+            "HUGGING_FACE_HUB_TOKEN"
+        )
+        logger.info(
+            "Loading HF model %s (dtype=%s)%s",
+            args.model,
+            hf_dtype,
+            " with HF_TOKEN" if hf_token else "",
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=hf_dtype,
+            token=hf_token,
+        )
+    else:
+        model = Transformer.from_model_args(config)
     mstr = summarize_model(
         model,
         verbose=False,
         depth=2,
-        # input_size=(
-        #     torch.tensor((int(args.batch_size), int(args.seq_length))).to(
-        #         torch.long
-        #     )
-        # ).shape,
     )
     logger.info(f"\n{mstr}")
     model.to(device)
@@ -819,19 +942,65 @@ def train(
             cast_forward_inputs=True,
             reduce_dtype=torch.float32,
         )
-    model = parallelize(
-        model,
-        device_mesh,
-        mp_config,
-        sharding_strategy=args.sharding_strategy,
-        device_id=device,
-    )
+    if is_hf_model:
+        # HF path: FSDP-only wrap. Use FSDP1 directly with a
+        # transformer-block auto-wrap policy keyed on the HF decoder layer
+        # class so each block becomes its own FSDP unit (otherwise the
+        # whole model is one giant FSDP shard and memory savings
+        # disappear). The class names HF uses are framework-specific
+        # (LlamaDecoderLayer, GemmaDecoderLayer, ...); we discover them
+        # by walking the model graph and picking the deepest unique
+        # ModuleList children — same heuristic transformers' own Trainer
+        # uses for `_no_split_modules`.
+        from torch.distributed.fsdp import (
+            FullyShardedDataParallel as FSDPWrap,
+        )
+        from torch.distributed.fsdp.wrap import (
+            transformer_auto_wrap_policy,
+        )
+
+        block_classes = set()
+        for module in model.modules():
+            if (
+                isinstance(module, torch.nn.ModuleList)
+                and len(module) > 0
+            ):
+                # `module.0` is a transformer block in every HF causal-LM
+                # arch we care about; collect its class.
+                block_classes.add(type(module[0]))
+        auto_wrap = functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls=block_classes,
+        )
+        sharding_strategy = SHARDING_STRATEGIES.get(
+            args.sharding_strategy, ShardingStrategy.FULL_SHARD
+        )
+        model = FSDPWrap(
+            model,
+            auto_wrap_policy=auto_wrap,
+            mixed_precision=mp_config,
+            sharding_strategy=sharding_strategy,
+            device_id=device,
+        )
+    else:
+        model = parallelize(
+            model,
+            device_mesh,
+            mp_config,
+            sharding_strategy=args.sharding_strategy,
+            device_id=device,
+        )
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
     act_activations: dict[str, torch.Tensor] = {}
     act_handles: list[torch.utils.hooks.RemovableHandle] = []
-    if track_hist and track_act_hist and ezpz.get_rank() == 0:
+    if track_hist and track_act_hist and ezpz.get_rank() == 0 and not is_hf_model:
+        # `_register_activation_hooks` indexes into `model.layers[i]`, which
+        # is ezpz-Transformer specific. HF models nest blocks under
+        # `model.model.layers` (Llama/Mistral) or `model.gpt_neox.layers`
+        # (GPT-NeoX) etc., so the hook registration would key-error. Skip
+        # the hooks for HF runs; the rest of the metrics still work.
         hist_layers_spec = os.environ.get(
             "EZPZ_HIST_LAYERS", f"0,{config.n_layers - 1}"
         )
@@ -963,6 +1132,10 @@ def train(
             if attn_mask is not None:
                 attn_mask = attn_mask.to(device)
             pred = model(inp)
+            # HF causal-LM models return a CausalLMOutput dataclass with a
+            # `.logits` tensor; ezpz's Transformer returns logits directly.
+            if hasattr(pred, "logits"):
+                pred = pred.logits
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
                 labels = _slice_for_sequence_parallel(labels, local_seq_len)
