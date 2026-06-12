@@ -914,6 +914,22 @@ def _apply_activation_checkpointing(
         mode,
         len(blocks),
     )
+    # selective AC silently no-ops on blocks lacking a `.attention`
+    # submodule (HF arches use `.self_attn`, etc.). Warn the user once
+    # if any blocks were skipped so they know to switch to `--ac block`
+    # for full coverage on non-ezpz architectures.
+    if mode == "selective":
+        skipped = sum(
+            1 for b in blocks if getattr(b, "attention", None) is None
+        )
+        if skipped > 0:
+            logger.warning(
+                "activation_checkpoint=selective: %d/%d blocks had no "
+                "`.attention` attribute and were left unwrapped. For "
+                "non-ezpz architectures, use --ac block instead.",
+                skipped,
+                len(blocks),
+            )
     return model
 
 
@@ -1114,20 +1130,38 @@ def train(
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    # Run try_estimate with a tiny probe (batch=1, seq=128) and scale up.
-    # The full (batch_size, seq_len) shape would OOM on big models —
-    # FlopCounterMode does a real forward pass, and a 2B-param model at
-    # seq=8192 materializes multi-GiB of activations per rank before FSDP
-    # has a chance to shard. FLOPs scale linearly in batch*seq for
-    # transformers (attention is technically O(seq²) but FlopCounterMode
-    # counts only the matmuls inside SDPA, which are O(seq)), so the
-    # scale-up gives a correct per-step number.
+    # Run try_estimate with a tiny probe (batch=1, seq=128) and scale up
+    # by total-tokens ratio. The full (batch_size, seq_len) shape would
+    # OOM on big models — FlopCounterMode does a real forward pass, and
+    # a 2B-param model at seq=8192 materializes multi-GiB of activations
+    # per rank before FSDP has a chance to shard.
+    #
+    # CAVEAT: This linear scaling is exact for the O(seq * dim) ops
+    # (MLP, qkv/output projections) but UNDER-COUNTS attention. The
+    # Q·Kᵀ and attn·V matmuls inside SDPA are O(seq² * dim), so scaling
+    # them by (seq_actual / seq_probe) instead of (seq_actual / seq_probe)²
+    # under-reports their FLOPs. At seq_probe=128 and seq_actual=8192
+    # the attention term is off by ~64×, which makes reported MFU
+    # OPTIMISTIC (real model FLOPs are higher → real MFU is lower).
+    # For compute-bound long-seq runs, treat the printed MFU as an
+    # upper bound. The fix would be to probe at a representative seq
+    # length, but probing OOMs on big models. Keeping the probe small
+    # is the conservative choice.
     _flops_probe_batch = 1
     _flops_probe_seq = min(128, args.seq_len)
     _flops_probe = try_estimate(model, (_flops_probe_batch, _flops_probe_seq))
     _actual_tokens = args.batch_size * args.seq_len
     _probe_tokens = _flops_probe_batch * _flops_probe_seq
     _model_flops = int(_flops_probe * _actual_tokens / max(_probe_tokens, 1))
+    if args.seq_len > _flops_probe_seq:
+        logger.info(
+            "FLOPs estimate uses linear-scaling probe "
+            "(probe seq=%d -> actual seq=%d): under-counts O(seq^2) "
+            "attention by ~%dx; reported MFU is an upper bound.",
+            _flops_probe_seq,
+            args.seq_len,
+            args.seq_len // _flops_probe_seq,
+        )
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
@@ -1153,15 +1187,37 @@ def train(
             transformer_auto_wrap_policy,
         )
 
-        block_classes = set()
-        for module in model.modules():
+        # Pick the SINGLE deepest non-empty ModuleList in the graph rather
+        # than every ModuleList we encounter. Collecting `type(m[0])` for
+        # all ModuleLists over-wraps MoE models (each expert is itself a
+        # ModuleList), multimodal models (vision_tower.encoder.layers PLUS
+        # text decoder), and anything with auxiliary stacked submodules.
+        # Over-wrapping costs throughput and can break FSDP's
+        # unshard/reshard bookkeeping. The decoder block stack is reliably
+        # the deepest ModuleList in HF causal-LMs (e.g.
+        # `model.model.layers`), matching the heuristic used by
+        # `_find_block_list` and HF's `_no_split_modules`.
+        deepest_modlist: Optional[torch.nn.ModuleList] = None
+        deepest_depth = -1
+        deepest_len = -1
+        for name, module in model.named_modules():
             if (
                 isinstance(module, torch.nn.ModuleList)
                 and len(module) > 0
             ):
-                # `module.0` is a transformer block in every HF causal-LM
-                # arch we care about; collect its class.
-                block_classes.add(type(module[0]))
+                depth = name.count(".")
+                # Tie-break on length: at equal depth, take the longer
+                # stack (decoder layers typically beat any sibling
+                # ModuleList of e.g. norms or biases).
+                if depth > deepest_depth or (
+                    depth == deepest_depth and len(module) > deepest_len
+                ):
+                    deepest_depth = depth
+                    deepest_len = len(module)
+                    deepest_modlist = module
+        block_classes: set = set()
+        if deepest_modlist is not None:
+            block_classes.add(type(deepest_modlist[0]))
         auto_wrap = functools.partial(
             transformer_auto_wrap_policy,
             transformer_layer_cls=block_classes,

@@ -215,3 +215,98 @@ def test_ac_warns_when_no_blocks_found():
     result = mod._apply_activation_checkpointing(m, "block")
     # Returned model is the same object — AC was a no-op (with warning).
     assert result is m
+
+
+def test_selective_warns_when_blocks_lack_attention(caplog):
+    """`--ac selective` only wraps `.attention` submodules. For HF
+    blocks (which use `.self_attn`) or any non-ezpz arch, the wrap
+    silently no-ops. The helper must emit ONE warning naming the
+    skip count so users know to use --ac block instead."""
+    import logging
+
+    import torch.nn as nn
+
+    mod = _import_fsdp_tp()
+
+    # Bare blocks with NO .attention attribute (mimics HF arch).
+    class _Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = nn.Linear(4, 4)
+
+        def forward(self, x):
+            return self.lin(x)
+
+    class _Stack(nn.Module):
+        def __init__(self, n=3):
+            super().__init__()
+            self.layers = nn.ModuleList([_Block() for _ in range(n)])
+
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            return x
+
+    m = _Stack(n=3)
+    with caplog.at_level(logging.WARNING, logger=mod.logger.name):
+        mod._apply_activation_checkpointing(m, "selective")
+
+    skip_warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "selective" in r.getMessage()
+    ]
+    assert len(skip_warnings) == 1, (
+        f"expected exactly one selective-skip warning, got {skip_warnings}"
+    )
+    msg = skip_warnings[0].getMessage()
+    assert "3/3" in msg
+    assert "--ac block" in msg
+
+
+def test_selective_no_warn_when_all_blocks_have_attention():
+    """If every block has `.attention`, the selective-skip warning
+    must NOT fire — only when something was actually skipped."""
+    import logging
+
+    import torch.nn as nn
+
+    mod = _import_fsdp_tp()
+
+    class _Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.attention = nn.Linear(4, 4)
+
+        def forward(self, x):
+            return self.attention(x)
+
+    class _Stack(nn.Module):
+        def __init__(self, n=2):
+            super().__init__()
+            self.layers = nn.ModuleList([_Block() for _ in range(n)])
+
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            return x
+
+    m = _Stack(n=2)
+    # Capture records by attaching a temporary handler to the module's
+    # logger (caplog fixture-based isolation would need parametrize +
+    # the per-logger propagate dance).
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[assignment]
+    mod.logger.addHandler(handler)
+    try:
+        mod._apply_activation_checkpointing(m, "selective")
+    finally:
+        mod.logger.removeHandler(handler)
+
+    skip_warnings = [
+        r for r in records
+        if r.levelno == logging.WARNING and "selective" in r.getMessage()
+    ]
+    assert skip_warnings == [], (
+        f"selective-skip warning fired with zero skips: {skip_warnings}"
+    )
