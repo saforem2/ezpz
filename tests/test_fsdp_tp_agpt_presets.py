@@ -164,3 +164,54 @@ def test_explicit_flag_wins_for_both_argv_shapes(
     assert args.batch_size == expected_batch_size, (
         f"argv {argv}: batch_size = {args.batch_size}, expected {expected_batch_size}"
     )
+
+
+@pytest.mark.parametrize("theta", [10000.0, 50000.0, 500000.0])
+def test_reshape_for_broadcast_fallback_uses_provided_theta(theta):
+    """Regression: when the cached freqs buffer is too short for the
+    incoming sequence, `reshape_for_broadcast` recomputes on the fly. That
+    recomputation must use the same RoPE base (`theta`) as the original
+    buffer — otherwise agpt-2b (50000), agpt-20b (500000), or Llama3
+    (500000) silently fall back to the Llama1/Llama2 default of 10000,
+    producing a different rotary basis.
+    """
+    torch = pytest.importorskip("torch")
+    llama = pytest.importorskip("ezpz.models.llama")
+
+    rotary_dim = 8  # complex pair count = 4
+    short_len = 4
+    long_len = 16  # > short_len so the fallback fires
+
+    # Start with a "too short" buffer (built with the right theta).
+    short_freqs = llama.precompute_freqs_cis(
+        rotary_dim * 2, short_len, theta=theta
+    )
+    # Fake query tensor that needs `long_len` positions worth of freqs.
+    fake_q = torch.zeros((1, long_len, 1, rotary_dim), dtype=torch.complex64)
+
+    reshaped = llama.reshape_for_broadcast(short_freqs, fake_q, theta=theta)
+
+    # Ground truth: what precompute_freqs_cis returns at `long_len` with
+    # the SAME theta the caller passed.
+    expected = llama.precompute_freqs_cis(
+        rotary_dim * 2, long_len, theta=theta
+    )
+    # reshaped is broadcast-shaped (1, long_len, 1, rotary_dim/2 complex).
+    # Flatten it back to (long_len, rotary_dim/2) for comparison.
+    reshaped_flat = reshaped.reshape(long_len, -1)
+    assert torch.allclose(reshaped_flat, expected, atol=1e-6), (
+        f"Fallback freqs at theta={theta} do not match precompute_freqs_cis "
+        f"with the same theta — the on-the-fly recomputation is using a "
+        f"different RoPE base."
+    )
+
+    if theta != 10000.0:
+        # And critically: the freqs at theta!=10000 must NOT match the
+        # default-base freqs. This is the bug the fix is closing.
+        default_base = llama.precompute_freqs_cis(
+            rotary_dim * 2, long_len, theta=10000.0
+        )
+        assert not torch.allclose(reshaped_flat, default_base, atol=1e-3), (
+            f"Fallback freqs at theta={theta} accidentally match the "
+            f"theta=10000 freqs — the theta kwarg is being ignored."
+        )

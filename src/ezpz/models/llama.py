@@ -163,7 +163,7 @@ def _infer_seq_start_idx(freq_len: int, seqlen: int) -> int:
 
 
 def reshape_for_broadcast(
-    freqs_cis: torch.Tensor, x: torch.Tensor
+    freqs_cis: torch.Tensor, x: torch.Tensor, theta: float = 10000.0
 ) -> torch.Tensor:
     """
     Reshape frequency tensor for broadcasting it with another tensor.
@@ -174,6 +174,10 @@ def reshape_for_broadcast(
     Args:
         freqs_cis (torch.Tensor): Frequency tensor to be reshaped.
         x (torch.Tensor): Target tensor for broadcasting compatibility.
+        theta (float, optional): RoPE base used if the freqs buffer is too
+            short and must be recomputed on the fly. Must match the value
+            used to precompute `freqs_cis` to preserve the rotary basis.
+            Defaults to 10000.0 for parity with Llama1/Llama2.
 
     Returns:
         torch.Tensor: Reshaped frequency tensor.
@@ -203,9 +207,9 @@ def reshape_for_broadcast(
 
     freq_seqlen = int(freqs_cis.shape[0])
     if freq_seqlen < seqlen:
-        freqs_cis = precompute_freqs_cis(rotary_dim * 2, seqlen).to(
-            device=freqs_cis.device, dtype=freqs_cis.dtype
-        )
+        freqs_cis = precompute_freqs_cis(
+            rotary_dim * 2, seqlen, theta=theta
+        ).to(device=freqs_cis.device, dtype=freqs_cis.dtype)
         freq_seqlen = seqlen
 
     if freq_seqlen != seqlen:
@@ -230,6 +234,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
+    theta: float = 10000.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Apply rotary embeddings to input tensors using the given frequency tensor.
@@ -243,13 +248,17 @@ def apply_rotary_emb(
         xq (torch.Tensor): Query tensor to apply rotary embeddings.
         xk (torch.Tensor): Key tensor to apply rotary embeddings.
         freqs_cis (torch.Tensor): Precomputed frequency tensor for complex exponentials.
+        theta (float, optional): RoPE base used if `freqs_cis` is too short
+            for the current sequence and must be recomputed on the fly. Must
+            match the value passed to `precompute_freqs_cis`. Defaults to
+            10000.0 for parity with Llama1/Llama2.
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: Tuple of modified query tensor and key tensor with rotary embeddings.
     """
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_, theta=theta)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
@@ -327,6 +336,10 @@ class Attention(nn.Module):
         )
         self.n_rep = self.n_heads // self.n_kv_heads
         self.head_dim = model_args.dim // model_args.n_heads
+        # Keep RoPE base around so the on-the-fly recomputation fallback
+        # inside `apply_rotary_emb`/`reshape_for_broadcast` matches the base
+        # used by `precompute_freqs_cis` at model construction.
+        self.rope_theta = model_args.rope_theta
 
         self.wq = nn.Linear(
             model_args.dim, model_args.n_heads * self.head_dim, bias=False
@@ -369,7 +382,9 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+        xq, xk = apply_rotary_emb(
+            xq, xk, freqs_cis=freqs_cis, theta=self.rope_theta
+        )
 
         keys = repeat_kv(
             xk, self.n_rep
