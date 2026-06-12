@@ -71,15 +71,39 @@ def test_hf_tokenizer_defaults_to_repo(repo_id):
     )
 
 
-def test_explicit_tokenizer_wins_over_hf_default():
+@pytest.mark.parametrize(
+    "tokenizer_argv",
+    [
+        # Space-separated form: two argv tokens.
+        ["--tokenizer_name", "gpt2"],
+        # Equals-fused form: one argv token. This is the exact bug
+        # class that motivated the `_arg_provided` fix — pre-fix, a
+        # single "--tokenizer_name=gpt2" token wasn't detected by a
+        # naive `flag in argv` check and the HF default silently
+        # clobbered the user's override.
+        ["--tokenizer_name=gpt2"],
+    ],
+    ids=["space_separated", "equals_fused"],
+)
+def test_explicit_tokenizer_wins_over_hf_default(tokenizer_argv):
     """If the user passes --tokenizer_name explicitly, the HF
-    auto-default in apply_model_preset must NOT overwrite it."""
+    auto-default in apply_model_preset must NOT overwrite it.
+
+    Covers both argv shapes accepted by argparse for the underscore
+    form. Note: ``--tokenizer-name`` (hyphenated) is NOT declared in
+    fsdp_tp's argparse, so those forms would SystemExit at parse
+    time and aren't valid test inputs — even though `_arg_provided`
+    would detect them in the raw argv list.
+    """
     mod = _import_fsdp_tp()
     args = mod.parse_args([
         "--model", "meta-llama/Llama-3.2-1B",
-        "--tokenizer_name", "gpt2",
+        *tokenizer_argv,
     ])
-    assert args.tokenizer_name == "gpt2"
+    assert args.tokenizer_name == "gpt2", (
+        f"argv={tokenizer_argv}: tokenizer_name={args.tokenizer_name!r}, "
+        "expected 'gpt2' — HF default must not clobber explicit override."
+    )
 
 
 def test_hf_path_does_not_apply_preset_fields():

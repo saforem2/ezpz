@@ -169,14 +169,7 @@ def _parse_with_model(module_name: str, model_value: str) -> Any:
     parse_args = mod.parse_args
     # The vit, fsdp, fsdp_tp, diffusion parse_args take an argv
     # list directly. test.py's parse_args also accepts argv.
-    import sys
-
-    saved_argv = sys.argv
-    sys.argv = [module_name, "--model", model_value]
-    try:
-        return parse_args([f"--model", model_value])
-    finally:
-        sys.argv = saved_argv
+    return parse_args(["--model", model_value])
 
 
 @pytest.mark.parametrize(
