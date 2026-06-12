@@ -147,8 +147,8 @@ architectures. The `MODEL_ALIASES` dict beneath `MODEL_PRESETS` adds
 long-form spellings (e.g. `xlarge`, `extra-large` → `xl`). Any CLI flag
 the user passes explicitly overrides the preset value.
 
-```python title="src/ezpz/examples/fsdp.py:66:87"
---8<-- "src/ezpz/examples/fsdp.py:66:87"
+```python title="src/ezpz/examples/fsdp.py:66:98"
+--8<-- "src/ezpz/examples/fsdp.py:66:98"
 ```
 
 </details>

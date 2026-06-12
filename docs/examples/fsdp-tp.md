@@ -202,8 +202,8 @@ model momentarily during `model.to(device)` before FSDP shards). If
 the model OOMs during init, raise `--tp` (halves per-rank weight
 memory for each doubling) or use a smaller preset.
 
-```python title="src/ezpz/examples/fsdp_tp.py:172:213"
---8<-- "src/ezpz/examples/fsdp_tp.py:172:213"
+```python title="src/ezpz/examples/fsdp_tp.py:172:303"
+--8<-- "src/ezpz/examples/fsdp_tp.py:172:303"
 ```
 
 </details>

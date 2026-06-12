@@ -59,8 +59,8 @@ mimicking real architectures). `MODEL_ALIASES` makes long-form spellings
 work too — `--model xlarge` or `--model extra-large` both resolve to
 `xl`, and the same pattern applies to `xxl`/`xxxl`.
 
-```python title="src/ezpz/examples/test.py:38:74"
---8<-- "src/ezpz/examples/test.py:38:74"
+```python title="src/ezpz/examples/test.py:38:108"
+--8<-- "src/ezpz/examples/test.py:38:108"
 ```
 
 `MODEL_PRESET_FLAGS` maps each preset field to its CLI flags so that

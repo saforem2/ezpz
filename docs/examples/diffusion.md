@@ -114,8 +114,8 @@ Predefined hyperparameter bundles selectable via `--model`:
 CLI flags that the user passes explicitly take priority over preset
 values.
 
-```python title="src/ezpz/examples/diffusion.py:89:122"
---8<-- "src/ezpz/examples/diffusion.py:89:122"
+```python title="src/ezpz/examples/diffusion.py:89:170"
+--8<-- "src/ezpz/examples/diffusion.py:89:170"
 ```
 
 ```python title="src/ezpz/examples/diffusion.py:133:144"

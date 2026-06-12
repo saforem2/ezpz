@@ -26,7 +26,7 @@ ezpz benchmark --outdir outputs/my-benchmark
 | Flag | Description |
 |------|-------------|
 | `--examples` | Space-separated list of examples to run (default: all) |
-| `--model` | Model size preset passed through to each example (default: `small`). Each example resolves the preset against its own `MODEL_PRESETS`; sizes range `debug → xxxl` with long-form aliases (`xlarge` / `extra-large`, etc.). See each example's docs for per-file parameter scales. |
+| `--model` | Model size preset passed through to each example (default: `small`). Each example resolves the preset against its own `MODEL_PRESETS`; sizes range `debug → xxxl` with long-form aliases (`xlarge` / `extra-large`, etc.). See each example's docs for per-file parameter scales. **Note:** `agpt-2b` and `agpt-20b` are `fsdp_tp`-only presets; passing them via `ezpz benchmark --model agpt-2b` will fail on the other four examples (`test`, `fsdp`, `vit`, `diffusion`), which don't define those keys. |
 | `--outdir` | Output directory (default: `outputs/benchmarks/{timestamp}`) |
 
 ## Available Examples

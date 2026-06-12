@@ -118,8 +118,8 @@ configurations and each have multiple aliases via `MODEL_ALIASES`
 override `img_size`, `num_classes`, and `patch_size` when `--dataset
 mnist` is used.
 
-```python title="src/ezpz/examples/vit.py:97:139"
---8<-- "src/ezpz/examples/vit.py:97:139"
+```python title="src/ezpz/examples/vit.py:97:164"
+--8<-- "src/ezpz/examples/vit.py:97:164"
 ```
 
 </details>
