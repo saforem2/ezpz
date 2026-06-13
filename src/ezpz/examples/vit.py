@@ -520,6 +520,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--dtype", type=str, default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
     parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
+    )
+    parser.add_argument(
         "--num_workers",
         "--num-workers",
         type=int,
@@ -763,8 +775,8 @@ def train_fn(
         #     model = ezpz.distributed.prepare_model_for_ddp(model)
 
     if args.compile:
-        logger.info("Compiling model")
-        model = torch.compile(model)
+        logger.info("Compiling model with torch.compile(mode=%s)", args.compile_mode)
+        model = torch.compile(model, mode=args.compile_mode)
 
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()

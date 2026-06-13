@@ -460,6 +460,11 @@ def train(
         dtype=args.dtype,
         **({"reshard_after_forward": reshard} if reshard is not None else {}),
     )
+    if args.compile:
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
+        )
+        wrapped_model = torch.compile(wrapped_model, mode=args.compile_mode)
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
         wrapped_model,
@@ -734,6 +739,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--n-heads", type=int, default=4,
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)

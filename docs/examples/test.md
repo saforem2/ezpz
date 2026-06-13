@@ -17,6 +17,14 @@ See: 📘 [docs](../python/Code-Reference/examples/test.md),
 ezpz launch python3 -m ezpz.examples.test
 ```
 
+## Common modifications
+
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
+
 ## Source
 
 <details closed><summary><code>src/ezpz/examples/test.py</code></summary>

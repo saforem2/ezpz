@@ -25,6 +25,18 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
 
+## Common modifications
+
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
+
+> Note: combining `--compile` with `--ac` on HuggingFace models can trigger a
+> `CheckpointError: tensor count mismatch` due to HF's DynamicCache. Drop one
+> if you hit it.
+
 ## Source
 
 <details closed><summary><code>src/ezpz/examples/fsdp_tp.py</code></summary>

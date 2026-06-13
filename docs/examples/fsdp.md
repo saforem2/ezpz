@@ -85,6 +85,11 @@ log captured on Sunspot).
   in the same function; swap them out without touching the rest of the loop.
 - **Save a checkpoint** — pass `--save-model` to write `mnist_cnn.pt` from rank 0
   after training completes.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
 
 ## Code Walkthrough
 

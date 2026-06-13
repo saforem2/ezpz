@@ -156,6 +156,8 @@ class TrainConfig:
     num_workers: int = 0
     no_distributed_history: bool = False
     save_datasets: bool = False
+    compile: bool = False
+    compile_mode: str = "default"
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
@@ -523,7 +525,12 @@ def train(
     t1m = time.perf_counter()
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
-    model, optimizer = build_model_and_optimizer(model, dtype=config.dtype)
+    model, optimizer = build_model_and_optimizer(
+        model,
+        dtype=config.dtype,
+        compile=config.compile,
+        compile_mode=config.compile_mode,
+    )
     t2m = time.perf_counter()
     dt_optimizer = time.perf_counter() - t1m
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
@@ -644,6 +651,8 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
         dataset=args.dataset,
         dataset_root=args.dataset_root,
         num_workers=args.num_workers,
+        compile=args.compile,
+        compile_mode=args.compile_mode,
         pyinstrument_profiler=args.pyinstrument_profiler,
         pytorch_profiler=args.pytorch_profiler,
         pytorch_profiler_wait=args.pytorch_profiler_wait,
@@ -665,6 +674,8 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 def build_model_and_optimizer(
     model: torch.nn.Module,
     dtype: Optional[str] = None,
+    compile: bool = False,
+    compile_mode: str = "default",
 ) -> ModelOptimizerPair:
     """Prepare the model and optimiser for the requested backend."""
     device_override = os.environ.get("TORCH_DEVICE")
@@ -695,6 +706,12 @@ def build_model_and_optimizer(
                 model = DDP(model)
         except Exception:
             model = DDP(model)
+
+    if compile:
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", compile_mode
+        )
+        model = torch.compile(model, mode=compile_mode)
 
     # elif backend.lower() in ("ds", "deepspeed"):
     #     parser = argparse.ArgumentParser(

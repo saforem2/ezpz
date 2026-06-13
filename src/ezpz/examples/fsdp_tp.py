@@ -692,6 +692,23 @@ def parse_args(argv: Optional[list[str]] = None):
         action="store_true",
         help="Disable mixed precision (use fp32) for debugging NaNs.",
     )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
+    )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
     # depth_init: bool = True
@@ -1246,6 +1263,16 @@ def train(
     # is re-played during recomputation). Reverse order silently
     # double-shards / corrupts grads.
     model = _apply_activation_checkpointing(model, args.activation_checkpoint)
+    if args.compile:
+        if is_hf_model and args.activation_checkpoint != "none":
+            logger.warning(
+                "torch.compile + activation_checkpointing on HF models can produce "
+                "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
+            )
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
+        )
+        model = torch.compile(model, mode=args.compile_mode)
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)

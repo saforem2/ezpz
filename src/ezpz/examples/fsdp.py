@@ -289,6 +289,12 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
             cast_forward_inputs=True,
         ),
     )
+    if getattr(args, "compile", False):
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...",
+            args.compile_mode,
+        )
+        model = torch.compile(model, mode=args.compile_mode)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     logger.info(f"{model=}")
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
@@ -602,6 +608,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=False,
         default=None,
         help="data directory prefix",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/DDP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search - slow startup, fastest steady state."
+        ),
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)

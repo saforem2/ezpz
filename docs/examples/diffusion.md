@@ -80,6 +80,11 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
   `train()` toggles between DDP and FSDP for you.
 - **Generate more / fewer samples** — `--samples N` controls how many prompts
   `generate_text()` decodes at the end of each evaluation pass.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
 
 ## Code Walkthrough
 

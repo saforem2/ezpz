@@ -82,8 +82,12 @@ specializes kernels — subsequent steps drop to the steady-state `dt`. See the
 - **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp_sharding_strategy`)
   to switch from DDP. The call to `ezpz.distributed.wrap_model(..., use_fsdp=...)`
   in `main()` handles both cases.
-- **Toggle `torch.compile`** — `--compile` enables it. Useful for measuring the
-  fused-kernel speedup vs. eager execution.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state. Useful for
+  measuring the fused-kernel speedup vs. eager execution.
 - **Swap the dataset** — `--dataset {mnist,fake}` routes through the helpers
   in `ezpz.data.vision` (or generates random tensors for quick smoke tests).
 

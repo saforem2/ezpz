@@ -289,6 +289,23 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         help="Disable distributed history aggregation",
     )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/DDP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search - slow startup, fastest steady state."
+        ),
+    )
     return parser
 
 
