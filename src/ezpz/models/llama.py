@@ -59,7 +59,17 @@ class ModelArgs:
         256  # make SwiGLU hidden layer size multiple of large power of 2
     )
     ffn_dim_multiplier: Optional[float] = None
+    # Override SwiGLU FFN hidden dim. When None, TransformerBlock falls back
+    # to the standard `4 * dim` pre-multiplier; FeedForward then applies the
+    # 2/3 scaling, `ffn_dim_multiplier`, and `multiple_of` rounding on top.
+    # Set this to bypass the formula entirely for architectures that publish
+    # a concrete hidden_dim (e.g. agpt-2b ⇒ 11008, agpt-20b ⇒ 14336).
+    hidden_dim: Optional[int] = None
     norm_eps: float = 1e-5
+    # Base frequency for RoPE positional embeddings. Defaults to 10000 for
+    # parity with the original Llama1/Llama2 recipe. Llama3 uses 500000,
+    # agpt-2b uses 50000, agpt-20b uses 500000.
+    rope_theta: float = 10000.0
 
     batch_size: int = 32
     max_seq_len: int = 32768
@@ -153,7 +163,7 @@ def _infer_seq_start_idx(freq_len: int, seqlen: int) -> int:
 
 
 def reshape_for_broadcast(
-    freqs_cis: torch.Tensor, x: torch.Tensor
+    freqs_cis: torch.Tensor, x: torch.Tensor, theta: float = 10000.0
 ) -> torch.Tensor:
     """
     Reshape frequency tensor for broadcasting it with another tensor.
@@ -164,6 +174,10 @@ def reshape_for_broadcast(
     Args:
         freqs_cis (torch.Tensor): Frequency tensor to be reshaped.
         x (torch.Tensor): Target tensor for broadcasting compatibility.
+        theta (float, optional): RoPE base used if the freqs buffer is too
+            short and must be recomputed on the fly. Must match the value
+            used to precompute `freqs_cis` to preserve the rotary basis.
+            Defaults to 10000.0 for parity with Llama1/Llama2.
 
     Returns:
         torch.Tensor: Reshaped frequency tensor.
@@ -193,9 +207,9 @@ def reshape_for_broadcast(
 
     freq_seqlen = int(freqs_cis.shape[0])
     if freq_seqlen < seqlen:
-        freqs_cis = precompute_freqs_cis(rotary_dim * 2, seqlen).to(
-            device=freqs_cis.device, dtype=freqs_cis.dtype
-        )
+        freqs_cis = precompute_freqs_cis(
+            rotary_dim * 2, seqlen, theta=theta
+        ).to(device=freqs_cis.device, dtype=freqs_cis.dtype)
         freq_seqlen = seqlen
 
     if freq_seqlen != seqlen:
@@ -220,6 +234,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
+    theta: float = 10000.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Apply rotary embeddings to input tensors using the given frequency tensor.
@@ -233,13 +248,17 @@ def apply_rotary_emb(
         xq (torch.Tensor): Query tensor to apply rotary embeddings.
         xk (torch.Tensor): Key tensor to apply rotary embeddings.
         freqs_cis (torch.Tensor): Precomputed frequency tensor for complex exponentials.
+        theta (float, optional): RoPE base used if `freqs_cis` is too short
+            for the current sequence and must be recomputed on the fly. Must
+            match the value passed to `precompute_freqs_cis`. Defaults to
+            10000.0 for parity with Llama1/Llama2.
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: Tuple of modified query tensor and key tensor with rotary embeddings.
     """
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_, theta=theta)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
@@ -317,6 +336,10 @@ class Attention(nn.Module):
         )
         self.n_rep = self.n_heads // self.n_kv_heads
         self.head_dim = model_args.dim // model_args.n_heads
+        # Keep RoPE base around so the on-the-fly recomputation fallback
+        # inside `apply_rotary_emb`/`reshape_for_broadcast` matches the base
+        # used by `precompute_freqs_cis` at model construction.
+        self.rope_theta = model_args.rope_theta
 
         self.wq = nn.Linear(
             model_args.dim, model_args.n_heads * self.head_dim, bias=False
@@ -359,7 +382,9 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+        xq, xk = apply_rotary_emb(
+            xq, xk, freqs_cis=freqs_cis, theta=self.rope_theta
+        )
 
         keys = repeat_kv(
             xk, self.n_rep
@@ -482,9 +507,19 @@ class TransformerBlock(nn.Module):
         self.n_heads = model_args.n_heads
         self.dim = model_args.dim
         self.attention = Attention(model_args)
+        # FeedForward applies its own `int(2 * hidden_dim / 3)` scaling on top
+        # of whatever we pass. To hit an exact target width (e.g. agpt-2b's
+        # published 11008), pre-multiply by 3/2 so FeedForward's 2/3 reduces
+        # back to the desired value. When `model_args.hidden_dim` is None,
+        # fall through to the historical `4 * dim` pre-multiplier and let
+        # ffn_dim_multiplier + multiple_of do the shaping.
+        if model_args.hidden_dim is not None:
+            ffn_input = (model_args.hidden_dim * 3 + 1) // 2  # ⌈3·H/2⌉
+        else:
+            ffn_input = 4 * model_args.dim
         self.feed_forward = FeedForward(
             dim=model_args.dim,
-            hidden_dim=4 * model_args.dim,
+            hidden_dim=ffn_input,
             multiple_of=model_args.multiple_of,
             ffn_dim_multiplier=model_args.ffn_dim_multiplier,
         )
@@ -564,6 +599,7 @@ class Transformer(nn.Module):
                 # Need to compute until at least the max token limit for generation
                 # (use 2x max sequence length to be safe)
                 model_args.max_seq_len * 2,
+                theta=model_args.rope_theta,
             ),
         )
         self.layers = torch.nn.ModuleList()
@@ -595,6 +631,7 @@ class Transformer(nn.Module):
                 # Need to compute until at least the max token limit for generation
                 # (use 2x max sequence length to be safe)
                 self.model_args.max_seq_len * 2,
+                theta=self.model_args.rope_theta,
             )
         nn.init.normal_(self.tok_embeddings.weight)
         for layer in self.layers:

@@ -61,8 +61,25 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
 
 ## Common modifications
 
-- **Pick a model size** — `--model {debug,small,medium,large}` sets `hidden`,
-  `n_layers`, `n_heads`, `seq_len`, `timesteps`, and `batch_size` together.
+- **Pick a model size** — `--model {debug,s,m,l,xl,xxl,xxxl}` sets
+  `hidden`, `n_layers`, `n_heads`, `seq_len`, `timesteps`, and
+  `batch_size` together. Each short-name size also accepts long-form
+  aliases (`small`/`medium`/`large`/`xlarge`/`extra-large`/etc). Shared
+  size ladder across all 5 example modules:
+
+  | Preset | Diffusion (vocab=10k) |
+  |---|---|
+  | `debug` | < 1 MiB (laptop smoke test) |
+  | `s` (small) | **~101M** |
+  | `m` (medium) | **~274M** |
+  | `l` (large) | **~500M** |
+  | `xl` | **~939M** |
+  | `xxl` | **~5.50B** |
+  | `xxxl` | **~11.4B** |
+
+  > **Breaking change**: `--model small` now resolves to ~101M (was a
+  > toy ~6M). Use `--model debug` for laptop-runnable smoke tests.
+
   Presets live in `MODEL_PRESETS` near the top of
   `src/ezpz/examples/diffusion.py`.
 - **Tune the diffusion process** — `--timesteps`, `--seq-len`, `--train-steps`
@@ -76,6 +93,11 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
   `train()` toggles between DDP and FSDP for you.
 - **Generate more / fewer samples** — `--samples N` controls how many prompts
   `generate_text()` decodes at the end of each evaluation pass.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
 
 ## Code Walkthrough
 
@@ -98,12 +120,20 @@ clusters.
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-Predefined hyperparameter bundles (`debug`, `small`, `medium`, `large`)
-that can be selected via `--model`. CLI flags that the user passes
-explicitly take priority over preset values.
+Predefined hyperparameter bundles selectable via `--model`:
 
-```python title="src/ezpz/examples/diffusion.py:89:122"
---8<-- "src/ezpz/examples/diffusion.py:89:122"
+- Toy / smoke-test sizes: `debug`, `small`, `medium`, `large`.
+- Production-scale sizes: `xl`, `xxl`, `xxxl` — targeting DiT-XL/2 and
+  SD3-MMDiT trajectories. Each accepts long-form aliases through
+  `MODEL_ALIASES` (e.g. `xlarge`, `extra-large` resolve to `xl`;
+  `xxlarge`, `extra-extra-large` → `xxl`; `xxxlarge`,
+  `extra-extra-extra-large` → `xxxl`).
+
+CLI flags that the user passes explicitly take priority over preset
+values.
+
+```python title="src/ezpz/examples/diffusion.py:89:170"
+--8<-- "src/ezpz/examples/diffusion.py:89:170"
 ```
 
 ```python title="src/ezpz/examples/diffusion.py:133:144"
@@ -377,7 +407,8 @@ usage: diffusion.py [-h] [--batch-size BATCH_SIZE] [--dtype DTYPE]
                     [--log_freq LOG_FREQ] [--outdir OUTDIR]
                     [--samples SAMPLES] [--seed SEED] [--seq-len SEQ_LEN]
                     [--timesteps TIMESTEPS] [--train-steps TRAIN_STEPS]
-                    [--lr LR] [--model {debug,large,medium,small}]
+                    [--lr LR]
+                    [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                     [--n-layers N_LAYERS] [--n-heads N_HEADS]
 
 Tiny diffusion example for text generation.
@@ -405,8 +436,10 @@ options:
   --hf-text-column HF_TEXT_COLUMN, --text-column HF_TEXT_COLUMN
                         Column containing raw text in the dataset. (default:
                         text)
-  --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick
-                        experiments. (default: 512)
+  --hf-limit HF_LIMIT   Maximum number of rows to sample from the HF dataset.
+                        0 (default) = no limit (use the full dataset). Pass a
+                        positive value (e.g. `--hf-limit 512`) to subsample
+                        for smoke tests. (default: 0)
   --log_freq LOG_FREQ
   --outdir OUTDIR
   --samples SAMPLES
@@ -415,9 +448,11 @@ options:
   --timesteps TIMESTEPS
   --train-steps TRAIN_STEPS
   --lr LR
-  --model {debug,large,medium,small}
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
                         Model size preset (overrides hidden/layer/head
-                        defaults). (default: None)
+                        defaults). xl/xxl/xxxl accept long-form aliases too:
+                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
+                        etc. (default: None)
   --n-layers N_LAYERS
   --n-heads N_HEADS
 ```

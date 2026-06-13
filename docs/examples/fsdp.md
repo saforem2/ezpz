@@ -68,9 +68,30 @@ log captured on Sunspot).
 
 ## Common modifications
 
-- **Pick a different model size** — pass `--model {debug,small,medium,large}` or
-  override `--conv1-channels / --conv2-channels / --fc-dim` directly. Presets
-  live in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
+- **Pick a different model size** — pass
+  `--model {debug,s,m,l,xl,xxl,xxxl}` or override
+  `--conv1-channels / --conv2-channels / --fc-dim` directly. Each
+  short-name size also accepts long-form aliases
+  (`small`/`medium`/`large`/`xlarge`/`extra-large`/etc). Shared size
+  ladder across all 5 example modules:
+
+  | Preset | CNN (MNIST) |
+  |---|---|
+  | `debug` | < 1 MiB (laptop smoke test) |
+  | `s` (small) | **~76M** |
+  | `m` (medium) | **~227M** |
+  | `l` (large) | **~605M** |
+  | `xl` | **~1.21B** |
+  | `xxl` | **~4.84B** |
+  | `xxxl` | **~9.68B** |
+
+  > **Breaking change**: `--model small` now resolves to ~76M (was a
+  > toy ~38K). Use `--model debug` for laptop-runnable smoke tests.
+
+  Architectural note: at `xxxl` the single FC layer dominates (~9 GiB
+  of dense linear weights). The CNN is intentionally trivial — sizes
+  mainly stress-test FSDP wrapping, not real CNN topology. Presets live
+  in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
 - **Train on a bigger dataset** — `--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}`
   routes through `get_data()` to dataset-specific loaders in `ezpz.data.vision`.
 - **Switch the FSDP compute dtype** — pass `--dtype {bf16,fp16,fp32}`. The value
@@ -80,6 +101,11 @@ log captured on Sunspot).
   in the same function; swap them out without touching the rest of the loop.
 - **Save a checkpoint** — pass `--save-model` to write `mnist_cnn.pt` from rank 0
   after training completes.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
 
 ## Code Walkthrough
 
@@ -131,15 +157,19 @@ except Exception:
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-Named presets (`debug`, `small`, `medium`, `large`) let users scale the CNN
-architecture from the command line with `--model <preset>`. Each preset
-bundles `conv1_channels`, `conv2_channels`, and `fc_dim` so you can quickly
-compare FSDP overhead at different model sizes without manually tuning
-individual flags. Any CLI flag the user passes explicitly overrides the
-preset value.
+Named presets (`debug`, `small`, `medium`, `large`, `xl`, `xxl`, `xxxl`)
+let users scale the CNN architecture from the command line with
+`--model <preset>`. Each preset bundles `conv1_channels`, `conv2_channels`,
+and `fc_dim` so you can quickly compare FSDP overhead at different model
+sizes without manually tuning individual flags. The three large sizes use
+geometric 2× channel scaling — the model is a toy classifier, so the
+intent is FSDP overhead measurement rather than mirroring published
+architectures. The `MODEL_ALIASES` dict beneath `MODEL_PRESETS` adds
+long-form spellings (e.g. `xlarge`, `extra-large` → `xl`). Any CLI flag
+the user passes explicitly overrides the preset value.
 
-```python title="src/ezpz/examples/fsdp.py:66:87"
---8<-- "src/ezpz/examples/fsdp.py:66:87"
+```python title="src/ezpz/examples/fsdp.py:66:98"
+--8<-- "src/ezpz/examples/fsdp.py:66:98"
 ```
 
 </details>
@@ -356,7 +386,8 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 $ python3 -m ezpz.examples.fsdp --help
 usage: fsdp.py [-h] [--num-workers N]
                [--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}]
-               [--batch-size N] [--model {debug,large,medium,small}]
+               [--batch-size N]
+               [--model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}]
                [--conv1-channels N] [--conv2-channels N] [--fc-dim N]
                [--dtype D] [--test-batch-size N] [--epochs N] [--lr LR]
                [--gamma M] [--seed S] [--save-model]
@@ -370,9 +401,11 @@ options:
   --dataset {MNIST,OpenImages,ImageNet,ImageNet1k}
                         Dataset to use (default: MNIST)
   --batch-size N        input batch size for training (default: 64)
-  --model {debug,large,medium,small}
-                        Model size preset (overrides conv/fc defaults)
-                        (default: None)
+  --model {debug,extra-extra-extra-large,extra-extra-large,extra-large,large,medium,small,xl,xlarge,xxl,xxlarge,xxxl,xxxlarge}
+                        Model size preset (overrides conv/fc defaults).
+                        xl/xxl/xxxl accept long-form aliases too:
+                        `xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`,
+                        etc. (default: None)
   --conv1-channels N    Number of output channels in conv1 (default: 32)
   --conv2-channels N    Number of output channels in conv2 (default: 64)
   --fc-dim N            Hidden dimension for the first linear layer (default:

@@ -41,8 +41,6 @@ def test_fsdp_tp_launch_tp_random_smoke():
         "1",
         "--batch-size",
         "2",
-        "--seq-length",
-        "128",
         "--seq-len",
         "128",
         "--dim",

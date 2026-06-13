@@ -61,7 +61,7 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                       [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
                       [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
                       [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
-                      [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
+                      [--lr LR] [--epochs EPOCHS]
                       [--batch-size BATCH_SIZE]
                       [--test-batch-size TEST_BATCH_SIZE]
                       [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
@@ -86,7 +86,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --ffn-dim-multiplier FFN_DIM_MULTIPLIER
       --norm-eps NORM_EPS
       --vocab-size VOCAB_SIZE
-      --seq-length SEQ_LENGTH
       --lr LR
       --epochs EPOCHS
       --batch-size BATCH_SIZE
@@ -105,8 +104,9 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
                             Column containing raw text in the dataset.
       --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
-                            Number of rows to sample from the HF dataset for quick
-                            experiments.
+                            Max rows from the HF dataset. 0 (default) = no
+                            limit. Pass e.g. `--hf-limit 512` to subsample
+                            for smoke tests.
       --seq-len SEQ_LEN
       --max-seq-len MAX_SEQ_LEN
       --depth-init DEPTH_INIT
@@ -115,9 +115,11 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
 The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
 """
 
+import functools
 import os
 import sys
 import argparse
+import json
 import logging
 import time
 from pathlib import Path
@@ -139,6 +141,7 @@ import torch.nn.functional as F
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh
@@ -176,40 +179,126 @@ MODEL_PRESETS = {
         "n_heads": 4,
         "n_kv_heads": 2,
         "multiple_of": 128,
-        "seq_length": 256,
         "seq_len": 256,
         "batch_size": 1,
     },
-    "small": {
-        "dim": 256,
-        "n_layers": 8,
-        "n_heads": 8,
-        "n_kv_heads": 4,
-        "multiple_of": 128,
-        "seq_length": 512,
-        "seq_len": 512,
-        "batch_size": 2,
-    },
-    "medium": {
-        "dim": 512,
-        "n_layers": 16,
-        "n_heads": 8,
+    # ---- size ladder: s / m / l / xl / xxl / xxxl ----
+    # Targets ~125M / ~250M / ~500M / ~1B / ~5B / ~10B params (Llama-arch,
+    # vocab=32k). This is a BREAKING semantic change: the old
+    # `small/medium/large` were toy-scale (~6M / ~50M / ~170M). Those
+    # long-form names still parse (via MODEL_ALIASES) but now map to the
+    # new s/m/l presets. Use `debug` for the laptop-friendly tiny model.
+    "s": {
+        "dim": 768,
+        "n_layers": 12,
+        "n_heads": 12,
         "n_kv_heads": 4,
         "multiple_of": 256,
-        "seq_length": 1024,
-        "seq_len": 1024,
-        "batch_size": 2,
-    },
-    "large": {
+        "seq_len": 2048,
+        "batch_size": 4,
+    },  # ~125M
+    "m": {
         "dim": 1024,
-        "n_layers": 24,
+        "n_layers": 16,
         "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,
+        "seq_len": 2048,
+        "batch_size": 4,
+    },  # ~246M
+    "l": {
+        "dim": 1536,
+        "n_layers": 16,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,
+        "seq_len": 2048,
+        "batch_size": 2,
+    },  # ~495M
+    # xl/xxl/xxxl map roughly to Llama-1.5B / Llama-7B / Llama-13B
+    # architectures (dim × layers chosen to hit those parameter
+    # counts). Batch size stays at 1 — at these scales the user is
+    # already past the point where batch tuning matters; FSDP/TP
+    # configuration dominates.
+    "xl": {
+        "dim": 2048,
+        "n_layers": 24,
+        "n_heads": 32,
         "n_kv_heads": 8,
         "multiple_of": 256,
-        "seq_length": 2048,
         "seq_len": 2048,
         "batch_size": 1,
     },
+    "xxl": {
+        "dim": 4096,
+        "n_layers": 32,
+        "n_heads": 32,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_len": 4096,
+        "batch_size": 1,
+    },
+    "xxxl": {
+        "dim": 5120,
+        "n_layers": 40,
+        "n_heads": 40,
+        "n_kv_heads": 8,
+        "multiple_of": 256,
+        "seq_len": 4096,
+        "batch_size": 1,
+    },
+    # ---- torchtitan AuroraGPT (agpt) flavors ----
+    # Verbatim from torchtitan/experiments/ezpz/agpt/__init__.py at
+    # 0aa404543cd5707d21678f26d1d0dc6a13c9c750 — kept exact (hidden_dim,
+    # rope_theta, vocab_size all match) so this example can be A/B'd against
+    # a real torchtitan agpt run on the same arch.
+    "agpt-2b": {
+        "dim": 2048,
+        "n_layers": 12,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,  # rounds the FFN width up; 11008 % 256 == 0 already
+        "vocab_size": 256128,
+        "hidden_dim": 11008,
+        "rope_theta": 50000.0,
+        "seq_len": 8192,  # matches torchtitan's agpt-2b production seq_len
+        "batch_size": 1,
+    },
+    "agpt-20b": {
+        "dim": 5120,
+        "n_layers": 64,
+        "n_heads": 40,
+        "n_kv_heads": 8,
+        "multiple_of": 1024,  # agpt-20b uses compute_ffn_hidden_dim(5120, multiple_of=1024)
+        "vocab_size": 256128,
+        "hidden_dim": 14336,
+        "rope_theta": 500000.0,
+        "seq_len": 2048,
+        "batch_size": 1,
+    },
+}
+# Long-form size aliases (--model xl|xlarge|extra-large all resolve to xl).
+# NOTE: small/medium/large now map to the new ~125M/~250M/~500M presets
+# (s/m/l), not the previous toy-scale architectures. Use `debug` for the
+# laptop-friendly tiny model.
+MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "xlarge": "xl",
+    "extra-large": "xl",
+    "xxlarge": "xxl",
+    "extra-extra-large": "xxl",
+    "xxxlarge": "xxxl",
+    "extra-extra-extra-large": "xxxl",
+    # agpt aliases — accept the case- and separator-tolerant forms users
+    # naturally write (agpt2b, agpt_2b, AGPT-2B).
+    "agpt2b": "agpt-2b",
+    "agpt_2b": "agpt-2b",
+    "AGPT-2B": "agpt-2b",
+    "agpt20b": "agpt-20b",
+    "agpt_20b": "agpt-20b",
+    "AGPT-20B": "agpt-20b",
 }
 MODEL_PRESET_FLAGS = {
     "dim": ["--dim"],
@@ -217,9 +306,12 @@ MODEL_PRESET_FLAGS = {
     "n_heads": ["--n-heads"],
     "n_kv_heads": ["--n-kv-heads"],
     "multiple_of": ["--multiple-of"],
-    "seq_length": ["--seq-length"],
+    "vocab_size": ["--vocab-size"],
+    "hidden_dim": ["--hidden-dim"],
+    "rope_theta": ["--rope-theta"],
     "seq_len": ["--seq-len"],
     "batch_size": ["--batch-size"],
+    "activation_checkpoint": ["--activation-checkpoint", "--ac"],
 }
 
 
@@ -427,14 +519,34 @@ def _wandb_log_histograms(
         wandb.log(hist_payload, step=step)
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. Originally local
+# here (b2c0b67); extracted to a shared module so the same fix
+# automatically applies to fsdp.py / vit.py / diffusion.py / test.py.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # HF repo ID (contains `/`) — leave args.model alone; the model-construction
+    # path branches on this. Default --tokenizer_name to the same repo if the
+    # user didn't override it, since 99% of HF model repos publish a matching
+    # tokenizer at the same path.
+    if "/" in args.model:
+        if not _arg_provided(argv, ["--tokenizer_name", "--tokenizer-name"]):
+            args.tokenizer_name = args.model
+        return
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    if model_key not in MODEL_PRESETS:
+        valid = sorted({*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()})
+        raise SystemExit(
+            f"unknown --model {args.model!r}: not a preset name "
+            f"(choices: {', '.join(valid)}) and not a HuggingFace "
+            f"repo id (would need a '/' in the name)"
+        )
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -455,9 +567,29 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--n-kv-heads", type=int, default=4)
     parser.add_argument("--multiple-of", type=int, default=360)
     parser.add_argument("--ffn-dim-multiplier", type=float, default=None)
+    parser.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=None,
+        help=(
+            "Override SwiGLU FFN hidden dim. When None (default), TransformerBlock "
+            "derives it as `4 * dim` and FeedForward applies the 2/3 + "
+            "ffn_dim_multiplier + multiple_of pipeline. Set this to a concrete "
+            "value (e.g. 11008 for agpt-2b, 14336 for agpt-20b) to bypass the "
+            "formula and hit a published architecture exactly."
+        ),
+    )
+    parser.add_argument(
+        "--rope-theta",
+        type=float,
+        default=10000.0,
+        help=(
+            "Base frequency for RoPE positional embeddings. Llama1/2 used "
+            "10000 (the default); Llama3 uses 500000; agpt-2b uses 50000."
+        ),
+    )
     parser.add_argument("--norm-eps", type=float, default=1e-5)
     parser.add_argument("--vocab-size", type=int, default=32_000)
-    parser.add_argument("--seq-length", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -465,14 +597,48 @@ def parse_args(argv: Optional[list[str]] = None):
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides dim/layer defaults)",
+        # No `choices=` — accepts both preset names (validated in
+        # apply_model_preset) AND free-form HF repo IDs like
+        # `meta-llama/Llama-3.2-1B`. Disambiguation is by the `/` character:
+        # presence of `/` => HF repo ID; absence => preset/alias lookup.
+        help=(
+            "Model size preset (overrides dim/layer defaults). "
+            "Presets: debug/small/medium/large/xl/xxl/xxxl/agpt-2b/agpt-20b. "
+            "xl/xxl/xxxl accept long-form aliases (`xlarge`/`extra-large`, etc). "
+            "agpt presets accept `agpt2b`/`agpt_2b` etc. "
+            "Pass a HuggingFace repo id with a `/` (e.g. "
+            "`meta-llama/Llama-3.2-1B`) to load HF weights instead — that "
+            "path forces --tp 1 (FSDP-only)."
+        ),
     )
     parser.add_argument("--test-batch-size", type=int, default=1000)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--tp", type=int, default=2)
     parser.add_argument("--sharding-strategy", type=str, default="full_shard")
+    parser.add_argument(
+        "--activation-checkpoint",
+        "--ac",
+        type=str,
+        default="none",
+        # `full` is an alias for `block` for compatibility with
+        # torchtitan's CLI surface (their `activation_checkpoint_mode`
+        # uses `full` for what we call `block` — every transformer
+        # block wrapped). Resolved in _apply_activation_checkpointing.
+        choices=["none", "block", "full", "selective"],
+        help=(
+            "Activation checkpointing strategy. "
+            "`none` (default) keeps all forward activations in memory. "
+            "`block` (alias: `full`) wraps each TransformerBlock — typical "
+            "30-40 pct activation memory reduction, ~20 pct throughput hit "
+            "(matches torchtitan's default for agpt-2b/agpt-20b). "
+            "`selective` checkpoints only the attention computation inside "
+            "each block — ~15-20 pct memory reduction, ~10 pct throughput "
+            "hit. Trade activation memory for recomputation cost — useful "
+            "when OOM-ing during training (NOT during init; for init-time "
+            "OOM consider increasing --tp or reducing --seq-len)."
+        ),
+    )
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--outdir", type=str, default=None)
     # parser.add_argument('--dataset', type=str, default='random')
@@ -505,8 +671,14 @@ def parse_args(argv: Optional[list[str]] = None):
         "--hf-limit",
         "--hf_limit",
         type=int,
-        default=512,
-        help="Number of rows to sample from the HF dataset for quick experiments.",
+        default=0,
+        help=(
+            "Maximum number of rows to sample from the HF dataset. "
+            "0 (default) = no limit (use the full dataset). Pass a "
+            "positive value (e.g. `--hf-limit 512`) to subsample for "
+            "smoke tests. Subsampling is deterministic given "
+            "$EZPZ_HF_SAMPLE_SEED."
+        ),
     )
     # parser.add_argument('--max_batch_size', type=int, default=None)
     parser.add_argument(
@@ -518,6 +690,23 @@ def parse_args(argv: Optional[list[str]] = None):
         "--fp32",
         action="store_true",
         help="Disable mixed precision (use fp32) for debugging NaNs.",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
     )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
@@ -607,6 +796,157 @@ def parallelize(
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
     return sharded_model
+
+
+def _apply_activation_checkpointing(
+    model: nn.Module, mode: str
+) -> nn.Module:
+    """Wrap transformer blocks with activation checkpointing in-place.
+
+    `mode`:
+      - "none": no-op, returns the model unchanged.
+      - "block": wrap each transformer block's forward with
+        ``torch.utils.checkpoint.checkpoint``. The block re-runs its
+        forward during backward instead of caching all intermediate
+        activations — saves ~30-40% activation memory for ~20%
+        throughput overhead.
+      - "selective": wrap only the inner attention call. Smaller memory
+        savings (~15-20%), smaller throughput hit (~10%). Less general
+        than "block" — only applies to ezpz's Transformer arch where
+        each block has an `.attention` submodule.
+
+    Works for both ezpz's Transformer (blocks live at ``model.layers``)
+    and HF causal-LM arches (blocks live at the deepest ``ModuleList``).
+    For HF + "selective", we fall back to "block" if no `.attention`-
+    shaped submodule is found, since HF uses `.self_attn` and the
+    selective path expects a specific name.
+    """
+    if mode == "none":
+        return model
+    # `full` is a torchtitan-style alias for `block` (both mean "wrap
+    # every transformer block"). Normalize here so downstream branches
+    # only have to think about {block, selective}.
+    if mode == "full":
+        mode = "block"
+
+    # HF causal-LM models have their own gradient-checkpointing path that
+    # KNOWS about `use_cache`, RNG state, attention-mask plumbing, and
+    # the cache-vs-checkpoint interaction. Use that instead of our
+    # generic per-block wrap — otherwise we hit a hard
+    # `CheckpointError: A different number of tensors was saved during
+    # the original forward and recomputation` because HF's DynamicCache
+    # gets created on the first forward but skipped on the recompute,
+    # producing different saved-tensor counts. Set use_cache=False so
+    # the cache code-path is identical on both passes.
+    base_model = getattr(model, "_fsdp_wrapped_module", model)
+    if hasattr(base_model, "gradient_checkpointing_enable") and hasattr(
+        base_model, "config"
+    ):
+        if getattr(base_model.config, "use_cache", False):
+            base_model.config.use_cache = False  # type: ignore[attr-defined]
+            logger.info(
+                "Disabled use_cache on HF model %s for AC compatibility "
+                "(cache and gradient checkpointing are mutually exclusive).",
+                type(base_model).__name__,
+            )
+        base_model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        logger.info(
+            "Applied activation_checkpoint=%s via HF "
+            "gradient_checkpointing_enable on %s.",
+            mode,
+            type(base_model).__name__,
+        )
+        return model
+
+    from torch.utils.checkpoint import checkpoint
+
+    def _find_block_list(m: nn.Module) -> Optional[nn.ModuleList]:
+        # ezpz.Transformer wraps layers as `.layers`; FSDP wrappers
+        # expose the underlying module via `_fsdp_wrapped_module`.
+        candidate = getattr(m, "layers", None) or getattr(
+            getattr(m, "_fsdp_wrapped_module", m), "layers", None
+        )
+        if isinstance(candidate, nn.ModuleList):
+            return candidate
+        # HF fallback: take the deepest non-empty ModuleList in the graph.
+        # Most HF causal-LMs put decoder blocks at e.g.
+        # `model.model.layers`.
+        deepest: Optional[nn.ModuleList] = None
+        deepest_depth = -1
+        for name, sub in m.named_modules():
+            if isinstance(sub, nn.ModuleList) and len(sub) > 0:
+                depth = name.count(".")
+                if depth > deepest_depth:
+                    deepest_depth = depth
+                    deepest = sub
+        return deepest
+
+    blocks = _find_block_list(model)
+    if blocks is None:
+        logger.warning(
+            "activation_checkpoint=%s requested but no ModuleList of "
+            "transformer blocks was found in the model graph; AC has "
+            "NOT been applied.",
+            mode,
+        )
+        return model
+
+    def _wrap_block(block: nn.Module) -> nn.Module:
+        if mode == "block":
+            original_forward = block.forward
+
+            def checkpointed_forward(*args, **kwargs):
+                # use_reentrant=False is required for FSDP + AC to play
+                # nicely together (the reentrant path saves the entire
+                # input/output graph and breaks FSDP's unshard/reshard
+                # bookkeeping).
+                return checkpoint(
+                    original_forward, *args, use_reentrant=False, **kwargs
+                )
+
+            block.forward = checkpointed_forward  # type: ignore[assignment]
+            return block
+        # selective: only checkpoint .attention. If absent, no-op for
+        # this block — caller already logged the missing-attention case.
+        attn = getattr(block, "attention", None)
+        if attn is None:
+            return block
+        original_attn_forward = attn.forward
+
+        def checkpointed_attn_forward(*args, **kwargs):
+            return checkpoint(
+                original_attn_forward, *args, use_reentrant=False, **kwargs
+            )
+
+        attn.forward = checkpointed_attn_forward  # type: ignore[assignment]
+        return block
+
+    for block in blocks:
+        _wrap_block(block)
+    logger.info(
+        "Applied activation_checkpoint=%s to %d transformer blocks.",
+        mode,
+        len(blocks),
+    )
+    # selective AC silently no-ops on blocks lacking a `.attention`
+    # submodule (HF arches use `.self_attn`, etc.). Warn the user once
+    # if any blocks were skipped so they know to switch to `--ac block`
+    # for full coverage on non-ezpz architectures.
+    if mode == "selective":
+        skipped = sum(
+            1 for b in blocks if getattr(b, "attention", None) is None
+        )
+        if skipped > 0:
+            logger.warning(
+                "activation_checkpoint=selective: %d/%d blocks had no "
+                "`.attention` attribute and were left unwrapped. For "
+                "non-ezpz architectures, use --ac block instead.",
+                skipped,
+                len(blocks),
+            )
+    return model
 
 
 def _accumulate_stats(
@@ -720,6 +1060,11 @@ def train(
             )
             args.vocab_size = hf_tokenizer.vocab_size
 
+    # HF repo IDs are forced to the HF code path; the ezpz Transformer
+    # construction below would silently produce a randomly-initialized model
+    # with the wrong architecture for the requested repo.
+    is_hf_model = bool(args.model and "/" in args.model)
+
     config = ModelArgs(
         dim=args.dim,
         n_layers=args.n_layers,
@@ -728,6 +1073,11 @@ def train(
         batch_size=args.batch_size,
         vocab_size=args.vocab_size,
         multiple_of=args.multiple_of,
+        hidden_dim=args.hidden_dim,
+        rope_theta=args.rope_theta,
+        ffn_dim_multiplier=args.ffn_dim_multiplier,
+        norm_eps=args.norm_eps,
+        max_seq_len=args.max_seq_len,
     )
     logger.info(f"config:\n{config}")
     metrics_every = int(os.environ.get("EZPZ_METRICS_EVERY", "1"))
@@ -753,21 +1103,81 @@ def train(
         if device_type == "cpu"
         else torch.device(f"{device_type}:{ezpz.get_local_rank()}")
     )
-    model = Transformer.from_model_args(config)
+    if is_hf_model:
+        # HF path: pull arch + weights from the hub. The ezpz Transformer
+        # above is skipped entirely. Note we still built `config` above so
+        # downstream logging / wandb.config.update(asdict(config)) doesn't
+        # crash, but it does NOT reflect the real HF architecture — that's
+        # in `model.config` after the load below.
+        from transformers import AutoModelForCausalLM
+
+        if args.tp > 1:
+            logger.warning(
+                "HF model %s requested with --tp=%d; ezpz's TP plan is "
+                "hardcoded to its own Transformer module names and won't "
+                "match HF's LlamaDecoderLayer / GemmaDecoderLayer / ... "
+                "Forcing --tp 1 (FSDP-only).",
+                args.model,
+                args.tp,
+            )
+            args.tp = 1
+        hf_dtype = torch.float32 if args.fp32 else torch.bfloat16
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
+            "HUGGING_FACE_HUB_TOKEN"
+        )
+        logger.info(
+            "Loading HF model %s (dtype=%s)%s",
+            args.model,
+            hf_dtype,
+            " with HF_TOKEN" if hf_token else "",
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=hf_dtype,
+            token=hf_token,
+        )
+    else:
+        model = Transformer.from_model_args(config)
     mstr = summarize_model(
         model,
         verbose=False,
         depth=2,
-        # input_size=(
-        #     torch.tensor((int(args.batch_size), int(args.seq_length))).to(
-        #         torch.long
-        #     )
-        # ).shape,
     )
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    _model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+    # Run try_estimate with a tiny probe (batch=1, seq=128) and scale up
+    # by total-tokens ratio. The full (batch_size, seq_len) shape would
+    # OOM on big models — FlopCounterMode does a real forward pass, and
+    # a 2B-param model at seq=8192 materializes multi-GiB of activations
+    # per rank before FSDP has a chance to shard.
+    #
+    # CAVEAT: This linear scaling is exact for the O(seq * dim) ops
+    # (MLP, qkv/output projections) but UNDER-COUNTS attention. The
+    # Q·Kᵀ and attn·V matmuls inside SDPA are O(seq² * dim), so scaling
+    # them by (seq_actual / seq_probe) instead of (seq_actual / seq_probe)²
+    # under-reports their FLOPs. At seq_probe=128 and seq_actual=8192
+    # the attention term is off by ~64×, which makes reported MFU
+    # OPTIMISTIC (real model FLOPs are higher → real MFU is lower).
+    # For compute-bound long-seq runs, treat the printed MFU as an
+    # upper bound. The fix would be to probe at a representative seq
+    # length, but probing OOMs on big models. Keeping the probe small
+    # is the conservative choice.
+    _flops_probe_batch = 1
+    _flops_probe_seq = min(128, args.seq_len)
+    _flops_probe = try_estimate(model, (_flops_probe_batch, _flops_probe_seq))
+    _actual_tokens = args.batch_size * args.seq_len
+    _probe_tokens = _flops_probe_batch * _flops_probe_seq
+    _model_flops = int(_flops_probe * _actual_tokens / max(_probe_tokens, 1))
+    if args.seq_len > _flops_probe_seq:
+        logger.info(
+            "FLOPs estimate uses linear-scaling probe "
+            "(probe seq=%d -> actual seq=%d): under-counts O(seq^2) "
+            "attention by ~%dx; reported MFU is an upper bound.",
+            _flops_probe_seq,
+            args.seq_len,
+            args.seq_len // _flops_probe_seq,
+        )
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
@@ -776,19 +1186,103 @@ def train(
             cast_forward_inputs=True,
             reduce_dtype=torch.float32,
         )
-    model = parallelize(
-        model,
-        device_mesh,
-        mp_config,
-        sharding_strategy=args.sharding_strategy,
-        device_id=device,
-    )
+    if is_hf_model:
+        # HF path: FSDP-only wrap. Use FSDP1 directly with a
+        # transformer-block auto-wrap policy keyed on the HF decoder layer
+        # class so each block becomes its own FSDP unit (otherwise the
+        # whole model is one giant FSDP shard and memory savings
+        # disappear). The class names HF uses are framework-specific
+        # (LlamaDecoderLayer, GemmaDecoderLayer, ...); we discover them
+        # by walking the model graph and picking the deepest unique
+        # ModuleList children — same heuristic transformers' own Trainer
+        # uses for `_no_split_modules`.
+        from torch.distributed.fsdp import (
+            FullyShardedDataParallel as FSDPWrap,
+        )
+        from torch.distributed.fsdp.wrap import (
+            transformer_auto_wrap_policy,
+        )
+
+        # Pick the SINGLE deepest non-empty ModuleList in the graph rather
+        # than every ModuleList we encounter. Collecting `type(m[0])` for
+        # all ModuleLists over-wraps MoE models (each expert is itself a
+        # ModuleList), multimodal models (vision_tower.encoder.layers PLUS
+        # text decoder), and anything with auxiliary stacked submodules.
+        # Over-wrapping costs throughput and can break FSDP's
+        # unshard/reshard bookkeeping. The decoder block stack is reliably
+        # the deepest ModuleList in HF causal-LMs (e.g.
+        # `model.model.layers`), matching the heuristic used by
+        # `_find_block_list` and HF's `_no_split_modules`.
+        deepest_modlist: Optional[torch.nn.ModuleList] = None
+        deepest_depth = -1
+        deepest_len = -1
+        for name, module in model.named_modules():
+            if (
+                isinstance(module, torch.nn.ModuleList)
+                and len(module) > 0
+            ):
+                depth = name.count(".")
+                # Tie-break on length: at equal depth, take the longer
+                # stack (decoder layers typically beat any sibling
+                # ModuleList of e.g. norms or biases).
+                if depth > deepest_depth or (
+                    depth == deepest_depth and len(module) > deepest_len
+                ):
+                    deepest_depth = depth
+                    deepest_len = len(module)
+                    deepest_modlist = module
+        block_classes: set = set()
+        if deepest_modlist is not None:
+            block_classes.add(type(deepest_modlist[0]))
+        auto_wrap = functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls=block_classes,
+        )
+        sharding_strategy = SHARDING_STRATEGIES.get(
+            args.sharding_strategy, ShardingStrategy.FULL_SHARD
+        )
+        model = FSDPWrap(
+            model,
+            auto_wrap_policy=auto_wrap,
+            mixed_precision=mp_config,
+            sharding_strategy=sharding_strategy,
+            device_id=device,
+        )
+    else:
+        model = parallelize(
+            model,
+            device_mesh,
+            mp_config,
+            sharding_strategy=args.sharding_strategy,
+            device_id=device,
+        )
+    # Apply activation checkpointing AFTER FSDP/TP wrap — order matters:
+    # the checkpoint envelope must wrap the already-sharded forward so
+    # FSDP's unshard/reshard happens inside the checkpoint region (and
+    # is re-played during recomputation). Reverse order silently
+    # double-shards / corrupts grads.
+    model = _apply_activation_checkpointing(model, args.activation_checkpoint)
+    if args.compile:
+        if is_hf_model and args.activation_checkpoint != "none":
+            logger.warning(
+                "torch.compile + activation_checkpointing on HF models can produce "
+                "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
+            )
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
+        )
+        model = torch.compile(model, mode=args.compile_mode)
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
     act_activations: dict[str, torch.Tensor] = {}
     act_handles: list[torch.utils.hooks.RemovableHandle] = []
-    if track_hist and track_act_hist and ezpz.get_rank() == 0:
+    if track_hist and track_act_hist and ezpz.get_rank() == 0 and not is_hf_model:
+        # `_register_activation_hooks` indexes into `model.layers[i]`, which
+        # is ezpz-Transformer specific. HF models nest blocks under
+        # `model.model.layers` (Llama/Mistral) or `model.gpt_neox.layers`
+        # (GPT-NeoX) etc., so the hook registration would key-error. Skip
+        # the hooks for HF runs; the rest of the metrics still work.
         hist_layers_spec = os.environ.get(
             "EZPZ_HIST_LAYERS", f"0,{config.n_layers - 1}"
         )
@@ -830,7 +1324,7 @@ def train(
         data = get_random_dataset_fsdp_tp(
             batch_size=args.batch_size,
             vocab_size=args.vocab_size,
-            seq_length=args.seq_length,
+            seq_length=args.seq_len,
             dp_group=device_mesh.get_group("dp"),
             tp_group=tp_group,
             broadcast_within_tp=True,
@@ -920,6 +1414,10 @@ def train(
             if attn_mask is not None:
                 attn_mask = attn_mask.to(device)
             pred = model(inp)
+            # HF causal-LM models return a CausalLMOutput dataclass with a
+            # `.logits` tensor; ezpz's Transformer returns logits directly.
+            if hasattr(pred, "logits"):
+                pred = pred.logits
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
                 labels = _slice_for_sequence_parallel(labels, local_seq_len)
@@ -1077,6 +1575,9 @@ def main(args: argparse.Namespace) -> int:
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)

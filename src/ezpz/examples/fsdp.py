@@ -12,6 +12,7 @@ flags and their current defaults.
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DistributedSampler, DataLoader
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
@@ -20,7 +21,6 @@ import time
 import ezpz
 
 import torch
-import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import MixedPrecision
 import torch.nn as nn
@@ -31,6 +31,7 @@ from torch.optim.lr_scheduler import StepLR
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 
 logger = ezpz.get_logger(__name__)
 
@@ -40,27 +41,72 @@ fname = f"{fp.parent.stem}.{fp.stem}"
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 OUTPUT_DIR = Path(os.getcwd()).joinpath("outputs", fname)
 
+# Size ladder shared across all five example modules:
+#   s ~100M, m ~250M, l ~500M, xl ~1B, xxl ~5B, xxxl ~10B
+#
+# BREAKING CHANGE: prior to this redesign the long-form preset names
+# (`small`/`medium`/`large`) mapped to tiny CNNs (~38K / ~150K / ~600K
+# params). They now resolve via MODEL_ALIASES to the new short-form
+# tier (`s`/`m`/`l`), which are *orders of magnitude larger*:
+# `--model small` is now ~76M params (was ~38K).
+#
+# For this MNIST CNN (conv1 → conv2 → fc1 → fc2) the fc1 weight matrix
+# is `(conv2_channels * 144) * fc_dim` and dominates total parameter
+# count at scale. The xxxl preset is therefore best understood as a
+# wide CNN trunk feeding a giant fully-connected head — useful as an
+# FSDP wrapping / sharding stress test, NOT as a sensible production
+# architecture. CNN scaling is also choppy due to integer channel
+# constraints; sizes are within ~±25% of the ideal ladder ratios.
 MODEL_PRESETS = {
     "debug": {
         "conv1_channels": 8,
         "conv2_channels": 16,
         "fc_dim": 64,
     },
-    "small": {
-        "conv1_channels": 16,
-        "conv2_channels": 32,
-        "fc_dim": 128,
-    },
-    "medium": {
-        "conv1_channels": 32,
-        "conv2_channels": 64,
-        "fc_dim": 256,
-    },
-    "large": {
+    "s": {
         "conv1_channels": 64,
         "conv2_channels": 128,
-        "fc_dim": 512,
-    },
+        "fc_dim": 4096,
+    },  # ~76M (slight undershoot of ~100M ideal)
+    "m": {
+        "conv1_channels": 128,
+        "conv2_channels": 384,
+        "fc_dim": 4096,
+    },  # ~227M
+    "l": {
+        "conv1_channels": 128,
+        "conv2_channels": 512,
+        "fc_dim": 8192,
+    },  # ~605M
+    "xl": {
+        "conv1_channels": 256,
+        "conv2_channels": 1024,
+        "fc_dim": 8192,
+    },  # ~1.21B
+    "xxl": {
+        "conv1_channels": 512,
+        "conv2_channels": 2048,
+        "fc_dim": 16384,
+    },  # ~4.84B
+    "xxxl": {
+        "conv1_channels": 1024,
+        "conv2_channels": 2048,
+        "fc_dim": 32768,
+    },  # ~9.68B
+}
+# Long-form aliases collapse onto the short-form ladder so that
+# `--model small|medium|large|xlarge|extra-large|...` all resolve to
+# the new s/m/l/xl/xxl/xxxl presets defined above.
+MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "extra-large": "xl",
+    "xlarge": "xl",
+    "extra-extra-large": "xxl",
+    "xxlarge": "xxl",
+    "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "conv1_channels": ["--conv1-channels"],
@@ -149,7 +195,12 @@ def train(
         else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.train()
-    ddp_loss = torch.zeros(2).to(device)
+    # Per-rank running totals; intentionally NOT all-reduced. History's
+    # distributed_history=True reduces across ranks itself and adds `/std`,
+    # so leaving the values per-rank lets the console line show
+    # `train_loss=0.05(±0.003)` instead of a single global scalar with no
+    # cross-rank spread visible.
+    local_loss = torch.zeros(2).to(device)
     if sampler:
         sampler.set_epoch(epoch)
     ezpz.distributed.synchronize()
@@ -163,18 +214,17 @@ def train(
         loss = F.nll_loss(output, target, reduction="sum")
         loss.backward()
         optimizer.step()
-        ddp_loss[0] += loss.item()
-        ddp_loss[1] += len(batch)
+        local_loss[0] += loss.item()
+        local_loss[1] += len(batch)
         num_batches += 1
     ezpz.distributed.synchronize()
     t1 = time.perf_counter()
     epoch_dt = t1 - t0
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
     return {
         "epoch": epoch,
         "dt": epoch_dt,
         "dt_per_step": epoch_dt / max(num_batches, 1),
-        "train_loss": ddp_loss[0] / ddp_loss[1],
+        "train_loss": (local_loss[0] / local_loss[1]).item(),
     }
 
 
@@ -188,26 +238,25 @@ def test(model, test_loader):
         else torch.device(f"{device_type}:{ezpz.distributed.get_local_rank()}")
     )
     model.eval()
-    # correct = 0
-    ddp_loss = torch.zeros(3).to(device)
+    # Per-rank totals; left un-reduced for the same reason as train() —
+    # History will reduce across ranks and the printed line will show
+    # `test_loss=0.03(±0.002) test_acc=98.7(±0.4)` instead of a flat
+    # scalar that hides shard-to-shard spread.
+    local_stats = torch.zeros(3).to(device)
     with torch.no_grad():
         for batch, target in test_loader:
             batch, target = batch.to(device), target.to(device)
             output = model(batch)
-            ddp_loss[0] += F.nll_loss(output, target, reduction="sum")
+            local_stats[0] += F.nll_loss(output, target, reduction="sum")
             pred = output.argmax(
                 dim=1, keepdim=True
             )  # get the index of the max log-probability
-            ddp_loss[1] += pred.eq(target.view_as(pred)).sum()
-            ddp_loss[2] += len(batch)
-
-    dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)  # type:ignore
-
-    test_loss = ddp_loss[0] / ddp_loss[2]
+            local_stats[1] += pred.eq(target.view_as(pred)).sum()
+            local_stats[2] += len(batch)
 
     return {
-        "test_loss": test_loss,
-        "test_acc": 100.0 * ddp_loss[1] / ddp_loss[2],
+        "test_loss": (local_stats[0] / local_stats[2]).item(),
+        "test_acc": (100.0 * local_stats[1] / local_stats[2]).item(),
     }
 
 
@@ -257,6 +306,12 @@ def prepare_model_optimizer_and_scheduler(args: argparse.Namespace) -> dict:
             cast_forward_inputs=True,
         ),
     )
+    if getattr(args, "compile", False):
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...",
+            args.compile_mode,
+        )
+        model = torch.compile(model, mode=args.compile_mode)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     logger.info(f"{model=}")
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
@@ -346,6 +401,9 @@ def fsdp_main(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     data = get_data(args)
     ezpz.distributed.barrier()
     train_loader = data["train"]["loader"]
@@ -435,14 +493,21 @@ def fsdp_main(args: argparse.Namespace) -> None:
         del dataset  # logged by finalize()
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth. The previous local copy used `flag in argv` which
+# silently failed for `--flag=value` argv tokens (every preset
+# clobbered `--batch-size=32`-style user overrides). See PR #166
+# b2c0b67 for the original fix on fsdp_tp.py; this consolidation
+# prevents the same drift across the other examples.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -482,8 +547,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides conv/fc defaults)",
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help=(
+            "Model size preset (overrides conv/fc defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument(
         "--conv1-channels",
@@ -560,6 +629,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=False,
         default=None,
         help="data directory prefix",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/DDP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search - slow startup, fastest steady state."
+        ),
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)

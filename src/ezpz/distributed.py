@@ -642,7 +642,16 @@ def setup_torch(
     if world_size > 1:
         barrier()
 
-    logger.info(print_dist_setup(display=False))
+    # Only log the per-host summary from local_rank=0. At large scale
+    # (96+ ranks across 8 hosts) logging from every rank produces
+    # ~world_size lines of nearly-identical noise that drowns out
+    # real training output. local_rank=0 gives one line per host —
+    # enough to confirm topology + spot hostname/device mismatches —
+    # without the per-tile spam. Override with EZPZ_LOG_ALL_RANKS=1
+    # if you really do need every rank's line (debugging weird
+    # local-rank assignments).
+    if local_rank == 0 or os.environ.get("EZPZ_LOG_ALL_RANKS") == "1":
+        logger.info(print_dist_setup(display=False))
     barrier()
     _configure_rank_warnings(rank)
     return rank

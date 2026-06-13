@@ -295,3 +295,107 @@ class TestGetHfTextDatasetRankGating:
             f"events: {events}. Tokenization writes to a shared "
             "Arrow cache file and MUST be rank-0-gated."
         )
+
+
+class TestLoadHfTextsLimitContract:
+    """``load_hf_texts(limit=...)`` contract pinning.
+
+    Pre-PR-#166, ``limit=0`` raised ``ValueError``. PR #166 changed
+    the semantics: ``limit <= 0`` now means "use the full dataset",
+    matching ``get_hf_text_dataset``'s convention. These tests pin
+    the new contract so a future "validate limit > 0" refactor
+    can't silently regress it.
+    """
+
+    def _make_fake_load_dataset(self, n_rows: int):
+        """Build a fake ``datasets.load_dataset`` returning ``n_rows`` rows.
+
+        The returned object only needs to support the surface used by
+        ``load_hf_texts``: ``column_names``, ``len()``, ``shuffle()``,
+        and ``select()``.
+        """
+        rows = [{"text": f"row {i} text payload"} for i in range(n_rows)]
+
+        class _FakeDataset:
+            def __init__(self, _rows):
+                self._rows = _rows
+                self.column_names = ["text"]
+
+            def __len__(self):
+                return len(self._rows)
+
+            def shuffle(self, seed=None):
+                # Deterministic "no-op shuffle" — we just want to
+                # verify the limit-handling branch, not RNG behavior.
+                return self
+
+            def select(self, indices):
+                return _FakeDataset([self._rows[i] for i in indices])
+
+            def __iter__(self):
+                return iter(self._rows)
+
+        ds = _FakeDataset(rows)
+
+        def _fake_load_dataset(*_a, **_kw):
+            return ds
+
+        return _fake_load_dataset
+
+    def test_limit_zero_returns_all_rows(self, monkeypatch):
+        """``limit=0`` means "no limit" — must return every row, not
+        raise ValueError (pre-PR-#166 behavior) and not return [].
+        """
+        fake_load = self._make_fake_load_dataset(n_rows=10)
+        # ``load_hf_texts`` does ``from datasets import load_dataset``
+        # at call time, so patch the source module's symbol.
+        import datasets as _datasets
+        monkeypatch.setattr(_datasets, "load_dataset", fake_load)
+
+        texts = hf.load_hf_texts(
+            dataset_name="dummy",
+            split="train",
+            text_column="text",
+            limit=0,
+        )
+        assert len(texts) == 10, (
+            f"limit=0 must return all 10 rows; got {len(texts)}. "
+            "PR #166 redefined limit<=0 as 'no limit' — a regression "
+            "to the pre-#166 'raise ValueError' contract would break "
+            "callers that pass limit=0 to mean 'use the full dataset'."
+        )
+
+    def test_limit_negative_returns_all_rows(self, monkeypatch):
+        """``limit=-1`` also means "no limit" per the implementation
+        (``if limit <= 0 or limit >= total``)."""
+        fake_load = self._make_fake_load_dataset(n_rows=10)
+        import datasets as _datasets
+        monkeypatch.setattr(_datasets, "load_dataset", fake_load)
+
+        texts = hf.load_hf_texts(
+            dataset_name="dummy",
+            split="train",
+            text_column="text",
+            limit=-1,
+        )
+        assert len(texts) == 10, (
+            f"limit=-1 must return all 10 rows; got {len(texts)}. "
+            "Any limit <= 0 is the 'no limit' sentinel."
+        )
+
+    def test_limit_positive_truncates(self, monkeypatch):
+        """A positive ``limit`` below the dataset size must subsample
+        exactly that many rows."""
+        fake_load = self._make_fake_load_dataset(n_rows=10)
+        import datasets as _datasets
+        monkeypatch.setattr(_datasets, "load_dataset", fake_load)
+
+        texts = hf.load_hf_texts(
+            dataset_name="dummy",
+            split="train",
+            text_column="text",
+            limit=5,
+        )
+        assert len(texts) == 5, (
+            f"limit=5 must return exactly 5 rows; got {len(texts)}."
+        )

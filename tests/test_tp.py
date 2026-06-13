@@ -52,6 +52,23 @@ class TestTP:
         with pytest.raises(AssertionError, match="not initialized"):
             tp.get_context_parallel_group()
 
+    def test_tp_rank_and_world_size_have_identity_defaults(self):
+        """get_tensor_parallel_rank/world_size must NOT raise when the TP
+        group is uninitialized — they return the identity-group values
+        (rank=0, world=1). Otherwise any caller that wants to log/report
+        ``tp_rank`` has to either probe ``tensor_parallel_is_initialized``
+        first or wrap the call in try/except — both annoying and easy to
+        forget. Concretely this was the bug surfaced by
+        ``ezpz launch python3 -m ezpz.examples.fsdp_tp --tp=1``, which
+        hit `AssertionError: tensor parallel group is not initialized`
+        from inside the per-step metric path.
+        """
+        # Sanity: TP is in fact NOT initialized in this test session.
+        assert tp.tensor_parallel_is_initialized() is False
+        # Both accessors must return the trivial-group defaults.
+        assert tp.get_tensor_parallel_rank() == 0
+        assert tp.get_tensor_parallel_world_size() == 1
+
 
 # ---------------------------------------------------------------------------
 # Pure function tests (no distributed mocking needed)

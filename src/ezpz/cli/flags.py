@@ -205,8 +205,28 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--model",
         type=str,
         default=None,
-        choices=["debug", "small", "medium", "large"],
-        help="Model size preset for the smoke test.",
+        # Choices kept in sync with `ezpz.examples.test.MODEL_PRESETS`
+        # and `MODEL_ALIASES`. If you add a size to test.py, add it
+        # here too (this parser is in cli/flags.py, separate module
+        # from test.py — couldn't import MODEL_PRESETS without
+        # creating a circular dep).
+        choices=[
+            "debug",
+            "s", "small",
+            "m", "medium",
+            "l", "large",
+            "xl", "xlarge", "extra-large",
+            "xxl", "xxlarge", "extra-extra-large",
+            "xxxl", "xxxlarge", "extra-extra-extra-large",
+        ],
+        help=(
+            "Model size preset for the smoke test. The size ladder is "
+            "`debug → s → m → l → xl → xxl → xxxl` targeting roughly "
+            "100M/250M/500M/1B/5B/10B params respectively. Long-form "
+            "aliases (`small`/`medium`/`large`/`xlarge`/`extra-large`/...) "
+            "map onto the same ladder. `debug` is the laptop-runnable "
+            "smoke-test preset (~110K params)."
+        ),
     )
     parser.add_argument(
         "--log-freq",
@@ -274,6 +294,23 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--no-distributed-history",
         action="store_true",
         help="Disable distributed history aggregation",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/DDP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search - slow startup, fastest steady state."
+        ),
     )
     return parser
 
