@@ -27,6 +27,27 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
 
 ## Common modifications
 
+- **Pick a model size** — pass `--model {debug,small,medium,large,xl,xxl,xxxl}`.
+  Each `xN` size also accepts long-form aliases (`xlarge`/`extra-large` etc.).
+  Sizes climb in roughly Llama-1.5B / 7B / 13B parameter targets at
+  `xl`/`xxl`/`xxxl`.
+- **AuroraGPT presets** — `--model agpt-2b` or `--model agpt-20b` reproduce
+  torchtitan's `agpt_configs` registry exactly (`dim`, `n_layers`, `n_heads`,
+  `n_kv_heads`, `vocab_size`, `hidden_dim`, `rope_theta` all match). Useful
+  for A/B'ing against a torchtitan agpt run on identical architecture.
+  Aliases: `agpt2b`, `agpt_2b`, `AGPT-2B` (and 20b counterparts).
+- **Load a HuggingFace model** — pass any `--model owner/repo` (e.g.
+  `--model meta-llama/Llama-3.2-1B`). The `/` is the sentinel — anything
+  with one is treated as a HF repo id, pulled via `AutoModelForCausalLM`,
+  and wrapped with FSDP. `--tokenizer_name` auto-defaults to the same repo.
+  **Note**: HF mode forces `--tp 1` (the TP plan is hardcoded to ezpz's own
+  Transformer module names; doesn't apply to HF's `LlamaDecoderLayer`). See
+  [HuggingFace models](#huggingface-models) for details.
+- **Activation checkpointing** — `--ac {none,block,full,selective}` (or
+  `--activation-checkpoint`) trades compute for memory during training.
+  `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
+  reduction, ~20 pct throughput hit); matches torchtitan's default for
+  agpt-2b/agpt-20b. See [Activation checkpointing](#activation-checkpointing).
 - **Compile with torch.compile** — pass `--compile` to wrap the model with
   `torch.compile()` after FSDP/DDP wrap. Tune the mode with
   `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).

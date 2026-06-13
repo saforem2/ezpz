@@ -19,6 +19,27 @@ ezpz launch python3 -m ezpz.examples.test
 
 ## Common modifications
 
+- **Pick a model size** — pass `--model {debug,small,medium,large,xl,xxl,xxxl}`.
+  Each `xN` size also accepts long-form aliases (`xlarge`/`extra-large` etc).
+  Approximate parameter counts (MNIST `input_dim=784` + `output=10`):
+
+  | Preset | Params | Memory (bf16 weights) |
+  |---|---|---|
+  | `debug` | ~110K | < 1 MiB |
+  | `small` | ~250K | < 1 MiB |
+  | `medium` | ~570K | 1 MiB |
+  | `large` | ~1.5M | 3 MiB |
+  | `xl` | **~65M** | 120 MiB |
+  | `xxl` | **~256M** | 480 MiB |
+  | `xxxl` | **~1.8B** | 3.4 GiB |
+
+  The `xl`/`xxl`/`xxxl` sizes are deliberately big — `xxxl` lands in the
+  agpt-2b parameter ballpark so the size ladder is consistent with the
+  other examples (`vit-xxxl` ≈ 2B, `fsdp_tp-xxxl` ≈ 13B). Adam state at
+  `xxxl` dominates per-rank memory (~14 GiB fp32 for m+v); batch sizes
+  halve at each step to compensate.
+- **Override individual dims** — `--layer-sizes 4096 2048 1024` overrides
+  the preset's hidden-layer widths; `--batch-size N` overrides batch.
 - **Compile with torch.compile** — pass `--compile` to wrap the model with
   `torch.compile()` after FSDP/DDP wrap. Tune the mode with
   `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
