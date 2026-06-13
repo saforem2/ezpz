@@ -99,6 +99,20 @@ logger = ezpz.get_logger(__name__)
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 
+# Unified size ladder shared across all ezpz example modules:
+#     s (~100M) -> m (~250M) -> l (~500M) -> xl (~1B) -> xxl (~5B) -> xxxl (~10B)
+# For ViT (224x224 RGB, 1000 classes) the analytic param counts are:
+#     s     ~87M    (ViT-Base-like)
+#     m     ~204M
+#     l     ~632M   (ViT-L-ish)
+#     xl    ~1.21B  (toward ViT-H)
+#     xxl   ~5.44B
+#     xxxl  ~9.67B  (approaches the ViT-22B trajectory)
+# BREAKING: ``--model small`` is now ViT-Base (~87M) — previously this
+# alias resolved to a deeper ~38M custom config. The long-form aliases
+# (small/medium/large/xlarge/...) map onto the short ladder below.
+# Batch sizes halve at each rung to keep memory footprint roughly
+# constant on commodity GPUs.
 MODEL_PRESETS = {
     "debug": {
         "batch_size": 4,
@@ -106,56 +120,53 @@ MODEL_PRESETS = {
         "head_dim": 16,
         "depth": 2,
     },
-    "small": {
-        "batch_size": 128,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 24,
-    },
-    "medium": {
+    "s": {
         "batch_size": 64,
         "num_heads": 12,
         "head_dim": 64,
-        "depth": 16,
+        "depth": 12,
     },
-    "large": {
+    "m": {
         "batch_size": 32,
         "num_heads": 16,
         "head_dim": 64,
-        "depth": 32,
+        "depth": 16,
     },
-    # xl/xxl/xxxl roughly match published ViT scales (Huge ≈ 630M,
-    # ViT-22B-ish trajectory). Batch sizes halve at each step to
-    # keep memory footprint roughly constant on commodity GPUs.
-    "xl": {
+    "l": {
         "batch_size": 16,
         "num_heads": 16,
         "head_dim": 80,
         "depth": 32,
     },
-    "xxl": {
+    "xl": {
         "batch_size": 8,
         "num_heads": 16,
-        "head_dim": 96,
+        "head_dim": 128,
+        "depth": 24,
+    },
+    "xxl": {
+        "batch_size": 4,
+        "num_heads": 24,
+        "head_dim": 128,
         "depth": 48,
     },
     "xxxl": {
-        "batch_size": 4,
-        "num_heads": 20,
+        "batch_size": 2,
+        "num_heads": 32,
         "head_dim": 128,
-        "depth": 56,
+        "depth": 48,
     },
 }
 MODEL_ALIASES = {
-    "med": "medium",
-    # xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
-    # all resolve to the same preset).
-    "xlarge": "xl",
+    "small": "s",
+    "medium": "m",
+    "large": "l",
     "extra-large": "xl",
-    "xxlarge": "xxl",
+    "xlarge": "xl",
     "extra-extra-large": "xxl",
-    "xxxlarge": "xxxl",
+    "xxlarge": "xxl",
     "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch_size", "--batch-size"],

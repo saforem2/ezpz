@@ -182,33 +182,39 @@ MODEL_PRESETS = {
         "seq_len": 256,
         "batch_size": 1,
     },
-    "small": {
-        "dim": 256,
-        "n_layers": 8,
-        "n_heads": 8,
+    # ---- size ladder: s / m / l / xl / xxl / xxxl ----
+    # Targets ~125M / ~250M / ~500M / ~1B / ~5B / ~10B params (Llama-arch,
+    # vocab=32k). This is a BREAKING semantic change: the old
+    # `small/medium/large` were toy-scale (~6M / ~50M / ~170M). Those
+    # long-form names still parse (via MODEL_ALIASES) but now map to the
+    # new s/m/l presets. Use `debug` for the laptop-friendly tiny model.
+    "s": {
+        "dim": 768,
+        "n_layers": 12,
+        "n_heads": 12,
         "n_kv_heads": 4,
-        "multiple_of": 128,
-        "seq_len": 512,
-        "batch_size": 2,
-    },
-    "medium": {
-        "dim": 512,
-        "n_layers": 16,
-        "n_heads": 8,
-        "n_kv_heads": 4,
-        "multiple_of": 256,
-        "seq_len": 1024,
-        "batch_size": 2,
-    },
-    "large": {
-        "dim": 1024,
-        "n_layers": 24,
-        "n_heads": 16,
-        "n_kv_heads": 8,
         "multiple_of": 256,
         "seq_len": 2048,
-        "batch_size": 1,
-    },
+        "batch_size": 4,
+    },  # ~125M
+    "m": {
+        "dim": 1024,
+        "n_layers": 16,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,
+        "seq_len": 2048,
+        "batch_size": 4,
+    },  # ~246M
+    "l": {
+        "dim": 1536,
+        "n_layers": 16,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "multiple_of": 256,
+        "seq_len": 2048,
+        "batch_size": 2,
+    },  # ~495M
     # xl/xxl/xxxl map roughly to Llama-1.5B / Llama-7B / Llama-13B
     # architectures (dim × layers chosen to hit those parameter
     # counts). Batch size stays at 1 — at these scales the user is
@@ -271,9 +277,14 @@ MODEL_PRESETS = {
         "batch_size": 1,
     },
 }
-# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
-# all resolve to the same preset).
+# Long-form size aliases (--model xl|xlarge|extra-large all resolve to xl).
+# NOTE: small/medium/large now map to the new ~125M/~250M/~500M presets
+# (s/m/l), not the previous toy-scale architectures. Use `debug` for the
+# laptop-friendly tiny model.
 MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
     "xlarge": "xl",
     "extra-large": "xl",
     "xxlarge": "xxl",

@@ -45,6 +45,36 @@ scheduler is auto-detected.
 | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:fontawesome-brands-github:][gh-hf-trainer] | `hf_trainer` | Using HF Trainer with ezpz's launcher | Beginner |
 | [:lucide-book:][ex-inference] · [:lucide-file-code:][api-inference] · [:fontawesome-brands-github:][gh-inference] | `inference` | Distributed HF inference (benchmark / generate / eval modes) | Intermediate |
 
+### Model size ladder
+
+All 5 training examples (`test`, `fsdp`, `vit`, `diffusion`, `fsdp_tp`)
+expose the same `--model {debug,s,m,l,xl,xxl,xxxl}` preset ladder
+targeting consistent parameter counts. Architectures differ; the
+ladder positions are aligned.
+
+| Preset | Target | `test` | `fsdp` | `vit` | `diffusion` | `fsdp_tp` |
+|--------|-------:|-------:|-------:|------:|------------:|----------:|
+| `debug` | smoke | ~110K | ~10K | ~50K | ~50K | ~10K |
+| `s` (small) | ~100M | 107M | 76M | 87M | 101M | 125M |
+| `m` (medium) | ~250M | 248M | 227M | 204M | 274M | 246M |
+| `l` (large) | ~500M | 449M | 605M | 632M | 500M | 495M |
+| `xl` | ~1B | 858M | 1.21B | 1.21B | 939M | 1.21B |
+| `xxl` | ~5B | 3.43B | 4.84B | 5.44B | 5.50B | 5.93B |
+| `xxxl` | ~10B | 9.88B | 9.68B | 9.67B | 11.4B | 11.34B |
+
+Long-form aliases (`small`, `medium`, `large`, `xlarge`, `extra-large`,
+`xxlarge`, `extra-extra-large`, `xxxlarge`, `extra-extra-extra-large`)
+map onto the same short-name canonical presets.
+
+> **Breaking change** as of this release: `--model small` (and other
+> long-form aliases) now resolve to the production-scale ladder above.
+> Old toy-scale `small/medium/large` (~250K–1M params) are gone. Use
+> `--model debug` for the laptop-runnable smoke-test path.
+
+For Llama-specific configs, `fsdp_tp` additionally exposes the
+torchtitan-flavored `agpt-2b` (1.99B params) and `agpt-20b` (20.74B
+params) presets, which reproduce the AuroraGPT registry exactly.
+
 [ex-test]: test.md "Example"
 [api-test]: ../python/Code-Reference/examples/test.md "API Reference"
 [gh-test]: https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/test.py "GitHub Source"

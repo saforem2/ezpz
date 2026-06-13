@@ -61,14 +61,27 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
 
 ## Common modifications
 
-- **Pick a model size** — `--model {debug,small,medium,large,xl,xxl,xxxl}` sets
-  `hidden`, `n_layers`, `n_heads`, `seq_len`, `timesteps`, and `batch_size`
-  together. The three large sizes scale toward DiT-XL/2 and SD3-MMDiT
-  configurations (`hidden 768/1024/1280`, `n_layers 12/16/20`,
-  `n_heads 12/16/20`). Each `xN` also accepts the long-form aliases
-  (`xlarge` / `extra-large` → `xl`, `xxlarge` / `extra-extra-large` → `xxl`,
-  `xxxlarge` / `extra-extra-extra-large` → `xxxl`). Presets live in
-  `MODEL_PRESETS` near the top of `src/ezpz/examples/diffusion.py`.
+- **Pick a model size** — `--model {debug,s,m,l,xl,xxl,xxxl}` sets
+  `hidden`, `n_layers`, `n_heads`, `seq_len`, `timesteps`, and
+  `batch_size` together. Each short-name size also accepts long-form
+  aliases (`small`/`medium`/`large`/`xlarge`/`extra-large`/etc). Shared
+  size ladder across all 5 example modules:
+
+  | Preset | Diffusion (vocab=10k) |
+  |---|---|
+  | `debug` | < 1 MiB (laptop smoke test) |
+  | `s` (small) | **~101M** |
+  | `m` (medium) | **~274M** |
+  | `l` (large) | **~500M** |
+  | `xl` | **~939M** |
+  | `xxl` | **~5.50B** |
+  | `xxxl` | **~11.4B** |
+
+  > **Breaking change**: `--model small` now resolves to ~101M (was a
+  > toy ~6M). Use `--model debug` for laptop-runnable smoke tests.
+
+  Presets live in `MODEL_PRESETS` near the top of
+  `src/ezpz/examples/diffusion.py`.
 - **Tune the diffusion process** — `--timesteps`, `--seq-len`, `--train-steps`
   control the noise schedule length, sequence length, and total optimizer
   steps. Explicit flags override the preset.

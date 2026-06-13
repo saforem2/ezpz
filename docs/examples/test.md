@@ -19,25 +19,31 @@ ezpz launch python3 -m ezpz.examples.test
 
 ## Common modifications
 
-- **Pick a model size** — pass `--model {debug,small,medium,large,xl,xxl,xxxl}`.
-  Each `xN` size also accepts long-form aliases (`xlarge`/`extra-large` etc).
+- **Pick a model size** — pass `--model {debug,s,m,l,xl,xxl,xxxl}`. Each
+  short-name size also accepts long-form aliases (`small`/`medium`/`large`/
+  `xlarge`/`extra-large`/etc). The size ladder is shared across all 5
+  example modules — same `s/m/l/xl/xxl/xxxl` targets, different
+  architectures.
+
   Approximate parameter counts (MNIST `input_dim=784` + `output=10`):
 
   | Preset | Params | Memory (bf16 weights) |
   |---|---|---|
   | `debug` | ~110K | < 1 MiB |
-  | `small` | ~250K | < 1 MiB |
-  | `medium` | ~570K | 1 MiB |
-  | `large` | ~1.5M | 3 MiB |
-  | `xl` | **~65M** | 120 MiB |
-  | `xxl` | **~256M** | 480 MiB |
-  | `xxxl` | **~1.8B** | 3.4 GiB |
+  | `s` (small) | **~107M** | 200 MiB |
+  | `m` (medium) | **~248M** | 470 MiB |
+  | `l` (large) | **~449M** | 850 MiB |
+  | `xl` | **~858M** | 1.6 GiB |
+  | `xxl` | **~3.4B** | 6.4 GiB |
+  | `xxxl` | **~9.9B** | 19 GiB |
 
-  The `xl`/`xxl`/`xxxl` sizes are deliberately big — `xxxl` lands in the
-  agpt-2b parameter ballpark so the size ladder is consistent with the
-  other examples (`vit-xxxl` ≈ 2B, `fsdp_tp-xxxl` ≈ 13B). Adam state at
-  `xxxl` dominates per-rank memory (~14 GiB fp32 for m+v); batch sizes
-  halve at each step to compensate.
+  > **Breaking change**: `--model small` now resolves to ~107M params
+  > (was ~250K). Use `--model debug` for the old laptop-friendly toy.
+
+  Adam state at `xxxl` dominates per-rank memory (~80 GiB fp32 for m+v);
+  batch sizes halve at each rung to compensate. The MLP is
+  architecturally trivial — depth/width is the only knob, so layer_sizes
+  grows aggressively at the top of the ladder.
 - **Override individual dims** — `--layer-sizes 4096 2048 1024` overrides
   the preset's hidden-layer widths; `--batch-size N` overrides batch.
 - **Compile with torch.compile** — pass `--compile` to wrap the model with

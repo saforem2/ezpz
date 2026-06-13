@@ -69,13 +69,29 @@ log captured on Sunspot).
 ## Common modifications
 
 - **Pick a different model size** — pass
-  `--model {debug,small,medium,large,xl,xxl,xxxl}` or override
-  `--conv1-channels / --conv2-channels / --fc-dim` directly. The `xl/xxl/xxxl`
-  presets follow geometric 2× CNN channel scaling (the model is a toy
-  classifier, so sizes mainly stress-test FSDP wrapping rather than mimicking
-  published architectures). Long-form aliases work too: `--model xlarge` or
-  `--model extra-large` both resolve to `xl`. Presets live in `MODEL_PRESETS`
-  near the top of `src/ezpz/examples/fsdp.py`.
+  `--model {debug,s,m,l,xl,xxl,xxxl}` or override
+  `--conv1-channels / --conv2-channels / --fc-dim` directly. Each
+  short-name size also accepts long-form aliases
+  (`small`/`medium`/`large`/`xlarge`/`extra-large`/etc). Shared size
+  ladder across all 5 example modules:
+
+  | Preset | CNN (MNIST) |
+  |---|---|
+  | `debug` | < 1 MiB (laptop smoke test) |
+  | `s` (small) | **~76M** |
+  | `m` (medium) | **~227M** |
+  | `l` (large) | **~605M** |
+  | `xl` | **~1.21B** |
+  | `xxl` | **~4.84B** |
+  | `xxxl` | **~9.68B** |
+
+  > **Breaking change**: `--model small` now resolves to ~76M (was a
+  > toy ~38K). Use `--model debug` for laptop-runnable smoke tests.
+
+  Architectural note: at `xxxl` the single FC layer dominates (~9 GiB
+  of dense linear weights). The CNN is intentionally trivial — sizes
+  mainly stress-test FSDP wrapping, not real CNN topology. Presets live
+  in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
 - **Train on a bigger dataset** — `--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}`
   routes through `get_data()` to dataset-specific loaders in `ezpz.data.vision`.
 - **Switch the FSDP compute dtype** — pass `--dtype {bf16,fp16,fp32}`. The value

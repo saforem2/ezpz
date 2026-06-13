@@ -1,18 +1,22 @@
-"""Tests for the XL/XXL/XXXL model-size presets across ezpz.examples.
+"""Tests for the unified s/m/l/xl/xxl/xxxl model-size ladder across
+ezpz.examples.
 
 Each example exposes a MODEL_PRESETS dict (size_name → preset values)
-plus a MODEL_ALIASES dict (alias → canonical_size_name). Users can
-say ``--model xl`` or ``--model xlarge`` or ``--model extra-large``
-and all three should resolve to the same preset.
+plus a MODEL_ALIASES dict (alias → canonical_size_name). The canonical
+short names are ``s/m/l/xl/xxl/xxxl`` targeting roughly
+``100M/250M/500M/1B/5B/10B`` params. Long-form aliases
+(``small``/``medium``/``large``/``xlarge``/``extra-large``/...) map
+onto the same ladder. ``debug`` is the laptop-runnable smoke-test
+preset (sub-MB scale) and is preserved across the ladder change.
 
 These tests pin the contract:
-1. Every example has the three new sizes (``xl``, ``xxl``, ``xxxl``).
-2. Every example accepts the long-form aliases (``xlarge`` /
-   ``extra-large`` / etc.) and resolves them to the same preset as
-   the short form.
-3. argparse rejects unknown sizes (no silent fallthrough).
-4. Sizes are strictly increasing in their main "model capacity"
-   dimension (catches accidental down-scaling).
+1. Every example has all 6 ladder presets (``s/m/l/xl/xxl/xxxl``).
+2. Every example also preserves ``debug``.
+3. Long-form aliases (``small``/``medium``/.../``extra-extra-extra-large``)
+   resolve to the same preset values as the short forms.
+4. Aliases never point at nonexistent presets.
+5. End-to-end CLI parse: ``--model xl`` and ``--model xlarge`` produce
+   identical Namespaces.
 """
 
 from __future__ import annotations
@@ -23,22 +27,24 @@ from typing import Any
 import pytest
 
 
-# Map of example module name → (alias dict attribute, presets dict
-# attribute, "size signal" key to use for monotonicity check).
-# The "size signal" key is whichever field most cleanly captures
-# the model's parameter count for that file's NN topology.
+# Map of example module name → (presets attr, aliases attr).
+# All 5 examples now use the same ladder, so monotonicity / size-signal
+# checks are handled by test_example_size_targets.py (which actually
+# verifies parameter counts hit the targets).
 _EXAMPLES = [
-    # (module, presets_attr, aliases_attr, monotonic_key)
-    ("ezpz.examples.test", "MODEL_PRESETS", "MODEL_ALIASES", None),  # layer_sizes is a list — skip strict mono check
-    ("ezpz.examples.fsdp", "MODEL_PRESETS", "MODEL_ALIASES", "fc_dim"),
-    ("ezpz.examples.vit", "MODEL_PRESETS", "MODEL_ALIASES", "head_dim"),
-    ("ezpz.examples.diffusion", "MODEL_PRESETS", "MODEL_ALIASES", "hidden"),
-    ("ezpz.examples.fsdp_tp", "MODEL_PRESETS", "MODEL_ALIASES", "dim"),
+    ("ezpz.examples.test", "MODEL_PRESETS", "MODEL_ALIASES"),
+    ("ezpz.examples.fsdp", "MODEL_PRESETS", "MODEL_ALIASES"),
+    ("ezpz.examples.vit", "MODEL_PRESETS", "MODEL_ALIASES"),
+    ("ezpz.examples.diffusion", "MODEL_PRESETS", "MODEL_ALIASES"),
+    ("ezpz.examples.fsdp_tp", "MODEL_PRESETS", "MODEL_ALIASES"),
 ]
 
 
-_EXPECTED_NEW_SIZES = ("xl", "xxl", "xxxl")
+_LADDER_SIZES = ("s", "m", "l", "xl", "xxl", "xxxl")
 _EXPECTED_ALIAS_GROUPS = {
+    "s": ("small",),
+    "m": ("medium",),
+    "l": ("large",),
     "xl": ("xlarge", "extra-large"),
     "xxl": ("xxlarge", "extra-extra-large"),
     "xxxl": ("xxxlarge", "extra-extra-extra-large"),
@@ -65,31 +71,41 @@ def _load(module_name: str) -> Any:
 
 
 @pytest.mark.parametrize(
-    "module_name,presets_attr,aliases_attr,_mono",
+    "module_name,presets_attr,aliases_attr",
     _EXAMPLES,
-    ids=[m for m, _, _, _ in _EXAMPLES],
+    ids=[m for m, _, _ in _EXAMPLES],
 )
 class TestModelSizePresets:
-    def test_has_xl_xxl_xxxl_presets(
-        self, module_name, presets_attr, aliases_attr, _mono
+    def test_has_all_ladder_sizes(
+        self, module_name, presets_attr, aliases_attr
     ):
-        """All 3 new size names must appear in MODEL_PRESETS."""
+        """All 6 canonical short-name sizes must appear in MODEL_PRESETS."""
         mod = _load(module_name)
         presets = getattr(mod, presets_attr)
-        for size in _EXPECTED_NEW_SIZES:
+        for size in _LADDER_SIZES:
             assert size in presets, (
                 f"{module_name}.{presets_attr} missing '{size}' "
                 f"preset. Got: {sorted(presets.keys())}"
             )
 
-    def test_has_long_form_aliases(
-        self, module_name, presets_attr, aliases_attr, _mono
+    def test_preserves_debug_preset(
+        self, module_name, presets_attr, aliases_attr
     ):
-        """Each new size has both short-form and long-form aliases.
+        """`debug` is the laptop-runnable smoke-test escape hatch and
+        must survive the s/m/l/xl/xxl/xxxl ladder migration."""
+        mod = _load(module_name)
+        presets = getattr(mod, presets_attr)
+        assert "debug" in presets, (
+            f"{module_name}.{presets_attr} dropped the `debug` preset. "
+            "Keep it — it's the smoke-test entry point."
+        )
 
-        E.g. ``--model xl``, ``--model xlarge``, and
-        ``--model extra-large`` must all resolve to the ``xl``
-        preset.
+    def test_has_long_form_aliases(
+        self, module_name, presets_attr, aliases_attr
+    ):
+        """Long-form names map to canonical short names.
+
+        E.g. ``small → s``, ``xlarge → xl``, ``extra-large → xl``.
         """
         mod = _load(module_name)
         aliases = getattr(mod, aliases_attr)
@@ -106,7 +122,7 @@ class TestModelSizePresets:
                 )
 
     def test_aliases_point_to_real_presets(
-        self, module_name, presets_attr, aliases_attr, _mono
+        self, module_name, presets_attr, aliases_attr
     ):
         """Every alias must point to a key that actually exists in
         MODEL_PRESETS. Catches typos (alias → nonexistent preset)
@@ -121,40 +137,6 @@ class TestModelSizePresets:
                 f"{presets_attr}. Got presets: {sorted(presets.keys())}"
             )
 
-    def test_size_monotonically_increasing(
-        self, module_name, presets_attr, aliases_attr, _mono
-    ):
-        """Each consecutive size (large → xl → xxl → xxxl) should
-        scale UP on the chosen monotonicity-signal key.
-
-        Skipped for examples where the size signal is a list
-        (e.g. test.py uses layer_sizes — comparing nested lists
-        for monotonicity is its own thing). For those, the other
-        tests verify the presets exist + aliases resolve.
-        """
-        if _mono is None:
-            pytest.skip(f"no scalar size signal for {module_name}")
-        mod = _load(module_name)
-        presets = getattr(mod, presets_attr)
-        # large is the "old" top size; xl/xxl/xxxl should each be
-        # strictly larger.
-        sequence = ["large", "xl", "xxl", "xxxl"]
-        values = [presets[s][_mono] for s in sequence if s in presets]
-        assert values == sorted(values), (
-            f"{module_name}: '{_mono}' is not monotonically "
-            f"increasing across {sequence}. Got: "
-            f"{dict(zip(sequence, values))}"
-        )
-        # Also: strictly increasing, not just non-decreasing — if
-        # two consecutive sizes are equal on the size signal, the
-        # XL/XXL/XXXL distinction is meaningless for this metric.
-        for a, b in zip(values, values[1:]):
-            assert a < b, (
-                f"{module_name}: '{_mono}' did not strictly "
-                f"increase from {a} → {b} between consecutive "
-                f"sizes. XL/XXL/XXXL should be distinct."
-            )
-
 
 # ===================================================================
 # End-to-end CLI parse: --model xl etc. actually applies the preset
@@ -163,25 +145,25 @@ class TestModelSizePresets:
 
 def _parse_with_model(module_name: str, model_value: str) -> Any:
     """Run the example's parse_args with --model <value> and return
-    the resulting Namespace. Used to verify the preset values
-    actually propagate to argparse output."""
+    the resulting Namespace."""
     mod = _load(module_name)
     parse_args = mod.parse_args
-    # The vit, fsdp, fsdp_tp, diffusion parse_args take an argv
-    # list directly. test.py's parse_args also accepts argv.
     return parse_args(["--model", model_value])
 
 
 @pytest.mark.parametrize(
     "module_name,short,alias",
     [
-        # Just spot-check vit + fsdp_tp end-to-end (the others use the
-        # same alias-resolution helper). If those two work, the
-        # contract is exercised.
+        # Cover each example × at least one long-form alias.
         ("ezpz.examples.vit", "xl", "xlarge"),
         ("ezpz.examples.vit", "xxl", "extra-extra-large"),
+        ("ezpz.examples.vit", "s", "small"),
         ("ezpz.examples.fsdp_tp", "xl", "xlarge"),
         ("ezpz.examples.fsdp_tp", "xxxl", "extra-extra-extra-large"),
+        ("ezpz.examples.fsdp_tp", "l", "large"),
+        ("ezpz.examples.fsdp", "m", "medium"),
+        ("ezpz.examples.diffusion", "xxl", "xxlarge"),
+        ("ezpz.examples.test", "s", "small"),
     ],
     ids=lambda v: str(v),
 )

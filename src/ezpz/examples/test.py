@@ -36,6 +36,29 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
 
+# Size ladder shared across all five example modules
+# (test, fsdp, vit, diffusion, fsdp-tp, hf, minimal):
+#
+#   s    → ~100M params
+#   m    → ~250M
+#   l    → ~500M
+#   xl   →   ~1B
+#   xxl  →   ~5B
+#   xxxl →  ~10B
+#
+# For test.py (MLP, MNIST input_dim=784 + output=10), depth/width are
+# the only knobs, so the layer_sizes are chosen to hit those param
+# targets within an order of magnitude. batch_size shrinks at each
+# step to keep activation + optimizer-state memory roughly constant
+# per rank — Adam state at xxxl is already ~120 GiB in fp32
+# (4× params × 2 for m+v), which dominates per-rank memory under FSDP.
+#
+# BREAKING (vs pre-v0.19): the old `small / medium / large` keys are
+# gone; `--model small` (via the alias below) now produces ~100M
+# params instead of ~250K. If you want the old "tiny laptop MLP",
+# use `--model debug` — that preset is the new escape-hatch for
+# "does this run at all" smoke-testing and is intentionally
+# unchanged.
 MODEL_PRESETS = {
     "debug": {
         "batch_size": 16,
@@ -44,74 +67,61 @@ MODEL_PRESETS = {
         "print_freq": 1,
         "layer_sizes": [128, 64],
     },
-    "small": {
-        "batch_size": 64,
-        "train_iters": 200,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [256, 128, 64],
-    },
-    "medium": {
-        "batch_size": 128,
-        "train_iters": 200,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [512, 256, 128],
-    },
-    "large": {
-        "batch_size": 256,
-        "train_iters": 400,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [1024, 512, 256],
-    },
-    # xl/xxl/xxxl are sized for meaningful FSDP / distributed-init
-    # stress, not just for "is it a bigger MLP". Approximate param
-    # counts with MNIST input_dim=784 + output=10:
-    #
-    #   xl    →  ~65M   (~0.12 GiB bf16 weights only)
-    #   xxl   → ~256M   (~0.48 GiB)
-    #   xxxl  → ~1.8B   (~3.4 GiB)  — order-of-magnitude match for
-    #                                 ezpz.examples.fsdp_tp's xxxl
-    #                                 (Llama-13B-ish) and vit's xxxl
-    #                                 (ViT-Huge/22B-trajectory ~2B).
-    #
-    # The MLP is still architecturally trivial; depth/width is the
-    # only knob. batch_size halves at each step to keep activation +
-    # optimizer-state memory roughly constant per rank, since adam
-    # state at xxxl is already ~14 GiB in fp32 (4x params × 2 for
-    # m+v) — that dominates per-rank memory under FSDP.
-    "xl": {
+    "s": {
         "batch_size": 64,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [8192, 4096, 4096, 2048],
-    },
-    "xxl": {
+        "layer_sizes": [8192, 8192, 4096],
+    },  # ~107M
+    "m": {
         "batch_size": 32,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [16384, 8192, 8192, 4096, 2048],
-    },
-    "xxxl": {
+        "layer_sizes": [16384, 8192, 8192, 4096],
+    },  # ~248M
+    "l": {
+        "batch_size": 32,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [16384, 16384, 8192, 4096],
+    },  # ~449M
+    "xl": {
+        "batch_size": 16,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [24576, 16384, 16384, 8192, 4096],
+    },  # ~858M
+    "xxl": {
         "batch_size": 8,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [32768, 32768, 16384, 8192, 4096, 2048],
-    },
+        "layer_sizes": [49152, 49152, 16384, 8192, 4096],
+    },  # ~3.43B
+    "xxxl": {
+        "batch_size": 4,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [65536, 65536, 65536, 16384, 8192, 4096],
+    },  # ~9.88B
 }
-# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
-# all resolve to the same preset).
+# Long-form aliases — `--model small` and `--model extra-large` etc.
+# resolve to the short canonical keys in MODEL_PRESETS above.
 MODEL_ALIASES = {
-    "xlarge": "xl",
+    "small": "s",
+    "medium": "m",
+    "large": "l",
     "extra-large": "xl",
-    "xxlarge": "xxl",
+    "xlarge": "xl",
     "extra-extra-large": "xxl",
-    "xxxlarge": "xxxl",
+    "xxlarge": "xxl",
     "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch-size"],

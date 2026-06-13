@@ -90,6 +90,19 @@ logger = ezpz.get_logger(__name__)
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 
+# MODEL_PRESETS defines a consistent size ladder shared across all
+# ezpz example modules:
+#
+#   s    (~100M), m    (~250M), l    (~500M),
+#   xl   (~1B),   xxl  (~5B),   xxxl (~10B)
+#
+# `debug` remains a tiny laptop smoke-test config and is not part of
+# the ladder.
+#
+# BREAKING CHANGE: the previous keys `small`/`medium`/`large` are now
+# aliased to `s`/`m`/`l` (see MODEL_ALIASES) and have substantially
+# larger parameter counts than before. Previous `xl`/`xxl`/`xxxl`
+# values are also replaced with the new ladder targets.
 MODEL_PRESETS = {
     "debug": {
         "hidden": 64,
@@ -99,67 +112,67 @@ MODEL_PRESETS = {
         "timesteps": 32,
         "batch_size": 4,
     },
-    "small": {
-        "hidden": 128,
-        "n_layers": 4,
-        "n_heads": 4,
-        "seq_len": 24,
-        "timesteps": 64,
-        "batch_size": 8,
-    },
-    "medium": {
-        "hidden": 256,
-        "n_layers": 6,
-        "n_heads": 8,
-        "seq_len": 48,
-        "timesteps": 128,
-        "batch_size": 4,
-    },
-    "large": {
-        "hidden": 512,
-        "n_layers": 8,
-        "n_heads": 8,
-        "seq_len": 64,
-        "timesteps": 256,
-        "batch_size": 2,
-    },
-    # xl/xxl/xxxl scale toward published diffusion-transformer sizes
-    # (DiT-XL/2 ≈ 675M; SD3-MMDiT ≈ 2-8B). Batch sizes drop with
-    # parameter count to stay within commodity-GPU memory.
-    "xl": {
+    "s": {
         "hidden": 768,
         "n_layers": 12,
         "n_heads": 12,
-        "seq_len": 96,
-        "timesteps": 512,
-        "batch_size": 2,
-    },
-    "xxl": {
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 4,
+    },  # ~101M
+    "m": {
         "hidden": 1024,
-        "n_layers": 16,
-        "n_heads": 16,
-        "seq_len": 128,
-        "timesteps": 1024,
-        "batch_size": 1,
-    },
-    "xxxl": {
-        "hidden": 1280,
         "n_layers": 20,
-        "n_heads": 20,
-        "seq_len": 160,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 4,
+    },  # ~274M
+    "l": {
+        "hidden": 1280,
+        "n_layers": 24,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 2,
+    },  # ~500M
+    "xl": {
+        "hidden": 1536,
+        "n_layers": 32,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 2,
+    },  # ~939M
+    "xxl": {
+        "hidden": 3072,
+        "n_layers": 48,
+        "n_heads": 24,
+        "seq_len": 256,
         "timesteps": 1024,
         "batch_size": 1,
-    },
+    },  # ~5.50B
+    "xxxl": {
+        "hidden": 4096,
+        "n_layers": 56,
+        "n_heads": 32,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 1,
+    },  # ~11.4B
 }
-# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large all
-# resolve to the same preset).
+# Long-form aliases (--model small|medium|large|xlarge|extra-large …
+# all resolve to the corresponding ladder preset).
 MODEL_ALIASES = {
-    "xlarge": "xl",
+    "small": "s",
+    "medium": "m",
+    "large": "l",
     "extra-large": "xl",
-    "xxlarge": "xxl",
+    "xlarge": "xl",
     "extra-extra-large": "xxl",
-    "xxxlarge": "xxxl",
+    "xxlarge": "xxl",
     "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "hidden": ["--hidden"],

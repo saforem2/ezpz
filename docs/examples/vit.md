@@ -72,11 +72,27 @@ specializes kernels — subsequent steps drop to the steady-state `dt`. See the
 
 ## Common modifications
 
-- **Pick a model size** — pass
-  `--model {debug,small,medium,med,large,xl,xxl,xxxl}`. Presets live in
-  `MODEL_PRESETS` near the top of `src/ezpz/examples/vit.py`; tweak the
-  dict to add your own. Each `xN` size also accepts the long-form aliases
-  (e.g. `--model xlarge` or `--model extra-large` both resolve to `xl`).
+- **Pick a model size** — pass `--model {debug,s,m,l,xl,xxl,xxxl}`. Each
+  short-name size also accepts long-form aliases
+  (`small`/`medium`/`large`/`xlarge`/`extra-large`/etc). Shared size
+  ladder across all 5 example modules:
+
+  | Preset | ViT (224×224 RGB, 1000 cls) |
+  |---|---|
+  | `debug` | < 1 MiB (laptop smoke test) |
+  | `s` (small) | **~87M** (ViT-Base-like) |
+  | `m` (medium) | **~204M** |
+  | `l` (large) | **~632M** (ViT-L-ish) |
+  | `xl` | **~1.21B** (toward ViT-H) |
+  | `xxl` | **~5.44B** |
+  | `xxxl` | **~9.67B** (ViT-22B trajectory) |
+
+  > **Breaking change**: `--model small` now resolves to ~87M (was a
+  > custom ~38M config). Use `--model debug` for laptop-runnable smoke
+  > tests.
+
+  Presets live in `MODEL_PRESETS` near the top of
+  `src/ezpz/examples/vit.py`; tweak the dict to add your own.
 - **Tune individual architecture knobs** — `--img_size`, `--patch_size`,
   `--num_heads`, `--head_dim`, `--depth`, `--embed_dim` all override the preset.
 - **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp_sharding_strategy`)

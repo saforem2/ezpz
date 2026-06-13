@@ -27,10 +27,23 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
 
 ## Common modifications
 
-- **Pick a model size** — pass `--model {debug,small,medium,large,xl,xxl,xxxl}`.
-  Each `xN` size also accepts long-form aliases (`xlarge`/`extra-large` etc.).
-  Sizes climb in roughly Llama-1.5B / 7B / 13B parameter targets at
-  `xl`/`xxl`/`xxxl`.
+- **Pick a model size** — pass `--model {debug,s,m,l,xl,xxl,xxxl}`. Each
+  short-name size also accepts long-form aliases (`small`/`medium`/`large`/
+  `xlarge`/`extra-large`/etc). Shared size ladder across all 5 example
+  modules:
+
+  | Preset | Llama-arch (vocab=32k) |
+  |---|---|
+  | `debug` | ~10K (laptop smoke test) |
+  | `s` (small) | **~125M** |
+  | `m` (medium) | **~246M** |
+  | `l` (large) | **~495M** |
+  | `xl` | **~1.21B** (Llama-1.5B-ish) |
+  | `xxl` | **~5.93B** (Llama-7B-ish) |
+  | `xxxl` | **~11.34B** (Llama-13B-ish) |
+
+  > **Breaking change**: `--model small` now resolves to ~125M (was a
+  > toy ~6M). Use `--model debug` for laptop-runnable smoke tests.
 - **AuroraGPT presets** — `--model agpt-2b` or `--model agpt-20b` reproduce
   torchtitan's `agpt_configs` registry exactly (`dim`, `n_layers`, `n_heads`,
   `n_kv_heads`, `vocab_size`, `hidden_dim`, `rope_theta` all match). Useful

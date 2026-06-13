@@ -41,56 +41,72 @@ fname = f"{fp.parent.stem}.{fp.stem}"
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 OUTPUT_DIR = Path(os.getcwd()).joinpath("outputs", fname)
 
+# Size ladder shared across all five example modules:
+#   s ~100M, m ~250M, l ~500M, xl ~1B, xxl ~5B, xxxl ~10B
+#
+# BREAKING CHANGE: prior to this redesign the long-form preset names
+# (`small`/`medium`/`large`) mapped to tiny CNNs (~38K / ~150K / ~600K
+# params). They now resolve via MODEL_ALIASES to the new short-form
+# tier (`s`/`m`/`l`), which are *orders of magnitude larger*:
+# `--model small` is now ~76M params (was ~38K).
+#
+# For this MNIST CNN (conv1 → conv2 → fc1 → fc2) the fc1 weight matrix
+# is `(conv2_channels * 144) * fc_dim` and dominates total parameter
+# count at scale. The xxxl preset is therefore best understood as a
+# wide CNN trunk feeding a giant fully-connected head — useful as an
+# FSDP wrapping / sharding stress test, NOT as a sensible production
+# architecture. CNN scaling is also choppy due to integer channel
+# constraints; sizes are within ~±25% of the ideal ladder ratios.
 MODEL_PRESETS = {
     "debug": {
         "conv1_channels": 8,
         "conv2_channels": 16,
         "fc_dim": 64,
     },
-    "small": {
-        "conv1_channels": 16,
-        "conv2_channels": 32,
-        "fc_dim": 128,
-    },
-    "medium": {
-        "conv1_channels": 32,
-        "conv2_channels": 64,
-        "fc_dim": 256,
-    },
-    "large": {
+    "s": {
         "conv1_channels": 64,
         "conv2_channels": 128,
-        "fc_dim": 512,
-    },
-    # xl/xxl/xxxl are geometric 2× scales of large. The CNN here is
-    # a toy MNIST classifier — these sizes mainly exist as stress-
-    # test parameters for FSDP wrapping, not as analogues to any
-    # published model.
-    "xl": {
-        "conv1_channels": 128,
-        "conv2_channels": 256,
-        "fc_dim": 1024,
-    },
-    "xxl": {
-        "conv1_channels": 256,
-        "conv2_channels": 512,
-        "fc_dim": 2048,
-    },
-    "xxxl": {
-        "conv1_channels": 512,
-        "conv2_channels": 1024,
         "fc_dim": 4096,
-    },
+    },  # ~76M (slight undershoot of ~100M ideal)
+    "m": {
+        "conv1_channels": 128,
+        "conv2_channels": 384,
+        "fc_dim": 4096,
+    },  # ~227M
+    "l": {
+        "conv1_channels": 128,
+        "conv2_channels": 512,
+        "fc_dim": 8192,
+    },  # ~605M
+    "xl": {
+        "conv1_channels": 256,
+        "conv2_channels": 1024,
+        "fc_dim": 8192,
+    },  # ~1.21B
+    "xxl": {
+        "conv1_channels": 512,
+        "conv2_channels": 2048,
+        "fc_dim": 16384,
+    },  # ~4.84B
+    "xxxl": {
+        "conv1_channels": 1024,
+        "conv2_channels": 2048,
+        "fc_dim": 32768,
+    },  # ~9.68B
 }
-# xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
-# all resolve to the same preset).
+# Long-form aliases collapse onto the short-form ladder so that
+# `--model small|medium|large|xlarge|extra-large|...` all resolve to
+# the new s/m/l/xl/xxl/xxxl presets defined above.
 MODEL_ALIASES = {
-    "xlarge": "xl",
+    "small": "s",
+    "medium": "m",
+    "large": "l",
     "extra-large": "xl",
-    "xxlarge": "xxl",
+    "xlarge": "xl",
     "extra-extra-large": "xxl",
-    "xxxlarge": "xxxl",
+    "xxlarge": "xxl",
     "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "conv1_channels": ["--conv1-channels"],

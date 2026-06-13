@@ -211,15 +211,21 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         # from test.py — couldn't import MODEL_PRESETS without
         # creating a circular dep).
         choices=[
-            "debug", "small", "medium", "large",
+            "debug",
+            "s", "small",
+            "m", "medium",
+            "l", "large",
             "xl", "xlarge", "extra-large",
             "xxl", "xxlarge", "extra-extra-large",
             "xxxl", "xxxlarge", "extra-extra-extra-large",
         ],
         help=(
-            "Model size preset for the smoke test. "
-            "xl/xxl/xxxl accept long-form aliases too: "
-            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+            "Model size preset for the smoke test. The size ladder is "
+            "`debug → s → m → l → xl → xxl → xxxl` targeting roughly "
+            "100M/250M/500M/1B/5B/10B params respectively. Long-form "
+            "aliases (`small`/`medium`/`large`/`xlarge`/`extra-large`/...) "
+            "map onto the same ladder. `debug` is the laptop-runnable "
+            "smoke-test preset (~110K params)."
         ),
     )
     parser.add_argument(
