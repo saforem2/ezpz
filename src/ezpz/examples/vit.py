@@ -89,6 +89,7 @@ import ezpz.distributed
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
@@ -316,8 +317,9 @@ class SimpleVisionTransformer(torch.nn.Module):
         return self.head(x)
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. See fsdp.py for the
+# original drift-prevention rationale.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:

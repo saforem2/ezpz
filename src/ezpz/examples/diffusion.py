@@ -82,6 +82,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
@@ -170,8 +171,9 @@ MODEL_PRESET_FLAGS = {
 }
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. See fsdp.py for the
+# original drift-prevention rationale.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:

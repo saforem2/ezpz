@@ -141,6 +141,7 @@ import torch.nn.functional as F
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh
@@ -507,23 +508,10 @@ def _wandb_log_histograms(
         wandb.log(hist_payload, step=step)
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    """Return True if any of ``flags`` was provided on the command line.
-
-    Matches both the space-separated form (``["--seq-len", "8192"]``,
-    one token per element) and the ``=``-fused form
-    (``"--seq-len=8192"``, single token). Without the prefix check the
-    preset-override logic in :func:`apply_model_preset` would silently
-    clobber any explicit ``--flag=value`` user override with the
-    preset's default — every preset value would "win" against
-    ``=``-style flags.
-    """
-    for flag in flags:
-        prefix = flag + "="
-        for token in argv:
-            if token == flag or token.startswith(prefix):
-                return True
-    return False
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. Originally local
+# here (b2c0b67); extracted to a shared module so the same fix
+# automatically applies to fsdp.py / vit.py / diffusion.py / test.py.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:

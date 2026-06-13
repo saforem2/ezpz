@@ -31,6 +31,7 @@ from torch.optim.lr_scheduler import StepLR
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 
 logger = ezpz.get_logger(__name__)
 
@@ -476,8 +477,12 @@ def fsdp_main(args: argparse.Namespace) -> None:
         del dataset  # logged by finalize()
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth. The previous local copy used `flag in argv` which
+# silently failed for `--flag=value` argv tokens (every preset
+# clobbered `--batch-size=32`-style user overrides). See PR #166
+# b2c0b67 for the original fix on fsdp_tp.py; this consolidation
+# prevents the same drift across the other examples.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:

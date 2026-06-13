@@ -23,6 +23,7 @@ import ezpz
 import ezpz.distributed
 from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.profile import get_profiling_context
 
@@ -587,8 +588,8 @@ def train(
     return trainer
 
 
-def _arg_provided(argv: Sequence[str], flags: Sequence[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper.
 
 
 def _apply_model_preset(args: argparse.Namespace, argv: Sequence[str]) -> None:
