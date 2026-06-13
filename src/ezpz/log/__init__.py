@@ -269,6 +269,16 @@ _DEFAULT_NOISY_LOGGERS: tuple[str, ...] = (
     "huggingface_hub",
     "filelock",
     "urllib3",
+    # datasets emits `logger.warning("Using the latest cached version of
+    # the dataset since ... couldn't be found on the Hugging Face Hub")`
+    # and a matching "Found the latest cached dataset configuration ..."
+    # from its cache-resolver — one line per rank. On a 96-rank job
+    # that's 96 lines per dataset access, dominating training output.
+    "datasets",
+    "datasets.load",
+    "datasets.builder",
+    "datasets.info",
+    "datasets.arrow_dataset",
 )
 
 
@@ -277,6 +287,7 @@ def silence_noisy_loggers(
     extra: Optional[Sequence[str]] = None,
     level: int = logging.WARNING,
     silence_transformers: bool = True,
+    silence_datasets: bool = True,
 ) -> None:
     """Quiet third-party loggers that spam INFO during ML workloads.
 
@@ -286,6 +297,8 @@ def silence_noisy_loggers(
         - ``huggingface_hub`` (resolve/redirect chatter)
         - ``filelock`` (acquire/release on every cache hit)
         - ``urllib3`` (connection pool diagnostics)
+        - ``datasets`` family ("Using the latest cached version ..."
+          warnings — one per rank when running on cached data)
 
     These are noisy enough to dominate the console output for any
     example that touches ``AutoTokenizer.from_pretrained`` or similar
@@ -301,6 +314,16 @@ def silence_noisy_loggers(
             and disable its progress bar. ``transformers`` is imported
             lazily inside the function so this is safe when the package
             isn't installed.
+        silence_datasets: also raise HuggingFace `datasets` library's
+            internal verbosity to ERROR via
+            `datasets.utils.logging.set_verbosity_error`. This is
+            necessary because `datasets` has TWO emit channels — Python
+            `logging` (caught by the level bump above) AND its own
+            internal verbosity-routed handlers (which print to stdout
+            regardless of the Python logging level). The internal
+            verbosity is the one that emits the plain-stdout
+            "Using the latest cached version ..." line on every rank.
+            ``datasets`` imported lazily, safe if not installed.
 
     Idempotent — safe to call multiple times.
     """
@@ -314,6 +337,14 @@ def silence_noisy_loggers(
             _transformers.logging.disable_progress_bar()
         except Exception:
             # transformers not installed; nothing to silence.
+            pass
+    if silence_datasets:
+        try:
+            import datasets.utils.logging as _dslogging
+            _dslogging.set_verbosity_error()
+            _dslogging.disable_progress_bar()
+        except Exception:
+            # datasets not installed; nothing to silence.
             pass
 
 
