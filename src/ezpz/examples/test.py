@@ -64,30 +64,42 @@ MODEL_PRESETS = {
         "print_freq": 10,
         "layer_sizes": [1024, 512, 256],
     },
-    # xl/xxl/xxxl scale the MLP geometrically (2× layer widths per
-    # step) with batch_size halving to keep memory roughly
-    # constant. This MLP is intentionally trivial — these sizes
-    # mainly exist as stress-test parameters for distributed init.
+    # xl/xxl/xxxl are sized for meaningful FSDP / distributed-init
+    # stress, not just for "is it a bigger MLP". Approximate param
+    # counts with MNIST input_dim=784 + output=10:
+    #
+    #   xl    →  ~65M   (~0.12 GiB bf16 weights only)
+    #   xxl   → ~256M   (~0.48 GiB)
+    #   xxxl  → ~1.8B   (~3.4 GiB)  — order-of-magnitude match for
+    #                                 ezpz.examples.fsdp_tp's xxxl
+    #                                 (Llama-13B-ish) and vit's xxxl
+    #                                 (ViT-Huge/22B-trajectory ~2B).
+    #
+    # The MLP is still architecturally trivial; depth/width is the
+    # only knob. batch_size halves at each step to keep activation +
+    # optimizer-state memory roughly constant per rank, since adam
+    # state at xxxl is already ~14 GiB in fp32 (4x params × 2 for
+    # m+v) — that dominates per-rank memory under FSDP.
     "xl": {
-        "batch_size": 128,
-        "train_iters": 400,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [2048, 1024, 512],
-    },
-    "xxl": {
         "batch_size": 64,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [4096, 2048, 1024],
+        "layer_sizes": [8192, 4096, 4096, 2048],
     },
-    "xxxl": {
+    "xxl": {
         "batch_size": 32,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [8192, 4096, 2048],
+        "layer_sizes": [16384, 8192, 8192, 4096, 2048],
+    },
+    "xxxl": {
+        "batch_size": 8,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [32768, 32768, 16384, 8192, 4096, 2048],
     },
 }
 # xl/xxl/xxxl long-form aliases (--model xl|xlarge|extra-large
