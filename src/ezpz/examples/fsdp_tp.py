@@ -733,7 +733,27 @@ def parse_args(argv: Optional[list[str]] = None):
             "repo id."
         ),
     )
-    parser.add_argument("--sharding-strategy", type=str, default="full_shard")
+    parser.add_argument(
+        "--sharding-strategy",
+        type=str,
+        default="full_shard",
+        choices=list(SHARDING_STRATEGIES.keys()),
+        help=(
+            "FSDP sharding strategy. "
+            "`full_shard` (default, ZeRO-3): shards params, grads, and "
+            "optimizer state across all ranks — lowest memory, highest "
+            "comm. "
+            "`shard_grad_op` (ZeRO-2): shards grads and optimizer state; "
+            "params replicated — moderate memory, less comm than full_shard. "
+            "`no_shard` (ZeRO-0 / DDP-equivalent): no sharding, pure data "
+            "parallel — highest memory, lowest comm. "
+            "`hybrid_shard`: full_shard within a node, replicate across "
+            "nodes — trades inter-node comm for intra-node sharding (good "
+            "on slow interconnects). "
+            "`hybrid_shard_zero2`: shard_grad_op within a node, replicate "
+            "across nodes."
+        ),
+    )
     parser.add_argument(
         "--activation-checkpoint",
         "--ac",
