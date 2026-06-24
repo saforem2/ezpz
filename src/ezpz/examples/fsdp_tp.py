@@ -68,10 +68,9 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                       [--sharding-strategy SHARDING_STRATEGY]
                       [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
                       [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
-                      [--model_name_or_path MODEL_NAME_OR_PATH]
                       [--hf-split HF_SPLIT] [--hf-text-column HF_TEXT_COLUMN]
                       [--hf-limit HF_LIMIT] [--seq-len SEQ_LEN]
-                      [--max-seq-len MAX_SEQ_LEN] [--depth-init DEPTH_INIT]
+                      [--max-seq-len MAX_SEQ_LEN]
                       [--fp32]
 
     2D Parallel Training
@@ -98,7 +97,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --outdir OUTDIR
       --dataset DATASET
       --tokenizer_name TOKENIZER_NAME
-      --model_name_or_path MODEL_NAME_OR_PATH
       --hf-split HF_SPLIT, --hf_split HF_SPLIT
                             Dataset split to load.
       --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
@@ -109,7 +107,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                             for smoke tests.
       --seq-len SEQ_LEN
       --max-seq-len MAX_SEQ_LEN
-      --depth-init DEPTH_INIT
       --fp32                Disable mixed precision (use fp32) for debugging NaNs.
 
 The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
@@ -138,7 +135,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-from ezpz.flops import compute_mfu, try_estimate
+from ezpz.flops import compute_mfu, try_estimate, try_estimate_fake
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
@@ -561,12 +558,64 @@ def parse_args(argv: Optional[list[str]] = None):
         description="2D Parallel Training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--dim", type=int, default=256)
-    parser.add_argument("--n-layers", type=int, default=32)
-    parser.add_argument("--n-heads", type=int, default=32)
-    parser.add_argument("--n-kv-heads", type=int, default=4)
-    parser.add_argument("--multiple-of", type=int, default=360)
-    parser.add_argument("--ffn-dim-multiplier", type=float, default=None)
+    parser.add_argument(
+        "--dim",
+        type=int,
+        default=256,
+        help=(
+            "Model hidden / embedding dimension (a.k.a. d_model). Overridden "
+            "when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-layers",
+        type=int,
+        default=32,
+        help=(
+            "Number of TransformerBlocks stacked in the model. Overridden "
+            "when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-heads",
+        type=int,
+        default=32,
+        help=(
+            "Number of attention heads per layer. Must divide --dim. "
+            "Overridden when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-kv-heads",
+        type=int,
+        default=4,
+        help=(
+            "Number of key/value heads for grouped-query attention (GQA). "
+            "Must divide --n-heads. Set equal to --n-heads for standard MHA. "
+            "Overridden when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--multiple-of",
+        type=int,
+        default=360,
+        help=(
+            "Round the SwiGLU FFN hidden dim up to a multiple of this value "
+            "(for hardware-friendly shapes). Ignored when --hidden-dim is "
+            "set explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--ffn-dim-multiplier",
+        type=float,
+        default=None,
+        help=(
+            "Scale factor applied to the SwiGLU FFN hidden dim before the "
+            "--multiple-of rounding step. None (default) means no extra "
+            "scaling; Llama2-style models use 1.3. Ignored when "
+            "--hidden-dim is set explicitly."
+        ),
+    )
     parser.add_argument(
         "--hidden-dim",
         type=int,
@@ -588,11 +637,42 @@ def parse_args(argv: Optional[list[str]] = None):
             "10000 (the default); Llama3 uses 500000; agpt-2b uses 50000."
         ),
     )
-    parser.add_argument("--norm-eps", type=float, default=1e-5)
-    parser.add_argument("--vocab-size", type=int, default=32_000)
-    parser.add_argument("--lr", type=float, default=3e-3)
-    parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument(
+        "--norm-eps",
+        type=float,
+        default=1e-5,
+        help="Epsilon added to RMSNorm denominators for numerical stability.",
+    )
+    parser.add_argument(
+        "--vocab-size",
+        type=int,
+        default=32_000,
+        help=(
+            "Tokenizer vocabulary size. Sets the embedding table and output "
+            "projection sizes; must match the tokenizer used for the dataset."
+        ),
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=3e-3,
+        help="Peak learning rate for the AdamW optimizer.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=5,
+        help="Number of passes over the training dataset.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Per-DP-rank training batch size (a.k.a. micro-batch). "
+            "Global batch = --batch-size * (world_size / --tp)."
+        ),
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -611,11 +691,69 @@ def parse_args(argv: Optional[list[str]] = None):
             "path forces --tp 1 (FSDP-only)."
         ),
     )
-    parser.add_argument("--test-batch-size", type=int, default=1000)
-    parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--tp", type=int, default=2)
-    parser.add_argument("--sharding-strategy", type=str, default="full_shard")
+    parser.add_argument(
+        "--test-batch-size",
+        type=int,
+        default=1000,
+        help=(
+            "Per-DP-rank batch size for the eval/test loader. Only "
+            "consumed by the MNIST data path; ignored for random and HF "
+            "datasets."
+        ),
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help=(
+            "Subprocess workers for the DataLoader. 0 (default) loads "
+            "in-process — fine for tokenized HF datasets; bump for "
+            "image pipelines or heavy on-the-fly preprocessing."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for torch/numpy/python RNGs (forwarded to "
+            "ezpz.setup_torch). None (default) leaves the RNGs unseeded "
+            "for non-deterministic runs."
+        ),
+    )
+    parser.add_argument(
+        "--tp",
+        type=int,
+        default=2,
+        help=(
+            "Tensor-parallel degree (a.k.a. TP / Megatron-style sharding). "
+            "Must divide WORLD_SIZE. The remaining dimension "
+            "(WORLD_SIZE / --tp) is used for FSDP data parallelism. "
+            "Set to 1 for FSDP-only. Forced to 1 when --model is a HF "
+            "repo id."
+        ),
+    )
+    parser.add_argument(
+        "--sharding-strategy",
+        type=str,
+        default="full_shard",
+        choices=list(SHARDING_STRATEGIES.keys()),
+        help=(
+            "FSDP sharding strategy. "
+            "`full_shard` (default, ZeRO-3): shards params, grads, and "
+            "optimizer state across all ranks — lowest memory, highest "
+            "comm. "
+            "`shard_grad_op` (ZeRO-2): shards grads and optimizer state; "
+            "params replicated — moderate memory, less comm than full_shard. "
+            "`no_shard` (ZeRO-0 / DDP-equivalent): no sharding, pure data "
+            "parallel — highest memory, lowest comm. "
+            "`hybrid_shard`: full_shard within a node, replicate across "
+            "nodes — trades inter-node comm for intra-node sharding (good "
+            "on slow interconnects). "
+            "`hybrid_shard_zero2`: shard_grad_op within a node, replicate "
+            "across nodes."
+        ),
+    )
     parser.add_argument(
         "--activation-checkpoint",
         "--ac",
@@ -639,19 +777,44 @@ def parse_args(argv: Optional[list[str]] = None):
             "OOM consider increasing --tp or reducing --seq-len)."
         ),
     )
-    parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--outdir", type=str, default=None)
-    # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
-        "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
+        "--max-grad-norm",
+        type=float,
+        default=1.0,
+        help=(
+            "Clip gradients to this L2 norm before the optimizer step. "
+            "Set to 0 (or negative) to disable gradient clipping."
+        ),
     )
     parser.add_argument(
-        "--tokenizer_name", type=str, default="meta-llama/llama-2-7b-hf"
-    )
-    parser.add_argument(
-        "--model_name_or_path",
+        "--outdir",
         type=str,
         default=None,
+        help=(
+            "Base directory for checkpoints and logs. None (default) "
+            "writes under the current working directory."
+        ),
+    )
+    # parser.add_argument('--dataset', type=str, default='random')
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="eliplutchok/fineweb-small-sample",
+        help=(
+            "Training dataset. Special values: `mnist` (image debug "
+            "dataset) and `random` (synthetic tokens, no IO). Anything "
+            "else is treated as a HuggingFace dataset repo id."
+        ),
+    )
+    parser.add_argument(
+        "--tokenizer_name",
+        type=str,
+        default="meta-llama/llama-2-7b-hf",
+        help=(
+            "HuggingFace tokenizer repo id used to tokenize the HF "
+            "dataset. Auto-overridden to --model when --model is a HF "
+            "repo id and --tokenizer_name wasn't passed explicitly."
+        ),
     )
     parser.add_argument(
         "--hf-split",
@@ -682,10 +845,24 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     # parser.add_argument('--max_batch_size', type=int, default=None)
     parser.add_argument(
-        "--seq-len", type=int, default=int(os.environ.get("SEQ_LEN", 1024))
+        "--seq-len",
+        type=int,
+        default=int(os.environ.get("SEQ_LEN", 1024)),
+        help=(
+            "Training sequence length (tokens per sample). Defaults to "
+            "$SEQ_LEN if set, otherwise 1024. Must be <= --max-seq-len."
+        ),
     )
-    parser.add_argument("--max-seq-len", type=int, default=32768)
-    parser.add_argument("--depth-init", type=bool, default=True)
+    parser.add_argument(
+        "--max-seq-len",
+        type=int,
+        default=32768,
+        help=(
+            "Maximum sequence length the model is built to support — "
+            "sets the RoPE frequency table size and the attention "
+            "scratch budget. Increase if you raise --seq-len."
+        ),
+    )
     parser.add_argument(
         "--fp32",
         action="store_true",
@@ -694,7 +871,13 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument(
         "--compile",
         action="store_true",
-        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+        help=(
+            "Compile each TransformerBlock with torch.compile after "
+            "FSDP/TP wrap (matches torchtitan's apply_compile pattern). "
+            "Per-block compile dodges the Dynamo + DTensor _MaskPartial "
+            "graph break that whole-model compile hits on TP-wrapped "
+            "tok_embeddings, and amortizes compile cost across N layers."
+        ),
     )
     parser.add_argument(
         "--compile-mode",
@@ -710,7 +893,6 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
-    # depth_init: bool = True
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     return args
@@ -793,6 +975,16 @@ def parallelize(
         device_mesh=dp_mesh,
         sharding_strategy=sharding_strategy,
         device_id=device_id,
+        # Required for torch.compile compatibility. With the default
+        # (False), FSDP1 flattens all params into a single FlatParameter
+        # and Dynamo refuses to trace through that shape — it raises
+        # `Unsupported: FSDP with use_orig_params=False`. With True,
+        # FSDP keeps the original nn.Parameter objects on each module
+        # (still sharded under the hood) so the compiled graph sees the
+        # same parameter structure as eager. No correctness impact;
+        # this has been the recommended setting for compile + FSDP1
+        # since PyTorch 2.0.
+        use_orig_params=True,
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
     return sharded_model
@@ -860,7 +1052,17 @@ def _apply_activation_checkpointing(
         )
         return model
 
-    from torch.utils.checkpoint import checkpoint
+    # Use the ptd checkpoint_wrapper (torchtitan-style) rather than a
+    # monkey-patched closure around torch.utils.checkpoint.checkpoint.
+    # The closure approach hits a hard Dynamo graph break under
+    # `torch.compile(fullgraph=True)`: Dynamo can't trace through the
+    # Python-level `checkpoint(...)` call, breaks the graph, and
+    # fullgraph mode turns the break into an error. The ptd wrapper
+    # registers as a proper nn.Module wrapper with compile-aware hooks,
+    # so the checkpoint boundary stays inside the traced graph.
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        checkpoint_wrapper as ptd_checkpoint_wrapper,
+    )
 
     def _find_block_list(m: nn.Module) -> Optional[nn.ModuleList]:
         # ezpz.Transformer wraps layers as `.layers`; FSDP wrappers
@@ -893,38 +1095,30 @@ def _apply_activation_checkpointing(
         )
         return model
 
-    def _wrap_block(block: nn.Module) -> nn.Module:
-        if mode == "block":
-            original_forward = block.forward
-
-            def checkpointed_forward(*args, **kwargs):
-                # use_reentrant=False is required for FSDP + AC to play
-                # nicely together (the reentrant path saves the entire
-                # input/output graph and breaks FSDP's unshard/reshard
-                # bookkeeping).
-                return checkpoint(
-                    original_forward, *args, use_reentrant=False, **kwargs
-                )
-
-            block.forward = checkpointed_forward  # type: ignore[assignment]
-            return block
+    # preserve_rng_state=True matches the semantics of the previous
+    # implementation (torch.utils.checkpoint.checkpoint defaults to True):
+    # the recomputed forward replays the same RNG state as the original,
+    # so dropout masks (and any other RNG-dependent ops) are identical on
+    # both passes. Setting it False would desync them and silently corrupt
+    # training for models that use dropout.
+    if mode == "block":
+        # Replace each block with a CheckpointWrapper(block) in-place on
+        # the ModuleList. Subsequent per-block torch.compile sees the
+        # wrapped modules and can trace through them.
+        for i in range(len(blocks)):
+            blocks[i] = ptd_checkpoint_wrapper(
+                blocks[i], preserve_rng_state=True
+            )
+    else:
         # selective: only checkpoint .attention. If absent, no-op for
         # this block — caller already logged the missing-attention case.
-        attn = getattr(block, "attention", None)
-        if attn is None:
-            return block
-        original_attn_forward = attn.forward
-
-        def checkpointed_attn_forward(*args, **kwargs):
-            return checkpoint(
-                original_attn_forward, *args, use_reentrant=False, **kwargs
+        for block in blocks:
+            attn = getattr(block, "attention", None)
+            if attn is None:
+                continue
+            block.attention = ptd_checkpoint_wrapper(
+                attn, preserve_rng_state=True
             )
-
-        attn.forward = checkpointed_attn_forward  # type: ignore[assignment]
-        return block
-
-    for block in blocks:
-        _wrap_block(block)
     logger.info(
         "Applied activation_checkpoint=%s to %d transformer blocks.",
         mode,
@@ -1146,38 +1340,57 @@ def train(
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    # Run try_estimate with a tiny probe (batch=1, seq=128) and scale up
-    # by total-tokens ratio. The full (batch_size, seq_len) shape would
-    # OOM on big models — FlopCounterMode does a real forward pass, and
-    # a 2B-param model at seq=8192 materializes multi-GiB of activations
-    # per rank before FSDP has a chance to shard.
+    # FLOPs estimation: try the exact fake-tensor path first, fall back
+    # to the linear-scaling probe if it fails.
     #
-    # CAVEAT: This linear scaling is exact for the O(seq * dim) ops
-    # (MLP, qkv/output projections) but UNDER-COUNTS attention. The
-    # Q·Kᵀ and attn·V matmuls inside SDPA are O(seq² * dim), so scaling
-    # them by (seq_actual / seq_probe) instead of (seq_actual / seq_probe)²
-    # under-reports their FLOPs. At seq_probe=128 and seq_actual=8192
-    # the attention term is off by ~64×, which makes reported MFU
-    # OPTIMISTIC (real model FLOPs are higher → real MFU is lower).
-    # For compute-bound long-seq runs, treat the printed MFU as an
-    # upper bound. The fix would be to probe at a representative seq
-    # length, but probing OOMs on big models. Keeping the probe small
-    # is the conservative choice.
-    _flops_probe_batch = 1
-    _flops_probe_seq = min(128, args.seq_len)
-    _flops_probe = try_estimate(model, (_flops_probe_batch, _flops_probe_seq))
-    _actual_tokens = args.batch_size * args.seq_len
-    _probe_tokens = _flops_probe_batch * _flops_probe_seq
-    _model_flops = int(_flops_probe * _actual_tokens / max(_probe_tokens, 1))
-    if args.seq_len > _flops_probe_seq:
+    # FAKE-TENSOR PATH (preferred): runs the forward+backward at the
+    # real (batch, seq) shape under FakeTensorMode (shape-only tensors,
+    # no allocations → no OOM) with sdpa_kernel(MATH) forced so SDPA
+    # decomposes into bmms that FlopCounterMode can see. Exact count,
+    # attention included.
+    #
+    # LINEAR-SCALING PROBE (fallback): runs at (1, 128) with real
+    # tensors and scales by token ratio. Exact for O(seq·dim) MLP/proj
+    # ops, but UNDER-COUNTS attention because the O(seq²·dim) Q·Kᵀ and
+    # attn·V matmuls don't scale linearly. Worse, on CPU and on fused
+    # SDPA backends (flash / efficient / cuDNN), FlopCounterMode often
+    # reports zero for the SDPA op entirely — so both probe and actual
+    # silently drop attention from the count. Reported MFU is then a
+    # lower bound: real utilization is at least the printed number,
+    # often significantly higher on long-seq runs.
+    _model_flops = try_estimate_fake(
+        model, (args.batch_size, args.seq_len)
+    )
+    if _model_flops > 0:
         logger.info(
-            "FLOPs estimate uses linear-scaling probe "
-            "(probe seq=%d -> actual seq=%d): under-counts O(seq^2) "
-            "attention by ~%dx; reported MFU is an upper bound.",
-            _flops_probe_seq,
+            "FLOPs counted exactly via FakeTensorMode at shape "
+            "(batch=%d, seq=%d): %.3e (includes attention).",
+            args.batch_size,
             args.seq_len,
-            args.seq_len // _flops_probe_seq,
+            _model_flops,
         )
+    else:
+        _flops_probe_batch = 1
+        _flops_probe_seq = min(128, args.seq_len)
+        _flops_probe = try_estimate(
+            model, (_flops_probe_batch, _flops_probe_seq)
+        )
+        _actual_tokens = args.batch_size * args.seq_len
+        _probe_tokens = _flops_probe_batch * _flops_probe_seq
+        _model_flops = int(
+            _flops_probe * _actual_tokens / max(_probe_tokens, 1)
+        )
+        if args.seq_len > _flops_probe_seq:
+            logger.warning(
+                "Fake-tensor FLOP estimate failed; falling back to "
+                "linear-scaling probe (probe seq=%d -> actual seq=%d). "
+                "This under-counts O(seq^2) attention by ~%dx; reported "
+                "MFU is a lower bound (real utilization is at least this "
+                "high).",
+                _flops_probe_seq,
+                args.seq_len,
+                args.seq_len // _flops_probe_seq,
+            )
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
@@ -1247,6 +1460,9 @@ def train(
             mixed_precision=mp_config,
             sharding_strategy=sharding_strategy,
             device_id=device,
+            # Required for torch.compile compatibility — see the
+            # parallelize() wrap above for the same explanation.
+            use_orig_params=True,
         )
     else:
         model = parallelize(
@@ -1268,10 +1484,49 @@ def train(
                 "torch.compile + activation_checkpointing on HF models can produce "
                 "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
             )
-        logger.info(
-            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
-        )
-        model = torch.compile(model, mode=args.compile_mode)
+        # Compile each TransformerBlock individually rather than the whole
+        # model. This is what torchtitan does (apply_compile in
+        # torchtitan/models/.../infra/parallelize.py) and it dodges the
+        # Dynamo + DTensor _MaskPartial graph break that whole-model
+        # compile hits on TP-wrapped tok_embeddings:
+        #
+        #   RuntimeError when making fake tensor call: call_method
+        #   redistribute(...) on DTensor(_MaskPartial(...))
+        #
+        # The embedding's RowwiseParallel output_fn does a redistribute
+        # from _MaskPartial → Shard(1), which Dynamo can't trace under
+        # fake tensors. Excluding the embedding from compile (and only
+        # compiling the blocks) keeps the speedup where it matters
+        # (attention + MLP, the repeated structure) without exposing
+        # Dynamo to the TP output transform. Bonus: compile cost is paid
+        # once for one block and reused across N layers, not N times.
+        #
+        # Find the block list: ezpz Transformer has `.layers`, HF
+        # decoder-only models nest it as `.model.layers`.
+        block_container = None
+        if hasattr(model, "layers"):
+            block_container = model.layers
+        elif hasattr(model, "model") and hasattr(model.model, "layers"):
+            block_container = model.model.layers
+        if block_container is None:
+            logger.warning(
+                "Could not find a TransformerBlock list (model.layers or "
+                "model.model.layers) — falling back to whole-model "
+                "torch.compile, which may hit DTensor graph breaks."
+            )
+            model = torch.compile(model, mode=args.compile_mode)
+        else:
+            logger.info(
+                "Compiling each TransformerBlock with torch.compile"
+                "(mode=%s, fullgraph=True) — %d blocks.",
+                args.compile_mode,
+                len(block_container),
+            )
+            for layer_id, block in block_container.named_children():
+                compiled = torch.compile(
+                    block, mode=args.compile_mode, fullgraph=True
+                )
+                block_container.register_module(layer_id, compiled)
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)

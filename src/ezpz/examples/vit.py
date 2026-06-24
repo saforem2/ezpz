@@ -21,7 +21,6 @@ Help output (``python3 -m ezpz.examples.vit --help``):
 
     usage: ezpz.examples.vit [-h] [--img_size IMG_SIZE] [--batch_size BATCH_SIZE]
                              [--num_heads NUM_HEADS] [--head_dim HEAD_DIM]
-                             [--hidden-dim HIDDEN_DIM] [--mlp-dim MLP_DIM]
                              [--dropout DROPOUT]
                              [--attention-dropout ATTENTION_DROPOUT]
                              [--num_classes NUM_CLASSES] [--dataset {fake,mnist}]
@@ -44,10 +43,6 @@ Help output (``python3 -m ezpz.examples.vit --help``):
                             Number of heads
       --head_dim HEAD_DIM, --head-dim HEAD_DIM
                             Hidden Dimension
-      --hidden-dim HIDDEN_DIM, --hidden_dim HIDDEN_DIM
-                            Hidden Dimension
-      --mlp-dim MLP_DIM, --mlp_dim MLP_DIM
-                            MLP Dimension
       --dropout DROPOUT     Dropout rate
       --attention-dropout ATTENTION_DROPOUT, --attention_dropout ATTENTION_DROPOUT
                             Attention Dropout rate
@@ -478,16 +473,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=int,
         default=64,
         help="Hidden Dimension",
-    )
-    parser.add_argument(
-        "--hidden-dim",
-        "--hidden_dim",
-        type=int,
-        default=1024,
-        help="Hidden Dimension",
-    )
-    parser.add_argument(
-        "--mlp-dim", "--mlp_dim", type=int, default=2048, help="MLP Dimension"
     )
     parser.add_argument(
         "--dropout", type=float, default=0.1, help="Dropout rate"
