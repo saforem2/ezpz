@@ -61,11 +61,13 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
   reduction, ~20 pct throughput hit); matches torchtitan's default for
   agpt-2b/agpt-20b. See [Activation checkpointing](#activation-checkpointing).
-- **Compile with torch.compile** — pass `--compile` to wrap the model with
-  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+- **Compile with torch.compile** — pass `--compile` to compile each
+  TransformerBlock after the FSDP/TP wrap. Tune the mode with
   `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
   Use `reduce-overhead` for cudagraphs on small models / large batches;
-  `max-autotune` for the slowest startup / fastest steady-state.
+  `max-autotune` for the slowest startup / fastest steady-state. See
+  [torch.compile](#torchcompile) for the per-block rationale and the
+  `--tp`/`--ac`/`--compile` interaction caveat.
 
 > Note: combining `--compile` with `--ac` on HuggingFace models can trigger a
 > `CheckpointError: tensor count mismatch` due to HF's DynamicCache. Drop one
@@ -153,8 +155,8 @@ Standard library, PyTorch, and `ezpz` imports. The key distributed
 primitives -- `DeviceMesh`, `FSDP`, and `parallelize_module` -- are
 all pulled in here.
 
-```python title="src/ezpz/examples/fsdp_tp.py:118:158"
---8<-- "src/ezpz/examples/fsdp_tp.py:118:158"
+```python title="src/ezpz/examples/fsdp_tp.py:115:158"
+--8<-- "src/ezpz/examples/fsdp_tp.py:115:158"
 ```
 
 A logger is set up and W&B is optionally imported.
@@ -226,10 +228,11 @@ Modes:
 
 - **`none`** (default) — keeps all forward activations in memory.
   Lowest latency, highest memory.
-- **`block`** (alias: **`full`**) — wraps each TransformerBlock's
-  forward with `torch.utils.checkpoint`. The block re-runs its
-  forward during backward instead of caching intermediate
-  activations. Typical **30-40% activation-memory reduction**,
+- **`block`** (alias: **`full`**) — wraps each TransformerBlock with
+  the compile-aware `checkpoint_wrapper`
+  (`torch.distributed.algorithms._checkpoint.checkpoint_wrapper`). The
+  block re-runs its forward during backward instead of caching
+  intermediate activations. Typical **30-40% activation-memory reduction**,
   **~20% throughput hit**. Matches torchtitan's default for
   agpt-2b / agpt-20b. `--ac full` is accepted as a compatibility
   alias with torchtitan's CLI.
@@ -248,8 +251,8 @@ model momentarily during `model.to(device)` before FSDP shards). If
 the model OOMs during init, raise `--tp` (halves per-rank weight
 memory for each doubling) or use a smaller preset.
 
-```python title="src/ezpz/examples/fsdp_tp.py:172:303"
---8<-- "src/ezpz/examples/fsdp_tp.py:172:303"
+```python title="src/ezpz/examples/fsdp_tp.py:172:312"
+--8<-- "src/ezpz/examples/fsdp_tp.py:172:312"
 ```
 
 </details>
@@ -258,8 +261,8 @@ memory for each doubling) or use a smaller preset.
 
 Maps user-facing string names to PyTorch `ShardingStrategy` enum values.
 
-```python title="src/ezpz/examples/fsdp_tp.py:226:232"
---8<-- "src/ezpz/examples/fsdp_tp.py:226:232"
+```python title="src/ezpz/examples/fsdp_tp.py:315:321"
+--8<-- "src/ezpz/examples/fsdp_tp.py:315:321"
 ```
 
 </details>
@@ -270,8 +273,8 @@ When sequence parallelism is active, each TP rank only sees a slice of
 the sequence dimension. This helper narrows the label tensor to match
 the local shard so `cross_entropy` computes the correct loss.
 
-```python title="src/ezpz/examples/fsdp_tp.py:235:290"
---8<-- "src/ezpz/examples/fsdp_tp.py:235:290"
+```python title="src/ezpz/examples/fsdp_tp.py:324:379"
+--8<-- "src/ezpz/examples/fsdp_tp.py:324:379"
 ```
 
 </details>
@@ -282,8 +285,8 @@ the local shard so `cross_entropy` computes the correct loss.
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
 precedence over the preset via `apply_model_preset`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:444:524"
---8<-- "src/ezpz/examples/fsdp_tp.py:444:524"
+```python title="src/ezpz/examples/fsdp_tp.py:553:898"
+--8<-- "src/ezpz/examples/fsdp_tp.py:553:898"
 ```
 
 </details>
@@ -294,16 +297,16 @@ This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
 dimension, then wraps the result with FSDP along the `"dp"` dimension.
 
-```python title="src/ezpz/examples/fsdp_tp.py:527:541"
---8<-- "src/ezpz/examples/fsdp_tp.py:527:541"
+```python title="src/ezpz/examples/fsdp_tp.py:901:915"
+--8<-- "src/ezpz/examples/fsdp_tp.py:901:915"
 ```
 
 **Top-level TP plan.** The embedding is row-sharded, the final output
 projection is column-sharded, and the RMS norm between them uses
 `SequenceParallel`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:542:558"
---8<-- "src/ezpz/examples/fsdp_tp.py:542:558"
+```python title="src/ezpz/examples/fsdp_tp.py:916:933"
+--8<-- "src/ezpz/examples/fsdp_tp.py:916:933"
 ```
 
 **Per-layer TP plan.** Each transformer block's attention and FFN
@@ -311,15 +314,15 @@ sub-modules are parallelized: Q/K/V projections are column-sharded,
 output projections are row-sharded, and norms use `SequenceParallel`.
 Attention head counts are divided by the TP mesh size.
 
-```python title="src/ezpz/examples/fsdp_tp.py:560:589"
---8<-- "src/ezpz/examples/fsdp_tp.py:560:589"
+```python title="src/ezpz/examples/fsdp_tp.py:935:963"
+--8<-- "src/ezpz/examples/fsdp_tp.py:935:963"
 ```
 
 **FSDP wrapping.** After TP is applied, the entire model is wrapped with
 FSDP on the `"dp"` sub-mesh.
 
-```python title="src/ezpz/examples/fsdp_tp.py:598:606"
---8<-- "src/ezpz/examples/fsdp_tp.py:598:606"
+```python title="src/ezpz/examples/fsdp_tp.py:972:990"
+--8<-- "src/ezpz/examples/fsdp_tp.py:972:990"
 ```
 
 </details>
@@ -332,28 +335,28 @@ loads data, then runs the epoch loop.
 **Device mesh creation.** World size is split into `dp` x `tp`
 dimensions.
 
-```python title="src/ezpz/examples/fsdp_tp.py:681:695"
---8<-- "src/ezpz/examples/fsdp_tp.py:681:695"
+```python title="src/ezpz/examples/fsdp_tp.py:1227:1233"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1227:1233"
 ```
 
 **HuggingFace dataset loading.** If `--dataset` is not `"mnist"` or
 `"random"`, a tokenized HF text dataset is loaded and the vocab size is
 synced to the tokenizer.
 
-```python title="src/ezpz/examples/fsdp_tp.py:697:718"
---8<-- "src/ezpz/examples/fsdp_tp.py:697:718"
+```python title="src/ezpz/examples/fsdp_tp.py:1234:1260"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1234:1260"
 ```
 
 **Model construction and parallelization.** A `Transformer` is built
 from `ModelArgs`, moved to the device, optionally given a
 `MixedPrecision` config, and then handed to `parallelize`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:720:729"
---8<-- "src/ezpz/examples/fsdp_tp.py:720:729"
+```python title="src/ezpz/examples/fsdp_tp.py:1262:1275"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1262:1275"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:753:782"
---8<-- "src/ezpz/examples/fsdp_tp.py:753:782"
+```python title="src/ezpz/examples/fsdp_tp.py:1468:1480"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1468:1480"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -361,15 +364,15 @@ HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group.
 
-```python title="src/ezpz/examples/fsdp_tp.py:840:862"
---8<-- "src/ezpz/examples/fsdp_tp.py:840:862"
+```python title="src/ezpz/examples/fsdp_tp.py:1559:1624"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1559:1624"
 ```
 
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
-```python title="src/ezpz/examples/fsdp_tp.py:870:885"
---8<-- "src/ezpz/examples/fsdp_tp.py:870:885"
+```python title="src/ezpz/examples/fsdp_tp.py:1626:1645"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1626:1645"
 ```
 
 **Training loop.** Each batch is moved to device, split into
@@ -377,30 +380,30 @@ JSONL metric logging and optional distributed aggregation.
 `cross_entropy`. Labels are narrowed for sequence parallelism when
 needed. Gradient clipping is applied before `optimizer.step()`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:893:922"
---8<-- "src/ezpz/examples/fsdp_tp.py:893:922"
+```python title="src/ezpz/examples/fsdp_tp.py:1646:1742"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1646:1742"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:958:962"
---8<-- "src/ezpz/examples/fsdp_tp.py:958:962"
+```python title="src/ezpz/examples/fsdp_tp.py:1741:1742"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1741:1742"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:978:985"
---8<-- "src/ezpz/examples/fsdp_tp.py:978:985"
+```python title="src/ezpz/examples/fsdp_tp.py:1808:1818"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1808:1818"
 ```
 
 After each step, timing and loss metrics are collected into a dict and
 passed to `history.update` and `history.log_metrics`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:989:997"
---8<-- "src/ezpz/examples/fsdp_tp.py:989:997"
+```python title="src/ezpz/examples/fsdp_tp.py:1808:1818"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1808:1818"
 ```
 
 At the end of training, activation hooks are removed, a barrier syncs
 all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1058:1101"
---8<-- "src/ezpz/examples/fsdp_tp.py:1058:1101"
+```python title="src/ezpz/examples/fsdp_tp.py:1819:1825"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1819:1825"
 ```
 
 </details>
@@ -411,34 +414,80 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 distributed backend (including TP groups), determines the output
 directory, and dispatches to `train`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1066:1087"
---8<-- "src/ezpz/examples/fsdp_tp.py:1066:1087"
+```python title="src/ezpz/examples/fsdp_tp.py:1827:1860"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1827:1860"
 ```
 
 The `if __name__ == "__main__"` block parses args, runs `main`, cleans
 up distributed state, and exits.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1104:1108"
---8<-- "src/ezpz/examples/fsdp_tp.py:1104:1108"
+```python title="src/ezpz/examples/fsdp_tp.py:1862:1864"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1862:1864"
 ```
 
 </details>
 
 ## MFU Tracking
 
-Model FLOPS are estimated via [`try_estimate`](../recipes.md#mfu-tracking)
-on the unwrapped model **before** the 2D FSDP+TP parallelization.
-Per-step **TFLOPS** and **MFU** are reported under `train/tflops`
-and `train/mfu`.
+Model FLOPs are estimated on the unwrapped model **before** the 2D
+FSDP+TP parallelization, and per-step **TFLOPS** and **MFU** are reported
+under `train/tflops` and `train/mfu`.
+
+The example prefers an **exact** count via
+[`try_estimate_fake`](../python/Code-Reference/flops.md): it runs a
+forward+backward under `FakeTensorMode` (shape-only tensors — no
+allocations, so it never OOMs at the real `(batch, seq)` shape) with
+`sdpa_kernel(MATH)` forced so attention decomposes into matmuls the FLOP
+counter can see. If that path fails it falls back to the older
+linear-scaling probe (`try_estimate` at a tiny seq, scaled by the token
+ratio).
+
+> **Why the fake-tensor path matters.** The linear-scaling probe
+> under-counts the `O(seq²)` attention term — and on CPU and the fused
+> SDPA backends `FlopCounterMode` reports *zero* for the attention op
+> entirely, so both the probe and the real shape silently drop it. For
+> agpt-xl at `seq=8192` that made reported MFU ~36% **low**. The exact
+> path includes attention, so when it falls back the printed MFU is a
+> *lower bound*, not an upper bound.
 
 ```python
-_model_flops = try_estimate(model, (args.batch_size, args.seq_len))
+# exact (preferred), with a graceful fallback:
+_model_flops = try_estimate_fake(model, (args.batch_size, args.seq_len))
 # ... per step:
 metrics["train/tflops"] = _model_flops / (t2 - t0) / 1e12
 metrics["train/mfu"] = compute_mfu(_model_flops, t2 - t0)
 ```
 
 See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
+## torch.compile
+
+Pass `--compile` to wrap the model with `torch.compile` after the
+FSDP/TP wrap. The example compiles **each `TransformerBlock`
+individually** (matching torchtitan's `apply_compile`) rather than the
+whole model:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --tp 2 --compile
+```
+
+- Per-block compile dodges a Dynamo graph break that whole-model compile
+  hits on the TP-wrapped `tok_embeddings` (the embedding's
+  `RowwiseParallel` output transform redistributes a `_MaskPartial`
+  DTensor, which Dynamo can't trace under fake tensors), and it amortizes
+  compile cost across the `N` identical layers.
+- `--compile-mode {default,reduce-overhead,max-autotune}` selects the
+  compile mode (default: `default`).
+- For `--compile` to work with FSDP, the example wraps FSDP with
+  `use_orig_params=True` (Dynamo refuses the default `False`), and
+  activation checkpointing uses the compile-aware
+  `checkpoint_wrapper` (see [Activation checkpointing](#activation-checkpointing)).
+
+> **Known limitation.** Combining all three of `--tp > 1`,
+> `--activation-checkpoint`, and `--compile` at once trips an upstream
+> AOTAutograd assertion (a `DeviceMesh` reaches the saved-tensors check).
+> Drop any one of the three until it's fixed upstream. Any two together
+> work.
 
 ## Help
 
@@ -454,26 +503,43 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--epochs EPOCHS] [--batch-size BATCH_SIZE] [--model MODEL]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
-                  [--sharding-strategy SHARDING_STRATEGY]
+                  [--sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}]
                   [--activation-checkpoint {none,block,full,selective}]
                   [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
                   [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
-                  [--model_name_or_path MODEL_NAME_OR_PATH]
                   [--hf-split HF_SPLIT] [--hf-text-column HF_TEXT_COLUMN]
                   [--hf-limit HF_LIMIT] [--seq-len SEQ_LEN]
-                  [--max-seq-len MAX_SEQ_LEN] [--depth-init DEPTH_INIT]
-                  [--fp32]
+                  [--max-seq-len MAX_SEQ_LEN] [--fp32] [--compile]
+                  [--compile-mode {default,reduce-overhead,max-autotune}]
 
 2D Parallel Training
 
 options:
   -h, --help            show this help message and exit
-  --dim DIM
-  --n-layers N_LAYERS
-  --n-heads N_HEADS
+  --dim DIM             Model hidden / embedding dimension (a.k.a. d_model).
+                        Overridden when --model selects a preset. (default:
+                        256)
+  --n-layers N_LAYERS   Number of TransformerBlocks stacked in the model.
+                        Overridden when --model selects a preset. (default:
+                        32)
+  --n-heads N_HEADS     Number of attention heads per layer. Must divide
+                        --dim. Overridden when --model selects a preset.
+                        (default: 32)
   --n-kv-heads N_KV_HEADS
+                        Number of key/value heads for grouped-query attention
+                        (GQA). Must divide --n-heads. Set equal to --n-heads
+                        for standard MHA. Overridden when --model selects a
+                        preset. (default: 4)
   --multiple-of MULTIPLE_OF
+                        Round the SwiGLU FFN hidden dim up to a multiple of
+                        this value (for hardware-friendly shapes). Ignored
+                        when --hidden-dim is set explicitly. (default: 360)
   --ffn-dim-multiplier FFN_DIM_MULTIPLIER
+                        Scale factor applied to the SwiGLU FFN hidden dim
+                        before the --multiple-of rounding step. None (default)
+                        means no extra scaling; Llama2-style models use 1.3.
+                        Ignored when --hidden-dim is set explicitly. (default:
+                        None)
   --hidden-dim HIDDEN_DIM
                         Override SwiGLU FFN hidden dim. When None (default),
                         TransformerBlock derives it as `4 * dim` and
@@ -486,11 +552,20 @@ options:
                         Base frequency for RoPE positional embeddings.
                         Llama1/2 used 10000 (the default); Llama3 uses 500000;
                         agpt-2b uses 50000. (default: 10000.0)
-  --norm-eps NORM_EPS
+  --norm-eps NORM_EPS   Epsilon added to RMSNorm denominators for numerical
+                        stability. (default: 1e-05)
   --vocab-size VOCAB_SIZE
-  --lr LR
-  --epochs EPOCHS
+                        Tokenizer vocabulary size. Sets the embedding table
+                        and output projection sizes; must match the tokenizer
+                        used for the dataset. (default: 32000)
+  --lr LR               Peak learning rate for the AdamW optimizer. (default:
+                        0.003)
+  --epochs EPOCHS       Number of passes over the training dataset. (default:
+                        5)
   --batch-size BATCH_SIZE
+                        Per-DP-rank training batch size (a.k.a. micro-batch).
+                        Global batch = --batch-size * (world_size / --tp).
+                        (default: 1)
   --model MODEL         Model size preset (overrides dim/layer defaults).
                         Presets:
                         debug/small/medium/large/xl/xxl/xxxl/agpt-2b/agpt-20b.
@@ -500,10 +575,35 @@ options:
                         `meta-llama/Llama-3.2-1B`) to load HF weights instead
                         — that path forces --tp 1 (FSDP-only). (default: None)
   --test-batch-size TEST_BATCH_SIZE
+                        Per-DP-rank batch size for the eval/test loader. Only
+                        consumed by the MNIST data path; ignored for random
+                        and HF datasets. (default: 1000)
   --num-workers NUM_WORKERS
-  --seed SEED
-  --tp TP
-  --sharding-strategy SHARDING_STRATEGY
+                        Subprocess workers for the DataLoader. 0 (default)
+                        loads in-process — fine for tokenized HF datasets;
+                        bump for image pipelines or heavy on-the-fly
+                        preprocessing. (default: 0)
+  --seed SEED           Seed for torch/numpy/python RNGs (forwarded to
+                        ezpz.setup_torch). None (default) leaves the RNGs
+                        unseeded for non-deterministic runs. (default: None)
+  --tp TP               Tensor-parallel degree (a.k.a. TP / Megatron-style
+                        sharding). Must divide WORLD_SIZE. The remaining
+                        dimension (WORLD_SIZE / --tp) is used for FSDP data
+                        parallelism. Set to 1 for FSDP-only. Forced to 1 when
+                        --model is a HF repo id. (default: 2)
+  --sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}
+                        FSDP sharding strategy. `full_shard` (default,
+                        ZeRO-3): shards params, grads, and optimizer state
+                        across all ranks — lowest memory, highest comm.
+                        `shard_grad_op` (ZeRO-2): shards grads and optimizer
+                        state; params replicated — moderate memory, less comm
+                        than full_shard. `no_shard` (ZeRO-0 / DDP-equivalent):
+                        no sharding, pure data parallel — highest memory,
+                        lowest comm. `hybrid_shard`: full_shard within a node,
+                        replicate across nodes — trades inter-node comm for
+                        intra-node sharding (good on slow interconnects).
+                        `hybrid_shard_zero2`: shard_grad_op within a node,
+                        replicate across nodes. (default: full_shard)
   --activation-checkpoint {none,block,full,selective}, --ac {none,block,full,selective}
                         Activation checkpointing strategy. `none` (default)
                         keeps all forward activations in memory. `block`
@@ -515,13 +615,24 @@ options:
                         memory reduction, ~10 pct throughput hit. Trade
                         activation memory for recomputation cost — useful when
                         OOM-ing during training (NOT during init; for init-
-                        time OOM consider increasing --tp or reducing
-                        --seq-len). (default: none)
+                        time OOM consider increasing --tp or reducing --seq-
+                        len). (default: none)
   --max-grad-norm MAX_GRAD_NORM
-  --outdir OUTDIR
-  --dataset DATASET
+                        Clip gradients to this L2 norm before the optimizer
+                        step. Set to 0 (or negative) to disable gradient
+                        clipping. (default: 1.0)
+  --outdir OUTDIR       Base directory for checkpoints and logs. None
+                        (default) writes under the current working directory.
+                        (default: None)
+  --dataset DATASET     Training dataset. Special values: `mnist` (image debug
+                        dataset) and `random` (synthetic tokens, no IO).
+                        Anything else is treated as a HuggingFace dataset repo
+                        id. (default: eliplutchok/fineweb-small-sample)
   --tokenizer_name TOKENIZER_NAME
-  --model_name_or_path MODEL_NAME_OR_PATH
+                        HuggingFace tokenizer repo id used to tokenize the HF
+                        dataset. Auto-overridden to --model when --model is a
+                        HF repo id and --tokenizer_name wasn't passed
+                        explicitly. (default: meta-llama/llama-2-7b-hf)
   --hf-split HF_SPLIT, --hf_split HF_SPLIT
                         Dataset split to load. (default: train)
   --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
@@ -533,11 +644,29 @@ options:
                         positive value (e.g. `--hf-limit 512`) to subsample
                         for smoke tests. Subsampling is deterministic given
                         $EZPZ_HF_SAMPLE_SEED. (default: 0)
-  --seq-len SEQ_LEN
+  --seq-len SEQ_LEN     Training sequence length (tokens per sample). Defaults
+                        to $SEQ_LEN if set, otherwise 1024. Must be <= --max-
+                        seq-len. (default: 1024)
   --max-seq-len MAX_SEQ_LEN
-  --depth-init DEPTH_INIT
+                        Maximum sequence length the model is built to support
+                        — sets the RoPE frequency table size and the attention
+                        scratch budget. Increase if you raise --seq-len.
+                        (default: 32768)
   --fp32                Disable mixed precision (use fp32) for debugging NaNs.
                         (default: False)
+  --compile             Compile each TransformerBlock with torch.compile after
+                        FSDP/TP wrap (matches torchtitan's apply_compile
+                        pattern). Per-block compile dodges the Dynamo +
+                        DTensor _MaskPartial graph break that whole-model
+                        compile hits on TP-wrapped tok_embeddings, and
+                        amortizes compile cost across N layers. (default:
+                        False)
+  --compile-mode {default,reduce-overhead,max-autotune}
+                        torch.compile mode (only used when --compile is set).
+                        `default` is safest. `reduce-overhead` enables
+                        cudagraphs for small models / large batches. `max-
+                        autotune` does extensive kernel search — slow startup,
+                        fastest steady state. (default: default)
 ```
 
 </details>
