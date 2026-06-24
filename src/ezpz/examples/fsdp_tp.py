@@ -68,10 +68,9 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                       [--sharding-strategy SHARDING_STRATEGY]
                       [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
                       [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
-                      [--model_name_or_path MODEL_NAME_OR_PATH]
                       [--hf-split HF_SPLIT] [--hf-text-column HF_TEXT_COLUMN]
                       [--hf-limit HF_LIMIT] [--seq-len SEQ_LEN]
-                      [--max-seq-len MAX_SEQ_LEN] [--depth-init DEPTH_INIT]
+                      [--max-seq-len MAX_SEQ_LEN]
                       [--fp32]
 
     2D Parallel Training
@@ -98,7 +97,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
       --outdir OUTDIR
       --dataset DATASET
       --tokenizer_name TOKENIZER_NAME
-      --model_name_or_path MODEL_NAME_OR_PATH
       --hf-split HF_SPLIT, --hf_split HF_SPLIT
                             Dataset split to load.
       --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
@@ -109,7 +107,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
                             for smoke tests.
       --seq-len SEQ_LEN
       --max-seq-len MAX_SEQ_LEN
-      --depth-init DEPTH_INIT
       --fp32                Disable mixed precision (use fp32) for debugging NaNs.
 
 The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
@@ -561,12 +558,64 @@ def parse_args(argv: Optional[list[str]] = None):
         description="2D Parallel Training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--dim", type=int, default=256)
-    parser.add_argument("--n-layers", type=int, default=32)
-    parser.add_argument("--n-heads", type=int, default=32)
-    parser.add_argument("--n-kv-heads", type=int, default=4)
-    parser.add_argument("--multiple-of", type=int, default=360)
-    parser.add_argument("--ffn-dim-multiplier", type=float, default=None)
+    parser.add_argument(
+        "--dim",
+        type=int,
+        default=256,
+        help=(
+            "Model hidden / embedding dimension (a.k.a. d_model). Overridden "
+            "when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-layers",
+        type=int,
+        default=32,
+        help=(
+            "Number of TransformerBlocks stacked in the model. Overridden "
+            "when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-heads",
+        type=int,
+        default=32,
+        help=(
+            "Number of attention heads per layer. Must divide --dim. "
+            "Overridden when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--n-kv-heads",
+        type=int,
+        default=4,
+        help=(
+            "Number of key/value heads for grouped-query attention (GQA). "
+            "Must divide --n-heads. Set equal to --n-heads for standard MHA. "
+            "Overridden when --model selects a preset."
+        ),
+    )
+    parser.add_argument(
+        "--multiple-of",
+        type=int,
+        default=360,
+        help=(
+            "Round the SwiGLU FFN hidden dim up to a multiple of this value "
+            "(for hardware-friendly shapes). Ignored when --hidden-dim is "
+            "set explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--ffn-dim-multiplier",
+        type=float,
+        default=None,
+        help=(
+            "Scale factor applied to the SwiGLU FFN hidden dim before the "
+            "--multiple-of rounding step. None (default) means no extra "
+            "scaling; Llama2-style models use 1.3. Ignored when "
+            "--hidden-dim is set explicitly."
+        ),
+    )
     parser.add_argument(
         "--hidden-dim",
         type=int,
@@ -588,11 +637,42 @@ def parse_args(argv: Optional[list[str]] = None):
             "10000 (the default); Llama3 uses 500000; agpt-2b uses 50000."
         ),
     )
-    parser.add_argument("--norm-eps", type=float, default=1e-5)
-    parser.add_argument("--vocab-size", type=int, default=32_000)
-    parser.add_argument("--lr", type=float, default=3e-3)
-    parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument(
+        "--norm-eps",
+        type=float,
+        default=1e-5,
+        help="Epsilon added to RMSNorm denominators for numerical stability.",
+    )
+    parser.add_argument(
+        "--vocab-size",
+        type=int,
+        default=32_000,
+        help=(
+            "Tokenizer vocabulary size. Sets the embedding table and output "
+            "projection sizes; must match the tokenizer used for the dataset."
+        ),
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=3e-3,
+        help="Peak learning rate for the AdamW optimizer.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=5,
+        help="Number of passes over the training dataset.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Per-DP-rank training batch size (a.k.a. micro-batch). "
+            "Global batch = --batch-size * (world_size / --tp)."
+        ),
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -611,10 +691,48 @@ def parse_args(argv: Optional[list[str]] = None):
             "path forces --tp 1 (FSDP-only)."
         ),
     )
-    parser.add_argument("--test-batch-size", type=int, default=1000)
-    parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--tp", type=int, default=2)
+    parser.add_argument(
+        "--test-batch-size",
+        type=int,
+        default=1000,
+        help=(
+            "Per-DP-rank batch size for the eval/test loader. Only "
+            "consumed by the MNIST data path; ignored for random and HF "
+            "datasets."
+        ),
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help=(
+            "Subprocess workers for the DataLoader. 0 (default) loads "
+            "in-process — fine for tokenized HF datasets; bump for "
+            "image pipelines or heavy on-the-fly preprocessing."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for torch/numpy/python RNGs (forwarded to "
+            "ezpz.setup_torch). None (default) leaves the RNGs unseeded "
+            "for non-deterministic runs."
+        ),
+    )
+    parser.add_argument(
+        "--tp",
+        type=int,
+        default=2,
+        help=(
+            "Tensor-parallel degree (a.k.a. TP / Megatron-style sharding). "
+            "Must divide WORLD_SIZE. The remaining dimension "
+            "(WORLD_SIZE / --tp) is used for FSDP data parallelism. "
+            "Set to 1 for FSDP-only. Forced to 1 when --model is a HF "
+            "repo id."
+        ),
+    )
     parser.add_argument("--sharding-strategy", type=str, default="full_shard")
     parser.add_argument(
         "--activation-checkpoint",
@@ -639,19 +757,44 @@ def parse_args(argv: Optional[list[str]] = None):
             "OOM consider increasing --tp or reducing --seq-len)."
         ),
     )
-    parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--outdir", type=str, default=None)
-    # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
-        "--dataset", type=str, default="eliplutchok/fineweb-small-sample"
+        "--max-grad-norm",
+        type=float,
+        default=1.0,
+        help=(
+            "Clip gradients to this L2 norm before the optimizer step. "
+            "Set to 0 (or negative) to disable gradient clipping."
+        ),
     )
     parser.add_argument(
-        "--tokenizer_name", type=str, default="meta-llama/llama-2-7b-hf"
-    )
-    parser.add_argument(
-        "--model_name_or_path",
+        "--outdir",
         type=str,
         default=None,
+        help=(
+            "Base directory for checkpoints and logs. None (default) "
+            "writes under the current working directory."
+        ),
+    )
+    # parser.add_argument('--dataset', type=str, default='random')
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="eliplutchok/fineweb-small-sample",
+        help=(
+            "Training dataset. Special values: `mnist` (image debug "
+            "dataset) and `random` (synthetic tokens, no IO). Anything "
+            "else is treated as a HuggingFace dataset repo id."
+        ),
+    )
+    parser.add_argument(
+        "--tokenizer_name",
+        type=str,
+        default="meta-llama/llama-2-7b-hf",
+        help=(
+            "HuggingFace tokenizer repo id used to tokenize the HF "
+            "dataset. Auto-overridden to --model when --model is a HF "
+            "repo id and --tokenizer_name wasn't passed explicitly."
+        ),
     )
     parser.add_argument(
         "--hf-split",
@@ -682,10 +825,24 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     # parser.add_argument('--max_batch_size', type=int, default=None)
     parser.add_argument(
-        "--seq-len", type=int, default=int(os.environ.get("SEQ_LEN", 1024))
+        "--seq-len",
+        type=int,
+        default=int(os.environ.get("SEQ_LEN", 1024)),
+        help=(
+            "Training sequence length (tokens per sample). Defaults to "
+            "$SEQ_LEN if set, otherwise 1024. Must be <= --max-seq-len."
+        ),
     )
-    parser.add_argument("--max-seq-len", type=int, default=32768)
-    parser.add_argument("--depth-init", type=bool, default=True)
+    parser.add_argument(
+        "--max-seq-len",
+        type=int,
+        default=32768,
+        help=(
+            "Maximum sequence length the model is built to support — "
+            "sets the RoPE frequency table size and the attention "
+            "scratch budget. Increase if you raise --seq-len."
+        ),
+    )
     parser.add_argument(
         "--fp32",
         action="store_true",
@@ -710,7 +867,6 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
-    # depth_init: bool = True
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     return args

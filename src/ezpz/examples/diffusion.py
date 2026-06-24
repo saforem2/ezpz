@@ -22,7 +22,7 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
 
     usage: diffusion.py [-h] [--batch-size BATCH_SIZE] [--dtype DTYPE]
                         [--extra-text [EXTRA_TEXT ...]] [--fsdp]
-                        [--fsdp-mixed-precision] [--hidden HIDDEN]
+                        [--hidden HIDDEN]
                         [--hf-dataset HF_DATASET] [--hf-split HF_SPLIT]
                         [--hf-text-column HF_TEXT_COLUMN] [--hf-limit HF_LIMIT]
                         [--log_freq LOG_FREQ] [--outdir OUTDIR]
@@ -39,8 +39,6 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
       --extra-text [EXTRA_TEXT ...]
                             Additional sentences to add to the tiny corpus.
       --fsdp                Enable FSDP wrapping (requires WORLD_SIZE>1 and torch.distributed init).
-      --fsdp-mixed-precision
-                            Use bfloat16 parameters with FSDP for speed (defaults to float32).
       --hidden HIDDEN
       --hf-dataset HF_DATASET
                             Optional Hugging Face dataset name (e.g., 'ag_news'). When set, replaces the toy corpus.
@@ -673,11 +671,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="full-shard",
         choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
         help="FSDP sharding strategy",
-    )
-    parser.add_argument(
-        "--fsdp-mixed-precision",
-        action="store_true",
-        help="Use bfloat16 parameters with FSDP for speed (otherwise float32).",
     )
     parser.add_argument(
         "--hidden", type=int, default=int(os.environ.get("HIDDEN", 128))
