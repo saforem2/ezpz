@@ -851,7 +851,13 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument(
         "--compile",
         action="store_true",
-        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+        help=(
+            "Compile each TransformerBlock with torch.compile after "
+            "FSDP/TP wrap (matches torchtitan's apply_compile pattern). "
+            "Per-block compile dodges the Dynamo + DTensor _MaskPartial "
+            "graph break that whole-model compile hits on TP-wrapped "
+            "tok_embeddings, and amortizes compile cost across N layers."
+        ),
     )
     parser.add_argument(
         "--compile-mode",
@@ -949,6 +955,16 @@ def parallelize(
         device_mesh=dp_mesh,
         sharding_strategy=sharding_strategy,
         device_id=device_id,
+        # Required for torch.compile compatibility. With the default
+        # (False), FSDP1 flattens all params into a single FlatParameter
+        # and Dynamo refuses to trace through that shape — it raises
+        # `Unsupported: FSDP with use_orig_params=False`. With True,
+        # FSDP keeps the original nn.Parameter objects on each module
+        # (still sharded under the hood) so the compiled graph sees the
+        # same parameter structure as eager. No correctness impact;
+        # this has been the recommended setting for compile + FSDP1
+        # since PyTorch 2.0.
+        use_orig_params=True,
     )
     logger.info(f"Model after parallelization:\n{sharded_model=}\n")
     return sharded_model
@@ -1016,7 +1032,17 @@ def _apply_activation_checkpointing(
         )
         return model
 
-    from torch.utils.checkpoint import checkpoint
+    # Use the ptd checkpoint_wrapper (torchtitan-style) rather than a
+    # monkey-patched closure around torch.utils.checkpoint.checkpoint.
+    # The closure approach hits a hard Dynamo graph break under
+    # `torch.compile(fullgraph=True)`: Dynamo can't trace through the
+    # Python-level `checkpoint(...)` call, breaks the graph, and
+    # fullgraph mode turns the break into an error. The ptd wrapper
+    # registers as a proper nn.Module wrapper with compile-aware hooks,
+    # so the checkpoint boundary stays inside the traced graph.
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        checkpoint_wrapper as ptd_checkpoint_wrapper,
+    )
 
     def _find_block_list(m: nn.Module) -> Optional[nn.ModuleList]:
         # ezpz.Transformer wraps layers as `.layers`; FSDP wrappers
@@ -1049,38 +1075,24 @@ def _apply_activation_checkpointing(
         )
         return model
 
-    def _wrap_block(block: nn.Module) -> nn.Module:
-        if mode == "block":
-            original_forward = block.forward
-
-            def checkpointed_forward(*args, **kwargs):
-                # use_reentrant=False is required for FSDP + AC to play
-                # nicely together (the reentrant path saves the entire
-                # input/output graph and breaks FSDP's unshard/reshard
-                # bookkeeping).
-                return checkpoint(
-                    original_forward, *args, use_reentrant=False, **kwargs
-                )
-
-            block.forward = checkpointed_forward  # type: ignore[assignment]
-            return block
+    if mode == "block":
+        # Replace each block with a CheckpointWrapper(block) in-place on
+        # the ModuleList. Subsequent per-block torch.compile sees the
+        # wrapped modules and can trace through them.
+        for i in range(len(blocks)):
+            blocks[i] = ptd_checkpoint_wrapper(
+                blocks[i], preserve_rng_state=False
+            )
+    else:
         # selective: only checkpoint .attention. If absent, no-op for
         # this block — caller already logged the missing-attention case.
-        attn = getattr(block, "attention", None)
-        if attn is None:
-            return block
-        original_attn_forward = attn.forward
-
-        def checkpointed_attn_forward(*args, **kwargs):
-            return checkpoint(
-                original_attn_forward, *args, use_reentrant=False, **kwargs
+        for block in blocks:
+            attn = getattr(block, "attention", None)
+            if attn is None:
+                continue
+            block.attention = ptd_checkpoint_wrapper(
+                attn, preserve_rng_state=False
             )
-
-        attn.forward = checkpointed_attn_forward  # type: ignore[assignment]
-        return block
-
-    for block in blocks:
-        _wrap_block(block)
     logger.info(
         "Applied activation_checkpoint=%s to %d transformer blocks.",
         mode,
@@ -1422,6 +1434,9 @@ def train(
             mixed_precision=mp_config,
             sharding_strategy=sharding_strategy,
             device_id=device,
+            # Required for torch.compile compatibility — see the
+            # parallelize() wrap above for the same explanation.
+            use_orig_params=True,
         )
     else:
         model = parallelize(
@@ -1443,10 +1458,49 @@ def train(
                 "torch.compile + activation_checkpointing on HF models can produce "
                 "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
             )
-        logger.info(
-            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
-        )
-        model = torch.compile(model, mode=args.compile_mode)
+        # Compile each TransformerBlock individually rather than the whole
+        # model. This is what torchtitan does (apply_compile in
+        # torchtitan/models/.../infra/parallelize.py) and it dodges the
+        # Dynamo + DTensor _MaskPartial graph break that whole-model
+        # compile hits on TP-wrapped tok_embeddings:
+        #
+        #   RuntimeError when making fake tensor call: call_method
+        #   redistribute(...) on DTensor(_MaskPartial(...))
+        #
+        # The embedding's RowwiseParallel output_fn does a redistribute
+        # from _MaskPartial → Shard(1), which Dynamo can't trace under
+        # fake tensors. Excluding the embedding from compile (and only
+        # compiling the blocks) keeps the speedup where it matters
+        # (attention + MLP, the repeated structure) without exposing
+        # Dynamo to the TP output transform. Bonus: compile cost is paid
+        # once for one block and reused across N layers, not N times.
+        #
+        # Find the block list: ezpz Transformer has `.layers`, HF
+        # decoder-only models nest it as `.model.layers`.
+        block_container = None
+        if hasattr(model, "layers"):
+            block_container = model.layers
+        elif hasattr(model, "model") and hasattr(model.model, "layers"):
+            block_container = model.model.layers
+        if block_container is None:
+            logger.warning(
+                "Could not find a TransformerBlock list (model.layers or "
+                "model.model.layers) — falling back to whole-model "
+                "torch.compile, which may hit DTensor graph breaks."
+            )
+            model = torch.compile(model, mode=args.compile_mode)
+        else:
+            logger.info(
+                "Compiling each TransformerBlock with torch.compile"
+                "(mode=%s, fullgraph=True) — %d blocks.",
+                args.compile_mode,
+                len(block_container),
+            )
+            for layer_id, block in block_container.named_children():
+                compiled = torch.compile(
+                    block, mode=args.compile_mode, fullgraph=True
+                )
+                block_container.register_module(layer_id, compiled)
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
