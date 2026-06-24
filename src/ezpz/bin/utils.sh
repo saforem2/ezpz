@@ -1376,6 +1376,69 @@ ezpz_get_venv_dir() {
 }
 
 # -----------------------------------------------------------------------------
+# @description Activate a Python venv AND prepend its bundled libs to
+# LD_LIBRARY_PATH.
+#
+# Why the LD_LIBRARY_PATH step matters: pip/uv wheels for accelerator builds
+# (e.g. torch+xpu) ship their own runtime libs under `${VIRTUAL_ENV}/lib`
+# (libsycl, libur_loader, ...). If `ezpz_load_modules` (or a system oneAPI
+# module) put an OLDER copy of those libs on LD_LIBRARY_PATH, it shadows the
+# wheel's bundled ones and `import torch` dies with errors like:
+#   ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp, ...
+# LD_LIBRARY_PATH takes precedence over a library's own RUNPATH ($ORIGIN), so
+# the only robust fix is to prepend `${VIRTUAL_ENV}/lib` AFTER module setup.
+#
+# - Usage:
+#     ezpz_activate_venv [venv_dir]
+#   With no argument, defaults to `${WORKING_DIR:-$(pwd)}/.venv`.
+#
+# - Behavior / fallbacks:
+#   - If `venv_dir/bin/activate` exists: source it, then prepend its lib dir.
+#   - Else if a venv is already active (`VIRTUAL_ENV` set): skip activation but
+#     still (re-)prepend its lib dir — useful right after `ezpz_load_modules`.
+#   - Else: warn and return 1 (does NOT create a venv; use
+#     `ezpz_setup_uv_venv` / `ezpz_build_new_uv_venv` for that).
+#   - The prepend is idempotent (no-op if the lib dir is already first) and
+#     skipped if `${VIRTUAL_ENV}/lib` doesn't exist (e.g. a plain CPU venv).
+ezpz_activate_venv() {
+	local venv_dir fpactivate
+	venv_dir="${1:-${WORKING_DIR:-$(pwd)}/.venv}"
+	# Normalize trailing slash.
+	venv_dir="${venv_dir%/}"
+	fpactivate="${venv_dir}/bin/activate"
+
+	if [[ -f "${fpactivate}" ]]; then
+		log_message INFO "  - Activating venv at: ${CYAN}${venv_dir}${RESET}"
+		# shellcheck disable=SC1090
+		source "${fpactivate}" || {
+			log_message ERROR "  - Failed to source ${fpactivate}"
+			return 1
+		}
+	elif [[ -n "${VIRTUAL_ENV:-}" ]]; then
+		log_message INFO "  - No activate script at ${CYAN}${venv_dir}${RESET}; using already-active venv: ${CYAN}${VIRTUAL_ENV}${RESET}"
+	else
+		log_message WARN "  - No venv found at ${CYAN}${venv_dir}${RESET} and no VIRTUAL_ENV active."
+		log_message WARN "  - Skipping activation. Create one with ezpz_setup_uv_venv (or uv venv .venv)."
+		return 1
+	fi
+
+	# Prepend the venv's bundled libs so wheel-shipped runtime libs win over
+	# any module-provided copies on LD_LIBRARY_PATH.
+	local venv_lib="${VIRTUAL_ENV:-${venv_dir}}/lib"
+	if [[ -d "${venv_lib}" ]]; then
+		case ":${LD_LIBRARY_PATH:-}:" in
+			"${venv_lib}":* | *:"${venv_lib}":*)
+				log_message INFO "  - ${CYAN}${venv_lib}${RESET} already on LD_LIBRARY_PATH"
+				;;
+			*)
+				export LD_LIBRARY_PATH="${venv_lib}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+				log_message INFO "  - Prepended ${CYAN}${venv_lib}${RESET} to LD_LIBRARY_PATH"
+				;;
+		esac
+	fi
+}
+
+# -----------------------------------------------------------------------------
 # @description Set up a standard Python `venv` on top of an active Conda environment.
 # Creates a venv named after the Conda environment in a central 'venvs' directory.
 # Activates the created venv. Inherits system site packages.
