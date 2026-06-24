@@ -1,10 +1,48 @@
 # ezpz TODO
 
 Tracked issues, improvements, and potential enhancements identified
-from a full codebase review. **Last audited: 2026-06-10.**
+from a full codebase review. **Last audited: 2026-06-24.**
 
 When updating: include a `Status: DONE` line + commit/PR ref when an
 item ships, then prune in the next audit pass.
+
+**Shipped between 2026-06-10 and 2026-06-24** (PRs #166, #167):
+
+- Examples: unified `s/m/l/xl/xxl/xxxl` size ladder across all 5
+  example modules targeting 100M → 10B params (#166).
+- Examples: `agpt-2b` / `agpt-20b` presets in `fsdp_tp` reproducing
+  torchtitan's `agpt_configs` registry exactly (#166).
+- Examples: HF model loading via `--model owner/repo` in `fsdp_tp`,
+  with auto-tokenizer-default and `--tp 1` coercion (#166).
+- Examples: `--activation-checkpoint {none,block,full,selective}`
+  flag in `fsdp_tp` with HF-aware delegation to
+  `gradient_checkpointing_enable` (#166).
+- Examples: `--compile` + `--compile-mode` across all 5 example
+  modules; wrapped AFTER FSDP/TP/AC (#166).
+- Examples: `_arg_provided` consolidated into
+  `ezpz.examples._presets` so `--flag=value` overrides correctly
+  beat presets across every example (#166).
+- Distributed: per-rank `setup_torch` log gated on `local_rank=0`
+  — was 96 lines per launch, now 1 per host (#166).
+- Distributed: `get_tensor_parallel_rank` / `_world_size` return
+  identity defaults when TP isn't initialised — fixed `--tp=1`
+  crash in `fsdp_tp` (#166).
+- Library: `ezpz.utils` no longer hard-imports torch/xarray/torchinfo
+  at module top → `ezpz launch` works in torchless venvs
+  (partially addresses item 2; #166).
+- Library: `ezpz.__getattr__` now surfaces underlying ImportErrors
+  instead of silently swallowing them (#166).
+- Logging: HF `datasets` library's two-channel spam (Python logging
+  + internal verbosity router) silenced in `silence_noisy_loggers`
+  (#166).
+- Models: `hidden_dim` + `rope_theta` added to `ezpz.models.llama
+  .ModelArgs`; threaded through `TransformerBlock` and
+  `precompute_freqs_cis` call sites including the defensive
+  fallback (#166).
+- Shell: `utils.sh` `log_message` now writes to stderr instead of
+  stdout — fixes `ezpz_setup_uv_venv` producing literal directories
+  named after log lines when output is captured via `$(...)`
+  (#167).
 
 ---
 
@@ -34,10 +72,20 @@ Several modules still execute work at import time:
   at module scope.
 
 **Fixed** (no longer reproduces): `dist.py` eager wandb probe, the
-unconditional `os.environ["COLORTERM"] = "truecolor"`.
+unconditional `os.environ["COLORTERM"] = "truecolor"`. Also (2026-06,
+PR #166) `ezpz.utils.__init__` no longer hard-imports
+`torch`/`xarray`/`tqdm`/`torchinfo` at module top — each is wrapped
+in `try/except ImportError` with a `None` fallback so the module
+loads in torchless venvs. `ezpz.get_timestamp()` and other
+torch-free helpers stay usable in environments that only run
+`ezpz launch`. `ezpz.__getattr__` now also surfaces the underlying
+ImportError when a submodule fails to load, so future regressions
+of this shape are debuggable instead of silently raising "no
+attribute".
 
 **Resolution**: move remaining computations to function-local or
-lazily-computed properties.
+lazily-computed properties (still applies to `__init__.py:18-19`,
+`jobs.py`, `train.py`).
 
 ---
 
@@ -121,9 +169,9 @@ Audit imports first.
 
 ---
 
-## 7. Duplicated Code [MEDIUM, NOT FIXED]
+## 7. Duplicated Code [MEDIUM, PARTIAL]
 
-All still present:
+All of the originally-listed cases still present:
 
 - `write_deepspeed_zero12_auto_config` and
   `write_deepspeed_zero3_auto_config` in `utils/__init__.py`
@@ -138,6 +186,14 @@ All still present:
   `distributed.py:1987` and `doctor.py:351`.
 
 Easy individual cleanups; each could be its own ~30-min PR.
+
+**Pattern reference** (since 2026-06, PR #166): `_arg_provided` had
+been copy-pasted into all 5 `ezpz/examples/*.py` files and a fix in
+one (`fsdp_tp`) silently regressed in the others. Consolidated into
+`src/ezpz/examples/_presets.py` with a single `arg_provided`
+function imported everywhere. Same playbook applies to the
+duplicates above: extract to a leaf module, replace the copies with
+imports, add a regression test that pins the cross-file contract.
 
 ---
 
@@ -237,7 +293,17 @@ piped. Audit + sweep needed.
 ## 14. `bin/utils.sh` Cleanup [MEDIUM, PARTIAL]
 
 `utils.sh` is now 3250 lines (audit 2026-06-10; grew from ~2931
-originally). Specific items:
+originally).
+
+**Shipped** (PR #167, 2026-06-12): `log_message` now writes to
+**stderr** instead of stdout, so log lines don't get captured into
+`$(some_helper)` substitutions. Pre-fix, `ezpz_setup_uv_venv` was
+creating literal directories named after the log lines themselves
+(e.g. `venvs/sunspot/'[2026-06-12-104735][I][:]   - Found python
+root at: python3.12\n'/`). One-line patch + comment block to
+prevent regression.
+
+Specific remaining items:
 
 - **Dead-code logging wrappers** (`utils.sh`): `log_info`, `log_warn`,
   `log_error` are defined but never called anywhere in the
