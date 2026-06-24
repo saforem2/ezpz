@@ -361,28 +361,31 @@ def estimate_model_flops_fake(
     Returns:
         Total FLOPS (forward + backward if requested), or 0 on failure.
     """
-    from torch._subclasses.fake_tensor import FakeTensorMode
-    from torch.nn.attention import sdpa_kernel, SDPBackend
-
-    try:
-        device = next(model.parameters()).device
-    except StopIteration:
-        device = torch.device("cpu")
-
-    has_embedding = any(
-        isinstance(m, (torch.nn.Embedding, torch.nn.EmbeddingBag))
-        for m in model.modules()
-    )
-    if has_embedding:
-        vocab_size = 32000
-        for m in model.modules():
-            if isinstance(m, torch.nn.Embedding):
-                vocab_size = m.num_embeddings
-                break
-
     flops = 0
     backward_ran = False
     try:
+        # Imported inside the try so older/minimal PyTorch builds that lack
+        # FakeTensorMode or torch.nn.attention return 0 (per the docstring
+        # contract) instead of raising ImportError at the call site.
+        from torch._subclasses.fake_tensor import FakeTensorMode
+        from torch.nn.attention import sdpa_kernel, SDPBackend
+
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+
+        has_embedding = any(
+            isinstance(m, (torch.nn.Embedding, torch.nn.EmbeddingBag))
+            for m in model.modules()
+        )
+        if has_embedding:
+            vocab_size = 32000
+            for m in model.modules():
+                if isinstance(m, torch.nn.Embedding):
+                    vocab_size = m.num_embeddings
+                    break
+
         with FakeTensorMode(allow_non_fake_inputs=True):
             with sdpa_kernel(SDPBackend.MATH):
                 if has_embedding:

@@ -8,8 +8,10 @@ import torch
 from ezpz.flops import (
     compute_mfu,
     estimate_model_flops,
+    estimate_model_flops_fake,
     get_peak_flops,
     try_estimate,
+    try_estimate_fake,
 )
 from ezpz.flops import _extract_loss
 
@@ -261,6 +263,67 @@ class TestTryEstimate:
         fwd_only = try_estimate(model, (1, 8), device="cpu", backward=False)
         fwd_bwd = try_estimate(model, (1, 8), device="cpu", backward=True)
         assert fwd_bwd > fwd_only
+
+
+class TestEstimateModelFlopsFake:
+    """Tests for the FakeTensorMode-based ``estimate_model_flops_fake``."""
+
+    def test_returns_positive_int(self):
+        model = torch.nn.Sequential(
+            torch.nn.Linear(16, 16), torch.nn.ReLU(), torch.nn.Linear(16, 16)
+        )
+        flops = estimate_model_flops_fake(model, (2, 16))
+        assert isinstance(flops, int)
+        assert flops > 0
+
+    def test_embedding_model_uses_int_inputs(self):
+        # An embedding model would error on float inputs; a clean positive
+        # count proves the function picked the integer-input path.
+        model = torch.nn.Sequential(
+            torch.nn.Embedding(100, 32), torch.nn.Linear(32, 32)
+        )
+        flops = estimate_model_flops_fake(model, (1, 8))
+        assert isinstance(flops, int)
+        assert flops > 0
+
+    def test_backward_increases_count(self):
+        model = torch.nn.Linear(32, 32)
+        fwd_only = estimate_model_flops_fake(model, (4, 32), backward=False)
+        fwd_bwd = estimate_model_flops_fake(model, (4, 32), backward=True)
+        assert fwd_bwd > fwd_only
+
+    def test_returns_zero_when_fake_mode_unavailable(self, monkeypatch):
+        # Simulate an older PyTorch lacking the import: the function must
+        # return 0 (per its docstring), not raise ImportError.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _fail_fake(name, *args, **kwargs):
+            if name == "torch._subclasses.fake_tensor":
+                raise ImportError("simulated missing FakeTensorMode")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _fail_fake)
+        assert estimate_model_flops_fake(torch.nn.Linear(4, 4), (1, 4)) == 0
+
+
+class TestTryEstimateFake:
+    """Tests for the ``try_estimate_fake`` wrapper."""
+
+    def test_returns_int_on_success(self):
+        flops = try_estimate_fake(torch.nn.Linear(8, 4), (1, 8))
+        assert isinstance(flops, int)
+        assert flops > 0
+
+    def test_returns_zero_on_exception(self, monkeypatch):
+        from ezpz import flops as _flops
+
+        def _raise(*_a, **_kw):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(_flops, "estimate_model_flops_fake", _raise)
+        assert _flops.try_estimate_fake(torch.nn.Linear(2, 2), (1, 2)) == 0
 
 
 class TestComputeMfu:

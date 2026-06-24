@@ -1095,13 +1095,19 @@ def _apply_activation_checkpointing(
         )
         return model
 
+    # preserve_rng_state=True matches the semantics of the previous
+    # implementation (torch.utils.checkpoint.checkpoint defaults to True):
+    # the recomputed forward replays the same RNG state as the original,
+    # so dropout masks (and any other RNG-dependent ops) are identical on
+    # both passes. Setting it False would desync them and silently corrupt
+    # training for models that use dropout.
     if mode == "block":
         # Replace each block with a CheckpointWrapper(block) in-place on
         # the ModuleList. Subsequent per-block torch.compile sees the
         # wrapped modules and can trace through them.
         for i in range(len(blocks)):
             blocks[i] = ptd_checkpoint_wrapper(
-                blocks[i], preserve_rng_state=False
+                blocks[i], preserve_rng_state=True
             )
     else:
         # selective: only checkpoint .attention. If absent, no-op for
@@ -1111,7 +1117,7 @@ def _apply_activation_checkpointing(
             if attn is None:
                 continue
             block.attention = ptd_checkpoint_wrapper(
-                attn, preserve_rng_state=False
+                attn, preserve_rng_state=True
             )
     logger.info(
         "Applied activation_checkpoint=%s to %d transformer blocks.",
