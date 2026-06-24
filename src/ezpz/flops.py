@@ -42,9 +42,11 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "compute_mfu",
     "estimate_model_flops",
+    "estimate_model_flops_fake",
     "get_device_name",
     "get_peak_flops",
     "try_estimate",
+    "try_estimate_fake",
 ]
 
 
@@ -318,6 +320,129 @@ def try_estimate(
         return flops
     except Exception as exc:
         logger.warning("FLOPS estimation failed: %s", exc)
+        return 0
+
+
+def estimate_model_flops_fake(
+    model: torch.nn.Module,
+    input_shape: tuple[int, ...] | list[int],
+    *,
+    backward: bool = True,
+) -> int:
+    """Count FLOPS exactly via FakeTensorMode — no memory, no OOM.
+
+    Two PyTorch features make this work:
+
+    * ``FakeTensorMode`` runs the forward (and backward) pass with
+      shape-only tensors. No real allocations happen, so even seq=8192
+      on a 2B-param model fits in a few KB of metadata. This dodges
+      the OOM that forced the linear-scaling probe in the first place.
+
+    * ``sdpa_kernel(SDPBackend.MATH)`` forces
+      ``F.scaled_dot_product_attention`` to decompose into the
+      explicit ``Q·Kᵀ`` and ``attn·V`` ``bmm`` calls that
+      ``FlopCounterMode`` knows how to count. Without this, the
+      fused SDPA kernels (flash / efficient / cuDNN / CPU-fused)
+      either skip the registry entirely or report zero — silently
+      dropping the entire attention contribution from the count.
+
+    Combined, this gives an exact FLOP count at the real
+    ``(batch, seq)`` shape, regardless of how large the model is
+    or which device it lives on.
+
+    Args:
+        model: The model to profile (must already be moved to the
+            target device — the fake-tensor trace inherits the
+            parameters' device).
+        input_shape: Real shape of the input tensor (e.g.
+            ``(batch, seq_len)``). No memory allocated at this shape.
+        backward: If ``True``, also count the backward pass FLOPS.
+
+    Returns:
+        Total FLOPS (forward + backward if requested), or 0 on failure.
+    """
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.nn.attention import sdpa_kernel, SDPBackend
+
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = torch.device("cpu")
+
+    has_embedding = any(
+        isinstance(m, (torch.nn.Embedding, torch.nn.EmbeddingBag))
+        for m in model.modules()
+    )
+    if has_embedding:
+        vocab_size = 32000
+        for m in model.modules():
+            if isinstance(m, torch.nn.Embedding):
+                vocab_size = m.num_embeddings
+                break
+
+    flops = 0
+    backward_ran = False
+    try:
+        with FakeTensorMode(allow_non_fake_inputs=True):
+            with sdpa_kernel(SDPBackend.MATH):
+                if has_embedding:
+                    dummy = torch.randint(
+                        0, vocab_size, input_shape, device=device
+                    )
+                else:
+                    try:
+                        dtype = next(model.parameters()).dtype
+                    except StopIteration:
+                        dtype = torch.float32
+                    dummy = torch.randn(
+                        *input_shape, device=device, dtype=dtype
+                    )
+                with FlopCounterMode(display=False) as counter:
+                    output = model(dummy)
+                    if backward:
+                        loss = _extract_loss(output)
+                        if loss is not None:
+                            loss.backward()
+                            backward_ran = True
+                flops = counter.get_total_flops()
+    except Exception as exc:
+        logger.debug("FakeTensorMode FLOP estimate failed: %s", exc)
+        flops = 0
+    finally:
+        if backward_ran:
+            model.zero_grad(set_to_none=True)
+
+    return int(flops)
+
+
+def try_estimate_fake(
+    model: torch.nn.Module,
+    input_shape: tuple[int, ...] | list[int],
+    *,
+    backward: bool = True,
+) -> int:
+    """Estimate model FLOPS via FakeTensorMode, returning 0 on failure.
+
+    Convenience wrapper around :func:`estimate_model_flops_fake` that
+    catches exceptions and logs a warning instead of propagating.
+    """
+    try:
+        flops = estimate_model_flops_fake(
+            model, input_shape, backward=backward,
+        )
+        if flops > 0:
+            try:
+                from ezpz.distributed import get_rank
+                rank = get_rank()
+            except Exception:
+                rank = 0
+            if rank == 0:
+                logger.info(
+                    "Model FLOPS (fwd+bwd, fake-tensor): %.2e", flops
+                )
+        return flops
+    except Exception as exc:
+        logger.warning("Fake-tensor FLOPS estimation failed: %s", exc)
         return 0
 
 

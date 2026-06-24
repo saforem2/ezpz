@@ -138,7 +138,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-from ezpz.flops import compute_mfu, try_estimate
+from ezpz.flops import compute_mfu, try_estimate, try_estimate_fake
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
@@ -1146,38 +1146,57 @@ def train(
     logger.info(f"\n{mstr}")
     model.to(device)
 
-    # Run try_estimate with a tiny probe (batch=1, seq=128) and scale up
-    # by total-tokens ratio. The full (batch_size, seq_len) shape would
-    # OOM on big models — FlopCounterMode does a real forward pass, and
-    # a 2B-param model at seq=8192 materializes multi-GiB of activations
-    # per rank before FSDP has a chance to shard.
+    # FLOPs estimation: try the exact fake-tensor path first, fall back
+    # to the linear-scaling probe if it fails.
     #
-    # CAVEAT: This linear scaling is exact for the O(seq * dim) ops
-    # (MLP, qkv/output projections) but UNDER-COUNTS attention. The
-    # Q·Kᵀ and attn·V matmuls inside SDPA are O(seq² * dim), so scaling
-    # them by (seq_actual / seq_probe) instead of (seq_actual / seq_probe)²
-    # under-reports their FLOPs. At seq_probe=128 and seq_actual=8192
-    # the attention term is off by ~64×, which makes reported MFU
-    # OPTIMISTIC (real model FLOPs are higher → real MFU is lower).
-    # For compute-bound long-seq runs, treat the printed MFU as an
-    # upper bound. The fix would be to probe at a representative seq
-    # length, but probing OOMs on big models. Keeping the probe small
-    # is the conservative choice.
-    _flops_probe_batch = 1
-    _flops_probe_seq = min(128, args.seq_len)
-    _flops_probe = try_estimate(model, (_flops_probe_batch, _flops_probe_seq))
-    _actual_tokens = args.batch_size * args.seq_len
-    _probe_tokens = _flops_probe_batch * _flops_probe_seq
-    _model_flops = int(_flops_probe * _actual_tokens / max(_probe_tokens, 1))
-    if args.seq_len > _flops_probe_seq:
+    # FAKE-TENSOR PATH (preferred): runs the forward+backward at the
+    # real (batch, seq) shape under FakeTensorMode (shape-only tensors,
+    # no allocations → no OOM) with sdpa_kernel(MATH) forced so SDPA
+    # decomposes into bmms that FlopCounterMode can see. Exact count,
+    # attention included.
+    #
+    # LINEAR-SCALING PROBE (fallback): runs at (1, 128) with real
+    # tensors and scales by token ratio. Exact for O(seq·dim) MLP/proj
+    # ops, but UNDER-COUNTS attention because the O(seq²·dim) Q·Kᵀ and
+    # attn·V matmuls don't scale linearly. Worse, on CPU and on fused
+    # SDPA backends (flash / efficient / cuDNN), FlopCounterMode often
+    # reports zero for the SDPA op entirely — so both probe and actual
+    # silently drop attention from the count. Reported MFU is then a
+    # lower bound: real utilization is at least the printed number,
+    # often significantly higher on long-seq runs.
+    _model_flops = try_estimate_fake(
+        model, (args.batch_size, args.seq_len)
+    )
+    if _model_flops > 0:
         logger.info(
-            "FLOPs estimate uses linear-scaling probe "
-            "(probe seq=%d -> actual seq=%d): under-counts O(seq^2) "
-            "attention by ~%dx; reported MFU is an upper bound.",
-            _flops_probe_seq,
+            "FLOPs counted exactly via FakeTensorMode at shape "
+            "(batch=%d, seq=%d): %.3e (includes attention).",
+            args.batch_size,
             args.seq_len,
-            args.seq_len // _flops_probe_seq,
+            _model_flops,
         )
+    else:
+        _flops_probe_batch = 1
+        _flops_probe_seq = min(128, args.seq_len)
+        _flops_probe = try_estimate(
+            model, (_flops_probe_batch, _flops_probe_seq)
+        )
+        _actual_tokens = args.batch_size * args.seq_len
+        _probe_tokens = _flops_probe_batch * _flops_probe_seq
+        _model_flops = int(
+            _flops_probe * _actual_tokens / max(_probe_tokens, 1)
+        )
+        if args.seq_len > _flops_probe_seq:
+            logger.warning(
+                "Fake-tensor FLOP estimate failed; falling back to "
+                "linear-scaling probe (probe seq=%d -> actual seq=%d). "
+                "This under-counts O(seq^2) attention by ~%dx; reported "
+                "MFU is a lower bound (real utilization is at least this "
+                "high).",
+                _flops_probe_seq,
+                args.seq_len,
+                args.seq_len // _flops_probe_seq,
+            )
 
     mp_config: Optional[MixedPrecision] = None
     if not args.fp32:
