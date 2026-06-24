@@ -133,8 +133,16 @@ log_message() {
 	esac
 
 	log_msg="[${date}][${log_level}][${BASH_SOURCE[1]}:${BASH_LINENO[0]}] ${string}"
-	# printf is predictable; preserves backslashes unless you add %b intentionally
-	printf "%b\n" "${log_msg}"
+	# Write to STDERR — not stdout. Many helpers in this file use
+	# `value=$(some_helper)` patterns, and any log_message emitted inside
+	# `some_helper` would otherwise be captured into `value` along with
+	# the intended return string. Example failure pre-fix: in
+	# `ezpz_get_venv_dir`, a "Found python root at: ..." log line ended
+	# up concatenated onto the venv path (which then propagated to a
+	# literal mkdir of a directory named after the log line). Sending
+	# logs to stderr keeps them visible in the terminal while making
+	# them invisible to `$(...)`.
+	printf "%b\n" "${log_msg}" >&2
 }
 
 # --- Global Variables ---
