@@ -1376,6 +1376,87 @@ ezpz_get_venv_dir() {
 }
 
 # -----------------------------------------------------------------------------
+# @description Activate a Python venv AND prepend its bundled libs to
+# LD_LIBRARY_PATH.
+#
+# Why the LD_LIBRARY_PATH step matters: pip/uv wheels for accelerator builds
+# (e.g. torch+xpu) ship their own runtime libs under `${VIRTUAL_ENV}/lib`
+# (libsycl, libur_loader, ...). If `ezpz_load_modules` (or a system oneAPI
+# module) put an OLDER copy of those libs on LD_LIBRARY_PATH, it shadows the
+# wheel's bundled ones and `import torch` dies with errors like:
+#   ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp, ...
+# LD_LIBRARY_PATH takes precedence over a library's own RUNPATH ($ORIGIN), so
+# the only robust fix is to prepend `${VIRTUAL_ENV}/lib` AFTER module setup.
+#
+# - Usage:
+#     ezpz_activate_venv [venv_dir]
+#   With no argument, defaults to `${WORKING_DIR:-$(pwd)}/.venv`.
+#
+# - Behavior / fallbacks:
+#   - If `venv_dir/bin/activate` exists: source it, then prepend its lib dir.
+#   - Else if a venv is already active (`VIRTUAL_ENV` set): skip activation but
+#     still (re-)prepend its lib dir — useful right after `ezpz_load_modules`.
+#   - Else: warn and return 1 (does NOT create a venv; use
+#     `ezpz_setup_uv_venv` / `ezpz_build_new_uv_venv` for that).
+#   - Ensures `${VIRTUAL_ENV}/lib` is FIRST on LD_LIBRARY_PATH: no-op if it
+#     already is; otherwise any existing occurrence is removed and it is
+#     prepended (so a present-but-not-first entry — e.g. when modules were
+#     loaded after activation — is correctly moved to the front).
+#   - Skipped if `${VIRTUAL_ENV}/lib` doesn't exist (e.g. a plain CPU venv).
+ezpz_activate_venv() {
+	local venv_dir fpactivate
+	venv_dir="${1:-${WORKING_DIR:-$(pwd)}/.venv}"
+	# Normalize trailing slash.
+	venv_dir="${venv_dir%/}"
+	fpactivate="${venv_dir}/bin/activate"
+
+	if [[ -f "${fpactivate}" ]]; then
+		log_message INFO "  - Activating venv at: ${CYAN}${venv_dir}${RESET}"
+		# shellcheck disable=SC1090
+		source "${fpactivate}" || {
+			log_message ERROR "  - Failed to source ${fpactivate}"
+			return 1
+		}
+	elif [[ -n "${VIRTUAL_ENV:-}" ]]; then
+		log_message INFO "  - No activate script at ${CYAN}${venv_dir}${RESET}; using already-active venv: ${CYAN}${VIRTUAL_ENV}${RESET}"
+	else
+		log_message WARN "  - No venv found at ${CYAN}${venv_dir}${RESET} and no VIRTUAL_ENV active."
+		log_message WARN "  - Skipping activation. Create one with ezpz_setup_uv_venv (or uv venv .venv)."
+		return 1
+	fi
+
+	# Ensure the venv's bundled libs are FIRST on LD_LIBRARY_PATH so
+	# wheel-shipped runtime libs win over any module-provided copies.
+	#
+	# Being merely *present* is not enough: if the venv was activated first
+	# and `ezpz_load_modules` later prepended the system oneAPI, the venv lib
+	# is present-but-not-first and its libs are still shadowed. So:
+	#   - if it's already the FIRST entry, no-op;
+	#   - otherwise strip any existing occurrence(s) and prepend, so it
+	#     always ends up at the front.
+	local venv_lib="${VIRTUAL_ENV:-${venv_dir}}/lib"
+	if [[ -d "${venv_lib}" ]]; then
+		case ":${LD_LIBRARY_PATH:-}:" in
+			":${venv_lib}:"*)
+				log_message INFO "  - ${CYAN}${venv_lib}${RESET} already first on LD_LIBRARY_PATH"
+				;;
+			*)
+				# Remove any existing occurrence(s) of venv_lib, then prepend.
+				# Wrap in leading/trailing ':' so first/middle/last all match
+				# the same way, strip venv_lib, collapse doubled ':', and trim
+				# the sentinel colons.
+				local _cleaned=":${LD_LIBRARY_PATH:-}:"
+				_cleaned="${_cleaned//:${venv_lib}:/:}"
+				_cleaned="${_cleaned#:}"
+				_cleaned="${_cleaned%:}"
+				export LD_LIBRARY_PATH="${venv_lib}${_cleaned:+:${_cleaned}}"
+				log_message INFO "  - Prepended ${CYAN}${venv_lib}${RESET} to LD_LIBRARY_PATH"
+				;;
+		esac
+	fi
+}
+
+# -----------------------------------------------------------------------------
 # @description Set up a standard Python `venv` on top of an active Conda environment.
 # Creates a venv named after the Conda environment in a central 'venvs' directory.
 # Activates the created venv. Inherits system site packages.
