@@ -119,9 +119,17 @@ def load_hf_texts(
     limit: int,
 ) -> list[str]:
     """
-    Pull a small slice of text from a Hugging Face dataset for quick experiments.
+    Load text rows from a Hugging Face dataset.
 
-    This uses only a limited number of rows (`limit`) to keep the example light.
+    Args:
+        dataset_name: HF dataset id (e.g. ``"eliplutchok/fineweb-small-sample"``).
+        split: dataset split (e.g. ``"train"``).
+        text_column: column holding the text payload.
+        limit: maximum number of rows to keep. ``<= 0`` means *no limit*
+            (use the full dataset). Any positive value subsamples by
+            shuffling with seed ``$EZPZ_HF_SAMPLE_SEED`` (default 1337)
+            and taking the first ``limit`` rows — deterministic for the
+            same seed.
     """
     try:
         from datasets import load_dataset  # type: ignore
@@ -149,9 +157,8 @@ def load_hf_texts(
     else:
         assert callable(getattr(dataset, "select"))
         total = len(dataset)
-        if limit <= 0:
-            raise ValueError("limit must be > 0 for HF dataset sampling.")
-        if limit >= total:
+        # limit <= 0 means "no limit"; matches get_hf_text_dataset() below.
+        if limit <= 0 or limit >= total:
             indices = list(range(total))
         else:
             seed = int(os.environ.get("EZPZ_HF_SAMPLE_SEED", "1337"))

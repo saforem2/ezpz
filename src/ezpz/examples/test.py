@@ -23,6 +23,7 @@ import ezpz
 import ezpz.distributed
 from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.profile import get_profiling_context
 
@@ -35,6 +36,29 @@ ModelOptimizerPair = tuple[torch.nn.Module, torch.optim.Optimizer]
 
 logger = ezpz.get_logger(__name__)
 
+# Size ladder shared across all five example modules
+# (test, fsdp, vit, diffusion, fsdp-tp, hf, minimal):
+#
+#   s    → ~100M params
+#   m    → ~250M
+#   l    → ~500M
+#   xl   →   ~1B
+#   xxl  →   ~5B
+#   xxxl →  ~10B
+#
+# For test.py (MLP, MNIST input_dim=784 + output=10), depth/width are
+# the only knobs, so the layer_sizes are chosen to hit those param
+# targets within an order of magnitude. batch_size shrinks at each
+# step to keep activation + optimizer-state memory roughly constant
+# per rank — Adam state at xxxl is already ~120 GiB in fp32
+# (4× params × 2 for m+v), which dominates per-rank memory under FSDP.
+#
+# BREAKING (vs pre-v0.19): the old `small / medium / large` keys are
+# gone; `--model small` (via the alias below) now produces ~100M
+# params instead of ~250K. If you want the old "tiny laptop MLP",
+# use `--model debug` — that preset is the new escape-hatch for
+# "does this run at all" smoke-testing and is intentionally
+# unchanged.
 MODEL_PRESETS = {
     "debug": {
         "batch_size": 16,
@@ -43,27 +67,61 @@ MODEL_PRESETS = {
         "print_freq": 1,
         "layer_sizes": [128, 64],
     },
-    "small": {
+    "s": {
         "batch_size": 64,
-        "train_iters": 200,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [256, 128, 64],
-    },
-    "medium": {
-        "batch_size": 128,
-        "train_iters": 200,
-        "log_freq": 1,
-        "print_freq": 10,
-        "layer_sizes": [512, 256, 128],
-    },
-    "large": {
-        "batch_size": 256,
         "train_iters": 400,
         "log_freq": 1,
         "print_freq": 10,
-        "layer_sizes": [1024, 512, 256],
-    },
+        "layer_sizes": [8192, 8192, 4096],
+    },  # ~107M
+    "m": {
+        "batch_size": 32,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [16384, 8192, 8192, 4096],
+    },  # ~248M
+    "l": {
+        "batch_size": 32,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [16384, 16384, 8192, 4096],
+    },  # ~449M
+    "xl": {
+        "batch_size": 16,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [24576, 16384, 16384, 8192, 4096],
+    },  # ~858M
+    "xxl": {
+        "batch_size": 8,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [49152, 49152, 16384, 8192, 4096],
+    },  # ~3.43B
+    "xxxl": {
+        "batch_size": 4,
+        "train_iters": 400,
+        "log_freq": 1,
+        "print_freq": 10,
+        "layer_sizes": [65536, 65536, 65536, 16384, 8192, 4096],
+    },  # ~9.88B
+}
+# Long-form aliases — `--model small` and `--model extra-large` etc.
+# resolve to the short canonical keys in MODEL_PRESETS above.
+MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "extra-large": "xl",
+    "xlarge": "xl",
+    "extra-extra-large": "xxl",
+    "xxlarge": "xxl",
+    "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch-size"],
@@ -109,6 +167,8 @@ class TrainConfig:
     num_workers: int = 0
     no_distributed_history: bool = False
     save_datasets: bool = False
+    compile: bool = False
+    compile_mode: str = "default"
 
     def __post_init__(self):
         """Initialise output paths and configure profiling context managers."""
@@ -476,7 +536,12 @@ def train(
     t1m = time.perf_counter()
     dt_model = t1m - t0m
     logger.info(f"Took: {dt_model} seconds to build model")
-    model, optimizer = build_model_and_optimizer(model, dtype=config.dtype)
+    model, optimizer = build_model_and_optimizer(
+        model,
+        dtype=config.dtype,
+        compile=config.compile,
+        compile_mode=config.compile_mode,
+    )
     t2m = time.perf_counter()
     dt_optimizer = time.perf_counter() - t1m
     logger.info(f"Took: {dt_optimizer:.2f} seconds to build optimizer")
@@ -533,14 +598,17 @@ def train(
     return trainer
 
 
-def _arg_provided(argv: Sequence[str], flags: Sequence[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper.
 
 
 def _apply_model_preset(args: argparse.Namespace, argv: Sequence[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS.get(args.model)
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS.get(model_key)
     if preset is None:
         return
     for field_name, value in preset.items():
@@ -594,6 +662,8 @@ def get_config_from_args(args: argparse.Namespace) -> TrainConfig:
         dataset=args.dataset,
         dataset_root=args.dataset_root,
         num_workers=args.num_workers,
+        compile=args.compile,
+        compile_mode=args.compile_mode,
         pyinstrument_profiler=args.pyinstrument_profiler,
         pytorch_profiler=args.pytorch_profiler,
         pytorch_profiler_wait=args.pytorch_profiler_wait,
@@ -615,6 +685,8 @@ def calc_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 def build_model_and_optimizer(
     model: torch.nn.Module,
     dtype: Optional[str] = None,
+    compile: bool = False,
+    compile_mode: str = "default",
 ) -> ModelOptimizerPair:
     """Prepare the model and optimiser for the requested backend."""
     device_override = os.environ.get("TORCH_DEVICE")
@@ -645,6 +717,12 @@ def build_model_and_optimizer(
                 model = DDP(model)
         except Exception:
             model = DDP(model)
+
+    if compile:
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", compile_mode
+        )
+        model = torch.compile(model, mode=compile_mode)
 
     # elif backend.lower() in ("ds", "deepspeed"):
     #     parser = argparse.ArgumentParser(

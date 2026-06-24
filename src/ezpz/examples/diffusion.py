@@ -47,7 +47,9 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
       --hf-split HF_SPLIT   Dataset split to load.
       --hf-text-column HF_TEXT_COLUMN
                             Column containing raw text in the dataset.
-      --hf-limit HF_LIMIT   Number of rows to sample from the HF dataset for quick experiments.
+      --hf-limit HF_LIMIT   Max rows from the HF dataset. 0 (default) = no
+                            limit. Pass e.g. `--hf-limit 512` to subsample
+                            for smoke tests.
       --log_freq LOG_FREQ
       --outdir OUTDIR
       --samples SAMPLES
@@ -59,6 +61,7 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
 """
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -79,6 +82,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 
 logger = ezpz.get_logger(__name__)
@@ -86,6 +90,19 @@ logger = ezpz.get_logger(__name__)
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 
+# MODEL_PRESETS defines a consistent size ladder shared across all
+# ezpz example modules:
+#
+#   s    (~100M), m    (~250M), l    (~500M),
+#   xl   (~1B),   xxl  (~5B),   xxxl (~10B)
+#
+# `debug` remains a tiny laptop smoke-test config and is not part of
+# the ladder.
+#
+# BREAKING CHANGE: the previous keys `small`/`medium`/`large` are now
+# aliased to `s`/`m`/`l` (see MODEL_ALIASES) and have substantially
+# larger parameter counts than before. Previous `xl`/`xxl`/`xxxl`
+# values are also replaced with the new ladder targets.
 MODEL_PRESETS = {
     "debug": {
         "hidden": 64,
@@ -95,30 +112,67 @@ MODEL_PRESETS = {
         "timesteps": 32,
         "batch_size": 4,
     },
-    "small": {
-        "hidden": 128,
-        "n_layers": 4,
-        "n_heads": 4,
-        "seq_len": 24,
-        "timesteps": 64,
-        "batch_size": 8,
-    },
-    "medium": {
-        "hidden": 256,
-        "n_layers": 6,
-        "n_heads": 8,
-        "seq_len": 48,
-        "timesteps": 128,
+    "s": {
+        "hidden": 768,
+        "n_layers": 12,
+        "n_heads": 12,
+        "seq_len": 256,
+        "timesteps": 1024,
         "batch_size": 4,
-    },
-    "large": {
-        "hidden": 512,
-        "n_layers": 8,
-        "n_heads": 8,
-        "seq_len": 64,
-        "timesteps": 256,
+    },  # ~101M
+    "m": {
+        "hidden": 1024,
+        "n_layers": 20,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 4,
+    },  # ~274M
+    "l": {
+        "hidden": 1280,
+        "n_layers": 24,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
         "batch_size": 2,
-    },
+    },  # ~500M
+    "xl": {
+        "hidden": 1536,
+        "n_layers": 32,
+        "n_heads": 16,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 2,
+    },  # ~939M
+    "xxl": {
+        "hidden": 3072,
+        "n_layers": 48,
+        "n_heads": 24,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 1,
+    },  # ~5.50B
+    "xxxl": {
+        "hidden": 4096,
+        "n_layers": 56,
+        "n_heads": 32,
+        "seq_len": 256,
+        "timesteps": 1024,
+        "batch_size": 1,
+    },  # ~11.4B
+}
+# Long-form aliases (--model small|medium|large|xlarge|extra-large …
+# all resolve to the corresponding ladder preset).
+MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "extra-large": "xl",
+    "xlarge": "xl",
+    "extra-extra-large": "xxl",
+    "xxlarge": "xxl",
+    "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
 }
 MODEL_PRESET_FLAGS = {
     "hidden": ["--hidden"],
@@ -130,14 +184,18 @@ MODEL_PRESET_FLAGS = {
 }
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. See fsdp.py for the
+# original drift-prevention rationale.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
     if args.model is None:
         return
-    preset = MODEL_PRESETS[args.model]
+    # Resolve aliases (e.g. "xlarge" → "xl") before looking up the
+    # preset. Direct preset keys fall through unchanged.
+    model_key = MODEL_ALIASES.get(args.model, args.model)
+    preset = MODEL_PRESETS[model_key]
     for field_name, value in preset.items():
         flags = MODEL_PRESET_FLAGS.get(field_name, [])
         if not _arg_provided(argv, flags):
@@ -417,6 +475,11 @@ def train(
         dtype=args.dtype,
         **({"reshard_after_forward": reshard} if reshard is not None else {}),
     )
+    if args.compile:
+        logger.info(
+            "Compiling model with torch.compile(mode=%s)...", args.compile_mode
+        )
+        wrapped_model = torch.compile(wrapped_model, mode=args.compile_mode)
     optim = torch.optim.AdamW(wrapped_model.parameters(), lr=lr)
     mstr = ezpz.models.summarize_model(
         wrapped_model,
@@ -643,8 +706,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--hf-limit",
         type=int,
-        default=512,
-        help="Number of rows to sample from the HF dataset for quick experiments.",
+        default=0,
+        help=(
+            "Maximum number of rows to sample from the HF dataset. "
+            "0 (default) = no limit (use the full dataset). Pass a "
+            "positive value (e.g. `--hf-limit 512`) to subsample for "
+            "smoke tests."
+        ),
     )
     parser.add_argument(
         "--log_freq", type=int, default=int(os.environ.get("LOG_FREQ", 1))
@@ -674,14 +742,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        choices=sorted(MODEL_PRESETS.keys()),
-        help="Model size preset (overrides hidden/layer/head defaults).",
+        choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
+        help=(
+            "Model size preset (overrides hidden/layer/head defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument(
         "--n-layers", type=int, default=2,
     )
     parser.add_argument(
         "--n-heads", type=int, default=4,
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile after FSDP/TP wrap.",
+    )
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
     )
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
@@ -694,6 +783,9 @@ def main(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
     rank = ezpz.setup_torch(seed=args.seed)
     t_setup = time.perf_counter()
+    if rank == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
     base_dir = args.outdir if args.outdir else None
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)

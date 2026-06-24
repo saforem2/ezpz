@@ -5,31 +5,62 @@ ezpz/utils/__init__.py
 from __future__ import annotations
 
 import logging
+import math
 import os
 import pdb
 import re
 import subprocess
 import sys
-import tqdm
-from typing import Any
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Iterable, Optional, Sequence, TYPE_CHECKING, Union
 
 import ezpz
-
-# from ezpz import get_rank
-from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence, Union
-
-import numpy as np
-import torch
-
-# import torch.distributed
-import xarray as xr
-from torchinfo import ModelStatistics
-
 from ezpz.configs import PathLike, ScalarLike, ZeroConfig
 
-import math
+# -- Heavy / optional deps --
+# torch, numpy, tqdm, xarray, torchinfo are imported at module top so
+# function bodies don't have to repeat `import torch` everywhere. But
+# they are wrapped in try/except so this module loads even when one
+# (or all) of them is missing — `ezpz.get_timestamp` and the other
+# torch-free helpers stay usable inside torchless venvs (notably the
+# `ezpz launch` path, which only orchestrates `mpiexec` and never
+# imports torch itself).
+#
+# Functions that DO need a missing dep will hit a plain `NameError:
+# name 'torch' is not defined` when called — that's clearer than the
+# old behavior where the whole module silently failed to import and
+# every util appeared "missing" from `ezpz.<attr>` lookups.
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore[assignment]
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+try:
+    import tqdm
+except ImportError:
+    tqdm = None  # type: ignore[assignment]
+try:
+    import xarray as xr
+except ImportError:
+    xr = None  # type: ignore[assignment]
+try:
+    from torchinfo import ModelStatistics
+except ImportError:
+    ModelStatistics = None  # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    # Re-import unconditionally for static type checkers (TYPE_CHECKING
+    # is True at analysis time only). Keeps `xr.Dataset` annotations
+    # resolvable in IDEs without forcing the runtime import.
+    import numpy as np  # noqa: F811
+    import torch  # noqa: F811
+    import tqdm  # noqa: F811
+    import xarray as xr  # noqa: F811
+    from torchinfo import ModelStatistics  # noqa: F811
 
 # import numpy as np
 

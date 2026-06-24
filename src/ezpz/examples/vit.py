@@ -10,9 +10,12 @@ Quick smoke test on a laptop:
         --batch_size 4 --img_size 64 --patch_size 8 \
         --num_heads 2 --head_dim 16 --depth 2 --num_classes 10
 
-Model presets:
+Model presets (ascending size, real-CLI names):
 
-    --model debug|small|medium|med|large
+    --model debug|small|medium|med|large|xl|xxl|xxxl
+
+Each of `xl`, `xxl`, `xxxl` also accepts long-form aliases — e.g.
+`--model xlarge` or `--model extra-large` both resolve to `xl`.
 
 Help output (``python3 -m ezpz.examples.vit --help``):
 
@@ -71,6 +74,7 @@ Help output (``python3 -m ezpz.examples.vit --help``):
 
 import argparse
 import functools
+import json
 import math
 from pathlib import Path
 import sys
@@ -85,6 +89,7 @@ import ezpz.distributed
 # from TORCH_DTYPES_MAP
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.examples import get_example_outdir
+from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
@@ -94,6 +99,20 @@ logger = ezpz.get_logger(__name__)
 fp = Path(__file__)
 WBPROJ_NAME = f"ezpz.{fp.parent.stem}.{fp.stem}"
 
+# Unified size ladder shared across all ezpz example modules:
+#     s (~100M) -> m (~250M) -> l (~500M) -> xl (~1B) -> xxl (~5B) -> xxxl (~10B)
+# For ViT (224x224 RGB, 1000 classes) the analytic param counts are:
+#     s     ~87M    (ViT-Base-like)
+#     m     ~204M
+#     l     ~632M   (ViT-L-ish)
+#     xl    ~1.21B  (toward ViT-H)
+#     xxl   ~5.44B
+#     xxxl  ~9.67B  (approaches the ViT-22B trajectory)
+# BREAKING: ``--model small`` is now ViT-Base (~87M) — previously this
+# alias resolved to a deeper ~38M custom config. The long-form aliases
+# (small/medium/large/xlarge/...) map onto the short ladder below.
+# Batch sizes halve at each rung to keep memory footprint roughly
+# constant on commodity GPUs.
 MODEL_PRESETS = {
     "debug": {
         "batch_size": 4,
@@ -101,26 +120,54 @@ MODEL_PRESETS = {
         "head_dim": 16,
         "depth": 2,
     },
-    "small": {
-        "batch_size": 128,
-        "num_heads": 16,
-        "head_dim": 64,
-        "depth": 24,
-    },
-    "medium": {
+    "s": {
         "batch_size": 64,
         "num_heads": 12,
         "head_dim": 64,
-        "depth": 16,
+        "depth": 12,
     },
-    "large": {
+    "m": {
         "batch_size": 32,
         "num_heads": 16,
         "head_dim": 64,
+        "depth": 16,
+    },
+    "l": {
+        "batch_size": 16,
+        "num_heads": 16,
+        "head_dim": 80,
         "depth": 32,
     },
+    "xl": {
+        "batch_size": 8,
+        "num_heads": 16,
+        "head_dim": 128,
+        "depth": 24,
+    },
+    "xxl": {
+        "batch_size": 4,
+        "num_heads": 24,
+        "head_dim": 128,
+        "depth": 48,
+    },
+    "xxxl": {
+        "batch_size": 2,
+        "num_heads": 32,
+        "head_dim": 128,
+        "depth": 48,
+    },
 }
-MODEL_ALIASES = {"med": "medium"}
+MODEL_ALIASES = {
+    "small": "s",
+    "medium": "m",
+    "large": "l",
+    "extra-large": "xl",
+    "xlarge": "xl",
+    "extra-extra-large": "xxl",
+    "xxlarge": "xxl",
+    "extra-extra-extra-large": "xxxl",
+    "xxxlarge": "xxxl",
+}
 MODEL_PRESET_FLAGS = {
     "batch_size": ["--batch_size", "--batch-size"],
     "num_heads": ["--num_heads", "--num-heads"],
@@ -281,8 +328,9 @@ class SimpleVisionTransformer(torch.nn.Module):
         return self.head(x)
 
 
-def _arg_provided(argv: list[str], flags: list[str]) -> bool:
-    return any(flag in argv for flag in flags)
+# `_arg_provided` is imported from `ezpz.examples._presets` — single
+# source of truth for the preset-override helper. See fsdp.py for the
+# original drift-prevention rationale.
 
 
 def apply_model_preset(args: argparse.Namespace, argv: list[str]) -> None:
@@ -468,7 +516,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--model",
         default=None,
         choices=sorted([*MODEL_PRESETS.keys(), *MODEL_ALIASES.keys()]),
-        help="Model size preset (overrides defaults)",
+        help=(
+            "Model size preset (overrides defaults). "
+            "xl/xxl/xxxl accept long-form aliases too: "
+            "`xlarge`/`extra-large`, `xxlarge`/`extra-extra-large`, etc."
+        ),
     )
     parser.add_argument("--depth", type=int, default=24, help="Depth")
     parser.add_argument(
@@ -480,6 +532,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--dtype", type=str, default="bf16", help="Data type")
     parser.add_argument("--compile", action="store_true", help="Compile model")
+    parser.add_argument(
+        "--compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help=(
+            "torch.compile mode (only used when --compile is set). "
+            "`default` is safest. `reduce-overhead` enables cudagraphs "
+            "for small models / large batches. `max-autotune` does "
+            "extensive kernel search — slow startup, fastest steady state."
+        ),
+    )
     parser.add_argument(
         "--num_workers",
         "--num-workers",
@@ -724,8 +788,8 @@ def train_fn(
         #     model = ezpz.distributed.prepare_model_for_ddp(model)
 
     if args.compile:
-        logger.info("Compiling model")
-        model = torch.compile(model)
+        logger.info("Compiling model with torch.compile(mode=%s)", args.compile_mode)
+        model = torch.compile(model, mode=args.compile_mode)
 
     torch_dtype = ezpz.distributed.TORCH_DTYPES_MAP[args.dtype]
     criterion = torch.nn.CrossEntropyLoss()
@@ -943,6 +1007,9 @@ def main(args: argparse.Namespace):
     t0 = time.perf_counter()
     _ = ezpz.distributed.setup_torch()
     t_setup = time.perf_counter()
+    if ezpz.get_rank() == 0:
+        jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
+        logger.info(f"config:\n{jstr}")
 
     def attn_fn(
         q: torch.Tensor, k: torch.Tensor, v: torch.Tensor

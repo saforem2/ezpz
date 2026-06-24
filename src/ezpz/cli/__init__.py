@@ -129,7 +129,11 @@ def benchmark_cmd(args: tuple[str, ...]) -> None:
     \b
     Options (passed through to the benchmark runner):
       --run NAME[,NAME,...]   Examples to run (default: all)
-      --model SIZE            Model size: debug, small, medium, large
+      --model SIZE            Model size preset passed through to each example
+                              (debug/small/medium/large + xl/xxl/xxxl with
+                              long-form aliases like xlarge/extra-large).
+                              agpt-2b/agpt-20b are fsdp_tp-only. Each example
+                              validates the preset against its own MODEL_PRESETS.
       --outdir PATH           Output directory for logs and report
     """
     from ezpz.examples.run_all import main as run_all_main

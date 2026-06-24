@@ -207,16 +207,31 @@ __all__ = [
 ]  # type: ignore
 
 _IMPORT_CACHE: Dict[str, ModuleType] = {}
+# Track the underlying ImportError for any submodule whose import
+# failed, so __getattr__ can surface it in the AttributeError instead
+# of giving a misleading "no attribute" message that doesn't say WHY.
+_IMPORT_ERRORS: Dict[str, ImportError] = {}
 
 
 def _load_module(module_name: str) -> ModuleType | None:
-    """Import *module_name* once and cache the result."""
+    """Import *module_name* once and cache the result.
 
+    Returns ``None`` on import failure; the underlying ImportError is
+    stashed in :data:`_IMPORT_ERRORS` so the lazy attribute lookup
+    below can include it in the final error message.
+    """
     if module_name in _IMPORT_CACHE:
         return _IMPORT_CACHE[module_name]
+    if module_name in _IMPORT_ERRORS:
+        return None
     try:
         module = import_module(module_name)
-    except ModuleNotFoundError:
+    except ImportError as exc:
+        # Catch ImportError (not just ModuleNotFoundError) so failures
+        # inside the imported module itself — e.g. `import torch`
+        # failing inside `ezpz.utils.__init__` — are also stashed and
+        # reported, not silently swallowed.
+        _IMPORT_ERRORS[module_name] = exc
         return None
     _IMPORT_CACHE[module_name] = module
     return module
@@ -226,10 +241,13 @@ def __getattr__(name: str) -> Any:  # pragma: no cover - exercised via tests
     """Dynamically resolve attributes from submodules on first access."""
 
     if name in _LAZY_MODULES:
-        module = _load_module(_LAZY_MODULES[name])
+        module_name = _LAZY_MODULES[name]
+        module = _load_module(module_name)
         if module is None:
+            err = _IMPORT_ERRORS.get(module_name)
+            detail = f": {err}" if err else ""
             raise AttributeError(
-                f"Module {_LAZY_MODULES[name]!r} cannot be imported"
+                f"Module {module_name!r} cannot be imported{detail}"
             )
         globals()[name] = module
         return module
@@ -242,6 +260,22 @@ def __getattr__(name: str) -> Any:  # pragma: no cover - exercised via tests
             value = getattr(module, name)
             globals()[name] = value
             return value
+    # Attribute not found in any successfully-loaded submodule. Include
+    # any import failures we saw along the way — chances are that's
+    # the real reason the attribute is "missing". Without this, a
+    # missing `torch` would silently mask every util as "no attribute",
+    # which is brutal to debug (the user sees `AttributeError: module
+    # 'ezpz' has no attribute 'get_timestamp'` with no hint that the
+    # underlying cause is `ModuleNotFoundError: No module named
+    # 'torch'` inside `ezpz.utils.__init__`).
+    if _IMPORT_ERRORS:
+        failures = "; ".join(
+            f"{m}: {e}" for m, e in _IMPORT_ERRORS.items()
+        )
+        raise AttributeError(
+            f"module 'ezpz' has no attribute {name!r} "
+            f"(submodule import failures: {failures})"
+        )
     raise AttributeError(f"module 'ezpz' has no attribute {name!r}")
 
 

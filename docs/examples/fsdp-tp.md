@@ -25,6 +25,52 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
 
+## Common modifications
+
+- **Pick a model size** — pass `--model {debug,s,m,l,xl,xxl,xxxl}`. Each
+  short-name size also accepts long-form aliases (`small`/`medium`/`large`/
+  `xlarge`/`extra-large`/etc). Shared size ladder across all 5 example
+  modules:
+
+  | Preset | Llama-arch (vocab=32k) |
+  |---|---|
+  | `debug` | ~10K (laptop smoke test) |
+  | `s` (small) | **~125M** |
+  | `m` (medium) | **~246M** |
+  | `l` (large) | **~495M** |
+  | `xl` | **~1.21B** (Llama-1.5B-ish) |
+  | `xxl` | **~5.93B** (Llama-7B-ish) |
+  | `xxxl` | **~11.34B** (Llama-13B-ish) |
+
+  > **Breaking change**: `--model small` now resolves to ~125M (was a
+  > toy ~6M). Use `--model debug` for laptop-runnable smoke tests.
+- **AuroraGPT presets** — `--model agpt-2b` or `--model agpt-20b` reproduce
+  torchtitan's `agpt_configs` registry exactly (`dim`, `n_layers`, `n_heads`,
+  `n_kv_heads`, `vocab_size`, `hidden_dim`, `rope_theta` all match). Useful
+  for A/B'ing against a torchtitan agpt run on identical architecture.
+  Aliases: `agpt2b`, `agpt_2b`, `AGPT-2B` (and 20b counterparts).
+- **Load a HuggingFace model** — pass any `--model owner/repo` (e.g.
+  `--model meta-llama/Llama-3.2-1B`). The `/` is the sentinel — anything
+  with one is treated as a HF repo id, pulled via `AutoModelForCausalLM`,
+  and wrapped with FSDP. `--tokenizer_name` auto-defaults to the same repo.
+  **Note**: HF mode forces `--tp 1` (the TP plan is hardcoded to ezpz's own
+  Transformer module names; doesn't apply to HF's `LlamaDecoderLayer`). See
+  [HuggingFace models](#huggingface-models) for details.
+- **Activation checkpointing** — `--ac {none,block,full,selective}` (or
+  `--activation-checkpoint`) trades compute for memory during training.
+  `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
+  reduction, ~20 pct throughput hit); matches torchtitan's default for
+  agpt-2b/agpt-20b. See [Activation checkpointing](#activation-checkpointing).
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
+
+> Note: combining `--compile` with `--ac` on HuggingFace models can trigger a
+> `CheckpointError: tensor count mismatch` due to HF's DynamicCache. Drop one
+> if you hit it.
+
 ## Source
 
 <details closed><summary><code>src/ezpz/examples/fsdp_tp.py</code></summary>
@@ -121,12 +167,89 @@ A logger is set up and W&B is optionally imported.
 
 <details closed markdown><summary><strong>Model Presets</strong></summary>
 
-`MODEL_PRESETS` defines canned configurations (`debug`, `small`,
-`medium`, `large`) that override default CLI values for quick
-experimentation.
+`MODEL_PRESETS` defines canned configurations that override default CLI
+values for quick experimentation:
 
-```python title="src/ezpz/examples/fsdp_tp.py:172:213"
---8<-- "src/ezpz/examples/fsdp_tp.py:172:213"
+- Toy / smoke-test sizes: `debug`, `small`, `medium`, `large`.
+- Production-scale sizes: `xl`, `xxl`, `xxxl` — chosen to map roughly to
+  Llama-1.5B / Llama-7B / Llama-13B (`dim 2048/4096/5120`,
+  `n_layers 24/32/40`, `n_heads 32/32/40`, `n_kv_heads 8`).
+- **AuroraGPT (agpt) sizes**: `agpt-2b`, `agpt-20b` — verbatim from
+  torchtitan's `agpt_configs` registry. agpt-2b is
+  `dim=2048, n_layers=12, n_heads=16, n_kv_heads=4, vocab_size=256128, hidden_dim=11008, rope_theta=50000`.
+  agpt-20b is `dim=5120, n_layers=64, n_heads=40, n_kv_heads=8, vocab_size=256128, hidden_dim=14336, rope_theta=500000`.
+  These exist so an ezpz `fsdp_tp` run can be A/B'd against a torchtitan
+  agpt run on the same architecture.
+
+Each `xN` size also accepts long-form aliases via `MODEL_ALIASES`
+(`xlarge` / `extra-large` → `xl`, `xxlarge` / `extra-extra-large` →
+`xxl`, `xxxlarge` / `extra-extra-extra-large` → `xxxl`), so spelling
+them out works too. agpt presets accept the natural variants
+`agpt2b` / `agpt_2b` / `AGPT-2B` (and the 20b counterparts).
+
+### HuggingFace models
+
+`--model` also accepts a HuggingFace repo id whenever the value contains
+a `/`:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp --model meta-llama/Llama-3.2-1B
+```
+
+The HF path:
+
+- Pulls both the architecture (config) AND the pretrained weights via
+  `AutoModelForCausalLM.from_pretrained(...)`.
+- Auto-defaults `--tokenizer_name` to the same repo id (override with
+  `--tokenizer_name <other>` if you want a different one).
+- Reads `$HF_TOKEN` / `$HUGGING_FACE_HUB_TOKEN` for gated repos; you can
+  also `huggingface-cli login` once and skip the env var.
+- **Forces `--tp 1`** (FSDP-only). The existing TP `parallelize()` plan is
+  hardcoded to ezpz's own `TransformerBlock` module names (`attention.wq`,
+  `feed_forward.w1`, etc.) and won't apply cleanly to HF's
+  `LlamaDecoderLayer` / `GemmaDecoderLayer` / etc. The example logs a
+  warning if you pass `--tp > 1` along with a HF model.
+- Wraps the model with FSDP using a transformer-block auto-wrap policy
+  derived from the HF model's own `ModuleList` children — so each
+  decoder layer becomes its own FSDP unit.
+
+### Activation checkpointing
+
+Pass `--activation-checkpoint` (alias `--ac`) to trade compute for
+memory during training:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --ac block
+```
+
+Modes:
+
+- **`none`** (default) — keeps all forward activations in memory.
+  Lowest latency, highest memory.
+- **`block`** (alias: **`full`**) — wraps each TransformerBlock's
+  forward with `torch.utils.checkpoint`. The block re-runs its
+  forward during backward instead of caching intermediate
+  activations. Typical **30-40% activation-memory reduction**,
+  **~20% throughput hit**. Matches torchtitan's default for
+  agpt-2b / agpt-20b. `--ac full` is accepted as a compatibility
+  alias with torchtitan's CLI.
+- **`selective`** — checkpoints only the attention computation
+  inside each block. Smaller memory savings (~15-20%), smaller
+  throughput hit (~10%). Less robust than `block` for arbitrary
+  architectures.
+
+AC is applied **after** the TP/FSDP wrap so the checkpoint envelope
+contains FSDP's unshard/reshard bookkeeping; reversed order would
+double-shard and corrupt grads.
+
+Caveat: AC only helps with **training-time** activation memory. It
+will NOT fix init-time OOMs (every rank holds the full unsharded
+model momentarily during `model.to(device)` before FSDP shards). If
+the model OOMs during init, raise `--tp` (halves per-rank weight
+memory for each doubling) or use a smaller preset.
+
+```python title="src/ezpz/examples/fsdp_tp.py:172:303"
+--8<-- "src/ezpz/examples/fsdp_tp.py:172:303"
 ```
 
 </details>
@@ -309,7 +432,7 @@ Per-step **TFLOPS** and **MFU** are reported under `train/tflops`
 and `train/mfu`.
 
 ```python
-_model_flops = try_estimate(model, (args.batch_size, args.seq_length))
+_model_flops = try_estimate(model, (args.batch_size, args.seq_len))
 # ... per step:
 metrics["train/tflops"] = _model_flops / (t2 - t0) / 1e12
 metrics["train/mfu"] = compute_mfu(_model_flops, t2 - t0)
@@ -326,13 +449,13 @@ $ python3 -m ezpz.examples.fsdp_tp --help
 usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
                   [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
                   [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
-                  [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE]
-                  [--seq-length SEQ_LENGTH] [--lr LR] [--epochs EPOCHS]
-                  [--batch-size BATCH_SIZE]
-                  [--model {debug,large,medium,small}]
+                  [--hidden-dim HIDDEN_DIM] [--rope-theta ROPE_THETA]
+                  [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE] [--lr LR]
+                  [--epochs EPOCHS] [--batch-size BATCH_SIZE] [--model MODEL]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
                   [--sharding-strategy SHARDING_STRATEGY]
+                  [--activation-checkpoint {none,block,full,selective}]
                   [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
                   [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
                   [--model_name_or_path MODEL_NAME_OR_PATH]
@@ -351,20 +474,49 @@ options:
   --n-kv-heads N_KV_HEADS
   --multiple-of MULTIPLE_OF
   --ffn-dim-multiplier FFN_DIM_MULTIPLIER
+  --hidden-dim HIDDEN_DIM
+                        Override SwiGLU FFN hidden dim. When None (default),
+                        TransformerBlock derives it as `4 * dim` and
+                        FeedForward applies the 2/3 + ffn_dim_multiplier +
+                        multiple_of pipeline. Set this to a concrete value
+                        (e.g. 11008 for agpt-2b, 14336 for agpt-20b) to bypass
+                        the formula and hit a published architecture exactly.
+                        (default: None)
+  --rope-theta ROPE_THETA
+                        Base frequency for RoPE positional embeddings.
+                        Llama1/2 used 10000 (the default); Llama3 uses 500000;
+                        agpt-2b uses 50000. (default: 10000.0)
   --norm-eps NORM_EPS
   --vocab-size VOCAB_SIZE
-  --seq-length SEQ_LENGTH
   --lr LR
   --epochs EPOCHS
   --batch-size BATCH_SIZE
-  --model {debug,large,medium,small}
-                        Model size preset (overrides dim/layer defaults)
-                        (default: None)
+  --model MODEL         Model size preset (overrides dim/layer defaults).
+                        Presets:
+                        debug/small/medium/large/xl/xxl/xxxl/agpt-2b/agpt-20b.
+                        xl/xxl/xxxl accept long-form aliases (`xlarge`/`extra-
+                        large`, etc). agpt presets accept `agpt2b`/`agpt_2b`
+                        etc. Pass a HuggingFace repo id with a `/` (e.g.
+                        `meta-llama/Llama-3.2-1B`) to load HF weights instead
+                        — that path forces --tp 1 (FSDP-only). (default: None)
   --test-batch-size TEST_BATCH_SIZE
   --num-workers NUM_WORKERS
   --seed SEED
   --tp TP
   --sharding-strategy SHARDING_STRATEGY
+  --activation-checkpoint {none,block,full,selective}, --ac {none,block,full,selective}
+                        Activation checkpointing strategy. `none` (default)
+                        keeps all forward activations in memory. `block`
+                        (alias: `full`) wraps each TransformerBlock — typical
+                        30-40 pct activation memory reduction, ~20 pct
+                        throughput hit (matches torchtitan's default for
+                        agpt-2b/agpt-20b). `selective` checkpoints only the
+                        attention computation inside each block — ~15-20 pct
+                        memory reduction, ~10 pct throughput hit. Trade
+                        activation memory for recomputation cost — useful when
+                        OOM-ing during training (NOT during init; for init-
+                        time OOM consider increasing --tp or reducing
+                        --seq-len). (default: none)
   --max-grad-norm MAX_GRAD_NORM
   --outdir OUTDIR
   --dataset DATASET
@@ -376,8 +528,11 @@ options:
                         Column containing raw text in the dataset. (default:
                         text)
   --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
-                        Number of rows to sample from the HF dataset for quick
-                        experiments. (default: 512)
+                        Maximum number of rows to sample from the HF dataset.
+                        0 (default) = no limit (use the full dataset). Pass a
+                        positive value (e.g. `--hf-limit 512`) to subsample
+                        for smoke tests. Subsampling is deterministic given
+                        $EZPZ_HF_SAMPLE_SEED. (default: 0)
   --seq-len SEQ_LEN
   --max-seq-len MAX_SEQ_LEN
   --depth-init DEPTH_INIT

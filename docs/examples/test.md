@@ -17,6 +17,41 @@ See: 📘 [docs](../python/Code-Reference/examples/test.md),
 ezpz launch python3 -m ezpz.examples.test
 ```
 
+## Common modifications
+
+- **Pick a model size** — pass `--model {debug,s,m,l,xl,xxl,xxxl}`. Each
+  short-name size also accepts long-form aliases (`small`/`medium`/`large`/
+  `xlarge`/`extra-large`/etc). The size ladder is shared across all 5
+  example modules — same `s/m/l/xl/xxl/xxxl` targets, different
+  architectures.
+
+  Approximate parameter counts (MNIST `input_dim=784` + `output=10`):
+
+  | Preset | Params | Memory (bf16 weights) |
+  |---|---|---|
+  | `debug` | ~110K | < 1 MiB |
+  | `s` (small) | **~107M** | 200 MiB |
+  | `m` (medium) | **~248M** | 470 MiB |
+  | `l` (large) | **~449M** | 850 MiB |
+  | `xl` | **~858M** | 1.6 GiB |
+  | `xxl` | **~3.4B** | 6.4 GiB |
+  | `xxxl` | **~9.9B** | 19 GiB |
+
+  > **Breaking change**: `--model small` now resolves to ~107M params
+  > (was ~250K). Use `--model debug` for the old laptop-friendly toy.
+
+  Adam state at `xxxl` dominates per-rank memory (~80 GiB fp32 for m+v);
+  batch sizes halve at each rung to compensate. The MLP is
+  architecturally trivial — depth/width is the only knob, so layer_sizes
+  grows aggressively at the top of the ladder.
+- **Override individual dims** — `--layer-sizes 4096 2048 1024` overrides
+  the preset's hidden-layer widths; `--batch-size N` overrides batch.
+- **Compile with torch.compile** — pass `--compile` to wrap the model with
+  `torch.compile()` after FSDP/DDP wrap. Tune the mode with
+  `--compile-mode {default,reduce-overhead,max-autotune}` (default: `default`).
+  Use `reduce-overhead` for cudagraphs on small models / large batches;
+  `max-autotune` for the slowest startup / fastest steady-state.
+
 ## Source
 
 <details closed><summary><code>src/ezpz/examples/test.py</code></summary>
@@ -50,11 +85,17 @@ can be reported later.
 
 <details closed markdown><summary><strong><code>MODEL_PRESETS</code></strong></summary>
 
-Named presets that bundle batch size, iteration count, logging frequency,
-and layer sizes into a single `--model` flag.
+Named presets that bundle batch size, iteration count, logging
+frequency, and layer sizes into a single `--model` flag. Sizes climb
+from `debug → small → medium → large → xl → xxl → xxxl`; the last three
+use geometric 2× scaling on MLP layer widths (the model is a toy MLP, so
+sizes mainly stress-test distributed init and AllReduce rather than
+mimicking real architectures). `MODEL_ALIASES` makes long-form spellings
+work too — `--model xlarge` or `--model extra-large` both resolve to
+`xl`, and the same pattern applies to `xxl`/`xxxl`.
 
-```python title="src/ezpz/examples/test.py:38:74"
---8<-- "src/ezpz/examples/test.py:38:74"
+```python title="src/ezpz/examples/test.py:38:108"
+--8<-- "src/ezpz/examples/test.py:38:108"
 ```
 
 `MODEL_PRESET_FLAGS` maps each preset field to its CLI flags so that
@@ -280,7 +321,8 @@ usage: ezpz test [-h] [--warmup WARMUP] [--tp TP] [--pp PP]
                  [--with-flops | --no-with-flops]
                  [--with-modules | --no-with-modules] [--acc-events]
                  [--train-iters TRAIN_ITERS]
-                 [--model {debug,small,medium,large}] [--log-freq LOG_FREQ]
+                 [--model {debug,small,medium,large,xl,xlarge,extra-large,xxl,xxlarge,extra-extra-large,xxxl,xxxlarge,extra-extra-extra-large}]
+                 [--log-freq LOG_FREQ]
                  [--print-freq PRINT_FREQ] [--batch-size BATCH_SIZE]
                  [--input-size INPUT_SIZE] [--output-size OUTPUT_SIZE]
                  [--layer-sizes LAYER_SIZES] [--dtype DTYPE]
@@ -331,8 +373,10 @@ options:
   --acc-events          Accumulate events in the profiler (default: False)
   --train-iters TRAIN_ITERS, --train_iters TRAIN_ITERS
                         Number of training iterations (default: 200)
-  --model {debug,small,medium,large}
-                        Model size preset for the smoke test. (default: None)
+  --model {debug,small,medium,large,xl,xlarge,extra-large,xxl,xxlarge,extra-extra-large,xxxl,xxxlarge,extra-extra-extra-large}
+                        Model size preset for the smoke test. xl/xxl/xxxl
+                        accept long-form aliases too: `xlarge`/`extra-large`,
+                        `xxlarge`/`extra-extra-large`, etc. (default: None)
   --log-freq LOG_FREQ, --log_freq LOG_FREQ
                         Logging frequency (default: 1)
   --print-freq PRINT_FREQ, --print_freq PRINT_FREQ
