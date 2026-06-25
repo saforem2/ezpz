@@ -902,7 +902,11 @@ def parse_args(argv: Optional[list[str]] = None):
             "each block — ~15-20 pct memory reduction, ~10 pct throughput "
             "hit. Trade activation memory for recomputation cost — useful "
             "when OOM-ing during training (NOT during init; for init-time "
-            "OOM consider increasing --tp or reducing --seq-len)."
+            "OOM consider increasing --tp or reducing --seq-len). "
+            "NOTE: cannot be combined with --compile (upstream AOTAutograd "
+            "DeviceMesh-in-saved-tensors bug — see the --compile warning). "
+            "With FSDP2 you usually don't need --ac anyway; it was a "
+            "workaround for the FSDP1 backward-memory OOM that FSDP2 fixes."
         ),
     )
     parser.add_argument(
@@ -1650,10 +1654,26 @@ def train(
             activation_checkpoint=args.activation_checkpoint,
         )
     if args.compile:
-        if is_hf_model and args.activation_checkpoint != "none":
+        if args.activation_checkpoint != "none":
+            # --ac + --compile together trip an upstream AOTAutograd bug:
+            #   AssertionError: expected all tensors_saved_with_vc_check to
+            #   be Tensors, got [... DeviceMesh]
+            # The non-reentrant checkpoint_wrapper saves a DeviceMesh into
+            # the autograd graph, which the compiled-backward saved-tensors
+            # check rejects. Under FSDP2 every sharded module carries a
+            # DeviceMesh, so this fires even at --tp 1 (with FSDP1 it
+            # required --tp > 1). Repro + triage:
+            # torchtitan/.../docs/upstream-issues/repro_devicemesh_in_saved_tensors.py
+            # Not fixable here — drop one of --ac / --compile. (With FSDP2
+            # you typically no longer need --ac for memory; it was a
+            # workaround for the FSDP1 OOM that FSDP2 already resolves.)
             logger.warning(
-                "torch.compile + activation_checkpointing on HF models can produce "
-                "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
+                "--compile + --activation-checkpoint=%s will likely crash "
+                "with an AOTAutograd 'tensors_saved_with_vc_check ... "
+                "DeviceMesh' assertion (upstream bug; fires under FSDP2 even "
+                "at --tp 1). Drop one of --ac / --compile. Note FSDP2 usually "
+                "removes the need for --ac (it fixed the FSDP1 OOM).",
+                args.activation_checkpoint,
             )
         # Compile each TransformerBlock individually rather than the whole
         # model. This is what torchtitan does (apply_compile in
