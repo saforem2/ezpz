@@ -1077,6 +1077,47 @@ def parse_args(argv: Optional[list[str]] = None):
     return args
 
 
+def _configure_fsdp_gradient_division(model: nn.Module) -> None:
+    """Set FSDP2 gradient divide factor to 1.0 and (on CCL/XPU) force SUM
+    reduction for cross-rank gradient comms.
+
+    Mirrors torchtitan's ``disable_fsdp_gradient_division``. FSDP2's default
+    reduce-scatter does a MEAN (divide by world size) inside the collective.
+    On NCCL that's fine; on CCL (XPU) splitting the divide out of the
+    collective and forcing a plain SUM avoids a per-reduce precision loss
+    and matches the comm path torchtitan runs on Aurora/Sunspot. The single
+    post-hoc divide is folded into FSDP's gradient pipeline via the
+    divide-factor=1.0 setting, so numerics are unchanged vs the mean path.
+
+    Safe no-op on modules that aren't FSDP2-wrapped or torch builds without
+    these setters.
+    """
+    force_sum_reduction = False
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        backend = str(torch.distributed.get_backend() or "")
+        if backend and "nccl" not in backend.lower():
+            force_sum_reduction = True
+
+    n_updated = 0
+    for module in model.modules():
+        set_divide_factor = getattr(module, "set_gradient_divide_factor", None)
+        if callable(set_divide_factor):
+            set_divide_factor(1.0)
+            n_updated += 1
+            if force_sum_reduction:
+                set_force_sum = getattr(
+                    module, "set_force_sum_reduction_for_comms", None
+                )
+                if callable(set_force_sum):
+                    set_force_sum(True)
+    logger.info(
+        "Configured FSDP gradient division for %d modules "
+        "(force_sum_reduction=%s)",
+        n_updated,
+        force_sum_reduction,
+    )
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -1190,6 +1231,8 @@ def parallelize(
         fully_shard([model.norm, model.output], **fsdp_kwargs)
     # Root last.
     fully_shard(model, **fsdp_kwargs)
+
+    _configure_fsdp_gradient_division(model)
 
     logger.info(f"Model after parallelization (FSDP2):\n{model=}\n")
     return model
@@ -1666,6 +1709,7 @@ def train(
                 "root module (per-layer memory savings will be reduced)."
             )
         fully_shard(model, **hf_fsdp_kwargs)
+        _configure_fsdp_gradient_division(model)
     else:
         # TP + FSDP2. parallelize() applies activation checkpointing per
         # block BEFORE fully_shard (correct FSDP2 ordering), so we do NOT
