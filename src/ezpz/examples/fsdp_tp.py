@@ -1087,54 +1087,64 @@ def parallelize(
     reshard = _reshard_after_forward(sharding_strategy)
 
     model.init_weights()  # type: ignore
-    model = parallelize_module(
-        model,
-        tp_mesh,
-        {
-            "tok_embeddings": RowwiseParallel(
-                input_layouts=Replicate(),
-                output_layouts=Shard(1),
-            ),
-            "norm": SequenceParallel(),
-            "output": ColwiseParallel(
-                input_layouts=Shard(1),
-                output_layouts=Replicate(),
-                # use DTensor as the output
-                # use_local_output=False,
-            ),
-        },
-    )
 
-    assert isinstance(model.layers, Iterable)
-    for _, transformer_block in enumerate(model.layers):
-        layer_tp_plan = {
-            "attention_norm": SequenceParallel(),
-            "attention": PrepareModuleInput(
-                input_layouts=(Shard(1), None),  # type:ignore
-                desired_input_layouts=(Replicate(), None),  # type:ignore
-            ),
-            "attention.wq": ColwiseParallel(),
-            "attention.wk": ColwiseParallel(),
-            "attention.wv": ColwiseParallel(),
-            "attention.wo": RowwiseParallel(output_layouts=Shard(1)),
-            "ffn_norm": SequenceParallel(),
-            "feed_forward": PrepareModuleInput(
-                input_layouts=(Shard(1),),
-                desired_input_layouts=(Replicate(),),
-            ),
-            "feed_forward.w1": ColwiseParallel(),
-            "feed_forward.w2": RowwiseParallel(output_layouts=Shard(1)),
-            "feed_forward.w3": ColwiseParallel(),
-        }
-
-        attn_layer = transformer_block.attention  # type: ignore
-        attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
-        attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
-        parallelize_module(
-            module=transformer_block,  # type: ignore
-            device_mesh=tp_mesh,
-            parallelize_plan=layer_tp_plan,
+    # Only apply tensor/sequence parallelism when the tp mesh dim is > 1.
+    # At tp=1 (FSDP-only) the TP plan is pure overhead: SequenceParallel
+    # still wraps norms as DTensors sharded over a size-1 tp dim, which
+    # produces a `_NormPartial` placement that must be all-reduced — and
+    # combined with FSDP2's dp sharding triggers the "2 sequential
+    # all_reduce ... suboptimal" warning every step, for zero benefit
+    # (there's nothing to shard across a 1-rank tp group). torchtitan
+    # guards the same way (`if parallel_dims.tp_enabled`).
+    if tp_mesh.size() > 1:
+        model = parallelize_module(
+            model,
+            tp_mesh,
+            {
+                "tok_embeddings": RowwiseParallel(
+                    input_layouts=Replicate(),
+                    output_layouts=Shard(1),
+                ),
+                "norm": SequenceParallel(),
+                "output": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    # use DTensor as the output
+                    # use_local_output=False,
+                ),
+            },
         )
+
+        assert isinstance(model.layers, Iterable)
+        for _, transformer_block in enumerate(model.layers):
+            layer_tp_plan = {
+                "attention_norm": SequenceParallel(),
+                "attention": PrepareModuleInput(
+                    input_layouts=(Shard(1), None),  # type:ignore
+                    desired_input_layouts=(Replicate(), None),  # type:ignore
+                ),
+                "attention.wq": ColwiseParallel(),
+                "attention.wk": ColwiseParallel(),
+                "attention.wv": ColwiseParallel(),
+                "attention.wo": RowwiseParallel(output_layouts=Shard(1)),
+                "ffn_norm": SequenceParallel(),
+                "feed_forward": PrepareModuleInput(
+                    input_layouts=(Shard(1),),
+                    desired_input_layouts=(Replicate(),),
+                ),
+                "feed_forward.w1": ColwiseParallel(),
+                "feed_forward.w2": RowwiseParallel(output_layouts=Shard(1)),
+                "feed_forward.w3": ColwiseParallel(),
+            }
+
+            attn_layer = transformer_block.attention  # type: ignore
+            attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
+            attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
+            parallelize_module(
+                module=transformer_block,  # type: ignore
+                device_mesh=tp_mesh,
+                parallelize_plan=layer_tp_plan,
+            )
 
     # Activation checkpointing must wrap each block BEFORE fully_shard so the
     # checkpoint envelope lives inside the FSDP2 unit (torchtitan ordering;
