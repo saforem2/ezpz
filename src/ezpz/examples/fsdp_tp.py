@@ -1778,7 +1778,31 @@ def train(
         )
     logger.info(f"Creating optimizer=AdamW with lr={args.lr}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, foreach=True)
+    # Prefer the fused AdamW kernel (single kernel for the whole param
+    # update) — it's what torchtitan uses and it's measurably faster than
+    # `foreach` on XPU. Fall back to foreach if fused isn't supported for
+    # this build/device (older torch, CPU, etc.).
+    try:
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.1,
+            fused=True,
+        )
+    except (RuntimeError, ValueError) as exc:
+        logger.warning(
+            "Fused AdamW unavailable (%s); falling back to foreach=True.", exc
+        )
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.1,
+            foreach=True,
+        )
 
     # reuse device for input placement
 
