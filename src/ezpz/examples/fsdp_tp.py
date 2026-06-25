@@ -1024,6 +1024,21 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--act-mem-budget",
+        type=float,
+        default=1.0,
+        help=(
+            "Activation-memory budget for the inductor min-cut partitioner "
+            "(sets torch._functorch.config.activation_memory_budget). Only "
+            "takes effect with --compile. 1.0 (default) saves ALL "
+            "activations (no recompute); lower values let the compiler "
+            "recompute activations in backward to cut peak memory — e.g. "
+            "0.5 keeps ~half. This is how torchtitan fits larger batches "
+            "for the same model (its MemoryBudgetAC sets 0.5). Try 0.5 if "
+            "you OOM in backward at a batch size that should fit."
+        ),
+    )
+    parser.add_argument(
         "--loss-impl",
         type=str,
         default="eager",
@@ -1664,6 +1679,21 @@ def train(
             activation_checkpoint=args.activation_checkpoint,
         )
     if args.compile:
+        # Activation-memory budget for the inductor min-cut partitioner.
+        # Default 1.0 = save every activation (no recompute); < 1.0 lets the
+        # compiler recompute a fraction of activations in backward to cut
+        # peak memory. This is the knob torchtitan's MemoryBudgetAC sets
+        # (0.5) — it's why TT fits a larger batch than this example for the
+        # same model. Global config, applies to every compiled block below.
+        if args.act_mem_budget != 1.0:
+            import torch._functorch.config as _functorch_config
+
+            _functorch_config.activation_memory_budget = args.act_mem_budget
+            logger.info(
+                "Set activation_memory_budget=%.3f (inductor will recompute "
+                "activations in backward to cut peak memory).",
+                args.act_mem_budget,
+            )
         if args.activation_checkpoint != "none":
             # --ac + --compile together trip an upstream AOTAutograd bug:
             #   AssertionError: expected all tensors_saved_with_vc_check to
