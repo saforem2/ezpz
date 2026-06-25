@@ -1900,7 +1900,14 @@ def train(
                 if tp_mod is not None
                 else 0
             )
-            if epoch == 0 and idx == 0:
+            # First-step finite/max debug stats. Gated behind
+            # EZPZ_TRACK_LOGITS because `torch.isfinite(pred)` allocates a
+            # full `(B, T, vocab)`-shaped bool tensor on the un-reduced
+            # logits — at agpt's 256K vocab and long seq that's multiple GB
+            # materialized *before* the loss, which can OOM a run that would
+            # otherwise fit (the loss itself may be chunked/compiled to stay
+            # bounded, but this debug probe is not). Off by default.
+            if track_logits and epoch == 0 and idx == 0:
                 pred_finite = torch.isfinite(pred)
                 pred_nonfinite = int((~pred_finite).sum().item())
                 pred_max = float(pred.abs().max().item())
