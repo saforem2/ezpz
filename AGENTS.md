@@ -52,9 +52,17 @@ Guidance for AI coding assistants (and humans) working in this repo.
 - **Every PR needs a `release:` label before merge**: one of
   `release:patch`, `release:minor`, `release:major`, or `release:skip`.
   There is no default-to-patch — pick deliberately. Merging triggers
-  release-please to auto-cut a tagged release (except `release:skip`).
-- Squash-merge is the current convention (commit subject ends with the
-  `(#NN)` PR number).
+  `.github/workflows/release-on-merge.yml` to bump the version (via
+  `hatch version`), append a `CHANGELOG.md` entry, tag, and cut a GitHub
+  release (except `release:skip`).
+- **Merge with a merge commit, not squash.** `release-on-merge.yml` builds
+  the changelog + release notes from `git log --pretty=%s {prev_tag}..HEAD`
+  — i.e. *every* commit in the range. A merge commit preserves each
+  branch commit as its own release-note bullet; a squash collapses the
+  whole PR to one line. Keep branch commits atomic and well-titled
+  (`type(scope): message`) so each becomes a clean bullet. (Trade-off: the
+  `Merge pull request #NN …` line also appears as a bullet — acceptable
+  noise for the per-change detail.)
 
 ## Module structure
 
