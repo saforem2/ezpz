@@ -112,7 +112,6 @@ Help output (``python3 -m ezpz.examples.fsdp_tp --help``):
 The remaining comments outline the parallel layout used to combine TP/SP with FSDP.
 """
 
-import functools
 import os
 import sys
 import argparse
@@ -143,9 +142,8 @@ from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import (
-    FullyShardedDataParallel as FSDP,
-    MixedPrecision,
-    ShardingStrategy,
+    fully_shard,
+    MixedPrecisionPolicy,
 )
 from torch.distributed._tensor import Shard, Replicate  # type: ignore
 
@@ -312,13 +310,34 @@ MODEL_PRESET_FLAGS = {
 }
 
 
+# FSDP2 (`fully_shard`) has no `sharding_strategy` enum — sharding behavior
+# is controlled by `reshard_after_forward` (bool). We keep the legacy
+# FSDP1 strategy NAMES as the CLI surface (so existing scripts don't break)
+# and map each to the closest FSDP2 reshard policy:
+#   - full_shard  (ZeRO-3): reshard params after forward -> lowest memory  -> True
+#   - shard_grad_op (ZeRO-2): keep params unsharded after forward          -> False
+#   - no_shard    (ZeRO-0 / replicate): also keep unsharded (closest FSDP2 -> False;
+#       true no-shard = don't shard at all, not expressible per-module here)
+#   - hybrid_shard (ZeRO-3-like): FSDP1 inter/intra-node hybrid has no
+#       direct one-flag FSDP2 equivalent (needs an explicit 2D mesh); map
+#       to reshard-after-forward                                     -> True
+#   - hybrid_shard_zero2 (ZeRO-2-like): same caveat, but keep params
+#       unsharded after forward to mirror the zero2 variant          -> False
+# This is the set of valid `--sharding-strategy` values.
 SHARDING_STRATEGIES = {
-    "no_shard": ShardingStrategy.NO_SHARD,
-    "full_shard": ShardingStrategy.FULL_SHARD,
-    "shard_grad_op": ShardingStrategy.SHARD_GRAD_OP,
-    "hybrid_shard": ShardingStrategy.HYBRID_SHARD,
-    "hybrid_shard_zero2": ShardingStrategy._HYBRID_SHARD_ZERO2,
+    "no_shard": False,
+    "full_shard": True,
+    "shard_grad_op": False,
+    "hybrid_shard": True,
+    "hybrid_shard_zero2": False,
 }
+
+
+def _reshard_after_forward(sharding_strategy: Optional[str]) -> bool:
+    """Map a legacy --sharding-strategy name to FSDP2 reshard_after_forward."""
+    if sharding_strategy is None:
+        return True
+    return SHARDING_STRATEGIES.get(sharding_strategy, True)
 
 
 def _slice_for_sequence_parallel(
@@ -377,6 +396,124 @@ def _slice_for_sequence_parallel(
     if copy_len > 0:
         shard[:, :copy_len] = labels.narrow(1, start, copy_len)
     return shard
+
+
+# ---------------------------------------------------------------------------
+# Cross-entropy loss implementations.
+#
+# At large vocab (e.g. agpt's 256K) and long sequence (8192), the default
+# eager `F.cross_entropy(logits.reshape(-1, V), ...)` materializes a
+# (B*T, V) logits tensor AND an equal-size gradient in fp32 during
+# `loss.backward()`. For agpt-2b @ seq=8192 that transient is ~25GB, which
+# OOMs a PVC tile (UR_RESULT_ERROR_OUT_OF_RESOURCES) even though the model
+# itself uses <20% of memory. Two alternatives shrink that transient:
+#
+#   - "chunked": split the (B*T) rows into chunks and accumulate the
+#     summed loss chunk-by-chunk, so only one chunk's logits/grad exist at
+#     a time. Pure eager, no torch.compile dependency.
+#   - "compiled": wrap the standard CE in torch.compile so inductor fuses
+#     log_softmax+NLL+backward and never materializes the full fp32 logits
+#     and gradient at once (this is what torchtitan does via
+#     `compile.components=["loss"]`).
+#
+# Selected via `--loss-impl {eager,chunked,compiled}`.
+# ---------------------------------------------------------------------------
+
+
+def _cross_entropy_eager(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+) -> torch.Tensor:
+    """Standard mean-reduced cross-entropy (the original behavior)."""
+    return F.cross_entropy(
+        logits.reshape(-1, logits.size(-1)),
+        labels.reshape(-1),
+        ignore_index=ignore_index,
+    )
+
+
+def _cross_entropy_chunked(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    chunk_size: int = 1024,
+) -> torch.Tensor:
+    """Mean-reduced cross-entropy computed over row chunks.
+
+    Mathematically identical to ``_cross_entropy_eager`` (mean over the
+    non-ignored tokens), but only one ``chunk_size``-row block of logits
+    (and its gradient) is materialized at a time, bounding the backward
+    transient by ``chunk_size * vocab`` instead of ``B*T * vocab``.
+
+    We accumulate the SUM of per-token losses across chunks and divide by
+    the total valid-token count once, so the result matches mean reduction
+    exactly (autograd handles the constant scale through the division).
+    """
+    flat_logits = logits.reshape(-1, logits.size(-1))
+    flat_labels = labels.reshape(-1)
+    n_rows = flat_labels.shape[0]
+
+    valid = (flat_labels != ignore_index).sum()
+    # Accumulate the loss and divide by the valid-token count in fp32.
+    # `F.cross_entropy` computes log_softmax/NLL in fp32 internally, so a
+    # fp32 accumulator + fp32 denominator track eager's numerics; casting
+    # either to a reduced logits dtype (bf16/fp16) would drift from eager
+    # and force a dtype promotion on every chunk add.
+    denom = valid.clamp(min=1).float()
+
+    total = torch.zeros((), dtype=torch.float32, device=logits.device)
+    for start in range(0, n_rows, chunk_size):
+        end = min(start + chunk_size, n_rows)
+        chunk_loss = F.cross_entropy(
+            flat_logits[start:end],
+            flat_labels[start:end],
+            ignore_index=ignore_index,
+            reduction="sum",
+        )
+        total = total + chunk_loss.float()
+    return total / denom
+
+
+# Lazily-built torch.compile wrapper around the eager CE. Cached so we only
+# compile once (the first call triggers a trace). Module-level so the
+# compiled artifact persists across training steps.
+_COMPILED_CE = None
+
+
+def _cross_entropy_compiled(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+) -> torch.Tensor:
+    """torch.compile-fused cross-entropy (torchtitan-style)."""
+    global _COMPILED_CE
+    if _COMPILED_CE is None:
+        _COMPILED_CE = torch.compile(_cross_entropy_eager)
+    return _COMPILED_CE(logits, labels, ignore_index=ignore_index)
+
+
+def _compute_loss(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    impl: str = "eager",
+    ignore_index: int = -100,
+    chunk_size: int = 1024,
+) -> torch.Tensor:
+    """Dispatch to the selected cross-entropy implementation."""
+    if impl == "chunked":
+        return _cross_entropy_chunked(
+            logits, labels, ignore_index=ignore_index, chunk_size=chunk_size
+        )
+    if impl == "compiled":
+        return _cross_entropy_compiled(
+            logits, labels, ignore_index=ignore_index
+        )
+    return _cross_entropy_eager(logits, labels, ignore_index=ignore_index)
 
 
 def _sample_tensor_values(
@@ -739,19 +876,19 @@ def parse_args(argv: Optional[list[str]] = None):
         default="full_shard",
         choices=list(SHARDING_STRATEGIES.keys()),
         help=(
-            "FSDP sharding strategy. "
-            "`full_shard` (default, ZeRO-3): shards params, grads, and "
-            "optimizer state across all ranks — lowest memory, highest "
-            "comm. "
-            "`shard_grad_op` (ZeRO-2): shards grads and optimizer state; "
-            "params replicated — moderate memory, less comm than full_shard. "
-            "`no_shard` (ZeRO-0 / DDP-equivalent): no sharding, pure data "
-            "parallel — highest memory, lowest comm. "
-            "`hybrid_shard`: full_shard within a node, replicate across "
-            "nodes — trades inter-node comm for intra-node sharding (good "
-            "on slow interconnects). "
-            "`hybrid_shard_zero2`: shard_grad_op within a node, replicate "
-            "across nodes."
+            "FSDP sharding behavior. The model uses FSDP2 (`fully_shard`), "
+            "which controls sharding via `reshard_after_forward` rather than "
+            "a strategy enum; the legacy FSDP1 names below are kept as the "
+            "CLI surface and mapped to the nearest FSDP2 policy. "
+            "`full_shard` (default, ZeRO-3): reshard params after forward — "
+            "lowest memory, params re-all-gathered in backward. "
+            "`shard_grad_op` (ZeRO-2): keep params unsharded after forward — "
+            "more memory, avoids the backward all-gather. "
+            "`no_shard`: mapped to keep-unsharded (FSDP2 has no true "
+            "per-module no-shard). `hybrid_shard`/`hybrid_shard_zero2`: "
+            "FSDP1 hybrid has no one-flag FSDP2 equivalent — `hybrid_shard` "
+            "maps to reshard-after-forward, `hybrid_shard_zero2` to "
+            "keep-unsharded (mirroring their ZeRO-3/ZeRO-2 variants)."
         ),
     )
     parser.add_argument(
@@ -774,7 +911,11 @@ def parse_args(argv: Optional[list[str]] = None):
             "each block — ~15-20 pct memory reduction, ~10 pct throughput "
             "hit. Trade activation memory for recomputation cost — useful "
             "when OOM-ing during training (NOT during init; for init-time "
-            "OOM consider increasing --tp or reducing --seq-len)."
+            "OOM consider increasing --tp or reducing --seq-len). "
+            "NOTE: cannot be combined with --compile (upstream AOTAutograd "
+            "DeviceMesh-in-saved-tensors bug — see the --compile warning). "
+            "With FSDP2 you usually don't need --ac anyway; it was a "
+            "workaround for the FSDP1 backward-memory OOM that FSDP2 fixes."
         ),
     )
     parser.add_argument(
@@ -891,6 +1032,53 @@ def parse_args(argv: Optional[list[str]] = None):
             "extensive kernel search — slow startup, fastest steady state."
         ),
     )
+    parser.add_argument(
+        "--act-mem-budget",
+        type=float,
+        default=1.0,
+        help=(
+            "Activation-memory budget for the inductor min-cut partitioner "
+            "(sets torch._functorch.config.activation_memory_budget). Only "
+            "takes effect with --compile. 1.0 (default) saves ALL "
+            "activations (no recompute); lower values let the compiler "
+            "recompute activations in backward to cut peak memory — e.g. "
+            "0.5 keeps ~half. This is how torchtitan fits larger batches "
+            "for the same model (its MemoryBudgetAC sets 0.5). Try 0.5 if "
+            "you OOM in backward at a batch size that should fit."
+        ),
+    )
+    parser.add_argument(
+        "--loss-impl",
+        type=str,
+        default="eager",
+        choices=["eager", "chunked", "compiled"],
+        help=(
+            "Cross-entropy implementation. `eager` (default) is the plain "
+            "F.cross_entropy over the full (B*T, vocab) logits — simplest, "
+            "but at large vocab (e.g. agpt's 256K) and long seq it "
+            "materializes a multi-GB fp32 logits+grad transient in "
+            "loss.backward() that can OOM a GPU tile "
+            "(UR_RESULT_ERROR_OUT_OF_RESOURCES) even when the model itself "
+            "fits. `chunked` computes CE over row-chunks (see "
+            "--loss-chunk-size) so only one chunk's logits/grad exist at "
+            "once — pure eager, no torch.compile needed. `compiled` wraps "
+            "CE in torch.compile so inductor fuses log_softmax+NLL+backward "
+            "and never materializes the full transient (torchtitan's "
+            "approach). NOTE: `--compile` only compiles the transformer "
+            "blocks, NOT the loss, so it does NOT fix this — use "
+            "--loss-impl for the loss transient."
+        ),
+    )
+    parser.add_argument(
+        "--loss-chunk-size",
+        type=int,
+        default=1024,
+        help=(
+            "Row-chunk size for --loss-impl=chunked (number of (B*T) "
+            "token rows per cross-entropy chunk). Smaller = lower peak "
+            "memory, more kernel launches. Ignored for other --loss-impl."
+        ),
+    )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
     args = parser.parse_args(argv)
@@ -898,96 +1086,182 @@ def parse_args(argv: Optional[list[str]] = None):
     return args
 
 
+def _configure_fsdp_gradient_division(model: nn.Module) -> None:
+    """Set FSDP2 gradient divide factor to 1.0 and (on CCL/XPU) force SUM
+    reduction for cross-rank gradient comms.
+
+    Mirrors torchtitan's ``disable_fsdp_gradient_division``. FSDP2's default
+    reduce-scatter does a MEAN (divide by world size) inside the collective.
+    On NCCL that's fine; on CCL (XPU) splitting the divide out of the
+    collective and forcing a plain SUM avoids a per-reduce precision loss
+    and matches the comm path torchtitan runs on Aurora/Sunspot. The single
+    post-hoc divide is folded into FSDP's gradient pipeline via the
+    divide-factor=1.0 setting, so numerics are unchanged vs the mean path.
+
+    Safe no-op on modules that aren't FSDP2-wrapped or torch builds without
+    these setters.
+    """
+    force_sum_reduction = False
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        backend = str(torch.distributed.get_backend() or "")
+        if backend and "nccl" not in backend.lower():
+            force_sum_reduction = True
+
+    n_updated = 0
+    for module in model.modules():
+        set_divide_factor = getattr(module, "set_gradient_divide_factor", None)
+        if callable(set_divide_factor):
+            set_divide_factor(1.0)
+            n_updated += 1
+            if force_sum_reduction:
+                set_force_sum = getattr(
+                    module, "set_force_sum_reduction_for_comms", None
+                )
+                if callable(set_force_sum):
+                    set_force_sum(True)
+    logger.info(
+        "Configured FSDP gradient division for %d modules "
+        "(force_sum_reduction=%s)",
+        n_updated,
+        force_sum_reduction,
+    )
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
-    mixed_precision: Optional[MixedPrecision],
-    sharding_strategy: Optional[ShardingStrategy | str] = None,
-    device_id: Optional[torch.device] = None,
+    mixed_precision: Optional[MixedPrecisionPolicy],
+    sharding_strategy: Optional[str] = None,
+    activation_checkpoint: str = "none",
 ) -> nn.Module:
-    """Wrap the model with tensor-parallel and FSDP sharding strategies."""
+    """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
+
+    FSDP2 shards each module group independently (embedding, every
+    TransformerBlock, then [norm, output], then the root). This per-module
+    sharding keeps the backward-pass gradient/activation memory bounded —
+    in particular for the large 256K-vocab embedding and output projection
+    — where FSDP1's single flat-parameter wrap would OOM at long sequence
+    length. Activation checkpointing (when requested) is applied to each
+    block BEFORE ``fully_shard`` so the checkpoint envelope sits inside the
+    sharded unit (torchtitan's ordering).
+    """
     tp_mesh = device_mesh["tp"]
     dp_mesh = device_mesh["dp"]
 
-    if isinstance(sharding_strategy, str):
-        sharding_strategy = SHARDING_STRATEGIES.get(sharding_strategy, None)
+    reshard = _reshard_after_forward(sharding_strategy)
 
-    model.init_weights()  # type: ignore
-    model = parallelize_module(
-        model,
-        tp_mesh,
-        {
-            "tok_embeddings": RowwiseParallel(
-                input_layouts=Replicate(),
-                output_layouts=Shard(1),
-            ),
-            "norm": SequenceParallel(),
-            "output": ColwiseParallel(
-                input_layouts=Shard(1),
-                output_layouts=Replicate(),
-                # use DTensor as the output
-                # use_local_output=False,
-            ),
-        },
-    )
-
-    assert isinstance(model.layers, Iterable)
-    for _, transformer_block in enumerate(model.layers):
-        layer_tp_plan = {
-            "attention_norm": SequenceParallel(),
-            "attention": PrepareModuleInput(
-                input_layouts=(Shard(1), None),  # type:ignore
-                desired_input_layouts=(Replicate(), None),  # type:ignore
-            ),
-            "attention.wq": ColwiseParallel(),
-            "attention.wk": ColwiseParallel(),
-            "attention.wv": ColwiseParallel(),
-            "attention.wo": RowwiseParallel(output_layouts=Shard(1)),
-            "ffn_norm": SequenceParallel(),
-            "feed_forward": PrepareModuleInput(
-                input_layouts=(Shard(1),),
-                desired_input_layouts=(Replicate(),),
-            ),
-            "feed_forward.w1": ColwiseParallel(),
-            "feed_forward.w2": RowwiseParallel(output_layouts=Shard(1)),
-            "feed_forward.w3": ColwiseParallel(),
-        }
-
-        attn_layer = transformer_block.attention  # type: ignore
-        attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
-        attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
-        parallelize_module(
-            module=transformer_block,  # type: ignore
-            device_mesh=tp_mesh,
-            parallelize_plan=layer_tp_plan,
+    # `no_shard` is NOT a true ZeRO-0 / DDP replicate under FSDP2: every
+    # module group below still gets `fully_shard`, so params, grads, and
+    # optimizer state are sharded across the dp mesh regardless. The
+    # strategy name only controls `reshard_after_forward` (False here =
+    # keep params gathered after forward). There is no per-module "don't
+    # shard at all" knob in FSDP2 — that would require skipping fully_shard
+    # entirely (plain DDP). Warn so a multi-rank run that asked for
+    # replicated params/checkpoints isn't silently sharded.
+    if sharding_strategy == "no_shard" and dp_mesh.size() > 1:
+        logger.warning(
+            "--sharding-strategy=no_shard does NOT give replicated "
+            "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
+            "optimizer state are still sharded across the %d-rank dp mesh. "
+            "Only post-forward resharding is disabled. Use plain DDP if you "
+            "need truly replicated parameters.",
+            dp_mesh.size(),
         )
 
-    # from torch.distributed.fsdp import fully_shard
+    model.init_weights()  # type: ignore
 
-    # ShardingStrategy.NO_SHARD: HandleShardingStrategy.NO_SHARD,
-    # ShardingStrategy.FULL_SHARD: HandleShardingStrategy.FULL_SHARD,
-    # ShardingStrategy.SHARD_GRAD_OP: HandleShardingStrategy.SHARD_GRAD_OP,
-    # ShardingStrategy.HYBRID_SHARD: HandleShardingStrategy.HYBRID_SHARD,
-    # ShardingStrategy._HYBRID_SHARD_ZERO2: HandleShardingStrategy._HYBRID_SHARD_ZERO2,
-    sharded_model = FSDP(
-        model,
-        mixed_precision=mixed_precision,
-        device_mesh=dp_mesh,
-        sharding_strategy=sharding_strategy,
-        device_id=device_id,
-        # Required for torch.compile compatibility. With the default
-        # (False), FSDP1 flattens all params into a single FlatParameter
-        # and Dynamo refuses to trace through that shape — it raises
-        # `Unsupported: FSDP with use_orig_params=False`. With True,
-        # FSDP keeps the original nn.Parameter objects on each module
-        # (still sharded under the hood) so the compiled graph sees the
-        # same parameter structure as eager. No correctness impact;
-        # this has been the recommended setting for compile + FSDP1
-        # since PyTorch 2.0.
-        use_orig_params=True,
-    )
-    logger.info(f"Model after parallelization:\n{sharded_model=}\n")
-    return sharded_model
+    # Only apply tensor/sequence parallelism when the tp mesh dim is > 1.
+    # At tp=1 (FSDP-only) the TP plan is pure overhead: SequenceParallel
+    # still wraps norms as DTensors sharded over a size-1 tp dim, which
+    # produces a `_NormPartial` placement that must be all-reduced — and
+    # combined with FSDP2's dp sharding triggers the "2 sequential
+    # all_reduce ... suboptimal" warning every step, for zero benefit
+    # (there's nothing to shard across a 1-rank tp group). torchtitan
+    # guards the same way (`if parallel_dims.tp_enabled`).
+    if tp_mesh.size() > 1:
+        model = parallelize_module(
+            model,
+            tp_mesh,
+            {
+                "tok_embeddings": RowwiseParallel(
+                    input_layouts=Replicate(),
+                    output_layouts=Shard(1),
+                ),
+                "norm": SequenceParallel(),
+                "output": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    # use DTensor as the output
+                    # use_local_output=False,
+                ),
+            },
+        )
+
+        assert isinstance(model.layers, Iterable)
+        for _, transformer_block in enumerate(model.layers):
+            layer_tp_plan = {
+                "attention_norm": SequenceParallel(),
+                "attention": PrepareModuleInput(
+                    input_layouts=(Shard(1), None),  # type:ignore
+                    desired_input_layouts=(Replicate(), None),  # type:ignore
+                ),
+                "attention.wq": ColwiseParallel(),
+                "attention.wk": ColwiseParallel(),
+                "attention.wv": ColwiseParallel(),
+                "attention.wo": RowwiseParallel(output_layouts=Shard(1)),
+                "ffn_norm": SequenceParallel(),
+                "feed_forward": PrepareModuleInput(
+                    input_layouts=(Shard(1),),
+                    desired_input_layouts=(Replicate(),),
+                ),
+                "feed_forward.w1": ColwiseParallel(),
+                "feed_forward.w2": RowwiseParallel(output_layouts=Shard(1)),
+                "feed_forward.w3": ColwiseParallel(),
+            }
+
+            attn_layer = transformer_block.attention  # type: ignore
+            attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
+            attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
+            parallelize_module(
+                module=transformer_block,  # type: ignore
+                device_mesh=tp_mesh,
+                parallelize_plan=layer_tp_plan,
+            )
+
+    # Activation checkpointing must wrap each block BEFORE fully_shard so the
+    # checkpoint envelope lives inside the FSDP2 unit (torchtitan ordering;
+    # the reverse — AC after sharding — is the FSDP1 order and is wrong for
+    # FSDP2). _apply_activation_checkpointing replaces each block in
+    # `model.layers` in-place with a compile-aware CheckpointWrapper.
+    if activation_checkpoint != "none":
+        _apply_activation_checkpointing(model, activation_checkpoint)
+
+    # FSDP2: shard each module group on the dp sub-mesh. Per-module sharding
+    # (vs FSDP1's one flat param) is what keeps backward memory bounded.
+    fsdp_kwargs = {"mesh": dp_mesh, "reshard_after_forward": reshard}
+    if mixed_precision is not None:
+        fsdp_kwargs["mp_policy"] = mixed_precision
+
+    # Embedding first (largest single param: vocab*dim).
+    if getattr(model, "tok_embeddings", None) is not None:
+        fully_shard(model.tok_embeddings, **fsdp_kwargs)
+    # Each transformer block (or its CheckpointWrapper) as its own unit.
+    assert isinstance(model.layers, Iterable)
+    for block in model.layers:
+        fully_shard(block, **fsdp_kwargs)
+    # norm + output together (output is the other vocab*dim-sized param).
+    if (
+        getattr(model, "norm", None) is not None
+        and getattr(model, "output", None) is not None
+    ):
+        fully_shard([model.norm, model.output], **fsdp_kwargs)
+    # Root last.
+    fully_shard(model, **fsdp_kwargs)
+
+    _configure_fsdp_gradient_division(model)
+
+    logger.info(f"Model after parallelization (FSDP2):\n{model=}\n")
+    return model
 
 
 def _apply_activation_checkpointing(
@@ -1150,7 +1424,16 @@ def _accumulate_stats(
     nonfinite: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Accumulate norm and non-finite counts into running stats."""
-    if tensor is None or tensor.numel() == 0:
+    if tensor is None:
+        return sumsq, max_abs, nonfinite
+    # FSDP2 parameters/grads are DTensors: `.numel()` reports the GLOBAL
+    # size (nonzero) but the math below runs on this rank's LOCAL shard,
+    # which can be empty (0 elements) on some ranks. Unwrap to the local
+    # shard first so the empty-guard actually catches it — otherwise
+    # `t.abs().max()` raises "Expected reduction dim ... numel() == 0".
+    if hasattr(tensor, "to_local"):
+        tensor = tensor.to_local()
+    if tensor.numel() == 0:
         return sumsq, max_abs, nonfinite
     t = tensor.float()
     nonfinite = nonfinite + (~torch.isfinite(t)).sum()
@@ -1205,7 +1488,14 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
                 layer_id = int(layer_str)
             except Exception:
                 continue
-            grad = param.grad.float()
+            grad = param.grad
+            # FSDP2 grads are DTensors; sum the LOCAL shard (each rank
+            # contributes its piece — adequate for a logging-only norm).
+            if hasattr(grad, "to_local"):
+                grad = grad.to_local()
+            grad = grad.float()
+            if grad.numel() == 0:
+                continue
             layer_sumsq[layer_id] = layer_sumsq.get(layer_id, 0.0) + float(
                 (grad * grad).sum().item()
             )
@@ -1392,40 +1682,26 @@ def train(
                 args.seq_len // _flops_probe_seq,
             )
 
-    mp_config: Optional[MixedPrecision] = None
+    # FSDP2 mixed-precision policy (param in bf16, reduce in fp32). None when
+    # --fp32 is set (pure fp32 for NaN debugging).
+    mp_config: Optional[MixedPrecisionPolicy] = None
     if not args.fp32:
-        mp_config = MixedPrecision(
+        mp_config = MixedPrecisionPolicy(
             param_dtype=torch.bfloat16,
-            cast_forward_inputs=True,
             reduce_dtype=torch.float32,
         )
     if is_hf_model:
-        # HF path: FSDP-only wrap. Use FSDP1 directly with a
-        # transformer-block auto-wrap policy keyed on the HF decoder layer
-        # class so each block becomes its own FSDP unit (otherwise the
-        # whole model is one giant FSDP shard and memory savings
-        # disappear). The class names HF uses are framework-specific
-        # (LlamaDecoderLayer, GemmaDecoderLayer, ...); we discover them
-        # by walking the model graph and picking the deepest unique
-        # ModuleList children — same heuristic transformers' own Trainer
-        # uses for `_no_split_modules`.
-        from torch.distributed.fsdp import (
-            FullyShardedDataParallel as FSDPWrap,
-        )
-        from torch.distributed.fsdp.wrap import (
-            transformer_auto_wrap_policy,
-        )
+        # HF path: FSDP2-only wrap (no TP — the TP plan is ezpz-specific).
+        # Apply activation checkpointing first (HF models use their own
+        # gradient_checkpointing_enable inside _apply_activation_checkpointing),
+        # then fully_shard each decoder block + the root.
+        if args.activation_checkpoint != "none":
+            _apply_activation_checkpointing(model, args.activation_checkpoint)
 
-        # Pick the SINGLE deepest non-empty ModuleList in the graph rather
-        # than every ModuleList we encounter. Collecting `type(m[0])` for
-        # all ModuleLists over-wraps MoE models (each expert is itself a
-        # ModuleList), multimodal models (vision_tower.encoder.layers PLUS
-        # text decoder), and anything with auxiliary stacked submodules.
-        # Over-wrapping costs throughput and can break FSDP's
-        # unshard/reshard bookkeeping. The decoder block stack is reliably
-        # the deepest ModuleList in HF causal-LMs (e.g.
-        # `model.model.layers`), matching the heuristic used by
-        # `_find_block_list` and HF's `_no_split_modules`.
+        # Find the decoder block stack: the SINGLE deepest non-empty
+        # ModuleList (e.g. `model.model.layers`). Collecting every ModuleList
+        # would over-shard MoE/multimodal models; the deepest one is reliably
+        # the decoder stack (matches _find_block_list / HF's _no_split_modules).
         deepest_modlist: Optional[torch.nn.ModuleList] = None
         deepest_depth = -1
         deepest_len = -1
@@ -1435,54 +1711,78 @@ def train(
                 and len(module) > 0
             ):
                 depth = name.count(".")
-                # Tie-break on length: at equal depth, take the longer
-                # stack (decoder layers typically beat any sibling
-                # ModuleList of e.g. norms or biases).
                 if depth > deepest_depth or (
                     depth == deepest_depth and len(module) > deepest_len
                 ):
                     deepest_depth = depth
                     deepest_len = len(module)
                     deepest_modlist = module
-        block_classes: set = set()
+
+        hf_fsdp_kwargs = {
+            "mesh": device_mesh["dp"],
+            "reshard_after_forward": _reshard_after_forward(
+                args.sharding_strategy
+            ),
+        }
+        if mp_config is not None:
+            hf_fsdp_kwargs["mp_policy"] = mp_config
         if deepest_modlist is not None:
-            block_classes.add(type(deepest_modlist[0]))
-        auto_wrap = functools.partial(
-            transformer_auto_wrap_policy,
-            transformer_layer_cls=block_classes,
-        )
-        sharding_strategy = SHARDING_STRATEGIES.get(
-            args.sharding_strategy, ShardingStrategy.FULL_SHARD
-        )
-        model = FSDPWrap(
-            model,
-            auto_wrap_policy=auto_wrap,
-            mixed_precision=mp_config,
-            sharding_strategy=sharding_strategy,
-            device_id=device,
-            # Required for torch.compile compatibility — see the
-            # parallelize() wrap above for the same explanation.
-            use_orig_params=True,
-        )
+            for block in deepest_modlist:
+                fully_shard(block, **hf_fsdp_kwargs)
+        else:
+            logger.warning(
+                "HF model: no decoder ModuleList found; sharding only the "
+                "root module (per-layer memory savings will be reduced)."
+            )
+        fully_shard(model, **hf_fsdp_kwargs)
+        _configure_fsdp_gradient_division(model)
     else:
+        # TP + FSDP2. parallelize() applies activation checkpointing per
+        # block BEFORE fully_shard (correct FSDP2 ordering), so we do NOT
+        # re-apply it afterwards.
         model = parallelize(
             model,
             device_mesh,
             mp_config,
             sharding_strategy=args.sharding_strategy,
-            device_id=device,
+            activation_checkpoint=args.activation_checkpoint,
         )
-    # Apply activation checkpointing AFTER FSDP/TP wrap — order matters:
-    # the checkpoint envelope must wrap the already-sharded forward so
-    # FSDP's unshard/reshard happens inside the checkpoint region (and
-    # is re-played during recomputation). Reverse order silently
-    # double-shards / corrupts grads.
-    model = _apply_activation_checkpointing(model, args.activation_checkpoint)
     if args.compile:
-        if is_hf_model and args.activation_checkpoint != "none":
+        # Activation-memory budget for the inductor min-cut partitioner.
+        # Default 1.0 = save every activation (no recompute); < 1.0 lets the
+        # compiler recompute a fraction of activations in backward to cut
+        # peak memory. This is the knob torchtitan's MemoryBudgetAC sets
+        # (0.5) — it's why TT fits a larger batch than this example for the
+        # same model. Global config, applies to every compiled block below.
+        if args.act_mem_budget != 1.0:
+            import torch._functorch.config as _functorch_config
+
+            _functorch_config.activation_memory_budget = args.act_mem_budget
+            logger.info(
+                "Set activation_memory_budget=%.3f (inductor will recompute "
+                "activations in backward to cut peak memory).",
+                args.act_mem_budget,
+            )
+        if args.activation_checkpoint != "none":
+            # --ac + --compile together trip an upstream AOTAutograd bug:
+            #   AssertionError: expected all tensors_saved_with_vc_check to
+            #   be Tensors, got [... DeviceMesh]
+            # The non-reentrant checkpoint_wrapper saves a DeviceMesh into
+            # the autograd graph, which the compiled-backward saved-tensors
+            # check rejects. Under FSDP2 every sharded module carries a
+            # DeviceMesh, so this fires even at --tp 1 (with FSDP1 it
+            # required --tp > 1). Repro + triage:
+            # torchtitan/.../docs/upstream-issues/repro_devicemesh_in_saved_tensors.py
+            # Not fixable here — drop one of --ac / --compile. (With FSDP2
+            # you typically no longer need --ac for memory; it was a
+            # workaround for the FSDP1 OOM that FSDP2 already resolves.)
             logger.warning(
-                "torch.compile + activation_checkpointing on HF models can produce "
-                "CheckpointError: tensor count mismatch. If you hit it, drop --ac or --compile."
+                "--compile + --activation-checkpoint=%s will likely crash "
+                "with an AOTAutograd 'tensors_saved_with_vc_check ... "
+                "DeviceMesh' assertion (upstream bug; fires under FSDP2 even "
+                "at --tp 1). Drop one of --ac / --compile. Note FSDP2 usually "
+                "removes the need for --ac (it fixed the FSDP1 OOM).",
+                args.activation_checkpoint,
             )
         # Compile each TransformerBlock individually rather than the whole
         # model. This is what torchtitan does (apply_compile in
@@ -1547,7 +1847,31 @@ def train(
         )
     logger.info(f"Creating optimizer=AdamW with lr={args.lr}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, foreach=True)
+    # Prefer the fused AdamW kernel (single kernel for the whole param
+    # update) — it's what torchtitan uses and it's measurably faster than
+    # `foreach` on XPU. Fall back to foreach if fused isn't supported for
+    # this build/device (older torch, CPU, etc.).
+    try:
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.1,
+            fused=True,
+        )
+    except (RuntimeError, ValueError) as exc:
+        logger.warning(
+            "Fused AdamW unavailable (%s); falling back to foreach=True.", exc
+        )
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=0.1,
+            foreach=True,
+        )
 
     # reuse device for input placement
 
@@ -1699,7 +2023,14 @@ def train(
                 if tp_mod is not None
                 else 0
             )
-            if epoch == 0 and idx == 0:
+            # First-step finite/max debug stats. Gated behind
+            # EZPZ_TRACK_LOGITS because `torch.isfinite(pred)` allocates a
+            # full `(B, T, vocab)`-shaped bool tensor on the un-reduced
+            # logits — at agpt's 256K vocab and long seq that's multiple GB
+            # materialized *before* the loss, which can OOM a run that would
+            # otherwise fit (the loss itself may be chunked/compiled to stay
+            # bounded, but this debug probe is not). Off by default.
+            if track_logits and epoch == 0 and idx == 0:
                 pred_finite = torch.isfinite(pred)
                 pred_nonfinite = int((~pred_finite).sum().item())
                 pred_max = float(pred.abs().max().item())
@@ -1711,10 +2042,12 @@ def train(
                     pred_nonfinite,
                     f"{pred_max:.6f}",
                 )
-            loss = F.cross_entropy(
-                pred.reshape(-1, pred.size(-1)),
-                labels.reshape(-1),
+            loss = _compute_loss(
+                pred,
+                labels,
+                impl=args.loss_impl,
                 ignore_index=-100,
+                chunk_size=args.loss_chunk_size,
             )
             if epoch == 0 and idx == 0:
                 valid_labels = int((labels != -100).sum().item())
