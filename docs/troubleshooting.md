@@ -75,7 +75,7 @@ source <(curl -fsSL https://bit.ly/ezpz-utils) \
   && ezpz_setup_job && ezpz_load_modules && ezpz_activate_venv
 ```
 
-See [`ezpz_activate_venv`](notes/shell-environment.md#ezpz_activate_venv--activate--fix-ld_library_path)
+See [`ezpz_activate_venv`](notes/shell-environment.md#ezpz_activate_venv-activate-fix-ld_library_path)
 for details.
 
 ### Distributed Training Hangs / Deadlocks

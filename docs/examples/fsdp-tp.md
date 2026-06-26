@@ -161,8 +161,8 @@ all pulled in here.
 
 A logger is set up and W&B is optionally imported.
 
-```python title="src/ezpz/examples/fsdp_tp.py:160:170"
---8<-- "src/ezpz/examples/fsdp_tp.py:160:170"
+```python title="src/ezpz/examples/fsdp_tp.py:160:169"
+--8<-- "src/ezpz/examples/fsdp_tp.py:160:169"
 ```
 
 </details>
@@ -251,8 +251,8 @@ model momentarily during `model.to(device)` before FSDP shards). If
 the model OOMs during init, raise `--tp` (halves per-rank weight
 memory for each doubling) or use a smaller preset.
 
-```python title="src/ezpz/examples/fsdp_tp.py:172:312"
---8<-- "src/ezpz/examples/fsdp_tp.py:172:312"
+```python title="src/ezpz/examples/fsdp_tp.py:170:297"
+--8<-- "src/ezpz/examples/fsdp_tp.py:170:297"
 ```
 
 </details>
@@ -261,8 +261,8 @@ memory for each doubling) or use a smaller preset.
 
 Maps user-facing string names to PyTorch `ShardingStrategy` enum values.
 
-```python title="src/ezpz/examples/fsdp_tp.py:315:321"
---8<-- "src/ezpz/examples/fsdp_tp.py:315:321"
+```python title="src/ezpz/examples/fsdp_tp.py:327:333"
+--8<-- "src/ezpz/examples/fsdp_tp.py:327:333"
 ```
 
 </details>
@@ -273,8 +273,8 @@ When sequence parallelism is active, each TP rank only sees a slice of
 the sequence dimension. This helper narrows the label tensor to match
 the local shard so `cross_entropy` computes the correct loss.
 
-```python title="src/ezpz/examples/fsdp_tp.py:324:379"
---8<-- "src/ezpz/examples/fsdp_tp.py:324:379"
+```python title="src/ezpz/examples/fsdp_tp.py:343:399"
+--8<-- "src/ezpz/examples/fsdp_tp.py:343:399"
 ```
 
 </details>
@@ -285,8 +285,8 @@ the local shard so `cross_entropy` computes the correct loss.
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
 precedence over the preset via `apply_model_preset`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:553:898"
---8<-- "src/ezpz/examples/fsdp_tp.py:553:898"
+```python title="src/ezpz/examples/fsdp_tp.py:690:1086"
+--8<-- "src/ezpz/examples/fsdp_tp.py:690:1086"
 ```
 
 </details>
@@ -297,16 +297,16 @@ This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
 dimension, then wraps the result with FSDP along the `"dp"` dimension.
 
-```python title="src/ezpz/examples/fsdp_tp.py:901:915"
---8<-- "src/ezpz/examples/fsdp_tp.py:901:915"
+```python title="src/ezpz/examples/fsdp_tp.py:1130:1147"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1130:1147"
 ```
 
 **Top-level TP plan.** The embedding is row-sharded, the final output
 projection is column-sharded, and the RMS norm between them uses
 `SequenceParallel`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:916:933"
---8<-- "src/ezpz/examples/fsdp_tp.py:916:933"
+```python title="src/ezpz/examples/fsdp_tp.py:1148:1198"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1148:1198"
 ```
 
 **Per-layer TP plan.** Each transformer block's attention and FFN
@@ -314,15 +314,15 @@ sub-modules are parallelized: Q/K/V projections are column-sharded,
 output projections are row-sharded, and norms use `SequenceParallel`.
 Attention head counts are divided by the TP mesh size.
 
-```python title="src/ezpz/examples/fsdp_tp.py:935:963"
---8<-- "src/ezpz/examples/fsdp_tp.py:935:963"
+```python title="src/ezpz/examples/fsdp_tp.py:1200:1230"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1200:1230"
 ```
 
 **FSDP wrapping.** After TP is applied, the entire model is wrapped with
 FSDP on the `"dp"` sub-mesh.
 
-```python title="src/ezpz/examples/fsdp_tp.py:972:990"
---8<-- "src/ezpz/examples/fsdp_tp.py:972:990"
+```python title="src/ezpz/examples/fsdp_tp.py:1239:1264"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1239:1264"
 ```
 
 </details>
@@ -335,28 +335,28 @@ loads data, then runs the epoch loop.
 **Device mesh creation.** World size is split into `dp` x `tp`
 dimensions.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1227:1233"
---8<-- "src/ezpz/examples/fsdp_tp.py:1227:1233"
+```python title="src/ezpz/examples/fsdp_tp.py:1517:1522"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1517:1522"
 ```
 
 **HuggingFace dataset loading.** If `--dataset` is not `"mnist"` or
 `"random"`, a tokenized HF text dataset is loaded and the vocab size is
 synced to the tokenizer.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1234:1260"
---8<-- "src/ezpz/examples/fsdp_tp.py:1234:1260"
+```python title="src/ezpz/examples/fsdp_tp.py:1524:1546"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1524:1546"
 ```
 
 **Model construction and parallelization.** A `Transformer` is built
 from `ModelArgs`, moved to the device, optionally given a
 `MixedPrecision` config, and then handed to `parallelize`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1262:1275"
---8<-- "src/ezpz/examples/fsdp_tp.py:1262:1275"
+```python title="src/ezpz/examples/fsdp_tp.py:1552:1632"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1552:1632"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1468:1480"
---8<-- "src/ezpz/examples/fsdp_tp.py:1468:1480"
+```python title="src/ezpz/examples/fsdp_tp.py:1743:1750"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1743:1750"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -364,15 +364,15 @@ HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1559:1624"
---8<-- "src/ezpz/examples/fsdp_tp.py:1559:1624"
+```python title="src/ezpz/examples/fsdp_tp.py:1879:1939"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1879:1939"
 ```
 
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1626:1645"
---8<-- "src/ezpz/examples/fsdp_tp.py:1626:1645"
+```python title="src/ezpz/examples/fsdp_tp.py:1950:1962"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1950:1962"
 ```
 
 **Training loop.** Each batch is moved to device, split into
@@ -380,30 +380,30 @@ JSONL metric logging and optional distributed aggregation.
 `cross_entropy`. Labels are narrowed for sequence parallelism when
 needed. Gradient clipping is applied before `optimizer.step()`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1646:1742"
---8<-- "src/ezpz/examples/fsdp_tp.py:1646:1742"
+```python title="src/ezpz/examples/fsdp_tp.py:1970:2148"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1970:2148"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1741:1742"
---8<-- "src/ezpz/examples/fsdp_tp.py:1741:1742"
+```python title="src/ezpz/examples/fsdp_tp.py:2067:2074"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2067:2074"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1808:1818"
---8<-- "src/ezpz/examples/fsdp_tp.py:1808:1818"
+```python title="src/ezpz/examples/fsdp_tp.py:2078:2090"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2078:2090"
 ```
 
 After each step, timing and loss metrics are collected into a dict and
 passed to `history.update` and `history.log_metrics`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1808:1818"
---8<-- "src/ezpz/examples/fsdp_tp.py:1808:1818"
+```python title="src/ezpz/examples/fsdp_tp.py:2141:2148"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2141:2148"
 ```
 
 At the end of training, activation hooks are removed, a barrier syncs
 all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1819:1825"
---8<-- "src/ezpz/examples/fsdp_tp.py:1819:1825"
+```python title="src/ezpz/examples/fsdp_tp.py:2151:2156"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2151:2156"
 ```
 
 </details>
@@ -414,15 +414,15 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 distributed backend (including TP groups), determines the output
 directory, and dispatches to `train`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1827:1860"
---8<-- "src/ezpz/examples/fsdp_tp.py:1827:1860"
+```python title="src/ezpz/examples/fsdp_tp.py:2160:2198"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2160:2198"
 ```
 
 The `if __name__ == "__main__"` block parses args, runs `main`, cleans
 up distributed state, and exits.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1862:1864"
---8<-- "src/ezpz/examples/fsdp_tp.py:1862:1864"
+```python title="src/ezpz/examples/fsdp_tp.py:2201:2206"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2201:2206"
 ```
 
 </details>
@@ -462,10 +462,10 @@ See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
 
 ## torch.compile
 
-Pass `--compile` to wrap the model with `torch.compile` after the
-FSDP/TP wrap. The example compiles **each `TransformerBlock`
-individually** (matching torchtitan's `apply_compile`) rather than the
-whole model:
+Pass `--compile` to apply `torch.compile` after the FSDP/TP wrap. The
+example compiles **each `TransformerBlock` individually** (matching
+torchtitan's `apply_compile`) rather than wrapping the whole model in a
+single `torch.compile` call:
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --tp 2 --compile
