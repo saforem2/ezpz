@@ -116,12 +116,12 @@ Each call to `update()`:
 
 ### Console summary format
 
-`update()` returns a column-aligned `key=value(±std)` string designed to
+`update()` returns a compact `key=value(±std)` string designed to
 collapse the noisy `loss=…  loss/mean=…  loss/max=…  loss/min=…  loss/std=…`
 shape into a single scannable line:
 
 ```
-iter=180   loss=0.078(± 0.026) accuracy=0.984(±9.9e-3) dtf=0.014(±7.4e-4) lr=0.000059 memory=0.01/0.01GiB (0%)
+iter=180   loss=0.078(±0.026) accuracy=0.984(±9.9e-3) dtf=0.014(±7.4e-4) lr=0.000059 memory=0.01/0.01GiB (0%)
 ```
 
 Format rules (all handled by [`ezpz.utils.format_compact_summary`][ezpz.utils.format_compact_summary]):
@@ -130,19 +130,22 @@ Format rules (all handled by [`ezpz.utils.format_compact_summary`][ezpz.utils.fo
   distributed history is on), the std is appended inline as
   `X=value(±std)`. The `/mean`, `/min`, `/max`, `/avg` companions are
   dropped from the console — trackers still receive them.
-- **Std values are right-aligned in a 6-char column** so a row with
-  `(±0.070)` lines up under one with `(±5.1e-4)` or `(±  0.12)`.
+- **Std hugs its value**: `value(±std)` with no padding inside the
+  parentheses (`loss=0.078(±0.026)`, not `loss=0.078(±  0.026)`). The
+  values preceding each `(±…)` are themselves variable-width, so padding
+  the std never actually aligned the parentheticals into columns — it just
+  added ragged whitespace after every `±`.
 - **Counter-like keys** (`iter`, `step`, `epoch`, `batch`, `idx`) are
   bare (no `(±std)`) and left-edge padded so the next field aligns
   across rows: `iter=8     loss=…` lines up under `iter=180   loss=…`.
+  (This per-field counter padding is unchanged — it aligns real columns.)
 - **Replicated hyperparameters** (`lr`, `momentum`, `weight_decay`,
   `beta1`, `beta2`, `eps`, `clip_grad`, `warmup_steps`, …) are bare —
-  their per-step std is always 0 across ranks, so no parenthetical and
-  no padding gap is emitted.
+  their per-step std is always 0 across ranks, so no parenthetical is
+  emitted.
 - **Std formatting**: 2 sig figs, fixed-point for magnitudes ≥ 0.01
   (`0.16`, `0.020`, `1.3`), scientific for magnitudes < 0.01 with the
-  leading exponent zero stripped (`5.1e-4`, not `5.1e-04`). Bounded
-  width keeps columns stable across runs.
+  leading exponent zero stripped (`5.1e-4`, not `5.1e-04`).
 
 ### Device memory tracking
 

@@ -734,15 +734,6 @@ _DEFAULT_MIN_WIDTHS: dict[str, int] = {
     "bidx": 9,
 }
 
-# Max width of the std token produced by `_format_std` (see its
-# docstring for the bounds proof: fixed-point >= 0.01 caps at ~5 chars,
-# scientific notation < 0.01 caps at 6 chars like "5.1e-4"). Right-
-# aligning std tokens to this width makes every `(±X)` parenthetical
-# exactly `_STD_TOKEN_MAX_WIDTH + 3` chars wide ("(±" + token + ")"), so
-# columns align across log rows even when stds swing between fixed and
-# scientific forms.
-_STD_TOKEN_MAX_WIDTH = 6
-
 
 def format_compact_summary(
     metrics: dict[str, float],
@@ -857,20 +848,18 @@ def format_compact_summary(
         if std is not None and not _is_counter(k) and not _is_known_constant(k):
             std_token = _format_std(std, precision=precision)
             if std_token is None:
-                # std rounds to zero at the chosen precision (e.g.
-                # `lr/std=1e-12` with precision=2). `(±0)` adds no
-                # signal; drop it. Pad with spaces matching the width
-                # of a full `(±XXXXXX)` parenthetical so this token's
-                # successor still aligns with its neighbors above/below
-                # — important for metrics that swing between zero and
-                # non-zero std across rows (e.g. small/sporadic noise).
-                pad = " " * (_STD_TOKEN_MAX_WIDTH + 3)
-                tokens.append(f"{base_token}{pad}")
+                # std is exactly 0.0 (`_format_std` returns None only for
+                # std == 0; non-zero stds always format, in scientific
+                # notation if tiny). `(±0)` adds no signal, so drop the
+                # parenthetical entirely and emit the bare value — same as
+                # a metric with no std at all.
+                tokens.append(base_token)
             else:
-                # Right-align the std token so `(±0.070)`, `(±0.12)`,
-                # and `(±5.1e-4)` all occupy the same number of columns.
-                padded = std_token.rjust(_STD_TOKEN_MAX_WIDTH)
-                tokens.append(f"{base_token}(±{padded})")
+                # Inline the std tight: `loss=0.500000(±0.020)`. No column
+                # padding inside the parens — the parenthetical hugs the
+                # value, and successive rows align per-token at the left
+                # edge rather than into std columns.
+                tokens.append(f"{base_token}(±{std_token})")
         else:
             # Counters and known-constant hyperparameters: no padding,
             # no parenthetical. Counters still get left-edge padding so

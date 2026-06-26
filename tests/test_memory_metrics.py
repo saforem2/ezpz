@@ -527,15 +527,14 @@ class TestFormatCompactSummary:
     """The ``key=value(±std)`` console renderer."""
 
     def test_collapses_base_and_std_into_inline_format(self):
-        """`loss=0.5` + `loss/std=0.02` → `loss=0.50(± 0.020)` (std
-        right-aligned to 6 chars for column alignment across rows)."""
+        """`loss=0.5` + `loss/std=0.02` → `loss=0.50(±0.020)` (std inlined
+        tight, no column padding inside the parens)."""
         from ezpz.utils import format_compact_summary
         out = format_compact_summary(
             {"loss": 0.5, "loss/std": 0.02}, precision=2,
         )
-        # 0.02 at 2 sig figs (fixed-point, magnitude=-2) → "0.020"
-        # (5 chars), right-padded to 6 inside `(±...)`.
-        assert out == "loss=0.50(± 0.020)"
+        # 0.02 at 2 sig figs (fixed-point, magnitude=-2) → "0.020".
+        assert out == "loss=0.50(±0.020)"
 
     def test_drops_other_aggregation_suffixes(self):
         """`/mean`, `/min`, `/max`, `/avg` are dropped (W&B has them)."""
@@ -549,7 +548,7 @@ class TestFormatCompactSummary:
             precision=2,
         )
         # All four aggregation suffixes drop; only the inline std survives.
-        assert out == "loss=0.50(± 0.020)"
+        assert out == "loss=0.50(±0.020)"
         assert "/mean" not in out and "/max" not in out and "/min" not in out
 
     def test_std_uses_two_sig_figs(self):
@@ -564,8 +563,8 @@ class TestFormatCompactSummary:
         out = format_compact_summary(
             {"loss": 0.289993, "loss/std": 0.157124}, precision=6,
         )
-        # "0.16" is 4 chars; right-padded to 6 inside `(±...)`.
-        assert out == "loss=0.289993(±  0.16)"
+        # "0.16" inlined tight, no column padding.
+        assert out == "loss=0.289993(±0.16)"
 
     def test_zero_std_drops_parenthetical(self):
         """`(±0.0)` adds no signal — drop it entirely. Common for
@@ -609,8 +608,8 @@ class TestFormatCompactSummary:
         out = format_compact_summary(
             {"tflops": 16.778491, "tflops/std": 1.297581}, precision=6,
         )
-        # "1.3" is 3 chars; right-padded to 6 inside `(±...)`.
-        assert out == "tflops=16.778491(±   1.3)"
+        # "1.3" inlined tight, no column padding.
+        assert out == "tflops=16.778491(±1.3)"
 
     def test_skips_memory_keys_entirely(self):
         """Memory keys are handled by format_memory_summary; never appear here."""
@@ -632,7 +631,7 @@ class TestFormatCompactSummary:
         as bare `key=value` with no `(±...)` and no 9-char pad gap.
 
         This is the visual fix for log lines like
-            ... acc=0.5(±  0.12) lr=0.000059          dt=...
+            ... acc=0.5(±0.12) lr=0.000059          dt=...
         where the `lr` token's wide trailing whitespace gap was reserving
         space for a (±std) parenthetical that will never appear.
         """
@@ -647,7 +646,7 @@ class TestFormatCompactSummary:
         # No 9-char gap (the old behavior would emit "lr=0.000059         ").
         assert "lr=0.000059  " not in out
         # loss still gets its inline std as before.
-        assert "(±" in out  # loss=0.500000(± 0.020)
+        assert "(±" in out  # loss=0.500000(±0.020)
 
     def test_constant_keys_kwarg_extends_set(self):
         """Callers can mark extra metrics as known-constant via
@@ -675,8 +674,8 @@ class TestFormatCompactSummary:
         assert "iter=100" in out
         assert "iter=100(" not in out  # not "iter=100(±5.00)"
         # loss still has its inline std (2 sig figs, magnitude=-2 →
-        # "0.020", right-padded to 6 chars inside `(±...)`).
-        assert "loss=0.50(± 0.020)" in out
+        # "0.020", inlined tight).
+        assert "loss=0.50(±0.020)" in out
 
     def test_no_std_no_parenthetical(self):
         """When `/std` is absent, the metric prints as-is — no (±0) noise."""
@@ -760,9 +759,9 @@ class TestFormatCompactSummary:
         # 4 tokens: iter, loss(±std), accuracy(±std), dtf (no std — it's 0)
         assert out.count("=") == 4
         assert "iter=180" in out
-        # 2 sig figs fixed-point: 0.023 → "0.023" (5 chars, padded to 6).
-        assert "loss=0.047(± 0.023)" in out
-        # 0.007 < 0.01 → scientific: "7.0e-3" (already 6 chars, no pad).
+        # 2 sig figs fixed-point: 0.023 → "0.023", inlined tight.
+        assert "loss=0.047(±0.023)" in out
+        # 0.007 < 0.01 → scientific: "7.0e-3".
         assert "accuracy=1.000(±7.0e-3)" in out
         # dtf/std=0.000 → drop the parenthetical entirely.
         assert "dtf=0.009" in out
