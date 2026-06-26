@@ -51,6 +51,32 @@ recommended fix.
 |---------|-------|-----|
 | `ModuleNotFoundError: ezpz` | Not installed | `pip install git+https://github.com/saforem2/ezpz` |
 | `ImportError: ... .so` | Binary incompatibility | Rebuild from source; match Python/PyTorch versions |
+| `ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp` (XPU) | System oneAPI libs shadow the venv's bundled ones | Prepend the venv libs — use `ezpz_activate_venv` (see below) |
+
+#### `libsycl.so` undefined symbol on XPU
+
+When a `torch+xpu` wheel is installed in a venv, it ships its own
+`libsycl` / `libur_loader` under `${VIRTUAL_ENV}/lib`. If you load a
+system oneAPI module (e.g. via `ezpz_load_modules`) **after** activating
+the venv, the module's older copy lands first on `LD_LIBRARY_PATH` and
+shadows the wheel's, so `import torch` dies with:
+
+```
+ImportError: .../torch/lib/../../../../libsycl.so.9: undefined symbol: urDeviceWaitExp, version LIBUR_LOADER_0.12
+```
+
+`LD_LIBRARY_PATH` wins over a library's own `RUNPATH`, so the fix is to
+ensure `${VIRTUAL_ENV}/lib` is **first**. Use `ezpz_activate_venv`
+(activates the venv and re-prepends its lib dir), and put it **last** in
+the setup chain so it runs after module loading:
+
+```bash
+source <(curl -fsSL https://bit.ly/ezpz-utils) \
+  && ezpz_setup_job && ezpz_load_modules && ezpz_activate_venv
+```
+
+See [`ezpz_activate_venv`](notes/shell-environment.md#ezpz_activate_venv-activate-fix-ld_library_path)
+for details.
 
 ### Distributed Training Hangs / Deadlocks
 
@@ -223,6 +249,7 @@ TORCH_DDP_TIMEOUT=7200 ezpz launch -- python3 train.py
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | OOM during forward pass | All-gather materializes full parameters | Use `reshard_after_forward=True` (ZeRO-3) or reduce batch size |
+| OOM in `loss.backward()` at a batch size that "should" fit (large-vocab / long-seq) | Activations saved at full size (`activation_memory_budget=1.0`) + a multi-GB cross-entropy logits/grad transient | In `ezpz.examples.fsdp_tp`: add `--compile --act-mem-budget 0.5` (inductor recomputes activations) and `--loss-impl compiled` (fuses the CE). See [Matching torchtitan](examples/fsdp-tp.md#matching-torchtitan) |
 | `FSDP not supported on mps` | Apple MPS doesn't support FSDP | Expected — ezpz auto-falls back to DDP; or use `use_fsdp=False` |
 | Checkpoint saved with FSDP won't load in DDP | State dict format mismatch | Save a portable checkpoint (see below) |
 | `RuntimeError: ... DeviceMesh` | PyTorch version mismatch | FSDP2 requires PyTorch 2.4+; check `python -c "import torch; print(torch.__version__)"` |

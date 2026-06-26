@@ -164,6 +164,7 @@ ezpz_setup_env
 | `ezpz_get_scheduler_type`    | Echo the active scheduler: `pbs`, `slurm`, or empty when neither is detected              |
 | `ezpz_get_working_dir`       | Echo the current working directory (shells out to `python3 -c 'os.getcwd()'`)             |
 | `ezpz_check_working_dir`     | Resolve and export `WORKING_DIR`; returns non-zero on failure (see below)                 |
+| `ezpz_activate_venv`         | Activate a venv **and** put its bundled libs first on `LD_LIBRARY_PATH` (see below)        |
 
 ### Shell Variables Exported
 
@@ -211,6 +212,43 @@ Two failure modes the function now signals:
 Pre-v0.18.4 the function had no `return 1` anywhere, so the
 `|| log_message ERROR ...` branch in `ezpz_setup_job` was unreachable
 and a silent empty `WORKING_DIR` could leak through.
+
+### `ezpz_activate_venv` — activate + fix `LD_LIBRARY_PATH`
+
+```bash
+ezpz_activate_venv [venv_dir]   # defaults to ${WORKING_DIR:-$(pwd)}/.venv
+```
+
+Activates a Python venv **and** ensures the venv's bundled libraries are
+**first** on `LD_LIBRARY_PATH`. This matters for accelerator wheels (e.g.
+`torch+xpu`) that ship their own runtime libs (`libsycl`,
+`libur_loader`, …) under `${VIRTUAL_ENV}/lib`: if `ezpz_load_modules`
+loaded a system oneAPI whose copy of those libs is **older**, it shadows
+the wheel's and `import torch` fails with e.g.
+
+```
+ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp, version LIBUR_LOADER_0.12
+```
+
+`LD_LIBRARY_PATH` takes precedence over a library's own `RUNPATH`
+(`$ORIGIN`), so the robust fix is to (re-)prepend `${VIRTUAL_ENV}/lib`
+**after** module setup. Put it last in the chain:
+
+```bash
+source <(curl -fsSL https://bit.ly/ezpz-utils) \
+  && ezpz_setup_job && ezpz_load_modules && ezpz_activate_venv
+```
+
+Behavior:
+
+- venv `bin/activate` exists → source it, then prepend its lib dir.
+- already in a venv (`VIRTUAL_ENV` set), no activate script at the path →
+  skip activation but still (re-)prepend the lib dir.
+- neither → warn and return `1` (does **not** create a venv; use
+  `ezpz_setup_uv_venv`).
+- The lib dir is forced to the **front**: no-op only if already first,
+  otherwise any existing occurrence is removed and it is re-prepended.
+  Skipped when `${VIRTUAL_ENV}/lib` doesn't exist (a plain CPU venv).
 
 ## Setup Python
 
