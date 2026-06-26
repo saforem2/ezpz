@@ -237,9 +237,9 @@ The HF path:
   `feed_forward.w1`, etc.) and won't apply cleanly to HF's
   `LlamaDecoderLayer` / `GemmaDecoderLayer` / etc. The example logs a
   warning if you pass `--tp > 1` along with a HF model.
-- Wraps the model with FSDP using a transformer-block auto-wrap policy
-  derived from the HF model's own `ModuleList` children — so each
-  decoder layer becomes its own FSDP unit.
+- Wraps the model with FSDP2: each block in the HF model's own decoder
+  `ModuleList` gets its own `fully_shard` unit, then the root — so each
+  decoder layer is sharded independently.
 
 ### Activation checkpointing
 
@@ -267,9 +267,10 @@ Modes:
   throughput hit (~10%). Less robust than `block` for arbitrary
   architectures.
 
-AC is applied **after** the TP/FSDP wrap so the checkpoint envelope
-contains FSDP's unshard/reshard bookkeeping; reversed order would
-double-shard and corrupt grads.
+Under FSDP2, AC is applied to each block **before** `fully_shard` (the
+checkpoint wrapper lives inside the FSDP2 unit) — this is torchtitan's
+ordering. (This is the reverse of the FSDP1 order, where AC wrapped the
+already-sharded module.)
 
 Caveat: AC only helps with **training-time** activation memory. It
 will NOT fix init-time OOMs (every rank holds the full unsharded
@@ -285,7 +286,10 @@ memory for each doubling) or use a smaller preset.
 
 <details closed markdown><summary><strong>Sharding Strategies</strong></summary>
 
-Maps user-facing string names to PyTorch `ShardingStrategy` enum values.
+Maps the legacy FSDP1 strategy names (kept as the CLI surface so existing
+scripts don't break) to FSDP2's `reshard_after_forward` policy: `True`
+reshards params after forward (ZeRO-3-like), `False` keeps them gathered
+(ZeRO-2-like).
 
 ```python title="src/ezpz/examples/fsdp_tp.py:327:333"
 --8<-- "src/ezpz/examples/fsdp_tp.py:327:333"
@@ -327,9 +331,10 @@ dimension, then wraps the result with FSDP along the `"dp"` dimension.
 --8<-- "src/ezpz/examples/fsdp_tp.py:1130:1147"
 ```
 
-**Top-level TP plan.** The embedding is row-sharded, the final output
-projection is column-sharded, and the RMS norm between them uses
-`SequenceParallel`.
+**Top-level TP plan.** Applied only when `--tp > 1` (at `--tp 1` the whole
+TP plan is skipped — no SequenceParallel overhead). The embedding is
+row-sharded, the final output projection is column-sharded, and the RMS
+norm between them uses `SequenceParallel`.
 
 ```python title="src/ezpz/examples/fsdp_tp.py:1148:1198"
 --8<-- "src/ezpz/examples/fsdp_tp.py:1148:1198"
@@ -344,8 +349,11 @@ Attention head counts are divided by the TP mesh size.
 --8<-- "src/ezpz/examples/fsdp_tp.py:1200:1230"
 ```
 
-**FSDP wrapping.** After TP is applied, the entire model is wrapped with
-FSDP on the `"dp"` sub-mesh.
+**FSDP2 wrapping.** After TP is applied, each module group is sharded
+independently on the `"dp"` sub-mesh with `fully_shard` — the embedding,
+each TransformerBlock, then `[norm, output]`, then the root last. A final
+`_configure_fsdp_gradient_division` call forces SUM reduction for gradient
+comms on CCL/XPU (matching torchtitan).
 
 ```python title="src/ezpz/examples/fsdp_tp.py:1239:1264"
 --8<-- "src/ezpz/examples/fsdp_tp.py:1239:1264"
