@@ -249,6 +249,7 @@ TORCH_DDP_TIMEOUT=7200 ezpz launch -- python3 train.py
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | OOM during forward pass | All-gather materializes full parameters | Use `reshard_after_forward=True` (ZeRO-3) or reduce batch size |
+| OOM in `loss.backward()` at a batch size that "should" fit (large-vocab / long-seq) | Activations saved at full size (`activation_memory_budget=1.0`) + a multi-GB cross-entropy logits/grad transient | In `ezpz.examples.fsdp_tp`: add `--compile --act-mem-budget 0.5` (inductor recomputes activations) and `--loss-impl compiled` (fuses the CE). See [Matching torchtitan](examples/fsdp-tp.md#matching-torchtitan) |
 | `FSDP not supported on mps` | Apple MPS doesn't support FSDP | Expected — ezpz auto-falls back to DDP; or use `use_fsdp=False` |
 | Checkpoint saved with FSDP won't load in DDP | State dict format mismatch | Save a portable checkpoint (see below) |
 | `RuntimeError: ... DeviceMesh` | PyTorch version mismatch | FSDP2 requires PyTorch 2.4+; check `python -c "import torch; print(torch.__version__)"` |

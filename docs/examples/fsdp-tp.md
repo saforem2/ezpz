@@ -6,6 +6,19 @@ layers across GPUs within a node) with FSDP (sharding parameters across
 nodes). This is the approach for training very large transformer models where
 both memory and communication efficiency matter.
 
+!!! note "FSDP2 (`fully_shard`)"
+
+    This example uses **FSDP2** — each module group (embedding, every
+    `TransformerBlock`, `[norm, output]`, then the root) is sharded
+    independently with `fully_shard`. Per-module sharding keeps backward
+    memory bounded — in particular for the 256K-vocab embedding + output
+    projection — where FSDP1's single flat-parameter wrap OOM'd at long
+    sequence length. Tensor parallelism is only applied when `--tp > 1`
+    (at `--tp 1` the model stays in plain tensors, no SequenceParallel
+    overhead). The first-step logits debug probe is gated behind
+    `EZPZ_TRACK_LOGITS=1` (off by default — it allocates a full-logits
+    tensor that can itself OOM a large-vocab run).
+
 !!! info "Key API Functions"
 
     - [`setup_torch()`][ezpz.distributed.setup_torch] — Initialize distributed training
@@ -68,6 +81,19 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   `max-autotune` for the slowest startup / fastest steady-state. See
   [torch.compile](#torchcompile) for the per-block rationale and the
   `--tp`/`--ac`/`--compile` interaction caveat.
+- **Cross-entropy implementation** — `--loss-impl {eager,chunked,compiled}`
+  (default `eager`). At a large vocab (agpt's 256K) and long sequence, eager
+  `F.cross_entropy` materializes a multi-GB `(B·T, vocab)` fp32 logits +
+  gradient transient in backward. `chunked` bounds it to
+  `--loss-chunk-size` rows at a time; `compiled` wraps the CE in
+  `torch.compile` so inductor fuses log-softmax + NLL + backward (what
+  torchtitan does). See [Matching torchtitan](#matching-torchtitan).
+- **Activation-memory budget** — `--act-mem-budget <float>` (default `1.0`,
+  only active with `--compile`). Sets
+  `torch._functorch.config.activation_memory_budget`: `1.0` saves every
+  activation, lower values let the inductor partitioner recompute a fraction
+  in backward to cut peak memory. This is the knob that lets larger batches
+  fit. See [Matching torchtitan](#matching-torchtitan).
 
 > Note: combining `--compile` with `--ac` on HuggingFace models can trigger a
 > `CheckpointError: tensor count mismatch` due to HF's DynamicCache. Drop one
@@ -355,8 +381,8 @@ from `ModelArgs`, moved to the device, optionally given a
 --8<-- "src/ezpz/examples/fsdp_tp.py:1552:1632"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1743:1750"
---8<-- "src/ezpz/examples/fsdp_tp.py:1743:1750"
+```python title="src/ezpz/examples/fsdp_tp.py:1743:1749"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1743:1749"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -478,10 +504,11 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --tp 2 --compile
   compile cost across the `N` identical layers.
 - `--compile-mode {default,reduce-overhead,max-autotune}` selects the
   compile mode (default: `default`).
-- For `--compile` to work with FSDP, the example wraps FSDP with
-  `use_orig_params=True` (Dynamo refuses the default `False`), and
-  activation checkpointing uses the compile-aware
-  `checkpoint_wrapper` (see [Activation checkpointing](#activation-checkpointing)).
+- The example uses **FSDP2** (`fully_shard`), which has no flat
+  `FlatParameter` and so no `use_orig_params` knob — the Dynamo refusal that
+  FSDP1 hit there is moot. Activation checkpointing still uses the
+  compile-aware `checkpoint_wrapper` (see
+  [Activation checkpointing](#activation-checkpointing)).
 
 > **Known limitation.** Combining all three of `--tp > 1`,
 > `--activation-checkpoint`, and `--compile` at once trips an upstream
@@ -489,28 +516,103 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --tp 2 --compile
 > Drop any one of the three until it's fixed upstream. Any two together
 > work.
 
+## Matching torchtitan
+
+This example targets parity with [torchtitan](https://github.com/pytorch/torchtitan)
+on the same AuroraGPT model. On Sunspot (Intel PVC), agpt-2b at
+`--batch-size 2 --seq-len 7320 --tp 1`, full-shard, 2 nodes (dp=24), the
+recipe below reproduces torchtitan's throughput within noise:
+
+```bash
+ezpz launch python3 -m ezpz.examples.fsdp_tp \
+  --model agpt-2b --seq-len 7320 --batch-size 2 --tp 1 \
+  --sharding-strategy full_shard \
+  --compile --loss-impl compiled --act-mem-budget 0.5
+```
+
+| metric | torchtitan | this example |
+|---|---|---|
+| MFU | ~26% | ~26% |
+| TFLOP/s (per rank) | ~79 | ~77 |
+| tokens/s (per rank) | ~7,300 | ~7,180 |
+
+Three pieces close the gap, all matching what torchtitan does:
+
+- **`--act-mem-budget 0.5`** — the decisive one for memory. torchtitan's
+  `MemoryBudgetAC` sets `activation_memory_budget = 0.5`; this example
+  defaulted to `1.0` (save all activations) and so OOM'd at `bs=2` where
+  torchtitan fit. The budget only takes effect with `--compile` (it drives
+  the inductor min-cut partitioner). `--loss-impl` alone is **not** enough —
+  the eager `(B·T, vocab)` cross-entropy transient is only one contributor;
+  the activation budget is what actually makes `bs=2` fit.
+- **`--loss-impl compiled`** — torchtitan compiles its loss
+  (`compile.components = ["model", "loss"]`); this fuses the large-vocab
+  cross-entropy so its logits/grad transient never fully materializes.
+- **Fused AdamW + FSDP gradient division** — the optimizer now uses
+  `fused=True` with torchtitan's betas/eps/wd, and FSDP2 gradient comms force
+  SUM reduction on CCL/XPU (mirroring torchtitan's
+  `disable_fsdp_gradient_division`). Both are automatic — no flags.
+
+!!! warning "Reading the memory number: allocated vs reserved"
+
+    This example's `memory=alloc/peak` line reports **peak *allocated***
+    bytes; torchtitan's `memory:` line reports **peak *reserved*** bytes,
+    reset per step. They are different metrics, so don't compare them
+    directly. The **allocated** peaks match (~44 GiB for this recipe vs
+    torchtitan's ~44 GiB). This example's cumulative *reserved* peak looks
+    higher only because it includes the one-time compile-warmup
+    high-water mark that torchtitan's per-step reset discards — it is not
+    extra real usage.
+
+Verified batch/loss/budget sweep (agpt-2b, seq=8192, tp=1, full_shard,
+dp=48, `--compile`):
+
+| batch | `--loss-impl` | `--act-mem-budget` | result |
+|---|---|---|---|
+| 1 | eager | 1.0 | fits (peak ~41 GiB alloc) |
+| 2 | eager | 1.0 | OOM in `loss.backward()` |
+| 2 | compiled | 1.0 | OOM (FSDP reduce-scatter) |
+| 2 | chunked | 1.0 | OOM in backward |
+| 2 | compiled | 0.5 | **fits** (peak ~44 GiB alloc) |
+
+Lower the budget further (e.g. `0.3`) to trade more recompute for less
+memory if you need headroom for a bigger batch.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
 
 ```bash
-$ python3 -m ezpz.examples.fsdp_tp --help
-usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS] [--n-heads N_HEADS]
-                  [--n-kv-heads N_KV_HEADS] [--multiple-of MULTIPLE_OF]
+usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS]
+                  [--n-heads N_HEADS]
+                  [--n-kv-heads N_KV_HEADS]
+                  [--multiple-of MULTIPLE_OF]
                   [--ffn-dim-multiplier FFN_DIM_MULTIPLIER]
-                  [--hidden-dim HIDDEN_DIM] [--rope-theta ROPE_THETA]
-                  [--norm-eps NORM_EPS] [--vocab-size VOCAB_SIZE] [--lr LR]
-                  [--epochs EPOCHS] [--batch-size BATCH_SIZE] [--model MODEL]
+                  [--hidden-dim HIDDEN_DIM]
+                  [--rope-theta ROPE_THETA]
+                  [--norm-eps NORM_EPS]
+                  [--vocab-size VOCAB_SIZE] [--lr LR]
+                  [--epochs EPOCHS]
+                  [--batch-size BATCH_SIZE]
+                  [--model MODEL]
                   [--test-batch-size TEST_BATCH_SIZE]
-                  [--num-workers NUM_WORKERS] [--seed SEED] [--tp TP]
+                  [--num-workers NUM_WORKERS]
+                  [--seed SEED] [--tp TP]
                   [--sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}]
                   [--activation-checkpoint {none,block,full,selective}]
-                  [--max-grad-norm MAX_GRAD_NORM] [--outdir OUTDIR]
-                  [--dataset DATASET] [--tokenizer_name TOKENIZER_NAME]
-                  [--hf-split HF_SPLIT] [--hf-text-column HF_TEXT_COLUMN]
-                  [--hf-limit HF_LIMIT] [--seq-len SEQ_LEN]
-                  [--max-seq-len MAX_SEQ_LEN] [--fp32] [--compile]
+                  [--max-grad-norm MAX_GRAD_NORM]
+                  [--outdir OUTDIR] [--dataset DATASET]
+                  [--tokenizer_name TOKENIZER_NAME]
+                  [--hf-split HF_SPLIT]
+                  [--hf-text-column HF_TEXT_COLUMN]
+                  [--hf-limit HF_LIMIT]
+                  [--seq-len SEQ_LEN]
+                  [--max-seq-len MAX_SEQ_LEN] [--fp32]
+                  [--compile]
                   [--compile-mode {default,reduce-overhead,max-autotune}]
+                  [--act-mem-budget ACT_MEM_BUDGET]
+                  [--loss-impl {eager,chunked,compiled}]
+                  [--loss-chunk-size LOSS_CHUNK_SIZE]
 
 2D Parallel Training
 
@@ -592,19 +694,23 @@ options:
                         parallelism. Set to 1 for FSDP-only. Forced to 1 when
                         --model is a HF repo id. (default: 2)
   --sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}
-                        FSDP sharding strategy. `full_shard` (default,
-                        ZeRO-3): shards params, grads, and optimizer state
-                        across all ranks — lowest memory, highest comm.
-                        `shard_grad_op` (ZeRO-2): shards grads and optimizer
-                        state; params replicated — moderate memory, less comm
-                        than full_shard. `no_shard` (ZeRO-0 / DDP-equivalent):
-                        no sharding, pure data parallel — highest memory,
-                        lowest comm. `hybrid_shard`: full_shard within a node,
-                        replicate across nodes — trades inter-node comm for
-                        intra-node sharding (good on slow interconnects).
-                        `hybrid_shard_zero2`: shard_grad_op within a node,
-                        replicate across nodes. (default: full_shard)
-  --activation-checkpoint {none,block,full,selective}, --ac {none,block,full,selective}
+                        FSDP sharding behavior. The model uses FSDP2
+                        (`fully_shard`), which controls sharding via
+                        `reshard_after_forward` rather than a strategy enum;
+                        the legacy FSDP1 names below are kept as the CLI
+                        surface and mapped to the nearest FSDP2 policy.
+                        `full_shard` (default, ZeRO-3): reshard params after
+                        forward — lowest memory, params re-all-gathered in
+                        backward. `shard_grad_op` (ZeRO-2): keep params
+                        unsharded after forward — more memory, avoids the
+                        backward all-gather. `no_shard`: mapped to keep-
+                        unsharded (FSDP2 has no true per-module no-shard).
+                        `hybrid_shard`/`hybrid_shard_zero2`: FSDP1 hybrid has
+                        no one-flag FSDP2 equivalent — `hybrid_shard` maps to
+                        reshard-after-forward, `hybrid_shard_zero2` to keep-
+                        unsharded (mirroring their ZeRO-3/ZeRO-2 variants).
+                        (default: full_shard)
+  --activation-checkpoint, --ac {none,block,full,selective}
                         Activation checkpointing strategy. `none` (default)
                         keeps all forward activations in memory. `block`
                         (alias: `full`) wraps each TransformerBlock — typical
@@ -616,7 +722,12 @@ options:
                         activation memory for recomputation cost — useful when
                         OOM-ing during training (NOT during init; for init-
                         time OOM consider increasing --tp or reducing --seq-
-                        len). (default: none)
+                        len). NOTE: cannot be combined with --compile
+                        (upstream AOTAutograd DeviceMesh-in-saved-tensors bug
+                        — see the --compile warning). With FSDP2 you usually
+                        don't need --ac anyway; it was a workaround for the
+                        FSDP1 backward-memory OOM that FSDP2 fixes. (default:
+                        none)
   --max-grad-norm MAX_GRAD_NORM
                         Clip gradients to this L2 norm before the optimizer
                         step. Set to 0 (or negative) to disable gradient
@@ -633,12 +744,12 @@ options:
                         dataset. Auto-overridden to --model when --model is a
                         HF repo id and --tokenizer_name wasn't passed
                         explicitly. (default: meta-llama/llama-2-7b-hf)
-  --hf-split HF_SPLIT, --hf_split HF_SPLIT
+  --hf-split, --hf_split HF_SPLIT
                         Dataset split to load. (default: train)
-  --hf-text-column HF_TEXT_COLUMN, --hf_text_column HF_TEXT_COLUMN
+  --hf-text-column, --hf_text_column HF_TEXT_COLUMN
                         Column containing raw text in the dataset. (default:
                         text)
-  --hf-limit HF_LIMIT, --hf_limit HF_LIMIT
+  --hf-limit, --hf_limit HF_LIMIT
                         Maximum number of rows to sample from the HF dataset.
                         0 (default) = no limit (use the full dataset). Pass a
                         positive value (e.g. `--hf-limit 512`) to subsample
@@ -667,6 +778,40 @@ options:
                         cudagraphs for small models / large batches. `max-
                         autotune` does extensive kernel search — slow startup,
                         fastest steady state. (default: default)
+  --act-mem-budget ACT_MEM_BUDGET
+                        Activation-memory budget for the inductor min-cut
+                        partitioner (sets
+                        torch._functorch.config.activation_memory_budget).
+                        Only takes effect with --compile. 1.0 (default) saves
+                        ALL activations (no recompute); lower values let the
+                        compiler recompute activations in backward to cut peak
+                        memory — e.g. 0.5 keeps ~half. This is how torchtitan
+                        fits larger batches for the same model (its
+                        MemoryBudgetAC sets 0.5). Try 0.5 if you OOM in
+                        backward at a batch size that should fit. (default:
+                        1.0)
+  --loss-impl {eager,chunked,compiled}
+                        Cross-entropy implementation. `eager` (default) is the
+                        plain F.cross_entropy over the full (B*T, vocab)
+                        logits — simplest, but at large vocab (e.g. agpt's
+                        256K) and long seq it materializes a multi-GB fp32
+                        logits+grad transient in loss.backward() that can OOM
+                        a GPU tile (UR_RESULT_ERROR_OUT_OF_RESOURCES) even
+                        when the model itself fits. `chunked` computes CE over
+                        row-chunks (see --loss-chunk-size) so only one chunk's
+                        logits/grad exist at once — pure eager, no
+                        torch.compile needed. `compiled` wraps CE in
+                        torch.compile so inductor fuses
+                        log_softmax+NLL+backward and never materializes the
+                        full transient (torchtitan's approach). NOTE:
+                        `--compile` only compiles the transformer blocks, NOT
+                        the loss, so it does NOT fix this — use --loss-impl
+                        for the loss transient. (default: eager)
+  --loss-chunk-size LOSS_CHUNK_SIZE
+                        Row-chunk size for --loss-impl=chunked (number of
+                        (B*T) token rows per cross-entropy chunk). Smaller =
+                        lower peak memory, more kernel launches. Ignored for
+                        other --loss-impl. (default: 1024)
 ```
 
 </details>
