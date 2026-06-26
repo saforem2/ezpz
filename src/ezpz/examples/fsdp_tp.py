@@ -318,8 +318,11 @@ MODEL_PRESET_FLAGS = {
 #   - shard_grad_op (ZeRO-2): keep params unsharded after forward          -> False
 #   - no_shard    (ZeRO-0 / replicate): also keep unsharded (closest FSDP2 -> False;
 #       true no-shard = don't shard at all, not expressible per-module here)
-#   - hybrid_shard*: FSDP1 inter/intra-node hybrid has no direct one-flag
-#       FSDP2 equivalent (needs an explicit 2D mesh); map to full reshard.
+#   - hybrid_shard (ZeRO-3-like): FSDP1 inter/intra-node hybrid has no
+#       direct one-flag FSDP2 equivalent (needs an explicit 2D mesh); map
+#       to reshard-after-forward                                     -> True
+#   - hybrid_shard_zero2 (ZeRO-2-like): same caveat, but keep params
+#       unsharded after forward to mirror the zero2 variant          -> False
 # This is the set of valid `--sharding-strategy` values.
 SHARDING_STRATEGIES = {
     "no_shard": False,
@@ -454,10 +457,14 @@ def _cross_entropy_chunked(
     n_rows = flat_labels.shape[0]
 
     valid = (flat_labels != ignore_index).sum()
-    # Avoid div-by-zero on an all-ignored microbatch.
-    denom = valid.clamp(min=1).to(logits.dtype)
+    # Accumulate the loss and divide by the valid-token count in fp32.
+    # `F.cross_entropy` computes log_softmax/NLL in fp32 internally, so a
+    # fp32 accumulator + fp32 denominator track eager's numerics; casting
+    # either to a reduced logits dtype (bf16/fp16) would drift from eager
+    # and force a dtype promotion on every chunk add.
+    denom = valid.clamp(min=1).float()
 
-    total = logits.new_zeros(())
+    total = torch.zeros((), dtype=torch.float32, device=logits.device)
     for start in range(0, n_rows, chunk_size):
         end = min(start + chunk_size, n_rows)
         chunk_loss = F.cross_entropy(
@@ -466,7 +473,7 @@ def _cross_entropy_chunked(
             ignore_index=ignore_index,
             reduction="sum",
         )
-        total = total + chunk_loss
+        total = total + chunk_loss.float()
     return total / denom
 
 
@@ -878,8 +885,10 @@ def parse_args(argv: Optional[list[str]] = None):
             "`shard_grad_op` (ZeRO-2): keep params unsharded after forward — "
             "more memory, avoids the backward all-gather. "
             "`no_shard`: mapped to keep-unsharded (FSDP2 has no true "
-            "per-module no-shard). `hybrid_shard*`: FSDP1 hybrid has no "
-            "one-flag FSDP2 equivalent — mapped to full reshard."
+            "per-module no-shard). `hybrid_shard`/`hybrid_shard_zero2`: "
+            "FSDP1 hybrid has no one-flag FSDP2 equivalent — `hybrid_shard` "
+            "maps to reshard-after-forward, `hybrid_shard_zero2` to "
+            "keep-unsharded (mirroring their ZeRO-3/ZeRO-2 variants)."
         ),
     )
     parser.add_argument(
@@ -1123,7 +1132,6 @@ def parallelize(
     device_mesh: DeviceMesh,
     mixed_precision: Optional[MixedPrecisionPolicy],
     sharding_strategy: Optional[str] = None,
-    device_id: Optional[torch.device] = None,
     activation_checkpoint: str = "none",
 ) -> nn.Module:
     """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
@@ -1141,6 +1149,24 @@ def parallelize(
     dp_mesh = device_mesh["dp"]
 
     reshard = _reshard_after_forward(sharding_strategy)
+
+    # `no_shard` is NOT a true ZeRO-0 / DDP replicate under FSDP2: every
+    # module group below still gets `fully_shard`, so params, grads, and
+    # optimizer state are sharded across the dp mesh regardless. The
+    # strategy name only controls `reshard_after_forward` (False here =
+    # keep params gathered after forward). There is no per-module "don't
+    # shard at all" knob in FSDP2 — that would require skipping fully_shard
+    # entirely (plain DDP). Warn so a multi-rank run that asked for
+    # replicated params/checkpoints isn't silently sharded.
+    if sharding_strategy == "no_shard" and dp_mesh.size() > 1:
+        logger.warning(
+            "--sharding-strategy=no_shard does NOT give replicated "
+            "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
+            "optimizer state are still sharded across the %d-rank dp mesh. "
+            "Only post-forward resharding is disabled. Use plain DDP if you "
+            "need truly replicated parameters.",
+            dp_mesh.size(),
+        )
 
     model.init_weights()  # type: ignore
 
@@ -1719,7 +1745,6 @@ def train(
             device_mesh,
             mp_config,
             sharding_strategy=args.sharding_strategy,
-            device_id=device,
             activation_checkpoint=args.activation_checkpoint,
         )
     if args.compile:
