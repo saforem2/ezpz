@@ -848,10 +848,11 @@ def format_compact_summary(
         if std is not None and not _is_counter(k) and not _is_known_constant(k):
             std_token = _format_std(std, precision=precision)
             if std_token is None:
-                # std rounds to zero at the chosen precision (e.g.
-                # `lr/std=1e-12` with precision=2). `(±0)` adds no signal,
-                # so drop the parenthetical entirely and emit the bare
-                # value — same as a metric with no std at all.
+                # std is exactly 0.0 (`_format_std` returns None only for
+                # std == 0; non-zero stds always format, in scientific
+                # notation if tiny). `(±0)` adds no signal, so drop the
+                # parenthetical entirely and emit the bare value — same as
+                # a metric with no std at all.
                 tokens.append(base_token)
             else:
                 # Inline the std tight: `loss=0.500000(±0.020)`. No column
