@@ -25,7 +25,7 @@ from ezpz.configs import PathLike
 from ezpz.cli.flags import build_test_parser
 from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
-from ezpz.profile import get_profiling_context
+from ezpz.profile import profiling_context_from_args
 
 START_TIME = time.perf_counter()  # start time
 
@@ -191,22 +191,12 @@ class TrainConfig:
         )
         dataset_root.mkdir(parents=True, exist_ok=True)
         self.dataset_root = dataset_root
-        profiler_type = "torch" if self.pytorch_profiler else "pyinstrument"
-        self.ctx = get_profiling_context(
-            profiler_type=profiler_type,
-            rank_zero_only=self.rank_zero_only,
-            record_shapes=self.record_shapes,
-            with_stack=self.with_stack,
-            with_flops=self.with_flops,
-            with_modules=self.with_modules,
-            acc_events=self.acc_events,
-            profile_memory=self.profile_memory,
-            wait=self.pytorch_profiler_wait,
-            warmup=self.pytorch_profiler_warmup,
-            active=self.pytorch_profiler_active,
-            repeat=self.pytorch_profiler_repeat,
-            outdir=self.outdir,
-        )
+        # TrainConfig exposes the shared profiler flag attributes
+        # (pytorch_profiler / pyinstrument_profiler / schedule / detail
+        # toggles), so the namespace adapter consumes `self` directly.
+        # Returns nullcontext() when no profile flag is set, so the
+        # default `with self.ctx as c` path yields c=None (no profiling).
+        self.ctx = profiling_context_from_args(self, outdir=self.outdir)
         logger.info(f"Outputs will be saved to {self.outdir}")
 
     def get_torch_dtype(self) -> torch.dtype:
