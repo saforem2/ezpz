@@ -167,6 +167,76 @@ def get_profiling_context(
     )
 
 
+def profiling_context_from_args(
+    args: Any,
+    outdir: Optional[str | Path | os.PathLike] = None,
+) -> AbstractContextManager:
+    """Build a profiling context manager from parsed CLI ``args``.
+
+    Thin adapter over :func:`get_profiling_context` that maps the shared
+    profiler flag-set (see :func:`ezpz.cli.flags.add_profiling_args`) onto
+    the context-manager call, so every ``ezpz.examples.*`` module wires
+    profiling the same way:
+
+    .. code-block:: python
+
+        with profiling_context_from_args(args, outdir) as prof:
+            train(..., profiler=prof)
+        # in the loop:  if prof is not None: prof.step()
+
+    Returns a :func:`contextlib.nullcontext` (whose ``as`` target is
+    ``None``) when neither ``--profile`` nor ``--pyinstrument-profiler``
+    was passed (and ``PYINSTRUMENT_PROFILER`` is unset), so the default
+    code path is completely unaffected.
+
+    ``getattr`` defaults mirror :func:`add_profiling_args` so this is
+    safe to call even on a namespace that only set a subset of the flags.
+
+    Backward-compatible activation: the ``PYINSTRUMENT_PROFILER`` env var
+    also turns on the pyinstrument profiler even with no flag, matching
+    the long-standing :func:`get_context_manager` ``strict`` behavior.
+
+    Args:
+        args: Parsed argparse namespace (or any object exposing the
+            profiler attributes as fields).
+        outdir: Directory for profiler output. Defaults to
+            ``get_profiling_context``'s own fallback when ``None``.
+
+    Returns:
+        AbstractContextManager: torch / pyinstrument profiler context, or
+        ``nullcontext()`` when profiling was not requested.
+    """
+    pyinstrument = bool(getattr(args, "pyinstrument_profiler", False))
+    pytorch = bool(getattr(args, "pytorch_profiler", False))
+    # Honor the legacy env-var opt-in so callers that relied on
+    # PYINSTRUMENT_PROFILER=1 (no flag) keep working.
+    if os.environ.get("PYINSTRUMENT_PROFILER") is not None:
+        pyinstrument = True
+    if not (pyinstrument or pytorch):
+        return nullcontext()
+    return get_profiling_context(
+        # torch profiler wins if both flags are somehow set: it produces
+        # the per-op chrome trace that the schedule flags are about.
+        profiler_type=("torch" if pytorch else "pyinstrument"),
+        wait=int(getattr(args, "pytorch_profiler_wait", 1)),
+        warmup=int(getattr(args, "pytorch_profiler_warmup", 2)),
+        active=int(getattr(args, "pytorch_profiler_active", 3)),
+        repeat=int(getattr(args, "pytorch_profiler_repeat", 5)),
+        rank_zero_only=bool(getattr(args, "rank_zero_only", False)),
+        record_shapes=bool(getattr(args, "record_shapes", True)),
+        with_stack=bool(getattr(args, "with_stack", True)),
+        with_flops=bool(getattr(args, "with_flops", True)),
+        with_modules=bool(getattr(args, "with_modules", True)),
+        acc_events=bool(getattr(args, "acc_events", False)),
+        profile_memory=bool(getattr(args, "profile_memory", True)),
+        outdir=outdir,
+        # The torch path ignores `strict`; for pyinstrument, passing
+        # `--pyinstrument-profiler` is itself the opt-in, so don't also
+        # require the PYINSTRUMENT_PROFILER env var.
+        strict=not pyinstrument,
+    )
+
+
 def get_context_manager(
     rank: Optional[int] = None,
     outdir: Optional[str] = None,
