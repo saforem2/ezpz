@@ -48,6 +48,120 @@ def _spare_nodes_value(value: str) -> "int | str":
     return _non_negative_int(value)
 
 
+def add_profiling_args(
+    parser: argparse.ArgumentParser,
+) -> argparse.ArgumentParser:
+    """Add the shared profiling flag-set used across ``ezpz.examples.*``.
+
+    This is the single source of truth for the profiler CLI surface.
+    ``ezpz.examples.test`` was the only example with profiling support;
+    these flags were inlined in :func:`build_test_parser`. Extracting
+    them here lets every example (`fsdp_tp`, `fsdp`, `vit`, `diffusion`)
+    expose an identical surface by calling this once, instead of
+    copy-pasting ~80 lines that would inevitably drift.
+
+    Pair with :func:`ezpz.profile.profiling_context_from_args`, which
+    consumes the resulting namespace and returns the context manager.
+
+    The flag spellings are kept exactly as they were in ``test`` so
+    existing muscle-memory / docs / scripts carry over unchanged:
+
+    - ``--pyinstrument-profiler`` — statistical (pyinstrument) profiler.
+    - ``-p`` / ``--profile`` (dest ``pytorch_profiler``) — torch profiler.
+    - ``--rank-zero-only`` — only profile rank 0 (one trace, not N).
+    - ``--pytorch-profiler-{wait,warmup,active,repeat}`` — schedule.
+    - ``--profile-memory`` / ``--record-shapes`` / ``--with-stack`` /
+      ``--with-flops`` / ``--with-modules`` — torch profiler detail
+      toggles (``BooleanOptionalAction`` → each has a ``--no-*`` form).
+    - ``--acc-events`` — accumulate events across schedule cycles.
+    """
+    parser.add_argument(
+        "--pyinstrument-profiler",
+        action="store_true",
+        help="Profile the training loop",
+    )
+    parser.add_argument(
+        "-p",
+        "--profile",
+        default=False,
+        dest="pytorch_profiler",
+        required=False,
+        action="store_true",
+        help="Use PyTorch profiler",
+    )
+    parser.add_argument(
+        "--rank-zero-only",
+        action="store_true",
+        help="Run profiler only on rank 0",
+    )
+    parser.add_argument(
+        "--pytorch-profiler-wait",
+        type=int,
+        default=1,
+        help="Wait time before starting the PyTorch profiler",
+    )
+    parser.add_argument(
+        "--pytorch-profiler-warmup",
+        type=int,
+        default=2,
+        help="Warmup iterations for the PyTorch profiler",
+    )
+    parser.add_argument(
+        "--pytorch-profiler-active",
+        type=int,
+        default=3,
+        help="Active iterations for the PyTorch profiler",
+    )
+    parser.add_argument(
+        "--pytorch-profiler-repeat",
+        type=int,
+        default=5,
+        help="Repeat iterations for the PyTorch profiler",
+    )
+    # The next five flags default to True. They were declared as
+    # `action="store_true"`, which made them unreachable as False —
+    # passing the flag and not passing it both produced True.
+    # BooleanOptionalAction generates the matching --no-* form so users
+    # can actually disable each one (e.g. `--no-with-stack`).
+    parser.add_argument(
+        "--profile-memory",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Profile memory usage",
+    )
+    parser.add_argument(
+        "--record-shapes",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Record shapes in the profiler",
+    )
+    parser.add_argument(
+        "--with-stack",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Include stack traces in the profiler",
+    )
+    parser.add_argument(
+        "--with-flops",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Include FLOPs in the profiler",
+    )
+    parser.add_argument(
+        "--with-modules",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Include module information in the profiler",
+    )
+    parser.add_argument(
+        "--acc-events",
+        default=False,
+        action="store_true",
+        help="Accumulate events in the profiler",
+    )
+    return parser
+
+
 def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
@@ -104,95 +218,15 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default="DDP",
         help="Backend (DDP, DeepSpeed, etc.)",
     )
-    parser.add_argument(
-        "--pyinstrument-profiler",
-        action="store_true",
-        help="Profile the training loop",
-    )
-    parser.add_argument(
-        "-p",
-        "--profile",
-        default=False,
-        dest="pytorch_profiler",
-        required=False,
-        action="store_true",
-        help="Use PyTorch profiler",
-    )
-    parser.add_argument(
-        "--rank-zero-only",
-        action="store_true",
-        help="Run profiler only on rank 0",
-    )
-    parser.add_argument(
-        "--pytorch-profiler-wait",
-        type=int,
-        default=1,
-        help="Wait time before starting the PyTorch profiler",
-    )
-    parser.add_argument(
-        "--pytorch-profiler-warmup",
-        type=int,
-        default=2,
-        help="Warmup iterations for the PyTorch profiler",
-    )
-    parser.add_argument(
-        "--pytorch-profiler-active",
-        type=int,
-        default=3,
-        help="Active iterations for the PyTorch profiler",
-    )
-    parser.add_argument(
-        "--pytorch-profiler-repeat",
-        type=int,
-        default=5,
-        help="Repeat iterations for the PyTorch profiler",
-    )
-    # The next five flags default to True and were declared as
-    # `action="store_true"`, which made them unreachable as False —
-    # passing the flag and not passing it both produced True.
-    # BooleanOptionalAction generates the matching --no-* form so users
-    # can actually disable each one (e.g. `--no-with-stack`).
-    parser.add_argument(
-        "--profile-memory",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Profile memory usage",
-    )
-    parser.add_argument(
-        "--record-shapes",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Record shapes in the profiler",
-    )
+    # Shared profiler flags (--profile / --pyinstrument-profiler / etc.)
+    # live in add_profiling_args so every ezpz.examples.* module exposes
+    # an identical surface. --save-datasets below is test-specific.
+    add_profiling_args(parser)
     parser.add_argument(
         "--save-datasets",
         action="store_true",
         default=False,
         help="Save datasets",
-    )
-    parser.add_argument(
-        "--with-stack",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Include stack traces in the profiler",
-    )
-    parser.add_argument(
-        "--with-flops",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Include FLOPs in the profiler",
-    )
-    parser.add_argument(
-        "--with-modules",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Include module information in the profiler",
-    )
-    parser.add_argument(
-        "--acc-events",
-        default=False,
-        action="store_true",
-        help="Accumulate events in the profiler",
     )
     parser.add_argument(
         "--train-iters",
