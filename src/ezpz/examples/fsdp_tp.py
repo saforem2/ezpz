@@ -120,7 +120,7 @@ import logging
 import time
 from pathlib import Path
 from time import perf_counter
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from torch.utils.data import DataLoader, DistributedSampler
 
@@ -136,6 +136,8 @@ import torch.nn.functional as F
 
 from ezpz.flops import compute_mfu, try_estimate, try_estimate_fake
 from ezpz.models import summarize_model
+from ezpz.cli.flags import add_profiling_args
+from ezpz.profile import profiling_context_from_args
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
 
@@ -1081,6 +1083,9 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
+    # Shared profiler flags (--profile / --pyinstrument-profiler / etc.),
+    # consumed by profiling_context_from_args around the training loop.
+    add_profiling_args(parser)
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     return args
@@ -1100,7 +1105,13 @@ def _configure_fsdp_gradient_division(model: nn.Module) -> None:
 
     Safe no-op on modules that aren't FSDP2-wrapped or torch builds without
     these setters.
+
+    Set ``EZPZ_FSDP_GRAD_DIV=0`` to skip this entirely (debug escape hatch:
+    leaves FSDP2's default mean reduce-scatter in place).
     """
+    if os.environ.get("EZPZ_FSDP_GRAD_DIV", "1") == "0":
+        logger.info("Skipping FSDP gradient-division config (EZPZ_FSDP_GRAD_DIV=0)")
+        return
     force_sum_reduction = False
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         backend = str(torch.distributed.get_backend() or "")
@@ -1509,8 +1520,18 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
 def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
+    profiler: Optional[Any] = None,
 ) -> int:
-    """Run TP/SP + FSDP training and optionally log metrics."""
+    """Run TP/SP + FSDP training and optionally log metrics.
+
+    Args:
+        args: Parsed CLI namespace.
+        outdir: Output directory for metrics / reports.
+        profiler: Optional active profiler (``torch.profiler.profile`` or
+            ``None``) from :func:`ezpz.profile.profiling_context_from_args`.
+            When non-None, ``profiler.step()`` is called once per training
+            step so the schedule (wait/warmup/active/repeat) advances.
+    """
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
@@ -1686,9 +1707,20 @@ def train(
     # --fp32 is set (pure fp32 for NaN debugging).
     mp_config: Optional[MixedPrecisionPolicy] = None
     if not args.fp32:
+        # reduce_dtype: fp32 gradient reduce-scatter is more accurate, but for
+        # a large-vocab output projection (e.g. agpt's 256K) the single
+        # reduce-scatter tensor can exceed CCL's ~2GB-per-message MPI limit
+        # (256K*2048*4B = 2.1GB) → `atl_mpi !req.is_completed`. Set
+        # EZPZ_REDUCE_DTYPE=bf16 to halve the collective size (1.05GB) and
+        # stay under the limit.
+        _reduce_dtype = (
+            torch.bfloat16
+            if os.environ.get("EZPZ_REDUCE_DTYPE", "fp32").lower() in ("bf16", "bfloat16")
+            else torch.float32
+        )
         mp_config = MixedPrecisionPolicy(
             param_dtype=torch.bfloat16,
-            reduce_dtype=torch.float32,
+            reduce_dtype=_reduce_dtype,
         )
     if is_hf_model:
         # HF path: FSDP2-only wrap (no TP — the TP plan is ezpz-specific).
@@ -1955,8 +1987,12 @@ def train(
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
+        # Disable cross-rank history aggregation while profiling — the
+        # all-gather of per-rank metrics perturbs the very step times the
+        # profiler is measuring.
         distributed_history=(
-            1 < world_size <= 384  # and not config.pytorch_profiler
+            1 < world_size <= 384
+            and not getattr(args, "pytorch_profiler", False)
         ),
     )
 
@@ -2075,6 +2111,10 @@ def train(
             ezpz.distributed.synchronize()
             t2 = perf_counter()
             global_step += 1
+            # Advance the torch.profiler schedule once per optimizer step.
+            # No-op when not profiling (profiler is None).
+            if profiler is not None:
+                profiler.step()
             metrics: dict[str, object] = {
                 "train/iter": global_step,
                 "train/epoch": epoch,
@@ -2136,6 +2176,16 @@ def train(
             if _model_flops > 0 and dt_step > 0:
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
+            # Throughput. `--batch-size` is the PER-DP-RANK micro-batch, so
+            # tokens processed per rank per step is batch_size * seq_len.
+            #   - train/tps_per_gpu  : per-rank tokens/sec (torchtitan's `tgs`)
+            #   - train/tps          : global tokens/sec across all DP ranks
+            # (dp ranks = world_size / tp; tp ranks process the same tokens).
+            if dt_step > 0:
+                tokens_per_rank = args.batch_size * local_seq_len
+                metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
+                dp_size = max(1, world_size // args.tp)
+                metrics["train/tps"] = tokens_per_rank * dp_size / dt_step
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
@@ -2171,7 +2221,9 @@ def main(args: argparse.Namespace) -> int:
     logger.info("Outputs will be saved to %s", outdir)
     # Tracker setup is handled by History constructor (inside train())
     train_start = time.perf_counter()
-    history = train(args=args, outdir=outdir)
+    # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
+    with profiling_context_from_args(args, outdir) as prof:
+        history = train(args=args, outdir=outdir, profiler=prof)
     train_end = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,
