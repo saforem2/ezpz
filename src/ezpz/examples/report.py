@@ -25,6 +25,8 @@ import statistics
 from pathlib import Path
 from typing import Any, Optional
 
+from ezpz.cli.help_format import ColorFormatter
+
 # ── Metric key mapping per example ───────────────────────────────────────────
 # Each example logs slightly different key names in its history.  We map
 # canonical fields to the keys each example actually records.
@@ -403,7 +405,8 @@ def generate_report(outdir: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate a markdown benchmark report from run artifacts."
+        description="Generate a markdown benchmark report from run artifacts.",
+        formatter_class=ColorFormatter,
     )
     parser.add_argument(
         "--outdir",
