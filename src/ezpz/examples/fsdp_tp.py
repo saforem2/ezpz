@@ -1712,12 +1712,20 @@ def train(
         # reduce-scatter tensor can exceed CCL's ~2GB-per-message MPI limit
         # (256K*2048*4B = 2.1GB) → `atl_mpi !req.is_completed`. Set
         # EZPZ_REDUCE_DTYPE=bf16 to halve the collective size (1.05GB) and
-        # stay under the limit.
-        _reduce_dtype = (
-            torch.bfloat16
-            if os.environ.get("EZPZ_REDUCE_DTYPE", "fp32").lower() in ("bf16", "bfloat16")
-            else torch.float32
-        )
+        # stay under the limit. Validated against an explicit set: a typo
+        # silently falling back to fp32 would re-trigger the very CCL
+        # failure this escape hatch exists to avoid, so raise instead.
+        _reduce_dtype_env = os.environ.get("EZPZ_REDUCE_DTYPE", "fp32")
+        _reduce_dtype_key = _reduce_dtype_env.lower()
+        if _reduce_dtype_key == "fp32":
+            _reduce_dtype = torch.float32
+        elif _reduce_dtype_key in ("bf16", "bfloat16"):
+            _reduce_dtype = torch.bfloat16
+        else:
+            raise ValueError(
+                f"Invalid EZPZ_REDUCE_DTYPE={_reduce_dtype_env!r}. Expected "
+                "one of: 'fp32', 'bf16', 'bfloat16' (case-insensitive)."
+            )
         mp_config = MixedPrecisionPolicy(
             param_dtype=torch.bfloat16,
             reduce_dtype=_reduce_dtype,
@@ -1987,12 +1995,13 @@ def train(
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
-        # Disable cross-rank history aggregation while profiling — the
-        # all-gather of per-rank metrics perturbs the very step times the
-        # profiler is measuring.
+        # Disable cross-rank history aggregation while profiling (either
+        # profiler) — the all-gather of per-rank metrics perturbs the very
+        # step times the profiler is measuring.
         distributed_history=(
             1 < world_size <= 384
             and not getattr(args, "pytorch_profiler", False)
+            and not getattr(args, "pyinstrument_profiler", False)
         ),
     )
 

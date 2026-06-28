@@ -437,12 +437,13 @@ def fsdp_main(args: argparse.Namespace) -> None:
         jsonl_path=metrics_path,
         project_name=WBPROJ_NAME,
         config={"args": vars(args), **ezpz.get_dist_info()},
-        # Disable cross-rank history aggregation while profiling — the
-        # all-gather of per-rank metrics perturbs the very step times the
-        # profiler is measuring.
+        # Disable cross-rank history aggregation while profiling (either
+        # profiler) — the all-gather of per-rank metrics perturbs the very
+        # step times the profiler is measuring.
         distributed_history=(
             1 < ezpz.get_world_size() <= 384
             and not getattr(args, "pytorch_profiler", False)
+            and not getattr(args, "pyinstrument_profiler", False)
         ),
     )
 

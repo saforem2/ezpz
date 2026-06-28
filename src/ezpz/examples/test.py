@@ -264,7 +264,9 @@ class Trainer:
             jsonl_path=metrics_path,
             jsonl_overwrite=True,
             distributed_history=(
-                1 < self.world_size <= 384 and not self.config.pytorch_profiler
+                1 < self.world_size <= 384
+                and not self.config.pytorch_profiler
+                and not self.config.pyinstrument_profiler
             ),
             project_name="ezpz.examples.test",
             config=asdict(self.config) | ezpz.get_dist_info(),
