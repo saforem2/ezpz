@@ -159,7 +159,15 @@ def get_profiling_context(
         )
 
     if profiler_type == "pyinstrument":
-        return get_context_manager(rank=ezpz.get_rank(), strict=strict)
+        # Forward outdir + rank_zero_only so pyinstrument honors the
+        # requested output directory and rank gating (previously dropped,
+        # so pyinstrument profiles always landed in the default dir).
+        return get_context_manager(
+            rank=ezpz.get_rank(),
+            outdir=(None if outdir is None else os.fspath(outdir)),
+            strict=strict,
+            rank_zero_only=rank_zero_only,
+        )
 
     raise ValueError(
         f"Invalid profiling type: {profiler_type}. "
@@ -390,10 +398,13 @@ class PyInstrumentProfiler:
                     pyinstrument.Profiler() if (rank is None or rank == 0) else None
                 )
         self._start = time.perf_counter_ns()
-        # outdir = os.getcwd() if outdir is None else outdir
-        # outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir
-        self.outdir = Path(os.getcwd()).joinpath("ezpz_pyinstrument_profiles")
-        # self.outdir = Path(outdir) if outdir is None else Path(outdir)
+        # Honor the requested outdir (callers pass one through
+        # get_context_manager); fall back to cwd when none is given.
+        self.outdir = (
+            Path(outdir)
+            if outdir is not None
+            else Path(os.getcwd()).joinpath("ezpz_pyinstrument_profiles")
+        )
         self.outdir.mkdir(exist_ok=True, parents=True)
 
     def __enter__(self):
