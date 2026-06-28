@@ -551,7 +551,7 @@ def build_generate_parser(
     """Build the CLI argument parser for ``ezpz generate``."""
     parser = argparse.ArgumentParser(
         prog=prog,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
         description="Generate text using a model.",
     )
     parser.add_argument(

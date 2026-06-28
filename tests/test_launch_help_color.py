@@ -34,9 +34,11 @@ def _run_launch_help(env_extra):
 
 def test_launch_help_has_color_with_force_color():
     out = _run_launch_help({"FORCE_COLOR": "1"})
+    assert out.returncode == 0, out.stderr
     assert ESC in out.stdout, "expected ANSI escapes in colorized launch help"
 
 
 def test_launch_help_plain_with_no_color():
     out = _run_launch_help({"NO_COLOR": "1"})
+    assert out.returncode == 0, out.stderr
     assert ESC not in out.stdout, "NO_COLOR must strip ANSI from launch help"
