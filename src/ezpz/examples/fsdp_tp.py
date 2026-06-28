@@ -115,6 +115,7 @@ The remaining comments outline the parallel layout used to combine TP/SP with FS
 import os
 import sys
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import json
 import logging
 import time
@@ -695,7 +696,7 @@ def parse_args(argv: Optional[list[str]] = None):
         argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="2D Parallel Training",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
     )
     parser.add_argument(
         "--dim",

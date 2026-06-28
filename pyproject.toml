@@ -54,6 +54,7 @@ ezpz-generate-tui = "ezpz.examples.generate_tui:main" # XXX: Use `ezpz generate 
 vit = ["timm"]
 mpi = ["mpi4py"]
 hf = ["accelerate"]
+cli = ["rich-argparse>=1.8.0"]
 # xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
 # xpu = ["pytorch-triton-xpu"]
 torch = ["torch", "torchaudio", "torchvision", "torchdata", "torchcomms"]
@@ -85,6 +86,7 @@ dev = [
   "pudb",
   "pynvim",
   "pyright",
+  "rich-argparse>=1.8.0",
   "ruff",
   "tensorboard",
   # "hydra-colorlog",

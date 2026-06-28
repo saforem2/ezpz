@@ -12,6 +12,7 @@ flags and their current defaults.
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DistributedSampler, DataLoader
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import json
 import os
 from pathlib import Path
@@ -542,7 +543,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="PyTorch MNIST Example using FSDP",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
     )
     parser.add_argument(
         "--num-workers",
