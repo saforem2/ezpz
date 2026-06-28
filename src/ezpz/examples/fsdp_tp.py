@@ -446,13 +446,22 @@ def _cross_entropy_chunked(
     """Mean-reduced cross-entropy computed over row chunks.
 
     Mathematically identical to ``_cross_entropy_eager`` (mean over the
-    non-ignored tokens), but only one ``chunk_size``-row block of logits
-    (and its gradient) is materialized at a time, bounding the backward
-    transient by ``chunk_size * vocab`` instead of ``B*T * vocab``.
+    non-ignored tokens). We accumulate the SUM of per-token losses across
+    chunks and divide by the total valid-token count once, so the result
+    matches mean reduction exactly (autograd handles the constant scale
+    through the division).
 
-    We accumulate the SUM of per-token losses across chunks and divide by
-    the total valid-token count once, so the result matches mean reduction
-    exactly (autograd handles the constant scale through the division).
+    .. warning::
+        This chunks only the **forward** pass. Because every chunk feeds a
+        single autograd graph over the full ``flat_logits``, ``backward()``
+        still materializes the entire ``(B*T, vocab)`` logits gradient at
+        once — it does NOT bound the backward transient. Measured on
+        agpt-2b (bs=2, seq=8192, vocab=256K) this OOMs in ``loss.backward()``
+        (~15.6 GiB logits grad) where ``--loss-impl=compiled`` fits. Prefer
+        ``compiled`` for large-vocab models; ``chunked`` only meaningfully
+        helps the forward transient and is not a backward-memory lever.
+        (A true backward bound would need a custom ``autograd.Function`` or
+        activation checkpointing around the per-chunk CE.)
     """
     flat_logits = logits.reshape(-1, logits.size(-1))
     flat_labels = labels.reshape(-1)
