@@ -65,7 +65,7 @@ from ezpz.configs import (
     HfModelArguments,
     HfProfileArguments,
 )
-from ezpz.profile import get_profiling_context
+from ezpz.profile import profiling_context_from_args
 
 logger = ezpz.get_logger(__name__)
 
@@ -94,26 +94,11 @@ class ProfilerCallback(TrainerCallback):
         self._profiler = None
 
     def on_train_begin(self, args, state, control, **kwargs):
-        profiler_type = (
-            "torch" if self._args.pytorch_profiler else "pyinstrument"
-        )
-        self._cm = get_profiling_context(
-            profiler_type=profiler_type,
-            wait=self._args.pytorch_profiler_wait,
-            warmup=self._args.pytorch_profiler_warmup,
-            active=self._args.pytorch_profiler_active,
-            repeat=self._args.pytorch_profiler_repeat,
-            rank_zero_only=self._args.rank_zero_only,
-            record_shapes=self._args.record_shapes,
-            with_stack=self._args.with_stack,
-            with_flops=self._args.with_flops,
-            with_modules=self._args.with_modules,
-            acc_events=self._args.acc_events,
-            profile_memory=self._args.profile_memory,
-            outdir=self._outdir,
-            # pyinstrument opt-in is the flag itself, not an env var.
-            strict=self._args.pytorch_profiler,
-        )
+        # Delegate profiler-type selection + strictness/rank-zero semantics
+        # to the shared adapter (HfProfileArguments exposes the same field
+        # names the namespace adapter reads), so this stays aligned with
+        # the other examples and only owns the Trainer lifecycle.
+        self._cm = profiling_context_from_args(self._args, outdir=self._outdir)
         # __enter__ returns the torch profiler (has .step()) or the
         # pyinstrument wrapper / nullcontext target (None) — store it.
         self._profiler = self._cm.__enter__()

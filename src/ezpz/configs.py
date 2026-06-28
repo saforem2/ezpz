@@ -986,7 +986,9 @@ class HfProfileArguments:
         metadata={"help": "Enable the pyinstrument statistical profiler."},
     )
     rank_zero_only: bool = field(
-        default=True,
+        # Match add_profiling_args' --rank-zero-only default (False) so HF
+        # profiling behavior doesn't diverge from the other examples.
+        default=False,
         metadata={"help": "Only run the profiler on global rank 0."},
     )
     pytorch_profiler_wait: int = field(
