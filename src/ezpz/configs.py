@@ -979,7 +979,14 @@ class HfProfileArguments:
 
     pytorch_profiler: bool = field(
         default=False,
-        metadata={"help": "Enable the torch profiler (chrome traces)."},
+        # Expose the same -p/--profile spelling add_profiling_args gives the
+        # other examples. HfArgumentParser only derives --pytorch-profiler
+        # from the field name; aliases adds the documented shared flag so
+        # `--profile`/`-p` aren't rejected here.
+        metadata={
+            "help": "Enable the torch profiler (chrome traces).",
+            "aliases": ["--profile", "-p"],
+        },
     )
     pyinstrument_profiler: bool = field(
         default=False,
