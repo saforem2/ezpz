@@ -68,6 +68,7 @@ Help output (``python3 -m ezpz.examples.vit --help``):
 """
 
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import functools
 import json
 import math
@@ -446,7 +447,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.vit",
         description="Train a simple ViT",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
     )
     parser.add_argument(
         "--img_size",

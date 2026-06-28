@@ -21,6 +21,7 @@ generated text.  Outputs go to ``outputs/ezpz.examples.inference/<ts>/``:
 from __future__ import annotations
 
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import json
 import time
 from pathlib import Path
@@ -39,7 +40,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse inference command-line arguments."""
     parser = argparse.ArgumentParser(
         prog="ezpz.examples.inference",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
         description=(
             "Distributed inference over a HuggingFace model + dataset. "
             "Three modes: --mode benchmark (throughput), generate "
