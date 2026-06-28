@@ -124,3 +124,30 @@ class TestProfilingContextFromArgs:
             SimpleNamespace(), outdir="/tmp"
         )
         assert isinstance(cm, nullcontext)
+
+
+@pytest.mark.skipif(not PROFILE_AVAILABLE, reason="ezpz.profile not available")
+class TestTableSortKey:
+    """Regression for the torch-profiler trace_handler sort key.
+
+    The table can only be sorted by a column the profiler records
+    (self_{cpu,cuda,xpu}_time_total). get_torch_device_type() can return
+    "mps" (or another accelerator we don't add as a ProfilerActivity), and
+    sort_by="self_mps_time_total" raised AttributeError in
+    key_averages().table() (the original crash on Apple Silicon).
+    """
+
+    def test_mps_falls_back_to_cpu(self):
+        # The exact crash case: must NOT produce self_mps_time_total.
+        assert profile._table_sort_key("mps") == "self_cpu_time_total"
+
+    def test_cpu(self):
+        assert profile._table_sort_key("cpu") == "self_cpu_time_total"
+
+    def test_cuda_and_xpu_keep_their_column(self):
+        assert profile._table_sort_key("cuda") == "self_cuda_time_total"
+        assert profile._table_sort_key("xpu") == "self_xpu_time_total"
+
+    def test_unknown_device_falls_back_to_cpu(self):
+        # Any future/unprofiled accelerator string must be safe.
+        assert profile._table_sort_key("privateuseone") == "self_cpu_time_total"

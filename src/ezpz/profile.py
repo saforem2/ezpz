@@ -56,6 +56,23 @@ logger = logging.getLogger(__name__)
 from contextlib import AbstractContextManager, nullcontext
 
 
+def _table_sort_key(device_type: str) -> str:
+    """Pick a valid ``key_averages().table(sort_by=...)`` column.
+
+    The torch profiler only records ``self_{cpu,cuda,xpu}_time_total`` (the
+    only device activities :func:`get_torch_profiler` adds).
+    :func:`ezpz.get_torch_device_type` can return ``"mps"`` (or another
+    accelerator we don't profile), for which no ``self_<dev>_time_total``
+    column exists -> ``AttributeError`` in ``key_averages().table()``. Map
+    only cuda/xpu to their column; everything else (mps, cpu, ...) sorts by
+    CPU. Pure string map (no ``is_available()`` re-probe, which can itself
+    raise on some accelerator stacks).
+    """
+    if device_type in ("cuda", "xpu"):
+        return f"self_{device_type}_time_total"
+    return "self_cpu_time_total"
+
+
 def get_profiling_context(
     profiler_type: str,
     wait: int,
@@ -119,13 +136,8 @@ def get_profiling_context(
             """
             Callback function to handle the trace when it is ready.
             """
-            logger.info(
-                "\n"
-                + p.key_averages().table(
-                    sort_by=(f"self_{ezpz.get_torch_device_type()}_time_total"),
-                    row_limit=-1,
-                )
-            )
+            sort_key = _table_sort_key(ezpz.get_torch_device_type())
+            logger.info("\n" + p.key_averages().table(sort_by=sort_key, row_limit=-1))
             fname: str = "-".join(
                 [
                     "torch-profiler",
