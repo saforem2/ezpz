@@ -38,7 +38,7 @@ def launch_cmd(ctx: click.Context, args: tuple[str, ...]) -> None:
         parser = build_launch_parser(
             prog="ezpz-launch" if _invoked_as_ezpz_launch() else "ezpz launch"
         )
-        click.echo(parser.format_help().rstrip())
+        click.echo(parser.format_help().rstrip(), color=True)
         ctx.exit(0)
     from ezpz import launch as launch_module
 
