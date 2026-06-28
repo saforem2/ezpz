@@ -10,6 +10,13 @@ Running ``python3 -m ezpz.examples.minimal --help`` prints:
     usage: ezpz.examples.minimal --help
     (Set env vars such as PRINT_ITERS=100 TRAIN_ITERS=1000 INPUT_SIZE=128 OUTPUT_SIZE=128 LAYER_SIZES=\"128,256,128\" before calling ezpz launch)
 
+This example is intentionally profiler-free: it is configured purely via
+environment variables (no argparse), so it stays the smallest possible
+distributed smoke test. For ``--profile`` / ``--pyinstrument-profiler``
+support, use any of the other examples (``test``, ``fsdp_tp``, ``fsdp``,
+``vit``, ``diffusion``, ``hf_trainer``), which share the flag-set from
+:func:`ezpz.cli.flags.add_profiling_args`.
+
 """
 
 import os

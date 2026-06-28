@@ -56,6 +56,23 @@ logger = logging.getLogger(__name__)
 from contextlib import AbstractContextManager, nullcontext
 
 
+def _table_sort_key(device_type: str) -> str:
+    """Pick a valid ``key_averages().table(sort_by=...)`` column.
+
+    The torch profiler only records ``self_{cpu,cuda,xpu}_time_total`` (the
+    only device activities :func:`get_torch_profiler` adds).
+    :func:`ezpz.get_torch_device_type` can return ``"mps"`` (or another
+    accelerator we don't profile), for which no ``self_<dev>_time_total``
+    column exists -> ``AttributeError`` in ``key_averages().table()``. Map
+    only cuda/xpu to their column; everything else (mps, cpu, ...) sorts by
+    CPU. Pure string map (no ``is_available()`` re-probe, which can itself
+    raise on some accelerator stacks).
+    """
+    if device_type in ("cuda", "xpu"):
+        return f"self_{device_type}_time_total"
+    return "self_cpu_time_total"
+
+
 def get_profiling_context(
     profiler_type: str,
     wait: int,
@@ -119,13 +136,8 @@ def get_profiling_context(
             """
             Callback function to handle the trace when it is ready.
             """
-            logger.info(
-                "\n"
-                + p.key_averages().table(
-                    sort_by=(f"self_{ezpz.get_torch_device_type()}_time_total"),
-                    row_limit=-1,
-                )
-            )
+            sort_key = _table_sort_key(ezpz.get_torch_device_type())
+            logger.info("\n" + p.key_averages().table(sort_by=sort_key, row_limit=-1))
             fname: str = "-".join(
                 [
                     "torch-profiler",
@@ -159,11 +171,89 @@ def get_profiling_context(
         )
 
     if profiler_type == "pyinstrument":
-        return get_context_manager(rank=ezpz.get_rank(), strict=strict)
+        # Forward outdir + rank_zero_only so pyinstrument honors the
+        # requested output directory and rank gating (previously dropped,
+        # so pyinstrument profiles always landed in the default dir).
+        return get_context_manager(
+            rank=ezpz.get_rank(),
+            outdir=(None if outdir is None else os.fspath(outdir)),
+            strict=strict,
+            rank_zero_only=rank_zero_only,
+        )
 
     raise ValueError(
         f"Invalid profiling type: {profiler_type}. "
         "Must be one of ['torch', 'pyinstrument']"
+    )
+
+
+def profiling_context_from_args(
+    args: Any,
+    outdir: Optional[str | Path | os.PathLike] = None,
+) -> AbstractContextManager:
+    """Build a profiling context manager from parsed CLI ``args``.
+
+    Thin adapter over :func:`get_profiling_context` that maps the shared
+    profiler flag-set (see :func:`ezpz.cli.flags.add_profiling_args`) onto
+    the context-manager call, so every ``ezpz.examples.*`` module wires
+    profiling the same way:
+
+    .. code-block:: python
+
+        with profiling_context_from_args(args, outdir) as prof:
+            train(..., profiler=prof)
+        # in the loop:  if prof is not None: prof.step()
+
+    Returns a :func:`contextlib.nullcontext` (whose ``as`` target is
+    ``None``) when neither ``--profile`` nor ``--pyinstrument-profiler``
+    was passed (and ``PYINSTRUMENT_PROFILER`` is unset), so the default
+    code path is completely unaffected.
+
+    ``getattr`` defaults mirror :func:`add_profiling_args` so this is
+    safe to call even on a namespace that only set a subset of the flags.
+
+    Backward-compatible activation: the ``PYINSTRUMENT_PROFILER`` env var
+    also turns on the pyinstrument profiler even with no flag, matching
+    the long-standing :func:`get_context_manager` ``strict`` behavior.
+
+    Args:
+        args: Parsed argparse namespace (or any object exposing the
+            profiler attributes as fields).
+        outdir: Directory for profiler output. Defaults to
+            ``get_profiling_context``'s own fallback when ``None``.
+
+    Returns:
+        AbstractContextManager: torch / pyinstrument profiler context, or
+        ``nullcontext()`` when profiling was not requested.
+    """
+    pyinstrument = bool(getattr(args, "pyinstrument_profiler", False))
+    pytorch = bool(getattr(args, "pytorch_profiler", False))
+    # Honor the legacy env-var opt-in so callers that relied on
+    # PYINSTRUMENT_PROFILER=1 (no flag) keep working.
+    if os.environ.get("PYINSTRUMENT_PROFILER") is not None:
+        pyinstrument = True
+    if not (pyinstrument or pytorch):
+        return nullcontext()
+    return get_profiling_context(
+        # torch profiler wins if both flags are somehow set: it produces
+        # the per-op chrome trace that the schedule flags are about.
+        profiler_type=("torch" if pytorch else "pyinstrument"),
+        wait=int(getattr(args, "pytorch_profiler_wait", 1)),
+        warmup=int(getattr(args, "pytorch_profiler_warmup", 2)),
+        active=int(getattr(args, "pytorch_profiler_active", 3)),
+        repeat=int(getattr(args, "pytorch_profiler_repeat", 5)),
+        rank_zero_only=bool(getattr(args, "rank_zero_only", False)),
+        record_shapes=bool(getattr(args, "record_shapes", True)),
+        with_stack=bool(getattr(args, "with_stack", True)),
+        with_flops=bool(getattr(args, "with_flops", True)),
+        with_modules=bool(getattr(args, "with_modules", True)),
+        acc_events=bool(getattr(args, "acc_events", False)),
+        profile_memory=bool(getattr(args, "profile_memory", True)),
+        outdir=outdir,
+        # The torch path ignores `strict`; for pyinstrument, passing
+        # `--pyinstrument-profiler` is itself the opt-in, so don't also
+        # require the PYINSTRUMENT_PROFILER env var.
+        strict=not pyinstrument,
     )
 
 
@@ -320,10 +410,13 @@ class PyInstrumentProfiler:
                     pyinstrument.Profiler() if (rank is None or rank == 0) else None
                 )
         self._start = time.perf_counter_ns()
-        # outdir = os.getcwd() if outdir is None else outdir
-        # outdir = ezpz.OUTPUTS_DIR.as_posix() if outdir is None else outdir
-        self.outdir = Path(os.getcwd()).joinpath("ezpz_pyinstrument_profiles")
-        # self.outdir = Path(outdir) if outdir is None else Path(outdir)
+        # Honor the requested outdir (callers pass one through
+        # get_context_manager); fall back to cwd when none is given.
+        self.outdir = (
+            Path(outdir)
+            if outdir is not None
+            else Path(os.getcwd()).joinpath("ezpz_pyinstrument_profiles")
+        )
         self.outdir.mkdir(exist_ok=True, parents=True)
 
     def __enter__(self):

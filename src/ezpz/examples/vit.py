@@ -82,9 +82,11 @@ import ezpz
 import ezpz.distributed
 
 # from TORCH_DTYPES_MAP
+from ezpz.cli.flags import add_profiling_args
 from ezpz.data.vision import get_fake_data, get_mnist
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
+from ezpz.profile import profiling_context_from_args
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.models.vit.attention import AttentionBlock
@@ -615,6 +617,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         choices=list(ezpz.distributed.FSDP_SHARDING_STRATEGIES),
         help="FSDP sharding strategy",
     )
+    # Shared profiler flags (--profile / --pyinstrument-profiler / etc.),
+    # consumed by profiling_context_from_args around the training loop.
+    add_profiling_args(parser)
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     apply_dataset_overrides(args, argv)
@@ -641,6 +646,7 @@ def train_fn(
     block_fn: Any,
     args: argparse.Namespace,
     dataset: Optional[str] = "fake",
+    profiler: Optional[Any] = None,
 ) -> ezpz.History:
     """Train the Vision Transformer on fake or MNIST data.
 
@@ -648,6 +654,9 @@ def train_fn(
         block_fn: Attention block constructor with attn_fn injected.
         args: Training hyperparameters.
         dataset: Dataset choice, either ``fake`` or ``mnist``.
+        profiler: Optional active profiler from
+            :func:`ezpz.profile.profiling_context_from_args`. When
+            non-None, ``profiler.step()`` is called once per training step.
 
     Returns:
         History of training metrics.
@@ -886,6 +895,10 @@ def train_fn(
             lr_scheduler.step()
         ezpz.distributed.synchronize()
         t4 = time.perf_counter()
+        # Advance the torch.profiler schedule once per optimizer step.
+        # No-op when not profiling (profiler is None).
+        if profiler is not None:
+            profiler.step()
         if step >= warmup_iters:
             loss_value = float(loss.detach().item())
             acc_value = float(acc.detach().item())
@@ -1048,7 +1061,11 @@ def main(args: argparse.Namespace):
         raise ValueError(f"Unknown attention type: {args.attn_type}")
     logger.info(f"Using AttentionBlock Attention with {args.compile=}")
     train_start = time.perf_counter()
-    history, outdir = train_fn(block_fn, args=args, dataset=args.dataset)
+    # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
+    with profiling_context_from_args(args) as prof:
+        history, outdir = train_fn(
+            block_fn, args=args, dataset=args.dataset, profiler=prof
+        )
     train_end = time.perf_counter()
     t1 = time.perf_counter()
     timings = {

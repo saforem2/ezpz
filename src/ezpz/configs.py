@@ -964,6 +964,82 @@ class HfDataTrainingArguments:
             ], "`validation_file` should be a csv, a json or a txt file."
 
 
+@dataclass
+class HfProfileArguments:
+    """Profiler controls for the HuggingFace Trainer example.
+
+    Mirrors the subset of :func:`ezpz.cli.flags.add_profiling_args` that
+    applies to a Trainer-owned loop (no `--no-*` toggles — HF's
+    ``HfArgumentParser`` renders ``bool`` fields as a single store-true
+    flag). Field names match the argparse spellings used by the other
+    ``ezpz.examples.*`` modules so semantics carry over; consumed by
+    ``ezpz.examples.hf_trainer.ProfilerCallback`` via
+    :func:`ezpz.profile.get_profiling_context`.
+    """
+
+    pytorch_profiler: bool = field(
+        default=False,
+        # Expose the same -p/--profile spelling add_profiling_args gives the
+        # other examples. HfArgumentParser only derives --pytorch-profiler
+        # from the field name; aliases adds the documented shared flag so
+        # `--profile`/`-p` aren't rejected here.
+        metadata={
+            "help": "Enable the torch profiler (chrome traces).",
+            "aliases": ["--profile", "-p"],
+        },
+    )
+    pyinstrument_profiler: bool = field(
+        default=False,
+        metadata={"help": "Enable the pyinstrument statistical profiler."},
+    )
+    rank_zero_only: bool = field(
+        # Match add_profiling_args' --rank-zero-only default (False) so HF
+        # profiling behavior doesn't diverge from the other examples.
+        default=False,
+        metadata={"help": "Only run the profiler on global rank 0."},
+    )
+    pytorch_profiler_wait: int = field(
+        default=1,
+        metadata={"help": "torch.profiler schedule: steps to wait."},
+    )
+    pytorch_profiler_warmup: int = field(
+        default=2,
+        metadata={"help": "torch.profiler schedule: warmup steps."},
+    )
+    pytorch_profiler_active: int = field(
+        default=3,
+        metadata={"help": "torch.profiler schedule: active (recorded) steps."},
+    )
+    pytorch_profiler_repeat: int = field(
+        default=5,
+        metadata={"help": "torch.profiler schedule: schedule-cycle repeats."},
+    )
+    profile_memory: bool = field(
+        default=True,
+        metadata={"help": "Record memory allocations in the torch profiler."},
+    )
+    record_shapes: bool = field(
+        default=True,
+        metadata={"help": "Record tensor shapes in the torch profiler."},
+    )
+    with_stack: bool = field(
+        default=True,
+        metadata={"help": "Record source stacks in the torch profiler."},
+    )
+    with_flops: bool = field(
+        default=True,
+        metadata={"help": "Estimate FLOPs in the torch profiler."},
+    )
+    with_modules: bool = field(
+        default=True,
+        metadata={"help": "Record module hierarchy in the torch profiler."},
+    )
+    acc_events: bool = field(
+        default=False,
+        metadata={"help": "Accumulate events across schedule cycles."},
+    )
+
+
 def print_config_tree(
     cfg: DictConfig,
     resolve: bool = True,

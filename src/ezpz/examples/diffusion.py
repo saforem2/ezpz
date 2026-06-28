@@ -66,7 +66,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from contextlib import nullcontext
 import ezpz
 import ezpz.distributed
@@ -79,9 +79,11 @@ import torch.functional as F
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 # from torch.distributed.fsdp import MixedPrecision
 
+from ezpz.cli.flags import add_profiling_args
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
 from ezpz.flops import compute_mfu, try_estimate
+from ezpz.profile import profiling_context_from_args
 
 logger = ezpz.get_logger(__name__)
 
@@ -454,8 +456,14 @@ def train(
     steps: int,
     outdir: Path | os.PathLike | str,
     lr: float = 1e-3,
+    profiler: Optional[Any] = None,
 ) -> tuple[ezpz.History, torch.nn.Module]:
-    """Train the diffusion text model for a fixed number of steps."""
+    """Train the diffusion text model for a fixed number of steps.
+
+    When ``profiler`` is non-None (from
+    :func:`ezpz.profile.profiling_context_from_args`), ``profiler.step()``
+    is called once per training step to advance the profiler schedule.
+    """
     device = ezpz.get_torch_device(as_torch_device=True)
     # if not isinstance(model, (DistributeFSDP):
     model.to(device)
@@ -498,8 +506,13 @@ def train(
         report_enabled=True,
         jsonl_path=metrics_path,
         jsonl_overwrite=True,
+        # Disable cross-rank history aggregation while profiling (either
+        # profiler) — the all-gather of per-rank metrics perturbs the very
+        # step times the profiler is measuring.
         distributed_history=(
-            1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
+            1 < ezpz.get_world_size() <= 384
+            and not getattr(args, "pytorch_profiler", False)
+            and not getattr(args, "pyinstrument_profiler", False)
         ),
     )
 
@@ -546,6 +559,10 @@ def train(
         optim.zero_grad(set_to_none=True)
         t3 = time.perf_counter()
         ezpz.distributed.synchronize()
+        # Advance the torch.profiler schedule once per optimizer step.
+        # No-op when not profiling (profiler is None).
+        if profiler is not None:
+            profiler.step()
 
         if step % args.log_freq == 0 or step == steps - 1:
             train_metrics = {
@@ -765,6 +782,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "extensive kernel search — slow startup, fastest steady state."
         ),
     )
+    # Shared profiler flags (--profile / --pyinstrument-profiler / etc.),
+    # consumed by profiling_context_from_args around the training loop.
+    add_profiling_args(parser)
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     return args
@@ -825,15 +845,18 @@ def main(args: argparse.Namespace) -> None:
     model.to(device)
 
     train_start = time.perf_counter()
-    history, wrapped_model = train(
-        model=model,
-        loader=loader,
-        schedule=schedule,
-        args=args,
-        steps=args.train_steps,
-        lr=args.lr,
-        outdir=outdir,
-    )
+    # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
+    with profiling_context_from_args(args, outdir) as prof:
+        history, wrapped_model = train(
+            model=model,
+            loader=loader,
+            schedule=schedule,
+            args=args,
+            steps=args.train_steps,
+            lr=args.lr,
+            outdir=outdir,
+            profiler=prof,
+        )
     train_end = time.perf_counter()
 
     samples = generate_text(

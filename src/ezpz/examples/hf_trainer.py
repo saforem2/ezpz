@@ -60,9 +60,58 @@ class MemoryMetricsCallback(TrainerCallback):
 
 import ezpz
 import ezpz.configs
-from ezpz.configs import HfDataTrainingArguments, HfModelArguments
+from ezpz.configs import (
+    HfDataTrainingArguments,
+    HfModelArguments,
+    HfProfileArguments,
+)
+from ezpz.profile import profiling_context_from_args
 
 logger = ezpz.get_logger(__name__)
+
+
+class ProfilerCallback(TrainerCallback):
+    """Drive an ezpz profiler across a HuggingFace Trainer run.
+
+    HF Trainer owns its training loop, so there's no place to put a
+    ``with profiling_context_from_args(...)`` block + ``profiler.step()``
+    the way the other ``ezpz.examples.*`` modules do. The equivalent
+    extension points are Trainer callbacks:
+
+    - ``on_train_begin``  → enter the context manager (start profiling)
+    - ``on_step_end``     → ``profiler.step()`` (advance torch schedule)
+    - ``on_train_end``    → exit the context manager (flush traces)
+
+    Built from :class:`ezpz.configs.HfProfileArguments`, whose field
+    names match the shared profiler flag-set. Register only when a
+    profile flag is set (see ``main``); a no-op otherwise.
+    """
+
+    def __init__(self, profile_args: HfProfileArguments, outdir=None):
+        self._args = profile_args
+        self._outdir = outdir
+        self._cm = None
+        self._profiler = None
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        # Delegate profiler-type selection + strictness/rank-zero semantics
+        # to the shared adapter (HfProfileArguments exposes the same field
+        # names the namespace adapter reads), so this stays aligned with
+        # the other examples and only owns the Trainer lifecycle.
+        self._cm = profiling_context_from_args(self._args, outdir=self._outdir)
+        # __enter__ returns the torch profiler (has .step()) or the
+        # pyinstrument wrapper / nullcontext target (None) — store it.
+        self._profiler = self._cm.__enter__()
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if self._profiler is not None and hasattr(self._profiler, "step"):
+            self._profiler.step()
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self._cm is not None:
+            self._cm.__exit__(None, None, None)
+            self._cm = None
+            self._profiler = None
 
 
 def _as_bool(value: Any, *, default: bool = True) -> bool:
@@ -204,7 +253,12 @@ def parse_args() -> dict:
     #   We now keep distinct sets of args, for a cleaner separation of concerns.
     rank = ezpz.get_rank()
     parser = HfArgumentParser(
-        (HfModelArguments, HfDataTrainingArguments, TrainingArguments)  # type:ignore
+        (  # type:ignore
+            HfModelArguments,
+            HfDataTrainingArguments,
+            TrainingArguments,
+            HfProfileArguments,
+        )
     )
     try:
         transformers_major = int(transformers.__version__.split(".", 1)[0])
@@ -239,15 +293,15 @@ def parse_args() -> dict:
             )
             rewrites.extend(json_rewrites)
             overwrite_output_dir = json_overwrite_output_dir
-            model_args, data_args, training_args = parser.parse_dict(
-                normalized_json_args
+            model_args, data_args, training_args, profile_args = (
+                parser.parse_dict(normalized_json_args)
             )
         else:
-            model_args, data_args, training_args = parser.parse_json_file(
-                json_file=os.path.abspath(cli_args[0])
+            model_args, data_args, training_args, profile_args = (
+                parser.parse_json_file(json_file=os.path.abspath(cli_args[0]))
             )
     else:
-        model_args, data_args, training_args = (
+        model_args, data_args, training_args, profile_args = (
             parser.parse_args_into_dataclasses(args=cli_args)
         )
 
@@ -305,6 +359,7 @@ def parse_args() -> dict:
         "model": model_args,
         "data": data_args,
         "training": training_args,
+        "profile": profile_args,
         "overwrite_output_dir": overwrite_output_dir,
     }
 
@@ -473,11 +528,13 @@ def main() -> int:
 
     args = parse_args()
     t_setup = time.perf_counter()
-    # args includes model/data/training dataclasses plus overwrite_output_dir.
+    # args includes model/data/training/profile dataclasses plus
+    # overwrite_output_dir.
     assert "data" in args and "model" in args and "training" in args
     data_args: HfDataTrainingArguments = args["data"]
     model_args: HfModelArguments = args["model"]
     training_args: TrainingArguments = args["training"]
+    profile_args: HfProfileArguments = args["profile"]
     overwrite_output_dir = bool(args.get("overwrite_output_dir", False))
 
     # Initialise wandb early so console capture covers the full run.
@@ -985,6 +1042,16 @@ def main() -> int:
     # callbacks the Trainer already added by default (or that a forked
     # version of this script might want to layer on top).
     trainer.add_callback(MemoryMetricsCallback())
+    # Optional profiler, driven across the Trainer-owned loop via callback
+    # hooks. Only registered when --profile / --pyinstrument-profiler is
+    # set, so the default path is untouched.
+    if profile_args.pytorch_profiler or profile_args.pyinstrument_profiler:
+        trainer.add_callback(
+            ProfilerCallback(
+                profile_args,
+                outdir=getattr(training_args, "output_dir", None),
+            )
+        )
 
     # if wandb is not None and getattr(wandb, "run", None) is not None:
     #     # from transformers.integrations.integration_utils import W

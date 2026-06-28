@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from typing import Any, Optional
 
 import ezpz
 
@@ -28,10 +29,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
+from ezpz.cli.flags import add_profiling_args
 from ezpz.flops import compute_mfu, try_estimate
 from ezpz.models import summarize_model
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
+from ezpz.profile import profiling_context_from_args
 
 logger = ezpz.get_logger(__name__)
 
@@ -175,6 +178,7 @@ def train(
     optimizer: torch.optim.Optimizer,
     epoch: int,
     sampler: DistributedSampler | None = None,
+    profiler: Optional[Any] = None,
 ) -> dict:
     """One epoch of training and loss aggregation across ranks.
 
@@ -184,6 +188,10 @@ def train(
         optimizer: Optimizer instance.
         epoch: Current epoch index.
         sampler: Optional distributed sampler to set epoch.
+        profiler: Optional active profiler from
+            :func:`ezpz.profile.profiling_context_from_args`. When
+            non-None, ``profiler.step()`` is called once per batch so the
+            schedule advances across the whole (multi-epoch) run.
 
     Returns:
         Dict with epoch, wall-clock duration, and averaged train loss.
@@ -217,6 +225,10 @@ def train(
         local_loss[0] += loss.item()
         local_loss[1] += len(batch)
         num_batches += 1
+        # Advance the torch.profiler schedule once per optimizer step.
+        # No-op when not profiling (profiler is None).
+        if profiler is not None:
+            profiler.step()
     ezpz.distributed.synchronize()
     t1 = time.perf_counter()
     epoch_dt = t1 - t0
@@ -425,38 +437,48 @@ def fsdp_main(args: argparse.Namespace) -> None:
         jsonl_path=metrics_path,
         project_name=WBPROJ_NAME,
         config={"args": vars(args), **ezpz.get_dist_info()},
+        # Disable cross-rank history aggregation while profiling (either
+        # profiler) — the all-gather of per-rank metrics perturbs the very
+        # step times the profiler is measuring.
         distributed_history=(
-            1 < ezpz.get_world_size() <= 384  # and not config.pytorch_profiler
+            1 < ezpz.get_world_size() <= 384
+            and not getattr(args, "pytorch_profiler", False)
+            and not getattr(args, "pyinstrument_profiler", False)
         ),
     )
 
     start = time.perf_counter()
-    for epoch in range(1, args.epochs + 1):
-        train_metrics = train(
-            model=model,
-            train_loader=train_loader,
-            optimizer=optimizer,
-            epoch=epoch,
-            sampler=data["train"]["sampler"],
-        )
-        test_metrics = test(model, test_loader)
-        scheduler.step()
-        merged = {**train_metrics, **test_metrics}
-        if _model_flops > 0:
-            # FSDP epoch loop reports per-epoch averages, so MFU here
-            # is averaged over the whole epoch (epoch_dt / num_batches),
-            # not per-step.  Smooths out warmup spikes but obscures
-            # straggler effects compared to the per-step MFU other
-            # examples report.
-            dt_step = merged.get("dt_per_step", 0.0)
-            if dt_step > 0:
-                merged["tflops"] = _model_flops / dt_step / 1e12
-                merged["mfu"] = compute_mfu(_model_flops, dt_step)
-        # Device memory: per-EPOCH peak (we don't reset between batches),
-        # so mem_peak_* here captures the high-water mark across the
-        # whole training+eval epoch.
-        merged |= ezpz.get_memory_metrics()
-        logger.info(history.update(merged))
+    # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
+    # The schedule spans the whole run; train() steps it once per batch.
+    prof_ctx = profiling_context_from_args(args, outdir)
+    with prof_ctx as prof:
+        for epoch in range(1, args.epochs + 1):
+            train_metrics = train(
+                model=model,
+                train_loader=train_loader,
+                optimizer=optimizer,
+                epoch=epoch,
+                sampler=data["train"]["sampler"],
+                profiler=prof,
+            )
+            test_metrics = test(model, test_loader)
+            scheduler.step()
+            merged = {**train_metrics, **test_metrics}
+            if _model_flops > 0:
+                # FSDP epoch loop reports per-epoch averages, so MFU here
+                # is averaged over the whole epoch (epoch_dt / num_batches),
+                # not per-step.  Smooths out warmup spikes but obscures
+                # straggler effects compared to the per-step MFU other
+                # examples report.
+                dt_step = merged.get("dt_per_step", 0.0)
+                if dt_step > 0:
+                    merged["tflops"] = _model_flops / dt_step / 1e12
+                    merged["mfu"] = compute_mfu(_model_flops, dt_step)
+            # Device memory: per-EPOCH peak (we don't reset between
+            # batches), so mem_peak_* here captures the high-water mark
+            # across the whole training+eval epoch.
+            merged |= ezpz.get_memory_metrics()
+            logger.info(history.update(merged))
 
     train_end = time.perf_counter()
     logger.info(
@@ -647,6 +669,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "extensive kernel search - slow startup, fastest steady state."
         ),
     )
+    # Shared profiler flags (--profile / --pyinstrument-profiler / etc.),
+    # consumed by profiling_context_from_args around the training loop.
+    add_profiling_args(parser)
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
     return args
