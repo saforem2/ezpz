@@ -2185,16 +2185,21 @@ def train(
             if _model_flops > 0 and dt_step > 0:
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
-            # Throughput. `--batch-size` is the PER-DP-RANK micro-batch, so
-            # tokens processed per rank per step is batch_size * seq_len.
-            #   - train/tps_per_gpu  : per-rank tokens/sec (torchtitan's `tgs`)
-            #   - train/tps          : global tokens/sec across all DP ranks
-            # (dp ranks = world_size / tp; tp ranks process the same tokens).
+            # Throughput. `--batch-size` is the PER-DP-RANK micro-batch and
+            # `local_seq_len` is this rank's (post-SP-slice) sequence length,
+            # so tokens processed per rank per step is batch_size *
+            # local_seq_len.
+            #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
+            #   - train/tps         : global tokens/sec across ALL ranks
+            # Multiply by world_size, not dp_size: under sequence parallelism
+            # each TP rank holds a DISTINCT seq shard (labels are sliced via
+            # _slice_for_sequence_parallel), so the TP ranks process distinct
+            # tokens too. Using dp_size would undercount global tps by ~tp.
+            # At tp=1, world_size == dp_size so this is unchanged.
             if dt_step > 0:
                 tokens_per_rank = args.batch_size * local_seq_len
                 metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
-                dp_size = max(1, world_size // args.tp)
-                metrics["train/tps"] = tokens_per_rank * dp_size / dt_step
+                metrics["train/tps"] = tokens_per_rank * world_size / dt_step
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
