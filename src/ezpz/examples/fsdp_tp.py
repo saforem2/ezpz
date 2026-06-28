@@ -2054,12 +2054,23 @@ def train(
                     attn_labels = _slice_for_sequence_parallel(
                         attn_labels, local_seq_len
                     )
-                labels = labels.clone()
-                labels[attn_labels == 0] = -100
+            # Build a single ignore-mask (attention-pad OR tokenizer-pad) and
+            # apply it with ONE masked_fill, instead of two .clone()s + two
+            # boolean index-assigns. Each .clone() + labels[mask]=-100 was a
+            # separate aten::copy_ per step; this collapses them to one copy.
+            # -100 can't collide with a valid pad_id (>=0), so mask order is
+            # irrelevant. (Profiling: agpt-2b aten::copy_ was ~8.8% of step.)
             pad_id = getattr(dataset, "pad_id", None)
+            ignore_mask = None
+            if attn_mask is not None:
+                ignore_mask = attn_labels == 0
             if pad_id is not None:
-                labels = labels.clone()
-                labels[labels == int(pad_id)] = -100
+                pad_mask = labels == int(pad_id)
+                ignore_mask = (
+                    pad_mask if ignore_mask is None else (ignore_mask | pad_mask)
+                )
+            if ignore_mask is not None:
+                labels = labels.masked_fill(ignore_mask, -100)
             ezpz.distributed.synchronize()
             t1 = perf_counter()
             tp_mod = getattr(ezpz, "tp", None)
