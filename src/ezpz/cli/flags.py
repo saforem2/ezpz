@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import argparse
 
-
-class _RawDescAndDefaultsFormatter(
-    argparse.ArgumentDefaultsHelpFormatter,
-    argparse.RawDescriptionHelpFormatter,
-):
-    """Combine raw multi-line descriptions with auto-appended defaults."""
+from ezpz.cli.help_format import (
+    DefaultsFormatter,
+    RawDescAndDefaultsFormatter,
+)
 
 
 def _non_negative_int(value: str) -> int:
@@ -166,7 +164,7 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz test`` (ezpz.examples.test)."""
     parser = argparse.ArgumentParser(
         prog=prog,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
         description=(
             """
             ezpz test: A simple PyTorch distributed smoke test
@@ -383,7 +381,7 @@ def build_launch_parser(
         #         "\t$ ezpz launch --nproc 8 -x EZPZ_LOG_LEVEL=DEBUG -- python3 my_script.py --my-arg val",
         #     ]
         # )
-        formatter_class=_RawDescAndDefaultsFormatter,
+        formatter_class=RawDescAndDefaultsFormatter,
     )
     parser.add_argument(
         "--print-source",
@@ -536,7 +534,7 @@ def build_doctor_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     """Build the CLI argument parser for ``ezpz doctor``."""
     parser = argparse.ArgumentParser(
         prog=prog,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
         description="Inspect the current environment for ezpz launch readiness.",
     )
     parser.add_argument(
