@@ -81,13 +81,33 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   `max-autotune` for the slowest startup / fastest steady-state. See
   [torch.compile](#torchcompile) for the per-block rationale and the
   `--tp`/`--ac`/`--compile` interaction caveat.
-- **Cross-entropy implementation** — `--loss-impl {eager,chunked,compiled}`
+- **Cross-entropy implementation** —
+  `--loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}`
   (default `eager`). At a large vocab (agpt's 256K) and long sequence, eager
   `F.cross_entropy` materializes a multi-GB `(B·T, vocab)` fp32 logits +
-  gradient transient in backward. `chunked` bounds it to
-  `--loss-chunk-size` rows at a time; `compiled` wraps the CE in
-  `torch.compile` so inductor fuses log-softmax + NLL + backward (what
-  torchtitan does). See [Matching torchtitan](#matching-torchtitan).
+  gradient transient in backward that OOMs even when the model fits. The
+  large-vocab output path is *the* memory bottleneck; pick by need (numbers
+  measured on agpt-2b, tp=1, bs=2, seq=8192):
+    - `eager` — full logits; OOMs at this scale. Small vocab/seq only.
+    - `chunked` — chunks the **forward** only (`--loss-chunk-size`); does
+      **not** bound backward, still OOMs at large vocab. Rarely useful.
+    - `compiled` — `torch.compile` fuses log-softmax + NLL + backward so the
+      full transient never materializes (torchtitan's approach). Fits
+      (~45 GiB) and is the **fastest that fits** (~28% MFU). Best default
+      when it fits + compile works.
+    - `fused-linear` — runs the output projection per row-chunk so the full
+      `(B·T, vocab)` logits/grad are **never built** (Liger/Cut-CE style);
+      bounds **both** the row and vocab dims. **Lowest memory** (~32 GiB,
+      below compiled) at ~24% MFU — trade a little speed for headroom (bigger
+      batch/seq). ezpz `Transformer` + tp=1 only (HF / tp>1 fall back to
+      compiled).
+    - `loss-parallel` — vocab-parallel CE sharding the vocab across TP ranks
+      (each holds `vocab/tp`) via TP all-reduces. Bounds the **vocab** dim;
+      only helps at tp>1 (falls back to eager at tp=1). At tp>1 it is also the
+      **only correct path** (plain CE hits a Tensor/DTensor mismatch on the
+      replicated logits). ~23 GiB/rank, ~34% MFU at tp=2.
+
+  See [Matching torchtitan](#matching-torchtitan).
 - **Activation-memory budget** — `--act-mem-budget <float>` (default `1.0`,
   only active with `--compile`). Sets
   `torch._functorch.config.activation_memory_budget`: `1.0` saves every
@@ -619,7 +639,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS]
                   [--compile]
                   [--compile-mode {default,reduce-overhead,max-autotune}]
                   [--act-mem-budget ACT_MEM_BUDGET]
-                  [--loss-impl {eager,chunked,compiled}]
+                  [--loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}]
                   [--loss-chunk-size LOSS_CHUNK_SIZE]
 
 2D Parallel Training
@@ -798,7 +818,7 @@ options:
                         MemoryBudgetAC sets 0.5). Try 0.5 if you OOM in
                         backward at a batch size that should fit. (default:
                         1.0)
-  --loss-impl {eager,chunked,compiled}
+  --loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}
                         Cross-entropy implementation. `eager` (default) is the
                         plain F.cross_entropy over the full (B*T, vocab)
                         logits — simplest, but at large vocab (e.g. agpt's
