@@ -647,16 +647,28 @@ class Transformer(nn.Module):
             b=cutoff_factor * final_out_std,
         )
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, tokens: torch.Tensor, return_hidden: bool = False
+    ) -> torch.Tensor:
         """
         Perform a forward pass through the Transformer model.
 
         Args:
             tokens (torch.Tensor): Input token indices.
+            return_hidden (bool): When True, return the normalized hidden
+                states ``h`` (shape ``(B, T, dim)``) *before* the output
+                projection, instead of the full ``(B, T, vocab)`` logits.
+                This lets a fused-linear cross-entropy compute
+                ``logits = h @ self.output.weight.T`` in chunks inside the
+                loss, never materializing the full logits/grad tensors
+                (the memory lever for large-vocab models). Default False
+                keeps the original full-logits behavior for every existing
+                caller.
 
         Returns:
-            torch.Tensor: Output logits after applying the Transformer model.
-
+            torch.Tensor: Output logits ``(B, T, vocab)`` (default), or the
+            pre-projection hidden states ``(B, T, dim)`` when
+            ``return_hidden=True``.
         """
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
@@ -666,6 +678,8 @@ class Transformer(nn.Module):
         for layer in self.layers:
             h = layer(h, freqs_cis)
         h = self.norm(h)
+        if return_hidden:
+            return h
         output = self.output(h).float()
         return output
 
