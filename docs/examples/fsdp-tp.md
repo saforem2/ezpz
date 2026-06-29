@@ -82,7 +82,7 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   [torch.compile](#torchcompile) for the per-block rationale and the
   `--tp`/`--ac`/`--compile` interaction caveat.
 - **Cross-entropy implementation** —
-  `--loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}`
+  `--loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}`
   (default `eager`). At a large vocab (agpt's 256K) and long sequence, eager
   `F.cross_entropy` materializes a multi-GB `(B·T, vocab)` fp32 logits +
   gradient transient in backward that OOMs even when the model fits. The
@@ -91,6 +91,13 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
     - `eager` — full logits; OOMs at this scale. Small vocab/seq only.
     - `chunked` — chunks the **forward** only (`--loss-chunk-size`); does
       **not** bound backward, still OOMs at large vocab. Rarely useful.
+    - `chunked-backward` — custom autograd Function that also bounds the
+      backward **graph** (recomputes each chunk's grad), saving ~one full
+      logits buffer vs eager. General + model-agnostic: works for **HF
+      models** (where `fused-linear` can't) and needs **no `torch.compile`** —
+      good at *moderate* vocab/seq or when compile is unavailable. Still holds
+      two logit-sized buffers, so it does **not** fix the very-large-vocab OOM
+      (use `fused-linear`/`compiled` there).
     - `compiled` — `torch.compile` fuses log-softmax + NLL + backward so the
       full transient never materializes (torchtitan's approach). Fits
       (~45 GiB) and is the **fastest that fits** (~28% MFU). Best default
@@ -639,7 +646,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS]
                   [--compile]
                   [--compile-mode {default,reduce-overhead,max-autotune}]
                   [--act-mem-budget ACT_MEM_BUDGET]
-                  [--loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}]
+                  [--loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}]
                   [--loss-chunk-size LOSS_CHUNK_SIZE]
 
 2D Parallel Training
@@ -818,7 +825,7 @@ options:
                         MemoryBudgetAC sets 0.5). Try 0.5 if you OOM in
                         backward at a batch size that should fit. (default:
                         1.0)
-  --loss-impl {eager,chunked,compiled,fused-linear,loss-parallel}
+  --loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}
                         Cross-entropy implementation. `eager` (default) is the
                         plain F.cross_entropy over the full (B*T, vocab)
                         logits — simplest, but at large vocab (e.g. agpt's
