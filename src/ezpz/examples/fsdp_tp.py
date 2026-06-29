@@ -488,120 +488,6 @@ def _cross_entropy_chunked(
     return total / denom
 
 
-class _CrossEntropyChunkedBackward(torch.autograd.Function):
-    """Row-chunked cross-entropy that bounds the *backward* transient.
-
-    Numerically identical to :func:`_cross_entropy_eager` (mean over the
-    non-ignored tokens), but unlike :func:`_cross_entropy_chunked` it is a
-    custom autograd Function, so the backward does NOT let autograd
-    materialize the full ``(B*T, vocab)`` softmax/logsumexp graph at once.
-
-    Why this exists: plain forward-chunking still OOMs in ``loss.backward()``
-    at large vocab (agpt-2b 256K vocab, seq=8192: ~15.6 GiB logits grad) —
-    see :func:`_cross_entropy_chunked`'s warning. Here we recompute each
-    row-chunk's gradient on the fly in :meth:`backward` and write it into the
-    output buffer chunk-by-chunk, so the peak *transient beyond the returned
-    grad buffer* is only ``chunk_size * vocab`` (the per-chunk softmax),
-    rather than a second full-size autograd graph.
-
-    Honest caveat: the returned ``grad_logits`` is still ``(B*T, vocab)`` —
-    that allocation is unavoidable here because it's the gradient of the
-    (already-materialized) logits. To avoid the full logits/grad buffers
-    entirely you must fuse the output projection into the loss (the
-    ``fused-linear`` impl). This Function fixes the *peak* (no extra full
-    graph) which is what was OOMing; ``fused-linear`` fixes the *buffers*.
-
-    Returns mean-reduced loss; gradient w.r.t. logits is
-    ``(softmax(logits) - onehot(labels)) / valid`` with ignored rows zeroed,
-    matching ``F.cross_entropy(reduction="mean", ignore_index=...)``.
-    """
-
-    @staticmethod
-    def forward(  # type: ignore[override]
-        ctx,
-        logits: torch.Tensor,
-        labels: torch.Tensor,
-        ignore_index: int,
-        chunk_size: int,
-    ) -> torch.Tensor:
-        flat_logits = logits.reshape(-1, logits.size(-1))
-        flat_labels = labels.reshape(-1)
-        n_rows = flat_labels.shape[0]
-
-        valid = (flat_labels != ignore_index).sum()
-        denom = valid.clamp(min=1).to(torch.float32)
-
-        total = torch.zeros((), dtype=torch.float32, device=logits.device)
-        for start in range(0, n_rows, chunk_size):
-            end = min(start + chunk_size, n_rows)
-            # reduction="sum" so chunk contributions add; fp32 to match eager.
-            total = total + F.cross_entropy(
-                flat_logits[start:end],
-                flat_labels[start:end],
-                ignore_index=ignore_index,
-                reduction="sum",
-            ).to(torch.float32)
-
-        # Save the (already-materialized) logits + labels — NOT a second graph.
-        ctx.save_for_backward(flat_logits, flat_labels, denom)
-        ctx.ignore_index = ignore_index
-        ctx.chunk_size = chunk_size
-        ctx.logits_shape = logits.shape
-        ctx.logits_dtype = logits.dtype
-        return total / denom
-
-    @staticmethod
-    def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
-        flat_logits, flat_labels, denom = ctx.saved_tensors
-        ignore_index = ctx.ignore_index
-        chunk_size = ctx.chunk_size
-        n_rows, vocab = flat_logits.shape
-
-        # The returned grad buffer is unavoidably (B*T, vocab); fill it
-        # chunk-by-chunk so the per-chunk softmax (chunk*vocab) is the only
-        # transient beyond it — never a second full-size tensor at once.
-        grad_logits = torch.empty_like(flat_logits)
-        # scalar upstream grad (mean loss) scaled by 1/valid once.
-        scale = (grad_output / denom).to(torch.float32)
-
-        for start in range(0, n_rows, chunk_size):
-            end = min(start + chunk_size, n_rows)
-            logits_chunk = flat_logits[start:end].to(torch.float32)
-            labels_chunk = flat_labels[start:end]
-            # softmax(logits) - onehot(labels), in fp32 (matches eager grad).
-            probs = torch.softmax(logits_chunk, dim=-1)
-            ignored = labels_chunk == ignore_index
-            safe = torch.where(ignored, torch.zeros_like(labels_chunk), labels_chunk)
-            probs.scatter_add_(
-                -1,
-                safe.unsqueeze(-1),
-                torch.full(
-                    (safe.shape[0], 1), -1.0, dtype=probs.dtype, device=probs.device
-                ),
-            )
-            grad_chunk = probs * scale
-            # Ignored rows contribute zero gradient.
-            grad_chunk[ignored] = 0.0
-            grad_logits[start:end] = grad_chunk.to(grad_logits.dtype)
-
-        grad_logits = grad_logits.reshape(ctx.logits_shape)
-        # grads for (logits, labels, ignore_index, chunk_size)
-        return grad_logits, None, None, None
-
-
-def _cross_entropy_chunked_backward(
-    logits: torch.Tensor,
-    labels: torch.Tensor,
-    *,
-    ignore_index: int = -100,
-    chunk_size: int = 1024,
-) -> torch.Tensor:
-    """Functional wrapper around :class:`_CrossEntropyChunkedBackward`."""
-    return _CrossEntropyChunkedBackward.apply(
-        logits, labels, ignore_index, chunk_size
-    )
-
-
 class _VocabParallelCrossEntropy(torch.autograd.Function):
     """Vocab-parallel cross-entropy on plain (non-DTensor) local tensors.
 
@@ -743,8 +629,8 @@ def _cross_entropy_fused_linear(
     ``(chunk, vocab)`` logits are freed after the forward and recomputed one
     chunk at a time in backward. Peak logits transient is ``chunk*vocab``
     instead of ``N*vocab`` — bounding BOTH the row and vocab dimensions of
-    the loss (chunked-backward bounds rows only; loss-parallel bounds vocab
-    only; this bounds both).
+    the loss (loss-parallel bounds only the vocab dim, across TP ranks; this
+    bounds both, and at tp=1).
 
     Critically this calls the output projection as a **module**
     (``output_module(h_chunk)``), NOT ``h @ weight.T`` on a raw weight. Under
@@ -828,10 +714,6 @@ def _compute_loss(
     """Dispatch to the selected cross-entropy implementation."""
     if impl == "chunked":
         return _cross_entropy_chunked(
-            logits, labels, ignore_index=ignore_index, chunk_size=chunk_size
-        )
-    if impl == "chunked-backward":
-        return _cross_entropy_chunked_backward(
             logits, labels, ignore_index=ignore_index, chunk_size=chunk_size
         )
     if impl == "compiled":
@@ -1379,40 +1261,39 @@ def parse_args(argv: Optional[list[str]] = None):
         choices=[
             "eager",
             "chunked",
-            "chunked-backward",
             "compiled",
             "loss-parallel",
             "fused-linear",
         ],
         help=(
-            "Cross-entropy implementation. `eager` (default) is the plain "
-            "F.cross_entropy over the full (B*T, vocab) logits — simplest, "
-            "but at large vocab (e.g. agpt's 256K) and long seq it "
-            "materializes a multi-GB fp32 logits+grad transient in "
-            "loss.backward() that can OOM a GPU tile "
-            "(UR_RESULT_ERROR_OUT_OF_RESOURCES) even when the model itself "
-            "fits. `chunked` chunks only the FORWARD (see --loss-chunk-size) "
-            "— it does NOT bound backward and still OOMs at large vocab. "
-            "`chunked-backward` is a custom autograd Function that ALSO "
-            "bounds the backward (recomputes each chunk's grad on the fly), "
-            "so the peak transient is ~chunk*vocab instead of a second full "
-            "graph — use this to fix the large-vocab backward OOM without "
-            "torch.compile. `compiled` wraps CE in torch.compile so inductor "
-            "fuses log_softmax+NLL+backward and never materializes the full "
-            "transient (torchtitan's approach). `loss-parallel` shards the "
-            "vocab dim across TP ranks (each holds vocab/tp) and runs "
-            "vocab-parallel CE via TP all-reduces — bounds the VOCAB dim, so "
-            "it only helps at tp>1 (at tp=1 it falls back to eager). "
-            "`fused-linear` (Liger/Cut-CE) fuses the output projection INTO "
-            "the loss: it takes hidden states + the output weight and forms "
-            "logits one row-chunk at a time, so the full (B*T,vocab) logits "
-            "AND grad are never materialized — bounds BOTH the row and vocab "
-            "transients. ezpz Transformer + tp=1 only (HF / tp>1 fall back to "
-            "compiled). NOTE: `--compile` only compiles the transformer "
-            "blocks, NOT the loss, so it does NOT fix the loss transient — "
-            "use --loss-impl. Row-dim (B*T) and vocab-dim bounding are "
-            "orthogonal: chunked-backward bounds rows, loss-parallel bounds "
-            "vocab, fused-linear bounds both."
+            "Cross-entropy implementation. The large-vocab output path is the "
+            "memory bottleneck: a full (B*T, vocab) fp32 logits tensor + its "
+            "grad (agpt-2b 256K vocab, seq=8192, bs=2: ~16.8 GiB EACH) can OOM "
+            "a GPU tile (UR_RESULT_ERROR_OUT_OF_RESOURCES) even when the model "
+            "fits. Pick by what you need (numbers = measured agpt-2b tp=1):\n"
+            "  • `eager` (default): plain F.cross_entropy on full logits. "
+            "Simplest; OOMs at agpt-2b bs2/seq8192. Use for small vocab/seq.\n"
+            "  • `chunked`: chunks only the FORWARD (--loss-chunk-size). Does "
+            "NOT bound backward; still OOMs at large vocab. Rarely useful.\n"
+            "  • `compiled`: torch.compile fuses log_softmax+NLL+backward so "
+            "the full transient is never materialized (torchtitan's approach). "
+            "Fits (~45 GB) and is the FASTEST that fits (~28% MFU). Needs "
+            "working torch.compile. Best default when it fits.\n"
+            "  • `fused-linear` (Liger/Cut-CE): runs the output projection "
+            "per row-chunk so the full (B*T,vocab) logits/grad are NEVER built "
+            "— bounds BOTH row and vocab dims. LOWEST memory (~32 GB, below "
+            "compiled) at ~24% MFU; trades a little speed for headroom (bigger "
+            "batch/seq). ezpz Transformer + tp=1 only (HF / tp>1 fall back to "
+            "compiled).\n"
+            "  • `loss-parallel`: vocab-parallel CE sharding the vocab across "
+            "TP ranks (each holds vocab/tp) via TP all-reduces. Bounds the "
+            "VOCAB dim; only helps at tp>1 (at tp=1 falls back to eager). At "
+            "tp>1 it is also the only correct path (plain CE hits a "
+            "Tensor/DTensor mismatch on Replicate logits). ~23 GB/rank, "
+            "~34% MFU at tp=2.\n"
+            "NOTE: `--compile` only compiles the transformer blocks, NOT the "
+            "loss, so it does NOT by itself fix the loss transient — use "
+            "--loss-impl for that."
         ),
     )
     parser.add_argument(
@@ -1420,9 +1301,10 @@ def parse_args(argv: Optional[list[str]] = None):
         type=int,
         default=1024,
         help=(
-            "Row-chunk size for --loss-impl=chunked (number of (B*T) "
-            "token rows per cross-entropy chunk). Smaller = lower peak "
-            "memory, more kernel launches. Ignored for other --loss-impl."
+            "Row-chunk size (number of (B*T) token rows per cross-entropy "
+            "chunk) for --loss-impl=chunked and --loss-impl=fused-linear. "
+            "Smaller = lower peak memory, more kernel launches. Ignored for "
+            "eager/compiled/loss-parallel."
         ),
     )
     # max_batch_size: int = 32

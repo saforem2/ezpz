@@ -7,8 +7,8 @@ matching both the **loss value** and the **gradient w.r.t. logits**,
 including ``ignore_index`` (``-100``) labels.
 
 This is the correctness gate that lets us trust the memory-bounded impls
-(``chunked``, ``chunked-backward``, and — when added — ``fused-linear`` /
-``loss-parallel``). It runs on CPU; no XPU/accelerator required.
+(``chunked``, ``fused-linear``, ``loss-parallel``). It runs on CPU; no
+XPU/accelerator required.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ except Exception:  # noqa: BLE001 - heavy optional deps may be missing
 # CE impls that operate on already-materialized logits and are expected to
 # match eager loss+grad. (loss-parallel/fused-linear are added with their own
 # TP-aware tests when implemented.)
-LOGIT_IMPLS = ["chunked", "chunked-backward", "compiled"]
+LOGIT_IMPLS = ["chunked", "compiled"]
 
 
 def _loss_and_grad(impl, logits, labels, *, chunk_size=1024):
@@ -71,18 +71,18 @@ class TestLossImplEquivalence:
         )
 
     def test_chunk_size_invariant(self):
-        """chunked-backward must be identical regardless of chunk_size."""
+        """chunked must be identical regardless of chunk_size (loss + grad)."""
         torch.manual_seed(1)
         logits = torch.randn(2, 64, 200, dtype=torch.float32)
         labels = torch.randint(0, 200, (2, 64))
         labels[1, ::3] = -100
         ref_l, ref_g = _loss_and_grad("eager", logits, labels)
         for cs in (1, 13, 64, 100000):
-            lv, gv = _loss_and_grad("chunked-backward", logits, labels, chunk_size=cs)
+            lv, gv = _loss_and_grad("chunked", logits, labels, chunk_size=cs)
             assert torch.allclose(lv, ref_l, atol=1e-5), f"chunk_size={cs} loss"
             assert torch.allclose(gv, ref_g, atol=1e-5), f"chunk_size={cs} grad"
 
-    def test_all_ignored_is_finite(self):  # noqa: D401 (see _vp test below)
+    def test_all_ignored_is_finite(self):
         """All-ignored microbatch: eager yields NaN (0/0); the memory-bounded
         impls clamp the denominator to 1 and yield a finite 0 loss + finite
         grad. We assert the *finite* behavior (the safer contract); this is a
@@ -92,10 +92,9 @@ class TestLossImplEquivalence:
         torch.manual_seed(2)
         logits = torch.randn(2, 4, 10, dtype=torch.float32)
         labels = torch.full((2, 4), -100)
-        for impl in ("chunked", "chunked-backward"):
-            lv, gv = _loss_and_grad(impl, logits, labels, chunk_size=3)
-            assert torch.isfinite(lv).all(), f"{impl} loss not finite"
-            assert torch.isfinite(gv).all(), f"{impl} grad not finite"
+        lv, gv = _loss_and_grad("chunked", logits, labels, chunk_size=3)
+        assert torch.isfinite(lv).all(), "chunked loss not finite"
+        assert torch.isfinite(gv).all(), "chunked grad not finite"
 
 
 @pytest.mark.skipif(not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable")
