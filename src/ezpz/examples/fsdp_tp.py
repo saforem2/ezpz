@@ -726,112 +726,76 @@ def _cross_entropy_vocab_parallel(
     )
 
 
-class _FusedLinearCrossEntropy(torch.autograd.Function):
-    """Fused output-projection + cross-entropy (Liger / Cut-CE style).
-
-    Takes hidden states ``h [N, dim]`` and the output projection weight
-    ``W [vocab, dim]`` and computes mean-reduced CE **without ever
-    materializing the full ``[N, vocab]`` logits or its gradient**. Logits
-    are formed one row-chunk at a time (``h_chunk @ W.T``) in both forward
-    and backward; the returned grads are ``grad_h [N, dim]`` and
-    ``grad_W [vocab, dim]`` — neither is ``[N, vocab]``.
-
-    This is the only impl that bounds BOTH the row (N) and vocab dimensions
-    of the loss transient simultaneously (chunked-backward bounds rows only;
-    loss-parallel bounds vocab only). tp=1 path (no collectives) implemented
-    here; tp>1 composition with vocab sharding is gated separately.
-
-    Numerically identical to ``F.cross_entropy(h @ W.T, labels,
-    reduction="mean", ignore_index=...)``. Attribution: the chunked
-    fused-linear-CE technique is from Liger-Kernel / Apple Cut-CE /
-    torchtune; this is an independent pure-PyTorch implementation.
-    """
-
-    @staticmethod
-    def forward(  # type: ignore[override]
-        ctx,
-        hidden: torch.Tensor,
-        weight: torch.Tensor,
-        labels: torch.Tensor,
-        ignore_index: int,
-        chunk_size: int,
-    ) -> torch.Tensor:
-        h2d = hidden.reshape(-1, hidden.size(-1))
-        labels_1d = labels.reshape(-1)
-        n_rows = h2d.shape[0]
-        valid = (labels_1d != ignore_index).sum().clamp(min=1).to(torch.float32)
-
-        total = torch.zeros((), dtype=torch.float32, device=hidden.device)
-        for start in range(0, n_rows, chunk_size):
-            end = min(start + chunk_size, n_rows)
-            logits_c = (h2d[start:end] @ weight.t()).float()  # [c, vocab]
-            total = total + F.cross_entropy(
-                logits_c,
-                labels_1d[start:end],
-                ignore_index=ignore_index,
-                reduction="sum",
-            ).to(torch.float32)
-            del logits_c  # free the chunk's logits before the next iteration
-
-        ctx.save_for_backward(h2d, weight, labels_1d, valid)
-        ctx.ignore_index = ignore_index
-        ctx.chunk_size = chunk_size
-        ctx.hidden_shape = hidden.shape
-        ctx.hidden_dtype = hidden.dtype
-        ctx.weight_dtype = weight.dtype
-        return total / valid
-
-    @staticmethod
-    def backward(ctx, grad_output):  # type: ignore[override]
-        h2d, weight, labels_1d, valid = ctx.saved_tensors
-        ignore_index = ctx.ignore_index
-        chunk_size = ctx.chunk_size
-        n_rows = h2d.shape[0]
-
-        # Accumulators are [N,dim] and [vocab,dim] — never [N,vocab].
-        grad_h = torch.zeros_like(h2d, dtype=torch.float32)
-        grad_w = torch.zeros_like(weight, dtype=torch.float32)
-        scale = (grad_output / valid).to(torch.float32)
-
-        for start in range(0, n_rows, chunk_size):
-            end = min(start + chunk_size, n_rows)
-            h_c = h2d[start:end].float()             # [c, dim]
-            labels_c = labels_1d[start:end]
-            logits_c = h_c @ weight.t().float()      # [c, vocab] (recomputed)
-            probs = torch.softmax(logits_c, dim=-1)
-            ignored = labels_c == ignore_index
-            safe = torch.where(ignored, torch.zeros_like(labels_c), labels_c)
-            probs.scatter_add_(
-                -1,
-                safe.unsqueeze(-1),
-                torch.full(
-                    (safe.shape[0], 1), -1.0, dtype=probs.dtype, device=probs.device
-                ),
-            )
-            g_c = probs * scale                      # [c, vocab]
-            g_c[ignored] = 0.0
-            grad_h[start:end] = g_c @ weight.float()  # [c, dim]
-            grad_w += g_c.t() @ h_c                    # [vocab, dim]
-            del logits_c, probs, g_c
-
-        grad_h = grad_h.reshape(ctx.hidden_shape).to(ctx.hidden_dtype)
-        grad_w = grad_w.to(ctx.weight_dtype)
-        # grads for (hidden, weight, labels, ignore_index, chunk_size)
-        return grad_h, grad_w, None, None, None
-
-
 def _cross_entropy_fused_linear(
     hidden: torch.Tensor,
-    weight: torch.Tensor,
+    output_module: nn.Module,
     labels: torch.Tensor,
     *,
     ignore_index: int = -100,
     chunk_size: int = 1024,
 ) -> torch.Tensor:
-    """Functional wrapper around :class:`_FusedLinearCrossEntropy`."""
-    return _FusedLinearCrossEntropy.apply(
-        hidden, weight, labels, ignore_index, chunk_size
-    )
+    """Fused output-projection + cross-entropy (Liger / Cut-CE style).
+
+    Computes mean-reduced CE over ``output_module(hidden)`` **without ever
+    materializing the full ``(N, vocab)`` logits tensor**. The hidden states
+    are split into row-chunks; for each chunk the output projection + CE are
+    run under :func:`torch.utils.checkpoint.checkpoint`, so the chunk's
+    ``(chunk, vocab)`` logits are freed after the forward and recomputed one
+    chunk at a time in backward. Peak logits transient is ``chunk*vocab``
+    instead of ``N*vocab`` — bounding BOTH the row and vocab dimensions of
+    the loss (chunked-backward bounds rows only; loss-parallel bounds vocab
+    only; this bounds both).
+
+    Critically this calls the output projection as a **module**
+    (``output_module(h_chunk)``), NOT ``h @ weight.T`` on a raw weight. Under
+    FSDP2 the projection weight is a sharded DTensor unsharded only inside the
+    module's forward (via FSDP hooks); going through the module lets FSDP
+    all-gather the weight and reduce-scatter its gradient correctly. A
+    hand-rolled ``h @ weight.T`` on the sharded weight raises
+    "mixed Tensor and DTensor" (and bypassing it with ``.full_tensor()`` would
+    silently break gradient flow to the sharded param).
+
+    Numerically matches ``F.cross_entropy(output_module(h), labels,
+    reduction="mean", ignore_index=...)``. Attribution: the chunked
+    fused-linear-CE technique is from Liger-Kernel / Apple Cut-CE /
+    torchtune / torchtitan's ChunkedLossWrapper; this is an independent
+    pure-PyTorch implementation.
+    """
+    from torch.utils.checkpoint import checkpoint
+
+    h2d = hidden.reshape(-1, hidden.size(-1))
+    labels_1d = labels.reshape(-1)
+    n_rows = labels_1d.shape[0]
+    # Denominator for mean reduction over non-ignored tokens (fp32, matches
+    # eager). Sum per-chunk CE then divide once so autograd scales correctly.
+    valid = (labels_1d != ignore_index).sum().clamp(min=1).to(torch.float32)
+
+    def _chunk_loss(h_chunk: torch.Tensor, lbl_chunk: torch.Tensor) -> torch.Tensor:
+        logits_c = output_module(h_chunk)  # FSDP unshards weight here
+        if hasattr(logits_c, "logits"):
+            logits_c = logits_c.logits
+        return F.cross_entropy(
+            logits_c.float(),
+            lbl_chunk,
+            ignore_index=ignore_index,
+            reduction="sum",
+        ).to(torch.float32)
+
+    total = torch.zeros((), dtype=torch.float32, device=hidden.device)
+    for start in range(0, n_rows, chunk_size):
+        end = min(start + chunk_size, n_rows)
+        h_chunk = h2d[start:end]
+        lbl_chunk = labels_1d[start:end]
+        if h_chunk.requires_grad:
+            # checkpoint frees the chunk's logits after forward; recomputed
+            # one chunk at a time in backward -> peak logits = chunk*vocab.
+            total = total + checkpoint(
+                _chunk_loss, h_chunk, lbl_chunk, use_reentrant=False
+            )
+        else:
+            # eval / no-grad: no checkpoint needed.
+            total = total + _chunk_loss(h_chunk, lbl_chunk)
+    return total / valid
 
 
 # Lazily-built torch.compile wrapper around the eager CE. Cached so we only
@@ -2528,12 +2492,13 @@ def train(
                     f"{pred_max:.6f}",
                 )
             if use_fused_linear:
-                # `pred` is hidden states (B,T,dim); form logits in chunks
-                # inside the loss via h @ output.weight.T — never materializing
-                # the full (B,T,vocab) logits or its grad.
+                # `pred` is hidden states (B,T,dim); the fused loss runs the
+                # output projection MODULE per row-chunk (so FSDP unshards the
+                # weight + routes its grad) and never materializes the full
+                # (B,T,vocab) logits or its grad.
                 loss = _cross_entropy_fused_linear(
                     pred,
-                    base_model.output.weight,
+                    base_model.output,
                     labels,
                     ignore_index=-100,
                     chunk_size=args.loss_chunk_size,

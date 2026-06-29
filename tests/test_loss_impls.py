@@ -100,61 +100,96 @@ class TestLossImplEquivalence:
 
 @pytest.mark.skipif(not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable")
 class TestFusedLinearCE:
-    """fused-linear forms logits as ``h @ W.T`` in chunks; verify loss AND
-    both gradients (grad_h, grad_W) match eager CE over the full logits.
+    """fused-linear runs the output projection MODULE per row-chunk (under
+    checkpoint) and never materializes the full logits. Verify loss AND both
+    gradients (grad_h via hidden, grad_W via the module weight) match eager
+    CE over the full ``output_module(h)``.
     """
+
+    @staticmethod
+    def _make(N, D, V, seed=0):
+        torch.manual_seed(seed)
+        h = torch.randn(N, D, dtype=torch.float32)
+        out = torch.nn.Linear(D, V, bias=False)
+        labels = torch.randint(0, V, (N,))
+        labels[::5] = -100
+        return h, out, labels
 
     @pytest.mark.parametrize(
         "shape", [(16, 8, 50), (257, 16, 128), (8, 32, 1000)], ids=["small", "long", "wide"]
     )
     def test_matches_eager_loss_and_both_grads(self, shape):
-        torch.manual_seed(0)
-        N, D, V = shape
-        h = torch.randn(N, D, dtype=torch.float32)
-        W = torch.randn(V, D, dtype=torch.float32)
-        labels = torch.randint(0, V, (N,))
-        labels[::5] = -100
-
-        he = h.clone().requires_grad_(True)
-        We = W.clone().requires_grad_(True)
         import torch.nn.functional as F
 
-        ref = F.cross_entropy(he @ We.t(), labels, ignore_index=-100)
+        N, D, V = shape
+        h, out, labels = self._make(N, D, V)
+
+        # reference: eager CE over the full module output
+        he = h.clone().requires_grad_(True)
+        out_ref = torch.nn.Linear(D, V, bias=False)
+        out_ref.load_state_dict(out.state_dict())
+        ref = F.cross_entropy(out_ref(he), labels, ignore_index=-100)
         ref.backward()
 
         hf = h.clone().requires_grad_(True)
-        Wf = W.clone().requires_grad_(True)
-        lf = fsdp_tp._cross_entropy_fused_linear(
-            hf, Wf, labels, ignore_index=-100, chunk_size=7
-        )
-        lf.backward()
+        try:
+            lf = fsdp_tp._cross_entropy_fused_linear(
+                hf, out, labels, ignore_index=-100, chunk_size=7
+            )
+            lf.backward()
+        except OSError as exc:
+            # torch.utils.checkpoint probes accelerator devices for RNG state;
+            # on a CPU-only host without the XPU/CUDA loader libs that raises.
+            # The grad path is exercised in CI / on-node; skip here.
+            pytest.skip(f"checkpoint device probe unavailable on this host: {exc}")
 
         assert torch.allclose(lf, ref, atol=1e-4), f"loss {lf} != {ref}"
         assert torch.allclose(hf.grad, he.grad, atol=1e-4), "grad_h mismatch"
-        assert torch.allclose(Wf.grad, We.grad, atol=1e-4), "grad_W mismatch"
+        assert torch.allclose(
+            out.weight.grad, out_ref.weight.grad, atol=1e-4
+        ), "grad_W mismatch"
 
-    def test_chunk_size_invariant(self):
-        torch.manual_seed(1)
-        h = torch.randn(64, 16, dtype=torch.float32)
-        W = torch.randn(200, 16, dtype=torch.float32)
-        labels = torch.randint(0, 200, (64,))
-        labels[::3] = -100
+    def test_forward_matches_eager_no_checkpoint(self):
+        """Forward equivalence on the no-grad path (no checkpoint, so it runs
+        even on hosts without an accelerator device loader). Locks the chunked
+        loss summation math independent of the checkpoint backward.
+        """
         import torch.nn.functional as F
 
+        h, out, labels = self._make(40, 16, 300, seed=3)
+        with torch.no_grad():
+            ref = F.cross_entropy(out(h), labels, ignore_index=-100)
+            for cs in (1, 7, 40, 99999):
+                fused = fsdp_tp._cross_entropy_fused_linear(
+                    h, out, labels, ignore_index=-100, chunk_size=cs
+                )
+                assert torch.allclose(fused, ref, atol=1e-5), f"cs={cs} forward"
+
+    def test_chunk_size_invariant(self):
+        import torch.nn.functional as F
+
+        h, out, labels = self._make(64, 16, 200, seed=1)
         he = h.clone().requires_grad_(True)
-        We = W.clone().requires_grad_(True)
-        ref = F.cross_entropy(he @ We.t(), labels, ignore_index=-100)
+        out_ref = torch.nn.Linear(16, 200, bias=False)
+        out_ref.load_state_dict(out.state_dict())
+        ref = F.cross_entropy(out_ref(he), labels, ignore_index=-100)
         ref.backward()
         for cs in (1, 9, 64, 100000):
+            for p in out.parameters():
+                p.grad = None
             hf = h.clone().requires_grad_(True)
-            Wf = W.clone().requires_grad_(True)
-            lf = fsdp_tp._cross_entropy_fused_linear(
-                hf, Wf, labels, ignore_index=-100, chunk_size=cs
-            )
-            lf.backward()
+            try:
+                lf = fsdp_tp._cross_entropy_fused_linear(
+                    hf, out, labels, ignore_index=-100, chunk_size=cs
+                )
+                lf.backward()
+            except OSError as exc:
+                pytest.skip(f"checkpoint device probe unavailable: {exc}")
             assert torch.allclose(lf, ref, atol=1e-4), f"cs={cs} loss"
             assert torch.allclose(hf.grad, he.grad, atol=1e-4), f"cs={cs} grad_h"
-            assert torch.allclose(Wf.grad, We.grad, atol=1e-4), f"cs={cs} grad_W"
+            assert torch.allclose(
+                out.weight.grad, out_ref.weight.grad, atol=1e-4
+            ), f"cs={cs} grad_W"
 
 
 # ---------------------------------------------------------------------------
