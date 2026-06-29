@@ -602,6 +602,130 @@ def _cross_entropy_chunked_backward(
     )
 
 
+class _VocabParallelCrossEntropy(torch.autograd.Function):
+    """Vocab-parallel cross-entropy on plain (non-DTensor) local tensors.
+
+    Mirrors torchtitan's ``_LossParallelCrossEntropy``
+    (torchtitan/components/loss.py) and the semantics of
+    ``torch.distributed.tensor.parallel.loss_parallel`` — but operates on
+    this rank's local ``[N, vocab/tp]`` vocab shard + a process group,
+    instead of requiring DTensor inputs. Forward uses three TP all-reduces
+    (max for stable log-softmax, sumexp for the denominator, gather for the
+    target logprob); backward is fused (softmax − onehot) with zero
+    collectives. Handles ``IGNORE_INDEX`` and uneven final shards.
+
+    This bounds the **vocab** dimension across TP ranks (each holds
+    ``vocab/tp``), so it only reduces memory when ``tp > 1``. It does NOT
+    bound the row (``B*T``) dimension — combine with row-chunking
+    (``fused-linear``) for both. Returns mean-reduced loss to match
+    :func:`_cross_entropy_eager`.
+
+    Attribution: algorithm adapted from torchtitan (BSD-licensed); ezpz does
+    not import torchtitan (it is a sibling checkout, not a dependency).
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        local_logits: torch.Tensor,
+        labels: torch.Tensor,
+        ignore_index: int,
+        global_vocab_size: int,
+        tp_group,
+    ) -> torch.Tensor:
+        import torch.distributed as dist
+        import torch.distributed._functional_collectives as funcol
+
+        logits_2d = local_logits.reshape(-1, local_logits.size(-1)).float()
+        labels_1d = labels.reshape(-1)
+
+        tp_world = dist.get_world_size(tp_group)
+        tp_rank = dist.get_rank(tp_group)
+        chunk = (global_vocab_size + tp_world - 1) // tp_world
+        vocab_start = min(global_vocab_size, chunk * tp_rank)
+        vocab_end = min(global_vocab_size, vocab_start + chunk)
+        local_vocab = max(0, vocab_end - vocab_start)
+        if logits_2d.shape[-1] != local_vocab:
+            raise ValueError(
+                "_VocabParallelCrossEntropy expected local vocab "
+                f"{local_vocab} for global {global_vocab_size}, got "
+                f"{logits_2d.shape[-1]}."
+            )
+
+        # 1) all-reduce MAX for numerically stable distributed log-softmax.
+        local_max = torch.amax(logits_2d, dim=-1, keepdim=True)
+        local_max = funcol.all_reduce(
+            local_max, reduceOp=dist.ReduceOp.MAX.name, group=tp_group
+        )
+        shifted = logits_2d - local_max
+        # 2) all-reduce SUM of exp for the global softmax denominator.
+        sumexp = torch.sum(torch.exp(shifted), dim=-1, keepdim=True)
+        sumexp = funcol.all_reduce(
+            sumexp, reduceOp=dist.ReduceOp.SUM.name, group=tp_group
+        )
+        log_probs = shifted - torch.log(sumexp)
+
+        # 3) gather the target token's logprob from its owner rank.
+        ignored = labels_1d == ignore_index
+        safe = torch.where(ignored, torch.zeros_like(labels_1d), labels_1d)
+        out_of_range = (safe < vocab_start) | (safe >= vocab_end)
+        local_labels = (safe - vocab_start).clamp_(min=0)
+        local_labels[out_of_range] = 0
+        picked = torch.gather(log_probs, -1, local_labels.unsqueeze(-1))
+        picked[out_of_range.unsqueeze(-1)] = 0.0
+        picked = funcol.all_reduce(
+            picked, reduceOp=dist.ReduceOp.SUM.name, group=tp_group
+        )
+        nll = -picked.squeeze(-1)
+        nll = torch.where(ignored, torch.zeros_like(nll), nll)
+
+        valid = (~ignored).sum().clamp(min=1).to(torch.float32)
+
+        ctx.save_for_backward(log_probs, labels_1d, valid)
+        ctx.vocab_start = vocab_start
+        ctx.local_vocab = local_vocab
+        ctx.ignore_index = ignore_index
+        ctx.logits_shape = local_logits.shape
+        ctx.logits_dtype = local_logits.dtype
+        return nll.sum() / valid
+
+    @staticmethod
+    def backward(ctx, grad_output):  # type: ignore[override]
+        log_probs, labels_1d, valid = ctx.saved_tensors
+        ignored = labels_1d == ctx.ignore_index
+        safe = torch.where(ignored, torch.zeros_like(labels_1d), labels_1d)
+        out_of_range = (safe < ctx.vocab_start) | (
+            safe >= ctx.vocab_start + ctx.local_vocab
+        )
+        local_labels = (safe - ctx.vocab_start).clamp_(min=0)
+        local_labels[out_of_range] = 0
+
+        # grad = (softmax − onehot)/valid * grad_out, onehot only on owner rank.
+        grad = torch.exp(log_probs)
+        row = torch.arange(local_labels.shape[0], device=local_labels.device)
+        # subtract 1 at the target col on the owning rank (0 if out-of-range).
+        grad[row, local_labels] -= (~out_of_range).to(grad.dtype)
+        scale = (grad_output / valid).to(grad.dtype)
+        grad = grad * scale
+        grad[ignored] = 0.0
+        grad = grad.reshape(ctx.logits_shape).to(ctx.logits_dtype)
+        return grad, None, None, None, None
+
+
+def _cross_entropy_vocab_parallel(
+    local_logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    global_vocab_size: int,
+    tp_group,
+) -> torch.Tensor:
+    """Functional wrapper around :class:`_VocabParallelCrossEntropy`."""
+    return _VocabParallelCrossEntropy.apply(
+        local_logits, labels, ignore_index, global_vocab_size, tp_group
+    )
+
+
 # Lazily-built torch.compile wrapper around the eager CE. Cached so we only
 # compile once (the first call triggers a trace). Module-level so the
 # compiled artifact persists across training steps.
@@ -1180,7 +1304,13 @@ def parse_args(argv: Optional[list[str]] = None):
         "--loss-impl",
         type=str,
         default="eager",
-        choices=["eager", "chunked", "chunked-backward", "compiled"],
+        choices=[
+            "eager",
+            "chunked",
+            "chunked-backward",
+            "compiled",
+            "loss-parallel",
+        ],
         help=(
             "Cross-entropy implementation. `eager` (default) is the plain "
             "F.cross_entropy over the full (B*T, vocab) logits — simplest, "
@@ -1196,9 +1326,14 @@ def parse_args(argv: Optional[list[str]] = None):
             "graph — use this to fix the large-vocab backward OOM without "
             "torch.compile. `compiled` wraps CE in torch.compile so inductor "
             "fuses log_softmax+NLL+backward and never materializes the full "
-            "transient (torchtitan's approach). NOTE: `--compile` only "
-            "compiles the transformer blocks, NOT the loss, so it does NOT "
-            "fix this — use --loss-impl for the loss transient."
+            "transient (torchtitan's approach). `loss-parallel` shards the "
+            "vocab dim across TP ranks (each holds vocab/tp) and runs "
+            "vocab-parallel CE via TP all-reduces — bounds the VOCAB dim, so "
+            "it only helps at tp>1 (at tp=1 it falls back to eager). NOTE: "
+            "`--compile` only compiles the transformer blocks, NOT the loss, "
+            "so it does NOT fix this — use --loss-impl for the loss "
+            "transient. Row-dim (B*T) and vocab-dim bounding are orthogonal: "
+            "chunked-backward bounds rows, loss-parallel bounds vocab."
         ),
     )
     parser.add_argument(
@@ -1274,6 +1409,7 @@ def parallelize(
     mixed_precision: Optional[MixedPrecisionPolicy],
     sharding_strategy: Optional[str] = None,
     activation_checkpoint: str = "none",
+    loss_parallel: bool = False,
 ) -> nn.Module:
     """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
 
@@ -1329,11 +1465,14 @@ def parallelize(
                     output_layouts=Shard(1),
                 ),
                 "norm": SequenceParallel(),
+                # With loss_parallel, keep logits vocab-sharded (Shard(-1))
+                # and return the LOCAL [N, vocab/tp] tensor so the loss can run
+                # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
+                # to Replicate() so the loss sees full-vocab logits (default).
                 "output": ColwiseParallel(
                     input_layouts=Shard(1),
-                    output_layouts=Replicate(),
-                    # use DTensor as the output
-                    # use_local_output=False,
+                    output_layouts=Shard(-1) if loss_parallel else Replicate(),
+                    use_local_output=bool(loss_parallel),
                 ),
             },
         )
@@ -1665,6 +1804,11 @@ def train(
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
+    # loss-parallel (vocab-sharded CE) only does anything at tp>1; at tp=1 the
+    # local vocab IS the full vocab, so the loss call site falls back to eager.
+    use_loss_parallel = (
+        getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
+    )
     device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
         (dpsize, args.tp),
@@ -1910,12 +2054,16 @@ def train(
         # TP + FSDP2. parallelize() applies activation checkpointing per
         # block BEFORE fully_shard (correct FSDP2 ordering), so we do NOT
         # re-apply it afterwards.
+        # loss-parallel needs vocab-sharded (local) logits out of the output
+        # projection; only meaningful at tp>1 (at tp=1 there's nothing to
+        # shard, so it falls back to eager — see the loss call site).
         model = parallelize(
             model,
             device_mesh,
             mp_config,
             sharding_strategy=args.sharding_strategy,
             activation_checkpoint=args.activation_checkpoint,
+            loss_parallel=use_loss_parallel,
         )
     if args.compile:
         # Activation-memory budget for the inductor min-cut partitioner.
@@ -2228,13 +2376,26 @@ def train(
                     pred_nonfinite,
                     f"{pred_max:.6f}",
                 )
-            loss = _compute_loss(
-                pred,
-                labels,
-                impl=args.loss_impl,
-                ignore_index=-100,
-                chunk_size=args.loss_chunk_size,
-            )
+            if use_loss_parallel:
+                # `pred` is this rank's local [B, T, vocab/tp] shard
+                # (output projection has use_local_output=True under
+                # loss-parallel). Vocab-parallel CE reduces across the TP
+                # group; global vocab is needed to compute shard bounds.
+                loss = _cross_entropy_vocab_parallel(
+                    pred,
+                    labels,
+                    ignore_index=-100,
+                    global_vocab_size=args.vocab_size,
+                    tp_group=tp_group,
+                )
+            else:
+                loss = _compute_loss(
+                    pred,
+                    labels,
+                    impl=args.loss_impl,
+                    ignore_index=-100,
+                    chunk_size=args.loss_chunk_size,
+                )
             if epoch == 0 and idx == 0:
                 valid_labels = int((labels != -100).sum().item())
                 logger.info(

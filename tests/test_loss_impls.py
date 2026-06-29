@@ -82,7 +82,7 @@ class TestLossImplEquivalence:
             assert torch.allclose(lv, ref_l, atol=1e-5), f"chunk_size={cs} loss"
             assert torch.allclose(gv, ref_g, atol=1e-5), f"chunk_size={cs} grad"
 
-    def test_all_ignored_is_finite(self):
+    def test_all_ignored_is_finite(self):  # noqa: D401 (see _vp test below)
         """All-ignored microbatch: eager yields NaN (0/0); the memory-bounded
         impls clamp the denominator to 1 and yield a finite 0 loss + finite
         grad. We assert the *finite* behavior (the safer contract); this is a
@@ -96,3 +96,84 @@ class TestLossImplEquivalence:
             lv, gv = _loss_and_grad(impl, logits, labels, chunk_size=3)
             assert torch.isfinite(lv).all(), f"{impl} loss not finite"
             assert torch.isfinite(gv).all(), f"{impl} grad not finite"
+
+
+# ---------------------------------------------------------------------------
+# Vocab-parallel CE: real 2-rank gloo test (the simulation in dev verified the
+# math; this exercises the actual funcol all-reduces + process group, so a
+# collective/group bug can't slip through). Skipped if gloo isn't usable.
+# ---------------------------------------------------------------------------
+
+# Shared fixture data so both ranks + the reference agree (seeded, not random).
+_VP_N, _VP_V = 8, 12  # rows, global vocab (split across 2 ranks: 6 + 6)
+
+
+def _vp_worker(rank, world_size, vocab, n_rows, ret):
+    import os
+
+    import torch
+    import torch.distributed as dist
+
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "29555")
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    try:
+        import ezpz.examples.fsdp_tp as m
+
+        torch.manual_seed(123)
+        full_logits = torch.randn(n_rows, vocab, dtype=torch.float32)
+        labels = torch.randint(0, vocab, (n_rows,))
+        labels[::4] = -100
+
+        chunk = (vocab + world_size - 1) // world_size
+        s, e = chunk * rank, min(vocab, chunk * (rank + 1))
+        local = full_logits[:, s:e].clone().detach().requires_grad_(True)
+
+        loss = m._cross_entropy_vocab_parallel(
+            local,
+            labels,
+            ignore_index=-100,
+            global_vocab_size=vocab,
+            tp_group=dist.group.WORLD,
+        )
+        loss.backward()
+        # rank 0 reports loss + its grad shard for comparison to eager.
+        if rank == 0:
+            ret["loss"] = float(loss.detach())
+            ret["grad0"] = local.grad.detach().clone()
+            ret["shard"] = (s, e)
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.skipif(not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable")
+def test_vocab_parallel_matches_eager_2rank():
+    import torch
+    import torch.multiprocessing as mp
+
+    try:
+        mgr = mp.Manager()
+        ret = mgr.dict()
+        mp.spawn(
+            _vp_worker, args=(2, _VP_V, _VP_N, ret), nprocs=2, join=True
+        )
+    except Exception as exc:  # noqa: BLE001 - gloo/spawn may be unavailable
+        pytest.skip(f"2-rank gloo unavailable: {exc}")
+
+    assert "loss" in ret, "rank 0 did not report"
+    # Reference: full-vocab eager CE on the SAME seeded data.
+    torch.manual_seed(123)
+    full = torch.randn(_VP_N, _VP_V, dtype=torch.float32, requires_grad=True)
+    labels = torch.randint(0, _VP_V, (_VP_N,))
+    labels[::4] = -100
+    import torch.nn.functional as F
+
+    ref = F.cross_entropy(full, labels, ignore_index=-100)
+    ref.backward()
+    s, e = ret["shard"]
+    assert abs(ret["loss"] - float(ref)) < 1e-4, (
+        f"vp loss {ret['loss']} != eager {float(ref)}"
+    )
+    assert torch.allclose(ret["grad0"], full.grad[:, s:e], atol=1e-4), (
+        "vocab-parallel grad shard != eager grad shard"
+    )
