@@ -613,6 +613,70 @@ dp=48, `--compile`):
 Lower the budget further (e.g. `0.3`) to trade more recompute for less
 memory if you need headroom for a bigger batch.
 
+## `compiled` vs `fused-linear` benchmark (agpt-2b, 128K vocab)
+
+A head-to-head of the two production-scale `--loss-impl` modes on Sunspot
+(Intel PVC). To keep the run in a regime where both modes comfortably fit —
+so the comparison measures *speed vs memory*, not who hits the OOM cliff
+first — the agpt-2b architecture is paired with the **`meta-llama/Llama-3.2-1B`
+tokenizer**, which drops the vocab from agpt's native 256,128 to **128,000**
+(the `(B·T, vocab)` logits/grad buffers roughly halve). The example does this
+override automatically: pass a real HF dataset + `--tokenizer_name` and the
+tokenizer's `vocab_size` replaces the preset's (logged as `Overriding
+vocab_size from 256128 to tokenizer vocab_size=128000`).
+
+Setup: agpt-2b (`dim=2048`, `n_layers=12`, `hidden_dim=11008`),
+`--tokenizer_name meta-llama/Llama-3.2-1B` (vocab 128,000), `--seq-len 8192`,
+`--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`, 2× Sunspot nodes
+(dp=24), dataset `eliplutchok/fineweb-small-sample`. Each config runs ~31
+iters; metrics are the steady-state mean over 26 iters (warmup + the final
+eval-pass step dropped).
+
+```bash
+# compiled (fastest that fits)
+ezpz launch python3 -m ezpz.examples.fsdp_tp \
+  --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
+  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --compile --loss-impl compiled --act-mem-budget 0.5
+
+# fused-linear (lowest memory)
+ezpz launch python3 -m ezpz.examples.fsdp_tp \
+  --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
+  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --loss-impl fused-linear
+```
+
+| metric | `compiled` | `fused-linear` | Δ (fused vs compiled) |
+|---|---|---|---|
+| MFU | **33.4 %** | 28.8 % | −13.8 % |
+| TFLOP/s (per rank) | **99.5** | 85.8 | −13.8 % |
+| tokens/s (global) | **248,400** | 214,200 | −13.8 % |
+| tokens/s (per GPU) | 10,351 | 8,926 | −13.8 % |
+| step time | 1.58 s | 1.84 s | +16 % |
+| memory (peak reserved) | 28.64 GiB | 29.10 GiB | +1.6 % |
+| memory (allocated) | 8.76 GiB | **1.50 GiB** | **−83 %** |
+
+Takeaways:
+
+- **`compiled` is ~14% faster** on every throughput metric. Compiling the
+  block + the fused cross-entropy keeps the GPU busy; this is the mode to use
+  when it fits.
+- **`fused-linear`'s win is allocated memory: 1.50 GiB vs 8.76 GiB (−83%).**
+  It runs the output projection per row-chunk so the full `(B·T, vocab)`
+  logits/grad are never materialized — exactly its design goal. The *reserved*
+  peak looks ~equal only because at 128K vocab the activation high-water mark
+  dominates the allocator arena; the headroom shows up in **allocated** bytes,
+  which is what lets you push a bigger batch or sequence before OOM.
+- Net guidance: **`compiled` for raw speed when it fits; `fused-linear` for
+  memory headroom.** At this 128K-vocab / seq-8192 operating point both fit
+  easily and `compiled` wins on speed. `fused-linear`'s advantage widens as
+  vocab × seq grows and `compiled` approaches the OOM cliff (cf. agpt's native
+  256K vocab, where the eager/compiled transient is the binding constraint).
+
+> Loss reads `nan` during these runs — expected, since the model is
+> randomly initialized with no real LR schedule. The benchmark measures
+> throughput and memory only, not convergence.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
