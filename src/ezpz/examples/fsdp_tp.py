@@ -726,6 +726,114 @@ def _cross_entropy_vocab_parallel(
     )
 
 
+class _FusedLinearCrossEntropy(torch.autograd.Function):
+    """Fused output-projection + cross-entropy (Liger / Cut-CE style).
+
+    Takes hidden states ``h [N, dim]`` and the output projection weight
+    ``W [vocab, dim]`` and computes mean-reduced CE **without ever
+    materializing the full ``[N, vocab]`` logits or its gradient**. Logits
+    are formed one row-chunk at a time (``h_chunk @ W.T``) in both forward
+    and backward; the returned grads are ``grad_h [N, dim]`` and
+    ``grad_W [vocab, dim]`` — neither is ``[N, vocab]``.
+
+    This is the only impl that bounds BOTH the row (N) and vocab dimensions
+    of the loss transient simultaneously (chunked-backward bounds rows only;
+    loss-parallel bounds vocab only). tp=1 path (no collectives) implemented
+    here; tp>1 composition with vocab sharding is gated separately.
+
+    Numerically identical to ``F.cross_entropy(h @ W.T, labels,
+    reduction="mean", ignore_index=...)``. Attribution: the chunked
+    fused-linear-CE technique is from Liger-Kernel / Apple Cut-CE /
+    torchtune; this is an independent pure-PyTorch implementation.
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        hidden: torch.Tensor,
+        weight: torch.Tensor,
+        labels: torch.Tensor,
+        ignore_index: int,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        h2d = hidden.reshape(-1, hidden.size(-1))
+        labels_1d = labels.reshape(-1)
+        n_rows = h2d.shape[0]
+        valid = (labels_1d != ignore_index).sum().clamp(min=1).to(torch.float32)
+
+        total = torch.zeros((), dtype=torch.float32, device=hidden.device)
+        for start in range(0, n_rows, chunk_size):
+            end = min(start + chunk_size, n_rows)
+            logits_c = (h2d[start:end] @ weight.t()).float()  # [c, vocab]
+            total = total + F.cross_entropy(
+                logits_c,
+                labels_1d[start:end],
+                ignore_index=ignore_index,
+                reduction="sum",
+            ).to(torch.float32)
+            del logits_c  # free the chunk's logits before the next iteration
+
+        ctx.save_for_backward(h2d, weight, labels_1d, valid)
+        ctx.ignore_index = ignore_index
+        ctx.chunk_size = chunk_size
+        ctx.hidden_shape = hidden.shape
+        ctx.hidden_dtype = hidden.dtype
+        ctx.weight_dtype = weight.dtype
+        return total / valid
+
+    @staticmethod
+    def backward(ctx, grad_output):  # type: ignore[override]
+        h2d, weight, labels_1d, valid = ctx.saved_tensors
+        ignore_index = ctx.ignore_index
+        chunk_size = ctx.chunk_size
+        n_rows = h2d.shape[0]
+
+        # Accumulators are [N,dim] and [vocab,dim] — never [N,vocab].
+        grad_h = torch.zeros_like(h2d, dtype=torch.float32)
+        grad_w = torch.zeros_like(weight, dtype=torch.float32)
+        scale = (grad_output / valid).to(torch.float32)
+
+        for start in range(0, n_rows, chunk_size):
+            end = min(start + chunk_size, n_rows)
+            h_c = h2d[start:end].float()             # [c, dim]
+            labels_c = labels_1d[start:end]
+            logits_c = h_c @ weight.t().float()      # [c, vocab] (recomputed)
+            probs = torch.softmax(logits_c, dim=-1)
+            ignored = labels_c == ignore_index
+            safe = torch.where(ignored, torch.zeros_like(labels_c), labels_c)
+            probs.scatter_add_(
+                -1,
+                safe.unsqueeze(-1),
+                torch.full(
+                    (safe.shape[0], 1), -1.0, dtype=probs.dtype, device=probs.device
+                ),
+            )
+            g_c = probs * scale                      # [c, vocab]
+            g_c[ignored] = 0.0
+            grad_h[start:end] = g_c @ weight.float()  # [c, dim]
+            grad_w += g_c.t() @ h_c                    # [vocab, dim]
+            del logits_c, probs, g_c
+
+        grad_h = grad_h.reshape(ctx.hidden_shape).to(ctx.hidden_dtype)
+        grad_w = grad_w.to(ctx.weight_dtype)
+        # grads for (hidden, weight, labels, ignore_index, chunk_size)
+        return grad_h, grad_w, None, None, None
+
+
+def _cross_entropy_fused_linear(
+    hidden: torch.Tensor,
+    weight: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    chunk_size: int = 1024,
+) -> torch.Tensor:
+    """Functional wrapper around :class:`_FusedLinearCrossEntropy`."""
+    return _FusedLinearCrossEntropy.apply(
+        hidden, weight, labels, ignore_index, chunk_size
+    )
+
+
 # Lazily-built torch.compile wrapper around the eager CE. Cached so we only
 # compile once (the first call triggers a trace). Module-level so the
 # compiled artifact persists across training steps.
@@ -1310,6 +1418,7 @@ def parse_args(argv: Optional[list[str]] = None):
             "chunked-backward",
             "compiled",
             "loss-parallel",
+            "fused-linear",
         ],
         help=(
             "Cross-entropy implementation. `eager` (default) is the plain "
@@ -1329,11 +1438,17 @@ def parse_args(argv: Optional[list[str]] = None):
             "transient (torchtitan's approach). `loss-parallel` shards the "
             "vocab dim across TP ranks (each holds vocab/tp) and runs "
             "vocab-parallel CE via TP all-reduces — bounds the VOCAB dim, so "
-            "it only helps at tp>1 (at tp=1 it falls back to eager). NOTE: "
-            "`--compile` only compiles the transformer blocks, NOT the loss, "
-            "so it does NOT fix this — use --loss-impl for the loss "
-            "transient. Row-dim (B*T) and vocab-dim bounding are orthogonal: "
-            "chunked-backward bounds rows, loss-parallel bounds vocab."
+            "it only helps at tp>1 (at tp=1 it falls back to eager). "
+            "`fused-linear` (Liger/Cut-CE) fuses the output projection INTO "
+            "the loss: it takes hidden states + the output weight and forms "
+            "logits one row-chunk at a time, so the full (B*T,vocab) logits "
+            "AND grad are never materialized — bounds BOTH the row and vocab "
+            "transients. ezpz Transformer + tp=1 only (HF / tp>1 fall back to "
+            "compiled). NOTE: `--compile` only compiles the transformer "
+            "blocks, NOT the loss, so it does NOT fix the loss transient — "
+            "use --loss-impl. Row-dim (B*T) and vocab-dim bounding are "
+            "orthogonal: chunked-backward bounds rows, loss-parallel bounds "
+            "vocab, fused-linear bounds both."
         ),
     )
     parser.add_argument(
@@ -1809,6 +1924,11 @@ def train(
     use_loss_parallel = (
         getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
     )
+    # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
+    # weight, so only the ezpz Transformer (not HF models) and — for now —
+    # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
+    # Resolved against the actual model after it's built (see below).
+    want_fused_linear = getattr(args, "loss_impl", "eager") == "fused-linear"
     device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
         (dpsize, args.tp),
@@ -2148,6 +2268,26 @@ def train(
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
+    # Resolve fused-linear eligibility now that the model exists. Requires the
+    # ezpz Transformer (has `.output` weight + return_hidden) and tp=1 for now.
+    use_fused_linear = False
+    if want_fused_linear:
+        has_output = hasattr(base_model, "output") and hasattr(
+            base_model.output, "weight"
+        )
+        if is_hf_model or not has_output:
+            logger.warning(
+                "--loss-impl=fused-linear needs the ezpz Transformer "
+                "(hidden states + output weight); falling back to compiled "
+                "for this model."
+            )
+        elif args.tp > 1:
+            logger.warning(
+                "--loss-impl=fused-linear with tp>1 is not yet supported "
+                "(needs vocab-shard composition); falling back to compiled."
+            )
+        else:
+            use_fused_linear = True
     act_activations: dict[str, torch.Tensor] = {}
     act_handles: list[torch.utils.hooks.RemovableHandle] = []
     if track_hist and track_act_hist and ezpz.get_rank() == 0 and not is_hf_model:
@@ -2315,11 +2455,19 @@ def train(
             labels = labels.to(device)
             if attn_mask is not None:
                 attn_mask = attn_mask.to(device)
-            pred = model(inp)
+            # fused-linear gets hidden states (B,T,dim) instead of logits, so
+            # the loss can form logits in chunks and never materialize the full
+            # (B,T,vocab) tensor. Otherwise the model returns logits as usual.
+            if use_fused_linear:
+                pred = model(inp, return_hidden=True)
+            else:
+                pred = model(inp)
             # HF causal-LM models return a CausalLMOutput dataclass with a
             # `.logits` tensor; ezpz's Transformer returns logits directly.
             if hasattr(pred, "logits"):
                 pred = pred.logits
+            # pred is (B,T,vocab) logits, or (B,T,dim) hidden under
+            # fused-linear; either way dim-1 is the (SP-local) seq length.
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
                 labels = _slice_for_sequence_parallel(labels, local_seq_len)
@@ -2364,7 +2512,10 @@ def train(
             # materialized *before* the loss, which can OOM a run that would
             # otherwise fit (the loss itself may be chunked/compiled to stay
             # bounded, but this debug probe is not). Off by default.
-            if track_logits and epoch == 0 and idx == 0:
+            # Skip the logits probe under fused-linear: `pred` is hidden
+            # states there, not logits, so finite/max-abs of it is meaningless
+            # (and the full logits are never materialized by design).
+            if track_logits and not use_fused_linear and epoch == 0 and idx == 0:
                 pred_finite = torch.isfinite(pred)
                 pred_nonfinite = int((~pred_finite).sum().item())
                 pred_max = float(pred.abs().max().item())
@@ -2376,7 +2527,18 @@ def train(
                     pred_nonfinite,
                     f"{pred_max:.6f}",
                 )
-            if use_loss_parallel:
+            if use_fused_linear:
+                # `pred` is hidden states (B,T,dim); form logits in chunks
+                # inside the loss via h @ output.weight.T — never materializing
+                # the full (B,T,vocab) logits or its grad.
+                loss = _cross_entropy_fused_linear(
+                    pred,
+                    base_model.output.weight,
+                    labels,
+                    ignore_index=-100,
+                    chunk_size=args.loss_chunk_size,
+                )
+            elif use_loss_parallel:
                 # `pred` is this rank's local [B, T, vocab/tp] shard
                 # (output projection has use_local_output=True under
                 # loss-parallel). Vocab-parallel CE reduces across the TP

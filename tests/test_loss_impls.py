@@ -98,6 +98,65 @@ class TestLossImplEquivalence:
             assert torch.isfinite(gv).all(), f"{impl} grad not finite"
 
 
+@pytest.mark.skipif(not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable")
+class TestFusedLinearCE:
+    """fused-linear forms logits as ``h @ W.T`` in chunks; verify loss AND
+    both gradients (grad_h, grad_W) match eager CE over the full logits.
+    """
+
+    @pytest.mark.parametrize(
+        "shape", [(16, 8, 50), (257, 16, 128), (8, 32, 1000)], ids=["small", "long", "wide"]
+    )
+    def test_matches_eager_loss_and_both_grads(self, shape):
+        torch.manual_seed(0)
+        N, D, V = shape
+        h = torch.randn(N, D, dtype=torch.float32)
+        W = torch.randn(V, D, dtype=torch.float32)
+        labels = torch.randint(0, V, (N,))
+        labels[::5] = -100
+
+        he = h.clone().requires_grad_(True)
+        We = W.clone().requires_grad_(True)
+        import torch.nn.functional as F
+
+        ref = F.cross_entropy(he @ We.t(), labels, ignore_index=-100)
+        ref.backward()
+
+        hf = h.clone().requires_grad_(True)
+        Wf = W.clone().requires_grad_(True)
+        lf = fsdp_tp._cross_entropy_fused_linear(
+            hf, Wf, labels, ignore_index=-100, chunk_size=7
+        )
+        lf.backward()
+
+        assert torch.allclose(lf, ref, atol=1e-4), f"loss {lf} != {ref}"
+        assert torch.allclose(hf.grad, he.grad, atol=1e-4), "grad_h mismatch"
+        assert torch.allclose(Wf.grad, We.grad, atol=1e-4), "grad_W mismatch"
+
+    def test_chunk_size_invariant(self):
+        torch.manual_seed(1)
+        h = torch.randn(64, 16, dtype=torch.float32)
+        W = torch.randn(200, 16, dtype=torch.float32)
+        labels = torch.randint(0, 200, (64,))
+        labels[::3] = -100
+        import torch.nn.functional as F
+
+        he = h.clone().requires_grad_(True)
+        We = W.clone().requires_grad_(True)
+        ref = F.cross_entropy(he @ We.t(), labels, ignore_index=-100)
+        ref.backward()
+        for cs in (1, 9, 64, 100000):
+            hf = h.clone().requires_grad_(True)
+            Wf = W.clone().requires_grad_(True)
+            lf = fsdp_tp._cross_entropy_fused_linear(
+                hf, Wf, labels, ignore_index=-100, chunk_size=cs
+            )
+            lf.backward()
+            assert torch.allclose(lf, ref, atol=1e-4), f"cs={cs} loss"
+            assert torch.allclose(hf.grad, he.grad, atol=1e-4), f"cs={cs} grad_h"
+            assert torch.allclose(Wf.grad, We.grad, atol=1e-4), f"cs={cs} grad_W"
+
+
 # ---------------------------------------------------------------------------
 # Vocab-parallel CE: real 2-rank gloo test (the simulation in dev verified the
 # math; this exercises the actual funcol all-reduces + process group, so a
