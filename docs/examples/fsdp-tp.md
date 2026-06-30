@@ -669,13 +669,51 @@ Takeaways:
   which is what lets you push a bigger batch or sequence before OOM.
 - Net guidance: **`compiled` for raw speed when it fits; `fused-linear` for
   memory headroom.** At this 128K-vocab / seq-8192 operating point both fit
-  easily and `compiled` wins on speed. `fused-linear`'s advantage widens as
-  vocab × seq grows and `compiled` approaches the OOM cliff (cf. agpt's native
-  256K vocab, where the eager/compiled transient is the binding constraint).
+  easily and `compiled` wins on speed. (At the native 256K vocab the picture
+  is more nuanced — both avoid the eager OOM but have severe first-step
+  latency on XPU; see "The real baseline" below.)
 
 > Loss reads `nan` during these runs — expected, since the model is
 > randomly initialized with no real LR schedule. The benchmark measures
 > throughput and memory only, not convergence.
+
+### The real baseline: `eager` doesn't run at all
+
+The `compiled`-vs-`fused-linear` table above is a tradeoff *between two
+bounded modes*. The more important comparison is against the **default
+(`eager`) cross-entropy**, which is what these modes replace. Measured on the
+same 2-node Sunspot setup (agpt-2b, bs=2, seq=8192, tp=1, dp=24):
+
+| `--loss-impl` | vocab=128,000 (Llama-3.2-1B tok) | vocab=256,128 (native agpt-2b) |
+|---|---|---|
+| `eager` | ❌ OOM in `loss.backward()` (step 0) | ❌ OOM in `F.cross_entropy` fwd (step 0) |
+| `compiled` | ✅ 33.4% MFU, 8.76 GiB | ⚠️ runs (no OOM); compile warmup did not finish in 15 min |
+| `fused-linear` | ✅ 28.8% MFU, 1.50 GiB | ⚠️ runs (no OOM); first step >26 min (see below) |
+
+So the headline is **enablement, not just speed**: at bs=2/seq=8192 the eager
+`(B·T, vocab)` cross-entropy transient OOMs the PVC tile at step 0 — at *both*
+vocab sizes (it OOMs in the backward at 128K, and can't even materialize the
+forward logits at 256K). The bounded modes turn "doesn't run" into "trains."
+That is the actual before/after this PR delivers.
+
+!!! warning "256K vocab: avoids OOM, but first-step latency is severe on XPU"
+
+    At agpt's native 256K vocab, neither bounded mode OOMs — but neither
+    produced a steady-state step in a practical wall-clock on the current
+    XPU/torch build:
+
+    - `compiled`: `torch.compile` warmup over the 256K-vocab reduction did not
+      finish within a 15-min cap (0 steps; not an OOM — it was still compiling).
+    - `fused-linear`: reached the first step but the chunked output-projection +
+      CE over 256K vocab took **>26 min for step 0 alone** (vs *seconds* at
+      128K), i.e. a superlinear first-step cliff, not the ~2× you'd expect from
+      doubling the vocab.
+
+    Net: at 256K on PVC today, the bounded modes are *correct and non-OOMing*
+    but not yet *fast to warm up*. Steady-state 256K throughput is therefore
+    not reported here. If you hit this, prefer a smaller effective vocab
+    (custom tokenizer) for throughput work, and track the first-step latency as
+    a separate XPU-inductor / chunked-matmul issue.
 
 ## Help
 
