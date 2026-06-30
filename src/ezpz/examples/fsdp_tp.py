@@ -643,6 +643,17 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
 
         tp_world = dist.get_world_size(tp_group)
         tp_rank = dist.get_rank(tp_group)
+        # Fail fast on a degenerate sharding: if the TP degree exceeds the
+        # global vocab, the highest ranks get an empty (local_vocab==0) shard,
+        # which would otherwise blow up later in gather/indexing with a
+        # confusing error. This config makes no sense for vocab-parallel CE.
+        if tp_world > global_vocab_size:
+            raise ValueError(
+                f"vocab-parallel CE requires global_vocab_size "
+                f"({global_vocab_size}) >= TP world size ({tp_world}); "
+                "some ranks would hold an empty vocab shard. Use a smaller "
+                "--tp or a different --loss-impl."
+            )
         chunk = (global_vocab_size + tp_world - 1) // tp_world
         vocab_start = min(global_vocab_size, chunk * tp_rank)
         vocab_end = min(global_vocab_size, vocab_start + chunk)
@@ -841,7 +852,22 @@ def _compute_loss(
         return _cross_entropy_compiled(
             logits, labels, ignore_index=ignore_index
         )
-    return _cross_entropy_eager(logits, labels, ignore_index=ignore_index)
+    if impl == "eager":
+        return _cross_entropy_eager(logits, labels, ignore_index=ignore_index)
+    # `fused-linear` and `loss-parallel` are NOT logits-based CE variants — they
+    # are dispatched at the call site (they need the output module / a vocab
+    # shard + TP group), and when their specialized path is disabled the caller
+    # is expected to have normalized `loss_impl` to a supported value (e.g.
+    # `compiled`). Reaching here with one of those (or any unknown) means that
+    # normalization was missed; fail loudly instead of silently running eager CE
+    # — which would reintroduce the full-(B*T, vocab) logits/grad OOM these modes
+    # exist to avoid.
+    raise ValueError(
+        f"_compute_loss got unhandled impl={impl!r}. Expected one of "
+        "{'eager', 'chunked', 'chunked-backward', 'compiled'}. "
+        "('fused-linear'/'loss-parallel' are dispatched separately and must be "
+        "normalized to a supported impl when their specialized path is disabled.)"
+    )
 
 
 def _sample_tensor_values(
@@ -1894,16 +1920,16 @@ def train(
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
-    # loss-parallel (vocab-sharded CE) only does anything at tp>1; at tp=1 the
-    # local vocab IS the full vocab, so the loss call site falls back to eager.
-    use_loss_parallel = (
-        getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
-    )
     # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
     # weight, so only the ezpz Transformer (not HF models) and — for now —
     # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
     # Resolved against the actual model after it's built (see below).
     want_fused_linear = getattr(args, "loss_impl", "eager") == "fused-linear"
+    # loss-parallel (vocab-sharded CE) only does anything at tp>1; at tp=1 the
+    # local vocab IS the full vocab. NOTE: `use_loss_parallel` is resolved
+    # LATER (after the HF branch may force args.tp=1), so an HF model launched
+    # with --tp>1 --loss-impl=loss-parallel doesn't enter vocab-parallel CE
+    # with a stale TP group. See the resolution just before parallelize().
     device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
         (dpsize, args.tp),
@@ -2099,6 +2125,23 @@ def train(
             param_dtype=torch.bfloat16,
             reduce_dtype=_reduce_dtype,
         )
+    # Resolve loss-parallel NOW that args.tp is final (the HF branch above may
+    # have forced tp=1). loss-parallel only does anything at tp>1; at tp=1 the
+    # local vocab IS the full vocab, so normalize to compiled CE rather than
+    # leaving loss_impl='loss-parallel' to hit an unhandled impl at the call
+    # site. This also covers the HF + --tp>1 --loss-impl=loss-parallel case:
+    # tp is now 1, so we fall back instead of entering vocab-parallel CE with a
+    # stale TP group.
+    use_loss_parallel = (
+        getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
+    )
+    if getattr(args, "loss_impl", "eager") == "loss-parallel" and not use_loss_parallel:
+        logger.warning(
+            "--loss-impl=loss-parallel requires tp>1 (got tp=%d); falling back "
+            "to compiled CE.",
+            args.tp,
+        )
+        args.loss_impl = "compiled"
     if is_hf_model:
         # HF path: FSDP2-only wrap (no TP — the TP plan is ezpz-specific).
         # Apply activation checkpointing first (HF models use their own
@@ -2256,11 +2299,16 @@ def train(
                 "(hidden states + output weight); falling back to compiled "
                 "for this model."
             )
+            # Normalize so the `_compute_loss` call site actually runs compiled
+            # CE — leaving loss_impl='fused-linear' would fall through to an
+            # unhandled impl (now an error; previously silent eager + OOM).
+            args.loss_impl = "compiled"
         elif args.tp > 1:
             logger.warning(
                 "--loss-impl=fused-linear with tp>1 is not yet supported "
                 "(needs vocab-shard composition); falling back to compiled."
             )
+            args.loss_impl = "compiled"
         else:
             use_fused_linear = True
     act_activations: dict[str, torch.Tensor] = {}

@@ -205,14 +205,29 @@ class TestFusedLinearCE:
 _VP_N, _VP_V = 8, 12  # rows, global vocab (split across 2 ranks: 6 + 6)
 
 
-def _vp_worker(rank, world_size, vocab, n_rows, ret):
+def _free_port() -> int:
+    """Bind to port 0 to let the OS hand us a free TCP port, then release it."""
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def _vp_worker(rank, world_size, vocab, n_rows, master_port, ret):
     import os
 
     import torch
     import torch.distributed as dist
 
-    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-    os.environ.setdefault("MASTER_PORT", "29555")
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    # Port is chosen (free) by the parent and passed in, rather than
+    # `setdefault`-ing a hard-coded value: setdefault would inherit an
+    # already-set (possibly busy) MASTER_PORT from the parent environment and
+    # hang/flake on collision.
+    os.environ["MASTER_PORT"] = str(master_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
     try:
         import ezpz.examples.fsdp_tp as m
@@ -244,15 +259,24 @@ def _vp_worker(rank, world_size, vocab, n_rows, ret):
 
 
 @pytest.mark.skipif(not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable")
-def test_vocab_parallel_matches_eager_2rank():
+@pytest.mark.parametrize(
+    "vocab",
+    [
+        12,  # even: 2 ranks -> 6 + 6 (divisible)
+        13,  # uneven: 2 ranks -> 7 + 6, exercises the uneven-shard math
+        # (local_vocab computation, out-of-range label clamping, ragged gather)
+    ],
+)
+def test_vocab_parallel_matches_eager_2rank(vocab):
     import torch
     import torch.multiprocessing as mp
 
+    port = _free_port()
     try:
         mgr = mp.Manager()
         ret = mgr.dict()
         mp.spawn(
-            _vp_worker, args=(2, _VP_V, _VP_N, ret), nprocs=2, join=True
+            _vp_worker, args=(2, vocab, _VP_N, port, ret), nprocs=2, join=True
         )
     except Exception as exc:  # noqa: BLE001 - gloo/spawn may be unavailable
         pytest.skip(f"2-rank gloo unavailable: {exc}")
@@ -260,8 +284,8 @@ def test_vocab_parallel_matches_eager_2rank():
     assert "loss" in ret, "rank 0 did not report"
     # Reference: full-vocab eager CE on the SAME seeded data.
     torch.manual_seed(123)
-    full = torch.randn(_VP_N, _VP_V, dtype=torch.float32, requires_grad=True)
-    labels = torch.randint(0, _VP_V, (_VP_N,))
+    full = torch.randn(_VP_N, vocab, dtype=torch.float32, requires_grad=True)
+    labels = torch.randint(0, vocab, (_VP_N,))
     labels[::4] = -100
     import torch.nn.functional as F
 
@@ -269,8 +293,8 @@ def test_vocab_parallel_matches_eager_2rank():
     ref.backward()
     s, e = ret["shard"]
     assert abs(ret["loss"] - float(ref)) < 1e-4, (
-        f"vp loss {ret['loss']} != eager {float(ref)}"
+        f"vp loss {ret['loss']} != eager {float(ref)} (vocab={vocab})"
     )
     assert torch.allclose(ret["grad0"], full.grad[:, s:e], atol=1e-4), (
-        "vocab-parallel grad shard != eager grad shard"
+        f"vocab-parallel grad shard != eager grad shard (vocab={vocab})"
     )
