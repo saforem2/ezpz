@@ -715,6 +715,61 @@ That is the actual before/after this PR delivers.
     (custom tokenizer) for throughput work, and track the first-step latency as
     a separate XPU-inductor / chunked-matmul issue.
 
+### Full six-mode comparison at a config where *every* mode runs
+
+To get real throughput/memory numbers for **all** `--loss-impl` modes side by
+side — not just "what each unlocks" — we need an operating point where even
+`eager` fits. Pairing the **`google/gemma-7b` tokenizer (vocab 256,000 —
+realistically large)** with a shorter **seq-len 2048** does it: the
+`(B·T, vocab)` transient is ~4× smaller than the seq-8192 case above, so eager
+fits with headroom and every mode produces steady-state steps.
+
+Setup: agpt-2b arch, `--tokenizer_name google/gemma-7b` (vocab 256,000),
+`--seq-len 2048`, `--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`,
+2× Sunspot nodes (dp=24), `eliplutchok/fineweb-small-sample`. Steady-state mean
+over 26 iters (warmup + final eval-pass step dropped).
+
+| `--loss-impl` | extra flags | MFU | TFLOP/s/rank | tokens/s | alloc mem | peak mem |
+|---|---|---|---|---|---|---|
+| `eager` | — | 19.1% | 57.0 | 145,900 | 5.18 GiB | 22.94 GiB |
+| `chunked` | — | 17.5% | 52.1 | 133,400 | 5.18 GiB | 21.96 GiB |
+| `chunked-backward` | — | 18.1% | 53.9 | 138,000 | 5.18 GiB | 18.37 GiB |
+| `compiled` | — | 19.7% | 58.9 | 150,700 | 5.18 GiB | 18.37 GiB |
+| `compiled` | `--compile --act-mem-budget 0.5` | **20.0%** | **59.6** | **152,600** | 5.18 GiB | 14.38 GiB |
+| `fused-linear` | — | 17.0% | 50.8 | 129,900 | **2.27 GiB** | **13.19 GiB** |
+
+Reading the table (all relative to the `eager` baseline):
+
+- **The `compiled` modes are the throughput winners** — both beat eager.
+  `compiled` (loss only) is +3% tps over eager while cutting peak memory
+  (18.4 vs 22.9 GiB), because the fused log-softmax+NLL avoids eager's extra
+  softmax buffer. Adding `--compile --act-mem-budget 0.5` (compile the
+  transformer blocks too, with activation recompute) is the **best overall**:
+  highest throughput (20.0% MFU, 152.6k tps) *and* the second-lowest peak
+  memory (14.4 GiB — the activation-memory budget recomputes in backward).
+  When `torch.compile` is available and warms up in time, this is the default
+  to reach for. (Caveat: at 256K-vocab × seq-8192 the compile warmup did not
+  finish in a practical wall-clock on XPU — see the warning above; that's why
+  this comparison uses seq-2048.)
+- **Chunked vs non-chunked:** `chunked` (forward-only) costs ~9% throughput for
+  *no* allocated-memory win (it chunks the forward but the backward still
+  builds the full grad). `chunked-backward` is strictly better among the
+  hand-rolled chunked variants — less throughput hit (~5%) *and* it cuts peak
+  memory (bounds the backward graph). Allocated stays at 5.18 GiB for both
+  because the input logits are still materialized.
+- **Fused vs non-fused:** `fused-linear` is the only mode that cuts *both*
+  allocated (−56%, 2.27 vs 5.18 GiB) and peak (−42%, 13.2 vs 22.9 GiB) — it
+  never materializes the `(B·T, vocab)` logits at all. It pays ~11% throughput
+  for that headroom, which is exactly what buys the bigger-batch / longer-seq /
+  larger-vocab regimes where `eager` OOMs outright (the seq-8192 cases above).
+
+Bottom line: where everything fits, the bounded modes cost **5–11% throughput**
+(except `compiled`, which is a net win), and the memory savings track precisely
+what each mode bounds — forward buffer (`chunked`: none), backward graph
+(`chunked-backward`: peak), or the logits entirely (`fused-linear`: both). The
+mode you pick is a throughput-vs-headroom dial, and at scales past the OOM
+cliff it's not a dial at all — only the bounded modes run.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
