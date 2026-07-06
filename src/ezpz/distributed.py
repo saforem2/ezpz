@@ -62,6 +62,7 @@ __all__ = [
     "get_torch_device",
     "get_torch_device_type",
     "get_torch_backend",
+    "use_torchcomms",
     "TORCH_DTYPES_MAP",
     # -- lifecycle --
     "setup_torch",
@@ -428,6 +429,80 @@ def get_torch_backend() -> str:
             return "xccl"
         return "ccl"
     return "gloo"
+
+
+# Module-scope cache for the torchcomms availability probe so the import
+# check runs once and any warning fires exactly once per process.
+_TORCHCOMMS_CACHE: "tuple[bool, str] | None" = None
+
+
+def _reset_torchcomms_cache() -> None:
+    """Clear the cached torchcomms probe result (test hook)."""
+    global _TORCHCOMMS_CACHE
+    _TORCHCOMMS_CACHE = None
+
+
+def _probe_torchcomms() -> "tuple[bool, str]":
+    """Return ``(usable, reason)`` for torchcomms.
+
+    ``usable`` is True only when torchcomms is importable AND torch exposes the
+    ``use_torchcomms`` switch. ``reason`` is a human-readable explanation when
+    not usable, else ``""``.
+
+    Result is cached at module scope; call :func:`_reset_torchcomms_cache` to
+    reprobe.
+    """
+    global _TORCHCOMMS_CACHE
+    if _TORCHCOMMS_CACHE is not None:
+        return _TORCHCOMMS_CACHE
+    try:
+        import torchcomms  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - any import failure → unavailable
+        _TORCHCOMMS_CACHE = (False, f"torchcomms import failed: {exc}")
+        return _TORCHCOMMS_CACHE
+    import torch.distributed as _td
+
+    if not hasattr(getattr(_td, "config", None), "use_torchcomms"):
+        _TORCHCOMMS_CACHE = (
+            False,
+            "installed torch lacks torch.distributed.config.use_torchcomms",
+        )
+        return _TORCHCOMMS_CACHE
+    _TORCHCOMMS_CACHE = (True, "")
+    return _TORCHCOMMS_CACHE
+
+
+def _torchcomms_requested() -> bool:
+    """Whether ``EZPZ_USE_TORCHCOMMS`` is set to a truthy value."""
+    return os.environ.get("EZPZ_USE_TORCHCOMMS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def use_torchcomms() -> bool:
+    """Whether to route ``torch.distributed`` through torchcomms.
+
+    True only when ``EZPZ_USE_TORCHCOMMS`` is truthy (``1``/``true``/``yes``/
+    ``on``) AND torchcomms is usable (package importable + torch exposes
+    ``torch.distributed.config.use_torchcomms``). Best-effort: returns False
+    when requested-but-unavailable; use :func:`_torchcomms_unavailable_reason`
+    to surface why.
+    """
+    if not _torchcomms_requested():
+        return False
+    usable, _ = _probe_torchcomms()
+    return usable
+
+
+def _torchcomms_unavailable_reason() -> str:
+    """Reason torchcomms is unusable when requested; ``""`` otherwise."""
+    if not _torchcomms_requested():
+        return ""
+    _, reason = _probe_torchcomms()
+    return reason
 
 
 # ===================================================================
