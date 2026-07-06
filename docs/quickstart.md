@@ -34,6 +34,20 @@ uv pip install git+https://github.com/saforem2/ezpz
     uv pip install -e .
     ```
 
+??? tip "Colorized `--help` output"
+
+    `ezpz` and its example modules print syntax-highlighted `--help` text.
+    This is automatic on **Python 3.14+** (argparse colorizes natively).
+    On earlier Python versions, install the `cli` extra to get the same
+    colors on any interpreter:
+
+    ```bash linenums='0'
+    uv pip install "ezpz[cli]"
+    ```
+
+    Colors respect the standard `NO_COLOR` and `FORCE_COLOR` environment
+    variables and are disabled automatically when output is not a terminal.
+
 ??? tip "Try _without installing_ via `uv run`"
 
     If you already have a Python environment with

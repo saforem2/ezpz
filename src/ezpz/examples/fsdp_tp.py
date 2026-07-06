@@ -115,6 +115,7 @@ The remaining comments outline the parallel layout used to combine TP/SP with FS
 import os
 import sys
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import json
 import logging
 import time
@@ -1047,7 +1048,7 @@ def parse_args(argv: Optional[list[str]] = None):
         argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="2D Parallel Training",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
     )
     parser.add_argument(
         "--dim",
@@ -1432,12 +1433,12 @@ def parse_args(argv: Optional[list[str]] = None):
             "fused-linear/compiled there).\n"
             "  • `compiled`: torch.compile fuses log_softmax+NLL+backward so "
             "the full transient is never materialized (torchtitan's approach). "
-            "Fits (~45 GB) and is the FASTEST that fits (~28% MFU). Needs "
+            "Fits (~45 GB) and is the FASTEST that fits (~28%% MFU). Needs "
             "working torch.compile. Best default when it fits.\n"
             "  • `fused-linear` (Liger/Cut-CE): runs the output projection "
             "per row-chunk so the full (B*T,vocab) logits/grad are NEVER built "
             "— bounds BOTH row and vocab dims. LOWEST memory (~32 GB, below "
-            "compiled) at ~24% MFU; trades a little speed for headroom (bigger "
+            "compiled) at ~24%% MFU; trades a little speed for headroom (bigger "
             "batch/seq). ezpz Transformer + tp=1 only (HF / tp>1 fall back to "
             "compiled).\n"
             "  • `loss-parallel`: vocab-parallel CE sharding the vocab across "
@@ -1445,7 +1446,7 @@ def parse_args(argv: Optional[list[str]] = None):
             "VOCAB dim; only helps at tp>1 (at tp=1 falls back to eager). At "
             "tp>1 it is also the only correct path (plain CE hits a "
             "Tensor/DTensor mismatch on Replicate logits). ~23 GB/rank, "
-            "~34% MFU at tp=2.\n"
+            "~34%% MFU at tp=2.\n"
             "NOTE: `--compile` only compiles the transformer blocks, NOT the "
             "loss, so it does NOT by itself fix the loss transient — use "
             "--loss-impl for that."

@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ezpz.cli.help_format import ColorFormatter
+
 # ── Example definitions ──────────────────────────────────────────────────────
 # Each entry mirrors a ``run_example`` call from the original bash script.
 # Args containing ``{model}``, ``{bench_dir}``, or ``{timestamp}`` are
@@ -397,6 +399,7 @@ def run_example(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Run all ezpz examples sequentially and generate a report.",
+        formatter_class=ColorFormatter,
     )
     parser.add_argument(
         "--run", "--examples",

@@ -22,7 +22,7 @@ def _print_help(
     test_help = test_parser.format_help().rstrip()
     launch_parser = build_launch_parser(prog="ezpz launch")
     launch_help = launch_parser.format_help().rstrip()
-    click.echo(f"{test_help}\n\n{launch_help}\n")
+    click.echo(f"{test_help}\n\n{launch_help}\n", color=True)
     ctx.exit()
 
 

@@ -59,6 +59,7 @@ Help output (``python3 -m ezpz.examples.diffusion --help``):
 """
 
 import argparse
+from ezpz.cli.help_format import DefaultsFormatter
 import json
 import math
 import os
@@ -662,7 +663,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         description="Tiny diffusion example for text generation.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=DefaultsFormatter,
     )
     parser.add_argument(
         "--batch-size", type=int, default=int(os.environ.get("BATCH_SIZE", 8))
