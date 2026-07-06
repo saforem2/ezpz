@@ -1689,6 +1689,26 @@ class TestGetDistInfo:
             info = dist.get_dist_info(verbose=True)
             assert isinstance(info, dict)
 
+    def test_dist_info_includes_torchcomms(self, fake_comm, monkeypatch):
+        monkeypatch.delenv("EZPZ_USE_TORCHCOMMS", raising=False)
+        monkeypatch.setenv("NGPU_PER_HOST", "4")
+        monkeypatch.setenv("SLURM_NNODES", "1")
+        monkeypatch.setenv("PMI_LOCAL_RANK", "0")
+        dist._reset_torchcomms_cache()
+        with (
+            patch("ezpz.configs.get_scheduler", return_value="slurm"),
+            patch.object(
+                dist,
+                "get_hostfile_with_fallback",
+                return_value=Path("/dev/null"),
+            ),
+            patch.object(dist, "get_torch_device", return_value="cpu"),
+            patch.object(dist, "get_torch_backend", return_value="gloo"),
+        ):
+            info = dist.get_dist_info()
+            assert "TORCHCOMMS" in info
+            assert info["TORCHCOMMS"] is False
+
 
 class TestTorchDtypesMap:
     """Tests for ``TORCH_DTYPES_MAP`` and ``_ensure_dtype_map``."""

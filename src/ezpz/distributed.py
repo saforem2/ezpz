@@ -1133,6 +1133,7 @@ def get_dist_info(
             "DEVICE": get_torch_device(),
             "DEVICE_ID": f"{get_torch_device()}:{get_local_rank()}",
             "DISTRIBUTED_BACKEND": get_torch_backend(),
+            "TORCHCOMMS": use_torchcomms(),
             "GPUS_PER_NODE": gpus,
             "HOSTS": str(hosts),
             "HOSTFILE": hostfile_path,
