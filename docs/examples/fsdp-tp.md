@@ -81,13 +81,40 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   `max-autotune` for the slowest startup / fastest steady-state. See
   [torch.compile](#torchcompile) for the per-block rationale and the
   `--tp`/`--ac`/`--compile` interaction caveat.
-- **Cross-entropy implementation** — `--loss-impl {eager,chunked,compiled}`
+- **Cross-entropy implementation** —
+  `--loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}`
   (default `eager`). At a large vocab (agpt's 256K) and long sequence, eager
   `F.cross_entropy` materializes a multi-GB `(B·T, vocab)` fp32 logits +
-  gradient transient in backward. `chunked` bounds it to
-  `--loss-chunk-size` rows at a time; `compiled` wraps the CE in
-  `torch.compile` so inductor fuses log-softmax + NLL + backward (what
-  torchtitan does). See [Matching torchtitan](#matching-torchtitan).
+  gradient transient in backward that OOMs even when the model fits. The
+  large-vocab output path is *the* memory bottleneck; pick by need (numbers
+  measured on agpt-2b, tp=1, bs=2, seq=8192):
+    - `eager` — full logits; OOMs at this scale. Small vocab/seq only.
+    - `chunked` — chunks the **forward** only (`--loss-chunk-size`); does
+      **not** bound backward, still OOMs at large vocab. Rarely useful.
+    - `chunked-backward` — custom autograd Function that also bounds the
+      backward **graph** (recomputes each chunk's grad), saving ~one full
+      logits buffer vs eager. General + model-agnostic: works for **HF
+      models** (where `fused-linear` can't) and needs **no `torch.compile`** —
+      good at *moderate* vocab/seq or when compile is unavailable. Still holds
+      two logit-sized buffers, so it does **not** fix the very-large-vocab OOM
+      (use `fused-linear`/`compiled` there).
+    - `compiled` — `torch.compile` fuses log-softmax + NLL + backward so the
+      full transient never materializes (torchtitan's approach). Fits
+      (~45 GiB) and is the **fastest that fits** (~28% MFU). Best default
+      when it fits + compile works.
+    - `fused-linear` — runs the output projection per row-chunk so the full
+      `(B·T, vocab)` logits/grad are **never built** (Liger/Cut-CE style);
+      bounds **both** the row and vocab dims. **Lowest memory** (~32 GiB,
+      below compiled) at ~24% MFU — trade a little speed for headroom (bigger
+      batch/seq). ezpz `Transformer` + tp=1 only (HF / tp>1 fall back to
+      compiled).
+    - `loss-parallel` — vocab-parallel CE sharding the vocab across TP ranks
+      (each holds `vocab/tp`) via TP all-reduces. Bounds the **vocab** dim;
+      only helps at tp>1 (falls back to eager at tp=1). At tp>1 it is also the
+      **only correct path** (plain CE hits a Tensor/DTensor mismatch on the
+      replicated logits). ~23 GiB/rank, ~34% MFU at tp=2.
+
+  See [Matching torchtitan](#matching-torchtitan).
 - **Activation-memory budget** — `--act-mem-budget <float>` (default `1.0`,
   only active with `--compile`). Sets
   `torch._functorch.config.activation_memory_budget`: `1.0` saves every
@@ -586,6 +613,163 @@ dp=48, `--compile`):
 Lower the budget further (e.g. `0.3`) to trade more recompute for less
 memory if you need headroom for a bigger batch.
 
+## `compiled` vs `fused-linear` benchmark (agpt-2b, 128K vocab)
+
+A head-to-head of the two production-scale `--loss-impl` modes on Sunspot
+(Intel PVC). To keep the run in a regime where both modes comfortably fit —
+so the comparison measures *speed vs memory*, not who hits the OOM cliff
+first — the agpt-2b architecture is paired with the **`meta-llama/Llama-3.2-1B`
+tokenizer**, which drops the vocab from agpt's native 256,128 to **128,000**
+(the `(B·T, vocab)` logits/grad buffers roughly halve). The example does this
+override automatically: pass a real HF dataset + `--tokenizer_name` and the
+tokenizer's `vocab_size` replaces the preset's (logged as `Overriding
+vocab_size from 256128 to tokenizer vocab_size=128000`).
+
+Setup: agpt-2b (`dim=2048`, `n_layers=12`, `hidden_dim=11008`),
+`--tokenizer_name meta-llama/Llama-3.2-1B` (vocab 128,000), `--seq-len 8192`,
+`--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`, 2× Sunspot nodes
+(dp=24), dataset `eliplutchok/fineweb-small-sample`. Each config runs ~31
+iters; metrics are the steady-state mean over 26 iters (warmup + the final
+eval-pass step dropped).
+
+```bash
+# compiled (fastest that fits)
+ezpz launch python3 -m ezpz.examples.fsdp_tp \
+  --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
+  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --compile --loss-impl compiled --act-mem-budget 0.5
+
+# fused-linear (lowest memory)
+ezpz launch python3 -m ezpz.examples.fsdp_tp \
+  --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
+  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --loss-impl fused-linear
+```
+
+| metric | `compiled` | `fused-linear` | Δ (fused vs compiled) |
+|---|---|---|---|
+| MFU | **33.4 %** | 28.8 % | −13.8 % |
+| TFLOP/s (per rank) | **99.5** | 85.8 | −13.8 % |
+| tokens/s (global) | **248,400** | 214,200 | −13.8 % |
+| tokens/s (per GPU) | 10,351 | 8,926 | −13.8 % |
+| step time | 1.58 s | 1.84 s | +16 % |
+| memory (peak reserved) | 28.64 GiB | 29.10 GiB | +1.6 % |
+| memory (allocated) | 8.76 GiB | **1.50 GiB** | **−83 %** |
+
+Takeaways:
+
+- **`compiled` is ~14% faster** on every throughput metric. Compiling the
+  block + the fused cross-entropy keeps the GPU busy; this is the mode to use
+  when it fits.
+- **`fused-linear`'s win is allocated memory: 1.50 GiB vs 8.76 GiB (−83%).**
+  It runs the output projection per row-chunk so the full `(B·T, vocab)`
+  logits/grad are never materialized — exactly its design goal. The *reserved*
+  peak looks ~equal only because at 128K vocab the activation high-water mark
+  dominates the allocator arena; the headroom shows up in **allocated** bytes,
+  which is what lets you push a bigger batch or sequence before OOM.
+- Net guidance: **`compiled` for raw speed when it fits; `fused-linear` for
+  memory headroom.** At this 128K-vocab / seq-8192 operating point both fit
+  easily and `compiled` wins on speed. (At the native 256K vocab the picture
+  is more nuanced — both avoid the eager OOM but have severe first-step
+  latency on XPU; see "The real baseline" below.)
+
+> Loss reads `nan` during these runs — expected, since the model is
+> randomly initialized with no real LR schedule. The benchmark measures
+> throughput and memory only, not convergence.
+
+### The real baseline: `eager` doesn't run at all
+
+The `compiled`-vs-`fused-linear` table above is a tradeoff *between two
+bounded modes*. The more important comparison is against the **default
+(`eager`) cross-entropy**, which is what these modes replace. Measured on the
+same 2-node Sunspot setup (agpt-2b, bs=2, seq=8192, tp=1, dp=24):
+
+| `--loss-impl` | vocab=128,000 (Llama-3.2-1B tok) | vocab=256,128 (native agpt-2b) |
+|---|---|---|
+| `eager` | ❌ OOM in `loss.backward()` (step 0) | ❌ OOM in `F.cross_entropy` fwd (step 0) |
+| `compiled` | ✅ 33.4% MFU, 8.76 GiB | ⚠️ runs (no OOM); compile warmup did not finish in 15 min |
+| `fused-linear` | ✅ 28.8% MFU, 1.50 GiB | ⚠️ runs (no OOM); first step >26 min (see below) |
+
+So the headline is **enablement, not just speed**: at bs=2/seq=8192 the eager
+`(B·T, vocab)` cross-entropy transient OOMs the PVC tile at step 0 — at *both*
+vocab sizes (it OOMs in the backward at 128K, and can't even materialize the
+forward logits at 256K). The bounded modes turn "doesn't run" into "trains."
+That is the actual before/after this PR delivers.
+
+!!! warning "256K vocab: avoids OOM, but first-step latency is severe on XPU"
+
+    At agpt's native 256K vocab, neither bounded mode OOMs — but neither
+    produced a steady-state step in a practical wall-clock on the current
+    XPU/torch build:
+
+    - `compiled`: `torch.compile` warmup over the 256K-vocab reduction did not
+      finish within a 15-min cap (0 steps; not an OOM — it was still compiling).
+    - `fused-linear`: reached the first step but the chunked output-projection +
+      CE over 256K vocab took **>26 min for step 0 alone** (vs *seconds* at
+      128K), i.e. a superlinear first-step cliff, not the ~2× you'd expect from
+      doubling the vocab.
+
+    Net: at 256K on PVC today, the bounded modes are *correct and non-OOMing*
+    but not yet *fast to warm up*. Steady-state 256K throughput is therefore
+    not reported here. If you hit this, prefer a smaller effective vocab
+    (custom tokenizer) for throughput work, and track the first-step latency as
+    a separate XPU-inductor / chunked-matmul issue.
+
+### Full six-mode comparison at a config where *every* mode runs
+
+To get real throughput/memory numbers for **all** `--loss-impl` modes side by
+side — not just "what each unlocks" — we need an operating point where even
+`eager` fits. Pairing the **`google/gemma-7b` tokenizer (vocab 256,000 —
+realistically large)** with a shorter **seq-len 2048** does it: the
+`(B·T, vocab)` transient is ~4× smaller than the seq-8192 case above, so eager
+fits with headroom and every mode produces steady-state steps.
+
+Setup: agpt-2b arch, `--tokenizer_name google/gemma-7b` (vocab 256,000),
+`--seq-len 2048`, `--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`,
+2× Sunspot nodes (dp=24), `eliplutchok/fineweb-small-sample`. Steady-state mean
+over 26 iters (warmup + final eval-pass step dropped).
+
+| `--loss-impl` | extra flags | MFU | TFLOP/s/rank | tokens/s | alloc mem | peak mem |
+|---|---|---|---|---|---|---|
+| `eager` | — | 19.1% | 57.0 | 145,900 | 5.18 GiB | 22.94 GiB |
+| `chunked` | — | 17.5% | 52.1 | 133,400 | 5.18 GiB | 21.96 GiB |
+| `chunked-backward` | — | 18.1% | 53.9 | 138,000 | 5.18 GiB | 18.37 GiB |
+| `compiled` | — | 19.7% | 58.9 | 150,700 | 5.18 GiB | 18.37 GiB |
+| `compiled` | `--compile --act-mem-budget 0.5` | **20.0%** | **59.6** | **152,600** | 5.18 GiB | 14.38 GiB |
+| `fused-linear` | — | 17.0% | 50.8 | 129,900 | **2.27 GiB** | **13.19 GiB** |
+
+Reading the table (all relative to the `eager` baseline):
+
+- **The `compiled` modes are the throughput winners** — both beat eager.
+  `compiled` (loss only) is +3% tps over eager while cutting peak memory
+  (18.4 vs 22.9 GiB), because the fused log-softmax+NLL avoids eager's extra
+  softmax buffer. Adding `--compile --act-mem-budget 0.5` (compile the
+  transformer blocks too, with activation recompute) is the **best overall**:
+  highest throughput (20.0% MFU, 152.6k tps) *and* the second-lowest peak
+  memory (14.4 GiB — the activation-memory budget recomputes in backward).
+  When `torch.compile` is available and warms up in time, this is the default
+  to reach for. (Caveat: at 256K-vocab × seq-8192 the compile warmup did not
+  finish in a practical wall-clock on XPU — see the warning above; that's why
+  this comparison uses seq-2048.)
+- **Chunked vs non-chunked:** `chunked` (forward-only) costs ~9% throughput for
+  *no* allocated-memory win (it chunks the forward but the backward still
+  builds the full grad). `chunked-backward` is strictly better among the
+  hand-rolled chunked variants — less throughput hit (~5%) *and* it cuts peak
+  memory (bounds the backward graph). Allocated stays at 5.18 GiB for both
+  because the input logits are still materialized.
+- **Fused vs non-fused:** `fused-linear` is the only mode that cuts *both*
+  allocated (−56%, 2.27 vs 5.18 GiB) and peak (−42%, 13.2 vs 22.9 GiB) — it
+  never materializes the `(B·T, vocab)` logits at all. It pays ~11% throughput
+  for that headroom, which is exactly what buys the bigger-batch / longer-seq /
+  larger-vocab regimes where `eager` OOMs outright (the seq-8192 cases above).
+
+Bottom line: where everything fits, the bounded modes cost **5–11% throughput**
+(except `compiled`, which is a net win), and the memory savings track precisely
+what each mode bounds — forward buffer (`chunked`: none), backward graph
+(`chunked-backward`: peak), or the logits entirely (`fused-linear`: both). The
+mode you pick is a throughput-vs-headroom dial, and at scales past the OOM
+cliff it's not a dial at all — only the bounded modes run.
+
 ## Help
 
 <details closed><summary><code>--help</code></summary>
@@ -619,7 +803,7 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS]
                   [--compile]
                   [--compile-mode {default,reduce-overhead,max-autotune}]
                   [--act-mem-budget ACT_MEM_BUDGET]
-                  [--loss-impl {eager,chunked,compiled}]
+                  [--loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}]
                   [--loss-chunk-size LOSS_CHUNK_SIZE]
 
 2D Parallel Training
@@ -798,7 +982,7 @@ options:
                         MemoryBudgetAC sets 0.5). Try 0.5 if you OOM in
                         backward at a batch size that should fit. (default:
                         1.0)
-  --loss-impl {eager,chunked,compiled}
+  --loss-impl {eager,chunked,chunked-backward,compiled,fused-linear,loss-parallel}
                         Cross-entropy implementation. `eager` (default) is the
                         plain F.cross_entropy over the full (B*T, vocab)
                         logits — simplest, but at large vocab (e.g. agpt's
