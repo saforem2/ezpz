@@ -446,13 +446,22 @@ def _cross_entropy_chunked(
     """Mean-reduced cross-entropy computed over row chunks.
 
     Mathematically identical to ``_cross_entropy_eager`` (mean over the
-    non-ignored tokens), but only one ``chunk_size``-row block of logits
-    (and its gradient) is materialized at a time, bounding the backward
-    transient by ``chunk_size * vocab`` instead of ``B*T * vocab``.
+    non-ignored tokens). We accumulate the SUM of per-token losses across
+    chunks and divide by the total valid-token count once, so the result
+    matches mean reduction exactly (autograd handles the constant scale
+    through the division).
 
-    We accumulate the SUM of per-token losses across chunks and divide by
-    the total valid-token count once, so the result matches mean reduction
-    exactly (autograd handles the constant scale through the division).
+    .. warning::
+        This chunks only the **forward** pass. Because every chunk feeds a
+        single autograd graph over the full ``flat_logits``, ``backward()``
+        still materializes the entire ``(B*T, vocab)`` logits gradient at
+        once — it does NOT bound the backward transient. Measured on
+        agpt-2b (bs=2, seq=8192, vocab=256K) this OOMs in ``loss.backward()``
+        (~15.6 GiB logits grad) where ``--loss-impl=compiled`` fits. Prefer
+        ``compiled`` for large-vocab models; ``chunked`` only meaningfully
+        helps the forward transient and is not a backward-memory lever.
+        (A true backward bound would need a custom ``autograd.Function`` or
+        activation checkpointing around the per-chunk CE.)
     """
     flat_logits = logits.reshape(-1, logits.size(-1))
     flat_labels = labels.reshape(-1)
@@ -477,6 +486,330 @@ def _cross_entropy_chunked(
         )
         total = total + chunk_loss.float()
     return total / denom
+
+
+class _CrossEntropyChunkedBackward(torch.autograd.Function):
+    """Row-chunked cross-entropy that also bounds the *backward* transient.
+
+    Numerically identical to :func:`_cross_entropy_eager` (mean over the
+    non-ignored tokens), but a custom autograd Function whose backward
+    recomputes each row-chunk's gradient on the fly instead of letting
+    autograd hold a full ``(B*T, vocab)`` softmax/logsumexp graph. So the
+    peak *transient beyond the returned grad buffer* is ``chunk_size*vocab``
+    rather than a second full-size graph (unlike :func:`_cross_entropy_chunked`,
+    which chunks only the forward and still OOMs in backward at large vocab).
+
+    Scope / when to use this:
+      - It is a **general, model-agnostic** method: it operates on any already
+        materialized ``(B*T, vocab)`` logits, so it works for **HF models**
+        (where ``fused-linear`` cannot go — that needs the ezpz Transformer's
+        hidden-state path) and needs **no torch.compile** (handy when inductor
+        is unavailable/flaky, or for debugging).
+      - It helps at **moderate** vocab/seq where eager's extra softmax buffer
+        is what pushes you over: it saves ~one full ``(B*T, vocab)`` buffer
+        vs eager.
+
+    What it does NOT do: the returned ``grad_logits`` is still
+    ``(B*T, vocab)``, and the *input* logits are already materialized, so two
+    logit-sized buffers remain. At very large vocab × long seq (e.g. agpt-2b
+    256K vocab, seq=8192: two ~16.8 GiB fp32 buffers) that still OOMs — there,
+    use ``fused-linear`` (never materializes logits) or ``compiled``. This
+    bounds the *graph*; ``fused-linear`` bounds the *buffers*.
+
+    Returns mean-reduced loss; gradient w.r.t. logits is
+    ``(softmax(logits) - onehot(labels)) / valid`` with ignored rows zeroed,
+    matching ``F.cross_entropy(reduction="mean", ignore_index=...)``.
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        ignore_index: int,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        flat_logits = logits.reshape(-1, logits.size(-1))
+        flat_labels = labels.reshape(-1)
+        n_rows = flat_labels.shape[0]
+
+        valid = (flat_labels != ignore_index).sum()
+        denom = valid.clamp(min=1).to(torch.float32)
+
+        total = torch.zeros((), dtype=torch.float32, device=logits.device)
+        for start in range(0, n_rows, chunk_size):
+            end = min(start + chunk_size, n_rows)
+            # reduction="sum" so chunk contributions add; fp32 to match eager.
+            total = total + F.cross_entropy(
+                flat_logits[start:end],
+                flat_labels[start:end],
+                ignore_index=ignore_index,
+                reduction="sum",
+            ).to(torch.float32)
+
+        # Save the (already-materialized) logits + labels — NOT a second graph.
+        ctx.save_for_backward(flat_logits, flat_labels, denom)
+        ctx.ignore_index = ignore_index
+        ctx.chunk_size = chunk_size
+        ctx.logits_shape = logits.shape
+        ctx.logits_dtype = logits.dtype
+        return total / denom
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
+        flat_logits, flat_labels, denom = ctx.saved_tensors
+        ignore_index = ctx.ignore_index
+        chunk_size = ctx.chunk_size
+
+        # The returned grad buffer is (B*T, vocab); fill it chunk-by-chunk so
+        # the per-chunk softmax (chunk*vocab) is the only transient beyond it.
+        grad_logits = torch.empty_like(flat_logits)
+        scale = (grad_output / denom).to(torch.float32)
+
+        n_rows = flat_labels.shape[0]
+        for start in range(0, n_rows, chunk_size):
+            end = min(start + chunk_size, n_rows)
+            logits_chunk = flat_logits[start:end].to(torch.float32)
+            labels_chunk = flat_labels[start:end]
+            # softmax(logits) - onehot(labels), in fp32 (matches eager grad).
+            probs = torch.softmax(logits_chunk, dim=-1)
+            ignored = labels_chunk == ignore_index
+            safe = torch.where(ignored, torch.zeros_like(labels_chunk), labels_chunk)
+            probs.scatter_add_(
+                -1,
+                safe.unsqueeze(-1),
+                torch.full(
+                    (safe.shape[0], 1), -1.0, dtype=probs.dtype, device=probs.device
+                ),
+            )
+            grad_chunk = probs * scale
+            grad_chunk[ignored] = 0.0  # ignored rows contribute zero gradient
+            grad_logits[start:end] = grad_chunk.to(grad_logits.dtype)
+
+        grad_logits = grad_logits.reshape(ctx.logits_shape)
+        # grads for (logits, labels, ignore_index, chunk_size)
+        return grad_logits, None, None, None
+
+
+def _cross_entropy_chunked_backward(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    chunk_size: int = 1024,
+) -> torch.Tensor:
+    """Functional wrapper around :class:`_CrossEntropyChunkedBackward`."""
+    return _CrossEntropyChunkedBackward.apply(
+        logits, labels, ignore_index, chunk_size
+    )
+
+
+class _VocabParallelCrossEntropy(torch.autograd.Function):
+    """Vocab-parallel cross-entropy on plain (non-DTensor) local tensors.
+
+    Mirrors torchtitan's ``_LossParallelCrossEntropy``
+    (torchtitan/components/loss.py) and the semantics of
+    ``torch.distributed.tensor.parallel.loss_parallel`` — but operates on
+    this rank's local ``[N, vocab/tp]`` vocab shard + a process group,
+    instead of requiring DTensor inputs. Forward uses three TP all-reduces
+    (max for stable log-softmax, sumexp for the denominator, gather for the
+    target logprob); backward is fused (softmax − onehot) with zero
+    collectives. Handles ``IGNORE_INDEX`` and uneven final shards.
+
+    This bounds the **vocab** dimension across TP ranks (each holds
+    ``vocab/tp``), so it only reduces memory when ``tp > 1``. It does NOT
+    bound the row (``B*T``) dimension — combine with row-chunking
+    (``fused-linear``) for both. Returns mean-reduced loss to match
+    :func:`_cross_entropy_eager`.
+
+    Attribution: algorithm adapted from torchtitan (BSD-licensed); ezpz does
+    not import torchtitan (it is a sibling checkout, not a dependency).
+    """
+
+    @staticmethod
+    def forward(  # type: ignore[override]
+        ctx,
+        local_logits: torch.Tensor,
+        labels: torch.Tensor,
+        ignore_index: int,
+        global_vocab_size: int,
+        tp_group,
+    ) -> torch.Tensor:
+        import torch.distributed as dist
+        import torch.distributed._functional_collectives as funcol
+
+        logits_2d = local_logits.reshape(-1, local_logits.size(-1)).float()
+        labels_1d = labels.reshape(-1)
+
+        tp_world = dist.get_world_size(tp_group)
+        tp_rank = dist.get_rank(tp_group)
+        # Fail fast on a degenerate sharding: if the TP degree exceeds the
+        # global vocab, the highest ranks get an empty (local_vocab==0) shard,
+        # which would otherwise blow up later in gather/indexing with a
+        # confusing error. This config makes no sense for vocab-parallel CE.
+        if tp_world > global_vocab_size:
+            raise ValueError(
+                f"vocab-parallel CE requires global_vocab_size "
+                f"({global_vocab_size}) >= TP world size ({tp_world}); "
+                "some ranks would hold an empty vocab shard. Use a smaller "
+                "--tp or a different --loss-impl."
+            )
+        chunk = (global_vocab_size + tp_world - 1) // tp_world
+        vocab_start = min(global_vocab_size, chunk * tp_rank)
+        vocab_end = min(global_vocab_size, vocab_start + chunk)
+        local_vocab = max(0, vocab_end - vocab_start)
+        if logits_2d.shape[-1] != local_vocab:
+            raise ValueError(
+                "_VocabParallelCrossEntropy expected local vocab "
+                f"{local_vocab} for global {global_vocab_size}, got "
+                f"{logits_2d.shape[-1]}."
+            )
+
+        # 1) all-reduce MAX for numerically stable distributed log-softmax.
+        local_max = torch.amax(logits_2d, dim=-1, keepdim=True)
+        local_max = funcol.all_reduce(
+            local_max, reduceOp=dist.ReduceOp.MAX.name, group=tp_group
+        )
+        shifted = logits_2d - local_max
+        # 2) all-reduce SUM of exp for the global softmax denominator.
+        sumexp = torch.sum(torch.exp(shifted), dim=-1, keepdim=True)
+        sumexp = funcol.all_reduce(
+            sumexp, reduceOp=dist.ReduceOp.SUM.name, group=tp_group
+        )
+        log_probs = shifted - torch.log(sumexp)
+
+        # 3) gather the target token's logprob from its owner rank.
+        ignored = labels_1d == ignore_index
+        safe = torch.where(ignored, torch.zeros_like(labels_1d), labels_1d)
+        out_of_range = (safe < vocab_start) | (safe >= vocab_end)
+        local_labels = (safe - vocab_start).clamp_(min=0)
+        local_labels[out_of_range] = 0
+        picked = torch.gather(log_probs, -1, local_labels.unsqueeze(-1))
+        picked[out_of_range.unsqueeze(-1)] = 0.0
+        picked = funcol.all_reduce(
+            picked, reduceOp=dist.ReduceOp.SUM.name, group=tp_group
+        )
+        nll = -picked.squeeze(-1)
+        nll = torch.where(ignored, torch.zeros_like(nll), nll)
+
+        valid = (~ignored).sum().clamp(min=1).to(torch.float32)
+
+        ctx.save_for_backward(log_probs, labels_1d, valid)
+        ctx.vocab_start = vocab_start
+        ctx.local_vocab = local_vocab
+        ctx.ignore_index = ignore_index
+        ctx.logits_shape = local_logits.shape
+        ctx.logits_dtype = local_logits.dtype
+        return nll.sum() / valid
+
+    @staticmethod
+    def backward(ctx, grad_output):  # type: ignore[override]
+        log_probs, labels_1d, valid = ctx.saved_tensors
+        ignored = labels_1d == ctx.ignore_index
+        safe = torch.where(ignored, torch.zeros_like(labels_1d), labels_1d)
+        out_of_range = (safe < ctx.vocab_start) | (
+            safe >= ctx.vocab_start + ctx.local_vocab
+        )
+        local_labels = (safe - ctx.vocab_start).clamp_(min=0)
+        local_labels[out_of_range] = 0
+
+        # grad = (softmax − onehot)/valid * grad_out, onehot only on owner rank.
+        grad = torch.exp(log_probs)
+        row = torch.arange(local_labels.shape[0], device=local_labels.device)
+        # subtract 1 at the target col on the owning rank (0 if out-of-range).
+        grad[row, local_labels] -= (~out_of_range).to(grad.dtype)
+        scale = (grad_output / valid).to(grad.dtype)
+        grad = grad * scale
+        grad[ignored] = 0.0
+        grad = grad.reshape(ctx.logits_shape).to(ctx.logits_dtype)
+        return grad, None, None, None, None
+
+
+def _cross_entropy_vocab_parallel(
+    local_logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    global_vocab_size: int,
+    tp_group,
+) -> torch.Tensor:
+    """Functional wrapper around :class:`_VocabParallelCrossEntropy`."""
+    return _VocabParallelCrossEntropy.apply(
+        local_logits, labels, ignore_index, global_vocab_size, tp_group
+    )
+
+
+def _cross_entropy_fused_linear(
+    hidden: torch.Tensor,
+    output_module: nn.Module,
+    labels: torch.Tensor,
+    *,
+    ignore_index: int = -100,
+    chunk_size: int = 1024,
+) -> torch.Tensor:
+    """Fused output-projection + cross-entropy (Liger / Cut-CE style).
+
+    Computes mean-reduced CE over ``output_module(hidden)`` **without ever
+    materializing the full ``(N, vocab)`` logits tensor**. The hidden states
+    are split into row-chunks; for each chunk the output projection + CE are
+    run under :func:`torch.utils.checkpoint.checkpoint`, so the chunk's
+    ``(chunk, vocab)`` logits are freed after the forward and recomputed one
+    chunk at a time in backward. Peak logits transient is ``chunk*vocab``
+    instead of ``N*vocab`` — bounding BOTH the row and vocab dimensions of
+    the loss (chunked-backward bounds the backward graph but still holds two
+    logit-sized buffers; loss-parallel bounds only the vocab dim across TP
+    ranks; this bounds both, and at tp=1).
+
+    Critically this calls the output projection as a **module**
+    (``output_module(h_chunk)``), NOT ``h @ weight.T`` on a raw weight. Under
+    FSDP2 the projection weight is a sharded DTensor unsharded only inside the
+    module's forward (via FSDP hooks); going through the module lets FSDP
+    all-gather the weight and reduce-scatter its gradient correctly. A
+    hand-rolled ``h @ weight.T`` on the sharded weight raises
+    "mixed Tensor and DTensor" (and bypassing it with ``.full_tensor()`` would
+    silently break gradient flow to the sharded param).
+
+    Numerically matches ``F.cross_entropy(output_module(h), labels,
+    reduction="mean", ignore_index=...)``. Attribution: the chunked
+    fused-linear-CE technique is from Liger-Kernel / Apple Cut-CE /
+    torchtune / torchtitan's ChunkedLossWrapper; this is an independent
+    pure-PyTorch implementation.
+    """
+    from torch.utils.checkpoint import checkpoint
+
+    h2d = hidden.reshape(-1, hidden.size(-1))
+    labels_1d = labels.reshape(-1)
+    n_rows = labels_1d.shape[0]
+    # Denominator for mean reduction over non-ignored tokens (fp32, matches
+    # eager). Sum per-chunk CE then divide once so autograd scales correctly.
+    valid = (labels_1d != ignore_index).sum().clamp(min=1).to(torch.float32)
+
+    def _chunk_loss(h_chunk: torch.Tensor, lbl_chunk: torch.Tensor) -> torch.Tensor:
+        logits_c = output_module(h_chunk)  # FSDP unshards weight here
+        if hasattr(logits_c, "logits"):
+            logits_c = logits_c.logits
+        return F.cross_entropy(
+            logits_c.float(),
+            lbl_chunk,
+            ignore_index=ignore_index,
+            reduction="sum",
+        ).to(torch.float32)
+
+    total = torch.zeros((), dtype=torch.float32, device=hidden.device)
+    for start in range(0, n_rows, chunk_size):
+        end = min(start + chunk_size, n_rows)
+        h_chunk = h2d[start:end]
+        lbl_chunk = labels_1d[start:end]
+        if h_chunk.requires_grad:
+            # checkpoint frees the chunk's logits after forward; recomputed
+            # one chunk at a time in backward -> peak logits = chunk*vocab.
+            total = total + checkpoint(
+                _chunk_loss, h_chunk, lbl_chunk, use_reentrant=False
+            )
+        else:
+            # eval / no-grad: no checkpoint needed.
+            total = total + _chunk_loss(h_chunk, lbl_chunk)
+    return total / valid
 
 
 # Lazily-built torch.compile wrapper around the eager CE. Cached so we only
@@ -511,11 +844,30 @@ def _compute_loss(
         return _cross_entropy_chunked(
             logits, labels, ignore_index=ignore_index, chunk_size=chunk_size
         )
+    if impl == "chunked-backward":
+        return _cross_entropy_chunked_backward(
+            logits, labels, ignore_index=ignore_index, chunk_size=chunk_size
+        )
     if impl == "compiled":
         return _cross_entropy_compiled(
             logits, labels, ignore_index=ignore_index
         )
-    return _cross_entropy_eager(logits, labels, ignore_index=ignore_index)
+    if impl == "eager":
+        return _cross_entropy_eager(logits, labels, ignore_index=ignore_index)
+    # `fused-linear` and `loss-parallel` are NOT logits-based CE variants — they
+    # are dispatched at the call site (they need the output module / a vocab
+    # shard + TP group), and when their specialized path is disabled the caller
+    # is expected to have normalized `loss_impl` to a supported value (e.g.
+    # `compiled`). Reaching here with one of those (or any unknown) means that
+    # normalization was missed; fail loudly instead of silently running eager CE
+    # — which would reintroduce the full-(B*T, vocab) logits/grad OOM these modes
+    # exist to avoid.
+    raise ValueError(
+        f"_compute_loss got unhandled impl={impl!r}. Expected one of "
+        "{'eager', 'chunked', 'chunked-backward', 'compiled'}. "
+        "('fused-linear'/'loss-parallel' are dispatched separately and must be "
+        "normalized to a supported impl when their specialized path is disabled.)"
+    )
 
 
 def _sample_tensor_values(
@@ -1053,22 +1405,50 @@ def parse_args(argv: Optional[list[str]] = None):
         "--loss-impl",
         type=str,
         default="eager",
-        choices=["eager", "chunked", "compiled"],
+        choices=[
+            "eager",
+            "chunked",
+            "chunked-backward",
+            "compiled",
+            "loss-parallel",
+            "fused-linear",
+        ],
         help=(
-            "Cross-entropy implementation. `eager` (default) is the plain "
-            "F.cross_entropy over the full (B*T, vocab) logits — simplest, "
-            "but at large vocab (e.g. agpt's 256K) and long seq it "
-            "materializes a multi-GB fp32 logits+grad transient in "
-            "loss.backward() that can OOM a GPU tile "
-            "(UR_RESULT_ERROR_OUT_OF_RESOURCES) even when the model itself "
-            "fits. `chunked` computes CE over row-chunks (see "
-            "--loss-chunk-size) so only one chunk's logits/grad exist at "
-            "once — pure eager, no torch.compile needed. `compiled` wraps "
-            "CE in torch.compile so inductor fuses log_softmax+NLL+backward "
-            "and never materializes the full transient (torchtitan's "
-            "approach). NOTE: `--compile` only compiles the transformer "
-            "blocks, NOT the loss, so it does NOT fix this — use "
-            "--loss-impl for the loss transient."
+            "Cross-entropy implementation. The large-vocab output path is the "
+            "memory bottleneck: a full (B*T, vocab) fp32 logits tensor + its "
+            "grad (agpt-2b 256K vocab, seq=8192, bs=2: ~16.8 GiB EACH) can OOM "
+            "a GPU tile (UR_RESULT_ERROR_OUT_OF_RESOURCES) even when the model "
+            "fits. Pick by what you need (numbers = measured agpt-2b tp=1):\n"
+            "  • `eager` (default): plain F.cross_entropy on full logits. "
+            "Simplest; OOMs at agpt-2b bs2/seq8192. Use for small vocab/seq.\n"
+            "  • `chunked`: chunks only the FORWARD (--loss-chunk-size). Does "
+            "NOT bound backward; still OOMs at large vocab. Rarely useful.\n"
+            "  • `chunked-backward`: custom autograd Function that also bounds "
+            "the backward graph (recomputes each chunk's grad), saving ~one "
+            "full logits buffer vs eager. General + model-agnostic (works for "
+            "HF models, no torch.compile needed) — good at MODERATE vocab/seq "
+            "or when compile is unavailable. Still holds two logit-sized "
+            "buffers, so it does NOT fix the very-large-vocab OOM (use "
+            "fused-linear/compiled there).\n"
+            "  • `compiled`: torch.compile fuses log_softmax+NLL+backward so "
+            "the full transient is never materialized (torchtitan's approach). "
+            "Fits (~45 GB) and is the FASTEST that fits (~28% MFU). Needs "
+            "working torch.compile. Best default when it fits.\n"
+            "  • `fused-linear` (Liger/Cut-CE): runs the output projection "
+            "per row-chunk so the full (B*T,vocab) logits/grad are NEVER built "
+            "— bounds BOTH row and vocab dims. LOWEST memory (~32 GB, below "
+            "compiled) at ~24% MFU; trades a little speed for headroom (bigger "
+            "batch/seq). ezpz Transformer + tp=1 only (HF / tp>1 fall back to "
+            "compiled).\n"
+            "  • `loss-parallel`: vocab-parallel CE sharding the vocab across "
+            "TP ranks (each holds vocab/tp) via TP all-reduces. Bounds the "
+            "VOCAB dim; only helps at tp>1 (at tp=1 falls back to eager). At "
+            "tp>1 it is also the only correct path (plain CE hits a "
+            "Tensor/DTensor mismatch on Replicate logits). ~23 GB/rank, "
+            "~34% MFU at tp=2.\n"
+            "NOTE: `--compile` only compiles the transformer blocks, NOT the "
+            "loss, so it does NOT by itself fix the loss transient — use "
+            "--loss-impl for that."
         ),
     )
     parser.add_argument(
@@ -1076,9 +1456,10 @@ def parse_args(argv: Optional[list[str]] = None):
         type=int,
         default=1024,
         help=(
-            "Row-chunk size for --loss-impl=chunked (number of (B*T) "
-            "token rows per cross-entropy chunk). Smaller = lower peak "
-            "memory, more kernel launches. Ignored for other --loss-impl."
+            "Row-chunk size (number of (B*T) token rows per cross-entropy "
+            "chunk) for --loss-impl=chunked, chunked-backward, and "
+            "fused-linear. Smaller = lower peak memory, more kernel launches. "
+            "Ignored for eager/compiled/loss-parallel."
         ),
     )
     # max_batch_size: int = 32
@@ -1144,6 +1525,7 @@ def parallelize(
     mixed_precision: Optional[MixedPrecisionPolicy],
     sharding_strategy: Optional[str] = None,
     activation_checkpoint: str = "none",
+    loss_parallel: bool = False,
 ) -> nn.Module:
     """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
 
@@ -1199,11 +1581,14 @@ def parallelize(
                     output_layouts=Shard(1),
                 ),
                 "norm": SequenceParallel(),
+                # With loss_parallel, keep logits vocab-sharded (Shard(-1))
+                # and return the LOCAL [N, vocab/tp] tensor so the loss can run
+                # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
+                # to Replicate() so the loss sees full-vocab logits (default).
                 "output": ColwiseParallel(
                     input_layouts=Shard(1),
-                    output_layouts=Replicate(),
-                    # use DTensor as the output
-                    # use_local_output=False,
+                    output_layouts=Shard(-1) if loss_parallel else Replicate(),
+                    use_local_output=bool(loss_parallel),
                 ),
             },
         )
@@ -1535,6 +1920,16 @@ def train(
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     dpsize = world_size // args.tp
+    # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
+    # weight, so only the ezpz Transformer (not HF models) and — for now —
+    # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
+    # Resolved against the actual model after it's built (see below).
+    want_fused_linear = getattr(args, "loss_impl", "eager") == "fused-linear"
+    # loss-parallel (vocab-sharded CE) only does anything at tp>1; at tp=1 the
+    # local vocab IS the full vocab. NOTE: `use_loss_parallel` is resolved
+    # LATER (after the HF branch may force args.tp=1), so an HF model launched
+    # with --tp>1 --loss-impl=loss-parallel doesn't enter vocab-parallel CE
+    # with a stale TP group. See the resolution just before parallelize().
     device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
         (dpsize, args.tp),
@@ -1730,6 +2125,23 @@ def train(
             param_dtype=torch.bfloat16,
             reduce_dtype=_reduce_dtype,
         )
+    # Resolve loss-parallel NOW that args.tp is final (the HF branch above may
+    # have forced tp=1). loss-parallel only does anything at tp>1; at tp=1 the
+    # local vocab IS the full vocab, so normalize to compiled CE rather than
+    # leaving loss_impl='loss-parallel' to hit an unhandled impl at the call
+    # site. This also covers the HF + --tp>1 --loss-impl=loss-parallel case:
+    # tp is now 1, so we fall back instead of entering vocab-parallel CE with a
+    # stale TP group.
+    use_loss_parallel = (
+        getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
+    )
+    if getattr(args, "loss_impl", "eager") == "loss-parallel" and not use_loss_parallel:
+        logger.warning(
+            "--loss-impl=loss-parallel requires tp>1 (got tp=%d); falling back "
+            "to compiled CE.",
+            args.tp,
+        )
+        args.loss_impl = "compiled"
     if is_hf_model:
         # HF path: FSDP2-only wrap (no TP — the TP plan is ezpz-specific).
         # Apply activation checkpointing first (HF models use their own
@@ -1780,12 +2192,16 @@ def train(
         # TP + FSDP2. parallelize() applies activation checkpointing per
         # block BEFORE fully_shard (correct FSDP2 ordering), so we do NOT
         # re-apply it afterwards.
+        # loss-parallel needs vocab-sharded (local) logits out of the output
+        # projection; only meaningful at tp>1 (at tp=1 there's nothing to
+        # shard, so it falls back to eager — see the loss call site).
         model = parallelize(
             model,
             device_mesh,
             mp_config,
             sharding_strategy=args.sharding_strategy,
             activation_checkpoint=args.activation_checkpoint,
+            loss_parallel=use_loss_parallel,
         )
     if args.compile:
         # Activation-memory budget for the inductor min-cut partitioner.
@@ -1870,6 +2286,31 @@ def train(
     base_model = model
     if not hasattr(base_model, "layers"):
         base_model = getattr(model, "_fsdp_wrapped_module", model)
+    # Resolve fused-linear eligibility now that the model exists. Requires the
+    # ezpz Transformer (has `.output` weight + return_hidden) and tp=1 for now.
+    use_fused_linear = False
+    if want_fused_linear:
+        has_output = hasattr(base_model, "output") and hasattr(
+            base_model.output, "weight"
+        )
+        if is_hf_model or not has_output:
+            logger.warning(
+                "--loss-impl=fused-linear needs the ezpz Transformer "
+                "(hidden states + output weight); falling back to compiled "
+                "for this model."
+            )
+            # Normalize so the `_compute_loss` call site actually runs compiled
+            # CE — leaving loss_impl='fused-linear' would fall through to an
+            # unhandled impl (now an error; previously silent eager + OOM).
+            args.loss_impl = "compiled"
+        elif args.tp > 1:
+            logger.warning(
+                "--loss-impl=fused-linear with tp>1 is not yet supported "
+                "(needs vocab-shard composition); falling back to compiled."
+            )
+            args.loss_impl = "compiled"
+        else:
+            use_fused_linear = True
     act_activations: dict[str, torch.Tensor] = {}
     act_handles: list[torch.utils.hooks.RemovableHandle] = []
     if track_hist and track_act_hist and ezpz.get_rank() == 0 and not is_hf_model:
@@ -2037,11 +2478,19 @@ def train(
             labels = labels.to(device)
             if attn_mask is not None:
                 attn_mask = attn_mask.to(device)
-            pred = model(inp)
+            # fused-linear gets hidden states (B,T,dim) instead of logits, so
+            # the loss can form logits in chunks and never materialize the full
+            # (B,T,vocab) tensor. Otherwise the model returns logits as usual.
+            if use_fused_linear:
+                pred = model(inp, return_hidden=True)
+            else:
+                pred = model(inp)
             # HF causal-LM models return a CausalLMOutput dataclass with a
             # `.logits` tensor; ezpz's Transformer returns logits directly.
             if hasattr(pred, "logits"):
                 pred = pred.logits
+            # pred is (B,T,vocab) logits, or (B,T,dim) hidden under
+            # fused-linear; either way dim-1 is the (SP-local) seq length.
             local_seq_len = pred.shape[1]
             if labels.shape[1] != local_seq_len:
                 labels = _slice_for_sequence_parallel(labels, local_seq_len)
@@ -2054,12 +2503,23 @@ def train(
                     attn_labels = _slice_for_sequence_parallel(
                         attn_labels, local_seq_len
                     )
-                labels = labels.clone()
-                labels[attn_labels == 0] = -100
+            # Build a single ignore-mask (attention-pad OR tokenizer-pad) and
+            # apply it with ONE masked_fill, instead of two .clone()s + two
+            # boolean index-assigns. Each .clone() + labels[mask]=-100 was a
+            # separate aten::copy_ per step; this collapses them to one copy.
+            # -100 can't collide with a valid pad_id (>=0), so mask order is
+            # irrelevant. (Profiling: agpt-2b aten::copy_ was ~8.8% of step.)
             pad_id = getattr(dataset, "pad_id", None)
+            ignore_mask = None
+            if attn_mask is not None:
+                ignore_mask = attn_labels == 0
             if pad_id is not None:
-                labels = labels.clone()
-                labels[labels == int(pad_id)] = -100
+                pad_mask = labels == int(pad_id)
+                ignore_mask = (
+                    pad_mask if ignore_mask is None else (ignore_mask | pad_mask)
+                )
+            if ignore_mask is not None:
+                labels = labels.masked_fill(ignore_mask, -100)
             ezpz.distributed.synchronize()
             t1 = perf_counter()
             tp_mod = getattr(ezpz, "tp", None)
@@ -2075,7 +2535,10 @@ def train(
             # materialized *before* the loss, which can OOM a run that would
             # otherwise fit (the loss itself may be chunked/compiled to stay
             # bounded, but this debug probe is not). Off by default.
-            if track_logits and epoch == 0 and idx == 0:
+            # Skip the logits probe under fused-linear: `pred` is hidden
+            # states there, not logits, so finite/max-abs of it is meaningless
+            # (and the full logits are never materialized by design).
+            if track_logits and not use_fused_linear and epoch == 0 and idx == 0:
                 pred_finite = torch.isfinite(pred)
                 pred_nonfinite = int((~pred_finite).sum().item())
                 pred_max = float(pred.abs().max().item())
@@ -2087,13 +2550,38 @@ def train(
                     pred_nonfinite,
                     f"{pred_max:.6f}",
                 )
-            loss = _compute_loss(
-                pred,
-                labels,
-                impl=args.loss_impl,
-                ignore_index=-100,
-                chunk_size=args.loss_chunk_size,
-            )
+            if use_fused_linear:
+                # `pred` is hidden states (B,T,dim); the fused loss runs the
+                # output projection MODULE per row-chunk (so FSDP unshards the
+                # weight + routes its grad) and never materializes the full
+                # (B,T,vocab) logits or its grad.
+                loss = _cross_entropy_fused_linear(
+                    pred,
+                    base_model.output,
+                    labels,
+                    ignore_index=-100,
+                    chunk_size=args.loss_chunk_size,
+                )
+            elif use_loss_parallel:
+                # `pred` is this rank's local [B, T, vocab/tp] shard
+                # (output projection has use_local_output=True under
+                # loss-parallel). Vocab-parallel CE reduces across the TP
+                # group; global vocab is needed to compute shard bounds.
+                loss = _cross_entropy_vocab_parallel(
+                    pred,
+                    labels,
+                    ignore_index=-100,
+                    global_vocab_size=args.vocab_size,
+                    tp_group=tp_group,
+                )
+            else:
+                loss = _compute_loss(
+                    pred,
+                    labels,
+                    impl=args.loss_impl,
+                    ignore_index=-100,
+                    chunk_size=args.loss_chunk_size,
+                )
             if epoch == 0 and idx == 0:
                 valid_labels = int((labels != -100).sum().item())
                 logger.info(
