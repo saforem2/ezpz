@@ -677,6 +677,37 @@ class TestUseTorchcomms:
         # cached True result must persist (probe ran once).
         assert dist.use_torchcomms() is True
 
+    def test_activation_sets_flag_when_available(self, monkeypatch):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        fake_tc = MagicMock()
+        fake_cfg = MagicMock()
+        fake_cfg.use_torchcomms = False
+        with (
+            patch.dict("sys.modules", {"torchcomms": fake_tc}),
+            patch.object(torch.distributed, "config", fake_cfg, create=True),
+        ):
+            applied = dist._maybe_enable_torchcomms(rank=0, backend="nccl")
+        assert applied is True
+        assert fake_cfg.use_torchcomms is True
+
+    def test_activation_warns_when_requested_unavailable(
+        self, monkeypatch, caplog
+    ):
+        import logging
+
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        with patch.dict("sys.modules", {"torchcomms": None}):
+            with caplog.at_level(logging.WARNING, logger="ezpz.distributed"):
+                applied = dist._maybe_enable_torchcomms(rank=0, backend="xccl")
+        assert applied is False
+        assert any(
+            "EZPZ_USE_TORCHCOMMS" in r.getMessage() for r in caplog.records
+        )
+
+    def test_activation_noop_when_unset(self, monkeypatch):
+        monkeypatch.delenv("EZPZ_USE_TORCHCOMMS", raising=False)
+        assert dist._maybe_enable_torchcomms(rank=0, backend="nccl") is False
+
 
 # ===================================================================
 # get_machine / get_hostname

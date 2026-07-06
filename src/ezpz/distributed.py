@@ -505,6 +505,30 @@ def _torchcomms_unavailable_reason() -> str:
     return reason
 
 
+def _maybe_enable_torchcomms(*, rank: int, backend: str) -> bool:
+    """Enable torchcomms for the standard PG if requested + available.
+
+    Returns True if torchcomms was activated. When requested but unavailable,
+    logs a single rank-0 warning naming the reason and returns False. No-op
+    (returns False) when ``EZPZ_USE_TORCHCOMMS`` is unset.
+    """
+    if use_torchcomms():
+        import torch.distributed as _td
+
+        _td.config.use_torchcomms = True
+        if rank == 0:
+            logger.info("Using torchcomms over backend=%s", backend)
+        return True
+    if _torchcomms_requested() and rank == 0:
+        logger.warning(
+            "EZPZ_USE_TORCHCOMMS set but torchcomms unavailable (%s); "
+            "using standard %s backend.",
+            _torchcomms_unavailable_reason(),
+            backend,
+        )
+    return False
+
+
 # ===================================================================
 # Lifecycle
 # ===================================================================
@@ -1837,6 +1861,8 @@ def _setup_ddp(
             backend,
             timeout,
         )
+
+    _maybe_enable_torchcomms(rank=rank, backend=backend)
 
     if not torch.distributed.is_initialized():
         init_kwargs: dict[str, Any] = {
