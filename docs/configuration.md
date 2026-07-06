@@ -55,6 +55,9 @@ EZPZ_TRACKER_BACKENDS=none WANDB_DISABLED=1 ezpz launch -- python3 train.py
 # Force CPU mode for debugging (no GPU required)
 TORCH_DEVICE=cpu TORCH_BACKEND=gloo ezpz launch -np 2 -- python3 train.py
 
+# Route distributed comms through torchcomms over nccl
+EZPZ_USE_TORCHCOMMS=1 TORCH_BACKEND=nccl ezpz launch -np 2 -- python3 train.py
+
 # Log to all tracking backends simultaneously
 EZPZ_TRACKER_BACKENDS=wandb,mlflow,csv ezpz launch -- python3 train.py
 
@@ -78,6 +81,7 @@ EZPZ_TRACKER_BACKENDS=mlflow ezpz launch -- python3 train.py
 |----------|---------|-----------------|
 | `TORCH_DEVICE` | Force device selection instead of auto-detection. | `cpu`, `cuda`, `mps`, `xpu`. Auto-detected. |
 | `TORCH_BACKEND` | Override distributed backend. | `nccl`, `gloo`, `mpi`, `xccl`. Auto-detected. |
+| `EZPZ_USE_TORCHCOMMS` | Route `torch.distributed` through [torchcomms](https://github.com/meta-pytorch/torchcomms) over the selected `TORCH_BACKEND` transport. Best-effort: warns and falls back to the standard backend if torchcomms is unavailable. | `1`/`true`/`yes`/`on`. Default: unset (off). |
 | `TORCH_DDP_TIMEOUT` | DDP init timeout for slow launches. | Seconds. Default: `3600`. |
 | `MASTER_ADDR` | Rendezvous address for distributed init. | Hostname/IP. Auto-detected from scheduler. |
 | `MASTER_PORT` | Rendezvous port for distributed init. | Port number. Auto-detected (picks a free port). |
