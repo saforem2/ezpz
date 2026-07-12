@@ -590,8 +590,9 @@ Three pieces close the gap, all matching what torchtitan does:
 
 !!! warning "Reading the memory number: allocated vs reserved"
 
-    This example's `memory=alloc/peak` line reports **peak *allocated***
-    bytes; torchtitan's `memory:` line reports **peak *reserved*** bytes,
+    This example's `memory=<cur>/<peak>GiB (cur/peak, …)` line reports
+    **current and peak *allocated*** bytes (the right-hand number is the
+    peak); torchtitan's `memory:` line reports **peak *reserved*** bytes,
     reset per step. They are different metrics, so don't compare them
     directly. The **allocated** peaks match (~44 GiB for this recipe vs
     torchtitan's ~44 GiB). This example's cumulative *reserved* peak looks

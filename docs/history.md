@@ -121,7 +121,7 @@ collapse the noisy `loss=…  loss/mean=…  loss/max=…  loss/min=…  loss/st
 shape into a single scannable line:
 
 ```
-iter=180   loss=0.078(±0.026) accuracy=0.984(±9.9e-3) dtf=0.014(±7.4e-4) lr=0.000059 memory=0.01/0.01GiB (0%)
+iter=180   loss=0.078(±0.026) accuracy=0.984(±9.9e-3) dtf=0.014(±7.4e-4) lr=0.000059 memory=0.01/0.01GiB (cur/peak, 0% of 40.0GiB)
 ```
 
 Format rules (all handled by [`ezpz.utils.format_compact_summary`][ezpz.utils.format_compact_summary]):
@@ -166,8 +166,14 @@ The helper returns 4 keys when supported (CUDA, XPU): `mem_alloc`,
 Returns `{}` on CPU / MPS so the laptop smoke path stays clean. Opt
 out on supported devices via `EZPZ_TRACK_MEMORY=0`. The 4 memory keys
 are auto-collapsed in the console line into a single
-`memory=alloc/reserved (peak%)` token — full per-rank aggregations
-still flow to the trackers.
+`memory=<cur>/<peak>GiB (cur/peak, <pct>% of <total>GiB)` token —
+the left pair is **current / peak allocated** (`mem_alloc` /
+`mem_peak_alloc`), and the percentage is current alloc as a fraction of
+the device's physical total (spelled out so `<cur>/<peak>` isn't
+misread as a fraction). The `, <pct>% of <total>GiB` part is dropped
+when the device total is unknown. Full per-rank aggregations (including
+the `mem_reserved` / `mem_peak_reserved` keys, which aren't shown on the
+console line) still flow to the trackers.
 
 ### Distributed statistics
 

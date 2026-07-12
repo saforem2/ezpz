@@ -301,7 +301,7 @@ class TestFormatMemorySummary:
         out = format_memory_summary(
             {"mem_alloc": 1.5, "mem_peak_alloc": 2.25}
         )
-        assert out == "1.50/2.25GiB"
+        assert out == "1.50/2.25GiB (cur/peak)"
         # Specifically: no parenthetical percentage when total unknown.
         assert "%" not in out
 
@@ -318,8 +318,9 @@ class TestFormatMemorySummary:
         out = format_memory_summary(
             {"mem_alloc": 8.0, "mem_peak_alloc": 10.0}
         )
-        # 8 / 16 = 50%
-        assert out == "8.00/10.00GiB (50%)"
+        # 8 / 16 = 50%; denominator (16.0GiB) is spelled out so the
+        # left pair isn't misread as a fraction.
+        assert out == "8.00/10.00GiB (cur/peak, 50% of 16.0GiB)"
 
     def test_handles_prefix(self, monkeypatch):
         """The prefix kwarg should match the keys in the dict."""
@@ -333,7 +334,7 @@ class TestFormatMemorySummary:
             {"train/mem_alloc": 1.5, "train/mem_peak_alloc": 2.0},
             prefix="train/",
         )
-        assert out == "1.50/2.00GiB"
+        assert out == "1.50/2.00GiB (cur/peak)"
 
     def test_alloc_only_when_peak_missing(self, monkeypatch):
         """If only alloc is present (e.g. partial dict), format that alone."""
@@ -344,14 +345,12 @@ class TestFormatMemorySummary:
             lambda d=None: {"name": "x", "total_memory": -1},
         )
         out = format_memory_summary({"mem_alloc": 1.5})
-        assert out == "1.50GiB"
+        assert out == "1.50GiB (cur)"
 
     def test_peak_only_uses_GiB_suffix_not_legacy_format(self, monkeypatch):
-        """When only mem_peak_alloc is present, output should be
-        `X.XXGiB` (matching the alloc-only branch), not the legacy
-        `peak X.XXGiB` form. Regression: the old code returned a
-        different prefix for this rare case, breaking the documented
-        contract."""
+        """When only mem_peak_alloc is present, output is
+        `X.XXGiB (peak)` — the number is labeled `(peak)` so it reads
+        unambiguously, not the legacy `peak X.XXGiB` prefix form."""
         import ezpz.distributed
         monkeypatch.setattr(
             ezpz.distributed,
@@ -359,9 +358,10 @@ class TestFormatMemorySummary:
             lambda d=None: {"name": "x", "total_memory": -1},
         )
         out = format_memory_summary({"mem_peak_alloc": 2.5})
-        assert out == "2.50GiB"
-        # Must NOT use the legacy "peak X.XXGiB" wording.
-        assert "peak" not in out
+        assert out == "2.50GiB (peak)"
+        # Must NOT use the legacy "peak X.XXGiB" prefix wording (label
+        # rides in parens after the value instead).
+        assert not out.startswith("peak")
 
     def test_peak_only_includes_percentage_when_total_known(self, monkeypatch):
         """The peak-only branch should still include the percentage,
@@ -376,9 +376,8 @@ class TestFormatMemorySummary:
         # alloc is missing entirely; with no alloc to %-of, pct_str should
         # remain empty (pct is computed against `alloc`, not `peak`).
         out = format_memory_summary({"mem_peak_alloc": 2.0})
-        # Format matches the consistent `X.XXGiB` shape — no percent
-        # (we'd need alloc to compute it).
-        assert out == "2.00GiB"
+        # Labeled `(peak)` — no percent (we'd need alloc to compute it).
+        assert out == "2.00GiB (peak)"
 
     def test_prefix_auto_detected_from_keys(self, monkeypatch):
         """When prefix is None (default), it's inferred from the keys."""
@@ -392,15 +391,15 @@ class TestFormatMemorySummary:
         out = format_memory_summary(
             {"train/mem_alloc": 1.5, "train/mem_peak_alloc": 2.0}
         )
-        assert out == "1.50/2.00GiB"
+        assert out == "1.50/2.00GiB (cur/peak)"
         # eval/ prefix
         out = format_memory_summary(
             {"eval/mem_alloc": 3.0, "eval/mem_peak_alloc": 4.0}
         )
-        assert out == "3.00/4.00GiB"
+        assert out == "3.00/4.00GiB (cur/peak)"
         # No prefix
         out = format_memory_summary({"mem_alloc": 5.0, "mem_peak_alloc": 6.0})
-        assert out == "5.00/6.00GiB"
+        assert out == "5.00/6.00GiB (cur/peak)"
 
     def test_explicit_prefix_overrides_auto_detect(self, monkeypatch):
         """If caller passes a prefix, it should win over inference."""
@@ -419,7 +418,7 @@ class TestFormatMemorySummary:
             },
             prefix="eval/",
         )
-        assert out == "7.00/8.00GiB"
+        assert out == "7.00/8.00GiB (cur/peak)"
 
     def test_device_int_passed_to_get_device_properties(self, monkeypatch):
         """`device=1` should be forwarded as the int index, not None."""
@@ -486,7 +485,7 @@ class TestFormatMemorySummary:
         out = format_memory_summary(
             {"mem_alloc": 1.5, "mem_peak_alloc": 2.0}
         )
-        assert out == "1.50/2.00GiB"
+        assert out == "1.50/2.00GiB (cur/peak)"
 
 
 class TestIsMemoryMetricKey:

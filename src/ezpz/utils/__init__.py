@@ -577,10 +577,16 @@ def format_memory_summary(
     ``{prefix}mem_peak_alloc``, ``{prefix}mem_reserved``,
     ``{prefix}mem_peak_reserved``.
 
-    Output: ``"X.XX/Y.YYGiB (Z%)"`` where X is current alloc, Y is peak
-    alloc, and Z is current alloc as a percent of device total memory
-    (omitted when device total isn't available — e.g. unknown XPU, CPU
-    fallback).
+    Output: ``"X.XX/Y.YYGiB (cur/peak, Z% of T.TGiB)"`` where X is current
+    alloc, Y is peak alloc, Z is current alloc as a percent of device
+    total memory, and T is the device total. The ``cur/peak`` label names
+    the two allocation numbers; the ``Z% of T.TGiB`` names the percentage
+    denominator so the left pair isn't misread as a fraction. The
+    ``, Z% of T.TGiB`` part is omitted when the device total isn't
+    available (e.g. unknown XPU, CPU fallback), leaving
+    ``"X.XX/Y.YYGiB (cur/peak)"``. Alloc-only dicts yield
+    ``"X.XXGiB (cur[, Z% of T.TGiB])"``; peak-only yields
+    ``"Y.YYGiB (peak)"``.
 
     Args:
         metrics: dict that may contain mem_* keys.
@@ -616,7 +622,14 @@ def format_memory_summary(
     # Normalize `device` → int index where possible, so callers passing
     # `torch.device('cuda:1')` get the right device's total (not rank 0's
     # device by way of get_local_rank()).
-    pct_str = ""
+    #
+    # `pct_of` labels the current alloc as a percent of *physical device
+    # total* — e.g. "25% of 64.0GiB". It is intentionally distinct from
+    # the `alloc/peak` pair on the left (which are two allocation
+    # numbers, not a fraction): the left side is cur/peak allocated, the
+    # right side is cur ÷ device capacity. Spelling out the denominator
+    # keeps those from being misread as "16 out of 46".
+    pct_of = ""
     try:
         import ezpz
         idx: int | None
@@ -635,19 +648,24 @@ def format_memory_summary(
         if total_bytes and total_bytes > 0 and alloc is not None:
             total_gib = total_bytes / (1024 ** 3)
             pct = 100.0 * alloc / total_gib
-            pct_str = f" ({pct:.0f}%)"
+            pct_of = f", {pct:.0f}% of {total_gib:.1f}GiB"
     except Exception:
         # Any failure resolving total memory: omit the percentage rather
         # than break logging. Raw numbers still print.
-        pct_str = ""
+        pct_of = ""
 
+    # Label the numbers so the console line is self-describing:
+    #   cur/peak  → the two allocation numbers are current + peak alloc
+    #   cur       → single number is current alloc
+    #   peak      → single number is peak alloc (rare partial-dict case)
+    # The `pct_of` denominator (when present) rides inside the same parens.
     if alloc is not None and peak is not None:
-        return f"{alloc:.2f}/{peak:.2f}GiB{pct_str}"
+        return f"{alloc:.2f}/{peak:.2f}GiB (cur/peak{pct_of})"
     if alloc is not None:
-        return f"{alloc:.2f}GiB{pct_str}"
+        return f"{alloc:.2f}GiB (cur{pct_of})"
     # Only peak is present (rare — caller passed `mem_peak_alloc` without
-    # `mem_alloc`). Format matches the alloc-only branch for consistency.
-    return f"{peak:.2f}GiB{pct_str}"
+    # `mem_alloc`). No alloc → no percent (pct is computed against alloc).
+    return f"{peak:.2f}GiB (peak)"
 
 
 # Base names for the 4 memory metrics produced by get_memory_metrics().
