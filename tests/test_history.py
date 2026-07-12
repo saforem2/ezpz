@@ -675,7 +675,7 @@ class TestLogMetricsCondensation:
         assert "epoch=0" in msg
         assert "loss=10" in msg and "(±" in msg
         # Memory keys do NOT appear as `mem_alloc=0.18` in the base flow;
-        # they're summarized as `memory=0.18/0.68GiB`.
+        # they're summarized as `memory=0.18/0.68GiB (cur/peak, …)`.
         assert "mem_alloc=" not in msg
         assert "mem_peak_alloc=" not in msg
         assert "memory=" in msg
