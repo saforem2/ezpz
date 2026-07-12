@@ -610,6 +610,105 @@ class TestGetTorchBackend:
             assert dist.get_torch_backend() == "gloo"
 
 
+class TestUseTorchcomms:
+    """Tests for ``use_torchcomms`` and its availability probe."""
+
+    def setup_method(self):
+        # Each test starts with a clean probe cache.
+        dist._reset_torchcomms_cache()
+
+    def teardown_method(self):
+        dist._reset_torchcomms_cache()
+
+    def test_unset_is_false(self, monkeypatch):
+        monkeypatch.delenv("EZPZ_USE_TORCHCOMMS", raising=False)
+        assert dist.use_torchcomms() is False
+        assert dist._torchcomms_unavailable_reason() == ""
+
+    @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
+    def test_truthy_and_available(self, monkeypatch, val):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", val)
+        fake_tc = MagicMock()
+        fake_cfg = MagicMock()
+        fake_cfg.use_torchcomms = False  # attr must EXIST
+        with (
+            patch.dict("sys.modules", {"torchcomms": fake_tc}),
+            patch.object(torch.distributed, "config", fake_cfg, create=True),
+        ):
+            assert dist.use_torchcomms() is True
+            assert dist._torchcomms_unavailable_reason() == ""
+
+    @pytest.mark.parametrize("val", ["0", "false", "no", "", "off"])
+    def test_falsy_is_false(self, monkeypatch, val):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", val)
+        assert dist.use_torchcomms() is False
+
+    def test_requested_but_package_missing(self, monkeypatch):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        with patch.dict("sys.modules", {"torchcomms": None}):
+            # sys.modules[name] = None makes `import torchcomms` raise ImportError
+            assert dist.use_torchcomms() is False
+            assert "torchcomms" in dist._torchcomms_unavailable_reason().lower()
+
+    def test_requested_but_torch_switch_absent(self, monkeypatch):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        fake_tc = MagicMock()
+        cfg_without_switch = MagicMock(spec=[])  # no use_torchcomms attr
+        with (
+            patch.dict("sys.modules", {"torchcomms": fake_tc}),
+            patch.object(
+                torch.distributed, "config", cfg_without_switch, create=True
+            ),
+        ):
+            assert dist.use_torchcomms() is False
+            assert dist._torchcomms_unavailable_reason() != ""
+
+    def test_probe_is_cached(self, monkeypatch):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        fake_tc = MagicMock()
+        fake_cfg = MagicMock()
+        fake_cfg.use_torchcomms = False
+        with (
+            patch.dict("sys.modules", {"torchcomms": fake_tc}),
+            patch.object(torch.distributed, "config", fake_cfg, create=True),
+        ):
+            assert dist.use_torchcomms() is True
+        # After the patches exit, torchcomms would look unavailable — but the
+        # cached True result must persist (probe ran once).
+        assert dist.use_torchcomms() is True
+
+    def test_activation_sets_flag_when_available(self, monkeypatch):
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        fake_tc = MagicMock()
+        fake_cfg = MagicMock()
+        fake_cfg.use_torchcomms = False
+        with (
+            patch.dict("sys.modules", {"torchcomms": fake_tc}),
+            patch.object(torch.distributed, "config", fake_cfg, create=True),
+        ):
+            applied = dist._maybe_enable_torchcomms(rank=0, backend="nccl")
+        assert applied is True
+        assert fake_cfg.use_torchcomms is True
+
+    def test_activation_warns_when_requested_unavailable(
+        self, monkeypatch, caplog
+    ):
+        import logging
+
+        monkeypatch.setenv("EZPZ_USE_TORCHCOMMS", "1")
+        with patch.dict("sys.modules", {"torchcomms": None}):
+            with caplog.at_level(logging.WARNING, logger="ezpz.distributed"):
+                applied = dist._maybe_enable_torchcomms(rank=0, backend="xccl")
+        assert applied is False
+        assert any(
+            "EZPZ_USE_TORCHCOMMS" in r.getMessage() for r in caplog.records
+        )
+
+    def test_activation_noop_when_unset(self, monkeypatch):
+        monkeypatch.delenv("EZPZ_USE_TORCHCOMMS", raising=False)
+        assert dist._maybe_enable_torchcomms(rank=0, backend="nccl") is False
+
+
 # ===================================================================
 # get_machine / get_hostname
 # ===================================================================
@@ -1589,6 +1688,26 @@ class TestGetDistInfo:
         ):
             info = dist.get_dist_info(verbose=True)
             assert isinstance(info, dict)
+
+    def test_dist_info_includes_torchcomms(self, fake_comm, monkeypatch):
+        monkeypatch.delenv("EZPZ_USE_TORCHCOMMS", raising=False)
+        monkeypatch.setenv("NGPU_PER_HOST", "4")
+        monkeypatch.setenv("SLURM_NNODES", "1")
+        monkeypatch.setenv("PMI_LOCAL_RANK", "0")
+        dist._reset_torchcomms_cache()
+        with (
+            patch("ezpz.configs.get_scheduler", return_value="slurm"),
+            patch.object(
+                dist,
+                "get_hostfile_with_fallback",
+                return_value=Path("/dev/null"),
+            ),
+            patch.object(dist, "get_torch_device", return_value="cpu"),
+            patch.object(dist, "get_torch_backend", return_value="gloo"),
+        ):
+            info = dist.get_dist_info()
+            assert "TORCHCOMMS" in info
+            assert info["TORCHCOMMS"] is False
 
 
 class TestTorchDtypesMap:
