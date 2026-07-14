@@ -11,6 +11,8 @@ shell commands only when the env vars are absent (e.g. on a login node).
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional, Union
 
@@ -18,6 +20,32 @@ import ezpz
 from ezpz.distributed import _expand_slurm_nodelist
 
 logger = ezpz.get_logger(__name__)
+
+
+def _run_slurm_command(cmd: str, *args: str) -> str:
+    """Run a SLURM client command via subprocess and return its stdout.
+
+    Replaces the old ``from sh import <cmd>`` pattern. Raises
+    ``FileNotFoundError`` when the binary isn't on ``PATH`` (mirrors the
+    ``ImportError`` that ``sh`` raised when a command was missing — e.g.
+    off a SLURM cluster) and ``RuntimeError`` (with stderr) on a non-zero
+    exit, so existing ``try/except`` blocks around these calls behave the
+    same.
+    """
+    if shutil.which(cmd) is None:
+        raise FileNotFoundError(f"{cmd} not found on PATH")
+    proc = subprocess.run(
+        [cmd, *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"{cmd} exited {proc.returncode}: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        )
+    return proc.stdout
 
 
 # ── job discovery ──────────────────────────────────────────────────────────
@@ -31,21 +59,21 @@ def get_slurm_running_jobs() -> list[str] | None:
     unavailable.
     """
     try:
-        from sh import sacct  # type:ignore
-    except (ImportError, ModuleNotFoundError):
-        logger.warning("sacct unavailable (sh package not installed)")
+        output = _run_slurm_command("sacct")
+    except FileNotFoundError:
+        logger.warning("sacct unavailable (not found on PATH)")
         return None
-
-    try:
-        return list(
-            {
-                i.replace(".", " ").split(" ")[0]
-                for i in [j for j in sacct().split("\n") if " RUNNING " in j]
-            }
-        )
     except Exception as e:
         logger.error("Error getting running jobs from sacct: %s", e)
         return None
+
+    return list(
+        {
+            i.replace(".", " ").split(" ")[0]
+            for i in output.split("\n")
+            if " RUNNING " in i
+        }
+    )
 
 
 def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
@@ -61,12 +89,7 @@ def get_nodelist_from_slurm_jobid(jobid: str | int) -> list[str]:
 
     # Slow path: query scontrol for an arbitrary job ID.
     try:
-        from sh import scontrol  # type:ignore
-    except Exception as e:
-        logger.error("Error importing sh.scontrol: %s", e)
-        raise e
-    try:
-        output = scontrol("show", "job", str(jobid)).split("\n")
+        output = _run_slurm_command("scontrol", "show", "job", str(jobid)).split("\n")
         # scontrol can return multiple NodeList= lines; skip "(null)" entries
         # which appear for batch job wrappers before the real allocation.
         best_match: str | None = None
