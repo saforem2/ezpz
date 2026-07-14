@@ -193,7 +193,7 @@ class TestGetRunningJobsFromQstat:
         assert isinstance(result, list)
         assert result == [123456, 123458]
 
-    def test_qstat_failure_returns_empty(self, monkeypatch):
+    def test_qstat_nonzero_exit_raises(self, monkeypatch):
         """When qstat exits non-zero, a RuntimeError propagates."""
         monkeypatch.setenv("USER", "testuser")
         monkeypatch.setattr(pbs.shutil, "which", lambda _c: "/usr/bin/qstat")
@@ -267,8 +267,8 @@ class TestGetPbsRunningJobsForUser:
         result = pbs.get_pbs_running_jobs_for_user()
         assert result == {}
 
-    def test_qstat_import_failure_raises(self, monkeypatch):
-        """When the qstat binary isn't on PATH, the exception propagates."""
+    def test_qstat_binary_missing_raises(self, monkeypatch):
+        """When the qstat binary isn't on PATH, FileNotFoundError propagates."""
         monkeypatch.setattr(pbs.shutil, "which", lambda _c: None)
         with pytest.raises(FileNotFoundError):
             pbs.get_pbs_running_jobs_for_user()

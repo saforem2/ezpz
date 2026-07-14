@@ -34,7 +34,11 @@ def _run_slurm_command(cmd: str, *args: str) -> str:
     """
     if shutil.which(cmd) is None:
         raise FileNotFoundError(f"{cmd} not found on PATH")
-    proc = subprocess.run(
+    # No shell (list form), so args are passed as literal argv tokens — a
+    # value like a job ID can't inject a command. `cmd` is always an
+    # internal literal ("sacct"/"scontrol"); it's never caller/attacker
+    # supplied. Safe against command injection.
+    proc = subprocess.run(  # nosec B603  # noqa: S603
         [cmd, *args],
         capture_output=True,
         text=True,

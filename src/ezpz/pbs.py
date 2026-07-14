@@ -513,7 +513,10 @@ def get_pbs_launch_cmd(
 
 def get_running_jobs_from_qstat() -> list[int]:
     """Get the running jobs from qstat"""
-    output = _run_qstat_with_retry(_qstat, "-u", os.environ.get("USER", ""))
+    # getuser() resolves the current user robustly (env vars → pwd), so we
+    # never pass an empty `-u ""` to qstat. Matches the other qstat site
+    # (get_pbs_running_jobs_for_user) which already uses getuser().
+    output = _run_qstat_with_retry(_qstat, "-u", getuser())
     return [
         int(i.split(".")[0])
         for i in output.split("\n")[2:-1]
