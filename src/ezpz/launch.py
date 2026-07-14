@@ -85,6 +85,7 @@ def _run_with_watchdog(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        errors="replace",  # ezpz#163: tolerate non-utf8 child bytes
         bufsize=1,  # line-buffered on our side; child uses PYTHONUNBUFFERED
         env=child_env,
     )
@@ -252,6 +253,7 @@ def run_bash_command(command: str) -> subprocess.CompletedProcess[str]:
         shell=True,
         check=False,
         text=True,
+        errors="replace",  # ezpz#163: tolerate non-utf8 child bytes
         capture_output=True,
     )
 
@@ -318,6 +320,7 @@ def _mpirun_supports_flag(flag: str) -> bool:
             check=False,
             capture_output=True,
             text=True,
+            errors="replace",  # ezpz#163: tolerate non-utf8 child bytes
         )
     except Exception:
         return False
@@ -389,6 +392,7 @@ def run_command(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        errors="replace",  # ezpz#163: tolerate non-utf8 child bytes
         bufsize=1,
         close_fds=True,
     ) as process:
