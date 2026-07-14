@@ -1,13 +1,13 @@
 """Tests for ``ezpz.slurm``.
 
-Covers all public functions with mocked ``sh.sacct``, ``sh.scontrol``,
-``socket.getfqdn``, environment variables, and filesystem operations.
+Covers all public functions with mocked ``_run_slurm_command`` (the
+subprocess seam for ``sacct`` / ``scontrol``), ``socket.getfqdn``,
+environment variables, and filesystem operations.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -65,27 +65,26 @@ def _mock_scontrol_no_nodelist(*_args, **_kwargs):
 class TestGetSlurmRunningJobs:
     """Tests for ``get_slurm_running_jobs``."""
 
-    def test_happy_path(self):
+    def test_happy_path(self, monkeypatch):
         """Parses sacct output and returns unique job IDs as strings."""
-        mock_sh = MagicMock()
-        mock_sh.sacct = _mock_sacct
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = slurm.get_slurm_running_jobs()
+        monkeypatch.setattr(slurm, "_run_slurm_command", _mock_sacct)
+        result = slurm.get_slurm_running_jobs()
         assert isinstance(result, list)
         assert set(result) == {"12345", "67890"}
 
-    def test_sacct_failure_returns_none(self):
-        """When sacct fails, returns None instead of raising."""
-        mock_sh = MagicMock()
-        mock_sh.sacct = _mock_sacct_failure
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = slurm.get_slurm_running_jobs()
+    def test_sacct_failure_returns_none(self, monkeypatch):
+        """When sacct exits non-zero, returns None instead of raising."""
+        monkeypatch.setattr(slurm, "_run_slurm_command", _mock_sacct_failure)
+        result = slurm.get_slurm_running_jobs()
         assert result is None
 
-    def test_sacct_unavailable_returns_none(self):
-        """When sh package is not installed, returns None."""
-        with patch.dict("sys.modules", {"sh": None}):
-            result = slurm.get_slurm_running_jobs()
+    def test_sacct_unavailable_returns_none(self, monkeypatch):
+        """When the sacct binary isn't on PATH, returns None."""
+        def _not_found(*_a, **_k):
+            raise FileNotFoundError("sacct not found on PATH")
+
+        monkeypatch.setattr(slurm, "_run_slurm_command", _not_found)
+        result = slurm.get_slurm_running_jobs()
         assert result is None
 
 
@@ -106,29 +105,29 @@ class TestGetNodelistFromSlurmJobid:
     def test_scontrol_fallback(self, monkeypatch):
         """Falls back to scontrol when SLURM_NODELIST is not set."""
         monkeypatch.delenv("SLURM_NODELIST", raising=False)
-        mock_sh = MagicMock()
-        mock_sh.scontrol = _mock_scontrol
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = slurm.get_nodelist_from_slurm_jobid("12345")
+        monkeypatch.setattr(slurm, "_run_slurm_command", _mock_scontrol)
+        result = slurm.get_nodelist_from_slurm_jobid("12345")
         assert result == ["nid001", "nid002", "nid003"]
 
     def test_missing_nodelist_raises(self, monkeypatch):
         """When NodeList line is absent in scontrol output, raises ValueError."""
         monkeypatch.delenv("SLURM_NODELIST", raising=False)
-        mock_sh = MagicMock()
-        mock_sh.scontrol = _mock_scontrol_no_nodelist
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            with pytest.raises(ValueError, match="NodeList not found"):
-                slurm.get_nodelist_from_slurm_jobid("99999")
+        monkeypatch.setattr(
+            slurm, "_run_slurm_command", _mock_scontrol_no_nodelist
+        )
+        with pytest.raises(ValueError, match="NodeList not found"):
+            slurm.get_nodelist_from_slurm_jobid("99999")
 
     def test_scontrol_failure_raises(self, monkeypatch):
-        """When scontrol call fails, raises the error."""
+        """When the scontrol call fails, raises the error."""
         monkeypatch.delenv("SLURM_NODELIST", raising=False)
-        mock_sh = MagicMock()
-        mock_sh.scontrol.side_effect = RuntimeError("scontrol broken")
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            with pytest.raises(RuntimeError, match="scontrol broken"):
-                slurm.get_nodelist_from_slurm_jobid("12345")
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("scontrol broken")
+
+        monkeypatch.setattr(slurm, "_run_slurm_command", _boom)
+        with pytest.raises(RuntimeError, match="scontrol broken"):
+            slurm.get_nodelist_from_slurm_jobid("12345")
 
 
 # ===================================================================
