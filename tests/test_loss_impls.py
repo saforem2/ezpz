@@ -304,8 +304,12 @@ def test_vocab_parallel_matches_eager_2rank(vocab):
         f"vp loss {ret['loss']} != eager {float(ref)} (vocab={vocab})"
     )
     # grad0 came back as a plain nested list (see _vp_worker) — rebuild a
-    # tensor for the comparison.
-    grad0 = torch.tensor(ret["grad0"], dtype=torch.float32)
+    # tensor for the comparison, matching the eager grad's dtype and device
+    # so the check stays accurate if the reference ever runs in another
+    # precision / on an accelerator.
+    grad0 = torch.tensor(
+        ret["grad0"], dtype=full.grad.dtype, device=full.grad.device
+    )
     assert torch.allclose(grad0, full.grad[:, s:e], atol=1e-4), (
         f"vocab-parallel grad shard != eager grad shard (vocab={vocab})"
     )
