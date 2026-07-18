@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -182,36 +182,35 @@ class TestGetRunningJobsFromQstat:
 
     def test_happy_path(self, monkeypatch):
         """Realistic qstat -u output yields list of running job ID ints."""
-        mock_sh = MagicMock()
-        mock_sh.qstat = MagicMock(return_value=QSTAT_U_OUTPUT)
         monkeypatch.setenv("USER", "testuser")
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = pbs.get_running_jobs_from_qstat()
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: "/usr/bin/qstat")
+        monkeypatch.setattr(
+            pbs.subprocess,
+            "run",
+            lambda *a, **k: MagicMock(returncode=0, stdout=QSTAT_U_OUTPUT, stderr=""),
+        )
+        result = pbs.get_running_jobs_from_qstat()
         assert isinstance(result, list)
         assert result == [123456, 123458]
 
-    def test_qstat_failure_returns_empty(self, monkeypatch):
-        """When qstat raises an error, the exception propagates."""
-        mock_sh = MagicMock()
-        mock_sh.qstat = MagicMock(side_effect=RuntimeError("qstat broken"))
+    def test_qstat_nonzero_exit_raises(self, monkeypatch):
+        """When qstat exits non-zero, a RuntimeError propagates."""
         monkeypatch.setenv("USER", "testuser")
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            with pytest.raises(RuntimeError, match="qstat broken"):
-                pbs.get_running_jobs_from_qstat()
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: "/usr/bin/qstat")
+        monkeypatch.setattr(
+            pbs.subprocess,
+            "run",
+            lambda *a, **k: MagicMock(returncode=1, stdout="", stderr="qstat broken"),
+        )
+        with pytest.raises(RuntimeError, match="qstat broken"):
+            pbs.get_running_jobs_from_qstat()
 
-    def test_qstat_unavailable(self):
-        """ImportError when sh.qstat is not importable propagates."""
-        import sys
-        _orig_sh = sys.modules.get("sh", _SENTINEL := object())
-        try:
-            sys.modules["sh"] = None  # type: ignore[assignment]
-            with pytest.raises((ImportError, ModuleNotFoundError)):
-                pbs.get_running_jobs_from_qstat()
-        finally:
-            if _orig_sh is _SENTINEL:
-                sys.modules.pop("sh", None)
-            else:
-                sys.modules["sh"] = _orig_sh
+    def test_qstat_unavailable(self, monkeypatch):
+        """FileNotFoundError when the qstat binary isn't on PATH propagates."""
+        monkeypatch.setenv("USER", "testuser")
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: None)
+        with pytest.raises(FileNotFoundError):
+            pbs.get_running_jobs_from_qstat()
 
 
 # ===================================================================
@@ -225,12 +224,17 @@ class TestGetPbsRunningJobsForUser:
     def setup_method(self):
         pbs._pbs_jobs_cache = None
 
-    def test_returns_jobid_to_nodelist_mapping(self):
+    def test_returns_jobid_to_nodelist_mapping(self, monkeypatch):
         """Parses qstat -fn1wru and returns {jobid: [nodes]} dict."""
-        mock_sh = MagicMock()
-        mock_sh.qstat = MagicMock(return_value=QSTAT_FN1WRU_OUTPUT)
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = pbs.get_pbs_running_jobs_for_user()
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: "/usr/bin/qstat")
+        monkeypatch.setattr(
+            pbs.subprocess,
+            "run",
+            lambda *a, **k: MagicMock(
+                returncode=0, stdout=QSTAT_FN1WRU_OUTPUT, stderr=""
+            ),
+        )
+        result = pbs.get_pbs_running_jobs_for_user()
         assert isinstance(result, dict)
         assert "123456" in result
         assert "123458" in result
@@ -244,7 +248,7 @@ class TestGetPbsRunningJobsForUser:
             "x3006c0s1b0n0",
         ]
 
-    def test_no_running_jobs(self):
+    def test_no_running_jobs(self, monkeypatch):
         """Empty qstat output with only queued jobs returns empty dict."""
         qstat_no_running = (
             "                                                            Req'd  Req'd   Elap\n"
@@ -252,25 +256,22 @@ class TestGetPbsRunningJobsForUser:
             "--------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n"
             "123457.pbs      testuser workq    myjob2      1235   1   4    --  02:00 Q   --\n"
         )
-        mock_sh = MagicMock()
-        mock_sh.qstat = MagicMock(return_value=qstat_no_running)
-        with patch.dict("sys.modules", {"sh": mock_sh}):
-            result = pbs.get_pbs_running_jobs_for_user()
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: "/usr/bin/qstat")
+        monkeypatch.setattr(
+            pbs.subprocess,
+            "run",
+            lambda *a, **k: MagicMock(
+                returncode=0, stdout=qstat_no_running, stderr=""
+            ),
+        )
+        result = pbs.get_pbs_running_jobs_for_user()
         assert result == {}
 
-    def test_qstat_import_failure_raises(self):
-        """When sh is not importable, the exception propagates."""
-        import sys
-        _orig_sh = sys.modules.get("sh", _SENTINEL := object())
-        try:
-            sys.modules["sh"] = None  # type: ignore[assignment]
-            with pytest.raises(Exception):
-                pbs.get_pbs_running_jobs_for_user()
-        finally:
-            if _orig_sh is _SENTINEL:
-                sys.modules.pop("sh", None)
-            else:
-                sys.modules["sh"] = _orig_sh
+    def test_qstat_binary_missing_raises(self, monkeypatch):
+        """When the qstat binary isn't on PATH, FileNotFoundError propagates."""
+        monkeypatch.setattr(pbs.shutil, "which", lambda _c: None)
+        with pytest.raises(FileNotFoundError):
+            pbs.get_pbs_running_jobs_for_user()
 
 
 # ===================================================================

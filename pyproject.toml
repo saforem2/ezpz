@@ -15,7 +15,6 @@ dependencies = [
   "plotext",
   "rich",
   "seaborn",
-  "sh",
   "transformers>=4.50",
   "torchinfo",
   "wandb",

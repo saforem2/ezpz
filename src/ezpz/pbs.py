@@ -11,6 +11,8 @@ for more information.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional, Union, Tuple
@@ -28,9 +30,40 @@ Pathish = Union[str, os.PathLike, Path]
 
 logger = ezpz.get_logger(__name__)
 
-# Suppress the sh library's INFO-level "process started" noise
-import logging as _logging
-_logging.getLogger("sh").setLevel(_logging.WARNING)
+
+def _qstat(*args: str) -> str:
+    """Run ``qstat`` via subprocess and return its stdout as a string.
+
+    Drop-in replacement for the old ``sh.qstat`` callable — same
+    ``(*args) -> str`` shape, so it plugs straight into
+    :func:`_run_qstat_with_retry`. Each argument is passed as its own
+    argv token (``qstat`` never shell-splits), so callers should pass
+    ``"-fn1wru", user`` rather than a single ``"-fn1wru {user}"`` string.
+
+    Raises ``FileNotFoundError`` if ``qstat`` isn't on ``PATH`` (mirrors
+    the old ``ImportError`` from ``from sh import qstat`` on login/compute
+    nodes that lack the PBS binaries), and ``RuntimeError`` with the
+    combined stderr on a non-zero exit — the message carries PBS's
+    "Communication failure" / "cannot connect to server" text so the
+    retry logic in :func:`_run_qstat_with_retry` still triggers.
+    """
+    if shutil.which("qstat") is None:
+        raise FileNotFoundError(
+            "qstat not found on PATH — PBS client tools unavailable"
+        )
+    proc = subprocess.run(
+        ["qstat", *args],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"qstat exited {proc.returncode}: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        )
+    return proc.stdout
+
 
 _QSTAT_MAX_RETRIES = 5
 _QSTAT_RETRY_DELAY = 2  # seconds
@@ -79,13 +112,7 @@ def get_pbs_running_jobs_for_user() -> dict[str, list[str]]:
         if time.monotonic() - ts < _PBS_JOBS_CACHE_TTL:
             return cached
 
-    try:
-        from sh import qstat  # type:ignore
-    except Exception as e:
-        logger.debug("Error importing sh.qstat: %s", e)
-        raise
-
-    output = _run_qstat_with_retry(qstat, f"-fn1wru {getuser()}")
+    output = _run_qstat_with_retry(_qstat, "-fn1wru", getuser())
     jobarr = [
         i for i in output.split("\n") if " R " in i
     ]
@@ -486,11 +513,10 @@ def get_pbs_launch_cmd(
 
 def get_running_jobs_from_qstat() -> list[int]:
     """Get the running jobs from qstat"""
-    try:
-        from sh import qstat as shqstat  # type: ignore
-    except Exception as e:
-        raise e
-    output = _run_qstat_with_retry(shqstat, "-u", os.environ.get("USER"))
+    # getuser() resolves the current user robustly (env vars → pwd), so we
+    # never pass an empty `-u ""` to qstat. Matches the other qstat site
+    # (get_pbs_running_jobs_for_user) which already uses getuser().
+    output = _run_qstat_with_retry(_qstat, "-u", getuser())
     return [
         int(i.split(".")[0])
         for i in output.split("\n")[2:-1]
