@@ -853,8 +853,14 @@ class TestRun:
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
     def test_generic_source_skips_venv_footer(
         self, _nodes, _host, mock_rsync, mock_patch_venv, tmp_path, capsys,
+        monkeypatch,
     ):
         """A non-venv directory source uses the generic 'Synced to ...' footer."""
+        # Force needs_local_copy=True so total_nodes>0 and the sync (+ footer)
+        # actually runs. Without this, `tmp_path` under /tmp on Linux makes
+        # _needs_local_copy() False → total_nodes==0 → early return, no footer
+        # (the platform trap _needs_local_copy was extracted to let tests avoid).
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         # Make a plain dir source (no bin/activate, no conda-meta)
         src = tmp_path / "data"
         src.mkdir()
@@ -875,9 +881,13 @@ class TestRun:
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
     def test_venv_source_uses_venv_footer(
-        self, _nodes, _host, mock_rsync, tmp_path, capsys,
+        self, _nodes, _host, mock_rsync, tmp_path, capsys, monkeypatch,
     ):
         """A directory with bin/activate triggers the venv footer."""
+        # Force needs_local_copy=True (see sibling test) so the sync + footer
+        # run regardless of whether tmp_path is under /tmp (Linux) or
+        # /var/folders (macOS).
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         src = tmp_path / "myenv"
         (src / "bin").mkdir(parents=True)
         (src / "bin" / "activate").write_text("# fake venv")
