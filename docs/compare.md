@@ -66,10 +66,13 @@ type (`nvidia-smi` / `xpu-smi` / `rocm-smi`), picks the right launcher
 The same script runs on your laptop with `world_size=1`. See [Why
 ezpz?](./index.md) for the diff version.
 
-What you give up: complete control over launcher flags. You can pass
-launcher-specific args through with `ezpz launch -- <launcher flags> --
-python train.py`, but if you need exotic options not covered by the
-common path, raw `torchrun` is more direct.
+Launcher flags stay fully under your control. The defaults above are
+just that — defaults. Any launcher-specific args you pass through with
+`ezpz launch -- <launcher flags> -- python train.py` are appended
+*after* them, so they take precedence (the launcher applies
+last-one-wins) and let you override or extend anything the common path
+sets. Nothing is hidden or off-limits; the exotic option you need is a
+pass-through away.
 
 ## vs. HuggingFace `accelerate`
 
