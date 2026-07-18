@@ -250,9 +250,17 @@ def _vp_worker(rank, world_size, vocab, n_rows, master_port, ret):
         )
         loss.backward()
         # rank 0 reports loss + its grad shard for comparison to eager.
+        # NOTE: store grad0 as a plain nested list, NOT a torch.Tensor.
+        # Putting a Tensor into a multiprocessing.Manager().dict() routes
+        # it through torch's shared-memory / file-descriptor reducer, and
+        # handing that FD to the Manager server process HANGS under the
+        # `spawn` start method (default on macOS) — gloo then sits at its
+        # 30-min rendezvous timeout, looking like the whole suite froze.
+        # `.tolist()` serializes as pure Python; the parent rebuilds a
+        # tensor for the allclose check.
         if rank == 0:
             ret["loss"] = float(loss.detach())
-            ret["grad0"] = local.grad.detach().clone()
+            ret["grad0"] = local.grad.detach().tolist()
             ret["shard"] = (s, e)
     finally:
         dist.destroy_process_group()
@@ -295,6 +303,13 @@ def test_vocab_parallel_matches_eager_2rank(vocab):
     assert abs(ret["loss"] - float(ref)) < 1e-4, (
         f"vp loss {ret['loss']} != eager {float(ref)} (vocab={vocab})"
     )
-    assert torch.allclose(ret["grad0"], full.grad[:, s:e], atol=1e-4), (
+    # grad0 came back as a plain nested list (see _vp_worker) — rebuild a
+    # tensor for the comparison, matching the eager grad's dtype and device
+    # so the check stays accurate if the reference ever runs in another
+    # precision / on an accelerator.
+    grad0 = torch.tensor(
+        ret["grad0"], dtype=full.grad.dtype, device=full.grad.device
+    )
+    assert torch.allclose(grad0, full.grad[:, s:e], atol=1e-4), (
         f"vocab-parallel grad shard != eager grad shard (vocab={vocab})"
     )
