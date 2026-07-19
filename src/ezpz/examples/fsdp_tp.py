@@ -20,6 +20,11 @@ separate parallel dimensions:
     Data Parallel ("dp") across hosts
     Tensor Parallel ("tp") within each host
 
+The data-parallel dim can itself be split for HSDP via --dp-replicate /
+--dp-shard: weights are replicated across `dp_replicate` groups and
+sharded within each `dp_shard` group (dp = dp_replicate * dp_shard). The
+defaults (dp_replicate=1, dp_shard=-1) give a single flat sharded dp dim.
+
 We use a simple diagram to illustrate below:
 
 +-----.-----+-----+-----+
@@ -341,6 +346,46 @@ def _reshard_after_forward(sharding_strategy: Optional[str]) -> bool:
     if sharding_strategy is None:
         return True
     return SHARDING_STRATEGIES.get(sharding_strategy, True)
+
+
+def _resolve_dp_degrees(
+    *, world_size: int, tp: int, dp_replicate: int, dp_shard: int
+) -> tuple[int, int]:
+    """Resolve the (dp_replicate, dp_shard) data-parallel degrees.
+
+    Mirrors torchtitan's semantics:
+
+    - ``dp_shard == -1`` means "use all remaining ranks", i.e.
+      ``world_size // (dp_replicate * tp)``.
+    - The product ``dp_replicate * dp_shard * tp`` must equal
+      ``world_size``.
+
+    With the defaults (``dp_replicate=1``, ``dp_shard=-1``) this yields
+    ``dp_shard = world_size // tp`` and ``dp_replicate = 1`` — i.e. a single
+    flat data-parallel dim (pure FSDP sharding), identical to the behavior
+    before HSDP support was added.
+
+    Returns the resolved ``(dp_replicate, dp_shard)`` tuple. Raises
+    ``AssertionError`` with an explicit message on an invalid configuration.
+    """
+    assert dp_replicate >= 1, (
+        f"--dp-replicate must be >= 1 (got {dp_replicate})"
+    )
+    assert dp_shard == -1 or dp_shard >= 1, (
+        f"--dp-shard must be >= 1, or -1 for auto (got {dp_shard})"
+    )
+    if dp_shard < 0:
+        denom = dp_replicate * tp
+        assert world_size % denom == 0, (
+            f"cannot auto-resolve --dp-shard: WORLD_SIZE({world_size}) is not "
+            f"divisible by dp_replicate({dp_replicate}) * tp({tp}) = {denom}"
+        )
+        dp_shard = world_size // denom
+    assert dp_replicate * dp_shard * tp == world_size, (
+        f"dp_replicate({dp_replicate}) * dp_shard({dp_shard}) * tp({tp}) "
+        f"= {dp_replicate * dp_shard * tp} != WORLD_SIZE({world_size})"
+    )
+    return dp_replicate, dp_shard
 
 
 def _slice_for_sequence_parallel(
@@ -1226,6 +1271,33 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--dp-replicate",
+        type=int,
+        default=1,
+        help=(
+            "Data-parallel REPLICATE degree (HSDP outer dim). Weights are "
+            "replicated across this many groups; within each group they are "
+            "sharded across --dp-shard ranks. Default 1 = no replication "
+            "(pure FSDP sharding, i.e. today's behavior). Set >1 for HSDP "
+            "(e.g. shard within a node, replicate across nodes). Mirrors "
+            "torchtitan's data_parallel_replicate_degree. Constraint: "
+            "dp_replicate * dp_shard * tp == WORLD_SIZE."
+        ),
+    )
+    parser.add_argument(
+        "--dp-shard",
+        type=int,
+        default=-1,
+        help=(
+            "Data-parallel SHARD degree (FSDP inner dim). Weights are "
+            "sharded across this many ranks within each replicate group. "
+            "Default -1 = 'use all remaining ranks' = "
+            "WORLD_SIZE / (dp_replicate * tp), which reproduces today's "
+            "flat data-parallel behavior. Mirrors torchtitan's "
+            "data_parallel_shard_degree."
+        ),
+    )
+    parser.add_argument(
         "--sharding-strategy",
         type=str,
         default="full_shard",
@@ -1243,7 +1315,9 @@ def parse_args(argv: Optional[list[str]] = None):
             "per-module no-shard). `hybrid_shard`/`hybrid_shard_zero2`: "
             "FSDP1 hybrid has no one-flag FSDP2 equivalent — `hybrid_shard` "
             "maps to reshard-after-forward, `hybrid_shard_zero2` to "
-            "keep-unsharded (mirroring their ZeRO-3/ZeRO-2 variants)."
+            "keep-unsharded (mirroring their ZeRO-3/ZeRO-2 variants). "
+            "For actual HSDP (replicate + shard), use --dp-replicate / "
+            "--dp-shard, which build a 2D data-parallel mesh."
         ),
     )
     parser.add_argument(
@@ -1540,7 +1614,20 @@ def parallelize(
     sharded unit (torchtitan's ordering).
     """
     tp_mesh = device_mesh["tp"]
-    dp_mesh = device_mesh["dp"]
+    dp_mesh = device_mesh["dp"]  # flattened (dp_replicate*dp_shard) — used by
+    # non-FSDP dp consumers below and elsewhere in the module.
+
+    # Choose the mesh fully_shard shards over:
+    #   dp_replicate > 1 -> 2D (dp_replicate, dp_shard) submesh; FSDP2 reads a
+    #                       2D DP mesh as HSDP (replicate across the outer dim,
+    #                       shard within the inner) automatically.
+    #   dp_replicate == 1 -> 1D dp_shard mesh; plain FSDP sharding, identical
+    #                        to the pre-HSDP behavior (avoids a needless
+    #                        size-1 replicate wrap).
+    if device_mesh["dp_replicate"].size() > 1:
+        fsdp_dp_mesh = device_mesh["dp_replicate", "dp_shard"]
+    else:
+        fsdp_dp_mesh = device_mesh["dp_shard"]
 
     reshard = _reshard_after_forward(sharding_strategy)
 
@@ -1635,7 +1722,7 @@ def parallelize(
 
     # FSDP2: shard each module group on the dp sub-mesh. Per-module sharding
     # (vs FSDP1's one flat param) is what keeps backward memory bounded.
-    fsdp_kwargs = {"mesh": dp_mesh, "reshard_after_forward": reshard}
+    fsdp_kwargs = {"mesh": fsdp_dp_mesh, "reshard_after_forward": reshard}
     if mixed_precision is not None:
         fsdp_kwargs["mp_policy"] = mixed_precision
 
@@ -1920,7 +2007,16 @@ def train(
     """
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
-    dpsize = world_size // args.tp
+    # Resolve the data-parallel topology: dp_replicate (HSDP outer) x
+    # dp_shard (FSDP inner). Defaults (replicate=1, shard=-1) reproduce the
+    # flat FSDP dp dim exactly.
+    dp_replicate, dp_shard = _resolve_dp_degrees(
+        world_size=world_size,
+        tp=args.tp,
+        dp_replicate=args.dp_replicate,
+        dp_shard=args.dp_shard,
+    )
+    dpsize = dp_replicate * dp_shard  # == flattened "dp" size
     # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
     # weight, so only the ezpz Transformer (not HF models) and — for now —
     # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
@@ -1931,11 +2027,17 @@ def train(
     # LATER (after the HF branch may force args.tp=1), so an HF model launched
     # with --tp>1 --loss-impl=loss-parallel doesn't enter vocab-parallel CE
     # with a stale TP group. See the resolution just before parallelize().
+    # 3D mesh: (dp_replicate, dp_shard, tp). We then flatten the two DP dims
+    # into a single named "dp" dim so all existing dp consumers
+    # (DistributedSampler num_replicas/rank, loss dp_group) keep working with
+    # correct rank arithmetic. fully_shard picks the DP submesh explicitly
+    # (2D -> HSDP when dp_replicate > 1, else 1D dp_shard == today's FSDP).
     device_mesh = ezpz.init_device_mesh_safe(
         str(ezpz.get_torch_device()),
-        (dpsize, args.tp),
-        mesh_dim_names=("dp", "tp"),
+        (dp_replicate, dp_shard, args.tp),
+        mesh_dim_names=("dp_replicate", "dp_shard", "tp"),
     )
+    device_mesh[("dp_replicate", "dp_shard")]._flatten("dp")
     logger.info(f"Device mesh created:\n{device_mesh=}")
 
     hf_dataset = None
@@ -2171,8 +2273,14 @@ def train(
                     deepest_len = len(module)
                     deepest_modlist = module
 
+        # Same HSDP mesh selection as parallelize(): 2D DP submesh when
+        # replicating, else the 1D shard mesh (identical to pre-HSDP).
+        if device_mesh["dp_replicate"].size() > 1:
+            hf_dp_mesh = device_mesh["dp_replicate", "dp_shard"]
+        else:
+            hf_dp_mesh = device_mesh["dp_shard"]
         hf_fsdp_kwargs = {
-            "mesh": device_mesh["dp"],
+            "mesh": hf_dp_mesh,
             "reshard_after_forward": _reshard_after_forward(
                 args.sharding_strategy
             ),
