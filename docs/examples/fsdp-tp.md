@@ -69,6 +69,25 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   **Note**: HF mode forces `--tp 1` (the TP plan is hardcoded to ezpz's own
   Transformer module names; doesn't apply to HF's `LlamaDecoderLayer`). See
   [HuggingFace models](#huggingface-models) for details.
+- **HSDP (replicate + shard)** — split the data-parallel dim into a
+  replicate × shard mesh with `--dp-replicate` / `--dp-shard`. Weights are
+  **replicated** across `dp_replicate` groups and **sharded** within each
+  `dp_shard` group — e.g. shard within a node, replicate across nodes to
+  cut inter-node all-gather traffic:
+
+  ```bash
+  # 16 ranks: shard within groups of 4, replicate across 4 groups (tp=1)
+  ezpz launch python3 -m ezpz.examples.fsdp_tp \
+    --model agpt-2b --dp-replicate 4 --dp-shard 4 --tp 1
+  ```
+
+  Constraint: `dp_replicate * dp_shard * tp == WORLD_SIZE`. Defaults
+  (`--dp-replicate 1 --dp-shard -1`) give a single flat sharded dp dim
+  (pure FSDP), identical to the pre-HSDP behavior — `--dp-shard -1` means
+  "use all remaining ranks" = `WORLD_SIZE / (dp_replicate * tp)`. Mirrors
+  torchtitan's `data_parallel_replicate_degree` / `data_parallel_shard_degree`.
+  (The legacy `--sharding-strategy hybrid_shard*` names do **not** do real
+  HSDP under FSDP2 — use these flags instead.)
 - **Activation checkpointing** — `--ac {none,block,full,selective}` (or
   `--activation-checkpoint`) trades compute for memory during training.
   `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
