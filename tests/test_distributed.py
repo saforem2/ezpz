@@ -65,7 +65,8 @@ def fake_comm(monkeypatch):
     for var in (
         "WORLD_SIZE", "PMI_SIZE", "OMPI_COMM_WORLD_SIZE", "SLURM_NTASKS",
         "RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID",
-        "LOCAL_RANK", "PMI_LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK",
+        "LOCAL_RANK", "PALS_LOCAL_RANKID", "PMIX_LOCAL_RANK",
+        "PMI_LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK",
         "MPI_LOCALRANKID", "MPICH_LOCALRANKID", "SLURM_LOCAL_ID",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -237,10 +238,61 @@ class TestGetLocalRank:
         monkeypatch.setenv("SLURM_LOCAL_ID", "4")
         assert dist.get_local_rank() == 4
 
+    def test_from_PALS_LOCAL_RANKID(self, fake_comm, monkeypatch):
+        """cray-pals mpiexec (Aurora/Sunspot) sets ``PALS_LOCAL_RANKID``.
+
+        Regression for the COMPOSITE device-index crash: without this
+        var recognized, ``get_local_rank`` fell through to the modulo
+        fallback and computed an out-of-range device index.
+        """
+        for v in ("LOCAL_RANK", "PMI_LOCAL_RANK"):
+            monkeypatch.delenv(v, raising=False)
+        monkeypatch.setenv("PALS_LOCAL_RANKID", "5")
+        assert dist.get_local_rank() == 5
+
+    def test_from_PMIX_LOCAL_RANK(self, fake_comm, monkeypatch):
+        """PMIx layer (Aurora/Sunspot) sets ``PMIX_LOCAL_RANK``.
+
+        ezpz's own ``affinity.sh`` reads this var, confirming it is
+        exported per-rank on the ALCF XPU systems.
+        """
+        for v in ("LOCAL_RANK", "PMI_LOCAL_RANK", "PALS_LOCAL_RANKID"):
+            monkeypatch.delenv(v, raising=False)
+        monkeypatch.setenv("PMIX_LOCAL_RANK", "3")
+        assert dist.get_local_rank() == 3
+
+    def test_pals_beats_modulo_fallback_under_composite(
+        self, monkeypatch
+    ):
+        """The real-world COMPOSITE crash: -ppn 6 on a 12-device node.
+
+        ``NGPU_PER_HOST`` is a stale 12 (FLAT-mode constant), device
+        count is 6 (COMPOSITE), and this is rank 11's process. The old
+        modulo fallback would return ``11 % 12 == 11`` (out of range for
+        ``xpu.set_device`` on 6 composite GPUs). With PALS_LOCAL_RANKID
+        recognized, we get the launcher's authoritative local rank (5).
+        """
+        for v in (
+            "LOCAL_RANK",
+            "PMI_LOCAL_RANK",
+            "OMPI_COMM_WORLD_LOCAL_RANK",
+            "MPI_LOCALRANKID",
+            "MPICH_LOCALRANKID",
+            "SLURM_LOCAL_ID",
+        ):
+            monkeypatch.delenv(v, raising=False)
+        monkeypatch.setenv("NGPU_PER_HOST", "12")  # stale FLAT constant
+        monkeypatch.setenv("PALS_LOCAL_RANKID", "5")  # true local rank
+        comm = _FakeComm(rank=11, size=24)
+        dist._MPI_COMM = comm
+        assert dist.get_local_rank() == 5
+
     def test_fallback_world_size_1(self, monkeypatch):
         """world_size == 1 ⇒ local_rank = 0."""
         for v in (
             "LOCAL_RANK",
+            "PALS_LOCAL_RANKID",
+            "PMIX_LOCAL_RANK",
             "PMI_LOCAL_RANK",
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
@@ -253,9 +305,11 @@ class TestGetLocalRank:
         assert dist.get_local_rank() == 0
 
     def test_fallback_modulo(self, monkeypatch):
-        """No env vars, world_size > 1 ⇒ rank % gpus_per_node."""
+        """No env vars, world_size > 1 ⇒ rank % ranks_per_node."""
         for v in (
             "LOCAL_RANK",
+            "PALS_LOCAL_RANKID",
+            "PMIX_LOCAL_RANK",
             "PMI_LOCAL_RANK",
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
@@ -274,13 +328,85 @@ class TestGetLocalRank:
         monkeypatch.setenv("NGPU_PER_HOST", "4")
         comm = _FakeComm(rank=5, size=8)
         dist._MPI_COMM = comm
-        # 5 % 4 == 1
-        assert dist.get_local_rank() == 1
+        # ranks_per_node = world_size(8) // num_nodes(2) == 4; 5 % 4 == 1
+        with patch.object(dist, "get_num_nodes", return_value=2):
+            assert dist.get_local_rank() == 1
 
-    def test_fallback_gpus_per_node_zero(self, monkeypatch):
-        """gpus_per_node == 0 ⇒ local_rank = 0 (avoid ZeroDivisionError)."""
+    def test_fallback_ranks_per_node_not_device_count(self, monkeypatch):
+        """Fallback uses ranks-per-node, not device-count.
+
+        Regression for the COMPOSITE crash's *second* defect: when no
+        local-rank env var is set and ranks-per-node (6) is less than
+        the device count / NGPU_PER_HOST (12), the modulo must use the
+        actual ranks-per-node so the result stays in ``[0, ppn)``.
+        Rank 23 of a ``-n 24 -ppn 6`` (4-node) run is local rank 5, not
+        ``23 % 12 == 11`` (out of range).
+        """
         for v in (
             "LOCAL_RANK",
+            "PALS_LOCAL_RANKID",
+            "PMIX_LOCAL_RANK",
+            "PMI_LOCAL_RANK",
+            "OMPI_COMM_WORLD_LOCAL_RANK",
+            "MPI_LOCALRANKID",
+            "MPICH_LOCALRANKID",
+            "SLURM_LOCAL_ID",
+            "RANK",
+            "PMI_RANK",
+            "OMPI_COMM_WORLD_RANK",
+            "SLURM_PROCID",
+            "WORLD_SIZE",
+            "PMI_SIZE",
+            "OMPI_COMM_WORLD_SIZE",
+            "SLURM_NTASKS",
+        ):
+            monkeypatch.delenv(v, raising=False)
+        monkeypatch.setenv("NGPU_PER_HOST", "12")  # stale FLAT constant
+        comm = _FakeComm(rank=23, size=24)
+        dist._MPI_COMM = comm
+        # ranks_per_node = 24 // 4 == 6; 23 % 6 == 5 (in range [0,6))
+        with patch.object(dist, "get_num_nodes", return_value=4):
+            assert dist.get_local_rank() == 5
+
+    def test_fallback_cpu_single_node_uses_ranks_per_node(self, monkeypatch):
+        """CPU-only, no devices: ranks-per-node still gives distinct ranks.
+
+        ``mpirun -n 4`` on one CPU node (no accelerators, no local-rank
+        env var) should yield local ranks 0..3, not 0 for everyone. The
+        ranks-per-node fallback (world_size // num_nodes) delivers this
+        even when device probing returns 0.
+        """
+        for v in (
+            "LOCAL_RANK",
+            "PALS_LOCAL_RANKID",
+            "PMIX_LOCAL_RANK",
+            "PMI_LOCAL_RANK",
+            "OMPI_COMM_WORLD_LOCAL_RANK",
+            "MPI_LOCALRANKID",
+            "MPICH_LOCALRANKID",
+            "SLURM_LOCAL_ID",
+            "NGPU_PER_HOST",
+            "LOCAL_WORLD_SIZE",
+            "PMI_LOCAL_SIZE",
+            "SLURM_NTASKS_PER_NODE",
+        ):
+            monkeypatch.delenv(v, raising=False)
+        comm = _FakeComm(rank=3, size=4)
+        dist._MPI_COMM = comm
+        with patch.object(dist, "get_num_nodes", return_value=1):
+            assert dist.get_local_rank() == 3  # 3 % (4 // 1)
+
+    def test_fallback_indeterminate_returns_zero(self, monkeypatch):
+        """No env var, can't determine nnodes, no devices ⇒ 0 (no crash).
+
+        When ranks-per-node can't be derived (``get_num_nodes`` returns 0)
+        and device probing yields 0, the modulo guard returns 0 rather
+        than raising ``ZeroDivisionError``.
+        """
+        for v in (
+            "LOCAL_RANK",
+            "PALS_LOCAL_RANKID",
+            "PMIX_LOCAL_RANK",
             "PMI_LOCAL_RANK",
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
@@ -296,6 +422,7 @@ class TestGetLocalRank:
         dist._MPI_COMM = comm
         # torch hardware probing returns 0 on CPU-only machines
         with (
+            patch.object(dist, "get_num_nodes", return_value=0),
             patch.object(torch.cuda, "is_available", return_value=False),
             patch.object(torch.xpu, "is_available", return_value=False),
             patch.object(
@@ -410,6 +537,71 @@ class TestGetGpusPerNode:
             ),
         ):
             assert dist.get_gpus_per_node() == 0
+
+    def test_composite_clamps_stale_ngpu_per_host(self, monkeypatch):
+        """Stale ``NGPU_PER_HOST=12`` (FLAT) clamps to XPU count under COMPOSITE.
+
+        Regression for the COMPOSITE device-index skew: ezpz's shell sets
+        ``NGPU_PER_HOST=12`` (FLAT tile count), but under
+        ``ZE_FLAT_DEVICE_HIERARCHY=COMPOSITE`` only 6 composite GPUs
+        exist. ``get_gpus_per_node`` must not over-report devices — that
+        would skew ``get_node_index`` and the per-host summary line.
+        """
+        monkeypatch.setenv("NGPU_PER_HOST", "12")
+        with (
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(torch.xpu, "device_count", return_value=6),
+        ):
+            assert dist.get_gpus_per_node() == 6
+
+    def test_flat_no_clamp_when_env_matches_devices(self, monkeypatch):
+        """FLAT mode: ``NGPU_PER_HOST=12`` == device count ⇒ unchanged."""
+        monkeypatch.setenv("NGPU_PER_HOST", "12")
+        with (
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(torch.xpu, "device_count", return_value=12),
+        ):
+            assert dist.get_gpus_per_node() == 12
+
+    def test_under_subscription_not_bumped_up(self, monkeypatch):
+        """A smaller env hint is a deliberate under-subscription — keep it.
+
+        ``-ppn 4`` on a 12-device node sets ``NGPU_PER_HOST=4``; we must
+        never bump it *up* to the device count. Only clamp down.
+        """
+        monkeypatch.setenv("NGPU_PER_HOST", "4")
+        with (
+            patch.object(torch.xpu, "is_available", return_value=True),
+            patch.object(torch.xpu, "device_count", return_value=12),
+        ):
+            assert dist.get_gpus_per_node() == 4
+
+    def test_login_node_probe_error_keeps_env_hint(self, monkeypatch):
+        """XPU probe errors (login node, no Level-Zero loader) ⇒ keep env.
+
+        ``get_gpus_per_node`` runs during launch-time topology inference
+        on the login node, where ``torch.xpu.is_available()`` may raise.
+        The env hint must survive so we don't clamp it to 0.
+        """
+        monkeypatch.setenv("NGPU_PER_HOST", "12")
+        with patch.object(
+            torch.xpu, "is_available", side_effect=RuntimeError("no libze")
+        ):
+            assert dist.get_gpus_per_node() == 12
+
+    def test_cuda_env_hint_not_clamped(self, monkeypatch):
+        """Clamp is XPU-only: CUDA env-hint behavior is byte-identical.
+
+        COMPOSITE is an Intel/XPU concept; CUDA has no equivalent split,
+        so a CUDA env hint is returned verbatim even if it exceeds the
+        visible CUDA device count (e.g. a single-GPU CI box).
+        """
+        monkeypatch.setenv("NGPU_PER_HOST", "8")
+        with (
+            patch.object(torch.cuda, "is_available", return_value=True),
+            patch.object(torch.cuda, "device_count", return_value=1),
+        ):
+            assert dist.get_gpus_per_node() == 8
 
 
 class TestGetNodeIndex:
