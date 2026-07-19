@@ -589,6 +589,18 @@ class TestGetGpusPerNode:
         ):
             assert dist.get_gpus_per_node() == 12
 
+    def test_no_xpu_attribute_keeps_env_hint(self, monkeypatch):
+        """Non-XPU torch builds (no ``torch.xpu``) don't crash the clamp.
+
+        CPU-/CUDA-only / ROCm builds may lack ``torch.xpu`` entirely.
+        ``_xpu_device_count_safe`` guards this with ``hasattr`` and
+        returns ``None``, so the env hint is returned verbatim rather
+        than raising ``AttributeError``.
+        """
+        monkeypatch.setenv("NGPU_PER_HOST", "8")
+        monkeypatch.delattr(torch, "xpu", raising=False)
+        assert dist.get_gpus_per_node() == 8
+
     def test_cuda_env_hint_not_clamped(self, monkeypatch):
         """Clamp is XPU-only: CUDA env-hint behavior is byte-identical.
 
