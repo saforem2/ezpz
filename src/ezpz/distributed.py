@@ -325,11 +325,17 @@ def get_gpus_per_node() -> int:
             env_hint = int(val)
             break
 
-    xpu_count = _xpu_device_count_safe()
     if env_hint is not None:
         # Only reconcile against XPU: clamp a stale FLAT-mode hint down to
         # the visible composite-GPU count. Never bump up (under-
         # subscription is intentional), never touch the CUDA path.
+        #
+        # `_xpu_device_count_safe()` does NOT force an `import torch`: the
+        # launch/PBS topology path (`pbs._infer_topology`) calls this on a
+        # torch-less launcher/login node and must still get the env hint
+        # back. It probes only if torch is already imported (a worker
+        # process), where the COMPOSITE clamp actually matters.
+        xpu_count = _xpu_device_count_safe()
         if xpu_count is not None and 0 < xpu_count < env_hint:
             return xpu_count
         return env_hint
@@ -338,6 +344,7 @@ def get_gpus_per_node() -> int:
 
     if torch.cuda.is_available():
         return torch.cuda.device_count()
+    xpu_count = _xpu_device_count_safe()
     if xpu_count is not None:
         return xpu_count
     if torch.backends.mps.is_available():
@@ -348,13 +355,18 @@ def get_gpus_per_node() -> int:
 def _xpu_device_count_safe() -> int | None:
     """Return ``torch.xpu.device_count()`` or ``None`` if unavailable.
 
-    Guards against builds without ``torch.xpu`` (CPU-/CUDA-only) and
-    against login nodes where probing raises (no Level-Zero loader) —
-    ``get_gpus_per_node`` runs during launch-time topology inference
-    there, so a raised exception must degrade to "unknown", not crash.
+    Never forces ``import torch``: returns ``None`` when torch is not
+    already imported, so torch-less callers (the launch/PBS topology path
+    runs without torch installed) don't raise ``ModuleNotFoundError``.
+    Also guards builds without ``torch.xpu`` (CPU-/CUDA-only) and login
+    nodes where probing raises (no Level-Zero loader) — a raised
+    exception degrades to "unknown", not a crash.
     """
-    import torch
+    import sys
 
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return None
     if not hasattr(torch, "xpu"):
         return None
     try:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import random
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -600,6 +601,31 @@ class TestGetGpusPerNode:
         monkeypatch.setenv("NGPU_PER_HOST", "8")
         monkeypatch.delattr(torch, "xpu", raising=False)
         assert dist.get_gpus_per_node() == 8
+
+    def test_env_hint_honored_without_torch(self, monkeypatch):
+        """Torch-less launcher/login env: env hint returned, no import.
+
+        ``get_gpus_per_node`` is called by ``pbs._infer_topology`` during
+        launch-time topology inference, which is designed to run without
+        torch installed. When an env hint is present the function must
+        NOT force ``import torch`` (which would raise ModuleNotFoundError
+        on a torch-less launcher) — it must return the hint directly.
+        Regression for PR #187 review (Codex P1 / Copilot).
+        """
+        import builtins
+
+        monkeypatch.setenv("NGPU_PER_HOST", "12")
+        # Hide torch from import machinery for the duration of the call.
+        monkeypatch.setitem(sys.modules, "torch", None)
+        real_import = builtins.__import__
+
+        def _no_torch(name, *args, **kwargs):
+            if name == "torch" or name.startswith("torch."):
+                raise ModuleNotFoundError("No module named 'torch'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _no_torch)
+        assert dist.get_gpus_per_node() == 12
 
     def test_cuda_env_hint_not_clamped(self, monkeypatch):
         """Clamp is XPU-only: CUDA env-hint behavior is byte-identical.
