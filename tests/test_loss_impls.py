@@ -299,9 +299,13 @@ def test_vocab_parallel_matches_eager_2rank(vocab):
 
     ref = F.cross_entropy(full, labels, ignore_index=-100)
     ref.backward()
+    # `full` requires grad, so `ref` tracks grad too; detach before the
+    # Python-float conversion to avoid a "converting a tensor with
+    # requires_grad=True to a scalar" UserWarning (the value is unaffected).
+    ref_val = ref.detach().item()
     s, e = ret["shard"]
-    assert abs(ret["loss"] - float(ref)) < 1e-4, (
-        f"vp loss {ret['loss']} != eager {float(ref)} (vocab={vocab})"
+    assert abs(ret["loss"] - ref_val) < 1e-4, (
+        f"vp loss {ret['loss']} != eager {ref_val} (vocab={vocab})"
     )
     # grad0 came back as a plain nested list (see _vp_worker) — rebuild a
     # tensor for the comparison, matching the eager grad's dtype and device
