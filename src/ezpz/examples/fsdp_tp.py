@@ -1989,6 +1989,67 @@ def _collect_layer_grad_norms(model: nn.Module) -> list[float]:
     return [(layer_sumsq.get(i, 0.0) ** 0.5) for i in range(max_layer + 1)]
 
 
+def _build_hf_dataloader(
+    dataset,
+    *,
+    batch_size: int,
+    dpsize: int,
+    dp_rank: int,
+    world_size: int,
+):
+    """Build the (sampler, DataLoader) for the HF-text training path.
+
+    Both the ``DistributedSampler`` and the ``DataLoader`` use
+    ``drop_last=True`` so every batch has a static batch dimension. A
+    ragged final batch (e.g. batch_size 2 -> 1) makes torch.compile mark
+    the batch dim dynamic and recompile at the epoch boundary; under
+    symbolic shapes inductor can no longer fuse log_softmax+NLL+backward,
+    so the ``compiled`` CE materializes the full (B*T, vocab) logits grad
+    (agpt-2b 256K vocab, seq 8192: ~15.6 GiB) and OOMs at the first step
+    of epoch 1. Static shapes avoid the recompile. Matches the ``random``
+    branch and torchtitan; the dropped tail is at most (batch_size - 1)
+    samples per dp rank per epoch (negligible for LM pretraining).
+
+    Extracted from ``train`` so the drop_last invariant + the too-small
+    guard below are unit-testable without launching a run.
+
+    Raises:
+        ValueError: if ``drop_last=True`` would leave zero batches for this
+            rank (dataset too small for ``batch_size`` * dp degree). Without
+            this, training would run zero optimizer steps yet exit 0 — a
+            smoke test would falsely "pass". Callers should reduce
+            ``--batch-size`` / ``--dp-*`` or raise ``--hf-limit``.
+    """
+    sampler = (
+        DistributedSampler(
+            dataset=dataset,
+            num_replicas=dpsize,
+            rank=dp_rank,
+            drop_last=True,
+        )
+        if world_size > 1
+        else None
+    )
+    # Per-rank sample count after DistributedSampler shards + drops the tail.
+    per_rank = (len(dataset) // dpsize) if sampler is not None else len(dataset)
+    if per_rank // batch_size < 1:
+        raise ValueError(
+            "HF dataloader with drop_last=True yields 0 full batches for this "
+            f"rank: {per_rank} samples/rank < batch_size={batch_size} "
+            f"(dataset={len(dataset)}, dp={dpsize}). Training would run zero "
+            "steps. Lower --batch-size / --dp-shard / --dp-replicate or raise "
+            "--hf-limit."
+        )
+    dataloader = DataLoader(
+        dataset,
+        sampler=sampler,
+        batch_size=batch_size,
+        shuffle=(sampler is None),
+        drop_last=True,
+    )
+    return sampler, dataloader
+
+
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     args: argparse.Namespace,
@@ -2508,32 +2569,15 @@ def train(
 
         assert hf_dataset is not None
         dataset = hf_dataset
-        # drop_last=True on BOTH the sampler and the loader. A ragged final
-        # batch (e.g. batch_size 2 -> 1) makes torch.compile mark the batch
-        # dim dynamic and recompile at the epoch boundary; under symbolic
-        # shapes inductor can no longer fuse log_softmax+NLL+backward, so the
-        # `compiled` CE materializes the full (B*T, vocab) logits grad
-        # (agpt-2b 256K vocab, seq 8192: ~15.6 GiB) and OOMs at the first
-        # step of epoch 1. Static batch shapes avoid the recompile entirely.
-        # Matches the `random` branch above and torchtitan. The dropped tail
-        # is at most (batch_size - 1) samples per dp rank per epoch —
-        # negligible for LM pretraining.
-        sampler = (
-            DistributedSampler(
-                dataset=dataset,
-                num_replicas=dpsize,
-                rank=device_mesh.get_local_rank("dp"),
-                drop_last=True,
-            )
-            if ezpz.get_world_size() > 1
-            else None
-        )
-        dataloader = DataLoader(
+        # drop_last=True (both sampler + loader) so every batch has a static
+        # batch dim — a ragged tail triggers a torch.compile recompile at the
+        # epoch boundary that OOMs the compiled CE. See _build_hf_dataloader.
+        sampler, dataloader = _build_hf_dataloader(
             dataset,
-            sampler=sampler,
             batch_size=args.batch_size,
-            shuffle=(sampler is None),
-            drop_last=True,
+            dpsize=dpsize,
+            dp_rank=device_mesh.get_local_rank("dp"),
+            world_size=ezpz.get_world_size(),
         )
         if args.tp > 1:
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
