@@ -193,13 +193,15 @@ def get_local_rank() -> int:
 
     The value is resolved from well-known environment variables set by
     common MPI implementations and job schedulers.  If none are set the
-    function falls back to ``get_rank() % get_gpus_per_node()``.
+    function falls back to ``get_rank() % ranks_per_node``.
 
     Returns:
         Local rank (0-indexed within the node).
     """
     _ENV_VARS = (
         "LOCAL_RANK",
+        "PALS_LOCAL_RANKID",  # cray-pals mpiexec (Aurora / Sunspot)
+        "PMIX_LOCAL_RANK",  # PMIx layer (Aurora / Sunspot)
         "PMI_LOCAL_RANK",
         "OMPI_COMM_WORLD_LOCAL_RANK",
         "MPI_LOCALRANKID",
@@ -213,8 +215,21 @@ def get_local_rank() -> int:
     ws = get_world_size()
     if ws <= 1:
         return 0
-    gpn = get_gpus_per_node()
-    return get_rank() % gpn if gpn > 0 else 0
+    # Last-resort fallback (no launcher local-rank var found): derive the
+    # local rank from the global rank and the number of ranks placed on
+    # each node. Use ranks-per-node (world_size // num_nodes), NOT the
+    # device count — they diverge whenever a job under-subscribes a node
+    # (e.g. `-ppn 6` on a 12-device node, or COMPOSITE collapsing 12
+    # tiles into 6 GPUs), and a device-count modulo would then hand
+    # `set_device` an out-of-range index (the original COMPOSITE crash).
+    nnodes = get_num_nodes()
+    if nnodes > 0 and ws % nnodes == 0:
+        ranks_per_node = ws // nnodes
+    else:
+        # Can't cleanly determine ranks-per-node; best-effort with the
+        # device count (historical behavior).
+        ranks_per_node = get_gpus_per_node()
+    return get_rank() % ranks_per_node if ranks_per_node > 0 else 0
 
 
 def get_world_size(
@@ -287,7 +302,18 @@ def get_gpus_per_node() -> int:
     Prefers environment variables (``NGPU_PER_HOST``, ``LOCAL_WORLD_SIZE``,
     ``PMI_LOCAL_SIZE``, ``SLURM_NTASKS_PER_NODE``) then falls back to
     ``torch.{cuda,xpu}.device_count()``.
+
+    On Intel XPU the env hint is *clamped down* to the number of devices
+    the runtime actually exposes: ezpz's shell setup hardcodes
+    ``NGPU_PER_HOST=12`` (the FLAT tile count), but under
+    ``ZE_FLAT_DEVICE_HIERARCHY=COMPOSITE`` only 6 composite GPUs exist.
+    Reporting 12 there over-counts devices and skews ``get_node_index``,
+    the per-host summary, and the local-rank fallback. Clamping is
+    one-directional (never bumps a smaller, deliberate under-subscription
+    up) and XPU-only (COMPOSITE has no CUDA analogue), so CUDA behavior
+    is unchanged.
     """
+    env_hint: int | None = None
     for var in (
         "NGPU_PER_HOST",
         "LOCAL_WORLD_SIZE",
@@ -296,16 +322,59 @@ def get_gpus_per_node() -> int:
     ):
         val = os.environ.get(var)
         if val is not None and val != "":
-            return int(val)
+            env_hint = int(val)
+            break
+
+    if env_hint is not None:
+        # Only reconcile against XPU: clamp a stale FLAT-mode hint down to
+        # the visible composite-GPU count. Never bump up (under-
+        # subscription is intentional), never touch the CUDA path.
+        #
+        # `_xpu_device_count_safe()` does NOT force an `import torch`: the
+        # launch/PBS topology path (`pbs._infer_topology`) calls this on a
+        # torch-less launcher/login node and must still get the env hint
+        # back. It probes only if torch is already imported (a worker
+        # process), where the COMPOSITE clamp actually matters.
+        xpu_count = _xpu_device_count_safe()
+        if xpu_count is not None and 0 < xpu_count < env_hint:
+            return xpu_count
+        return env_hint
+
     import torch
 
     if torch.cuda.is_available():
         return torch.cuda.device_count()
-    if torch.xpu.is_available():
-        return torch.xpu.device_count()
+    xpu_count = _xpu_device_count_safe()
+    if xpu_count is not None:
+        return xpu_count
     if torch.backends.mps.is_available():
         return get_world_size_in_use()
     return 0
+
+
+def _xpu_device_count_safe() -> int | None:
+    """Return ``torch.xpu.device_count()`` or ``None`` if unavailable.
+
+    Never forces ``import torch``: returns ``None`` when torch is not
+    already imported, so torch-less callers (the launch/PBS topology path
+    runs without torch installed) don't raise ``ModuleNotFoundError``.
+    Also guards builds without ``torch.xpu`` (CPU-/CUDA-only) and login
+    nodes where probing raises (no Level-Zero loader) — a raised
+    exception degrades to "unknown", not a crash.
+    """
+    import sys
+
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return None
+    if not hasattr(torch, "xpu"):
+        return None
+    try:
+        if torch.xpu.is_available():
+            return torch.xpu.device_count()
+    except Exception:
+        return None
+    return None
 
 
 def get_cpus_per_node() -> int:
