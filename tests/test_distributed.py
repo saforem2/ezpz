@@ -2577,3 +2577,138 @@ class TestInitDeviceMeshSafe:
         # Must not raise from the shim itself; inner call still fires.
         dist.init_device_mesh_safe("xpu", (4,))
         called.assert_called_once()
+
+
+# ===================================================================
+# flatten_device_mesh_safe
+# ===================================================================
+
+
+class TestFlattenDeviceMeshSafe:
+    """``flatten_device_mesh_safe`` runs ``DeviceMesh._flatten`` under the
+    same ``bound_device_id`` workaround as ``init_device_mesh_safe``.
+
+    Regression for the HSDP crash (PR #186 deferred on-node
+    dp_replicate>1 validation): the bare ``._flatten("dp")`` call in
+    ``ezpz.examples.fsdp_tp`` ran *outside* the workaround, so on XPU +
+    xccl torch took the ``split_group`` path and raised
+        RuntimeError: No backend for the parent process group or its
+                      backend does not support splitting
+    even though ``init_device_mesh_safe`` had built the 3D mesh fine.
+    """
+
+    def _fake_submesh(self, bound, flat_result, observed):
+        """A submesh whose ``_flatten`` records the mid-call
+        ``bound_device_id`` of the (shared) default PG."""
+        submesh = MagicMock(name="submesh")
+        submesh.device_type = "xpu"
+
+        def _flatten(name):
+            observed["mid_call_bound_device_id"] = bound["pg"].bound_device_id
+            observed["flatten_name"] = name
+            return flat_result
+
+        submesh._flatten.side_effect = _flatten
+        return submesh
+
+    def test_xpu_clears_and_restores_around_flatten(self, monkeypatch):
+        """On xpu with a bound default PG: clear → _flatten → restore."""
+        sentinel = torch.device("xpu:2")
+        pg = MagicMock()
+        pg.bound_device_id = sentinel
+        bound = {"pg": pg}
+        observed: dict[str, Any] = {}
+        flat = MagicMock(name="flat_mesh")
+        submesh = self._fake_submesh(bound, flat, observed)
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        result = dist.flatten_device_mesh_safe(submesh, "dp")
+
+        assert result is flat
+        assert observed["flatten_name"] == "dp"
+        assert observed["mid_call_bound_device_id"] is None, (
+            "Workaround failed: bound_device_id was not cleared during "
+            "_flatten. Torch takes the split_group branch and raises on "
+            "xccl."
+        )
+        assert pg.bound_device_id == sentinel, (
+            "bound_device_id was not restored after _flatten."
+        )
+
+    def test_device_type_autodetected_from_submesh(self, monkeypatch):
+        """When device_type is omitted, it comes from submesh.device_type."""
+        sentinel = torch.device("xpu:1")
+        pg = MagicMock()
+        pg.bound_device_id = sentinel
+        bound = {"pg": pg}
+        observed: dict[str, Any] = {}
+        submesh = self._fake_submesh(bound, MagicMock(), observed)
+        submesh.device_type = "xpu"
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        dist.flatten_device_mesh_safe(submesh, "dp")
+        assert observed["mid_call_bound_device_id"] is None
+
+    def test_non_xpu_is_pass_through(self, monkeypatch):
+        """CUDA: no bound_device_id touching; _flatten called directly."""
+        submesh = MagicMock(name="submesh")
+        submesh.device_type = "cuda"
+        submesh._flatten.return_value = MagicMock(name="flat")
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        # CUDA path must never fetch the default PG.
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            MagicMock(
+                side_effect=AssertionError("CUDA must not touch default PG")
+            ),
+        )
+
+        out = dist.flatten_device_mesh_safe(submesh, "dp")
+        submesh._flatten.assert_called_once_with("dp")
+        assert out is submesh._flatten.return_value
+
+    def test_restores_bound_device_id_when_flatten_raises(self, monkeypatch):
+        """If ``_flatten`` raises, bound_device_id MUST be restored."""
+        sentinel = torch.device("xpu:4")
+        pg = MagicMock()
+        pg.bound_device_id = sentinel
+        submesh = MagicMock(name="submesh")
+        submesh.device_type = "xpu"
+        submesh._flatten.side_effect = RuntimeError("simulated split fail")
+
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: True
+        )
+        monkeypatch.setattr(
+            torch.distributed.distributed_c10d,
+            "_get_default_group",
+            lambda: pg,
+        )
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            dist.flatten_device_mesh_safe(submesh, "dp")
+
+        assert pg.bound_device_id == sentinel, (
+            "Workaround leaked: bound_device_id stayed cleared after a "
+            "_flatten failure."
+        )
