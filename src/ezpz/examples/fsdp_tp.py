@@ -877,6 +877,40 @@ def _cross_entropy_compiled(
     return _COMPILED_CE(logits, labels, ignore_index=ignore_index)
 
 
+def _localize_logits_for_loss(logits: "torch.Tensor") -> "torch.Tensor":
+    """Return a plain tensor of logits for non-loss-parallel CE.
+
+    At tp>1 the output ColwiseParallel uses ``output_layouts=Replicate()``,
+    ``use_local_output=False``, so ``logits`` is a REPLICATED ``DTensor``
+    while ``labels`` is a plain tensor. Plain ``F.cross_entropy(DTensor,
+    Tensor)`` raises "got mixed torch.Tensor and DTensor". Localizing to
+    the per-rank tensor (which, being Replicate, holds the full vocab)
+    fixes it with no numeric change; ``to_local()`` is differentiable so
+    grads still reach the sharded output weight. Mirrors torchtitan
+    ``components/loss.py``.
+
+    No-op for a plain tensor (tp=1 / HF path), so it is always safe to call.
+
+    Raises:
+        RuntimeError: if ``logits`` is a vocab-SHARDED ``DTensor``
+            (``Shard(-1)``). That is vocab-parallel logits and must go
+            through ``--loss-impl=loss-parallel``; localizing here would
+            silently compute CE on a partial vocab. Explicit raise (not
+            ``assert``) so it survives ``python -O``.
+    """
+    if not hasattr(logits, "to_local"):
+        return logits
+    from torch.distributed._tensor import Replicate as _Replicate
+
+    if not all(isinstance(p, _Replicate) for p in logits.placements):
+        raise RuntimeError(
+            "non-loss-parallel loss expects Replicate logits; got "
+            f"placements={logits.placements}. Vocab-sharded logits must "
+            "use --loss-impl=loss-parallel."
+        )
+    return logits.to_local()
+
+
 def _compute_loss(
     logits: torch.Tensor,
     labels: torch.Tensor,
@@ -2684,34 +2718,14 @@ def train(
                     tp_group=tp_group,
                 )
             else:
-                # tp>1 non-loss-parallel: the output ColwiseParallel uses
-                # output_layouts=Replicate(), use_local_output=False, so
-                # `pred` is a REPLICATED DTensor while `labels` is a plain
-                # tensor. Plain F.cross_entropy(DTensor, Tensor) raises
-                # "got mixed torch.Tensor and DTensor". Localize pred to a
-                # plain tensor first (torchtitan components/loss.py does the
-                # same). to_local() on a Replicate DTensor is a data no-op
-                # (full logits already on every tp rank) and is
-                # differentiable — its backward re-wraps the grad as a
-                # Replicate DTensor, so grads still reach the sharded output
-                # weight correctly. No-op at tp=1 / HF (pred is already a
-                # plain tensor, so hasattr(...) is False).
-                if hasattr(pred, "to_local"):
-                    # Guard the invariant this localization relies on: only a
-                    # Replicate DTensor holds the full vocab locally. A
-                    # Shard(-1) pred would mean vocab-parallel logits and must
-                    # go through the loss-parallel branch instead — localizing
-                    # it here would silently compute CE on a partial vocab.
-                    assert all(
-                        isinstance(p, Replicate) for p in pred.placements
-                    ), (
-                        "non-loss-parallel loss expects Replicate logits; got "
-                        f"placements={pred.placements}. Vocab-sharded logits "
-                        "must use --loss-impl=loss-parallel."
-                    )
-                    pred = pred.to_local()
+                # tp>1 non-loss-parallel: `pred` is a REPLICATED DTensor
+                # (output ColwiseParallel output_layouts=Replicate,
+                # use_local_output=False) but `labels` is plain, so plain CE
+                # would raise "mixed torch.Tensor and DTensor". Localize to a
+                # plain tensor first (no-op at tp=1/HF). See
+                # _localize_logits_for_loss for the full rationale + guard.
                 loss = _compute_loss(
-                    pred,
+                    _localize_logits_for_loss(pred),
                     labels,
                     impl=args.loss_impl,
                     ignore_index=-100,

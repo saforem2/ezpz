@@ -337,6 +337,7 @@ def _replicate_dtensor_worker(rank, world_size, master_port, ret):
     os.environ["MASTER_PORT"] = str(master_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
     try:
+        import ezpz.examples.fsdp_tp as fsdp_tp
         from torch.distributed.device_mesh import init_device_mesh
         from torch.distributed.tensor import DTensor, Replicate
 
@@ -355,10 +356,14 @@ def _replicate_dtensor_worker(rank, world_size, master_port, ret):
         leaf = full.clone().detach().requires_grad_(True)
         dpred = DTensor.from_local(leaf, mesh, [Replicate()], run_check=False)
 
-        # This is exactly what the train loop now does before _compute_loss.
-        assert hasattr(dpred, "to_local")
-        assert all(isinstance(p, Replicate) for p in dpred.placements)
-        local = dpred.to_local()
+        # Exercise the ACTUAL production helper the train loop calls, so a
+        # revert of the fix (e.g. dropping the to_local localization) fails
+        # this test rather than silently passing.
+        local = fsdp_tp._localize_logits_for_loss(dpred)
+        assert not hasattr(local, "to_local"), (
+            "_localize_logits_for_loss must return a plain tensor for a "
+            "Replicate DTensor"
+        )
         loss = F.cross_entropy(
             local.reshape(-1, local.size(-1)),
             labels.reshape(-1),
@@ -374,6 +379,9 @@ def _replicate_dtensor_worker(rank, world_size, master_port, ret):
         dist.destroy_process_group()
 
 
+@pytest.mark.skipif(
+    not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable"
+)
 def test_replicate_dtensor_to_local_matches_eager_1rank():
     import torch
     import torch.multiprocessing as mp
@@ -386,8 +394,18 @@ def test_replicate_dtensor_to_local_matches_eager_1rank():
         mp.spawn(
             _replicate_dtensor_worker, args=(1, port, ret), nprocs=1, join=True
         )
-    except Exception as exc:  # noqa: BLE001 - gloo/DeviceMesh may be unavailable
-        pytest.skip(f"1-rank gloo/DeviceMesh unavailable: {exc}")
+    except (RuntimeError, OSError) as exc:
+        # Only skip for genuine infra/unavailability (gloo transport,
+        # DeviceMesh init, spawn). Real regressions in the worker surface as
+        # AssertionError (from the in-worker asserts) or other exceptions and
+        # must NOT be swallowed — re-raise those.
+        msg = str(exc).lower()
+        if any(
+            k in msg
+            for k in ("gloo", "process group", "devicemesh", "backend", "connect")
+        ):
+            pytest.skip(f"1-rank gloo/DeviceMesh unavailable: {exc}")
+        raise
 
     assert "loss" in ret, "worker did not report"
     assert ret["has_grad"], (
@@ -409,3 +427,33 @@ def test_replicate_dtensor_to_local_matches_eager_1rank():
     assert torch.allclose(grad, full.grad, atol=1e-5), (
         "grad through to_local() != eager grad"
     )
+
+
+@pytest.mark.skipif(
+    not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable"
+)
+def test_localize_logits_plain_tensor_is_noop():
+    """Fast CPU unit test (no process group): a plain tensor passes through
+    _localize_logits_for_loss unchanged. Locks the tp=1 / HF no-op contract."""
+    x = torch.randn(4, 8)
+    out = fsdp_tp._localize_logits_for_loss(x)
+    assert out is x  # identity, no copy, no wrap
+
+
+@pytest.mark.skipif(
+    not LOSS_AVAILABLE, reason="ezpz.examples.fsdp_tp not importable"
+)
+def test_localize_logits_rejects_vocab_sharded_dtensor():
+    """A Shard(-1) (vocab-parallel) DTensor must be rejected, not silently
+    localized to a partial-vocab tensor. Uses a lightweight stub with the
+    DTensor duck-type (to_local + placements) so no process group is needed."""
+    from torch.distributed.tensor import Shard
+
+    class _FakeShardedDT:
+        placements = (Shard(-1),)
+
+        def to_local(self):  # pragma: no cover - must raise before this
+            raise AssertionError("to_local must not be reached for Shard(-1)")
+
+    with pytest.raises(RuntimeError, match="loss-parallel"):
+        fsdp_tp._localize_logits_for_loss(_FakeShardedDT())
