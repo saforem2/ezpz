@@ -2684,6 +2684,32 @@ def train(
                     tp_group=tp_group,
                 )
             else:
+                # tp>1 non-loss-parallel: the output ColwiseParallel uses
+                # output_layouts=Replicate(), use_local_output=False, so
+                # `pred` is a REPLICATED DTensor while `labels` is a plain
+                # tensor. Plain F.cross_entropy(DTensor, Tensor) raises
+                # "got mixed torch.Tensor and DTensor". Localize pred to a
+                # plain tensor first (torchtitan components/loss.py does the
+                # same). to_local() on a Replicate DTensor is a data no-op
+                # (full logits already on every tp rank) and is
+                # differentiable — its backward re-wraps the grad as a
+                # Replicate DTensor, so grads still reach the sharded output
+                # weight correctly. No-op at tp=1 / HF (pred is already a
+                # plain tensor, so hasattr(...) is False).
+                if hasattr(pred, "to_local"):
+                    # Guard the invariant this localization relies on: only a
+                    # Replicate DTensor holds the full vocab locally. A
+                    # Shard(-1) pred would mean vocab-parallel logits and must
+                    # go through the loss-parallel branch instead — localizing
+                    # it here would silently compute CE on a partial vocab.
+                    assert all(
+                        isinstance(p, Replicate) for p in pred.placements
+                    ), (
+                        "non-loss-parallel loss expects Replicate logits; got "
+                        f"placements={pred.placements}. Vocab-sharded logits "
+                        "must use --loss-impl=loss-parallel."
+                    )
+                    pred = pred.to_local()
                 loss = _compute_loss(
                     pred,
                     labels,

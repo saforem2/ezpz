@@ -313,3 +313,99 @@ def test_vocab_parallel_matches_eager_2rank(vocab):
     assert torch.allclose(grad0, full.grad[:, s:e], atol=1e-4), (
         f"vocab-parallel grad shard != eager grad shard (vocab={vocab})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Replicate-DTensor loss localization: at tp>1 (non-loss-parallel), the output
+# projection returns a REPLICATED DTensor. The train loop must localize it
+# (pred.to_local()) before eager/chunked/compiled CE, else F.cross_entropy
+# raises "got mixed torch.Tensor and DTensor". This builds a real Replicate
+# DTensor on a 1-rank gloo mesh and asserts to_local() -> plain CE matches
+# plain eager (loss + grad), and that the differentiable to_local() routes the
+# grad back to the DTensor. Skipped if gloo/DeviceMesh aren't usable.
+# ---------------------------------------------------------------------------
+
+
+def _replicate_dtensor_worker(rank, world_size, master_port, ret):
+    import os
+
+    import torch
+    import torch.distributed as dist
+    import torch.nn.functional as F
+
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(master_port)
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    try:
+        from torch.distributed.device_mesh import init_device_mesh
+        from torch.distributed.tensor import DTensor, Replicate
+
+        n, vocab = 6, 16
+        torch.manual_seed(7)
+        full = torch.randn(n, vocab, dtype=torch.float32)
+        labels = torch.randint(0, vocab, (n,))
+        labels[::3] = -100
+
+        mesh = init_device_mesh("cpu", (world_size,), mesh_dim_names=("tp",))
+        # Replicated DTensor built from a differentiable local leaf, mirroring
+        # the non-loss-parallel output projection (output_layouts=Replicate(),
+        # use_local_output=False). from_local (not distribute_tensor) keeps the
+        # autograd chain to `leaf` so we can assert grad routes back through
+        # to_local().
+        leaf = full.clone().detach().requires_grad_(True)
+        dpred = DTensor.from_local(leaf, mesh, [Replicate()], run_check=False)
+
+        # This is exactly what the train loop now does before _compute_loss.
+        assert hasattr(dpred, "to_local")
+        assert all(isinstance(p, Replicate) for p in dpred.placements)
+        local = dpred.to_local()
+        loss = F.cross_entropy(
+            local.reshape(-1, local.size(-1)),
+            labels.reshape(-1),
+            ignore_index=-100,
+        )
+        loss.backward()
+
+        ret["loss"] = float(loss.detach().item())
+        # grad flowed back through to_local() into the DTensor -> local leaf.
+        ret["has_grad"] = leaf.grad is not None
+        ret["grad"] = leaf.grad.tolist() if leaf.grad is not None else None
+    finally:
+        dist.destroy_process_group()
+
+
+def test_replicate_dtensor_to_local_matches_eager_1rank():
+    import torch
+    import torch.multiprocessing as mp
+    import torch.nn.functional as F
+
+    port = _free_port()
+    mgr = mp.Manager()
+    ret = mgr.dict()
+    try:
+        mp.spawn(
+            _replicate_dtensor_worker, args=(1, port, ret), nprocs=1, join=True
+        )
+    except Exception as exc:  # noqa: BLE001 - gloo/DeviceMesh may be unavailable
+        pytest.skip(f"1-rank gloo/DeviceMesh unavailable: {exc}")
+
+    assert "loss" in ret, "worker did not report"
+    assert ret["has_grad"], (
+        "to_local() must be differentiable so grad reaches the DTensor"
+    )
+
+    # Reference: plain eager CE on the same seeded data (no DTensor).
+    torch.manual_seed(7)
+    full = torch.randn(6, 16, dtype=torch.float32, requires_grad=True)
+    labels = torch.randint(0, 16, (6,))
+    labels[::3] = -100
+    ref = F.cross_entropy(full, labels, ignore_index=-100)
+    ref.backward()
+
+    assert abs(ret["loss"] - ref.detach().item()) < 1e-5, (
+        f"Replicate-DTensor localized loss {ret['loss']} != eager {ref.item()}"
+    )
+    grad = torch.tensor(ret["grad"], dtype=full.grad.dtype)
+    assert torch.allclose(grad, full.grad, atol=1e-5), (
+        "grad through to_local() != eager grad"
+    )
