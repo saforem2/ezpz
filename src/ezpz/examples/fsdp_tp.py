@@ -2508,11 +2508,22 @@ def train(
 
         assert hf_dataset is not None
         dataset = hf_dataset
+        # drop_last=True on BOTH the sampler and the loader. A ragged final
+        # batch (e.g. batch_size 2 -> 1) makes torch.compile mark the batch
+        # dim dynamic and recompile at the epoch boundary; under symbolic
+        # shapes inductor can no longer fuse log_softmax+NLL+backward, so the
+        # `compiled` CE materializes the full (B*T, vocab) logits grad
+        # (agpt-2b 256K vocab, seq 8192: ~15.6 GiB) and OOMs at the first
+        # step of epoch 1. Static batch shapes avoid the recompile entirely.
+        # Matches the `random` branch above and torchtitan. The dropped tail
+        # is at most (batch_size - 1) samples per dp rank per epoch —
+        # negligible for LM pretraining.
         sampler = (
             DistributedSampler(
                 dataset=dataset,
                 num_replicas=dpsize,
                 rank=device_mesh.get_local_rank("dp"),
+                drop_last=True,
             )
             if ezpz.get_world_size() > 1
             else None
@@ -2522,7 +2533,7 @@ def train(
             sampler=sampler,
             batch_size=args.batch_size,
             shuffle=(sampler is None),
-            drop_last=False,
+            drop_last=True,
         )
         if args.tp > 1:
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)

@@ -68,3 +68,51 @@ def test_fsdp_tp_dataset_hf_loss_is_finite():
     batch = next(iter(dataloader))
     model = _build_tiny_model(vocab_size=len(vocab), seq_len=seq_len)
     assert _loss_is_finite(model, batch)
+
+
+def test_hf_dataloader_drop_last_yields_static_batch_shape():
+    """Every batch must have a static batch dim under ``drop_last=True``.
+
+    Regression for the ``--loss-impl=compiled`` step-53 OOM: a ragged
+    final batch (batch_size 2 -> 1) makes torch.compile mark the batch
+    dim dynamic and recompile at the epoch boundary; the recompiled
+    backward drops the fused CE and materializes the full (B*T, vocab)
+    logits grad (~15.6 GiB for agpt-2b) -> XPU OOM. The fsdp_tp HF loader
+    now sets drop_last=True, so no ragged batch reaches the compiled step.
+
+    Dataset size (5) is deliberately NOT a multiple of batch_size (2):
+    with drop_last=False the last batch would be size 1 (the recompile
+    trigger); with drop_last=True it must be dropped.
+    """
+
+    class _TinyDS(torch.utils.data.Dataset):
+        def __init__(self, n, seq_len):
+            self.data = torch.arange(n * seq_len).reshape(n, seq_len)
+
+        def __len__(self):
+            return len(self.data)
+
+        def __getitem__(self, i):
+            return self.data[i]
+
+    batch_size = 2
+    seq_len = 8
+    dataset = _TinyDS(5, seq_len)  # 5 % 2 == 1 -> ragged tail without drop_last
+
+    # drop_last=True (the fix): only full-size batches, none ragged.
+    dl_fixed = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, drop_last=True
+    )
+    batches = list(dl_fixed)
+    assert len(batches) == 2  # floor(5 / 2)
+    assert all(b.shape[0] == batch_size for b in batches), (
+        "drop_last=True must yield only full-size batches (static batch dim)"
+    )
+
+    # Sanity: the pre-fix config (drop_last=False) DID produce the ragged
+    # size-1 tail batch that triggered the recompile. Locks the root cause.
+    dl_ragged = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, drop_last=False
+    )
+    ragged = list(dl_ragged)
+    assert len(ragged) == 3 and ragged[-1].shape[0] == 1
