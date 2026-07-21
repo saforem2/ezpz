@@ -55,6 +55,24 @@ class TestReshardAfterForwardFlag:
         with pytest.raises(SystemExit):
             m.parse_args(["--reshard-after-forward", "sometimes"])
 
+    def test_conflicting_new_flags_last_wins(self):
+        """--reshard-after-forward and --no-… share a dest; last-on-line wins.
+
+        Locks the argparse precedence so a future ordering/parsing change
+        can't silently flip which policy applies when both are passed.
+        """
+        m = _import_fsdp_tp()
+        # --no-… last -> never
+        a = m.parse_args(
+            ["--reshard-after-forward", "always", "--no-reshard-after-forward"]
+        )
+        assert a.reshard_after_forward == "never"
+        # --reshard-after-forward last -> its value wins
+        b = m.parse_args(
+            ["--no-reshard-after-forward", "--reshard-after-forward", "always"]
+        )
+        assert b.reshard_after_forward == "always"
+
 
 class TestReshardArg:
     """The pure policy->bool mapper used for fully_shard."""
@@ -66,6 +84,12 @@ class TestReshardArg:
     def test_never_false(self):
         m = _import_fsdp_tp()
         assert m._reshard_arg("never") is False
+
+    def test_invalid_policy_raises(self):
+        """A bad programmatic value raises rather than silently -> True."""
+        m = _import_fsdp_tp()
+        with pytest.raises(ValueError, match="invalid reshard_after_forward"):
+            m._reshard_arg("alwyas")
 
 
 class TestLegacyShardingStrategyAlias:

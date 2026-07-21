@@ -333,8 +333,15 @@ def _reshard_arg(policy: str) -> bool:
     """Map a --reshard-after-forward policy to the FSDP2 bool.
 
     Only two behaviors exist under FSDP2: ``always`` -> True, ``never`` ->
-    False.
+    False. Validates against RESHARD_POLICIES so a bad programmatic value
+    (the CLI already restricts via ``choices``) raises instead of silently
+    resolving to True.
     """
+    if policy not in RESHARD_POLICIES:
+        raise ValueError(
+            f"invalid reshard_after_forward policy {policy!r}; "
+            f"expected one of {RESHARD_POLICIES}"
+        )
     return policy != "never"
 
 
