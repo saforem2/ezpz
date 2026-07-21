@@ -358,8 +358,8 @@ When sequence parallelism is active, each TP rank only sees a slice of
 the sequence dimension. This helper narrows the label tensor to match
 the local shard so `cross_entropy` computes the correct loss.
 
-```python title="src/ezpz/examples/fsdp_tp.py:343:399"
---8<-- "src/ezpz/examples/fsdp_tp.py:343:399"
+```python title="src/ezpz/examples/fsdp_tp.py:452:507"
+--8<-- "src/ezpz/examples/fsdp_tp.py:452:507"
 ```
 
 </details>
@@ -370,8 +370,8 @@ the local shard so `cross_entropy` computes the correct loss.
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
 precedence over the preset via `apply_model_preset`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:690:1086"
---8<-- "src/ezpz/examples/fsdp_tp.py:690:1086"
+```python title="src/ezpz/examples/fsdp_tp.py:1185:1656"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1185:1656"
 ```
 
 </details>
@@ -382,8 +382,8 @@ This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
 dimension, then wraps the result with FSDP along the `"dp"` dimension.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1130:1147"
---8<-- "src/ezpz/examples/fsdp_tp.py:1130:1147"
+```python title="src/ezpz/examples/fsdp_tp.py:1706:1724"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1706:1724"
 ```
 
 **Top-level TP plan.** Applied only when `--tp > 1` (at `--tp 1` the whole
@@ -391,8 +391,8 @@ TP plan is skipped — no SequenceParallel overhead). The embedding is
 row-sharded, the final output projection is column-sharded, and the RMS
 norm between them uses `SequenceParallel`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1148:1198"
---8<-- "src/ezpz/examples/fsdp_tp.py:1148:1198"
+```python title="src/ezpz/examples/fsdp_tp.py:1725:1771"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1725:1771"
 ```
 
 **Per-layer TP plan.** Each transformer block's attention and FFN
@@ -400,8 +400,8 @@ sub-modules are parallelized: Q/K/V projections are column-sharded,
 output projections are row-sharded, and norms use `SequenceParallel`.
 Attention head counts are divided by the TP mesh size.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1200:1230"
---8<-- "src/ezpz/examples/fsdp_tp.py:1200:1230"
+```python title="src/ezpz/examples/fsdp_tp.py:1773:1802"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1773:1802"
 ```
 
 **FSDP2 wrapping.** After TP is applied, each module group is sharded
@@ -410,8 +410,8 @@ each TransformerBlock, then `[norm, output]`, then the root last. A final
 `_configure_fsdp_gradient_division` call forces SUM reduction for gradient
 comms on CCL/XPU (matching torchtitan).
 
-```python title="src/ezpz/examples/fsdp_tp.py:1239:1264"
---8<-- "src/ezpz/examples/fsdp_tp.py:1239:1264"
+```python title="src/ezpz/examples/fsdp_tp.py:1812:1837"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1812:1837"
 ```
 
 </details>
@@ -424,28 +424,28 @@ loads data, then runs the epoch loop.
 **Device mesh creation.** World size is split into `dp` x `tp`
 dimensions.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1517:1522"
---8<-- "src/ezpz/examples/fsdp_tp.py:1517:1522"
+```python title="src/ezpz/examples/fsdp_tp.py:2185:2197"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2185:2197"
 ```
 
 **HuggingFace dataset loading.** If `--dataset` is not `"mnist"` or
 `"random"`, a tokenized HF text dataset is loaded and the vocab size is
 synced to the tokenizer.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1524:1546"
---8<-- "src/ezpz/examples/fsdp_tp.py:1524:1546"
+```python title="src/ezpz/examples/fsdp_tp.py:2199:2220"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2199:2220"
 ```
 
 **Model construction and parallelization.** A `Transformer` is built
 from `ModelArgs`, moved to the device, optionally given a
 `MixedPrecision` config, and then handed to `parallelize`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1552:1632"
---8<-- "src/ezpz/examples/fsdp_tp.py:1552:1632"
+```python title="src/ezpz/examples/fsdp_tp.py:2227:2306"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2227:2306"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1743:1749"
---8<-- "src/ezpz/examples/fsdp_tp.py:1743:1749"
+```python title="src/ezpz/examples/fsdp_tp.py:2461:2468"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2461:2468"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -453,15 +453,15 @@ HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1879:1939"
---8<-- "src/ezpz/examples/fsdp_tp.py:1879:1939"
+```python title="src/ezpz/examples/fsdp_tp.py:2623:2676"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2623:2676"
 ```
 
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1950:1962"
---8<-- "src/ezpz/examples/fsdp_tp.py:1950:1962"
+```python title="src/ezpz/examples/fsdp_tp.py:2688:2704"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2688:2704"
 ```
 
 **Training loop.** Each batch is moved to device, split into
@@ -469,30 +469,30 @@ JSONL metric logging and optional distributed aggregation.
 `cross_entropy`. Labels are narrowed for sequence parallelism when
 needed. Gradient clipping is applied before `optimizer.step()`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1970:2148"
---8<-- "src/ezpz/examples/fsdp_tp.py:1970:2148"
+```python title="src/ezpz/examples/fsdp_tp.py:2713:2965"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2713:2965"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2067:2074"
---8<-- "src/ezpz/examples/fsdp_tp.py:2067:2074"
+```python title="src/ezpz/examples/fsdp_tp.py:2863:2870"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2863:2870"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2078:2090"
---8<-- "src/ezpz/examples/fsdp_tp.py:2078:2090"
+```python title="src/ezpz/examples/fsdp_tp.py:2878:2890"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2878:2890"
 ```
 
 After each step, timing and loss metrics are collected into a dict and
 passed to `history.update` and `history.log_metrics`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2141:2148"
---8<-- "src/ezpz/examples/fsdp_tp.py:2141:2148"
+```python title="src/ezpz/examples/fsdp_tp.py:2956:2963"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2956:2963"
 ```
 
 At the end of training, activation hooks are removed, a barrier syncs
 all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2151:2156"
---8<-- "src/ezpz/examples/fsdp_tp.py:2151:2156"
+```python title="src/ezpz/examples/fsdp_tp.py:2966:2971"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2966:2971"
 ```
 
 </details>
@@ -503,15 +503,15 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 distributed backend (including TP groups), determines the output
 directory, and dispatches to `train`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2160:2198"
---8<-- "src/ezpz/examples/fsdp_tp.py:2160:2198"
+```python title="src/ezpz/examples/fsdp_tp.py:2975:3015"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2975:3015"
 ```
 
 The `if __name__ == "__main__"` block parses args, runs `main`, cleans
 up distributed state, and exits.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2201:2206"
---8<-- "src/ezpz/examples/fsdp_tp.py:2201:2206"
+```python title="src/ezpz/examples/fsdp_tp.py:3018:3022"
+--8<-- "src/ezpz/examples/fsdp_tp.py:3018:3022"
 ```
 
 </details>
