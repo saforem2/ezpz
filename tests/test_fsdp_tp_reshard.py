@@ -19,7 +19,9 @@ import pytest
 def _import_fsdp_tp():
     try:
         return importlib.import_module("ezpz.examples.fsdp_tp")
-    except Exception as exc:  # heavy optional deps may be missing
+    except ImportError as exc:  # only missing optional deps -> skip
+        # Real regressions (SyntaxError, AttributeError, ...) propagate and
+        # fail the run rather than being silently skipped.
         pytest.skip(f"could not import ezpz.examples.fsdp_tp: {exc}")
 
 

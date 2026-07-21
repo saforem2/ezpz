@@ -368,7 +368,8 @@ def _resolve_reshard_after_forward(args: argparse.Namespace) -> None:
     - `hybrid_shard` / `hybrid_shard_zero2` -> hard error (SystemExit),
       pointing at --dp-replicate / --dp-shard for real HSDP.
     - `full_shard` -> always; `shard_grad_op` / `no_shard` -> never, with a
-      one-time deprecation warning.
+      deprecation warning (emitted on rank 0 only — parse_args runs on every
+      rank, and AGENTS.md gates per-rank log lines to local_rank 0).
     - If both `--sharding-strategy` and the new flag are passed, the
       deprecated value is applied last (documented precedence).
     """
@@ -385,20 +386,26 @@ def _resolve_reshard_after_forward(args: argparse.Namespace) -> None:
     if ss not in _LEGACY_SHARDING_TO_RESHARD:
         raise SystemExit(f"unknown --sharding-strategy={ss!r}")
     mapped = _LEGACY_SHARDING_TO_RESHARD[ss]
-    logger.warning(
-        "--sharding-strategy is deprecated; use --reshard-after-forward. "
-        "Mapping --sharding-strategy=%s -> --reshard-after-forward=%s.",
-        ss,
-        mapped,
-    )
-    if ss == "no_shard":
+    # parse_args() runs on every rank before setup_torch; gate the warnings
+    # to rank 0 so a large launch doesn't emit N duplicate lines (AGENTS.md
+    # "Logging at scale"). get_rank() reads the launcher's env vars, which
+    # are already set at parse time.
+    if ezpz.get_rank() == 0:
         logger.warning(
-            "--sharding-strategy=no_shard does NOT give replicated "
-            "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
-            "optimizer state are still sharded across the dp mesh. Only "
-            "post-forward resharding is disabled (== --reshard-after-forward "
-            "never). Use plain DDP if you need truly replicated parameters."
+            "--sharding-strategy is deprecated; use --reshard-after-forward. "
+            "Mapping --sharding-strategy=%s -> --reshard-after-forward=%s.",
+            ss,
+            mapped,
         )
+        if ss == "no_shard":
+            logger.warning(
+                "--sharding-strategy=no_shard does NOT give replicated "
+                "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
+                "optimizer state are still sharded across the dp mesh. Only "
+                "post-forward resharding is disabled (== "
+                "--reshard-after-forward never). Use plain DDP if you need "
+                "truly replicated parameters."
+            )
     args.reshard_after_forward = mapped
 
 
