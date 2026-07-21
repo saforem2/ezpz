@@ -24,6 +24,7 @@ import logging
 import os
 import socket
 import time
+from contextlib import contextmanager
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
@@ -78,6 +79,7 @@ __all__ = [
     "wrap_model_for_fsdp",
     "wrap_model_for_fsdp2",
     "init_device_mesh_safe",
+    "flatten_device_mesh_safe",
     # -- diagnostics --
     "get_dist_info",
     "get_hostname",
@@ -1985,15 +1987,13 @@ def _setup_ddp(
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
-def init_device_mesh_safe(
-    device_type: str,
-    mesh_shape: tuple[int, ...],
-    *,
-    mesh_dim_names: tuple[str, ...] | None = None,
-) -> Any:
-    """Drop-in replacement for ``torch.distributed.init_device_mesh``.
+@contextmanager
+def _xccl_split_workaround(device_type: str):
+    """Temporarily clear the default PG's ``bound_device_id`` on XPU.
 
-    Works around xccl's missing ``ProcessGroup.split_group`` support.
+    Works around xccl's missing ``ProcessGroup.split_group`` support for
+    any torch DeviceMesh operation that would otherwise take the
+    ``split_group`` path.
 
     For FSDP2 to route ``foreach_all_gather`` correctly on XPU,
     ``_setup_ddp`` binds the default PG to a device by passing
@@ -2007,15 +2007,16 @@ def init_device_mesh_safe(
         RuntimeError: No backend for the parent process group or its
                       backend does not support splitting
 
-    We temporarily clear ``default_group.bound_device_id`` for the
-    duration of the ``init_device_mesh`` call so torch takes the
-    ``new_group`` fallback (which xccl supports), then restore it so
-    FSDP2's per-device PG resolution still works.
+    Clearing ``bound_device_id`` for the duration of the mesh op makes
+    torch take the ``new_group`` fallback (which xccl supports); the
+    original value is restored afterwards so FSDP2's per-device PG
+    resolution still works. Both ``init_device_mesh`` (mesh creation)
+    and ``DeviceMesh._flatten`` (submesh flattening, HSDP) create PGs
+    this way, so both must run inside this context.
 
     No-op on non-xpu devices and when no default PG exists yet.
     """
     import torch
-    from torch.distributed.device_mesh import init_device_mesh as _imd
 
     default_pg = None
     saved: Any = None
@@ -2030,13 +2031,65 @@ def init_device_mesh_safe(
         except (AttributeError, RuntimeError):
             needs_workaround = False
     try:
-        return _imd(device_type, mesh_shape, mesh_dim_names=mesh_dim_names)
+        yield
     finally:
         if needs_workaround and default_pg is not None:
             try:
                 default_pg.bound_device_id = saved  # type: ignore[attr-defined]
             except AttributeError:
                 pass
+
+
+def init_device_mesh_safe(
+    device_type: str,
+    mesh_shape: tuple[int, ...],
+    *,
+    mesh_dim_names: tuple[str, ...] | None = None,
+) -> Any:
+    """Drop-in replacement for ``torch.distributed.init_device_mesh``.
+
+    Works around xccl's missing ``ProcessGroup.split_group`` support by
+    running the mesh construction under :func:`_xccl_split_workaround`
+    (see there for the full mechanism). No-op on non-xpu devices and
+    when no default PG exists yet.
+    """
+    from torch.distributed.device_mesh import init_device_mesh as _imd
+
+    with _xccl_split_workaround(device_type):
+        return _imd(device_type, mesh_shape, mesh_dim_names=mesh_dim_names)
+
+
+def flatten_device_mesh_safe(
+    submesh: Any,
+    mesh_dim_name: str,
+    *,
+    device_type: str | None = None,
+) -> Any:
+    """Flatten a DeviceMesh submesh, guarded against xccl's split limits.
+
+    ``DeviceMesh._flatten`` builds the flattened process group with
+    ``split_group`` when the default PG is device-bound — which xccl
+    does not support (see :func:`_xccl_split_workaround`). This wraps
+    the ``_flatten`` call in that workaround so HSDP meshes (e.g.
+    ``mesh["dp_replicate", "dp_shard"]._flatten("dp")``) build the
+    flattened PG via the ``new_group`` fallback on XPU.
+
+    Args:
+        submesh: The (sub)mesh to flatten, e.g.
+            ``mesh["dp_replicate", "dp_shard"]``.
+        mesh_dim_name: Name for the resulting flattened dim (``"dp"``).
+        device_type: Device family; auto-detected from *submesh* (else
+            :func:`get_torch_device_type`) when ``None``.
+
+    Returns:
+        The flattened :class:`~torch.distributed.device_mesh.DeviceMesh`.
+    """
+    if device_type is None:
+        device_type = getattr(submesh, "device_type", None) or (
+            get_torch_device_type()
+        )
+    with _xccl_split_workaround(device_type):
+        return submesh._flatten(mesh_dim_name)
 
 
 def _init_deepspeed(timeout: int = 3600) -> None:

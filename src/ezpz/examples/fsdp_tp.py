@@ -2037,7 +2037,13 @@ def train(
         (dp_replicate, dp_shard, args.tp),
         mesh_dim_names=("dp_replicate", "dp_shard", "tp"),
     )
-    device_mesh[("dp_replicate", "dp_shard")]._flatten("dp")
+    # Flatten the two DP dims into a single "dp" dim. Must go through
+    # flatten_device_mesh_safe: `_flatten` builds the flattened PG via
+    # split_group when the default PG is device-bound, which xccl (XPU)
+    # doesn't support — the same workaround init_device_mesh_safe applies.
+    ezpz.distributed.flatten_device_mesh_safe(
+        device_mesh[("dp_replicate", "dp_shard")], "dp"
+    )
     logger.info(f"Device mesh created:\n{device_mesh=}")
 
     hf_dataset = None
