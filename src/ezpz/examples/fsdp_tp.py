@@ -319,33 +319,94 @@ MODEL_PRESET_FLAGS = {
 
 
 # FSDP2 (`fully_shard`) has no `sharding_strategy` enum — sharding behavior
-# is controlled by `reshard_after_forward` (bool). We keep the legacy
-# FSDP1 strategy NAMES as the CLI surface (so existing scripts don't break)
-# and map each to the closest FSDP2 reshard policy:
-#   - full_shard  (ZeRO-3): reshard params after forward -> lowest memory  -> True
-#   - shard_grad_op (ZeRO-2): keep params unsharded after forward          -> False
-#   - no_shard    (ZeRO-0 / replicate): also keep unsharded (closest FSDP2 -> False;
-#       true no-shard = don't shard at all, not expressible per-module here)
-#   - hybrid_shard (ZeRO-3-like): FSDP1 inter/intra-node hybrid has no
-#       direct one-flag FSDP2 equivalent (needs an explicit 2D mesh); map
-#       to reshard-after-forward                                     -> True
-#   - hybrid_shard_zero2 (ZeRO-2-like): same caveat, but keep params
-#       unsharded after forward to mirror the zero2 variant          -> False
-# This is the set of valid `--sharding-strategy` values.
-SHARDING_STRATEGIES = {
-    "no_shard": False,
-    "full_shard": True,
-    "shard_grad_op": False,
-    "hybrid_shard": True,
-    "hybrid_shard_zero2": False,
+# is a single knob, `reshard_after_forward` (bool). The CLI surface is
+# `--reshard-after-forward {always,never}` (+ `--no-reshard-after-forward`),
+# which names exactly that. Two behaviors exist:
+#   - always (ZeRO-3, default): reshard params after forward  -> True
+#       lowest memory, re-all-gathers params in backward.
+#   - never  (ZeRO-2):          keep params gathered after fwd -> False
+#       more memory, skips the backward all-gather.
+RESHARD_POLICIES = ("always", "never")
+
+
+def _reshard_arg(policy: str) -> bool:
+    """Map a --reshard-after-forward policy to the FSDP2 bool.
+
+    Only two behaviors exist under FSDP2: ``always`` -> True, ``never`` ->
+    False. Validates against RESHARD_POLICIES so a bad programmatic value
+    (the CLI already restricts via ``choices``) raises instead of silently
+    resolving to True.
+    """
+    if policy not in RESHARD_POLICIES:
+        raise ValueError(
+            f"invalid reshard_after_forward policy {policy!r}; "
+            f"expected one of {RESHARD_POLICIES}"
+        )
+    return policy != "never"
+
+
+# Legacy `--sharding-strategy` values -> the new reshard policy. Kept only
+# for the hidden, deprecated `--sharding-strategy` alias (see parse_args).
+# `hybrid_shard*` are intentionally absent: they never did real HSDP under
+# FSDP2 (use --dp-replicate / --dp-shard), so they hard-error instead of
+# silently mapping to a reshard bool.
+_LEGACY_SHARDING_TO_RESHARD = {
+    "full_shard": "always",
+    "shard_grad_op": "never",
+    "no_shard": "never",
 }
+_LEGACY_HYBRID_SHARDING = ("hybrid_shard", "hybrid_shard_zero2")
 
 
-def _reshard_after_forward(sharding_strategy: Optional[str]) -> bool:
-    """Map a legacy --sharding-strategy name to FSDP2 reshard_after_forward."""
-    if sharding_strategy is None:
-        return True
-    return SHARDING_STRATEGIES.get(sharding_strategy, True)
+def _resolve_reshard_after_forward(args: argparse.Namespace) -> None:
+    """Fold the deprecated `--sharding-strategy` alias into `reshard_after_forward`.
+
+    Mutates *args* in place. Called from ``parse_args`` so the module
+    entrypoint and tests both see the normalized value. No-op when
+    `--sharding-strategy` wasn't passed (the common path).
+
+    - `hybrid_shard` / `hybrid_shard_zero2` -> hard error (SystemExit),
+      pointing at --dp-replicate / --dp-shard for real HSDP.
+    - `full_shard` -> always; `shard_grad_op` / `no_shard` -> never, with a
+      deprecation warning (emitted on rank 0 only — parse_args runs on every
+      rank, and AGENTS.md gates per-rank log lines to local_rank 0).
+    - If both `--sharding-strategy` and the new flag are passed, the
+      deprecated value is applied last (documented precedence).
+    """
+    ss = getattr(args, "sharding_strategy", None)
+    if ss is None:
+        return
+    if ss in _LEGACY_HYBRID_SHARDING:
+        raise SystemExit(
+            f"--sharding-strategy={ss} is removed: it never performed real "
+            "HSDP under FSDP2. Use --dp-replicate / --dp-shard for hybrid "
+            "sharding, and --reshard-after-forward {always,never} for the "
+            "ZeRO-3/ZeRO-2 reshard policy."
+        )
+    if ss not in _LEGACY_SHARDING_TO_RESHARD:
+        raise SystemExit(f"unknown --sharding-strategy={ss!r}")
+    mapped = _LEGACY_SHARDING_TO_RESHARD[ss]
+    # parse_args() runs on every rank before setup_torch; gate the warnings
+    # to rank 0 so a large launch doesn't emit N duplicate lines (AGENTS.md
+    # "Logging at scale"). get_rank() reads the launcher's env vars, which
+    # are already set at parse time.
+    if ezpz.get_rank() == 0:
+        logger.warning(
+            "--sharding-strategy is deprecated; use --reshard-after-forward. "
+            "Mapping --sharding-strategy=%s -> --reshard-after-forward=%s.",
+            ss,
+            mapped,
+        )
+        if ss == "no_shard":
+            logger.warning(
+                "--sharding-strategy=no_shard does NOT give replicated "
+                "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
+                "optimizer state are still sharded across the dp mesh. Only "
+                "post-forward resharding is disabled (== "
+                "--reshard-after-forward never). Use plain DDP if you need "
+                "truly replicated parameters."
+            )
+    args.reshard_after_forward = mapped
 
 
 def _resolve_dp_degrees(
@@ -1332,27 +1393,38 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
-        "--sharding-strategy",
-        type=str,
-        default="full_shard",
-        choices=list(SHARDING_STRATEGIES.keys()),
+        "--reshard-after-forward",
+        dest="reshard_after_forward",
+        nargs="?",
+        const="always",
+        default="always",
+        choices=list(RESHARD_POLICIES),
         help=(
-            "FSDP sharding behavior. The model uses FSDP2 (`fully_shard`), "
-            "which controls sharding via `reshard_after_forward` rather than "
-            "a strategy enum; the legacy FSDP1 names below are kept as the "
-            "CLI surface and mapped to the nearest FSDP2 policy. "
-            "`full_shard` (default, ZeRO-3): reshard params after forward — "
-            "lowest memory, params re-all-gathered in backward. "
-            "`shard_grad_op` (ZeRO-2): keep params unsharded after forward — "
-            "more memory, avoids the backward all-gather. "
-            "`no_shard`: mapped to keep-unsharded (FSDP2 has no true "
-            "per-module no-shard). `hybrid_shard`/`hybrid_shard_zero2`: "
-            "FSDP1 hybrid has no one-flag FSDP2 equivalent — `hybrid_shard` "
-            "maps to reshard-after-forward, `hybrid_shard_zero2` to "
-            "keep-unsharded (mirroring their ZeRO-3/ZeRO-2 variants). "
-            "For actual HSDP (replicate + shard), use --dp-replicate / "
-            "--dp-shard, which build a 2D data-parallel mesh."
+            "FSDP2 reshard_after_forward policy (memory vs. comm tradeoff). "
+            "`always` (default, ZeRO-3): reshard params after forward — "
+            "lowest memory, re-all-gathers params in backward. `never` "
+            "(ZeRO-2): keep params gathered after forward — more memory, "
+            "skips the backward all-gather. Bare `--reshard-after-forward` "
+            "== `always`; `--no-reshard-after-forward` == `never`. For HSDP "
+            "(replicate + shard) use --dp-replicate / --dp-shard."
         ),
+    )
+    parser.add_argument(
+        "--no-reshard-after-forward",
+        dest="reshard_after_forward",
+        action="store_const",
+        const="never",
+        help="Alias for --reshard-after-forward never (ZeRO-2).",
+    )
+    # Deprecated legacy alias, hidden from --help. Resolved post-parse by
+    # _resolve_reshard_after_forward: full_shard->always, shard_grad_op/
+    # no_shard->never (with a deprecation warning), hybrid_shard*->hard error.
+    parser.add_argument(
+        "--sharding-strategy",
+        dest="sharding_strategy",
+        type=str,
+        default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--activation-checkpoint",
@@ -1578,6 +1650,9 @@ def parse_args(argv: Optional[list[str]] = None):
     add_profiling_args(parser)
     args = parser.parse_args(argv)
     apply_model_preset(args, argv)
+    # Fold the deprecated --sharding-strategy alias into reshard_after_forward
+    # (and hard-error the removed hybrid_shard* values).
+    _resolve_reshard_after_forward(args)
     return args
 
 
@@ -1632,7 +1707,7 @@ def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
     mixed_precision: Optional[MixedPrecisionPolicy],
-    sharding_strategy: Optional[str] = None,
+    reshard_after_forward: str = "always",
     activation_checkpoint: str = "none",
     loss_parallel: bool = False,
 ) -> nn.Module:
@@ -1648,8 +1723,6 @@ def parallelize(
     sharded unit (torchtitan's ordering).
     """
     tp_mesh = device_mesh["tp"]
-    dp_mesh = device_mesh["dp"]  # flattened (dp_replicate*dp_shard) — used by
-    # non-FSDP dp consumers below and elsewhere in the module.
 
     # Choose the mesh fully_shard shards over:
     #   dp_replicate > 1 -> 2D (dp_replicate, dp_shard) submesh; FSDP2 reads a
@@ -1663,25 +1736,7 @@ def parallelize(
     else:
         fsdp_dp_mesh = device_mesh["dp_shard"]
 
-    reshard = _reshard_after_forward(sharding_strategy)
-
-    # `no_shard` is NOT a true ZeRO-0 / DDP replicate under FSDP2: every
-    # module group below still gets `fully_shard`, so params, grads, and
-    # optimizer state are sharded across the dp mesh regardless. The
-    # strategy name only controls `reshard_after_forward` (False here =
-    # keep params gathered after forward). There is no per-module "don't
-    # shard at all" knob in FSDP2 — that would require skipping fully_shard
-    # entirely (plain DDP). Warn so a multi-rank run that asked for
-    # replicated params/checkpoints isn't silently sharded.
-    if sharding_strategy == "no_shard" and dp_mesh.size() > 1:
-        logger.warning(
-            "--sharding-strategy=no_shard does NOT give replicated "
-            "(ZeRO-0/DDP) params under FSDP2: parameters, gradients, and "
-            "optimizer state are still sharded across the %d-rank dp mesh. "
-            "Only post-forward resharding is disabled. Use plain DDP if you "
-            "need truly replicated parameters.",
-            dp_mesh.size(),
-        )
+    reshard = _reshard_arg(reshard_after_forward)
 
     model.init_weights()  # type: ignore
 
@@ -2382,9 +2437,7 @@ def train(
             hf_dp_mesh = device_mesh["dp_shard"]
         hf_fsdp_kwargs = {
             "mesh": hf_dp_mesh,
-            "reshard_after_forward": _reshard_after_forward(
-                args.sharding_strategy
-            ),
+            "reshard_after_forward": _reshard_arg(args.reshard_after_forward),
         }
         if mp_config is not None:
             hf_fsdp_kwargs["mp_policy"] = mp_config
@@ -2409,7 +2462,7 @@ def train(
             model,
             device_mesh,
             mp_config,
-            sharding_strategy=args.sharding_strategy,
+            reshard_after_forward=args.reshard_after_forward,
             activation_checkpoint=args.activation_checkpoint,
             loss_parallel=use_loss_parallel,
         )

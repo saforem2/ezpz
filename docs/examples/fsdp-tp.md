@@ -86,8 +86,8 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   (pure FSDP), identical to the pre-HSDP behavior — `--dp-shard -1` means
   "use all remaining ranks" = `WORLD_SIZE / (dp_replicate * tp)`. Mirrors
   torchtitan's `data_parallel_replicate_degree` / `data_parallel_shard_degree`.
-  (The legacy `--sharding-strategy hybrid_shard*` names do **not** do real
-  HSDP under FSDP2 — use these flags instead.)
+  (The legacy `--sharding-strategy hybrid_shard*` names have been **removed**
+  — they now hard-error. Use `--dp-replicate` / `--dp-shard` for HSDP.)
 - **Activation checkpointing** — `--ac {none,block,full,selective}` (or
   `--activation-checkpoint`) trades compute for memory during training.
   `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
@@ -330,15 +330,24 @@ memory for each doubling) or use a smaller preset.
 
 </details>
 
-<details closed markdown><summary><strong>Sharding Strategies</strong></summary>
+<details closed markdown><summary><strong>Reshard-after-forward policy</strong></summary>
 
-Maps the legacy FSDP1 strategy names (kept as the CLI surface so existing
-scripts don't break) to FSDP2's `reshard_after_forward` policy: `True`
-reshards params after forward (ZeRO-3-like), `False` keeps them gathered
-(ZeRO-2-like).
+`--reshard-after-forward {always,never}` (and its shorthand
+`--no-reshard-after-forward`) map directly to FSDP2's `reshard_after_forward`
+bool: `always` -> `True` (ZeRO-3: reshard params after forward — lowest
+memory, re-all-gathers params in backward), `never` -> `False` (ZeRO-2: keep
+params gathered after forward — more memory, skips the backward all-gather).
+Bare `--reshard-after-forward` == `always` (the default);
+`--no-reshard-after-forward` == `never`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:327:333"
---8<-- "src/ezpz/examples/fsdp_tp.py:327:333"
+The legacy `--sharding-strategy` flag is a deprecated hidden alias (kept so
+existing scripts don't break, but suppressed from `--help`): `full_shard`
+maps to `always`, `shard_grad_op`/`no_shard` map to `never` (with a
+deprecation warning). The `hybrid_shard`/`hybrid_shard_zero2` names have been
+removed and now hard-error — use `--dp-replicate` / `--dp-shard` for HSDP.
+
+```python title="src/ezpz/examples/fsdp_tp.py:329:338"
+--8<-- "src/ezpz/examples/fsdp_tp.py:329:338"
 ```
 
 </details>
@@ -349,8 +358,8 @@ When sequence parallelism is active, each TP rank only sees a slice of
 the sequence dimension. This helper narrows the label tensor to match
 the local shard so `cross_entropy` computes the correct loss.
 
-```python title="src/ezpz/examples/fsdp_tp.py:343:399"
---8<-- "src/ezpz/examples/fsdp_tp.py:343:399"
+```python title="src/ezpz/examples/fsdp_tp.py:452:507"
+--8<-- "src/ezpz/examples/fsdp_tp.py:452:507"
 ```
 
 </details>
@@ -361,8 +370,8 @@ the local shard so `cross_entropy` computes the correct loss.
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
 precedence over the preset via `apply_model_preset`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:690:1086"
---8<-- "src/ezpz/examples/fsdp_tp.py:690:1086"
+```python title="src/ezpz/examples/fsdp_tp.py:1185:1656"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1185:1656"
 ```
 
 </details>
@@ -373,8 +382,8 @@ This is the core of the 2D parallelism setup. It takes the model and
 device mesh, applies tensor/sequence parallelism along the `"tp"` mesh
 dimension, then wraps the result with FSDP along the `"dp"` dimension.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1130:1147"
---8<-- "src/ezpz/examples/fsdp_tp.py:1130:1147"
+```python title="src/ezpz/examples/fsdp_tp.py:1706:1724"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1706:1724"
 ```
 
 **Top-level TP plan.** Applied only when `--tp > 1` (at `--tp 1` the whole
@@ -382,8 +391,8 @@ TP plan is skipped — no SequenceParallel overhead). The embedding is
 row-sharded, the final output projection is column-sharded, and the RMS
 norm between them uses `SequenceParallel`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1148:1198"
---8<-- "src/ezpz/examples/fsdp_tp.py:1148:1198"
+```python title="src/ezpz/examples/fsdp_tp.py:1725:1771"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1725:1771"
 ```
 
 **Per-layer TP plan.** Each transformer block's attention and FFN
@@ -391,8 +400,8 @@ sub-modules are parallelized: Q/K/V projections are column-sharded,
 output projections are row-sharded, and norms use `SequenceParallel`.
 Attention head counts are divided by the TP mesh size.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1200:1230"
---8<-- "src/ezpz/examples/fsdp_tp.py:1200:1230"
+```python title="src/ezpz/examples/fsdp_tp.py:1773:1802"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1773:1802"
 ```
 
 **FSDP2 wrapping.** After TP is applied, each module group is sharded
@@ -401,8 +410,8 @@ each TransformerBlock, then `[norm, output]`, then the root last. A final
 `_configure_fsdp_gradient_division` call forces SUM reduction for gradient
 comms on CCL/XPU (matching torchtitan).
 
-```python title="src/ezpz/examples/fsdp_tp.py:1239:1264"
---8<-- "src/ezpz/examples/fsdp_tp.py:1239:1264"
+```python title="src/ezpz/examples/fsdp_tp.py:1812:1837"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1812:1837"
 ```
 
 </details>
@@ -415,28 +424,28 @@ loads data, then runs the epoch loop.
 **Device mesh creation.** World size is split into `dp` x `tp`
 dimensions.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1517:1522"
---8<-- "src/ezpz/examples/fsdp_tp.py:1517:1522"
+```python title="src/ezpz/examples/fsdp_tp.py:2185:2197"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2185:2197"
 ```
 
 **HuggingFace dataset loading.** If `--dataset` is not `"mnist"` or
 `"random"`, a tokenized HF text dataset is loaded and the vocab size is
 synced to the tokenizer.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1524:1546"
---8<-- "src/ezpz/examples/fsdp_tp.py:1524:1546"
+```python title="src/ezpz/examples/fsdp_tp.py:2199:2220"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2199:2220"
 ```
 
 **Model construction and parallelization.** A `Transformer` is built
 from `ModelArgs`, moved to the device, optionally given a
 `MixedPrecision` config, and then handed to `parallelize`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1552:1632"
---8<-- "src/ezpz/examples/fsdp_tp.py:1552:1632"
+```python title="src/ezpz/examples/fsdp_tp.py:2227:2306"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2227:2306"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:1743:1749"
---8<-- "src/ezpz/examples/fsdp_tp.py:1743:1749"
+```python title="src/ezpz/examples/fsdp_tp.py:2461:2468"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2461:2468"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -444,15 +453,15 @@ HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1879:1939"
---8<-- "src/ezpz/examples/fsdp_tp.py:1879:1939"
+```python title="src/ezpz/examples/fsdp_tp.py:2623:2676"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2623:2676"
 ```
 
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1950:1962"
---8<-- "src/ezpz/examples/fsdp_tp.py:1950:1962"
+```python title="src/ezpz/examples/fsdp_tp.py:2688:2704"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2688:2704"
 ```
 
 **Training loop.** Each batch is moved to device, split into
@@ -460,30 +469,30 @@ JSONL metric logging and optional distributed aggregation.
 `cross_entropy`. Labels are narrowed for sequence parallelism when
 needed. Gradient clipping is applied before `optimizer.step()`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1970:2148"
---8<-- "src/ezpz/examples/fsdp_tp.py:1970:2148"
+```python title="src/ezpz/examples/fsdp_tp.py:2713:2965"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2713:2965"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2067:2074"
---8<-- "src/ezpz/examples/fsdp_tp.py:2067:2074"
+```python title="src/ezpz/examples/fsdp_tp.py:2863:2870"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2863:2870"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2078:2090"
---8<-- "src/ezpz/examples/fsdp_tp.py:2078:2090"
+```python title="src/ezpz/examples/fsdp_tp.py:2878:2890"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2878:2890"
 ```
 
 After each step, timing and loss metrics are collected into a dict and
 passed to `history.update` and `history.log_metrics`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2141:2148"
---8<-- "src/ezpz/examples/fsdp_tp.py:2141:2148"
+```python title="src/ezpz/examples/fsdp_tp.py:2956:2963"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2956:2963"
 ```
 
 At the end of training, activation hooks are removed, a barrier syncs
 all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2151:2156"
---8<-- "src/ezpz/examples/fsdp_tp.py:2151:2156"
+```python title="src/ezpz/examples/fsdp_tp.py:2966:2971"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2966:2971"
 ```
 
 </details>
@@ -494,15 +503,15 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 distributed backend (including TP groups), determines the output
 directory, and dispatches to `train`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2160:2198"
---8<-- "src/ezpz/examples/fsdp_tp.py:2160:2198"
+```python title="src/ezpz/examples/fsdp_tp.py:2975:3015"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2975:3015"
 ```
 
 The `if __name__ == "__main__"` block parses args, runs `main`, cleans
 up distributed state, and exits.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2201:2206"
---8<-- "src/ezpz/examples/fsdp_tp.py:2201:2206"
+```python title="src/ezpz/examples/fsdp_tp.py:3018:3022"
+--8<-- "src/ezpz/examples/fsdp_tp.py:3018:3022"
 ```
 
 </details>
@@ -574,13 +583,13 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp --model agpt-2b --tp 2 --compile
 
 This example targets parity with [torchtitan](https://github.com/pytorch/torchtitan)
 on the same AuroraGPT model. On Sunspot (Intel PVC), agpt-2b at
-`--batch-size 2 --seq-len 7320 --tp 1`, full-shard, 2 nodes (dp=24), the
-recipe below reproduces torchtitan's throughput within noise:
+`--batch-size 2 --seq-len 7320 --tp 1`, default reshard-after-forward
+(ZeRO-3), 2 nodes (dp=24), the recipe below reproduces torchtitan's
+throughput within noise:
 
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
   --model agpt-2b --seq-len 7320 --batch-size 2 --tp 1 \
-  --sharding-strategy full_shard \
   --compile --loss-impl compiled --act-mem-budget 0.5
 ```
 
@@ -619,8 +628,8 @@ Three pieces close the gap, all matching what torchtitan does:
     high-water mark that torchtitan's per-step reset discards — it is not
     extra real usage.
 
-Verified batch/loss/budget sweep (agpt-2b, seq=8192, tp=1, full_shard,
-dp=48, `--compile`):
+Verified batch/loss/budget sweep (agpt-2b, seq=8192, tp=1, default
+reshard-after-forward (ZeRO-3), dp=48, `--compile`):
 
 | batch | `--loss-impl` | `--act-mem-budget` | result |
 |---|---|---|---|
@@ -647,8 +656,8 @@ vocab_size from 256128 to tokenizer vocab_size=128000`).
 
 Setup: agpt-2b (`dim=2048`, `n_layers=12`, `hidden_dim=11008`),
 `--tokenizer_name meta-llama/Llama-3.2-1B` (vocab 128,000), `--seq-len 8192`,
-`--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`, 2× Sunspot nodes
-(dp=24), dataset `eliplutchok/fineweb-small-sample`. Each config runs ~31
+`--batch-size 2`, `--tp 1`, default reshard-after-forward (ZeRO-3), 2× Sunspot
+nodes (dp=24), dataset `eliplutchok/fineweb-small-sample`. Each config runs ~31
 iters; metrics are the steady-state mean over 26 iters (warmup + the final
 eval-pass step dropped).
 
@@ -656,13 +665,13 @@ eval-pass step dropped).
 # compiled (fastest that fits)
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
   --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
-  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --seq-len 8192 --batch-size 2 --tp 1 \
   --compile --loss-impl compiled --act-mem-budget 0.5
 
 # fused-linear (lowest memory)
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
   --model agpt-2b --tokenizer_name meta-llama/Llama-3.2-1B \
-  --seq-len 8192 --batch-size 2 --tp 1 --sharding-strategy full_shard \
+  --seq-len 8192 --batch-size 2 --tp 1 \
   --loss-impl fused-linear
 ```
 
@@ -745,8 +754,9 @@ realistically large)** with a shorter **seq-len 2048** does it: the
 fits with headroom and every mode produces steady-state steps.
 
 Setup: agpt-2b arch, `--tokenizer_name google/gemma-7b` (vocab 256,000),
-`--seq-len 2048`, `--batch-size 2`, `--tp 1`, `--sharding-strategy full_shard`,
-2× Sunspot nodes (dp=24), `eliplutchok/fineweb-small-sample`. Steady-state mean
+`--seq-len 2048`, `--batch-size 2`, `--tp 1`, default reshard-after-forward
+(ZeRO-3), 2× Sunspot nodes (dp=24), `eliplutchok/fineweb-small-sample`.
+Steady-state mean
 over 26 iters (warmup + final eval-pass step dropped).
 
 | `--loss-impl` | extra flags | MFU | TFLOP/s/rank | tokens/s | alloc mem | peak mem |
@@ -810,7 +820,8 @@ usage: fsdp_tp.py [-h] [--dim DIM] [--n-layers N_LAYERS]
                   [--test-batch-size TEST_BATCH_SIZE]
                   [--num-workers NUM_WORKERS]
                   [--seed SEED] [--tp TP]
-                  [--sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}]
+                  [--reshard-after-forward [{always,never}]]
+                  [--no-reshard-after-forward]
                   [--activation-checkpoint {none,block,full,selective}]
                   [--max-grad-norm MAX_GRAD_NORM]
                   [--outdir OUTDIR] [--dataset DATASET]
@@ -905,23 +916,19 @@ options:
                         dimension (WORLD_SIZE / --tp) is used for FSDP data
                         parallelism. Set to 1 for FSDP-only. Forced to 1 when
                         --model is a HF repo id. (default: 2)
-  --sharding-strategy {no_shard,full_shard,shard_grad_op,hybrid_shard,hybrid_shard_zero2}
-                        FSDP sharding behavior. The model uses FSDP2
-                        (`fully_shard`), which controls sharding via
-                        `reshard_after_forward` rather than a strategy enum;
-                        the legacy FSDP1 names below are kept as the CLI
-                        surface and mapped to the nearest FSDP2 policy.
-                        `full_shard` (default, ZeRO-3): reshard params after
-                        forward — lowest memory, params re-all-gathered in
-                        backward. `shard_grad_op` (ZeRO-2): keep params
-                        unsharded after forward — more memory, avoids the
-                        backward all-gather. `no_shard`: mapped to keep-
-                        unsharded (FSDP2 has no true per-module no-shard).
-                        `hybrid_shard`/`hybrid_shard_zero2`: FSDP1 hybrid has
-                        no one-flag FSDP2 equivalent — `hybrid_shard` maps to
-                        reshard-after-forward, `hybrid_shard_zero2` to keep-
-                        unsharded (mirroring their ZeRO-3/ZeRO-2 variants).
-                        (default: full_shard)
+  --reshard-after-forward [{always,never}]
+                        FSDP2 reshard_after_forward policy (memory vs. comm
+                        tradeoff). `always` (default, ZeRO-3): reshard params
+                        after forward — lowest memory, re-all-gathers params
+                        in backward. `never` (ZeRO-2): keep params gathered
+                        after forward — more memory, skips the backward all-
+                        gather. Bare `--reshard-after-forward` == `always`;
+                        `--no-reshard-after-forward` == `never`. For HSDP
+                        (replicate + shard) use --dp-replicate / --dp-shard.
+                        (default: always)
+  --no-reshard-after-forward
+                        Alias for --reshard-after-forward never (ZeRO-2).
+                        (default: None)
   --activation-checkpoint, --ac {none,block,full,selective}
                         Activation checkpointing strategy. `none` (default)
                         keeps all forward activations in memory. `block`
