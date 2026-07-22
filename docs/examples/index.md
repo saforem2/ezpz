@@ -45,6 +45,12 @@ scheduler is auto-detected.
 | [:lucide-book:][ex-hf-trainer] · [:lucide-file-code:][api-hf-trainer] · [:fontawesome-brands-github:][gh-hf-trainer] | `hf_trainer` | Using HF Trainer with ezpz's launcher | Beginner |
 | [:lucide-book:][ex-inference] · [:lucide-file-code:][api-inference] · [:fontawesome-brands-github:][gh-inference] | `inference` | Distributed HF inference (benchmark / generate / eval modes) | Intermediate |
 
+!!! tip "Fine-tuning or training an LLM?"
+    See the [**Fine-Tuning & Training LLMs**](../guides/llm-finetuning.md)
+    guide for a task-oriented walkthrough of the three paths (`hf_trainer`,
+    `hf`, `fsdp_tp`) — which to pick, larger-model targets, resource
+    requirements, and how to scale.
+
 ### Model size ladder
 
 All 5 training examples (`test`, `fsdp`, `vit`, `diffusion`, `fsdp_tp`)
