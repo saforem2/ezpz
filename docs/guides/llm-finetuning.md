@@ -98,7 +98,7 @@ Rough guidance — validate against a real run before publishing (see
 | **Llama-3.3-70B** (largest) | bf16 + `full_shard` + grad-ckpt | ~16–32 (4–8 nodes) | tune `block_size` down if OOM |
 
 Memory levers (both HF paths): `--fsdp=full_shard` (vs `shard_grad_op`),
-`--gradient_checkpointing=true`, and lowering `--block-size` /
+`--gradient_checkpointing=true`, and lowering `--block_size` /
 `--per_device_train_batch_size`.
 
 ### Path 3 — from-scratch FSDP+TP
@@ -158,20 +158,20 @@ TMPDIR=$(pwd) uv run \
         --include-for-metrics='inputs,loss' \
         --max-eval-samples=50 \
         --per_device_train_batch_size=1 \
-        --block-size=8192 \
+        --block_size=8192 \
         --gradient_checkpointing=true \
         --fsdp=shard_grad_op
 ```
 
 **Larger targets** — swap the model + tokenizer id (and prefer `full_shard`
-for 32B/70B; reduce `--block-size` if you OOM):
+for 32B/70B; reduce `--block_size` if you OOM):
 
 ```bash
 # Llama-3.1-8B
         --tokenizer_name meta-llama/Llama-3.1-8B \
         --model_name_or_path meta-llama/Llama-3.1-8B \
         --fsdp=shard_grad_op \
-        --block-size=8192 \
+        --block_size=8192 \
 
 # Qwen2.5-7B (or a Qwen3 8B/14B repo once confirmed)
         --tokenizer_name Qwen/Qwen2.5-7B \
@@ -182,14 +182,14 @@ for 32B/70B; reduce `--block-size` if you OOM):
         --tokenizer_name meta-llama/Llama-3.3-70B \
         --model_name_or_path meta-llama/Llama-3.3-70B \
         --fsdp=full_shard \
-        --block-size=4096 \
+        --block_size=4096 \
 ```
 
 If you need `torch` and/or `mpi4py`, add the extras:
 
 ```bash
 TMPDIR=$(pwd) uv run \
-    --with "git+https://github.com/saforem2/ezpz[torch,mpi4py]" \
+    --with "git+https://github.com/saforem2/ezpz[torch,mpi,hf]" \
     --python=$(which python3) \
     # ...
 ```
@@ -212,8 +212,10 @@ Same `--model_name_or_path` scaling — useful for comparing the custom loop
 against the `Trainer` path on identical targets.
 
 ```bash
-# Llama-3.1-8B, custom loop
-TMPDIR=$(pwd) uv run \
+# Llama-3.1-8B, custom loop.
+# hf.py enables FSDP via ACCELERATE_USE_FSDP (it does NOT read --fsdp), and it
+# reports tokens/sec on its own (train/tokens_per_sec) — no --include-* flags.
+ACCELERATE_USE_FSDP=true TMPDIR=$(pwd) uv run \
     --with "git+https://github.com/saforem2/ezpz" \
     --python=$(which python3) \
     ezpz launch python3 -m ezpz.examples.hf \
@@ -226,7 +228,6 @@ TMPDIR=$(pwd) uv run \
         --do_eval=true \
         --report-to=wandb \
         --logging-steps=1 \
-        --include-tokens-per-second=true \
         --max-steps=100 \
         --include-num-input-tokens-seen=true \
         --optim=adamw_torch \
@@ -236,8 +237,7 @@ TMPDIR=$(pwd) uv run \
         --per_device_train_batch_size=1 \
         --per_device_eval_batch_size=1 \
         --block_size=8192 \
-        --gradient_checkpointing=true \
-        --fsdp=auto_wrap
+        --gradient_checkpointing=true
 ```
 
 The same larger-target swaps from Path 1 apply here (Llama-3.1-8B /
@@ -268,9 +268,11 @@ TMPDIR=$(pwd) uv run \
         --act-mem-budget 0.5 \
         --compile \
         --seq-len 4096 \
-        --batch-size 1 \
-        --report-to wandb
+        --batch-size 1
 ```
+
+> `fsdp_tp` enables wandb automatically (via `ezpz`'s `History` / `setup_wandb`
+> and `WANDB_*` env vars) — there is no `--report-to` flag here.
 
 Other size-ladder targets (same flags, just change `--model`):
 
@@ -290,8 +292,7 @@ Largest config — `agpt-20b` (~20B, 256k vocab), higher TP:
         --act-mem-budget 0.5 \
         --compile \
         --seq-len 2048 \
-        --batch-size 1 \
-        --report-to wandb
+        --batch-size 1
 ```
 
 !!! note
@@ -311,9 +312,9 @@ drop `--tp`); the same memory levers apply:
         --act-mem-budget 0.5 \
         --compile \
         --seq-len 4096 \
-        --batch-size 1 \
-        --report-to wandb
+        --batch-size 1
         # --tokenizer_name defaults to --model; set HF_TOKEN for gated repos
+        # (wandb auto-enabled; no --report-to flag on fsdp_tp)
 ```
 
 Any HF repo works here (e.g. `Qwen/Qwen2.5-7B`, `mistralai/Mistral-7B-v0.3`) —
@@ -332,9 +333,10 @@ them (wandb + the resource tables above):
    counts; record peak memory and the smallest node count that fits. Adjust
    `block_size` / `seq_len` / `act-mem-budget` and re-record on OOM.
 2. **Throughput / MFU.** Capture tokens/sec-per-GPU and MFU at steady state
-   (past step ~20, after any `torch.compile` warmup/recompile). HF paths:
-   `--include-tokens-per-second`. Path 3: the `tps_per_gpu` / `mfu` history
-   metrics.
+   (past step ~20, after any `torch.compile` warmup/recompile). Path 1
+   (`hf_trainer`): `--include-tokens-per-second`. Path 2 (`hf`): reported
+   automatically as `train/tokens_per_sec` (no flag). Path 3 (`fsdp_tp`): the
+   `tps_per_gpu` / `mfu` history metrics.
 3. **`Trainer` vs custom-loop A/B (Paths 1 vs 2).** Run the same target on
    both HF paths and compare throughput/MFU + loss curves.
 4. **Scaling curve.** Run each target at 2–3 node counts (1, 2, 4) for a
@@ -413,26 +415,26 @@ them (wandb + the resource tables above):
         --fsdp=shard_grad_op \
         --output_dir=outputs/ezpz.hf_trainer/$(tstamp)
 
-    # Path 2: HF custom loop (same target)
-    ezpz launch python3 -m ezpz.examples.hf \
+    # Path 2: HF custom loop (same target). FSDP via ACCELERATE_USE_FSDP;
+    # no --fsdp / --include-tokens-per-second (see the Path 2 section above).
+    ACCELERATE_USE_FSDP=true ezpz launch python3 -m ezpz.examples.hf \
         --dataset_name=eliplutchok/fineweb-small-sample --streaming \
         --tokenizer_name meta-llama/Llama-3.1-8B \
         --model_name_or_path meta-llama/Llama-3.1-8B \
         --bf16=true --do_train=true --do_eval=true \
         --report-to=wandb --logging-steps=1 --logging-first-step \
-        --include-tokens-per-second=true --include-num-input-tokens-seen=true \
+        --include-num-input-tokens-seen=true \
         --optim=adamw_torch --include-for-metrics='inputs,loss' \
         --max-steps=100 --max-eval-samples=100 \
         --per_device_train_batch_size=1 --per_device_eval_batch_size=1 \
         --block_size=8192 --gradient_checkpointing=true \
-        --fsdp=auto_wrap \
         --output_dir=outputs/ezpz.hf/$(tstamp)
 
-    # Path 3: from-scratch FSDP+TP (xxl / ~7B)
+    # Path 3: from-scratch FSDP+TP (xxl / ~7B)  [wandb auto-enabled]
     ezpz launch python3 -m ezpz.examples.fsdp_tp \
         --model xxl --tp 2 --dp-shard -1 \
         --loss-impl loss-parallel --act-mem-budget 0.5 --compile \
-        --seq-len 4096 --batch-size 1 --report-to wandb
+        --seq-len 4096 --batch-size 1
     ```
 
 ---
