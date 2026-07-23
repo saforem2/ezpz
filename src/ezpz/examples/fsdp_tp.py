@@ -2738,8 +2738,9 @@ def train(
     # Cumulative count of training tokens consumed across the whole run
     # (summed global tokens/step). Logged as train/tokens_seen — the standard
     # x-axis for loss-vs-tokens curves. See the metrics block for the
-    # per-step global-token computation (world_size, not dp_size, because SP
-    # gives each tp rank a distinct sequence shard).
+    # per-step global-token computation (dpsize * effective-tp = number of
+    # ranks holding distinct tokens; == world_size under SP, == dpsize on the
+    # HF no-SP path where tp was forced to 1).
     tokens_seen = 0
     for epoch in range(args.epochs):
         if sampler is not None:
@@ -2973,16 +2974,21 @@ def train(
             # local_seq_len.
             #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
             #   - train/tps         : global tokens/sec across ALL ranks
-            # Multiply by world_size, not dp_size: under sequence parallelism
-            # each TP rank holds a DISTINCT seq shard (labels are sliced via
-            # _slice_for_sequence_parallel), so the TP ranks process distinct
-            # tokens too. Using dp_size would undercount global tps by ~tp.
-            # At tp=1, world_size == dp_size so this is unchanged.
+            # The global multiplier is the number of ranks that hold DISTINCT
+            # tokens, which is dpsize * (effective) args.tp:
+            #   * ezpz Transformer + tp>1 uses sequence parallelism, so each TP
+            #     rank holds a distinct seq shard (labels sliced via
+            #     _slice_for_sequence_parallel) -> all world_size ranks distinct;
+            #     dpsize * args.tp == world_size (no change from before).
+            #   * HF models force args.tp=1 with NO SP (see the HF branch), while
+            #     dpsize was computed with the ORIGINAL tp, so the tp-dim ranks
+            #     see DUPLICATE samples. Here args.tp is the post-force value (1),
+            #     so dpsize * args.tp == dpsize and we don't overcount by ~tp.
+            # Using world_size unconditionally would overstate HF-path tokens by
+            # the requested TP factor.
             tokens_per_rank = args.batch_size * local_seq_len
-            # Global tokens processed THIS step across all ranks. world_size
-            # (not dp_size): under SP each tp rank holds a distinct seq shard,
-            # so tp ranks consume distinct tokens (at tp=1 these are equal).
-            tokens_this_step = tokens_per_rank * world_size
+            # Global tokens processed THIS step across all distinct-data ranks.
+            tokens_this_step = tokens_per_rank * dpsize * args.tp
             tokens_seen += tokens_this_step
             # Cumulative consumed training tokens — the standard x-axis for
             # loss curves. Accumulated every step (this block runs each step),

@@ -569,12 +569,21 @@ Per step, the example reports how many tokens were consumed:
 | `train/tps` | Global tokens/sec across all ranks |
 | `train/tps_per_gpu` | Per-rank tokens/sec |
 
-Global tokens/step is `batch × local_seq_len × world_size` — **`world_size`,
-not `dp_size`**. Under sequence parallelism each TP rank holds a distinct
-slice of the sequence (see `_slice_for_sequence_parallel`), so the TP
-ranks process distinct tokens; using `dp_size` would undercount by a
-factor of `tp`. At `tp=1` the two are equal. This is the one place token
-throughput and the global *batch* (which excludes tp) scale differently.
+Global tokens/step is `batch × local_seq_len × (dp_size × tp)`, where the
+`dp_size × tp` factor counts the ranks holding **distinct** tokens:
+
+- **ezpz Transformer, `tp>1`** uses sequence parallelism, so each TP rank
+  holds a distinct slice of the sequence (see `_slice_for_sequence_parallel`)
+  — all `world_size` ranks process distinct tokens, and `dp_size × tp ==
+  world_size`.
+- **HF models (`--model owner/repo`)** force `tp=1` with **no** sequence
+  parallelism, so the TP-dim ranks see duplicate samples. Here `tp` is the
+  post-force value (`1`), so the multiplier collapses to `dp_size` and does
+  not overcount by the requested TP factor.
+
+At `tp=1` this is just `dp_size`. Note the global *batch* excludes `tp`
+entirely (tp ranks share the same samples), so under SP the token
+throughput and the global batch scale differently by a factor of `tp`.
 
 ## torch.compile
 
