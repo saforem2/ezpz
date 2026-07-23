@@ -2991,7 +2991,8 @@ def train(
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
             # Throughput.
             #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
-            #   - train/tps         : global tokens/sec across ALL ranks
+            #   - train/tps         : global tokens/sec (over distinct-data
+            #                         ranks; see the dpsize rationale below)
             # tokens_per_rank uses `local_seq_len` (= pred.shape[1]) because it
             # describes THIS rank's work. Global tokens, however, are computed
             # from the FULL pre-shard sequence length `inp.shape[1]` times the

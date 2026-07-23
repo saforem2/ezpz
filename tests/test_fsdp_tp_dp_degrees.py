@@ -199,13 +199,16 @@ class TestConsumedTokensAccounting:
     run to exercise the tensors themselves).
     """
 
-    def _global_tokens(self, m, *, batch, seq_len, world_size, tp,
-                       dp_replicate, dp_shard):
+    def _global_tokens(
+        self, m, *, batch, seq_len, world_size, tp, dp_replicate, dp_shard
+    ):
         """Global tokens/step exactly as train() computes it:
         batch * seq_len * dpsize, where seq_len is the full (pre-shard)
         length and dpsize is resolved from the ORIGINAL tp."""
         rep, shard = m._resolve_dp_degrees(
-            world_size=world_size, tp=tp, dp_replicate=dp_replicate,
+            world_size=world_size,
+            tp=tp,
+            dp_replicate=dp_replicate,
             dp_shard=dp_shard,
         )
         return batch * seq_len * (rep * shard)

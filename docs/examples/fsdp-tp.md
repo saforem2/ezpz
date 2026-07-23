@@ -574,7 +574,7 @@ Per step, the example reports how many tokens were consumed:
 |--------|---------|
 | `train/tokens` | Global tokens processed **this step** |
 | `train/tokens_seen` | Cumulative tokens over the whole run (the standard x-axis for loss-vs-tokens curves) |
-| `train/tps` | Global tokens/sec across all ranks |
+| `train/tps` | Global tokens/sec (over distinct-data ranks — see the `dp_size` note below) |
 | `train/tps_per_gpu` | Per-rank tokens/sec |
 
 Global tokens/step is `batch × seq_len × dp_size`, using the **full,
