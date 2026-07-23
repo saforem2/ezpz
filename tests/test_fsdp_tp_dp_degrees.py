@@ -179,69 +179,96 @@ class TestGlobalBatchSize:
 
 
 class TestConsumedTokensAccounting:
-    """Locks the token-accounting invariants used by train()'s metrics.
+    """Locks the token-accounting invariant used by train()'s metrics.
 
-    train() logs global tokens as `batch * local_seq_len * (dp_size * tp)`
-    per step (cumulative in train/tokens_seen), where `dp_size * tp` counts
-    the ranks that hold DISTINCT tokens. This equals WORLD_SIZE only on the
-    sequence-parallel path (ezpz Transformer, tp>1: each tp rank owns a
-    distinct seq shard). On the HF path, train() forces tp=1 with NO SP, so
-    the tp-dim ranks see duplicate samples and the correct multiplier is
-    dp_size (== dp_size * 1). Contrast with the global-batch-size formula,
-    which always uses dp_size and excludes tp entirely. These are
-    pure-arithmetic checks of that intent (the loop itself needs a live run).
+    train() logs global tokens/step as `batch * inp.shape[1] * dpsize`,
+    where inp.shape[1] is the FULL pre-shard sequence length (the model
+    input is Replicate() across the tp group; only the embedding OUTPUT is
+    sequence-sharded). tp does NOT enter: under SP the tp ranks hold shards
+    of the SAME sequence (summing the shards recovers the full length), and
+    on the HF path tp is forced to 1 with no SP. So the token count is
+    exactly the global batch (batch * dpsize) times the sequence length, on
+    every parallelism config.
+
+    The earlier `local_seq_len * dpsize * tp` framing overcounted by
+    `dpsize * (tp - remainder)` whenever seq_len % tp != 0 — and since
+    inp = x[:, :-1] makes seq_len odd, that was the common case. These are
+    pure-arithmetic checks of the corrected formula (the loop needs a live
+    run to exercise the tensors themselves).
     """
 
-    def _tok_factor(self, m, *, world_size, tp, effective_tp, dp_replicate,
-                    dp_shard):
-        """Distinct-token rank count as train() computes it: dpsize *
-        effective_tp, where dpsize comes from the ORIGINAL tp (that's what
-        the DistributedSampler shards over) and effective_tp is the
-        post-force value used at the metrics block."""
+    def _global_tokens(self, m, *, batch, seq_len, world_size, tp,
+                       dp_replicate, dp_shard):
+        """Global tokens/step exactly as train() computes it:
+        batch * seq_len * dpsize, where seq_len is the full (pre-shard)
+        length and dpsize is resolved from the ORIGINAL tp."""
         rep, shard = m._resolve_dp_degrees(
             world_size=world_size, tp=tp, dp_replicate=dp_replicate,
             dp_shard=dp_shard,
         )
-        return (rep * shard) * effective_tp
+        return batch * seq_len * (rep * shard)
 
-    def test_sp_path_equals_world_size(self):
-        """ezpz Transformer, tp>1 (SP): effective_tp == tp, so the multiplier
-        is dpsize * tp == world_size (all ranks hold distinct tokens)."""
+    def test_sp_path_seq_divisible_by_tp(self):
+        """ezpz Transformer, tp=2, seq divisible by tp: 8 ranks → dpsize=4.
+        Global tokens = batch * seq * 4 (tp does not enter)."""
         m = _import_fsdp_tp()
-        # 8 ranks, tp=2, SP active → effective_tp=2 → factor=4*2=8=world_size.
-        assert self._tok_factor(
-            m, world_size=8, tp=2, effective_tp=2, dp_replicate=1, dp_shard=-1
-        ) == 8
+        assert self._global_tokens(
+            m, batch=2, seq_len=4096, world_size=8, tp=2,
+            dp_replicate=1, dp_shard=-1,
+        ) == 2 * 4096 * 4
+
+    def test_sp_path_seq_not_divisible_by_tp(self):
+        """The bug Copilot flagged: seq_len=4095, tp=2. The full-length
+        formula gives batch*4095*dpsize exactly; the old shard*tp framing
+        would have given batch*4096*dpsize (overcount by dpsize per step)."""
+        m = _import_fsdp_tp()
+        batch, seq, tp, dpsize = 2, 4095, 2, 4
+        exact = self._global_tokens(
+            m, batch=batch, seq_len=seq, world_size=8, tp=tp,
+            dp_replicate=1, dp_shard=-1,
+        )
+        assert exact == batch * seq * dpsize          # 2 * 4095 * 4 = 32760
+        # Old (buggy) framing: batch * rank0_shard * dpsize * tp, where
+        #   rank0_shard = ceil(seq/tp) = 2048  →  batch*2048*dpsize*2 = 32768,
+        # overcounting the true 32760 by batch*dpsize*(tp - remainder) = 8.
+        rank0_shard = (seq + tp - 1) // tp            # ceil(4095/2) = 2048
+        buggy = batch * rank0_shard * dpsize * tp
+        remainder = seq % tp                          # 1
+        assert buggy == exact + batch * dpsize * (tp - remainder)
+        assert buggy != exact
 
     def test_hf_forced_tp1_uses_dp_size_not_world_size(self):
-        """HF path forces tp=1 with NO SP: dpsize was computed with the
-        ORIGINAL tp (=2), but effective_tp=1, so the multiplier is dpsize
-        (=4), NOT world_size (=8). Using world_size would 2x-overcount."""
+        """HF path forces tp=1 with NO SP: dpsize was resolved with the
+        ORIGINAL tp (=2), so global tokens use dpsize (=4), NOT world_size
+        (=8). Multiplying by world_size would 2x-overcount duplicated ranks."""
         m = _import_fsdp_tp()
-        factor = self._tok_factor(
-            m, world_size=8, tp=2, effective_tp=1, dp_replicate=1, dp_shard=-1
+        tokens = self._global_tokens(
+            m, batch=2, seq_len=1024, world_size=8, tp=2,
+            dp_replicate=1, dp_shard=-1,
         )
-        assert factor == 4          # dpsize, not world_size
-        assert factor != 8          # the bug Codex flagged (would overcount)
+        assert tokens == 2 * 1024 * 4          # dpsize=4, not world_size=8
+        assert tokens != 2 * 1024 * 8
 
-    def test_tp1_path_equals_dp_size_and_world_size(self):
-        """Plain tp=1: dpsize == world_size and effective_tp=1, so all three
-        framings agree (regression guard for the common path)."""
+    def test_tp1_path(self):
+        """Plain tp=1: dpsize == world_size, regression guard for the
+        common path."""
         m = _import_fsdp_tp()
-        assert self._tok_factor(
-            m, world_size=8, tp=1, effective_tp=1, dp_replicate=1, dp_shard=-1
-        ) == 8
+        assert self._global_tokens(
+            m, batch=2, seq_len=512, world_size=8, tp=1,
+            dp_replicate=1, dp_shard=-1,
+        ) == 2 * 512 * 8
 
-    def test_tps_and_gbs_differ_by_tp_under_sp(self):
-        """GBS excludes tp (samples), token-throughput includes it (SP seq
-        shards). On the SP path the two scalings differ by exactly tp."""
+    def test_tokens_equal_global_batch_times_seq(self):
+        """Tokens/step == global_batch * seq_len on every config: the token
+        multiplier (dpsize) is exactly the global-batch multiplier."""
         m = _import_fsdp_tp()
-        batch, world_size, tp = 2, 8, 2
+        batch, seq, world_size, tp = 3, 2048, 16, 2
         rep, shard = m._resolve_dp_degrees(
-            world_size=world_size, tp=tp, dp_replicate=1, dp_shard=-1
+            world_size=world_size, tp=tp, dp_replicate=2, dp_shard=-1
         )
-        gbs_factor = rep * shard              # dp_size = 4 (samples)
-        tok_factor = gbs_factor * tp          # 8 = world_size (SP, distinct)
-        assert tok_factor == world_size
-        assert batch * gbs_factor == 8        # global batch (samples/step)
-        assert batch * tok_factor == 16       # global-token rank multiplier
+        gbs = batch * rep * shard                     # global batch (samples)
+        tokens = self._global_tokens(
+            m, batch=batch, seq_len=seq, world_size=world_size, tp=tp,
+            dp_replicate=2, dp_shard=-1,
+        )
+        assert tokens == gbs * seq

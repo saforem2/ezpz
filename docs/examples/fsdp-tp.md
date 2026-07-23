@@ -569,21 +569,26 @@ Per step, the example reports how many tokens were consumed:
 | `train/tps` | Global tokens/sec across all ranks |
 | `train/tps_per_gpu` | Per-rank tokens/sec |
 
-Global tokens/step is `batch × local_seq_len × (dp_size × tp)`, where the
-`dp_size × tp` factor counts the ranks holding **distinct** tokens:
+Global tokens/step is `batch × seq_len × dp_size`, using the **full,
+pre-shard** sequence length (`inp.shape[1]`) and the data-parallel degree:
 
-- **ezpz Transformer, `tp>1`** uses sequence parallelism, so each TP rank
-  holds a distinct slice of the sequence (see `_slice_for_sequence_parallel`)
-  — all `world_size` ranks process distinct tokens, and `dp_size × tp ==
-  world_size`.
-- **HF models (`--model owner/repo`)** force `tp=1` with **no** sequence
-  parallelism, so the TP-dim ranks see duplicate samples. Here `tp` is the
-  post-force value (`1`), so the multiplier collapses to `dp_size` and does
-  not overcount by the requested TP factor.
+- The model **input** is replicated across the TP group (the TP plan shards
+  only the embedding *output*, not the input), so `inp.shape[1]` is the full
+  sequence and is identical on every rank — the metric is rank-invariant
+  even though only rank 0 logs.
+- Under sequence parallelism the TP ranks hold *shards of the same*
+  sequence, not distinct sequences, so `tp` does **not** enter the global
+  count. (Summing each rank's local shard length recovers the full
+  sequence.) Scaling rank 0's SP-local shard by `tp` instead would overcount
+  by `dp_size × (tp − remainder)` whenever `seq_len` isn't divisible by `tp`
+  — and since `inp = x[:, :-1]`, an odd length is the common case.
+- **HF models (`--model owner/repo`)** force `tp=1` with no sequence
+  parallelism, so the TP-dim ranks see duplicate samples; multiplying by
+  `dp_size` (not `world_size`) counts each distinct token exactly once.
 
-At `tp=1` this is just `dp_size`. Note the global *batch* excludes `tp`
-entirely (tp ranks share the same samples), so under SP the token
-throughput and the global batch scale differently by a factor of `tp`.
+The global *batch* (samples/step) is `batch × dp_size` — the same `dp_size`
+factor — so tokens/step is simply the global batch times the sequence
+length, on every parallelism configuration.
 
 ## torch.compile
 

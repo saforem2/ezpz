@@ -2739,10 +2739,9 @@ def train(
     global_step = 0
     # Cumulative count of training tokens consumed across the whole run
     # (summed global tokens/step). Logged as train/tokens_seen — the standard
-    # x-axis for loss-vs-tokens curves. See the metrics block for the
-    # per-step global-token computation (dpsize * effective-tp = number of
-    # ranks holding distinct tokens; == world_size under SP, == dpsize on the
-    # HF no-SP path where tp was forced to 1).
+    # x-axis for loss-vs-tokens curves. See the metrics block: global
+    # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
+    # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
     # Push the RESOLVED CLI args to the wandb run config now — after every
     # args mutation (HF tp-force, loss_impl normalization) and after the
@@ -2981,27 +2980,30 @@ def train(
             if _model_flops > 0 and dt_step > 0:
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
-            # Throughput. `--batch-size` is the PER-DP-RANK micro-batch and
-            # `local_seq_len` is this rank's (post-SP-slice) sequence length,
-            # so tokens processed per rank per step is batch_size *
-            # local_seq_len.
+            # Throughput.
             #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
             #   - train/tps         : global tokens/sec across ALL ranks
-            # The global multiplier is the number of ranks that hold DISTINCT
-            # tokens, which is dpsize * (effective) args.tp:
-            #   * ezpz Transformer + tp>1 uses sequence parallelism, so each TP
-            #     rank holds a distinct seq shard (labels sliced via
-            #     _slice_for_sequence_parallel) -> all world_size ranks distinct;
-            #     dpsize * args.tp == world_size (no change from before).
-            #   * HF models force args.tp=1 with NO SP (see the HF branch), while
-            #     dpsize was computed with the ORIGINAL tp, so the tp-dim ranks
-            #     see DUPLICATE samples. Here args.tp is the post-force value (1),
-            #     so dpsize * args.tp == dpsize and we don't overcount by ~tp.
-            # Using world_size unconditionally would overstate HF-path tokens by
-            # the requested TP factor.
+            # tokens_per_rank uses `local_seq_len` (this rank's post-SP-slice
+            # length) because it describes THIS rank's work. Global tokens,
+            # however, are computed from the FULL pre-shard sequence length
+            # `inp.shape[1]` times the data-parallel degree `dpsize`:
+            #   * `inp` is Replicate() across the tp group (the TP plan shards
+            #     only the embedding OUTPUT, not the input), so inp.shape[1] is
+            #     the full sequence and is identical on every rank — the metric
+            #     is rank-invariant even though only rank 0 logs.
+            #   * Summing local_seq_len over tp ranks also equals inp.shape[1]
+            #     (SP hands base+1 tokens to the first `remainder` ranks and
+            #     base to the rest), so batch * inp.shape[1] * dpsize is the
+            #     EXACT global token count. Scaling rank-0's local_seq_len by
+            #     tp instead overcounts by dpsize*(tp - remainder) whenever the
+            #     sequence isn't divisible by tp (and inp = x[:, :-1] makes an
+            #     odd length the common case).
+            #   * On the HF path (tp forced to 1, no SP) the tp-dim ranks see
+            #     DUPLICATE samples; multiplying by dpsize (not world_size)
+            #     counts each distinct token exactly once.
             tokens_per_rank = args.batch_size * local_seq_len
             # Global tokens processed THIS step across all distinct-data ranks.
-            tokens_this_step = tokens_per_rank * dpsize * args.tp
+            tokens_this_step = args.batch_size * inp.shape[1] * dpsize
             tokens_seen += tokens_this_step
             # Cumulative consumed training tokens — the standard x-axis for
             # loss curves. Accumulated every step (this block runs each step),
