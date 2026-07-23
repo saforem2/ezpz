@@ -424,28 +424,28 @@ loads data, then runs the epoch loop.
 **Device mesh creation.** World size is split into `dp` x `tp`
 dimensions.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2185:2197"
---8<-- "src/ezpz/examples/fsdp_tp.py:2185:2197"
+```python title="src/ezpz/examples/fsdp_tp.py:2206:2218"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2206:2218"
 ```
 
 **HuggingFace dataset loading.** If `--dataset` is not `"mnist"` or
 `"random"`, a tokenized HF text dataset is loaded and the vocab size is
 synced to the tokenizer.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2199:2220"
---8<-- "src/ezpz/examples/fsdp_tp.py:2199:2220"
+```python title="src/ezpz/examples/fsdp_tp.py:2220:2241"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2220:2241"
 ```
 
 **Model construction and parallelization.** A `Transformer` is built
 from `ModelArgs`, moved to the device, optionally given a
 `MixedPrecision` config, and then handed to `parallelize`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2227:2306"
---8<-- "src/ezpz/examples/fsdp_tp.py:2227:2306"
+```python title="src/ezpz/examples/fsdp_tp.py:2248:2331"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2248:2331"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2461:2468"
---8<-- "src/ezpz/examples/fsdp_tp.py:2461:2468"
+```python title="src/ezpz/examples/fsdp_tp.py:2486:2493"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2486:2493"
 ```
 
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
@@ -453,15 +453,15 @@ HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2623:2676"
---8<-- "src/ezpz/examples/fsdp_tp.py:2623:2676"
+```python title="src/ezpz/examples/fsdp_tp.py:2648:2701"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2648:2701"
 ```
 
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2688:2704"
---8<-- "src/ezpz/examples/fsdp_tp.py:2688:2704"
+```python title="src/ezpz/examples/fsdp_tp.py:2713:2729"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2713:2729"
 ```
 
 **Training loop.** Each batch is moved to device, split into
@@ -469,30 +469,30 @@ JSONL metric logging and optional distributed aggregation.
 `cross_entropy`. Labels are narrowed for sequence parallelism when
 needed. Gradient clipping is applied before `optimizer.step()`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2713:2965"
---8<-- "src/ezpz/examples/fsdp_tp.py:2713:2965"
+```python title="src/ezpz/examples/fsdp_tp.py:2744:3006"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2744:3006"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2863:2870"
---8<-- "src/ezpz/examples/fsdp_tp.py:2863:2870"
+```python title="src/ezpz/examples/fsdp_tp.py:2894:2901"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2894:2901"
 ```
 
-```python title="src/ezpz/examples/fsdp_tp.py:2878:2890"
---8<-- "src/ezpz/examples/fsdp_tp.py:2878:2890"
+```python title="src/ezpz/examples/fsdp_tp.py:2909:2921"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2909:2921"
 ```
 
 After each step, timing and loss metrics are collected into a dict and
 passed to `history.update` and `history.log_metrics`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2956:2963"
---8<-- "src/ezpz/examples/fsdp_tp.py:2956:2963"
+```python title="src/ezpz/examples/fsdp_tp.py:2997:3004"
+--8<-- "src/ezpz/examples/fsdp_tp.py:2997:3004"
 ```
 
 At the end of training, activation hooks are removed, a barrier syncs
 all ranks, and `history.finalize` writes the summary dataset on rank 0.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2966:2971"
---8<-- "src/ezpz/examples/fsdp_tp.py:2966:2971"
+```python title="src/ezpz/examples/fsdp_tp.py:3007:3012"
+--8<-- "src/ezpz/examples/fsdp_tp.py:3007:3012"
 ```
 
 </details>
@@ -503,15 +503,15 @@ all ranks, and `history.finalize` writes the summary dataset on rank 0.
 distributed backend (including TP groups), determines the output
 directory, and dispatches to `train`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:2975:3015"
---8<-- "src/ezpz/examples/fsdp_tp.py:2975:3015"
+```python title="src/ezpz/examples/fsdp_tp.py:3016:3056"
+--8<-- "src/ezpz/examples/fsdp_tp.py:3016:3056"
 ```
 
 The `if __name__ == "__main__"` block parses args, runs `main`, cleans
 up distributed state, and exits.
 
-```python title="src/ezpz/examples/fsdp_tp.py:3018:3022"
---8<-- "src/ezpz/examples/fsdp_tp.py:3018:3022"
+```python title="src/ezpz/examples/fsdp_tp.py:3059:3063"
+--8<-- "src/ezpz/examples/fsdp_tp.py:3059:3063"
 ```
 
 </details>
@@ -548,6 +548,33 @@ metrics["train/mfu"] = compute_mfu(_model_flops, t2 - t0)
 ```
 
 See [`ezpz.flops`](../python/Code-Reference/flops.md) for details.
+
+## Token Accounting
+
+The global batch size is resolved once in `train` and backfilled onto
+`args` so it lands in the run config (and the W&B config):
+
+```python
+# global batch = local batch × (dp_replicate × dp_shard); tp does NOT
+# scale the batch — tp ranks share the same samples:
+args.global_batch_size = args.batch_size * dp_replicate * dp_shard
+```
+
+Per step, the example reports how many tokens were consumed:
+
+| Metric | Meaning |
+|--------|---------|
+| `train/tokens` | Global tokens processed **this step** |
+| `train/tokens_seen` | Cumulative tokens over the whole run (the standard x-axis for loss-vs-tokens curves) |
+| `train/tps` | Global tokens/sec across all ranks |
+| `train/tps_per_gpu` | Per-rank tokens/sec |
+
+Global tokens/step is `batch × local_seq_len × world_size` — **`world_size`,
+not `dp_size`**. Under sequence parallelism each TP rank holds a distinct
+slice of the sequence (see `_slice_for_sequence_parallel`), so the TP
+ranks process distinct tokens; using `dp_size` would undercount by a
+factor of `tp`. At `tp=1` the two are equal. This is the one place token
+throughput and the global *batch* (which excludes tp) scale differently.
 
 ## torch.compile
 
