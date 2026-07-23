@@ -2268,6 +2268,12 @@ def train(
     hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
     dataset_tag = args.dataset.lower().replace("/", "_")
     # Update wandb config with model args (run already initialised in main).
+    # NOTE: `config` (ModelArgs) is not mutated later, so it's safe to push
+    # here. The resolved CLI `args`, however, ARE still mutated below (the HF
+    # branch forces args.tp=1; args.loss_impl can be normalized to
+    # "compiled"), so vars(args) is pushed just before the training loop
+    # instead (see below) — logging it here would record the requested
+    # settings rather than the effective ones actually used.
     if (
         ezpz.get_rank() == 0
         and wandb is not None
@@ -2276,10 +2282,6 @@ def train(
         from dataclasses import asdict
 
         wandb.config.update(asdict(config))  # type:ignore
-        # Also surface the resolved CLI args (incl. the backfilled
-        # global_batch_size) in the run config. allow_val_change since some
-        # keys may already be present from main()'s init.
-        wandb.config.update(vars(args), allow_val_change=True)  # type:ignore
 
     device_type = ezpz.distributed.get_torch_device_type()
     device = (
@@ -2742,6 +2744,17 @@ def train(
     # ranks holding distinct tokens; == world_size under SP, == dpsize on the
     # HF no-SP path where tp was forced to 1).
     tokens_seen = 0
+    # Push the RESOLVED CLI args to the wandb run config now — after every
+    # args mutation (HF tp-force, loss_impl normalization) and after the
+    # global_batch_size backfill — so the logged config reflects the settings
+    # actually used for the rest of training, not the requested ones.
+    if (
+        ezpz.get_rank() == 0
+        and wandb is not None
+        and getattr(wandb, "run", None) is not None
+    ):
+        # allow_val_change since some keys may already be present from main().
+        wandb.config.update(vars(args), allow_val_change=True)  # type:ignore
     for epoch in range(args.epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
