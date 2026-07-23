@@ -2167,6 +2167,27 @@ def train(
         dp_shard=args.dp_shard,
     )
     dpsize = dp_replicate * dp_shard  # == flattened "dp" size
+    # Global batch size = per-DP-rank micro-batch x data-parallel degree.
+    # Data parallelism is dp_replicate * dp_shard (== dpsize): BOTH the HSDP
+    # replicate dim and the FSDP shard dim get a distinct data slice (the
+    # DistributedSampler shards over num_replicas=dpsize). TP is NOT data
+    # parallel — tp ranks process the SAME batch (sharded across the hidden
+    # dim), so tp does not enter here. Backfilled onto args so it lands in the
+    # wandb run config (History logs vars(args); we also push it to
+    # wandb.config below). Computed here, not in parse_args, because the
+    # default --dp-shard -1 ("use all remaining ranks") only resolves to a
+    # concrete degree once WORLD_SIZE is known.
+    args.global_batch_size = args.batch_size * dpsize
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "global_batch_size=%d (batch_size=%d x dp_replicate=%d x "
+            "dp_shard=%d; tp=%d does not scale the batch)",
+            args.global_batch_size,
+            args.batch_size,
+            dp_replicate,
+            dp_shard,
+            args.tp,
+        )
     # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
     # weight, so only the ezpz Transformer (not HF models) and — for now —
     # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
@@ -2255,6 +2276,10 @@ def train(
         from dataclasses import asdict
 
         wandb.config.update(asdict(config))  # type:ignore
+        # Also surface the resolved CLI args (incl. the backfilled
+        # global_batch_size) in the run config. allow_val_change since some
+        # keys may already be present from main()'s init.
+        wandb.config.update(vars(args), allow_val_change=True)  # type:ignore
 
     device_type = ezpz.distributed.get_torch_device_type()
     device = (
@@ -2710,6 +2735,12 @@ def train(
     # x = torch.tensor((args.batch_size, args.seq_len))
     x = torch.tensor(0)
     global_step = 0
+    # Cumulative count of training tokens consumed across the whole run
+    # (summed global tokens/step). Logged as train/tokens_seen — the standard
+    # x-axis for loss-vs-tokens curves. See the metrics block for the
+    # per-step global-token computation (world_size, not dp_size, because SP
+    # gives each tp rank a distinct sequence shard).
+    tokens_seen = 0
     for epoch in range(args.epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
@@ -2947,10 +2978,20 @@ def train(
             # _slice_for_sequence_parallel), so the TP ranks process distinct
             # tokens too. Using dp_size would undercount global tps by ~tp.
             # At tp=1, world_size == dp_size so this is unchanged.
+            tokens_per_rank = args.batch_size * local_seq_len
+            # Global tokens processed THIS step across all ranks. world_size
+            # (not dp_size): under SP each tp rank holds a distinct seq shard,
+            # so tp ranks consume distinct tokens (at tp=1 these are equal).
+            tokens_this_step = tokens_per_rank * world_size
+            tokens_seen += tokens_this_step
+            # Cumulative consumed training tokens — the standard x-axis for
+            # loss curves. Accumulated every step (this block runs each step),
+            # so it's exact regardless of the metrics-logging interval.
+            metrics["train/tokens"] = tokens_this_step
+            metrics["train/tokens_seen"] = tokens_seen
             if dt_step > 0:
-                tokens_per_rank = args.batch_size * local_seq_len
                 metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
-                metrics["train/tps"] = tokens_per_rank * world_size / dt_step
+                metrics["train/tps"] = tokens_this_step / dt_step
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
