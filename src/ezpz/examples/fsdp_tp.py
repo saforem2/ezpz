@@ -2177,6 +2177,15 @@ def train(
     # wandb.config below). Computed here, not in parse_args, because the
     # default --dp-shard -1 ("use all remaining ranks") only resolves to a
     # concrete degree once WORLD_SIZE is known.
+    #
+    # This is the general Megatron/NeMo formula
+    #   gbs = micro_batch * world_size * grad_accum
+    #         / (tensor_parallel * pipeline_parallel)
+    # specialized to this example: there is no pipeline parallelism
+    # (pipeline_parallel = 1) and no gradient accumulation (grad_accum = 1 —
+    # zero_grad/backward/step run every iteration), and world_size / tp ==
+    # dp_replicate * dp_shard == dpsize. If either is ever added, this must
+    # gain the corresponding factor (* grad_accum, / pipeline_parallel).
     args.global_batch_size = args.batch_size * dpsize
     if ezpz.get_rank() == 0:
         logger.info(
