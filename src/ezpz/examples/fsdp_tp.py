@@ -2983,24 +2983,29 @@ def train(
             # Throughput.
             #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
             #   - train/tps         : global tokens/sec across ALL ranks
-            # tokens_per_rank uses `local_seq_len` (this rank's post-SP-slice
-            # length) because it describes THIS rank's work. Global tokens,
-            # however, are computed from the FULL pre-shard sequence length
-            # `inp.shape[1]` times the data-parallel degree `dpsize`:
-            #   * `inp` is Replicate() across the tp group (the TP plan shards
-            #     only the embedding OUTPUT, not the input), so inp.shape[1] is
-            #     the full sequence and is identical on every rank — the metric
-            #     is rank-invariant even though only rank 0 logs.
-            #   * Summing local_seq_len over tp ranks also equals inp.shape[1]
-            #     (SP hands base+1 tokens to the first `remainder` ranks and
-            #     base to the rest), so batch * inp.shape[1] * dpsize is the
-            #     EXACT global token count. Scaling rank-0's local_seq_len by
-            #     tp instead overcounts by dpsize*(tp - remainder) whenever the
-            #     sequence isn't divisible by tp (and inp = x[:, :-1] makes an
-            #     odd length the common case).
-            #   * On the HF path (tp forced to 1, no SP) the tp-dim ranks see
-            #     DUPLICATE samples; multiplying by dpsize (not world_size)
-            #     counts each distinct token exactly once.
+            # tokens_per_rank uses `local_seq_len` (= pred.shape[1]) because it
+            # describes THIS rank's work. Global tokens, however, are computed
+            # from the FULL pre-shard sequence length `inp.shape[1]` times the
+            # data-parallel degree `dpsize`. `inp` is Replicate() across the tp
+            # group (the TP plan shards only the embedding OUTPUT, never the
+            # input), so inp.shape[1] is the full sequence, identical on every
+            # rank — the metric is exact and rank-invariant even though only
+            # rank 0 logs. tp does NOT enter: the tp ranks hold the SAME
+            # sequence (as full-length logits under the default Replicate()
+            # output, or as Shard(1) slices whose lengths sum to inp.shape[1]
+            # under fused-linear / loss-parallel), never distinct sequences.
+            #
+            # Why not `local_seq_len * dpsize * tp`? It over-counts, by a margin
+            # that depends on the loss path:
+            #   * default (eager, Replicate() output): local_seq_len is the FULL
+            #     gathered sequence, so that formula is a full ~tp x over-count.
+            #   * seq-sharded output (fused-linear / loss-parallel): local_seq_len
+            #     is this rank's shard; scaling it by tp over-counts by
+            #     dpsize*(tp - remainder) when the sequence isn't divisible by tp
+            #     (and inp = x[:, :-1] makes an odd length common).
+            # On the HF path (tp forced to 1, no SP) the tp-dim ranks see
+            # DUPLICATE samples; multiplying by dpsize (not world_size) counts
+            # each distinct token exactly once.
             tokens_per_rank = args.batch_size * local_seq_len
             # Global tokens processed THIS step across all distinct-data ranks.
             tokens_this_step = args.batch_size * inp.shape[1] * dpsize

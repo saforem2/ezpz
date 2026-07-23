@@ -576,12 +576,14 @@ pre-shard** sequence length (`inp.shape[1]`) and the data-parallel degree:
   only the embedding *output*, not the input), so `inp.shape[1]` is the full
   sequence and is identical on every rank — the metric is rank-invariant
   even though only rank 0 logs.
-- Under sequence parallelism the TP ranks hold *shards of the same*
-  sequence, not distinct sequences, so `tp` does **not** enter the global
-  count. (Summing each rank's local shard length recovers the full
-  sequence.) Scaling rank 0's SP-local shard by `tp` instead would overcount
-  by `dp_size × (tp − remainder)` whenever `seq_len` isn't divisible by `tp`
-  — and since `inp = x[:, :-1]`, an odd length is the common case.
+- `tp` does **not** enter the global count: the TP ranks hold the *same*
+  sequence, not distinct sequences — as full-length logits under the default
+  `Replicate()` output, or as `Shard(1)` slices whose lengths sum to the full
+  sequence under `--loss-impl fused-linear`/`loss-parallel`. The tempting
+  `local_seq_len × dp_size × tp` over-counts: by a full `~tp×` in the default
+  eager path (there `local_seq_len` is the *gathered* full sequence), or by
+  `dp_size × (tp − remainder)` in the seq-sharded paths when `seq_len` isn't
+  divisible by `tp` (and `inp = x[:, :-1]` makes an odd length common).
 - **HF models (`--model owner/repo`)** force `tp=1` with no sequence
   parallelism, so the TP-dim ranks see duplicate samples; multiplying by
   `dp_size` (not `world_size`) counts each distinct token exactly once.

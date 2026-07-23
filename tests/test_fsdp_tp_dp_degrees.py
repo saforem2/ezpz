@@ -190,9 +190,11 @@ class TestConsumedTokensAccounting:
     exactly the global batch (batch * dpsize) times the sequence length, on
     every parallelism config.
 
-    The earlier `local_seq_len * dpsize * tp` framing overcounted by
-    `dpsize * (tp - remainder)` whenever seq_len % tp != 0 — and since
-    inp = x[:, :-1] makes seq_len odd, that was the common case. These are
+    The earlier `local_seq_len * dpsize * tp` framing overcounted, by an
+    amount that depends on the loss path: a full ~tp x in the default eager
+    path (there local_seq_len is the gathered FULL sequence, Replicate()
+    output), or dpsize * (tp - remainder) in the seq-sharded paths
+    (fused-linear / loss-parallel) when seq_len % tp != 0. These are
     pure-arithmetic checks of the corrected formula (the loop needs a live
     run to exercise the tensors themselves).
     """
@@ -218,9 +220,10 @@ class TestConsumedTokensAccounting:
         ) == 2 * 4096 * 4
 
     def test_sp_path_seq_not_divisible_by_tp(self):
-        """The bug Copilot flagged: seq_len=4095, tp=2. The full-length
-        formula gives batch*4095*dpsize exactly; the old shard*tp framing
-        would have given batch*4096*dpsize (overcount by dpsize per step)."""
+        """Seq-sharded remainder case (one facet of what Copilot flagged):
+        seq_len=4095, tp=2. The full-length formula gives batch*4095*dpsize
+        exactly; the old shard*tp framing would have given batch*4096*dpsize
+        (overcount by dpsize per step)."""
         m = _import_fsdp_tp()
         batch, seq, tp, dpsize = 2, 4095, 2, 4
         exact = self._global_tokens(
