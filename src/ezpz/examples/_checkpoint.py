@@ -189,11 +189,6 @@ def save_checkpoint_async(
 
     stage_out = _step_dir(stage_dir, step)
     final_out = _step_dir(ckpt_dir, step)
-    # dcp.async_save stages/writes from a background CPU thread and needs a PG
-    # with a CPU (gloo) backend. On XPU/CUDA the default PG is xccl/nccl-only,
-    # so we pass a dedicated gloo PG. new_group() is collective — resolved
-    # (cached) on ALL ranks below, before the rank-0-only work.
-    cpu_pg = _cpu_capable_group()
     is_rank0 = _is_rank0()
     if is_rank0:
         # Clear the DURABLE marker up front (same crash-safety reasoning as
@@ -208,7 +203,6 @@ def save_checkpoint_async(
     future = dcp.async_save(
         {"model": model_sd, "optim": optim_sd},
         checkpoint_id=str(stage_out),
-        process_group=cpu_pg,
     )
     return PendingCheckpoint(
         future=future,
@@ -325,46 +319,6 @@ def load_checkpoint(
             "resumed from checkpoint: %s (step=%s)", latest, meta.get("step")
         )
     return meta
-
-
-_CPU_PG = None  # cached gloo group for async_save (created once, collectively)
-_CPU_PG_RESOLVED = False
-
-
-def _cpu_capable_group():
-    """Return a process group whose backend supports CPU tensors, or None.
-
-    ``dcp.async_save`` requires the PG to include a CPU (gloo) backend for its
-    background-thread collective. If the default PG already has one (a
-    gloo-only or ``cpu:gloo,<accel>`` init), return None so async_save uses the
-    default. Otherwise (XPU/CUDA-only default PG, e.g. xccl/nccl) create a
-    dedicated gloo group ONCE and cache it.
-
-    MUST be called on every rank (``new_group`` is collective). Cached so the
-    per-step save path doesn't re-collective.
-    """
-    global _CPU_PG, _CPU_PG_RESOLVED
-    if _CPU_PG_RESOLVED:
-        return _CPU_PG
-    try:
-        import torch
-        import torch.distributed as dist
-
-        if not (dist.is_available() and dist.is_initialized()):
-            _CPU_PG_RESOLVED = True
-            return None  # single process — no PG needed
-        default = dist.group.WORLD
-        # If the default PG already speaks CPU, use it (no extra group).
-        if torch.device("cpu") in getattr(default, "_device_types", set()):
-            _CPU_PG_RESOLVED = True
-            return None
-        # Accel-only default PG: build a gloo group over all ranks.
-        _CPU_PG = dist.new_group(backend="gloo")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("could not create gloo PG for async save: %s", exc)
-        _CPU_PG = None
-    _CPU_PG_RESOLVED = True
-    return _CPU_PG
 
 
 def _is_rank0() -> bool:
