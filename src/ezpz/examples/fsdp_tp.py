@@ -1742,8 +1742,31 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
     """
     if not getattr(args, "async_ckpt", False):
         return
-    if os.environ.get("TORCH_BACKEND"):
-        return  # user override wins
+    # parse_args runs on EVERY rank before distributed init, so gate the
+    # informational log to one process per host (env local rank; 0 when unset).
+    _lr = (
+        os.environ.get("PALS_LOCAL_RANKID")
+        or os.environ.get("PMIX_LOCAL_RANK")
+        or os.environ.get("LOCAL_RANK")
+        or "0"
+    )
+    is_local0 = _lr == "0"
+    override = os.environ.get("TORCH_BACKEND")
+    if override:
+        # A user override wins, but --async-ckpt needs a CPU backend in the PG
+        # or dcp.async_save asserts at the first save. If the override has no
+        # cpu:/gloo entry, augment it (append cpu:gloo) rather than fail late.
+        if "gloo" in override or "cpu:" in override:
+            return  # already has a CPU backend
+        os.environ["TORCH_BACKEND"] = f"{override},cpu:gloo"
+        if is_local0:
+            logger.warning(
+                "async-ckpt: TORCH_BACKEND=%s lacks a CPU backend; augmented "
+                "to %s (dcp.async_save requires one)",
+                override,
+                os.environ["TORCH_BACKEND"],
+            )
+        return
     try:
         import torch
 
@@ -1757,10 +1780,12 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
         # then cpu:gloo. The accel backend stays primary; cpu:gloo is added so
         # dcp.async_save's background CPU-thread collective has a backend.
         os.environ["TORCH_BACKEND"] = f"{accel},cpu:gloo"
-        logger.info(
-            "async-ckpt: set TORCH_BACKEND=%s so async_save has a CPU backend",
-            os.environ["TORCH_BACKEND"],
-        )
+        if is_local0:
+            logger.info(
+                "async-ckpt: set TORCH_BACKEND=%s so async_save has a CPU "
+                "backend",
+                os.environ["TORCH_BACKEND"],
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not set composite backend for --async-ckpt: %s", exc)
 
@@ -2951,6 +2976,18 @@ def train(
             # Step-based stop (independent of --epochs).
             if args.train_iters and global_step >= args.train_iters:
                 break
+            # Fan out any pending async checkpoint at the START of the next
+            # step (not deferred to the next save interval). This keeps the
+            # window where a checkpoint is staged-but-not-yet-durable to ~1
+            # step: the background write from last step's save_checkpoint_async
+            # has typically finished by now, so drain() rarely blocks, and a
+            # crash loses at most ~1 interval (the durable dir always has the
+            # prior complete checkpoint).
+            if pending_ckpt is not None:
+                from ezpz.examples._checkpoint import drain
+
+                drain(pending_ckpt)
+                pending_ckpt = None
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
@@ -3249,10 +3286,12 @@ def train(
                         save_checkpoint_async,
                     )
 
-                    # Only one async save may be in flight (DCP constraint) —
-                    # finish the previous one before starting the next. At
-                    # save_interval >> save time this is effectively free.
+                    # Only one async save may be in flight (DCP constraint).
+                    # The previous one is normally already drained at the top
+                    # of this step; this is a defensive no-op unless
+                    # save_interval == 1 (drain(None) is safe).
                     drain(pending_ckpt)
+                    pending_ckpt = None
                     _t_stage = perf_counter()
                     pending_ckpt = save_checkpoint_async(
                         args.ckpt_dir,

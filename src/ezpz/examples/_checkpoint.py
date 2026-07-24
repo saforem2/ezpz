@@ -155,7 +155,7 @@ class PendingCheckpoint:
 
     future: Any
     step: int
-    meta: Optional[dict]
+    meta: Optional[dict[str, Any]]
     stage_path: Path
     final_path: Path
     drained: bool = False

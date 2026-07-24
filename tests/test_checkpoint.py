@@ -278,3 +278,7 @@ class TestAsyncCheckpoint:
         p1 = m.drain(pending)
         p2 = m.drain(pending)  # second drain is a no-op
         assert p1 == p2 and pending.drained
+        # First drain produced a durable, complete checkpoint...
+        assert (p1 / ".complete").exists()
+        # ...and reclaimed the node-local staging copy.
+        assert not (tmp_path / "s" / "step-5").exists()
