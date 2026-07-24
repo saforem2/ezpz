@@ -229,25 +229,25 @@ def drain(pending: Optional[PendingCheckpoint]) -> Optional[Path]:
     # Block until the node-local staged write completed.
     pending.future.result()
 
-    is_rank0 = _is_rank0()
-    # Fan out: each rank copies its own shard files to the durable dir. Shard
-    # files are named per-rank (__<rank>_<n>.distcp) so ranks don't collide;
-    # the shared .metadata is copied by rank 0 only.
+    my_rank = _global_rank()
+    is_rank0 = my_rank == 0
     pending.final_path.mkdir(parents=True, exist_ok=True)
-    for src in sorted(pending.stage_path.glob("*.distcp")):
-        # A rank only copies files it produced. DCP names them __<rank>_..;
-        # copying all *.distcp present on THIS node is safe because each node
-        # only holds its own ranks' shards in stage_dir. Use copy2 to a temp
-        # name + rename for atomicity within the shared FS.
+    # Fan out: each rank copies ONLY the shard files IT wrote. DCP names shards
+    # `__<rank>_<n>.distcp`, so we filter by this rank's prefix — otherwise
+    # every rank globs every shard and they race on the shared durable dir
+    # (rank A's temp gets os.replace'd away by rank B mid-copy →
+    # FileNotFoundError; caught on Sunspot job 12471711). The temp suffix is
+    # per-rank-unique for the same reason.
+    for src in sorted(pending.stage_path.glob(f"__{my_rank}_*.distcp")):
         dst = pending.final_path / src.name
-        tmp = dst.with_suffix(dst.suffix + ".partial")
+        tmp = pending.final_path / f"{src.name}.r{my_rank}.partial"
         shutil.copy2(src, tmp)
         os.replace(tmp, dst)
     if is_rank0:
         meta_src = pending.stage_path / ".metadata"
         if meta_src.exists():
             dst = pending.final_path / ".metadata"
-            tmp = dst.with_suffix(".partial")
+            tmp = pending.final_path / ".metadata.r0.partial"
             shutil.copy2(meta_src, tmp)
             os.replace(tmp, dst)
     _barrier()  # all shards fanned out before the marker
@@ -321,16 +321,21 @@ def load_checkpoint(
     return meta
 
 
-def _is_rank0() -> bool:
-    """True on global rank 0, or when not running distributed."""
+def _global_rank() -> int:
+    """This process's global rank, or 0 when not running distributed."""
     try:
         import torch.distributed as dist
 
         if dist.is_available() and dist.is_initialized():
-            return dist.get_rank() == 0
+            return dist.get_rank()
     except Exception:  # noqa: BLE001
         pass
-    return True
+    return 0
+
+
+def _is_rank0() -> bool:
+    """True on global rank 0, or when not running distributed."""
+    return _global_rank() == 0
 
 
 def _barrier() -> None:
