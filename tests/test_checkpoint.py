@@ -116,6 +116,35 @@ class TestLatestCheckpoint:
         got = m.latest_checkpoint(tmp_path)
         assert got is not None and got.name == "step-10"
 
+    def test_save_clears_stale_marker_before_writing(self, tmp_path):
+        """Overwriting an existing step dir must clear its old .complete FIRST,
+        so a crash mid-overwrite isn't mistaken for a valid checkpoint. We
+        simulate the crash by monkeypatching dcp.save to raise AFTER the marker
+        should have been cleared, then assert latest_checkpoint ignores it.
+        """
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        model, opt = _Tiny.build(torch)
+
+        # First, a real complete checkpoint at step-30.
+        m.save_checkpoint(tmp_path, 30, model, opt, meta={})
+        assert (tmp_path / "step-30" / ".complete").exists()
+
+        # Now overwrite step-30 but crash during dcp.save.
+        import torch.distributed.checkpoint as dcp
+
+        orig = dcp.save
+        dcp.save = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            with pytest.raises(RuntimeError):
+                m.save_checkpoint(tmp_path, 30, model, opt, meta={})
+        finally:
+            dcp.save = orig
+        # The stale marker was removed before the (failed) save, so step-30 is
+        # no longer considered complete → latest_checkpoint returns None.
+        assert m.latest_checkpoint(tmp_path) is None
+
 
 class TestSaveLoadRoundTrip:
     def test_round_trip_restores_params_optimizer_and_meta(self, tmp_path):
@@ -132,7 +161,13 @@ class TestSaveLoadRoundTrip:
             opt.step()
 
         ref_params = [p.detach().clone() for p in model.parameters()]
-        ref_step0 = opt.state[next(iter(opt.state))]["step"].clone()
+        # AdamW's per-param "step" may be a python int OR a 0-dim tensor
+        # depending on torch version/capturable — normalize to int.
+        def _step_int(state):
+            s = state[next(iter(state))]["step"]
+            return int(s.item() if hasattr(s, "item") else s)
+
+        ref_step0 = _step_int(opt.state)
 
         m.save_checkpoint(
             tmp_path, step=30, model=model, optimizer=opt,
@@ -160,8 +195,7 @@ class TestSaveLoadRoundTrip:
         for a, b in zip(ref_params, model2.parameters()):
             assert torch.allclose(a, b), "loaded params differ from saved"
         # Optimizer step counter restored.
-        ld_step0 = opt2.state[next(iter(opt2.state))]["step"]
-        assert torch.equal(ref_step0, ld_step0)
+        assert _step_int(opt2.state) == ref_step0
 
     def test_load_returns_none_when_empty(self, tmp_path):
         torch = _torch_or_skip()

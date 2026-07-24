@@ -2190,6 +2190,7 @@ def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
     profiler: Optional[Any] = None,
+    process_start: Optional[float] = None,
 ) -> int:
     """Run TP/SP + FSDP training and optionally log metrics.
 
@@ -2201,10 +2202,11 @@ def train(
             When non-None, ``profiler.step()`` is called once per training
             step so the schedule (wait/warmup/active/repeat) advances.
     """
-    # Training-entry timestamp for the restart-time metric. Captured first so
-    # train/restart_seconds includes model build + dcp.load, i.e. the full cold
-    # path an --auto-retry relaunch pays before its first productive step.
-    _train_t0 = perf_counter()
+    # Timestamp for the restart-time metric. Prefer the caller's
+    # process-start (main() captures it BEFORE setup_torch, so
+    # train/restart_seconds includes distributed init — the dominant cost of a
+    # real cold failover). Fall back to now() when train() is called directly.
+    _train_t0 = process_start if process_start is not None else perf_counter()
     _restart_logged = False
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
@@ -3199,7 +3201,12 @@ def main(args: argparse.Namespace) -> int:
     train_start = time.perf_counter()
     # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
     with profiling_context_from_args(args, outdir) as prof:
-        history = train(args=args, outdir=outdir, profiler=prof)
+        # Pass main()'s t0 (captured before setup_torch) so
+        # train/restart_seconds covers the full cold path incl. distributed
+        # init — the dominant cost of a real --auto-retry failover.
+        history = train(
+            args=args, outdir=outdir, profiler=prof, process_start=t0
+        )
     train_end = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,

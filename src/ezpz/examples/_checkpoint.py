@@ -92,17 +92,23 @@ def save_checkpoint(
 
     Returns the ``step-<N>`` directory path.
     """
-    import torch.distributed as dist
     import torch.distributed.checkpoint as dcp
     from torch.distributed.checkpoint.state_dict import get_state_dict
 
     out = _step_dir(ckpt_dir, step)
-    is_rank0 = (not dist.is_available()) or (not dist.is_initialized()) or (
-        dist.get_rank() == 0
-    )
+    is_rank0 = _is_rank0()
     if is_rank0:
         out.mkdir(parents=True, exist_ok=True)
-    _barrier()  # ensure the dir exists before any rank writes into it
+        # Clear any stale completion marker FIRST. If this step dir already
+        # exists (e.g. re-running into the same --ckpt-dir), an old .complete
+        # would make the checkpoint look valid mid-overwrite — so if the
+        # process dies during this save, latest_checkpoint() must NOT trust
+        # it. Removing the marker up front means a partial overwrite is
+        # correctly skipped and resume falls back to the previous good step.
+        marker = out / _COMPLETE_MARKER
+        if marker.exists():
+            marker.unlink()
+    _barrier()  # ensure the dir exists (and marker cleared) before any writes
 
     model_sd, optim_sd = get_state_dict(model, optimizer)
     dcp.save(
@@ -118,7 +124,8 @@ def save_checkpoint(
         # safe to resume from" contract that latest_checkpoint() relies on.
         (out / _COMPLETE_MARKER).write_text("")
     _barrier()
-    logger.info("saved checkpoint: %s", out)
+    if is_rank0:  # gate per-rank log spam (AGENTS.md)
+        logger.info("saved checkpoint: %s", out)
     return out
 
 
@@ -163,10 +170,28 @@ def load_checkpoint(
         try:
             meta = json.loads(meta_path.read_text())
         except (ValueError, OSError):
-            logger.warning("could not parse %s; resuming with step only", meta_path)
+            if _is_rank0():
+                logger.warning(
+                    "could not parse %s; resuming with step only", meta_path
+                )
     meta.setdefault("step", int(latest.name[len(_STEP_PREFIX):]))
-    logger.info("resumed from checkpoint: %s (step=%s)", latest, meta.get("step"))
+    if _is_rank0():  # gate per-rank log spam (AGENTS.md)
+        logger.info(
+            "resumed from checkpoint: %s (step=%s)", latest, meta.get("step")
+        )
     return meta
+
+
+def _is_rank0() -> bool:
+    """True on global rank 0, or when not running distributed."""
+    try:
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            return dist.get_rank() == 0
+    except Exception:  # noqa: BLE001
+        pass
+    return True
 
 
 def _barrier() -> None:
