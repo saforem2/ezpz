@@ -90,8 +90,13 @@ def _extract_gloo_peer(log_text: str) -> Iterable[str]:
 # speculatively rewrite — return None (drop) rather than risk tagging a
 # wrong node.
 # ---------------------------------------------------------------------------
+# Capture the node token (group 1) so we can canonicalize to ONE form
+# regardless of an optional `-hsnN` HSN suffix. Both `x...n0-hsn0.hsn...`
+# and `x...n0.hsn...` name the same node; returning them verbatim would let
+# the same node dedupe as two entries (breaking swap_in's hostfile grep and
+# the caller's de-duplication). Always emit the suffix-less form.
 _SUNSPOT_HSN_RX = re.compile(
-    r"^x\d+c\d+s\d+b\d+n\d+(?:-hsn\d+)?\.hsn\.cm\.sunspot\.alcf\.anl\.gov$"
+    r"^(x\d+c\d+s\d+b\d+n\d+)(?:-hsn\d+)?\.hsn\.cm\.sunspot\.alcf\.anl\.gov$"
 )
 _SUNSPOT_HOSTMGMT_RX = re.compile(
     r"^(x\d+c\d+s\d+b\d+n\d+)\.hostmgmt\d+\.cm\.sunspot\.alcf\.anl\.gov$"
@@ -99,24 +104,28 @@ _SUNSPOT_HOSTMGMT_RX = re.compile(
 
 
 def normalize_sunspot_hostname(host: str) -> "str | None":
-    """Return the canonical ``.hsn.cm.sunspot.alcf.anl.gov`` form, or None
-    if *host* doesn't look like a valid Sunspot compute hostname.
+    """Return the canonical ``x...n0.hsn.cm.sunspot.alcf.anl.gov`` form, or
+    None if *host* doesn't look like a valid Sunspot compute hostname.
+
+    The ``-hsnN`` HSN token is stripped so the SAME node always maps to ONE
+    canonical name (else `x...n0-hsn0...` and `x...n0...` would count as two
+    different bad nodes).
 
     Examples (in → out):
-      ``x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov``      → unchanged
+      ``x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov``      → x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov
       ``x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov``           → unchanged
       ``x1922c7s6b0n0.hostmgmt2001.cm.sunspot.alcf.anl.gov``  → HSN form
       ``x1922c7s6b0n0.something-else.example.com``            → None
       ``some-other-host``                                     → None
 
-    NOTE: the exact HSN suffix that a gloo reverse-DNS lookup returns on
-    Sunspot (with vs without ``-hsn0``) is not yet confirmed against a real
-    postmortem. The hostmgmt→HSN rewrite drops the ``-hsnN`` token (mirrors
-    the observed PBS hostfile + shepherd-line form); revisit if a real
-    failure shows a different mapping.
+    NOTE: whether swap_in must match the `-hsnN` form in the live PBS
+    hostfile is not yet confirmed against a real postmortem — the observed
+    hostfile + shepherd-line form is suffix-less, so we canonicalize to that.
+    Revisit if a real failure shows the hostfile carries `-hsnN`.
     """
-    if _SUNSPOT_HSN_RX.match(host):
-        return host
+    m = _SUNSPOT_HSN_RX.match(host)
+    if m:
+        return f"{m.group(1)}.hsn.cm.sunspot.alcf.anl.gov"
     m = _SUNSPOT_HOSTMGMT_RX.match(host)
     if m:
         return f"{m.group(1)}.hsn.cm.sunspot.alcf.anl.gov"

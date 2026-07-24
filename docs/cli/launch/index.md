@@ -398,9 +398,20 @@ Two ready-to-submit PBS drivers ship with the package, both
 following the same scenario-runner pattern (each scenario writes
 `PASS|FAIL` to a summary at the end):
 
+The `--auto-retry` driver is machine-agnostic — the `#PBS` directives
+default to Aurora, but qsub command-line flags override them, so pass the
+per-machine account / queue / filesystems (nothing inside the script is
+Aurora-specific):
+
 ```bash
-# In an ezpz checkout on Aurora:
-qsub src/ezpz/bin/test_launch_auto_retry_aurora.pbs
+# In an ezpz checkout (run `mkdir -p logs` first):
+
+# Aurora:
+qsub src/ezpz/bin/test_launch_auto_retry.pbs
+
+# Sunspot:
+qsub -A datascience -q workq -l filesystems=tegu:home -l select=4 \
+    src/ezpz/bin/test_launch_auto_retry.pbs
 
 # Or for the pre-#144 watchdog/retries (PR #136):
 qsub src/ezpz/bin/test_launch_timeout_retries_aurora.pbs

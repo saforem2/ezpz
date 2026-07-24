@@ -78,8 +78,9 @@ _CRASH_PATTERNS_RX = re.compile(
     # stripped as an innocent cascade below) and the loop would NOT retry
     # it. Confirmed on a live Sunspot run (job 12471663): scenarios B/D/E
     # all stopped after 1-2 attempts as "walltime" for a plain `exit 1`.
-    # `[1-9]` excludes the clean `exited with code 0` PALS prints per rank.
-    r"|rank \d+ exited with code [1-9]"
+    # `[1-9][0-9]*` = any nonzero code (incl. 10+, e.g. 137 = SIGKILL/OOM),
+    # while excluding the clean `exited with code 0` PALS prints per rank.
+    r"|rank \d+ exited with code [1-9][0-9]*"
     r"|EOFError: No data left in file"
 )
 

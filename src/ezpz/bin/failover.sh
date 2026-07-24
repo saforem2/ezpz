@@ -311,7 +311,7 @@ failover_run() {
             # (real shepherd kill), `died from signal 6` (SIGABRT
             # from a real assert), etc. still count.
             crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
-                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9]|EOFError: No data left in file")
+                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9][0-9]*|EOFError: No data left in file")
             if (( crash_lines >= 1 )); then
                 _failover_log "WARNING: shell exit 0 but log has $crash_lines crash-pattern line(s); treating as failure (rc=1)"
                 rc=1
@@ -344,7 +344,7 @@ failover_run() {
             # override the clean rc=143 into a bad-node retry and
             # burn spares for nothing.
             bad_crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
-                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9]|EOFError: No data left in file")
+                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9][0-9]*|EOFError: No data left in file")
             if (( bad_crash_lines == 0 )); then
                 _failover_log "attempt ${attempt} exited 143 (walltime / SIGTERM) — not a bad-node failure, no retry"
                 return "$rc"

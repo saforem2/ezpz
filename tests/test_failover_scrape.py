@@ -246,7 +246,9 @@ class TestSunspotShepherdSignal9:
             "More output after\n"
         ))
         hosts = scrape_bad_nodes(log, machine="sunspot")
-        assert hosts == ["x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"]
+        # The `-hsn0` token is canonicalized away by the normalizer so the
+        # node has a single canonical name (see normalize_sunspot_hostname).
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
 
     def test_single_signal_9_extracted_plain_token(self, tmp_path):
         """Plain node token (no `-hsnN`) — the PBS_NODEFILE form may use
@@ -259,15 +261,17 @@ class TestSunspotShepherdSignal9:
         assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
 
     def test_multiple_signal_9_deduplicated(self, tmp_path):
+        # Same node emitted BOTH with and without the -hsn0 token — must
+        # collapse to ONE canonical entry (the point of stripping -hsnN).
         log = _make_log(tmp_path, (
             "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
             "shepherd died from signal 9\n"
             "more output\n"
-            "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov: "
             "shepherd died from signal 9\n"
         ))
         hosts = scrape_bad_nodes(log, machine="sunspot")
-        assert hosts == ["x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"]
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
 
     def test_innocent_rank_signal_11_not_matched(self, tmp_path):
         """Same critical exclusion as Aurora: cascading `rank N died from
@@ -311,7 +315,8 @@ class TestSunspotGlooConnectionClosed:
             "[10.0.0.42]:12345\n"
         ))
         hosts = scrape_bad_nodes(log, machine="sunspot")
-        assert hosts == ["x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"]
+        # reverse-DNS returned the -hsn0 form; normalizer canonicalizes it.
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
 
     def test_hostmgmt_form_canonicalized_to_hsn(self, tmp_path, monkeypatch):
         """Reverse-lookup returning the .hostmgmtNNNN form is rewritten to
@@ -343,14 +348,17 @@ class TestSunspotGlooConnectionClosed:
 class TestSunspotHostnameNormalizer:
     """Direct unit tests of `normalize_sunspot_hostname`."""
 
-    def test_hsn_forms_pass_through(self):
+    def test_hsn_forms_canonicalize_to_one_name(self):
         from ezpz.failover.patterns.sunspot import normalize_sunspot_hostname
 
+        canonical = "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"
+        # Both the -hsn0 and suffix-less forms must map to the SAME canonical
+        # name so one node never counts as two.
         for h in (
             "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov",
             "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov",
         ):
-            assert normalize_sunspot_hostname(h) == h
+            assert normalize_sunspot_hostname(h) == canonical
 
     def test_hostmgmt_rewritten_to_hsn(self):
         from ezpz.failover.patterns.sunspot import normalize_sunspot_hostname

@@ -293,6 +293,38 @@ class TestClassifyAttempt:
             is TerminationReason.BAD_NODE_BLIND
         )
 
+    def test_pals_mixed_exit_codes_is_bad_node(self, tmp_path):
+        """rc=143 where PALS printed BOTH `exited with code 0` (clean ranks)
+        AND `exited with code 1` (the crashed rank). Any nonzero exit must
+        override the clean-shutdown noise → bad-node retry, not WALLTIME.
+        """
+        log = _write(
+            tmp_path / "log",
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 0 exited with code 0\n"
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 5 exited with code 1\n"
+            "rank 6 died from signal 15\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_pals_multidigit_exit_code_is_bad_node(self, tmp_path):
+        """Exit codes >= 10 (e.g. 137 = 128+SIGKILL/OOM) must count as a
+        crash — the pattern is `[1-9][0-9]*`, not a single digit.
+        """
+        log = _write(
+            tmp_path / "log",
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 3 exited with code 137\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
     def test_pals_clean_exit_code_0_not_treated_as_crash(self, tmp_path):
         """Guard the `[1-9]` bound: PALS prints `rank N exited with code 0`
         for every rank on a CLEAN shutdown. That must NOT count as a crash,
