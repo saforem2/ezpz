@@ -1732,8 +1732,9 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
 
     ``dcp.async_save`` asserts the process group includes a CPU backend (it
     stages/writes from a background CPU thread). On an accelerator the default
-    PG is xccl/nccl-only, so we must init with a COMPOSITE backend string
-    (e.g. ``cpu:gloo,xpu:xccl``). This runs in parse_args — BEFORE
+    PG is xccl/nccl-only, so we must init with a COMPOSITE backend string,
+    accelerator-first: ``xpu:xccl,cpu:gloo`` (matching torchtitan). This runs
+    in parse_args — BEFORE
     ``setup_torch``/``init_process_group`` — and sets ``TORCH_BACKEND``, which
     ``ezpz.distributed.get_torch_backend`` honors as an override.
 
@@ -1770,9 +1771,11 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
     try:
         import torch
 
+        # hasattr guard: torch.xpu is absent on CPU-only / CUDA-only / ROCm
+        # builds, where torch.xpu.is_available() would raise AttributeError.
         if torch.cuda.is_available():
             accel = "cuda:nccl"
-        elif torch.xpu.is_available():
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
             accel = "xpu:xccl"
         else:
             return  # CPU-only: default gloo already has a CPU backend
@@ -3303,10 +3306,20 @@ def train(
                     )
                     # Caller-thread stall = staging time (the disk write +
                     # fan-out happen off-thread). Compare to the sync save cost.
+                    # Emit as a real tracked metric (train/ckpt_stage_seconds)
+                    # so it lands in History/W&B/JSONL, not just the log.
+                    _stage_s = perf_counter() - _t_stage
                     if ezpz.get_rank() == 0:
+                        history.tracker.log(
+                            {
+                                "train/ckpt_stage_seconds": _stage_s,
+                                "train/iter": global_step,
+                            }
+                        )
                         logger.info(
-                            "ckpt_stage_seconds=%.4f (async stage @ step %d)",
-                            perf_counter() - _t_stage,
+                            "train/ckpt_stage_seconds=%.4f (async stage @ "
+                            "step %d)",
+                            _stage_s,
                             global_step,
                         )
                 else:

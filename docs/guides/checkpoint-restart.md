@@ -51,7 +51,8 @@ python3 -m ezpz.examples.fsdp_tp ... \
 returns), then written to fast **node-local** `--ckpt-stage-dir` (default
 `/tmp/ezpz-ckpt-<jobid>`) by a background thread, and finally **fanned out**
 to the durable `--ckpt-dir` on shared FS. The only cost on the training
-thread is the short staging copy (logged as `ckpt_stage_seconds`).
+thread is the short staging copy (logged + tracked as
+`train/ckpt_stage_seconds`).
 
 !!! warning "Node-local staging is not durable"
     `--ckpt-stage-dir` (e.g. `/tmp`) is node-local and **not resumable on its
