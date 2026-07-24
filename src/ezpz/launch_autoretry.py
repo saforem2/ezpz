@@ -69,6 +69,18 @@ _CRASH_PATTERNS_RX = re.compile(
     r"|OutOfMemoryError"
     r"|UR_RESULT_ERROR_OUT_OF_RESOURCES"
     r"|died from signal"
+    # A rank returning a NONZERO application exit code. On Aurora/Sunspot
+    # PALS, one rank's `exit 1` tears the job down with SIGTERM and the
+    # aggregate surfaces as bash 143 (== _WALLTIME_RC) plus a
+    # `<host>: rank N exited with code K` line (K != 0). Without this
+    # pattern a genuine crash is indistinguishable from a clean walltime
+    # kill (which only ever emits `rank N died from signal {11,15}`,
+    # stripped as an innocent cascade below) and the loop would NOT retry
+    # it. Confirmed on a live Sunspot run (job 12471663): scenarios B/D/E
+    # all stopped after 1-2 attempts as "walltime" for a plain `exit 1`.
+    # `[1-9][0-9]*` = any nonzero code (incl. 10+, e.g. 137 = SIGKILL/OOM),
+    # while excluding the clean `exited with code 0` PALS prints per rank.
+    r"|rank \d+ exited with code [1-9][0-9]*"
     r"|EOFError: No data left in file"
 )
 

@@ -225,6 +225,163 @@ class TestAuroraGlooConnectionClosed:
 
 
 # ---------------------------------------------------------------------------
+# Sunspot: same failure modes as Aurora, different hostname suffix
+# ---------------------------------------------------------------------------
+
+class TestSunspotShepherdSignal9:
+    """Pattern: `<host>.hsn.cm.sunspot.alcf.anl.gov: shepherd died from signal 9`.
+
+    Sunspot is Aurora's test-and-dev twin (same PVC + PALS runtime), so the
+    shepherd-kill signature is identical apart from the `.sunspot` suffix and
+    an optional `-hsnN` on the HSN node token.
+    """
+
+    def test_single_signal_9_extracted_hsn_suffix_token(self, tmp_path):
+        """HSN node token carries a `-hsn0` suffix (observed on real
+        Sunspot allocations)."""
+        log = _make_log(tmp_path, (
+            "Some normal training output\n"
+            "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+            "More output after\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        # The `-hsn0` token is canonicalized away by the normalizer so the
+        # node has a single canonical name (see normalize_sunspot_hostname).
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
+
+    def test_single_signal_9_extracted_plain_token(self, tmp_path):
+        """Plain node token (no `-hsnN`) — the PBS_NODEFILE form may use
+        either, so both must match."""
+        log = _make_log(tmp_path, (
+            "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
+
+    def test_multiple_signal_9_deduplicated(self, tmp_path):
+        # Same node emitted BOTH with and without the -hsn0 token — must
+        # collapse to ONE canonical entry (the point of stripping -hsnN).
+        log = _make_log(tmp_path, (
+            "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+            "more output\n"
+            "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
+
+    def test_innocent_rank_signal_11_not_matched(self, tmp_path):
+        """Same critical exclusion as Aurora: cascading `rank N died from
+        signal {11,15}` must NOT tag a node, and `shepherd died from
+        signal 11` (not 9) must NOT match either."""
+        log = _make_log(tmp_path, (
+            "rank 1304 died from signal 11\n"
+            "rank 88 died from signal 15\n"
+            "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "shepherd died from signal 11\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == [], (
+            f"Innocent ranks/signals must not be tagged, got: {hosts!r}"
+        )
+
+    def test_aurora_suffix_not_matched_on_sunspot(self, tmp_path):
+        """A line with the Aurora suffix must not match under the Sunspot
+        pattern set (keeps each machine's suffix explicit)."""
+        log = _make_log(tmp_path, (
+            "x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov: "
+            "shepherd died from signal 9\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == []
+
+
+class TestSunspotGlooConnectionClosed:
+    """gloo peer-closed → IP reverse-resolved, then normalized to the
+    `.hsn.cm.sunspot` form. `reverse_resolve_ip` is stubbed (no real DNS)."""
+
+    def test_single_peer_ip_resolved_to_hostname(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.sunspot.reverse_resolve_ip",
+            lambda ip, **_kw: (
+                "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+            ),
+        )
+        log = _make_log(tmp_path, (
+            "RuntimeError: [..gloo..] Connection closed by peer "
+            "[10.0.0.42]:12345\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        # reverse-DNS returned the -hsn0 form; normalizer canonicalizes it.
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
+
+    def test_hostmgmt_form_canonicalized_to_hsn(self, tmp_path, monkeypatch):
+        """Reverse-lookup returning the .hostmgmtNNNN form is rewritten to
+        the .hsn form so downstream swap_in finds it in the PBS hostfile."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.sunspot.reverse_resolve_ip",
+            lambda ip, **_kw: (
+                "x1922c7s6b0n0.hostmgmt2001.cm.sunspot.alcf.anl.gov"
+            ),
+        )
+        log = _make_log(tmp_path, (
+            "Connection closed by peer [10.0.0.42]:12345\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == ["x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"]
+
+    def test_non_sunspot_resolved_name_dropped(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.sunspot.reverse_resolve_ip",
+            lambda ip, **_kw: "some-unrelated-host.example.com",
+        )
+        log = _make_log(tmp_path, (
+            "Connection closed by peer [10.0.0.42]:12345\n"
+        ))
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == []
+
+
+class TestSunspotHostnameNormalizer:
+    """Direct unit tests of `normalize_sunspot_hostname`."""
+
+    def test_hsn_forms_canonicalize_to_one_name(self):
+        from ezpz.failover.patterns.sunspot import normalize_sunspot_hostname
+
+        canonical = "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"
+        # Both the -hsn0 and suffix-less forms must map to the SAME canonical
+        # name so one node never counts as two.
+        for h in (
+            "x1922c7s6b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov",
+            "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov",
+        ):
+            assert normalize_sunspot_hostname(h) == canonical
+
+    def test_hostmgmt_rewritten_to_hsn(self):
+        from ezpz.failover.patterns.sunspot import normalize_sunspot_hostname
+
+        assert (
+            normalize_sunspot_hostname(
+                "x1922c7s6b0n0.hostmgmt2001.cm.sunspot.alcf.anl.gov"
+            )
+            == "x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov"
+        )
+
+    def test_junk_dropped(self):
+        from ezpz.failover.patterns.sunspot import normalize_sunspot_hostname
+
+        for h in (
+            "some-other-host",
+            "x1922c7s6b0n0.something-else.example.com",
+            "x4502c1s3b0n0.hsn.cm.aurora.alcf.anl.gov",  # Aurora suffix
+        ):
+            assert normalize_sunspot_hostname(h) is None
+
+
+# ---------------------------------------------------------------------------
 # Cross-pattern: dedup + ordering
 # ---------------------------------------------------------------------------
 

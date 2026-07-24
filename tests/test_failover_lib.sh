@@ -451,6 +451,74 @@ EOF
     assert_eq "$(wc -l < "${FAILOVER_BAD}" | tr -d ' ')" "0" "bad_nodes_count"
 }
 
+test_run_walltime_143_retries_on_nonzero_rank_exit_only() {
+    # Regression for live Sunspot job 12471663: a plain application
+    # `exit 1` on PALS tears the job down with SIGTERM, so the aggregate
+    # is rc=143 and the ONLY crash signal is `rank N exited with code 1`
+    # (K != 0) — no UR_OOM, no gloo, no shepherd-9. The innocent
+    # `rank N died from signal 15` cascade is stripped. Before the
+    # `rank N exited with code [1-9]` crash pattern this looked exactly
+    # like a clean walltime kill and did NOT retry a genuine crash.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/nonzero_exit_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" == "1" ]]; then
+    echo "step: 1 loss: 3.14"
+    echo "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 0 exited with code 1"
+    echo "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 11 died from signal 15"
+    exit 143
+else
+    exit 0
+fi
+EOF
+    chmod +x "${bindir}/nonzero_exit_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # blind rotation
+
+    export FAILOVER_MAX_RETRIES=2
+    failover_run nonzero_exit_cmd || exit 1
+    # We DID retry (nonzero rank exit was recognized as a crash, not
+    # misread as a clean walltime kill) → a host was swapped out.
+    assert_file_contents "${FAILOVER_BAD}" "host1"
+}
+
+test_run_walltime_143_no_retry_when_only_rank_exit_code_0() {
+    # Guard the `[1-9]` bound: PALS prints `rank N exited with code 0`
+    # for every rank on a CLEAN shutdown. Combined with a real walltime
+    # SIGTERM (rc=143) that must stay WALLTIME (no swap), not be read as
+    # a crash.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/clean_exit_cmd" <<'EOF'
+#!/usr/bin/env bash
+echo "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 0 exited with code 0"
+echo "rank 1 died from signal 15"
+exit 143
+EOF
+    chmod +x "${bindir}/clean_exit_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""
+
+    export FAILOVER_MAX_RETRIES=2
+    local rc=0
+    failover_run clean_exit_cmd || rc=$?
+    assert_eq "${rc}" "143" "rc"
+    assert_eq "$(wc -l < "${FAILOVER_BAD}" | tr -d ' ')" "0" "bad_nodes_count"
+}
+
 test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade() {
     # Regression for actual Aurora torchtitan log shape (2026-05-12):
     # 18 training steps complete cleanly, then a real level_zero
@@ -681,6 +749,8 @@ run_test "run retries on failure, succeeds on attempt 2"      test_run_retries_o
 run_test "run does NOT retry on walltime (143) when clean"    test_run_walltime_143_no_retry_when_clean
 run_test "run DOES retry on 143 when log has bad-node pattern" test_run_walltime_143_retries_when_bad_node_pattern_in_log
 run_test "run does NOT retry on 143 with only innocent rank-signal lines" test_run_walltime_143_no_retry_when_only_innocent_rank_signals
+run_test "run DOES retry on 143 when only signal is nonzero rank exit"     test_run_walltime_143_retries_on_nonzero_rank_exit_only
+run_test "run does NOT retry on 143 with only rank-exit-code-0 lines"      test_run_walltime_143_no_retry_when_only_rank_exit_code_0
 run_test "run DOES retry on 143 when real hw death is mixed with cascade"  test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade
 run_test "run handles real Aurora UR_OOM + cascade regression"             test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade
 run_test "run swaps named bad node (from scraper)"            test_run_swaps_named_bad_node_when_scraper_finds_one

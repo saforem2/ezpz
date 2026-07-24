@@ -270,6 +270,76 @@ class TestClassifyAttempt:
             is TerminationReason.BAD_NODE_BLIND
         )
 
+    def test_pals_nonzero_exit_surfaces_as_143_is_bad_node(self, tmp_path):
+        """REGRESSION (live Sunspot job 12471663): on Aurora/Sunspot PALS a
+        rank's nonzero application exit tears the job down with SIGTERM, so
+        the aggregate shell rc is 143 (== _WALLTIME_RC) and the log shows
+        `<host>: rank N exited with code K` (K != 0) alongside innocent
+        `rank M died from signal 15` cascade lines. Before the
+        `rank N exited with code [1-9]` crash pattern, this classified as a
+        clean WALLTIME and the loop did NOT retry a genuine crash. It must
+        be a bad-node retry.
+        """
+        log = _write(
+            tmp_path / "log",
+            "some training output\n"
+            "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 0 exited with code 1\n"
+            "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 11 died from signal 15\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_pals_mixed_exit_codes_is_bad_node(self, tmp_path):
+        """rc=143 where PALS printed BOTH `exited with code 0` (clean ranks)
+        AND `exited with code 1` (the crashed rank). Any nonzero exit must
+        override the clean-shutdown noise → bad-node retry, not WALLTIME.
+        """
+        log = _write(
+            tmp_path / "log",
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 0 exited with code 0\n"
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 5 exited with code 1\n"
+            "rank 6 died from signal 15\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_pals_multidigit_exit_code_is_bad_node(self, tmp_path):
+        """Exit codes >= 10 (e.g. 137 = 128+SIGKILL/OOM) must count as a
+        crash — the pattern is `[1-9][0-9]*`, not a single digit.
+        """
+        log = _write(
+            tmp_path / "log",
+            "x1921c2s1b0n0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 3 exited with code 137\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_pals_clean_exit_code_0_not_treated_as_crash(self, tmp_path):
+        """Guard the `[1-9]` bound: PALS prints `rank N exited with code 0`
+        for every rank on a CLEAN shutdown. That must NOT count as a crash,
+        so a genuine walltime kill (rc=143) with only code-0 lines + signal
+        cascades stays WALLTIME.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 0\n"
+            "x1921c2s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 0 exited with code 0\n"
+            "rank 1 died from signal 15\n",
+        )
+        assert classify_attempt(143, log, []).reason is TerminationReason.WALLTIME
+
     def test_watchdog_124_triggers_blind(self, tmp_path):
         log = _write(tmp_path / "log", "starting...\n")
         assert (

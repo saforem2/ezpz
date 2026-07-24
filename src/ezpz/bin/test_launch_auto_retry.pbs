@@ -6,9 +6,14 @@
 #PBS -l filesystems=flare:home
 #PBS -N ezpz-launch-auto-retry-test
 #PBS -j oe
-#PBS -o logs/ezpz-launch-auto-retry-test.${PBS_JOBID}.log
+# NB: point -o at the logs/ DIRECTORY (trailing slash), not a filename with
+# ${PBS_JOBID} — PBS does NOT expand shell variables in -o, so a literal
+# name makes every run append to the same file. With a directory, PBS writes
+# logs/<jobname>.o<jobid> using the real job id. (logs/ must exist at submit
+# time: `mkdir -p logs` before qsub.)
+#PBS -o logs/
 #
-# PBS test driver for `ezpz launch --auto-retry` on Aurora.
+# PBS test driver for `ezpz launch --auto-retry` — machine-agnostic.
 #
 # Companion to test_launch_timeout_retries_aurora.pbs (which covers
 # --timeout / --retries from PR #136). This driver exercises the
@@ -21,17 +26,33 @@
 # work for the trivial scenarios but exhausts spares too fast for
 # the rotation tests.
 #
-# Submit with:
-#   cd ~/ezpz  # (or wherever your checkout is)
-#   qsub src/ezpz/bin/test_launch_auto_retry_aurora.pbs
+# The `#PBS` directives above default to Aurora, but qsub command-line
+# options OVERRIDE script directives — so submit with the per-machine
+# flags below (nothing inside the script is Aurora-specific):
+#
+#   # Aurora:
+#   qsub src/ezpz/bin/test_launch_auto_retry.pbs
+#
+#   # Sunspot:
+#   qsub -A datascience -q workq -l filesystems=tegu:home -l select=4 \
+#        src/ezpz/bin/test_launch_auto_retry.pbs
+#
+#   # Polaris:
+#   qsub -A <proj> -q debug -l filesystems=eagle:home -l select=4 \
+#        src/ezpz/bin/test_launch_auto_retry.pbs
+#
+# GPUs-per-node is derived at runtime (EZPZ_GPN override, else
+# ezpz.get_gpus_per_node()), so the topology is correct on any machine.
+#
+# Scenario C (named swap) needs a registered bad-node pattern module for
+# the current machine (ezpz.failover.patterns.<machine>). Aurora + Sunspot
+# ship one; on a machine without one the scraper returns [] and C would do
+# a BLIND swap instead of a named one. The preflight self-check below tells
+# you up front whether a pattern fired on this machine's nodefile format.
 #
 # Inspect:
 #   tail -f logs/ezpz-launch-auto-retry-test.*.log
 #   ls logs/failover-*/   # per-scenario attempt-N.log + bad_nodes.txt
-#
-# Sunspot users: change `-A AuroraGPT` → `-A datascience`,
-# `filesystems=flare:home` → `filesystems=tegu:home`. Everything
-# else is identical (same scrape patterns, same workflow).
 
 set -u
 unset CDPATH
@@ -91,7 +112,7 @@ log_message INFO "First node: $(head -1 "${PBS_NODEFILE}")"
 # point of view and scenario B/C fail spuriously. PBS_O_WORKDIR is
 # the user's submit-time CWD — Lustre on Aurora, GPFS on Polaris —
 # always visible from every compute node in the allocation.
-TMP="$(mktemp -d -p "${PBS_O_WORKDIR}" ezpz-aurora-auto-retry-XXXXXX)"
+TMP="$(mktemp -d -p "${PBS_O_WORKDIR}" ezpz-auto-retry-XXXXXX)"
 log_message INFO "Scratch dir (shared FS): ${TMP}"
 LOG="${TMP}/scenario.log"
 SUMMARY="${TMP}/summary.txt"
@@ -127,10 +148,40 @@ scen_dir() {
     echo "${d}"
 }
 
-# Use --nproc 12 -ppn 12 (matches Aurora's 12 GPUs/node) so the
-# topology inference is unambiguous. With 4 allocated nodes →
-# ceil(12/12) = 1 active host, 3 spares.
-NP=(--nproc 12 --nproc_per_node 12)
+# GPUs-per-node, derived at runtime so this isn't Aurora-specific
+# (Aurora + Sunspot-FLAT are both 12; Polaris is 4). EZPZ_GPN overrides.
+# We pass --nproc == --nproc_per_node == GPN so topology inference is
+# unambiguous: with 4 allocated nodes → ceil(GPN/GPN) = 1 active host,
+# 3 spares.
+GPN="${EZPZ_GPN:-$(python3 -c 'import ezpz; print(ezpz.get_gpus_per_node())' 2>/dev/null || echo 12)}"
+if ! [[ "${GPN}" =~ ^[0-9]+$ ]] || (( GPN < 1 )); then
+    log_message WARN "Could not derive GPUs/node (got '${GPN}'); defaulting to 12."
+    GPN=12
+fi
+log_message INFO "GPUs per node: ${GPN} (override with EZPZ_GPN)"
+NP=(--nproc "${GPN}" --nproc_per_node "${GPN}")
+
+# ---- Preflight: does this machine have a bad-node scraper pattern? ---------
+# Scenario C (named swap) only works if scrape_bad_nodes recognizes a
+# signature for the current machine + nodefile hostname format. Synthesize
+# a shepherd-9 line from the real first node and check whether a pattern
+# fires BEFORE running the scenarios, so a C failure is diagnosable in one
+# line ("no pattern for this machine" / "nodefile format didn't match")
+# rather than a bare assertion mismatch.
+PREFLIGHT_HOST=$(head -n 1 "${PBS_NODEFILE}")
+PREFLIGHT_LOG="${TMP}/preflight.log"
+printf '%s: shepherd died from signal 9\n' "${PREFLIGHT_HOST}" > "${PREFLIGHT_LOG}"
+log_message INFO "Preflight: scraping a synthetic shepherd-9 line for ${PREFLIGHT_HOST}"
+PREFLIGHT_MATCH=$(python3 -m ezpz.failover "${PREFLIGHT_LOG}" 2>/dev/null | head -1)
+if [[ "${PREFLIGHT_MATCH}" == "${PREFLIGHT_HOST}" ]]; then
+    log_message INFO "Preflight OK: scraper named the host → scenario C should do a NAMED swap."
+    PREFLIGHT_NAMED=1
+else
+    log_message WARN "Preflight: scraper did NOT name the host (got '${PREFLIGHT_MATCH}')."
+    log_message WARN "  → No pattern for this machine/nodefile format; scenario C will BLIND-swap."
+    log_message WARN "  → python3 -m ezpz.failover --explain '${PREFLIGHT_LOG}' for the per-pattern breakdown."
+    PREFLIGHT_NAMED=0
+fi
 
 # ---- A: happy path — succeeds first attempt, no retry ----------------------
 hdr "A" "Happy path: --auto-retry, succeeds first attempt → 1 attempt, rc=0"
@@ -154,24 +205,32 @@ else
 fi
 
 # ---- B: blind rotation — first attempt crashes, scraper finds nothing -----
-hdr "B" "Blind rotation: fail rc=1 once, scraper empty, succeed attempt 2 → 1 swap"
+hdr "B" "Blind rotation: fail once, scraper empty, succeed attempt 2 → 1 swap"
 D=$(scen_dir B)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
-COUNTER="${D}/counter_b"
-echo 0 > "${COUNTER}"
+# Fail-once latch: a MARKER FILE, not a read-increment-write counter. The
+# command runs on all GPN ranks concurrently; a counter races (12 ranks
+# lose updates → wrong attempt number). A one-way marker is race-safe: on
+# attempt 1 the marker is absent for every rank (all fail); on attempt 2 it
+# exists for every rank (all succeed). Even if ranks fail/create the marker
+# out of order, PALS tears the whole attempt down when ANY rank exits
+# nonzero, so attempt 1 fails as a unit. Lives on the shared FS (scen dir).
+MARKER="${D}/failed_once"
+rm -f "${MARKER}"
 START=$(date +%s)
 # First attempt: print no recognized crash signature, exit 1 → blind rotation
-# Second attempt: succeed
+# (the scraper finds no shepherd-9/gloo, so the swap is blind). PALS adds a
+# `rank N exited with code 1` line, which the classifier reads as a crash
+# → it retries. Second attempt: succeed.
 ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
     -- bash -c "
-        n=\$(cat '${COUNTER}')
-        n=\$((n + 1))
-        echo \$n > '${COUNTER}'
-        echo \"B attempt \$n iter step=\$n\"
-        if [ \$n -eq 1 ]; then
+        if [ ! -e '${MARKER}' ]; then
+            : > '${MARKER}'
+            echo 'B attempt 1 iter step=1'
             echo 'random non-recognized error'
             exit 1
         fi
+        echo 'B attempt 2 iter step=2'
         exit 0
     " > "${LOG}" 2>&1
 RC=$?
@@ -192,27 +251,30 @@ fi
 hdr "C" "Named swap: emit shepherd-died-9 from rank 0 host, succeed attempt 2"
 D=$(scen_dir C)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
-COUNTER="${D}/counter_c"
-echo 0 > "${COUNTER}"
+# Fail-once via a marker file, not a counter (see scenario B — a counter
+# races across the GPN concurrent ranks).
+MARKER="${D}/failed_once"
+rm -f "${MARKER}"
 # Find the FIRST active host (= the one the failover loop would use as
-# nproc/ppn=12 → 1 active host = head -n 1 of PBS_NODEFILE)
+# nproc/ppn=GPN → 1 active host = head -n 1 of PBS_NODEFILE)
 ACTIVE_HOST=$(head -n 1 "${PBS_NODEFILE}")
 log_message INFO "Active host for scenario C: ${ACTIVE_HOST}"
 START=$(date +%s)
 ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
     -- bash -c "
-        n=\$(cat '${COUNTER}')
-        n=\$((n + 1))
-        echo \$n > '${COUNTER}'
-        echo \"C attempt \$n iter step=\$n\"
-        if [ \$n -eq 1 ]; then
-            # Emit the exact Aurora PALS shepherd-9 signature that
-            # scrape_bad_nodes recognizes. Must include hostname-like
-            # prefix matching the .hsn.cm.aurora pattern (so the
-            # registered Aurora scraper regex fires).
+        if [ ! -e '${MARKER}' ]; then
+            : > '${MARKER}'
+            echo 'C attempt 1 iter step=1'
+            # Emit the PALS shepherd-9 signature that scrape_bad_nodes
+            # recognizes. The line is built from the REAL first node, so it
+            # carries this machine's actual hostname suffix — the machine's
+            # registered scraper pattern (aurora/sunspot/...) fires iff that
+            # suffix is one it knows. This is what makes scenario C a real
+            # named-swap test of the per-machine pattern module.
             echo '${ACTIVE_HOST}: shepherd died from signal 9'
             exit 1
         fi
+        echo 'C attempt 2 iter step=2'
         exit 0
     " > "${LOG}" 2>&1
 RC=$?
@@ -227,18 +289,35 @@ BAD_NODES_FILE=$(ls "${D}"/logs/failover-*/bad_nodes.txt 2>/dev/null | head -1)
 SWAPPED_HOST=$(head -1 "${BAD_NODES_FILE}" 2>/dev/null || echo "")
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}  swapped_host='${SWAPPED_HOST}'"
 grep -E "FAILOVER STOP|bad nodes detected|swapped:" "${LOG}" | head -10
-# We want: 2 attempts, the SWAPPED host == ACTIVE_HOST (named swap, not blind).
-if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 2 && "${SWAPPED_HOST}" == "${ACTIVE_HOST}" ]]; then
-    record C PASS "named swap of ${SWAPPED_HOST}, rc=0 in ${ELAPSED}s"
+# Assertion depends on whether this machine has a scraper pattern (preflight):
+#  - PREFLIGHT_NAMED=1 → expect a NAMED swap: SWAPPED_HOST == ACTIVE_HOST.
+#  - PREFLIGHT_NAMED=0 → no pattern for this machine, so the loop falls back
+#    to a BLIND swap. Recovery still succeeds in 2 attempts; the swapped host
+#    is unnamed (blind rotation drops a host without scraping), so we only
+#    assert rc=0 + 2 attempts and record it as a blind-swap pass.
+if (( PREFLIGHT_NAMED == 1 )); then
+    if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 2 && "${SWAPPED_HOST}" == "${ACTIVE_HOST}" ]]; then
+        record C PASS "named swap of ${SWAPPED_HOST}, rc=0 in ${ELAPSED}s"
+    else
+        record C FAIL "rc=${RC} attempts=${ATTEMPTS} swapped='${SWAPPED_HOST}' wanted='${ACTIVE_HOST}'"
+    fi
 else
-    record C FAIL "rc=${RC} attempts=${ATTEMPTS} swapped='${SWAPPED_HOST}' wanted='${ACTIVE_HOST}'"
+    if [[ ${RC} -eq 0 && ${ATTEMPTS} -eq 2 ]]; then
+        record C PASS "blind swap (no scraper pattern for this machine), rc=0 in ${ELAPSED}s"
+    else
+        record C FAIL "rc=${RC} attempts=${ATTEMPTS} (blind-swap machine; wanted rc=0, attempts=2)"
+    fi
 fi
 
 # ---- D: --max-failover-retries cap — fail forever, cap at 2 ----------------
-hdr "D" "Cap exhaustion: --max-failover-retries 2, always-fail → 3 attempts, rc=1"
+hdr "D" "Cap exhaustion: --max-failover-retries 2, always-fail → 3 attempts, rc!=0"
 D=$(scen_dir D)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
 START=$(date +%s)
+# Always fail WITH progress (step=1) so it's not the stuck-guard path — we
+# want the failover cap to be what stops it. rc is whatever PALS returns for
+# a nonzero exit (143 on Aurora/Sunspot, 1 elsewhere), so assert rc!=0, not
+# a specific code.
 ezpz launch "${NP[@]}" --auto-retry --max-failover-retries 2 --timeout 60 \
     -- bash -c 'echo "D iter step=1"; echo "transient error"; exit 1' > "${LOG}" 2>&1
 RC=$?
@@ -247,12 +326,12 @@ cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; 
 
 ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
-grep -E "FAILOVER STOP|max_failover_retries" "${LOG}" | head -5
+grep -E "FAILOVER STOP|max_failover_retries|exhausted" "${LOG}" | head -5
 # cap=2 means 1 initial + 2 retries = 3 attempts total.
-if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 3 ]]; then
+if [[ ${RC} -ne 0 && ${ATTEMPTS} -eq 3 ]]; then
     record D PASS "cap exhausted after ${ATTEMPTS} attempts, rc=${RC} in ${ELAPSED}s"
 else
-    record D FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=3)"
+    record D FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc!=0, attempts=3)"
 fi
 
 # ---- E: stuck_pre_training — 2 consecutive 0-progress attempts ------------
@@ -269,12 +348,13 @@ cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; 
 ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
 grep -E "FAILOVER STOP|stuck_pre_training" "${LOG}" | head -5
-# stuck guard fires on attempt 2 (prior=no progress, current=no progress).
-# So exactly 2 attempts before bail.
-if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 2 ]]; then
+# stuck guard fires on attempt 2 (prior=no progress, current=no progress),
+# so exactly 2 attempts before bail. rc is whatever PALS returns for the
+# nonzero exit (143 on Aurora/Sunspot, 1 elsewhere) → assert rc!=0.
+if [[ ${RC} -ne 0 && ${ATTEMPTS} -eq 2 ]]; then
     record E PASS "stuck_pre_training after ${ATTEMPTS} attempts in ${ELAPSED}s"
 else
-    record E FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=2)"
+    record E FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc!=0, attempts=2)"
 fi
 
 # ---- F: realistic — ezpz.examples.test under --auto-retry -----------------
@@ -306,8 +386,8 @@ cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
 head -n 2 "${PBS_NODEFILE}" > "${D}/user.hostfile"
 log_message INFO "User hostfile (2 nodes): $(tr '\n' ' ' < "${D}/user.hostfile")"
 START=$(date +%s)
-# --np 12 -ppn 12 → 1 active host → 1 spare from the user's 2-host file
-# (NOT 3 spares from the full PBS allocation).
+# --nproc GPN -ppn GPN → 1 active host → 1 spare from the user's 2-host
+# file (NOT 3 spares from the full PBS allocation).
 ezpz launch "${NP[@]}" --hostfile "${D}/user.hostfile" \
     --auto-retry --timeout 60 \
     -- bash -c 'echo "iter step=1"; exit 0' > "${LOG}" 2>&1
@@ -329,7 +409,9 @@ fi
 
 # ---- Final report ---------------------------------------------------------
 printf "\n========================================================================\n"
-printf "Aurora --auto-retry summary  (PASS=%d  FAIL=%d)\n" "${PASS}" "${FAIL}"
+printf "%s --auto-retry summary  (PASS=%d  FAIL=%d)\n" \
+    "$(python3 -c 'import ezpz; print(ezpz.get_machine())' 2>/dev/null || echo '')" \
+    "${PASS}" "${FAIL}"
 printf "========================================================================\n"
 cat "${SUMMARY}"
 

@@ -149,10 +149,11 @@ register_patterns(
     AURORA_PATTERNS,
     hostname_normalizer=normalize_aurora_hostname,
 )
-# NOTE: Sunspot uses the same XPU fabric + PALS shepherd as Aurora,
-# so the patterns SHOULD apply — but the full hostname suffix differs
-# from Aurora's `.hsn.cm.aurora.alcf.anl.gov`. We haven't postmortemed
-# a real Sunspot failure yet to confirm the exact suffix shape, so the
-# Aurora pattern is NOT auto-registered for sunspot here. Add a
-# dedicated `sunspot.py` module once a real failure provides the
-# hostname format to match against.
+# NOTE: Sunspot uses the same XPU fabric + PALS shepherd as Aurora, so the
+# same two failure modes apply — but the hostname suffix differs
+# (`.hsn.cm.sunspot.alcf.anl.gov`, with an optional `-hsnN` on the node
+# token). The Sunspot equivalents live in a dedicated `sunspot.py` module
+# (registered under the "sunspot" machine key), rather than reusing these
+# Aurora regexes, so each machine's suffix stays explicit. The exact HSN
+# suffix a gloo reverse-DNS returns on Sunspot is still unconfirmed against
+# a real postmortem — see the note in `sunspot.py`.
