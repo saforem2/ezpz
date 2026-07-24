@@ -1723,7 +1723,43 @@ def parse_args(argv: Optional[list[str]] = None):
     # Fold the deprecated --sharding-strategy alias into reshard_after_forward
     # (and hard-error the removed hybrid_shard* values).
     _resolve_reshard_after_forward(args)
+    _maybe_enable_cpu_backend_for_async_ckpt(args)
     return args
+
+
+def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
+    """Register a CPU (gloo) backend when --async-ckpt is set.
+
+    ``dcp.async_save`` asserts the process group includes a CPU backend (it
+    stages/writes from a background CPU thread). On an accelerator the default
+    PG is xccl/nccl-only, so we must init with a COMPOSITE backend string
+    (e.g. ``cpu:gloo,xpu:xccl``). This runs in parse_args — BEFORE
+    ``setup_torch``/``init_process_group`` — and sets ``TORCH_BACKEND``, which
+    ``ezpz.distributed.get_torch_backend`` honors as an override.
+
+    Respects a user-set ``TORCH_BACKEND`` (only fills it when unset) and is a
+    no-op on CPU-only runs (backend is already gloo).
+    """
+    if not getattr(args, "async_ckpt", False):
+        return
+    if os.environ.get("TORCH_BACKEND"):
+        return  # user override wins
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            accel = "cuda:nccl"
+        elif torch.xpu.is_available():
+            accel = "xpu:xccl"
+        else:
+            return  # CPU-only: default gloo already has a CPU backend
+        os.environ["TORCH_BACKEND"] = f"cpu:gloo,{accel}"
+        logger.info(
+            "async-ckpt: set TORCH_BACKEND=%s so async_save has a CPU backend",
+            os.environ["TORCH_BACKEND"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not set composite backend for --async-ckpt: %s", exc)
 
 
 def _configure_fsdp_gradient_division(model: nn.Module) -> None:
