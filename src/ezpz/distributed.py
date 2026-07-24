@@ -1980,7 +1980,15 @@ def _setup_ddp(
                 resolved_device = device_id
         elif device_type in ("cuda", "xpu"):
             resolved_device = torch.device(f"{device_type}:{local_rank}")
-        if resolved_device is not None:
+        # A COMPOSITE backend (e.g. "xpu:xccl,cpu:gloo", set for async DCP
+        # checkpointing) is INCOMPATIBLE with device_id: torch eager-inits only
+        # the device_id's single device backend, dropping cpu:gloo, so
+        # dcp.async_save's CPU-backend assert fails. torchtitan's default init
+        # uses the composite backend with device_id=None; mirror that. This
+        # only fires when a comma-composite backend is requested — normal
+        # single-backend runs keep device_id (load-bearing: prevents the FSDP2
+        # all-gather deadlock, Aurora job 8518207).
+        if resolved_device is not None and "," not in str(backend):
             init_kwargs["device_id"] = resolved_device
         torch.distributed.init_process_group(**init_kwargs)
 

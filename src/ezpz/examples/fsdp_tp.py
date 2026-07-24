@@ -1753,7 +1753,10 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
             accel = "xpu:xccl"
         else:
             return  # CPU-only: default gloo already has a CPU backend
-        os.environ["TORCH_BACKEND"] = f"cpu:gloo,{accel}"
+        # Order matches torchtitan (distributed/utils.py): accelerator FIRST,
+        # then cpu:gloo. The accel backend stays primary; cpu:gloo is added so
+        # dcp.async_save's background CPU-thread collective has a backend.
+        os.environ["TORCH_BACKEND"] = f"{accel},cpu:gloo"
         logger.info(
             "async-ckpt: set TORCH_BACKEND=%s so async_save has a CPU backend",
             os.environ["TORCH_BACKEND"],
