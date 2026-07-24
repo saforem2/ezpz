@@ -1517,6 +1517,30 @@ def parse_args(argv: Optional[list[str]] = None):
             "(step 0). Default behavior auto-resumes from the latest."
         ),
     )
+    parser.add_argument(
+        "--async-ckpt",
+        "--async_ckpt",
+        action="store_true",
+        dest="async_ckpt",
+        help=(
+            "Save checkpoints asynchronously: stage to fast node-local "
+            "--ckpt-stage-dir (background thread, overlaps training), then "
+            "fan out to the durable --ckpt-dir on shared FS. Requires "
+            "--ckpt-dir. Resume is unchanged (always from --ckpt-dir)."
+        ),
+    )
+    parser.add_argument(
+        "--ckpt-stage-dir",
+        "--ckpt_stage_dir",
+        type=str,
+        default=None,
+        dest="ckpt_stage_dir",
+        help=(
+            "Node-local staging dir for --async-ckpt (default "
+            "/tmp/ezpz-ckpt-<jobid>). Transient — NOT resumable on its own; "
+            "only the fanned-out --ckpt-dir copy is durable."
+        ),
+    )
     # parser.add_argument('--dataset', type=str, default='random')
     parser.add_argument(
         "--dataset",
@@ -2711,6 +2735,21 @@ def train(
     # correct point to restore sharded DCP state into them. Auto-resume (no
     # flag) is what lets `ezpz launch --auto-retry` — which relaunches the
     # IDENTICAL command each attempt — pick up where a failed attempt left off.
+    # Async checkpointing needs a durable target to fan out to; a node-local
+    # stage dir alone is not resumable after a failure (see _checkpoint.py).
+    if args.async_ckpt and not args.ckpt_dir:
+        raise ValueError("--async-ckpt requires --ckpt-dir (the durable target)")
+    ckpt_stage_dir = args.ckpt_stage_dir
+    if args.async_ckpt and not ckpt_stage_dir:
+        jobid = (
+            os.environ.get("PBS_JOBID")
+            or os.environ.get("SLURM_JOB_ID")
+            or str(os.getpid())
+        ).split(".")[0]
+        ckpt_stage_dir = f"/tmp/ezpz-ckpt-{jobid}"
+    # In-flight async checkpoint handle (drained before the next save + at exit).
+    pending_ckpt = None
+
     resume_meta: "dict[str, object] | None" = None
     if args.ckpt_dir and not args.no_resume:
         from ezpz.examples._checkpoint import load_checkpoint
@@ -3159,23 +3198,58 @@ def train(
                 and args.save_interval
                 and global_step % args.save_interval == 0
             ):
-                from ezpz.examples._checkpoint import save_checkpoint
+                _ckpt_meta = {
+                    "tokens_seen": tokens_seen,
+                    "epoch": epoch,
+                    # Next batch to run on resume within `epoch`.
+                    "batch_offset": idx + 1,
+                }
+                if args.async_ckpt:
+                    from ezpz.examples._checkpoint import (
+                        drain,
+                        save_checkpoint_async,
+                    )
 
-                save_checkpoint(
-                    args.ckpt_dir,
-                    global_step,
-                    model,
-                    optimizer,
-                    meta={
-                        "tokens_seen": tokens_seen,
-                        "epoch": epoch,
-                        # Next batch to run on resume within `epoch`.
-                        "batch_offset": idx + 1,
-                    },
-                )
+                    # Only one async save may be in flight (DCP constraint) —
+                    # finish the previous one before starting the next. At
+                    # save_interval >> save time this is effectively free.
+                    drain(pending_ckpt)
+                    _t_stage = perf_counter()
+                    pending_ckpt = save_checkpoint_async(
+                        args.ckpt_dir,
+                        ckpt_stage_dir,
+                        global_step,
+                        model,
+                        optimizer,
+                        meta=_ckpt_meta,
+                    )
+                    # Caller-thread stall = staging time (the disk write +
+                    # fan-out happen off-thread). Compare to the sync save cost.
+                    if ezpz.get_rank() == 0:
+                        logger.info(
+                            "ckpt_stage_seconds=%.4f (async stage @ step %d)",
+                            perf_counter() - _t_stage,
+                            global_step,
+                        )
+                else:
+                    from ezpz.examples._checkpoint import save_checkpoint
+
+                    save_checkpoint(
+                        args.ckpt_dir,
+                        global_step,
+                        model,
+                        optimizer,
+                        meta=_ckpt_meta,
+                    )
         # Step-based stop breaks the inner loop; also break the epoch loop.
         if args.train_iters and global_step >= args.train_iters:
             break
+    # Finish any in-flight async checkpoint so a run that ends right after a
+    # save doesn't lose it (the fan-out to durable FS may still be running).
+    if pending_ckpt is not None:
+        from ezpz.examples._checkpoint import drain
+
+        drain(pending_ckpt)
     if act_handles:
         for handle in act_handles:
             handle.remove()

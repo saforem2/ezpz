@@ -33,6 +33,33 @@ ezpz launch --auto-retry --np <N> -- \
     --ckpt-dir ./ckpts --save-interval 100 --train-iters 3000
 ```
 
+### Asynchronous checkpointing
+
+By default a save is **synchronous** — the training loop blocks while every
+rank writes its shards to the durable `--ckpt-dir`. At large model sizes that
+stall recurs every `--save-interval` steps. Pass `--async-ckpt` to overlap the
+write with training:
+
+```bash
+python3 -m ezpz.examples.fsdp_tp ... \
+    --ckpt-dir /shared/ckpts --async-ckpt \
+    --ckpt-stage-dir /tmp/ezpz-ckpt --save-interval 100
+```
+
+`--async-ckpt` uses `dcp.async_save`: the state dict is staged to CPU memory
+**synchronously** (so it's safe to keep training the instant the call
+returns), then written to fast **node-local** `--ckpt-stage-dir` (default
+`/tmp/ezpz-ckpt-<jobid>`) by a background thread, and finally **fanned out**
+to the durable `--ckpt-dir` on shared FS. The only cost on the training
+thread is the short staging copy (logged as `ckpt_stage_seconds`).
+
+!!! warning "Node-local staging is not durable"
+    `--ckpt-stage-dir` (e.g. `/tmp`) is node-local and **not resumable on its
+    own** — its shards are scattered per node and it carries no completion
+    marker. Only the fanned-out `--ckpt-dir` copy on shared FS survives a node
+    failure, and resume always reads from there. That's why `--async-ckpt`
+    *requires* `--ckpt-dir`; `/tmp` is a staging tier, not the checkpoint.
+
 ## The experiment
 
 To measure restart cost we ran two 3000-step jobs on **2 Sunspot nodes (24

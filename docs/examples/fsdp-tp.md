@@ -613,6 +613,8 @@ FSDP+TP.
 | `--save-interval N` | Save every `N` optimizer steps (`0` = off) |
 | `--train-iters N` | Stop after `N` steps, regardless of `--epochs` (`0` = full epochs) |
 | `--no-resume` | Ignore an existing checkpoint and start fresh |
+| `--async-ckpt` | Save asynchronously (stage to node-local, fan out to `--ckpt-dir`); overlaps the write with training. Requires `--ckpt-dir`. |
+| `--ckpt-stage-dir DIR` | Node-local staging dir for `--async-ckpt` (default `/tmp/ezpz-ckpt-<jobid>`) |
 
 **Auto-resume.** On startup, if `--ckpt-dir` contains a complete checkpoint,
 the newest one is loaded and training continues from its step — no flag
