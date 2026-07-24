@@ -6,7 +6,12 @@
 #PBS -l filesystems=flare:home
 #PBS -N ezpz-launch-auto-retry-test
 #PBS -j oe
-#PBS -o logs/ezpz-launch-auto-retry-test.${PBS_JOBID}.log
+# NB: point -o at the logs/ DIRECTORY (trailing slash), not a filename with
+# ${PBS_JOBID} — PBS does NOT expand shell variables in -o, so a literal
+# name makes every run append to the same file. With a directory, PBS writes
+# logs/<jobname>.o<jobid> using the real job id. (logs/ must exist at submit
+# time: `mkdir -p logs` before qsub.)
+#PBS -o logs/
 #
 # PBS test driver for `ezpz launch --auto-retry` — machine-agnostic.
 #
