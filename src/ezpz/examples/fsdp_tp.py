@@ -2931,6 +2931,9 @@ def train(
     # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
     # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
+    # Async-checkpoint staging time from the PREVIOUS step, folded into the
+    # next step's metrics dict so train/ckpt_stage_seconds reaches JSONL + W&B.
+    pending_stage_seconds: "float | None" = None
     # Resume bookkeeping. When resuming, seed the counters from the checkpoint
     # and reconstruct (start_epoch, resume_offset) so the loop skips
     # already-consumed batches. drop_last=True on both sampler and loader makes
@@ -3252,6 +3255,12 @@ def train(
             if dt_step > 0:
                 metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
                 metrics["train/tps"] = tokens_this_step / dt_step
+            # Async-ckpt staging time from the previous step's save, carried
+            # here so it lands in the JSONL + W&B alongside the other train/*
+            # metrics (set once, then cleared).
+            if pending_stage_seconds is not None:
+                metrics["train/ckpt_stage_seconds"] = pending_stage_seconds
+                pending_stage_seconds = None
             # Restart time: on the FIRST completed step after a resume, log how
             # long from train() entry (process init + dist setup + model build
             # + dcp.load + this step) to a productive step. This is the full
@@ -3305,17 +3314,13 @@ def train(
                         meta=_ckpt_meta,
                     )
                     # Caller-thread stall = staging time (the disk write +
-                    # fan-out happen off-thread). Compare to the sync save cost.
-                    # Emit as a real tracked metric (train/ckpt_stage_seconds)
-                    # so it lands in History/W&B/JSONL, not just the log.
+                    # fan-out happen off-thread). Stash it so the NEXT step's
+                    # metrics dict carries train/ckpt_stage_seconds through
+                    # history.update -> JSONL + W&B (this save block runs after
+                    # the current step's metrics were already written).
                     _stage_s = perf_counter() - _t_stage
+                    pending_stage_seconds = _stage_s
                     if ezpz.get_rank() == 0:
-                        history.tracker.log(
-                            {
-                                "train/ckpt_stage_seconds": _stage_s,
-                                "train/iter": global_step,
-                            }
-                        )
                         logger.info(
                             "train/ckpt_stage_seconds=%.4f (async stage @ "
                             "step %d)",

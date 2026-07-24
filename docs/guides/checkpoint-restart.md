@@ -104,6 +104,32 @@ Per failure (kill → PALS teardown → relaunch → DCP resume):
 - **≈ 33 s total per failure** (~11 s restart + ~22 s recomputing lost steps),
   which is the +2.23 min overhead across 4 failures.
 
+### Async checkpointing under the same failures
+
+Re-running the identical experiment with `--async-ckpt` (stage to `/tmp`, fan
+out to shared FS) on the same 2 nodes / 24 XPU ranks:
+
+![Baseline vs async checkpoint restart](checkpoint-restart-async.png)
+
+| # | resume @ step | lost steps | `restart_seconds` |
+|---|---:|---:|---:|
+| 1 | 801 | 74 | 8.94 |
+| 2 | 1301 | 57 | 8.94 |
+| 3 | 1801 | 61 | 9.31 |
+| 4 | 2301 | 56 | 9.30 |
+
+- **Per-step stall from checkpointing: `train/ckpt_stage_seconds` ≈ 28 ms**
+  (median) — the async stage barely touches the training thread; the shard
+  write + fan-out happen off-thread. Compare to a synchronous save, which
+  blocks the loop for the full write.
+- **Restart cost ≈ 8.9–9.3 s** — the resume path is the same as sync (init +
+  `dcp.load`), so restart time is comparable (here marginally lower, within
+  run-to-run noise). Async's win is on the *save* side, not the restart side:
+  it removes the per-interval training stall, which matters at scale where a
+  synchronous shard write is seconds, not milliseconds.
+- Recovery still works identically: every kill resumed from the last durable
+  (fanned-out) checkpoint, never from the node-local `/tmp` staging copy.
+
 ## Measuring it yourself
 
 `fsdp_tp` logs a `RESUMED from step=N` line on resume and a

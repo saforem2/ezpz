@@ -90,6 +90,15 @@ def main(argv=None):
     )
     ap.add_argument("--out", default="restart_plot.png")
     ap.add_argument("--report", default="restart_report.md")
+    ap.add_argument(
+        "--restart-label", default="Checkpoint Restart",
+        help="legend label for the restart line (e.g. 'Async Checkpoint Restart')",
+    )
+    ap.add_argument(
+        "--title",
+        default="Training progress over time — Baseline vs Checkpoint "
+        "Restart (real Sunspot / XPU, injected failures)",
+    )
     args = ap.parse_args(argv)
 
     base = _rebase(_load(args.baseline))
@@ -142,6 +151,15 @@ def main(argv=None):
         print(f"[plot skipped: matplotlib unavailable: {exc}]", file=sys.stderr)
         return 0
 
+    # House style: ambivalent stylesheet + Iosevka (same as the torchtitan
+    # ezpz production charts). Best-effort — falls back to mpl defaults.
+    try:
+        import plot_style
+
+        plot_style.apply_style()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[plot_style not applied: {exc}]", file=sys.stderr)
+
     fig, ax = plt.subplots(figsize=(11, 6))
     if base:
         ax.plot(
@@ -153,7 +171,7 @@ def main(argv=None):
         ax.plot(
             [r["elapsed_min"] for r in rst],
             [r["iter"] for r in rst],
-            "-o", color="tab:red", label="Checkpoint Restart", markersize=2,
+            "-o", color="tab:red", label=args.restart_label, markersize=2,
             linewidth=1.2,
         )
     for e in events:
@@ -173,10 +191,7 @@ def main(argv=None):
         )
     ax.set_xlabel("Elapsed time (minutes from run start)")
     ax.set_ylabel("Training step")
-    ax.set_title(
-        "Training progress over time — Baseline vs Checkpoint Restart "
-        "(real Sunspot / XPU, injected failures)"
-    )
+    ax.set_title(args.title)
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()

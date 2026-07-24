@@ -68,6 +68,18 @@ Per failure (each a real kill → PALS teardown → relaunch → DCP resume):
   are parallelism-agnostic (DCP is sharded), but absolute restart_seconds
   will grow with model size / node count (bigger `dcp.load`, longer init).
 
+## Async variant
+
+`restart_experiment_async.pbs` runs the same experiment with `--async-ckpt`
+(stage to node-local `/tmp`, fan out to shared FS). Real Sunspot numbers
+(job 12471716): baseline 5.84 min vs async restart 8.06 min across 4
+failures; per-step checkpoint stall `train/ckpt_stage_seconds` ≈ 28 ms
+(median); restart cost ≈ 8.9–9.3 s. See `async_restart_plot.png`.
+
+Charts use the `ambivalent` matplotlib stylesheet + Iosevka font via
+`plot_style.py` (matching the torchtitan ezpz production charts); font +
+stylesheet must be installed on the plotting host.
+
 ## Reproduce
 
 ```bash
