@@ -200,24 +200,32 @@ else
 fi
 
 # ---- B: blind rotation — first attempt crashes, scraper finds nothing -----
-hdr "B" "Blind rotation: fail rc=1 once, scraper empty, succeed attempt 2 → 1 swap"
+hdr "B" "Blind rotation: fail once, scraper empty, succeed attempt 2 → 1 swap"
 D=$(scen_dir B)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
-COUNTER="${D}/counter_b"
-echo 0 > "${COUNTER}"
+# Fail-once latch: a MARKER FILE, not a read-increment-write counter. The
+# command runs on all GPN ranks concurrently; a counter races (12 ranks
+# lose updates → wrong attempt number). A one-way marker is race-safe: on
+# attempt 1 the marker is absent for every rank (all fail); on attempt 2 it
+# exists for every rank (all succeed). Even if ranks fail/create the marker
+# out of order, PALS tears the whole attempt down when ANY rank exits
+# nonzero, so attempt 1 fails as a unit. Lives on the shared FS (scen dir).
+MARKER="${D}/failed_once"
+rm -f "${MARKER}"
 START=$(date +%s)
 # First attempt: print no recognized crash signature, exit 1 → blind rotation
-# Second attempt: succeed
+# (the scraper finds no shepherd-9/gloo, so the swap is blind). PALS adds a
+# `rank N exited with code 1` line, which the classifier reads as a crash
+# → it retries. Second attempt: succeed.
 ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
     -- bash -c "
-        n=\$(cat '${COUNTER}')
-        n=\$((n + 1))
-        echo \$n > '${COUNTER}'
-        echo \"B attempt \$n iter step=\$n\"
-        if [ \$n -eq 1 ]; then
+        if [ ! -e '${MARKER}' ]; then
+            : > '${MARKER}'
+            echo 'B attempt 1 iter step=1'
             echo 'random non-recognized error'
             exit 1
         fi
+        echo 'B attempt 2 iter step=2'
         exit 0
     " > "${LOG}" 2>&1
 RC=$?
@@ -238,8 +246,10 @@ fi
 hdr "C" "Named swap: emit shepherd-died-9 from rank 0 host, succeed attempt 2"
 D=$(scen_dir C)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
-COUNTER="${D}/counter_c"
-echo 0 > "${COUNTER}"
+# Fail-once via a marker file, not a counter (see scenario B — a counter
+# races across the GPN concurrent ranks).
+MARKER="${D}/failed_once"
+rm -f "${MARKER}"
 # Find the FIRST active host (= the one the failover loop would use as
 # nproc/ppn=GPN → 1 active host = head -n 1 of PBS_NODEFILE)
 ACTIVE_HOST=$(head -n 1 "${PBS_NODEFILE}")
@@ -247,11 +257,9 @@ log_message INFO "Active host for scenario C: ${ACTIVE_HOST}"
 START=$(date +%s)
 ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
     -- bash -c "
-        n=\$(cat '${COUNTER}')
-        n=\$((n + 1))
-        echo \$n > '${COUNTER}'
-        echo \"C attempt \$n iter step=\$n\"
-        if [ \$n -eq 1 ]; then
+        if [ ! -e '${MARKER}' ]; then
+            : > '${MARKER}'
+            echo 'C attempt 1 iter step=1'
             # Emit the PALS shepherd-9 signature that scrape_bad_nodes
             # recognizes. The line is built from the REAL first node, so it
             # carries this machine's actual hostname suffix — the machine's
@@ -261,6 +269,7 @@ ezpz launch "${NP[@]}" --auto-retry --timeout 60 \
             echo '${ACTIVE_HOST}: shepherd died from signal 9'
             exit 1
         fi
+        echo 'C attempt 2 iter step=2'
         exit 0
     " > "${LOG}" 2>&1
 RC=$?
@@ -296,10 +305,14 @@ else
 fi
 
 # ---- D: --max-failover-retries cap — fail forever, cap at 2 ----------------
-hdr "D" "Cap exhaustion: --max-failover-retries 2, always-fail → 3 attempts, rc=1"
+hdr "D" "Cap exhaustion: --max-failover-retries 2, always-fail → 3 attempts, rc!=0"
 D=$(scen_dir D)
 cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
 START=$(date +%s)
+# Always fail WITH progress (step=1) so it's not the stuck-guard path — we
+# want the failover cap to be what stops it. rc is whatever PALS returns for
+# a nonzero exit (143 on Aurora/Sunspot, 1 elsewhere), so assert rc!=0, not
+# a specific code.
 ezpz launch "${NP[@]}" --auto-retry --max-failover-retries 2 --timeout 60 \
     -- bash -c 'echo "D iter step=1"; echo "transient error"; exit 1' > "${LOG}" 2>&1
 RC=$?
@@ -308,12 +321,12 @@ cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; 
 
 ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
-grep -E "FAILOVER STOP|max_failover_retries" "${LOG}" | head -5
+grep -E "FAILOVER STOP|max_failover_retries|exhausted" "${LOG}" | head -5
 # cap=2 means 1 initial + 2 retries = 3 attempts total.
-if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 3 ]]; then
+if [[ ${RC} -ne 0 && ${ATTEMPTS} -eq 3 ]]; then
     record D PASS "cap exhausted after ${ATTEMPTS} attempts, rc=${RC} in ${ELAPSED}s"
 else
-    record D FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=3)"
+    record D FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc!=0, attempts=3)"
 fi
 
 # ---- E: stuck_pre_training — 2 consecutive 0-progress attempts ------------
@@ -330,12 +343,13 @@ cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; 
 ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d ' ')
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}"
 grep -E "FAILOVER STOP|stuck_pre_training" "${LOG}" | head -5
-# stuck guard fires on attempt 2 (prior=no progress, current=no progress).
-# So exactly 2 attempts before bail.
-if [[ ${RC} -eq 1 && ${ATTEMPTS} -eq 2 ]]; then
+# stuck guard fires on attempt 2 (prior=no progress, current=no progress),
+# so exactly 2 attempts before bail. rc is whatever PALS returns for the
+# nonzero exit (143 on Aurora/Sunspot, 1 elsewhere) → assert rc!=0.
+if [[ ${RC} -ne 0 && ${ATTEMPTS} -eq 2 ]]; then
     record E PASS "stuck_pre_training after ${ATTEMPTS} attempts in ${ELAPSED}s"
 else
-    record E FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc=1, attempts=2)"
+    record E FAIL "rc=${RC} attempts=${ATTEMPTS} (wanted rc!=0, attempts=2)"
 fi
 
 # ---- F: realistic — ezpz.examples.test under --auto-retry -----------------
