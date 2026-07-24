@@ -646,6 +646,10 @@ crash-signal scenarios) and `train/restart_seconds` on the next attempt is
 your restart cost; compare against a cold start (no checkpoint) for the
 speedup.
 
+See the [**Checkpoint & Restart Under Failure**](../guides/checkpoint-restart.md)
+guide for a full worked experiment with real Sunspot restart-time
+measurements.
+
 ## torch.compile
 
 Pass `--compile` to apply `torch.compile` after the FSDP/TP wrap. The
