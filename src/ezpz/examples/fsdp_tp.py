@@ -1467,8 +1467,54 @@ def parse_args(argv: Optional[list[str]] = None):
         type=str,
         default=None,
         help=(
-            "Base directory for checkpoints and logs. None (default) "
-            "writes under the current working directory."
+            "Base directory for metrics logs + the History report. None "
+            "(default) writes under the current working directory. (Model "
+            "checkpoints go to --ckpt-dir, not here.)"
+        ),
+    )
+    parser.add_argument(
+        "--ckpt-dir",
+        "--ckpt_dir",
+        type=str,
+        default=None,
+        dest="ckpt_dir",
+        help=(
+            "Directory for DCP (sharded) checkpoints. When set, enables "
+            "checkpoint save (see --save-interval) AND auto-resume: on "
+            "startup the latest complete checkpoint here is loaded and "
+            "training continues from it (unless --no-resume). This is what "
+            "makes `ezpz launch --auto-retry` resume across attempts."
+        ),
+    )
+    parser.add_argument(
+        "--save-interval",
+        "--save_interval",
+        type=int,
+        default=0,
+        dest="save_interval",
+        help=(
+            "Save a checkpoint every N optimizer steps (requires "
+            "--ckpt-dir). 0 (default) disables saving."
+        ),
+    )
+    parser.add_argument(
+        "--train-iters",
+        "--train_iters",
+        type=int,
+        default=0,
+        dest="train_iters",
+        help=(
+            "Stop after N optimizer steps, regardless of --epochs. 0 "
+            "(default) runs the full --epochs pass. Step-based cap for "
+            "fixed-length runs / restart-time experiments."
+        ),
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help=(
+            "Ignore any existing checkpoint in --ckpt-dir and start fresh "
+            "(step 0). Default behavior auto-resumes from the latest."
         ),
     )
     # parser.add_argument('--dataset', type=str, default='random')
@@ -2144,6 +2190,7 @@ def train(
     args: argparse.Namespace,
     outdir: Path | str | os.PathLike,
     profiler: Optional[Any] = None,
+    process_start: Optional[float] = None,
 ) -> int:
     """Run TP/SP + FSDP training and optionally log metrics.
 
@@ -2155,6 +2202,12 @@ def train(
             When non-None, ``profiler.step()`` is called once per training
             step so the schedule (wait/warmup/active/repeat) advances.
     """
+    # Timestamp for the restart-time metric. Prefer the caller's
+    # process-start (main() captures it BEFORE setup_torch, so
+    # train/restart_seconds includes distributed init — the dominant cost of a
+    # real cold failover). Fall back to now() when train() is called directly.
+    _train_t0 = process_start if process_start is not None else perf_counter()
+    _restart_logged = False
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     # Resolve the data-parallel topology: dp_replicate (HSDP outer) x
@@ -2653,6 +2706,26 @@ def train(
             foreach=True,
         )
 
+    # --- Resume from checkpoint (auto-detect latest) --------------------------
+    # Both model AND optimizer exist and are fully sharded here, so this is the
+    # correct point to restore sharded DCP state into them. Auto-resume (no
+    # flag) is what lets `ezpz launch --auto-retry` — which relaunches the
+    # IDENTICAL command each attempt — pick up where a failed attempt left off.
+    resume_meta: "dict[str, object] | None" = None
+    if args.ckpt_dir and not args.no_resume:
+        from ezpz.examples._checkpoint import load_checkpoint
+
+        resume_meta = load_checkpoint(args.ckpt_dir, model, optimizer)
+        if resume_meta is not None and ezpz.get_rank() == 0:
+            logger.info(
+                "RESUMED from step=%s (epoch=%s, batch_offset=%s, "
+                "tokens_seen=%s)",
+                resume_meta.get("step"),
+                resume_meta.get("epoch"),
+                resume_meta.get("batch_offset"),
+                resume_meta.get("tokens_seen"),
+            )
+
     # reuse device for input placement
 
     tp_group = device_mesh.get_group("tp")
@@ -2752,6 +2825,33 @@ def train(
     # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
     # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
+    # Resume bookkeeping. When resuming, seed the counters from the checkpoint
+    # and reconstruct (start_epoch, resume_offset) so the loop skips
+    # already-consumed batches. drop_last=True on both sampler and loader makes
+    # batches-per-epoch deterministic, so global_step -> (epoch, offset) is
+    # exact. batches_per_epoch may be 0 for iterable/unsized loaders — guard it.
+    start_epoch = 0
+    resume_offset = 0
+    if resume_meta is not None:
+        global_step = int(resume_meta.get("step", 0) or 0)
+        tokens_seen = int(resume_meta.get("tokens_seen", 0) or 0)
+        try:
+            batches_per_epoch = len(dataloader)
+        except TypeError:
+            batches_per_epoch = 0
+        if batches_per_epoch > 0:
+            start_epoch = global_step // batches_per_epoch
+            resume_offset = global_step % batches_per_epoch
+        else:
+            # Unsized loader: fall back to the saved epoch/offset if present.
+            start_epoch = int(resume_meta.get("epoch", 0) or 0)
+            resume_offset = int(resume_meta.get("batch_offset", 0) or 0)
+        # Time-to-first-post-resume-step: measured against the training entry
+        # timestamp captured at the top of train() (see _train_t0), logged once
+        # on the first completed step below as train/restart_seconds.
+        _resumed = True
+    else:
+        _resumed = False
     # Push the RESOLVED CLI args to the wandb run config now — after every
     # args mutation (HF tp-force, loss_impl normalization) and after the
     # global_batch_size backfill — so the logged config reflects the settings
@@ -2763,10 +2863,16 @@ def train(
     ):
         # allow_val_change since some keys may already be present from main().
         wandb.config.update(vars(args), allow_val_change=True)  # type:ignore
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
         for idx, batch in enumerate(dataloader):
+            # Skip already-consumed batches in the resumed epoch only.
+            if _resumed and epoch == start_epoch and idx < resume_offset:
+                continue
+            # Step-based stop (independent of --epochs).
+            if args.train_iters and global_step >= args.train_iters:
+                break
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
@@ -3028,6 +3134,13 @@ def train(
             if dt_step > 0:
                 metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
                 metrics["train/tps"] = tokens_this_step / dt_step
+            # Restart time: on the FIRST completed step after a resume, log how
+            # long from train() entry (process init + dist setup + model build
+            # + dcp.load + this step) to a productive step. This is the full
+            # cold path a real --auto-retry failover pays. Logged once.
+            if _resumed and not _restart_logged:
+                metrics["train/restart_seconds"] = perf_counter() - _train_t0
+                _restart_logged = True
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
@@ -3040,6 +3153,29 @@ def train(
             )
             if epoch == 0 and idx == 0:
                 logger.info(f"{x.shape}")
+            # Save a checkpoint every --save-interval optimizer steps.
+            if (
+                args.ckpt_dir
+                and args.save_interval
+                and global_step % args.save_interval == 0
+            ):
+                from ezpz.examples._checkpoint import save_checkpoint
+
+                save_checkpoint(
+                    args.ckpt_dir,
+                    global_step,
+                    model,
+                    optimizer,
+                    meta={
+                        "tokens_seen": tokens_seen,
+                        "epoch": epoch,
+                        # Next batch to run on resume within `epoch`.
+                        "batch_offset": idx + 1,
+                    },
+                )
+        # Step-based stop breaks the inner loop; also break the epoch loop.
+        if args.train_iters and global_step >= args.train_iters:
+            break
     if act_handles:
         for handle in act_handles:
             handle.remove()
@@ -3065,7 +3201,12 @@ def main(args: argparse.Namespace) -> int:
     train_start = time.perf_counter()
     # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
     with profiling_context_from_args(args, outdir) as prof:
-        history = train(args=args, outdir=outdir, profiler=prof)
+        # Pass main()'s t0 (captured before setup_torch) so
+        # train/restart_seconds covers the full cold path incl. distributed
+        # init — the dominant cost of a real --auto-retry failover.
+        history = train(
+            args=args, outdir=outdir, profiler=prof, process_start=t0
+        )
     train_end = time.perf_counter()
     timings = {
         "main/setup_torch": t_setup - t0,

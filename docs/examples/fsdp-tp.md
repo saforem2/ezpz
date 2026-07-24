@@ -600,6 +600,56 @@ The global *batch* (samples/step) is `batch × dp_size` — the same `dp_size`
 factor — so tokens/step is simply the global batch times the sequence
 length, on every parallelism configuration.
 
+## Checkpointing
+
+`fsdp_tp` saves **sharded** checkpoints via PyTorch's Distributed Checkpoint
+(DCP): each rank writes its own shard in parallel (no gather-to-rank-0 that
+would OOM at scale), so it works identically under FSDP-only, HSDP, and 2D
+FSDP+TP.
+
+| Flag | Meaning |
+|------|---------|
+| `--ckpt-dir DIR` | Enable checkpointing (and auto-resume) into `DIR` |
+| `--save-interval N` | Save every `N` optimizer steps (`0` = off) |
+| `--train-iters N` | Stop after `N` steps, regardless of `--epochs` (`0` = full epochs) |
+| `--no-resume` | Ignore an existing checkpoint and start fresh |
+
+**Auto-resume.** On startup, if `--ckpt-dir` contains a complete checkpoint,
+the newest one is loaded and training continues from its step — no flag
+required. Each `step-<N>/` dir gets a `.complete` marker written **last**, so
+a checkpoint interrupted mid-save (e.g. by the very failure you're recovering
+from) is skipped and resume falls back to the previous good step.
+
+Because resume is automatic on startup, it composes directly with
+[`ezpz launch --auto-retry`](../cli/launch/index.md), which relaunches the
+identical command each attempt — a swapped-node retry simply resumes:
+
+```bash
+ezpz launch --auto-retry --np <N> -- \
+  python3 -m ezpz.examples.fsdp_tp --model debug \
+    --ckpt-dir ./ckpts --save-interval 10 --train-iters 100
+```
+
+### Restart-time measurement
+
+Two signals report how long a resume takes:
+
+- a `RESUMED from step=N (epoch=…, batch_offset=…, tokens_seen=…)` log line
+  at load time, and
+- a **`train/restart_seconds`** metric logged once on the first completed
+  post-resume step — measured from `train()` entry, so it captures the full
+  cold path a real failover pays (process init + distributed setup + model
+  build + `dcp.load` + first step), not just the load call.
+
+Inject a failure mid-run (kill a rank, or the `--auto-retry` driver's
+crash-signal scenarios) and `train/restart_seconds` on the next attempt is
+your restart cost; compare against a cold start (no checkpoint) for the
+speedup.
+
+See the [**Checkpoint & Restart Under Failure**](../guides/checkpoint-restart.md)
+guide for a full worked experiment with real Sunspot restart-time
+measurements.
+
 ## torch.compile
 
 Pass `--compile` to apply `torch.compile` after the FSDP/TP wrap. The
