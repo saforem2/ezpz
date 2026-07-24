@@ -14,6 +14,25 @@ import importlib
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _destroy_pg_after():
+    """Tear down any process group these tests initialized.
+
+    Without this, `dist.init_process_group` leaves global distributed state
+    initialized, which pollutes OTHER test modules that assume no PG (e.g.
+    test_distributed's get_local_rank env-fallback, which then sees a real
+    rank-0 PG instead of the mocked env). Runs even if the test skips.
+    """
+    yield
+    try:
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            dist.destroy_process_group()
+    except Exception:  # pragma: no cover - best-effort cleanup
+        pass
+
+
 def _import():
     try:
         return importlib.import_module("ezpz.examples._checkpoint")
@@ -33,20 +52,21 @@ def _torch_or_skip():
 def _init_single_rank_pg(torch):
     """Init a 1-rank gloo process group so DCP has a group to collective on.
 
-    Idempotent-ish: skips if already initialized. Uses a file-free TCP init
-    on a fixed localhost port range via env — but the simplest portable path
-    is the ``gloo`` backend with a single rank.
+    Idempotent-ish: skips if already initialized. Passes rank/world_size and
+    a TCP ``init_method`` DIRECTLY to init_process_group so it does NOT touch
+    os.environ (RANK/WORLD_SIZE/MASTER_* leaking into the process env polluted
+    downstream tests — e.g. get_local_rank's env-fallback). Paired with the
+    autouse teardown fixture that destroys the group.
     """
     import torch.distributed as dist
 
     if dist.is_available() and not dist.is_initialized():
-        import os
-
-        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-        os.environ.setdefault("MASTER_PORT", "29555")
-        os.environ.setdefault("RANK", "0")
-        os.environ.setdefault("WORLD_SIZE", "1")
-        dist.init_process_group(backend="gloo", rank=0, world_size=1)
+        dist.init_process_group(
+            backend="gloo",
+            init_method="tcp://127.0.0.1:29557",
+            rank=0,
+            world_size=1,
+        )
     return dist
 
 
