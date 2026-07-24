@@ -2167,6 +2167,36 @@ def train(
         dp_shard=args.dp_shard,
     )
     dpsize = dp_replicate * dp_shard  # == flattened "dp" size
+    # Global batch size = per-DP-rank micro-batch x data-parallel degree.
+    # Data parallelism is dp_replicate * dp_shard (== dpsize): BOTH the HSDP
+    # replicate dim and the FSDP shard dim get a distinct data slice (the
+    # DistributedSampler shards over num_replicas=dpsize). TP is NOT data
+    # parallel — tp ranks process the SAME batch (sharded across the hidden
+    # dim), so tp does not enter here. Backfilled onto args so it lands in the
+    # wandb run config (History logs vars(args); we also push it to
+    # wandb.config below). Computed here, not in parse_args, because the
+    # default --dp-shard -1 ("use all remaining ranks") only resolves to a
+    # concrete degree once WORLD_SIZE is known.
+    #
+    # This is the general Megatron/NeMo formula
+    #   gbs = micro_batch * world_size * grad_accum
+    #         / (tensor_parallel * pipeline_parallel)
+    # specialized to this example: there is no pipeline parallelism
+    # (pipeline_parallel = 1) and no gradient accumulation (grad_accum = 1 —
+    # zero_grad/backward/step run every iteration), and world_size / tp ==
+    # dp_replicate * dp_shard == dpsize. If either is ever added, this must
+    # gain the corresponding factor (* grad_accum, / pipeline_parallel).
+    args.global_batch_size = args.batch_size * dpsize
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "global_batch_size=%d (batch_size=%d x dp_replicate=%d x "
+            "dp_shard=%d; tp=%d does not scale the batch)",
+            args.global_batch_size,
+            args.batch_size,
+            dp_replicate,
+            dp_shard,
+            args.tp,
+        )
     # fused-linear (Liger/Cut-CE): needs the model's hidden states + output
     # weight, so only the ezpz Transformer (not HF models) and — for now —
     # only tp=1 (tp>1 needs vocab-shard composition, gated to a follow-up).
@@ -2247,6 +2277,12 @@ def train(
     hist_samples = int(os.environ.get("EZPZ_HIST_SAMPLES", "20000"))
     dataset_tag = args.dataset.lower().replace("/", "_")
     # Update wandb config with model args (run already initialised in main).
+    # NOTE: `config` (ModelArgs) is not mutated later, so it's safe to push
+    # here. The resolved CLI `args`, however, ARE still mutated below (the HF
+    # branch forces args.tp=1; args.loss_impl can be normalized to
+    # "compiled"), so vars(args) is pushed just before the training loop
+    # instead (see below) — logging it here would record the requested
+    # settings rather than the effective ones actually used.
     if (
         ezpz.get_rank() == 0
         and wandb is not None
@@ -2710,6 +2746,23 @@ def train(
     # x = torch.tensor((args.batch_size, args.seq_len))
     x = torch.tensor(0)
     global_step = 0
+    # Cumulative count of training tokens consumed across the whole run
+    # (summed global tokens/step). Logged as train/tokens_seen — the standard
+    # x-axis for loss-vs-tokens curves. See the metrics block: global
+    # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
+    # not the SP-local shard, so it's exact and rank-invariant).
+    tokens_seen = 0
+    # Push the RESOLVED CLI args to the wandb run config now — after every
+    # args mutation (HF tp-force, loss_impl normalization) and after the
+    # global_batch_size backfill — so the logged config reflects the settings
+    # actually used for the rest of training, not the requested ones.
+    if (
+        ezpz.get_rank() == 0
+        and wandb is not None
+        and getattr(wandb, "run", None) is not None
+    ):
+        # allow_val_change since some keys may already be present from main().
+        wandb.config.update(vars(args), allow_val_change=True)  # type:ignore
     for epoch in range(args.epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
@@ -2936,21 +2989,45 @@ def train(
             if _model_flops > 0 and dt_step > 0:
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
-            # Throughput. `--batch-size` is the PER-DP-RANK micro-batch and
-            # `local_seq_len` is this rank's (post-SP-slice) sequence length,
-            # so tokens processed per rank per step is batch_size *
-            # local_seq_len.
+            # Throughput.
             #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
-            #   - train/tps         : global tokens/sec across ALL ranks
-            # Multiply by world_size, not dp_size: under sequence parallelism
-            # each TP rank holds a DISTINCT seq shard (labels are sliced via
-            # _slice_for_sequence_parallel), so the TP ranks process distinct
-            # tokens too. Using dp_size would undercount global tps by ~tp.
-            # At tp=1, world_size == dp_size so this is unchanged.
+            #   - train/tps         : global tokens/sec (over distinct-data
+            #                         ranks; see the dpsize rationale below)
+            # tokens_per_rank uses `local_seq_len` (= pred.shape[1]) because it
+            # describes THIS rank's work. Global tokens, however, are computed
+            # from the FULL pre-shard sequence length `inp.shape[1]` times the
+            # data-parallel degree `dpsize`. `inp` is Replicate() across the tp
+            # group (the TP plan shards only the embedding OUTPUT, never the
+            # input), so inp.shape[1] is the full sequence, identical on every
+            # rank — the metric is exact and rank-invariant even though only
+            # rank 0 logs. tp does NOT enter: the tp ranks hold the SAME
+            # sequence (as full-length logits under the default Replicate()
+            # output, or as Shard(1) slices whose lengths sum to inp.shape[1]
+            # under fused-linear / loss-parallel), never distinct sequences.
+            #
+            # Why not `local_seq_len * dpsize * tp`? It over-counts, by a margin
+            # that depends on the loss path:
+            #   * default (eager, Replicate() output): local_seq_len is the FULL
+            #     gathered sequence, so that formula is a full ~tp x over-count.
+            #   * seq-sharded output (fused-linear / loss-parallel): local_seq_len
+            #     is this rank's shard; scaling it by tp over-counts by
+            #     dpsize*(tp - remainder) when the sequence isn't divisible by tp
+            #     (and inp = x[:, :-1] makes an odd length common).
+            # On the HF path (tp forced to 1, no SP) the tp-dim ranks see
+            # DUPLICATE samples; multiplying by dpsize (not world_size) counts
+            # each distinct token exactly once.
+            tokens_per_rank = args.batch_size * local_seq_len
+            # Global tokens processed THIS step across all distinct-data ranks.
+            tokens_this_step = args.batch_size * inp.shape[1] * dpsize
+            tokens_seen += tokens_this_step
+            # Cumulative consumed training tokens — the standard x-axis for
+            # loss curves. Accumulated every step (this block runs each step),
+            # so it's exact regardless of the metrics-logging interval.
+            metrics["train/tokens"] = tokens_this_step
+            metrics["train/tokens_seen"] = tokens_seen
             if dt_step > 0:
-                tokens_per_rank = args.batch_size * local_seq_len
                 metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
-                metrics["train/tps"] = tokens_per_rank * world_size / dt_step
+                metrics["train/tps"] = tokens_this_step / dt_step
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
