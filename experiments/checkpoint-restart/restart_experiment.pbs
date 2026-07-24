@@ -1,0 +1,126 @@
+#!/bin/bash --login
+#PBS -N ckpt-restart-expt
+#PBS -A datascience
+#PBS -l select=2
+#PBS -l walltime=00:45:00
+#PBS -q workq
+#PBS -l filesystems=tegu:home
+#PBS -j oe
+# ---------------------------------------------------------------------------
+# Checkpoint-restart experiment on real XPU hardware (2 nodes / 24 ranks).
+# Produces the two ezpz-genuine lines of the reference plot:
+#   BASELINE        : one clean run, no failures  -> straight step-vs-time line
+#   CKPT RESTART    : relaunch loop + real kill-a-node injection -> sawtooth
+#
+# "Checkpoint Restart" semantics (matching the reference figure): a failure
+# kills training, we RELAUNCH on the same nodes, and fsdp_tp AUTO-RESUMES from
+# the last checkpoint (losing only the steps since that checkpoint). This is a
+# plain relaunch loop, NOT --auto-retry node-swapping (which needs spares and
+# is a separate, production failover layer).
+#
+# Failure injection: a background chaos loop kills the training ranks on the
+# first compute node with SIGKILL (via a 1-rank mpiexec to that host) at a few
+# points -> PALS tears down the training mpiexec -> nonzero exit -> the loop
+# relaunches -> resume. This is a real process kill, not a scripted self-exit.
+# ---------------------------------------------------------------------------
+set -o pipefail
+export WANDB_MODE=offline
+export TP=2
+export http_proxy=http://proxy.alcf.anl.gov:3128
+export https_proxy=http://proxy.alcf.anl.gov:3128
+
+SUBMIT_DIR="${PBS_O_WORKDIR:-$(pwd)}"
+cd "${SUBMIT_DIR}"
+source "${SUBMIT_DIR}/src/ezpz/bin/utils.sh" && ezpz_setup_job
+ezpz_setup .venv
+
+JOBID=$(echo "${PBS_JOBID}" | cut -d. -f1)
+EXPT="${SUBMIT_DIR}/expt_${JOBID}"
+mkdir -p "${EXPT}"
+FIRST_NODE=$(head -n 1 "${PBS_NODEFILE}")
+ONEHOST="${EXPT}/onehost"
+echo "${FIRST_NODE}" > "${ONEHOST}"
+
+# debug model is ~0.11 s/step, so 3000 steps ~= 6 min — long enough to inject
+# several kills mid-training and produce a real multi-tooth sawtooth (and it
+# matches the reference plot's ~3000-step x-axis).
+TRAIN_ITERS=3000
+SAVE_INTERVAL=100
+NP=(--nproc 24 --nproc_per_node 12)
+COMMON=(--model debug --dataset random --tp 2 --seq-len 512 --batch-size 1)
+
+echo "############ BASELINE (no failures) ############"
+BASE_OUT="${EXPT}/baseline"
+mkdir -p "${BASE_OUT}"
+# Baseline: no checkpointing (clean "no events" reference timing).
+ezpz_launch python3 -m ezpz.examples.fsdp_tp "${COMMON[@]}" \
+    --train-iters "${TRAIN_ITERS}" --outdir "${BASE_OUT}" 2>&1 \
+    | tee "${EXPT}/baseline.log"
+echo "############ BASELINE done ############"
+
+echo "############ CKPT RESTART (relaunch loop + injection) ############"
+CKPT="${EXPT}/ckpts"
+RST_OUT="${EXPT}/restart"
+mkdir -p "${RST_OUT}"
+rm -rf "${CKPT}"
+
+# --- background chaos injector: kill training mid-run at ~90s intervals ---
+# Waits for the first checkpoint (so there IS something to resume from), then
+# kills every KILL_EVERY seconds. Each kill SIGKILLs the training ranks on
+# EVERY allocated node (pbsdsh with no -n = all nodes), which is the most
+# reliable way to guarantee the training mpiexec tears down. 6 min run /
+# 90s => ~4 kills, each losing up to ~SAVE_INTERVAL steps.
+KILL_EVERY=90
+chaos() {
+    local kills=0 target=4
+    while [ ! -d "${CKPT}" ] || [ -z "$(ls -d ${CKPT}/step-* 2>/dev/null)" ]; do
+        sleep 3
+        [ -f "${EXPT}/.restart_done" ] && return 0
+    done
+    while [ "${kills}" -lt "${target}" ]; do
+        local waited=0
+        while [ "${waited}" -lt "${KILL_EVERY}" ]; do
+            sleep 5; waited=$((waited + 5))
+            [ -f "${EXPT}/.restart_done" ] && { echo "[CHAOS] done (${kills} kills)" >> "${EXPT}/chaos.log"; return 0; }
+        done
+        kills=$((kills + 1))
+        echo "[CHAOS] kill #${kills} across all nodes at $(date +%s)" | tee -a "${EXPT}/chaos.log"
+        # pbsdsh with no -n runs on ALL allocated nodes (no nested mpiexec that
+        # could collide with training). SIGKILL the training ranks everywhere.
+        pbsdsh -- bash -c 'pkill -9 -f "ezpz.examples.fsdp_tp" 2>/dev/null; true' \
+            >> "${EXPT}/chaos.log" 2>&1
+        echo "[CHAOS] kill #${kills} issued (rc=$?)" >> "${EXPT}/chaos.log"
+    done
+    echo "[CHAOS] done (${kills} kills)" | tee -a "${EXPT}/chaos.log"
+}
+chaos &
+CHAOS_PID=$!
+
+# --- relaunch loop: restart until training reaches TRAIN_ITERS or cap ---
+attempt=0
+max_attempts=8
+while [ "${attempt}" -lt "${max_attempts}" ]; do
+    attempt=$((attempt + 1))
+    echo "===== restart attempt ${attempt} at $(date +%s) =====" | tee -a "${EXPT}/restart.log"
+    ezpz_launch python3 -m ezpz.examples.fsdp_tp "${COMMON[@]}" \
+        --train-iters "${TRAIN_ITERS}" --ckpt-dir "${CKPT}" \
+        --save-interval "${SAVE_INTERVAL}" --outdir "${RST_OUT}" 2>&1 \
+        | tee -a "${EXPT}/restart.log"
+    rc=${PIPESTATUS[0]}
+    echo "===== attempt ${attempt} exit rc=${rc} at $(date +%s) =====" | tee -a "${EXPT}/restart.log"
+    if [ "${rc}" -eq 0 ]; then
+        echo "training completed on attempt ${attempt}" | tee -a "${EXPT}/restart.log"
+        break
+    fi
+done
+touch "${EXPT}/.restart_done"
+kill "${CHAOS_PID}" 2>/dev/null || true
+
+echo "############ SUMMARY ############"
+echo "checkpoints:"; ls -d "${CKPT}"/step-* 2>/dev/null
+echo "restart attempts: ${attempt}"
+echo "chaos kills:"; grep -c "\[CHAOS\] kill" "${EXPT}/chaos.log" 2>/dev/null || echo 0
+echo "restart_seconds observed:"
+grep -rhoaE "restart_seconds=[0-9.]+" "${RST_OUT}" "${EXPT}/restart.log" 2>/dev/null | sort -u | head
+echo "metrics JSONL dirs: baseline=${BASE_OUT} restart=${RST_OUT}"
+echo "############ EXPERIMENT DONE ############"
