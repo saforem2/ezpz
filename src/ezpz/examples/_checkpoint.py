@@ -36,6 +36,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -48,6 +50,31 @@ _STEP_PREFIX = "step-"
 
 def _step_dir(ckpt_dir: os.PathLike | str, step: int) -> Path:
     return Path(ckpt_dir) / f"{_STEP_PREFIX}{step}"
+
+
+def _clear_stale_marker(out: Path) -> None:
+    """rank-0: create the step dir and remove any pre-existing .complete.
+
+    A leftover marker from a prior run into the same dir would make a
+    mid-overwrite checkpoint look valid; clearing it first means a crash
+    during the (re)write is correctly skipped by latest_checkpoint().
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    marker = out / _COMPLETE_MARKER
+    if marker.exists():
+        marker.unlink()
+
+
+def _write_meta_and_marker(out: Path, step: int, meta: Optional[dict]) -> None:
+    """rank-0: write meta.json, then the .complete marker LAST.
+
+    The marker's presence is the "complete + safe to resume" contract that
+    latest_checkpoint() relies on, so it must be the final write.
+    """
+    payload = dict(meta or {})
+    payload["step"] = step
+    (out / _META_FILE).write_text(json.dumps(payload, indent=2))
+    (out / _COMPLETE_MARKER).write_text("")
 
 
 def latest_checkpoint(ckpt_dir: os.PathLike | str) -> Optional[Path]:
@@ -98,16 +125,7 @@ def save_checkpoint(
     out = _step_dir(ckpt_dir, step)
     is_rank0 = _is_rank0()
     if is_rank0:
-        out.mkdir(parents=True, exist_ok=True)
-        # Clear any stale completion marker FIRST. If this step dir already
-        # exists (e.g. re-running into the same --ckpt-dir), an old .complete
-        # would make the checkpoint look valid mid-overwrite — so if the
-        # process dies during this save, latest_checkpoint() must NOT trust
-        # it. Removing the marker up front means a partial overwrite is
-        # correctly skipped and resume falls back to the previous good step.
-        marker = out / _COMPLETE_MARKER
-        if marker.exists():
-            marker.unlink()
+        _clear_stale_marker(out)
     _barrier()  # ensure the dir exists (and marker cleared) before any writes
 
     model_sd, optim_sd = get_state_dict(model, optimizer)
@@ -117,16 +135,137 @@ def save_checkpoint(
     )
 
     if is_rank0:
-        payload = dict(meta or {})
-        payload["step"] = step
-        (out / _META_FILE).write_text(json.dumps(payload, indent=2))
-        # Marker LAST: its presence is the "this checkpoint is complete and
-        # safe to resume from" contract that latest_checkpoint() relies on.
-        (out / _COMPLETE_MARKER).write_text("")
+        _write_meta_and_marker(out, step, meta)
     _barrier()
     if is_rank0:  # gate per-rank log spam (AGENTS.md)
         logger.info("saved checkpoint: %s", out)
     return out
+
+
+@dataclass
+class PendingCheckpoint:
+    """Handle for an in-flight async checkpoint (see :func:`save_checkpoint_async`).
+
+    The staged shards are being written to ``stage_path`` (node-local) by a
+    DCP background thread; ``future`` resolves when that disk write finishes.
+    :func:`drain` then fans the shards out to the durable ``final_path`` on
+    shared FS and stamps the completion marker there. Until drained, the
+    durable checkpoint does NOT exist / is not marked complete.
+    """
+
+    future: Any
+    step: int
+    meta: Optional[dict]
+    stage_path: Path
+    final_path: Path
+    drained: bool = False
+
+
+def save_checkpoint_async(
+    ckpt_dir: os.PathLike | str,
+    stage_dir: os.PathLike | str,
+    step: int,
+    model: Any,
+    optimizer: Any,
+    *,
+    meta: Optional[dict[str, Any]] = None,
+) -> PendingCheckpoint:
+    """Start an async checkpoint: stage to node-local ``stage_dir``, return.
+
+    ``dcp.async_save`` stages the state dict to CPU memory SYNCHRONOUSLY (so
+    it is safe for the caller to keep training / mutating params right after
+    this returns), then writes the shards to ``stage_dir/step-N`` in a
+    background thread. The returned :class:`PendingCheckpoint` must later be
+    passed to :func:`drain`, which blocks on the write and fans the shards out
+    to the DURABLE ``ckpt_dir`` on shared FS.
+
+    IMPORTANT: node-local ``stage_dir`` (e.g. ``/tmp``) is NOT resumable on
+    its own — the shards are scattered per node. Only the fanned-out
+    ``ckpt_dir`` copy (written by :func:`drain`) is durable + resumable. Never
+    point ``latest_checkpoint`` at ``stage_dir``.
+    """
+    import torch.distributed.checkpoint as dcp
+    from torch.distributed.checkpoint.state_dict import get_state_dict
+
+    stage_out = _step_dir(stage_dir, step)
+    final_out = _step_dir(ckpt_dir, step)
+    is_rank0 = _is_rank0()
+    if is_rank0:
+        # Clear the DURABLE marker up front (same crash-safety reasoning as
+        # sync): if we die before drain() re-stamps it, the half-fanned-out
+        # dir must not look complete.
+        _clear_stale_marker(final_out)
+    # Every rank owns its stage dir (each writes its own shards there).
+    stage_out.mkdir(parents=True, exist_ok=True)
+    _barrier()
+
+    model_sd, optim_sd = get_state_dict(model, optimizer)
+    future = dcp.async_save(
+        {"model": model_sd, "optim": optim_sd},
+        checkpoint_id=str(stage_out),
+    )
+    return PendingCheckpoint(
+        future=future,
+        step=step,
+        meta=meta,
+        stage_path=stage_out,
+        final_path=final_out,
+    )
+
+
+def drain(pending: Optional[PendingCheckpoint]) -> Optional[Path]:
+    """Finish an async checkpoint: block on the staged write, fan out, mark.
+
+    Steps (per rank): wait for the background DCP write to ``stage_path`` to
+    finish, copy this rank's shard files ``stage_path/* -> final_path/`` on
+    shared FS (rank 0 also copies ``.metadata``), barrier, then rank 0 writes
+    ``meta.json`` + the ``.complete`` marker LAST. Idempotent / None-safe.
+
+    Returns the durable ``final_path`` (or None if nothing to drain).
+    """
+    if pending is None or pending.drained:
+        return None if pending is None else pending.final_path
+
+    # Block until the node-local staged write completed.
+    pending.future.result()
+
+    is_rank0 = _is_rank0()
+    # Fan out: each rank copies its own shard files to the durable dir. Shard
+    # files are named per-rank (__<rank>_<n>.distcp) so ranks don't collide;
+    # the shared .metadata is copied by rank 0 only.
+    pending.final_path.mkdir(parents=True, exist_ok=True)
+    for src in sorted(pending.stage_path.glob("*.distcp")):
+        # A rank only copies files it produced. DCP names them __<rank>_..;
+        # copying all *.distcp present on THIS node is safe because each node
+        # only holds its own ranks' shards in stage_dir. Use copy2 to a temp
+        # name + rename for atomicity within the shared FS.
+        dst = pending.final_path / src.name
+        tmp = dst.with_suffix(dst.suffix + ".partial")
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    if is_rank0:
+        meta_src = pending.stage_path / ".metadata"
+        if meta_src.exists():
+            dst = pending.final_path / ".metadata"
+            tmp = dst.with_suffix(".partial")
+            shutil.copy2(meta_src, tmp)
+            os.replace(tmp, dst)
+    _barrier()  # all shards fanned out before the marker
+
+    if is_rank0:
+        _write_meta_and_marker(pending.final_path, pending.step, pending.meta)
+    _barrier()
+
+    # Reclaim the node-local staging copy — it's transient.
+    try:
+        shutil.rmtree(pending.stage_path, ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+    pending.drained = True
+    if is_rank0:
+        logger.info("saved checkpoint (async): %s", pending.final_path)
+    return pending.final_path
 
 
 def load_checkpoint(

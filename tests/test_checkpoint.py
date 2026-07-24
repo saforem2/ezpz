@@ -203,3 +203,78 @@ class TestSaveLoadRoundTrip:
         m = _import()
         model, opt = _Tiny.build(torch)
         assert m.load_checkpoint(tmp_path, model, opt) is None
+
+
+class TestAsyncCheckpoint:
+    """Async save (stage to node-local dir -> fan out to durable dir)."""
+
+    def test_async_round_trip(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+
+        model, opt = _Tiny.build(torch)
+        for _ in range(3):
+            opt.zero_grad()
+            model(torch.randn(4, 8)).sum().backward()
+            opt.step()
+        ref_params = [p.detach().clone() for p in model.parameters()]
+
+        pending = m.save_checkpoint_async(
+            durable, stage, 20, model, opt,
+            meta={"tokens_seen": 999, "epoch": 0, "batch_offset": 20},
+        )
+        # Before drain: durable checkpoint is NOT complete yet.
+        assert m.latest_checkpoint(durable) is None
+        # Drain: block on the staged write + fan out to durable.
+        m.drain(pending)
+        assert (durable / "step-20" / ".complete").exists()
+        # Staging copy reclaimed.
+        assert not (stage / "step-20").exists()
+
+        # Resume from the DURABLE dir works.
+        torch.manual_seed(7)
+        model2, opt2 = _Tiny.build(torch)
+        meta = m.load_checkpoint(durable, model2, opt2)
+        assert meta is not None and meta["step"] == 20
+        assert meta["tokens_seen"] == 999
+        for a, b in zip(ref_params, model2.parameters()):
+            assert torch.allclose(a, b)
+
+    def test_stage_only_is_not_resumable(self, tmp_path):
+        """The core correctness guard: a checkpoint present ONLY in the
+        node-local stage dir (drain never ran) must NOT be resumable — no
+        completion marker is ever written there, and latest_checkpoint scans
+        only the durable dir. Prevents the '/tmp defeats failure recovery'
+        bug."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+
+        pending = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        pending.future.result()  # staged write done, but NO drain/fan-out
+        # Durable dir has no complete checkpoint.
+        assert m.latest_checkpoint(durable) is None
+        # Stage dir must never carry a completion marker.
+        assert not (stage / "step-10" / ".complete").exists()
+        m.drain(pending)  # cleanup
+
+    def test_drain_is_idempotent_and_none_safe(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        assert m.drain(None) is None
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(
+            tmp_path / "c", tmp_path / "s", 5, model, opt, meta={}
+        )
+        p1 = m.drain(pending)
+        p2 = m.drain(pending)  # second drain is a no-op
+        assert p1 == p2 and pending.drained
