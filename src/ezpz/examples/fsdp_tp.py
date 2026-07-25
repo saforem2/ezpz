@@ -2931,9 +2931,12 @@ def train(
     # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
     # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
-    # Async-checkpoint staging time from the PREVIOUS step, folded into the
-    # next step's metrics dict so train/ckpt_stage_seconds reaches JSONL + W&B.
+    # Checkpoint timings from the PREVIOUS step, folded into the next step's
+    # metrics dict so they reach JSONL + W&B: async staging stall
+    # (train/ckpt_stage_seconds) and the sync save's blocking write
+    # (train/ckpt_save_seconds).
     pending_stage_seconds: "float | None" = None
+    pending_save_seconds: "float | None" = None
     # Resume bookkeeping. When resuming, seed the counters from the checkpoint
     # and reconstruct (start_epoch, resume_offset) so the loop skips
     # already-consumed batches. drop_last=True on both sampler and loader makes
@@ -3261,6 +3264,9 @@ def train(
             if pending_stage_seconds is not None:
                 metrics["train/ckpt_stage_seconds"] = pending_stage_seconds
                 pending_stage_seconds = None
+            if pending_save_seconds is not None:
+                metrics["train/ckpt_save_seconds"] = pending_save_seconds
+                pending_save_seconds = None
             # Restart time: on the FIRST completed step after a resume, log how
             # long from train() entry (process init + dist setup + model build
             # + dcp.load + this step) to a productive step. This is the full
@@ -3330,6 +3336,11 @@ def train(
                 else:
                     from ezpz.examples._checkpoint import save_checkpoint
 
+                    # Synchronous save BLOCKS the training loop for the full
+                    # write. Time it (train/ckpt_save_seconds) so the sync-vs-
+                    # async trade-off is measurable — this is the stall async
+                    # removes. Folded into the next step's metrics dict.
+                    _t_save = perf_counter()
                     save_checkpoint(
                         args.ckpt_dir,
                         global_step,
@@ -3337,6 +3348,15 @@ def train(
                         optimizer,
                         meta=_ckpt_meta,
                     )
+                    pending_stage_seconds = None  # (async-only; keep clear)
+                    _save_s = perf_counter() - _t_save
+                    pending_save_seconds = _save_s
+                    if ezpz.get_rank() == 0:
+                        logger.info(
+                            "train/ckpt_save_seconds=%.4f (sync save @ step %d)",
+                            _save_s,
+                            global_step,
+                        )
         # Step-based stop breaks the inner loop; also break the epoch loop.
         if args.train_iters and global_step >= args.train_iters:
             break
