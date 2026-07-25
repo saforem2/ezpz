@@ -3220,33 +3220,20 @@ def train(
                 metrics["train/tflops"] = _model_flops / dt_step / 1e12
                 metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
             # Throughput.
-            #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
-            #   - train/tps         : global tokens/sec (over distinct-data
-            #                         ranks; see the dpsize rationale below)
-            # tokens_per_rank uses `local_seq_len` (= pred.shape[1]) because it
-            # describes THIS rank's work. Global tokens, however, are computed
-            # from the FULL pre-shard sequence length `inp.shape[1]` times the
-            # data-parallel degree `dpsize`. `inp` is Replicate() across the tp
-            # group (the TP plan shards only the embedding OUTPUT, never the
-            # input), so inp.shape[1] is the full sequence, identical on every
-            # rank — the metric is exact and rank-invariant even though only
-            # rank 0 logs. tp does NOT enter: the tp ranks hold the SAME
-            # sequence (as full-length logits under the default Replicate()
-            # output, or as Shard(1) slices whose lengths sum to inp.shape[1]
-            # under fused-linear / loss-parallel), never distinct sequences.
+            #   - train/tps         : global tokens/sec across all GPUs
+            #   - train/tps_per_gpu : per-GPU tokens/sec (torchtitan's `tgs`)
             #
-            # Why not `local_seq_len * dpsize * tp`? It over-counts, by a margin
-            # that depends on the loss path:
-            #   * default (eager, Replicate() output): local_seq_len is the FULL
-            #     gathered sequence, so that formula is a full ~tp x over-count.
-            #   * seq-sharded output (fused-linear / loss-parallel): local_seq_len
-            #     is this rank's shard; scaling it by tp over-counts by
-            #     dpsize*(tp - remainder) when the sequence isn't divisible by tp
-            #     (and inp = x[:, :-1] makes an odd length common).
-            # On the HF path (tp forced to 1, no SP) the tp-dim ranks see
-            # DUPLICATE samples; multiplying by dpsize (not world_size) counts
-            # each distinct token exactly once.
-            tokens_per_rank = args.batch_size * local_seq_len
+            # Global tokens/step = batch * FULL pre-shard seq len (inp.shape[1])
+            # * dpsize. `inp` is Replicate() across the tp group (the TP plan
+            # shards only the embedding OUTPUT, never the input), so inp.shape[1]
+            # is the full sequence, identical on every rank — exact and
+            # rank-invariant even though only rank 0 logs. tp does NOT enter the
+            # GLOBAL count: the tp ranks hold the SAME sequence (full-length
+            # logits under the default Replicate() output, or Shard(1) slices
+            # summing to inp.shape[1] under fused-linear / loss-parallel), never
+            # distinct sequences. On the HF path (tp forced to 1, no SP) the
+            # tp-dim ranks see DUPLICATE samples, so multiplying by dpsize (not
+            # world_size) counts each distinct token once.
             # Global tokens processed THIS step across all distinct-data ranks.
             tokens_this_step = args.batch_size * inp.shape[1] * dpsize
             tokens_seen += tokens_this_step
@@ -3256,7 +3243,13 @@ def train(
             metrics["train/tokens"] = tokens_this_step
             metrics["train/tokens_seen"] = tokens_seen
             if dt_step > 0:
-                metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
+                # Per-GPU throughput = global tokens / (actual GPU count) / dt.
+                # Divide by world_size, NOT dpsize: under TP the `tp` GPUs in a
+                # data-parallel group process that group's tokens TOGETHER, so
+                # the per-GPU rate is tp× lower. (tokens_per_rank / dt would be
+                # per-DP-group, over-counting per-GPU by `tp`; at tp=1
+                # world_size==dpsize so this is unchanged.)
+                metrics["train/tps_per_gpu"] = tokens_this_step / world_size / dt_step
                 metrics["train/tps"] = tokens_this_step / dt_step
             # Async-ckpt staging time from the previous step's save, carried
             # here so it lands in the JSONL + W&B alongside the other train/*

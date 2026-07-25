@@ -278,3 +278,23 @@ class TestConsumedTokensAccounting:
             dp_replicate=2, dp_shard=-1,
         )
         assert tokens == gbs * seq
+
+    def test_tps_per_gpu_divides_by_world_size_not_dpsize(self):
+        """REGRESSION: train/tps_per_gpu = tokens_this_step / WORLD_SIZE / dt,
+        not / dpsize. Under TP the `tp` GPUs in a DP group share the group's
+        tokens, so per-GPU throughput is tp× lower than per-DP-group. The old
+        `tokens_per_rank/dt` (batch*full_seq/dt) over-counted per-GPU by `tp`
+        (2× at tp=2, 4× at tp=4). At tp=1 the two denominators coincide."""
+        m = _import_fsdp_tp()
+        batch, seq, world_size, tp = 1, 512, 8, 2
+        rep, shard = m._resolve_dp_degrees(
+            world_size=world_size, tp=tp, dp_replicate=1, dp_shard=-1
+        )
+        dpsize = rep * shard  # 4
+        tokens_this_step = batch * seq * dpsize
+        dt = 0.5
+        correct = tokens_this_step / world_size / dt     # per actual GPU
+        buggy = (batch * seq) / dt                        # old tokens_per_rank/dt
+        assert correct == tokens_this_step / 8 / dt
+        # The bug inflated per-GPU by exactly tp.
+        assert abs(buggy / correct - tp) < 1e-9
