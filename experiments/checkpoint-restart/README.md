@@ -91,21 +91,33 @@ steps 60/120/180) so each restart phase produces a clean, evenly-spaced
 
 ![agpt-2b sync vs async](agpt2b_restart.png)
 
-Real Sunspot numbers (job `12471769`, 2 nodes / 24 XPU ranks, `tp=2`):
+Real Sunspot numbers (backgrounded fan-out, job `12471771`, 2 nodes / 24 XPU
+ranks, `tp=2`):
 
 | | Baseline | Sync restart | Async restart |
 |---|---:|---:|---:|
 | Steps | 240 | 240 | 240 |
-| Wall-clock | 2.03 min | 5.42 min | 5.65 min |
-| True per-save stall (median) | — | `ckpt_save_seconds` **3.54 s** | `ckpt_stage_seconds` **0.30 s** + `ckpt_drain_seconds` **5.18 s** = **5.47 s** |
+| Wall-clock | 2.03 min | 5.42 min | 5.70 min |
+| True per-save stall (median) | — | `ckpt_save_seconds` **3.62 s** | `ckpt_stage_seconds` **0.32 s** + `ckpt_drain_seconds` **0.65 s** = **0.97 s** |
 
-The **counterintuitive** headline: at 23 GB async is *slower*, not faster. The
-cheap `ckpt_stage_seconds` (0.30 s) is only half the story — the blocking
-`/tmp`→shared-FS fan-out (`ckpt_drain_seconds` ≈ 5.18 s) is the expensive half
-and was originally untimed. True per-save stall is **stage + drain ≈ 5.47 s vs
-sync's 3.54 s (~1.5× larger)**. Restart cost is ≈37–43 s for both (dominated by
-the 23 GB `dcp.load` + init). See `docs/guides/checkpoint-restart.md` for the
-full accounting and when async *does* pay off (background the drain).
+Two lessons, both learned the hard way (full write-up in
+`docs/guides/checkpoint-restart.md`):
+
+1. **`ckpt_stage_seconds` is not the async cost.** The first run (blocking
+   drain, job `12471769`) had a cheap 0.30 s stage but a **5.18 s blocking
+   `/tmp`→shared-FS fan-out** that no metric captured — making async ~1.5×
+   *slower* than sync. Always compare `stage + drain` against the sync save.
+2. **Backgrounding the fan-out fixes it.** The copy is collective-free per-rank
+   I/O, so it runs on a background thread (`start_fanout`) and is finalized —
+   barrier + marker — at the next save boundary (`finalize_fanout`). Per-save
+   stall dropped to **0.97 s, ~3.7× less than sync**, with no cross-thread
+   deadlock at 24 ranks. Tradeoff: the durable marker lags one save interval,
+   so a marker-independent crash can lose up to ~2 intervals (vs ~1 for sync).
+
+Restart cost is ≈37–43 s for both (dominated by the 23 GB `dcp.load` + init).
+Note: the async sawtooth's teeth look deeper than sync's, but that's mostly the
+marker-gated injector killing ~20 steps later — both resume from the identical
+durable checkpoints (61/121/181).
 
 ```bash
 qsub restart_experiment_2b.pbs      # 2 nodes, 3 phases

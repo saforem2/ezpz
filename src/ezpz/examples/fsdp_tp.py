@@ -2997,10 +2997,11 @@ def train(
             # drained here. It runs on a background thread (started right after
             # the save via start_fanout) and is finalized at the NEXT save
             # boundary — this overlaps the expensive 23 GB copy with a full
-            # save interval of training instead of blocking the loop. The
-            # staged-but-not-durable window widens from ~1 step to ~1 interval,
-            # but the PREVIOUS complete checkpoint stays durable, so a crash
-            # still loses at most one interval (same guarantee as before).
+            # save interval of training instead of blocking the loop. Tradeoff:
+            # the .complete marker lands ~1 interval after the save (not ~1
+            # step), so an arbitrarily-timed crash can lose up to ~2 intervals
+            # of work vs ~1 for a sync save (see finalize_fanout). Recovery is
+            # never broken — the previous complete checkpoint is always durable.
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None

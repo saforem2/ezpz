@@ -290,11 +290,17 @@ def finalize_fanout(pending: Optional[PendingCheckpoint]) -> Optional[Path]:
     then reclaims the node-local staging copy. Must be called by ALL ranks (it
     barriers). Idempotent / None-safe.
 
-    Because the durable marker is only stamped here, the checkpoint becomes
-    resumable exactly at this point — one save interval after the save that
-    produced it. The PREVIOUS complete checkpoint stays durable throughout, so
-    a crash in the window still loses at most one interval (same guarantee as
-    the old inline drain).
+    Durability tradeoff (IMPORTANT): the ``.complete`` marker for a checkpoint
+    saved at step N is only stamped here, at the NEXT save boundary (step
+    N+save_interval). So during the whole window ``[N, N+save_interval)`` the
+    newest resumable checkpoint is N-save_interval, and an arbitrarily-timed
+    crash (a real hardware failure, not synchronized to the marker write) can
+    lose up to ~2 save intervals of work — vs ~1 interval for a synchronous
+    save or the old inline drain, whose marker lands ~1 step after the save.
+    This is the cost of overlapping the fan-out with training. The previous
+    complete checkpoint is always durable, so recovery is never broken — only
+    the worst-case amount of recomputed work grows by one interval. Shrink
+    ``--save-interval`` to bound it.
     """
     if pending is None or pending.drained:
         return None if pending is None else pending.final_path
