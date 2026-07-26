@@ -87,6 +87,26 @@ chaos() {
     echo "[CHAOS] done (${#KILL_AT_STEPS[@]} kills)" | tee -a "${EXPT}/chaos.log"
 }
 
+# ---- checkpoint pruner (keep only the N newest complete step dirs) ----
+# Each agpt-2b checkpoint is ~23 GB and the run saves every SAVE_INTERVAL
+# steps, so keeping all of them fills the shared-FS quota mid-run (observed:
+# job 12471768 crashed on "Disk quota exceeded" fanning out step-180). Resume
+# only ever needs the newest complete checkpoint; keep 2 for safety (the very
+# newest may be mid-write). Runs in the background alongside each phase.
+KEEP_CKPTS=2
+prune_ckpts() {
+    local ckpt="$1" doneflag="$2"
+    while [ ! -f "${doneflag}" ]; do
+        if [ -d "${ckpt}" ]; then
+            # newest-first by numeric step; delete everything past KEEP_CKPTS
+            ls -d "${ckpt}"/step-* 2>/dev/null \
+                | sed "s#.*/step-##" | sort -rn | tail -n +$((KEEP_CKPTS + 1)) \
+                | while read -r s; do rm -rf "${ckpt}/step-${s}"; done
+        fi
+        sleep 10
+    done
+}
+
 # ---- restart phase runner ----
 # Usage: run_restart_phase <tag> <extra-ckpt-flags...>
 run_restart_phase() {
@@ -99,6 +119,8 @@ run_restart_phase() {
     echo "############ ${tag} RESTART phase ############"
     chaos "${ckpt}" "${doneflag}" &
     local cpid=$!
+    prune_ckpts "${ckpt}" "${doneflag}" &          # cap disk use during the phase
+    local ppid=$!
     local attempt=0
     while [ "${attempt}" -lt 8 ]; do
         attempt=$((attempt + 1))
@@ -112,7 +134,10 @@ run_restart_phase() {
         [ "${rc}" -eq 0 ] && { echo "[${tag}] completed on attempt ${attempt}" | tee -a "${log}"; break; }
     done
     touch "${doneflag}"
-    kill "${cpid}" 2>/dev/null || true
+    kill "${cpid}" "${ppid}" 2>/dev/null || true
+    # Reclaim this phase's checkpoints once we've captured its metrics — the
+    # JSONL under ${out} is what the plotter needs, not the 23 GB blobs.
+    rm -rf "${ckpt}"
     echo "############ ${tag} done (${attempt} attempts) ############"
 }
 

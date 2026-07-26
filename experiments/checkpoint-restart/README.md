@@ -91,18 +91,21 @@ steps 60/120/180) so each restart phase produces a clean, evenly-spaced
 
 ![agpt-2b sync vs async](agpt2b_restart.png)
 
-Real Sunspot numbers (job `12471756`, 2 nodes / 24 XPU ranks, `tp=2`):
+Real Sunspot numbers (job `12471769`, 2 nodes / 24 XPU ranks, `tp=2`):
 
 | | Baseline | Sync restart | Async restart |
 |---|---:|---:|---:|
 | Steps | 240 | 240 | 240 |
-| Wall-clock | 2.03 min | 5.54 min | 5.79 min |
-| Per-save stall (median) | — | `ckpt_save_seconds` **3.567 s** | `ckpt_stage_seconds` **0.301 s** |
+| Wall-clock | 2.03 min | 5.42 min | 5.65 min |
+| True per-save stall (median) | — | `ckpt_save_seconds` **3.54 s** | `ckpt_stage_seconds` **0.30 s** + `ckpt_drain_seconds` **5.18 s** = **5.47 s** |
 
-The headline: at 23 GB the async **per-step save stall is ≈12× smaller** (0.301 s
-vs 3.567 s). Restart cost is ≈38–43 s for both (dominated by the 23 GB
-`dcp.load` + init). Async's win is on save stall, not total wall-clock at this
-step count — see `docs/guides/checkpoint-restart.md` for the full nuance.
+The **counterintuitive** headline: at 23 GB async is *slower*, not faster. The
+cheap `ckpt_stage_seconds` (0.30 s) is only half the story — the blocking
+`/tmp`→shared-FS fan-out (`ckpt_drain_seconds` ≈ 5.18 s) is the expensive half
+and was originally untimed. True per-save stall is **stage + drain ≈ 5.47 s vs
+sync's 3.54 s (~1.5× larger)**. Restart cost is ≈37–43 s for both (dominated by
+the 23 GB `dcp.load` + init). See `docs/guides/checkpoint-restart.md` for the
+full accounting and when async *does* pay off (background the drain).
 
 ```bash
 qsub restart_experiment_2b.pbs      # 2 nodes, 3 phases

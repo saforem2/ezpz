@@ -60,7 +60,7 @@ shared FS.
     large checkpoint sizes it dominates — the true per-save stall is
     `stage + drain`, **not** `stage` alone. See the [agpt-2b
     measurements](#at-realistic-scale-agpt-2b-a-23-gb-checkpoint) below, where
-    the drain (5.45 s) is ~18× the stage (0.30 s). Do not read
+    the drain (5.18 s) is ~17× the stage (0.30 s). Do not read
     `ckpt_stage_seconds` as the cost of an async save.
 
 !!! warning "Node-local staging is not durable"
@@ -155,14 +155,14 @@ every tooth loses at most one save interval:
 | | Baseline | Sync restart | Async restart |
 |---|---:|---:|---:|
 | Steps | 240 | 240 | 240 |
-| Wall-clock | **2.03 min** | **5.54 min** | **5.79 min** |
+| Wall-clock | **2.03 min** | **5.42 min** | **5.65 min** |
 | Failures | 0 | 3 | 3 |
 
 !!! warning "Async was **slower** here — and why the naive metric hides it"
     The first cut of this experiment looked like a landslide for async: the
     logged `ckpt_stage_seconds` (0.30 s) was ~12× smaller than the sync
-    `ckpt_save_seconds` (3.57 s). But async's **total wall-clock was higher**
-    (5.79 vs 5.54 min) — even though *every logged metric* favored it
+    `ckpt_save_seconds` (3.54 s). But async's **total wall-clock was higher**
+    (5.65 vs 5.42 min) — even though *every logged metric* favored it
     (`restart_seconds` and per-step `train/dt` were both marginally lower for
     async). That paradox was the tell: the cost was real but **untimed**.
 
@@ -172,25 +172,25 @@ only the save step. The *drain* — the fan-out of the full 23 GB from node-loca
 `/tmp` to shared FS — is a **blocking foreground copy** that runs at the start
 of the *next* step. It lands between `train/dt` windows and is separate from
 `ckpt_stage_seconds`, so originally **no metric captured it**. Measuring the
-inter-step wall-clock gap directly revealed it; `train/ckpt_drain_seconds` now
-records it explicitly.
+inter-step wall-clock gap first revealed it; `train/ckpt_drain_seconds` now
+records it explicitly (the numbers below are from that metric).
 
 The honest per-save stall on the training thread, at 23 GB:
 
 | | sync | async |
 |---|---:|---:|
 | stage (blocks save step) | — | `ckpt_stage_seconds` **0.30 s** |
-| drain / write (blocks next step) | — | `ckpt_drain_seconds` **5.45 s** |
-| blocking write (all at once) | `ckpt_save_seconds` **3.57 s** | — |
-| **true total per save** | **≈3.6 s** | **≈5.75 s** |
+| drain / write (blocks next step) | — | `ckpt_drain_seconds` **5.18 s** |
+| blocking write (all at once) | `ckpt_save_seconds` **3.54 s** | — |
+| **true total per save** | **≈3.54 s** | **≈5.47 s** |
 
-- **Async's true stall is ~1.6× *larger* than sync's here, not 12× smaller.**
+- **Async's true stall is ~1.5× *larger* than sync's here, not 12× smaller.**
   It does roughly double the I/O — write 23 GB to `/tmp`, then read it back and
   write 23 GB to shared FS — and only ~1 training step (~0.45 s) overlaps the
   `/tmp` write. The expensive shared-FS write is *foreground*, so `/tmp`
   staging doesn't actually move it off the critical path in this
   implementation.
-- **Restart cost ≈ 38–43 s** (both sync and async), dominated by the 23 GB
+- **Restart cost ≈ 37–43 s** (both sync and async), dominated by the 23 GB
   `dcp.load` + distributed init — ~4× the debug model's ~10 s, as expected when
   the checkpoint is ~40× larger.
 
@@ -243,7 +243,7 @@ restart — e.g. pause/resume or in-place elastic recovery (TorchFT-style) —
 are separate systems not integrated into ezpz and are out of scope here.
 
 Numbers above are from Sunspot: debug-model runs (job `12471687`) and the
-agpt-2b / 23 GB run (job `12471756`), both 2 nodes / 24 XPU ranks. Absolute
+agpt-2b / 23 GB run (job `12471769`), both 2 nodes / 24 XPU ranks. Absolute
 `restart_seconds` grows with model size and node count (larger `dcp.load`,
 longer init) — the debug→agpt-2b jump (≈10 s → ≈40 s) shows exactly that; the
 *mechanism* is parallelism-agnostic since DCP is sharded.
