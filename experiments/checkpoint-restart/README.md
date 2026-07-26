@@ -85,39 +85,43 @@ stylesheet must be installed on the plotting host.
 `restart_experiment_2b.pbs` runs all THREE phases (baseline / sync restart /
 async restart) with **agpt-2b** (~2B params, 256K vocab → a **23 GB** sharded
 checkpoint) so the sync-vs-async save trade-off is visible at a size where it
-matters. Kills are **step-driven** (injected right after the checkpoints at
-steps 60/120/180) so each restart phase produces a clean, evenly-spaced
-3-tooth sawtooth regardless of per-step wall-clock.
+matters. 2000 steps, save every 100; kills are **step-driven** (injected right
+after the checkpoints at steps 500/1000/1500) so each restart phase produces a
+clean, evenly-spaced 3-tooth sawtooth regardless of per-step wall-clock.
 
 ![agpt-2b sync vs async](agpt2b_restart.png)
 
-Real Sunspot numbers (backgrounded fan-out, job `12471771`, 2 nodes / 24 XPU
+Real Sunspot numbers (finalize-when-ready, job `12471773`, 2 nodes / 24 XPU
 ranks, `tp=2`):
 
 | | Baseline | Sync restart | Async restart |
 |---|---:|---:|---:|
-| Steps | 240 | 240 | 240 |
-| Wall-clock | 2.03 min | 5.42 min | 5.70 min |
-| True per-save stall (median) | — | `ckpt_save_seconds` **3.62 s** | `ckpt_stage_seconds` **0.32 s** + `ckpt_drain_seconds` **0.65 s** = **0.97 s** |
+| Steps | 2000 | 2000 | 2000 |
+| Wall-clock | 16.94 min | 20.94 min | **20.75 min** |
+| True per-save stall (median) | — | `ckpt_save_seconds` **3.75 s** | `ckpt_stage_seconds` **0.31 s** + `ckpt_drain_seconds` **0.73 s** = **1.05 s** |
 
-Two lessons, both learned the hard way (full write-up in
+Three iterations, the first two instructive dead ends (full write-up in
 `docs/guides/checkpoint-restart.md`):
 
 1. **`ckpt_stage_seconds` is not the async cost.** The first run (blocking
    drain, job `12471769`) had a cheap 0.30 s stage but a **5.18 s blocking
    `/tmp`→shared-FS fan-out** that no metric captured — making async ~1.5×
    *slower* than sync. Always compare `stage + drain` against the sync save.
-2. **Backgrounding the fan-out fixes it.** The copy is collective-free per-rank
-   I/O, so it runs on a background thread (`start_fanout`) and is finalized —
-   barrier + marker — at the next save boundary (`finalize_fanout`). Per-save
-   stall dropped to **0.97 s, ~3.7× less than sync**, with no cross-thread
-   deadlock at 24 ranks. Tradeoff: the durable marker lags one save interval,
-   so a marker-independent crash can lose up to ~2 intervals (vs ~1 for sync).
+2. **Backgrounding the copy but finalizing late (job `12471771`)** hid the
+   stall but stamped the durable marker a full save interval after the save, so
+   async resumed from an older checkpoint and still trailed on wall-clock.
+3. **`try_finalize_if_ready` fixes it.** The copy runs on a background thread
+   (`start_fanout`); each step a cheap **MPI probe** (separate communicator, no
+   xccl deadlock) stamps the durable marker as soon as all ranks' copies land.
+   Per-save stall **1.05 s, ~3.6× less than sync**; async now **finishes first
+   on wall-clock** (20.75 vs 20.94 min); lost steps matched (sync 2–4, async
+   6–11), both resuming from the identical checkpoints (501/1001/1501). No
+   cross-thread deadlock at 24 ranks.
 
-Restart cost is ≈37–43 s for both (dominated by the 23 GB `dcp.load` + init).
-Note: the async sawtooth's teeth look deeper than sync's, but that's mostly the
-marker-gated injector killing ~20 steps later — both resume from the identical
-durable checkpoints (61/121/181).
+Restart cost is ≈40–44 s for both (dominated by the 23 GB `dcp.load` + init).
+Residual tradeoff: for the ~1 copy-duration between a save and its marker, a
+crash falls back one extra interval — inherent to any overlapped write, bounded
+by `--save-interval`.
 
 ```bash
 qsub restart_experiment_2b.pbs      # 2 nodes, 3 phases

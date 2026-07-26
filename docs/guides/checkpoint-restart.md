@@ -51,20 +51,20 @@ python3 -m ezpz.examples.fsdp_tp ... \
 returns; tracked as `train/ckpt_stage_seconds`), then written to fast
 **node-local** `--ckpt-stage-dir` (default `/tmp/ezpz-ckpt-<jobid>`) by a
 background thread, and finally **fanned out** to the durable `--ckpt-dir` on
-shared FS. The fan-out copy runs on a background worker (`start_fanout`) and is
-finalized — barrier + `.complete` marker — at the *next* save boundary
-(`finalize_fanout`), so the expensive shared-FS write overlaps training rather
-than blocking it.
+shared FS. The fan-out copy runs on a background worker (`start_fanout`), and
+`try_finalize_if_ready` — called each step — stamps the durable `.complete`
+marker (barrier, main thread) as soon as **all** ranks' copies finish, so the
+expensive shared-FS write overlaps training rather than blocking it.
 
-!!! warning "Watch `stage + drain`, and mind the marker lag"
-    Two things the naive reading gets wrong (both learned the hard way — see
-    the [agpt-2b measurements](#at-realistic-scale-agpt-2b-a-23-gb-checkpoint)):
-    the true per-save stall is `ckpt_stage_seconds + ckpt_drain_seconds`, not
-    the cheap stage alone; and because the fan-out is backgrounded, a
-    checkpoint's durable `.complete` marker lands one full `--save-interval`
-    later, so an arbitrarily-timed crash can lose up to ~2 intervals of work
-    (vs ~1 for a sync save). Recovery is never broken; worst-case recomputed
-    work just grows by an interval. Shrink `--save-interval` to bound it.
+!!! warning "Watch `stage + drain`, not just the stage"
+    The true per-save stall is `ckpt_stage_seconds + ckpt_drain_seconds`, not
+    the cheap stage alone — the first cut of the [agpt-2b
+    measurements](#at-realistic-scale-agpt-2b-a-23-gb-checkpoint) missed a 5 s
+    blocking fan-out by reading `ckpt_stage_seconds` in isolation. With the
+    fan-out backgrounded the drain residual is small (~0.7 s), but always
+    compare `stage + drain` against the sync save. One residual tradeoff: for
+    the ~1 copy-duration between a save and its marker, a crash falls back one
+    extra interval; shrink `--save-interval` to bound it.
 
 !!! warning "Node-local staging is not durable"
     `--ckpt-stage-dir` (e.g. `/tmp`) is node-local and **not resumable on its
@@ -149,86 +149,87 @@ The debug-model numbers above make the *mechanism* clear, but the async win is
 a rounding error there (28 ms stall). The whole point of async checkpointing is
 large checkpoints, so we re-ran the experiment with **agpt-2b** (~2B params,
 256K vocab) — a **23 GB sharded checkpoint** — on 2 Sunspot nodes / 24 XPU
-ranks, `tp=2`. Three phases (baseline, sync restart, async restart), each with
-**3 real SIGKILLs injected at steps 60/120/180** (right after a checkpoint).
+ranks, `tp=2`: baseline + sync restart + async restart, **2000 steps, save
+every 100, 3 real SIGKILLs at steps 500/1000/1500**.
 
-Getting this right took two iterations, and the first was a cautionary tale.
+Getting an *honest* async win took three iterations, and the two dead ends are
+instructive.
 
-#### First attempt: async was *slower*, and the obvious metric hid it
+#### Dead end 1 — async was *slower*, and the obvious metric hid it
 
 The first cut looked like a landslide for async: the logged
 `ckpt_stage_seconds` (0.30 s) was ~12× smaller than the sync
-`ckpt_save_seconds` (3.5 s). But async's **wall-clock was higher** (5.65 vs
-5.42 min) even though *every logged metric* favored it. The paradox was the
-tell: the cost was real but **untimed**.
+`ckpt_save_seconds` (3.5 s). But async's **wall-clock was higher**, even though
+*every logged metric* favored it. The paradox was the tell — the cost was real
+but **untimed**. An async save has two halves: the *stage* (copy state to host,
+kick off the background write) is cheap, but the *drain* — the fan-out of the
+full 23 GB from node-local `/tmp` to shared FS — was a **blocking foreground
+copy** at the next step start, landing between `train/dt` windows, so no metric
+captured it. Adding `train/ckpt_drain_seconds` exposed a **5.18 s** blocking
+drain: `/tmp` staging *added* I/O without moving the slow write off the critical
+path, making async ~1.5× slower per save than plain sync. Lesson:
+`ckpt_stage_seconds` alone is not the async cost; compare `stage + drain`.
 
-An async save has two halves. The *stage* (copy state to host, kick off the
-background write) is cheap. The *drain* — the fan-out of the full 23 GB from
-node-local `/tmp` to shared FS — was a **blocking foreground copy** at the next
-step start, landing between `train/dt` windows and separate from
-`ckpt_stage_seconds`, so **no metric captured it**. Adding
-`train/ckpt_drain_seconds` exposed it:
-
-| per-save training-thread stall | sync | async (blocking drain) |
-|---|---:|---:|
-| stage | — | `ckpt_stage_seconds` 0.30 s |
-| drain (/tmp→FS) | — | `ckpt_drain_seconds` **5.18 s** |
-| blocking write | `ckpt_save_seconds` 3.54 s | — |
-| **true total** | **≈3.5 s** | **≈5.5 s** |
-
-So `/tmp` staging *added* work (write 23 GB to `/tmp`, then copy it to shared
-FS) without moving the expensive write off the critical path — **async was
-~1.5× slower per save than plain sync.** Lesson: `ckpt_stage_seconds` alone is
-not the async cost; compare `stage + drain` against the sync save.
-
-#### Fix: background the fan-out
+#### Dead end 2 — backgrounding the copy, but finalizing too late
 
 The drain copy is pure per-rank file I/O with **no collectives**, so it is safe
-to run on a background thread while training continues; only the completion
-barrier + `.complete` marker must stay on the main thread. The save now calls
-`start_fanout()` (submits the copy to a background worker, returns immediately)
-and `finalize_fanout()` at the *next* save boundary (joins the already-finished
-copy, then the collective barrier + marker). The expensive copy overlaps a full
-save interval of training instead of blocking it:
+on a background thread; only the completion barrier + `.complete` marker must
+stay on the main thread. So `start_fanout()` submits the copy to a background
+worker and returns immediately. But the first version stamped the marker only at
+the *next save boundary* — one full interval later. That fixed the stall (copy
+now hidden) but broke durability: a checkpoint's shards landed on shared FS
+~1 copy-time after the save, yet weren't marked *resumable* until +100 steps.
+An arbitrarily-timed crash could then fall back **~2 intervals**, and the
+marker-gated failure injector (it waits for `.complete` before killing) fired
+~1 interval late, so async recomputed extra steps and still trailed on
+wall-clock — a real regression masquerading as the earlier artifact.
+
+#### The fix — finalize as soon as the copy is done
+
+`try_finalize_if_ready()` runs every step: a cheap **MPI probe** (on MPI's own
+communicator, *not* the xccl training group — so it cannot cross-match the
+gradient all-reduce and deadlock) checks whether **all** ranks' background
+copies have finished, and stamps the durable marker the instant they have —
+~1 copy-time after the save, not a full interval. Async durability now matches
+sync except during the brief copy window.
 
 ![agpt-2b (23 GB) — sync vs async checkpoint restart](checkpoint-restart-agpt2b.png)
 
 | per-save training-thread stall | sync | async (backgrounded) |
 |---|---:|---:|
-| stage | — | `ckpt_stage_seconds` 0.32 s |
-| drain residual (barrier + marker) | — | `ckpt_drain_seconds` **0.65 s** |
-| blocking write | `ckpt_save_seconds` 3.62 s | — |
-| **true total** | **≈3.6 s** | **≈0.97 s** |
+| stage | — | `ckpt_stage_seconds` 0.31 s |
+| drain residual (barrier + marker) | — | `ckpt_drain_seconds` **0.73 s** |
+| blocking write | `ckpt_save_seconds` 3.75 s | — |
+| **true total** | **≈3.75 s** | **≈1.05 s** |
 
-- **Backgrounding cut the async per-save stall from ~5.5 s to ~0.97 s — now
-  ~3.7× *less* than sync**, not 1.5× more. The residual 0.65 s is just the
-  cross-rank barrier + marker; the 23 GB copy is fully hidden. Validated on 24
-  ranks with **no cross-thread collective deadlock** (the barriers stay on the
-  main thread in lockstep).
-- **Restart cost ≈ 37–43 s** (both sync and async), dominated by the 23 GB
-  `dcp.load` + distributed init.
+| | Baseline | Sync restart | Async restart |
+|---|---:|---:|---:|
+| Steps | 2000 | 2000 | 2000 |
+| Wall-clock | 16.94 min | 20.94 min | **20.75 min** |
+| Lost steps / kill | — | 2–4 | 6–11 |
 
-!!! warning "Durability tradeoff: the marker now lags one save interval"
-    Backgrounding is not free. The `.complete` marker for a checkpoint saved at
-    step N is stamped at the *next* save boundary (N + `save_interval`), so a
-    checkpoint takes one full interval to become resumable. For an
-    arbitrarily-timed crash (a real hardware failure, not synchronized to a
-    save), the newest resumable checkpoint can therefore be **up to ~2 save
-    intervals old**, vs ~1 for a synchronous save. Recovery is never broken —
-    the previous complete checkpoint is always durable — but worst-case
-    recomputed work grows by one interval. Shrink `--save-interval` to bound it.
+- **Async per-save stall is ~3.6× *less* than sync** (1.05 s vs 3.75 s); the
+  23 GB copy is fully hidden and only the cross-rank barrier + marker remain.
+  Validated on 24 ranks with **no cross-thread collective deadlock** — the
+  barriers stay on the main thread in lockstep.
+- **Async now finishes first on wall-clock** (20.75 vs 20.94 min). Over ~19
+  failure-free saves per phase it sheds ~2.7 s of stall each (~50 s total),
+  which more than covers the handful of extra steps it recomputes. This is the
+  regime async is *for*: many saves between rare failures.
+- **Lost steps are now matched** (sync 2–4, async 6–11) — both resume from the
+  **identical** durable checkpoints (501/1001/1501). Async's small residual is
+  the genuine ~1-copy-window durability cost, not the earlier marker-lag
+  artifact.
+- **Restart cost ≈ 40–44 s** (both), dominated by the 23 GB `dcp.load` + init.
 
-!!! note "Reading the sawtooth: async's teeth look deeper — mostly an artifact"
-    In the plot the async (blue) kills land at higher steps (≈80/142/200) and
-    drop further back than sync's. That is **largely an artifact of this
-    experiment's failure injector**, not async discarding more durable work:
-    the injector waits for the `.complete` marker before killing, and that
-    marker now lags ~1 interval, so it lets async run ~20 extra steps before
-    the kill — steps that are then recomputed. Both sync and async in fact
-    resume from the **identical** durable checkpoints (steps 60/120/180 →
-    resume 61/121/181). The genuine durability lag (above) is real but bounded;
-    this marker-gated experiment kills at the best-case moment and so does not
-    measure it.
+!!! note "Residual durability tradeoff (bounded)"
+    Async is still not *free* on durability: for the ~1 copy-duration between a
+    save and its marker, the newest resumable checkpoint is the previous one, so
+    a crash in that narrow window falls back one extra interval. This is
+    inherent to any overlapped write and far smaller than the earlier
+    full-interval lag. Recovery is never broken — the previous complete
+    checkpoint is always durable — and shrinking `--save-interval` bounds the
+    worst case.
 
 ## Measuring it yourself
 
@@ -264,9 +265,10 @@ Frameworks that recover *without* losing steps or *without* a process
 restart — e.g. pause/resume or in-place elastic recovery (TorchFT-style) —
 are separate systems not integrated into ezpz and are out of scope here.
 
-Numbers above are from Sunspot: debug-model runs (job `12471687`), the
-blocking-drain agpt-2b run (job `12471769`), and the backgrounded-fan-out
-agpt-2b run (job `12471771`) — all 2 nodes / 24 XPU ranks. Absolute
-`restart_seconds` grows with model size and node count (larger `dcp.load`,
-longer init) — the debug→agpt-2b jump (≈10 s → ≈40 s) shows exactly that; the
-*mechanism* is parallelism-agnostic since DCP is sharded.
+Numbers above are from Sunspot (all 2 nodes / 24 XPU ranks): debug-model runs
+(job `12471687`); the agpt-2b iterations — blocking drain (`12471769`),
+backgrounded but finalized late (`12471771`); and the final fair
+finalize-when-ready run (job `12471773`, 2000 steps / save every 100) the plot
+and tables reflect. Absolute `restart_seconds` grows with model size and node
+count (larger `dcp.load`, longer init) — the debug→agpt-2b jump (≈10 s → ≈40 s)
+shows exactly that; the *mechanism* is parallelism-agnostic since DCP is sharded.

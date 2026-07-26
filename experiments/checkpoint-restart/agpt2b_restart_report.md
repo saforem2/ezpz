@@ -1,21 +1,21 @@
 # agpt-2b checkpoint-restart: sync vs async (real Sunspot)
 
-**Baseline:** 240 steps in 2.03 min.
-**Sync restart:** reached step 240 in 5.41 min across 3 restart(s).
-**Async restart:** reached step 240 in 5.70 min across 3 restart(s).
+**Baseline:** 2000 steps in 16.94 min.
+**Sync restart:** reached step 2000 in 20.94 min across 3 restart(s).
+**Async restart:** reached step 2000 in 20.75 min across 3 restart(s).
 
 **Per-save training-thread stall (median):**
 
-- sync `ckpt_save_seconds` = **3.618s** (n=11) — blocking write of the full checkpoint.
-- async `ckpt_stage_seconds` = **0.322s** (n=12) — CPU stage only (the cheap half).
-- async `ckpt_drain_seconds` = **0.652s** (n=12) — blocking /tmp→shared-FS fan-out at the next step (previously untimed).
-- async TRUE total (stage+drain) = **0.976s** — 3.71x less than sync.
+- sync `ckpt_save_seconds` = **3.754s** (n=19) — blocking write of the full checkpoint.
+- async `ckpt_stage_seconds` = **0.310s** (n=19) — CPU stage only (the cheap half).
+- async `ckpt_drain_seconds` = **0.731s** (n=18) — blocking /tmp→shared-FS fan-out at the next step (previously untimed).
+- async TRUE total (stage+drain) = **1.048s** — 3.58x less than sync.
 
 | phase | # | resume@step | lost steps | restart_seconds |
 |-------|---|-------------|-----------|-----------------|
-| sync | 1 | 61 | 3 | 40.41 |
-| sync | 2 | 121 | 3 | 39.48 |
-| sync | 3 | 181 | 2 | 39.29 |
-| async | 1 | 61 | 19 | 37.70 |
-| async | 2 | 121 | 21 | 41.48 |
-| async | 3 | 181 | 19 | 41.79 |
+| sync | 1 | 501 | 4 | 39.77 |
+| sync | 2 | 1001 | 2 | 40.34 |
+| sync | 3 | 1501 | 2 | 43.86 |
+| async | 1 | 501 | 6 | 42.19 |
+| async | 2 | 1001 | 11 | 42.12 |
+| async | 3 | 1501 | 9 | 42.40 |
