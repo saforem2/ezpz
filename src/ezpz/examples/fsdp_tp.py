@@ -3217,8 +3217,20 @@ def train(
             # step time.
             dt_step = float(metrics["train/dt"])  # type: ignore[arg-type]
             if _model_flops > 0 and dt_step > 0:
-                metrics["train/tflops"] = _model_flops / dt_step / 1e12
-                metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
+                # Per-DEVICE TFLOPS / MFU. `_model_flops` is counted on the
+                # FULL, un-sharded model (estimated before parallelize() applies
+                # TP), so it is the work of ONE data-parallel group — done
+                # COLLECTIVELY by the group's `tp` GPUs. Divide by args.tp so
+                # each metric reflects a single GPU's share; otherwise per-GPU
+                # TFLOPS/MFU over-count by exactly `tp` (2x at tp=2, 4x at tp=4;
+                # at tp=1 this is a no-op). Divide by tp, NOT world_size: unlike
+                # the GLOBAL token count (tps_per_gpu ÷ world_size), _model_flops
+                # is already per-DP-group, so only the tp ranks sharing that one
+                # model must be divided out — the dpsize groups each do this
+                # full-model work independently.
+                flops_per_gpu = _model_flops / args.tp
+                metrics["train/tflops"] = flops_per_gpu / dt_step / 1e12
+                metrics["train/mfu"] = compute_mfu(flops_per_gpu, dt_step)
             # Throughput.
             #   - train/tps         : global tokens/sec across all GPUs
             #   - train/tps_per_gpu : per-GPU tokens/sec (torchtitan's `tgs`)
