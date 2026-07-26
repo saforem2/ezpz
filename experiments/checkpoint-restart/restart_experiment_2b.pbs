@@ -2,7 +2,7 @@
 #PBS -N ckpt-restart-2b-st
 #PBS -A datascience
 #PBS -l select=2
-#PBS -l walltime=01:30:00
+#PBS -l walltime=02:30:00
 #PBS -q workq
 #PBS -l filesystems=tegu:home
 #PBS -j oe
@@ -40,18 +40,22 @@ JOBID=$(echo "${PBS_JOBID}" | cut -d. -f1)
 EXPT="${SUBMIT_DIR}/expt_${JOBID}"
 mkdir -p "${EXPT}"
 
-# 240 steps, save every 20. Kill AFTER steps 60/120/180 -> four even 60-step
-# segments = a clean 3-tooth sawtooth. Each target is a checkpoint multiple, so
-# a kill loses exactly the steps since the last save (<= SAVE_INTERVAL).
-TRAIN_ITERS=240
-SAVE_INTERVAL=20
+# 2000 steps, save every 100. Kill AFTER steps 500/1000/1500 -> four even
+# 500-step segments = a clean 3-tooth sawtooth. Each target is a checkpoint
+# multiple, so a kill loses exactly the steps since the last save
+# (<= SAVE_INTERVAL). At save_interval=100 the async fan-out (~11 steps) fully
+# overlaps training, and try_finalize_if_ready stamps the durable marker as
+# soon as the copy is done — so async's durability lag is ~copy-time, not a
+# full interval, making the sync-vs-async comparison fair.
+TRAIN_ITERS=2000
+SAVE_INTERVAL=100
 NP=(--nproc 24 --nproc_per_node 12)
 COMMON=(--model agpt-2b --dataset random --tp 2 --seq-len 512 --batch-size 1)
 
 # Step thresholds to kill AFTER (mid-training, past a real checkpoint). Aligned
-# to SAVE_INTERVAL=20 and evenly spaced across the 240-step run so the teeth
+# to SAVE_INTERVAL=100 and evenly spaced across the 2000-step run so the teeth
 # are uniform and each kill loses at most one save interval.
-KILL_AT_STEPS=(60 120 180)
+KILL_AT_STEPS=(500 1000 1500)
 
 # latest complete checkpoint step in a ckpt dir (0 if none).
 latest_ckpt_step() {
@@ -72,8 +76,8 @@ chaos() {
     local ckpt="$1" doneflag="$2"
     for target in "${KILL_AT_STEPS[@]}"; do
         # Wait until a COMPLETE checkpoint at/after this target exists. Because
-        # checkpoints persist on shared FS and targets increase (60<120<180),
-        # this naturally waits for each successive checkpoint — training must
+        # checkpoints persist on shared FS and the targets increase, this
+        # naturally waits for each successive checkpoint — training must
         # progress (post-resume) to the next target before the next kill arms.
         while [ "$(latest_ckpt_step "${ckpt}")" -lt "${target}" ]; do
             sleep 3

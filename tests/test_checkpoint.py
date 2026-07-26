@@ -389,3 +389,54 @@ class TestBackgroundedFanout:
         m = _import()
         m.shutdown_fanout_pool()
         m.shutdown_fanout_pool()  # twice is fine
+
+    def test_try_finalize_when_ready_finalizes(self, tmp_path):
+        """try_finalize_if_ready finalizes once the copy is done: it stamps the
+        durable marker and clears the pending, matching an explicit finalize."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 30, model, opt, meta={})
+        m.start_fanout(pending)
+        pending.fanout_future.result()  # ensure the copy is actually done
+        p = m.try_finalize_if_ready(pending)
+        assert p is not None and pending.drained
+        assert (p / ".complete").exists()
+        # Idempotent: a second call is a no-op (already drained).
+        assert m.try_finalize_if_ready(pending) is None
+        m.shutdown_fanout_pool()
+
+    def test_try_finalize_noop_while_copy_running(self, tmp_path):
+        """While a rank's copy is NOT yet done, try_finalize_if_ready must NOT
+        finalize (no marker, pending stays live) — the durability window closes
+        only once every rank's copy has landed."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 40, model, opt, meta={})
+
+        # Simulate an in-flight copy with a future that reports not-done.
+        class _NotDone:
+            def done(self):
+                return False
+
+        pending.fanout_future = _NotDone()
+        assert m.try_finalize_if_ready(pending) is None
+        assert not pending.drained
+        assert m.latest_checkpoint(durable) is None  # not resumable yet
+
+        # Now let a real copy run + finalize for cleanup.
+        pending.fanout_future = None
+        m.drain(pending)
+        assert (durable / "step-40" / ".complete").exists()
+        m.shutdown_fanout_pool()
+
+    def test_try_finalize_none_safe(self):
+        m = _import()
+        assert m.try_finalize_if_ready(None) is None

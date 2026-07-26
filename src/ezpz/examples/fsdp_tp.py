@@ -2993,15 +2993,21 @@ def train(
             # Step-based stop (independent of --epochs).
             if args.train_iters and global_step >= args.train_iters:
                 break
-            # NOTE: the async checkpoint fan-out (/tmp -> shared FS) is NOT
-            # drained here. It runs on a background thread (started right after
-            # the save via start_fanout) and is finalized at the NEXT save
-            # boundary — this overlaps the expensive 23 GB copy with a full
-            # save interval of training instead of blocking the loop. Tradeoff:
-            # the .complete marker lands ~1 interval after the save (not ~1
-            # step), so an arbitrarily-timed crash can lose up to ~2 intervals
-            # of work vs ~1 for a sync save (see finalize_fanout). Recovery is
-            # never broken — the previous complete checkpoint is always durable.
+            # Finalize the backgrounded async fan-out AS SOON AS every rank's
+            # copy is done — not deferred to the next save boundary. Each step
+            # this cheaply MPI-probes (separate communicator, no xccl deadlock)
+            # whether all ranks finished copying; when they have, it stamps the
+            # durable .complete marker (barrier on the main thread). This keeps
+            # the saved-but-not-yet-durable window to ~copy-duration (~seconds)
+            # instead of a full save interval, so a crash falls back at most ~1
+            # interval like a sync save. None-safe / no-op until ready.
+            if args.async_ckpt and pending_ckpt is not None:
+                from ezpz.examples._checkpoint import try_finalize_if_ready
+
+                _fin_t0 = perf_counter()
+                if try_finalize_if_ready(pending_ckpt) is not None:
+                    pending_drain_seconds = perf_counter() - _fin_t0
+                    pending_ckpt = None
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
@@ -3319,17 +3325,18 @@ def train(
                     )
 
                     # Only one async save may be in flight (DCP constraint), so
-                    # FINALIZE the previous one before starting a new one. Its
-                    # fan-out copy has been running in the background for the
-                    # whole save interval, so finalize_fanout should only pay a
-                    # cheap barrier + marker here (the expensive copy is already
-                    # done). Time it as train/ckpt_drain_seconds — with
-                    # backgrounding this is now the SMALL residual, not the full
-                    # copy. None-safe on the first save.
-                    _drain_t0 = perf_counter()
-                    finalize_fanout(pending_ckpt)
-                    pending_ckpt = None
-                    pending_drain_seconds = perf_counter() - _drain_t0
+                    # ensure the previous one is finalized before starting a new
+                    # one. Normally the per-step try_finalize_if_ready already
+                    # finalized it (pending_ckpt is None here); this is the
+                    # fallback for when the save interval is SHORTER than the
+                    # copy — then finalize_fanout blocks on the still-running
+                    # copy. Only record the drain time when we actually finalized
+                    # here (else keep the per-step poll's measurement). None-safe.
+                    if pending_ckpt is not None:
+                        _drain_t0 = perf_counter()
+                        finalize_fanout(pending_ckpt)
+                        pending_drain_seconds = perf_counter() - _drain_t0
+                        pending_ckpt = None
                     _t_stage = perf_counter()
                     pending_ckpt = save_checkpoint_async(
                         args.ckpt_dir,

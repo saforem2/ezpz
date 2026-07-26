@@ -271,13 +271,58 @@ def start_fanout(pending: Optional[PendingCheckpoint]) -> None:
 
     Returns immediately: the per-rank shard copy (:func:`_copy_my_shards`) runs
     on the fan-out pool so the expensive write overlaps subsequent training.
-    Pair with :func:`finalize_fanout` at the next save boundary, which joins
-    the copy and does the collective barrier + completion marker on the MAIN
-    thread. Idempotent / None-safe.
+    Pair with :func:`try_finalize_if_ready` (called each step) to finalize as
+    soon as every rank's copy is done, or :func:`finalize_fanout` to force it.
+    Idempotent / None-safe.
     """
     if pending is None or pending.drained or pending.fanout_future is not None:
         return
     pending.fanout_future = _fanout_pool().submit(_copy_my_shards, pending)
+
+
+def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
+    """Collective, DEADLOCK-SAFE probe: has EVERY rank's background copy finished?
+
+    Uses an MPI all-reduce over MPI's OWN communicator — deliberately NOT the
+    torch/xccl process group the training loop reduces gradients on. A collective
+    on a separate communicator cannot cross-match the training collectives, so
+    this is safe to call every step from the main thread while the fan-out runs
+    on a background thread. Returns the AND across ranks (min of per-rank 0/1),
+    so finalize only proceeds once no rank is still copying.
+    """
+    fut = pending.fanout_future
+    my_done = 1 if (fut is None or fut.done()) else 0
+    try:
+        import ezpz
+
+        # MIN over ranks: 1 only if every rank reports done.
+        total = ezpz.all_reduce(my_done, implementation="mpi")
+        return total == _world_size()
+    except Exception:  # noqa: BLE001 — if MPI unavailable, fall back to local
+        return my_done == 1
+
+
+def try_finalize_if_ready(
+    pending: Optional[PendingCheckpoint],
+) -> Optional[Path]:
+    """Finalize the fan-out IFF every rank's background copy has finished.
+
+    Call this once per step after :func:`start_fanout`. It cheaply probes
+    (:func:`_all_ranks_copy_done`) whether all ranks' copies are done; only then
+    does it run the collective :func:`finalize_fanout` (barrier + marker). This
+    stamps the durable ``.complete`` marker ~as soon as the copy completes
+    (~copy-duration after the save) rather than deferring a full save interval,
+    which minimizes the window where a saved-but-not-yet-durable checkpoint
+    forces resume from the PREVIOUS one. Returns the durable path when it
+    finalized this call, else None. None-safe; no-op if already drained.
+
+    MUST be called by ALL ranks every step (the probe is collective).
+    """
+    if pending is None or pending.drained:
+        return None
+    if not _all_ranks_copy_done(pending):
+        return None
+    return finalize_fanout(pending)
 
 
 def finalize_fanout(pending: Optional[PendingCheckpoint]) -> Optional[Path]:
@@ -427,6 +472,18 @@ def _global_rank() -> int:
 def _is_rank0() -> bool:
     """True on global rank 0, or when not running distributed."""
     return _global_rank() == 0
+
+
+def _world_size() -> int:
+    """Total rank count, or 1 when not running distributed."""
+    try:
+        import torch.distributed as dist
+
+        if dist.is_available() and dist.is_initialized():
+            return dist.get_world_size()
+    except Exception:  # noqa: BLE001
+        pass
+    return 1
 
 
 def _barrier() -> None:
