@@ -282,3 +282,110 @@ class TestAsyncCheckpoint:
         assert (p1 / ".complete").exists()
         # ...and reclaimed the node-local staging copy.
         assert not (tmp_path / "s" / "step-5").exists()
+
+
+class TestBackgroundedFanout:
+    """The two-phase fan-out: start_fanout (background copy, no collectives)
+    then finalize_fanout (main-thread barrier + marker). This is what lets the
+    expensive /tmp->shared-FS copy overlap training instead of blocking it."""
+
+    def test_start_then_finalize_round_trip(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+        model, opt = _Tiny.build(torch)
+        for _ in range(3):
+            opt.zero_grad()
+            model(torch.randn(4, 8)).sum().backward()
+            opt.step()
+        ref = [p.detach().clone() for p in model.parameters()]
+
+        pending = m.save_checkpoint_async(
+            durable, stage, 20, model, opt,
+            meta={"tokens_seen": 123, "epoch": 0, "batch_offset": 20},
+        )
+        m.start_fanout(pending)
+        # Copy runs in the background; durable not complete until finalize.
+        assert not pending.drained
+        m.finalize_fanout(pending)
+        assert pending.drained
+        assert (durable / "step-20" / ".complete").exists()
+        assert not (stage / "step-20").exists()  # staging reclaimed
+
+        model2, opt2 = _Tiny.build(torch)
+        meta = m.load_checkpoint(durable, model2, opt2)
+        assert meta is not None and meta["step"] == 20
+        assert meta["tokens_seen"] == 123
+        for a, b in zip(ref, model2.parameters()):
+            assert torch.allclose(a, b)
+        m.shutdown_fanout_pool()
+
+    def test_finalize_without_start_runs_copy_inline(self, tmp_path):
+        """finalize_fanout must be self-sufficient: if start_fanout was never
+        called (e.g. the exit-path drain), it runs the copy inline rather than
+        producing an empty checkpoint."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        # No start_fanout — finalize must still fan out the shards.
+        p = m.finalize_fanout(pending)
+        assert (p / ".complete").exists()
+        # shards actually copied (not just the marker)
+        assert list(p.glob("__0_*.distcp"))
+        m.shutdown_fanout_pool()
+
+    def test_previous_checkpoint_stays_resumable_during_window(self, tmp_path):
+        """The durability guarantee behind widening the window: while a newer
+        checkpoint is staged-but-not-finalized, latest_checkpoint still returns
+        the PREVIOUS complete one, so a crash loses at most one interval."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+
+        # Save + fully finalize step 10 (durable, complete).
+        p10 = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        m.drain(p10)
+        assert m.latest_checkpoint(durable) == (durable / "step-10")
+
+        # Start step 20 but DO NOT finalize (simulates the in-flight window).
+        opt.step()
+        p20 = m.save_checkpoint_async(durable, stage, 20, model, opt, meta={})
+        m.start_fanout(p20)
+        # Newest COMPLETE checkpoint is still step-10 — step-20 has no marker.
+        assert m.latest_checkpoint(durable) == (durable / "step-10")
+        # Now finalize; step-20 becomes the resumable one.
+        m.finalize_fanout(p20)
+        assert m.latest_checkpoint(durable) == (durable / "step-20")
+        m.shutdown_fanout_pool()
+
+    def test_finalize_idempotent_and_none_safe(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        assert m.finalize_fanout(None) is None
+        assert m.start_fanout(None) is None
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(tmp_path / "c", tmp_path / "s", 5, model, opt, meta={})
+        m.start_fanout(pending)
+        m.start_fanout(pending)  # second start is a no-op (future already set)
+        p1 = m.finalize_fanout(pending)
+        p2 = m.finalize_fanout(pending)  # second finalize is a no-op
+        assert p1 == p2 and pending.drained
+        assert (p1 / ".complete").exists()
+        m.shutdown_fanout_pool()
+
+    def test_shutdown_pool_safe_without_use(self):
+        """shutdown_fanout_pool must be a no-op when no pool was created."""
+        m = _import()
+        m.shutdown_fanout_pool()
+        m.shutdown_fanout_pool()  # twice is fine

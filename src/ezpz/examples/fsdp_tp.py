@@ -2993,23 +2993,14 @@ def train(
             # Step-based stop (independent of --epochs).
             if args.train_iters and global_step >= args.train_iters:
                 break
-            # Fan out any pending async checkpoint at the START of the next
-            # step (not deferred to the next save interval). This keeps the
-            # window where a checkpoint is staged-but-not-yet-durable to ~1
-            # step: the background write from last step's save_checkpoint_async
-            # has typically finished by now, but the fan-out (/tmp -> shared FS)
-            # is a BLOCKING foreground copy of the full checkpoint, so at large
-            # sizes it dominates the async save cost. Time it as
-            # train/ckpt_drain_seconds (folded into this step's metrics below);
-            # a crash still loses at most ~1 interval (the durable dir always
-            # has the prior complete checkpoint).
-            if pending_ckpt is not None:
-                from ezpz.examples._checkpoint import drain
-
-                _drain_t0 = perf_counter()
-                drain(pending_ckpt)
-                pending_drain_seconds = perf_counter() - _drain_t0
-                pending_ckpt = None
+            # NOTE: the async checkpoint fan-out (/tmp -> shared FS) is NOT
+            # drained here. It runs on a background thread (started right after
+            # the save via start_fanout) and is finalized at the NEXT save
+            # boundary — this overlaps the expensive 23 GB copy with a full
+            # save interval of training instead of blocking the loop. The
+            # staged-but-not-durable window widens from ~1 step to ~1 interval,
+            # but the PREVIOUS complete checkpoint stays durable, so a crash
+            # still loses at most one interval (same guarantee as before).
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
@@ -3321,24 +3312,23 @@ def train(
                 }
                 if args.async_ckpt:
                     from ezpz.examples._checkpoint import (
-                        drain,
+                        finalize_fanout,
                         save_checkpoint_async,
+                        start_fanout,
                     )
 
-                    # Only one async save may be in flight (DCP constraint).
-                    # The previous one is normally already drained at the top
-                    # of this step; this is a defensive no-op unless
-                    # save_interval == 1 (drain(None) is safe). When it DOES
-                    # fan out (save_interval==1), time it too so ckpt_drain_
-                    # seconds stays complete — accumulate onto any drain already
-                    # timed at the top of this step.
-                    if pending_ckpt is not None:
-                        _drain_t0 = perf_counter()
-                        drain(pending_ckpt)
-                        pending_drain_seconds = (
-                            pending_drain_seconds or 0.0
-                        ) + (perf_counter() - _drain_t0)
+                    # Only one async save may be in flight (DCP constraint), so
+                    # FINALIZE the previous one before starting a new one. Its
+                    # fan-out copy has been running in the background for the
+                    # whole save interval, so finalize_fanout should only pay a
+                    # cheap barrier + marker here (the expensive copy is already
+                    # done). Time it as train/ckpt_drain_seconds — with
+                    # backgrounding this is now the SMALL residual, not the full
+                    # copy. None-safe on the first save.
+                    _drain_t0 = perf_counter()
+                    finalize_fanout(pending_ckpt)
                     pending_ckpt = None
+                    pending_drain_seconds = perf_counter() - _drain_t0
                     _t_stage = perf_counter()
                     pending_ckpt = save_checkpoint_async(
                         args.ckpt_dir,
@@ -3348,13 +3338,16 @@ def train(
                         optimizer,
                         meta=_ckpt_meta,
                     )
-                    # Caller-thread stall = staging time (the disk write +
-                    # fan-out happen off-thread). Stash it so the NEXT step's
-                    # metrics dict carries train/ckpt_stage_seconds through
-                    # history.update -> JSONL + W&B (this save block runs after
-                    # the current step's metrics were already written).
+                    # Caller-thread stall = staging time only. Stash it so the
+                    # NEXT step's metrics dict carries train/ckpt_stage_seconds
+                    # through history.update -> JSONL + W&B (this save block runs
+                    # after the current step's metrics were already written).
                     _stage_s = perf_counter() - _t_stage
                     pending_stage_seconds = _stage_s
+                    # Kick the /tmp -> shared-FS fan-out onto a background
+                    # thread; it overlaps the next save interval of training and
+                    # is finalized at the next save boundary (above).
+                    start_fanout(pending_ckpt)
                     if ezpz.get_rank() == 0:
                         logger.info(
                             "train/ckpt_stage_seconds=%.4f (async stage @ "
@@ -3390,11 +3383,14 @@ def train(
         if args.train_iters and global_step >= args.train_iters:
             break
     # Finish any in-flight async checkpoint so a run that ends right after a
-    # save doesn't lose it (the fan-out to durable FS may still be running).
-    if pending_ckpt is not None:
-        from ezpz.examples._checkpoint import drain
+    # save doesn't lose it (the background fan-out may still be running), then
+    # tear down the fan-out worker. drain() joins the background copy if one is
+    # in flight, else runs it inline; either way it does the barrier + marker.
+    if args.async_ckpt:
+        from ezpz.examples._checkpoint import drain, shutdown_fanout_pool
 
         drain(pending_ckpt)
+        shutdown_fanout_pool()
     if act_handles:
         for handle in act_handles:
             handle.remove()
