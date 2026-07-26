@@ -130,6 +130,43 @@ out to shared FS) on the same 2 nodes / 24 XPU ranks:
 - Recovery still works identically: every kill resumed from the last durable
   (fanned-out) checkpoint, never from the node-local `/tmp` staging copy.
 
+### At realistic scale: agpt-2b, a 23 GB checkpoint
+
+The debug-model numbers above make the *mechanism* clear, but the async win is
+a rounding error there (28 ms stall). The whole point of async checkpointing is
+large checkpoints, so we re-ran the experiment with **agpt-2b** (~2B params,
+256K vocab) — a **23 GB sharded checkpoint** — on 2 Sunspot nodes / 24 XPU
+ranks, `tp=2`. Three phases (baseline, sync restart, async restart), each with
+**3 real SIGKILLs injected at steps 60/120/180** (right after a checkpoint), so
+every tooth loses at most one save interval:
+
+![agpt-2b (23 GB) — sync vs async checkpoint restart](checkpoint-restart-agpt2b.png)
+
+| | Baseline | Sync restart | Async restart |
+|---|---:|---:|---:|
+| Steps | 240 | 240 | 240 |
+| Wall-clock | **2.03 min** | **5.54 min** | **5.79 min** |
+| Failures | 0 | 3 | 3 |
+| Per-save stall (median) | — | `ckpt_save_seconds` **3.567 s** | `ckpt_stage_seconds` **0.301 s** |
+
+At 23 GB the contrast the debug model couldn't show is now stark:
+
+- **Per-step save stall: 3.567 s (sync) vs 0.301 s (async) — ≈12× less.** A
+  synchronous save blocks the training loop for the *full* 23 GB shard write
+  every interval; async only pays the short CPU-stage copy on the training
+  thread and writes off-thread. This is exactly the regime async is for.
+- **Restart cost ≈ 38–43 s** (both sync and async) — dominated by the 23 GB
+  `dcp.load` + distributed init, ~4× the debug model's ~10 s, as expected when
+  the checkpoint is ~40× larger.
+- **Honest nuance:** async's *total wall-clock* here (5.79 min) is marginally
+  **higher** than sync's (5.54 min), not lower. At only 240 steps the 3×~40 s
+  restart cost dominates, and ~9 saves × ~3.3 s of stall savings (~30 s) don't
+  fully offset run-to-run variance in the restart path. Async's guaranteed win
+  is on the **per-step stall** (training smoothness / not blocking the loop);
+  the wall-clock advantage compounds with more saves between failures, not
+  fewer. Pick async when saves are frequent and large, not to speed up
+  recovery.
+
 ## Measuring it yourself
 
 `fsdp_tp` logs a `RESUMED from step=N` line on resume and a
@@ -145,6 +182,17 @@ python3 experiments/checkpoint-restart/plot_restart.py \
     --out restart_plot.png --report restart_report.md
 ```
 
+The agpt-2b sync-vs-async comparison above is the same driver run at scale with
+a step-driven kill injector; its combined plotter takes all three phases:
+
+```bash
+python3 experiments/checkpoint-restart/plot_2b_comparison.py \
+    --baseline expt_<jobid>/baseline/*/*/metrics-0.jsonl \
+    --sync     expt_<jobid>/sync/*/*/metrics-0.jsonl \
+    --async    expt_<jobid>/async/*/*/metrics-0.jsonl \
+    --out agpt2b_restart.png --report agpt2b_restart_report.md
+```
+
 ## Scope
 
 This shows the two behaviors ezpz provides natively: a **baseline** and
@@ -153,6 +201,8 @@ Frameworks that recover *without* losing steps or *without* a process
 restart — e.g. pause/resume or in-place elastic recovery (TorchFT-style) —
 are separate systems not integrated into ezpz and are out of scope here.
 
-Numbers above are from Sunspot job `12471687` (debug model, 2 nodes). Absolute
+Numbers above are from Sunspot: debug-model runs (job `12471687`) and the
+agpt-2b / 23 GB run (job `12471756`), both 2 nodes / 24 XPU ranks. Absolute
 `restart_seconds` grows with model size and node count (larger `dcp.load`,
-longer init); the *mechanism* is parallelism-agnostic since DCP is sharded.
+longer init) — the debug→agpt-2b jump (≈10 s → ≈40 s) shows exactly that; the
+*mechanism* is parallelism-agnostic since DCP is sharded.

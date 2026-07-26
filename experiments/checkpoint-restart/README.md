@@ -80,6 +80,39 @@ Charts use the `ambivalent` matplotlib stylesheet + Iosevka font via
 `plot_style.py` (matching the torchtitan ezpz production charts); font +
 stylesheet must be installed on the plotting host.
 
+## Realistic scale: agpt-2b (23 GB checkpoint)
+
+`restart_experiment_2b.pbs` runs all THREE phases (baseline / sync restart /
+async restart) with **agpt-2b** (~2B params, 256K vocab → a **23 GB** sharded
+checkpoint) so the sync-vs-async save trade-off is visible at a size where it
+matters. Kills are **step-driven** (injected right after the checkpoints at
+steps 60/120/180) so each restart phase produces a clean, evenly-spaced
+3-tooth sawtooth regardless of per-step wall-clock.
+
+![agpt-2b sync vs async](agpt2b_restart.png)
+
+Real Sunspot numbers (job `12471756`, 2 nodes / 24 XPU ranks, `tp=2`):
+
+| | Baseline | Sync restart | Async restart |
+|---|---:|---:|---:|
+| Steps | 240 | 240 | 240 |
+| Wall-clock | 2.03 min | 5.54 min | 5.79 min |
+| Per-save stall (median) | — | `ckpt_save_seconds` **3.567 s** | `ckpt_stage_seconds` **0.301 s** |
+
+The headline: at 23 GB the async **per-step save stall is ≈12× smaller** (0.301 s
+vs 3.567 s). Restart cost is ≈38–43 s for both (dominated by the 23 GB
+`dcp.load` + init). Async's win is on save stall, not total wall-clock at this
+step count — see `docs/guides/checkpoint-restart.md` for the full nuance.
+
+```bash
+qsub restart_experiment_2b.pbs      # 2 nodes, 3 phases
+python3 plot_2b_comparison.py \
+    --baseline expt_<jid>/baseline/*/*/metrics-0.jsonl \
+    --sync     expt_<jid>/sync/*/*/metrics-0.jsonl \
+    --async    expt_<jid>/async/*/*/metrics-0.jsonl \
+    --out agpt2b_restart.png --report agpt2b_restart_report.md
+```
+
 ## Reproduce
 
 ```bash

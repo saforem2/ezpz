@@ -1,0 +1,142 @@
+#!/bin/bash --login
+#PBS -N ckpt-restart-2b-st
+#PBS -A datascience
+#PBS -l select=2
+#PBS -l walltime=01:30:00
+#PBS -q workq
+#PBS -l filesystems=tegu:home
+#PBS -j oe
+# ---------------------------------------------------------------------------
+# Checkpoint-restart with a REALISTIC (agpt-2b, ~2B param, 256K vocab)
+# checkpoint on 2 nodes / 24 XPU ranks. Runs THREE phases so the sync-vs-async
+# save trade-off is visible at a checkpoint size where it matters:
+#   BASELINE     : agpt-2b, no ckpt, no failures  -> reference line
+#   SYNC RESTART : --save-interval N (blocking DCP save) + kill injection
+#   ASYNC RESTART: --async-ckpt (stage /tmp -> fan out)   + kill injection
+#
+# agpt-2b's default seq_len is 8192 (OOMs eager loss); we override --seq-len
+# 512 so it fits easily at bs=1 — the CHECKPOINT size is driven by params +
+# the 256K vocab embedding/output, not seq. That yields a ~24GB checkpoint
+# (~1GB/rank sharded): a real dcp.load and a sync save that visibly stalls.
+# ---------------------------------------------------------------------------
+set -o pipefail
+export WANDB_MODE=offline
+export TP=2
+export http_proxy=http://proxy.alcf.anl.gov:3128
+export https_proxy=http://proxy.alcf.anl.gov:3128
+
+SUBMIT_DIR="${PBS_O_WORKDIR:-$(pwd)}"
+cd "${SUBMIT_DIR}"
+# Activate a venv with a working torch+xpu build. Override with EZPZ_VENV; the
+# default is this checkout's own .venv. `ezpz_setup <path>` ==
+# ezpz_setup_job + ezpz_load_modules + activate <path>. NOTE: whichever venv you
+# point at must have ezpz installed NON-editable (uv pip install --no-deps .)
+# so the compute nodes see it — an editable install is invisible to them.
+EZPZ_VENV="${EZPZ_VENV:-${SUBMIT_DIR}/.venv}"
+source "${SUBMIT_DIR}/src/ezpz/bin/utils.sh"
+ezpz_setup "${EZPZ_VENV}"
+
+JOBID=$(echo "${PBS_JOBID}" | cut -d. -f1)
+EXPT="${SUBMIT_DIR}/expt_${JOBID}"
+mkdir -p "${EXPT}"
+
+# 240 steps, save every 20. Kill AFTER steps 60/120/180 -> four even 60-step
+# segments = a clean 3-tooth sawtooth. Each target is a checkpoint multiple, so
+# a kill loses exactly the steps since the last save (<= SAVE_INTERVAL).
+TRAIN_ITERS=240
+SAVE_INTERVAL=20
+NP=(--nproc 24 --nproc_per_node 12)
+COMMON=(--model agpt-2b --dataset random --tp 2 --seq-len 512 --batch-size 1)
+
+# Step thresholds to kill AFTER (mid-training, past a real checkpoint). Aligned
+# to SAVE_INTERVAL=20 and evenly spaced across the 240-step run so the teeth
+# are uniform and each kill loses at most one save interval.
+KILL_AT_STEPS=(60 120 180)
+
+# latest complete checkpoint step in a ckpt dir (0 if none).
+latest_ckpt_step() {
+    local ckpt="$1" best=0 s
+    for d in "${ckpt}"/step-*; do
+        [ -e "${d}/.complete" ] || continue
+        s="${d##*step-}"
+        [ "${s}" -gt "${best}" ] 2>/dev/null && best="${s}"
+    done
+    echo "${best}"
+}
+
+# ---- STEP-DRIVEN chaos injector (shared by both restart phases) ----
+# Kills once the latest COMPLETE checkpoint has advanced past each target step,
+# so every kill lands mid-training after a real save (clean, evenly-spaced
+# sawtooth) regardless of per-step wall-clock. Usage: chaos <ckpt_dir> <flag>
+chaos() {
+    local ckpt="$1" doneflag="$2"
+    for target in "${KILL_AT_STEPS[@]}"; do
+        # Wait until a COMPLETE checkpoint at/after this target exists. Because
+        # checkpoints persist on shared FS and targets increase (60<120<180),
+        # this naturally waits for each successive checkpoint — training must
+        # progress (post-resume) to the next target before the next kill arms.
+        while [ "$(latest_ckpt_step "${ckpt}")" -lt "${target}" ]; do
+            sleep 3
+            [ -f "${doneflag}" ] && { echo "[CHAOS] done (finished early)" >> "${EXPT}/chaos.log"; return 0; }
+        done
+        echo "[CHAOS] kill after step>=${target} (latest ckpt=$(latest_ckpt_step "${ckpt}")) at $(date +%s)" | tee -a "${EXPT}/chaos.log"
+        pbsdsh -- bash -c 'pkill -9 -f "ezpz.examples.fsdp_tp" 2>/dev/null; true' \
+            >> "${EXPT}/chaos.log" 2>&1
+        sleep 10   # let the relaunch spin up before re-checking for the next target
+    done
+    echo "[CHAOS] done (${#KILL_AT_STEPS[@]} kills)" | tee -a "${EXPT}/chaos.log"
+}
+
+# ---- restart phase runner ----
+# Usage: run_restart_phase <tag> <extra-ckpt-flags...>
+run_restart_phase() {
+    local tag="$1"; shift
+    local ckpt="${EXPT}/ckpts_${tag}"
+    local out="${EXPT}/${tag}"
+    local doneflag="${EXPT}/.${tag}_done"
+    local log="${EXPT}/${tag}.log"
+    mkdir -p "${out}"; rm -rf "${ckpt}"; rm -f "${doneflag}"
+    echo "############ ${tag} RESTART phase ############"
+    chaos "${ckpt}" "${doneflag}" &
+    local cpid=$!
+    local attempt=0
+    while [ "${attempt}" -lt 8 ]; do
+        attempt=$((attempt + 1))
+        echo "===== [${tag}] restart attempt ${attempt} at $(date +%s) =====" | tee -a "${log}"
+        ezpz_launch python3 -m ezpz.examples.fsdp_tp "${COMMON[@]}" \
+            --train-iters "${TRAIN_ITERS}" --ckpt-dir "${ckpt}" \
+            --save-interval "${SAVE_INTERVAL}" "$@" \
+            --outdir "${out}" 2>&1 | tee -a "${log}"
+        local rc=${PIPESTATUS[0]}
+        echo "===== [${tag}] attempt ${attempt} exit rc=${rc} at $(date +%s) =====" | tee -a "${log}"
+        [ "${rc}" -eq 0 ] && { echo "[${tag}] completed on attempt ${attempt}" | tee -a "${log}"; break; }
+    done
+    touch "${doneflag}"
+    kill "${cpid}" 2>/dev/null || true
+    echo "############ ${tag} done (${attempt} attempts) ############"
+}
+
+# ---- BASELINE ----
+echo "############ BASELINE (agpt-2b, no failures) ############"
+BASE_OUT="${EXPT}/baseline"; mkdir -p "${BASE_OUT}"
+ezpz_launch python3 -m ezpz.examples.fsdp_tp "${COMMON[@]}" \
+    --train-iters "${TRAIN_ITERS}" --outdir "${BASE_OUT}" 2>&1 \
+    | tee "${EXPT}/baseline.log"
+echo "############ BASELINE done ############"
+
+# ---- SYNC restart (blocking DCP save) ----
+run_restart_phase sync
+
+# ---- ASYNC restart (/tmp staging -> fan out) ----
+run_restart_phase async --async-ckpt --ckpt-stage-dir "/tmp/ezpz-2b-stage-${JOBID}"
+
+echo "############ SUMMARY ############"
+echo "sync save times:"
+grep -rhoaE "ckpt_save_seconds=[0-9.]+" "${EXPT}/sync.log" 2>/dev/null | sort -u | head
+echo "async stage times:"
+grep -rhoaE "ckpt_stage_seconds=[0-9.]+" "${EXPT}/async.log" 2>/dev/null | sort -u | head
+echo "restart_seconds (sync/async):"
+grep -rhoaE "restart_seconds=[0-9.]+" "${EXPT}/sync.log" "${EXPT}/async.log" 2>/dev/null | sort -u | head
+echo "ckpt sizes:"; du -sh "${EXPT}"/ckpts_sync/step-* 2>/dev/null | head -3
+echo "metrics dirs: baseline=${BASE_OUT} sync=${EXPT}/sync async=${EXPT}/async"
+echo "############ EXPERIMENT DONE ############"
