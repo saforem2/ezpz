@@ -48,11 +48,20 @@ python3 -m ezpz.examples.fsdp_tp ... \
 
 `--async-ckpt` uses `dcp.async_save`: the state dict is staged to CPU memory
 **synchronously** (so it's safe to keep training the instant the call
-returns), then written to fast **node-local** `--ckpt-stage-dir` (default
-`/tmp/ezpz-ckpt-<jobid>`) by a background thread, and finally **fanned out**
-to the durable `--ckpt-dir` on shared FS. The only cost on the training
-thread is the short staging copy (logged + tracked as
-`train/ckpt_stage_seconds`).
+returns; tracked as `train/ckpt_stage_seconds`), then written to fast
+**node-local** `--ckpt-stage-dir` (default `/tmp/ezpz-ckpt-<jobid>`) by a
+background thread, and finally **fanned out** to the durable `--ckpt-dir` on
+shared FS.
+
+!!! warning "The fan-out (drain) is a real, blocking cost"
+    Only the CPU *stage* is cheap. The fan-out from `/tmp` to shared FS (the
+    "drain") is a **blocking foreground copy** of the full checkpoint, run at
+    the start of the next step and tracked as `train/ckpt_drain_seconds`. At
+    large checkpoint sizes it dominates — the true per-save stall is
+    `stage + drain`, **not** `stage` alone. See the [agpt-2b
+    measurements](#at-realistic-scale-agpt-2b-a-23-gb-checkpoint) below, where
+    the drain (5.45 s) is ~18× the stage (0.30 s). Do not read
+    `ckpt_stage_seconds` as the cost of an async save.
 
 !!! warning "Node-local staging is not durable"
     `--ckpt-stage-dir` (e.g. `/tmp`) is node-local and **not resumable on its
@@ -118,15 +127,16 @@ out to shared FS) on the same 2 nodes / 24 XPU ranks:
 | 3 | 1801 | 61 | 9.31 |
 | 4 | 2301 | 56 | 9.30 |
 
-- **Per-step stall from checkpointing: `train/ckpt_stage_seconds` ≈ 28 ms**
-  (median) — the async stage barely touches the training thread; the shard
-  write + fan-out happen off-thread. Compare to a synchronous save, which
-  blocks the loop for the full write.
+- **Per-step stage stall: `train/ckpt_stage_seconds` ≈ 28 ms** (median) — the
+  CPU stage barely touches the training thread. At this model's tiny checkpoint
+  the *drain* (fan-out to shared FS) is also negligible, so async looks like a
+  clean win here. **But that's an artifact of scale** — at 23 GB the drain
+  becomes the dominant cost and flips the result (see the [agpt-2b
+  section](#at-realistic-scale-agpt-2b-a-23-gb-checkpoint)). Don't generalize
+  the debug-model stage number to real checkpoints.
 - **Restart cost ≈ 8.9–9.3 s** — the resume path is the same as sync (init +
   `dcp.load`), so restart time is comparable (here marginally lower, within
-  run-to-run noise). Async's win is on the *save* side, not the restart side:
-  it removes the per-interval training stall, which matters at scale where a
-  synchronous shard write is seconds, not milliseconds.
+  run-to-run noise).
 - Recovery still works identically: every kill resumed from the last durable
   (fanned-out) checkpoint, never from the node-local `/tmp` staging copy.
 
@@ -147,25 +157,56 @@ every tooth loses at most one save interval:
 | Steps | 240 | 240 | 240 |
 | Wall-clock | **2.03 min** | **5.54 min** | **5.79 min** |
 | Failures | 0 | 3 | 3 |
-| Per-save stall (median) | — | `ckpt_save_seconds` **3.567 s** | `ckpt_stage_seconds` **0.301 s** |
 
-At 23 GB the contrast the debug model couldn't show is now stark:
+!!! warning "Async was **slower** here — and why the naive metric hides it"
+    The first cut of this experiment looked like a landslide for async: the
+    logged `ckpt_stage_seconds` (0.30 s) was ~12× smaller than the sync
+    `ckpt_save_seconds` (3.57 s). But async's **total wall-clock was higher**
+    (5.79 vs 5.54 min) — even though *every logged metric* favored it
+    (`restart_seconds` and per-step `train/dt` were both marginally lower for
+    async). That paradox was the tell: the cost was real but **untimed**.
 
-- **Per-step save stall: 3.567 s (sync) vs 0.301 s (async) — ≈12× less.** A
-  synchronous save blocks the training loop for the *full* 23 GB shard write
-  every interval; async only pays the short CPU-stage copy on the training
-  thread and writes off-thread. This is exactly the regime async is for.
-- **Restart cost ≈ 38–43 s** (both sync and async) — dominated by the 23 GB
-  `dcp.load` + distributed init, ~4× the debug model's ~10 s, as expected when
+**Where the time actually goes.** An async save has two halves. The
+*stage* (copy state to host, kick off the background write) is cheap and blocks
+only the save step. The *drain* — the fan-out of the full 23 GB from node-local
+`/tmp` to shared FS — is a **blocking foreground copy** that runs at the start
+of the *next* step. It lands between `train/dt` windows and is separate from
+`ckpt_stage_seconds`, so originally **no metric captured it**. Measuring the
+inter-step wall-clock gap directly revealed it; `train/ckpt_drain_seconds` now
+records it explicitly.
+
+The honest per-save stall on the training thread, at 23 GB:
+
+| | sync | async |
+|---|---:|---:|
+| stage (blocks save step) | — | `ckpt_stage_seconds` **0.30 s** |
+| drain / write (blocks next step) | — | `ckpt_drain_seconds` **5.45 s** |
+| blocking write (all at once) | `ckpt_save_seconds` **3.57 s** | — |
+| **true total per save** | **≈3.6 s** | **≈5.75 s** |
+
+- **Async's true stall is ~1.6× *larger* than sync's here, not 12× smaller.**
+  It does roughly double the I/O — write 23 GB to `/tmp`, then read it back and
+  write 23 GB to shared FS — and only ~1 training step (~0.45 s) overlaps the
+  `/tmp` write. The expensive shared-FS write is *foreground*, so `/tmp`
+  staging doesn't actually move it off the critical path in this
+  implementation.
+- **Restart cost ≈ 38–43 s** (both sync and async), dominated by the 23 GB
+  `dcp.load` + distributed init — ~4× the debug model's ~10 s, as expected when
   the checkpoint is ~40× larger.
-- **Honest nuance:** async's *total wall-clock* here (5.79 min) is marginally
-  **higher** than sync's (5.54 min), not lower. At only 240 steps the 3×~40 s
-  restart cost dominates, and ~9 saves × ~3.3 s of stall savings (~30 s) don't
-  fully offset run-to-run variance in the restart path. Async's guaranteed win
-  is on the **per-step stall** (training smoothness / not blocking the loop);
-  the wall-clock advantage compounds with more saves between failures, not
-  fewer. Pick async when saves are frequent and large, not to speed up
-  recovery.
+
+**When async *does* pay off:** when the fan-out can genuinely overlap
+compute — a longer save interval (more steps to hide the write behind), a
+faster staging→durable tier, or a non-blocking background drain (see below).
+The lesson here is narrower and important: **`ckpt_stage_seconds` alone is not
+the async cost** — always compare `stage + drain` against the sync save.
+
+!!! note "Follow-up: background the drain"
+    The drain is currently a blocking copy at the next step start. Overlapping
+    it with training across the save interval (instead of blocking) would move
+    the shared-FS write off the critical path and let async deliver the stall
+    reduction its design promises. That's a durability-window tradeoff (a
+    larger staged-but-not-durable window) and a separate change, tracked for
+    future work.
 
 ## Measuring it yourself
 
