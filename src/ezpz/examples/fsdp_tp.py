@@ -2932,11 +2932,19 @@ def train(
     # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
     # Checkpoint timings from the PREVIOUS step, folded into the next step's
-    # metrics dict so they reach JSONL + W&B: async staging stall
-    # (train/ckpt_stage_seconds) and the sync save's blocking write
-    # (train/ckpt_save_seconds).
+    # metrics dict so they reach JSONL + W&B:
+    #   - train/ckpt_save_seconds  : sync save's blocking write (all 23 GB to
+    #     the durable dir on the training thread).
+    #   - train/ckpt_stage_seconds : async save's CPU-stage stall only (the
+    #     cheap part — copy state to host, kick off the background write).
+    #   - train/ckpt_drain_seconds : async fan-out (/tmp -> shared FS) blocking
+    #     time at the START of the next step. This is the EXPENSIVE half of an
+    #     async save and was previously untimed — it lands between steps, so it
+    #     is captured by neither ckpt_stage_seconds nor train/dt. The honest
+    #     per-save stall for async is stage + drain, NOT stage alone.
     pending_stage_seconds: "float | None" = None
     pending_save_seconds: "float | None" = None
+    pending_drain_seconds: "float | None" = None
     # Resume bookkeeping. When resuming, seed the counters from the checkpoint
     # and reconstruct (start_epoch, resume_offset) so the loop skips
     # already-consumed batches. drop_last=True on both sampler and loader makes
@@ -2989,13 +2997,18 @@ def train(
             # step (not deferred to the next save interval). This keeps the
             # window where a checkpoint is staged-but-not-yet-durable to ~1
             # step: the background write from last step's save_checkpoint_async
-            # has typically finished by now, so drain() rarely blocks, and a
-            # crash loses at most ~1 interval (the durable dir always has the
-            # prior complete checkpoint).
+            # has typically finished by now, but the fan-out (/tmp -> shared FS)
+            # is a BLOCKING foreground copy of the full checkpoint, so at large
+            # sizes it dominates the async save cost. Time it as
+            # train/ckpt_drain_seconds (folded into this step's metrics below);
+            # a crash still loses at most ~1 interval (the durable dir always
+            # has the prior complete checkpoint).
             if pending_ckpt is not None:
                 from ezpz.examples._checkpoint import drain
 
+                _drain_t0 = perf_counter()
                 drain(pending_ckpt)
+                pending_drain_seconds = perf_counter() - _drain_t0
                 pending_ckpt = None
             ezpz.distributed.synchronize()
             t0 = perf_counter()
@@ -3272,6 +3285,9 @@ def train(
             if pending_save_seconds is not None:
                 metrics["train/ckpt_save_seconds"] = pending_save_seconds
                 pending_save_seconds = None
+            if pending_drain_seconds is not None:
+                metrics["train/ckpt_drain_seconds"] = pending_drain_seconds
+                pending_drain_seconds = None
             # Restart time: on the FIRST completed step after a resume, log how
             # long from train() entry (process init + dist setup + model build
             # + dcp.load + this step) to a productive step. This is the full
@@ -3312,8 +3328,16 @@ def train(
                     # Only one async save may be in flight (DCP constraint).
                     # The previous one is normally already drained at the top
                     # of this step; this is a defensive no-op unless
-                    # save_interval == 1 (drain(None) is safe).
-                    drain(pending_ckpt)
+                    # save_interval == 1 (drain(None) is safe). When it DOES
+                    # fan out (save_interval==1), time it too so ckpt_drain_
+                    # seconds stays complete — accumulate onto any drain already
+                    # timed at the top of this step.
+                    if pending_ckpt is not None:
+                        _drain_t0 = perf_counter()
+                        drain(pending_ckpt)
+                        pending_drain_seconds = (
+                            pending_drain_seconds or 0.0
+                        ) + (perf_counter() - _drain_t0)
                     pending_ckpt = None
                     _t_stage = perf_counter()
                     pending_ckpt = save_checkpoint_async(

@@ -59,6 +59,7 @@ def _load(paths):
                         "restart_seconds": m.get("train/restart_seconds"),
                         "save_seconds": m.get("train/ckpt_save_seconds"),
                         "stage_seconds": m.get("train/ckpt_stage_seconds"),
+                        "drain_seconds": m.get("train/ckpt_drain_seconds"),
                     }
                 )
     rows.sort(key=lambda x: x["t"])
@@ -128,6 +129,13 @@ def main(argv=None):
     asyn_ev = _detect_restarts(asyn)
     sync_save = _stalls(sync, "save_seconds")
     asyn_stage = _stalls(asyn, "stage_seconds")
+    asyn_drain = _stalls(asyn, "drain_seconds")
+    # The HONEST async per-save stall is stage (CPU copy, blocks the save step)
+    # + drain (blocking /tmp -> shared FS fan-out, blocks the NEXT step). Both
+    # land on the training thread; only their sum is comparable to a sync save.
+    # stage and drain are logged one step apart, so pair them by count.
+    _n = min(len(asyn_stage), len(asyn_drain))
+    asyn_total = [asyn_stage[i] + asyn_drain[i] for i in range(_n)]
 
     # ---- report (always; works without matplotlib) ----
     def _med(xs):
@@ -149,19 +157,39 @@ def main(argv=None):
             f"**Async restart:** reached step {asyn[-1]['iter']} in "
             f"{asyn[-1]['elapsed_min']:.2f} min across {len(asyn_ev)} restart(s)."
         )
-    lines += [
-        "",
-        f"**Per-step save stall (median):** sync "
-        f"`ckpt_save_seconds`={_med(sync_save):.3f}s (n={len(sync_save)}) "
-        f"vs async `ckpt_stage_seconds`={_med(asyn_stage):.3f}s "
-        f"(n={len(asyn_stage)}) — "
-        f"{(_med(sync_save) / _med(asyn_stage)):.1f}x less stall."
-        if sync_save and asyn_stage
-        else "",
-        "",
-        "| phase | # | resume@step | lost steps | restart_seconds |",
-        "|-------|---|-------------|-----------|-----------------|",
-    ]
+    if sync_save and asyn_total:
+        _sync_m = _med(sync_save)
+        _stage_m = _med(asyn_stage)
+        _drain_m = _med(asyn_drain)
+        _tot_m = _med(asyn_total)
+        lines += [
+            "",
+            "**Per-save training-thread stall (median):**",
+            "",
+            f"- sync `ckpt_save_seconds` = **{_sync_m:.3f}s** "
+            f"(n={len(sync_save)}) — blocking write of the full checkpoint.",
+            f"- async `ckpt_stage_seconds` = **{_stage_m:.3f}s** "
+            f"(n={len(asyn_stage)}) — CPU stage only (the cheap half).",
+            f"- async `ckpt_drain_seconds` = **{_drain_m:.3f}s** "
+            f"(n={len(asyn_drain)}) — blocking /tmp→shared-FS fan-out at the "
+            "next step (previously untimed).",
+            f"- async TRUE total (stage+drain) = **{_tot_m:.3f}s** — "
+            + (
+                f"{(_tot_m / _sync_m):.2f}x the sync stall "
+                "(async is SLOWER here)."
+                if _tot_m > _sync_m
+                else f"{(_sync_m / _tot_m):.2f}x less than sync."
+            ),
+            "",
+            "| phase | # | resume@step | lost steps | restart_seconds |",
+            "|-------|---|-------------|-----------|-----------------|",
+        ]
+    else:
+        lines += [
+            "",
+            "| phase | # | resume@step | lost steps | restart_seconds |",
+            "|-------|---|-------------|-----------|-----------------|",
+        ]
     for tag, evs, rows in (("sync", sync_ev, sync), ("async", asyn_ev, asyn)):
         for k, e in enumerate(evs, 1):
             rs = (
@@ -226,32 +254,42 @@ def main(argv=None):
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3)
 
-    # --- right: per-step save-stall strip ---
-    def _strip(xpos, vals, color, jitter=0.12):
-        # deterministic pseudo-jitter (no RNG) so points don't overlap
+    # --- right: HONEST per-save training-thread stall ---
+    # sync = one blocking write; async = stage (cheap) + drain (expensive
+    # fan-out). A stacked async bar next to the sync bar shows the true total,
+    # with the raw points overlaid so the distribution is visible.
+    def _strip_points(xpos, vals, color, jitter=0.10):
         import math
 
-        xs = [
-            xpos + jitter * math.sin(2.399963 * k) for k in range(len(vals))
-        ]
-        ax2.scatter(xs, vals, color=color, s=28, alpha=0.75, zorder=3)
-        if vals:
-            med = statistics.median(vals)
-            ax2.hlines(
-                med, xpos - 0.28, xpos + 0.28, color=color, linewidth=2.5,
-                zorder=4,
-            )
-            ax2.annotate(
-                f"median\n{med:.3f}s", (xpos, med), fontsize=8, color=color,
-                xytext=(10, 0), textcoords="offset points", va="center",
-            )
+        xs = [xpos + jitter * math.sin(2.399963 * k) for k in range(len(vals))]
+        ax2.scatter(xs, vals, color=color, s=16, alpha=0.55, zorder=5,
+                    edgecolors="none")
 
-    _strip(0, sync_save, "tab:red")
-    _strip(1, asyn_stage, "tab:blue")
+    sync_m = statistics.median(sync_save) if sync_save else 0.0
+    stage_m = statistics.median(asyn_stage) if asyn_stage else 0.0
+    drain_m = statistics.median(asyn_drain) if asyn_drain else 0.0
+
+    # sync bar (single segment) at x=0; async stacked bar at x=1.
+    ax2.bar(0, sync_m, width=0.55, color="tab:red", alpha=0.85, zorder=2,
+            label="sync save")
+    ax2.bar(1, stage_m, width=0.55, color="tab:blue", alpha=0.85, zorder=2,
+            label="async stage (CPU)")
+    ax2.bar(1, drain_m, width=0.55, bottom=stage_m, color="tab:orange",
+            alpha=0.9, zorder=2, label="async drain (fan-out)")
+    _strip_points(0, sync_save, "darkred")
+    # overlay async per-save totals (stage+drain) as points on the async bar
+    _strip_points(1, asyn_total, "black")
+
+    ax2.annotate(f"{sync_m:.2f}s", (0, sync_m), fontsize=9, ha="center",
+                 va="bottom", xytext=(0, 2), textcoords="offset points")
+    ax2.annotate(f"{stage_m + drain_m:.2f}s total\n({stage_m:.2f}+{drain_m:.2f})",
+                 (1, stage_m + drain_m), fontsize=9, ha="center", va="bottom",
+                 xytext=(0, 2), textcoords="offset points")
     ax2.set_xticks([0, 1])
-    ax2.set_xticklabels(["sync\nsave_seconds", "async\nstage_seconds"])
-    ax2.set_ylabel("Per-step checkpoint stall (s)")
-    ax2.set_title("Checkpoint stall per save")
+    ax2.set_xticklabels(["sync\n(save)", "async\n(stage+drain)"])
+    ax2.set_ylabel("Per-save training-thread stall (s)")
+    ax2.set_title("True checkpoint stall per save")
+    ax2.legend(loc="upper left", fontsize=8)
     ax2.grid(True, axis="y", alpha=0.3)
     ax2.set_xlim(-0.6, 1.6)
 
