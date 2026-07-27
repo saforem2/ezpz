@@ -63,8 +63,9 @@ BATCH_SIZE="${BATCH_SIZE:-1}"
 # here. The tp degree stays 2.
 COMMON=(--model "${MODEL}" --dataset random --tp 2 --seq-len "${SEQ_LEN}" --batch-size "${BATCH_SIZE}")
 
-# Kill thresholds: space-separated env override, else the 2b defaults.
-read -r -a KILL_AT_STEPS <<< "${KILL_STEPS:-500 1000 1500}"
+# Kill thresholds: env override accepts comma- OR space-separated (comma avoids
+# qsub -v value-splitting on spaces), else the 2b defaults.
+read -r -a KILL_AT_STEPS <<< "${KILL_STEPS:-500 1000 1500}" ; KILL_AT_STEPS=(${KILL_AT_STEPS[@]//,/ })
 
 # latest complete checkpoint step in a ckpt dir (0 if none).
 latest_ckpt_step() {
