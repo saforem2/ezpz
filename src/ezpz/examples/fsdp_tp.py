@@ -1454,6 +1454,25 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--meta-init",
+        type=str,
+        default="auto",
+        choices=["auto", "on", "off"],
+        help=(
+            "Build the native Transformer on the `meta` device, then "
+            "materialize only each rank's shard after FSDP2 sharding "
+            "(torchtitan pattern). Avoids the OOM from moving the full dense "
+            "model onto one device before sharding, which otherwise caps model "
+            "size at what fits whole on a single GPU (~2-8B) regardless of "
+            "node count. `auto` (default) enables it for large native models "
+            "(>= ~6B params) and keeps small models on the exact dense init "
+            "path (bit-for-bit reproducible); `on` forces it for any native "
+            "model; `off` forces the legacy dense path. Ignored for HF "
+            "`from_pretrained` models (they load real pretrained weights). "
+            "Override the auto threshold with EZPZ_META_INIT_MIN_PARAMS."
+        ),
+    )
+    parser.add_argument(
         "--max-grad-norm",
         type=float,
         default=1.0,
@@ -1840,6 +1859,67 @@ def _configure_fsdp_gradient_division(model: nn.Module) -> None:
     )
 
 
+def _estimate_param_count(config: "ModelArgs") -> int:
+    """Closed-form lower bound on parameter count from a ModelArgs (no alloc).
+
+    Counts the two vocab-sized matrices (embedding + output = ``2*vocab*dim``)
+    plus a per-layer ``~12*dim^2`` for attention (qkvo) + SwiGLU FFN (w1/w2/w3
+    at ~4*dim each ⇒ ~12*dim^2 combined for the common hidden≈~4*dim). This is
+    an approximation used only to pick the meta-init tier, so an exact FFN width
+    isn't needed — it separates agpt-2b (~2B, below) from xxl/xxxl/agpt-20b
+    (>=~7B, above) with wide margin.
+    """
+    dim = int(config.dim)
+    n_layers = int(config.n_layers)
+    vocab = int(config.vocab_size)
+    return 2 * vocab * dim + n_layers * 12 * dim * dim
+
+
+def _resolve_meta_init(
+    args: argparse.Namespace,
+    config: "ModelArgs",
+    is_hf_model: bool,
+) -> bool:
+    """Decide whether to use meta-device init for this run.
+
+    Meta-init (build on meta → shard → to_empty → init_weights) avoids OOM-ing
+    when the full dense model would not fit on one device before sharding. It is
+    NATIVE-Transformer only — HF `from_pretrained` models load real pretrained
+    weights and must materialize them, so meta-init never applies there.
+
+    Modes (``--meta-init``): ``off`` → dense (legacy); ``on`` → meta (native);
+    ``auto`` (default) → meta iff native and the estimated param count is at or
+    above EZPZ_META_INIT_MIN_PARAMS (default 6e9). ``auto`` keeps small models
+    (debug/s/m/l/xl/agpt-2b) on the exact dense path (bit-for-bit init) and
+    auto-enables meta-init for large ones (xxl/xxxl/agpt-20b).
+    """
+    mode = getattr(args, "meta_init", "auto")
+    if is_hf_model:
+        if mode == "on" and ezpz.get_rank() == 0:
+            logger.warning(
+                "--meta-init on ignored for HF model %s (from_pretrained "
+                "loads real weights; meta-init is native-Transformer only).",
+                args.model,
+            )
+        return False
+    if mode == "off":
+        return False
+    if mode == "on":
+        return True
+    # auto: enable for large native models.
+    threshold = float(os.environ.get("EZPZ_META_INIT_MIN_PARAMS", "6e9"))
+    est = _estimate_param_count(config)
+    use = est >= threshold
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "meta-init=auto: estimated ~%.1fB params (threshold %.1fB) -> %s",
+            est / 1e9,
+            threshold / 1e9,
+            "meta-init ON" if use else "dense init",
+        )
+    return use
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -1847,6 +1927,8 @@ def parallelize(
     reshard_after_forward: str = "always",
     activation_checkpoint: str = "none",
     loss_parallel: bool = False,
+    meta_init: bool = False,
+    device: Optional["torch.device"] = None,
 ) -> nn.Module:
     """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
 
@@ -1858,6 +1940,13 @@ def parallelize(
     length. Activation checkpointing (when requested) is applied to each
     block BEFORE ``fully_shard`` so the checkpoint envelope sits inside the
     sharded unit (torchtitan's ordering).
+
+    ``meta_init``: when True the model was built on the ``meta`` device (no
+    storage). Pre-shard ``init_weights`` is skipped; after ``fully_shard`` the
+    sharded params are materialized on ``device`` via ``to_empty`` and then
+    ``init_weights(buffer_device=device)`` fills them — so the full dense model
+    is never placed on one device (avoids the large-model build OOM). Requires
+    ``device``.
     """
     tp_mesh = device_mesh["tp"]
 
@@ -1875,7 +1964,11 @@ def parallelize(
 
     reshard = _reshard_arg(reshard_after_forward)
 
-    model.init_weights()  # type: ignore
+    # Dense path: init the real params now. Meta path: skip — the params are on
+    # `meta` (no storage), so init happens after fully_shard via to_empty +
+    # init_weights(buffer_device=device) below.
+    if not meta_init:
+        model.init_weights()  # type: ignore
 
     # Only apply tensor/sequence parallelism when the tp mesh dim is > 1.
     # At tp=1 (FSDP-only) the TP plan is pure overhead: SequenceParallel
@@ -1967,6 +2060,16 @@ def parallelize(
         fully_shard([model.norm, model.output], **fsdp_kwargs)
     # Root last.
     fully_shard(model, **fsdp_kwargs)
+
+    # Meta path: params are now sharded DTensors still on `meta`. Materialize
+    # ONLY this rank's shard on the real device (to_empty — no full-model copy),
+    # then init_weights fills the sharded params and recomputes the freqs_cis
+    # buffer on `device` (to_empty leaves buffer data uninitialized). On resume,
+    # dcp.load later overwrites the params + persistent buffers.
+    if meta_init:
+        assert device is not None, "meta_init=True requires a device"
+        model.to_empty(device=device)
+        model.init_weights(buffer_device=device)  # type: ignore
 
     _configure_fsdp_gradient_division(model)
 
@@ -2442,6 +2545,10 @@ def train(
         if device_type == "cpu"
         else torch.device(f"{device_type}:{ezpz.get_local_rank()}")
     )
+    # Decide meta-device init (native large models only) before building, so the
+    # native build below can go on `meta` and never place the full dense model
+    # on one device. HF models always resolve to False (they load real weights).
+    meta_init = _resolve_meta_init(args, config, is_hf_model)
     if is_hf_model:
         # HF path: pull arch + weights from the hub. The ezpz Transformer
         # above is skipped entirely. Note we still built `config` above so
@@ -2476,14 +2583,25 @@ def train(
             token=hf_token,
         )
     else:
-        model = Transformer.from_model_args(config)
+        if meta_init:
+            # Build on `meta`: no storage allocated, so even a 20B model costs
+            # nothing here. parallelize() shards it, then to_empty materializes
+            # only this rank's shard on the real device.
+            with torch.device("meta"):
+                model = Transformer.from_model_args(config)
+        else:
+            model = Transformer.from_model_args(config)
     mstr = summarize_model(
         model,
         verbose=False,
         depth=2,
     )
     logger.info(f"\n{mstr}")
-    model.to(device)
+    # Meta models are materialized (sharded) inside parallelize() via to_empty;
+    # moving a meta model with .to(device) would NOT allocate real storage, so
+    # skip it here. Dense + HF paths place the real model on-device now.
+    if not meta_init:
+        model.to(device)
 
     # FLOPs estimation: try the exact fake-tensor path first, fall back
     # to the linear-scaling probe if it fails.
@@ -2514,6 +2632,16 @@ def train(
             args.seq_len,
             _model_flops,
         )
+    elif meta_init:
+        # The real-tensor probe below would run an actual forward, which a
+        # meta model (no storage) cannot do. Skip it — MFU/TFLOPS just stay 0
+        # for meta-init runs when the fake-tensor count is unavailable.
+        if ezpz.get_rank() == 0:
+            logger.warning(
+                "Fake-tensor FLOP estimate returned 0 and model is on `meta` "
+                "(--meta-init); skipping the real-tensor probe. train/tflops "
+                "and train/mfu will be 0 for this run."
+            )
     else:
         _flops_probe_batch = 1
         _flops_probe_seq = min(128, args.seq_len)
@@ -2645,6 +2773,8 @@ def train(
             reshard_after_forward=args.reshard_after_forward,
             activation_checkpoint=args.activation_checkpoint,
             loss_parallel=use_loss_parallel,
+            meta_init=meta_init,
+            device=device,
         )
     if args.compile:
         # Activation-memory budget for the inductor min-cut partitioner.
