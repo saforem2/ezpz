@@ -203,3 +203,275 @@ class TestSaveLoadRoundTrip:
         m = _import()
         model, opt = _Tiny.build(torch)
         assert m.load_checkpoint(tmp_path, model, opt) is None
+
+
+class TestAsyncCheckpoint:
+    """Async save (stage to node-local dir -> fan out to durable dir)."""
+
+    def test_async_round_trip(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+
+        model, opt = _Tiny.build(torch)
+        for _ in range(3):
+            opt.zero_grad()
+            model(torch.randn(4, 8)).sum().backward()
+            opt.step()
+        ref_params = [p.detach().clone() for p in model.parameters()]
+
+        pending = m.save_checkpoint_async(
+            durable, stage, 20, model, opt,
+            meta={"tokens_seen": 999, "epoch": 0, "batch_offset": 20},
+        )
+        # Before drain: durable checkpoint is NOT complete yet.
+        assert m.latest_checkpoint(durable) is None
+        # Drain: block on the staged write + fan out to durable.
+        m.drain(pending)
+        assert (durable / "step-20" / ".complete").exists()
+        # Staging copy reclaimed.
+        assert not (stage / "step-20").exists()
+
+        # Resume from the DURABLE dir works.
+        torch.manual_seed(7)
+        model2, opt2 = _Tiny.build(torch)
+        meta = m.load_checkpoint(durable, model2, opt2)
+        assert meta is not None and meta["step"] == 20
+        assert meta["tokens_seen"] == 999
+        for a, b in zip(ref_params, model2.parameters()):
+            assert torch.allclose(a, b)
+
+    def test_stage_only_is_not_resumable(self, tmp_path):
+        """The core correctness guard: a checkpoint present ONLY in the
+        node-local stage dir (drain never ran) must NOT be resumable — no
+        completion marker is ever written there, and latest_checkpoint scans
+        only the durable dir. Prevents the '/tmp defeats failure recovery'
+        bug."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+
+        pending = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        pending.future.result()  # staged write done, but NO drain/fan-out
+        # Durable dir has no complete checkpoint.
+        assert m.latest_checkpoint(durable) is None
+        # Stage dir must never carry a completion marker.
+        assert not (stage / "step-10" / ".complete").exists()
+        m.drain(pending)  # cleanup
+
+    def test_drain_is_idempotent_and_none_safe(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        assert m.drain(None) is None
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(
+            tmp_path / "c", tmp_path / "s", 5, model, opt, meta={}
+        )
+        p1 = m.drain(pending)
+        p2 = m.drain(pending)  # second drain is a no-op
+        assert p1 == p2 and pending.drained
+        # First drain produced a durable, complete checkpoint...
+        assert (p1 / ".complete").exists()
+        # ...and reclaimed the node-local staging copy.
+        assert not (tmp_path / "s" / "step-5").exists()
+
+
+class TestBackgroundedFanout:
+    """The two-phase fan-out: start_fanout (background copy, no collectives)
+    then finalize_fanout (main-thread barrier + marker). This is what lets the
+    expensive /tmp->shared-FS copy overlap training instead of blocking it."""
+
+    def test_start_then_finalize_round_trip(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable = tmp_path / "ckpts"
+        stage = tmp_path / "stage"
+        model, opt = _Tiny.build(torch)
+        for _ in range(3):
+            opt.zero_grad()
+            model(torch.randn(4, 8)).sum().backward()
+            opt.step()
+        ref = [p.detach().clone() for p in model.parameters()]
+
+        pending = m.save_checkpoint_async(
+            durable, stage, 20, model, opt,
+            meta={"tokens_seen": 123, "epoch": 0, "batch_offset": 20},
+        )
+        m.start_fanout(pending)
+        # Copy runs in the background; durable not complete until finalize.
+        assert not pending.drained
+        m.finalize_fanout(pending)
+        assert pending.drained
+        assert (durable / "step-20" / ".complete").exists()
+        assert not (stage / "step-20").exists()  # staging reclaimed
+
+        model2, opt2 = _Tiny.build(torch)
+        meta = m.load_checkpoint(durable, model2, opt2)
+        assert meta is not None and meta["step"] == 20
+        assert meta["tokens_seen"] == 123
+        for a, b in zip(ref, model2.parameters()):
+            assert torch.allclose(a, b)
+        m.shutdown_fanout_pool()
+
+    def test_finalize_without_start_runs_copy_inline(self, tmp_path):
+        """finalize_fanout must be self-sufficient: if start_fanout was never
+        called (e.g. the exit-path drain), it runs the copy inline rather than
+        producing an empty checkpoint."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        # No start_fanout — finalize must still fan out the shards.
+        p = m.finalize_fanout(pending)
+        assert (p / ".complete").exists()
+        # shards actually copied (not just the marker)
+        assert list(p.glob("__0_*.distcp"))
+        m.shutdown_fanout_pool()
+
+    def test_previous_checkpoint_stays_resumable_during_window(self, tmp_path):
+        """The durability guarantee behind widening the window: while a newer
+        checkpoint is staged-but-not-finalized, latest_checkpoint still returns
+        the PREVIOUS complete one, so a crash loses at most one interval."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+
+        # Save + fully finalize step 10 (durable, complete).
+        p10 = m.save_checkpoint_async(durable, stage, 10, model, opt, meta={})
+        m.drain(p10)
+        assert m.latest_checkpoint(durable) == (durable / "step-10")
+
+        # Start step 20 but DO NOT finalize (simulates the in-flight window).
+        opt.step()
+        p20 = m.save_checkpoint_async(durable, stage, 20, model, opt, meta={})
+        m.start_fanout(p20)
+        # Newest COMPLETE checkpoint is still step-10 — step-20 has no marker.
+        assert m.latest_checkpoint(durable) == (durable / "step-10")
+        # Now finalize; step-20 becomes the resumable one.
+        m.finalize_fanout(p20)
+        assert m.latest_checkpoint(durable) == (durable / "step-20")
+        m.shutdown_fanout_pool()
+
+    def test_finalize_idempotent_and_none_safe(self, tmp_path):
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        assert m.finalize_fanout(None) is None
+        assert m.start_fanout(None) is None
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(tmp_path / "c", tmp_path / "s", 5, model, opt, meta={})
+        m.start_fanout(pending)
+        m.start_fanout(pending)  # second start is a no-op (future already set)
+        p1 = m.finalize_fanout(pending)
+        p2 = m.finalize_fanout(pending)  # second finalize is a no-op
+        assert p1 == p2 and pending.drained
+        assert (p1 / ".complete").exists()
+        m.shutdown_fanout_pool()
+
+    def test_shutdown_pool_safe_without_use(self):
+        """shutdown_fanout_pool must be a no-op when no pool was created."""
+        m = _import()
+        m.shutdown_fanout_pool()
+        m.shutdown_fanout_pool()  # twice is fine
+
+    def test_try_finalize_when_ready_finalizes(self, tmp_path):
+        """try_finalize_if_ready finalizes once the copy is done: it stamps the
+        durable marker and clears the pending, matching an explicit finalize."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 30, model, opt, meta={})
+        m.start_fanout(pending)
+        pending.fanout_future.result()  # ensure the copy is actually done
+        p = m.try_finalize_if_ready(pending)
+        assert p is not None and pending.drained
+        assert (p / ".complete").exists()
+        # Idempotent: a second call is a no-op (already drained).
+        assert m.try_finalize_if_ready(pending) is None
+        m.shutdown_fanout_pool()
+
+    def test_try_finalize_noop_while_copy_running(self, tmp_path):
+        """While a rank's copy is NOT yet done, try_finalize_if_ready must NOT
+        finalize (no marker, pending stays live) — the durability window closes
+        only once every rank's copy has landed."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 40, model, opt, meta={})
+
+        # Simulate an in-flight copy with a future that reports not-done.
+        class _NotDone:
+            def done(self):
+                return False
+
+        pending.fanout_future = _NotDone()
+        assert m.try_finalize_if_ready(pending) is None
+        assert not pending.drained
+        assert m.latest_checkpoint(durable) is None  # not resumable yet
+
+        # Now let a real copy run + finalize for cleanup.
+        pending.fanout_future = None
+        m.drain(pending)
+        assert (durable / "step-40" / ".complete").exists()
+        m.shutdown_fanout_pool()
+
+    def test_try_finalize_none_safe(self):
+        m = _import()
+        assert m.try_finalize_if_ready(None) is None
+
+    def test_failed_copy_does_not_vote_done(self, tmp_path):
+        """REGRESSION: a background copy that RAISED must NOT be treated as
+        'done' and must NOT stamp a .complete marker. Future.done() is True on
+        exception, so the readiness probe has to check .exception(). A failed
+        fan-out must raise (coordinated abort) rather than silently marking a
+        checkpoint whose shards never landed — and the durable dir stays
+        markerless (resume falls back to the previous good checkpoint)."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 70, model, opt, meta={})
+
+        # A future that is done() == True but carries an exception.
+        class _Failed:
+            def done(self):
+                return True
+
+            def exception(self):
+                return RuntimeError("simulated fan-out copy failure")
+
+            def result(self):
+                raise RuntimeError("simulated fan-out copy failure")
+
+        pending.fanout_future = _Failed()
+        # try_finalize must raise (not return a path, not mark complete).
+        with pytest.raises(RuntimeError):
+            m.try_finalize_if_ready(pending)
+        assert not pending.drained
+        assert not (durable / "step-70" / ".complete").exists()
+        assert m.latest_checkpoint(durable) is None
+        m.shutdown_fanout_pool()

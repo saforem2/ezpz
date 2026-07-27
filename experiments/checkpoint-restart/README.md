@@ -68,6 +68,85 @@ Per failure (each a real kill → PALS teardown → relaunch → DCP resume):
   are parallelism-agnostic (DCP is sharded), but absolute restart_seconds
   will grow with model size / node count (bigger `dcp.load`, longer init).
 
+## Async variant
+
+`restart_experiment_async.pbs` runs the same experiment with `--async-ckpt`
+(stage to node-local `/tmp`, fan out to shared FS). Real Sunspot numbers
+(job 12471716): baseline 5.84 min vs async restart 8.06 min across 4
+failures; per-step checkpoint stall `train/ckpt_stage_seconds` ≈ 28 ms
+(median); restart cost ≈ 8.9–9.3 s. See `async_restart_plot.png`.
+
+Charts use the `ambivalent` matplotlib stylesheet + Iosevka font via
+`plot_style.py` (matching the torchtitan ezpz production charts); font +
+stylesheet must be installed on the plotting host.
+
+## Realistic scale: agpt-2b (23 GB checkpoint)
+
+`restart_experiment_2b.pbs` runs all THREE phases (baseline / sync restart /
+async restart) with **agpt-2b** (~2B params, 256K vocab → a **23 GB** sharded
+checkpoint) so the sync-vs-async save trade-off is visible at a size where it
+matters. 2000 steps, save every 100; kills are **step-driven** (injected right
+after the checkpoints at steps 500/1000/1500) so each restart phase produces a
+clean, evenly-spaced 3-tooth sawtooth regardless of per-step wall-clock.
+
+![agpt-2b sync vs async](agpt2b_restart.png)
+
+Real Sunspot numbers (finalize-when-ready, job `12471773`, 2 nodes / 24 XPU
+ranks, `tp=2`):
+
+| | Baseline | Sync restart | Async restart |
+|---|---:|---:|---:|
+| Steps | 2000 | 2000 | 2000 |
+| Wall-clock | 16.94 min | 20.94 min | **20.75 min** |
+| True per-save stall (median) | — | `ckpt_save_seconds` **3.75 s** | `ckpt_stage_seconds` **0.31 s** + `ckpt_drain_seconds` **0.73 s** = **1.05 s** |
+
+Three iterations, the first two instructive dead ends (full write-up in
+`docs/guides/checkpoint-restart.md`):
+
+1. **`ckpt_stage_seconds` is not the async cost.** The first run (blocking
+   drain, job `12471769`) had a cheap 0.30 s stage but a **5.18 s blocking
+   `/tmp`→shared-FS fan-out** that no metric captured — making async ~1.5×
+   *slower* than sync. Always compare `stage + drain` against the sync save.
+2. **Backgrounding the copy but finalizing late (job `12471771`)** hid the
+   stall but stamped the durable marker a full save interval after the save, so
+   async resumed from an older checkpoint and still trailed on wall-clock.
+3. **`try_finalize_if_ready` fixes it.** The copy runs on a background thread
+   (`start_fanout`); each step a cheap **MPI probe** (separate communicator, no
+   xccl deadlock) stamps the durable marker as soon as all ranks' copies land.
+   Per-save stall **1.05 s, ~3.6× less than sync**; async now **finishes first
+   on wall-clock** (20.75 vs 20.94 min); lost steps matched (sync 2–4, async
+   6–11), both resuming from the identical checkpoints (501/1001/1501). No
+   cross-thread deadlock at 24 ranks.
+
+Restart cost is ≈40–44 s for both (dominated by the 23 GB `dcp.load` + init).
+Residual tradeoff: for the ~1 copy-duration between a save and its marker, a
+crash falls back one extra interval — inherent to any overlapped write, bounded
+by `--save-interval`.
+
+```bash
+qsub restart_experiment_2b.pbs      # 2 nodes, 3 phases
+python3 plot_2b_comparison.py \
+    --baseline expt_<jid>/baseline/*/*/metrics-0.jsonl \
+    --sync     expt_<jid>/sync/*/*/metrics-0.jsonl \
+    --async    expt_<jid>/async/*/*/metrics-0.jsonl \
+    --out agpt2b_restart.png --report agpt2b_restart_report.md
+```
+
+## Even bigger: agpt-20b (232 GB checkpoint, needs `--meta-init`)
+
+The same driver runs agpt-20b (~20B params → a **232 GB** checkpoint) once
+`--meta-init` is on (auto for models ≳6B) — without it the run OOMs moving the
+full dense model onto one GPU before sharding. Real Sunspot numbers (job
+`12471783`, 4 nodes, 300 steps, save every 50, kills at 100/200):
+
+![agpt-20b sync vs async](agpt20b_restart.png)
+
+The async win **scales with checkpoint size**: a synchronous save blocks the
+loop for **23.6 s** at 232 GB, vs async stage 1.73 s + drain 3.69 s = **5.4 s
+(~4.4× less)**. Meta-init drops peak memory from OOM (>64 GB/tile) to ~14 GB and
+composes with TP+FSDP2, DCP resume, and the backgrounded fan-out unchanged. Run
+it with `qsub -v MODEL=agpt-20b,KEEP=1,... -l select=4 restart_experiment_2b.pbs`.
+
 ## Reproduce
 
 ```bash

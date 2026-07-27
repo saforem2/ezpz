@@ -1454,6 +1454,25 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--meta-init",
+        type=str,
+        default="auto",
+        choices=["auto", "on", "off"],
+        help=(
+            "Build the native Transformer on the `meta` device, then "
+            "materialize only each rank's shard after FSDP2 sharding "
+            "(torchtitan pattern). Avoids the OOM from moving the full dense "
+            "model onto one device before sharding, which otherwise caps model "
+            "size at what fits whole on a single GPU (~2-8B) regardless of "
+            "node count. `auto` (default) enables it for large native models "
+            "(>= ~6B params) and keeps small models on the exact dense init "
+            "path (bit-for-bit reproducible); `on` forces it for any native "
+            "model; `off` forces the legacy dense path. Ignored for HF "
+            "`from_pretrained` models (they load real pretrained weights). "
+            "Override the auto threshold with EZPZ_META_INIT_MIN_PARAMS."
+        ),
+    )
+    parser.add_argument(
         "--max-grad-norm",
         type=float,
         default=1.0,
@@ -1515,6 +1534,30 @@ def parse_args(argv: Optional[list[str]] = None):
         help=(
             "Ignore any existing checkpoint in --ckpt-dir and start fresh "
             "(step 0). Default behavior auto-resumes from the latest."
+        ),
+    )
+    parser.add_argument(
+        "--async-ckpt",
+        "--async_ckpt",
+        action="store_true",
+        dest="async_ckpt",
+        help=(
+            "Save checkpoints asynchronously: stage to fast node-local "
+            "--ckpt-stage-dir (background thread, overlaps training), then "
+            "fan out to the durable --ckpt-dir on shared FS. Requires "
+            "--ckpt-dir. Resume is unchanged (always from --ckpt-dir)."
+        ),
+    )
+    parser.add_argument(
+        "--ckpt-stage-dir",
+        "--ckpt_stage_dir",
+        type=str,
+        default=None,
+        dest="ckpt_stage_dir",
+        help=(
+            "Node-local staging dir for --async-ckpt (default "
+            "/tmp/ezpz-ckpt-<jobid>). Transient — NOT resumable on its own; "
+            "only the fanned-out --ckpt-dir copy is durable."
         ),
     )
     # parser.add_argument('--dataset', type=str, default='random')
@@ -1699,7 +1742,74 @@ def parse_args(argv: Optional[list[str]] = None):
     # Fold the deprecated --sharding-strategy alias into reshard_after_forward
     # (and hard-error the removed hybrid_shard* values).
     _resolve_reshard_after_forward(args)
+    _maybe_enable_cpu_backend_for_async_ckpt(args)
     return args
+
+
+def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
+    """Register a CPU (gloo) backend when --async-ckpt is set.
+
+    ``dcp.async_save`` asserts the process group includes a CPU backend (it
+    stages/writes from a background CPU thread). On an accelerator the default
+    PG is xccl/nccl-only, so we must init with a COMPOSITE backend string,
+    accelerator-first: ``xpu:xccl,cpu:gloo`` (matching torchtitan). This runs
+    in parse_args — BEFORE
+    ``setup_torch``/``init_process_group`` — and sets ``TORCH_BACKEND``, which
+    ``ezpz.distributed.get_torch_backend`` honors as an override.
+
+    Respects a user-set ``TORCH_BACKEND`` (only fills it when unset) and is a
+    no-op on CPU-only runs (backend is already gloo).
+    """
+    if not getattr(args, "async_ckpt", False):
+        return
+    # parse_args runs on EVERY rank before distributed init, so gate the
+    # informational log to one process per host (env local rank; 0 when unset).
+    _lr = (
+        os.environ.get("PALS_LOCAL_RANKID")
+        or os.environ.get("PMIX_LOCAL_RANK")
+        or os.environ.get("LOCAL_RANK")
+        or "0"
+    )
+    is_local0 = _lr == "0"
+    override = os.environ.get("TORCH_BACKEND")
+    if override:
+        # A user override wins, but --async-ckpt needs a CPU backend in the PG
+        # or dcp.async_save asserts at the first save. If the override has no
+        # cpu:/gloo entry, augment it (append cpu:gloo) rather than fail late.
+        if "gloo" in override or "cpu:" in override:
+            return  # already has a CPU backend
+        os.environ["TORCH_BACKEND"] = f"{override},cpu:gloo"
+        if is_local0:
+            logger.warning(
+                "async-ckpt: TORCH_BACKEND=%s lacks a CPU backend; augmented "
+                "to %s (dcp.async_save requires one)",
+                override,
+                os.environ["TORCH_BACKEND"],
+            )
+        return
+    try:
+        import torch
+
+        # hasattr guard: torch.xpu is absent on CPU-only / CUDA-only / ROCm
+        # builds, where torch.xpu.is_available() would raise AttributeError.
+        if torch.cuda.is_available():
+            accel = "cuda:nccl"
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            accel = "xpu:xccl"
+        else:
+            return  # CPU-only: default gloo already has a CPU backend
+        # Order matches torchtitan (distributed/utils.py): accelerator FIRST,
+        # then cpu:gloo. The accel backend stays primary; cpu:gloo is added so
+        # dcp.async_save's background CPU-thread collective has a backend.
+        os.environ["TORCH_BACKEND"] = f"{accel},cpu:gloo"
+        if is_local0:
+            logger.info(
+                "async-ckpt: set TORCH_BACKEND=%s so async_save has a CPU "
+                "backend",
+                os.environ["TORCH_BACKEND"],
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not set composite backend for --async-ckpt: %s", exc)
 
 
 def _configure_fsdp_gradient_division(model: nn.Module) -> None:
@@ -1749,6 +1859,67 @@ def _configure_fsdp_gradient_division(model: nn.Module) -> None:
     )
 
 
+def _estimate_param_count(config: "ModelArgs") -> int:
+    """Closed-form lower bound on parameter count from a ModelArgs (no alloc).
+
+    Counts the two vocab-sized matrices (embedding + output = ``2*vocab*dim``)
+    plus a per-layer ``~12*dim^2`` for attention (qkvo) + SwiGLU FFN (w1/w2/w3
+    at ~4*dim each ⇒ ~12*dim^2 combined for the common hidden≈~4*dim). This is
+    an approximation used only to pick the meta-init tier, so an exact FFN width
+    isn't needed — it separates agpt-2b (~2B, below) from xxl/xxxl/agpt-20b
+    (>=~7B, above) with wide margin.
+    """
+    dim = int(config.dim)
+    n_layers = int(config.n_layers)
+    vocab = int(config.vocab_size)
+    return 2 * vocab * dim + n_layers * 12 * dim * dim
+
+
+def _resolve_meta_init(
+    args: argparse.Namespace,
+    config: "ModelArgs",
+    is_hf_model: bool,
+) -> bool:
+    """Decide whether to use meta-device init for this run.
+
+    Meta-init (build on meta → shard → to_empty → init_weights) avoids OOM-ing
+    when the full dense model would not fit on one device before sharding. It is
+    NATIVE-Transformer only — HF `from_pretrained` models load real pretrained
+    weights and must materialize them, so meta-init never applies there.
+
+    Modes (``--meta-init``): ``off`` → dense (legacy); ``on`` → meta (native);
+    ``auto`` (default) → meta iff native and the estimated param count is at or
+    above EZPZ_META_INIT_MIN_PARAMS (default 6e9). ``auto`` keeps small models
+    (debug/s/m/l/xl/agpt-2b) on the exact dense path (bit-for-bit init) and
+    auto-enables meta-init for large ones (xxl/xxxl/agpt-20b).
+    """
+    mode = getattr(args, "meta_init", "auto")
+    if is_hf_model:
+        if mode == "on" and ezpz.get_rank() == 0:
+            logger.warning(
+                "--meta-init on ignored for HF model %s (from_pretrained "
+                "loads real weights; meta-init is native-Transformer only).",
+                args.model,
+            )
+        return False
+    if mode == "off":
+        return False
+    if mode == "on":
+        return True
+    # auto: enable for large native models.
+    threshold = float(os.environ.get("EZPZ_META_INIT_MIN_PARAMS", "6e9"))
+    est = _estimate_param_count(config)
+    use = est >= threshold
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "meta-init=auto: estimated ~%.1fB params (threshold %.1fB) -> %s",
+            est / 1e9,
+            threshold / 1e9,
+            "meta-init ON" if use else "dense init",
+        )
+    return use
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -1756,6 +1927,8 @@ def parallelize(
     reshard_after_forward: str = "always",
     activation_checkpoint: str = "none",
     loss_parallel: bool = False,
+    meta_init: bool = False,
+    device: Optional["torch.device"] = None,
 ) -> nn.Module:
     """Apply tensor parallelism + FSDP2 (``fully_shard``) to the model.
 
@@ -1767,6 +1940,13 @@ def parallelize(
     length. Activation checkpointing (when requested) is applied to each
     block BEFORE ``fully_shard`` so the checkpoint envelope sits inside the
     sharded unit (torchtitan's ordering).
+
+    ``meta_init``: when True the model was built on the ``meta`` device (no
+    storage). Pre-shard ``init_weights`` is skipped; after ``fully_shard`` the
+    sharded params are materialized on ``device`` via ``to_empty`` and then
+    ``init_weights(buffer_device=device)`` fills them — so the full dense model
+    is never placed on one device (avoids the large-model build OOM). Requires
+    ``device``.
     """
     tp_mesh = device_mesh["tp"]
 
@@ -1784,7 +1964,11 @@ def parallelize(
 
     reshard = _reshard_arg(reshard_after_forward)
 
-    model.init_weights()  # type: ignore
+    # Dense path: init the real params now. Meta path: skip — the params are on
+    # `meta` (no storage), so init happens after fully_shard via to_empty +
+    # init_weights(buffer_device=device) below.
+    if not meta_init:
+        model.init_weights()  # type: ignore
 
     # Only apply tensor/sequence parallelism when the tp mesh dim is > 1.
     # At tp=1 (FSDP-only) the TP plan is pure overhead: SequenceParallel
@@ -1876,6 +2060,16 @@ def parallelize(
         fully_shard([model.norm, model.output], **fsdp_kwargs)
     # Root last.
     fully_shard(model, **fsdp_kwargs)
+
+    # Meta path: params are now sharded DTensors still on `meta`. Materialize
+    # ONLY this rank's shard on the real device (to_empty — no full-model copy),
+    # then init_weights fills the sharded params and recomputes the freqs_cis
+    # buffer on `device` (to_empty leaves buffer data uninitialized). On resume,
+    # dcp.load later overwrites the params + persistent buffers.
+    if meta_init:
+        assert device is not None, "meta_init=True requires a device"
+        model.to_empty(device=device)
+        model.init_weights(buffer_device=device)  # type: ignore
 
     _configure_fsdp_gradient_division(model)
 
@@ -2351,6 +2545,10 @@ def train(
         if device_type == "cpu"
         else torch.device(f"{device_type}:{ezpz.get_local_rank()}")
     )
+    # Decide meta-device init (native large models only) before building, so the
+    # native build below can go on `meta` and never place the full dense model
+    # on one device. HF models always resolve to False (they load real weights).
+    meta_init = _resolve_meta_init(args, config, is_hf_model)
     if is_hf_model:
         # HF path: pull arch + weights from the hub. The ezpz Transformer
         # above is skipped entirely. Note we still built `config` above so
@@ -2385,14 +2583,25 @@ def train(
             token=hf_token,
         )
     else:
-        model = Transformer.from_model_args(config)
+        if meta_init:
+            # Build on `meta`: no storage allocated, so even a 20B model costs
+            # nothing here. parallelize() shards it, then to_empty materializes
+            # only this rank's shard on the real device.
+            with torch.device("meta"):
+                model = Transformer.from_model_args(config)
+        else:
+            model = Transformer.from_model_args(config)
     mstr = summarize_model(
         model,
         verbose=False,
         depth=2,
     )
     logger.info(f"\n{mstr}")
-    model.to(device)
+    # Meta models are materialized (sharded) inside parallelize() via to_empty;
+    # moving a meta model with .to(device) would NOT allocate real storage, so
+    # skip it here. Dense + HF paths place the real model on-device now.
+    if not meta_init:
+        model.to(device)
 
     # FLOPs estimation: try the exact fake-tensor path first, fall back
     # to the linear-scaling probe if it fails.
@@ -2423,6 +2632,16 @@ def train(
             args.seq_len,
             _model_flops,
         )
+    elif meta_init:
+        # The real-tensor probe below would run an actual forward, which a
+        # meta model (no storage) cannot do. Skip it — MFU/TFLOPS just stay 0
+        # for meta-init runs when the fake-tensor count is unavailable.
+        if ezpz.get_rank() == 0:
+            logger.warning(
+                "Fake-tensor FLOP estimate returned 0 and model is on `meta` "
+                "(--meta-init); skipping the real-tensor probe. train/tflops "
+                "and train/mfu will be 0 for this run."
+            )
     else:
         _flops_probe_batch = 1
         _flops_probe_seq = min(128, args.seq_len)
@@ -2554,6 +2773,8 @@ def train(
             reshard_after_forward=args.reshard_after_forward,
             activation_checkpoint=args.activation_checkpoint,
             loss_parallel=use_loss_parallel,
+            meta_init=meta_init,
+            device=device,
         )
     if args.compile:
         # Activation-memory budget for the inductor min-cut partitioner.
@@ -2711,6 +2932,21 @@ def train(
     # correct point to restore sharded DCP state into them. Auto-resume (no
     # flag) is what lets `ezpz launch --auto-retry` — which relaunches the
     # IDENTICAL command each attempt — pick up where a failed attempt left off.
+    # Async checkpointing needs a durable target to fan out to; a node-local
+    # stage dir alone is not resumable after a failure (see _checkpoint.py).
+    if args.async_ckpt and not args.ckpt_dir:
+        raise ValueError("--async-ckpt requires --ckpt-dir (the durable target)")
+    ckpt_stage_dir = args.ckpt_stage_dir
+    if args.async_ckpt and not ckpt_stage_dir:
+        jobid = (
+            os.environ.get("PBS_JOBID")
+            or os.environ.get("SLURM_JOB_ID")
+            or str(os.getpid())
+        ).split(".")[0]
+        ckpt_stage_dir = f"/tmp/ezpz-ckpt-{jobid}"
+    # In-flight async checkpoint handle (drained before the next save + at exit).
+    pending_ckpt = None
+
     resume_meta: "dict[str, object] | None" = None
     if args.ckpt_dir and not args.no_resume:
         from ezpz.examples._checkpoint import load_checkpoint
@@ -2825,6 +3061,20 @@ def train(
     # tokens/step = batch * full_seq_len * dpsize (full pre-shard seq length,
     # not the SP-local shard, so it's exact and rank-invariant).
     tokens_seen = 0
+    # Checkpoint timings from the PREVIOUS step, folded into the next step's
+    # metrics dict so they reach JSONL + W&B:
+    #   - train/ckpt_save_seconds  : sync save's blocking write (all 23 GB to
+    #     the durable dir on the training thread).
+    #   - train/ckpt_stage_seconds : async save's CPU-stage stall only (the
+    #     cheap part — copy state to host, kick off the background write).
+    #   - train/ckpt_drain_seconds : async fan-out (/tmp -> shared FS) blocking
+    #     time at the START of the next step. This is the EXPENSIVE half of an
+    #     async save and was previously untimed — it lands between steps, so it
+    #     is captured by neither ckpt_stage_seconds nor train/dt. The honest
+    #     per-save stall for async is stage + drain, NOT stage alone.
+    pending_stage_seconds: "float | None" = None
+    pending_save_seconds: "float | None" = None
+    pending_drain_seconds: "float | None" = None
     # Resume bookkeeping. When resuming, seed the counters from the checkpoint
     # and reconstruct (start_epoch, resume_offset) so the loop skips
     # already-consumed batches. drop_last=True on both sampler and loader makes
@@ -2873,6 +3123,24 @@ def train(
             # Step-based stop (independent of --epochs).
             if args.train_iters and global_step >= args.train_iters:
                 break
+            # Finalize the backgrounded async fan-out AS SOON AS every rank's
+            # copy is done — not deferred to the next save boundary. Each step
+            # this cheaply votes (a torch all-reduce on the main thread, in
+            # lockstep across ranks — the same footing as the barriers already
+            # here, no cross-thread hazard) whether all ranks finished copying;
+            # when they have, it stamps the durable .complete marker. This keeps
+            # the saved-but-not-yet-durable window to ~copy-duration (~seconds)
+            # instead of a full save interval, so a crash falls back at most ~1
+            # interval like a sync save. The guard is rank-uniform (pending_ckpt
+            # is set/cleared identically on every rank), so all ranks enter the
+            # collective together. None-safe / no-op until ready.
+            if args.async_ckpt and pending_ckpt is not None:
+                from ezpz.examples._checkpoint import try_finalize_if_ready
+
+                _fin_t0 = perf_counter()
+                if try_finalize_if_ready(pending_ckpt) is not None:
+                    pending_drain_seconds = perf_counter() - _fin_t0
+                    pending_ckpt = None
             ezpz.distributed.synchronize()
             t0 = perf_counter()
             attn_mask = None
@@ -3093,36 +3361,35 @@ def train(
             # step time.
             dt_step = float(metrics["train/dt"])  # type: ignore[arg-type]
             if _model_flops > 0 and dt_step > 0:
-                metrics["train/tflops"] = _model_flops / dt_step / 1e12
-                metrics["train/mfu"] = compute_mfu(_model_flops, dt_step)
+                # Per-DEVICE TFLOPS / MFU. `_model_flops` is counted on the
+                # FULL, un-sharded model (estimated before parallelize() applies
+                # TP), so it is the work of ONE data-parallel group — done
+                # COLLECTIVELY by the group's `tp` GPUs. Divide by args.tp so
+                # each metric reflects a single GPU's share; otherwise per-GPU
+                # TFLOPS/MFU over-count by exactly `tp` (2x at tp=2, 4x at tp=4;
+                # at tp=1 this is a no-op). Divide by tp, NOT world_size: unlike
+                # the GLOBAL token count (tps_per_gpu ÷ world_size), _model_flops
+                # is already per-DP-group, so only the tp ranks sharing that one
+                # model must be divided out — the dpsize groups each do this
+                # full-model work independently.
+                flops_per_gpu = _model_flops / args.tp
+                metrics["train/tflops"] = flops_per_gpu / dt_step / 1e12
+                metrics["train/mfu"] = compute_mfu(flops_per_gpu, dt_step)
             # Throughput.
-            #   - train/tps_per_gpu : per-rank tokens/sec (torchtitan's `tgs`)
-            #   - train/tps         : global tokens/sec (over distinct-data
-            #                         ranks; see the dpsize rationale below)
-            # tokens_per_rank uses `local_seq_len` (= pred.shape[1]) because it
-            # describes THIS rank's work. Global tokens, however, are computed
-            # from the FULL pre-shard sequence length `inp.shape[1]` times the
-            # data-parallel degree `dpsize`. `inp` is Replicate() across the tp
-            # group (the TP plan shards only the embedding OUTPUT, never the
-            # input), so inp.shape[1] is the full sequence, identical on every
-            # rank — the metric is exact and rank-invariant even though only
-            # rank 0 logs. tp does NOT enter: the tp ranks hold the SAME
-            # sequence (as full-length logits under the default Replicate()
-            # output, or as Shard(1) slices whose lengths sum to inp.shape[1]
-            # under fused-linear / loss-parallel), never distinct sequences.
+            #   - train/tps         : global tokens/sec across all GPUs
+            #   - train/tps_per_gpu : per-GPU tokens/sec (torchtitan's `tgs`)
             #
-            # Why not `local_seq_len * dpsize * tp`? It over-counts, by a margin
-            # that depends on the loss path:
-            #   * default (eager, Replicate() output): local_seq_len is the FULL
-            #     gathered sequence, so that formula is a full ~tp x over-count.
-            #   * seq-sharded output (fused-linear / loss-parallel): local_seq_len
-            #     is this rank's shard; scaling it by tp over-counts by
-            #     dpsize*(tp - remainder) when the sequence isn't divisible by tp
-            #     (and inp = x[:, :-1] makes an odd length common).
-            # On the HF path (tp forced to 1, no SP) the tp-dim ranks see
-            # DUPLICATE samples; multiplying by dpsize (not world_size) counts
-            # each distinct token exactly once.
-            tokens_per_rank = args.batch_size * local_seq_len
+            # Global tokens/step = batch * FULL pre-shard seq len (inp.shape[1])
+            # * dpsize. `inp` is Replicate() across the tp group (the TP plan
+            # shards only the embedding OUTPUT, never the input), so inp.shape[1]
+            # is the full sequence, identical on every rank — exact and
+            # rank-invariant even though only rank 0 logs. tp does NOT enter the
+            # GLOBAL count: the tp ranks hold the SAME sequence (full-length
+            # logits under the default Replicate() output, or Shard(1) slices
+            # summing to inp.shape[1] under fused-linear / loss-parallel), never
+            # distinct sequences. On the HF path (tp forced to 1, no SP) the
+            # tp-dim ranks see DUPLICATE samples, so multiplying by dpsize (not
+            # world_size) counts each distinct token once.
             # Global tokens processed THIS step across all distinct-data ranks.
             tokens_this_step = args.batch_size * inp.shape[1] * dpsize
             tokens_seen += tokens_this_step
@@ -3132,8 +3399,26 @@ def train(
             metrics["train/tokens"] = tokens_this_step
             metrics["train/tokens_seen"] = tokens_seen
             if dt_step > 0:
-                metrics["train/tps_per_gpu"] = tokens_per_rank / dt_step
+                # Per-GPU throughput = global tokens / (actual GPU count) / dt.
+                # Divide by world_size, NOT dpsize: under TP the `tp` GPUs in a
+                # data-parallel group process that group's tokens TOGETHER, so
+                # the per-GPU rate is tp× lower. (tokens_per_rank / dt would be
+                # per-DP-group, over-counting per-GPU by `tp`; at tp=1
+                # world_size==dpsize so this is unchanged.)
+                metrics["train/tps_per_gpu"] = tokens_this_step / world_size / dt_step
                 metrics["train/tps"] = tokens_this_step / dt_step
+            # Async-ckpt staging time from the previous step's save, carried
+            # here so it lands in the JSONL + W&B alongside the other train/*
+            # metrics (set once, then cleared).
+            if pending_stage_seconds is not None:
+                metrics["train/ckpt_stage_seconds"] = pending_stage_seconds
+                pending_stage_seconds = None
+            if pending_save_seconds is not None:
+                metrics["train/ckpt_save_seconds"] = pending_save_seconds
+                pending_save_seconds = None
+            if pending_drain_seconds is not None:
+                metrics["train/ckpt_drain_seconds"] = pending_drain_seconds
+                pending_drain_seconds = None
             # Restart time: on the FIRST completed step after a resume, log how
             # long from train() entry (process init + dist setup + model build
             # + dcp.load + this step) to a productive step. This is the full
@@ -3159,23 +3444,94 @@ def train(
                 and args.save_interval
                 and global_step % args.save_interval == 0
             ):
-                from ezpz.examples._checkpoint import save_checkpoint
+                _ckpt_meta = {
+                    "tokens_seen": tokens_seen,
+                    "epoch": epoch,
+                    # Next batch to run on resume within `epoch`.
+                    "batch_offset": idx + 1,
+                }
+                if args.async_ckpt:
+                    from ezpz.examples._checkpoint import (
+                        finalize_fanout,
+                        save_checkpoint_async,
+                        start_fanout,
+                    )
 
-                save_checkpoint(
-                    args.ckpt_dir,
-                    global_step,
-                    model,
-                    optimizer,
-                    meta={
-                        "tokens_seen": tokens_seen,
-                        "epoch": epoch,
-                        # Next batch to run on resume within `epoch`.
-                        "batch_offset": idx + 1,
-                    },
-                )
+                    # Only one async save may be in flight (DCP constraint), so
+                    # ensure the previous one is finalized before starting a new
+                    # one. Normally the per-step try_finalize_if_ready already
+                    # finalized it (pending_ckpt is None here); this is the
+                    # fallback for when the save interval is SHORTER than the
+                    # copy — then finalize_fanout blocks on the still-running
+                    # copy. Only record the drain time when we actually finalized
+                    # here (else keep the per-step poll's measurement). None-safe.
+                    if pending_ckpt is not None:
+                        _drain_t0 = perf_counter()
+                        finalize_fanout(pending_ckpt)
+                        pending_drain_seconds = perf_counter() - _drain_t0
+                        pending_ckpt = None
+                    _t_stage = perf_counter()
+                    pending_ckpt = save_checkpoint_async(
+                        args.ckpt_dir,
+                        ckpt_stage_dir,
+                        global_step,
+                        model,
+                        optimizer,
+                        meta=_ckpt_meta,
+                    )
+                    # Caller-thread stall = staging time only. Stash it so the
+                    # NEXT step's metrics dict carries train/ckpt_stage_seconds
+                    # through history.update -> JSONL + W&B (this save block runs
+                    # after the current step's metrics were already written).
+                    _stage_s = perf_counter() - _t_stage
+                    pending_stage_seconds = _stage_s
+                    # Kick the /tmp -> shared-FS fan-out onto a background
+                    # thread; it overlaps the next save interval of training and
+                    # is finalized at the next save boundary (above).
+                    start_fanout(pending_ckpt)
+                    if ezpz.get_rank() == 0:
+                        logger.info(
+                            "train/ckpt_stage_seconds=%.4f (async stage @ "
+                            "step %d)",
+                            _stage_s,
+                            global_step,
+                        )
+                else:
+                    from ezpz.examples._checkpoint import save_checkpoint
+
+                    # Synchronous save BLOCKS the training loop for the full
+                    # write. Time it (train/ckpt_save_seconds) so the sync-vs-
+                    # async trade-off is measurable — this is the stall async
+                    # removes. Folded into the next step's metrics dict.
+                    _t_save = perf_counter()
+                    save_checkpoint(
+                        args.ckpt_dir,
+                        global_step,
+                        model,
+                        optimizer,
+                        meta=_ckpt_meta,
+                    )
+                    pending_stage_seconds = None  # (async-only; keep clear)
+                    _save_s = perf_counter() - _t_save
+                    pending_save_seconds = _save_s
+                    if ezpz.get_rank() == 0:
+                        logger.info(
+                            "train/ckpt_save_seconds=%.4f (sync save @ step %d)",
+                            _save_s,
+                            global_step,
+                        )
         # Step-based stop breaks the inner loop; also break the epoch loop.
         if args.train_iters and global_step >= args.train_iters:
             break
+    # Finish any in-flight async checkpoint so a run that ends right after a
+    # save doesn't lose it (the background fan-out may still be running), then
+    # tear down the fan-out worker. drain() joins the background copy if one is
+    # in flight, else runs it inline; either way it does the barrier + marker.
+    if args.async_ckpt:
+        from ezpz.examples._checkpoint import drain, shutdown_fanout_pool
+
+        drain(pending_ckpt)
+        shutdown_fanout_pool()
     if act_handles:
         for handle in act_handles:
             handle.remove()

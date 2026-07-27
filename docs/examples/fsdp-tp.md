@@ -575,7 +575,7 @@ Per step, the example reports how many tokens were consumed:
 | `train/tokens` | Global tokens processed **this step** |
 | `train/tokens_seen` | Cumulative tokens over the whole run (the standard x-axis for loss-vs-tokens curves) |
 | `train/tps` | Global tokens/sec (over distinct-data ranks — see the `dp_size` note below) |
-| `train/tps_per_gpu` | Per-rank tokens/sec |
+| `train/tps_per_gpu` | Per-GPU tokens/sec (global ÷ world_size; correct under TP) |
 
 Global tokens/step is `batch × seq_len × dp_size`, using the **full,
 pre-shard** sequence length (`inp.shape[1]`) and the data-parallel degree:
@@ -613,6 +613,8 @@ FSDP+TP.
 | `--save-interval N` | Save every `N` optimizer steps (`0` = off) |
 | `--train-iters N` | Stop after `N` steps, regardless of `--epochs` (`0` = full epochs) |
 | `--no-resume` | Ignore an existing checkpoint and start fresh |
+| `--async-ckpt` | Save asynchronously (stage to node-local, fan out to `--ckpt-dir`); overlaps the write with training. Requires `--ckpt-dir`. |
+| `--ckpt-stage-dir DIR` | Node-local staging dir for `--async-ckpt` (default `/tmp/ezpz-ckpt-<jobid>`) |
 
 **Auto-resume.** On startup, if `--ckpt-dir` contains a complete checkpoint,
 the newest one is loaded and training continues from its step — no flag

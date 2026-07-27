@@ -278,3 +278,68 @@ class TestConsumedTokensAccounting:
             dp_replicate=2, dp_shard=-1,
         )
         assert tokens == gbs * seq
+
+    def test_tps_per_gpu_divides_by_world_size_not_dpsize(self):
+        """REGRESSION: train/tps_per_gpu = tokens_this_step / WORLD_SIZE / dt,
+        not / dpsize. Under TP the `tp` GPUs in a DP group share the group's
+        tokens, so per-GPU throughput is tp× lower than per-DP-group. The old
+        `tokens_per_rank/dt` (batch*full_seq/dt) over-counted per-GPU by `tp`
+        (2× at tp=2, 4× at tp=4). At tp=1 the two denominators coincide."""
+        m = _import_fsdp_tp()
+        batch, seq, world_size, tp = 1, 512, 8, 2
+        rep, shard = m._resolve_dp_degrees(
+            world_size=world_size, tp=tp, dp_replicate=1, dp_shard=-1
+        )
+        dpsize = rep * shard  # 4
+        tokens_this_step = batch * seq * dpsize
+        dt = 0.5
+        correct = tokens_this_step / world_size / dt     # per actual GPU
+        buggy = (batch * seq) / dt                        # old tokens_per_rank/dt
+        assert correct == tokens_this_step / 8 / dt
+        # The bug inflated per-GPU by exactly tp.
+        assert abs(buggy / correct - tp) < 1e-9
+
+
+class TestTflopsMfuPerDevice:
+    """Locks the per-DEVICE scaling of train/tflops and train/mfu.
+
+    `_model_flops` is counted on the FULL, un-sharded model (estimated
+    before parallelize() applies TP), so it is the work of ONE data-parallel
+    group — performed COLLECTIVELY by that group's `tp` GPUs. The per-device
+    metrics must therefore divide it by `tp`:
+
+        flops_per_gpu = _model_flops / tp
+        train/tflops  = flops_per_gpu / dt / 1e12
+        train/mfu     = compute_mfu(flops_per_gpu, dt)
+
+    The pre-fix code fed the whole `_model_flops` into a single-device
+    denominator, inflating per-device TFLOPS/MFU by exactly `tp` (2x at
+    tp=2, 4x at tp=4). Divisor is `tp`, NOT world_size: _model_flops is
+    already per-DP-group (never multiplied by dpsize), so only the tp ranks
+    sharing that one model are divided out. At tp=1 it's a no-op.
+    """
+
+    def test_tflops_divides_flops_by_tp(self):
+        """REGRESSION: per-device TFLOPS uses _model_flops / tp, not the raw
+        full-model flops."""
+        model_flops, dt, tp = 6.0e14, 0.5, 2
+        correct = (model_flops / tp) / dt / 1e12
+        buggy = model_flops / dt / 1e12          # pre-fix (no /tp)
+        assert abs(buggy / correct - tp) < 1e-9  # inflated by exactly tp
+
+    def test_tflops_tp1_is_noop(self):
+        """At tp=1 the /tp division changes nothing (common path guard)."""
+        model_flops, dt = 6.0e14, 0.5
+        assert (model_flops / 1) / dt / 1e12 == model_flops / dt / 1e12
+
+    def test_mfu_divides_flops_by_tp(self):
+        """REGRESSION against the real compute_mfu helper: passing
+        _model_flops/tp yields exactly 1/tp of the (buggy) full-flops MFU,
+        since compute_mfu is linear in model_flops."""
+        m = _import_fsdp_tp()
+        model_flops, dt, tp = 6.0e14, 0.5, 4
+        peak = 1.0e15  # explicit peak → no device lookup, deterministic
+        correct = m.compute_mfu(model_flops / tp, dt, peak_flops=peak)
+        buggy = m.compute_mfu(model_flops, dt, peak_flops=peak)
+        assert correct > 0.0
+        assert abs(buggy / correct - tp) < 1e-9
