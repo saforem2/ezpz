@@ -293,14 +293,7 @@ def _abort_if_any_rank_failed(
     with, so just re-raise this rank's own error.
     """
     failed = 1 if my_err is not None else 0
-    try:
-        import ezpz
-
-        n_failed = ezpz.all_reduce(failed, implementation="mpi")
-    except Exception:  # noqa: BLE001 — no MPI: single-rank, re-raise locally
-        if my_err is not None:
-            raise my_err
-        return
+    n_failed = _allreduce_sum_int(failed)
     if n_failed > 0:
         if my_err is not None:
             logger.error(
@@ -347,13 +340,10 @@ def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
         done_ok, failed = 0, 1
     else:
         done_ok, failed = 1, 0
-    try:
-        import ezpz
-
-        n_done = ezpz.all_reduce(done_ok, implementation="mpi")
-        n_failed = ezpz.all_reduce(failed, implementation="mpi")
-    except Exception:  # noqa: BLE001 — MPI unavailable: defer, never diverge
-        return False
+    # Coordinate over the torch PG (works in any launch; no mpi4py needed). A
+    # failure raises identically on ALL ranks before any barrier — coordinated
+    # abort, not a one-rank-crash-rest-hang deadlock.
+    n_failed = _allreduce_sum_int(failed)
     if n_failed > 0:
         if failed and fut is not None:
             logger.error(
@@ -364,6 +354,7 @@ def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
             "async checkpoint fan-out failed on at least one rank; aborting "
             "(the previous complete checkpoint remains durable for resume)"
         )
+    n_done = _allreduce_sum_int(done_ok)
     return n_done == _world_size()
 
 
@@ -568,3 +559,37 @@ def _barrier() -> None:
             dist.barrier()
     except Exception:  # noqa: BLE001 — barrier is best-effort
         pass
+
+
+def _dist_active() -> bool:
+    """True iff a torch.distributed process group is initialized."""
+    try:
+        import torch.distributed as dist
+
+        return bool(dist.is_available() and dist.is_initialized())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _allreduce_sum_int(value: int) -> int:
+    """Sum an int across ranks via the torch PG (SUM all-reduce).
+
+    Uses ``torch.distributed`` — the same primitive as :func:`_barrier` — so it
+    works in ANY distributed launch (gloo, xccl+gloo composite), with no mpi4py
+    dependency. Runs on the CPU/gloo tensor so it's valid on the composite
+    ``xpu:xccl,cpu:gloo`` backend even from the main thread. When not
+    distributed (single process, no PG) returns ``value`` unchanged.
+
+    MUST be called by all ranks in lockstep (it is collective). This is safe on
+    the MAIN thread at a fixed per-step point — the same footing as the existing
+    ``_barrier`` calls — the cross-thread hazard only applies to the background
+    copy, which issues no collectives.
+    """
+    if not _dist_active():
+        return value
+    import torch
+    import torch.distributed as dist
+
+    t = torch.tensor([int(value)], dtype=torch.int64)  # CPU tensor → gloo path
+    dist.all_reduce(t, op=dist.ReduceOp.SUM)
+    return int(t.item())
