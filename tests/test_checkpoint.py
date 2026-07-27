@@ -440,3 +440,38 @@ class TestBackgroundedFanout:
     def test_try_finalize_none_safe(self):
         m = _import()
         assert m.try_finalize_if_ready(None) is None
+
+    def test_failed_copy_does_not_vote_done(self, tmp_path):
+        """REGRESSION: a background copy that RAISED must NOT be treated as
+        'done' and must NOT stamp a .complete marker. Future.done() is True on
+        exception, so the readiness probe has to check .exception(). A failed
+        fan-out must raise (coordinated abort) rather than silently marking a
+        checkpoint whose shards never landed — and the durable dir stays
+        markerless (resume falls back to the previous good checkpoint)."""
+        torch = _torch_or_skip()
+        _init_single_rank_pg(torch)
+        m = _import()
+        durable, stage = tmp_path / "c", tmp_path / "s"
+        model, opt = _Tiny.build(torch)
+        opt.step()
+        pending = m.save_checkpoint_async(durable, stage, 70, model, opt, meta={})
+
+        # A future that is done() == True but carries an exception.
+        class _Failed:
+            def done(self):
+                return True
+
+            def exception(self):
+                return RuntimeError("simulated fan-out copy failure")
+
+            def result(self):
+                raise RuntimeError("simulated fan-out copy failure")
+
+        pending.fanout_future = _Failed()
+        # try_finalize must raise (not return a path, not mark complete).
+        with pytest.raises(RuntimeError):
+            m.try_finalize_if_ready(pending)
+        assert not pending.drained
+        assert not (durable / "step-70" / ".complete").exists()
+        assert m.latest_checkpoint(durable) is None
+        m.shutdown_fanout_pool()

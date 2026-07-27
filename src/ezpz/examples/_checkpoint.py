@@ -280,26 +280,91 @@ def start_fanout(pending: Optional[PendingCheckpoint]) -> None:
     pending.fanout_future = _fanout_pool().submit(_copy_my_shards, pending)
 
 
-def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
-    """Collective, DEADLOCK-SAFE probe: has EVERY rank's background copy finished?
+def _abort_if_any_rank_failed(
+    my_err: "Optional[BaseException]", pending: PendingCheckpoint
+) -> None:
+    """Collectively abort the fan-out if ANY rank's shard copy failed.
 
-    Uses an MPI all-reduce over MPI's OWN communicator — deliberately NOT the
-    torch/xccl process group the training loop reduces gradients on. A collective
-    on a separate communicator cannot cross-match the training collectives, so
-    this is safe to call every step from the main thread while the fan-out runs
-    on a background thread. Returns the AND across ranks (min of per-rank 0/1),
-    so finalize only proceeds once no rank is still copying.
+    Every rank must call this after attempting its copy, passing its own
+    exception (or None). We MPI-all-reduce the failure count so all ranks agree,
+    then raise together BEFORE the finalize barrier — otherwise a rank that
+    raised on its own would leave the healthy ranks hanging at the barrier. If
+    MPI is unavailable (single process / no MPI) there is no one to coordinate
+    with, so just re-raise this rank's own error.
     """
-    fut = pending.fanout_future
-    my_done = 1 if (fut is None or fut.done()) else 0
+    failed = 1 if my_err is not None else 0
     try:
         import ezpz
 
-        # MIN over ranks: 1 only if every rank reports done.
-        total = ezpz.all_reduce(my_done, implementation="mpi")
-        return total == _world_size()
-    except Exception:  # noqa: BLE001 — if MPI unavailable, fall back to local
-        return my_done == 1
+        n_failed = ezpz.all_reduce(failed, implementation="mpi")
+    except Exception:  # noqa: BLE001 — no MPI: single-rank, re-raise locally
+        if my_err is not None:
+            raise my_err
+        return
+    if n_failed > 0:
+        if my_err is not None:
+            logger.error(
+                "async checkpoint fan-out failed on this rank: %s", my_err
+            )
+        raise RuntimeError(
+            "async checkpoint fan-out failed on at least one rank; aborting "
+            "(the previous complete checkpoint remains durable for resume)"
+        )
+
+
+def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
+    """Collective, DEADLOCK-SAFE probe: has EVERY rank's background copy finished
+    SUCCESSFULLY? Returns True only when all ranks' copies are done and none
+    failed; returns False while any rank is still copying. Raises (identically
+    on every rank) if any rank's background copy raised.
+
+    Uses MPI all-reduces over MPI's OWN communicator — deliberately NOT the
+    torch/xccl process group the training loop reduces gradients on — so this is
+    safe to call every step from the main thread while the fan-out runs on a
+    background thread (a collective on a separate communicator cannot cross-match
+    the training collectives).
+
+    Failure handling is the subtle part:
+      * ``Future.done()`` is True whether the copy finished OR raised, so we must
+        check ``.exception()`` — otherwise a FAILED copy would vote "done" and
+        finalize would stamp a marker (or, via ``.result()`` re-raising on one
+        rank while others sit at the barrier, hang the job).
+      * A failure is surfaced by raising on ALL ranks here (``n_failed`` is the
+        same everywhere), BEFORE anyone enters ``finalize_fanout``'s barrier —
+        a clean coordinated abort, not a one-rank-crashes-rest-hang deadlock.
+        The previous complete checkpoint stays durable for resume.
+      * If the MPI collective itself is unavailable we CANNOT make a per-step
+        decision that's consistent across ranks (divergence → deadlock), so we
+        report not-ready and defer to the save-boundary ``finalize_fanout`` (a
+        hard all-rank barrier).
+    """
+    fut = pending.fanout_future
+    if fut is None:
+        done_ok, failed = 1, 0
+    elif not fut.done():
+        done_ok, failed = 0, 0
+    elif fut.exception() is not None:  # done() True but the copy raised
+        done_ok, failed = 0, 1
+    else:
+        done_ok, failed = 1, 0
+    try:
+        import ezpz
+
+        n_done = ezpz.all_reduce(done_ok, implementation="mpi")
+        n_failed = ezpz.all_reduce(failed, implementation="mpi")
+    except Exception:  # noqa: BLE001 — MPI unavailable: defer, never diverge
+        return False
+    if n_failed > 0:
+        if failed and fut is not None:
+            logger.error(
+                "async checkpoint fan-out failed on this rank: %s",
+                fut.exception(),
+            )
+        raise RuntimeError(
+            "async checkpoint fan-out failed on at least one rank; aborting "
+            "(the previous complete checkpoint remains durable for resume)"
+        )
+    return n_done == _world_size()
 
 
 def try_finalize_if_ready(
@@ -350,12 +415,20 @@ def finalize_fanout(pending: Optional[PendingCheckpoint]) -> Optional[Path]:
     if pending is None or pending.drained:
         return None if pending is None else pending.final_path
 
-    # Ensure the copy ran, then join it (surfaces any exception here, on the
-    # main thread, rather than swallowing it on the pool).
-    if pending.fanout_future is None:
-        _copy_my_shards(pending)
-    else:
-        pending.fanout_future.result()
+    # Ensure the copy ran, then join it. Capture (don't immediately re-raise) a
+    # per-rank failure so we can decide COLLECTIVELY: if we let one rank raise
+    # here while healthy ranks fall through to _barrier(), the healthy ranks
+    # hang forever. Instead every rank votes, and all abort together (before the
+    # barrier) if ANY rank's copy failed.
+    my_err: Optional[BaseException] = None
+    try:
+        if pending.fanout_future is None:
+            _copy_my_shards(pending)
+        else:
+            pending.fanout_future.result()
+    except BaseException as exc:  # noqa: BLE001 — surfaced collectively below
+        my_err = exc
+    _abort_if_any_rank_failed(my_err, pending)
 
     _barrier()  # all ranks' shards fanned out before the marker
     if _global_rank() == 0:
