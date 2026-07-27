@@ -613,7 +613,7 @@ class Transformer(nn.Module):
         )
         self.init_weights()
 
-    def init_weights(self):
+    def init_weights(self, buffer_device: "torch.device | None" = None):
         """
         [Note: On ``init_weights`` vs. ``reset_parameters``]
         Modules may define ``reset_parameters`` to initialize parameter values.
@@ -624,8 +624,14 @@ class Transformer(nn.Module):
         different from that in ``reset_parameters``. For this, we define
         ``init_weights``. We only call it in the constructor of this
         ``Transformer`` root module to avoid reinitializing tensors.
+
+        ``buffer_device`` lets a meta-device init (torchtitan pattern) recompute
+        the ``freqs_cis`` buffer on the REAL device after ``to_empty`` has moved
+        it there with garbage data. Defaults to the buffer's current device, so
+        existing no-arg callers are unchanged.
         """
-        with torch.device(self.freqs_cis.device):
+        buffer_device = buffer_device or self.freqs_cis.device
+        with torch.device(buffer_device):
             self.freqs_cis = precompute_freqs_cis(
                 self.model_args.dim // self.model_args.n_heads,
                 # Need to compute until at least the max token limit for generation
