@@ -2937,22 +2937,26 @@ ezpz_setup_env() {
 #   sets up the job.
 #
 # Flow B — venv path argument:
-#   Calls `ezpz_setup_job && ezpz_load_modules && source <venv>/bin/activate`.
-#   This is the "I have my own venv" path: it loads the BARE module stack
-#   (no frameworks/conda) and activates the venv you point at. The venv
-#   must already exist — this function will NOT create one for you
-#   (use `uv venv` after `ezpz_load_modules` if you need to bootstrap).
+#   Calls `ezpz_setup_job && ezpz_load_modules`, then activates <venv>/bin/
+#   activate. This is the "I have my own venv" path: it loads the BARE module
+#   stack (no frameworks/conda) and activates the venv you point at. If the
+#   venv does NOT exist, it is auto-created with
+#   `uv venv --system-site-packages` on top of the just-loaded modules (so it
+#   uses the correct module-provided python3 + inherits the framework build).
+#   Set `EZPZ_NO_AUTO_VENV=1` to disable auto-create and fail loudly instead
+#   (e.g. in CI). Auto-create requires `uv` on PATH.
 #
 # The two flows are mutually exclusive. Flow A's `ezpz_setup_python` would
 # load `frameworks`/`conda` on top of Flow B's bare modules, which double-
 # loads modules and risks version mismatches. Pick one based on intent.
 #
 # Args:
-#   $1 (optional): path to an existing venv to activate. Resolved to an
-#                  absolute path via `ezpz_realpath` so the activated venv
-#                  survives a later `cd` (the activate script exports
-#                  VIRTUAL_ENV, and many tools key off that).
-# Returns: 0 on success, 1 on failure (missing venv, module load failed, etc).
+#   $1 (optional): path to a venv to activate (created if missing; see Flow B).
+#                  Resolved to an absolute path via `ezpz_realpath` so the
+#                  activated venv survives a later `cd` (the activate script
+#                  exports VIRTUAL_ENV, and many tools key off that).
+# Returns: 0 on success, 1 on failure (module load failed, uv missing or
+#          venv absent under EZPZ_NO_AUTO_VENV=1, venv creation failed, etc).
 # -----------------------------------------------------------------------------
 ezpz_setup() {
 	local venv_path="${1:-}"
@@ -2980,13 +2984,12 @@ ezpz_setup() {
 		venv_abs="$(cd "$(dirname "${venv_path}")" 2>/dev/null && pwd)/$(basename "${venv_path}")"
 	fi
 	local activate="${venv_abs}/bin/activate"
-	if [[ ! -f "${activate}" ]]; then
-		log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} (no ${activate})."
-		log_message ERROR "  - Create one first, e.g.:"
-		log_message ERROR "        ezpz_load_modules && uv venv ${venv_path}"
-		return 1
-	fi
 
+	# Load job env + modules BEFORE the venv existence check. Two reasons:
+	#   1. auto-creation (below) needs `uv` and the correct module-provided
+	#      python3 on PATH — creating against the bare login-node python would
+	#      silently produce a venv without the framework (e.g. torch+xpu) build.
+	#   2. even for an existing venv we want modules loaded first, unchanged.
 	if ! ezpz_setup_job; then
 		log_message ERROR "  - Job setup failed. Aborting."
 		return 1
@@ -2995,6 +2998,39 @@ ezpz_setup() {
 		log_message ERROR "  - Module load failed. Aborting."
 		return 1
 	fi
+
+	# Auto-create the venv when missing (the function's job is to land you in a
+	# working venv, and the modules loaded above provide `uv` + the right
+	# python3). Opt out with EZPZ_NO_AUTO_VENV=1 to restore the strict "must
+	# already exist" behavior (e.g. for CI that wants to fail loudly).
+	if [[ ! -f "${activate}" ]]; then
+		if [[ "${EZPZ_NO_AUTO_VENV:-0}" == "1" ]]; then
+			log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} (no ${activate})."
+			log_message ERROR "  - EZPZ_NO_AUTO_VENV=1 set; not auto-creating. Create it with:"
+			log_message ERROR "        uv venv --system-site-packages ${venv_path}"
+			return 1
+		fi
+		if ! command -v uv >/dev/null 2>&1; then
+			log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} and ${CYAN}uv${RESET} is not on PATH."
+			log_message ERROR "  - Install uv (or create the venv manually) then re-run:"
+			log_message ERROR "        uv venv --system-site-packages ${venv_path}"
+			return 1
+		fi
+		local _py
+		_py="$(command -v python3)"
+		log_message INFO "  - venv not found at ${CYAN}${venv_abs}${RESET}; creating with ${CYAN}uv${RESET} (python=${_py:-python3})..."
+		mkdir -p "$(dirname "${venv_abs}")" 2>/dev/null || true
+		if ! uv venv --python="${_py:-python3}" --system-site-packages "${venv_abs}"; then
+			log_message ERROR "  - Failed to create venv at ${RED}${venv_abs}${RESET}."
+			return 1
+		fi
+		if [[ ! -f "${activate}" ]]; then
+			log_message ERROR "  - venv creation reported success but ${activate} is missing."
+			return 1
+		fi
+		log_message INFO "  ${GREEN}[✓]${RESET} Created venv at: ${CYAN}${venv_abs}${RESET}"
+	fi
+
 	# shellcheck source=/dev/null
 	if ! source "${activate}"; then
 		log_message ERROR "  - Failed to activate venv at ${venv_abs}."
