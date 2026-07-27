@@ -7,8 +7,8 @@ Sunspot** (Intel PVC / XPU), not modeled estimates.
 
 !!! info "Key API"
     - [`ezpz.examples._checkpoint`](../python/Code-Reference/examples/fsdp_tp.md) — DCP save/load helpers
-    - `fsdp_tp` flags: `--ckpt-dir`, `--save-interval`, `--train-iters`, `--no-resume`
-    - Metric: `train/restart_seconds`
+    - `fsdp_tp` flags: `--ckpt-dir`, `--save-interval`, `--train-iters`, `--no-resume`, `--async-ckpt`, `--ckpt-stage-dir`, `--meta-init`
+    - Metrics: `train/restart_seconds`, `train/ckpt_save_seconds`, `train/ckpt_stage_seconds`, `train/ckpt_drain_seconds`
 
 ## How it works
 
@@ -231,6 +231,35 @@ sync except during the brief copy window.
     checkpoint is always durable — and shrinking `--save-interval` bounds the
     worst case.
 
+### Scaling up: agpt-20b, a 232 GB checkpoint (needs `--meta-init`)
+
+agpt-20b (~20B params) initially **OOM'd at model build**: the example moved the
+full dense model onto one GPU before FSDP sharded it, capping model size at what
+fits whole on a single device (~2–8B) regardless of node count. `--meta-init`
+(default `auto`, on for models ≳6B) fixes this — the model is built on the
+`meta` device, sharded, then only each rank's shard is materialized
+(torchtitan's pattern). Peak memory drops from OOM (>64 GB/tile) to **~14 GB/
+tile**, and the same checkpoint-restart experiment then runs unchanged:
+
+![agpt-20b (232 GB) — sync vs async checkpoint restart](checkpoint-restart-agpt20b.png)
+
+| per-save training-thread stall | sync | async (backgrounded) |
+|---|---:|---:|
+| stage | — | `ckpt_stage_seconds` 1.73 s |
+| drain residual | — | `ckpt_drain_seconds` 3.69 s |
+| blocking write | `ckpt_save_seconds` **23.57 s** | — |
+| **true total** | **≈23.6 s** | **≈5.4 s** |
+
+- **The async win scales with checkpoint size.** At 232 GB a synchronous save
+  freezes the training loop for **~24 s** every checkpoint; backgrounded async
+  cuts that to ~5.4 s — **4.4× less**, an ~18 s/save saving (vs ~2.7 s at 2b).
+  The bigger the checkpoint, the more the fan-out is worth hiding.
+- **Restart cost ≈ 55–63 s** (both), dominated by the 232 GB `dcp.load`.
+- Meta-init composes with everything: TP + FSDP2 sharding, DCP save/resume
+  (verified restoring from a 232 GB checkpoint), and the backgrounded fan-out —
+  all at 20B on 4 Sunspot nodes with no OOM. Small models (agpt-2b and below)
+  stay on the exact dense-init path (`auto` keeps them bit-for-bit).
+
 ## Measuring it yourself
 
 `fsdp_tp` logs a `RESUMED from step=N` line on resume and a
@@ -265,10 +294,11 @@ Frameworks that recover *without* losing steps or *without* a process
 restart — e.g. pause/resume or in-place elastic recovery (TorchFT-style) —
 are separate systems not integrated into ezpz and are out of scope here.
 
-Numbers above are from Sunspot (all 2 nodes / 24 XPU ranks): debug-model runs
-(job `12471687`); the agpt-2b iterations — blocking drain (`12471769`),
-backgrounded but finalized late (`12471771`); and the final fair
-finalize-when-ready run (job `12471773`, 2000 steps / save every 100) the plot
-and tables reflect. Absolute `restart_seconds` grows with model size and node
-count (larger `dcp.load`, longer init) — the debug→agpt-2b jump (≈10 s → ≈40 s)
-shows exactly that; the *mechanism* is parallelism-agnostic since DCP is sharded.
+Numbers above are from Sunspot: debug-model runs (job `12471687`, 2 nodes); the
+agpt-2b iterations — blocking drain (`12471769`), backgrounded but finalized
+late (`12471771`), and the final fair finalize-when-ready run (`12471773`, 2000
+steps / save every 100, 2 nodes) the 2b plot reflects; and the agpt-20b run
+(job `12471783`, 4 nodes, `--meta-init`) the 232 GB plot reflects. Absolute
+`restart_seconds` grows with model size and node count (larger `dcp.load`,
+longer init) — the debug→agpt-2b→agpt-20b jump (≈10 s → ≈40 s → ≈60 s) shows
+exactly that; the *mechanism* is parallelism-agnostic since DCP is sharded.

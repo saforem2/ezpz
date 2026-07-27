@@ -132,6 +132,21 @@ python3 plot_2b_comparison.py \
     --out agpt2b_restart.png --report agpt2b_restart_report.md
 ```
 
+## Even bigger: agpt-20b (232 GB checkpoint, needs `--meta-init`)
+
+The same driver runs agpt-20b (~20B params → a **232 GB** checkpoint) once
+`--meta-init` is on (auto for models ≳6B) — without it the run OOMs moving the
+full dense model onto one GPU before sharding. Real Sunspot numbers (job
+`12471783`, 4 nodes, 300 steps, save every 50, kills at 100/200):
+
+![agpt-20b sync vs async](agpt20b_restart.png)
+
+The async win **scales with checkpoint size**: a synchronous save blocks the
+loop for **23.6 s** at 232 GB, vs async stage 1.73 s + drain 3.69 s = **5.4 s
+(~4.4× less)**. Meta-init drops peak memory from OOM (>64 GB/tile) to ~14 GB and
+composes with TP+FSDP2, DCP resume, and the backgrounded fan-out unchanged. Run
+it with `qsub -v MODEL=agpt-20b,KEEP=1,... -l select=4 restart_experiment_2b.pbs`.
+
 ## Reproduce
 
 ```bash
