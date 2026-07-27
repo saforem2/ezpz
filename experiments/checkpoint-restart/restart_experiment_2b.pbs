@@ -40,22 +40,31 @@ JOBID=$(echo "${PBS_JOBID}" | cut -d. -f1)
 EXPT="${SUBMIT_DIR}/expt_${JOBID}"
 mkdir -p "${EXPT}"
 
-# 2000 steps, save every 100. Kill AFTER steps 500/1000/1500 -> four even
-# 500-step segments = a clean 3-tooth sawtooth. Each target is a checkpoint
-# multiple, so a kill loses exactly the steps since the last save
+# Defaults: agpt-2b, 2000 steps, save every 100, kill AFTER 500/1000/1500 ->
+# four even 500-step segments = a clean 3-tooth sawtooth. Each kill target is a
+# checkpoint multiple, so a kill loses exactly the steps since the last save
 # (<= SAVE_INTERVAL). At save_interval=100 the async fan-out (~11 steps) fully
-# overlaps training, and try_finalize_if_ready stamps the durable marker as
-# soon as the copy is done — so async's durability lag is ~copy-time, not a
-# full interval, making the sync-vs-async comparison fair.
-TRAIN_ITERS=2000
-SAVE_INTERVAL=100
-NP=(--nproc 24 --nproc_per_node 12)
-COMMON=(--model agpt-2b --dataset random --tp 2 --seq-len 512 --batch-size 1)
+# overlaps training, and try_finalize_if_ready stamps the durable marker as soon
+# as the copy is done — so async's durability lag is ~copy-time, making the
+# sync-vs-async comparison fair.
+#
+# All of these are env-overridable via `qsub -v` so a bigger model can be run
+# without editing the script, e.g. for agpt-20b (scaled-down footprint on more
+# nodes for memory):
+#   qsub -v MODEL=agpt-20b,TRAIN_ITERS=600,SAVE_INTERVAL=100,KILL_STEPS="200 400",KEEP=1 \
+#        -l select=4 ... restart_experiment_2b.pbs
+MODEL="${MODEL:-agpt-2b}"
+TRAIN_ITERS="${TRAIN_ITERS:-2000}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-100}"
+SEQ_LEN="${SEQ_LEN:-512}"
+BATCH_SIZE="${BATCH_SIZE:-1}"
+# ezpz_launch auto-detects rank count from the PBS allocation, so node/GPU
+# count is controlled purely by the qsub `-l select=` line — nothing to set
+# here. The tp degree stays 2.
+COMMON=(--model "${MODEL}" --dataset random --tp 2 --seq-len "${SEQ_LEN}" --batch-size "${BATCH_SIZE}")
 
-# Step thresholds to kill AFTER (mid-training, past a real checkpoint). Aligned
-# to SAVE_INTERVAL=100 and evenly spaced across the 2000-step run so the teeth
-# are uniform and each kill loses at most one save interval.
-KILL_AT_STEPS=(500 1000 1500)
+# Kill thresholds: space-separated env override, else the 2b defaults.
+read -r -a KILL_AT_STEPS <<< "${KILL_STEPS:-500 1000 1500}"
 
 # latest complete checkpoint step in a ckpt dir (0 if none).
 latest_ckpt_step() {
@@ -92,12 +101,13 @@ chaos() {
 }
 
 # ---- checkpoint pruner (keep only the N newest complete step dirs) ----
-# Each agpt-2b checkpoint is ~23 GB and the run saves every SAVE_INTERVAL
-# steps, so keeping all of them fills the shared-FS quota mid-run (observed:
-# job 12471768 crashed on "Disk quota exceeded" fanning out step-180). Resume
-# only ever needs the newest complete checkpoint; keep 2 for safety (the very
-# newest may be mid-write). Runs in the background alongside each phase.
-KEEP_CKPTS=2
+# Each agpt-2b checkpoint is ~23 GB (agpt-20b ~240 GB!) and the run saves every
+# SAVE_INTERVAL steps, so keeping all of them fills the shared-FS quota mid-run
+# (observed: job 12471768 crashed on "Disk quota exceeded"). Resume only ever
+# needs the newest complete checkpoint; keep 2 for safety (the very newest may
+# be mid-write). Override KEEP=1 for very large models to halve peak disk. Runs
+# in the background alongside each phase.
+KEEP_CKPTS="${KEEP:-2}"
 prune_ckpts() {
     local ckpt="$1" doneflag="$2"
     while [ ! -f "${doneflag}" ]; do
