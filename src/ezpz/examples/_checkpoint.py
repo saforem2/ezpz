@@ -286,11 +286,11 @@ def _abort_if_any_rank_failed(
     """Collectively abort the fan-out if ANY rank's shard copy failed.
 
     Every rank must call this after attempting its copy, passing its own
-    exception (or None). We MPI-all-reduce the failure count so all ranks agree,
-    then raise together BEFORE the finalize barrier — otherwise a rank that
-    raised on its own would leave the healthy ranks hanging at the barrier. If
-    MPI is unavailable (single process / no MPI) there is no one to coordinate
-    with, so just re-raise this rank's own error.
+    exception (or None). We all-reduce the failure count over the torch PG (see
+    :func:`_allreduce_sum_int`) so all ranks agree, then raise together BEFORE
+    the finalize barrier — otherwise a rank that raised on its own would leave
+    the healthy ranks hanging at the barrier. When not distributed (single
+    process, no PG) the count is this rank's own, so it re-raises locally.
     """
     failed = 1 if my_err is not None else 0
     n_failed = _allreduce_sum_int(failed)
@@ -311,11 +311,12 @@ def _all_ranks_copy_done(pending: PendingCheckpoint) -> bool:
     failed; returns False while any rank is still copying. Raises (identically
     on every rank) if any rank's background copy raised.
 
-    Uses MPI all-reduces over MPI's OWN communicator — deliberately NOT the
-    torch/xccl process group the training loop reduces gradients on — so this is
-    safe to call every step from the main thread while the fan-out runs on a
-    background thread (a collective on a separate communicator cannot cross-match
-    the training collectives).
+    Coordinates via a torch all-reduce (:func:`_allreduce_sum_int`) on the MAIN
+    thread, in lockstep across ranks — the same footing as the ``_barrier``
+    calls already in the finalize path, so there is no cross-thread hazard (the
+    cross-thread danger only applies to the background copy, which issues no
+    collectives). Callers must invoke this on all ranks in lockstep; the
+    training loop's guard (``pending_ckpt`` is rank-uniform) ensures that.
 
     Failure handling is the subtle part:
       * ``Future.done()`` is True whether the copy finished OR raised, so we must

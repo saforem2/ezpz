@@ -3125,12 +3125,15 @@ def train(
                 break
             # Finalize the backgrounded async fan-out AS SOON AS every rank's
             # copy is done — not deferred to the next save boundary. Each step
-            # this cheaply MPI-probes (separate communicator, no xccl deadlock)
-            # whether all ranks finished copying; when they have, it stamps the
-            # durable .complete marker (barrier on the main thread). This keeps
+            # this cheaply votes (a torch all-reduce on the main thread, in
+            # lockstep across ranks — the same footing as the barriers already
+            # here, no cross-thread hazard) whether all ranks finished copying;
+            # when they have, it stamps the durable .complete marker. This keeps
             # the saved-but-not-yet-durable window to ~copy-duration (~seconds)
             # instead of a full save interval, so a crash falls back at most ~1
-            # interval like a sync save. None-safe / no-op until ready.
+            # interval like a sync save. The guard is rank-uniform (pending_ckpt
+            # is set/cleared identically on every rank), so all ranks enter the
+            # collective together. None-safe / no-op until ready.
             if args.async_ckpt and pending_ckpt is not None:
                 from ezpz.examples._checkpoint import try_finalize_if_ready
 
