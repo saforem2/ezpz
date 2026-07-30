@@ -2379,6 +2379,70 @@ def _build_hf_dataloader(
     return sampler, dataloader
 
 
+def _local_dtype(t: "torch.Tensor | None") -> "str":
+    """dtype of a (possibly DTensor) tensor's LOCAL shard, as a short string."""
+    if t is None:
+        return "n/a"
+    inner = getattr(t, "to_local", None)
+    local = inner() if callable(inner) else t
+    return str(local.dtype).replace("torch.", "")
+
+
+def _log_precision_summary(
+    model: nn.Module,
+    mp_config: "Optional[MixedPrecisionPolicy]",
+    reduce_dtype: "torch.dtype",
+    args: argparse.Namespace,
+) -> None:
+    """Log the ACTUAL precision of each component by introspecting the live
+    objects (not the intended config). Rank 0 only. Optimizer-state dtype is
+    logged separately after the first step (state doesn't exist until then).
+    """
+    if ezpz.get_rank() != 0:
+        return
+    # A real parameter (master/sharded copy FSDP owns + the optimizer updates).
+    sample = next(iter(model.parameters()), None)
+    master = _local_dtype(sample)
+    if mp_config is None:
+        compute = master  # --fp32: no MP policy, compute == stored dtype
+        reduce_s = master
+        mode = "OFF (--fp32): pure fp32, no mixed precision"
+    else:
+        compute = str(mp_config.param_dtype).replace("torch.", "")
+        reduce_s = str(reduce_dtype).replace("torch.", "")
+        mode = "ON (FSDP2 MixedPrecisionPolicy)"
+    logger.info(
+        "precision summary [mixed-precision %s]:\n"
+        "  - master weights (stored param / optimizer target) : %s\n"
+        "  - compute weights (fwd/bwd param copy)              : %s\n"
+        "  - activations / matmuls                             : %s\n"
+        "  - gradient reduce-scatter (reduce_dtype)            : %s\n"
+        "  - loss / cross-entropy accumulation                : float32 (always)\n"
+        "  - optimizer states (AdamW)                          : logged at first step\n"
+        "  (EZPZ_REDUCE_DTYPE=%s, --fp32=%s)",
+        mode, master, compute, compute, reduce_s,
+        os.environ.get("EZPZ_REDUCE_DTYPE", "fp32"), bool(args.fp32),
+    )
+
+
+def _log_optimizer_state_dtype(optimizer: "torch.optim.Optimizer") -> None:
+    """Log the dtype of AdamW's exp_avg / exp_avg_sq once, after step 1 (before
+    that the state dict is empty). Rank 0 only; reads the first populated slot."""
+    if ezpz.get_rank() != 0:
+        return
+    for state in optimizer.state.values():
+        ea = state.get("exp_avg")
+        eas = state.get("exp_avg_sq")
+        if ea is not None or eas is not None:
+            logger.info(
+                "precision (optimizer states, post-step-1): "
+                "exp_avg=%s exp_avg_sq=%s",
+                _local_dtype(ea), _local_dtype(eas),
+            )
+            return
+    logger.info("precision (optimizer states): no populated state found")
+
+
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     args: argparse.Namespace,
@@ -2402,6 +2466,7 @@ def train(
     # real cold failover). Fall back to now() when train() is called directly.
     _train_t0 = process_start if process_start is not None else perf_counter()
     _restart_logged = False
+    _optim_dtype_logged = False  # log AdamW state dtype once, after step 1
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     # Resolve the data-parallel topology: dp_replicate (HSDP outer) x
@@ -2668,6 +2733,7 @@ def train(
     # FSDP2 mixed-precision policy (param in bf16, reduce in fp32). None when
     # --fp32 is set (pure fp32 for NaN debugging).
     mp_config: Optional[MixedPrecisionPolicy] = None
+    _reduce_dtype = torch.float32  # default (also the effective dtype under --fp32)
     if not args.fp32:
         # reduce_dtype: fp32 gradient reduce-scatter is more accurate, but for
         # a large-vocab output projection (e.g. agpt's 256K) the single
@@ -2926,6 +2992,11 @@ def train(
             weight_decay=0.1,
             foreach=True,
         )
+
+    # Log the ACTUAL precision of each component (introspects the live model +
+    # MP policy, not the intended config). Optimizer-state dtype is logged after
+    # the first step below (state is empty until then).
+    _log_precision_summary(model, mp_config, _reduce_dtype, args)
 
     # --- Resume from checkpoint (auto-detect latest) --------------------------
     # Both model AND optimizer exist and are fully sharded here, so this is the
@@ -3295,6 +3366,11 @@ def train(
                     model.parameters(), args.max_grad_norm
                 )
             optimizer.step()
+            # AdamW state (exp_avg/exp_avg_sq) is allocated on the first step;
+            # log its dtype once, now that it exists.
+            if not _optim_dtype_logged:
+                _log_optimizer_state_dtype(optimizer)
+                _optim_dtype_logged = True
             ezpz.distributed.synchronize()
             t2 = perf_counter()
             global_step += 1
