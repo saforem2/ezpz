@@ -3167,6 +3167,13 @@ def train(
         ),
     )
 
+    # Re-push the precision summary now that History has created the W&B run.
+    # The initial push (at optimizer-build time, above) runs BEFORE this and so
+    # no-ops on `wandb.run is None`; without this second push a run that dies
+    # before its first optimizer step would leave W&B with no precision
+    # diagnostics at all. Cheap + idempotent (config update, allow_val_change).
+    _push_precision_to_wandb(_precision_summary)
+
     # For TP, input needs to be the same across all TP ranks.
     # while for SP, input can be different across all ranks
     # We will use dp_rank for setting the random seed
