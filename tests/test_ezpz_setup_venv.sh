@@ -22,7 +22,9 @@
 #   6. relative path, missing parent     -> resolves under $PWD, NOT / (the
 #                                           old fallback collapsed venvs/run
 #                                           to /run and would mkdir at root)
-#   7. modules loaded BEFORE the venv check (ordering guard)
+#   7. a PRE-LOADED framework python survives ezpz_load_modules evicting it
+#                                          -> used for creation anyway
+#   8. modules loaded BEFORE the venv check (ordering guard)
 #
 # Each test runs in its own temp dir + subshell.
 
@@ -154,6 +156,37 @@ PYEOF
         printf "ASSERT FAIL: uv ran despite the no-torch guard\n" >&2; return 1; }
 }
 
+test_preloaded_framework_python_survives_module_load() {
+    # Sunspot-observed scenario: the user runs `module load frameworks` (so
+    # python3 HAS torch), then calls ezpz_setup. ezpz_load_modules loads the
+    # bare oneapi stack, which swaps MODULEPATH and EVICTS the frameworks
+    # module — leaving python3 as the system 3.6 interpreter with no torch.
+    # The pre-load capture must keep the user's torch python for creation,
+    # otherwise the guard refuses and the "load a framework python and re-run"
+    # remedy is impossible advice.
+    _make_fake_uv "${tmpdir}"
+    local good="${tmpdir}/goodbin" bare="${tmpdir}/barebin"
+    mkdir -p "${good}" "${bare}"
+    # torch-bearing python (pre-load)
+    printf '#!/usr/bin/env bash\nexit 0\n' > "${good}/python3"    # import torch OK
+    # bare python (post-load): import torch fails
+    printf '#!/usr/bin/env bash\nexit 1\n' > "${bare}/python3"
+    chmod +x "${good}/python3" "${bare}/python3"
+    # start with the GOOD python visible...
+    export PATH="${good}:${tmpdir}:${PATH}"
+    # ...and make ezpz_load_modules evict it, exactly like `module load oneapi`.
+    ezpz_load_modules() {
+        printf 'mods\n' >> "${ORDER_LOG}"
+        export PATH="${bare}:${tmpdir}:/usr/bin:/bin"
+        return 0
+    }
+    unset EZPZ_NO_AUTO_VENV EZPZ_ALLOW_BARE_VENV
+    ezpz_setup ".venv" || {
+        printf "ASSERT FAIL: refused despite a pre-loaded torch python\n" >&2; return 1; }
+    assert_file "${tmpdir}/.venv/bin/activate"
+    assert_contains_file "${ORDER_LOG}" "uv-ran"
+}
+
 test_relative_path_with_missing_parent() {
     # P2: `ezpz_setup venvs/run` when `venvs/` does not exist must resolve to
     # $PWD/venvs/run — the old fallback collapsed it to /run (filesystem root!),
@@ -237,6 +270,7 @@ run_test "EZPZ_NO_AUTO_VENV opt-out"         test_no_auto_venv_opt_out
 run_test "no uv available -> clean error"    test_no_uv_available_errors
 run_test "existing venv not recreated"       test_existing_venv_not_recreated
 run_test "refuses when python3 lacks torch"   test_refuses_when_python_has_no_torch
+run_test "preloaded framework python survives"  test_preloaded_framework_python_survives_module_load
 run_test "relative path, missing parent"     test_relative_path_with_missing_parent
 run_test "modules load before venv check"    test_modules_loaded_before_venv_check
 

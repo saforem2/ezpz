@@ -2990,6 +2990,19 @@ ezpz_setup() {
 	fi
 	local activate="${venv_abs}/bin/activate"
 
+	# If the caller already has a torch-bearing python active (e.g. they ran
+	# `module load frameworks/...` first), remember it NOW: ezpz_load_modules
+	# below loads the bare stack, and on Aurora/Sunspot `module load oneapi/...`
+	# swaps MODULEPATH and EVICTS a previously-loaded frameworks module —
+	# leaving `python3` as the system 3.6 interpreter. Without this, telling a
+	# user to "load a framework python and re-run" is impossible advice, since
+	# this function would throw their python away before using it.
+	local _preloaded_py=""
+	if command -v python3 >/dev/null 2>&1 \
+		&& python3 -c "import torch" >/dev/null 2>&1; then
+		_preloaded_py="$(command -v python3)"
+	fi
+
 	# Load job env + modules BEFORE the venv existence check. Two reasons:
 	#   1. auto-creation (below) needs `uv` and the correct module-provided
 	#      python3 on PATH — creating against the bare login-node python would
@@ -3022,30 +3035,43 @@ ezpz_setup() {
 			return 1
 		fi
 		local _py
-		_py="$(command -v python3)"
+		# Prefer the torch-bearing python captured BEFORE ezpz_load_modules ran
+		# (see _preloaded_py above): on Aurora/Sunspot the bare `oneapi` load
+		# evicts a user's frameworks module, so the post-load `python3` is the
+		# system 3.6 interpreter even when the user did the right thing.
+		if [[ -n "${_preloaded_py}" ]]; then
+			_py="${_preloaded_py}"
+			log_message INFO "  - Using the framework python you had loaded: ${CYAN}${_py}${RESET}"
+		else
+			_py="$(command -v python3)"
+		fi
 		if [[ -z "${_py}" ]]; then
 			log_message ERROR "  - No python3 on PATH; cannot create a venv."
 			return 1
 		fi
 		# `ezpz_load_modules` deliberately loads only the BARE stack (oneAPI /
 		# PrgEnv / CUDA deps) — NOT frameworks/conda — so on a clean login shell
-		# `python3` may be the system interpreter with no accelerator torch.
-		# Creating with --system-site-packages against it would "succeed" while
-		# exposing nothing useful, leaving a torch-less venv that fails later
-		# and confusingly. Check for torch and refuse with an actionable message
-		# instead of silently building the wrong thing. EZPZ_ALLOW_BARE_VENV=1
-		# proceeds anyway (e.g. a CPU-only box, or you plan to install torch
-		# yourself).
+		# `python3` may be the system interpreter with no accelerator torch
+		# (observed on Sunspot: /usr/bin/python3 == 3.6.15, which is also below
+		# this project's requires-python). Creating with --system-site-packages
+		# against it would "succeed" while exposing nothing useful, leaving a
+		# broken venv that fails later and confusingly. Refuse with actionable
+		# guidance instead. EZPZ_ALLOW_BARE_VENV=1 proceeds anyway.
 		if ! "${_py}" -c "import torch" >/dev/null 2>&1; then
 			if [[ "${EZPZ_ALLOW_BARE_VENV:-0}" != "1" ]]; then
-				log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET}, and the python3 on PATH"
+				log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET}, and the available python3"
 				log_message ERROR "    (${CYAN}${_py}${RESET}) has no ${CYAN}torch${RESET} — the bare module stack does not"
 				log_message ERROR "    provide a framework python, so auto-creating here would give you a"
 				log_message ERROR "    venv WITHOUT the accelerator torch build. Do one of:"
 				log_message ERROR "      1. use the all-in-one flow (loads frameworks/conda + makes a venv):"
 				log_message ERROR "             ${CYAN}ezpz_setup${RESET}          # no venv argument"
-				log_message ERROR "      2. load a framework python yourself, then re-run this command"
-				log_message ERROR "      3. ${CYAN}EZPZ_ALLOW_BARE_VENV=1${RESET} to create against ${_py} anyway"
+				log_message ERROR "      2. load a framework python FIRST, then re-run — e.g."
+				log_message ERROR "             ${CYAN}module load frameworks${RESET} && ${CYAN}ezpz_setup ${venv_path}${RESET}"
+				log_message ERROR "         (it is picked up even though the bare module load evicts it)"
+				log_message ERROR "      3. create it yourself, then re-run:"
+				log_message ERROR "             ${CYAN}uv venv --system-site-packages ${venv_abs}${RESET}"
+				log_message ERROR "      4. ${CYAN}EZPZ_ALLOW_BARE_VENV=1${RESET} to build against ${_py} anyway"
+				log_message ERROR "         (NOT recommended on Aurora/Sunspot: yields a python 3.6 venv)"
 				return 1
 			fi
 			log_message WARN "  - python3 (${_py}) has no torch; creating anyway (EZPZ_ALLOW_BARE_VENV=1)."
