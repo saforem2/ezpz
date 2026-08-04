@@ -2388,59 +2388,99 @@ def _local_dtype(t: "torch.Tensor | None") -> "str":
     return str(local.dtype).replace("torch.", "")
 
 
+def _push_precision_to_wandb(summary: "dict[str, str]") -> None:
+    """Push the precision summary to the W&B run config under `precision/*`
+    (rank 0, best-effort). Config (not per-step metric) since dtypes are static
+    for the run; `allow_val_change` so the post-step-1 optimizer-state update
+    can amend it."""
+    if ezpz.get_rank() != 0 or wandb is None or getattr(wandb, "run", None) is None:
+        return
+    try:
+        wandb.config.update(  # type: ignore[union-attr]
+            {f"precision/{k}": v for k, v in summary.items()},
+            allow_val_change=True,
+        )
+    except Exception:  # noqa: BLE001 — logging must never break training
+        pass
+
+
 def _log_precision_summary(
     model: nn.Module,
     mp_config: "Optional[MixedPrecisionPolicy]",
     reduce_dtype: "torch.dtype",
     args: argparse.Namespace,
-) -> None:
-    """Log the ACTUAL precision of each component by introspecting the live
-    objects (not the intended config). Rank 0 only. Optimizer-state dtype is
-    logged separately after the first step (state doesn't exist until then).
+) -> "dict[str, str]":
+    """Build + log the ACTUAL precision of each component by introspecting the
+    live objects (not the intended config), and push it to the W&B run config.
+    Returns the summary dict so the caller can (a) fold it into the metrics
+    JSONL and (b) amend it with the optimizer-state dtype after the first step.
+    Rank-0 logs; the returned dict is identical on every rank.
     """
-    if ezpz.get_rank() != 0:
-        return
     # A real parameter (master/sharded copy FSDP owns + the optimizer updates).
     sample = next(iter(model.parameters()), None)
     master = _local_dtype(sample)
     if mp_config is None:
         compute = master  # --fp32: no MP policy, compute == stored dtype
         reduce_s = master
-        mode = "OFF (--fp32): pure fp32, no mixed precision"
+        mode = "off (--fp32)"
     else:
         compute = str(mp_config.param_dtype).replace("torch.", "")
         reduce_s = str(reduce_dtype).replace("torch.", "")
-        mode = "ON (FSDP2 MixedPrecisionPolicy)"
-    logger.info(
-        "precision summary [mixed-precision %s]:\n"
-        "  - master weights (stored param / optimizer target) : %s\n"
-        "  - compute weights (fwd/bwd param copy)              : %s\n"
-        "  - activations / matmuls                             : %s\n"
-        "  - gradient reduce-scatter (reduce_dtype)            : %s\n"
-        "  - loss / cross-entropy accumulation                : float32 (always)\n"
-        "  - optimizer states (AdamW)                          : logged at first step\n"
-        "  (EZPZ_REDUCE_DTYPE=%s, --fp32=%s)",
-        mode, master, compute, compute, reduce_s,
-        os.environ.get("EZPZ_REDUCE_DTYPE", "fp32"), bool(args.fp32),
-    )
+        mode = "on"
+    summary = {
+        "mixed_precision": mode,
+        "master_weights": master,       # stored param / optimizer target
+        "compute_weights": compute,     # fwd/bwd param copy (param_dtype)
+        "activations": compute,
+        "grad_reduce": reduce_s,        # reduce_dtype
+        "loss_accum": "float32",        # CE always accumulates in fp32
+        "optimizer_states": "pending",  # amended post-step-1
+        "reduce_dtype_env": os.environ.get("EZPZ_REDUCE_DTYPE", "fp32"),
+        "fp32_flag": str(bool(args.fp32)),
+    }
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "precision summary [mixed-precision %s]:\n"
+            "  - master weights (stored param / optimizer target) : %s\n"
+            "  - compute weights (fwd/bwd param copy)              : %s\n"
+            "  - activations / matmuls                             : %s\n"
+            "  - gradient reduce-scatter (reduce_dtype)            : %s\n"
+            "  - loss / cross-entropy accumulation                : %s (always)\n"
+            "  - optimizer states (AdamW)                          : logged at first step\n"
+            "  (EZPZ_REDUCE_DTYPE=%s, --fp32=%s)",
+            mode, master, compute, compute, reduce_s, summary["loss_accum"],
+            summary["reduce_dtype_env"], summary["fp32_flag"],
+        )
+    _push_precision_to_wandb(summary)
+    return summary
 
 
-def _log_optimizer_state_dtype(optimizer: "torch.optim.Optimizer") -> None:
+def _log_optimizer_state_dtype(
+    optimizer: "torch.optim.Optimizer",
+    summary: "Optional[dict[str, str]]" = None,
+) -> None:
     """Log the dtype of AdamW's exp_avg / exp_avg_sq once, after step 1 (before
-    that the state dict is empty). Rank 0 only; reads the first populated slot."""
-    if ezpz.get_rank() != 0:
-        return
+    that the state dict is empty), and amend `summary` + W&B config in place.
+    Rank 0 logs; reads the first populated state slot."""
+    dtype = "n/a"
     for state in optimizer.state.values():
         ea = state.get("exp_avg")
         eas = state.get("exp_avg_sq")
         if ea is not None or eas is not None:
-            logger.info(
-                "precision (optimizer states, post-step-1): "
-                "exp_avg=%s exp_avg_sq=%s",
-                _local_dtype(ea), _local_dtype(eas),
-            )
-            return
-    logger.info("precision (optimizer states): no populated state found")
+            dtype = _local_dtype(ea if ea is not None else eas)
+            if ezpz.get_rank() == 0:
+                logger.info(
+                    "precision (optimizer states, post-step-1): "
+                    "exp_avg=%s exp_avg_sq=%s",
+                    _local_dtype(ea), _local_dtype(eas),
+                )
+            break
+    else:
+        if ezpz.get_rank() == 0:
+            logger.info("precision (optimizer states): no populated state found")
+    if summary is not None:
+        summary["optimizer_states"] = dtype
+        _push_precision_to_wandb(summary)
 
 
 @ezpz.timeitlogit(rank=ezpz.get_rank())
@@ -2467,6 +2507,7 @@ def train(
     _train_t0 = process_start if process_start is not None else perf_counter()
     _restart_logged = False
     _optim_dtype_logged = False  # log AdamW state dtype once, after step 1
+    _precision_in_jsonl = False  # fold precision summary into JSONL once
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     # Resolve the data-parallel topology: dp_replicate (HSDP outer) x
@@ -2994,9 +3035,10 @@ def train(
         )
 
     # Log the ACTUAL precision of each component (introspects the live model +
-    # MP policy, not the intended config). Optimizer-state dtype is logged after
-    # the first step below (state is empty until then).
-    _log_precision_summary(model, mp_config, _reduce_dtype, args)
+    # MP policy, not the intended config), push it to the W&B run config, and
+    # keep the dict to (a) fold into the first metrics row and (b) amend with
+    # the optimizer-state dtype after the first step (state is empty until then).
+    _precision_summary = _log_precision_summary(model, mp_config, _reduce_dtype, args)
 
     # --- Resume from checkpoint (auto-detect latest) --------------------------
     # Both model AND optimizer exist and are fully sharded here, so this is the
@@ -3367,9 +3409,10 @@ def train(
                 )
             optimizer.step()
             # AdamW state (exp_avg/exp_avg_sq) is allocated on the first step;
-            # log its dtype once, now that it exists.
+            # log its dtype once, now that it exists (also amends the summary +
+            # W&B config with the optimizer-state dtype).
             if not _optim_dtype_logged:
-                _log_optimizer_state_dtype(optimizer)
+                _log_optimizer_state_dtype(optimizer, _precision_summary)
                 _optim_dtype_logged = True
             ezpz.distributed.synchronize()
             t2 = perf_counter()
@@ -3504,6 +3547,14 @@ def train(
                 _restart_logged = True
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
+            # Fold the precision summary into the FIRST logged metrics row so it
+            # lands in the JSONL (as precision/*) alongside W&B config + the log.
+            # Done here (post-step-1) so optimizer_states is already populated.
+            if not _precision_in_jsonl:
+                metrics |= {
+                    f"precision/{k}": v for k, v in _precision_summary.items()
+                }
+                _precision_in_jsonl = True
             history.update(metrics, summarize=False)
             history.log_metrics(
                 metrics,
