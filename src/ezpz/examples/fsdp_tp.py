@@ -2379,6 +2379,114 @@ def _build_hf_dataloader(
     return sampler, dataloader
 
 
+def _local_dtype(t: "torch.Tensor | None") -> "str":
+    """dtype of a (possibly DTensor) tensor's LOCAL shard, as a short string."""
+    if t is None:
+        return "n/a"
+    inner = getattr(t, "to_local", None)
+    local = inner() if callable(inner) else t
+    return str(local.dtype).replace("torch.", "")
+
+
+def _push_precision_to_wandb(summary: "dict[str, str]") -> None:
+    """Push the precision summary to the W&B run config under `precision/*`
+    (rank 0, best-effort). Config (not per-step metric) since dtypes are static
+    for the run; `allow_val_change` so the post-step-1 optimizer-state update
+    can amend it."""
+    if ezpz.get_rank() != 0 or wandb is None or getattr(wandb, "run", None) is None:
+        return
+    try:
+        wandb.config.update(  # type: ignore[union-attr]
+            {f"precision/{k}": v for k, v in summary.items()},
+            allow_val_change=True,
+        )
+    except Exception:  # noqa: BLE001 — logging must never break training
+        # Debug-level (not silent): a W&B sync failure shouldn't kill training,
+        # but swallowing it entirely hides why precision/* never showed up.
+        logger.debug("could not push precision summary to W&B", exc_info=True)
+
+
+def _log_precision_summary(
+    model: nn.Module,
+    mp_config: "Optional[MixedPrecisionPolicy]",
+    reduce_dtype: "torch.dtype",
+    args: argparse.Namespace,
+) -> "dict[str, str]":
+    """Build + log the ACTUAL precision of each component by introspecting the
+    live objects (not the intended config), and push it to the W&B run config.
+    Returns the summary dict so the caller can (a) fold it into the metrics
+    JSONL and (b) amend it with the optimizer-state dtype after the first step.
+    Rank-0 logs; the returned dict is identical on every rank.
+    """
+    # A real parameter (master/sharded copy FSDP owns + the optimizer updates).
+    sample = next(iter(model.parameters()), None)
+    master = _local_dtype(sample)
+    if mp_config is None:
+        compute = master  # --fp32: no MP policy, compute == stored dtype
+        reduce_s = master
+        mode = "off (--fp32)"
+    else:
+        compute = str(mp_config.param_dtype).replace("torch.", "")
+        reduce_s = str(reduce_dtype).replace("torch.", "")
+        mode = "on"
+    summary = {
+        "mixed_precision": mode,
+        "master_weights": master,       # stored param / optimizer target
+        "compute_weights": compute,     # fwd/bwd param copy (param_dtype)
+        "activations": compute,
+        "grad_reduce": reduce_s,        # reduce_dtype
+        "loss_accum": "float32",        # CE always accumulates in fp32
+        "optimizer_states": "pending",  # amended post-step-1
+        "reduce_dtype_env": os.environ.get("EZPZ_REDUCE_DTYPE", "fp32"),
+        "fp32_flag": str(bool(args.fp32)),
+    }
+    if ezpz.get_rank() == 0:
+        logger.info(
+            "precision summary [mixed-precision %s]:\n"
+            "  - master weights (stored param / optimizer target) : %s\n"
+            "  - compute weights (fwd/bwd param copy)              : %s\n"
+            "  - activations / matmuls                             : %s\n"
+            "  - gradient reduce-scatter (reduce_dtype)            : %s\n"
+            "  - loss / cross-entropy accumulation                : %s (always)\n"
+            "  - optimizer states (AdamW)                          : logged at first step\n"
+            "  (EZPZ_REDUCE_DTYPE=%s, --fp32=%s)",
+            mode, master, compute, compute, reduce_s, summary["loss_accum"],
+            summary["reduce_dtype_env"], summary["fp32_flag"],
+        )
+    _push_precision_to_wandb(summary)
+    return summary
+
+
+def _log_optimizer_state_dtype(
+    optimizer: "torch.optim.Optimizer",
+    summary: "Optional[dict[str, str]]" = None,
+) -> None:
+    """Log the dtype of AdamW's exp_avg / exp_avg_sq once, after step 1, and
+    amend `summary` + W&B config in place. Called post-step-1 because on a FRESH
+    run the state dict is empty until the first step allocates it (a RESUMED run
+    already has it from load_checkpoint, so post-step-1 works either way).
+    Rank 0 logs; reads the first populated state slot."""
+    dtype = "n/a"
+    for state in optimizer.state.values():
+        ea = state.get("exp_avg")
+        eas = state.get("exp_avg_sq")
+        if ea is not None or eas is not None:
+            dtype = _local_dtype(ea if ea is not None else eas)
+            if ezpz.get_rank() == 0:
+                logger.info(
+                    "precision (optimizer states, post-step-1): "
+                    "exp_avg=%s exp_avg_sq=%s",
+                    _local_dtype(ea), _local_dtype(eas),
+                )
+            break
+    else:
+        if ezpz.get_rank() == 0:
+            logger.info("precision (optimizer states): no populated state found")
+    if summary is not None:
+        summary["optimizer_states"] = dtype
+        _push_precision_to_wandb(summary)
+
+
 @ezpz.timeitlogit(rank=ezpz.get_rank())
 def train(
     args: argparse.Namespace,
@@ -2402,6 +2510,8 @@ def train(
     # real cold failover). Fall back to now() when train() is called directly.
     _train_t0 = process_start if process_start is not None else perf_counter()
     _restart_logged = False
+    _optim_dtype_logged = False  # log AdamW state dtype once, after step 1
+    _precision_in_jsonl = False  # fold precision summary into JSONL once
     world_size = ezpz.distributed.get_world_size()
     assert world_size % args.tp == 0, "WORLD_SIZE must be divisible by TP"
     # Resolve the data-parallel topology: dp_replicate (HSDP outer) x
@@ -2668,6 +2778,7 @@ def train(
     # FSDP2 mixed-precision policy (param in bf16, reduce in fp32). None when
     # --fp32 is set (pure fp32 for NaN debugging).
     mp_config: Optional[MixedPrecisionPolicy] = None
+    _reduce_dtype = torch.float32  # default (also the effective dtype under --fp32)
     if not args.fp32:
         # reduce_dtype: fp32 gradient reduce-scatter is more accurate, but for
         # a large-vocab output projection (e.g. agpt's 256K) the single
@@ -2927,6 +3038,14 @@ def train(
             foreach=True,
         )
 
+    # Log the ACTUAL precision of each component (introspects the live model +
+    # MP policy, not the intended config), push it to the W&B run config, and
+    # keep the dict to (a) fold into the first metrics row and (b) amend with
+    # the optimizer-state dtype after the first step (on a FRESH run the state
+    # dict is empty until then; a RESUMED run has it populated by
+    # load_checkpoint, so reading it post-step-1 is correct either way).
+    _precision_summary = _log_precision_summary(model, mp_config, _reduce_dtype, args)
+
     # --- Resume from checkpoint (auto-detect latest) --------------------------
     # Both model AND optimizer exist and are fully sharded here, so this is the
     # correct point to restore sharded DCP state into them. Auto-resume (no
@@ -3047,6 +3166,13 @@ def train(
             and not getattr(args, "pyinstrument_profiler", False)
         ),
     )
+
+    # Re-push the precision summary now that History has created the W&B run.
+    # The initial push (at optimizer-build time, above) runs BEFORE this and so
+    # no-ops on `wandb.run is None`; without this second push a run that dies
+    # before its first optimizer step would leave W&B with no precision
+    # diagnostics at all. Cheap + idempotent (config update, allow_val_change).
+    _push_precision_to_wandb(_precision_summary)
 
     # For TP, input needs to be the same across all TP ranks.
     # while for SP, input can be different across all ranks
@@ -3295,6 +3421,13 @@ def train(
                     model.parameters(), args.max_grad_norm
                 )
             optimizer.step()
+            # AdamW state (exp_avg/exp_avg_sq) is allocated by the first step on
+            # a fresh run (a resumed run already has it from load_checkpoint);
+            # log its dtype once, now that it exists (also amends the summary +
+            # W&B config with the optimizer-state dtype).
+            if not _optim_dtype_logged:
+                _log_optimizer_state_dtype(optimizer, _precision_summary)
+                _optim_dtype_logged = True
             ezpz.distributed.synchronize()
             t2 = perf_counter()
             global_step += 1
@@ -3429,6 +3562,22 @@ def train(
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
             history.update(metrics, summarize=False)
+            # Write the precision summary as its OWN JSONL record, once.
+            # Deliberately NOT merged into `metrics`: History is a NUMERIC
+            # store (it coerces values with float() and builds an xarray
+            # Dataset), so string dtype names there break get_dataset() with
+            # "ValueError: too many dimensions 'str'" — taking the end-of-run
+            # report/plots down with it. _write_jsonl_entry is string-safe and
+            # independent of the numeric store. Emitted after step 1 so
+            # optimizer_states is populated.
+            if not _precision_in_jsonl:
+                try:
+                    history._write_jsonl_entry(
+                        {f"precision/{k}": v for k, v in _precision_summary.items()}
+                    )
+                except Exception:  # noqa: BLE001 — logging must not break training
+                    logger.debug("could not write precision JSONL entry", exc_info=True)
+                _precision_in_jsonl = True
             history.log_metrics(
                 metrics,
                 logger=logger,
