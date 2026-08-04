@@ -2401,7 +2401,9 @@ def _push_precision_to_wandb(summary: "dict[str, str]") -> None:
             allow_val_change=True,
         )
     except Exception:  # noqa: BLE001 — logging must never break training
-        pass
+        # Debug-level (not silent): a W&B sync failure shouldn't kill training,
+        # but swallowing it entirely hides why precision/* never showed up.
+        logger.debug("could not push precision summary to W&B", exc_info=True)
 
 
 def _log_precision_summary(
@@ -2459,8 +2461,10 @@ def _log_optimizer_state_dtype(
     optimizer: "torch.optim.Optimizer",
     summary: "Optional[dict[str, str]]" = None,
 ) -> None:
-    """Log the dtype of AdamW's exp_avg / exp_avg_sq once, after step 1 (before
-    that the state dict is empty), and amend `summary` + W&B config in place.
+    """Log the dtype of AdamW's exp_avg / exp_avg_sq once, after step 1, and
+    amend `summary` + W&B config in place. Called post-step-1 because on a FRESH
+    run the state dict is empty until the first step allocates it (a RESUMED run
+    already has it from load_checkpoint, so post-step-1 works either way).
     Rank 0 logs; reads the first populated state slot."""
     dtype = "n/a"
     for state in optimizer.state.values():
@@ -3037,7 +3041,9 @@ def train(
     # Log the ACTUAL precision of each component (introspects the live model +
     # MP policy, not the intended config), push it to the W&B run config, and
     # keep the dict to (a) fold into the first metrics row and (b) amend with
-    # the optimizer-state dtype after the first step (state is empty until then).
+    # the optimizer-state dtype after the first step (on a FRESH run the state
+    # dict is empty until then; a RESUMED run has it populated by
+    # load_checkpoint, so reading it post-step-1 is correct either way).
     _precision_summary = _log_precision_summary(model, mp_config, _reduce_dtype, args)
 
     # --- Resume from checkpoint (auto-detect latest) --------------------------
@@ -3408,7 +3414,8 @@ def train(
                     model.parameters(), args.max_grad_norm
                 )
             optimizer.step()
-            # AdamW state (exp_avg/exp_avg_sq) is allocated on the first step;
+            # AdamW state (exp_avg/exp_avg_sq) is allocated by the first step on
+            # a fresh run (a resumed run already has it from load_checkpoint);
             # log its dtype once, now that it exists (also amends the summary +
             # W&B config with the optimizer-state dtype).
             if not _optim_dtype_logged:
@@ -3547,15 +3554,23 @@ def train(
                 _restart_logged = True
             # Device memory: empty on CPU/MPS, 4 keys on CUDA/XPU.
             metrics |= ezpz.get_memory_metrics(prefix="train/")
-            # Fold the precision summary into the FIRST logged metrics row so it
-            # lands in the JSONL (as precision/*) alongside W&B config + the log.
-            # Done here (post-step-1) so optimizer_states is already populated.
-            if not _precision_in_jsonl:
-                metrics |= {
-                    f"precision/{k}": v for k, v in _precision_summary.items()
-                }
-                _precision_in_jsonl = True
             history.update(metrics, summarize=False)
+            # Write the precision summary as its OWN JSONL record, once.
+            # Deliberately NOT merged into `metrics`: History is a NUMERIC
+            # store (it coerces values with float() and builds an xarray
+            # Dataset), so string dtype names there break get_dataset() with
+            # "ValueError: too many dimensions 'str'" — taking the end-of-run
+            # report/plots down with it. _write_jsonl_entry is string-safe and
+            # independent of the numeric store. Emitted after step 1 so
+            # optimizer_states is populated.
+            if not _precision_in_jsonl:
+                try:
+                    history._write_jsonl_entry(
+                        {f"precision/{k}": v for k, v in _precision_summary.items()}
+                    )
+                except Exception:  # noqa: BLE001 — logging must not break training
+                    logger.debug("could not write precision JSONL entry", exc_info=True)
+                _precision_in_jsonl = True
             history.log_metrics(
                 metrics,
                 logger=logger,
