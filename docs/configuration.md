@@ -190,6 +190,8 @@ MLFLOW_TRACKING_INSECURE_TLS=true
 | Variable | Purpose | Values / Default |
 |----------|---------|-----------------|
 | `EZPZ_ATTENTION_FP32` | Force FP32 attention in LLaMA models. | Set to `1` to enable. |
+| `EZPZ_SDPA_ENABLE_GQA` | Let SDPA broadcast the kv heads (`enable_gqa=True`) instead of materializing them with `repeat_kv`. Saves memory/bandwidth and avoids an XPU `torch.compile` backward stride assert. | `1` (default). Set to `0` to use `repeat_kv`. |
+| `EZPZ_SDPA_CONTIGUOUS` | Force `q`/`k`/`v` contiguous before SDPA. Alternative workaround for the same XPU `torch.compile` stride assert; costs an extra copy. | Set to `1` to enable. |
 | `EZPZ_DEBUG_NAN` | Enable NaN debugging in model forward pass. | Set to `1` to enable. |
 | `PYINSTRUMENT_PROFILER` | Enable pyinstrument profiling. | Set to `1` to enable. |
 

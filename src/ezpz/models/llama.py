@@ -386,25 +386,48 @@ class Attention(nn.Module):
             xq, xk, freqs_cis=freqs_cis, theta=self.rope_theta
         )
 
-        keys = repeat_kv(
-            xk, self.n_rep
-        )  # (bs, seqlen, n_local_heads, head_dim)
-        values = repeat_kv(
-            xv, self.n_rep
-        )  # (bs, seqlen, n_local_heads, head_dim)
+        # `enable_gqa=True` lets SDPA broadcast the kv heads internally, so we
+        # skip materializing the repeated heads. Besides saving the memory and
+        # bandwidth of the expanded k/v, this avoids the expand+reshape that
+        # triggers the XPU backward stride assert described below. Set
+        # EZPZ_SDPA_ENABLE_GQA=0 to fall back to the explicit `repeat_kv`.
+        enable_gqa = os.environ.get("EZPZ_SDPA_ENABLE_GQA", "1") == "1"
+        if enable_gqa:
+            keys, values = xk, xv
+        else:
+            keys = repeat_kv(
+                xk, self.n_rep
+            )  # (bs, seqlen, n_local_heads, head_dim)
+            values = repeat_kv(
+                xv, self.n_rep
+            )  # (bs, seqlen, n_local_heads, head_dim)
 
         xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xk = keys.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xv = values.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        xk = keys.transpose(1, 2)  # (bs, n_local_kv_heads, seqlen, head_dim)
+        xv = values.transpose(1, 2)  # (bs, n_local_kv_heads, seqlen, head_dim)
+
+        # The transpose above (plus rotary flatten and GQA repeat_kv) leaves
+        # q/k/v non-contiguous. Under torch.compile on XPU the flash-attention
+        # backward meta kernel mispredicts the output strides for such inputs,
+        # tripping an assert_size_stride guard in the generated backward. Making
+        # the inputs contiguous keeps the layout the meta kernel expects.
+        if os.environ.get("EZPZ_SDPA_CONTIGUOUS") == "1":
+            xq = xq.contiguous()
+            xk = xk.contiguous()
+            xv = xv.contiguous()
 
         # we use casual mask for training
         if os.environ.get("EZPZ_ATTENTION_FP32") == "1":
             output = F.scaled_dot_product_attention(
-                xq.float(), xk.float(), xv.float(), is_causal=True
+                xq.float(),
+                xk.float(),
+                xv.float(),
+                is_causal=True,
+                enable_gqa=enable_gqa,
             ).to(xq.dtype)
         else:
             output = F.scaled_dot_product_attention(
-                xq, xk, xv, is_causal=True
+                xq, xk, xv, is_causal=True, enable_gqa=enable_gqa
             )
         output = output.transpose(
             1, 2
