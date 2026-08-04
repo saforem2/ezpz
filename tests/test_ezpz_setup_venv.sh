@@ -11,11 +11,18 @@
 # dependencies (ezpz_setup_job, ezpz_load_modules, log_message, ezpz_realpath)
 # plus a fake `uv` on PATH. This isolates the branching logic:
 #
-#   1. missing venv + uv present        -> auto-creates, activates
-#   2. missing venv + EZPZ_NO_AUTO_VENV -> errors, does NOT create
-#   3. missing venv + no uv on PATH     -> errors cleanly
+#   1. missing venv + uv present         -> auto-creates, activates
+#   2. missing venv + EZPZ_NO_AUTO_VENV  -> errors, does NOT create
+#   3. missing venv + no uv on PATH      -> errors cleanly
 #   4. existing venv                     -> activates, does NOT re-create
-#   5. modules loaded BEFORE the venv check (ordering guard)
+#   5. python3 without torch             -> refuses (bare module stack has no
+#                                           framework python; would build a
+#                                           torch-less venv) unless
+#                                           EZPZ_ALLOW_BARE_VENV=1
+#   6. relative path, missing parent     -> resolves under $PWD, NOT / (the
+#                                           old fallback collapsed venvs/run
+#                                           to /run and would mkdir at root)
+#   7. modules loaded BEFORE the venv check (ordering guard)
 #
 # Each test runs in its own temp dir + subshell.
 
@@ -116,9 +123,48 @@ assert_contains_file() { grep -q "$2" "$1" || { printf "ASSERT FAIL: %s not in %
 test_auto_create_when_missing() {
     _make_fake_uv "${tmpdir}"; export PATH="${tmpdir}:${PATH}"
     unset EZPZ_NO_AUTO_VENV
+    # The framework-python guard would otherwise refuse (test python3 has no
+    # torch); this test covers the CREATION branching, not torch detection —
+    # that's test_refuses_when_python_has_no_torch below.
+    export EZPZ_ALLOW_BARE_VENV=1
     ezpz_setup ".venv" || return 1
     assert_file "${tmpdir}/.venv/bin/activate"     # created
     assert_contains_file "${ORDER_LOG}" "uv-ran"   # uv actually invoked
+}
+
+test_refuses_when_python_has_no_torch() {
+    # P1 guard: the bare module stack has no framework python, so creating
+    # --system-site-packages against it yields a torch-less venv. Refuse loudly
+    # (unless EZPZ_ALLOW_BARE_VENV=1) instead of silently building the wrong env.
+    _make_fake_uv "${tmpdir}"; export PATH="${tmpdir}:${PATH}"
+    unset EZPZ_NO_AUTO_VENV EZPZ_ALLOW_BARE_VENV
+    # Shadow python3 with one that has no torch (import torch fails).
+    cat > "${tmpdir}/python3" <<'PYEOF'
+#!/usr/bin/env bash
+# stub python3: `-c "import torch"` always fails
+exit 1
+PYEOF
+    chmod +x "${tmpdir}/python3"
+    if ezpz_setup ".venv"; then
+        printf "ASSERT FAIL: expected refusal when python3 lacks torch\n" >&2
+        return 1
+    fi
+    assert_no_file "${tmpdir}/.venv/bin/activate"   # nothing created
+    ! grep -q "uv-ran" "${ORDER_LOG}" || {
+        printf "ASSERT FAIL: uv ran despite the no-torch guard\n" >&2; return 1; }
+}
+
+test_relative_path_with_missing_parent() {
+    # P2: `ezpz_setup venvs/run` when `venvs/` does not exist must resolve to
+    # $PWD/venvs/run — the old fallback collapsed it to /run (filesystem root!),
+    # which the auto-create would then mkdir.
+    _make_fake_uv "${tmpdir}"; export PATH="${tmpdir}:${PATH}"
+    unset EZPZ_NO_AUTO_VENV
+    export EZPZ_ALLOW_BARE_VENV=1
+    ezpz_setup "venvs/run" || return 1
+    assert_file "${tmpdir}/venvs/run/bin/activate"   # under CWD, not /run
+    [[ ! -e /run/bin/activate ]] || {
+        printf "ASSERT FAIL: created a venv at the filesystem root (/run)\n" >&2; return 1; }
 }
 
 test_no_auto_venv_opt_out() {
@@ -135,13 +181,23 @@ test_no_auto_venv_opt_out() {
 test_no_uv_available_errors() {
     # No fake uv on PATH, and neutralize any real uv so creation can't happen.
     unset EZPZ_NO_AUTO_VENV
-    uv() { return 127; }; export -f uv 2>/dev/null || true
-    # Also shadow command -v uv by putting a PATH without uv is hard; instead
-    # rely on the function's `command -v uv` — so ensure no uv on a clean PATH.
-    export PATH="/usr/bin:/bin"
+    # Do NOT define a `uv()` shell function to fake absence: `command -v uv`
+    # finds functions, so the no-uv branch would never be exercised (and the
+    # test would silently pass via the SKIP path). Instead point PATH at a
+    # directory containing ONLY the handful of binaries the function needs,
+    # guaranteeing `uv` is genuinely unreachable.
+    local bindir="${tmpdir}/nopath-bin"
+    mkdir -p "${bindir}"
+    local prog
+    for prog in bash dirname basename mkdir pwd cd python3; do
+        local src
+        src="$(command -v "${prog}" 2>/dev/null)" || continue
+        ln -sf "${src}" "${bindir}/${prog}" 2>/dev/null || true
+    done
+    export PATH="${bindir}"
     if command -v uv >/dev/null 2>&1; then
-        printf "SKIP: uv present on minimal PATH; cannot test no-uv branch\n" >&2
-        return 0
+        printf "ASSERT FAIL: uv still reachable on the stripped PATH\n" >&2
+        return 1
     fi
     if ezpz_setup ".venv"; then
         printf "ASSERT FAIL: expected nonzero exit when uv missing\n" >&2
@@ -164,6 +220,7 @@ test_existing_venv_not_recreated() {
 test_modules_loaded_before_venv_check() {
     _make_fake_uv "${tmpdir}"; export PATH="${tmpdir}:${PATH}"
     unset EZPZ_NO_AUTO_VENV
+    export EZPZ_ALLOW_BARE_VENV=1
     ezpz_setup ".venv" || return 1
     # order.log must show job + mods BEFORE uv-ran (creation)
     local order; order="$(tr '\n' ',' < "${ORDER_LOG}")"
@@ -179,6 +236,8 @@ run_test "auto-create when missing"          test_auto_create_when_missing
 run_test "EZPZ_NO_AUTO_VENV opt-out"         test_no_auto_venv_opt_out
 run_test "no uv available -> clean error"    test_no_uv_available_errors
 run_test "existing venv not recreated"       test_existing_venv_not_recreated
+run_test "refuses when python3 lacks torch"   test_refuses_when_python_has_no_torch
+run_test "relative path, missing parent"     test_relative_path_with_missing_parent
 run_test "modules load before venv check"    test_modules_loaded_before_venv_check
 
 rm -f "${EZPZ_SETUP_FN}"

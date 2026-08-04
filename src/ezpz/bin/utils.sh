@@ -2977,11 +2977,16 @@ ezpz_setup() {
 	# to silently rewrite.
 	local venv_abs
 	if ! venv_abs=$(ezpz_realpath "${venv_path}" 2>/dev/null); then
-		# ezpz_realpath fails when the parent dir doesn't exist; fall back
-		# to a plain abs-path computation that doesn't require the target
-		# to exist, so the error message below can name the path the user
-		# typed (in absolute form, which is easier to debug than `.venv`).
-		venv_abs="$(cd "$(dirname "${venv_path}")" 2>/dev/null && pwd)/$(basename "${venv_path}")"
+		# ezpz_realpath fails when the parent dir doesn't exist. Build the
+		# absolute path WITHOUT requiring the parent to exist: a `cd` into a
+		# missing parent yields an empty string, so the old
+		# "$(cd $(dirname ...) && pwd)/$(basename ...)" form collapsed
+		# `venvs/run` to `/run` — and since we now CREATE the venv, that would
+		# mkdir at the filesystem root. Just prefix $PWD for relative paths.
+		case "${venv_path}" in
+		/*) venv_abs="${venv_path}" ;;
+		*) venv_abs="${PWD}/${venv_path}" ;;
+		esac
 	fi
 	local activate="${venv_abs}/bin/activate"
 
@@ -3007,18 +3012,45 @@ ezpz_setup() {
 		if [[ "${EZPZ_NO_AUTO_VENV:-0}" == "1" ]]; then
 			log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} (no ${activate})."
 			log_message ERROR "  - EZPZ_NO_AUTO_VENV=1 set; not auto-creating. Create it with:"
-			log_message ERROR "        uv venv --system-site-packages ${venv_path}"
+			log_message ERROR "        uv venv --system-site-packages ${venv_abs}"
 			return 1
 		fi
 		if ! command -v uv >/dev/null 2>&1; then
 			log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET} and ${CYAN}uv${RESET} is not on PATH."
 			log_message ERROR "  - Install uv (or create the venv manually) then re-run:"
-			log_message ERROR "        uv venv --system-site-packages ${venv_path}"
+			log_message ERROR "        uv venv --system-site-packages ${venv_abs}"
 			return 1
 		fi
 		local _py
 		_py="$(command -v python3)"
-		log_message INFO "  - venv not found at ${CYAN}${venv_abs}${RESET}; creating with ${CYAN}uv${RESET} (python=${_py:-python3})..."
+		if [[ -z "${_py}" ]]; then
+			log_message ERROR "  - No python3 on PATH; cannot create a venv."
+			return 1
+		fi
+		# `ezpz_load_modules` deliberately loads only the BARE stack (oneAPI /
+		# PrgEnv / CUDA deps) — NOT frameworks/conda — so on a clean login shell
+		# `python3` may be the system interpreter with no accelerator torch.
+		# Creating with --system-site-packages against it would "succeed" while
+		# exposing nothing useful, leaving a torch-less venv that fails later
+		# and confusingly. Check for torch and refuse with an actionable message
+		# instead of silently building the wrong thing. EZPZ_ALLOW_BARE_VENV=1
+		# proceeds anyway (e.g. a CPU-only box, or you plan to install torch
+		# yourself).
+		if ! "${_py}" -c "import torch" >/dev/null 2>&1; then
+			if [[ "${EZPZ_ALLOW_BARE_VENV:-0}" != "1" ]]; then
+				log_message ERROR "  - venv not found at ${RED}${venv_abs}${RESET}, and the python3 on PATH"
+				log_message ERROR "    (${CYAN}${_py}${RESET}) has no ${CYAN}torch${RESET} — the bare module stack does not"
+				log_message ERROR "    provide a framework python, so auto-creating here would give you a"
+				log_message ERROR "    venv WITHOUT the accelerator torch build. Do one of:"
+				log_message ERROR "      1. use the all-in-one flow (loads frameworks/conda + makes a venv):"
+				log_message ERROR "             ${CYAN}ezpz_setup${RESET}          # no venv argument"
+				log_message ERROR "      2. load a framework python yourself, then re-run this command"
+				log_message ERROR "      3. ${CYAN}EZPZ_ALLOW_BARE_VENV=1${RESET} to create against ${_py} anyway"
+				return 1
+			fi
+			log_message WARN "  - python3 (${_py}) has no torch; creating anyway (EZPZ_ALLOW_BARE_VENV=1)."
+		fi
+		log_message INFO "  - venv not found at ${CYAN}${venv_abs}${RESET}; creating with ${CYAN}uv${RESET} (python=${_py})..."
 		mkdir -p "$(dirname "${venv_abs}")" 2>/dev/null || true
 		if ! uv venv --python="${_py:-python3}" --system-site-packages "${venv_abs}"; then
 			log_message ERROR "  - Failed to create venv at ${RED}${venv_abs}${RESET}."
