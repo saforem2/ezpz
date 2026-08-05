@@ -1658,48 +1658,84 @@ def setup_wandb(
             except Exception:
                 pass
 
-            # num_nodes / gpus_per_node have their own getters that
-            # already swallow failures internally (return 1 / fall
-            # back). Safe to call directly.
-            run.config.update(
-                {
-                    # "DIST_INFO": get_dist_info(),
-                    # --- existing fields (unchanged) ---
-                    "hostname": get_hostname(),
-                    "pytorch_backend": get_torch_backend(),
-                    "torch_version": torch.__version__,
-                    "world_size": get_world_size(),
-                    "ezpz_version": ezpz.__version__,
-                    "machine": get_machine(),
-                    "working_directory": os.getcwd(),
-                    "year": now.year,
-                    "month": now.month,
-                    "day": now.day,
-                    "tstamp": now.isoformat(),
-                    # --- new dimensions for filtering / grouping ---
-                    # Pivot from a wandb run → the cluster job that
-                    # ran it. None when not inside a PBS/SLURM job.
-                    "jobid": jobid,
-                    # "pbs" / "slurm" / "" — useful when you have
-                    # runs from both systems in the same project.
-                    "scheduler": get_scheduler(),
-                    # Distinct from world_size: same world_size can be
-                    # 8x8 or 4x16, lets you separate the two.
-                    "num_nodes": get_num_nodes(),
-                    "ranks_per_node": get_gpus_per_node(),
-                    # "cuda" / "xpu" / "mps" / "cpu" — at-a-glance
-                    # distinction between Aurora vs NVIDIA vs CPU runs.
-                    "device_type": get_torch_device_type(),
-                    # --- debugging / postmortems ---
-                    "python_version": sys.version.split()[0],
-                    # None when ezpz is a pip-install, not a git
-                    # checkout. Disambiguates dev branches sharing the
-                    # same ezpz_version.
-                    "ezpz_git_sha": _get_ezpz_git_sha(),
-                }
-            )
-            if config is not None:
-                run.config.update({"config": config})
+            # Everything from here on is *bookkeeping on an
+            # already-created run*. Scoped try/except: a failure here
+            # must not propagate to the outer handler, which returns
+            # None -- that makes WandbBackend set _run=None, and
+            # WandbBackend.log() early-returns on that, so the run stays
+            # visible in the W&B UI while silently receiving zero
+            # metrics for the whole job. A live run with stale metadata
+            # beats a live run with no data. (A failure of wandb.init()
+            # itself is different: there is no usable run, so it still
+            # falls through to the outer handler and returns None.)
+            try:
+                # num_nodes / gpus_per_node have their own getters that
+                # already swallow failures internally (return 1 / fall
+                # back). Safe to call directly.
+                run.config.update(
+                    {
+                        # "DIST_INFO": get_dist_info(),
+                        # --- existing fields (unchanged) ---
+                        "hostname": get_hostname(),
+                        "pytorch_backend": get_torch_backend(),
+                        "torch_version": torch.__version__,
+                        "world_size": get_world_size(),
+                        "ezpz_version": ezpz.__version__,
+                        "machine": get_machine(),
+                        "working_directory": os.getcwd(),
+                        "year": now.year,
+                        "month": now.month,
+                        "day": now.day,
+                        "tstamp": now.isoformat(),
+                        # --- new dimensions for filtering / grouping ---
+                        # Pivot from a wandb run → the cluster job that
+                        # ran it. None when not inside a PBS/SLURM job.
+                        "jobid": jobid,
+                        # "pbs" / "slurm" / "" — useful when you have
+                        # runs from both systems in the same project.
+                        "scheduler": get_scheduler(),
+                        # Distinct from world_size: same world_size can be
+                        # 8x8 or 4x16, lets you separate the two.
+                        "num_nodes": get_num_nodes(),
+                        "ranks_per_node": get_gpus_per_node(),
+                        # "cuda" / "xpu" / "mps" / "cpu" — at-a-glance
+                        # distinction between Aurora vs NVIDIA vs CPU runs.
+                        "device_type": get_torch_device_type(),
+                        # --- debugging / postmortems ---
+                        "python_version": sys.version.split()[0],
+                        # None when ezpz is a pip-install, not a git
+                        # checkout. Disambiguates dev branches sharing the
+                        # same ezpz_version.
+                        "ezpz_git_sha": _get_ezpz_git_sha(),
+                    },
+                    # setup_wandb may legitimately be called more than
+                    # once in a job: callers create the run early (so
+                    # startup work is recorded) and a later
+                    # WandbBackend re-enters here and adopts the same
+                    # run. The wall-clock keys above ("tstamp",
+                    # "year"/"month"/"day") differ between those calls,
+                    # and without allow_val_change wandb raises
+                    #   ConfigError: Attempted to change value of key
+                    #   "tstamp" from ... to ...
+                    # Re-stamping the metadata is what we want.
+                    allow_val_change=True,
+                )
+                if config is not None:
+                    run.config.update(
+                        {"config": config}, allow_val_change=True
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "wandb post-init config update failed on rank=%d "
+                    "(%s); keeping the active run %s -- metrics will "
+                    "still be logged.",
+                    rank,
+                    exc,
+                    getattr(run, "name", "?"),
+                )
+                logger.debug(
+                    "wandb post-init config traceback", exc_info=True
+                )
         return wandb.run
     except Exception as exc:
         logger.exception("wandb.init() failed from rank=%d: %s", rank, exc)
