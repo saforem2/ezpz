@@ -462,10 +462,11 @@ JSONL metric logging and optional distributed aggregation.
 
 !!! note "The W&B run is created earlier, in `main()`"
 
-    `History` no longer creates the Weights & Biases run. `main()` calls
-    `setup_wandb()` immediately after resolving the output directory —
-    *before* dataset tokenization, model build, FLOP counting, FSDP
-    wrapping and `torch.compile`.
+    The Weights & Biases run is now created in `main()` rather than
+    first coming into existence when `History` is constructed. `main()`
+    calls `setup_wandb()` immediately after resolving the output
+    directory — *before* dataset tokenization, model build, FLOP
+    counting, FSDP wrapping and `torch.compile`.
 
     On a 4-node `agpt-2b` run those steps take roughly a minute, and at
     20b they include the OOM-prone build/compile phase. With the run
@@ -473,10 +474,17 @@ JSONL metric logging and optional distributed aggregation.
     at all**; now the config, model summary, FLOP estimate and precision
     summary are all recorded before the first step.
 
-    `History` then *adopts* the existing run: `wandb.init()` returns the
-    live run object rather than starting a second one, and config
-    updates from both call sites merge. To disable tracking entirely,
-    set `WANDB_MODE=disabled` (or `offline`) as usual.
+    `History` still owns the tracker, and its `WandbBackend` still calls
+    `setup_wandb()` — it simply *adopts* the run that already exists
+    instead of creating one. `wandb.init()` returns the live run object
+    when a run is active, so config updates from both call sites land on
+    a single run.
+
+    Opting out works as before: `WANDB_MODE=disabled` (or `offline`),
+    or `EZPZ_TRACKER_BACKENDS` set to a selection without `wandb` (e.g.
+    `none`, or `csv`). The early init is gated on the same backend
+    resolution `History` uses, so a non-W&B tracker configuration stays
+    entirely offline.
 
     Note that W&B does not capture console output retroactively, so
     anything printed before `setup_wandb()` — including the `import

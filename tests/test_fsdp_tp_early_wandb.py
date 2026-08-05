@@ -24,10 +24,13 @@ import pytest
 
 
 def _import_fsdp_tp():
+    # Skip ONLY on a genuinely missing optional dependency. Any other
+    # import-time failure (SyntaxError, RuntimeError, ...) is a real
+    # regression and must surface as an error, not a silent skip.
     try:
         return importlib.import_module("ezpz.examples.fsdp_tp")
-    except Exception as exc:  # heavy optional deps may be missing
-        pytest.skip(f"could not import ezpz.examples.fsdp_tp: {exc}")
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"missing optional dependency for fsdp_tp: {exc}")
 
 
 class _FakeTracker:
@@ -133,6 +136,48 @@ class TestEarlyWandbInit:
         _run_main(m, monkeypatch, rank=3, events=events)
         assert "wandb" not in events, "non-zero rank must not init wandb"
         assert "train" in events, "non-zero ranks still train"
+
+    @pytest.mark.parametrize(
+        "backends", ["none", "csv", "mlflow", "csv,mlflow"]
+    )
+    def test_no_early_wandb_when_backend_opted_out(
+        self, monkeypatch, backends
+    ):
+        """EZPZ_TRACKER_BACKENDS without wandb must keep W&B out entirely.
+
+        setup_tracker() honours this and never builds a WandbBackend, so
+        an unconditional early init would resurrect a W&B run for users
+        who explicitly opted out.
+        """
+        m = _import_fsdp_tp()
+        monkeypatch.setenv("EZPZ_TRACKER_BACKENDS", backends)
+        events: list[str] = []
+        _run_main(m, monkeypatch, rank=0, events=events)
+        assert "wandb" not in events, (
+            f"EZPZ_TRACKER_BACKENDS={backends!r} excludes wandb, but the "
+            "early init created a run anyway"
+        )
+        assert "train" in events
+
+    @pytest.mark.parametrize("backends", ["wandb", "csv,wandb"])
+    def test_early_wandb_when_backend_includes_wandb(
+        self, monkeypatch, backends
+    ):
+        m = _import_fsdp_tp()
+        monkeypatch.setenv("EZPZ_TRACKER_BACKENDS", backends)
+        events: list[str] = []
+        _run_main(m, monkeypatch, rank=0, events=events)
+        assert "wandb" in events
+        assert events.index("wandb") < events.index("train")
+
+    def test_legacy_ezpz_trackers_env_honored(self, monkeypatch):
+        """The older EZPZ_TRACKERS spelling is the documented fallback."""
+        m = _import_fsdp_tp()
+        monkeypatch.delenv("EZPZ_TRACKER_BACKENDS", raising=False)
+        monkeypatch.setenv("EZPZ_TRACKERS", "none")
+        events: list[str] = []
+        _run_main(m, monkeypatch, rank=0, events=events)
+        assert "wandb" not in events
 
     def test_outdir_resolved_on_every_rank(self, monkeypatch):
         """get_example_outdir broadcasts a timestamp — it is collective, so

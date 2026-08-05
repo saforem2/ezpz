@@ -3699,23 +3699,27 @@ def main(args: argparse.Namespace) -> int:
     base_dir = args.outdir if args.outdir else None
     # Collective (broadcasts the shared timestamp) — every rank must call it.
     outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
-    # Create the W&B run HERE rather than letting History (inside train())
-    # do it. History is constructed only after tokenization, model build,
-    # FLOP counting, FSDP wrapping and torch.compile — on a 4-node agpt-2b
-    # run that is ~60s of startup, and at 20b the OOM-prone build/compile
-    # phase, all of which W&B would otherwise never see: a run that dies
-    # before the first step currently uploads nothing at all.
+    # Create the W&B run HERE, so it exists before the slow startup path.
+    # History (inside train()) is constructed only after tokenization,
+    # model build, FLOP counting, FSDP wrapping and torch.compile — on a
+    # 4-node agpt-2b run that is ~60s, and at 20b it spans the OOM-prone
+    # build/compile phase. Creating the run at History time meant a job
+    # that died before the first step uploaded nothing at all.
     #
-    # Safe to double-init: setup_wandb passes reinit=None, and wandb.init()
-    # returns the *existing* run object when one is live (verified on wandb
-    # 0.24.0 and 0.28.1), so History's later WandbBackend -> setup_wandb
-    # adopts this run instead of creating a second one, and config updates
-    # from both sites merge. setup_wandb is rank-0-only and performs no
-    # collectives, so calling it early cannot deadlock or diverge ranks.
+    # This does NOT move ownership away from History: History still builds
+    # the tracker, and its WandbBackend still calls setup_wandb. It simply
+    # *adopts* this run rather than creating one — setup_wandb passes
+    # reinit=None and wandb.init() returns the existing run object when one
+    # is live (verified on wandb 0.24.0 and 0.28.1), so config updates from
+    # both sites merge onto a single run.
     #
-    # No flag guarding this: WANDB_MODE=disabled/offline is the existing
-    # opt-out, and setup_wandb already no-ops when verify_wandb() fails.
-    if rank == 0:
+    # Gated on the same backend resolution History uses, so
+    # EZPZ_TRACKER_BACKENDS=none (or a csv/mlflow-only selection) still
+    # keeps W&B entirely out of the run. WANDB_MODE=disabled/offline
+    # remains the other opt-out, and setup_wandb additionally no-ops when
+    # verify_wandb() fails or rank != 0 — it performs no collectives, so
+    # calling it early cannot deadlock or diverge ranks.
+    if rank == 0 and "wandb" in ezpz.tracker.resolve_backend_names():
         ezpz.setup_wandb(project_name=WBPROJ_NAME, dir=outdir)
         # Dumped *after* wandb.init so the resolved config lands in the
         # run's captured console log too (wandb does not capture stdout

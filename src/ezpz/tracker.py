@@ -982,6 +982,40 @@ register_backend("csv", CSVBackend)
 register_backend("mlflow", MLflowBackend)
 
 
+def resolve_backend_names(
+    backends: str | Sequence[str] | None = None,
+) -> list[str]:
+    """Resolve the requested tracker backend names.
+
+    Shared by :func:`setup_tracker` and by callers that need to know
+    which backends *would* activate before building a
+    :class:`Tracker` — e.g. a training script that wants to create its
+    W&B run early (so startup work is recorded) but must still honour
+    ``EZPZ_TRACKER_BACKENDS=none``.
+
+    Args:
+        backends: Comma-separated string or sequence of names. When
+            ``None``, falls back to ``EZPZ_TRACKER_BACKENDS``, then
+            ``EZPZ_TRACKERS``, then ``"wandb"``.
+
+    Returns:
+        The resolved backend names. An empty list means "no tracking"
+        (i.e. the caller should use a :class:`NullTracker`); this is
+        what ``"none"`` resolves to.
+    """
+    if backends is None:
+        backends = os.environ.get(
+            "EZPZ_TRACKER_BACKENDS",
+            os.environ.get("EZPZ_TRACKERS", "wandb"),
+        )
+    if isinstance(backends, str):
+        backends = [b.strip() for b in backends.split(",") if b.strip()]
+    names = list(backends)
+    if names == ["none"]:
+        return []
+    return names
+
+
 def setup_tracker(
     project_name: str | None = None,
     backends: str | Sequence[str] | None = None,
@@ -1015,16 +1049,11 @@ def setup_tracker(
         except Exception:
             rank = 0
 
-    # Parse backends
-    if backends is None:
-        backends = os.environ.get(
-            "EZPZ_TRACKER_BACKENDS",
-            os.environ.get("EZPZ_TRACKERS", "wandb"),
-        )
-    if isinstance(backends, str):
-        backends = [b.strip() for b in backends.split(",") if b.strip()]
+    # Parse backends (shared with resolve_backend_names so early-init
+    # callers can honour the same env-var opt-outs).
+    backends = resolve_backend_names(backends)
 
-    if backends == ["none"] or not backends:
+    if not backends:
         return NullTracker()
 
     active: list[TrackerBackend] = []
