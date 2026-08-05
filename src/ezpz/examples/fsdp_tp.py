@@ -3696,13 +3696,39 @@ def main(args: argparse.Namespace) -> int:
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()
-    if rank == 0:
+    base_dir = args.outdir if args.outdir else None
+    # Collective (broadcasts the shared timestamp) — every rank must call it.
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    # Create the W&B run HERE, so it exists before the slow startup path.
+    # History (inside train()) is constructed only after tokenization,
+    # model build, FLOP counting, FSDP wrapping and torch.compile — on a
+    # 4-node agpt-2b run that is ~60s, and at 20b it spans the OOM-prone
+    # build/compile phase. Creating the run at History time meant a job
+    # that died before the first step uploaded nothing at all.
+    #
+    # This does NOT move ownership away from History: History still builds
+    # the tracker, and its WandbBackend still calls setup_wandb. It simply
+    # *adopts* this run rather than creating one — setup_wandb passes
+    # reinit=None and wandb.init() returns the existing run object when one
+    # is live (verified on wandb 0.24.0 and 0.28.1), so config updates from
+    # both sites merge onto a single run.
+    #
+    # Gated on the same backend resolution History uses, so
+    # EZPZ_TRACKER_BACKENDS=none (or a csv/mlflow-only selection) still
+    # keeps W&B entirely out of the run. WANDB_MODE=disabled/offline
+    # remains the other opt-out, and setup_wandb additionally no-ops when
+    # verify_wandb() fails or rank != 0 — it performs no collectives, so
+    # calling it early cannot deadlock or diverge ranks.
+    if rank == 0 and "wandb" in ezpz.tracker.resolve_backend_names():
+        ezpz.setup_wandb(project_name=WBPROJ_NAME, dir=outdir)
+        # Dumped *after* wandb.init so the resolved config lands in the
+        # run's captured console log too (wandb does not capture stdout
+        # retroactively).
         jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
         logger.info(f"config:\n{jstr}")
-    base_dir = args.outdir if args.outdir else None
-    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
-    # Tracker setup is handled by History constructor (inside train())
+    # W&B run created above; History (inside train()) adopts it and adds
+    # the CSV/JSONL backends.
     train_start = time.perf_counter()
     # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
     with profiling_context_from_args(args, outdir) as prof:

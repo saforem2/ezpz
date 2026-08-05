@@ -460,6 +460,36 @@ within each TP group.
 **Metric tracking.** An `ezpz.history.History` object is created for
 JSONL metric logging and optional distributed aggregation.
 
+!!! note "The W&B run is created earlier, in `main()`"
+
+    The Weights & Biases run is now created in `main()` rather than
+    first coming into existence when `History` is constructed. `main()`
+    calls `setup_wandb()` immediately after resolving the output
+    directory — *before* dataset tokenization, model build, FLOP
+    counting, FSDP wrapping and `torch.compile`.
+
+    On a 4-node `agpt-2b` run those steps take roughly a minute, and at
+    20b they include the OOM-prone build/compile phase. With the run
+    created late, a job that died during model build uploaded **nothing
+    at all**; now the config, model summary, FLOP estimate and precision
+    summary are all recorded before the first step.
+
+    `History` still owns the tracker, and its `WandbBackend` still calls
+    `setup_wandb()` — it simply *adopts* the run that already exists
+    instead of creating one. `wandb.init()` returns the live run object
+    when a run is active, so config updates from both call sites land on
+    a single run.
+
+    Opting out works as before: `WANDB_MODE=disabled` (or `offline`),
+    or `EZPZ_TRACKER_BACKENDS` set to a selection without `wandb` (e.g.
+    `none`, or `csv`). The early init is gated on the same backend
+    resolution `History` uses, so a non-W&B tracker configuration stays
+    entirely offline.
+
+    Note that W&B does not capture console output retroactively, so
+    anything printed before `setup_wandb()` — including the `import
+    torch` warnings — still won't appear in the run log.
+
 ```python title="src/ezpz/examples/fsdp_tp.py:2724:2740"
 --8<-- "src/ezpz/examples/fsdp_tp.py:2724:2740"
 ```
