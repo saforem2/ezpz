@@ -3696,13 +3696,35 @@ def main(args: argparse.Namespace) -> int:
     t0 = time.perf_counter()
     rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
     t_setup = time.perf_counter()
+    base_dir = args.outdir if args.outdir else None
+    # Collective (broadcasts the shared timestamp) — every rank must call it.
+    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
+    # Create the W&B run HERE rather than letting History (inside train())
+    # do it. History is constructed only after tokenization, model build,
+    # FLOP counting, FSDP wrapping and torch.compile — on a 4-node agpt-2b
+    # run that is ~60s of startup, and at 20b the OOM-prone build/compile
+    # phase, all of which W&B would otherwise never see: a run that dies
+    # before the first step currently uploads nothing at all.
+    #
+    # Safe to double-init: setup_wandb passes reinit=None, and wandb.init()
+    # returns the *existing* run object when one is live (verified on wandb
+    # 0.24.0 and 0.28.1), so History's later WandbBackend -> setup_wandb
+    # adopts this run instead of creating a second one, and config updates
+    # from both sites merge. setup_wandb is rank-0-only and performs no
+    # collectives, so calling it early cannot deadlock or diverge ranks.
+    #
+    # No flag guarding this: WANDB_MODE=disabled/offline is the existing
+    # opt-out, and setup_wandb already no-ops when verify_wandb() fails.
     if rank == 0:
+        ezpz.setup_wandb(project_name=WBPROJ_NAME, dir=outdir)
+        # Dumped *after* wandb.init so the resolved config lands in the
+        # run's captured console log too (wandb does not capture stdout
+        # retroactively).
         jstr = json.dumps(vars(args), indent=2, sort_keys=True, default=str)
         logger.info(f"config:\n{jstr}")
-    base_dir = args.outdir if args.outdir else None
-    outdir = get_example_outdir(WBPROJ_NAME, base_dir=base_dir)
     logger.info("Outputs will be saved to %s", outdir)
-    # Tracker setup is handled by History constructor (inside train())
+    # W&B run created above; History (inside train()) adopts it and adds
+    # the CSV/JSONL backends.
     train_start = time.perf_counter()
     # nullcontext (prof=None) unless --profile / --pyinstrument-profiler set.
     with profiling_context_from_args(args, outdir) as prof:
