@@ -117,6 +117,14 @@ class TestDoubleInit:
         assert second is not None, (
             "re-supplying config= with a changed value must not kill the run"
         )
+        # ...and the new value must actually land, not just survive.
+        nested = dict(second.config).get("config")
+        assert isinstance(nested, dict), (
+            f"expected config= nested under 'config', got {nested!r}"
+        )
+        assert nested.get("lr") == 0.003, (
+            "the second call's config value must overwrite the first"
+        )
 
 
 class TestLiveRunSurvivesPostInitFailure:
@@ -152,6 +160,36 @@ class TestLiveRunSurvivesPostInitFailure:
             "fails; returning None silently disables all metric logging"
         )
         second.log({"loss": 0.5})  # still usable
+
+    def test_bookkeeping_import_failure_keeps_run(
+        self, wandb_offline, tmp_path, monkeypatch
+    ):
+        """The recovery scope must start right after wandb.init().
+
+        ``wandb`` is a base dependency while ``torch`` is an optional
+        extra (pyproject.toml), so on a torch-less install the
+        post-init ``import torch`` raises with a perfectly good run
+        already live. If the scope began at ``config.update()`` instead,
+        that ImportError would reach the outer handler and discard the
+        run — the exact failure this PR fixes.
+        """
+        import builtins
+
+        setup_wandb = _setup_wandb()
+        real_import = builtins.__import__
+
+        def _no_torch(name, *args, **kwargs):
+            if name == "torch" or name.startswith("torch."):
+                raise ImportError("No module named 'torch'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _no_torch)
+        run = setup_wandb(project_name="p", dir=str(tmp_path), mode="offline")
+        monkeypatch.undo()
+        assert run is not None, (
+            "a failed bookkeeping import must not discard a live run"
+        )
+        run.log({"loss": 0.25})  # still usable
 
     def test_init_failure_itself_still_returns_none(
         self, wandb_offline, tmp_path, monkeypatch

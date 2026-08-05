@@ -1633,42 +1633,51 @@ def setup_wandb(
             **kwargs,
         )
         if run is not None:
-            logger.info("wandb.run=[%s](%s)", run.name, run.url)
-            import sys  # noqa: PLC0415
-            import torch  # noqa: PLC0415
-
-            import ezpz  # noqa: PLC0415
-            from ezpz.configs import get_scheduler  # noqa: PLC0415
-
-            now = datetime.datetime.now()
-
-            # Best-effort resolution of the active scheduler jobid.
-            # ezpz.launch.get_active_jobid imports ezpz.pbs / ezpz.slurm
-            # lazily and returns None when no job is detected. Wrapped
-            # in try/except because the launch module pulls a non-
-            # trivial chain on first import — any failure here should
-            # NOT block the wandb run from being created.
-            jobid: str | None = None
+            # EVERYTHING below this point is bookkeeping on an
+            # already-created run, so it all lives inside one scoped
+            # try/except. A failure here must not reach the outer
+            # handler, which returns None -- that makes WandbBackend set
+            # _run=None, and WandbBackend.log() early-returns on that,
+            # so the run stays visible in the W&B UI while silently
+            # receiving zero metrics for the whole job. A live run with
+            # stale metadata beats a live run with no data.
+            #
+            # The scope starts here, not at the config.update() below,
+            # because the bookkeeping imports can themselves fail: torch
+            # is an OPTIONAL extra while wandb is a base dependency
+            # (pyproject.toml), so a torch-less install would raise on
+            # `import torch` with a perfectly good run already live.
+            #
+            # A failure of wandb.init() itself is different: there is no
+            # usable run to salvage, so it still falls through to the
+            # outer handler and returns None (callers rely on that to
+            # no-op -- see test_tracker.py's
+            # test_init_failure_all_methods_noop).
             try:
-                from ezpz.launch import (
-                    get_active_jobid,
-                )  # noqa: PLC0415
+                logger.info("wandb.run=[%s](%s)", run.name, run.url)
+                import sys  # noqa: PLC0415
+                import torch  # noqa: PLC0415
 
-                jobid = get_active_jobid()
-            except Exception:
-                pass
+                import ezpz  # noqa: PLC0415
+                from ezpz.configs import get_scheduler  # noqa: PLC0415
 
-            # Everything from here on is *bookkeeping on an
-            # already-created run*. Scoped try/except: a failure here
-            # must not propagate to the outer handler, which returns
-            # None -- that makes WandbBackend set _run=None, and
-            # WandbBackend.log() early-returns on that, so the run stays
-            # visible in the W&B UI while silently receiving zero
-            # metrics for the whole job. A live run with stale metadata
-            # beats a live run with no data. (A failure of wandb.init()
-            # itself is different: there is no usable run, so it still
-            # falls through to the outer handler and returns None.)
-            try:
+                now = datetime.datetime.now()
+
+                # Best-effort resolution of the active scheduler jobid.
+                # ezpz.launch.get_active_jobid imports ezpz.pbs /
+                # ezpz.slurm lazily and returns None when no job is
+                # detected. Wrapped in its own try/except because the
+                # launch module pulls a non-trivial import chain.
+                jobid: str | None = None
+                try:
+                    from ezpz.launch import (
+                        get_active_jobid,
+                    )  # noqa: PLC0415
+
+                    jobid = get_active_jobid()
+                except Exception:
+                    pass
+
                 # num_nodes / gpus_per_node have their own getters that
                 # already swallow failures internally (return 1 / fall
                 # back). Safe to call directly.
