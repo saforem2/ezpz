@@ -937,10 +937,70 @@ ezpz_setup_conda_perlmutter() {
 #
 # @stdout Prints loaded module names
 ###############################################
+###############################################
+# Load the XPU module stack WITHOUT evicting an
+# already-active Python environment.
+#
+# `module load oneapi/release` prepends its own Python to PATH and
+# UNSETS CONDA_PREFIX, so an active conda env (e.g. the frameworks-RC
+# stack) is silently thrown away: `python3` flips to /usr/bin/python3
+# and `import torch` becomes ModuleNotFoundError. Measured on Sunspot:
+#
+#   conda activate <RC4 env>      -> python3 = <env>/bin/python3
+#   module load oneapi/release    -> python3 = /usr/bin/python3,
+#                                    CONDA_PREFIX = <empty>
+#
+# That turns a helper meant to PREPARE the XPU stack into one that
+# destroys it. ezpz_setup already works around this locally via
+# _preloaded_py; this fixes it at the source so every caller benefits.
+#
+# We capture the active interpreter's directory BEFORE loading and put
+# it back on the front of PATH afterwards. Only done when the
+# pre-existing python actually has torch -- otherwise there is nothing
+# worth preserving and we leave the module-provided python in place.
+#
+# @stdout Nothing (module output is the caller's concern)
+###############################################
+_ezpz_load_xpu_modules_preserving_python() {
+	# Predicate is "a managed env is ACTIVE", not "torch imports right
+	# now". Those differ in exactly the case that matters: on the
+	# frameworks-RC stack torch is installed but not yet importable
+	# before this function runs, because the pti-gpu module we are
+	# about to load is what supplies libpti_view.so.0. An
+	# `import torch` probe would fail, preserve nothing, and let the
+	# module load evict the env anyway -- which is precisely the bug.
+	local _py_dir="" _conda_prefix="${CONDA_PREFIX:-}" _virtual_env="${VIRTUAL_ENV:-}"
+	if [[ -n "${_conda_prefix}" || -n "${_virtual_env}" ]] \
+		&& command -v python3 >/dev/null 2>&1; then
+		_py_dir="$(dirname "$(command -v python3)")"
+	fi
+
+	module load oneapi/release hdf5 pti-gpu
+
+	if [[ -n "${_py_dir}" ]] \
+		&& [[ "$(dirname "$(command -v python3 2>/dev/null)")" != "${_py_dir}" ]]; then
+		log_message INFO "Restoring active python env evicted by module load: ${_py_dir}"
+		export PATH="${_py_dir}:${PATH}"
+		# The oneapi module also UNSETS these; put them back so conda /
+		# venv tooling downstream still sees an activated environment.
+		[[ -n "${_conda_prefix}" ]] && export CONDA_PREFIX="${_conda_prefix}"
+		[[ -n "${_virtual_env}" ]] && export VIRTUAL_ENV="${_virtual_env}"
+	fi
+	return 0
+}
+
 ezpz_load_modules_aurora() {
 	# oneAPI runtime + HDF5 + PTI profiler. Same as ezpz_setup_xpu;
 	# kept here so the function is self-contained / discoverable.
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	#
+	# NOTE: deliberately UNVERSIONED. This used to pin
+	# oneapi/release/2025.3.1, which as of the 26.181.0 stack is not the
+	# site default (2026.1.0 is) and lives only in the older 26.26.0
+	# module tree. Loading it SUCCEEDS but silently downgrades the
+	# already-loaded default and swaps MODULEPATH. Let the site default
+	# win; pin again only if a specific version is required, and verify
+	# it still exists in the active module tree.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -970,7 +1030,10 @@ ezpz_load_modules_sunspot() {
 	# (minus FI_MR_CACHE_MONITOR, which is Aurora-specific). Kept as a
 	# separate function for grep-ability and so the two stacks can
 	# diverge independently if Sunspot's oneAPI version ever differs.
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	#
+	# Unversioned + python-preserving -- see
+	# _ezpz_load_xpu_modules_preserving_python.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -2523,7 +2586,9 @@ ezpz_print_job_env() {
 # @stdout Prints loaded module names
 ###############################################
 ezpz_setup_xpu() {
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	# Unversioned + python-preserving -- see
+	# _ezpz_load_xpu_modules_preserving_python.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
