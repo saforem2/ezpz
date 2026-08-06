@@ -1633,73 +1633,118 @@ def setup_wandb(
             **kwargs,
         )
         if run is not None:
-            logger.info("wandb.run=[%s](%s)", run.name, run.url)
-            import sys  # noqa: PLC0415
-            import torch  # noqa: PLC0415
-
-            import ezpz  # noqa: PLC0415
-            from ezpz.configs import get_scheduler  # noqa: PLC0415
-
-            now = datetime.datetime.now()
-
-            # Best-effort resolution of the active scheduler jobid.
-            # ezpz.launch.get_active_jobid imports ezpz.pbs / ezpz.slurm
-            # lazily and returns None when no job is detected. Wrapped
-            # in try/except because the launch module pulls a non-
-            # trivial chain on first import — any failure here should
-            # NOT block the wandb run from being created.
-            jobid: str | None = None
+            # EVERYTHING below this point is bookkeeping on an
+            # already-created run, so it all lives inside one scoped
+            # try/except. A failure here must not reach the outer
+            # handler, which returns None -- that makes WandbBackend set
+            # _run=None, and WandbBackend.log() early-returns on that,
+            # so the run stays visible in the W&B UI while silently
+            # receiving zero metrics for the whole job. A live run with
+            # stale metadata beats a live run with no data.
+            #
+            # The scope starts here, not at the config.update() below,
+            # because the bookkeeping imports can themselves fail: torch
+            # is an OPTIONAL extra while wandb is a base dependency
+            # (pyproject.toml), so a torch-less install would raise on
+            # `import torch` with a perfectly good run already live.
+            #
+            # A failure of wandb.init() itself is different: there is no
+            # usable run to salvage, so it still falls through to the
+            # outer handler and returns None (callers rely on that to
+            # no-op -- see test_tracker.py's
+            # test_init_failure_all_methods_noop).
             try:
-                from ezpz.launch import (
-                    get_active_jobid,
-                )  # noqa: PLC0415
+                logger.info("wandb.run=[%s](%s)", run.name, run.url)
+                import sys  # noqa: PLC0415
+                import torch  # noqa: PLC0415
 
-                jobid = get_active_jobid()
-            except Exception:
-                pass
+                import ezpz  # noqa: PLC0415
+                from ezpz.configs import get_scheduler  # noqa: PLC0415
 
-            # num_nodes / gpus_per_node have their own getters that
-            # already swallow failures internally (return 1 / fall
-            # back). Safe to call directly.
-            run.config.update(
-                {
-                    # "DIST_INFO": get_dist_info(),
-                    # --- existing fields (unchanged) ---
-                    "hostname": get_hostname(),
-                    "pytorch_backend": get_torch_backend(),
-                    "torch_version": torch.__version__,
-                    "world_size": get_world_size(),
-                    "ezpz_version": ezpz.__version__,
-                    "machine": get_machine(),
-                    "working_directory": os.getcwd(),
-                    "year": now.year,
-                    "month": now.month,
-                    "day": now.day,
-                    "tstamp": now.isoformat(),
-                    # --- new dimensions for filtering / grouping ---
-                    # Pivot from a wandb run → the cluster job that
-                    # ran it. None when not inside a PBS/SLURM job.
-                    "jobid": jobid,
-                    # "pbs" / "slurm" / "" — useful when you have
-                    # runs from both systems in the same project.
-                    "scheduler": get_scheduler(),
-                    # Distinct from world_size: same world_size can be
-                    # 8x8 or 4x16, lets you separate the two.
-                    "num_nodes": get_num_nodes(),
-                    "ranks_per_node": get_gpus_per_node(),
-                    # "cuda" / "xpu" / "mps" / "cpu" — at-a-glance
-                    # distinction between Aurora vs NVIDIA vs CPU runs.
-                    "device_type": get_torch_device_type(),
-                    # --- debugging / postmortems ---
-                    "python_version": sys.version.split()[0],
-                    # None when ezpz is a pip-install, not a git
-                    # checkout. Disambiguates dev branches sharing the
-                    # same ezpz_version.
-                    "ezpz_git_sha": _get_ezpz_git_sha(),
-                }
-            )
-            if config is not None:
-                run.config.update({"config": config})
+                now = datetime.datetime.now()
+
+                # Best-effort resolution of the active scheduler jobid.
+                # ezpz.launch.get_active_jobid imports ezpz.pbs /
+                # ezpz.slurm lazily and returns None when no job is
+                # detected. Wrapped in its own try/except because the
+                # launch module pulls a non-trivial import chain.
+                jobid: str | None = None
+                try:
+                    from ezpz.launch import (
+                        get_active_jobid,
+                    )  # noqa: PLC0415
+
+                    jobid = get_active_jobid()
+                except Exception:
+                    pass
+
+                # num_nodes / gpus_per_node have their own getters that
+                # already swallow failures internally (return 1 / fall
+                # back). Safe to call directly.
+                run.config.update(
+                    {
+                        # "DIST_INFO": get_dist_info(),
+                        # --- existing fields (unchanged) ---
+                        "hostname": get_hostname(),
+                        "pytorch_backend": get_torch_backend(),
+                        "torch_version": torch.__version__,
+                        "world_size": get_world_size(),
+                        "ezpz_version": ezpz.__version__,
+                        "machine": get_machine(),
+                        "working_directory": os.getcwd(),
+                        "year": now.year,
+                        "month": now.month,
+                        "day": now.day,
+                        "tstamp": now.isoformat(),
+                        # --- new dimensions for filtering / grouping ---
+                        # Pivot from a wandb run → the cluster job that
+                        # ran it. None when not inside a PBS/SLURM job.
+                        "jobid": jobid,
+                        # "pbs" / "slurm" / "" — useful when you have
+                        # runs from both systems in the same project.
+                        "scheduler": get_scheduler(),
+                        # Distinct from world_size: same world_size can be
+                        # 8x8 or 4x16, lets you separate the two.
+                        "num_nodes": get_num_nodes(),
+                        "ranks_per_node": get_gpus_per_node(),
+                        # "cuda" / "xpu" / "mps" / "cpu" — at-a-glance
+                        # distinction between Aurora vs NVIDIA vs CPU runs.
+                        "device_type": get_torch_device_type(),
+                        # --- debugging / postmortems ---
+                        "python_version": sys.version.split()[0],
+                        # None when ezpz is a pip-install, not a git
+                        # checkout. Disambiguates dev branches sharing the
+                        # same ezpz_version.
+                        "ezpz_git_sha": _get_ezpz_git_sha(),
+                    },
+                    # setup_wandb may legitimately be called more than
+                    # once in a job: callers create the run early (so
+                    # startup work is recorded) and a later
+                    # WandbBackend re-enters here and adopts the same
+                    # run. The wall-clock keys above ("tstamp",
+                    # "year"/"month"/"day") differ between those calls,
+                    # and without allow_val_change wandb raises
+                    #   ConfigError: Attempted to change value of key
+                    #   "tstamp" from ... to ...
+                    # Re-stamping the metadata is what we want.
+                    allow_val_change=True,
+                )
+                if config is not None:
+                    run.config.update(
+                        {"config": config}, allow_val_change=True
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "wandb post-init config update failed on rank=%d "
+                    "(%s); keeping the active run %s -- metrics will "
+                    "still be logged.",
+                    rank,
+                    exc,
+                    getattr(run, "name", "?"),
+                )
+                logger.debug(
+                    "wandb post-init config traceback", exc_info=True
+                )
         return wandb.run
     except Exception as exc:
         logger.exception("wandb.init() failed from rank=%d: %s", rank, exc)
