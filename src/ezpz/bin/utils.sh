@@ -962,17 +962,31 @@ ezpz_setup_conda_perlmutter() {
 # @stdout Nothing (module output is the caller's concern)
 ###############################################
 _ezpz_load_xpu_modules_preserving_python() {
-	local _py_dir=""
-	if command -v python3 >/dev/null 2>&1 \
-		&& python3 -c "import torch" >/dev/null 2>&1; then
+	# Predicate is "a managed env is ACTIVE", not "torch imports right
+	# now". Those differ in exactly the case that matters: on the
+	# frameworks-RC stack torch is installed but not yet importable
+	# before this function runs, because the pti-gpu module we are
+	# about to load is what supplies libpti_view.so.0. An
+	# `import torch` probe would fail, preserve nothing, and let the
+	# module load evict the env anyway -- which is precisely the bug.
+	local _py_dir="" _conda_prefix="${CONDA_PREFIX:-}" _virtual_env="${VIRTUAL_ENV:-}"
+	if [[ -n "${_conda_prefix}" || -n "${_virtual_env}" ]] \
+		&& command -v python3 >/dev/null 2>&1; then
 		_py_dir="$(dirname "$(command -v python3)")"
 	fi
+
 	module load oneapi/release hdf5 pti-gpu
+
 	if [[ -n "${_py_dir}" ]] \
 		&& [[ "$(dirname "$(command -v python3 2>/dev/null)")" != "${_py_dir}" ]]; then
-		log_message INFO "Restoring pre-existing python env evicted by module load: ${_py_dir}"
+		log_message INFO "Restoring active python env evicted by module load: ${_py_dir}"
 		export PATH="${_py_dir}:${PATH}"
+		# The oneapi module also UNSETS these; put them back so conda /
+		# venv tooling downstream still sees an activated environment.
+		[[ -n "${_conda_prefix}" ]] && export CONDA_PREFIX="${_conda_prefix}"
+		[[ -n "${_virtual_env}" ]] && export VIRTUAL_ENV="${_virtual_env}"
 	fi
+	return 0
 }
 
 ezpz_load_modules_aurora() {
