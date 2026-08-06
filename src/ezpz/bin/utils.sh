@@ -940,7 +940,18 @@ ezpz_setup_conda_perlmutter() {
 ezpz_load_modules_aurora() {
 	# oneAPI runtime + HDF5 + PTI profiler. Same as ezpz_setup_xpu;
 	# kept here so the function is self-contained / discoverable.
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	#
+	# NOTE: deliberately UNVERSIONED. This used to pin
+	# oneapi/release/2025.3.1, which as of the 26.181.0 stack is not the
+	# site default (2026.1.0 is) and lives only in the older 26.26.0
+	# module tree. Loading it SUCCEEDS but silently downgrades the
+	# already-loaded default and swaps MODULEPATH, which breaks any
+	# environment built against the current oneAPI -- e.g. the
+	# frameworks-RC conda env, where `import torch` goes from working to
+	# ModuleNotFoundError immediately after this line. Let the site
+	# default win; pin again only if a specific version is required, and
+	# verify it still exists in the active module tree.
+	module load oneapi/release hdf5 pti-gpu
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -970,7 +981,11 @@ ezpz_load_modules_sunspot() {
 	# (minus FI_MR_CACHE_MONITOR, which is Aurora-specific). Kept as a
 	# separate function for grep-ability and so the two stacks can
 	# diverge independently if Sunspot's oneAPI version ever differs.
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	#
+	# Unversioned on purpose -- see ezpz_load_modules_aurora for why
+	# pinning 2025.3.1 silently downgraded the site default and broke
+	# torch on the frameworks-RC stack.
+	module load oneapi/release hdf5 pti-gpu
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -2523,7 +2538,10 @@ ezpz_print_job_env() {
 # @stdout Prints loaded module names
 ###############################################
 ezpz_setup_xpu() {
-	module load oneapi/release/2025.3.1 hdf5 pti-gpu
+	# Unversioned on purpose -- see ezpz_load_modules_aurora for why
+	# pinning 2025.3.1 silently downgraded the site default and broke
+	# torch on the frameworks-RC stack.
+	module load oneapi/release hdf5 pti-gpu
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
