@@ -937,6 +937,44 @@ ezpz_setup_conda_perlmutter() {
 #
 # @stdout Prints loaded module names
 ###############################################
+###############################################
+# Load the XPU module stack WITHOUT evicting an
+# already-active Python environment.
+#
+# `module load oneapi/release` prepends its own Python to PATH and
+# UNSETS CONDA_PREFIX, so an active conda env (e.g. the frameworks-RC
+# stack) is silently thrown away: `python3` flips to /usr/bin/python3
+# and `import torch` becomes ModuleNotFoundError. Measured on Sunspot:
+#
+#   conda activate <RC4 env>      -> python3 = <env>/bin/python3
+#   module load oneapi/release    -> python3 = /usr/bin/python3,
+#                                    CONDA_PREFIX = <empty>
+#
+# That turns a helper meant to PREPARE the XPU stack into one that
+# destroys it. ezpz_setup already works around this locally via
+# _preloaded_py; this fixes it at the source so every caller benefits.
+#
+# We capture the active interpreter's directory BEFORE loading and put
+# it back on the front of PATH afterwards. Only done when the
+# pre-existing python actually has torch -- otherwise there is nothing
+# worth preserving and we leave the module-provided python in place.
+#
+# @stdout Nothing (module output is the caller's concern)
+###############################################
+_ezpz_load_xpu_modules_preserving_python() {
+	local _py_dir=""
+	if command -v python3 >/dev/null 2>&1 \
+		&& python3 -c "import torch" >/dev/null 2>&1; then
+		_py_dir="$(dirname "$(command -v python3)")"
+	fi
+	module load oneapi/release hdf5 pti-gpu
+	if [[ -n "${_py_dir}" ]] \
+		&& [[ "$(dirname "$(command -v python3 2>/dev/null)")" != "${_py_dir}" ]]; then
+		log_message INFO "Restoring pre-existing python env evicted by module load: ${_py_dir}"
+		export PATH="${_py_dir}:${PATH}"
+	fi
+}
+
 ezpz_load_modules_aurora() {
 	# oneAPI runtime + HDF5 + PTI profiler. Same as ezpz_setup_xpu;
 	# kept here so the function is self-contained / discoverable.
@@ -945,13 +983,10 @@ ezpz_load_modules_aurora() {
 	# oneapi/release/2025.3.1, which as of the 26.181.0 stack is not the
 	# site default (2026.1.0 is) and lives only in the older 26.26.0
 	# module tree. Loading it SUCCEEDS but silently downgrades the
-	# already-loaded default and swaps MODULEPATH, which breaks any
-	# environment built against the current oneAPI -- e.g. the
-	# frameworks-RC conda env, where `import torch` goes from working to
-	# ModuleNotFoundError immediately after this line. Let the site
-	# default win; pin again only if a specific version is required, and
-	# verify it still exists in the active module tree.
-	module load oneapi/release hdf5 pti-gpu
+	# already-loaded default and swaps MODULEPATH. Let the site default
+	# win; pin again only if a specific version is required, and verify
+	# it still exists in the active module tree.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -982,10 +1017,9 @@ ezpz_load_modules_sunspot() {
 	# separate function for grep-ability and so the two stacks can
 	# diverge independently if Sunspot's oneAPI version ever differs.
 	#
-	# Unversioned on purpose -- see ezpz_load_modules_aurora for why
-	# pinning 2025.3.1 silently downgraded the site default and broke
-	# torch on the frameworks-RC stack.
-	module load oneapi/release hdf5 pti-gpu
+	# Unversioned + python-preserving -- see
+	# _ezpz_load_xpu_modules_preserving_python.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
@@ -2538,10 +2572,9 @@ ezpz_print_job_env() {
 # @stdout Prints loaded module names
 ###############################################
 ezpz_setup_xpu() {
-	# Unversioned on purpose -- see ezpz_load_modules_aurora for why
-	# pinning 2025.3.1 silently downgraded the site default and broke
-	# torch on the frameworks-RC stack.
-	module load oneapi/release hdf5 pti-gpu
+	# Unversioned + python-preserving -- see
+	# _ezpz_load_xpu_modules_preserving_python.
+	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
 	export CCL_OP_SYNC=1
