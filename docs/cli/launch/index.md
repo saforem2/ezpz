@@ -86,11 +86,13 @@ allocated to your job.
                                 Idle-output watchdog timeout in seconds. Off by default.
         --retries RETRIES     Re-execute on non-zero exit, up to N times. Default: 0.
         --auto-retry          Unbounded bad-node failover loop. Mutually
-                                exclusive with --retries. Requires explicit --nproc.
+                                exclusive with --retries. Requires an explicit
+                                active size: --nhosts (-nh) or --nproc (-n/--np).
         --spare-nodes SPARE_NODES
                                 Spare-node pool for --auto-retry. "auto" (default)
-                                derives from total_pbs_nodes - ceil($nproc / $ppn);
-                                pass an int for an explicit cap.
+                                derives from total_pbs_nodes - active_hosts
+                                (--nhosts, else ceil($nproc / $ppn)); pass an int
+                                for an explicit cap.
         --max-failover-retries MAX_FAILOVER_RETRIES
                                 Optional upper bound on --auto-retry attempts.
                                 Default: unbounded (see termination matrix).
@@ -435,7 +437,7 @@ qsub -A datascience -q workq -l filesystems=tegu:home -l select=4 \
 qsub src/ezpz/bin/test_launch_timeout_retries_aurora.pbs
 ```
 
-The `--auto-retry` driver requests 4 nodes and runs 7 scenarios
+The `--auto-retry` driver requests 4 nodes and runs 9 scenarios
 (~30 min walltime budget):
 
 | Scenario | What it covers |
@@ -447,6 +449,8 @@ The `--auto-retry` driver requests 4 nodes and runs 7 scenarios
 | E | `STUCK_PRE_TRAINING` guard — 2 consecutive zero-step attempts, bail at attempt 2 |
 | F | Realistic — `ezpz.examples.test --model debug --train-iters 20` under `--auto-retry` |
 | G | `--hostfile` honored — pass a 2-node filtered hostfile, verify the loop splits THAT (not the full PBS allocation) |
+| H | `--nhosts` sizing — no `--nproc` at all; verify the host count is honored verbatim |
+| I | No active size — `--auto-retry` alone must refuse at parse time, naming both `--nhosts` and `--nproc` |
 
 The driver works on **Sunspot too** — swap `-A AuroraGPT` → `-A datascience`
 and `filesystems=flare:home` → `filesystems=tegu:home` in the PBS header

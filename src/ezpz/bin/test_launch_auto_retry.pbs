@@ -407,6 +407,51 @@ else
     record G FAIL "rc=${RC} active_count=${ACTIVE_COUNT} (wanted 1)"
 fi
 
+# ---- H: --nhosts instead of --nproc ---------------------------------------
+hdr "H" "Active size via --nhosts: 1 active host, used verbatim (no --nproc)"
+D=$(scen_dir H)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+# NOTE: deliberately NO --nproc. --auto-retry used to reject this; it now
+# accepts a host count directly. --nhosts is a HOST count, so 1 here must
+# yield exactly 1 active host -- no ranks->hosts conversion applied to a
+# number that is already hosts.
+ezpz launch --nhosts 1 --auto-retry --timeout 60 \
+    -- bash -c 'echo "iter step=1"; exit 0' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+
+ACTIVE_FILE=$(ls "${D}"/logs/failover-*/active.hostfile 2>/dev/null | head -1)
+ACTIVE_COUNT=$(wc -l < "${ACTIVE_FILE}" 2>/dev/null || echo 0)
+echo "exit=${RC}  elapsed=${ELAPSED}s  active_hostfile_count=${ACTIVE_COUNT}"
+grep -E "active hostfile|spare hostfile|active=" "${LOG}" | head -5
+if [[ ${RC} -eq 0 && ${ACTIVE_COUNT} -eq 1 ]]; then
+    record H PASS "--nhosts 1 honored verbatim, rc=0 in ${ELAPSED}s"
+else
+    record H FAIL "rc=${RC} active_count=${ACTIVE_COUNT} (wanted rc=0, count=1)"
+fi
+
+# ---- I: neither --nhosts nor --nproc → clean parse-time refusal -----------
+hdr "I" "No active size: --auto-retry alone must fail fast at parse time"
+D=$(scen_dir I)
+cd "${D}" || { log_message ERROR "cd to scenario dir failed: ${D}"; exit 1; }
+START=$(date +%s)
+ezpz launch --auto-retry --timeout 60 \
+    -- bash -c 'echo "iter step=1"; exit 0' > "${LOG}" 2>&1
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+cd "${PBS_O_WORKDIR}" || { log_message ERROR "cd back to PBS_O_WORKDIR failed"; exit 1; }
+echo "exit=${RC}  elapsed=${ELAPSED}s"
+grep -E "active size" "${LOG}" | head -3
+# Must refuse immediately (no attempts, no failover dir), naming BOTH flags.
+if [[ ${RC} -ne 0 ]] && grep -q -- "--nhosts" "${LOG}" \
+    && grep -q -- "--nproc" "${LOG}"; then
+    record I PASS "refused at parse time (rc=${RC}), error names both flags"
+else
+    record I FAIL "rc=${RC} (wanted !=0 with an error naming --nhosts/--nproc)"
+fi
+
 # ---- Final report ---------------------------------------------------------
 printf "\n========================================================================\n"
 printf "%s --auto-retry summary  (PASS=%d  FAIL=%d)\n" \
