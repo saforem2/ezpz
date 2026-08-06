@@ -900,9 +900,33 @@ class TestRunWithAutoRetry:
 
 
 class TestArgparseValidation:
-    def test_auto_retry_requires_explicit_nproc(self):
-        with pytest.raises(SystemExit, match="requires --nproc"):
+    def test_auto_retry_requires_explicit_size(self):
+        """Neither --nproc nor --nhosts -> refuse.
+
+        What auto-retry needs is the ACTIVE HOST COUNT; with no size
+        flag at all there is nothing to split the allocation on.
+        """
+        with pytest.raises(SystemExit, match="requires the active size"):
             parse_args(["--auto-retry", "--", "echo", "x"])
+
+    @pytest.mark.parametrize(
+        "flag", ["--nhosts", "-nh", "--nnodes", "--nhost", "--nnode"]
+    )
+    def test_auto_retry_accepts_nhosts_instead_of_nproc(self, flag):
+        """--nhosts states the active host count directly, so it is a
+        first-class alternative to --nproc (which only implies it)."""
+        args = parse_args(["--auto-retry", flag, "4", "--", "echo", "x"])
+        assert args.auto_retry is True
+        assert args.nhosts == 4
+        assert args.nproc == -1  # never supplied
+
+    def test_auto_retry_accepts_both_nproc_and_nhosts(self):
+        args = parse_args(
+            ["--auto-retry", "--np", "48", "--nhosts", "4", "--",
+             "echo", "x"]
+        )
+        assert args.nproc == 48
+        assert args.nhosts == 4
 
     def test_auto_retry_mutex_with_retries(self):
         with pytest.raises(SystemExit, match="mutually exclusive"):
@@ -971,6 +995,88 @@ class TestArgparseValidation:
 # ---------------------------------------------------------------------------
 # Helpers in launch.py — the bridge between CLI args and the loop
 # ---------------------------------------------------------------------------
+
+
+class TestAutoRetryActiveSizeSource:
+    """`launch(auto_retry=True)` accepts nhosts OR ngpus.
+
+    The loop only ever needs the ACTIVE HOST COUNT. nhosts states it
+    directly; ngpus implies it via ranks->hosts. These tests pin that
+    both routes reach _resolve_auto_retry_allocation with the right
+    host count, and that nhosts is used VERBATIM (no ranks->hosts
+    rounding applied to a number that is already a host count).
+    """
+
+    @staticmethod
+    def _stub_scheduler(monkeypatch):
+        """Make launch() believe it is inside a live PBS job."""
+        import ezpz.launch as L
+
+        monkeypatch.setattr(L, "get_active_jobid", lambda: "12345")
+        monkeypatch.setattr(
+            L, "get_nodelist_of_active_job",
+            lambda: [f"h{i}" for i in range(8)],
+        )
+        monkeypatch.setattr(
+            L, "get_hostfile_of_active_job", lambda: None
+        )
+        return L
+
+    def _capture_nhosts_active(self, monkeypatch, **launch_kw):
+        """Run launch() far enough to record the host count it derives."""
+        L = self._stub_scheduler(monkeypatch)
+        seen = {}
+
+        def _fake_resolve_alloc(pool, nhosts_active, spare, log_dir):
+            seen["nhosts_active"] = nhosts_active
+            raise _StopHere()
+
+        monkeypatch.setattr(
+            L, "_resolve_auto_retry_node_pool", lambda *a, **k: [
+                f"h{i}" for i in range(8)
+            ]
+        )
+        monkeypatch.setattr(
+            L, "_resolve_auto_retry_allocation", _fake_resolve_alloc
+        )
+        monkeypatch.setattr(L, "_auto_retry_log_dir", lambda jobid: Path("/tmp"))
+        monkeypatch.setattr(L.ezpz, "get_gpus_per_node", lambda: 12)
+        try:
+            L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, **launch_kw)
+        except _StopHere:
+            pass
+        return seen.get("nhosts_active")
+
+    def test_nhosts_used_verbatim(self, monkeypatch):
+        got = self._capture_nhosts_active(monkeypatch, nhosts=4)
+        assert got == 4, (
+            "nhosts is already a host count and must be used as-is, "
+            f"not re-derived; got {got}"
+        )
+
+    def test_ngpus_still_converts_to_hosts(self, monkeypatch):
+        # 24 ranks / 12 per node -> 2 hosts (unchanged behavior).
+        got = self._capture_nhosts_active(monkeypatch, ngpus=24)
+        assert got == 2
+
+    def test_nhosts_wins_when_both_given(self, monkeypatch):
+        # ngpus=24 would imply 2 hosts; explicit nhosts=3 must win.
+        got = self._capture_nhosts_active(monkeypatch, ngpus=24, nhosts=3)
+        assert got == 3
+
+    def test_neither_raises(self, monkeypatch):
+        L = self._stub_scheduler(monkeypatch)
+        with pytest.raises(ValueError, match="nhosts or ngpus"):
+            L.launch(cmd_to_launch=["echo", "x"], auto_retry=True)
+
+    def test_nonpositive_nhosts_raises(self, monkeypatch):
+        L = self._stub_scheduler(monkeypatch)
+        with pytest.raises(ValueError, match="nhosts must be > 0"):
+            L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, nhosts=0)
+
+
+class _StopHere(Exception):
+    """Sentinel: stop launch() once the host count has been observed."""
 
 
 class TestRanksToHosts:

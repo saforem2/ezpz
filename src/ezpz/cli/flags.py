@@ -491,8 +491,8 @@ def build_launch_parser(
             "or rotate one spare blindly. Loops until success, a real "
             "walltime hit, spare exhaustion, two consecutive attempts "
             "with zero training progress, or SIGINT. "
-            "Requires --nproc to be set explicitly. "
-            "Mutually exclusive with --retries."
+            "Requires an explicit active size: --nhosts (-nh) or "
+            "--nproc (-n/--np). Mutually exclusive with --retries."
         ),
     )
     parser.add_argument(

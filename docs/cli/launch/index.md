@@ -178,8 +178,8 @@ between attempts.
 
 ```mermaid
 flowchart TD
-    Start(["ezpz launch --auto-retry --np N"]) --> Validate{"nproc set<br/>explicitly?"}
-    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nproc"]
+    Start(["ezpz launch --auto-retry<br/>--nhosts N (or --np N)"]) --> Validate{"active size set<br/>explicitly?"}
+    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nhosts or --nproc"]
     Validate -->|yes| Split["Split PBS nodelist<br/>into active + spare,<br/>write active.hostfile"]
     Split --> Attempt["Run attempt i<br/>tee to attempt-i.log,<br/>watchdog armed<br/>(default 1800s)"]
     Attempt -->|"SIGINT<br/>(Ctrl-C)"| Interrupted(["FAILOVER STOP:<br/>interrupted<br/>return 130"])
@@ -206,22 +206,40 @@ hosts and `swap_one_blind` when it didn't — see the
 edge case where `swap_in` finds no live hosts to replace and
 falls through to a blind rotation.
 
-### Required: explicit `--nproc`
+### Required: an explicit active size (`--nhosts` **or** `--nproc`)
 
-`--auto-retry` needs to know how many ranks are training so it can
-split the PBS allocation into active + spare. We **do not guess**
-the active-host count — pass `--nproc N` (or `-n N` / `--np N`)
-explicitly. The CLI errors out at parse time otherwise:
+`--auto-retry` needs the **active host count** so it can split the PBS
+allocation into active + spare. We **do not guess** it. Pass either:
+
+- `--nhosts N` (`-nh` / `--nnodes`) — states the host count directly,
+  used verbatim; or
+- `--nproc N` (`-n` / `--np`) — states *ranks*, which we ceiling-divide
+  by the ranks-per-node to get hosts.
+
+```bash
+# Equivalent on Aurora (12 ranks/node): 43 active hosts either way.
+ezpz launch --auto-retry --nhosts 43 -- python3 train.py
+ezpz launch --auto-retry --np 512   -- python3 train.py
+```
+
+If you think in nodes (the usual case when sizing a PBS job), prefer
+`--nhosts`; it avoids a rank-count round trip and sidesteps the
+ceiling-division rounding entirely. When both are given, `--nhosts`
+wins for the split.
+
+The CLI errors out at parse time when neither is set:
 
 ```text
 $ ezpz launch --auto-retry -- python3 train.py
---auto-retry requires --nproc (-n/--np) to be set explicitly. ...
+--auto-retry requires the active size to be set explicitly: pass
+--nhosts (-nh/--nnodes) or --nproc (-n/--np). ...
 ```
 
 ### Spare-node policy (`--spare-nodes`)
 
 By default (`--spare-nodes auto`), the spare pool is
-`total_pbs_nodes - ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
+`total_pbs_nodes - active_hosts`, where `active_hosts` is either
+`--nhosts` verbatim or `ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
 `--np`) flag counts *ranks*, not nodes; we ceiling-divide by the
 ranks-per-node (`--ppn` or the cluster's `get_gpus_per_node()`) to
 get the number of *hosts* actually needed for training. Any

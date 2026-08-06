@@ -285,8 +285,8 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     # Cross-flag validation. argparse mutex groups can't express
     # "--auto-retry vs --retries with a non-zero value" (since
     # --retries defaults to 0), so do it here. Same for --auto-retry
-    # requiring an explicit --nproc — the value depends on whether
-    # the user passed -n at all, which argparse can't observe from
+    # needing an explicit size — the value depends on whether the user
+    # passed the flag at all, which argparse can't observe from
     # inside the parser.
     if getattr(args, "auto_retry", False):
         if getattr(args, "retries", 0):
@@ -295,12 +295,20 @@ def parse_args(argv: Optional[Sequence[str]] = None):
                 "--retries is bounded per-process retry; --auto-retry "
                 "is unbounded node-level failover. Pick one."
             )
-        if getattr(args, "nproc", -1) <= 0:
+        # What auto-retry actually needs is the ACTIVE HOST COUNT, so
+        # it can split the allocation into active + spare. --nproc
+        # gives that indirectly (ranks -> hosts); --nhosts gives it
+        # directly. Accept either rather than forcing users to convert
+        # a node count into a rank count just to satisfy this check.
+        if (
+            getattr(args, "nproc", -1) <= 0
+            and getattr(args, "nhosts", -1) <= 0
+        ):
             raise SystemExit(
-                "--auto-retry requires --nproc (-n/--np) to be set "
-                "explicitly. The auto-retry loop needs the training "
-                "rank count to split the PBS allocation into active "
-                "+ spare hosts."
+                "--auto-retry requires the active size to be set "
+                "explicitly: pass --nhosts (-nh/--nnodes) or --nproc "
+                "(-n/--np). The auto-retry loop needs it to split the "
+                "PBS allocation into active + spare hosts."
             )
     return args
 
@@ -820,14 +828,19 @@ def launch(
     if auto_retry:
         # CLI entrypoints (parse_args) already enforce this; the
         # check here is the library-level precondition for direct
-        # `launch(auto_retry=True, ngpus=None)` callers. Same
-        # invariant, different audience.
-        if ngpus is None:
+        # `launch(auto_retry=True, ...)` callers. Same invariant,
+        # different audience.
+        #
+        # The loop needs the ACTIVE HOST COUNT. `nhosts` states it
+        # directly; `ngpus` implies it (ranks -> hosts). Either is
+        # sufficient — requiring ngpus specifically just forced
+        # node-count users to convert to ranks for no reason.
+        if ngpus is None and nhosts is None:
             raise ValueError(
-                "launch(auto_retry=True) requires ngpus to be set "
-                "explicitly. The auto-retry loop needs the training "
-                "rank count to split the node pool into active + "
-                "spare. (CLI: pass --nproc / -n / --np.)"
+                "launch(auto_retry=True) requires nhosts or ngpus to "
+                "be set explicitly. The auto-retry loop needs the "
+                "active size to split the node pool into active + "
+                "spare. (CLI: pass --nhosts / -nh, or --nproc / -n.)"
             )
         # Source the candidate node pool. Explicit --hostfile beats
         # the scheduler nodelist — see _resolve_auto_retry_node_pool.
@@ -839,7 +852,21 @@ def launch(
         # one rank per GPU) when not. `or 1` covers the degenerate
         # case where get_gpus_per_node() returns 0 on a non-GPU node.
         ranks_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
-        nhosts_active = _ranks_to_hosts(ngpus, ranks_per_node)
+        if nhosts is not None:
+            # Explicit host count wins: it is what we need, verbatim,
+            # with no ranks->hosts rounding in between. When BOTH are
+            # given, honour nhosts and let the (unchanged) downstream
+            # _infer_topology consistency checks flag any ngpus/nhosts
+            # mismatch, rather than silently preferring one here.
+            if nhosts <= 0:
+                raise ValueError(
+                    f"launch(auto_retry=True): nhosts must be > 0, "
+                    f"got {nhosts}."
+                )
+            nhosts_active = nhosts
+        else:
+            assert ngpus is not None  # guarded above
+            nhosts_active = _ranks_to_hosts(ngpus, ranks_per_node)
         autoretry_log_dir = _auto_retry_log_dir(jobid)
         autoretry_allocation, autoretry_hostfile = (
             _resolve_auto_retry_allocation(
