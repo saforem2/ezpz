@@ -60,6 +60,16 @@ unset CDPATH
 cd "${PBS_O_WORKDIR}" || { echo "PBS_O_WORKDIR unset; aborting"; exit 1; }
 
 # ---- Environment setup (identical to timeout/retries driver) --------------
+# ALCF compute nodes have NO direct outbound internet; everything goes
+# through the site proxy. Exported UNCONDITIONALLY (it used to live only
+# inside the curl-fallback branch below, which never fires when the repo
+# ships utils.sh -- so scenario F's `wandb.init()` had no proxy, blocked
+# 60s on api.wandb.ai, produced no output, and the idle watchdog killed
+# the run at 300s: `rc=124` after ~835s, a network failure masquerading
+# as an auto-retry failure).
+export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
+export https_proxy="${https_proxy:-${http_proxy}}"
+
 UTILS=""
 if [[ -f "${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh" ]]; then
     UTILS="${PBS_O_WORKDIR}/src/ezpz/bin/utils.sh"
@@ -70,8 +80,6 @@ elif command -v python3 >/dev/null 2>&1; then
     fi
 fi
 if [[ -z "${UTILS}" ]]; then
-    export http_proxy="${http_proxy:-http://proxy.alcf.anl.gov:3128}"
-    export https_proxy="${https_proxy:-${http_proxy}}"
     UTILS="$(mktemp -t ezpz-utils-XXXXXX).sh"
     curl -fsSL --max-time 30 \
         https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
