@@ -828,8 +828,28 @@ def setup_torch(
 
 
 def cleanup() -> None:
-    """Destroy the ``torch.distributed`` process group if active."""
-    import torch.distributed
+    """Destroy the ``torch.distributed`` process group if active.
+
+    Teardown must never turn a SUCCESSFUL run into a failure. This used
+    to `import torch.distributed` unguarded, so on a broken torch
+    install the import raised, the traceback escaped
+    `ezpz.launch.run()`, and a job that had already logged
+    "Execution finished with 0" exited 1. Observed on Sunspot with a
+    torch/oneAPI skew:
+
+        launch.py:1012 in run -> ezpz.distributed.cleanup()
+        distributed.py:832    -> import torch.distributed
+        ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp
+
+    There is also nothing to destroy when torch cannot be imported, so
+    failing here is doubly pointless. The wandb block below has always
+    been defensive; the torch import now matches.
+    """
+    try:
+        import torch.distributed
+    except Exception as exc:  # noqa: BLE001 - teardown is best-effort
+        logger.debug("cleanup: torch unavailable (%s); nothing to tear down", exc)
+        return
 
     if get_rank() == 0 and verify_wandb():
         try:
