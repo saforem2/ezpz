@@ -920,6 +920,19 @@ class TestArgparseValidation:
         assert args.nhosts == 4
         assert args.nproc == -1  # never supplied
 
+    @pytest.mark.parametrize("flag,val", [
+        ("--nhosts", "0"), ("--nhosts", "-5"),
+        ("--np", "0"), ("--np", "-3"),
+    ])
+    def test_auto_retry_rejects_nonpositive_size(self, flag, val):
+        """'provided but invalid' must not be reported as 'not provided'.
+
+        Both flags default to -1, so we can tell the two apart. Telling
+        a user who typed `--nhosts 0` to "pass --nhosts" is confusing.
+        """
+        with pytest.raises(SystemExit, match="must be > 0"):
+            parse_args(["--auto-retry", flag, val, "--", "echo", "x"])
+
     def test_auto_retry_accepts_both_nproc_and_nhosts(self):
         args = parse_args(
             ["--auto-retry", "--np", "48", "--nhosts", "4", "--",
@@ -1073,6 +1086,15 @@ class TestAutoRetryActiveSizeSource:
         L = self._stub_scheduler(monkeypatch)
         with pytest.raises(ValueError, match="nhosts must be > 0"):
             L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, nhosts=0)
+
+    @pytest.mark.parametrize("bad", [0, -4])
+    def test_nonpositive_ngpus_raises(self, monkeypatch, bad):
+        """Symmetric with the nhosts guard: _ranks_to_hosts(0, n) == 0,
+        which would request a zero-host active set."""
+        L = self._stub_scheduler(monkeypatch)
+        monkeypatch.setattr(L.ezpz, "get_gpus_per_node", lambda: 12)
+        with pytest.raises(ValueError, match="ngpus must be > 0"):
+            L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, ngpus=bad)
 
 
 class _StopHere(Exception):

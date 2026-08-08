@@ -237,6 +237,27 @@ $ ezpz launch --auto-retry -- python3 train.py
 --nhosts (-nh/--nnodes) or --nproc (-n/--np). ...
 ```
 
+A non-positive value is reported distinctly from a missing one — `--nhosts 0`
+gets `--auto-retry: --nhosts must be > 0, got 0`, not a misleading
+"pass `--nhosts`".
+
+!!! warning "`--auto-retry` needs an active PBS/SLURM allocation"
+
+    Failover works by splitting the scheduler's nodelist into active +
+    spare hosts. With no active job, `ezpz launch` falls back to a local
+    `mpirun` and there is no pool to fail over *to* — the command runs
+    once and `--auto-retry` has no effect. You get a warning rather than
+    silence:
+
+    ```text
+    --auto-retry has no effect without an active PBS/SLURM job: there is
+    no allocation to split into active + spare hosts. Running the
+    command once via the local mpirun fallback.
+    ```
+
+    On that fallback path `--nhosts N` without `--ppn` derives ranks as
+    `N × get_gpus_per_node()`.
+
 ### Spare-node policy (`--spare-nodes`)
 
 By default (`--spare-nodes auto`), the spare pool is

@@ -503,10 +503,11 @@ def build_launch_parser(
         help=(
             "Number of spare nodes to reserve for --auto-retry "
             "swap-ins. Pass 'auto' (the default when --auto-retry is "
-            "set) to derive from total_pbs_nodes - ceil($nproc / $ppn) "
-            "(ranks → hosts, since --nproc counts ranks). Pass an "
-            "integer for an explicit count. Ignored when --auto-retry "
-            "is not set."
+            "set) to derive from total_pbs_nodes - active_hosts, where "
+            "active_hosts is --nhosts verbatim, else "
+            "ceil($nproc / $ppn) (ranks → hosts, since --nproc counts "
+            "ranks). Pass an integer for an explicit count. Ignored "
+            "when --auto-retry is not set."
         ),
     )
     parser.add_argument(
