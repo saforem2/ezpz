@@ -56,7 +56,13 @@ grep -q "module load oneapi" "${FN_FILE}" || {
 
 run_test() {
     local name="$1"; shift
-    if ( "$@" ) >/dev/null 2>&1; then
+    # Give each test its own TMPDIR and remove it afterwards, so the
+    # per-test `mktemp -d` sandboxes don't leak into /tmp. The test body
+    # already runs in a subshell, so exporting TMPDIR here cannot bleed
+    # between tests.
+    local tmp_root
+    tmp_root="$(mktemp -d)"
+    if ( export TMPDIR="${tmp_root}"; "$@" ) >/dev/null 2>&1; then
         printf "  %s%-56s PASS%s\n" "${G}" "${name}" "${N}"
         PASS=$((PASS + 1))
     else
@@ -64,6 +70,7 @@ run_test() {
         FAIL=$((FAIL + 1))
         FAILED_TESTS+=("${name}")
     fi
+    rm -rf "${tmp_root}"
 }
 
 # Build a sandbox: a fake "conda env" python3 and a fake "system"

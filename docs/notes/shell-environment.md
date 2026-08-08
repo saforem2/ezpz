@@ -346,16 +346,36 @@ oneAPI software stack and sets the runtime environment:
 ezpz_setup_xpu
 ```
 
-This is equivalent to:
+This is roughly equivalent to:
 
 ```bash
-module load oneapi/release/2025.3.1 hdf5 pti-gpu
+module load oneapi/release hdf5 pti-gpu
 export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 export CCL_PROCESS_LAUNCHER=pmix
 export CCL_OP_SYNC=1
 export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 export TORCH_CPP_LOG_LEVEL=ERROR
 ```
+
+!!! warning "Two reasons to prefer the helper over the raw `module load`"
+
+    **Don't pin the oneAPI version.** This recipe used to read
+    `oneapi/release/2025.3.1`. On the current `26.181.0` stack that is
+    *not* the default (`2026.1.0` is, and is already loaded), and it
+    survives only in the older `26.26.0` module tree — so the load
+    **succeeds** while silently downgrading oneAPI and swapping
+    `MODULEPATH`. Measured on Sunspot: `import torch` goes from working
+    to `ModuleNotFoundError` immediately after.
+
+    **The raw command evicts an active Python environment.**
+    `module load oneapi/release` prepends its own Python to `PATH` and
+    **unsets `CONDA_PREFIX`**, so an already-activated conda env (e.g.
+    the frameworks-RC stack) is discarded — `python3` flips to
+    `/usr/bin/python3`. `ezpz_setup_xpu` captures the active
+    interpreter first and restores it afterwards, which the raw
+    `module load` above does not. If you must run the modules by hand
+    on top of an activated env, re-prepend your env's `bin` to `PATH`
+    afterwards.
 
 | Variable | Purpose |
 |----------|---------|
