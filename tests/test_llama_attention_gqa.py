@@ -31,18 +31,30 @@ def _build_attention(n_heads: int, n_kv_heads: int, head_dim: int = 16):
 
 
 def _backend_available(backend) -> bool:
-    """True when this torch build can run SDPA under *backend* here."""
-    q = torch.randn(2, 4, 8, 16)
-    k = torch.randn(2, 1, 8, 16)
-    v = torch.randn(2, 1, 8, 16)
+    """True when *backend* can run SDPA forward AND backward here.
+
+    Probes the backward too: the test that gates on this compares
+    gradients, and a backend can support the forward while rejecting
+    the backward — reporting it "available" would then fail confusingly
+    inside the test body instead of skipping.
+
+    Narrow catch on purpose. torch signals "this backend cannot run
+    that" as RuntimeError/NotImplementedError; anything else (a
+    TypeError from an API signature change, say) is a real problem with
+    this test and should surface loudly rather than silently skip.
+    """
+    q = torch.randn(2, 4, 8, 16, requires_grad=True)
+    k = torch.randn(2, 1, 8, 16, requires_grad=True)
+    v = torch.randn(2, 1, 8, 16, requires_grad=True)
     try:
         with sdpa_kernel(backend):
-            torch.nn.functional.scaled_dot_product_attention(
+            out = torch.nn.functional.scaled_dot_product_attention(
                 q, k, v, enable_gqa=True
             )
-    except Exception:
+            out.sum().backward()
+    except (RuntimeError, NotImplementedError):
         return False
-    return True
+    return q.grad is not None
 
 
 def _run_forward(attn, args, seq_len=16, batch_size=2):
