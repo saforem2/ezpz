@@ -1456,6 +1456,55 @@ class TestCleanup:
         ):
             dist.cleanup()  # Should not raise
 
+    def test_broken_torch_import_does_not_raise(self):
+        """Teardown must not turn a SUCCESSFUL run into a failure.
+
+        Regression guard: `cleanup()` used to `import torch.distributed`
+        unguarded. On a torch/oneAPI skew that import raises, the
+        traceback escaped `ezpz.launch.run()`, and a job that had
+        already logged "Execution finished with 0" exited 1. Observed on
+        Sunspot as:
+
+            ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp
+
+        There is also nothing to destroy when torch will not import, so
+        failing here is doubly pointless.
+        """
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _broken_torch(name, *args, **kwargs):
+            if name == "torch" or name.startswith("torch."):
+                raise ImportError(
+                    "libsycl.so.9: undefined symbol: urDeviceWaitExp"
+                )
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", _broken_torch):
+            dist.cleanup()  # must NOT raise
+
+    def test_broken_torch_import_skips_destroy(self):
+        """With torch unimportable there is nothing to destroy; we must
+        return early rather than fall through to destroy_process_group."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _broken_torch(name, *args, **kwargs):
+            if name == "torch" or name.startswith("torch."):
+                raise ImportError("boom")
+            return real_import(name, *args, **kwargs)
+
+        with (
+            patch.object(
+                torch.distributed, "destroy_process_group"
+            ) as mock_destroy,
+            patch.object(builtins, "__import__", _broken_torch),
+        ):
+            dist.cleanup()
+        mock_destroy.assert_not_called()
+
 
 # ===================================================================
 # wrap_model / wrap_model_for_ddp
