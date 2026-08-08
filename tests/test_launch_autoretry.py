@@ -1087,6 +1087,38 @@ class TestAutoRetryActiveSizeSource:
         with pytest.raises(ValueError, match="nhosts must be > 0"):
             L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, nhosts=0)
 
+    def test_nhosts_route_does_not_probe_gpus(self, monkeypatch):
+        """GPU detection must not run on the nhosts route.
+
+        An explicit host count IS the answer, and
+        ezpz.get_gpus_per_node() can raise ModuleNotFoundError on a
+        launcher/login node with no torch -- which would break a
+        perfectly well-specified `--auto-retry --nhosts N`.
+        """
+        L = self._stub_scheduler(monkeypatch)
+
+        def _boom():
+            raise ModuleNotFoundError("No module named 'torch'")
+
+        monkeypatch.setattr(L.ezpz, "get_gpus_per_node", _boom)
+        seen = {}
+
+        def _fake_alloc(pool, nhosts_active, spare, log_dir):
+            seen["n"] = nhosts_active
+            raise _StopHere()
+
+        monkeypatch.setattr(
+            L, "_resolve_auto_retry_node_pool",
+            lambda *a, **k: [f"h{i}" for i in range(8)],
+        )
+        monkeypatch.setattr(L, "_resolve_auto_retry_allocation", _fake_alloc)
+        monkeypatch.setattr(L, "_auto_retry_log_dir", lambda jobid: Path("/tmp"))
+        try:
+            L.launch(cmd_to_launch=["echo", "x"], auto_retry=True, nhosts=4)
+        except _StopHere:
+            pass
+        assert seen.get("n") == 4
+
     @pytest.mark.parametrize("bad", [0, -4])
     def test_nonpositive_ngpus_raises(self, monkeypatch, bad):
         """Symmetric with the nhosts guard: _ranks_to_hosts(0, n) == 0,

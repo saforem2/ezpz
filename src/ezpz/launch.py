@@ -857,11 +857,13 @@ def launch(
         autoretry_pool = _resolve_auto_retry_node_pool(
             selected_hostfile, nodelist
         )
-        # `--ppn` (== ngpu_per_host) sets ranks-per-node when given;
-        # fall back to the cluster's GPU count (the typical default,
-        # one rank per GPU) when not. `or 1` covers the degenerate
-        # case where get_gpus_per_node() returns 0 on a non-GPU node.
-        ranks_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
+        # NB: GPU detection is deliberately NOT done here. The nhosts
+        # route never needs it (an explicit host count is already the
+        # answer), and ezpz.get_gpus_per_node() can raise
+        # ModuleNotFoundError on a launcher/login node with no torch --
+        # which would break a perfectly well-specified
+        # `--auto-retry --nhosts N`. Only the ngpus route resolves it,
+        # lazily, below.
         if nhosts is not None:
             # Explicit host count wins: it is what we need, verbatim,
             # with no ranks->hosts rounding in between. When BOTH are
@@ -884,6 +886,13 @@ def launch(
                     f"launch(auto_retry=True): ngpus must be > 0, "
                     f"got {ngpus}."
                 )
+            # Resolved HERE, not above, so the nhosts route never pays
+            # for GPU detection (see the note at the top of this block).
+            # `--ppn` (== ngpu_per_host) wins when given; else the
+            # cluster's GPU count, the typical one-rank-per-GPU default.
+            # `or 1` covers get_gpus_per_node() returning 0 on a
+            # non-GPU node.
+            ranks_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
             nhosts_active = _ranks_to_hosts(ngpus, ranks_per_node)
         autoretry_log_dir = _auto_retry_log_dir(jobid)
         autoretry_allocation, autoretry_hostfile = (
