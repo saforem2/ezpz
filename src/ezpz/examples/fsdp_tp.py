@@ -146,6 +146,7 @@ from ezpz.cli.flags import add_profiling_args
 from ezpz.profile import profiling_context_from_args
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
+from ezpz.tinker import lora as _lora
 from ezpz.tinker import step as _tinker_step
 
 from ezpz.models.llama import Transformer, ModelArgs
@@ -1474,6 +1475,45 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--lora-rank",
+        type=int,
+        default=0,
+        help=(
+            "Enable LoRA fine-tuning with this rank (0 = off, full "
+            "fine-tuning). Freezes the base weights and trains a low-rank "
+            "update per targeted projection, so only ~rank/dim of the "
+            "parameters are trainable and checkpoints shrink by roughly the "
+            "same factor. Composes with FSDP2, TP and meta-init. Native "
+            "models only -- the HF path is unaffected."
+        ),
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help=(
+            "LoRA scaling numerator; the update is scaled by alpha/rank. "
+            "Defaults to --lora-rank (scale 1.0)."
+        ),
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="Dropout on the LoRA adapter branch input (0 = off).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        type=str,
+        default="attn,mlp",
+        help=(
+            "Which projections to adapt, comma-separated: `attn` "
+            "(wq/wk/wv/wo), `mlp` (w1/w2/w3), `unembed` (the output "
+            "projection -- the largest single matrix, off by default). "
+            "Ignored unless --lora-rank > 0."
+        ),
+    )
+    parser.add_argument(
         "--max-grad-norm",
         type=float,
         default=1.0,
@@ -1921,6 +1961,16 @@ def _resolve_meta_init(
     return use
 
 
+def _lora_is_applied(model: nn.Module) -> bool:
+    """True when any submodule is a LoRA wrapper.
+
+    Used to decide whether the TP plans need retargeting. Checked on the
+    live module tree rather than on `args.lora_rank` so `parallelize()`
+    stays correct for callers that apply LoRA themselves.
+    """
+    return any(True for _ in _lora.iter_lora_modules(model))
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -1980,26 +2030,31 @@ def parallelize(
     # (there's nothing to shard across a 1-rank tp group). torchtitan
     # guards the same way (`if parallel_dims.tp_enabled`).
     if tp_mesh.size() > 1:
-        model = parallelize_module(
-            model,
-            tp_mesh,
-            {
-                "tok_embeddings": RowwiseParallel(
-                    input_layouts=Replicate(),
-                    output_layouts=Shard(1),
-                ),
-                "norm": SequenceParallel(),
-                # With loss_parallel, keep logits vocab-sharded (Shard(-1))
-                # and return the LOCAL [N, vocab/tp] tensor so the loss can run
-                # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
-                # to Replicate() so the loss sees full-vocab logits (default).
-                "output": ColwiseParallel(
-                    input_layouts=Shard(1),
-                    output_layouts=Shard(-1) if loss_parallel else Replicate(),
-                    use_local_output=bool(loss_parallel),
-                ),
-            },
-        )
+        # `parallelize_module` dispatches on the module CLASS, so any plan
+        # key naming a LoRA-wrapped Linear raises `NotImplementedError:
+        # ColwiseParallel currently only support nn.Linear and
+        # nn.Embedding!`. _lora.lora_tp_plan rewrites those keys to the
+        # inner `.base` / `.B` Linears; it is a no-op when nothing is
+        # wrapped, so the non-LoRA path is untouched.
+        root_tp_plan = {
+            "tok_embeddings": RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
+            ),
+            "norm": SequenceParallel(),
+            # With loss_parallel, keep logits vocab-sharded (Shard(-1))
+            # and return the LOCAL [N, vocab/tp] tensor so the loss can run
+            # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
+            # to Replicate() so the loss sees full-vocab logits (default).
+            "output": ColwiseParallel(
+                input_layouts=Shard(1),
+                output_layouts=Shard(-1) if loss_parallel else Replicate(),
+                use_local_output=bool(loss_parallel),
+            ),
+        }
+        if _lora_is_applied(model):
+            root_tp_plan = _lora.lora_tp_plan(root_tp_plan)
+        model = parallelize_module(model, tp_mesh, root_tp_plan)
 
         assert isinstance(model.layers, Iterable)
         for _, transformer_block in enumerate(model.layers):
@@ -2026,6 +2081,8 @@ def parallelize(
             attn_layer = transformer_block.attention  # type: ignore
             attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
             attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
+            if _lora_is_applied(model):
+                layer_tp_plan = _lora.lora_tp_plan(layer_tp_plan)
             parallelize_module(
                 module=transformer_block,  # type: ignore
                 device_mesh=tp_mesh,
@@ -2702,6 +2759,32 @@ def train(
                 model = Transformer.from_model_args(config)
         else:
             model = Transformer.from_model_args(config)
+        # LoRA must be applied BEFORE parallelize(): the TP plan and
+        # fully_shard both need to see the final module tree. Under
+        # meta-init the adapters are built on `meta` too and materialized
+        # by the same to_empty()/init_weights() pass.
+        if getattr(args, "lora_rank", 0) > 0:
+            _targets = {
+                t.strip() for t in str(args.lora_target).split(",") if t.strip()
+            }
+            _unknown = _targets - {"attn", "mlp", "unembed"}
+            if _unknown:
+                raise SystemExit(
+                    f"--lora-target: unknown {sorted(_unknown)}; "
+                    "expected any of attn, mlp, unembed"
+                )
+            model = _lora.apply_lora(
+                model,
+                _lora.LoraConfig(
+                    rank=args.lora_rank,
+                    alpha=args.lora_alpha,
+                    dropout=args.lora_dropout,
+                    train_attn="attn" in _targets,
+                    train_mlp="mlp" in _targets,
+                    train_unembed="unembed" in _targets,
+                    seed=args.seed,
+                ),
+            )
     mstr = summarize_model(
         model,
         verbose=False,
