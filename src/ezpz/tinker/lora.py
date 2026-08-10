@@ -297,6 +297,24 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
 
     Only keys naming a wrapped target are rewritten -- ``norm`` /
     ``PrepareModuleInput`` entries pass through untouched.
+
+    .. warning::
+
+        **LoRA at ``tp > 1`` does not work yet**, and this plan alone
+        cannot make it work. ``fsdp_tp.parallelize`` halves ``n_heads``
+        in place, so ``attention.wo`` receives the per-rank width while
+        the adapter's ``A`` was constructed from the *unparallelized*
+        ``in_features``. That is a weight-**shape** mismatch, not a
+        layout one::
+
+            RuntimeError: a and b must have same reduction dim,
+            but got [128, 64] X [128, 8]
+
+        Fixing it needs ``A`` (and ``B``) to be built against the
+        post-TP dimensions, i.e. LoRA applied *after* ``parallelize``
+        rather than before -- a larger change. ``fsdp_tp`` refuses
+        ``--lora-rank`` with ``--tp > 1`` up front. This function is
+        correct and exercised at ``tp = 1``.
     """
     from torch.distributed.tensor import Replicate
     from torch.distributed.tensor.parallel import ColwiseParallel
