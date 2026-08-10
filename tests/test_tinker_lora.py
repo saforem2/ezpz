@@ -226,12 +226,32 @@ class TestApplyLora:
 class TestLoraTpPlan:
     def test_retargets_wrapped_leaves(self):
         plan = lora_tp_plan({"attention.wq": "COL", "attention.wo": "ROW"})
-        assert plan == {
-            "attention.wq.base": "COL",
-            "attention.wq.B": "COL",
-            "attention.wo.base": "ROW",
-            "attention.wo.B": "ROW",
+        # base + A + B for each wrapped module.
+        assert plan["attention.wq.base"] == "COL"
+        assert plan["attention.wq.B"] == "COL"
+        assert plan["attention.wo.base"] == "ROW"
+        assert plan["attention.wo.B"] == "ROW"
+        assert set(plan) == {
+            "attention.wq.base", "attention.wq.A", "attention.wq.B",
+            "attention.wo.base", "attention.wo.A", "attention.wo.B",
         }
+
+    def test_A_is_parallelized_with_replicated_output(self):
+        """REGRESSION (Sunspot tp=2): leaving A unparallelized makes it
+        return a plain tensor while base returns a DTensor, so their sum
+        raises `mixed torch.Tensor and DTensor`. A must be a DTensor op
+        whose output is Replicate, because B (Colwise) needs a
+        replicated input."""
+        from torch.distributed.tensor import Replicate
+        from torch.distributed.tensor.parallel import ColwiseParallel
+
+        a_style = lora_tp_plan({"attention.wq": "COL"})["attention.wq.A"]
+        assert isinstance(a_style, ColwiseParallel)
+        layouts = a_style.output_layouts
+        layouts = layouts if isinstance(layouts, tuple) else (layouts,)
+        assert all(isinstance(x, Replicate) for x in layouts), (
+            f"A must output Replicate for B to consume it, got {layouts}"
+        )
 
     def test_passes_through_non_targets(self):
         plan = lora_tp_plan({"attention_norm": "SP", "attention": "PREP"})
@@ -241,8 +261,8 @@ class TestLoraTpPlan:
         base = {f"attention.{n}": "S" for n in ATTN_TARGETS}
         base |= {f"feed_forward.{n}": "S" for n in MLP_TARGETS}
         plan = lora_tp_plan(base)
-        assert len(plan) == 2 * len(base)
-        assert all(k.endswith((".base", ".B")) for k in plan)
+        assert len(plan) == 3 * len(base)  # base + A + B
+        assert all(k.endswith((".base", ".A", ".B")) for k in plan)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="needs a gloo PG")

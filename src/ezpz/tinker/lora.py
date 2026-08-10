@@ -270,21 +270,46 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
         NotImplementedError: ColwiseParallel currently only support
         nn.Linear and nn.Embedding!
 
-    For each entry whose leaf attribute is a LoRA target, emit
-    ``"<key>.base"`` and ``"<key>.B"`` with the original style. ``B`` shares
-    the base's sharding so the adapter output lands in the same layout;
-    ``A`` stays replicated (it is ``d_in x r``, tiny, and sharding it would
-    force an extra collective inside the adapter).
+    All THREE inner Linears get an entry -- ``base``, ``A`` and ``B``:
 
-    Only the keys naming a wrapped target are rewritten -- ``norm`` /
+    * ``base`` and ``B`` keep the original style, so the adapter output
+      lands in the same layout as the base output and the two can be
+      summed.
+    * ``A`` gets ``ColwiseParallel(output_layouts=Replicate())``.
+
+    That last one is not an optimization, it is required for
+    correctness. An earlier version left ``A`` unparallelized on the
+    reasoning that ``d_in x r`` is tiny and sharding it would add a
+    collective. But an unparallelized ``nn.Linear`` holds a plain tensor
+    and returns a plain tensor, while ``base(x)`` returns a DTensor, so
+    the sum in :meth:`LoRALinear.forward` dies with::
+
+        RuntimeError: aten.mm.default got mixed torch.Tensor and DTensor,
+        need to convert all torch.Tensor to DTensor before calling
+        distributed operators!
+
+    (Observed on Sunspot at ``tp=2``; ``tp=1`` and non-LoRA ``tp=2`` both
+    pass, which is what isolates it to this plan.) ``A`` must therefore
+    be a DTensor op, and its output must be **replicated** because ``B``
+    is Colwise and Colwise expects a replicated input. The all-gather
+    this implies is over the rank dimension ``r`` -- 8 or 16 values, i.e.
+    negligible next to the base projection.
+
+    Only keys naming a wrapped target are rewritten -- ``norm`` /
     ``PrepareModuleInput`` entries pass through untouched.
     """
+    from torch.distributed.tensor import Replicate
+    from torch.distributed.tensor.parallel import ColwiseParallel
+
     adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
     out: dict[str, Any] = {}
     for key, style in base_plan.items():
         leaf = key.rsplit(".", 1)[-1]
         if leaf in adapted:
             out[f"{key}.base"] = style
+            # Shard A's work, then all-gather the r-dim so B (Colwise)
+            # sees a replicated DTensor input.
+            out[f"{key}.A"] = ColwiseParallel(output_layouts=Replicate())
             out[f"{key}.B"] = style
         else:
             out[key] = style
