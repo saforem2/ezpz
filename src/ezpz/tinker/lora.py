@@ -21,6 +21,14 @@ assumed (torch 2.12.1):
    and nn.Embedding!``. :func:`lora_tp_plan` rewrites those keys to point
    at the inner ``nn.Linear`` layers instead. Without it, ``tp>1`` dies.
 
+   Getting that rewrite *right* needs a real multi-rank mesh to verify.
+   A ``world_size=1`` mesh satisfies every placement trivially, and
+   ``ColwiseParallel``'s input hook uses ``DTensor.from_local(...,
+   run_check=False)``, so torch accepts a mislabeled layout instead of
+   raising -- a single-rank probe reports success for a plan that is
+   wrong at ``tp=2``. ``tests/test_tinker_lora_tp.py`` runs a genuine
+   2-rank gloo mesh and gates on tp=2 matching tp=1 numerically.
+
 3. **Model init reaches through to ``.weight``.**
    ``Attention.init_weights`` does ``nn.init.trunc_normal_(linear.weight,
    ...)`` (llama.py:359-360, :503-505) on exactly the modules we wrap, so
@@ -77,8 +85,12 @@ class LoraConfig:
             raise ValueError(
                 f"LoRA dropout must be in [0, 1), got {self.dropout}"
             )
-        if not (self.train_attn or self.train_mlp or self.train_unembed
-                or self.extra_targets):
+        if not (
+            self.train_attn
+            or self.train_mlp
+            or self.train_unembed
+            or self.extra_targets
+        ):
             raise ValueError(
                 "LoraConfig adapts nothing: enable train_attn / train_mlp / "
                 "train_unembed, or pass extra_targets."
@@ -189,7 +201,9 @@ class LoRALinear(nn.Module):
         return out + self.scaling * upd.to(out.dtype)
 
     def extra_repr(self) -> str:
-        return f"rank={self.rank}, alpha={self.alpha}, scaling={self.scaling:.4g}"
+        return (
+            f"rank={self.rank}, alpha={self.alpha}, scaling={self.scaling:.4g}"
+        )
 
 
 def apply_lora(
@@ -261,7 +275,9 @@ def apply_lora(
     return model
 
 
-def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
+def lora_tp_plan(
+    base_plan: dict[str, Any], module: nn.Module | None = None
+) -> dict[str, Any]:
     """Retarget a tensor-parallel plan at the inner Linears of wrapped modules.
 
     ``parallelize_module`` dispatches on the module *class*, so a plan entry
@@ -270,94 +286,119 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
         NotImplementedError: ColwiseParallel currently only support
         nn.Linear and nn.Embedding!
 
-    All THREE inner Linears get an entry -- ``base``, ``A`` and ``B``:
+    Each wrapped target becomes three entries -- ``base``, ``A`` and
+    ``B`` -- whose styles are *derived* from the original rather than
+    copied wholesale. ``A`` mirrors what the base consumes and ``B``
+    what it produces; see :func:`_adapter_in_style` and
+    :func:`_adapter_out_style` for why each of the four layout choices
+    is forced.
 
-    * ``base`` and ``B`` keep the original style, so the adapter output
-      lands in the same layout as the base output and the two can be
-      summed.
-    * ``A`` gets ``ColwiseParallel(output_layouts=Replicate())``.
+    Pass ``module`` whenever the model is available. A plan key is
+    retargeted only if it resolves to an actual :class:`LoRALinear`,
+    which matters because ``--lora-target`` is selective: with the
+    default ``attn,mlp`` the unembedding ``output`` is *not* wrapped, so
+    rewriting its key would point at ``output.base`` and friends, which
+    do not exist. ``parallelize_module`` ignores keys that match no
+    module **without raising**, so ``output`` would silently stay an
+    unsharded ``nn.Linear`` and fail downstream on its first DTensor
+    input::
 
-    That last one is not an optimization, it is required for
-    correctness. An earlier version left ``A`` unparallelized on the
-    reasoning that ``d_in x r`` is tiny and sharding it would add a
-    collective. But an unparallelized ``nn.Linear`` holds a plain tensor
-    and returns a plain tensor, while ``base(x)`` returns a DTensor, so
-    the sum in :meth:`LoRALinear.forward` dies with::
+        RuntimeError: aten.mm.default got mixed torch.Tensor and
+        DTensor, need to convert all torch.Tensor to DTensor before
+        calling distributed operators!
 
-        RuntimeError: aten.mm.default got mixed torch.Tensor and DTensor,
-        need to convert all torch.Tensor to DTensor before calling
-        distributed operators!
+    Omitting ``module`` falls back to retargeting every key whose leaf
+    names a LoRA-able module, which is right only when every one of
+    them is in fact wrapped.
 
-    (Observed on Sunspot at ``tp=2``; ``tp=1`` and non-LoRA ``tp=2`` both
-    pass, which is what isolates it to this plan.) ``A`` must therefore
-    be a DTensor op, and its output must be **replicated** because ``B``
-    is Colwise and Colwise expects a replicated input. The all-gather
-    this implies is over the rank dimension ``r`` -- 8 or 16 values, i.e.
-    negligible next to the base projection.
-
-    Only keys naming a wrapped target are rewritten -- ``norm`` /
-    ``PrepareModuleInput`` entries pass through untouched.
-
-    .. warning::
-
-        **LoRA at ``tp > 1`` does not work yet**, and this plan alone
-        cannot make it work. ``fsdp_tp.parallelize`` halves ``n_heads``
-        in place, so ``attention.wo`` receives the per-rank width while
-        the adapter's ``A`` was constructed from the *unparallelized*
-        ``in_features``. That is a weight-**shape** mismatch, not a
-        layout one::
-
-            RuntimeError: a and b must have same reduction dim,
-            but got [128, 64] X [128, 8]
-
-        Fixing it needs ``A`` (and ``B``) to be built against the
-        post-TP dimensions, i.e. LoRA applied *after* ``parallelize``
-        rather than before -- a larger change. ``fsdp_tp`` refuses
-        ``--lora-rank`` with ``--tp > 1`` up front. This function is
-        correct and exercised at ``tp = 1``.
+    Keys naming something other than a wrapped target -- ``norm``,
+    ``PrepareModuleInput`` -- pass through untouched either way.
     """
-    from torch.distributed.tensor import Replicate
-    from torch.distributed.tensor.parallel import ColwiseParallel
-
     adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
     out: dict[str, Any] = {}
     for key, style in base_plan.items():
         leaf = key.rsplit(".", 1)[-1]
-        if leaf not in adapted:
+        if leaf not in adapted or not _is_wrapped(module, key):
             out[key] = style
             continue
 
         out[f"{key}.base"] = style
-        # `A` gets ColwiseParallel(output_layouts=Replicate(),
-        # use_local_output=False) regardless of the base's style.
-        #
-        # Not a guess -- enumerated on a real 2-rank mesh (Sunspot job
-        # 12472835; a world_size=1 mesh materializes DTensors back to
-        # plain tensors and cannot distinguish these cases at all):
-        #
-        #   A style                       base=Colwise   base=Rowwise
-        #   ---------------------------   ------------   ------------
-        #   none                          OK             FAIL (mixed DTensor)
-        #   Col(out=Rep, ulo=False)       OK             OK          <- this
-        #   Col(out=Rep, ulo=True)        OK             FAIL (shape)
-        #   Row(in=Shard,out=Rep,ulo=F)   FAIL (shape)   OK
-        #   Row(in=Rep,  out=Rep,ulo=F)   OK             OK
-        #
-        # Two traps the table encodes:
-        #   * `none` looks fine under Colwise but leaves A a plain
-        #     nn.Linear, so under Rowwise its output cannot be added to
-        #     the base's DTensor.
-        #   * use_local_output defaults to True and unwraps the DTensor
-        #     to this rank's local shard, so B sees r/tp instead of r.
-        #
-        # Branching on the base style (Rowwise base -> Rowwise A) is
-        # WRONG despite sounding principled: the table shows Rowwise A
-        # fails under a Colwise base.
-        out[f"{key}.A"] = ColwiseParallel(
-            output_layouts=Replicate(), use_local_output=False
-        )
-        out[f"{key}.B"] = style
+        out[f"{key}.A"] = _adapter_in_style(style)
+        out[f"{key}.B"] = _adapter_out_style(style)
     return out
+
+
+def _first(layouts: Any) -> Any:
+    """``input_layouts``/``output_layouts`` are normalized to tuples."""
+    return layouts[0] if isinstance(layouts, tuple) else layouts
+
+
+def _is_wrapped(module: nn.Module | None, key: str) -> bool:
+    """Does ``key`` name a :class:`LoRALinear` inside ``module``?
+
+    ``None`` means "no model to check against", and the caller then
+    assumes every LoRA-able key is wrapped -- see :func:`lora_tp_plan`.
+    """
+    if module is None:
+        return True
+    target: Any = module
+    for part in key.split("."):
+        target = getattr(target, part, None)
+        if target is None:
+            return False
+    return isinstance(target, LoRALinear)
+
+
+def _adapter_in_style(style: Any) -> Any:
+    """The style for ``A``, derived from what the base *consumes*.
+
+    ``A`` is fed the same activation as ``base``, so it must agree with
+    the base on that tensor's layout, and it must hand ``B`` a
+    replicated ``r``-wide result.
+
+    Copying the base's class is not cosmetic. Under
+    ``RowwiseParallel``, ``base`` receives an input already sharded on
+    the feature dimension, and its weight is sharded to match. A
+    ``ColwiseParallel`` ``A`` declares that same input *replicated* and
+    keeps a full-width weight, so the contraction dimensions disagree::
+
+        Sharding propagation failed for aten.mm.default(
+            Spec(f32[16, 64](R)), Spec(f32[128, 8](S(1))))
+
+    (``attention.wo`` at ``tp=2``: activation 64 wide, weight 128.)
+    Mirroring the class shards ``A``'s weight the same way the base's
+    is, so the two line up.
+
+    ``output_layouts=Replicate()`` because ``B`` consumes this, and
+    ``use_local_output=False`` to keep it a DTensor -- the default
+    ``True`` unwraps to this rank's shard, so ``B`` would see ``r/tp``
+    instead of ``r``.
+    """
+    from torch.distributed.tensor import Replicate
+
+    return type(style)(
+        input_layouts=_first(style.input_layouts),
+        output_layouts=Replicate(),
+        use_local_output=False,
+    )
+
+
+def _adapter_out_style(style: Any) -> Any:
+    """The style for ``B``, derived from what the base *produces*.
+
+    ``B``'s output is summed with ``base``'s, so it must land in the
+    same layout; and its input is ``A``'s replicated output. Reusing
+    ``style`` unmodified is wrong whenever the base's declared
+    ``input_layouts`` is not ``Replicate()`` -- ``B`` is fed by ``A``,
+    not by the base's input.
+    """
+    from torch.distributed.tensor import Replicate
+
+    return type(style)(
+        input_layouts=Replicate(),
+        output_layouts=_first(style.output_layouts),
+        use_local_output=style.use_local_output,
+    )
 
 
 def iter_lora_modules(model: nn.Module) -> Iterable[tuple[str, LoRALinear]]:
