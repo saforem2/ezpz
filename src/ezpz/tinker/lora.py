@@ -298,11 +298,8 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
     Only keys naming a wrapped target are rewritten -- ``norm`` /
     ``PrepareModuleInput`` entries pass through untouched.
     """
-    from torch.distributed.tensor import Replicate, Shard
-    from torch.distributed.tensor.parallel import (
-        ColwiseParallel,
-        RowwiseParallel,
-    )
+    from torch.distributed.tensor import Replicate
+    from torch.distributed.tensor.parallel import ColwiseParallel
 
     adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
     out: dict[str, Any] = {}
@@ -313,37 +310,34 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
             continue
 
         out[f"{key}.base"] = style
-        # `A`'s style is dictated by the BASE's style, because A and base
-        # consume the SAME input `x`:
+        # `A` gets ColwiseParallel(output_layouts=Replicate(),
+        # use_local_output=False) regardless of the base's style.
         #
-        #   base is Colwise -> x arrives Replicate (full d_in).
-        #       A is Colwise too, but must hand B the full rank r, so
-        #       redistribute to Replicate and stay a DTensor
-        #       (use_local_output=False; the default True unwraps to this
-        #       rank's local shard).
+        # Not a guess -- enumerated on a real 2-rank mesh (Sunspot job
+        # 12472835; a world_size=1 mesh materializes DTensors back to
+        # plain tensors and cannot distinguish these cases at all):
         #
-        #   base is Rowwise (wq's `wo`, mlp's `w2`) -> x arrives
-        #       Shard(-1): each rank holds only d_in/tp columns. A must
-        #       be Rowwise as well or its d_in x r weight will not match
-        #       the sharded input. Observed at tp=2 as
-        #         "a and b must have same reduction dim,
-        #          got [128, 64] X [128, 8]"
-        #       raised inside `wo` -- 64 is the SHARDED d_in (128/2), 8
-        #       is the full rank; A had been given a Colwise style and so
-        #       still expected the unsharded input.
+        #   A style                       base=Colwise   base=Rowwise
+        #   ---------------------------   ------------   ------------
+        #   none                          OK             FAIL (mixed DTensor)
+        #   Col(out=Rep, ulo=False)       OK             OK          <- this
+        #   Col(out=Rep, ulo=True)        OK             FAIL (shape)
+        #   Row(in=Shard,out=Rep,ulo=F)   FAIL (shape)   OK
+        #   Row(in=Rep,  out=Rep,ulo=F)   OK             OK
         #
-        # Both shapes coincide at tp=1, which is precisely why this class
-        # of bug needs a multi-rank run to surface.
-        if isinstance(style, RowwiseParallel):
-            out[f"{key}.A"] = RowwiseParallel(
-                input_layouts=Shard(-1),
-                output_layouts=Replicate(),
-                use_local_output=False,
-            )
-        else:
-            out[f"{key}.A"] = ColwiseParallel(
-                output_layouts=Replicate(), use_local_output=False
-            )
+        # Two traps the table encodes:
+        #   * `none` looks fine under Colwise but leaves A a plain
+        #     nn.Linear, so under Rowwise its output cannot be added to
+        #     the base's DTensor.
+        #   * use_local_output defaults to True and unwraps the DTensor
+        #     to this rank's local shard, so B sees r/tp instead of r.
+        #
+        # Branching on the base style (Rowwise base -> Rowwise A) is
+        # WRONG despite sounding principled: the table shows Rowwise A
+        # fails under a Colwise base.
+        out[f"{key}.A"] = ColwiseParallel(
+            output_layouts=Replicate(), use_local_output=False
+        )
         out[f"{key}.B"] = style
     return out
 

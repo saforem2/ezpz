@@ -236,28 +236,31 @@ class TestLoraTpPlan:
             "attention.wo.base", "attention.wo.A", "attention.wo.B",
         }
 
-    def test_A_style_follows_the_base_style(self):
-        """A and base consume the SAME input, so A's style must match.
+    def test_A_is_colwise_replicated_under_BOTH_base_styles(self):
+        """A's style does NOT follow the base's -- one style works for both.
 
-        REGRESSION (Sunspot tp=2): giving A a Colwise style under a
-        Rowwise base means A expects the full d_in while the base gets a
-        Shard(-1) slice, raising inside `wo`:
-          "a and b must have same reduction dim, got [128, 64] X [128, 8]"
-        64 is the sharded d_in, 8 the full rank. Identical at tp=1.
+        Enumerated on a real 2-rank mesh (Sunspot job 12472835); a
+        world_size=1 mesh cannot distinguish these cases:
+
+            A style                       base=Col   base=Row
+            Col(out=Rep, ulo=False)       OK         OK        <- chosen
+            none                          OK         FAIL
+            Col(out=Rep, ulo=True)        OK         FAIL
+            Row(in=Shard,out=Rep,ulo=F)   FAIL       OK
+
+        Branching on the base style sounds principled and is wrong:
+        Rowwise A fails under a Colwise base.
         """
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
             RowwiseParallel,
         )
 
-        col = lora_tp_plan({"attention.wq": ColwiseParallel()})
-        assert isinstance(col["attention.wq.A"], ColwiseParallel)
-
-        row = lora_tp_plan({"attention.wo": RowwiseParallel()})
-        assert isinstance(row["attention.wo.A"], RowwiseParallel), (
-            "under a Rowwise base, A must also be Rowwise or it will "
-            "expect an unsharded input"
-        )
+        for base_style in (ColwiseParallel(), RowwiseParallel()):
+            a = lora_tp_plan({"attention.wq": base_style})["attention.wq.A"]
+            assert isinstance(a, ColwiseParallel), (
+                f"A must be Colwise even under {type(base_style).__name__}"
+            )
 
     def test_A_never_unwraps_to_a_local_tensor(self):
         """use_local_output must be False so B receives a DTensor.
