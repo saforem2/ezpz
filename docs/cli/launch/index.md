@@ -86,11 +86,13 @@ allocated to your job.
                                 Idle-output watchdog timeout in seconds. Off by default.
         --retries RETRIES     Re-execute on non-zero exit, up to N times. Default: 0.
         --auto-retry          Unbounded bad-node failover loop. Mutually
-                                exclusive with --retries. Requires explicit --nproc.
+                                exclusive with --retries. Requires an explicit
+                                active size: --nhosts (-nh) or --nproc (-n/--np).
         --spare-nodes SPARE_NODES
                                 Spare-node pool for --auto-retry. "auto" (default)
-                                derives from total_pbs_nodes - ceil($nproc / $ppn);
-                                pass an int for an explicit cap.
+                                derives from total_pbs_nodes - active_hosts
+                                (--nhosts, else ceil($nproc / $ppn)); pass an int
+                                for an explicit cap.
         --max-failover-retries MAX_FAILOVER_RETRIES
                                 Optional upper bound on --auto-retry attempts.
                                 Default: unbounded (see termination matrix).
@@ -178,8 +180,8 @@ between attempts.
 
 ```mermaid
 flowchart TD
-    Start(["ezpz launch --auto-retry --np N"]) --> Validate{"nproc set<br/>explicitly?"}
-    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nproc"]
+    Start(["ezpz launch --auto-retry<br/>--nhosts N (or --np N)"]) --> Validate{"active size set<br/>explicitly?"}
+    Validate -->|no| ErrParse["SystemExit at parse:<br/>requires --nhosts or --nproc"]
     Validate -->|yes| Split["Split PBS nodelist<br/>into active + spare,<br/>write active.hostfile"]
     Split --> Attempt["Run attempt i<br/>tee to attempt-i.log,<br/>watchdog armed<br/>(default 1800s)"]
     Attempt -->|"SIGINT<br/>(Ctrl-C)"| Interrupted(["FAILOVER STOP:<br/>interrupted<br/>return 130"])
@@ -206,22 +208,61 @@ hosts and `swap_one_blind` when it didn't — see the
 edge case where `swap_in` finds no live hosts to replace and
 falls through to a blind rotation.
 
-### Required: explicit `--nproc`
+### Required: an explicit active size (`--nhosts` **or** `--nproc`)
 
-`--auto-retry` needs to know how many ranks are training so it can
-split the PBS allocation into active + spare. We **do not guess**
-the active-host count — pass `--nproc N` (or `-n N` / `--np N`)
-explicitly. The CLI errors out at parse time otherwise:
+`--auto-retry` needs the **active host count** so it can split the PBS
+allocation into active + spare. We **do not guess** it. Pass either:
+
+- `--nhosts N` (`-nh` / `--nnodes`) — states the host count directly,
+  used verbatim; or
+- `--nproc N` (`-n` / `--np`) — states *ranks*, which we ceiling-divide
+  by the ranks-per-node to get hosts.
+
+```bash
+# Equivalent on Aurora (12 ranks/node): 43 active hosts either way.
+ezpz launch --auto-retry --nhosts 43 -- python3 train.py
+ezpz launch --auto-retry --np 512   -- python3 train.py
+```
+
+If you think in nodes (the usual case when sizing a PBS job), prefer
+`--nhosts`; it avoids a rank-count round trip and sidesteps the
+ceiling-division rounding entirely. When both are given, `--nhosts`
+wins for the split.
+
+The CLI errors out at parse time when neither is set:
 
 ```text
 $ ezpz launch --auto-retry -- python3 train.py
---auto-retry requires --nproc (-n/--np) to be set explicitly. ...
+--auto-retry requires the active size to be set explicitly: pass
+--nhosts (-nh/--nnodes) or --nproc (-n/--np). ...
 ```
+
+A non-positive value is reported distinctly from a missing one — `--nhosts 0`
+gets `--auto-retry: --nhosts must be > 0, got 0`, not a misleading
+"pass `--nhosts`".
+
+!!! warning "`--auto-retry` needs an active PBS/SLURM allocation"
+
+    Failover works by splitting the scheduler's nodelist into active +
+    spare hosts. With no active job, `ezpz launch` falls back to a local
+    `mpirun` and there is no pool to fail over *to* — the command runs
+    once and `--auto-retry` has no effect. You get a warning rather than
+    silence:
+
+    ```text
+    --auto-retry has no effect without an active PBS/SLURM job: there is
+    no allocation to split into active + spare hosts. Running the
+    command once via the local mpirun fallback.
+    ```
+
+    On that fallback path `--nhosts N` without `--ppn` derives ranks as
+    `N × get_gpus_per_node()`.
 
 ### Spare-node policy (`--spare-nodes`)
 
 By default (`--spare-nodes auto`), the spare pool is
-`total_pbs_nodes - ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
+`total_pbs_nodes - active_hosts`, where `active_hosts` is either
+`--nhosts` verbatim or `ceil($nproc / $ppn)`. The `--nproc` (or `-n`,
 `--np`) flag counts *ranks*, not nodes; we ceiling-divide by the
 ranks-per-node (`--ppn` or the cluster's `get_gpus_per_node()`) to
 get the number of *hosts* actually needed for training. Any
@@ -417,7 +458,7 @@ qsub -A datascience -q workq -l filesystems=tegu:home -l select=4 \
 qsub src/ezpz/bin/test_launch_timeout_retries_aurora.pbs
 ```
 
-The `--auto-retry` driver requests 4 nodes and runs 7 scenarios
+The `--auto-retry` driver requests 4 nodes and runs 9 scenarios
 (~30 min walltime budget):
 
 | Scenario | What it covers |
@@ -429,6 +470,8 @@ The `--auto-retry` driver requests 4 nodes and runs 7 scenarios
 | E | `STUCK_PRE_TRAINING` guard — 2 consecutive zero-step attempts, bail at attempt 2 |
 | F | Realistic — `ezpz.examples.test --model debug --train-iters 20` under `--auto-retry` |
 | G | `--hostfile` honored — pass a 2-node filtered hostfile, verify the loop splits THAT (not the full PBS allocation) |
+| H | `--nhosts` sizing — no `--nproc` at all; verify the host count is honored verbatim |
+| I | No active size — `--auto-retry` alone must refuse at parse time, naming both `--nhosts` and `--nproc` |
 
 The driver works on **Sunspot too** — swap `-A AuroraGPT` → `-A datascience`
 and `filesystems=flare:home` → `filesystems=tegu:home` in the PBS header

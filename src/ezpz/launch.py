@@ -285,8 +285,8 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     # Cross-flag validation. argparse mutex groups can't express
     # "--auto-retry vs --retries with a non-zero value" (since
     # --retries defaults to 0), so do it here. Same for --auto-retry
-    # requiring an explicit --nproc — the value depends on whether
-    # the user passed -n at all, which argparse can't observe from
+    # needing an explicit size — the value depends on whether the user
+    # passed the flag at all, which argparse can't observe from
     # inside the parser.
     if getattr(args, "auto_retry", False):
         if getattr(args, "retries", 0):
@@ -295,12 +295,30 @@ def parse_args(argv: Optional[Sequence[str]] = None):
                 "--retries is bounded per-process retry; --auto-retry "
                 "is unbounded node-level failover. Pick one."
             )
-        if getattr(args, "nproc", -1) <= 0:
+        # What auto-retry actually needs is the ACTIVE HOST COUNT, so
+        # it can split the allocation into active + spare. --nproc
+        # gives that indirectly (ranks -> hosts); --nhosts gives it
+        # directly. Accept either rather than forcing users to convert
+        # a node count into a rank count just to satisfy this check.
+        # Both default to -1, which lets us tell "not provided" apart
+        # from "provided but nonsensical". Collapsing the two would tell
+        # a user who typed `--nhosts 0` to "pass --nhosts", which is
+        # actively confusing.
+        _nproc = getattr(args, "nproc", -1)
+        _nhosts = getattr(args, "nhosts", -1)
+        for _flag, _val in (("--nproc", _nproc), ("--nhosts", _nhosts)):
+            if _val != -1 and _val <= 0:
+                raise SystemExit(
+                    f"--auto-retry: {_flag} must be > 0, got {_val}. The "
+                    "auto-retry loop needs a positive active size to "
+                    "split the allocation into active + spare hosts."
+                )
+        if _nproc <= 0 and _nhosts <= 0:
             raise SystemExit(
-                "--auto-retry requires --nproc (-n/--np) to be set "
-                "explicitly. The auto-retry loop needs the training "
-                "rank count to split the PBS allocation into active "
-                "+ spare hosts."
+                "--auto-retry requires the active size to be set "
+                "explicitly: pass --nhosts (-nh/--nnodes) or --nproc "
+                "(-n/--np). The auto-retry loop needs it to split the "
+                "PBS allocation into active + spare hosts."
             )
     return args
 
@@ -820,26 +838,62 @@ def launch(
     if auto_retry:
         # CLI entrypoints (parse_args) already enforce this; the
         # check here is the library-level precondition for direct
-        # `launch(auto_retry=True, ngpus=None)` callers. Same
-        # invariant, different audience.
-        if ngpus is None:
+        # `launch(auto_retry=True, ...)` callers. Same invariant,
+        # different audience.
+        #
+        # The loop needs the ACTIVE HOST COUNT. `nhosts` states it
+        # directly; `ngpus` implies it (ranks -> hosts). Either is
+        # sufficient — requiring ngpus specifically just forced
+        # node-count users to convert to ranks for no reason.
+        if ngpus is None and nhosts is None:
             raise ValueError(
-                "launch(auto_retry=True) requires ngpus to be set "
-                "explicitly. The auto-retry loop needs the training "
-                "rank count to split the node pool into active + "
-                "spare. (CLI: pass --nproc / -n / --np.)"
+                "launch(auto_retry=True) requires nhosts or ngpus to "
+                "be set explicitly. The auto-retry loop needs the "
+                "active size to split the node pool into active + "
+                "spare. (CLI: pass --nhosts / -nh, or --nproc / -n.)"
             )
         # Source the candidate node pool. Explicit --hostfile beats
         # the scheduler nodelist — see _resolve_auto_retry_node_pool.
         autoretry_pool = _resolve_auto_retry_node_pool(
             selected_hostfile, nodelist
         )
-        # `--ppn` (== ngpu_per_host) sets ranks-per-node when given;
-        # fall back to the cluster's GPU count (the typical default,
-        # one rank per GPU) when not. `or 1` covers the degenerate
-        # case where get_gpus_per_node() returns 0 on a non-GPU node.
-        ranks_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
-        nhosts_active = _ranks_to_hosts(ngpus, ranks_per_node)
+        # NB: GPU detection is deliberately NOT done here. The nhosts
+        # route never needs it (an explicit host count is already the
+        # answer), and ezpz.get_gpus_per_node() can raise
+        # ModuleNotFoundError on a launcher/login node with no torch --
+        # which would break a perfectly well-specified
+        # `--auto-retry --nhosts N`. Only the ngpus route resolves it,
+        # lazily, below.
+        if nhosts is not None:
+            # Explicit host count wins: it is what we need, verbatim,
+            # with no ranks->hosts rounding in between. When BOTH are
+            # given, honour nhosts and let the (unchanged) downstream
+            # _infer_topology consistency checks flag any ngpus/nhosts
+            # mismatch, rather than silently preferring one here.
+            if nhosts <= 0:
+                raise ValueError(
+                    f"launch(auto_retry=True): nhosts must be > 0, "
+                    f"got {nhosts}."
+                )
+            nhosts_active = nhosts
+        else:
+            assert ngpus is not None  # guarded above
+            if ngpus <= 0:
+                # Symmetric with the nhosts guard: _ranks_to_hosts(0, n)
+                # returns 0, which would ask for a zero-host active set
+                # and produce nonsense downstream.
+                raise ValueError(
+                    f"launch(auto_retry=True): ngpus must be > 0, "
+                    f"got {ngpus}."
+                )
+            # Resolved HERE, not above, so the nhosts route never pays
+            # for GPU detection (see the note at the top of this block).
+            # `--ppn` (== ngpu_per_host) wins when given; else the
+            # cluster's GPU count, the typical one-rank-per-GPU default.
+            # `or 1` covers get_gpus_per_node() returning 0 on a
+            # non-GPU node.
+            ranks_per_node = ngpu_per_host or ezpz.get_gpus_per_node() or 1
+            nhosts_active = _ranks_to_hosts(ngpus, ranks_per_node)
         autoretry_log_dir = _auto_retry_log_dir(jobid)
         autoretry_allocation, autoretry_hostfile = (
             _resolve_auto_retry_allocation(
@@ -988,14 +1042,27 @@ def run(argv: Sequence[str] | None = None) -> int:
     requested_nproc = args.nproc if args.nproc > -1 else None
     requested_ppn = args.nproc_per_node if args.nproc_per_node > -1 else None
     requested_nhosts = args.nhosts if args.nhosts > -1 else None
-    if (
-        requested_nproc is None
-        and requested_ppn is not None
-        and requested_nhosts is not None
-    ):
-        requested_nproc = requested_ppn * requested_nhosts
+    if requested_nproc is None and requested_nhosts is not None:
+        # Derive ranks from the requested host count. `--ppn` when given,
+        # else the machine's GPUs-per-node (the same fallback the
+        # auto-retry path uses). Without this, `--nhosts N` with no
+        # `--ppn` left requested_nproc None and silently fell through to
+        # WORLD_SIZE-or-2 below -- so `--nhosts 4` would launch 2 ranks.
+        # Only reachable now that --auto-retry accepts nhosts-only, but
+        # the bug applies to any nhosts-only invocation on this path.
+        _ppn = requested_ppn or ezpz.get_gpus_per_node() or 1
+        requested_nproc = _ppn * requested_nhosts
     if requested_nproc is None:
         requested_nproc = int(os.environ.get("WORLD_SIZE", "2"))
+    if getattr(args, "auto_retry", False):
+        # The local-mpirun fallback has no node pool to split, so there
+        # is nothing to fail over TO. Say so rather than appearing to
+        # honour the flag.
+        logger.warning(
+            "--auto-retry has no effect without an active PBS/SLURM job: "
+            "there is no allocation to split into active + spare hosts. "
+            "Running the command once via the local mpirun fallback."
+        )
     env_flags = _get_mpirun_env_flags()
     fallback_cmd = ["mpirun", *env_flags, "-np", str(requested_nproc)]
     if args.hostfile:
