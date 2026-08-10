@@ -308,7 +308,10 @@ class TestHooks:
             return real(*a, **k)
 
         st.compute_loss = spy
-        forward_backward(st, _batch(0), on_forward_done=lambda: seen.append("hook"))
+        forward_backward(
+            st, _batch(0),
+            on_forward_done=lambda pred, labels, n: seen.append("hook"),
+        )
         assert seen == ["hook", "loss"]
 
     def test_rejects_unimplemented_loss(self):

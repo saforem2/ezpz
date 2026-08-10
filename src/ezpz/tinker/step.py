@@ -217,7 +217,9 @@ def forward_backward(
     loss_fn: str = "cross_entropy",
     *,
     loss_scale: float = 1.0,
-    on_forward_done: Optional[Callable[[], None]] = None,
+    on_forward_done: Optional[
+        Callable[[torch.Tensor, torch.Tensor, int], None]
+    ] = None,
 ) -> ForwardBackwardOutput:
     """Forward, loss, backward. Accumulates grads; does NOT update.
 
@@ -229,13 +231,22 @@ def forward_backward(
         loss_scale: multiplies the loss before ``backward()``. Pass
             ``1/N`` when accumulating N microbatches so the summed
             gradient matches a single batch of the same total size.
-        on_forward_done: invoked after the forward pass and label
-            masking, before the loss. Exists so ``fsdp_tp`` can keep
-            drawing its ``t1`` barrier exactly where it did
-            (``fsdp_tp.py:3333-3334``) and its ``train/dtf`` /
-            ``train/dtb`` split stays comparable across the refactor.
-            Without this hook the boundary would be swallowed here and
-            those two metrics would silently shift meaning.
+        on_forward_done: invoked as ``fn(pred, labels, local_seq_len)``
+            after the forward pass and label masking, before the loss.
+            Two callers need this point:
+
+            * ``fsdp_tp`` draws its ``t1`` barrier here
+              (``fsdp_tp.py:3333-3334``), so ``train/dtf`` keeps meaning
+              "data prep + forward" and ``train/dtb`` keeps meaning
+              "loss + backward". Without the hook the boundary would be
+              swallowed and both metrics would silently shift meaning.
+            * its first-step debug probes (``track_logits``,
+              ``loss_inputs``) inspect ``pred``/``labels``.
+
+            Passing the tensors to a callback rather than returning them
+            keeps this function from retaining a reference to a
+            ``(B,T,vocab)`` tensor after the step -- at agpt's 256K vocab
+            that is multiple GB.
 
     Returns:
         The unscaled loss (so the number a caller logs is comparable
@@ -272,10 +283,10 @@ def forward_backward(
     labels = _apply_ignore_mask(state, labels, attn_labels)
 
     # The forward/backward split point. fsdp_tp draws its `t1` barrier
-    # here so `train/dtf` keeps meaning "data prep + forward" and
-    # `train/dtb` keeps meaning "loss + backward".
+    # here (so train/dtf and train/dtb keep their meanings) and runs its
+    # first-step debug probes over pred/labels.
     if on_forward_done is not None:
-        on_forward_done()
+        on_forward_done(pred, labels, local_seq_len)
 
     loss = compute_loss(state, pred, labels)
     (loss * loss_scale if loss_scale != 1.0 else loss).backward()
