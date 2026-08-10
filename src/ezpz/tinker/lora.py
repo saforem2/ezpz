@@ -186,7 +186,33 @@ class LoRALinear(nn.Module):
         upd = self.B(self.A(self.dropout(x)))
         # Adapter runs in the base's compute dtype (autocast/FSDP may hand
         # the branches different dtypes under mixed precision).
-        return out + self.scaling * upd.to(out.dtype)
+        upd = upd.to(out.dtype)
+
+        # Under TP the two branches can disagree about DTensor-ness: the
+        # base may return a DTensor / AsyncCollectiveTensor while the
+        # adapter returns a plain local tensor (or the reverse). Adding
+        # them then produces something that is no longer a DTensor, and
+        # the mismatch surfaces LATER -- at the next module that expects
+        # one. Observed at tp=2 as a failure in `Transformer.forward`'s
+        # `self.output(h)` (llama.py:712), several modules downstream of
+        # the adapter, which is what made it look unrelated to LoRA.
+        #
+        # Re-wrap the update to match the base's layout so the sum stays
+        # a DTensor with the base's placements. No-op at tp=1, where
+        # neither branch is a DTensor.
+        if type(out) is not type(upd):
+            from torch.distributed.tensor import DTensor
+
+            if isinstance(out, DTensor) and not isinstance(upd, DTensor):
+                upd = DTensor.from_local(
+                    upd.to_local() if hasattr(upd, "to_local") else upd,
+                    out.device_mesh,
+                    out.placements,
+                    run_check=False,
+                )
+            elif isinstance(upd, DTensor) and not isinstance(out, DTensor):
+                upd = upd.to_local()
+        return out + self.scaling * upd
 
     def extra_repr(self) -> str:
         return f"rank={self.rank}, alpha={self.alpha}, scaling={self.scaling:.4g}"
