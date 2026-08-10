@@ -298,21 +298,53 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
     Only keys naming a wrapped target are rewritten -- ``norm`` /
     ``PrepareModuleInput`` entries pass through untouched.
     """
-    from torch.distributed.tensor import Replicate
-    from torch.distributed.tensor.parallel import ColwiseParallel
+    from torch.distributed.tensor import Replicate, Shard
+    from torch.distributed.tensor.parallel import (
+        ColwiseParallel,
+        RowwiseParallel,
+    )
 
     adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
     out: dict[str, Any] = {}
     for key, style in base_plan.items():
         leaf = key.rsplit(".", 1)[-1]
-        if leaf in adapted:
-            out[f"{key}.base"] = style
-            # Shard A's work, then all-gather the r-dim so B (Colwise)
-            # sees a replicated DTensor input.
-            out[f"{key}.A"] = ColwiseParallel(output_layouts=Replicate())
-            out[f"{key}.B"] = style
-        else:
+        if leaf not in adapted:
             out[key] = style
+            continue
+
+        out[f"{key}.base"] = style
+        # `A`'s style is dictated by the BASE's style, because A and base
+        # consume the SAME input `x`:
+        #
+        #   base is Colwise -> x arrives Replicate (full d_in).
+        #       A is Colwise too, but must hand B the full rank r, so
+        #       redistribute to Replicate and stay a DTensor
+        #       (use_local_output=False; the default True unwraps to this
+        #       rank's local shard).
+        #
+        #   base is Rowwise (wq's `wo`, mlp's `w2`) -> x arrives
+        #       Shard(-1): each rank holds only d_in/tp columns. A must
+        #       be Rowwise as well or its d_in x r weight will not match
+        #       the sharded input. Observed at tp=2 as
+        #         "a and b must have same reduction dim,
+        #          got [128, 64] X [128, 8]"
+        #       raised inside `wo` -- 64 is the SHARDED d_in (128/2), 8
+        #       is the full rank; A had been given a Colwise style and so
+        #       still expected the unsharded input.
+        #
+        # Both shapes coincide at tp=1, which is precisely why this class
+        # of bug needs a multi-rank run to surface.
+        if isinstance(style, RowwiseParallel):
+            out[f"{key}.A"] = RowwiseParallel(
+                input_layouts=Shard(-1),
+                output_layouts=Replicate(),
+                use_local_output=False,
+            )
+        else:
+            out[f"{key}.A"] = ColwiseParallel(
+                output_layouts=Replicate(), use_local_output=False
+            )
+        out[f"{key}.B"] = style
     return out
 
 

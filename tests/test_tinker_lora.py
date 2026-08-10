@@ -236,6 +236,46 @@ class TestLoraTpPlan:
             "attention.wo.base", "attention.wo.A", "attention.wo.B",
         }
 
+    def test_A_style_follows_the_base_style(self):
+        """A and base consume the SAME input, so A's style must match.
+
+        REGRESSION (Sunspot tp=2): giving A a Colwise style under a
+        Rowwise base means A expects the full d_in while the base gets a
+        Shard(-1) slice, raising inside `wo`:
+          "a and b must have same reduction dim, got [128, 64] X [128, 8]"
+        64 is the sharded d_in, 8 the full rank. Identical at tp=1.
+        """
+        from torch.distributed.tensor.parallel import (
+            ColwiseParallel,
+            RowwiseParallel,
+        )
+
+        col = lora_tp_plan({"attention.wq": ColwiseParallel()})
+        assert isinstance(col["attention.wq.A"], ColwiseParallel)
+
+        row = lora_tp_plan({"attention.wo": RowwiseParallel()})
+        assert isinstance(row["attention.wo.A"], RowwiseParallel), (
+            "under a Rowwise base, A must also be Rowwise or it will "
+            "expect an unsharded input"
+        )
+
+    def test_A_never_unwraps_to_a_local_tensor(self):
+        """use_local_output must be False so B receives a DTensor.
+
+        The default (True) hands back this rank's local shard, so B sees
+        r/tp instead of r.
+        """
+        from torch.distributed.tensor.parallel import (
+            ColwiseParallel,
+            RowwiseParallel,
+        )
+
+        for base_style in (ColwiseParallel(), RowwiseParallel()):
+            a = lora_tp_plan({"attention.wq": base_style})["attention.wq.A"]
+            assert a.use_local_output is False, (
+                f"A under {type(base_style).__name__} must keep its DTensor"
+            )
+
     def test_A_is_parallelized_with_replicated_output(self):
         """REGRESSION (Sunspot tp=2): leaving A unparallelized makes it
         return a plain tensor while base returns a DTensor, so their sum
