@@ -57,6 +57,7 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
 
   > **Breaking change**: `--model small` now resolves to ~125M (was a
   > toy ~6M). Use `--model debug` for laptop-runnable smoke tests.
+
 - **AuroraGPT presets** — `--model agpt-2b` or `--model agpt-20b` reproduce
   torchtitan's `agpt_configs` registry exactly (`dim`, `n_layers`, `n_heads`,
   `n_kv_heads`, `vocab_size`, `hidden_dim`, `rope_theta` all match). Useful
@@ -88,6 +89,7 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   torchtitan's `data_parallel_replicate_degree` / `data_parallel_shard_degree`.
   (The legacy `--sharding-strategy hybrid_shard*` names have been **removed**
   — they now hard-error. Use `--dp-replicate` / `--dp-shard` for HSDP.)
+
 - **Activation checkpointing** — `--ac {none,block,full,selective}` (or
   `--activation-checkpoint`) trades compute for memory during training.
   `block`/`full` wraps each TransformerBlock (~30-40 pct activation-memory
@@ -134,6 +136,7 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
       replicated logits). ~23 GiB/rank, ~34% MFU at tp=2.
 
   See [Matching torchtitan](#matching-torchtitan).
+
 - **Activation-memory budget** — `--act-mem-budget <float>` (default `1.0`,
   only active with `--compile`). Sets
   `torch._functorch.config.activation_memory_budget`: `1.0` saves every
