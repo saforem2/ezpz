@@ -126,12 +126,25 @@ def save_checkpoint(
     optimizer: Any,
     *,
     meta: Optional[dict[str, Any]] = None,
+    state_dict_options: Any = None,
 ) -> Path:
     """Save a sharded DCP checkpoint of ``(model, optimizer)`` at ``step``.
 
     All ranks participate (DCP writes shards in parallel). Rank 0 writes
     ``meta.json`` and, LAST, the ``.complete`` marker. A final barrier keeps
     ranks in lockstep so the marker isn't observed before every shard landed.
+
+    Args:
+        state_dict_options: optional ``StateDictOptions`` forwarded to
+            ``get_state_dict``. Pass
+            ``StateDictOptions(ignore_frozen_params=True)`` for an
+            adapter-only (LoRA) checkpoint, which is ~``rank/dim`` the
+            size of a full one. ``None`` (the default) preserves the
+            existing full-state behavior exactly.
+
+            NOTE: a checkpoint written with this set is NOT loadable as a
+            full model -- pair it with the same option on load, and keep
+            the frozen base weights somewhere.
 
     Returns the ``step-<N>`` directory path.
     """
@@ -144,7 +157,11 @@ def save_checkpoint(
         _clear_stale_marker(out)
     _barrier()  # ensure the dir exists (and marker cleared) before any writes
 
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    model_sd, optim_sd = (
+        get_state_dict(model, optimizer, options=state_dict_options)
+        if state_dict_options is not None
+        else get_state_dict(model, optimizer)
+    )
     dcp.save(
         {"model": model_sd, "optim": optim_sd},
         checkpoint_id=str(out),

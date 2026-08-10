@@ -16,6 +16,12 @@ Everything composes with the existing distributed stack: FSDP2, tensor
 parallelism, HSDP, meta-device init, and the async DCP checkpoint layer.
 """
 
+from ezpz.tinker.client import (
+    ImmediateFuture,
+    LocalSamplingClient,
+    LocalTrainingClient,
+    build_training_client,
+)
 from ezpz.tinker.lora import (
     ATTN_TARGETS,
     MLP_TARGETS,
@@ -27,12 +33,42 @@ from ezpz.tinker.lora import (
     lora_tp_plan,
     merge_adapters,
 )
+from ezpz.tinker.step import (
+    TrainState,
+    forward_backward,
+    optim_step,
+)
+from ezpz.tinker.types import (
+    AdamParams,
+    Datum,
+    ForwardBackwardOutput,
+    LossFnInputs,
+    ModelInput,
+    OptimStepResponse,
+    SamplingParams,
+    SaveWeightsResponse,
+)
 
 __all__ = [
     "ATTN_TARGETS",
+    "AdamParams",
+    "Datum",
+    "ForwardBackwardOutput",
+    "ImmediateFuture",
+    "LocalSamplingClient",
+    "LocalTrainingClient",
+    "LossFnInputs",
     "MLP_TARGETS",
     "LoRALinear",
     "LoraConfig",
+    "ModelInput",
+    "OptimStepResponse",
+    "SamplingParams",
+    "SaveWeightsResponse",
+    "TrainState",
+    "build_training_client",
+    "forward_backward",
+    "optim_step",
     "adapter_state_dict",
     "apply_lora",
     "iter_lora_modules",
