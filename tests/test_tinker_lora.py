@@ -236,31 +236,34 @@ class TestLoraTpPlan:
             "attention.wo.base", "attention.wo.A", "attention.wo.B",
         }
 
-    def test_A_is_colwise_replicated_under_BOTH_base_styles(self):
-        """A's style does NOT follow the base's -- one style works for both.
+    def test_A_style_branches_on_the_base_style(self):
+        """A consumes the same input as base, and the two base styles
+        demand CONTRADICTORY layouts -- so A must branch.
 
-        Enumerated on a real 2-rank mesh (Sunspot job 12472835); a
-        world_size=1 mesh cannot distinguish these cases:
+        Colwise base -> input Replicate (full width) -> A Colwise.
+        Rowwise base -> input Shard(-1) (per-rank slice) -> A Rowwise,
+        so A's (r, d_in) weight is sharded on d_in to match.
 
-            A style                       base=Col   base=Row
-            Col(out=Rep, ulo=False)       OK         OK        <- chosen
-            none                          OK         FAIL
-            Col(out=Rep, ulo=True)        OK         FAIL
-            Row(in=Shard,out=Rep,ulo=F)   FAIL       OK
-
-        Branching on the base style sounds principled and is wrong:
-        Rowwise A fails under a Colwise base.
+        REGRESSION (Sunspot job 12472847): hardcoding Colwise made
+        attention.wo's adapter receive a half-width activation against a
+        full-width weight -> [16, 64] X [128, 8]. Toy single-module
+        probes call that "OK" because ColwiseParallel's input hook uses
+        DTensor.from_local(..., run_check=False), which believes the
+        mislabeled tensor instead of raising.
         """
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
             RowwiseParallel,
         )
 
-        for base_style in (ColwiseParallel(), RowwiseParallel()):
-            a = lora_tp_plan({"attention.wq": base_style})["attention.wq.A"]
-            assert isinstance(a, ColwiseParallel), (
-                f"A must be Colwise even under {type(base_style).__name__}"
-            )
+        col = lora_tp_plan({"attention.wq": ColwiseParallel()})
+        assert isinstance(col["attention.wq.A"], ColwiseParallel)
+
+        row = lora_tp_plan({"attention.wo": RowwiseParallel()})
+        assert isinstance(row["attention.wo.A"], RowwiseParallel), (
+            "under a Rowwise base A must be Rowwise, or it expects the "
+            "full input width while receiving a per-rank slice"
+        )
 
     def test_A_never_unwraps_to_a_local_tensor(self):
         """use_local_output must be False so B receives a DTensor.

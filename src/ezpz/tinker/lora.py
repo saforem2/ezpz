@@ -297,27 +297,12 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
 
     Only keys naming a wrapped target are rewritten -- ``norm`` /
     ``PrepareModuleInput`` entries pass through untouched.
-
-    .. warning::
-
-        **LoRA at ``tp > 1`` does not work yet**, and this plan alone
-        cannot make it work. ``fsdp_tp.parallelize`` halves ``n_heads``
-        in place, so ``attention.wo`` receives the per-rank width while
-        the adapter's ``A`` was constructed from the *unparallelized*
-        ``in_features``. That is a weight-**shape** mismatch, not a
-        layout one::
-
-            RuntimeError: a and b must have same reduction dim,
-            but got [128, 64] X [128, 8]
-
-        Fixing it needs ``A`` (and ``B``) to be built against the
-        post-TP dimensions, i.e. LoRA applied *after* ``parallelize``
-        rather than before -- a larger change. ``fsdp_tp`` refuses
-        ``--lora-rank`` with ``--tp > 1`` up front. This function is
-        correct and exercised at ``tp = 1``.
     """
     from torch.distributed.tensor import Replicate
-    from torch.distributed.tensor.parallel import ColwiseParallel
+    from torch.distributed.tensor.parallel import (
+        ColwiseParallel,
+        RowwiseParallel,
+    )
 
     adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
     out: dict[str, Any] = {}
@@ -328,34 +313,50 @@ def lora_tp_plan(base_plan: dict[str, Any]) -> dict[str, Any]:
             continue
 
         out[f"{key}.base"] = style
-        # `A` gets ColwiseParallel(output_layouts=Replicate(),
-        # use_local_output=False) regardless of the base's style.
+        # `A` consumes the SAME input as `base`, so its style must match
+        # what `base` expects of that input -- and the two base styles
+        # want CONTRADICTORY layouts, so this must branch.
         #
-        # Not a guess -- enumerated on a real 2-rank mesh (Sunspot job
-        # 12472835; a world_size=1 mesh materializes DTensors back to
-        # plain tensors and cannot distinguish these cases at all):
+        #   base Colwise (wq/wk/wv, w1/w3, output): input is Replicate,
+        #       full width. A is Colwise, redistributed back to
+        #       Replicate so B sees the full rank r.
+        #   base Rowwise (wo, w2): input is the per-rank Shard(-1)
+        #       slice. A must be Rowwise so its (r, d_in) weight is
+        #       sharded on d_in to match.
         #
-        #   A style                       base=Colwise   base=Rowwise
-        #   ---------------------------   ------------   ------------
-        #   none                          OK             FAIL (mixed DTensor)
-        #   Col(out=Rep, ulo=False)       OK             OK          <- this
-        #   Col(out=Rep, ulo=True)        OK             FAIL (shape)
-        #   Row(in=Shard,out=Rep,ulo=F)   FAIL (shape)   OK
-        #   Row(in=Rep,  out=Rep,ulo=F)   OK             OK
+        # Instrumented on the real model at tp=2 (Sunspot job 12472847),
+        # printing what each inner Linear actually receives:
         #
-        # Two traps the table encodes:
-        #   * `none` looks fine under Colwise but leaves A a plain
-        #     nn.Linear, so under Rowwise its output cannot be added to
-        #     the base's DTensor.
-        #   * use_local_output defaults to True and unwraps the DTensor
-        #     to this rank's local shard, so B sees r/tp instead of r.
+        #   wq/wk/wv:  x = DTensor(..,128)  -> A (Colwise) OK
+        #   wo:        x = Tensor(..,64)    -> A (Colwise) RAISED
+        #                                      [16, 64] X [128, 8]
         #
-        # Branching on the base style (Rowwise base -> Rowwise A) is
-        # WRONG despite sounding principled: the table shows Rowwise A
-        # fails under a Colwise base.
-        out[f"{key}.A"] = ColwiseParallel(
-            output_layouts=Replicate(), use_local_output=False
-        )
+        # A NOTE ON HOW THIS WAS GOT WRONG THREE TIMES. An earlier
+        # revision hardcoded Colwise for both and justified it with a
+        # toy-model table that recorded "Col(out=Rep, ulo=False): OK"
+        # under a Rowwise base. That reading was wrong twice over:
+        #
+        #   * The table's own `Row(in=Shard,...)` row reads FAIL under
+        #     Colwise / OK under Rowwise -- which argues FOR branching.
+        #     The comment concluded the opposite from the same data.
+        #   * The toy "OK" was an artifact. ColwiseParallel's input hook
+        #     uses DTensor.from_local(..., Replicate(), run_check=False)
+        #     (torch style.py:107-112), so torch BELIEVES a half-width
+        #     local shard is the full replicated tensor instead of
+        #     raising. The toy model never reached a shape that exposed
+        #     it; the real model did.
+        #
+        # use_local_output=False on both branches: the default True
+        # unwraps the DTensor to this rank's local shard, so B would see
+        # r/tp instead of r.
+        if isinstance(style, RowwiseParallel):
+            out[f"{key}.A"] = RowwiseParallel(
+                output_layouts=Replicate(), use_local_output=False
+            )
+        else:
+            out[f"{key}.A"] = ColwiseParallel(
+                output_layouts=Replicate(), use_local_output=False
+            )
         out[f"{key}.B"] = style
     return out
 

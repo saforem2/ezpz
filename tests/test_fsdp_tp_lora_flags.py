@@ -87,31 +87,6 @@ class TestLoraIsApplied:
         assert m._lora_is_applied(model) is True
 
 
-class TestTpGuard:
-    """LoRA at tp>1 must refuse UP FRONT, not fail mid-forward.
-
-    parallelize halves n_heads in place, so attention.wo receives the
-    per-rank width while the adapter's A was built from the
-    unparallelized in_features -- a weight-SHAPE mismatch no TP style
-    can fix (Sunspot jobs 12472831/33/34/36):
-      RuntimeError: a and b must have same reduction dim,
-      but got [128, 64] X [128, 8]
-    """
-
-    def test_lora_with_tp_gt_1_is_refused(self):
-        m = _fsdp_tp()
-        src = __import__("inspect").getsource(m.train)
-        assert "--lora-rank with --tp > 1 is not supported yet" in src, (
-            "the tp>1 LoRA guard is missing; runs would fail deep in the "
-            "first forward instead of at setup"
-        )
-
-    def test_guard_names_the_workaround(self):
-        m = _fsdp_tp()
-        src = __import__("inspect").getsource(m.train)
-        assert "Use --tp 1" in src
-
-
 class TestTargetValidation:
     """An unknown --lora-target must fail loudly at setup, not silently
     adapt nothing (which would look like LoRA 'not working')."""

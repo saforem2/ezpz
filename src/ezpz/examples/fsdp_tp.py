@@ -2764,23 +2764,6 @@ def train(
         # meta-init the adapters are built on `meta` too and materialized
         # by the same to_empty()/init_weights() pass.
         if getattr(args, "lora_rank", 0) > 0:
-            if args.tp > 1:
-                # NOT YET SUPPORTED. `parallelize` halves `n_heads` in
-                # place (fsdp_tp.py:2082-2083), so `attention.wo` receives
-                # the per-rank width while LoRA's `A` was built from the
-                # UNPARALLELIZED `in_features` -- a weight-SHAPE mismatch
-                # that no choice of TP style can fix:
-                #   RuntimeError: a and b must have same reduction dim,
-                #   but got [128, 64] X [128, 8]
-                # Fail loudly here rather than deep inside the first
-                # forward pass. LoRA at tp=1 is validated and unaffected.
-                raise SystemExit(
-                    "--lora-rank with --tp > 1 is not supported yet: the "
-                    "TP plan reshapes attention.wo's input, which the "
-                    "adapter's A matrix is not built for. Use --tp 1 for "
-                    "LoRA, or drop --lora-rank for full fine-tuning at "
-                    "tp > 1."
-                )
             _targets = {
                 t.strip() for t in str(args.lora_target).split(",") if t.strip()
             }
