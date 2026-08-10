@@ -3307,6 +3307,11 @@ def train(
             # masking, before the loss -- so train/dtf and train/dtb keep
             # their original meanings.
             _t1_holder: list[float] = []
+            # Per-step stats derived from pred/labels. Computed in the
+            # callback (the only point where the step still holds those
+            # tensors) and merged into `metrics` below.
+            _step_probe: dict[str, object] = {}
+            _seq_holder: list[int] = []
 
             def _at_forward_done(
                 pred: "torch.Tensor",
@@ -3317,6 +3322,25 @@ def train(
             ) -> None:
                 ezpz.distributed.synchronize()
                 _t1_holder.append(perf_counter())
+                _seq_holder.append(int(local_seq_len))
+                if global_step % max(metrics_every, 1) == 0:
+                    _step_probe["labels/valid"] = float(
+                        (masked_labels != -100).sum().item()
+                    )
+                    if track_logits:
+                        _finite = torch.isfinite(pred)
+                        _step_probe["logits/nonfinite"] = float(
+                            (~_finite).sum().item()
+                        )
+                        _step_probe["logits/max_abs"] = float(
+                            pred.abs().max().item()
+                        )
+                    if track_hist and ezpz.get_rank() == 0:
+                        _sample = _sample_tensor_values(pred, hist_samples)
+                        if _sample is not None:
+                            _hist = _histogram_dict(_sample, hist_bins)
+                            if _hist is not None:
+                                _step_probe[f"hist/{dataset_tag}/logits"] = _hist
                 tp_mod = getattr(ezpz, "tp", None)
                 tp_rank = (
                     getattr(tp_mod, "get_tensor_parallel_rank", lambda: 0)()
@@ -3407,19 +3431,11 @@ def train(
                 )
                 metrics["input/max"] = float(_ids.max().item())
                 metrics["input/min"] = float(_ids.min().item())
-                metrics["labels/valid"] = float((labels != -100).sum().item())
-                if track_logits:
-                    pred_finite = torch.isfinite(pred)
-                    metrics["logits/nonfinite"] = float(
-                        (~pred_finite).sum().item()
-                    )
-                    metrics["logits/max_abs"] = float(pred.abs().max().item())
+                # pred/labels-derived stats are computed inside the
+                # forward-done callback (that is the only point where the
+                # step still holds them) and stashed in _step_probe.
+                metrics.update(_step_probe)
                 if track_hist and ezpz.get_rank() == 0:
-                    logits_sample = _sample_tensor_values(pred, hist_samples)
-                    if logits_sample is not None:
-                        logits_hist = _histogram_dict(logits_sample, hist_bins)
-                        if logits_hist is not None:
-                            metrics[f"hist/{dataset_tag}/logits"] = logits_hist
                     layer_grad_norms = _collect_layer_grad_norms(base_model)
                     if layer_grad_norms:
                         layer_grad_hist = _histogram_dict(
@@ -3478,7 +3494,9 @@ def train(
             # tp-dim ranks see DUPLICATE samples, so multiplying by dpsize (not
             # world_size) counts each distinct token once.
             # Global tokens processed THIS step across all distinct-data ranks.
-            tokens_this_step = args.batch_size * inp.shape[1] * dpsize
+            tokens_this_step = (
+                args.batch_size * int(_fb.metrics["input_seq_len"]) * dpsize
+            )
             tokens_seen += tokens_this_step
             # Cumulative consumed training tokens — the standard x-axis for
             # loss curves. Accumulated every step (this block runs each step),

@@ -294,7 +294,14 @@ def forward_backward(
     return ForwardBackwardOutput(
         loss=float(loss.detach()),
         num_tokens=int((labels != -100).sum().item()),
-        metrics={"local_seq_len": float(local_seq_len)},
+        metrics={
+            "local_seq_len": float(local_seq_len),
+            # FULL pre-shard sequence length, i.e. `inp.shape[1]`. Callers
+            # need this (not local_seq_len) for a rank-invariant global
+            # token count: under sequence parallelism local_seq_len is
+            # only this rank's slice.
+            "input_seq_len": float(prepared.inp.shape[1]),
+        },
     )
 
 
