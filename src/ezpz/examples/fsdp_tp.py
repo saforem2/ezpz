@@ -2034,8 +2034,15 @@ def parallelize(
         # key naming a LoRA-wrapped Linear raises `NotImplementedError:
         # ColwiseParallel currently only support nn.Linear and
         # nn.Embedding!`. _lora.lora_tp_plan rewrites those keys to the
-        # inner `.base` / `.B` Linears; it is a no-op when nothing is
-        # wrapped, so the non-LoRA path is untouched.
+        # inner `.base` / `.A` / `.B` Linears; it is a no-op when nothing
+        # is wrapped, so the non-LoRA path is untouched.
+        #
+        # Pass the module: the plan must retarget only keys that really
+        # are wrapped. `--lora-target` is selective (the default leaves
+        # `output` alone), and parallelize_module DROPS keys matching no
+        # module without raising -- so retargeting an unwrapped `output`
+        # would leave it an unsharded nn.Linear that dies on its first
+        # DTensor input.
         root_tp_plan = {
             "tok_embeddings": RowwiseParallel(
                 input_layouts=Replicate(),
@@ -2053,7 +2060,7 @@ def parallelize(
             ),
         }
         if _lora_is_applied(model):
-            root_tp_plan = _lora.lora_tp_plan(root_tp_plan)
+            root_tp_plan = _lora.lora_tp_plan(root_tp_plan, model)
         model = parallelize_module(model, tp_mesh, root_tp_plan)
 
         assert isinstance(model.layers, Iterable)
@@ -2081,12 +2088,17 @@ def parallelize(
             attn_layer = transformer_block.attention  # type: ignore
             attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
             attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
+            # Bind a per-block plan rather than reassigning `layer_tp_plan`:
+            # that would feed layer 2 the plan already retargeted for layer 1.
+            block_tp_plan = layer_tp_plan
             if _lora_is_applied(model):
-                layer_tp_plan = _lora.lora_tp_plan(layer_tp_plan)
+                block_tp_plan = _lora.lora_tp_plan(
+                    layer_tp_plan, transformer_block
+                )
             parallelize_module(
                 module=transformer_block,  # type: ignore
                 device_mesh=tp_mesh,
-                parallelize_plan=layer_tp_plan,
+                parallelize_plan=block_tp_plan,
             )
 
     # Activation checkpointing must wrap each block BEFORE fully_shard so the
@@ -2764,23 +2776,6 @@ def train(
         # meta-init the adapters are built on `meta` too and materialized
         # by the same to_empty()/init_weights() pass.
         if getattr(args, "lora_rank", 0) > 0:
-            if args.tp > 1:
-                # NOT YET SUPPORTED. `parallelize` halves `n_heads` in
-                # place (fsdp_tp.py:2082-2083), so `attention.wo` receives
-                # the per-rank width while LoRA's `A` was built from the
-                # UNPARALLELIZED `in_features` -- a weight-SHAPE mismatch
-                # that no choice of TP style can fix:
-                #   RuntimeError: a and b must have same reduction dim,
-                #   but got [128, 64] X [128, 8]
-                # Fail loudly here rather than deep inside the first
-                # forward pass. LoRA at tp=1 is validated and unaffected.
-                raise SystemExit(
-                    "--lora-rank with --tp > 1 is not supported yet: the "
-                    "TP plan reshapes attention.wo's input, which the "
-                    "adapter's A matrix is not built for. Use --tp 1 for "
-                    "LoRA, or drop --lora-rank for full fine-tuning at "
-                    "tp > 1."
-                )
             _targets = {
                 t.strip() for t in str(args.lora_target).split(",") if t.strip()
             }
