@@ -82,7 +82,9 @@ class TestLoRALinear:
         every native model build fails.
         """
         lora = LoRALinear(nn.Linear(8, 8, bias=False), rank=2)
-        nn.init.trunc_normal_(lora.weight, mean=0.0, std=0.02)  # must not raise
+        nn.init.trunc_normal_(
+            lora.weight, mean=0.0, std=0.02
+        )  # must not raise
         assert lora.weight is lora.base.weight
 
     def test_base_is_frozen_adapters_are_not(self):
@@ -127,8 +129,12 @@ class TestLoRALinear:
 
 class TestLoraConfig:
     def test_target_names_by_role(self):
-        assert set(LoraConfig(train_mlp=False).target_names()) == set(ATTN_TARGETS)
-        assert set(LoraConfig(train_attn=False).target_names()) == set(MLP_TARGETS)
+        assert set(LoraConfig(train_mlp=False).target_names()) == set(
+            ATTN_TARGETS
+        )
+        assert set(LoraConfig(train_attn=False).target_names()) == set(
+            MLP_TARGETS
+        )
 
     def test_rejects_bad_rank(self):
         with pytest.raises(ValueError, match="rank must be > 0"):
@@ -155,14 +161,18 @@ class TestLoraConfig:
 
 class TestApplyLora:
     def test_wraps_expected_modules(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         names = {n for n, _ in iter_lora_modules(model)}
         assert "layers.0.attention.wq" in names
         assert "layers.0.feed_forward.w1" in names
         assert len(names) == 2 * (len(ATTN_TARGETS) + len(MLP_TARGETS))
 
     def test_output_untouched_by_default(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         assert not isinstance(model.output, LoRALinear)
 
     def test_train_unembed_wraps_output(self):
@@ -174,17 +184,23 @@ class TestApplyLora:
         assert isinstance(model.output, LoRALinear)
 
     def test_trainable_fraction_is_small(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
         n_all = sum(p.numel() for p in model.parameters())
         assert 0 < n_train < n_all
         assert n_train / n_all < 0.5
 
     def test_every_trainable_param_is_an_adapter(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         for name, p in model.named_parameters():
             if p.requires_grad:
-                assert ".A." in name or ".B." in name, f"{name} unexpectedly trainable"
+                assert ".A." in name or ".B." in name, (
+                    f"{name} unexpectedly trainable"
+                )
 
     def test_forward_unchanged_at_step_zero(self):
         """The whole model -- not just one layer -- starts as the base."""
@@ -198,24 +214,31 @@ class TestApplyLora:
         torch.testing.assert_close(got, want, rtol=0, atol=0)
 
     def test_backward_leaves_base_grads_none(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         model(torch.randint(0, 128, (2, 16))).sum().backward()
         frozen_with_grad = [
-            n for n, p in model.named_parameters()
+            n
+            for n, p in model.named_parameters()
             if not p.requires_grad and p.grad is not None
         ]
         assert frozen_with_grad == []
 
     def test_init_weights_still_works_after_wrapping(self):
         """The .weight proxy must survive a full re-init of the wrapped model."""
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         model.init_weights()  # must not raise
         for _, mod in iter_lora_modules(model):
             assert torch.count_nonzero(mod.B.weight) == 0
 
     def test_raises_when_nothing_matches(self):
         with pytest.raises(RuntimeError, match="matched no modules"):
-            apply_lora(nn.Sequential(nn.ReLU()), LoraConfig(rank=4), verbose=False)
+            apply_lora(
+                nn.Sequential(nn.ReLU()), LoraConfig(rank=4), verbose=False
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -225,31 +248,40 @@ class TestApplyLora:
 
 class TestLoraTpPlan:
     def test_retargets_wrapped_leaves(self):
-        plan = lora_tp_plan({"attention.wq": "COL", "attention.wo": "ROW"})
-        # base + A + B for each wrapped module.
-        assert plan["attention.wq.base"] == "COL"
-        assert plan["attention.wq.B"] == "COL"
-        assert plan["attention.wo.base"] == "ROW"
-        assert plan["attention.wo.B"] == "ROW"
+        from torch.distributed.tensor.parallel import (
+            ColwiseParallel,
+            RowwiseParallel,
+        )
+
+        col, row = ColwiseParallel(), RowwiseParallel()
+        plan = lora_tp_plan({"attention.wq": col, "attention.wo": row})
+        # base keeps the original style object; A and B are derived.
+        assert plan["attention.wq.base"] is col
+        assert plan["attention.wo.base"] is row
         assert set(plan) == {
-            "attention.wq.base", "attention.wq.A", "attention.wq.B",
-            "attention.wo.base", "attention.wo.A", "attention.wo.B",
+            "attention.wq.base",
+            "attention.wq.A",
+            "attention.wq.B",
+            "attention.wo.base",
+            "attention.wo.A",
+            "attention.wo.B",
         }
 
-    def test_A_is_colwise_replicated_under_BOTH_base_styles(self):
-        """A's style does NOT follow the base's -- one style works for both.
+    def test_A_follows_the_base_style(self):
+        """A mirrors the base's class -- it consumes the same activation.
 
-        Enumerated on a real 2-rank mesh (Sunspot job 12472835); a
-        world_size=1 mesh cannot distinguish these cases:
+        This test previously asserted the OPPOSITE (A is always
+        Colwise). That belief came from a toy single-rank probe, and it
+        is wrong: under a Rowwise base the activation arrives sharded on
+        the feature dim, so a Colwise A -- which declares that input
+        replicated and keeps a full-width weight -- disagrees on the
+        contraction dim::
 
-            A style                       base=Col   base=Row
-            Col(out=Rep, ulo=False)       OK         OK        <- chosen
-            none                          OK         FAIL
-            Col(out=Rep, ulo=True)        OK         FAIL
-            Row(in=Shard,out=Rep,ulo=F)   FAIL       OK
+            Sharding propagation failed for aten.mm.default(
+                Spec(f32[16, 64](R)), Spec(f32[128, 8](S(1))))
 
-        Branching on the base style sounds principled and is wrong:
-        Rowwise A fails under a Colwise base.
+        Verified numerically against tp=1 on a real 2-rank mesh in
+        tests/test_tinker_lora_tp.py.
         """
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
@@ -258,9 +290,25 @@ class TestLoraTpPlan:
 
         for base_style in (ColwiseParallel(), RowwiseParallel()):
             a = lora_tp_plan({"attention.wq": base_style})["attention.wq.A"]
-            assert isinstance(a, ColwiseParallel), (
-                f"A must be Colwise even under {type(base_style).__name__}"
+            assert isinstance(a, type(base_style)), (
+                f"A must mirror {type(base_style).__name__}, got "
+                f"{type(a).__name__}"
             )
+
+    def test_B_lands_in_the_bases_output_layout(self):
+        """B's output is summed with the base's, so layouts must agree.
+
+        B's *input* comes from A, not from the base's input, so the
+        base's `input_layouts` must NOT be copied onto it.
+        """
+        from torch.distributed.tensor import Replicate, Shard
+        from torch.distributed.tensor.parallel import RowwiseParallel
+
+        row = RowwiseParallel(output_layouts=Shard(1))
+        b = lora_tp_plan({"attention.wo": row})["attention.wo.B"]
+        assert isinstance(b, RowwiseParallel)
+        assert b.output_layouts == row.output_layouts
+        assert b.input_layouts == (Replicate(),)
 
     def test_A_never_unwraps_to_a_local_tensor(self):
         """use_local_output must be False so B receives a DTensor.
@@ -288,7 +336,9 @@ class TestLoraTpPlan:
         from torch.distributed.tensor import Replicate
         from torch.distributed.tensor.parallel import ColwiseParallel
 
-        a_style = lora_tp_plan({"attention.wq": "COL"})["attention.wq.A"]
+        a_style = lora_tp_plan({"attention.wq": ColwiseParallel()})[
+            "attention.wq.A"
+        ]
         assert isinstance(a_style, ColwiseParallel)
         layouts = a_style.output_layouts
         layouts = layouts if isinstance(layouts, tuple) else (layouts,)
@@ -301,8 +351,10 @@ class TestLoraTpPlan:
         assert plan == {"attention_norm": "SP", "attention": "PREP"}
 
     def test_covers_every_role_target(self):
-        base = {f"attention.{n}": "S" for n in ATTN_TARGETS}
-        base |= {f"feed_forward.{n}": "S" for n in MLP_TARGETS}
+        from torch.distributed.tensor.parallel import ColwiseParallel
+
+        base = {f"attention.{n}": ColwiseParallel() for n in ATTN_TARGETS}
+        base |= {f"feed_forward.{n}": ColwiseParallel() for n in MLP_TARGETS}
         plan = lora_tp_plan(base)
         assert len(plan) == 3 * len(base)  # base + A + B
         assert all(k.endswith((".base", ".A", ".B")) for k in plan)
@@ -350,15 +402,15 @@ class TestLoraTpPlanAgainstTorch:
         # Unretargeted: the plan names a LoRALinear -> torch refuses.
         bad = Attn()
         bad.wq = LoRALinear(bad.wq, rank=4)
-        with pytest.raises(NotImplementedError, match="only support nn.Linear"):
+        with pytest.raises(
+            NotImplementedError, match="only support nn.Linear"
+        ):
             parallelize_module(bad, mesh, {"wq": ColwiseParallel()})
 
         # Retargeted: shards and runs.
         good = Attn()
         good.wq = LoRALinear(good.wq, rank=4)
-        parallelize_module(
-            good, mesh, lora_tp_plan({"wq": ColwiseParallel()})
-        )
+        parallelize_module(good, mesh, lora_tp_plan({"wq": ColwiseParallel()}))
         good(torch.randn(2, 4, 16)).sum().backward()
 
         if dist.is_initialized():
@@ -397,7 +449,8 @@ class TestLoraUnderFSDP2:
 
             model(torch.randint(0, 128, (2, 16))).sum().backward()
             frozen_with_grad = [
-                n for n, p in model.named_parameters()
+                n
+                for n, p in model.named_parameters()
                 if not p.requires_grad and p.grad is not None
             ]
             assert frozen_with_grad == []
@@ -413,7 +466,9 @@ class TestLoraUnderFSDP2:
 
 class TestExportHelpers:
     def test_adapter_state_dict_is_adapters_only(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         sd = adapter_state_dict(model)
         assert sd
         assert all(".A." in k or ".B." in k for k in sd)
@@ -422,7 +477,9 @@ class TestExportHelpers:
 
     def test_merge_is_a_noop_at_step_zero(self):
         """B == 0, so merging changes nothing and restores a plain model."""
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         model.eval()
         tokens = torch.randint(0, 128, (2, 16))
         with torch.no_grad():
@@ -434,7 +491,9 @@ class TestExportHelpers:
         assert not list(iter_lora_modules(merged))
 
     def test_merge_applies_a_trained_delta(self):
-        model = apply_lora(_tiny_transformer(), LoraConfig(rank=4), verbose=False)
+        model = apply_lora(
+            _tiny_transformer(), LoraConfig(rank=4), verbose=False
+        )
         model.eval()
         tokens = torch.randint(0, 128, (2, 16))
         with torch.no_grad():
