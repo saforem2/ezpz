@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import click
@@ -179,3 +180,127 @@ def kill_cmd(args: tuple[str, ...]) -> None:
 
     rc = kill_module.run(list(args) if args else None)
     _handle_exit_code(rc)
+
+
+@main.command(name="export-amsc")
+@click.argument(
+    "rundir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--config",
+    required=True,
+    help="Benchmark configuration label, e.g. agpt-2b/bs1/seq2048/tp1.",
+)
+@click.option("--system", default=None, help="Facility name (default: MACHINE).")
+@click.option("--nodes", type=int, default=None, help="Node count (default: NUM_NODES).")
+@click.option("--gpus", type=int, default=None, help="GPU count (default: NGPUS).")
+@click.option(
+    "--status",
+    type=click.Choice(["pass", "fail"]),
+    default="pass",
+    help="Run outcome. NOT inferable from a run dir -- set it yourself.",
+)
+@click.option("--error", default="", help="Error note for a failed run.")
+@click.option(
+    "--warmup",
+    type=int,
+    default=None,
+    help="Leading steps to drop before reducing throughput (default: 1).",
+)
+@click.option(
+    "--reducer",
+    type=click.Choice(["median", "mean", "max", "min", "last"]),
+    default="median",
+    help="How to reduce the per-step series (default: median).",
+)
+@click.option(
+    "--wall-time-sec",
+    type=float,
+    default=None,
+    help="Override wall time with the scheduler's figure (recommended).",
+)
+@click.option(
+    "--append",
+    "append_to",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Append to this runs.csv (header written only if new).",
+)
+@click.option("--no-header", is_flag=True, help="Omit the header on stdout.")
+def export_amsc_cmd(
+    rundir: Path,
+    config: str,
+    system: str | None,
+    nodes: int | None,
+    gpus: int | None,
+    status: str,
+    error: str,
+    warmup: int | None,
+    reducer: str,
+    wall_time_sec: float | None,
+    append_to: Path | None,
+    no_header: bool,
+) -> None:
+    """Export a finished run as one AmSC at-scale benchmarks CSV row.
+
+    Reads a run directory's metrics JSONL, reduces it to the schema
+    used by the AmSC benchmarks dashboard, and writes one CSV row.
+
+    \b
+    Examples:
+      ezpz export-amsc outputs/ezpz.examples.fsdp_tp/2026-08-10-201958 \\
+          --config agpt-2b/bs1/seq2048/tp1
+      ezpz export-amsc <rundir> --config agpt-2b/... \\
+          --append benchmarks/training/llm-finetuning/results/runs.csv
+
+    \b
+    Notes:
+      * `mfu` is a PERCENTAGE (0-100), not a fraction.
+      * `mfu`/`tflops` are per-GPU; `throughput_tokens_per_sec` is global.
+      * wall_time_sec is the sum of measured step times and EXCLUDES
+        setup; pass --wall-time-sec for the scheduler's real figure.
+      * `status` cannot be inferred from a run directory.
+    """
+    from ezpz.export.amsc import (
+        AmscExportError,
+        DEFAULT_WARMUP,
+        format_csv,
+        load_run_metrics,
+        load_run_provenance,
+        summarize_run,
+        to_amsc_row,
+    )
+
+    try:
+        records = load_run_metrics(rundir)
+        summary = summarize_run(
+            records,
+            warmup=DEFAULT_WARMUP if warmup is None else warmup,
+            reducer=reducer,
+        )
+        if wall_time_sec is not None:
+            summary["wall_time_sec"] = wall_time_sec
+        row = to_amsc_row(
+            summary,
+            config=config,
+            system=system,
+            nodes=nodes,
+            gpus=gpus,
+            provenance=load_run_provenance(rundir),
+            status=status,
+            error=error,
+        )
+    except AmscExportError as exc:
+        click.echo(f"error: {exc}", err=True)
+        _handle_exit_code(1)
+        return
+
+    if append_to is not None:
+        exists = append_to.exists() and append_to.stat().st_size > 0
+        append_to.parent.mkdir(parents=True, exist_ok=True)
+        with append_to.open("a", encoding="utf-8") as fh:
+            fh.write(format_csv([row], header=not exists))
+        click.echo(f"appended 1 row to {append_to}", err=True)
+    else:
+        click.echo(format_csv([row], header=not no_header), nl=False)
