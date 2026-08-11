@@ -128,11 +128,22 @@ client.save_state("./ckpts", adapters_only=True).result()   # default
 This passes `StateDictOptions(ignore_frozen_params=True)` to the existing
 DCP layer, so only the trainable adapters are written.
 
+Restore it with the matching flag — `load_state` defaults to
+`adapters_only=True` for the same reason `save_state` does, so the
+round-trip works without passing anything:
+
+```python
+client.load_state("./ckpts").result()                      # adapters
+client.load_state("./ckpts", adapters_only=False).result() # full ckpt
+```
+
 !!! note "Adapter checkpoints are not standalone"
 
-    They contain no base weights. Keep the base model available, and load
-    with the same option. `--save-interval` in `fsdp_tp` still writes full
-    checkpoints; `adapters_only` is opt-in through the client.
+    They contain no base weights, so `adapters_only` must **match** on
+    save and load — loading one as a full checkpoint asks DCP for
+    parameters the file does not contain. Keep the base model available.
+    `--save-interval` in `fsdp_tp` still writes full checkpoints;
+    `adapters_only` is opt-in through the client.
 
 To fold adapters back into the base weights for export or inference:
 

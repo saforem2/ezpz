@@ -142,9 +142,10 @@ def save_checkpoint(
             size of a full one. ``None`` (the default) preserves the
             existing full-state behavior exactly.
 
-            NOTE: a checkpoint written with this set is NOT loadable as a
-            full model -- pair it with the same option on load, and keep
-            the frozen base weights somewhere.
+            NOTE: a checkpoint written with this set contains no frozen
+            base weights, so it is NOT a standalone model. Pass the same
+            option to :func:`load_checkpoint`, and keep the base weights
+            available separately.
 
     Returns the ``step-<N>`` directory path.
     """
@@ -477,6 +478,7 @@ def load_checkpoint(
     ckpt_dir: os.PathLike | str,
     model: Any,
     optimizer: Any,
+    state_dict_options: Any = None,
 ) -> Optional[dict[str, Any]]:
     """Load the latest complete checkpoint into ``(model, optimizer)``.
 
@@ -485,6 +487,15 @@ def load_checkpoint(
     exists (a fresh run — caller starts from scratch).
 
     Mutates ``model`` and ``optimizer`` in place via ``set_state_dict``.
+
+    Args:
+        state_dict_options: optional ``StateDictOptions``, which MUST
+            match the one used to save. An adapter-only checkpoint
+            (``ignore_frozen_params=True``) contains no frozen base
+            weights, so shaping the load container with the default
+            full-state options asks DCP for keys the checkpoint does not
+            have. Default ``None`` keeps every existing caller
+            byte-identical.
     """
     import torch.distributed.checkpoint as dcp
     from torch.distributed.checkpoint.state_dict import (
@@ -498,7 +509,8 @@ def load_checkpoint(
 
     # get_state_dict first to shape the containers DCP loads INTO (it fills
     # them in place with the right DTensor layouts for this rank).
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    _kw = {} if state_dict_options is None else {"options": state_dict_options}
+    model_sd, optim_sd = get_state_dict(model, optimizer, **_kw)
     state = {"model": model_sd, "optim": optim_sd}
     dcp.load(state, checkpoint_id=str(latest))
     set_state_dict(
@@ -506,6 +518,7 @@ def load_checkpoint(
         optimizer,
         model_state_dict=state["model"],
         optim_state_dict=state["optim"],
+        **_kw,
     )
 
     meta_path = latest / _META_FILE
