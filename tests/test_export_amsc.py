@@ -432,3 +432,100 @@ class TestCli:
         assert res.exit_code != 0
         assert "--nodes" in res.output
         assert "Traceback" not in res.output
+
+
+class TestReviewRegressions:
+    """Cases raised in review on #213, each verified before fixing."""
+
+    def test_finds_a_default_history_run_id_jsonl(self, tmp_path: Path):
+        """History names the file `<run_id>.jsonl` when the caller does
+        not pass one (history.py:419), which the metrics-*/metrics.jsonl
+        globs missed -- so export failed outright on a default run."""
+        _write_records(tmp_path / "20260811-182837.jsonl", REAL_TPS)
+        assert len(load_run_metrics(tmp_path)) == len(REAL_TPS)
+
+    def test_ignores_the_structured_log_jsonl(self, tmp_path: Path):
+        """finalize symlinks the LOG into the run dir and both are
+        *.jsonl; only one carries metric records."""
+        (tmp_path / "2026-08-11-132836-rank0.jsonl").write_text(
+            json.dumps(
+                {"timestamp": "...", "level": "INFO",
+                 "message": "hello", "module": "history"}
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        _write_records(tmp_path / "20260811-182837.jsonl", REAL_TPS)
+        assert len(load_run_metrics(tmp_path)) == len(REAL_TPS)
+
+    def test_log_only_directory_still_errors(self, tmp_path: Path):
+        (tmp_path / "log.jsonl").write_text(
+            json.dumps({"level": "INFO", "message": "x"}) + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(AmscExportError, match="no metrics JSONL"):
+            load_run_metrics(tmp_path)
+
+    def test_torchrun_world_size_is_not_under_reported(self, run_dir: Path):
+        """`get_world_size_in_use()` is MPI-only and returns 1 under
+        torchrun, while the lowercase `world_size` reads $WORLD_SIZE.
+        Taking WORLD_SIZE_IN_USE blindly would report gpus=1."""
+        row = to_amsc_row(
+            summarize_run(load_run_metrics(run_dir), warmup=1),
+            config="c",
+            provenance={
+                "MACHINE": "Perlmutter",
+                "WORLD_SIZE_IN_USE": "1",   # MPI absent
+                "world_size": "16",         # $WORLD_SIZE
+                "GPUS_PER_NODE": "4",
+            },
+        )
+        assert (row["nodes"], row["gpus"]) == (4, 16)
+
+    def test_summarize_rejects_empty_records(self):
+        with pytest.raises(AmscExportError, match="no records"):
+            summarize_run([])
+
+
+class TestAppendHeaderGuard:
+    """Appending under a foreign header would corrupt the results file.
+
+    Values are written positionally, so a runs.csv whose columns differ
+    -- or are merely ordered differently -- would silently take our
+    numbers into the wrong fields.
+    """
+
+    def _argv(self, run_dir, dest):
+        return ["export-amsc", str(run_dir), "--config", "c",
+                "--system", "S", "--nodes", "1", "--gpus", "12",
+                "--append", str(dest)]
+
+    def test_refuses_a_mismatched_header(self, run_dir: Path, tmp_path: Path):
+        from click.testing import CliRunner
+
+        from ezpz.cli import main
+
+        dest = tmp_path / "runs.csv"
+        dest.write_text(
+            "timestamp,system,config,nodes,gpus,status,wall_time_sec,"
+            "samples_per_sec,error\n",
+            encoding="utf-8",
+        )
+        res = CliRunner().invoke(main, self._argv(run_dir, dest))
+        assert res.exit_code != 0
+        assert "different header" in res.output
+        # and nothing was written
+        assert len(dest.read_text(encoding="utf-8").splitlines()) == 1
+
+    def test_accepts_a_matching_header(self, run_dir: Path, tmp_path: Path):
+        from click.testing import CliRunner
+
+        from ezpz.cli import main
+
+        dest = tmp_path / "runs.csv"
+        dest.write_text(",".join(AMSC_COLUMNS) + "\n", encoding="utf-8")
+        res = CliRunner().invoke(main, self._argv(run_dir, dest))
+        assert res.exit_code == 0, res.output
+        assert len(list(csv.DictReader(io.StringIO(
+            dest.read_text(encoding="utf-8")
+        )))) == 1

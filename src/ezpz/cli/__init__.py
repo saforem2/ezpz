@@ -263,6 +263,7 @@ def export_amsc_cmd(
       * `status` cannot be inferred from a run directory.
     """
     from ezpz.export.amsc import (
+        AMSC_COLUMNS,
         AmscExportError,
         DEFAULT_WARMUP,
         format_csv,
@@ -298,6 +299,29 @@ def export_amsc_cmd(
 
     if append_to is not None:
         exists = append_to.exists() and append_to.stat().st_size > 0
+        if exists:
+            # Refuse to append under a header we do not match. We write
+            # values positionally, so a file whose columns differ (or are
+            # merely ordered differently) would silently take our numbers
+            # into the wrong fields -- and a corrupted results file is
+            # worse than a failed export.
+            import csv as _csv
+
+            with append_to.open(encoding="utf-8", newline="") as fh:
+                existing = next(_csv.reader(fh), [])
+            expected = list(AMSC_COLUMNS)
+            if existing != expected:
+                click.echo(
+                    f"error: {append_to} has a different header, so "
+                    "appending would put values in the wrong columns.\n"
+                    f"  file:     {','.join(existing)}\n"
+                    f"  exporter: {','.join(expected)}\n"
+                    "Reconcile the columns, or write to stdout and merge "
+                    "by hand.",
+                    err=True,
+                )
+                _handle_exit_code(1)
+                return
         append_to.parent.mkdir(parents=True, exist_ok=True)
         with append_to.open("a", encoding="utf-8") as fh:
             fh.write(format_csv([row], header=not exists))

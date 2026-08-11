@@ -40,7 +40,9 @@ ezpz export-amsc <run-dir> --config agpt-2b/bs1/seq2048/tp1 \
 !!! warning "Throughput is a post-warmup median"
 
     Step 1 is routinely an order of magnitude slower — compile,
-    allocator warmup, lazy init. A real Sunspot `agpt-2b` series:
+    allocator warmup, lazy init. A real `agpt-2b` series from Sunspot
+    (which `get_machine()` reports as the literal `SunSpot`, hence the
+    `system` value above):
 
     ```text
     1045, 34601, 34686, 34715, 34833, 34650

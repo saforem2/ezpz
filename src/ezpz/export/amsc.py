@@ -117,6 +117,33 @@ _METRIC_MAP: dict[str, str] = {
 }
 
 
+def _looks_like_metrics(path: Path, *, probe_lines: int = 5) -> bool:
+    """Does this JSONL hold metric records rather than log lines?
+
+    ``finalize`` symlinks the structured LOG into the run directory
+    alongside the metrics, and both are ``*.jsonl``. Log records have
+    ``message``/``levelname`` and no ``metrics`` key, so a few lines are
+    enough to tell them apart without reading the whole file.
+    """
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for _, line in zip(range(probe_lines), handle):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict) and isinstance(
+                    payload.get("metrics"), dict
+                ):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def load_run_metrics(run_dir: Path | str) -> list[dict[str, Any]]:
     """Read every per-step metrics record under ``run_dir``.
 
@@ -134,44 +161,62 @@ def load_run_metrics(run_dir: Path | str) -> list[dict[str, Any]]:
     if not root.is_dir():
         raise AmscExportError(f"not a directory: {root}")
 
+    # Three naming schemes are in play: `metrics-<rank>.jsonl` (fsdp_tp,
+    # fsdp, diffusion), `metrics.jsonl` (vit, test, minimal, hf), and
+    # `<run_id>.jsonl` -- what History writes when the caller does not
+    # name the file (history.py:419). Missing the last one made the
+    # exporter fail outright on any default History run.
     files = sorted(root.rglob("metrics-*.jsonl")) or sorted(
         root.rglob("metrics.jsonl")
     )
     if not files:
+        # Fall back to any JSONL that actually carries metric records,
+        # excluding the structured LOG (which has "message"/"levelname"
+        # keys and no "metrics") that finalize symlinks into the run dir.
+        files = [
+            p
+            for p in sorted(root.rglob("*.jsonl"))
+            if _looks_like_metrics(p)
+        ]
+    if not files:
         raise AmscExportError(
             f"no metrics JSONL found under {root}. Expected "
-            "metrics-<rank>.jsonl or metrics.jsonl -- is this an ezpz "
-            "run directory?"
+            "metrics-<rank>.jsonl, metrics.jsonl, or a <run_id>.jsonl "
+            "containing metric records -- is this an ezpz run directory?"
         )
 
     records: list[dict[str, Any]] = []
     for path in files:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                # A run killed mid-write leaves a truncated final line.
-                continue
-            metrics = payload.get("metrics")
-            if not isinstance(metrics, dict):
-                continue
-            numeric = {
-                k: v
-                for k, v in metrics.items()
-                if isinstance(v, (int, float)) and not isinstance(v, bool)
-            }
-            if not numeric:
-                continue  # e.g. the all-strings precision/* record
-            records.append(
-                {
-                    "timestamp": payload.get("timestamp"),
-                    "rank": payload.get("rank", 0),
-                    "metrics": numeric,
+        # Stream: a long run's JSONL is large, and reading it whole just
+        # to split it doubles peak RSS for no benefit.
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    # A killed run leaves a truncated final line.
+                    continue
+                metrics = payload.get("metrics")
+                if not isinstance(metrics, dict):
+                    continue
+                numeric = {
+                    k: v
+                    for k, v in metrics.items()
+                    if isinstance(v, (int, float))
+                    and not isinstance(v, bool)
                 }
-            )
+                if not numeric:
+                    continue  # e.g. the all-strings precision/* record
+                records.append(
+                    {
+                        "timestamp": payload.get("timestamp"),
+                        "rank": payload.get("rank", 0),
+                        "metrics": numeric,
+                    }
+                )
 
     if not records:
         raise AmscExportError(f"no numeric metric records under {root}")
@@ -209,12 +254,8 @@ def _provenance_from_report(root: Path) -> dict[str, Any]:
             continue
         if "### Distributed" not in text:
             continue
-        section = text.split("### Distributed", 1)[1]
-        # Stop at the next heading of any level.
-        for line in section.splitlines()[1:]:
-            if line.startswith("#"):
-                break
-        section = section.split("\n#", 1)[0]
+        # Take the section, stopping at the next heading of any level.
+        section = text.split("### Distributed", 1)[1].split("\n#", 1)[0]
         found: dict[str, Any] = {}
         for line in section.splitlines():
             line = line.strip()
@@ -385,7 +426,16 @@ def to_amsc_row(
     #
     # So derive from the ranks actually participating, and only fall
     # back to the allocation when that is unavailable.
-    in_use = _prov_int("WORLD_SIZE_IN_USE") or _prov_int("world_size")
+    # `WORLD_SIZE_IN_USE` is MPI-only (`get_world_size_in_use` calls
+    # `MPI.COMM_WORLD.Get_size()` and falls back to 1), so under
+    # torchrun -- where MPI may be absent or every rank is a singleton
+    # COMM_WORLD -- it reads 1 while the lowercase `world_size` field
+    # correctly reflects $WORLD_SIZE. Take the larger: both describe the
+    # same quantity, and the failure mode of each is to under-report.
+    in_use = max(
+        _prov_int("WORLD_SIZE_IN_USE") or 0,
+        _prov_int("world_size") or 0,
+    ) or None
     per_node = _prov_int("GPUS_PER_NODE")
     if gpus is None:
         gpus = in_use if in_use is not None else _prov_int("NGPUS")
