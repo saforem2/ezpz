@@ -80,6 +80,15 @@ at step 0. An adapted model's output is bit-identical to the base model's
 before any training — so a bad adapter can never silently corrupt your
 starting point.
 
+That guarantee survives `--meta-init`. Adapters are built on the base
+layer's own device and dtype — so a `meta` base gives `meta` adapters
+(meta-init is not quietly defeated) and a bf16 base gives bf16 adapters
+(no dtype mismatch on the first adapter matmul). `to_empty()` leaves
+their storage uninitialized and `Transformer.init_weights` only reaches
+the *base* weights through the wrapper, so `parallelize` re-initializes
+every adapter afterwards; without that, `B` would not be zero and
+training would start from whatever was in memory.
+
 ## The decoupled step
 
 The example's loop and the client below run the **same** implementation
@@ -96,8 +105,9 @@ for batch in loader:
 
 Splitting the two is what makes these possible:
 
-**Gradient accumulation** — pass several microbatches; each is scaled by
-`1/N` for you, and the result matches one batch of the same total size:
+**Gradient accumulation** — pass several microbatches; each is scaled
+for you by its share of the tokens, so the result matches one batch of
+the same total size:
 
 ```python
 client.forward_backward([mb0, mb1, mb2, mb3]).result()   # accumulate
@@ -116,6 +126,22 @@ optimizer.
 does not change the client API. Only `cross_entropy` is implemented today;
 the others raise `NotImplementedError` rather than silently misbehaving.
 
+`forward_backward` accepts a raw tensor, an `{"input_ids": ...}` dict, a
+`ModelInput`, or a `Datum` — the Tinker-shaped form works as advertised:
+
+```python
+from ezpz.tinker import Datum, ModelInput
+client.forward_backward([Datum(model_input=ModelInput(token_ids=ids),
+                               loss_fn_inputs={})]).result()
+```
+
+**Ragged microbatches are weighted by tokens**, not by count. Each
+microbatch's cross-entropy is already a mean over its own tokens, so
+scaling them all by `1/N` would give a 300-token and a 100-token
+microbatch equal pull where a single combined batch weights them
+0.75/0.25. Microbatches with no valid targets are skipped — their loss
+is `0/0`.
+
 Calls return a future (`.result()`). It resolves immediately — the shape
 exists so a remote backend could be added without touching call sites.
 
@@ -126,7 +152,11 @@ client.save_state("./ckpts", adapters_only=True).result()   # default
 ```
 
 This passes `StateDictOptions(ignore_frozen_params=True)` to the existing
-DCP layer, so only the trainable adapters are written.
+DCP layer, so only the trainable adapters are written. Pass
+`overwrite=True` to clear an existing checkpoint at that step first —
+without it DCP writes into the existing directory and can leave a mix of
+old and new shards. (`ttl_seconds` is accepted for signature
+compatibility with Tinker and ignored; local checkpoints never expire.)
 
 Restore it with the matching flag — `load_state` defaults to
 `adapters_only=True` for the same reason `save_state` does, so the
