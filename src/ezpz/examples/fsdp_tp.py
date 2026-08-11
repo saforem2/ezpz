@@ -2043,6 +2043,10 @@ def parallelize(
         # module without raising -- so retargeting an unwrapped `output`
         # would leave it an unsharded nn.Linear that dies on its first
         # DTensor input.
+        #
+        # Computed once: the module tree does not change between here and
+        # the per-block loop, and each call walks every submodule.
+        _has_lora = _lora_is_applied(model)
         root_tp_plan = {
             "tok_embeddings": RowwiseParallel(
                 input_layouts=Replicate(),
@@ -2059,7 +2063,7 @@ def parallelize(
                 use_local_output=bool(loss_parallel),
             ),
         }
-        if _lora_is_applied(model):
+        if _has_lora:
             root_tp_plan = _lora.lora_tp_plan(root_tp_plan, model)
         model = parallelize_module(model, tp_mesh, root_tp_plan)
 
@@ -2091,7 +2095,7 @@ def parallelize(
             # Bind a per-block plan rather than reassigning `layer_tp_plan`:
             # that would feed layer 2 the plan already retargeted for layer 1.
             block_tp_plan = layer_tp_plan
-            if _lora_is_applied(model):
+            if _has_lora:
                 block_tp_plan = _lora.lora_tp_plan(
                     layer_tp_plan, transformer_block
                 )
@@ -2140,6 +2144,13 @@ def parallelize(
         assert device is not None, "meta_init=True requires a device"
         model.to_empty(device=device)
         model.init_weights(buffer_device=device)  # type: ignore
+        # `Transformer.init_weights` walks Attention/FeedForward, which
+        # reach through LoRALinear's `.weight` proxy to the BASE weight
+        # only -- nothing calls LoRALinear.init_weights, so `A`/`B` keep
+        # whatever `to_empty` left in their storage. A non-zero `B`
+        # breaks the "adapter is an exact no-op at step 0" guarantee and
+        # starts training from garbage or NaNs. Reset them explicitly.
+        _lora.reset_lora_after_materialize(model)
 
     _configure_fsdp_gradient_division(model)
 

@@ -30,6 +30,7 @@ from ezpz.tinker.lora import (
     adapter_state_dict,
     apply_lora,
     iter_lora_modules,
+    reset_lora_after_materialize,
     lora_tp_plan,
     merge_adapters,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "adapter_state_dict",
     "apply_lora",
     "iter_lora_modules",
+    "reset_lora_after_materialize",
     "lora_tp_plan",
     "merge_adapters",
 ]

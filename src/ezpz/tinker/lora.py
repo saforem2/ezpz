@@ -140,10 +140,19 @@ class LoRALinear(nn.Module):
 
         # Named A/B (not lora_A/lora_B) so the TP plan keys read naturally:
         # "attention.wq.A" / "attention.wq.B".
-        self.A = nn.Linear(base.in_features, self.rank, bias=False)
-        self.B = nn.Linear(self.rank, base.out_features, bias=False)
+        #
+        # Inherit the base's device AND dtype. Without this the adapters
+        # are built with the process defaults (cpu/float32): a bf16 base
+        # then dies on its first adapter matmul with `expected m1 and m2
+        # to have the same dtype`, and a base on `meta` gets adapters
+        # with REAL cpu storage, silently defeating meta-init on exactly
+        # the large models it exists for.
+        factory = {"device": base.weight.device, "dtype": base.weight.dtype}
+        self.A = nn.Linear(base.in_features, self.rank, bias=False, **factory)
+        self.B = nn.Linear(self.rank, base.out_features, bias=False, **factory)
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
-        self.reset_lora_parameters()
+        if not self.A.weight.is_meta:
+            self.reset_lora_parameters()
 
     # -- init ---------------------------------------------------------------
 
@@ -399,6 +408,29 @@ def _adapter_out_style(style: Any) -> Any:
         output_layouts=_first(style.output_layouts),
         use_local_output=style.use_local_output,
     )
+
+
+def reset_lora_after_materialize(model: nn.Module) -> int:
+    """Re-initialize every adapter after ``to_empty()``. Returns the count.
+
+    ``Transformer.init_weights`` reaches through :class:`LoRALinear`'s
+    ``.weight`` proxy to the *base* weight only -- no code path calls
+    :meth:`LoRALinear.init_weights`. So on the meta-init path ``A`` and
+    ``B`` keep whatever ``to_empty`` left in their storage, and a
+    non-zero ``B`` silently breaks the "adapter is an exact no-op at
+    step 0" guarantee: training starts from garbage or NaNs on exactly
+    the large models meta-init exists for.
+
+    Safe and free when no adapters are present (returns 0), so callers
+    need not check first.
+    """
+    n = 0
+    for _, mod in iter_lora_modules(model):
+        mod.reset_lora_parameters()
+        n += 1
+    if n:
+        logger.info("Re-initialized %d LoRA adapter(s) after to_empty()", n)
+    return n
 
 
 def iter_lora_modules(model: nn.Module) -> Iterable[tuple[str, LoRALinear]]:

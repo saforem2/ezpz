@@ -34,6 +34,7 @@ from ezpz.tinker.lora import (  # noqa: E402
     iter_lora_modules,
     lora_tp_plan,
     merge_adapters,
+    reset_lora_after_materialize,
 )
 
 
@@ -507,3 +508,112 @@ class TestExportHelpers:
         with torch.no_grad():
             after = merged(tokens)
         torch.testing.assert_close(after, adapted, rtol=1e-5, atol=1e-5)
+
+
+class TestAdapterDeviceAndDtype:
+    """Adapters must inherit the base's device and dtype.
+
+    Built with the process defaults instead, a bf16 base gets fp32
+    adapters and dies on its first adapter matmul, and a base on `meta`
+    gets adapters with REAL cpu storage -- silently defeating meta-init
+    on exactly the large models it exists for. (Codex P1 on #207.)
+    """
+
+    def test_dtype_follows_the_base(self):
+        base = nn.Linear(16, 16, bias=False, dtype=torch.bfloat16)
+        w = LoRALinear(base, rank=4)
+        assert w.A.weight.dtype == torch.bfloat16
+        assert w.B.weight.dtype == torch.bfloat16
+
+    def test_bf16_forward_does_not_raise(self):
+        # Pre-fix: RuntimeError: expected m1 and m2 to have the same
+        # dtype, but got: c10::BFloat16 != float
+        base = nn.Linear(16, 16, bias=False, dtype=torch.bfloat16)
+        w = LoRALinear(base, rank=4)
+        out = w(torch.randn(2, 16, dtype=torch.bfloat16))
+        assert out.shape == (2, 16)
+
+    def test_meta_base_keeps_adapters_on_meta(self):
+        with torch.device("meta"):
+            base = nn.Linear(16, 16, bias=False)
+        w = LoRALinear(base, rank=4)
+        assert w.A.weight.is_meta and w.B.weight.is_meta, (
+            "adapters allocated real storage for a meta base; meta-init "
+            "exists to avoid exactly this"
+        )
+
+
+class TestResetAfterMaterialize:
+    """`to_empty()` leaves adapter storage uninitialized.
+
+    `Transformer.init_weights` reaches through LoRALinear's `.weight`
+    proxy to the BASE weight only -- nothing calls
+    `LoRALinear.init_weights`. So on the meta-init path `B` keeps
+    whatever was in memory, breaking "adapter is an exact no-op at step
+    0" and starting training from garbage. (Codex P1 on #207.)
+    """
+
+    @staticmethod
+    def _meta_model():
+        from ezpz.models.llama import ModelArgs, Transformer
+
+        cfg = ModelArgs(
+            dim=64, n_layers=1, n_heads=4, n_kv_heads=4, vocab_size=128,
+            multiple_of=8, hidden_dim=128, max_seq_len=32, depth_init=True,
+        )
+        with torch.device("meta"):
+            model = Transformer.from_model_args(cfg)
+        return apply_lora(model, LoraConfig(rank=4), verbose=False)
+
+    def test_init_weights_alone_leaves_B_dirty(self):
+        """Pins WHY the extra call is needed -- not a redundant step."""
+        model = self._meta_model()
+        model.to_empty(device="cpu")
+        for _, mod in iter_lora_modules(model):
+            mod.B.weight.data.fill_(7.0)
+        model.init_weights()
+        dirty = [
+            n for n, mod in iter_lora_modules(model)
+            if float(mod.B.weight.detach().abs().max()) != 0.0
+        ]
+        assert dirty, (
+            "Transformer.init_weights now resets adapters on its own; "
+            "reset_lora_after_materialize may be redundant -- re-check "
+            "before deleting it"
+        )
+
+    def test_reset_zeroes_every_B(self):
+        model = self._meta_model()
+        model.to_empty(device="cpu")
+        for _, mod in iter_lora_modules(model):
+            mod.B.weight.data.fill_(7.0)
+            mod.A.weight.data.fill_(7.0)
+        model.init_weights()
+        n = reset_lora_after_materialize(model)
+        assert n == 7, f"expected 7 adapters, reset {n}"
+        for name, mod in iter_lora_modules(model):
+            assert float(mod.B.weight.detach().abs().max()) == 0.0, name
+            # A must be re-randomized, not left at the poison value
+            assert float(mod.A.weight.detach().abs().max()) != 7.0, name
+
+    def test_no_adapters_is_a_free_noop(self):
+        from ezpz.models.llama import ModelArgs, Transformer
+
+        cfg = ModelArgs(
+            dim=64, n_layers=1, n_heads=4, n_kv_heads=4, vocab_size=128,
+            multiple_of=8, hidden_dim=128, max_seq_len=32, depth_init=True,
+        )
+        assert reset_lora_after_materialize(
+            Transformer.from_model_args(cfg)
+        ) == 0
+
+    def test_fsdp_tp_calls_it_on_the_meta_path(self):
+        import inspect
+
+        from ezpz.examples import fsdp_tp
+
+        src = inspect.getsource(fsdp_tp.parallelize)
+        assert "reset_lora_after_materialize" in src, (
+            "the meta-init path no longer resets adapters; B would keep "
+            "whatever to_empty left in its storage"
+        )
