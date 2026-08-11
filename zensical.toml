@@ -82,6 +82,7 @@ nav = [
         { "🗜️ <code>ezpz tar-env</code>" = "cli/tar-env.md" },
         { "🩺 <code>ezpz doctor</code>" = "cli/doctor.md" },
         { "💀 <code>ezpz kill</code>" = "cli/kill.md" },
+        { "📤 <code>ezpz export-amsc</code>" = "cli/export-amsc.md" },
         { "🧪 Experimental" = [
             { "✍️ <code>ezpz generate</code>" = "cli/generate.md" },
             { "🖥️ <code>ezpz generate_tui</code>" = "cli/generate-tui.md" },
