@@ -1984,6 +1984,33 @@ def _setup_ddp(
         master_addr = broadcast(master_addr, root=0)
         master_port = broadcast(master_port, root=0)
 
+        # Non-zero ranks start with None and depend on the broadcast to
+        # deliver rank 0's values. If it degenerates -- every rank its
+        # own COMM_WORLD, which is what happens when mpi4py loads an MPI
+        # that cannot reach the launcher's PMI -- the None survives and
+        # `str(None)` hands torch the literal "None". torch then fails
+        # eleven frames down in rendezvous.py with `invalid literal for
+        # int() with base 10: 'None'`, naming neither MPI nor the
+        # broadcast. Fail here, where we know what actually went wrong.
+        if master_addr is None or master_port is None:
+            missing = ", ".join(
+                n
+                for n, v in (
+                    ("MASTER_ADDR", master_addr),
+                    ("MASTER_PORT", master_port),
+                )
+                if v is None
+            )
+            raise RuntimeError(
+                f"{missing} is still None on rank {rank} after the MPI "
+                "broadcast from rank 0. The broadcast did not propagate, "
+                "which usually means each rank is its own COMM_WORLD "
+                "(mpi4py loaded an MPI that cannot reach the launcher's "
+                "PMI -- check that libmpi matches the launcher, e.g. "
+                "MPICH with PALS). Workaround: set MASTER_ADDR and "
+                "MASTER_PORT in the environment to skip this path."
+            )
+
     os.environ["MASTER_ADDR"] = str(master_addr)
     os.environ["MASTER_PORT"] = str(master_port)
 
