@@ -210,3 +210,151 @@ class TestBuilder:
     def test_build_training_client(self):
         c, _, _ = _client()
         assert isinstance(build_training_client(c.state), LocalTrainingClient)
+
+
+class TestRaggedMicrobatchWeighting:
+    """Ragged microbatches must weight by tokens, not by count.
+
+    Each microbatch's cross-entropy is already a mean over its own
+    tokens, so a uniform `1/N` scale gives a 300-token and a 100-token
+    microbatch equal pull where one combined batch would weight them
+    0.75 / 0.25. (Codex P1 + Copilot on #207.)
+    """
+
+    @staticmethod
+    def _padded(rows, t=9, vocab=32, pad=0):
+        """rows = list of real-token counts; the rest is pad."""
+        out = torch.full((len(rows), t), pad, dtype=torch.long)
+        g = torch.Generator().manual_seed(7)
+        for i, n in enumerate(rows):
+            out[i, :n] = torch.randint(1, vocab, (n,), generator=g)
+        return out
+
+    class _DS:
+        pad_id = 0
+
+    def test_accumulated_grad_matches_one_combined_batch(self):
+        """The whole point of the scale: N microbatches == 1 big batch."""
+        long_mb = self._padded([9, 9])
+        short_mb = self._padded([3, 3])
+
+        # (a) two ragged microbatches, accumulated
+        c1, m1, o1 = _client(seed=1, dataset=self._DS())
+        c1.forward_backward([long_mb, short_mb]).result()
+        acc = torch.cat([p.grad.flatten() for p in m1.parameters()])
+
+        # (b) the same rows as a single batch
+        c2, m2, o2 = _client(seed=1, dataset=self._DS())
+        c2.forward_backward([torch.cat([long_mb, short_mb], dim=0)]).result()
+        combined = torch.cat([p.grad.flatten() for p in m2.parameters()])
+
+        cos = torch.nn.functional.cosine_similarity(
+            acc.unsqueeze(0), combined.unsqueeze(0)
+        ).item()
+        assert cos > 0.999, (
+            f"accumulated gradient diverges from the combined batch "
+            f"(cosine {cos:.4f}); microbatches are not token-weighted"
+        )
+
+    def test_zero_token_microbatch_contributes_nothing_to_loss(self):
+        """`max(num_tokens, 1)` gave an all-pad microbatch full weight."""
+        real = self._padded([9, 9])
+        empty = torch.zeros((2, 9), dtype=torch.long)  # all pad -> 0 valid
+
+        c, _, _ = _client(seed=2, dataset=self._DS())
+        with_empty = c.forward_backward([real, empty]).result().loss
+
+        c2, _, _ = _client(seed=2, dataset=self._DS())
+        alone = c2.forward_backward([real]).result().loss
+
+        assert with_empty == pytest.approx(alone, rel=1e-6), (
+            f"the empty microbatch shifted the reported loss "
+            f"({alone:.6f} -> {with_empty:.6f})"
+        )
+
+    def test_all_empty_reports_zero_tokens_and_does_not_crash(self):
+        """Every microbatch empty is a caller error, not a case to paper over.
+
+        Cross-entropy over zero valid targets is genuinely undefined, so
+        the loss is NaN and `num_tokens` is 0. What matters is that the
+        call returns those honestly instead of raising ZeroDivisionError
+        or silently reporting a plausible number.
+        """
+        import math
+
+        empty = torch.zeros((2, 9), dtype=torch.long)
+        c, _, _ = _client(seed=3, dataset=self._DS())
+        out = c.forward_backward([empty, empty]).result()
+        assert out.num_tokens == 0
+        assert math.isnan(out.loss), (
+            "an all-empty batch reported a finite loss; that would hide "
+            "a broken input pipeline"
+        )
+
+    def test_num_tokens_excludes_pads(self):
+        from ezpz.tinker.step import prepare_batch
+
+        c, _, _ = _client(seed=4, dataset=self._DS())
+        pb = prepare_batch(c.state, self._padded([3], t=9))
+        # 9 tokens -> 8 labels after the shift; 2 real (positions 1,2)
+        assert pb.num_tokens == 2, (
+            f"num_tokens={pb.num_tokens} counts pads; the client would "
+            "weight microbatches by padding rather than content"
+        )
+
+
+class TestDatumContract:
+    """The exported, documented Tinker input type must actually work."""
+
+    def test_datum_is_accepted(self):
+        from ezpz.tinker.types import Datum, ModelInput
+
+        c, _, _ = _client(seed=5)
+        d = Datum(
+            model_input=ModelInput(token_ids=list(range(1, 10))),
+            loss_fn_inputs={},
+        )
+        out = c.forward_backward([d]).result()
+        assert out.num_tokens > 0
+
+    def test_model_input_is_accepted(self):
+        from ezpz.tinker.types import ModelInput
+
+        c, _, _ = _client(seed=6)
+        out = c.forward_backward(
+            [ModelInput(token_ids=list(range(1, 10)))]
+        ).result()
+        assert out.num_tokens > 0
+
+    def test_unsupported_type_names_what_is_allowed(self):
+        c, _, _ = _client(seed=7)
+        with pytest.raises(TypeError, match="ModelInput.*Datum|Datum"):
+            c.forward_backward(["not a batch"]).result()
+
+
+class TestAdapterCheckpointRoundTrip:
+    """save_state defaults to adapters_only, so load_state must too."""
+
+    def test_load_state_defaults_match_save_state(self):
+        import inspect
+
+        from ezpz.tinker.client import LocalTrainingClient
+
+        save = inspect.signature(LocalTrainingClient.save_state)
+        load = inspect.signature(LocalTrainingClient.load_state)
+        assert "adapters_only" in load.parameters, (
+            "load_state cannot restore what save_state writes by default"
+        )
+        assert (
+            load.parameters["adapters_only"].default
+            == save.parameters["adapters_only"].default
+        ), "save/load adapters_only defaults disagree; round-trip breaks"
+
+    def test_load_checkpoint_accepts_state_dict_options(self):
+        import inspect
+
+        from ezpz.examples._checkpoint import load_checkpoint
+
+        assert "state_dict_options" in inspect.signature(
+            load_checkpoint
+        ).parameters

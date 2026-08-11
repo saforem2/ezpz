@@ -25,8 +25,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Generic, Optional, Sequence, TypeVar
 
+import torch
+
 import ezpz
-from ezpz.tinker.step import TrainState, forward_backward, optim_step
+from ezpz.tinker.step import (
+    TrainState,
+    forward_backward,
+    optim_step,
+    prepare_batch,
+)
 from ezpz.tinker.types import (
     AdamParams,
     ForwardBackwardOutput,
@@ -107,34 +114,69 @@ class LocalTrainingClient:
     ) -> ImmediateFuture[ForwardBackwardOutput]:
         """Accumulate gradients over ``data``; do not update.
 
-        ``data`` is a sequence of microbatches. Each is scaled by
-        ``1/len(data)`` so the accumulated gradient equals what a single
-        batch of the same total size would produce -- the caller should
-        not have to remember to scale.
+        ``data`` is a sequence of microbatches, each scaled so the
+        accumulated gradient equals what one batch of the same total
+        size would produce -- the caller should not have to remember to
+        scale.
 
-        Returns the token-weighted mean loss, which is the correct
-        average for ragged microbatches (a plain mean would over-weight
-        short ones).
+        The scale is each microbatch's **share of the valid tokens**,
+        not ``1/len(data)``. Every microbatch's cross-entropy is already
+        a mean over its own tokens, so a uniform ``1/N`` gives a
+        300-token and a 100-token microbatch equal pull (0.5 / 0.5)
+        where a single combined batch would weight them 0.75 / 0.25.
+        That silently changes results for ragged or differently padded
+        inputs.
+
+        Counting tokens needs a forward pass, so this runs
+        :func:`prepare_batch` first to size every microbatch, then does
+        the scaled forward+backward. The extra pass is cheap: it moves
+        and shifts tensors, no model call.
+
+        Returns the token-weighted mean loss -- the correct average for
+        ragged microbatches.
         """
         if not data:
             raise ValueError("forward_backward requires at least one batch")
 
-        scale = 1.0 / len(data)
+        # Pass 1: size each microbatch (no model, no autograd).
+        with torch.no_grad():
+            counts = [prepare_batch(self._state, b).num_tokens for b in data]
+        total_tokens = sum(counts)
+        # All-empty (or an unlabeled loss) -> fall back to uniform, which
+        # is what "no token information" can honestly support.
+        scales = (
+            [c / total_tokens for c in counts]
+            if total_tokens > 0
+            else [1.0 / len(data)] * len(data)
+        )
+
+        # Pass 2: the real work.
         total_loss = 0.0
-        total_tokens = 0
         outputs: list[ForwardBackwardOutput] = []
-        for batch in data:
+        for batch, count, scale in zip(data, counts, scales):
+            if count == 0 and total_tokens > 0:
+                # Nothing to score. Cross-entropy over zero valid targets
+                # is 0/0 = NaN, which would poison the weighted mean via
+                # `0 * NaN`, and its gradient is meaningless. Skip it --
+                # cheaper and correct. (When EVERY microbatch is empty we
+                # still run them, so the caller gets a real error rather
+                # than a silent no-op.)
+                continue
             out = forward_backward(
                 self._state, batch, loss_fn, loss_scale=scale
             )
             outputs.append(out)
-            total_tokens += out.num_tokens
-            total_loss += out.loss * max(out.num_tokens, 1)
+            # Weight by ACTUAL tokens, not max(n, 1), which gave an empty
+            # microbatch full weight whenever any other had tokens.
+            total_loss += out.loss * out.num_tokens
 
-        denom = total_tokens if total_tokens > 0 else len(outputs)
+        if total_tokens > 0:
+            mean_loss = total_loss / total_tokens
+        else:
+            mean_loss = sum(o.loss for o in outputs) / len(outputs)
         return ImmediateFuture(
             ForwardBackwardOutput(
-                loss=total_loss / denom,
+                loss=mean_loss,
                 num_tokens=total_tokens,
                 metrics={"num_microbatches": float(len(outputs))},
             )
@@ -154,7 +196,7 @@ class LocalTrainingClient:
         *,
         adapters_only: bool = True,
         ttl_seconds: Optional[int] = None,  # noqa: ARG002
-        overwrite: bool = False,  # noqa: ARG002
+        overwrite: bool = False,
     ) -> ImmediateFuture[SaveWeightsResponse]:
         """Checkpoint through the existing DCP layer.
 
@@ -163,6 +205,17 @@ class LocalTrainingClient:
         one. It maps to
         ``StateDictOptions(ignore_frozen_params=True)``; with no frozen
         params it is simply a no-op.
+
+        Args:
+            overwrite: remove an existing checkpoint at this step before
+                writing. Without it DCP writes into the existing
+                directory, which can leave a mix of old and new shards.
+            ttl_seconds: **accepted and ignored.** It exists so a loop
+                written against Tinker's signature runs here unchanged;
+                expiry is a hosted-service concern with no local
+                meaning, and silently dropping the argument is better
+                than rejecting an otherwise-portable call. Local
+                checkpoints never expire -- delete them yourself.
         """
         from ezpz.examples._checkpoint import save_checkpoint
 
@@ -171,6 +224,14 @@ class LocalTrainingClient:
             from torch.distributed.checkpoint.state_dict import StateDictOptions
 
             options = StateDictOptions(ignore_frozen_params=True)
+
+        if overwrite:
+            import shutil
+
+            stale = Path(name) / f"step-{self._state.global_step}"
+            if stale.is_dir():
+                logger.info("overwrite=True: removing %s", stale)
+                shutil.rmtree(stale)
 
         path = save_checkpoint(
             Path(name),
@@ -187,11 +248,32 @@ class LocalTrainingClient:
             )
         )
 
-    def load_state(self, path: str) -> ImmediateFuture[Optional[dict[str, Any]]]:
+    def load_state(
+        self, path: str, *, adapters_only: bool = True
+    ) -> ImmediateFuture[Optional[dict[str, Any]]]:
+        """Restore a checkpoint written by :meth:`save_state`.
+
+        ``adapters_only`` must MATCH the save. It defaults to True for
+        the same reason ``save_state`` does, so the client can round-trip
+        its own default: an adapter-only checkpoint holds no frozen base
+        weights, and shaping the load with full-state options would ask
+        DCP for keys the checkpoint does not contain.
+        """
         from ezpz.examples._checkpoint import load_checkpoint
 
+        options = None
+        if adapters_only:
+            from torch.distributed.checkpoint.state_dict import (
+                StateDictOptions,
+            )
+
+            options = StateDictOptions(ignore_frozen_params=True)
+
         meta = load_checkpoint(
-            Path(path), self._state.model, self._state.optimizer
+            Path(path),
+            self._state.model,
+            self._state.optimizer,
+            state_dict_options=options,
         )
         if meta:
             self._state.global_step = int(meta.get("step", 0) or 0)

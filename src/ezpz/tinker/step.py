@@ -104,6 +104,10 @@ class PreparedBatch:
     labels: torch.Tensor
     attn_mask: Optional[torch.Tensor] = None
     num_tokens: int = 0
+    """VALID (non-ignored) targets, i.e. ``(labels != -100).sum()`` --
+    the same notion ``ForwardBackwardOutput.num_tokens`` uses. Counting
+    raw ``labels.numel()`` here would silently mean two different things
+    by the same name; the client weights microbatches by this."""
 
 
 def prepare_batch(state: TrainState, batch: Any) -> PreparedBatch:
@@ -113,13 +117,28 @@ def prepare_batch(state: TrainState, batch: Any) -> PreparedBatch:
     (ignore mask). The SP-slicing that sat in between needs the model's
     output shape, so it happens in :func:`forward_backward` instead.
     """
+    from ezpz.tinker.types import Datum, ModelInput
+
     attn_mask = None
-    if isinstance(batch, dict) and "input_ids" in batch:
+    if isinstance(batch, Datum):
+        # The exported, documented Tinker contract. Without this branch
+        # a caller following the advertised API trips the isinstance
+        # assert below before the model ever runs.
+        batch = batch.model_input
+    if isinstance(batch, ModelInput):
+        x = torch.as_tensor(batch.token_ids, dtype=torch.long)
+        if x.ndim == 1:  # a single sequence -> batch of 1
+            x = x.unsqueeze(0)
+    elif isinstance(batch, dict) and "input_ids" in batch:
         x = batch["input_ids"]
         attn_mask = batch.get("attention_mask")
     else:
         x = batch
-    assert isinstance(x, torch.Tensor)
+    if not isinstance(x, torch.Tensor):
+        raise TypeError(
+            f"prepare_batch got {type(x).__name__}; expected a Tensor, a "
+            "dict with 'input_ids', a ModelInput, or a Datum"
+        )
     x = x.to(state.device)
     x = x.to(torch.long)
     # Both branches of the original `if args.dataset == "random"` did the
@@ -134,8 +153,41 @@ def prepare_batch(state: TrainState, batch: Any) -> PreparedBatch:
         inp=inp,
         labels=labels,
         attn_mask=attn_mask,
-        num_tokens=int(labels.numel()),
+        num_tokens=count_valid_tokens(state, labels, attn_mask),
     )
+
+
+def count_valid_tokens(
+    state: TrainState,
+    labels: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+) -> int:
+    """How many targets the loss will actually score.
+
+    :func:`_apply_ignore_mask` runs inside :func:`forward_backward`,
+    AFTER the model call -- it needs the output shape for the
+    sequence-parallel slice. So at :func:`prepare_batch` time the labels
+    still contain pads, and a naive ``(labels != -100).sum()`` there
+    counts every one of them.
+
+    This predicts the post-mask count from the pad id and attention mask
+    without mutating anything, so callers that must size a batch BEFORE
+    running it -- e.g. weighting ragged microbatches in
+    :meth:`~ezpz.tinker.client.LocalTrainingClient.forward_backward` --
+    get the real number. The SP slice only drops positions this rank
+    does not own, so it does not change the global count.
+    """
+    ignore = labels == -100
+    pad_id = getattr(state.dataset, "pad_id", None)
+    if pad_id is not None:
+        ignore = ignore | (labels == int(pad_id))
+    if attn_mask is not None:
+        attn_labels = (
+            attn_mask[:, 1:] if attn_mask.shape[1] > 1 else attn_mask
+        )
+        if attn_labels.shape == labels.shape:
+            ignore = ignore | (attn_labels == 0)
+    return int((~ignore).sum().item())
 
 
 def _apply_ignore_mask(
