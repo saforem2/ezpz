@@ -93,7 +93,6 @@ specializes kernels — subsequent steps drop to the steady-state `dt`. See the
 
   Presets live in `MODEL_PRESETS` near the top of
   `src/ezpz/examples/vit.py`; tweak the dict to add your own.
-
 - **Tune individual architecture knobs** — `--img_size`, `--patch_size`,
   `--num_heads`, `--head_dim`, `--depth`, `--embed_dim` all override the preset.
 - **Enable FSDP** — pass `--fsdp` (and optionally `--fsdp_sharding_strategy`)

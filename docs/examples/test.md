@@ -44,7 +44,6 @@ ezpz launch python3 -m ezpz.examples.test
   batch sizes halve at each rung to compensate. The MLP is
   architecturally trivial — depth/width is the only knob, so layer_sizes
   grows aggressively at the top of the ladder.
-
 - **Override individual dims** — `--layer-sizes 4096 2048 1024` overrides
   the preset's hidden-layer widths; `--batch-size N` overrides batch.
 - **Compile with torch.compile** — pass `--compile` to wrap the model with

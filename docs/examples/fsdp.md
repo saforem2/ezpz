@@ -92,7 +92,6 @@ log captured on Sunspot).
   of dense linear weights). The CNN is intentionally trivial — sizes
   mainly stress-test FSDP wrapping, not real CNN topology. Presets live
   in `MODEL_PRESETS` near the top of `src/ezpz/examples/fsdp.py`.
-
 - **Train on a bigger dataset** — `--dataset {MNIST,OpenImages,ImageNet,ImageNet1k}`
   routes through `get_data()` to dataset-specific loaders in `ezpz.data.vision`.
 - **Switch the FSDP compute dtype** — pass `--dtype {bf16,fp16,fp32}`. The value

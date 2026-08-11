@@ -82,7 +82,6 @@ Toward the end of the run, decoded samples are logged on rank 0 (look for
 
   Presets live in `MODEL_PRESETS` near the top of
   `src/ezpz/examples/diffusion.py`.
-
 - **Tune the diffusion process** — `--timesteps`, `--seq-len`, `--train-steps`
   control the noise schedule length, sequence length, and total optimizer
   steps. Explicit flags override the preset.
