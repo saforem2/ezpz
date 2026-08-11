@@ -646,6 +646,42 @@ class History:
 
         return summary
 
+    def _write_run_info(
+        self, base_dir: Path, env_details: dict[str, Any]
+    ) -> Optional[Path]:
+        """Persist the run's provenance as JSON. Returns the path, or None.
+
+        ``_default_environment_info`` already assembles everything a
+        consumer needs -- ``get_dist_info()`` under ``Distributed``
+        (MACHINE, NUM_NODES, NGPUS, SCHEDULER, the launch command), plus
+        Python/Torch versions and W&B/MLflow ids. Until now that dict was
+        rendered into ``report-*.md`` as markdown bullets and dropped.
+
+        A finished run therefore could not be summarized offline without
+        parsing prose: ``config.json`` only appears when the *non-default*
+        ``csv`` tracker backend is enabled, so a default run left the node
+        and GPU counts recoverable only from the report text. Writing the
+        same dict as ``run_info.json`` makes a run self-describing for any
+        downstream consumer (``ezpz export-amsc``, a results dashboard, a
+        future resume) regardless of which trackers were active.
+
+        Rank 0 only, and best-effort: a failure here must never take down
+        an otherwise successful run, so it warns and returns None.
+        """
+        if get_rank() != 0:
+            return None
+        path = Path(base_dir).joinpath("run_info.json")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(env_details, indent=2, default=str),
+                encoding="utf-8",
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning("Unable to write %s (%s)", path, exc)
+            return None
+        return path
+
     def _collect_metric_groups(
         self, dataset: xr.Dataset
     ) -> dict[str, dict[str, float]]:
@@ -2825,6 +2861,9 @@ class History:
             paths["Metrics CSV"] = str(_csv_be._csv_path)
             output_files["Metrics CSV"] = paths["Metrics CSV"]
         env_details["Paths"] = paths
+        run_info_path = self._write_run_info(base_dir, env_details)
+        if run_info_path is not None:
+            output_files["Run Info"] = str(run_info_path)
         self._write_environment_section(env_details)
         self._write_metric_summary(dataset)
         if plot and plotdir is not None:
