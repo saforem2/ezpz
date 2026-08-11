@@ -2820,8 +2820,20 @@ class TestSetupDdpMasterPortBroadcast:
         assert "broadcast" in msg.lower(), f"cause not named: {msg}"
 
     def test_working_broadcast_is_unaffected(self, monkeypatch):
-        # A real bcast delivers rank 0's port to rank 1.
-        self._run(monkeypatch, rank=1, bcast=lambda x, root=0: x or "29500")
+        """A real bcast delivers rank 0's addr AND port to rank 1.
+
+        The stub must return a distinct value per call -- addr first,
+        then port, matching the two `broadcast()` calls in order. A
+        single `x or "29500"` would set MASTER_ADDR to the port string
+        too, and still pass, which would hide an addr/port mix-up.
+        """
+        delivered = iter(["host-0.example", "29500"])
+
+        def bcast(x, root=0):
+            return x if x is not None else next(delivered)
+
+        self._run(monkeypatch, rank=1, bcast=bcast)
+        assert os.environ["MASTER_ADDR"] == "host-0.example"
         assert os.environ["MASTER_PORT"] == "29500"
 
     def test_rank_zero_never_trips_the_guard(self, monkeypatch):
