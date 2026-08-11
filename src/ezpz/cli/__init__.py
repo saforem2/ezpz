@@ -192,9 +192,23 @@ def kill_cmd(args: tuple[str, ...]) -> None:
     required=True,
     help="Benchmark configuration label, e.g. agpt-2b/bs1/seq2048/tp1.",
 )
-@click.option("--system", default=None, help="Facility name (default: MACHINE).")
-@click.option("--nodes", type=int, default=None, help="Node count (default: NUM_NODES).")
-@click.option("--gpus", type=int, default=None, help="GPU count (default: NGPUS).")
+@click.option(
+    "--system",
+    default=None,
+    help="Facility name (default: detected MACHINE).",
+)
+@click.option(
+    "--nodes",
+    type=int,
+    default=None,
+    help="Node count (default: derived from the run's world size).",
+)
+@click.option(
+    "--gpus",
+    type=int,
+    default=None,
+    help="GPU count (default: the run's world size).",
+)
 @click.option(
     "--status",
     type=click.Choice(["pass", "fail"]),
