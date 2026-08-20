@@ -2761,3 +2761,82 @@ class TestFlattenDeviceMeshSafe:
             "Workaround leaked: bound_device_id stayed cleared after a "
             "_flatten failure."
         )
+
+
+class TestSetupDdpMasterPortBroadcast:
+    """`MASTER_PORT` must never reach torch as the string ``"None"``.
+
+    When `MASTER_PORT` is unset, rank 0 picks a free port and every
+    other rank starts with `None`, relying on the MPI broadcast to
+    overwrite it. If that broadcast degenerates -- each rank a
+    singleton `COMM_WORLD`, which happens when mpi4py loads an MPI that
+    cannot reach the launcher's PMI -- the `None` survives, and
+    `str(None)` hands torch the literal `"None"`:
+
+        File ".../torch/distributed/rendezvous.py", line 277
+        master_port = int(_get_env_or_raise("MASTER_PORT"))
+        ValueError: invalid literal for int() with base 10: 'None'
+
+    Eleven frames deep, naming neither MPI nor the broadcast. Observed
+    on Sunspot (job 12472873). Fail where the information is instead.
+    """
+
+    def _run(self, monkeypatch, rank, bcast):
+        import torch
+
+        for k in ("MASTER_ADDR", "MASTER_PORT"):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("RANK", str(rank))
+        monkeypatch.setenv("WORLD_SIZE", "2")
+        monkeypatch.setenv("LOCAL_RANK", "0")
+        monkeypatch.setattr(dist, "get_rank", lambda: rank)
+        monkeypatch.setattr(dist, "get_world_size", lambda: 2)
+        monkeypatch.setattr(dist, "get_local_rank", lambda: 0)
+        monkeypatch.setattr(dist, "get_gpus_per_node", lambda: 1)
+        monkeypatch.setattr(dist, "get_torch_device_type", lambda: "cpu")
+        monkeypatch.setattr(dist, "get_machine", lambda: "unknown")
+        monkeypatch.setattr(dist, "broadcast", bcast)
+        monkeypatch.setattr(
+            torch.distributed, "is_initialized", lambda: False
+        )
+        monkeypatch.setattr(
+            torch.distributed, "init_process_group", lambda **kw: None
+        )
+        return dist._setup_ddp(backend="gloo")
+
+    def test_degenerate_broadcast_raises_a_named_error(self, monkeypatch):
+        # Identity bcast == every rank is its own COMM_WORLD, so a
+        # non-zero rank's None is never replaced.
+        with pytest.raises(RuntimeError, match="MASTER_PORT"):
+            self._run(monkeypatch, rank=1, bcast=lambda x, root=0: x)
+        assert os.environ.get("MASTER_PORT") != "None", (
+            "the literal string 'None' was exported to torch"
+        )
+
+    def test_error_names_the_actual_cause(self, monkeypatch):
+        with pytest.raises(RuntimeError) as ei:
+            self._run(monkeypatch, rank=1, bcast=lambda x, root=0: x)
+        msg = str(ei.value)
+        assert "broadcast" in msg.lower(), f"cause not named: {msg}"
+
+    def test_working_broadcast_is_unaffected(self, monkeypatch):
+        """A real bcast delivers rank 0's addr AND port to rank 1.
+
+        The stub must return a distinct value per call -- addr first,
+        then port, matching the two `broadcast()` calls in order. A
+        single `x or "29500"` would set MASTER_ADDR to the port string
+        too, and still pass, which would hide an addr/port mix-up.
+        """
+        delivered = iter(["host-0.example", "29500"])
+
+        def bcast(x, root=0):
+            return x if x is not None else next(delivered)
+
+        self._run(monkeypatch, rank=1, bcast=bcast)
+        assert os.environ["MASTER_ADDR"] == "host-0.example"
+        assert os.environ["MASTER_PORT"] == "29500"
+
+    def test_rank_zero_never_trips_the_guard(self, monkeypatch):
+        self._run(monkeypatch, rank=0, bcast=lambda x, root=0: x)
+        port = os.environ["MASTER_PORT"]
+        assert port.isdigit() and port != "None", port
