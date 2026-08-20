@@ -1848,9 +1848,15 @@ ezpz_assert_python_env_active() {
 	# interpreter and neither a venv nor a conda prefix is active, the
 	# setup did not happen, whatever it reported.
 	#
-	# The common cause on ALCF is no `frameworks` module being loaded --
-	# note `module load frameworks` with NO version silently loads nothing
-	# and exits 0, so the version must be explicit.
+	# Two ways to reach this state on ALCF, both silent:
+	#
+	#   1. `bash script.sh` (no -l) does not define the `module` function,
+	#      so ezpz_setup_conda_{sunspot,aurora}'s `module load frameworks`
+	#      is a no-op -- there is no shell function to run. Under `bash -l`
+	#      the same call succeeds and setup works, which is why this
+	#      reproduces from a script but not from an interactive shell.
+	#   2. `module load frameworks` with NO version silently loads nothing
+	#      and exits 0, so the version must be explicit.
 	local py
 	py="$(command -v python3 2>/dev/null || true)"
 	if [[ -n "${VIRTUAL_ENV:-}" || -n "${CONDA_PREFIX:-}" ]]; then
@@ -1867,6 +1873,12 @@ ezpz_assert_python_env_active() {
 	log_message ERROR "  - frameworks module: ${LMOD_FAMILY_FRAMEWORKS:-<none loaded>}"
 	log_message ERROR "Load a frameworks module FIRST, with an explicit version:"
 	log_message ERROR "    module load frameworks/2026.1.0   # bare 'frameworks' loads nothing"
+	if [[ "$(type -t module 2>/dev/null || true)" == "" ]]; then
+		log_message ERROR "NOTE: \`module\` is not defined in this shell, so any"
+		log_message ERROR "      'module load' inside ezpz was a silent no-op."
+		log_message ERROR "      Run the script with \`bash -l\` (login shell), or"
+		log_message ERROR "      source your lmod init before calling ezpz_setup_env."
+	fi
 	log_message ERROR "Then re-run ezpz_setup_env."
 	return 1
 }

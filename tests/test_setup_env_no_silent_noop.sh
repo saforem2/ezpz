@@ -115,6 +115,32 @@ t_error_names_the_cause() {
     [[ "${out}" == *"frameworks"* && "${out}" == *"module load"* ]]
 }
 
+# When `module` is undefined (plain `bash script.sh`), any `module load`
+# inside ezpz is a silent no-op -- the actual trigger in #216. The error
+# must say so, because the user's interactive shell would have worked.
+t_flags_undefined_module() {
+    source "${FN_FILE}"
+    local out=""
+    log_message() { out+="$* "; }
+    unset VIRTUAL_ENV CONDA_PREFIX
+    PATH="/usr/bin:/bin"
+    unset -f module 2>/dev/null || true
+    ezpz_assert_python_env_active 2>/dev/null || true
+    [[ "${out}" == *"not defined in this shell"* ]]
+}
+
+# ...but do NOT emit that note when `module` IS available, or it misleads.
+t_no_module_note_when_defined() {
+    source "${FN_FILE}"
+    local out=""
+    log_message() { out+="$* "; }
+    module() { :; }
+    unset VIRTUAL_ENV CONDA_PREFIX
+    PATH="/usr/bin:/bin"
+    ezpz_assert_python_env_active 2>/dev/null || true
+    [[ "${out}" != *"not defined in this shell"* ]]
+}
+
 # --- the call sites ----------------------------------------------------
 
 # Guard the actual bug: the pbs/slurm branches must not hardcode return 0.
@@ -145,6 +171,8 @@ run_test "active venv -> passes"                        t_venv_active_passes
 run_test "active conda -> passes"                       t_conda_active_passes
 run_test "module-provided python3 -> passes"            t_module_python_passes
 run_test "error message names frameworks + module load" t_error_names_the_cause
+run_test "undefined module -> error says so"            t_flags_undefined_module
+run_test "defined module -> no misleading note"         t_no_module_note_when_defined
 run_test "pbs branch propagates its return code"        t_pbs_branch_propagates
 run_test "slurm branch propagates its return code"      t_slurm_branch_propagates
 run_test "both branches assert the post-condition"      t_both_branches_assert
