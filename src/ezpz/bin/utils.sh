@@ -1839,15 +1839,60 @@ ezpz_setup_python_nersc() {
 	export PYTHON_EXEC="${python_exec}"
 }
 
+ezpz_assert_python_env_active() {
+	# Post-condition for python setup: SOMETHING must actually be active.
+	#
+	# Checking return codes is not enough on its own -- the bug in #216 was
+	# a path that returned 0 having done nothing. This verifies the
+	# OUTCOME instead of trusting the steps: if python3 is still the system
+	# interpreter and neither a venv nor a conda prefix is active, the
+	# setup did not happen, whatever it reported.
+	#
+	# The common cause on ALCF is no `frameworks` module being loaded --
+	# note `module load frameworks` with NO version silently loads nothing
+	# and exits 0, so the version must be explicit.
+	local py
+	py="$(command -v python3 2>/dev/null || true)"
+	if [[ -n "${VIRTUAL_ENV:-}" || -n "${CONDA_PREFIX:-}" ]]; then
+		return 0
+	fi
+	if [[ -n "${py}" && "${py}" != "/usr/bin/python3" && "${py}" != "/bin/python3" ]]; then
+		# A non-system python3 (e.g. a module-provided one) is acceptable.
+		return 0
+	fi
+	log_message ERROR "Python environment setup did NOT take effect."
+	log_message ERROR "  - python3          : ${py:-<not found>}"
+	log_message ERROR "  - VIRTUAL_ENV      : ${VIRTUAL_ENV:-<unset>}"
+	log_message ERROR "  - CONDA_PREFIX     : ${CONDA_PREFIX:-<unset>}"
+	log_message ERROR "  - frameworks module: ${LMOD_FAMILY_FRAMEWORKS:-<none loaded>}"
+	log_message ERROR "Load a frameworks module FIRST, with an explicit version:"
+	log_message ERROR "    module load frameworks/2026.1.0   # bare 'frameworks' loads nothing"
+	log_message ERROR "Then re-run ezpz_setup_env."
+	return 1
+}
+
 ezpz_setup_python() {
 	local venv_override="${1:-}"
 	local scheduler_type
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
-		ezpz_setup_python_alcf
+		# Propagate the return code. This used to be an unconditional
+		# `return 0`, which threw away every failure ezpz_setup_python_alcf
+		# detects -- so ezpz_setup_env printed "[OK] Finished" while
+		# nothing had been activated, and the job only failed later with
+		# `ModuleNotFoundError: No module named torch` (#216).
+		if ! ezpz_setup_python_alcf; then
+			log_message ERROR "  - ezpz_setup_python_alcf failed."
+			return 1
+		fi
+		ezpz_assert_python_env_active || return 1
 		return 0
 	elif [[ "${scheduler_type}" == "slurm" ]]; then
-		ezpz_setup_python_nersc
+		if ! ezpz_setup_python_nersc; then
+			log_message ERROR "  - ezpz_setup_python_nersc failed."
+			return 1
+		fi
+		ezpz_assert_python_env_active || return 1
 		return 0
 	else
 		# if [[ "${scheduler_type}" == "unknown" ]]; then
