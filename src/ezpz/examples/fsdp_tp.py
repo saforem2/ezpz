@@ -146,6 +146,8 @@ from ezpz.cli.flags import add_profiling_args
 from ezpz.profile import profiling_context_from_args
 from ezpz.examples import get_example_outdir
 from ezpz.examples._presets import arg_provided as _arg_provided
+from ezpz.tinker import lora as _lora
+from ezpz.tinker import step as _tinker_step
 
 from ezpz.models.llama import Transformer, ModelArgs
 from torch.distributed.device_mesh import DeviceMesh
@@ -1473,6 +1475,45 @@ def parse_args(argv: Optional[list[str]] = None):
         ),
     )
     parser.add_argument(
+        "--lora-rank",
+        type=int,
+        default=0,
+        help=(
+            "Enable LoRA fine-tuning with this rank (0 = off, full "
+            "fine-tuning). Freezes the base weights and trains a low-rank "
+            "update per targeted projection, so only ~rank/dim of the "
+            "parameters are trainable and checkpoints shrink by roughly the "
+            "same factor. Composes with FSDP2, TP and meta-init. Native "
+            "models only -- the HF path is unaffected."
+        ),
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help=(
+            "LoRA scaling numerator; the update is scaled by alpha/rank. "
+            "Defaults to --lora-rank (scale 1.0)."
+        ),
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="Dropout on the LoRA adapter branch input (0 = off).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        type=str,
+        default="attn,mlp",
+        help=(
+            "Which projections to adapt, comma-separated: `attn` "
+            "(wq/wk/wv/wo), `mlp` (w1/w2/w3), `unembed` (the output "
+            "projection -- the largest single matrix, off by default). "
+            "Ignored unless --lora-rank > 0."
+        ),
+    )
+    parser.add_argument(
         "--max-grad-norm",
         type=float,
         default=1.0,
@@ -1920,6 +1961,16 @@ def _resolve_meta_init(
     return use
 
 
+def _lora_is_applied(model: nn.Module) -> bool:
+    """True when any submodule is a LoRA wrapper.
+
+    Used to decide whether the TP plans need retargeting. Checked on the
+    live module tree rather than on `args.lora_rank` so `parallelize()`
+    stays correct for callers that apply LoRA themselves.
+    """
+    return any(True for _ in _lora.iter_lora_modules(model))
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -1979,26 +2030,42 @@ def parallelize(
     # (there's nothing to shard across a 1-rank tp group). torchtitan
     # guards the same way (`if parallel_dims.tp_enabled`).
     if tp_mesh.size() > 1:
-        model = parallelize_module(
-            model,
-            tp_mesh,
-            {
-                "tok_embeddings": RowwiseParallel(
-                    input_layouts=Replicate(),
-                    output_layouts=Shard(1),
-                ),
-                "norm": SequenceParallel(),
-                # With loss_parallel, keep logits vocab-sharded (Shard(-1))
-                # and return the LOCAL [N, vocab/tp] tensor so the loss can run
-                # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
-                # to Replicate() so the loss sees full-vocab logits (default).
-                "output": ColwiseParallel(
-                    input_layouts=Shard(1),
-                    output_layouts=Shard(-1) if loss_parallel else Replicate(),
-                    use_local_output=bool(loss_parallel),
-                ),
-            },
-        )
+        # `parallelize_module` dispatches on the module CLASS, so any plan
+        # key naming a LoRA-wrapped Linear raises `NotImplementedError:
+        # ColwiseParallel currently only support nn.Linear and
+        # nn.Embedding!`. _lora.lora_tp_plan rewrites those keys to the
+        # inner `.base` / `.A` / `.B` Linears; it is a no-op when nothing
+        # is wrapped, so the non-LoRA path is untouched.
+        #
+        # Pass the module: the plan must retarget only keys that really
+        # are wrapped. `--lora-target` is selective (the default leaves
+        # `output` alone), and parallelize_module DROPS keys matching no
+        # module without raising -- so retargeting an unwrapped `output`
+        # would leave it an unsharded nn.Linear that dies on its first
+        # DTensor input.
+        #
+        # Computed once: the module tree does not change between here and
+        # the per-block loop, and each call walks every submodule.
+        _has_lora = _lora_is_applied(model)
+        root_tp_plan = {
+            "tok_embeddings": RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
+            ),
+            "norm": SequenceParallel(),
+            # With loss_parallel, keep logits vocab-sharded (Shard(-1))
+            # and return the LOCAL [N, vocab/tp] tensor so the loss can run
+            # vocab-parallel CE (no full-vocab all-gather). Otherwise gather
+            # to Replicate() so the loss sees full-vocab logits (default).
+            "output": ColwiseParallel(
+                input_layouts=Shard(1),
+                output_layouts=Shard(-1) if loss_parallel else Replicate(),
+                use_local_output=bool(loss_parallel),
+            ),
+        }
+        if _has_lora:
+            root_tp_plan = _lora.lora_tp_plan(root_tp_plan, model)
+        model = parallelize_module(model, tp_mesh, root_tp_plan)
 
         assert isinstance(model.layers, Iterable)
         for _, transformer_block in enumerate(model.layers):
@@ -2025,10 +2092,17 @@ def parallelize(
             attn_layer = transformer_block.attention  # type: ignore
             attn_layer.n_heads = attn_layer.n_heads // tp_mesh.size()
             attn_layer.n_kv_heads = attn_layer.n_kv_heads // tp_mesh.size()
+            # Bind a per-block plan rather than reassigning `layer_tp_plan`:
+            # that would feed layer 2 the plan already retargeted for layer 1.
+            block_tp_plan = layer_tp_plan
+            if _has_lora:
+                block_tp_plan = _lora.lora_tp_plan(
+                    layer_tp_plan, transformer_block
+                )
             parallelize_module(
                 module=transformer_block,  # type: ignore
                 device_mesh=tp_mesh,
-                parallelize_plan=layer_tp_plan,
+                parallelize_plan=block_tp_plan,
             )
 
     # Activation checkpointing must wrap each block BEFORE fully_shard so the
@@ -2070,6 +2144,13 @@ def parallelize(
         assert device is not None, "meta_init=True requires a device"
         model.to_empty(device=device)
         model.init_weights(buffer_device=device)  # type: ignore
+        # `Transformer.init_weights` walks Attention/FeedForward, which
+        # reach through LoRALinear's `.weight` proxy to the BASE weight
+        # only -- nothing calls LoRALinear.init_weights, so `A`/`B` keep
+        # whatever `to_empty` left in their storage. A non-zero `B`
+        # breaks the "adapter is an exact no-op at step 0" guarantee and
+        # starts training from garbage or NaNs. Reset them explicitly.
+        _lora.reset_lora_after_materialize(model)
 
     _configure_fsdp_gradient_division(model)
 
@@ -2701,6 +2782,32 @@ def train(
                 model = Transformer.from_model_args(config)
         else:
             model = Transformer.from_model_args(config)
+        # LoRA must be applied BEFORE parallelize(): the TP plan and
+        # fully_shard both need to see the final module tree. Under
+        # meta-init the adapters are built on `meta` too and materialized
+        # by the same to_empty()/init_weights() pass.
+        if getattr(args, "lora_rank", 0) > 0:
+            _targets = {
+                t.strip() for t in str(args.lora_target).split(",") if t.strip()
+            }
+            _unknown = _targets - {"attn", "mlp", "unembed"}
+            if _unknown:
+                raise SystemExit(
+                    f"--lora-target: unknown {sorted(_unknown)}; "
+                    "expected any of attn, mlp, unembed"
+                )
+            model = _lora.apply_lora(
+                model,
+                _lora.LoraConfig(
+                    rank=args.lora_rank,
+                    alpha=args.lora_alpha,
+                    dropout=args.lora_dropout,
+                    train_attn="attn" in _targets,
+                    train_mlp="mlp" in _targets,
+                    train_unembed="unembed" in _targets,
+                    seed=args.seed,
+                ),
+            )
     mstr = summarize_model(
         model,
         verbose=False,
@@ -3181,6 +3288,29 @@ def train(
     # x = torch.tensor((args.batch_size, args.seq_len))
     x = torch.tensor(0)
     global_step = 0
+    # Bundle the step's dependencies once. This is a VIEW over the objects
+    # built above -- it constructs nothing and owns nothing -- so the loop
+    # below and ezpz.tinker's client run the exact same code path. The
+    # loss impls are injected rather than imported by the step module,
+    # which would otherwise import this module back (circular).
+    train_state = _tinker_step.TrainState(
+        model=model,
+        optimizer=optimizer,
+        device=device,
+        args=args,
+        base_model=base_model,
+        dataset=dataset,
+        tp_group=tp_group,
+        use_fused_linear=use_fused_linear,
+        use_loss_parallel=use_loss_parallel,
+        profiler=profiler,
+        global_step=0,
+        compute_loss=_compute_loss,
+        localize_logits=_localize_logits_for_loss,
+        fused_linear_loss=_cross_entropy_fused_linear,
+        vocab_parallel_loss=_cross_entropy_vocab_parallel,
+        slice_for_sequence_parallel=_slice_for_sequence_parallel,
+    )
     # Cumulative count of training tokens consumed across the whole run
     # (summed global tokens/step). Logged as train/tokens_seen — the standard
     # x-axis for loss-vs-tokens curves. See the metrics block: global
@@ -3210,6 +3340,9 @@ def train(
     resume_offset = 0
     if resume_meta is not None:
         global_step = int(resume_meta.get("step", 0) or 0)
+        # Keep the step's counter in sync on resume; optim_step increments
+        # from here, and metrics read train_state.global_step back out.
+        train_state.global_step = global_step
         tokens_seen = int(resume_meta.get("tokens_seen", 0) or 0)
         try:
             batches_per_epoch = len(dataloader)
@@ -3269,158 +3402,100 @@ def train(
                     pending_ckpt = None
             ezpz.distributed.synchronize()
             t0 = perf_counter()
-            attn_mask = None
-            if isinstance(batch, dict) and "input_ids" in batch:
-                x = batch["input_ids"]
-                attn_mask = batch.get("attention_mask")
-            else:
-                x = batch
-            assert isinstance(x, torch.Tensor)
-            x = x.to(device)
-            x = x.to(torch.long)
-            if args.dataset == "random":
-                inp = x[:, :-1]
-                labels = x[:, 1:]
-            else:
-                inp = x[:, :-1]
-                labels = x[:, 1:]
-            inp = inp.to(device)
-            labels = labels.to(device)
-            if attn_mask is not None:
-                attn_mask = attn_mask.to(device)
-            # fused-linear gets hidden states (B,T,dim) instead of logits, so
-            # the loss can form logits in chunks and never materialize the full
-            # (B,T,vocab) tensor. Otherwise the model returns logits as usual.
-            if use_fused_linear:
-                pred = model(inp, return_hidden=True)
-            else:
-                pred = model(inp)
-            # HF causal-LM models return a CausalLMOutput dataclass with a
-            # `.logits` tensor; ezpz's Transformer returns logits directly.
-            if hasattr(pred, "logits"):
-                pred = pred.logits
-            # pred is (B,T,vocab) logits, or (B,T,dim) hidden under
-            # fused-linear; either way dim-1 is the (SP-local) seq length.
-            local_seq_len = pred.shape[1]
-            if labels.shape[1] != local_seq_len:
-                labels = _slice_for_sequence_parallel(labels, local_seq_len)
-            if attn_mask is not None:
-                if attn_mask.shape[1] > 1:
-                    attn_labels = attn_mask[:, 1:]
-                else:
-                    attn_labels = attn_mask
-                if attn_labels.shape[1] != local_seq_len:
-                    attn_labels = _slice_for_sequence_parallel(
-                        attn_labels, local_seq_len
+            # The step body now lives in ezpz.tinker.step so the same
+            # implementation backs both this loop and the Tinker-style
+            # client (one forward_backward + one optim_step here == the
+            # old fused body; see test_split_matches_fused_loop).
+            #
+            # `_t1_holder` carries the mid-step barrier time out of the
+            # callback below. The callback fires exactly where the old
+            # `t1 = perf_counter()` line sat -- after forward + label
+            # masking, before the loss -- so train/dtf and train/dtb keep
+            # their original meanings.
+            _t1_holder: list[float] = []
+            # Per-step stats derived from pred/labels. Computed in the
+            # callback (the only point where the step still holds those
+            # tensors) and merged into `metrics` below.
+            _step_probe: dict[str, object] = {}
+            _seq_holder: list[int] = []
+
+            def _at_forward_done(
+                pred: "torch.Tensor",
+                masked_labels: "torch.Tensor",
+                local_seq_len: int,
+                _epoch: int = epoch,
+                _idx: int = idx,
+            ) -> None:
+                ezpz.distributed.synchronize()
+                _t1_holder.append(perf_counter())
+                _seq_holder.append(int(local_seq_len))
+                if global_step % max(metrics_every, 1) == 0:
+                    _step_probe["labels/valid"] = float(
+                        (masked_labels != -100).sum().item()
                     )
-            # Build a single ignore-mask (attention-pad OR tokenizer-pad) and
-            # apply it with ONE masked_fill, instead of two .clone()s + two
-            # boolean index-assigns. Each .clone() + labels[mask]=-100 was a
-            # separate aten::copy_ per step; this collapses them to one copy.
-            # -100 can't collide with a valid pad_id (>=0), so mask order is
-            # irrelevant. (Profiling: agpt-2b aten::copy_ was ~8.8% of step.)
-            pad_id = getattr(dataset, "pad_id", None)
-            ignore_mask = None
-            if attn_mask is not None:
-                ignore_mask = attn_labels == 0
-            if pad_id is not None:
-                pad_mask = labels == int(pad_id)
-                ignore_mask = (
-                    pad_mask if ignore_mask is None else (ignore_mask | pad_mask)
+                    if track_logits:
+                        _finite = torch.isfinite(pred)
+                        _step_probe["logits/nonfinite"] = float(
+                            (~_finite).sum().item()
+                        )
+                        _step_probe["logits/max_abs"] = float(
+                            pred.abs().max().item()
+                        )
+                    if track_hist and ezpz.get_rank() == 0:
+                        _sample = _sample_tensor_values(pred, hist_samples)
+                        if _sample is not None:
+                            _hist = _histogram_dict(_sample, hist_bins)
+                            if _hist is not None:
+                                _step_probe[f"hist/{dataset_tag}/logits"] = _hist
+                tp_mod = getattr(ezpz, "tp", None)
+                tp_rank = (
+                    getattr(tp_mod, "get_tensor_parallel_rank", lambda: 0)()
+                    if tp_mod is not None
+                    else 0
                 )
-            if ignore_mask is not None:
-                labels = labels.masked_fill(ignore_mask, -100)
-            ezpz.distributed.synchronize()
-            t1 = perf_counter()
-            tp_mod = getattr(ezpz, "tp", None)
-            tp_rank = (
-                getattr(tp_mod, "get_tensor_parallel_rank", lambda: 0)()
-                if tp_mod is not None
-                else 0
+                # First-step finite/max debug stats. Gated behind
+                # EZPZ_TRACK_LOGITS because `torch.isfinite(pred)` allocates
+                # a full `(B, T, vocab)`-shaped bool tensor on the un-reduced
+                # logits — at agpt's 256K vocab and long seq that's multiple
+                # GB materialized *before* the loss, which can OOM a run that
+                # would otherwise fit. Off by default. Skipped under
+                # fused-linear: `pred` is hidden states there, so finite/
+                # max-abs of it is meaningless.
+                if (
+                    track_logits
+                    and not use_fused_linear
+                    and _epoch == 0
+                    and _idx == 0
+                ):
+                    pred_finite = torch.isfinite(pred)
+                    pred_nonfinite = int((~pred_finite).sum().item())
+                    pred_max = float(pred.abs().max().item())
+                    logger.info(
+                        "pred_stats rank=%s tp=%s shape=%s nonfinite=%s max_abs=%s",
+                        ezpz.get_rank(),
+                        tp_rank,
+                        tuple(pred.shape),
+                        pred_nonfinite,
+                        f"{pred_max:.6f}",
+                    )
+                if _epoch == 0 and _idx == 0:
+                    valid_labels = int((masked_labels != -100).sum().item())
+                    logger.info(
+                        "loss_inputs rank=%s tp=%s local_seq_len=%s labels=%s valid_labels=%s",
+                        ezpz.get_rank(),
+                        tp_rank,
+                        local_seq_len,
+                        tuple(masked_labels.shape),
+                        valid_labels,
+                    )
+
+            _fb = _tinker_step.forward_backward(
+                train_state, batch, on_forward_done=_at_forward_done
             )
-            # First-step finite/max debug stats. Gated behind
-            # EZPZ_TRACK_LOGITS because `torch.isfinite(pred)` allocates a
-            # full `(B, T, vocab)`-shaped bool tensor on the un-reduced
-            # logits — at agpt's 256K vocab and long seq that's multiple GB
-            # materialized *before* the loss, which can OOM a run that would
-            # otherwise fit (the loss itself may be chunked/compiled to stay
-            # bounded, but this debug probe is not). Off by default.
-            # Skip the logits probe under fused-linear: `pred` is hidden
-            # states there, not logits, so finite/max-abs of it is meaningless
-            # (and the full logits are never materialized by design).
-            if track_logits and not use_fused_linear and epoch == 0 and idx == 0:
-                pred_finite = torch.isfinite(pred)
-                pred_nonfinite = int((~pred_finite).sum().item())
-                pred_max = float(pred.abs().max().item())
-                logger.info(
-                    "pred_stats rank=%s tp=%s shape=%s nonfinite=%s max_abs=%s",
-                    ezpz.get_rank(),
-                    tp_rank,
-                    tuple(pred.shape),
-                    pred_nonfinite,
-                    f"{pred_max:.6f}",
-                )
-            if use_fused_linear:
-                # `pred` is hidden states (B,T,dim); the fused loss runs the
-                # output projection MODULE per row-chunk (so FSDP unshards the
-                # weight + routes its grad) and never materializes the full
-                # (B,T,vocab) logits or its grad.
-                loss = _cross_entropy_fused_linear(
-                    pred,
-                    base_model.output,
-                    labels,
-                    ignore_index=-100,
-                    chunk_size=args.loss_chunk_size,
-                )
-            elif use_loss_parallel:
-                # `pred` is this rank's local [B, T, vocab/tp] shard
-                # (output projection has use_local_output=True under
-                # loss-parallel). Vocab-parallel CE reduces across the TP
-                # group; global vocab is needed to compute shard bounds.
-                loss = _cross_entropy_vocab_parallel(
-                    pred,
-                    labels,
-                    ignore_index=-100,
-                    global_vocab_size=args.vocab_size,
-                    tp_group=tp_group,
-                )
-            else:
-                # tp>1 non-loss-parallel: `pred` is a REPLICATED DTensor
-                # (output ColwiseParallel output_layouts=Replicate,
-                # use_local_output=False) but `labels` is plain, so plain CE
-                # would raise "mixed torch.Tensor and DTensor". Localize to a
-                # plain tensor first (no-op at tp=1/HF). See
-                # _localize_logits_for_loss for the full rationale + guard.
-                loss = _compute_loss(
-                    _localize_logits_for_loss(pred),
-                    labels,
-                    impl=args.loss_impl,
-                    ignore_index=-100,
-                    chunk_size=args.loss_chunk_size,
-                )
-            if epoch == 0 and idx == 0:
-                valid_labels = int((labels != -100).sum().item())
-                logger.info(
-                    "loss_inputs rank=%s tp=%s local_seq_len=%s labels=%s valid_labels=%s",
-                    ezpz.get_rank(),
-                    tp_rank,
-                    local_seq_len,
-                    tuple(labels.shape),
-                    valid_labels,
-                )
-                # loss = F.cross_entropy(
-                #     pred.flatten(0, 1),
-                #     labels.flatten(0, 1),
-                # )
-                # loss = output.loss
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            grad_norm_preclip = None
-            if args.max_grad_norm > 0:
-                grad_norm_preclip = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), args.max_grad_norm
-                )
-            optimizer.step()
+            t1 = _t1_holder[0] if _t1_holder else perf_counter()
+            loss = torch.as_tensor(_fb.loss)
+            _opt_resp = _tinker_step.optim_step(train_state)
+            grad_norm_preclip = _opt_resp.grad_norm
             # AdamW state (exp_avg/exp_avg_sq) is allocated by the first step on
             # a fresh run (a resumed run already has it from load_checkpoint);
             # log its dtype once, now that it exists (also amends the summary +
@@ -3430,11 +3505,11 @@ def train(
                 _optim_dtype_logged = True
             ezpz.distributed.synchronize()
             t2 = perf_counter()
-            global_step += 1
-            # Advance the torch.profiler schedule once per optimizer step.
-            # No-op when not profiling (profiler is None).
-            if profiler is not None:
-                profiler.step()
+            # global_step and profiler.step() are advanced inside
+            # _tinker_step.optim_step (once per OPTIMIZER step, which is
+            # what the profiler schedule wants). Mirror the counter back
+            # into the loop's local so the metrics below are unchanged.
+            global_step = train_state.global_step
             metrics: dict[str, object] = {
                 "train/iter": global_step,
                 "train/epoch": epoch,
@@ -3451,21 +3526,22 @@ def train(
                 metrics["opt/iter"] = (global_step,)
                 metrics["opt/lr"] = float(optimizer.param_groups[0]["lr"])
                 metrics["input/iter"] = (global_step,)
-                metrics["input/max"] = float(x.max().item())
-                metrics["input/min"] = float(x.min().item())
-                metrics["labels/valid"] = float((labels != -100).sum().item())
-                if track_logits:
-                    pred_finite = torch.isfinite(pred)
-                    metrics["logits/nonfinite"] = float(
-                        (~pred_finite).sum().item()
-                    )
-                    metrics["logits/max_abs"] = float(pred.abs().max().item())
+                # `batch` rather than the old `x`: the step now owns the
+                # unpack, so the raw batch is what's still in scope here.
+                # Same tensor, pre-shift (input/max|min are token-id
+                # sanity bounds, unaffected by the causal shift).
+                _ids = (
+                    batch["input_ids"]
+                    if isinstance(batch, dict) and "input_ids" in batch
+                    else batch
+                )
+                metrics["input/max"] = float(_ids.max().item())
+                metrics["input/min"] = float(_ids.min().item())
+                # pred/labels-derived stats are computed inside the
+                # forward-done callback (that is the only point where the
+                # step still holds them) and stashed in _step_probe.
+                metrics.update(_step_probe)
                 if track_hist and ezpz.get_rank() == 0:
-                    logits_sample = _sample_tensor_values(pred, hist_samples)
-                    if logits_sample is not None:
-                        logits_hist = _histogram_dict(logits_sample, hist_bins)
-                        if logits_hist is not None:
-                            metrics[f"hist/{dataset_tag}/logits"] = logits_hist
                     layer_grad_norms = _collect_layer_grad_norms(base_model)
                     if layer_grad_norms:
                         layer_grad_hist = _histogram_dict(
@@ -3524,7 +3600,9 @@ def train(
             # tp-dim ranks see DUPLICATE samples, so multiplying by dpsize (not
             # world_size) counts each distinct token once.
             # Global tokens processed THIS step across all distinct-data ranks.
-            tokens_this_step = args.batch_size * inp.shape[1] * dpsize
+            tokens_this_step = (
+                args.batch_size * int(_fb.metrics["input_seq_len"]) * dpsize
+            )
             tokens_seen += tokens_this_step
             # Cumulative consumed training tokens — the standard x-axis for
             # loss curves. Accumulated every step (this block runs each step),

@@ -126,12 +126,26 @@ def save_checkpoint(
     optimizer: Any,
     *,
     meta: Optional[dict[str, Any]] = None,
+    state_dict_options: Any = None,
 ) -> Path:
     """Save a sharded DCP checkpoint of ``(model, optimizer)`` at ``step``.
 
     All ranks participate (DCP writes shards in parallel). Rank 0 writes
     ``meta.json`` and, LAST, the ``.complete`` marker. A final barrier keeps
     ranks in lockstep so the marker isn't observed before every shard landed.
+
+    Args:
+        state_dict_options: optional ``StateDictOptions`` forwarded to
+            ``get_state_dict``. Pass
+            ``StateDictOptions(ignore_frozen_params=True)`` for an
+            adapter-only (LoRA) checkpoint, which is ~``rank/dim`` the
+            size of a full one. ``None`` (the default) preserves the
+            existing full-state behavior exactly.
+
+            NOTE: a checkpoint written with this set contains no frozen
+            base weights, so it is NOT a standalone model. Pass the same
+            option to :func:`load_checkpoint`, and keep the base weights
+            available separately.
 
     Returns the ``step-<N>`` directory path.
     """
@@ -144,7 +158,11 @@ def save_checkpoint(
         _clear_stale_marker(out)
     _barrier()  # ensure the dir exists (and marker cleared) before any writes
 
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    model_sd, optim_sd = (
+        get_state_dict(model, optimizer, options=state_dict_options)
+        if state_dict_options is not None
+        else get_state_dict(model, optimizer)
+    )
     dcp.save(
         {"model": model_sd, "optim": optim_sd},
         checkpoint_id=str(out),
@@ -460,6 +478,7 @@ def load_checkpoint(
     ckpt_dir: os.PathLike | str,
     model: Any,
     optimizer: Any,
+    state_dict_options: Any = None,
 ) -> Optional[dict[str, Any]]:
     """Load the latest complete checkpoint into ``(model, optimizer)``.
 
@@ -468,6 +487,15 @@ def load_checkpoint(
     exists (a fresh run — caller starts from scratch).
 
     Mutates ``model`` and ``optimizer`` in place via ``set_state_dict``.
+
+    Args:
+        state_dict_options: optional ``StateDictOptions``, which MUST
+            match the one used to save. An adapter-only checkpoint
+            (``ignore_frozen_params=True``) contains no frozen base
+            weights, so shaping the load container with the default
+            full-state options asks DCP for keys the checkpoint does not
+            have. Default ``None`` keeps every existing caller
+            byte-identical.
     """
     import torch.distributed.checkpoint as dcp
     from torch.distributed.checkpoint.state_dict import (
@@ -481,7 +509,8 @@ def load_checkpoint(
 
     # get_state_dict first to shape the containers DCP loads INTO (it fills
     # them in place with the right DTensor layouts for this rank).
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    _kw = {} if state_dict_options is None else {"options": state_dict_options}
+    model_sd, optim_sd = get_state_dict(model, optimizer, **_kw)
     state = {"model": model_sd, "optim": optim_sd}
     dcp.load(state, checkpoint_id=str(latest))
     set_state_dict(
@@ -489,6 +518,7 @@ def load_checkpoint(
         optimizer,
         model_state_dict=state["model"],
         optim_state_dict=state["optim"],
+        **_kw,
     )
 
     meta_path = latest / _META_FILE
