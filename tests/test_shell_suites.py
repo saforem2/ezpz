@@ -9,6 +9,7 @@ cover:
   * test_ezpz_setup_venv.sh          — ezpz_setup Flow B auto-venv
   * test_failover_lib.sh             — failover.sh bad-node helpers
   * test_xpu_module_python_guard.sh  — XPU module load must not evict
+  * test_setup_env_no_silent_noop.sh — ezpz_setup_env must not fake success
                                        an active python env
 
 Each is parametrized as its own pytest case so a failure names the
@@ -31,6 +32,7 @@ SHELL_SUITES = [
     "test_ezpz_setup_venv.sh",
     "test_failover_lib.sh",
     "test_xpu_module_python_guard.sh",
+    "test_setup_env_no_silent_noop.sh",
 ]
 
 pytestmark = [

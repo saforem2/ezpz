@@ -1839,15 +1839,89 @@ ezpz_setup_python_nersc() {
 	export PYTHON_EXEC="${python_exec}"
 }
 
+ezpz_assert_python_env_active() {
+	# Post-condition for python setup: SOMETHING must actually be active.
+	#
+	# Checking return codes is not enough on its own -- the bug in #216 was
+	# a path that returned 0 having done nothing. This verifies the
+	# OUTCOME instead of trusting the steps: if python3 is still the system
+	# interpreter and neither a venv nor a conda prefix is active, the
+	# setup did not happen, whatever it reported.
+	#
+	# Two ways to reach this state on ALCF, both silent:
+	#
+	#   1. `bash script.sh` (no -l) does not define the `module` function,
+	#      so ezpz_setup_conda_{sunspot,aurora}'s `module load frameworks`
+	#      is a no-op -- there is no shell function to run. Under `bash -l`
+	#      the same call succeeds and setup works, which is why this
+	#      reproduces from a script but not from an interactive shell.
+	#   2. `module load frameworks` with NO version silently loads nothing
+	#      and exits 0, so the version must be explicit.
+	local py py_real
+	py="$(command -v python3 2>/dev/null || true)"
+
+	# Accept ANY python root ezpz itself recognizes, not just a venv or
+	# conda: ezpz_get_python_root also honors PYTHON_ROOT and
+	# PYTHONUSERBASE, and a PYTHONUSERBASE-only setup (no venv) is a
+	# supported configuration. Rejecting it here would turn a working
+	# setup into a hard failure -- worse than the bug this guards.
+	if [[ -n "$(ezpz_get_python_root)" ]]; then
+		return 0
+	fi
+
+	# Canonicalize before comparing: a shim or symlink such as
+	# /usr/local/bin/python3 -> /usr/bin/python3 has a non-system-looking
+	# path, and comparing the un-resolved name would accept it and
+	# reinstate the very silent-success this exists to catch.
+	if [[ -n "${py}" ]]; then
+		py_real="$(readlink -f -- "${py}" 2>/dev/null || python3 -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null || echo "${py}")"
+		case "${py_real}" in
+		/usr/bin/python3* | /bin/python3* | /usr/local/bin/python3*) ;;
+		*)
+			# A genuinely non-system python3 (e.g. module-provided).
+			return 0
+			;;
+		esac
+	fi
+	log_message ERROR "Python environment setup did NOT take effect."
+	log_message ERROR "  - python3          : ${py:-<not found>}"
+	log_message ERROR "  - VIRTUAL_ENV      : ${VIRTUAL_ENV:-<unset>}"
+	log_message ERROR "  - CONDA_PREFIX     : ${CONDA_PREFIX:-<unset>}"
+	log_message ERROR "  - frameworks module: ${LMOD_FAMILY_FRAMEWORKS:-<none loaded>}"
+	log_message ERROR "Load a frameworks module FIRST, with an explicit version:"
+	log_message ERROR "    module load frameworks/2026.1.0   # bare 'frameworks' loads nothing"
+	if [[ "$(type -t module 2>/dev/null || true)" == "" ]]; then
+		log_message ERROR "NOTE: \`module\` is not defined in this shell, so any"
+		log_message ERROR "      'module load' inside ezpz was a silent no-op."
+		log_message ERROR "      Run the script with \`bash -l\` (login shell), or"
+		log_message ERROR "      source your lmod init before calling ezpz_setup_env."
+	fi
+	log_message ERROR "Then re-run ezpz_setup_env."
+	return 1
+}
+
 ezpz_setup_python() {
 	local venv_override="${1:-}"
 	local scheduler_type
 	scheduler_type=$(ezpz_get_scheduler_type)
 	if [[ "${scheduler_type}" == "pbs" ]]; then
-		ezpz_setup_python_alcf
+		# Propagate the return code. This used to be an unconditional
+		# `return 0`, which threw away every failure ezpz_setup_python_alcf
+		# detects -- so ezpz_setup_env printed "[OK] Finished" while
+		# nothing had been activated, and the job only failed later with
+		# `ModuleNotFoundError: No module named torch` (#216).
+		if ! ezpz_setup_python_alcf; then
+			log_message ERROR "  - ezpz_setup_python_alcf failed."
+			return 1
+		fi
+		ezpz_assert_python_env_active || return 1
 		return 0
 	elif [[ "${scheduler_type}" == "slurm" ]]; then
-		ezpz_setup_python_nersc
+		if ! ezpz_setup_python_nersc; then
+			log_message ERROR "  - ezpz_setup_python_nersc failed."
+			return 1
+		fi
+		ezpz_assert_python_env_active || return 1
 		return 0
 	else
 		# if [[ "${scheduler_type}" == "unknown" ]]; then
