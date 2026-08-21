@@ -2784,7 +2784,16 @@ class TestSetupDdpMasterPortBroadcast:
     def _run(self, monkeypatch, rank, bcast):
         import torch
 
+        # `_setup_ddp` writes MASTER_ADDR/MASTER_PORT through raw
+        # `os.environ`, which monkeypatch cannot see and therefore does
+        # not undo. `delenv` only records them as *absent*, so teardown
+        # deletes nothing and the fabricated values below survive into
+        # every later test. A leaked `MASTER_ADDR="host-0.example"` then
+        # sends the next gloo rendezvous to a host that does not resolve,
+        # where it waits out the 30-minute default PG timeout.
+        # `setenv` gives monkeypatch a recorded value to restore.
         for k in ("MASTER_ADDR", "MASTER_PORT"):
+            monkeypatch.setenv(k, os.environ.get(k, ""))
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("RANK", str(rank))
         monkeypatch.setenv("WORLD_SIZE", "2")
