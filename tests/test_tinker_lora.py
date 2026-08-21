@@ -17,6 +17,7 @@ they skip cleanly where that is unavailable.
 
 from __future__ import annotations
 
+import contextlib
 import os
 
 import pytest
@@ -362,6 +363,29 @@ class TestLoraTpPlan:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="needs a gloo PG")
+# A single-rank gloo PG needs a rendezvous address. Set it EXPLICITLY
+# rather than with `os.environ.setdefault`: setdefault *defers* to
+# whatever is already in the environment, so a value leaked by an
+# earlier test wins. That is how a fabricated `MASTER_ADDR` from a pure
+# unit test reached this rendezvous and blocked it for the 30-minute
+# default PG timeout. Restoring the previous values on the way out
+# keeps this test from becoming the next leaker (tests/conftest.py's
+# `_no_rendezvous_leak` enforces that).
+@contextlib.contextmanager
+def _rendezvous_env(port: str):
+    prev = {k: os.environ.get(k) for k in ("MASTER_ADDR", "MASTER_PORT")}
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = port
+    try:
+        yield
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 class TestLoraTpPlanAgainstTorch:
     """The retarget must actually satisfy ``parallelize_module``."""
 
@@ -371,13 +395,14 @@ class TestLoraTpPlanAgainstTorch:
 
         if dist.is_initialized():
             return True
-        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-        os.environ.setdefault("MASTER_PORT", "29733")
-        try:
-            dist.init_process_group("gloo", rank=0, world_size=1)
-        except Exception:
-            return False
-        return True
+        with _rendezvous_env("29733"):
+            try:
+                dist.init_process_group(
+                    "gloo", rank=0, world_size=1
+                )
+            except Exception:
+                return False
+            return True
 
     def test_unretargeted_plan_raises_but_retargeted_works(self):
         import torch.distributed as dist
@@ -430,12 +455,13 @@ class TestLoraUnderFSDP2:
 
         if dist.is_initialized():
             pytest.skip("PG already initialized by another test")
-        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-        os.environ.setdefault("MASTER_PORT", "29734")
-        try:
-            dist.init_process_group("gloo", rank=0, world_size=1)
-        except Exception:
-            pytest.skip("could not init gloo PG")
+        with _rendezvous_env("29734"):
+            try:
+                dist.init_process_group(
+                    "gloo", rank=0, world_size=1
+                )
+            except Exception:
+                pytest.skip("could not init gloo PG")
         try:
             from torch.distributed.device_mesh import init_device_mesh
             from torch.distributed.fsdp import fully_shard
