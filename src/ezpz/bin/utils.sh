@@ -1857,14 +1857,31 @@ ezpz_assert_python_env_active() {
 	#      reproduces from a script but not from an interactive shell.
 	#   2. `module load frameworks` with NO version silently loads nothing
 	#      and exits 0, so the version must be explicit.
-	local py
+	local py py_real
 	py="$(command -v python3 2>/dev/null || true)"
-	if [[ -n "${VIRTUAL_ENV:-}" || -n "${CONDA_PREFIX:-}" ]]; then
+
+	# Accept ANY python root ezpz itself recognizes, not just a venv or
+	# conda: ezpz_get_python_root also honors PYTHON_ROOT and
+	# PYTHONUSERBASE, and a PYTHONUSERBASE-only setup (no venv) is a
+	# supported configuration. Rejecting it here would turn a working
+	# setup into a hard failure -- worse than the bug this guards.
+	if [[ -n "$(ezpz_get_python_root)" ]]; then
 		return 0
 	fi
-	if [[ -n "${py}" && "${py}" != "/usr/bin/python3" && "${py}" != "/bin/python3" ]]; then
-		# A non-system python3 (e.g. a module-provided one) is acceptable.
-		return 0
+
+	# Canonicalize before comparing: a shim or symlink such as
+	# /usr/local/bin/python3 -> /usr/bin/python3 has a non-system-looking
+	# path, and comparing the un-resolved name would accept it and
+	# reinstate the very silent-success this exists to catch.
+	if [[ -n "${py}" ]]; then
+		py_real="$(readlink -f -- "${py}" 2>/dev/null || python3 -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null || echo "${py}")"
+		case "${py_real}" in
+		/usr/bin/python3* | /bin/python3* | /usr/local/bin/python3*) ;;
+		*)
+			# A genuinely non-system python3 (e.g. module-provided).
+			return 0
+			;;
+		esac
 	fi
 	log_message ERROR "Python environment setup did NOT take effect."
 	log_message ERROR "  - python3          : ${py:-<not found>}"

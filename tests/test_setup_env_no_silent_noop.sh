@@ -37,8 +37,12 @@ UTILS="${UTILS:-src/ezpz/bin/utils.sh}"
 
 FN_FILE="$(mktemp)"
 trap 'rm -f "${FN_FILE}"' EXIT
-awk '/^ezpz_assert_python_env_active\(\) \{/{f=1} f{print} f&&/^\}/{exit}' \
+awk '/^ezpz_get_python_root\(\) \{/{f=1} f{print} f&&/^\}/{exit}' \
     "${UTILS}" > "${FN_FILE}"
+awk '/^ezpz_assert_python_env_active\(\) \{/{f=1} f{print} f&&/^\}/{exit}' \
+    "${UTILS}" >> "${FN_FILE}"
+grep -q "ezpz_get_python_root" "${FN_FILE}" || {
+    printf "%sFATAL%s: helper deps not extracted\n" "${R}" "${N}" >&2; exit 1; }
 grep -q "VIRTUAL_ENV" "${FN_FILE}" || {
     printf "%sFATAL%s: could not extract ezpz_assert_python_env_active\n" "${R}" "${N}" >&2
     exit 1
@@ -141,6 +145,41 @@ t_no_module_note_when_defined() {
     [[ "${out}" != *"not defined in this shell"* ]]
 }
 
+# A PYTHONUSERBASE-only setup (no venv, no conda) is a SUPPORTED config --
+# ezpz_get_python_root honors it. Rejecting it would turn a working
+# environment into a hard failure. (Codex P2 on #217.)
+t_pythonuserbase_only_passes() {
+    source "${FN_FILE}"
+    log_message() { :; }
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT
+    PYTHONUSERBASE="/tmp/some/userbase"
+    PATH="/usr/bin:/bin"
+    ezpz_assert_python_env_active
+}
+
+t_python_root_only_passes() {
+    source "${FN_FILE}"
+    log_message() { :; }
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHONUSERBASE
+    PYTHON_ROOT="/tmp/some/root"
+    PATH="/usr/bin:/bin"
+    ezpz_assert_python_env_active
+}
+
+# A shim that RESOLVES to the system interpreter must still be rejected;
+# comparing the unresolved path would accept it. (Codex P2 on #217.)
+t_symlink_to_system_python_fails() {
+    source "${FN_FILE}"
+    log_message() { :; }
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
+    local d; d="$(mktemp -d)"
+    ln -s /usr/bin/python3 "${d}/python3" 2>/dev/null || { rm -rf "${d}"; return 0; }
+    PATH="${d}:/usr/bin:/bin"
+    local rc=0; ezpz_assert_python_env_active || rc=1
+    rm -rf "${d}"
+    [[ "${rc}" -eq 1 ]]
+}
+
 # --- the call sites ----------------------------------------------------
 
 # Guard the actual bug: the pbs/slurm branches must not hardcode return 0.
@@ -171,6 +210,9 @@ run_test "active venv -> passes"                        t_venv_active_passes
 run_test "active conda -> passes"                       t_conda_active_passes
 run_test "module-provided python3 -> passes"            t_module_python_passes
 run_test "error message names frameworks + module load" t_error_names_the_cause
+run_test "PYTHONUSERBASE-only -> passes (supported)"     t_pythonuserbase_only_passes
+run_test "PYTHON_ROOT-only -> passes (supported)"       t_python_root_only_passes
+run_test "shim resolving to system python -> FAILS"     t_symlink_to_system_python_fails
 run_test "undefined module -> error says so"            t_flags_undefined_module
 run_test "defined module -> no misleading note"         t_no_module_note_when_defined
 run_test "pbs branch propagates its return code"        t_pbs_branch_propagates
