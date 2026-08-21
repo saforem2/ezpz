@@ -362,7 +362,6 @@ class TestLoraTpPlan:
         assert all(k.endswith((".base", ".A", ".B")) for k in plan)
 
 
-@pytest.mark.skipif(os.name != "posix", reason="needs a gloo PG")
 # A single-rank gloo PG needs a rendezvous address. Set it EXPLICITLY
 # rather than with `os.environ.setdefault`: setdefault *defers* to
 # whatever is already in the environment, so a value leaked by an
@@ -386,6 +385,7 @@ def _rendezvous_env(port: str):
                 os.environ[k] = v
 
 
+@pytest.mark.skipif(os.name != "posix", reason="needs a gloo PG")
 class TestLoraTpPlanAgainstTorch:
     """The retarget must actually satisfy ``parallelize_module``."""
 
