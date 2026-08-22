@@ -27,7 +27,10 @@ nn = pytest.importorskip("torch.nn")
 
 from ezpz.tinker.lora import (  # noqa: E402
     ATTN_TARGETS,
+    HF_ATTN_TARGETS,
+    HF_MLP_TARGETS,
     MLP_TARGETS,
+    UNEMBED_TARGETS,
     LoraConfig,
     LoRALinear,
     adapter_state_dict,
@@ -131,12 +134,30 @@ class TestLoRALinear:
 
 class TestLoraConfig:
     def test_target_names_by_role(self):
-        assert set(LoraConfig(train_mlp=False).target_names()) == set(
-            ATTN_TARGETS
-        )
-        assert set(LoraConfig(train_attn=False).target_names()) == set(
-            MLP_TARGETS
-        )
+        """Each role emits BOTH spellings, and only that role's names.
+
+        The exact-equality assertions matter in both directions: a role
+        must not leak the other role's names (which would adapt more
+        than asked), and must not drop the HF spellings (which would
+        silently adapt nothing on an HF model).
+        """
+        attn = set(LoraConfig(train_mlp=False).target_names())
+        assert attn == set(ATTN_TARGETS) | set(HF_ATTN_TARGETS)
+
+        mlp = set(LoraConfig(train_attn=False).target_names())
+        assert mlp == set(MLP_TARGETS) | set(HF_MLP_TARGETS)
+
+        assert not attn & mlp, "roles must not overlap"
+
+    def test_unembed_is_not_in_target_names(self):
+        """`train_unembed` is handled separately, in `apply_lora`.
+
+        It walks `UNEMBED_TARGETS` against the ROOT module rather than
+        every submodule, so leaking `output`/`lm_head` into the generic
+        name set would wrap unintended children.
+        """
+        names = set(LoraConfig(train_unembed=True).target_names())
+        assert not names & set(UNEMBED_TARGETS)
 
     def test_rejects_bad_rank(self):
         with pytest.raises(ValueError, match="rank must be > 0"):

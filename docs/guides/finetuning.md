@@ -73,6 +73,46 @@ ezpz launch --nhosts 4 -- python3 -m ezpz.examples.fsdp_tp \
     runs a real 2-rank gloo mesh and gates on tp=2 matching tp=1
     numerically — a layout bug can run cleanly and still be wrong.
 
+## HuggingFace models
+
+The same flags work on HF Llama-family models — Llama, Mistral, Qwen2, Gemma:
+
+```bash
+python3 -m ezpz.launch --np 12 -- \
+  python3 -m ezpz.examples.fsdp_tp \
+    --model Qwen/Qwen3-0.6B --lora-rank 16 --dataset random
+```
+
+`LoraConfig` gates by *role* (`train_attn` / `train_mlp` / `train_unembed`)
+rather than by name, because the roles are stable across model families even
+when the spellings are not. `target_names()` emits both vocabularies at once:
+
+| role | native | HuggingFace |
+| --- | --- | --- |
+| `attn` | `wq` `wk` `wv` `wo` | `q_proj` `k_proj` `v_proj` `o_proj` |
+| `mlp` | `w1` `w2` `w3` | `gate_proj` `up_proj` `down_proj` |
+| `unembed` | `output` | `lm_head` |
+
+Emitting both is safe rather than sloppy: `apply_lora` wraps a child only
+when its attribute name is in the target set **and** it is an `nn.Linear`, so
+a spelling the model does not use never fires. No architecture sniffing, and
+nothing to mis-detect.
+
+Two things to know:
+
+- **HF runs are FSDP-only.** The HF path forces `--tp 1` (the TP plan is
+  written against the native module names), so LoRA composes with FSDP2 and
+  HSDP there, not with tensor parallelism.
+- **Tied embeddings are fine.** When `tie_word_embeddings=True`,
+  `lm_head.weight` *is* `embed_tokens.weight`; the adapter is additive and
+  the shared tensor stays frozen, so `--lora-target unembed` does not
+  accidentally thaw the input embedding.
+
+If a requested role adapts nothing, the run **fails at setup** rather than
+training. That matters more than it sounds: a LoRA request that silently
+falls back to full fine-tuning produces a plausible loss curve, a normal-looking
+log, and a checkpoint that is quietly 100× larger than intended.
+
 ## Why LoRA starts as a no-op
 
 `B` is zero-initialized, so `y = Wx + (alpha/r)·B(A(x))` equals `Wx` exactly
@@ -191,5 +231,9 @@ optimizer holds state for.
   `ezpz.examples.generate` against a saved checkpoint; the in-process path
   lands with the RL loop, which is the first thing that needs a real
   train→sample handoff.
-- **HF models.** `apply_lora` targets the native `Transformer`; the HF branch
-  already forces `tp=1` and takes a separate sharding path.
+- **Fused-QKV architectures** (GPT-2, Falcon, GPT-NeoX, MPT). GPT-2's
+  projections are `transformers.pytorch_utils.Conv1D`, which is not an
+  `nn.Linear` subclass, so `apply_lora` cannot wrap them; Falcon and GPT-NeoX
+  pack q/k/v into a single `query_key_value` that would have to be split
+  before an adapter could target one projection. These fail with a named
+  error rather than adapting nothing.

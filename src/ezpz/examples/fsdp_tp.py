@@ -1483,8 +1483,12 @@ def parse_args(argv: Optional[list[str]] = None):
             "fine-tuning). Freezes the base weights and trains a low-rank "
             "update per targeted projection, so only ~rank/dim of the "
             "parameters are trainable and checkpoints shrink by roughly the "
-            "same factor. Composes with FSDP2, TP and meta-init. Native "
-            "models only -- the HF path is unaffected."
+            "same factor. Composes with FSDP2, TP and meta-init. Works on "
+            "native models and on HF Llama-family models (Llama, Mistral, "
+            "Qwen2, Gemma), which are FSDP-only since the HF path forces "
+            "--tp 1. Fused-QKV architectures (GPT-2, Falcon, GPT-NeoX) are "
+            "not supported and fail with a named error rather than "
+            "silently training nothing."
         ),
     )
     parser.add_argument(
@@ -2782,32 +2786,80 @@ def train(
                 model = Transformer.from_model_args(config)
         else:
             model = Transformer.from_model_args(config)
-        # LoRA must be applied BEFORE parallelize(): the TP plan and
-        # fully_shard both need to see the final module tree. Under
-        # meta-init the adapters are built on `meta` too and materialized
-        # by the same to_empty()/init_weights() pass.
-        if getattr(args, "lora_rank", 0) > 0:
-            _targets = {
-                t.strip() for t in str(args.lora_target).split(",") if t.strip()
-            }
-            _unknown = _targets - {"attn", "mlp", "unembed"}
-            if _unknown:
-                raise SystemExit(
-                    f"--lora-target: unknown {sorted(_unknown)}; "
-                    "expected any of attn, mlp, unembed"
-                )
-            model = _lora.apply_lora(
-                model,
-                _lora.LoraConfig(
-                    rank=args.lora_rank,
-                    alpha=args.lora_alpha,
-                    dropout=args.lora_dropout,
-                    train_attn="attn" in _targets,
-                    train_mlp="mlp" in _targets,
-                    train_unembed="unembed" in _targets,
-                    seed=args.seed,
-                ),
+    # LoRA must be applied BEFORE parallelize()/fully_shard(): both need to
+    # see the final module tree. Under meta-init the adapters are built on
+    # `meta` too and materialized by the same to_empty()/init_weights()
+    # pass (native path only -- HF never meta-inits).
+    #
+    # This runs for BOTH paths. It used to live inside the native `else:`
+    # above, which meant `--lora-rank 16` on an HF model was accepted,
+    # logged, and then silently ignored: a full fine-tune wearing a LoRA
+    # run's clothes.
+    if getattr(args, "lora_rank", 0) > 0:
+        _targets = {
+            t.strip() for t in str(args.lora_target).split(",") if t.strip()
+        }
+        _unknown = _targets - {"attn", "mlp", "unembed"}
+        if _unknown:
+            raise SystemExit(
+                f"--lora-target: unknown {sorted(_unknown)}; "
+                "expected any of attn, mlp, unembed"
             )
+        model = _lora.apply_lora(
+            model,
+            _lora.LoraConfig(
+                rank=args.lora_rank,
+                alpha=args.lora_alpha,
+                dropout=args.lora_dropout,
+                train_attn="attn" in _targets,
+                train_mlp="mlp" in _targets,
+                train_unembed="unembed" in _targets,
+                seed=args.seed,
+            ),
+        )
+        # `apply_lora` raises when it matches NOTHING, but a PARTIAL match
+        # is the more dangerous case: it returns happily having adapted
+        # less than was asked for. Assert on the finished tree so a
+        # requested role cannot quietly become a no-op.
+        #
+        # (Tied embeddings are fine and deliberately not special-cased:
+        # `lm_head` is still an nn.Linear, the adapter is additive, and
+        # the shared weight stays frozen. Verified in
+        # tests/test_tinker_lora_hf.py.)
+        _applied = [n for n, _ in _lora.iter_lora_modules(model)]
+        _leaves = {n.rsplit(".", 1)[-1] for n in _applied}
+        _role_names = {
+            "attn": set(_lora.ATTN_TARGETS) | set(_lora.HF_ATTN_TARGETS),
+            "mlp": set(_lora.MLP_TARGETS) | set(_lora.HF_MLP_TARGETS),
+            "unembed": set(_lora.UNEMBED_TARGETS),
+        }
+        _empty = sorted(
+            role
+            for role in _targets
+            if not (_leaves & _role_names.get(role, set()))
+        )
+        if _empty:
+            raise SystemExit(
+                f"--lora-target requested {_empty} but no matching "
+                f"projection was adapted on {type(model).__name__}. "
+                f"Adapted instead: {sorted(_leaves) or 'nothing'}. "
+                "Expected attribute names: "
+                + "; ".join(
+                    f"{r}={sorted(_role_names[r])}"
+                    for r in _empty
+                    if r in _role_names
+                )
+                + ". Fused-QKV architectures (GPT-2, Falcon, GPT-NeoX) pack "
+                "q/k/v into one tensor or use Conv1D and are not supported."
+            )
+        logger.info(
+            "LoRA: %d adapters (rank=%d, targets=%s); %s trainable of %s",
+            len(_applied),
+            args.lora_rank,
+            ",".join(sorted(_targets)),
+            f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,}",
+            f"{sum(p.numel() for p in model.parameters()):,}",
+        )
     mstr = summarize_model(
         model,
         verbose=False,
