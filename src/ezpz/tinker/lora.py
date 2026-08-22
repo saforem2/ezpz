@@ -56,6 +56,27 @@ logger = ezpz.get_logger(__name__)
 ATTN_TARGETS: tuple[str, ...] = ("wq", "wk", "wv", "wo")
 MLP_TARGETS: tuple[str, ...] = ("w1", "w2", "w3")
 
+# The same roles as spelled by HuggingFace's Llama family (Llama, Mistral,
+# Qwen2, Gemma, ...). `target_names()` emits both sets rather than sniffing
+# the architecture: `apply_lora` wraps a child only when its *attribute
+# name* is in the target set AND it is an `nn.Linear`, so a spelling that
+# does not exist on the model simply never fires. A union therefore needs
+# no detection heuristic and cannot mis-detect.
+#
+# Fused-QKV families are deliberately absent. GPT-2 projections are
+# `transformers.pytorch_utils.Conv1D`, which is NOT an `nn.Linear`
+# subclass, so `apply_lora` skips them whatever they are called; Falcon
+# and GPT-NeoX pack qkv into one `query_key_value` that would have to be
+# split before an adapter could target a single projection. Naming them
+# here would produce silent no-ops, so the guard in `fsdp_tp` reports them
+# as unsupported instead.
+HF_ATTN_TARGETS: tuple[str, ...] = ("q_proj", "k_proj", "v_proj", "o_proj")
+HF_MLP_TARGETS: tuple[str, ...] = ("gate_proj", "up_proj", "down_proj")
+
+# Root-level unembedding projection: `output` on ezpz.models.llama,
+# `lm_head` on HF `*ForCausalLM`. Same role, same shape, same depth.
+UNEMBED_TARGETS: tuple[str, ...] = ("output", "lm_head")
+
 
 @dataclass
 class LoraConfig:
@@ -97,11 +118,19 @@ class LoraConfig:
             )
 
     def target_names(self) -> tuple[str, ...]:
+        """Attribute names to adapt, in both native and HF spellings.
+
+        Emitting both is safe because `apply_lora` matches on the
+        attribute name AND requires an `nn.Linear`, so the spellings a
+        given model does not use never fire.
+        """
         names: list[str] = []
         if self.train_attn:
             names.extend(ATTN_TARGETS)
+            names.extend(HF_ATTN_TARGETS)
         if self.train_mlp:
             names.extend(MLP_TARGETS)
+            names.extend(HF_MLP_TARGETS)
         names.extend(self.extra_targets)
         return tuple(dict.fromkeys(names))  # dedupe, keep order
 
@@ -255,17 +284,29 @@ def apply_lora(
             wrapped.append(f"{mod_name}.{attr}" if mod_name else attr)
 
     if cfg.train_unembed:
-        out = getattr(model, "output", None)
-        if isinstance(out, nn.Linear):
-            model.output = LoRALinear(  # type: ignore[assignment]
-                out, cfg.rank, cfg.alpha, cfg.dropout
-            )
-            wrapped.append("output")
+        # Write back to the attribute we actually matched. Hardcoding
+        # `model.output = ...` on an HF model creates a NEW attribute and
+        # leaves `lm_head` a plain Linear, so the forward path never sees
+        # the adapter -- a silent no-op that still reports success.
+        for attr in UNEMBED_TARGETS:
+            out = getattr(model, attr, None)
+            if isinstance(out, nn.Linear):
+                setattr(
+                    model,
+                    attr,
+                    LoRALinear(out, cfg.rank, cfg.alpha, cfg.dropout),
+                )
+                wrapped.append(attr)
+                break
 
     if not wrapped:
         raise RuntimeError(
-            f"apply_lora matched no modules (targets={sorted(targets)}). "
-            "Is this an ezpz.models.llama Transformer?"
+            f"apply_lora matched no modules (targets={sorted(targets)}) "
+            f"on {type(model).__name__}. Supported: ezpz.models.llama "
+            "Transformer, and HF Llama-family models (Llama, Mistral, "
+            "Qwen2, Gemma). Fused-QKV architectures (GPT-2, Falcon, "
+            "GPT-NeoX) are not supported: their projections are either "
+            "not nn.Linear or pack q/k/v into one tensor."
         )
 
     n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -323,7 +364,16 @@ def lora_tp_plan(
     Keys naming something other than a wrapped target -- ``norm``,
     ``PrepareModuleInput`` -- pass through untouched either way.
     """
-    adapted = set(ATTN_TARGETS) | set(MLP_TARGETS) | {"output"}
+    # Both spellings, so this table cannot drift from `target_names()`.
+    # Inert for HF today (the HF path forces tp=1 and never builds a TP
+    # plan), but wrong-by-omission the moment that changes.
+    adapted = (
+        set(ATTN_TARGETS)
+        | set(MLP_TARGETS)
+        | set(HF_ATTN_TARGETS)
+        | set(HF_MLP_TARGETS)
+        | set(UNEMBED_TARGETS)
+    )
     out: dict[str, Any] = {}
     for key, style in base_plan.items():
         leaf = key.rsplit(".", 1)[-1]
