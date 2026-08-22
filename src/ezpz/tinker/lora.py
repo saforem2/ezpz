@@ -1,4 +1,5 @@
-"""LoRA adapters for :mod:`ezpz.models.llama`, composable with FSDP2 + TP.
+"""LoRA adapters for :mod:`ezpz.models.llama` and HuggingFace Llama-family
+models (Llama, Mistral, Qwen2, Gemma), composable with FSDP2 + TP.
 
 Low-Rank Adaptation freezes the pretrained weight ``W`` and learns a
 low-rank update, so ``y = Wx + (alpha/r)·B(A(x))`` with
@@ -118,11 +119,17 @@ class LoraConfig:
             )
 
     def target_names(self) -> tuple[str, ...]:
-        """Attribute names to adapt, in both native and HF spellings.
+        """Submodule attribute names to adapt, native and HF spellings.
 
         Emitting both is safe because `apply_lora` matches on the
         attribute name AND requires an `nn.Linear`, so the spellings a
         given model does not use never fire.
+
+        Covers `train_attn` and `train_mlp` only. `train_unembed` is
+        deliberately absent: `apply_lora` resolves it against the ROOT
+        module (`UNEMBED_TARGETS`) rather than every submodule, so
+        including `output`/`lm_head` here would wrap any nested child
+        that happened to share the name.
         """
         names: list[str] = []
         if self.train_attn:

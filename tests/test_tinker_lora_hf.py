@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 
 torch = pytest.importorskip("torch")
-transformers = pytest.importorskip("transformers")
+pytest.importorskip("transformers")
 
 import torch.nn as nn  # noqa: E402
 

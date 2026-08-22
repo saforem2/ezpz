@@ -174,7 +174,58 @@ class TestHfPathReachesLora:
             "nothing inspects the finished tree, so a partially-applied "
             "LoRA request would pass silently"
         )
-        assert "UNEMBED_TARGETS" in src
+
+    def test_every_role_is_validated_not_just_unembed(self):
+        """The guard must cover attn and mlp too, not only unembed.
+
+        An earlier version checked `unembed` alone, so a model that
+        matched `attn` but had no recognizable MLP passed with fewer
+        adapters than requested -- the exact silent-partial-application
+        this guard exists to prevent.
+        """
+        src = self._train_src()
+        for role in ("ATTN_TARGETS", "MLP_TARGETS", "UNEMBED_TARGETS"):
+            assert role in src, f"the guard ignores {role}"
+        assert "HF_ATTN_TARGETS" in src and "HF_MLP_TARGETS" in src, (
+            "the guard checks only native spellings, so every HF model "
+            "would look like an empty role"
+        )
+
+    def test_partial_role_match_is_detected(self):
+        """Behavioural check of the guard's predicate, not its text.
+
+        Builds a model with attention projections but no MLP, asks for
+        both roles, and confirms the empty role is identified.
+        """
+        torch = pytest.importorskip("torch")
+        nn = torch.nn
+        from ezpz.tinker import lora as _lora
+
+        class Attn(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.q_proj = nn.Linear(8, 8)
+                self.k_proj = nn.Linear(8, 8)
+
+        model = nn.Module()
+        model.layers = nn.ModuleList([Attn()])
+        model = _lora.apply_lora(
+            model,
+            _lora.LoraConfig(rank=2, train_attn=True, train_mlp=True),
+            verbose=False,
+        )
+        leaves = {
+            n.rsplit(".", 1)[-1] for n, _ in _lora.iter_lora_modules(model)
+        }
+        roles = {
+            "attn": set(_lora.ATTN_TARGETS) | set(_lora.HF_ATTN_TARGETS),
+            "mlp": set(_lora.MLP_TARGETS) | set(_lora.HF_MLP_TARGETS),
+        }
+        empty = sorted(r for r in roles if not (leaves & roles[r]))
+        assert empty == ["mlp"], (
+            f"expected 'mlp' to be flagged as unmatched, got {empty}; "
+            "apply_lora does NOT raise here because attn matched"
+        )
 
     def test_help_text_no_longer_claims_native_only(self):
         m = _fsdp_tp()

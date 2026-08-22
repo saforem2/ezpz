@@ -2827,15 +2827,30 @@ def train(
         # the shared weight stays frozen. Verified in
         # tests/test_tinker_lora_hf.py.)
         _applied = [n for n, _ in _lora.iter_lora_modules(model)]
-        if "unembed" in _targets and not any(
-            n.rsplit(".", 1)[-1] in _lora.UNEMBED_TARGETS for n in _applied
-        ):
+        _leaves = {n.rsplit(".", 1)[-1] for n in _applied}
+        _role_names = {
+            "attn": set(_lora.ATTN_TARGETS) | set(_lora.HF_ATTN_TARGETS),
+            "mlp": set(_lora.MLP_TARGETS) | set(_lora.HF_MLP_TARGETS),
+            "unembed": set(_lora.UNEMBED_TARGETS),
+        }
+        _empty = sorted(
+            role
+            for role in _targets
+            if not (_leaves & _role_names.get(role, set()))
+        )
+        if _empty:
             raise SystemExit(
-                "--lora-target includes 'unembed' but no unembedding "
-                f"projection was adapted on {type(model).__name__}: "
-                f"expected one of {list(_lora.UNEMBED_TARGETS)} as a "
-                "top-level nn.Linear. Drop 'unembed' from --lora-target, "
-                "or use a model that exposes a separate output head."
+                f"--lora-target requested {_empty} but no matching "
+                f"projection was adapted on {type(model).__name__}. "
+                f"Adapted instead: {sorted(_leaves) or 'nothing'}. "
+                "Expected attribute names: "
+                + "; ".join(
+                    f"{r}={sorted(_role_names[r])}"
+                    for r in _empty
+                    if r in _role_names
+                )
+                + ". Fused-QKV architectures (GPT-2, Falcon, GPT-NeoX) pack "
+                "q/k/v into one tensor or use Conv1D and are not supported."
             )
         logger.info(
             "LoRA: %d adapters (rank=%d, targets=%s); %s trainable of %s",
