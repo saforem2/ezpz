@@ -137,6 +137,54 @@ class TestTpSupported:
             )
 
 
+class TestHfPathReachesLora:
+    """`--lora-rank` must not be silently ignored for HF models.
+
+    The LoRA block used to live inside the native model's ``else:``
+    branch, so an HF run accepted the flag, logged nothing unusual, and
+    full fine-tuned. Source-level checks because instantiating an HF
+    model here would need weights.
+    """
+
+    @staticmethod
+    def _train_src():
+        return __import__("inspect").getsource(_fsdp_tp().train)
+
+    def test_lora_block_is_not_nested_in_the_native_branch(self):
+        """`if args.lora_rank` must sit at function level.
+
+        Its indentation is the whole bug: one level deeper and only
+        native models reach it.
+        """
+        import re
+
+        src = self._train_src()
+        m = re.search(r'^(\s*)if getattr\(args, "lora_rank"', src, re.M)
+        assert m, "the --lora-rank block moved or was renamed"
+        assert len(m.group(1)) == 4, (
+            f"the LoRA block is indented {len(m.group(1))} spaces, so it "
+            "is nested inside a branch; at function level it must be 4, "
+            "or HF models silently skip LoRA again"
+        )
+
+    def test_partial_application_is_refused(self):
+        """A requested role that adapts nothing must fail loudly."""
+        src = self._train_src()
+        assert "iter_lora_modules(model)" in src, (
+            "nothing inspects the finished tree, so a partially-applied "
+            "LoRA request would pass silently"
+        )
+        assert "UNEMBED_TARGETS" in src
+
+    def test_help_text_no_longer_claims_native_only(self):
+        m = _fsdp_tp()
+        p = m.build_parser() if hasattr(m, "build_parser") else None
+        help_txt = p.format_help() if p else __import__("inspect").getsource(m)
+        assert "Native models only" not in help_txt, (
+            "--lora-rank still advertises itself as native-only"
+        )
+
+
 class TestTargetValidation:
     """An unknown --lora-target must fail loudly at setup, not silently
     adapt nothing (which would look like LoRA 'not working')."""
