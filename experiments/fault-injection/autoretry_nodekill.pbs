@@ -8,7 +8,7 @@
 #PBS -j oe
 # Absolute, because the script cd's and PBS resolves a relative path
 # against the CWD at exit -- job 12473702's log landed in the repo dir.
-#PBS -o /home/foremans/
+#PBS -o /home/foremans/autoretry-nodekill.log
 #
 # Does `ezpz launch --auto-retry` actually swap a bad node out, on real
 # hardware, mid-training?
@@ -96,6 +96,33 @@ latest_ckpt_step() {
     echo "${best}"
 }
 
+# ---- the killer, as a file ----------------------------------------------
+# Written to the shared FS so `pbsdsh` can exec it directly. See the note
+# in chaos() for why this is not an inline `bash -c`.
+KILLER="${EXPT}/kill_ranks.sh"
+cat > "${KILLER}" <<'KILLEOF'
+#!/bin/bash
+# Kill the training RANKS on this node, leaving the retry supervisor.
+#
+# `pkill -f ezpz.examples.fsdp_tp` also matches the parent
+# `python3 -m ezpz.launch --auto-retry -- python3 -m ezpz.examples.fsdp_tp`,
+# whose own command line contains that string. Job 12473702 killed the
+# supervisor that way: 1 attempt, empty bad_nodes.txt, nothing left to
+# fail over. So skip any pid whose cmdline mentions ezpz.launch.
+n=0
+for pid in $(pgrep -f "ezpz[.]examples[.]fsdp_tp" 2>/dev/null); do
+    if grep -qa "ezpz.launch" "/proc/${pid}/cmdline" 2>/dev/null; then
+        continue
+    fi
+    kill -9 "${pid}" 2>/dev/null && n=$((n + 1))
+done
+echo "[killer] $(hostname): killed ${n} rank pid(s)"
+# Report nothing-killed as a failure: a silent no-op here makes every
+# downstream failover assertion vacuous.
+[ "${n}" -gt 0 ]
+KILLEOF
+chmod +x "${KILLER}"
+
 # ---- kill ONE node, once ------------------------------------------------
 # `pbsdsh -n 0` targets the first node in the allocation, which is
 # active[0] -- the host auto-retry should retire. Killing a single node
@@ -110,19 +137,20 @@ chaos() {
         [ -f "${DONE}" ] && { echo "[CHAOS] training ended before the kill"; return 0; }
     done
     echo "[CHAOS] killing ranks on ${victim} at $(date +%s) (ckpt=$(latest_ckpt_step "${CKPT}"))"
-    # Kill the RANKS, not the supervisor. `pkill -f ezpz.examples.fsdp_tp`
-    # also matches the `python3 -m ezpz.launch --auto-retry -- python3 -m
-    # ezpz.examples.fsdp_tp ...` parent, whose command line contains that
-    # string -- so the first run took out the retry loop itself and there
-    # was nothing left to fail over (job 12473702: 1 attempt, empty
-    # bad_nodes.txt). Excluding `ezpz.launch` leaves the supervisor alive
-    # to observe the failure and swap.
-    pbsdsh -n 0 -- bash -c \
-        'for pid in $(pgrep -f "ezpz[.]examples[.]fsdp_tp"); do
-             grep -qa "ezpz.launch" "/proc/$pid/cmdline" 2>/dev/null && continue
-             kill -9 "$pid" 2>/dev/null
-         done; true' || true
-    echo "[CHAOS] kill delivered"
+    # Run a FILE, not an inline script. `pbsdsh -- bash -c '<multi-line>'`
+    # does not survive the trip: job 12473703 got "bash: -c: line 1:
+    # syntax error: unexpected end of file" and, because of a trailing
+    # `|| true`, still printed "kill delivered" while training ran on to
+    # completion. A file has no quoting or newline exposure at all.
+    # Capture to a file as well as stdout: the verdict runs while the
+    # job's own stdout is still spooled by PBS and cannot be read back.
+    pbsdsh -n 0 -- /bin/bash "${KILLER}" 2>&1 | tee "${EXPT}/kill.out"
+    local krc=${PIPESTATUS[0]}
+    echo "[CHAOS] kill rc=${krc}"
+    # Do NOT swallow this. A kill that never lands makes every downstream
+    # assertion vacuous, and that is exactly how 12473703 read as a
+    # failover bug when it was a quoting bug.
+    [ "${krc}" -eq 0 ] || echo "[CHAOS] WARNING: killer script failed"
 }
 
 chaos & CPID=$!
@@ -143,6 +171,9 @@ kill "${CPID}" 2>/dev/null || true
 # ---- verdict ------------------------------------------------------------
 FO_DIR="$(ls -dt "${D}"/logs/failover-* 2>/dev/null | head -1)"
 VICTIM="$(cat "${EXPT}/victim.txt" 2>/dev/null || echo '<none>')"
+# The killer runs under pbsdsh; chaos() tees its output here because the
+# job's own stdout is still spooled by PBS at this point.
+KILLOUT="$(cat "${EXPT}/kill.out" 2>/dev/null)"
 
 echo
 echo "======================= RESULT ======================="
@@ -168,14 +199,23 @@ else
     ACT="$(cat "${FO_DIR}/active.hostfile" 2>/dev/null)"
     N_ATTEMPTS="$(ls -1 "${FO_DIR}"/attempt-*.log 2>/dev/null | wc -l)"
 
+    # Checked FIRST because everything else presumes it. Job 12473703
+    # reported three FAILs that all traced back to a kill that never
+    # landed (`pbsdsh -- bash -c` mangled the inline script) -- the
+    # failover logic was never reached, let alone wrong. If the ranks
+    # are still alive there is no bad node and nothing to conclude.
+    grep -q "killed [1-9][0-9]* rank pid" <<< "${KILLOUT}"
+    check "the kill actually landed on ${VICTIM}" $?
+
     grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
     ! grep -q "${VICTIM}" <<< "${ACT}"
     check "killed host is OUT of the active hostfile" $?
-    # Ordered so the prerequisite is checked FIRST: without a relaunch
-    # the two checks below are vacuous -- on job 12473702 they both
-    # reported PASS while the test as a whole failed, because an
-    # untouched hostfile still has N hosts and attempt-1 (which ran
-    # BEFORE the kill) naturally never mentions the victim.
+    # Ordered so the prerequisite is checked before its dependents:
+    # without a relaunch the two checks below are vacuous -- on job
+    # 12473702 they both reported PASS while the test as a whole
+    # failed, because an untouched hostfile still has N hosts and
+    # attempt-1 (which ran BEFORE the kill) naturally never mentions
+    # the victim.
     [ "${N_ATTEMPTS}" -ge 2 ]; check "the job was relaunched (>=2 attempts)" $?
 
     if [ "${N_ATTEMPTS}" -lt 2 ]; then
