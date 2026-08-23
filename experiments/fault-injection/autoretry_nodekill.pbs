@@ -52,10 +52,17 @@ D="${EZPZ_DIR:-${HOME}/datascience/foremans/projects/saforem2/ezpz-validate}"
 cd "${D}" || exit 1
 echo "=== commit: $(git rev-parse --short HEAD) ==="
 
+# lmod's init reads ZSH_EVAL_CONTEXT unguarded, which `set -u` turns
+# into a fatal "unbound variable" the moment `module load` runs. Drop
+# nounset just for the module call rather than for the whole script --
+# the rest of this file relies on it to catch typo'd variables.
+set +u
 module load frameworks/2026.1.0
 export PATH="${HOME}/.local/bin:${PATH}:/opt/cray/pals/1.8/bin:/opt/pbs/bin"
 # shellcheck disable=SC1091
+# Same reason: venv activate scripts also read unset vars (PS1, etc).
 source venvs/aurora_frameworks-2026.1.0/bin/activate
+set -u
 export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
