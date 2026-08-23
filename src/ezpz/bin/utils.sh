@@ -1895,6 +1895,27 @@ ezpz_assert_python_env_active() {
 		log_message ERROR "      'module load' inside ezpz was a silent no-op."
 		log_message ERROR "      Run the script with \`bash -l\` (login shell), or"
 		log_message ERROR "      source your lmod init before calling ezpz_setup_env."
+	elif [[ -z "${MODULEPATH:-}" ]]; then
+		# `module` exists but MODULEPATH does not. Sourcing lmod's init
+		# defines the FUNCTION; the site MODULEPATH comes from the login
+		# profile. So a script can pass a `command -v module` check and
+		# still have every `module load` fail with
+		#
+		#     Lmod Warning: MODULEPATH is undefined.
+		#     Lmod has detected the following error: The following
+		#     module(s) are unknown: "frameworks/2026.1.0"
+		#
+		# Observed under PBS, which runs job scripts non-login: torch then
+		# imported from the wrong prefix and died on a missing
+		# libmkl_intel_lp64.so, naming neither lmod nor the module.
+		log_message ERROR "NOTE: \`module\` is defined but MODULEPATH is EMPTY, so"
+		log_message ERROR "      every 'module load' reported 'unknown module'."
+		log_message ERROR "      Sourcing lmod's init is NOT enough -- it defines the"
+		log_message ERROR "      function but not the site module path. Use a login"
+		log_message ERROR "      shell. In a PBS/Slurm job script:"
+		log_message ERROR "          #!/bin/bash -l"
+		log_message ERROR "      or re-exec once at the top of the script:"
+		log_message ERROR "          [ -z \"\${_RELOGIN:-}\" ] && export _RELOGIN=1 && exec bash -l \"\$0\" \"\$@\""
 	fi
 	log_message ERROR "Then re-run ezpz_setup_env."
 	return 1

@@ -52,6 +52,60 @@ recommended fix.
 | `ModuleNotFoundError: ezpz` | Not installed | `pip install git+https://github.com/saforem2/ezpz` |
 | `ImportError: ... .so` | Binary incompatibility | Rebuild from source; match Python/PyTorch versions |
 | `ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp` (XPU) | System oneAPI libs shadow the venv's bundled ones | Prepend the venv libs — use `ezpz_activate_venv` (see below) |
+| `ModuleNotFoundError: torch` or `OSError: libmkl_intel_lp64.so.N` **inside a batch job** | `module load` was a silent no-op: schedulers run job scripts non-login | Run the job script under a login shell (see below) |
+
+#### `module load` does nothing in a PBS / Slurm job script
+
+Schedulers run job scripts under a **non-login** shell, so your login
+profile never executes. Two distinct failures follow, both quiet:
+
+1. **`module` is not defined at all.** `module load frameworks` is not a
+   missing binary — it is a missing shell *function*, so the line does
+   nothing and the script continues.
+2. **`module` is defined but `MODULEPATH` is empty.** Every load then
+   reports `The following module(s) are unknown`.
+
+Either way setup falls through to the system Python, and the job dies
+later somewhere unrelated:
+
+```
+OSError: libmkl_intel_lp64.so.3: cannot open shared object file
+```
+
+naming neither lmod nor the module that failed to load.
+
+!!! warning "Sourcing lmod's init is not sufficient"
+
+    ```bash
+    . /usr/share/lmod/lmod/init/bash   # defines the `module` FUNCTION
+    module load frameworks/2026.1.0    # still fails: MODULEPATH is undefined
+    ```
+
+    The init script supplies the function; the site `MODULEPATH` comes
+    from the login profile. A script can therefore pass a
+    `command -v module` check and still have every `module load` be a
+    no-op.
+
+Use a login shell. Either the shebang:
+
+```bash
+#!/bin/bash -l
+```
+
+or, when the shebang is not under your control, re-exec once at the top
+of the script:
+
+```bash
+if [ -z "${_RELOGIN:-}" ]; then
+    export _RELOGIN=1
+    exec /bin/bash -l "$0" "$@"
+fi
+```
+
+`ezpz_setup_env` detects both states and reports them by name rather
+than letting the failure surface later as a missing module. Note also
+that `module load frameworks` with **no version** loads nothing and
+exits 0 — always pin the version.
 
 #### `libsycl.so` undefined symbol on XPU
 

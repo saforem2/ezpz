@@ -152,6 +152,24 @@ The recommended one-liner.  Internally it calls:
 ezpz_setup_env
 ```
 
+!!! warning "In a batch job, run the script under a login shell"
+
+    PBS and Slurm execute job scripts under a **non-login** shell, so
+    your login profile never runs and `module` is either undefined or
+    left with an empty `MODULEPATH`. Every `module load` inside
+    `ezpz_setup_env` is then a silent no-op, setup falls through to the
+    system Python, and the job dies later with `ModuleNotFoundError:
+    torch` or a missing `libmkl_intel_lp64.so`.
+
+    Use `#!/bin/bash -l`, or re-exec once at the top of the script.
+    Sourcing lmod's init is **not** enough — it defines the `module`
+    function but not the site `MODULEPATH`. See
+    [Import Errors](../troubleshooting.md#module-load-does-nothing-in-a-pbs-slurm-job-script)
+    for the full recipe.
+
+    `ezpz_setup_env` detects both states and names them rather than
+    reporting success.
+
 ### Key Functions
 
 | Function                     | Description                                                                               |

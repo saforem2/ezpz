@@ -122,6 +122,49 @@ t_error_names_the_cause() {
 # When `module` is undefined (plain `bash script.sh`), any `module load`
 # inside ezpz is a silent no-op -- the actual trigger in #216. The error
 # must say so, because the user's interactive shell would have worked.
+# `module` DEFINED but MODULEPATH empty: the second silent no-op. Sourcing
+# lmod's init supplies the function; the site MODULEPATH comes from the
+# login profile, so every `module load` reports "unknown module". Hit
+# under PBS, which runs job scripts non-login (issue #221).
+t_flags_empty_modulepath() {
+    source "${FN_FILE}"
+    local out=""
+    log_message() { out+="$* "; }
+    unset VIRTUAL_ENV CONDA_PREFIX
+    PATH="/usr/bin:/bin"
+    module() { :; }          # defined, as after sourcing lmod's init
+    MODULEPATH=""            # ...but no site path
+    ezpz_assert_python_env_active 2>/dev/null || true
+    [[ "${out}" == *"MODULEPATH is EMPTY"* ]]
+}
+
+# The message must name the FIX, not just the symptom: `bash -l`. Someone
+# hitting this has already tried sourcing lmod's init.
+t_modulepath_suggests_login_shell() {
+    source "${FN_FILE}"
+    local out=""
+    log_message() { out+="$* "; }
+    unset VIRTUAL_ENV CONDA_PREFIX
+    PATH="/usr/bin:/bin"
+    module() { :; }
+    MODULEPATH=""
+    ezpz_assert_python_env_active 2>/dev/null || true
+    [[ "${out}" == *"bash -l"* ]]
+}
+
+# The converse: with MODULEPATH set, blaming it would be a false lead.
+t_no_modulepath_note_when_set() {
+    source "${FN_FILE}"
+    local out=""
+    log_message() { out+="$* "; }
+    unset VIRTUAL_ENV CONDA_PREFIX
+    PATH="/usr/bin:/bin"
+    module() { :; }
+    MODULEPATH="/opt/modulefiles"
+    ezpz_assert_python_env_active 2>/dev/null || true
+    [[ "${out}" != *"MODULEPATH is EMPTY"* ]]
+}
+
 t_flags_undefined_module() {
     source "${FN_FILE}"
     local out=""
@@ -215,6 +258,9 @@ run_test "PYTHON_ROOT-only -> passes (supported)"       t_python_root_only_passe
 run_test "shim resolving to system python -> FAILS"     t_symlink_to_system_python_fails
 run_test "undefined module -> error says so"            t_flags_undefined_module
 run_test "defined module -> no misleading note"         t_no_module_note_when_defined
+run_test "empty MODULEPATH -> error says so"            t_flags_empty_modulepath
+run_test "empty MODULEPATH -> suggests a login shell"   t_modulepath_suggests_login_shell
+run_test "MODULEPATH set -> no misleading note"         t_no_modulepath_note_when_set
 run_test "pbs branch propagates its return code"        t_pbs_branch_propagates
 run_test "slurm branch propagates its return code"      t_slurm_branch_propagates
 run_test "both branches assert the post-condition"      t_both_branches_assert
