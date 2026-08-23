@@ -16,6 +16,18 @@ For what recovery *costs* at real scale, see
 checkpoint, 10.4–11.1 s per restart. This page is about the loop's
 decisions; that one is about the I/O.
 
+The two are worth keeping apart, because both survive a `pkill -9` and
+carry on training, so they look alike from outside:
+
+| | what fails | what recovers |
+| --- | --- | --- |
+| Checkpoint restart | the training **process** | relaunch on the **same** nodes, resuming from the last checkpoint |
+| `--auto-retry` (here) | a **node** | the bad host is retired, a spare takes its slot, the job runs **elsewhere** |
+
+The difference is whether the node set changes. Checkpoint restart is
+measured on real hardware; node-swapping is exercised here in process,
+and on-node validation is still outstanding (see [Scope](#scope)).
+
 ## The experiment
 
 Four attempts against a 300-step job checkpointing every 25 steps, with
