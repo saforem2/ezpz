@@ -30,8 +30,8 @@ watchdog timeout or an unrecognised crash still burns a spare, on the
 guess that a node is at fault — see the classification table below.
 And a retry of any kind requires a spare to exist: with none, the
 verdict is `EXHAUSTED` and the job stops. Checkpoint restart is
-measured on real hardware; node-swapping is exercised here in process,
-and on-node validation is still outstanding (see [Scope](#scope)).
+measured on real hardware, and node-swapping is now validated on real
+hardware too — see [On-node validation](#on-node-validation).
 
 ## The experiment
 
@@ -161,6 +161,53 @@ distributed init and reading a sharded checkpoint. What it does exercise
 for real is every decision the loop makes, the subprocess plumbing, the
 idle watchdog, the scraper, and the hostfile rewrite.
 
-The remaining gap is a genuine multi-node failure: killing a real node on
-a live allocation and confirming the relaunch lands on a different one.
-That still needs an allocation, and is tracked separately.
+## On-node validation
+
+The one claim no in-process test can make is that the *next* attempt's
+`mpiexec` actually lands somewhere else. That needed real hardware, and
+`experiments/fault-injection/autoretry_nodekill.pbs` now does it: 4
+Sunspot nodes split 2 active + 2 spare, `pbsdsh -n 0` killing the ranks
+on exactly one active node mid-training, with `--auto-retry` driving the
+retry loop.
+
+Sunspot job 12473704, killing `x1921c1s0b0n0` after checkpoint 40:
+
+| attempt | ran on | outcome |
+|---|---|---|
+| 1 | `s0b0n0` (victim), `s1b0n0` | 13 ranks killed on the victim |
+| 2 | `s1b0n0`, **`s4b0n0`** (spare) | victim retired, spare swapped in |
+| 3 | `s1b0n0`, **`s5b0n0`** (spare) | see the caveat below |
+
+Attempt 2 is the result: the killed host was recorded in
+`bad_nodes.txt`, removed from the active hostfile, and the relaunch ran
+on a different node set. Node-swapping works on real hardware.
+
+!!! warning "The same run exposed a classifier bug"
+
+    Attempt 2 died of `OSError: [Errno 28] No space left on device`
+    during a checkpoint save — the experiment kept every 22 GB
+    checkpoint and filled a shared filesystem. `--auto-retry` scraped a
+    host out of the resulting PALS teardown cascade and retired
+    `s4b0n0`, a healthy node, then relaunched into the same full disk.
+
+    A whole-job failure whose cascade happens to name a host is read as
+    that host being bad. Tracked in
+    [#231](https://github.com/saforem2/ezpz/issues/231). The experiment
+    now bounds its own footprint and refuses to start without room.
+
+Two harness bugs are worth recording, because both produced confident
+wrong verdicts before any of the above was true:
+
+- `pbsdsh -- bash -c '<multi-line>'` does not survive the trip
+  (`syntax error: unexpected end of file`). The kill never landed, the
+  job trained to completion, and a trailing `|| true` reported success
+  anyway. The killer is now a file, and reports non-zero if it kills
+  nothing.
+- Two assertions passed *vacuously* when there was no relaunch: an
+  untouched hostfile still has N hosts, and attempt 1 — which ran before
+  the kill — naturally never names the victim. They are now gated behind
+  the relaunch check, which is evaluated first.
+
+The general lesson: a chaos harness that cannot distinguish "the fault
+was injected and handled" from "the fault was never injected" reports
+the second as the first.
