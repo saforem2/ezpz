@@ -546,7 +546,7 @@ class TestProgressMarkerContract:
     def test_real_iter_output_counts_as_progress(
         self, tmp_path, monkeypatch
     ):
-        """`iter=N` is what every ezpz example prints, and it counts.
+        r"""`iter=N` is what every ezpz example prints, and it counts.
 
         This test was written to FAIL, back when the marker was
         `\bstep=\d+` and `minimal.py`/`test.py` both emitted `iter=`:

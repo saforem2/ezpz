@@ -437,6 +437,16 @@ def classify_attempt(
     KeyboardInterrupt is re-raised before we reach it.
     """
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+    # Strip ANSI ONCE, here, so every matcher below sees plain text.
+    #
+    # ezpz's logger colorizes when attached to a tty, and the escapes
+    # land INSIDE the tokens being matched: `\x1b[36miter\x1b[0m=12`
+    # defeats `\biter=\d+`, and a colorized `rank 3 died from signal 15`
+    # stops matching the innocent-cascade strip and is misread as a real
+    # crash. `_extract_inner_rc` already stripped for exactly this
+    # reason; doing it for the other two as well is the fix, rather
+    # than teaching each pattern to tolerate escapes.
+    log_text = _strip_ansi(log_text)
 
     inner_rc = _extract_inner_rc(log_text)
     crash = _has_crash_patterns(log_text)
@@ -706,11 +716,16 @@ def run_with_auto_retry(
                 # retry loop entirely (#223). Logged rather than
                 # swallowed silently: losing the bad node's NAME is
                 # worth a line in the log.
+                # Include the path and the traceback: this is the only
+                # trace of WHY attribution was lost, and "scraper
+                # failed" alone is not enough to debug from.
                 logger.warning(
-                    "[auto-retry] scraper failed (%s: %s); falling back "
-                    "to blind rotation",
+                    "[auto-retry] scraper failed on %s (%s: %s); falling "
+                    "back to blind rotation",
+                    p,
                     type(exc).__name__,
                     exc,
+                    exc_info=True,
                 )
                 return []
 
@@ -801,7 +816,9 @@ def run_with_auto_retry(
         if reason is TerminationReason.STUCK_PRE_TRAINING:
             logger.error(
                 "[auto-retry] FAILOVER STOP: stuck_pre_training "
-                "(two consecutive attempts with zero step= markers, "
+                "(two consecutive attempts with no progress markers "
+                "-- no iter=/step=/epoch=/batch=/idx= line in either "
+                "log, "
                 "rc=%d)",
                 last_rc,
             )

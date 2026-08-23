@@ -199,6 +199,44 @@ class TestPureHelpers:
         """
         assert _has_progress_markers(line), f"{line!r} should count"
 
+    def test_progress_markers_survive_ansi_color(self, tmp_path):
+        """Color must not hide progress. Raised as a P1 in review.
+
+        ezpz's logger colorizes when attached to a tty, and the escapes
+        land INSIDE the token: `\x1b[36miter\x1b[0m=12` does not match
+        `\biter=\d+`. Unfixed, the whole point of #224 would have been
+        undone on any normal terminal.
+
+        Asserted through `classify_attempt`, not `_has_progress_markers`
+        -- the strip happens in the caller, so testing the helper alone
+        would pass while the real path stayed broken.
+        """
+        log = tmp_path / "a.log"
+        log.write_text("\x1b[1;36miter\x1b[0m=\x1b[36m12\x1b[0m loss=0.5\n")
+        res = classify_attempt(
+            1, log, [], prior_attempt_had_progress=False, has_spares=True
+        )
+        assert res.has_progress, "ANSI-colored progress was not seen"
+        assert res.reason is not TerminationReason.STUCK_PRE_TRAINING
+
+    def test_colored_innocent_cascade_is_still_innocent(self, tmp_path):
+        """The same bug, on the crash side.
+
+        A colorized `rank 3 died from signal 15` stopped matching the
+        innocent-cascade strip, so a clean walltime kill was read as a
+        real crash and burned a spare.
+        """
+        log = tmp_path / "b.log"
+        log.write_text(
+            "iter=5\nrank 3 \x1b[31mdied from signal\x1b[0m 15\n"
+        )
+        res = classify_attempt(
+            143, log, [], prior_attempt_had_progress=True, has_spares=True
+        )
+        assert res.reason is TerminationReason.WALLTIME, (
+            f"colored cascade misread as {res.reason.value}"
+        )
+
     @pytest.mark.parametrize(
         "line",
         [
