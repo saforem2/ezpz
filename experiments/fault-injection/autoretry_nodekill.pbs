@@ -1,0 +1,170 @@
+#!/bin/bash -l
+#PBS -N autoretry-nodekill
+#PBS -A datascience
+#PBS -l select=4
+#PBS -l walltime=01:00:00
+#PBS -q workq
+#PBS -l filesystems=tegu:home
+#PBS -j oe
+#
+# Does `ezpz launch --auto-retry` actually swap a bad node out, on real
+# hardware, mid-training?
+#
+# Everything else in the failover stack is tested: 161 unit tests, 22
+# fault-injection tests driving the real loop against real subprocesses.
+# All of it runs in one process on one host. The single claim none of it
+# can reach is the one that matters most in production -- that when a
+# node dies, the NEXT attempt's mpiexec lands somewhere else.
+#
+# Deliberately NOT the same experiment as
+# experiments/checkpoint-restart/: that one kills every node at once
+# (`pbsdsh` with no index) and relaunches on a fixed node set with a
+# hand-rolled `while` loop. With every node hit there is no healthy/bad
+# distinction to fail over between, and with no spares there is nowhere
+# to fail over to. It measures restart cost; this measures failover.
+#
+# The differences that make this one a failover test:
+#   * select=4 with `--nhosts 2` -> 2 active + 2 SPARE hosts
+#   * `--auto-retry` drives the retry loop, not a bash `while`
+#   * `pbsdsh -n <index>` kills ranks on ONE node, so exactly one host
+#     is bad and three stay healthy
+#
+# PASS requires all four, checked at the end:
+#   1. the killed host is named in bad_nodes.txt
+#   2. it is GONE from the active hostfile
+#   3. a spare took its slot
+#   4. the post-kill attempt actually RAN on the new host set
+#      (this is the part no in-process test can establish)
+
+set -u
+set -o pipefail
+
+# PBS runs job scripts non-login, where `module` may exist but
+# MODULEPATH does not -- every `module load` then silently loads
+# nothing (see ezpz #216/#221). The shebang's -l covers it; assert
+# anyway, because the failure mode is a confusing MKL error much later.
+[ -n "${MODULEPATH:-}" ] || {
+    echo "FATAL: MODULEPATH unset -- module load would be a no-op"
+    exit 1
+}
+
+D="${EZPZ_DIR:-${HOME}/datascience/foremans/projects/saforem2/ezpz-validate}"
+cd "${D}" || exit 1
+echo "=== commit: $(git rev-parse --short HEAD) ==="
+
+module load frameworks/2026.1.0
+export PATH="${HOME}/.local/bin:${PATH}:/opt/cray/pals/1.8/bin:/opt/pbs/bin"
+# shellcheck disable=SC1091
+source venvs/aurora_frameworks-2026.1.0/bin/activate
+export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
+export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+
+EXPT="${D}/out/autoretry-nodekill-${PBS_JOBID%%.*}"
+mkdir -p "${EXPT}"
+CKPT="${EXPT}/ckpt"
+LOG="${EXPT}/train.log"
+DONE="${EXPT}/.done"
+
+ACTIVE_HOSTS=2          # --nhosts; the rest of select= becomes spare
+KILL_AFTER_STEP=40      # kill once a complete checkpoint passes this
+TRAIN_ITERS=400
+SAVE_INTERVAL=20
+
+mapfile -t ALL_HOSTS < "${PBS_NODEFILE}"
+echo "=== allocation (${#ALL_HOSTS[@]} hosts) ==="
+printf '  %s\n' "${ALL_HOSTS[@]}"
+echo "=== ${ACTIVE_HOSTS} active + $(( ${#ALL_HOSTS[@]} - ACTIVE_HOSTS )) spare ==="
+
+latest_ckpt_step() {
+    local best=-1 s
+    for d in "$1"/step-*; do
+        [ -e "${d}/.complete" ] || continue
+        s="${d##*step-}"
+        [ "${s}" -gt "${best}" ] 2>/dev/null && best="${s}"
+    done
+    echo "${best}"
+}
+
+# ---- kill ONE node, once ------------------------------------------------
+# `pbsdsh -n 0` targets the first node in the allocation, which is
+# active[0] -- the host auto-retry should retire. Killing a single node
+# is the whole point: with every node dead there is no bad-vs-healthy
+# distinction and nothing to swap.
+chaos() {
+    local victim="${ALL_HOSTS[0]}"
+    echo "${victim}" > "${EXPT}/victim.txt"
+    echo "[CHAOS] victim = ${victim}"
+    while [ "$(latest_ckpt_step "${CKPT}")" -lt "${KILL_AFTER_STEP}" ]; do
+        sleep 3
+        [ -f "${DONE}" ] && { echo "[CHAOS] training ended before the kill"; return 0; }
+    done
+    echo "[CHAOS] killing ranks on ${victim} at $(date +%s) (ckpt=$(latest_ckpt_step "${CKPT}"))"
+    pbsdsh -n 0 -- bash -c 'pkill -9 -f "ezpz.examples.fsdp_tp" 2>/dev/null; true' || true
+    echo "[CHAOS] kill delivered"
+}
+
+chaos & CPID=$!
+
+# ---- the run under test -------------------------------------------------
+# --auto-retry needs the ACTIVE size explicitly: that is how it knows
+# where to split the allocation into active + spare.
+python3 -m ezpz.launch --auto-retry --nhosts "${ACTIVE_HOSTS}" -- \
+    python3 -m ezpz.examples.fsdp_tp \
+        --model agpt-2b --tp 1 --dataset random \
+        --train-iters "${TRAIN_ITERS}" --batch-size 1 --seq-len 512 \
+        --ckpt-dir "${CKPT}" --save-interval "${SAVE_INTERVAL}" \
+        --outdir "${EXPT}/out" 2>&1 | tee -a "${LOG}"
+RC=${PIPESTATUS[0]}
+touch "${DONE}"
+kill "${CPID}" 2>/dev/null || true
+
+# ---- verdict ------------------------------------------------------------
+FO_DIR="$(ls -dt "${D}"/logs/failover-* 2>/dev/null | head -1)"
+VICTIM="$(cat "${EXPT}/victim.txt" 2>/dev/null || echo '<none>')"
+
+echo
+echo "======================= RESULT ======================="
+echo "rc=${RC}  victim=${VICTIM}"
+echo "failover dir: ${FO_DIR:-<none>}"
+[ -n "${FO_DIR}" ] && {
+    echo "--- bad_nodes.txt ---";    cat "${FO_DIR}/bad_nodes.txt"    2>/dev/null
+    echo "--- active.hostfile ---";  cat "${FO_DIR}/active.hostfile"  2>/dev/null
+    echo "--- attempts ---";         ls -1 "${FO_DIR}"/attempt-*.log 2>/dev/null
+    cp -r "${FO_DIR}" "${EXPT}/failover" 2>/dev/null || true
+}
+
+fail=0
+check() {  # check <description> <condition-rc>
+    if [ "$2" -eq 0 ]; then echo "  PASS  $1"; else echo "  FAIL  $1"; fail=1; fi
+}
+
+if [ -z "${FO_DIR}" ]; then
+    echo "  FAIL  --auto-retry produced no failover dir (did it engage?)"
+    fail=1
+else
+    BAD="$(cat "${FO_DIR}/bad_nodes.txt" 2>/dev/null)"
+    ACT="$(cat "${FO_DIR}/active.hostfile" 2>/dev/null)"
+    N_ATTEMPTS="$(ls -1 "${FO_DIR}"/attempt-*.log 2>/dev/null | wc -l)"
+
+    grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
+    ! grep -q "${VICTIM}" <<< "${ACT}"
+    check "killed host is OUT of the active hostfile" $?
+    [ "$(wc -l < "${FO_DIR}/active.hostfile")" -eq "${ACTIVE_HOSTS}" ]
+    check "active set still has ${ACTIVE_HOSTS} hosts (a spare filled in)" $?
+    [ "${N_ATTEMPTS}" -ge 2 ]; check "the job was relaunched (>=2 attempts)" $?
+
+    # The claim no in-process test can make: the post-kill attempt ran
+    # on the NEW host set. PALS prints the hosts it launched on, so the
+    # last attempt log must not name the victim.
+    LAST="$(ls -1t "${FO_DIR}"/attempt-*.log 2>/dev/null | head -1)"
+    if [ -n "${LAST}" ]; then
+        ! grep -q "${VICTIM}" "${LAST}"
+        check "final attempt did NOT run on the dead host ($(basename "${LAST}"))" $?
+    fi
+fi
+
+echo "======================================================"
+[ "${fail}" -eq 0 ] && echo "OVERALL: PASS" || echo "OVERALL: FAIL"
+echo "artifacts: ${EXPT}"
+exit "${fail}"
