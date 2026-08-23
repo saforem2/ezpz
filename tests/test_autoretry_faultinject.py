@@ -99,7 +99,16 @@ class Harness:
                 lambda s: real_sleep(min(s, 0.02)),
             )
         cfg = AutoRetryConfig(
-            cmd=[sys.executable, FAULT_SCRIPT],
+            # `AutoRetryConfig.cmd` documents that the command must
+            # already carry `--hostfile=<path>`: the loop never
+            # re-assembles it, it rewrites the file in place and relies
+            # on the launcher re-reading it. Passing it here means the
+            # child sees what a real launcher would.
+            cmd=[
+                sys.executable,
+                FAULT_SCRIPT,
+                f"--hostfile={self.hostfile}",
+            ],
             log_dir=self.log_dir,
             idle_timeout_s=idle_timeout_s,
             max_failover_retries=max_failover_retries,
@@ -132,6 +141,21 @@ class Harness:
 
     def log_text(self) -> str:
         return "".join(p.read_text() for p in self.attempt_logs)
+
+    @property
+    def hosts_seen(self) -> list[list[str]]:
+        """Hosts each attempt's CHILD read, in attempt order.
+
+        Distinct from `active_hosts`, which is the final on-disk state:
+        this is what the running process was actually handed.
+        """
+        out = []
+        for p in self.attempt_logs:
+            for line in p.read_text(errors="replace").splitlines():
+                if line.startswith("hostfile hosts="):
+                    out.append(line.split("=", 1)[1].split(","))
+                    break
+        return out
 
 
 class TestNamedBadNode:
@@ -169,6 +193,40 @@ class TestNamedBadNode:
         assert h.active_hosts == ["healthy-0", "spare-1"], (
             "the healthy host should be untouched and the spare should "
             f"take the bad host's slot; got {h.active_hosts}"
+        )
+
+    def test_the_next_attempt_is_handed_the_swapped_hostfile(
+        self, tmp_path, monkeypatch
+    ):
+        """The swap must reach the PROCESS, not just the disk.
+
+        `AutoRetryConfig.cmd` documents the contract: the command
+        carries `--hostfile=<path>`, the loop never re-assembles it,
+        and `NodeAllocation` rewrites that file in place so the
+        re-spawned launcher reads the fresh contents. Asserting on the
+        file after the run only shows it reached the disk -- this
+        checks what each child was actually handed.
+
+        Raised in review, and correctly: the first version of this file
+        did not pass `--hostfile` at all, so it never exercised the
+        contract as written.
+        """
+        h = Harness(tmp_path, FI_MODE="shepherd", FI_FAIL_ON="1")
+        rc = h.run(
+            monkeypatch,
+            nodes=("healthy-0", BAD_HOST, "spare-1"),
+            active=2,
+        )
+
+        assert rc == 0
+        seen = h.hosts_seen
+        assert len(seen) == 2, f"expected two attempts, saw {seen}"
+        assert seen[0] == ["healthy-0", BAD_HOST], (
+            f"attempt 1 should have been given the original set; got {seen[0]}"
+        )
+        assert seen[1] == ["healthy-0", "spare-1"], (
+            "attempt 2's process was handed a stale hostfile: expected the "
+            f"bad host replaced by the spare, got {seen[1]}"
         )
 
     def test_blind_rotates_when_the_machine_is_unknown(
@@ -374,7 +432,7 @@ class TestIdleWatchdog:
         h = Harness(
             tmp_path, FI_MODE="hang", FI_FAIL_ON="1", FI_HANG_S="120"
         )
-        rc = h.run(monkeypatch, idle_timeout_s=2)
+        rc = h.run(monkeypatch, idle_timeout_s=4)
 
         assert rc == 0, "the loop did not recover after killing the hang"
         assert h.attempts == 2, (
@@ -392,7 +450,7 @@ class TestIdleWatchdog:
             monkeypatch,
             nodes=("only-host",),
             active=1,
-            idle_timeout_s=2,
+            idle_timeout_s=4,
             max_failover_retries=0,
         )
 

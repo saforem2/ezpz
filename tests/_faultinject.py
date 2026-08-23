@@ -28,6 +28,7 @@ only that the harness can match its own strings.
 | `FI_MARKER`   | counter name in those lines: `step` (default) or `iter` |
 | `FI_TRAILER`  | if set, print ezpz launch's `Execution finished with N.` |
 | `FI_HOST`     | hostname to blame in `shepherd` mode                 |
+| `--hostfile=` | argv, like a launcher: contents are echoed per attempt |
 | `FI_CKPT`     | checkpoint file; enables save/resume + restart timing |
 | `FI_TOTAL`    | total steps to reach across all attempts (with FI_CKPT) |
 | `FI_CKPT_EVERY` | save interval in steps (default 10)                |
@@ -189,7 +190,34 @@ def _should_fail(attempt: int) -> bool:
     return attempt in {int(x) for x in spec.split(",") if x.strip()}
 
 
+def _echo_hostfile() -> None:
+    """Report the hosts this attempt was given, like a launcher would.
+
+    `AutoRetryConfig.cmd` documents that the command "must already
+    contain --hostfile=<path>", and that the loop never re-assembles
+    it: `NodeAllocation` rewrites the file in place and the launcher,
+    re-spawned per attempt, reads the fresh contents. Echoing them
+    proves the swap reached the process that consumes it -- reading
+    the file from the test afterwards only proves it reached the disk.
+    """
+    for arg in sys.argv[1:]:
+        if arg.startswith("--hostfile="):
+            path = arg.split("=", 1)[1]
+            try:
+                hosts = [
+                    ln.strip()
+                    for ln in open(path).read().splitlines()
+                    if ln.strip()
+                ]
+            except OSError as exc:
+                _emit(f"hostfile ERROR {exc}")
+                return
+            _emit(f"hostfile hosts={','.join(hosts)}")
+            return
+
+
 def main() -> int:
+    _echo_hostfile()
     counter = os.environ.get("FI_COUNTER")
     attempt = _bump_counter(counter) if counter else 1
 
