@@ -53,6 +53,7 @@ nav = [
         { "🦙 Fine-Tuning & Training LLMs" = "guides/llm-finetuning.md" },
         { "🪛 LoRA & the tinker API" = "guides/finetuning.md" },
         { "💾 Checkpoint & Restart Under Failure" = "guides/checkpoint-restart.md" },
+        { "🧪 Fault Injection & --auto-retry" = "guides/fault-injection.md" },
         "recipes.md",
         "reference.md",
         "history.md",
