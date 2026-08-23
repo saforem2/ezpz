@@ -177,9 +177,39 @@ class TestPureHelpers:
     def test_progress_markers_step_equals(self):
         assert _has_progress_markers("iter=10 step=5 loss=0.1")
 
-    def test_progress_markers_absent(self):
-        # No step=N anywhere.
-        assert not _has_progress_markers("loading dataset...\nERROR: cuda")
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "iter=12   loss=0.500000 dt=0.010000",  # what ezpz prints
+            "step=5 loss=0.1",
+            "epoch=3 loss=0.9",
+            "batch=17",
+            "idx=0",
+            "step: 1  loss: 8.2",  # torchtitan style
+            "train/iter=40",  # prefixed form
+        ],
+    )
+    def test_progress_markers_accept_every_counter_name(self, line):
+        """Any of History.update's counters is evidence of life.
+
+        Matching `step=` alone was #224: `minimal.py` and `test.py`
+        both print `iter=`, so a real ezpz job that hit a bad node
+        twice was classified as never having started and abandoned
+        with spare nodes still free.
+        """
+        assert _has_progress_markers(line), f"{line!r} should count"
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "loading dataset...\nERROR: cuda",
+            "footstep=3",  # \b must not match mid-word
+            "step=",  # no number
+            "steps are slow",
+        ],
+    )
+    def test_progress_markers_absent(self, line):
+        assert not _has_progress_markers(line), f"{line!r} should NOT count"
 
     def test_derive_spare_count_unused(self):
         assert derive_spare_count(10, 8) == 2

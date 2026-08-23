@@ -113,12 +113,30 @@ _WALLTIME_RC = 143
 # launch.py:_WATCHDOG_EXIT_CODE).
 _WATCHDOG_RC = 124
 
-# Progress marker: History.update prints `step=N` (or step=<N>) on
-# its summary line. If two consecutive attempts both contain zero
-# `step=` markers, the run is broken before training even started
-# (bad config, missing dataset, etc.) and no amount of node swapping
-# will help — bail out.
-_PROGRESS_MARKER_RX = re.compile(r"\bstep=\d+", re.MULTILINE)
+# Progress marker: evidence that training actually began. If two
+# consecutive attempts show none, the run is broken before training
+# starts (bad config, missing dataset, ...) and no amount of node
+# swapping will help — bail out.
+#
+# This matches any of `History.update`'s counter names, not just
+# `step`. That distinction is the whole bug: the counter bases are
+# ("iter", "step", "epoch", "batch", "idx") -- see
+# `ezpz.utils.format_compact_summary` -- and every ezpz example emits
+# `iter=` (minimal.py:92, test.py:401), not `step=`. Matching `step=`
+# alone meant a real ezpz job that hit a bad node twice was filed as
+# "never started" and ABANDONED with spares still free, which is
+# precisely the failure --auto-retry exists to survive.
+#
+# `torchtitan`-style `step: 1` (colon, spaces) is deliberately
+# accepted too: the separator carries no information here, and being
+# strict about it costs a real recovery.
+#
+# Erring toward accepting evidence of life is the right asymmetry. A
+# false positive costs one extra swap attempt; a false negative
+# abandons a recoverable job.
+_PROGRESS_MARKER_RX = re.compile(
+    r"\b(?:iter|step|epoch|batch|idx)\s*[=:]\s*\d+", re.MULTILINE
+)
 
 
 class TerminationReason(Enum):
@@ -676,7 +694,24 @@ def run_with_auto_retry(
         def _default_scrape(p: Path) -> list[str]:
             try:
                 return scrape_bad_nodes(p, machine=machine)
-            except FileNotFoundError:
+            except Exception as exc:
+                # Scraping is best-effort ATTRIBUTION: it upgrades a
+                # blind rotation to a named one. Nothing it can fail at
+                # is worth aborting a recoverable job for, so no
+                # scraper failure is fatal here -- a blind rotation is
+                # strictly better than a crash.
+                #
+                # This used to catch FileNotFoundError alone, so a
+                # PermissionError from `getent` propagated out of the
+                # retry loop entirely (#223). Logged rather than
+                # swallowed silently: losing the bad node's NAME is
+                # worth a line in the log.
+                logger.warning(
+                    "[auto-retry] scraper failed (%s: %s); falling back "
+                    "to blind rotation",
+                    type(exc).__name__,
+                    exc,
+                )
                 return []
 
         scrape_fn = _default_scrape

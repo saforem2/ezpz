@@ -356,19 +356,17 @@ class TestGlooPeerScrape:
         assert h.attempts == 2
         assert len(h.bad) == 1
 
-    def test_resolver_error_currently_escapes_the_loop(self, tmp_path):
-        """Pins the bug above so the fix is a deliberate edit.
+    def test_resolver_error_is_swallowed(self, tmp_path):
+        """A broken `getent` must not break resolution's caller.
 
-        Change this to `== []` once `reverse_resolve_ip` swallows
-        `OSError`.
+        Previously this caught `FileNotFoundError` only, so a
+        `PermissionError` -- a `getent` that exists but is not
+        executable, which is what macOS has -- escaped. This test
+        asserted `pytest.raises(PermissionError)` when it was written;
+        the assertion flipped when #223 was fixed.
         """
         from ezpz.failover.patterns import reverse_resolve_ip
 
-        log = tmp_path / "a.log"
-        log.write_text(
-            "RuntimeError: [enforce fail at gloo/transport/tcp/pair.cc:598] "
-            "Connection closed by peer [10.0.0.42]:53121\n"
-        )
         import subprocess as _sp
 
         def _boom(*_a, **_k):
@@ -377,10 +375,32 @@ class TestGlooPeerScrape:
         orig = _sp.check_output
         _sp.check_output = _boom
         try:
-            with pytest.raises(PermissionError):
-                reverse_resolve_ip("10.0.0.42")
+            assert reverse_resolve_ip("10.0.0.42") is None
         finally:
             _sp.check_output = orig
+
+    def test_a_failing_scraper_does_not_abort_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        """The real consequence of #223, at the loop level.
+
+        Attribution is best-effort: it upgrades a blind rotation to a
+        named one. If the scraper explodes the job should still
+        recover, blindly. Before the fix this raised out of
+        `run_with_auto_retry` and killed a recoverable run.
+        """
+        monkeypatch.setattr(
+            "ezpz.failover.scrape_bad_nodes",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                PermissionError(13, "Permission denied", "getent")
+            ),
+        )
+        h = Harness(tmp_path, FI_MODE="shepherd", FI_FAIL_ON="1")
+        rc = h.run(monkeypatch)
+
+        assert rc == 0, "a scraper failure aborted an otherwise fine run"
+        assert h.attempts == 2
+        assert len(h.bad) == 1, "it should still have rotated blindly"
 
 
 class TestProcessLevelFailures:
@@ -523,20 +543,17 @@ class TestProgressMarkerContract:
             f"spares run out; got {h.attempts} attempts"
         )
 
-    def test_real_iter_output_is_not_seen_as_progress(
+    def test_real_iter_output_counts_as_progress(
         self, tmp_path, monkeypatch
     ):
-        """The actual bug: `iter=N` is real output and does not count.
+        """`iter=N` is what every ezpz example prints, and it counts.
 
-        `FI_MARKER=iter` emits exactly what `minimal.py` and `test.py`
-        print. The log is FULL of progress; the loop still gives up at
-        two attempts with spares to spare.
-
-        An earlier version of this test used `FI_STEPS=0` -- an empty
-        log -- which proved only that the guard fires on silence, and
-        would have kept passing after a fix that made `iter=` count.
-        Raised in review; this is the version that would actually go red
-        once #224 is fixed.
+        This test was written to FAIL, back when the marker was
+        `\bstep=\d+` and `minimal.py`/`test.py` both emitted `iter=`:
+        a job visibly mid-training was filed as "never started" and
+        abandoned with spares free. Fixing #224 flipped it, which is
+        the strongest evidence available that the fix does what it
+        claims -- the assertion changed direction, not the harness.
         """
         h = Harness(
             tmp_path, FI_MODE="shepherd", FI_MARKER="iter", FI_STEPS="3"
@@ -550,13 +567,13 @@ class TestProgressMarkerContract:
 
         log = h.log_text()
         assert "iter=" in log, "the child did not emit the real marker"
-        assert "step=" not in log
+        assert "step=" not in log, "this must exercise the iter= path only"
         assert h.rc != 0
-        assert h.attempts == 2, (
-            "the loop abandoned a job that was visibly training -- see "
-            f"issue #224; got {h.attempts} attempts with 2 spares free"
+        assert h.attempts == 3, (
+            "a job that is visibly training should keep failing over "
+            f"until spares run out; got {h.attempts} attempts"
         )
-        assert len(h.bad) == 1
+        assert len(h.bad) == 2, "both spares should have been consumed"
 
     def test_no_output_at_all_aborts_after_two_attempts(
         self, tmp_path, monkeypatch
