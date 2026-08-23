@@ -12,7 +12,12 @@ dependencies = [
   "hydra-core",
   "numpy",
   "omegaconf",
-  "plotext",
+  # ezpz.tplot needs plotext's v5 API: clear_figure, main, theme,
+  # plot_size. 6.0.0 (2026-08-23) is a rewrite that drops all of them,
+  # and 4.x predates `theme`. Verified by unpacking the wheels: 5.0.2
+  # is the earliest release with the full set. Lift once tplot is
+  # ported to the v6 module layout.
+  "plotext>=5,<6",
   "rich",
   "seaborn",
   "transformers>=4.50",
