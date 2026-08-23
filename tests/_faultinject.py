@@ -28,13 +28,24 @@ only that the harness can match its own strings.
 | `FI_MARKER`   | counter name in those lines: `step` (default) or `iter` |
 | `FI_TRAILER`  | if set, print ezpz launch's `Execution finished with N.` |
 | `FI_HOST`     | hostname to blame in `shepherd` mode                 |
+| `FI_CKPT`     | checkpoint file; enables save/resume + restart timing |
+| `FI_TOTAL`    | total steps to reach across all attempts (with FI_CKPT) |
+| `FI_CKPT_EVERY` | save interval in steps (default 10)                |
+| `FI_FAIL_AT`  | step to fail at, instead of after FI_STEPS lines      |
+| `FI_STEP_MS`  | simulated cost of one step, milliseconds (default 0) |
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
+
+# Process entry. `restart_seconds` is measured from HERE, matching
+# fsdp_tp's `train/restart_seconds`, which is timed before setup_torch
+# so it captures the full cold path rather than just the ckpt read.
+_T_ENTRY = time.monotonic()
 
 # A real Sunspot node name. The scraper's normalizer rejects anything
 # that is not `x<d>c<d>s<d>b<d>n<d>`, so `h1`-style test names would be
@@ -64,36 +75,9 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
-def main() -> int:
-    counter = os.environ.get("FI_COUNTER")
-    attempt = _bump_counter(counter) if counter else 1
 
-    fail_on = os.environ.get("FI_FAIL_ON", "").strip()
-    should_fail = (
-        True
-        if not fail_on
-        else attempt in {int(x) for x in fail_on.split(",") if x.strip()}
-    )
-
-    host = os.environ.get("FI_HOST", DEFAULT_HOST)
-    mode = os.environ.get("FI_MODE", "shepherd")
-    n_steps = int(os.environ.get("FI_STEPS", "2"))
-
-    # Progress first. `_PROGRESS_MARKER_RX` is `\bstep=\d+` and nothing
-    # else, so the counter's NAME decides whether the loop believes
-    # training started. `FI_MARKER=iter` reproduces what every real ezpz
-    # example actually prints (minimal.py:92, test.py:401 both use
-    # "iter"), which does NOT match -- that is the point of the option.
-    marker = os.environ.get("FI_MARKER", "step")
-    for i in range(n_steps):
-        _emit(f"{marker}={attempt * 100 + i} loss={1.0 / (i + 1):.4f}")
-
-    if not should_fail:
-        _emit("training complete")
-        if os.environ.get("FI_TRAILER"):
-            _emit("Execution finished with 0.")
-        return 0
-
+def _die(mode: str, host: str) -> int:
+    """Emit the chosen failure signature and return its rc."""
     if mode == "shepherd":
         # PALS shepherd kill -- the one named-host signature reachable
         # off-ALCF (the gloo pattern yields an IP and needs `getent`).
@@ -141,7 +125,104 @@ def main() -> int:
         rc = 1
     else:  # pragma: no cover - guards a typo in a test
         raise SystemExit(f"_faultinject: unknown FI_MODE={mode!r}")
+    return rc
 
+
+def _run_checkpointed(attempt: int, mode: str, host: str) -> int:
+    """A training loop that resumes from a checkpoint after a fault.
+
+    Enabled by ``FI_CKPT``. The point is to measure what a restart
+    actually costs -- ``restart_seconds``, timed from process entry to
+    the first productive step, the same definition
+    ``fsdp_tp``'s ``train/restart_seconds`` uses -- so the numbers on
+    the docs page are measured rather than asserted.
+
+    The "model" is a single integer. That is deliberate: this measures
+    the loop's restart overhead, not tensor I/O, and a real model would
+    bury a ~30ms signal under seconds of framework startup.
+    """
+    ckpt_path = os.environ["FI_CKPT"]
+    total = int(os.environ.get("FI_TOTAL", "100"))
+    every = int(os.environ.get("FI_CKPT_EVERY", "10"))
+    step_ms = float(os.environ.get("FI_STEP_MS", "0"))
+    # FI_FAIL_AT may be a comma-separated list: the Nth entry is used on
+    # attempt N, so a single run can fail at different points in
+    # training rather than repeating one scenario.
+    _fa = [x.strip() for x in os.environ.get("FI_FAIL_AT", "").split(",") if x.strip()]
+    fail_at = _fa[min(attempt - 1, len(_fa) - 1)] if _fa else None
+    marker = os.environ.get("FI_MARKER", "step")
+
+    start = 0
+    resumed_from = None
+    if os.path.exists(ckpt_path):
+        with open(ckpt_path) as fh:
+            start = json.load(fh)["step"]
+        resumed_from = start
+        _emit(f"resumed from checkpoint at {marker}={start}")
+
+    restart_s = time.monotonic() - _T_ENTRY
+    _emit(
+        f"attempt={attempt} resumed_from={resumed_from} "
+        f"restart_seconds={restart_s:.4f}"
+    )
+
+    for step in range(start, total):
+        if step_ms:
+            time.sleep(step_ms / 1000.0)
+        _emit(f"{marker}={step} loss={1.0 / (step + 1):.4f}")
+        if (step + 1) % every == 0:
+            with open(ckpt_path, "w") as fh:
+                json.dump({"step": step + 1}, fh)
+        if fail_at is not None and step == int(fail_at) and _should_fail(
+            attempt
+        ):
+            return _die(mode, host)
+
+    _emit(f"training complete at {marker}={total}")
+    return 0
+
+
+def _should_fail(attempt: int) -> bool:
+    spec = os.environ.get("FI_FAIL_ON", "").strip()
+    if not spec:
+        return True
+    return attempt in {int(x) for x in spec.split(",") if x.strip()}
+
+
+def main() -> int:
+    counter = os.environ.get("FI_COUNTER")
+    attempt = _bump_counter(counter) if counter else 1
+
+    fail_on = os.environ.get("FI_FAIL_ON", "").strip()
+    should_fail = (
+        True
+        if not fail_on
+        else attempt in {int(x) for x in fail_on.split(",") if x.strip()}
+    )
+
+    host = os.environ.get("FI_HOST", DEFAULT_HOST)
+    mode = os.environ.get("FI_MODE", "shepherd")
+    n_steps = int(os.environ.get("FI_STEPS", "2"))
+
+    # Progress first. `_PROGRESS_MARKER_RX` is `\bstep=\d+` and nothing
+    # else, so the counter's NAME decides whether the loop believes
+    # training started. `FI_MARKER=iter` reproduces what every real ezpz
+    # example actually prints (minimal.py:92, test.py:401 both use
+    # "iter"), which does NOT match -- that is the point of the option.
+    if os.environ.get("FI_CKPT"):
+        return _run_checkpointed(attempt, mode, host)
+
+    marker = os.environ.get("FI_MARKER", "step")
+    for i in range(n_steps):
+        _emit(f"{marker}={attempt * 100 + i} loss={1.0 / (i + 1):.4f}")
+
+    if not should_fail:
+        _emit("training complete")
+        if os.environ.get("FI_TRAILER"):
+            _emit("Execution finished with 0.")
+        return 0
+
+    rc = _die(mode, host)
     if os.environ.get("FI_TRAILER"):
         _emit(f"Execution finished with {rc}.")
     return rc
