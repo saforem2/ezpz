@@ -169,7 +169,12 @@ touch "${DONE}"
 kill "${CPID}" 2>/dev/null || true
 
 # ---- verdict ------------------------------------------------------------
-FO_DIR="$(ls -dt "${D}"/logs/failover-* 2>/dev/null | head -1)"
+# Address THIS job's dir by id, not `ls -dt | head -1`. Picking the
+# newest by mtime means that if auto-retry never creates one, the
+# verdict silently reads the PREVIOUS job's results -- which, given the
+# checks below, could report PASS from a run that never happened.
+FO_DIR="${D}/logs/failover-${PBS_JOBID%%.*}"
+[ -d "${FO_DIR}" ] || FO_DIR=""
 VICTIM="$(cat "${EXPT}/victim.txt" 2>/dev/null || echo '<none>')"
 # The killer runs under pbsdsh; chaos() tees its output here because the
 # job's own stdout is still spooled by PBS at this point.
