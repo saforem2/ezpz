@@ -99,6 +99,14 @@ def _extract_cuda_unavailable(log_text: str) -> Iterable[str]:
 # A GPU that has fallen off the PCIe bus surfaces as one of these
 # rather than "busy or unavailable". Same remediation (swap the node),
 # so they share a pattern.
+#
+# NOTE: `device-side assert triggered` is deliberately EXCLUDED. It is
+# raised by a failing assertion inside a kernel -- an out-of-range index,
+# a bad label, an invalid model input -- which is an APPLICATION defect,
+# not a node fault. Matching it would retire a perfectly healthy node on
+# every retry while the real bug persists, burning the spare pool and
+# never converging. The rule for this pattern set: only match conditions
+# where the same code would succeed on a different node.
 # ---------------------------------------------------------------------------
 _CUDA_INIT_RX = compile_multiline(
     _LABEL
@@ -108,7 +116,6 @@ _CUDA_INIT_RX = compile_multiline(
     + r"|initialization error"
     + r"|unknown error"
     + r"|system not yet initialized"
-    + r"|device-side assert triggered"
     + r")",
 )
 
@@ -238,8 +245,10 @@ POLARIS_PATTERNS = [
         name="polaris.cuda_init_error",
         extractor=_extract_cuda_init,
         description=(
-            "CUDA init failure (no device detected / initialization error / "
-            "device-side assert). Requires --label."
+            "CUDA init failure (no device detected / initialization "
+            "error / unknown error). Excludes device-side asserts, "
+            "which are application defects, not node faults. "
+            "Requires --label."
         ),
     ),
     BadNodePattern(

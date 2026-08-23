@@ -478,15 +478,27 @@ def get_pbs_launch_cmd(
     # leaves the sick one in the allocation. Polaris job 7550301 burned
     # ~1 hour of 130 nodes to exactly this.
     #
-    # Opt-in rather than unconditional: the prefix changes the shape of
-    # every log line, and other machines' scraper patterns (Aurora and
-    # Sunspot both anchor on `^<host>: `) were written against UNLABELED
-    # output. Enabling it globally could silently break them.
-    if os.environ.get("EZPZ_MPI_LABEL", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }:
+    # Default ON for Polaris, because that is the machine whose dominant
+    # failure mode (a CUDA fault raised inside a rank's Python process)
+    # is unattributable without it. Leaving it opt-in would ship the
+    # Polaris scraper patterns in a state where they never fire for
+    # anyone who did not also know to set the variable.
+    #
+    # Default OFF elsewhere: the Aurora and Sunspot patterns anchor on
+    # UNLABELED `^<host>: ` lines, so turning the prefix on for those
+    # machines would silently stop their scrapers from matching.
+    #
+    # `EZPZ_MPI_LABEL` overrides the per-machine default in BOTH
+    # directions -- set it to 0/false/no to suppress labeling on
+    # Polaris, or to 1/true/yes to enable it anywhere else.
+    _label_env = os.environ.get("EZPZ_MPI_LABEL", "").strip().lower()
+    if _label_env in {"1", "true", "yes"}:
+        _use_label = True
+    elif _label_env in {"0", "false", "no"}:
+        _use_label = False
+    else:
+        _use_label = machine_name == "polaris"
+    if _use_label:
         cmd_list.append("--label")
     if verbose:
         cmd_list.append("--verbose")

@@ -938,3 +938,109 @@ def test_polaris_patterns_are_registered():
     names = {p.name for p in get_patterns_for_machine("polaris")}
     assert "polaris.cuda_device_unavailable" in names
     assert "polaris.shepherd_signal_9" in names
+
+
+def test_polaris_device_side_assert_not_matched(tmp_path):
+    """A device-side assert is an APPLICATION defect, not a node fault.
+
+    It is raised by a failing assertion inside a kernel (out-of-range
+    index, bad label, invalid model input). Tagging the host would
+    retire a healthy node on every retry while the real bug persists --
+    burning the spare pool and never converging.
+
+    The rule for this pattern set: only match conditions where the same
+    code would succeed on a different node.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3020c0s1b0n0.{_POLARIS_H} 3: RuntimeError: CUDA error: "
+        "device-side assert triggered\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+class TestPolarisGlooPeerClosed:
+    """Polaris gloo TCP peer-closed, mirroring the Aurora coverage.
+
+    `reverse_resolve_ip` is stubbed because unit tests cannot do real
+    DNS -- the IPs in real logs live on the HSN fabric and only resolve
+    through Polaris's name service.
+
+    Unlike the CUDA patterns, this one does NOT depend on `--label`:
+    the peer IP is inside the message body.
+    """
+
+    def test_single_peer_ip_resolved_to_hostname(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: f"x3030c0s1b0n0.{_POLARIS_H}",
+        )
+        log = _make_log(
+            tmp_path,
+            "RuntimeError: [..gloo..] Connection closed by peer "
+            "[10.0.0.42]:12345\n",
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == [
+            f"x3030c0s1b0n0.{_POLARIS_H}"
+        ]
+
+    def test_many_ranks_same_peer_dedup_to_one_node(
+        self, tmp_path, monkeypatch
+    ):
+        """Dozens of ranks log the same peer-closed. Want ONE entry."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: f"x3030c0s1b0n0.{_POLARIS_H}",
+        )
+        lines = [
+            f"rank {i}: RuntimeError: [..gloo..] Connection closed by peer "
+            f"[10.0.0.42]:{12000 + i}\n"
+            for i in range(30)
+        ]
+        assert scrape_bad_nodes(
+            _make_log(tmp_path, "".join(lines)), machine="polaris"
+        ) == [f"x3030c0s1b0n0.{_POLARIS_H}"]
+
+    def test_unresolvable_ip_skipped(self, tmp_path, monkeypatch):
+        """Losing one entry beats tagging a wrong node on a bogus lookup."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: None,
+        )
+        log = _make_log(
+            tmp_path,
+            "RuntimeError: [..gloo..] Connection closed by peer [10.0.0.42]:1\n",
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == []
+
+    def test_non_polaris_resolved_name_dropped_by_normalizer(
+        self, tmp_path, monkeypatch
+    ):
+        """A stale /etc/hosts entry or unrelated name must be dropped."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: "some-unrelated-host.example.com",
+        )
+        log = _make_log(
+            tmp_path, "Connection closed by peer [10.0.0.42]:12345\n"
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == []
+
+    def test_hostmgmt_form_canonicalized_to_hsn(self, tmp_path, monkeypatch):
+        """The management interface maps 1:1 to HSN and is safe to rewrite.
+
+        It must be canonicalized, since swap_in greps the active hostfile
+        which only ever carries the `.hsn.` form.
+        """
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: (
+                "x3030c0s1b0n0.hostmgmt2042.cm.polaris.alcf.anl.gov"
+            ),
+        )
+        log = _make_log(
+            tmp_path, "Connection closed by peer [10.0.0.42]:12345\n"
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == [
+            f"x3030c0s1b0n0.{_POLARIS_H}"
+        ]
