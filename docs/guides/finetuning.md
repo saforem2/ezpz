@@ -2,8 +2,9 @@
 
 `ezpz.tinker` gives you two things:
 
-- **LoRA adapters** for the native `Transformer`, composable with FSDP2 and
-  the async DCP checkpoint layer.
+- **LoRA adapters** for the native `Transformer` *and* HuggingFace
+  Llama-family models, composable with FSDP2 and the async DCP checkpoint
+  layer.
 - **A decoupled training step** — `forward_backward` and `optim_step` as
   separate calls — shaped after
   [Tinker](https://tinker-docs.thinkingmachines.ai/), but running in your own
@@ -26,7 +27,7 @@ factor.
 | `--lora-rank` | `0` (off) | inner dimension `r`; `0` means full fine-tuning |
 | `--lora-alpha` | `= rank` | update is scaled by `alpha/rank` |
 | `--lora-dropout` | `0.0` | dropout on the adapter branch input |
-| `--lora-target` | `attn,mlp` | `attn` (wq/wk/wv/wo), `mlp` (w1/w2/w3), `unembed` |
+| `--lora-target` | `attn,mlp` | roles to adapt: `attn`, `mlp`, `unembed` — see the [spelling table](#huggingface-models) for what each covers on native vs HF models |
 
 LoRA composes with FSDP2, HSDP and tensor parallelism. At `tp > 1` the
 adapters are sharded alongside the weights they wrap:
@@ -72,6 +73,82 @@ ezpz launch --nhosts 4 -- python3 -m ezpz.examples.fsdp_tp \
     mislabeled layout rather than rejecting it. `tests/test_tinker_lora_tp.py`
     runs a real 2-rank gloo mesh and gates on tp=2 matching tp=1
     numerically — a layout bug can run cleanly and still be wrong.
+
+## HuggingFace models
+
+The same flags work on HF Llama-family models — Llama, Mistral, Qwen2, Gemma.
+Any `--model` containing a `/` is treated as a hub repo id:
+
+```bash
+python3 -m ezpz.launch --np 12 -- \
+  python3 -m ezpz.examples.fsdp_tp \
+    --model Qwen/Qwen3-0.6B --lora-rank 16 --dataset random \
+    --train-iters 5 --batch-size 1 --seq-len 512
+```
+
+The run tells you what it adapted, which is the number to check first:
+
+```text
+LoRA: 196 adapters (rank=16, targets=attn,mlp); 10,092,544 trainable of 606,142,464
+```
+
+1.7% trainable — that line is the difference between a LoRA run and a full
+fine-tune wearing its clothes. (Measured on Sunspot, 12 ranks; Aurora gives
+the identical count.)
+
+To drive it from Python instead — any HF causal-LM, no ezpz model code:
+
+```python
+import torch
+from transformers import AutoModelForCausalLM
+from ezpz.tinker import LoraConfig, apply_lora, adapter_state_dict
+from ezpz.tinker.lora import iter_lora_modules
+
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B")
+model = apply_lora(model, LoraConfig(rank=16))       # attn + mlp by default
+
+n = len(list(iter_lora_modules(model)))              # 196
+trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+# Save just the adapters: 60x smaller than the full model
+# (~40 MB vs ~2.4 GB in fp32; ~20 MB vs ~1.2 GB in bf16).
+torch.save(adapter_state_dict(model), "adapters.pt")
+```
+
+`apply_lora` **raises** if the target names match nothing, so an
+unsupported architecture fails immediately rather than training a
+full fine-tune that looks like LoRA.
+
+`LoraConfig` gates by *role* (`train_attn` / `train_mlp` / `train_unembed`)
+rather than by name, because the roles are stable across model families even
+when the spellings are not. `target_names()` emits both vocabularies at once:
+
+| role | native | HuggingFace |
+| --- | --- | --- |
+| `attn` | `wq` `wk` `wv` `wo` | `q_proj` `k_proj` `v_proj` `o_proj` |
+| `mlp` | `w1` `w2` `w3` | `gate_proj` `up_proj` `down_proj` |
+| `unembed` | `output` | `lm_head` |
+
+Emitting both is safe rather than sloppy: `apply_lora` wraps a child only
+when its attribute name is in the target set **and** it is an `nn.Linear`, so
+a spelling the model does not use never fires. No architecture sniffing, and
+nothing to mis-detect.
+
+Two things to know:
+
+- **HF runs are FSDP-only.** The HF path forces `--tp 1` (the TP plan is
+  written against the native module names), so LoRA composes with FSDP2 and
+  HSDP there, not with tensor parallelism.
+- **Tied embeddings are fine.** When `tie_word_embeddings=True`,
+  `lm_head.weight` *is* `embed_tokens.weight`; the adapter is additive and
+  the shared tensor stays frozen, so `--lora-target unembed` does not
+  accidentally thaw the input embedding.
+
+If a requested role adapts nothing, the run **fails at setup** rather than
+training. That matters more than it sounds: a LoRA request that silently
+falls back to full fine-tuning produces a plausible loss curve, a normal-looking
+log, and a checkpoint tens of times larger than intended (60× for the
+Qwen3-0.6B run above).
 
 ## Why LoRA starts as a no-op
 
@@ -191,5 +268,9 @@ optimizer holds state for.
   `ezpz.examples.generate` against a saved checkpoint; the in-process path
   lands with the RL loop, which is the first thing that needs a real
   train→sample handoff.
-- **HF models.** `apply_lora` targets the native `Transformer`; the HF branch
-  already forces `tp=1` and takes a separate sharding path.
+- **Fused-QKV architectures** (GPT-2, Falcon, GPT-NeoX, MPT). GPT-2's
+  projections are `transformers.pytorch_utils.Conv1D`, which is not an
+  `nn.Linear` subclass, so `apply_lora` cannot wrap them; Falcon and GPT-NeoX
+  pack q/k/v into a single `query_key_value` that would have to be split
+  before an adapter could target one projection. These fail with a named
+  error rather than adapting nothing.
