@@ -113,12 +113,30 @@ _WALLTIME_RC = 143
 # launch.py:_WATCHDOG_EXIT_CODE).
 _WATCHDOG_RC = 124
 
-# Progress marker: History.update prints `step=N` (or step=<N>) on
-# its summary line. If two consecutive attempts both contain zero
-# `step=` markers, the run is broken before training even started
-# (bad config, missing dataset, etc.) and no amount of node swapping
-# will help — bail out.
-_PROGRESS_MARKER_RX = re.compile(r"\bstep=\d+", re.MULTILINE)
+# Progress marker: evidence that training actually began. If two
+# consecutive attempts show none, the run is broken before training
+# starts (bad config, missing dataset, ...) and no amount of node
+# swapping will help — bail out.
+#
+# This matches any of `History.update`'s counter names, not just
+# `step`. That distinction is the whole bug: the counter bases are
+# ("iter", "step", "epoch", "batch", "idx") -- see
+# `ezpz.utils.format_compact_summary` -- and every ezpz example emits
+# `iter=` (minimal.py:92, test.py:401), not `step=`. Matching `step=`
+# alone meant a real ezpz job that hit a bad node twice was filed as
+# "never started" and ABANDONED with spares still free, which is
+# precisely the failure --auto-retry exists to survive.
+#
+# `torchtitan`-style `step: 1` (colon, spaces) is deliberately
+# accepted too: the separator carries no information here, and being
+# strict about it costs a real recovery.
+#
+# Erring toward accepting evidence of life is the right asymmetry. A
+# false positive costs one extra swap attempt; a false negative
+# abandons a recoverable job.
+_PROGRESS_MARKER_RX = re.compile(
+    r"\b(?:iter|step|epoch|batch|idx)\s*[=:]\s*\d+", re.MULTILINE
+)
 
 
 class TerminationReason(Enum):
@@ -419,6 +437,16 @@ def classify_attempt(
     KeyboardInterrupt is re-raised before we reach it.
     """
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+    # Strip ANSI ONCE, here, so every matcher below sees plain text.
+    #
+    # ezpz's logger colorizes when attached to a tty, and the escapes
+    # land INSIDE the tokens being matched: `\x1b[36miter\x1b[0m=12`
+    # defeats `\biter=\d+`, and a colorized `rank 3 died from signal 15`
+    # stops matching the innocent-cascade strip and is misread as a real
+    # crash. `_extract_inner_rc` already stripped for exactly this
+    # reason; doing it for the other two as well is the fix, rather
+    # than teaching each pattern to tolerate escapes.
+    log_text = _strip_ansi(log_text)
 
     inner_rc = _extract_inner_rc(log_text)
     crash = _has_crash_patterns(log_text)
@@ -676,7 +704,29 @@ def run_with_auto_retry(
         def _default_scrape(p: Path) -> list[str]:
             try:
                 return scrape_bad_nodes(p, machine=machine)
-            except FileNotFoundError:
+            except Exception as exc:
+                # Scraping is best-effort ATTRIBUTION: it upgrades a
+                # blind rotation to a named one. Nothing it can fail at
+                # is worth aborting a recoverable job for, so no
+                # scraper failure is fatal here -- a blind rotation is
+                # strictly better than a crash.
+                #
+                # This used to catch FileNotFoundError alone, so a
+                # PermissionError from `getent` propagated out of the
+                # retry loop entirely (#223). Logged rather than
+                # swallowed silently: losing the bad node's NAME is
+                # worth a line in the log.
+                # Include the path and the traceback: this is the only
+                # trace of WHY attribution was lost, and "scraper
+                # failed" alone is not enough to debug from.
+                logger.warning(
+                    "[auto-retry] scraper failed on %s (%s: %s); falling "
+                    "back to blind rotation",
+                    p,
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
                 return []
 
         scrape_fn = _default_scrape
@@ -766,7 +816,9 @@ def run_with_auto_retry(
         if reason is TerminationReason.STUCK_PRE_TRAINING:
             logger.error(
                 "[auto-retry] FAILOVER STOP: stuck_pre_training "
-                "(two consecutive attempts with zero step= markers, "
+                "(two consecutive attempts with no progress markers "
+                "-- no iter=/step=/epoch=/batch=/idx= line in either "
+                "log, "
                 "rc=%d)",
                 last_rc,
             )

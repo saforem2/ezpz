@@ -177,9 +177,77 @@ class TestPureHelpers:
     def test_progress_markers_step_equals(self):
         assert _has_progress_markers("iter=10 step=5 loss=0.1")
 
-    def test_progress_markers_absent(self):
-        # No step=N anywhere.
-        assert not _has_progress_markers("loading dataset...\nERROR: cuda")
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "iter=12   loss=0.500000 dt=0.010000",  # what ezpz prints
+            "step=5 loss=0.1",
+            "epoch=3 loss=0.9",
+            "batch=17",
+            "idx=0",
+            "step: 1  loss: 8.2",  # torchtitan style
+            "train/iter=40",  # prefixed form
+        ],
+    )
+    def test_progress_markers_accept_every_counter_name(self, line):
+        """Any of History.update's counters is evidence of life.
+
+        Matching `step=` alone was #224: `minimal.py` and `test.py`
+        both print `iter=`, so a real ezpz job that hit a bad node
+        twice was classified as never having started and abandoned
+        with spare nodes still free.
+        """
+        assert _has_progress_markers(line), f"{line!r} should count"
+
+    def test_progress_markers_survive_ansi_color(self, tmp_path):
+        """Color must not hide progress. Raised as a P1 in review.
+
+        ezpz's logger colorizes when attached to a tty, and the escapes
+        land INSIDE the token: `\x1b[36miter\x1b[0m=12` does not match
+        `\biter=\d+`. Unfixed, the whole point of #224 would have been
+        undone on any normal terminal.
+
+        Asserted through `classify_attempt`, not `_has_progress_markers`
+        -- the strip happens in the caller, so testing the helper alone
+        would pass while the real path stayed broken.
+        """
+        log = tmp_path / "a.log"
+        log.write_text("\x1b[1;36miter\x1b[0m=\x1b[36m12\x1b[0m loss=0.5\n")
+        res = classify_attempt(
+            1, log, [], prior_attempt_had_progress=False, has_spares=True
+        )
+        assert res.has_progress, "ANSI-colored progress was not seen"
+        assert res.reason is not TerminationReason.STUCK_PRE_TRAINING
+
+    def test_colored_innocent_cascade_is_still_innocent(self, tmp_path):
+        """The same bug, on the crash side.
+
+        A colorized `rank 3 died from signal 15` stopped matching the
+        innocent-cascade strip, so a clean walltime kill was read as a
+        real crash and burned a spare.
+        """
+        log = tmp_path / "b.log"
+        log.write_text(
+            "iter=5\nrank 3 \x1b[31mdied from signal\x1b[0m 15\n"
+        )
+        res = classify_attempt(
+            143, log, [], prior_attempt_had_progress=True, has_spares=True
+        )
+        assert res.reason is TerminationReason.WALLTIME, (
+            f"colored cascade misread as {res.reason.value}"
+        )
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "loading dataset...\nERROR: cuda",
+            "footstep=3",  # \b must not match mid-word
+            "step=",  # no number
+            "steps are slow",
+        ],
+    )
+    def test_progress_markers_absent(self, line):
+        assert not _has_progress_markers(line), f"{line!r} should NOT count"
 
     def test_derive_spare_count_unused(self):
         assert derive_spare_count(10, 8) == 2
