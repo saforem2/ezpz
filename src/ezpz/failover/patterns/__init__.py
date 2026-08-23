@@ -147,7 +147,13 @@ def reverse_resolve_ip(ip: str, timeout_s: float = 5.0) -> "str | None":
     except (
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
-        FileNotFoundError,
+        # OSError, not just FileNotFoundError: it also covers
+        # PermissionError (a `getent` that exists but is not
+        # executable, which is what macOS has) and NotADirectoryError.
+        # The narrower catch let those escape all the way out of
+        # `run_with_auto_retry`, so a recoverable node failure crashed
+        # the machinery meant to recover from it -- see #223.
+        OSError,
     ):
         return None
     if not out:
