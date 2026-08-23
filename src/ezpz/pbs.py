@@ -497,7 +497,12 @@ def get_pbs_launch_cmd(
     elif _label_env in {"0", "false", "no"}:
         _use_label = False
     else:
-        _use_label = machine_name == "polaris"
+        # `get_machine()` maps a compute node (`x3...`) to "Polaris", but a
+        # LOGIN node falls through to the raw hostname
+        # ("polaris-login-04.hsn.cm.polaris.alcf.anl.gov"). An equality test
+        # would therefore be silently False off the compute nodes, so match
+        # the machine token instead of the exact string.
+        _use_label = "polaris" in machine_name and "sirius" not in machine_name
     if _use_label:
         cmd_list.append("--label")
     if verbose:

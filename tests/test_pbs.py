@@ -811,3 +811,33 @@ def test_launch_cmd_unrecognized_env_falls_back_to_machine_default(
     monkeypatch.setenv("EZPZ_MPI_LABEL", "bogus")
 
     assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_labels_on_polaris_login_node_hostname(
+    patch_topology, monkeypatch
+):
+    """`get_machine()` is not always the bare token.
+
+    It maps a COMPUTE node (`x3...`) to "Polaris", but a LOGIN node falls
+    through to the raw hostname, e.g.
+    "polaris-login-04.hsn.cm.polaris.alcf.anl.gov". An equality test
+    against "polaris" is silently False there -- the default would look
+    correct in review and never fire off the compute nodes.
+    """
+    hostfile = patch_topology(
+        machine="polaris-login-04.hsn.cm.polaris.alcf.anl.gov"
+    )
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_does_not_label_sirius(patch_topology, monkeypatch):
+    """Sirius shares Polaris's `x3` prefix and domain but is not Polaris.
+
+    Substring-matching "polaris" would otherwise sweep it in.
+    """
+    hostfile = patch_topology(machine="sirius")
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" not in pbs.get_pbs_launch_cmd(hostfile=hostfile)
