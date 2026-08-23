@@ -12,7 +12,10 @@ dependencies = [
   "hydra-core",
   "numpy",
   "omegaconf",
-  "plotext",
+  # plotext 6.0.0 (2026-08-23) is a rewrite that drops the entire
+  # legacy top-level API — clear_figure, clf, main, theme, plot_size.
+  # ezpz.tplot is written against v5; pin until it is ported.
+  "plotext<6",
   "rich",
   "seaborn",
   "transformers>=4.50",
