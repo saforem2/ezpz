@@ -73,13 +73,42 @@ export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 EXPT="${D}/out/autoretry-nodekill-${PBS_JOBID%%.*}"
 mkdir -p "${EXPT}"
 CKPT="${EXPT}/ckpt"
+# Checkpoints are the bulk of this experiment's footprint and are
+# worthless once the verdict is computed -- the assertions read
+# bad_nodes.txt and the attempt logs, never the weights. Reclaim them
+# however the job ends, including a walltime kill.
+trap 'rm -rf "${CKPT}" 2>/dev/null' EXIT
 LOG="${EXPT}/train.log"
 DONE="${EXPT}/.done"
 
 ACTIVE_HOSTS=2          # --nhosts; the rest of select= becomes spare
 KILL_AFTER_STEP=40      # kill once a complete checkpoint passes this
-TRAIN_ITERS=400
-SAVE_INTERVAL=20
+# Sized so the run cannot fill the shared filesystem. agpt-2b writes
+# ~22 GB per checkpoint and NOTHING prunes them, so job 12473704's
+# 400 iters / save-interval 20 produced 15 saves = 331 GB and then
+# died with `OSError: [Errno 28] No space left on device` mid-save --
+# on /lus/tegu, which other people are using.
+#
+# This test does not need long training: it needs ONE durable
+# checkpoint before the kill and enough runway after it to observe a
+# relaunch. 100 iters saving every 25 is 4 saves (~88 GB peak), and
+# the trap below reclaims them on exit.
+TRAIN_ITERS=100
+SAVE_INTERVAL=25
+
+# Preflight: refuse to start without room for the checkpoints. Job
+# 12473704 ran 56 minutes and then died mid-save on ENOSPC, which the
+# classifier read as a bad node and "fixed" by burning a spare -- an
+# expensive way to discover a full disk. ~22 GB/save * 4 saves, with
+# headroom for the async fanout holding two copies briefly.
+NEED_GB=120
+AVAIL_GB="$(df -BG --output=avail "${EXPT}" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "${AVAIL_GB}" ] && [ "${AVAIL_GB}" -lt "${NEED_GB}" ]; then
+    echo "FATAL: only ${AVAIL_GB}GB free at ${EXPT}, need ~${NEED_GB}GB."
+    echo "       Refusing to start rather than dying mid-checkpoint."
+    exit 1
+fi
+echo "=== disk: ${AVAIL_GB:-?}GB free, need ~${NEED_GB}GB ==="
 
 mapfile -t ALL_HOSTS < "${PBS_NODEFILE}"
 echo "=== allocation (${#ALL_HOSTS[@]} hosts) ==="
@@ -100,6 +129,7 @@ latest_ckpt_step() {
 # Written to the shared FS so `pbsdsh` can exec it directly. See the note
 # in chaos() for why this is not an inline `bash -c`.
 KILLER="${EXPT}/kill_ranks.sh"
+RECEIPT="${EXPT}/kill_receipt.txt"
 cat > "${KILLER}" <<'KILLEOF'
 #!/bin/bash
 # Kill the training RANKS on this node, leaving the retry supervisor.
@@ -117,6 +147,15 @@ for pid in $(pgrep -f "ezpz[.]examples[.]fsdp_tp" 2>/dev/null); do
     kill -9 "${pid}" 2>/dev/null && n=$((n + 1))
 done
 echo "[killer] $(hostname): killed ${n} rank pid(s)"
+# Write the receipt directly rather than relying on output plumbing.
+# On job 12473704 `pbsdsh ... | tee kill.out` left kill.out EMPTY --
+# pbsdsh's output reaches the job's stdout without passing through the
+# local pipe -- so the verdict could not see a kill that had plainly
+# worked (the job log shows "killed 13 rank pid(s)"). A file the
+# killer writes itself has no such dependency.
+if [ -n "${KILL_RECEIPT:-}" ]; then
+    echo "$(hostname) killed ${n}" >> "${KILL_RECEIPT}"
+fi
 # Report nothing-killed as a failure: a silent no-op here makes every
 # downstream failover assertion vacuous.
 [ "${n}" -gt 0 ]
@@ -142,10 +181,12 @@ chaos() {
     # syntax error: unexpected end of file" and, because of a trailing
     # `|| true`, still printed "kill delivered" while training ran on to
     # completion. A file has no quoting or newline exposure at all.
-    # Capture to a file as well as stdout: the verdict runs while the
-    # job's own stdout is still spooled by PBS and cannot be read back.
-    pbsdsh -n 0 -- /bin/bash "${KILLER}" 2>&1 | tee "${EXPT}/kill.out"
-    local krc=${PIPESTATUS[0]}
+    # `pbsdsh -- env VAR=... bash <script>`: pbsdsh does not forward the
+    # caller's environment, and the receipt path must reach the remote
+    # side for the killer to write it.
+    pbsdsh -n 0 -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
+        /bin/bash "${KILLER}"
+    local krc=$?
     echo "[CHAOS] kill rc=${krc}"
     # Do NOT swallow this. A kill that never lands makes every downstream
     # assertion vacuous, and that is exactly how 12473703 read as a
@@ -176,9 +217,10 @@ kill "${CPID}" 2>/dev/null || true
 FO_DIR="${D}/logs/failover-${PBS_JOBID%%.*}"
 [ -d "${FO_DIR}" ] || FO_DIR=""
 VICTIM="$(cat "${EXPT}/victim.txt" 2>/dev/null || echo '<none>')"
-# The killer runs under pbsdsh; chaos() tees its output here because the
-# job's own stdout is still spooled by PBS at this point.
-KILLOUT="$(cat "${EXPT}/kill.out" 2>/dev/null)"
+# The killer writes this itself on the victim node. Do NOT switch this
+# back to capturing pbsdsh's stdout: that read empty on job 12473704
+# while the kill had in fact succeeded.
+KILLOUT="$(cat "${RECEIPT}" 2>/dev/null)"
 
 echo
 echo "======================= RESULT ======================="
@@ -209,7 +251,7 @@ else
     # landed (`pbsdsh -- bash -c` mangled the inline script) -- the
     # failover logic was never reached, let alone wrong. If the ranks
     # are still alive there is no bad node and nothing to conclude.
-    grep -q "killed [1-9][0-9]* rank pid" <<< "${KILLOUT}"
+    grep -qE "killed [1-9][0-9]*$" <<< "${KILLOUT}"
     check "the kill actually landed on ${VICTIM}" $?
 
     grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
