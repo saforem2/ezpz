@@ -774,3 +774,167 @@ class TestNormalizeAuroraHostname:
         assert normalize_aurora_hostname("some-other-host") is None
         assert normalize_aurora_hostname("nid001234") is None
         assert normalize_aurora_hostname("polaris-login-1") is None
+
+
+# ---------------------------------------------------------------------------
+# Polaris: CUDA device faults
+#
+# Polaris differs from Aurora/Sunspot in a way that shapes every test
+# below: its dominant production failure is an NVIDIA CUDA-runtime error
+# raised inside a rank's Python process, NOT a PALS shepherd kill. A
+# shepherd kill arrives pre-labeled with the node that died; a Python
+# traceback does not -- mpiexec prints it verbatim on stderr with no host
+# prefix unless the launcher passes `--label` (see EZPZ_MPI_LABEL in
+# ezpz/pbs.py).
+#
+# Job 7550301 (2026-08-23, 130 nodes) is the motivating postmortem: two
+# ranks raised a CUDA device fault, the tracebacks were unlabeled, the
+# scraper found no host, and the caller blind-rotated a HEALTHY node while
+# the sick one stayed in the allocation. ~1h of 130 nodes, zero steps.
+# ---------------------------------------------------------------------------
+
+_POLARIS_H = "hsn.cm.polaris.alcf.anl.gov"
+
+
+def test_polaris_unlabeled_cuda_fault_yields_nothing(tmp_path):
+    """THE most important Polaris test.
+
+    This is job 7550301's real log shape: a bare CUDA traceback plus a
+    watchdog SIGTERM naming an INNOCENT host. The scraper must return []
+    so the caller falls back to blind rotation.
+
+    A false positive here is strictly WORSE than blind rotation: it swaps
+    a healthy node AND leaves the real culprit in the allocation. The
+    only host-attributed line in the entire 1800-line log named
+    x3007c0s13b1n0 -- which was not the node that raised the error.
+    """
+    log = _make_log(
+        tmp_path,
+        "Traceback (most recent call last):\n"
+        '  File ".../ezpz/distributed.py", line 662, in _set_local_device\n'
+        "    torch.cuda.set_device(device_index)\n"
+        "torch.AcceleratorError: CUDA error: CUDA-capable device(s) "
+        "is/are busy or unavailable\n"
+        f"x3007c0s13b1n0.{_POLARIS_H}: rank 57 died from signal 15\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+def test_polaris_labeled_cuda_fault_is_attributed(tmp_path):
+    """The same fault WITH --label: the culprit is named.
+
+    Note the SIGTERM line still names a different (innocent) host and
+    must still be ignored.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3006c0s13b1n0.{_POLARIS_H} 57: Traceback (most recent call last):\n"
+        f"x3006c0s13b1n0.{_POLARIS_H} 57: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3007c0s13b1n0.{_POLARIS_H}: rank 57 died from signal 15\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3006c0s13b1n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_cascade_victims_never_tagged(tmp_path):
+    """signal 11/15 and nonzero exits are downstream of the primary kill.
+
+    On Polaris the common source of SIGTERM is the idle-output watchdog's
+    OWN kill, so those ranks are victims of our teardown.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3001c0s1b0n0.{_POLARIS_H} 5: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3002c0s1b0n0.{_POLARIS_H}: rank 5 died from signal 15\n"
+        f"x3003c0s1b0n0.{_POLARIS_H}: rank 9 died from signal 11\n"
+        f"x3004c0s1b0n0.{_POLARIS_H}: rank 3 exited with code 1\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3001c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_cuda_init_variants(tmp_path):
+    """A GPU off the PCIe bus surfaces as init failures, not "busy"."""
+    log = _make_log(
+        tmp_path,
+        f"x3010c0s1b0n0.{_POLARIS_H} 2: RuntimeError: CUDA error: "
+        "no CUDA-capable device is detected\n"
+        f"x3011c0s1b0n0.{_POLARIS_H} 7: RuntimeError: CUDA error: "
+        "initialization error\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3010c0s1b0n0.{_POLARIS_H}",
+        f"x3011c0s1b0n0.{_POLARIS_H}",
+    ]
+
+
+def test_polaris_shepherd_sig9_needs_no_label(tmp_path):
+    """PALS prefixes shepherd kills itself, so this works unlabeled."""
+    log = _make_log(
+        tmp_path,
+        f"x3013c0s1b0n0.{_POLARIS_H}: shepherd died from signal 9\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3013c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_hsn_suffix_dedupes_to_one_node(tmp_path):
+    """`-hsn0` and the plain form name the SAME node.
+
+    Without normalization the same node dedupes as two entries, which
+    breaks swap_in's hostfile lookup and burns two spares for one fault.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3014c0s1b0n0-hsn0.{_POLARIS_H} 1: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3014c0s1b0n0.{_POLARIS_H} 1: RuntimeError: CUDA error: "
+        "CUDA-capable device(s) is/are busy or unavailable\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3014c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_clean_log_yields_nothing(tmp_path):
+    log = _make_log(tmp_path, "step=1 loss=12.03\nstep=2 loss=11.87\n")
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        (f"x3006c0s13b1n0.{_POLARIS_H}", f"x3006c0s13b1n0.{_POLARIS_H}"),
+        (f"x3006c0s13b1n0-hsn0.{_POLARIS_H}", f"x3006c0s13b1n0.{_POLARIS_H}"),
+        (
+            "x3006c0s13b1n0.hostmgmt2042.cm.polaris.alcf.anl.gov",
+            f"x3006c0s13b1n0.{_POLARIS_H}",
+        ),
+        ("x3006c0s13b1n0.something-else.example.com", None),
+        ("some-other-host", None),
+        # An Aurora host must NOT normalize as a Polaris one.
+        ("x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov", None),
+    ],
+)
+def test_polaris_hostname_normalizer(raw, want):
+    from ezpz.failover.patterns.polaris import normalize_polaris_hostname
+
+    assert normalize_polaris_hostname(raw) == want
+
+
+def test_polaris_patterns_are_registered():
+    """Regression guard for the bug itself.
+
+    Before polaris.py existed this returned [], which made every Polaris
+    failover blind. An empty pattern set is indistinguishable from a
+    clean log downstream (both yield []), so nothing surfaced the gap --
+    hence an explicit test.
+    """
+    names = {p.name for p in get_patterns_for_machine("polaris")}
+    assert "polaris.cuda_device_unavailable" in names
+    assert "polaris.shepherd_signal_9" in names

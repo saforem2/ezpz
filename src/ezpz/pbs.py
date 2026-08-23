@@ -469,6 +469,25 @@ def get_pbs_launch_cmd(
         f"--ppn={ngpu_per_host}",
         f"--hostfile={hostfile_str}",
     ]
+
+    # PALS `--label` prefixes every output line with `<fqdn> <rank>: `.
+    # Without it, a Python traceback (e.g. a CUDA device fault raised
+    # inside a rank) reaches the log with NO host attribution, so the
+    # bad-node scraper cannot name a culprit and the failover loop
+    # falls back to BLIND rotation -- which swaps a healthy node and
+    # leaves the sick one in the allocation. Polaris job 7550301 burned
+    # ~1 hour of 130 nodes to exactly this.
+    #
+    # Opt-in rather than unconditional: the prefix changes the shape of
+    # every log line, and other machines' scraper patterns (Aurora and
+    # Sunspot both anchor on `^<host>: `) were written against UNLABELED
+    # output. Enabling it globally could silently break them.
+    if os.environ.get("EZPZ_MPI_LABEL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        cmd_list.append("--label")
     if verbose:
         cmd_list.append("--verbose")
 
