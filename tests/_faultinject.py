@@ -24,7 +24,8 @@ only that the harness can match its own strings.
 | `FI_COUNTER`  | file holding the attempt number (incremented here)   |
 | `FI_MODE`     | which failure to inject (see `_MODES`)               |
 | `FI_FAIL_ON`  | comma-separated attempts that fail; default all      |
-| `FI_STEPS`    | how many `step=N` lines to print first (default 2)   |
+| `FI_STEPS`    | how many progress lines to print first (default 2)   |
+| `FI_MARKER`   | counter name in those lines: `step` (default) or `iter` |
 | `FI_TRAILER`  | if set, print ezpz launch's `Execution finished with N.` |
 | `FI_HOST`     | hostname to blame in `shepherd` mode                 |
 """
@@ -79,10 +80,13 @@ def main() -> int:
     n_steps = int(os.environ.get("FI_STEPS", "2"))
 
     # Progress first. `_PROGRESS_MARKER_RX` is `\bstep=\d+` and nothing
-    # else -- `iter=N`, which every real ezpz example prints, does NOT
-    # match. FI_STEPS=0 reproduces that case on purpose.
+    # else, so the counter's NAME decides whether the loop believes
+    # training started. `FI_MARKER=iter` reproduces what every real ezpz
+    # example actually prints (minimal.py:92, test.py:401 both use
+    # "iter"), which does NOT match -- that is the point of the option.
+    marker = os.environ.get("FI_MARKER", "step")
     for i in range(n_steps):
-        _emit(f"step={attempt * 100 + i} loss={1.0 / (i + 1):.4f}")
+        _emit(f"{marker}={attempt * 100 + i} loss={1.0 / (i + 1):.4f}")
 
     if not should_fail:
         _emit("training complete")

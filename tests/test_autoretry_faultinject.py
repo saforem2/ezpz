@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -78,10 +79,25 @@ class Harness:
     ) -> int:
         for k, v in self.env.items():
             monkeypatch.setenv(k, v)
-        # Backoff is 5/10/20s; real sleeps would dominate the suite.
+        # Zero the RETRY backoff (5/10/20s), which would otherwise
+        # dominate the suite. Deliberately not `time.sleep`: that is the
+        # shared stdlib function, so patching it also removes the 0.1-1s
+        # poll sleep inside `_run_attempt_with_tee`, leaving the watchdog
+        # tests to busy-spin a core for their whole timeout.
         monkeypatch.setattr(
-            "ezpz.launch_autoretry.time.sleep", lambda *_a, **_k: None
+            "ezpz.launch_autoretry._backoff_for_attempt", lambda _n: 0.0
         )
+        if idle_timeout_s == 0:
+            # With the watchdog off, the poll loop sleeps a flat 1.0s
+            # per iteration, so a child that exits in 10ms still costs a
+            # second per attempt. Shorten it ONLY here -- the watchdog
+            # tests keep the real sleep, since shortening it there would
+            # be tuning away the thing under test.
+            real_sleep = time.sleep
+            monkeypatch.setattr(
+                "ezpz.launch_autoretry.time.sleep",
+                lambda s: real_sleep(min(s, 0.02)),
+            )
         cfg = AutoRetryConfig(
             cmd=[sys.executable, FAULT_SCRIPT],
             log_dir=self.log_dir,
@@ -169,7 +185,7 @@ class TestNamedBadNode:
             monkeypatch,
             nodes=("healthy-0", BAD_HOST, "spare-1"),
             active=2,
-            machine=None,
+            machine="no-such-cluster",
         )
 
         assert rc == 0
@@ -449,12 +465,48 @@ class TestProgressMarkerContract:
             f"spares run out; got {h.attempts} attempts"
         )
 
-    def test_no_step_marker_aborts_after_two_attempts(
+    def test_real_iter_output_is_not_seen_as_progress(
         self, tmp_path, monkeypatch
     ):
-        """FI_STEPS=0 reproduces what every real ezpz example does.
+        """The actual bug: `iter=N` is real output and does not count.
 
-        The loop stops at 2 even though 2 spares were still available.
+        `FI_MARKER=iter` emits exactly what `minimal.py` and `test.py`
+        print. The log is FULL of progress; the loop still gives up at
+        two attempts with spares to spare.
+
+        An earlier version of this test used `FI_STEPS=0` -- an empty
+        log -- which proved only that the guard fires on silence, and
+        would have kept passing after a fix that made `iter=` count.
+        Raised in review; this is the version that would actually go red
+        once #224 is fixed.
+        """
+        h = Harness(
+            tmp_path, FI_MODE="shepherd", FI_MARKER="iter", FI_STEPS="3"
+        )
+        h.run(
+            monkeypatch,
+            nodes=(BAD_HOST, "s1", "s2"),
+            active=1,
+            max_failover_retries=None,
+        )
+
+        log = h.log_text()
+        assert "iter=" in log, "the child did not emit the real marker"
+        assert "step=" not in log
+        assert h.rc != 0
+        assert h.attempts == 2, (
+            "the loop abandoned a job that was visibly training -- see "
+            f"issue #224; got {h.attempts} attempts with 2 spares free"
+        )
+        assert len(h.bad) == 1
+
+    def test_no_output_at_all_aborts_after_two_attempts(
+        self, tmp_path, monkeypatch
+    ):
+        """The genuinely-silent case: no progress lines at all.
+
+        Distinct from the test above -- this is a job that really did
+        die before training, which the guard is *right* to abandon.
         """
         h = Harness(tmp_path, FI_MODE="shepherd", FI_STEPS="0")
         rc = h.run(
