@@ -6,6 +6,9 @@
 #PBS -q workq
 #PBS -l filesystems=tegu:home
 #PBS -j oe
+# Absolute, because the script cd's and PBS resolves a relative path
+# against the CWD at exit -- job 12473702's log landed in the repo dir.
+#PBS -o /home/foremans/
 #
 # Does `ezpz launch --auto-retry` actually swap a bad node out, on real
 # hardware, mid-training?
@@ -107,7 +110,18 @@ chaos() {
         [ -f "${DONE}" ] && { echo "[CHAOS] training ended before the kill"; return 0; }
     done
     echo "[CHAOS] killing ranks on ${victim} at $(date +%s) (ckpt=$(latest_ckpt_step "${CKPT}"))"
-    pbsdsh -n 0 -- bash -c 'pkill -9 -f "ezpz.examples.fsdp_tp" 2>/dev/null; true' || true
+    # Kill the RANKS, not the supervisor. `pkill -f ezpz.examples.fsdp_tp`
+    # also matches the `python3 -m ezpz.launch --auto-retry -- python3 -m
+    # ezpz.examples.fsdp_tp ...` parent, whose command line contains that
+    # string -- so the first run took out the retry loop itself and there
+    # was nothing left to fail over (job 12473702: 1 attempt, empty
+    # bad_nodes.txt). Excluding `ezpz.launch` leaves the supervisor alive
+    # to observe the failure and swap.
+    pbsdsh -n 0 -- bash -c \
+        'for pid in $(pgrep -f "ezpz[.]examples[.]fsdp_tp"); do
+             grep -qa "ezpz.launch" "/proc/$pid/cmdline" 2>/dev/null && continue
+             kill -9 "$pid" 2>/dev/null
+         done; true' || true
     echo "[CHAOS] kill delivered"
 }
 
@@ -157,9 +171,18 @@ else
     grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
     ! grep -q "${VICTIM}" <<< "${ACT}"
     check "killed host is OUT of the active hostfile" $?
+    # Ordered so the prerequisite is checked FIRST: without a relaunch
+    # the two checks below are vacuous -- on job 12473702 they both
+    # reported PASS while the test as a whole failed, because an
+    # untouched hostfile still has N hosts and attempt-1 (which ran
+    # BEFORE the kill) naturally never mentions the victim.
+    [ "${N_ATTEMPTS}" -ge 2 ]; check "the job was relaunched (>=2 attempts)" $?
+
+    if [ "${N_ATTEMPTS}" -lt 2 ]; then
+        echo "  SKIP  remaining checks: no relaunch, so nothing to verify"
+    else
     [ "$(wc -l < "${FO_DIR}/active.hostfile")" -eq "${ACTIVE_HOSTS}" ]
     check "active set still has ${ACTIVE_HOSTS} hosts (a spare filled in)" $?
-    [ "${N_ATTEMPTS}" -ge 2 ]; check "the job was relaunched (>=2 attempts)" $?
 
     # The claim no in-process test can make: the post-kill attempt ran
     # on the NEW host set. PALS prints the hosts it launched on, so the
@@ -168,6 +191,7 @@ else
     if [ -n "${LAST}" ]; then
         ! grep -q "${VICTIM}" "${LAST}"
         check "final attempt did NOT run on the dead host ($(basename "${LAST}"))" $?
+    fi
     fi
 fi
 
