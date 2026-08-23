@@ -22,9 +22,14 @@ carry on training, so they look alike from outside:
 | | what fails | what recovers |
 | --- | --- | --- |
 | Checkpoint restart | the training **process** | relaunch on the **same** nodes, resuming from the last checkpoint |
-| `--auto-retry` (here) | a **node** | the bad host is retired, a spare takes its slot, the job runs **elsewhere** |
+| `--auto-retry` (here) | a **node** — or any retryable failure it cannot pin on one | a named host is retired; otherwise a spare is rotated in blindly. Either way the job runs **elsewhere** |
 
-The difference is whether the node set changes. Checkpoint restart is
+The difference is whether the node set changes. Note the hedge in that
+second row: only a scraped, named host yields `BAD_NODE_KNOWN`. A
+watchdog timeout or an unrecognised crash still burns a spare, on the
+guess that a node is at fault — see the classification table below.
+And a retry of any kind requires a spare to exist: with none, the
+verdict is `EXHAUSTED` and the job stops. Checkpoint restart is
 measured on real hardware; node-swapping is exercised here in process,
 and on-node validation is still outstanding (see [Scope](#scope)).
 

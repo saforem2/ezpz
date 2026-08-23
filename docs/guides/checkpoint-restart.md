@@ -42,12 +42,20 @@ ezpz launch --auto-retry --np <N> -- \
     | | what fails | what recovers | measured where |
     | --- | --- | --- | --- |
     | **Checkpoint restart** (this page) | the training process | a relaunch on the **same** nodes, resuming from the last checkpoint | here — real Sunspot runs |
-    | **`--auto-retry`** ([fault injection](fault-injection.md)) | a **node** | the bad host is retired, a spare takes its slot, and the job relaunches **elsewhere** | locally; on-node validation still outstanding |
+    | **`--auto-retry`** ([fault injection](fault-injection.md)) | a **node** — or any retryable failure it cannot attribute to one | a named bad host is retired; otherwise a spare is rotated in blindly. Either way the job relaunches **elsewhere** | locally; on-node validation still outstanding |
 
     Both survive a `pkill -9` and keep training, which is exactly why
     they look alike from outside. The difference is whether the *node
     set changes*. The experiment below uses a plain relaunch loop on a
     fixed node set, so nothing here exercises node-swapping.
+
+    One asymmetry worth knowing: the plain relaunch loop always
+    retries, but **`--auto-retry` needs a spare to retry at all**.
+    Every retryable verdict is gated on `has_spares`
+    (`launch_autoretry.py:490-502`); with none left the run ends as
+    `EXHAUSTED` rather than relaunching. If `--np` claims the whole
+    allocation there is no spare, so ask the scheduler for more nodes
+    than you train on — that is what `--nhosts` is for.
 
 ### Asynchronous checkpointing
 
