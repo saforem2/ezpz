@@ -649,6 +649,26 @@ class TestBadNodeProvenance:
             bf,
         )
 
+    def test_provenance_words_on_disk_are_the_literal_labels(
+        self, tmp_path
+    ):
+        """Anchor the on-disk words, not just the accessors.
+
+        The other tests here compare ``scraped_bad_hosts()`` against
+        ``blind_bad_hosts()``. That passes even if BOTH the writer and
+        the accessor's comparison are flipped to the same wrong label,
+        because the two stay self-consistent -- verified: a mutant
+        flipping ``PROVENANCE_BLIND`` at both the write site and the
+        accessor's ``==`` left all 167 tests green.
+
+        An operator greps this file for the word ``blind``, so the word
+        itself is the contract. Assert the exact bytes.
+        """
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert bf.read_text() == "h2  scraped  attempt=1\nh1  blind  attempt=2\n"
+
     def test_hostname_stays_in_column_one(self, tmp_path):
         # The compatibility contract: bare-hostname consumers keep
         # working because column 1 is still just the hostname.
