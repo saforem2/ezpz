@@ -14,7 +14,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional, Union
+from typing import Sequence, Optional, Union
 
 import ezpz
 from ezpz.distributed import _expand_slurm_nodelist
@@ -188,6 +188,7 @@ def build_launch_cmd(
     ngpu_per_host: Optional[int] = None,
     hostfile: Optional[Union[str, Path, os.PathLike]] = None,
     cpu_bind: Optional[str] = None,
+    exclude_hosts: Optional[Sequence[str]] = None,
 ) -> str:
     """Build an ``srun`` command to launch a distributed job on SLURM.
 
@@ -213,6 +214,15 @@ def build_launch_cmd(
     cpu_bind : str, optional
         CPU binding policy (e.g. ``"verbose,list:0-7"``).  Passed as
         ``--cpu-bind=<value>`` to ``srun`` when provided.
+    exclude_hosts : sequence of str, optional
+        Hosts to keep OUT of the allocation, via ``srun -x``. Needed
+        alongside ``hostfile`` because ``-w`` is a floor, not a fence:
+        its man page says the job "will contain all of these hosts and
+        possibly additional hosts as needed", so a node swapped out by
+        ``--auto-retry`` could be handed back. Pass only hosts with
+        EVIDENCE against them (``NodeAllocation.scraped_bad_hosts()``);
+        excluding blind guesses would shrink the usable pool on
+        suspicion.
     """
     if ngpu_per_host is None:
         ngpu_per_host = ezpz.get_gpus_per_node()
@@ -261,6 +271,36 @@ def build_launch_cmd(
     cmd = f"srun -u --verbose -N{num_nodes} -n{total_gpus}"
     if ngpu_per_host > 0:
         cmd += f" --gpus-per-node={ngpu_per_host}"
+
+    # Tell srun WHICH nodes, not just how many (#235).
+    #
+    # Until this, `hostfile` was used only to count lines for -N, so
+    # `--auto-retry` could swap a bad node out, rewrite the hostfile,
+    # and relaunch with a byte-identical command -- proven on
+    # Perlmutter, where two different host sets produced
+    # `srun -u --verbose -N2 -n8 --gpus-per-node=4` both times. SLURM
+    # then re-picked from the same allocation and could hand back the
+    # sick node while every artifact claimed a swap had happened.
+    #
+    # `-w <filename>` rather than `-w host1,host2`: srun's man page
+    # documents `--nodelist={<node_name_list>|<filename>}`, and the
+    # file form is what preserves AutoRetryConfig's contract -- the
+    # command is assembled ONCE and the hostfile mutates in place
+    # between attempts, so a baked-in list would be stale the moment a
+    # node is swapped.
+    if hostfile is not None and Path(hostfile).is_file():
+        # Absolute: srun resolves a relative path against ITS cwd,
+        # which is not guaranteed to be ours.
+        cmd += f" --nodelist={Path(hostfile).resolve()}"
+
+    if exclude_hosts:
+        # `-w` admits "additional hosts as needed", so the retired node
+        # can come back without this. Deduplicated and sorted for a
+        # stable command line (easier to diff across attempts).
+        uniq = sorted({h for h in exclude_hosts if h})
+        if uniq:
+            cmd += f" --exclude={','.join(uniq)}"
+
     if cpu_bind is not None:
         cmd += f" --cpu-bind={cpu_bind}"
     return cmd
