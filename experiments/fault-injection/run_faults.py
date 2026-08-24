@@ -107,6 +107,7 @@ def main() -> int:
     from ezpz.launch_autoretry import (
         AutoRetryConfig,
         NodeAllocation,
+        parse_bad_nodes_file,
         run_with_auto_retry,
     )
 
@@ -143,11 +144,12 @@ def main() -> int:
         max_failover_retries=None,
         machine="sunspot",
     )
+    bad_nodes_path = work / "bad_nodes.txt"
     alloc = NodeAllocation.from_full_nodelist(
         [BAD_HOST, "spare-1", "spare-2", "spare-3"],
         1,
         work / "active.hostfile",
-        work / "bad_nodes.txt",
+        bad_nodes_path,
     )
 
     # Real backoff would put 5s and 10s of dead air into the chart and
@@ -196,7 +198,14 @@ def main() -> int:
         "ckpt_every": args.ckpt_every,
         "step_ms": args.step_ms,
         "mode": args.mode,
-        "bad_nodes": (work / "bad_nodes.txt").read_text().split(),
+        # bad_nodes.txt carries provenance from #233 -- hostname in
+        # column 1, `scraped`/`blind` in column 2. A bare .split()
+        # would turn 2 retired hosts into 6 tokens, so parse it.
+        "bad_nodes": [r.host for r in parse_bad_nodes_file(bad_nodes_path)],
+        "bad_node_records": [
+            {"host": r.host, "provenance": r.provenance, "attempt": r.attempt}
+            for r in parse_bad_nodes_file(bad_nodes_path)
+        ],
         "final_hostfile": (work / "active.hostfile").read_text().split(),
     }
 
@@ -213,7 +222,11 @@ def main() -> int:
             f"restart={a['restart_seconds']}  "
             f"wall={a.get('attempt_wall_s')}  fault={a['fault']}"
         )
-    print(f"  bad nodes retired: {summary['bad_nodes']}")
+    retired = ", ".join(
+        f"{r['host']} ({r['provenance']}, attempt={r['attempt']})"
+        for r in summary["bad_node_records"]
+    )
+    print(f"  bad nodes retired: {retired or 'none'}")
     print(f"  wrote {args.out}")
     return 0
 

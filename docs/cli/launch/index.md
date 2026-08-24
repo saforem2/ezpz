@@ -375,6 +375,12 @@ What the classifier does step by step:
 7. So this lands on row 6, not row 5: `swap_one_blind` evicts
    `active[0]` and `bad_nodes.txt` records *that* host — which is
    `x4610c4s3b0n0` only if it happened to be first in the active set.
+   Since #233 the line carries its provenance, so the postmortem says
+   plainly that this was a guess:
+
+    ```text
+    x4610c4s1b0n0.hsn.cm.aurora.alcf.anl.gov  blind  attempt=1
+    ```
    `active.hostfile` is rewritten with the evicted host replaced by the
    next spare. Getting a **named** swap here requires a
    `shepherd died from signal 9` line; see
@@ -457,10 +463,31 @@ Per-job, in `$(pwd)/logs/failover-<jobid>/`:
   place as nodes are swapped. Always reflects what the next attempt
   will run on.
 - `bad_nodes.txt` — every host that's been swapped out (named
-  swap_in *and* blind rotations). Append-only. **It does not record
-  which** — a host evicted by a blind rotation looks identical to one
-  the scraper named, so do not read this file as a hardware verdict
-  ([#233](https://github.com/saforem2/ezpz/issues/233)).
+  swap_in *and* blind rotations), one per line, append-only. Each
+  line records *why* the host was retired:
+
+  ```
+  x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov  scraped  attempt=1
+  x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov  blind    attempt=2
+  ```
+
+  Column 1 is the hostname, so `awk '{print $1}' bad_nodes.txt`
+  gives you the bare list. Column 2 is the provenance:
+
+  - `scraped` — the scraper **named** this host from a failure
+    signature in the log. This is evidence.
+  - `blind` — nothing in the log implicated this host;
+    `swap_one_blind` evicted `active[0]` because the crash could
+    not be attributed. This is a **guess**, and a `blind` entry is
+    not grounds for pulling a node out of service.
+
+  `attempt=N` is the attempt that retired the host. It is omitted
+  when the caller didn't supply one rather than filled with a
+  guessed value.
+
+  `src/ezpz/bin/failover.sh` writes the identical format, and
+  `ezpz.launch_autoretry.parse_bad_nodes_file` reads either this
+  or the older bare-hostname files.
 - `attempt-N.log` — combined stdout+stderr of attempt N. The
   supervisor's own `[auto-retry]` lines (`blind rotation`,
   `FAILOVER STOP`) are **not** here; they go to the job's stdout.

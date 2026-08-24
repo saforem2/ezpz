@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -212,6 +212,68 @@ class AutoRetryConfig:
     ``ezpz.get_machine()``."""
 
 
+# Provenance tags written to column 2 of ``bad_nodes.txt``. A
+# ``scraped`` host was *named* by the log scraper from a failure
+# signature; a ``blind`` host was evicted by :meth:`swap_one_blind`
+# on a guess, with nothing in the log implicating it. Postmortems
+# and any future "final attempt" logic need to tell those apart —
+# blind-evicted hosts were never evidenced as faulty. See #233.
+PROVENANCE_SCRAPED = "scraped"
+PROVENANCE_BLIND = "blind"
+
+
+@dataclass(frozen=True)
+class BadNodeRecord:
+    """One retired host plus *why* it was retired.
+
+    The on-disk rendering (:meth:`to_line`) keeps the hostname in
+    column 1 so bare-hostname consumers (``awk '{print $1}'``,
+    ``cut -f1``) keep working against the richer file.
+    """
+
+    host: str
+    provenance: str
+    attempt: Optional[int] = None
+    """1-based attempt that retired this host. ``None`` when the
+    caller didn't supply one — the column is then omitted rather
+    than filled with a guessed value."""
+
+    def to_line(self) -> str:
+        """Render as one whitespace-separated ``bad_nodes.txt`` line.
+
+        Two spaces rather than one purely for legibility; every
+        consumer splits on arbitrary whitespace.
+        """
+        parts = [self.host, self.provenance]
+        if self.attempt is not None:
+            parts.append(f"attempt={self.attempt}")
+        return "  ".join(parts)
+
+
+def parse_bad_nodes_file(path: Path) -> list[BadNodeRecord]:
+    """Read a ``bad_nodes.txt`` back into records.
+
+    Tolerates the legacy bare-hostname format (provenance is then
+    reported as ``""``) so old artifacts stay readable.
+    """
+    records: list[BadNodeRecord] = []
+    for raw in path.read_text().splitlines():
+        fields = raw.split()
+        if not fields:
+            continue
+        host = fields[0]
+        provenance = fields[1] if len(fields) > 1 else ""
+        attempt: Optional[int] = None
+        for tok in fields[2:]:
+            if tok.startswith("attempt="):
+                try:
+                    attempt = int(tok.split("=", 1)[1])
+                except ValueError:
+                    attempt = None
+        records.append(BadNodeRecord(host, provenance, attempt))
+    return records
+
+
 @dataclass
 class NodeAllocation:
     """In-memory active + spare hostfile tracker.
@@ -224,13 +286,21 @@ class NodeAllocation:
 
     ``spare`` is a deque so we can ``popleft()`` cheaply when
     rotating new hosts in. ``bad_nodes_path`` is appended-to once
-    per swap for postmortem.
+    per swap for postmortem, each line carrying the hostname in
+    column 1 and *why* it was retired in column 2 (see
+    :class:`BadNodeRecord`).
     """
 
     active: list[str]
     spare: deque[str]
     hostfile_path: Path
     bad_nodes_path: Path
+    bad_nodes: list[BadNodeRecord] = field(default_factory=list)
+    """In-memory mirror of ``bad_nodes_path``, with provenance.
+
+    Lets a caller ask "was anything actually *shown* to be bad?"
+    without re-parsing the file — see :meth:`scraped_bad_hosts` and
+    :meth:`blind_bad_hosts`."""
 
     @classmethod
     def from_full_nodelist(
@@ -273,22 +343,61 @@ class NodeAllocation:
             "\n".join(self.active) + ("\n" if self.active else "")
         )
 
-    def _append_bad(self, host: str) -> None:
-        """Append one bad host to ``bad_nodes_path`` for postmortem.
+    def _append_bad(
+        self,
+        host: str,
+        provenance: str,
+        attempt: Optional[int] = None,
+    ) -> None:
+        """Record one retired host + why, on disk and in memory.
 
         Open + append + close per call (cheap; swaps are rare and
         a leaked fd outliving the process would be worse than the
-        extra syscall)."""
-        with self.bad_nodes_path.open("a") as f:
-            f.write(host + "\n")
+        extra syscall).
 
-    def swap_in(self, bad_hosts: Sequence[str]) -> list[tuple[str, str]]:
+        ``attempt`` is omitted from the line when the caller doesn't
+        know it — an absent column beats a fabricated one."""
+        record = BadNodeRecord(host, provenance, attempt)
+        self.bad_nodes.append(record)
+        with self.bad_nodes_path.open("a") as f:
+            f.write(record.to_line() + "\n")
+
+    def scraped_bad_hosts(self) -> list[str]:
+        """Hosts a scraper *named* from a failure signature.
+
+        The evidenced subset — the only entries a postmortem can
+        call bad without qualification."""
+        return [
+            r.host
+            for r in self.bad_nodes
+            if r.provenance == PROVENANCE_SCRAPED
+        ]
+
+    def blind_bad_hosts(self) -> list[str]:
+        """Hosts evicted on a guess, never implicated by a log.
+
+        A future final attempt can reasonably reconstitute from
+        these; nothing ever showed them to be faulty."""
+        return [
+            r.host
+            for r in self.bad_nodes
+            if r.provenance == PROVENANCE_BLIND
+        ]
+
+    def swap_in(
+        self,
+        bad_hosts: Sequence[str],
+        attempt: Optional[int] = None,
+    ) -> list[tuple[str, str]]:
         """Swap each known-bad host out for a spare.
 
         Skips hosts not currently in the active set (already
         replaced, or scraped from an older log). Returns the list
         of ``(bad, spare)`` pairs actually swapped — caller can
         log a summary.
+
+        Every host retired here was *named* by the scraper, so it
+        is recorded with :data:`PROVENANCE_SCRAPED`.
 
         Raises :class:`RuntimeError` if a swap is wanted but no
         spare is available. The caller catches that and ends the
@@ -306,13 +415,15 @@ class NodeAllocation:
             spare = self.spare.popleft()
             idx = self.active.index(bad)
             self.active[idx] = spare
-            self._append_bad(bad)
+            self._append_bad(bad, PROVENANCE_SCRAPED, attempt)
             swaps.append((bad, spare))
         if swaps:
             self._write_active()
         return swaps
 
-    def swap_one_blind(self) -> tuple[str, str]:
+    def swap_one_blind(
+        self, attempt: Optional[int] = None
+    ) -> tuple[str, str]:
         """Rotate the first active host out for a spare.
 
         Used when the scraper can't pinpoint a culprit (silent hang,
@@ -320,6 +431,9 @@ class NodeAllocation:
         that's also what the bash lib does — the choice is arbitrary
         but stable, so consecutive blind rotations cycle through the
         active set rather than thrashing on one host.
+
+        Nothing implicated the evicted host, so it is recorded with
+        :data:`PROVENANCE_BLIND` — a guess, not evidence.
         """
         if not self.spare:
             raise RuntimeError("out of spare nodes — cannot blind-rotate")
@@ -328,7 +442,7 @@ class NodeAllocation:
         bad = self.active[0]
         spare = self.spare.popleft()
         self.active[0] = spare
-        self._append_bad(bad)
+        self._append_bad(bad, PROVENANCE_BLIND, attempt)
         self._write_active()
         return bad, spare
 
@@ -835,7 +949,7 @@ def run_with_auto_retry(
         # Bad-node paths fall through to a swap + continue.
         try:
             if reason is TerminationReason.BAD_NODE_KNOWN:
-                swaps = allocation.swap_in(scraped)
+                swaps = allocation.swap_in(scraped, attempt=attempt)
                 logger.warning(
                     "[auto-retry] bad nodes: %s — swapped %d",
                     scraped,
@@ -852,14 +966,16 @@ def run_with_auto_retry(
                             "(named hosts already swapped, no spares)"
                         )
                         return last_rc
-                    bad, spare = allocation.swap_one_blind()
+                    bad, spare = allocation.swap_one_blind(
+                        attempt=attempt
+                    )
                     logger.warning(
                         "[auto-retry] blind rotation: %s -> %s",
                         bad,
                         spare,
                     )
             else:  # BAD_NODE_BLIND
-                bad, spare = allocation.swap_one_blind()
+                bad, spare = allocation.swap_one_blind(attempt=attempt)
                 logger.warning(
                     "[auto-retry] blind rotation: %s -> %s", bad, spare
                 )

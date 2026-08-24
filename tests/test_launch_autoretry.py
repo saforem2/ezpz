@@ -30,7 +30,10 @@ from ezpz.launch import (
     parse_args,
 )
 from ezpz.launch_autoretry import (
+    PROVENANCE_BLIND,
+    PROVENANCE_SCRAPED,
     AutoRetryConfig,
+    BadNodeRecord,
     ClassificationResult,
     NodeAllocation,
     TerminationReason,
@@ -41,6 +44,7 @@ from ezpz.launch_autoretry import (
     _strip_ansi,
     classify_attempt,
     derive_spare_count,
+    parse_bad_nodes_file,
     run_with_auto_retry,
 )
 
@@ -573,8 +577,10 @@ class TestNodeAllocation:
         assert list(alloc.spare) == ["h5"]
         # Persisted on disk for the next launcher attempt.
         assert hf.read_text() == "h1\nh4\nh3\n"
-        # Bad nodes appended for postmortem.
-        assert bf.read_text() == "h2\n"
+        # Bad nodes appended for postmortem, with provenance. No
+        # attempt= column: swap_in() was called without one, and an
+        # absent column beats a fabricated one.
+        assert bf.read_text() == "h2  scraped\n"
 
     def test_swap_in_skips_hosts_not_in_active(self, tmp_path):
         alloc, _, _ = self._make(tmp_path)
@@ -605,7 +611,8 @@ class TestNodeAllocation:
         assert alloc.active == ["h4", "h2", "h3"]
         assert list(alloc.spare) == ["h5"]
         assert hf.read_text() == "h4\nh2\nh3\n"
-        assert bf.read_text() == "h1\n"
+        # Recorded as a GUESS, not as evidence -- nothing implicated h1.
+        assert bf.read_text() == "h1  blind\n"
 
     def test_swap_one_blind_raises_when_no_spares(self, tmp_path):
         alloc, _, _ = self._make(
@@ -621,6 +628,149 @@ class TestNodeAllocation:
         alloc.swap_one_blind()
         alloc.swap_one_blind()
         assert not alloc.has_spares
+
+
+# ---------------------------------------------------------------------------
+# Bad-node provenance (#233): evidence vs guess
+# ---------------------------------------------------------------------------
+
+
+class TestBadNodeProvenance:
+    """A scraped host was *named* by a failure signature; a blind
+    host was evicted on a guess. ``bad_nodes.txt`` recorded them
+    identically before #233, so a postmortem could not tell an
+    operator which hosts were actually shown to be faulty."""
+
+    def _make(self, tmp_path, full=("h1", "h2", "h3", "h4", "h5"), active=3):
+        hf = tmp_path / "active.hostfile"
+        bf = tmp_path / "bad_nodes.txt"
+        return (
+            NodeAllocation.from_full_nodelist(list(full), active, hf, bf),
+            bf,
+        )
+
+    def test_provenance_words_on_disk_are_the_literal_labels(
+        self, tmp_path
+    ):
+        """Anchor the on-disk words, not just the accessors.
+
+        The other tests here compare ``scraped_bad_hosts()`` against
+        ``blind_bad_hosts()``. That passes even if BOTH the writer and
+        the accessor's comparison are flipped to the same wrong label,
+        because the two stay self-consistent -- verified: a mutant
+        flipping ``PROVENANCE_BLIND`` at both the write site and the
+        accessor's ``==`` left all 167 tests green.
+
+        An operator greps this file for the word ``blind``, so the word
+        itself is the contract. Assert the exact bytes.
+        """
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert bf.read_text() == "h2  scraped  attempt=1\nh1  blind  attempt=2\n"
+
+    def test_hostname_stays_in_column_one(self, tmp_path):
+        # The compatibility contract: bare-hostname consumers keep
+        # working because column 1 is still just the hostname.
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        col1 = [line.split()[0] for line in bf.read_text().splitlines()]
+        assert col1 == ["h2", "h1"]
+
+    def test_scraped_and_blind_are_distinguishable_on_disk(self, tmp_path):
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert bf.read_text() == (
+            "h2  scraped  attempt=1\nh1  blind  attempt=2\n"
+        )
+
+    def test_attempt_column_omitted_when_unknown(self, tmp_path):
+        # Do not fabricate an attempt number the caller never gave.
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"])
+        assert bf.read_text() == "h2  scraped\n"
+        assert alloc.bad_nodes[0].attempt is None
+
+    def test_in_memory_records_mirror_the_file(self, tmp_path):
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.bad_nodes == [
+            BadNodeRecord("h2", PROVENANCE_SCRAPED, 1),
+            BadNodeRecord("h1", PROVENANCE_BLIND, 2),
+        ]
+        assert alloc.bad_nodes == parse_bad_nodes_file(bf)
+
+    def test_scraped_and_blind_accessors_partition_the_records(
+        self, tmp_path
+    ):
+        # The motivating question for a future final attempt: "was
+        # anything actually SHOWN to be bad?" -- h2 was, h1 was not.
+        alloc, _ = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.scraped_bad_hosts() == ["h2"]
+        assert alloc.blind_bad_hosts() == ["h1"]
+
+    def test_no_evidence_at_all_when_every_eviction_was_a_guess(
+        self, tmp_path
+    ):
+        alloc, _ = self._make(tmp_path)
+        alloc.swap_one_blind(attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.scraped_bad_hosts() == []
+        assert len(alloc.blind_bad_hosts()) == 2
+
+    def test_parse_tolerates_legacy_bare_hostname_file(self, tmp_path):
+        # Artifacts written before #233 must stay readable.
+        legacy = tmp_path / "bad_nodes.txt"
+        legacy.write_text("hostA\nhostB\n")
+        assert parse_bad_nodes_file(legacy) == [
+            BadNodeRecord("hostA", "", None),
+            BadNodeRecord("hostB", "", None),
+        ]
+
+    def test_parse_skips_blank_lines(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("\nhostA  blind  attempt=3\n\n")
+        assert parse_bad_nodes_file(f) == [
+            BadNodeRecord("hostA", PROVENANCE_BLIND, 3)
+        ]
+
+    def test_parse_of_empty_file_is_empty(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("")
+        assert parse_bad_nodes_file(f) == []
+
+    def test_parse_tolerates_unparseable_attempt_token(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("hostA  blind  attempt=notanumber\n")
+        assert parse_bad_nodes_file(f) == [
+            BadNodeRecord("hostA", PROVENANCE_BLIND, None)
+        ]
+
+    def test_loop_threads_the_real_attempt_number_through(
+        self, tmp_path, monkeypatch
+    ):
+        # Two failing attempts, both unclassified -> two blind
+        # rotations, recorded as attempts 1 and 2 (not 0, not 1/1).
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4"), active=2)
+        runner = _FakeRunner(
+            [
+                (1, "Execution finished with 1\niter step=1\n"),
+                (1, "Execution finished with 1\niter step=2\n"),
+                (0, "Execution finished with 0\niter step=3\n"),
+            ]
+        )
+        rc = _run(monkeypatch, config, allocation, runner)
+        assert rc == 0
+        assert [(r.provenance, r.attempt) for r in allocation.bad_nodes] == [
+            (PROVENANCE_BLIND, 1),
+            (PROVENANCE_BLIND, 2),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +899,11 @@ class TestRunWithAutoRetry:
         # Named swap: h1 → h3 (first spare)
         assert "h1" not in allocation.active
         assert "h3" in allocation.active
-        assert allocation.bad_nodes_path.read_text() == "h1\n"
+        # The loop threads its attempt counter through: h1 was
+        # retired on attempt 1, and it was NAMED by the scraper.
+        assert (
+            allocation.bad_nodes_path.read_text() == "h1  scraped  attempt=1\n"
+        )
 
     def test_walltime_no_retry(self, tmp_path, monkeypatch):
         config = _config(tmp_path)

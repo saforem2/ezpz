@@ -39,8 +39,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 from ezpz.launch_autoretry import (  # noqa: E402
+    PROVENANCE_BLIND,
+    PROVENANCE_SCRAPED,
     AutoRetryConfig,
+    BadNodeRecord,
     NodeAllocation,
+    parse_bad_nodes_file,
     run_with_auto_retry,
 )
 
@@ -133,7 +137,14 @@ class Harness:
 
     @property
     def bad(self) -> list[str]:
-        return self.bad_nodes.read_text().split()
+        # Column 1 only: bad_nodes.txt carries provenance columns
+        # since #233, so a whole-file .split() would report 3 tokens
+        # per retired host.
+        return [r.host for r in self.bad_records]
+
+    @property
+    def bad_records(self) -> list[BadNodeRecord]:
+        return parse_bad_nodes_file(self.bad_nodes)
 
     @property
     def active_hosts(self) -> list[str]:
@@ -186,6 +197,12 @@ class TestNamedBadNode:
             f"expected the SCRAPED host to be retired, got {h.bad} -- "
             "a blind rotation would have evicted 'healthy-0' instead"
         )
+        # ...and the artifact must SAY it was evidence, not a guess
+        # (#233). Retiring the right host for an unrecorded reason
+        # still leaves a postmortem unable to trust the file.
+        assert [(r.provenance, r.attempt) for r in h.bad_records] == [
+            (PROVENANCE_SCRAPED, 1)
+        ]
         assert BAD_HOST not in h.active_hosts, (
             "the bad host is STILL in the hostfile the next attempt reads "
             "-- the swap did not take effect where it matters"
@@ -255,6 +272,12 @@ class TestNamedBadNode:
         assert h.bad == ["healthy-0"], (
             f"expected a positional eviction of active[0], got {h.bad}"
         )
+        # The whole point of #233: this entry is a GUESS. `healthy-0`
+        # was never implicated by anything in the log, and the file
+        # has to say so or an operator will pull a healthy node.
+        assert [(r.provenance, r.attempt) for r in h.bad_records] == [
+            (PROVENANCE_BLIND, 1)
+        ]
         assert BAD_HOST in h.active_hosts, (
             "without machine patterns the scraper cannot name the bad "
             "host, so it is expected to survive the rotation"
@@ -499,6 +522,11 @@ class TestExhaustionAndCaps:
             f"got {h.attempts}"
         )
         assert len(h.bad) == 2, "spares were not actually consumed"
+        # Counting hosts must not be confused by the provenance
+        # columns: a whole-file `.read_text().split()` reports 6
+        # tokens here, not 2 (#233).
+        assert len(h.bad_nodes.read_text().split()) > len(h.bad)
+        assert [r.attempt for r in h.bad_records] == [1, 2]
 
     def test_max_failover_retries_is_respected(self, tmp_path, monkeypatch):
         """The cap counts RETRIES, so 1 means at most 2 attempts."""
