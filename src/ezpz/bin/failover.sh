@@ -133,10 +133,29 @@ failover_yeet_all() {
 # with the next available spare (popping from spare.hostfile). Logs
 # all bad hostnames to bad_nodes.txt for postmortem.
 # Returns 0 if all swaps succeeded, 1 if we ran out of spares.
+#
+# Each bad_nodes.txt line is whitespace-separated with the hostname in
+# COLUMN 1, so bare-hostname consumers (`awk '{print $1}'`, `cut`) keep
+# working:
+#
+#     x1921c1s0b0n0-hsn0...  scraped  attempt=1
+#     x1921c1s4b0n0-hsn0...  blind    attempt=2
+#
+# Column 2 is the provenance: `scraped` = the scraper NAMED this host
+# from a failure signature; `blind` = failover_swap_one_blind evicted it
+# on a guess with nothing in the log implicating it. Keep this format in
+# sync with BadNodeRecord.to_line() in src/ezpz/launch_autoretry.py (#233).
+#
+# Callers set two optional locals before calling (dynamic scope):
+#   _FAILOVER_PROVENANCE  default "scraped"
+#   _FAILOVER_ATTEMPT     attempt number; omitted from the line if empty
 # ---------------------------------------------------------------------------
 failover_swap_in() {
     local bad
     local swapped=0
+    local provenance="${_FAILOVER_PROVENANCE:-scraped}"
+    local attempt_field=""
+    [[ -n "${_FAILOVER_ATTEMPT:-}" ]] && attempt_field="  attempt=${_FAILOVER_ATTEMPT}"
     for bad in "$@"; do
         # Bad node must actually be in active set
         if ! grep -qxF "$bad" "$FAILOVER_ACTIVE" 2>/dev/null; then
@@ -153,7 +172,7 @@ failover_swap_in() {
         # Pop spare, swap in
         tail -n +2 "$FAILOVER_SPARE" > "$FAILOVER_SPARE.tmp" && mv "$FAILOVER_SPARE.tmp" "$FAILOVER_SPARE"
         sed -i.bak "s|^$bad\$|$spare|" "$FAILOVER_ACTIVE" && rm -f "$FAILOVER_ACTIVE.bak"
-        echo "$bad" >> "$FAILOVER_BAD"
+        echo "$bad  $provenance$attempt_field" >> "$FAILOVER_BAD"
         _failover_log "swapped: $bad -> $spare"
         swapped=$((swapped + 1))
     done
@@ -173,6 +192,10 @@ failover_swap_one_blind() {
     local first_active
     first_active=$(head -n 1 "$FAILOVER_ACTIVE")
     [[ -n "$first_active" ]] || return 1
+    # Nothing in the log implicated this host -- record it as a guess,
+    # not as evidence (#233). `local` here shadows any caller value for
+    # the duration of this function, which is exactly the scope we want.
+    local _FAILOVER_PROVENANCE="blind"
     failover_swap_in "$first_active"
 }
 
@@ -206,6 +229,10 @@ failover_run() {
     local max=${FAILOVER_MAX_RETRIES:-3}
     local attempt=1
     local rc
+    # Provenance context for failover_swap_in / failover_swap_one_blind.
+    # `local` so it's visible to those callees (bash dynamic scope) but
+    # doesn't leak out of failover_run. Re-assigned per iteration below.
+    local _FAILOVER_ATTEMPT=""
 
     # If the command is `ezpz launch ...`, inject explicit topology args so
     # ezpz launch doesn't re-derive nhosts/ngpus from the original PBS aux
@@ -240,6 +267,7 @@ failover_run() {
     fi
 
     while (( attempt <= max + 1 )); do
+        _FAILOVER_ATTEMPT="$attempt"
         local logf="$FAILOVER_LOG_DIR/attempt-${attempt}.log"
         _failover_log "attempt ${attempt}/${max} — active=$(wc -l < "$FAILOVER_ACTIVE") nodes, spare=$(wc -l < "$FAILOVER_SPARE") nodes"
         _failover_log "logging to $logf"
