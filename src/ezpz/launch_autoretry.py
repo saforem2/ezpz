@@ -82,6 +82,22 @@ _CRASH_PATTERNS_RX = re.compile(
     # while excluding the clean `exited with code 0` PALS prints per rank.
     r"|rank \d+ exited with code [1-9][0-9]*"
     r"|EOFError: No data left in file"
+    # SLURM's equivalent of the PALS lines above. `srun` reports a
+    # SIGKILLed rank as rc=143 -- the SAME code as a clean walltime
+    # expiry -- and emits none of the PALS signatures, so on SLURM
+    # EVERY killed node collapsed to WALLTIME and nothing failed over
+    # (#238). Confirmed on Perlmutter job 57540936: the kill landed at
+    # iter=10 with no TIME LIMIT in the log, and the loop still said
+    # `FAILOVER STOP: walltime (rc=143, attempt 1)`.
+    #
+    #     srun: error: nid001321: tasks 4-7: Killed       <- the victim
+    #     srun: error: nid001320: tasks 0-3: Terminated   <- the cascade
+    #
+    # `Killed` (SIGKILL) ONLY. NOT `Terminated` (SIGTERM), which is
+    # what every rank gets when a step is torn down normally --
+    # matching it would burn a spare on every expiring job, the same
+    # trap the `died from signal {11,15}` exclusion avoids for PALS.
+    r"|srun: error: \S+: tasks? [\d,-]+: Killed"
 )
 
 # Innocent rank-cascade lines. These are emitted by mpiexec when a

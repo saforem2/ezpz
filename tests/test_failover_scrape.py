@@ -1194,3 +1194,131 @@ class TestUnsupportedMachineWarns:
         with caplog.at_level("WARNING", logger=sc._get_logger().name):
             assert scrape_bad_nodes(log, machine="sunspot") == []
         assert "no bad-node patterns registered" not in caplog.text
+
+
+class TestPerlmutterSrunKilled:
+    """SLURM's kill signature (#238).
+
+    Perlmutter runs srun, not PALS, so none of the Aurora/Sunspot
+    signatures appear. Worse, srun reports a SIGKILLed rank as rc=143 --
+    the same code as a clean walltime expiry -- so a killed node
+    collapsed to WALLTIME and the loop did not even retry.
+
+    Captured on job 57540936, which SIGKILLed one node's ranks in a
+    2-active/2-spare allocation:
+
+        srun: error: nid001321: tasks 4-7: Killed       <- the victim
+        srun: error: nid001320: tasks 0-3: Terminated   <- the cascade
+    """
+
+    REAL = (
+        "srun: error: nid001321: tasks 4-7: Killed\n"
+        "srun: error: nid001320: tasks 0-3: Terminated\n"
+    )
+
+    def test_names_the_killed_node_not_the_cascade(self, tmp_path):
+        log = _make_log(tmp_path, self.REAL)
+        assert scrape_bad_nodes(log, machine="perlmutter") == ["nid001321"]
+
+    def test_singular_task_form_matches(self, tmp_path):
+        log = _make_log(
+            tmp_path, "srun: error: nid002813: task 4: Killed\n"
+        )
+        assert scrape_bad_nodes(log, machine="perlmutter") == ["nid002813"]
+
+    def test_comma_list_of_tasks_matches(self, tmp_path):
+        log = _make_log(
+            tmp_path, "srun: error: nid000042: tasks 1,3,5: Killed\n"
+        )
+        assert scrape_bad_nodes(log, machine="perlmutter") == ["nid000042"]
+
+    def test_a_clean_teardown_names_nobody(self, tmp_path):
+        """The regression this must not cause.
+
+        Every rank gets SIGTERM when a step ends normally. Matching
+        Terminated would retire a node on every expiring job.
+        """
+        log = _make_log(tmp_path, (
+            "srun: error: nid001320: tasks 0-3: Terminated\n"
+            "srun: error: nid001321: tasks 4-7: Terminated\n"
+            "srun: Force Terminated StepId=57540936.0\n"
+        ))
+        assert scrape_bad_nodes(log, machine="perlmutter") == []
+
+    def test_two_killed_nodes_both_named(self, tmp_path):
+        log = _make_log(tmp_path, (
+            "srun: error: nid001321: tasks 4-7: Killed\n"
+            "srun: error: nid009999: tasks 8-11: Killed\n"
+        ))
+        assert scrape_bad_nodes(log, machine="perlmutter") == [
+            "nid001321", "nid009999"
+        ]
+
+    def test_non_nid_hostname_rejected_by_the_pattern(self, tmp_path):
+        """The regex itself requires `nidNNNNNN`."""
+        log = _make_log(
+            tmp_path, "srun: error: login16: tasks 0-3: Killed\n"
+        )
+        assert scrape_bad_nodes(log, machine="perlmutter") == []
+
+    def test_the_normalizer_also_rejects_non_nid_names(self):
+        """Tested DIRECTLY, because the pattern already filters these.
+
+        Going through `scrape_bad_nodes` cannot exercise the
+        normalizer's guard -- the regex rejects `login16` first, so a
+        mutant that made the normalizer accept anything survived the
+        end-to-end version of this test.
+
+        The guard matters on its own: a name not in SLURM's form could
+        never match the active hostfile, so admitting one could only
+        put an unswappable host in bad_nodes.txt.
+        """
+        from ezpz.failover.patterns.perlmutter import (
+            normalize_perlmutter_hostname as norm,
+        )
+
+        assert norm("nid001321") == "nid001321"
+        assert norm("nid001321.chn.perlmutter.nersc.gov") == "nid001321"
+        for bad in ("login16", "x1921c7s1b0n0", "", "nid", "nidXYZ"):
+            assert norm(bad) is None, f"{bad!r} should be rejected"
+
+
+class TestSrunKilledIsACrashPattern:
+    """rc=143 must stop collapsing to WALLTIME on SLURM (#238)."""
+
+    def test_killed_node_is_retried_not_called_walltime(self, tmp_path):
+        from ezpz.launch_autoretry import (
+            TerminationReason,
+            classify_attempt,
+        )
+
+        log = _make_log(tmp_path, (
+            "iter=10 loss=1.0\n"
+            "srun: error: nid001321: tasks 4-7: Killed\n"
+            "srun: error: nid001320: tasks 0-3: Terminated\n"
+        ))
+        r = classify_attempt(
+            shell_rc=143, log_path=log, scraped_bad_nodes=[],
+            has_spares=True, prior_attempt_had_progress=True,
+        )
+        assert r.reason is not TerminationReason.WALLTIME, (
+            "a SIGKILLed node must not read as a clean walltime expiry"
+        )
+
+    def test_a_real_walltime_kill_still_reads_as_walltime(self, tmp_path):
+        """The guard that keeps this from burning a spare per job."""
+        from ezpz.launch_autoretry import (
+            TerminationReason,
+            classify_attempt,
+        )
+
+        log = _make_log(tmp_path, (
+            "iter=99 loss=1.0\n"
+            "srun: error: nid001320: tasks 0-3: Terminated\n"
+            "srun: Force Terminated StepId=1.0\n"
+        ))
+        r = classify_attempt(
+            shell_rc=143, log_path=log, scraped_bad_nodes=[],
+            has_spares=True, prior_attempt_had_progress=True,
+        )
+        assert r.reason is TerminationReason.WALLTIME
