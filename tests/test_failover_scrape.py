@@ -781,6 +781,275 @@ class TestNormalizeAuroraHostname:
         assert normalize_aurora_hostname("polaris-login-1") is None
 
 
+# ---------------------------------------------------------------------------
+# Polaris: CUDA device faults
+#
+# Polaris differs from Aurora/Sunspot in a way that shapes every test
+# below: its dominant production failure is an NVIDIA CUDA-runtime error
+# raised inside a rank's Python process, NOT a PALS shepherd kill. A
+# shepherd kill arrives pre-labeled with the node that died; a Python
+# traceback does not -- mpiexec prints it verbatim on stderr with no host
+# prefix unless the launcher passes `--label` (see EZPZ_MPI_LABEL in
+# ezpz/pbs.py).
+#
+# Job 7550301 (2026-08-23, 130 nodes) is the motivating postmortem: two
+# ranks raised a CUDA device fault, the tracebacks were unlabeled, the
+# scraper found no host, and the caller blind-rotated a HEALTHY node while
+# the sick one stayed in the allocation. ~1h of 130 nodes, zero steps.
+# ---------------------------------------------------------------------------
+
+_POLARIS_H = "hsn.cm.polaris.alcf.anl.gov"
+
+
+def test_polaris_unlabeled_cuda_fault_yields_nothing(tmp_path):
+    """THE most important Polaris test.
+
+    This is job 7550301's real log shape: a bare CUDA traceback plus a
+    watchdog SIGTERM naming an INNOCENT host. The scraper must return []
+    so the caller falls back to blind rotation.
+
+    A false positive here is strictly WORSE than blind rotation: it swaps
+    a healthy node AND leaves the real culprit in the allocation. The
+    only host-attributed line in the entire 1800-line log named
+    x3007c0s13b1n0 -- which was not the node that raised the error.
+    """
+    log = _make_log(
+        tmp_path,
+        "Traceback (most recent call last):\n"
+        '  File ".../ezpz/distributed.py", line 662, in _set_local_device\n'
+        "    torch.cuda.set_device(device_index)\n"
+        "torch.AcceleratorError: CUDA error: CUDA-capable device(s) "
+        "is/are busy or unavailable\n"
+        f"x3007c0s13b1n0.{_POLARIS_H}: rank 57 died from signal 15\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+def test_polaris_labeled_cuda_fault_is_attributed(tmp_path):
+    """The same fault WITH --label: the culprit is named.
+
+    Note the SIGTERM line still names a different (innocent) host and
+    must still be ignored.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3006c0s13b1n0.{_POLARIS_H} 57: Traceback (most recent call last):\n"
+        f"x3006c0s13b1n0.{_POLARIS_H} 57: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3007c0s13b1n0.{_POLARIS_H}: rank 57 died from signal 15\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3006c0s13b1n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_cascade_victims_never_tagged(tmp_path):
+    """signal 11/15 and nonzero exits are downstream of the primary kill.
+
+    On Polaris the common source of SIGTERM is the idle-output watchdog's
+    OWN kill, so those ranks are victims of our teardown.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3001c0s1b0n0.{_POLARIS_H} 5: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3002c0s1b0n0.{_POLARIS_H}: rank 5 died from signal 15\n"
+        f"x3003c0s1b0n0.{_POLARIS_H}: rank 9 died from signal 11\n"
+        f"x3004c0s1b0n0.{_POLARIS_H}: rank 3 exited with code 1\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3001c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_cuda_init_variants(tmp_path):
+    """A GPU off the PCIe bus surfaces as init failures, not "busy"."""
+    log = _make_log(
+        tmp_path,
+        f"x3010c0s1b0n0.{_POLARIS_H} 2: RuntimeError: CUDA error: "
+        "no CUDA-capable device is detected\n"
+        f"x3011c0s1b0n0.{_POLARIS_H} 7: RuntimeError: CUDA error: "
+        "initialization error\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3010c0s1b0n0.{_POLARIS_H}",
+        f"x3011c0s1b0n0.{_POLARIS_H}",
+    ]
+
+
+def test_polaris_shepherd_sig9_needs_no_label(tmp_path):
+    """PALS prefixes shepherd kills itself, so this works unlabeled."""
+    log = _make_log(
+        tmp_path,
+        f"x3013c0s1b0n0.{_POLARIS_H}: shepherd died from signal 9\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3013c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_hsn_suffix_dedupes_to_one_node(tmp_path):
+    """`-hsn0` and the plain form name the SAME node.
+
+    Without normalization the same node dedupes as two entries, which
+    breaks swap_in's hostfile lookup and burns two spares for one fault.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3014c0s1b0n0-hsn0.{_POLARIS_H} 1: torch.AcceleratorError: CUDA "
+        "error: CUDA-capable device(s) is/are busy or unavailable\n"
+        f"x3014c0s1b0n0.{_POLARIS_H} 1: RuntimeError: CUDA error: "
+        "CUDA-capable device(s) is/are busy or unavailable\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == [
+        f"x3014c0s1b0n0.{_POLARIS_H}"
+    ]
+
+
+def test_polaris_clean_log_yields_nothing(tmp_path):
+    log = _make_log(tmp_path, "step=1 loss=12.03\nstep=2 loss=11.87\n")
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        (f"x3006c0s13b1n0.{_POLARIS_H}", f"x3006c0s13b1n0.{_POLARIS_H}"),
+        (f"x3006c0s13b1n0-hsn0.{_POLARIS_H}", f"x3006c0s13b1n0.{_POLARIS_H}"),
+        (
+            "x3006c0s13b1n0.hostmgmt2042.cm.polaris.alcf.anl.gov",
+            f"x3006c0s13b1n0.{_POLARIS_H}",
+        ),
+        ("x3006c0s13b1n0.something-else.example.com", None),
+        ("some-other-host", None),
+        # An Aurora host must NOT normalize as a Polaris one.
+        ("x1234c0s0b0n0.hsn.cm.aurora.alcf.anl.gov", None),
+    ],
+)
+def test_polaris_hostname_normalizer(raw, want):
+    from ezpz.failover.patterns.polaris import normalize_polaris_hostname
+
+    assert normalize_polaris_hostname(raw) == want
+
+
+def test_polaris_patterns_are_registered():
+    """Regression guard for the bug itself.
+
+    Before polaris.py existed this returned [], which made every Polaris
+    failover blind. An empty pattern set is indistinguishable from a
+    clean log downstream (both yield []), so nothing surfaced the gap --
+    hence an explicit test.
+    """
+    names = {p.name for p in get_patterns_for_machine("polaris")}
+    assert "polaris.cuda_device_unavailable" in names
+    assert "polaris.shepherd_signal_9" in names
+
+
+def test_polaris_device_side_assert_not_matched(tmp_path):
+    """A device-side assert is an APPLICATION defect, not a node fault.
+
+    It is raised by a failing assertion inside a kernel (out-of-range
+    index, bad label, invalid model input). Tagging the host would
+    retire a healthy node on every retry while the real bug persists --
+    burning the spare pool and never converging.
+
+    The rule for this pattern set: only match conditions where the same
+    code would succeed on a different node.
+    """
+    log = _make_log(
+        tmp_path,
+        f"x3020c0s1b0n0.{_POLARIS_H} 3: RuntimeError: CUDA error: "
+        "device-side assert triggered\n",
+    )
+    assert scrape_bad_nodes(log, machine="polaris") == []
+
+
+class TestPolarisGlooPeerClosed:
+    """Polaris gloo TCP peer-closed, mirroring the Aurora coverage.
+
+    `reverse_resolve_ip` is stubbed because unit tests cannot do real
+    DNS -- the IPs in real logs live on the HSN fabric and only resolve
+    through Polaris's name service.
+
+    Unlike the CUDA patterns, this one does NOT depend on `--label`:
+    the peer IP is inside the message body.
+    """
+
+    def test_single_peer_ip_resolved_to_hostname(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: f"x3030c0s1b0n0.{_POLARIS_H}",
+        )
+        log = _make_log(
+            tmp_path,
+            "RuntimeError: [..gloo..] Connection closed by peer "
+            "[10.0.0.42]:12345\n",
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == [
+            f"x3030c0s1b0n0.{_POLARIS_H}"
+        ]
+
+    def test_many_ranks_same_peer_dedup_to_one_node(
+        self, tmp_path, monkeypatch
+    ):
+        """Dozens of ranks log the same peer-closed. Want ONE entry."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: f"x3030c0s1b0n0.{_POLARIS_H}",
+        )
+        lines = [
+            f"rank {i}: RuntimeError: [..gloo..] Connection closed by peer "
+            f"[10.0.0.42]:{12000 + i}\n"
+            for i in range(30)
+        ]
+        assert scrape_bad_nodes(
+            _make_log(tmp_path, "".join(lines)), machine="polaris"
+        ) == [f"x3030c0s1b0n0.{_POLARIS_H}"]
+
+    def test_unresolvable_ip_skipped(self, tmp_path, monkeypatch):
+        """Losing one entry beats tagging a wrong node on a bogus lookup."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: None,
+        )
+        log = _make_log(
+            tmp_path,
+            "RuntimeError: [..gloo..] Connection closed by peer [10.0.0.42]:1\n",
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == []
+
+    def test_non_polaris_resolved_name_dropped_by_normalizer(
+        self, tmp_path, monkeypatch
+    ):
+        """A stale /etc/hosts entry or unrelated name must be dropped."""
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: "some-unrelated-host.example.com",
+        )
+        log = _make_log(
+            tmp_path, "Connection closed by peer [10.0.0.42]:12345\n"
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == []
+
+    def test_hostmgmt_form_canonicalized_to_hsn(self, tmp_path, monkeypatch):
+        """The management interface maps 1:1 to HSN and is safe to rewrite.
+
+        It must be canonicalized, since swap_in greps the active hostfile
+        which only ever carries the `.hsn.` form.
+        """
+        monkeypatch.setattr(
+            "ezpz.failover.patterns.polaris.reverse_resolve_ip",
+            lambda ip, **_kw: (
+                "x3030c0s1b0n0.hostmgmt2042.cm.polaris.alcf.anl.gov"
+            ),
+        )
+        log = _make_log(
+            tmp_path, "Connection closed by peer [10.0.0.42]:12345\n"
+        )
+        assert scrape_bad_nodes(log, machine="polaris") == [
+            f"x3030c0s1b0n0.{_POLARIS_H}"
+        ]
+
 class TestRankSignal9:
     """`<host>: rank N died from signal 9` names the host.
 
@@ -867,9 +1136,20 @@ class TestUnsupportedMachineWarns:
 
     `scrape_bad_nodes` returns `[]` both for an unsupported machine and
     for a genuinely clean log, and only the second means "no node to
-    blame". Every Polaris failover has therefore always been blind,
-    with no error, no warning and no log line to reveal it (#229).
+    blame" -- so a machine with no pattern set fails over blind, with
+    no error, no warning and no log line to reveal it (#229).
+
+    These used to use `polaris` as the unsupported example. #230
+    registered Polaris patterns, which correctly broke them: they were
+    asserting on a machine that is now supported. Using a machine with
+    no pattern module pins the BEHAVIOUR instead of a snapshot of which
+    machines happen to be covered.
     """
+
+    # Deliberately not a real system. Naming any machine we might
+    # support makes these silently vacuous the day its patterns land --
+    # exactly what #230 did to the `polaris` version.
+    UNSUPPORTED = "no-such-cluster"
 
     def test_warns_naming_the_machine_and_what_is_available(
         self, tmp_path, caplog
@@ -883,9 +1163,9 @@ class TestUnsupportedMachineWarns:
         # to CRITICAL, so a bare at_level only lowers the ROOT level
         # and the record is dropped before it can propagate.
         with caplog.at_level("WARNING", logger=sc._get_logger().name):
-            assert scrape_bad_nodes(log, machine="polaris") == []
+            assert scrape_bad_nodes(log, machine=self.UNSUPPORTED) == []
         msg = caplog.text
-        assert "polaris" in msg
+        assert self.UNSUPPORTED in msg
         assert "BLIND" in msg, "the consequence must be stated, not implied"
         # Discovered from the package dir, so this cannot go stale.
         assert "aurora" in msg and "sunspot" in msg
@@ -902,7 +1182,7 @@ class TestUnsupportedMachineWarns:
         log.write_text("failure\n")
         with caplog.at_level("WARNING", logger=sc._get_logger().name):
             for _ in range(4):
-                scrape_bad_nodes(log, machine="polaris")
+                scrape_bad_nodes(log, machine=self.UNSUPPORTED)
         assert caplog.text.count("no bad-node patterns registered") == 1
 
     def test_a_supported_machine_is_silent(self, tmp_path, caplog):

@@ -469,6 +469,42 @@ def get_pbs_launch_cmd(
         f"--ppn={ngpu_per_host}",
         f"--hostfile={hostfile_str}",
     ]
+
+    # PALS `--label` prefixes every output line with `<fqdn> <rank>: `.
+    # Without it, a Python traceback (e.g. a CUDA device fault raised
+    # inside a rank) reaches the log with NO host attribution, so the
+    # bad-node scraper cannot name a culprit and the failover loop
+    # falls back to BLIND rotation -- which swaps a healthy node and
+    # leaves the sick one in the allocation. Polaris job 7550301 burned
+    # ~1 hour of 130 nodes to exactly this.
+    #
+    # Default ON for Polaris, because that is the machine whose dominant
+    # failure mode (a CUDA fault raised inside a rank's Python process)
+    # is unattributable without it. Leaving it opt-in would ship the
+    # Polaris scraper patterns in a state where they never fire for
+    # anyone who did not also know to set the variable.
+    #
+    # Default OFF elsewhere: the Aurora and Sunspot patterns anchor on
+    # UNLABELED `^<host>: ` lines, so turning the prefix on for those
+    # machines would silently stop their scrapers from matching.
+    #
+    # `EZPZ_MPI_LABEL` overrides the per-machine default in BOTH
+    # directions -- set it to 0/false/no to suppress labeling on
+    # Polaris, or to 1/true/yes to enable it anywhere else.
+    _label_env = os.environ.get("EZPZ_MPI_LABEL", "").strip().lower()
+    if _label_env in {"1", "true", "yes"}:
+        _use_label = True
+    elif _label_env in {"0", "false", "no"}:
+        _use_label = False
+    else:
+        # `get_machine()` maps a compute node (`x3...`) to "Polaris", but a
+        # LOGIN node falls through to the raw hostname
+        # ("polaris-login-04.hsn.cm.polaris.alcf.anl.gov"). An equality test
+        # would therefore be silently False off the compute nodes, so match
+        # the machine token instead of the exact string.
+        _use_label = "polaris" in machine_name and "sirius" not in machine_name
+    if _use_label:
+        cmd_list.append("--label")
     if verbose:
         cmd_list.append("--verbose")
 

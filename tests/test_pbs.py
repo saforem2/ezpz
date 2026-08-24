@@ -728,3 +728,116 @@ class TestGetPbsNodelistFromJobid:
         )
         with pytest.raises(AssertionError, match="not found in running jobs"):
             pbs.get_pbs_nodelist_from_jobid("999999")
+
+
+# ---------------------------------------------------------------------------
+# EZPZ_MPI_LABEL / PALS --label
+#
+# `--label` prefixes every output line with `<fqdn> <rank>: `. On Polaris
+# that prefix is what makes a rank's CUDA traceback attributable to a
+# host at all -- without it the bad-node scraper finds nothing and
+# failover blind-rotates a healthy node (job 7550301). It defaults ON for
+# Polaris and OFF elsewhere, because the Aurora/Sunspot scraper patterns
+# anchor on UNLABELED `^<host>: ` lines and would stop matching.
+# ---------------------------------------------------------------------------
+
+def test_launch_cmd_no_label_by_default_on_generic(
+    patch_topology, monkeypatch
+):
+    """Non-Polaris machines must NOT get --label.
+
+    Aurora and Sunspot patterns anchor on unlabeled output; adding the
+    prefix there would silently break their scrapers.
+    """
+    hostfile = patch_topology(machine="generic")
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" not in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_no_label_by_default_on_aurora(
+    patch_topology, monkeypatch
+):
+    hostfile = patch_topology(machine="aurora")
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" not in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_labels_by_default_on_polaris(
+    patch_topology, monkeypatch
+):
+    """Regression guard for the reason this flag exists.
+
+    If Polaris stops defaulting to --label, CUDA tracebacks become
+    unattributable again and failover silently reverts to blind
+    rotation -- with no error to notice.
+    """
+    hostfile = patch_topology(machine="polaris")
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", " Yes "])
+def test_launch_cmd_env_forces_label_on(patch_topology, monkeypatch, value):
+    """Truthy EZPZ_MPI_LABEL enables labeling on any machine."""
+    hostfile = patch_topology(machine="generic")
+    monkeypatch.setenv("EZPZ_MPI_LABEL", value)
+
+    assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "FALSE"])
+def test_launch_cmd_env_forces_label_off_on_polaris(
+    patch_topology, monkeypatch, value
+):
+    """Falsy EZPZ_MPI_LABEL overrides the Polaris default.
+
+    The override works in BOTH directions so a user hitting a
+    label-incompatible log consumer can turn it off.
+    """
+    hostfile = patch_topology(machine="polaris")
+    monkeypatch.setenv("EZPZ_MPI_LABEL", value)
+
+    assert "--label" not in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_unrecognized_env_falls_back_to_machine_default(
+    patch_topology, monkeypatch
+):
+    """Garbage in the env var must not silently disable Polaris labeling."""
+    hostfile = patch_topology(machine="polaris")
+    monkeypatch.setenv("EZPZ_MPI_LABEL", "bogus")
+
+    assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_labels_on_polaris_login_node_hostname(
+    patch_topology, monkeypatch
+):
+    """`get_machine()` is not always the bare token.
+
+    It maps a COMPUTE node (`x3...`) to "Polaris", but a LOGIN node falls
+    through to the raw hostname, e.g.
+    "polaris-login-04.hsn.cm.polaris.alcf.anl.gov". An equality test
+    against "polaris" is silently False there -- the default would look
+    correct in review and never fire off the compute nodes.
+    """
+    hostfile = patch_topology(
+        machine="polaris-login-04.hsn.cm.polaris.alcf.anl.gov"
+    )
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" in pbs.get_pbs_launch_cmd(hostfile=hostfile)
+
+
+def test_launch_cmd_does_not_label_sirius(patch_topology, monkeypatch):
+    """Sirius shares Polaris's `x3` prefix and domain but is not Polaris.
+
+    Substring-matching "polaris" would otherwise sweep it in.
+    """
+    hostfile = patch_topology(machine="sirius")
+    monkeypatch.delenv("EZPZ_MPI_LABEL", raising=False)
+
+    assert "--label" not in pbs.get_pbs_launch_cmd(hostfile=hostfile)
