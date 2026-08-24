@@ -55,6 +55,7 @@ nav = [
         { "💾 Checkpoint & Restart Under Failure" = "guides/checkpoint-restart.md" },
         { "🧪 Fault Injection & --auto-retry" = "guides/fault-injection.md" },
         { "🔪 Node-Kill Postmortem" = "guides/autoretry-nodekill.md" },
+        { "🖥️ Perlmutter (SLURM/A100)" = "guides/perlmutter.md" },
         "recipes.md",
         "reference.md",
         "history.md",
