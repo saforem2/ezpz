@@ -79,7 +79,7 @@ OUT="${D}/outputs/amsc-llm-ft-${SLURM_JOB_ID}"
 LOGDIR="${D}/outputs/amsc-llm-ft-${SLURM_JOB_ID}-logs"
 mkdir -p "${LOGDIR}"
 
-echo "=== config: model=${MODEL} bs=${BS} block=${BLOCK} steps=${STEPS} ==="
+echo "=== config: model=${MODEL} bs=${BS} block=${BLOCK} steps=${STEPS} fsdp=${FSDP:-auto_wrap} ==="
 echo "=== venv=${VENV} torch=$("${PY_BIN}" -c 'import torch;print(torch.__version__)' 2>/dev/null) ==="
 echo "=== nodes=${SLURM_NNODES} nodelist=${SLURM_JOB_NODELIST} ==="
 
@@ -101,7 +101,7 @@ NP=$(( SLURM_NNODES * 4 ))
         --per_device_train_batch_size="${BS}" \
         --block-size="${BLOCK}" \
         --gradient_checkpointing=true \
-        --fsdp=shard_grad_op \
+        --fsdp="${FSDP:-auto_wrap}" \
         --output_dir="${OUT}" 2>&1 | tee "${LOGDIR}/train.log"
 RC=${PIPESTATUS[0]}
 
