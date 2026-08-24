@@ -117,6 +117,12 @@ can match itself.
 | `hang` | goes silent | watchdog kill, rc 124 |
 | `sigkill` | `SIGKILL`s itself | negative rc, retried |
 | `silent_fail` | nothing a scraper can name | `BAD_NODE_BLIND` |
+| `enospc` | `OSError: [Errno 28] No space left on device` plus the PALS teardown cascade, rc 143 | `RETRYABLE_UNATTRIBUTED` — retried, no spare burned³ |
+| `enospc_named` | the same, with a `shepherd died from signal 9` line the scraper can name | `RETRYABLE_UNATTRIBUTED` — the named host is **not** retired³ |
+
+`FI_MODE` also accepts a comma-separated list, in which case the Nth
+entry drives attempt N (the last repeats). That is how the
+budget-reset test alternates failure kinds within one run.
 
 ¹ Named only when the IP reverse-resolves, which needs `getent` — so
 off-cluster it falls back to a blind rotation.
@@ -128,9 +134,17 @@ classifier strips `rank N died from signal 11|15` before matching crash
 patterns, which is what keeps a walltime expiry from burning a spare on
 every job.
 
+³ The ENOSPC traceback and cascade are transcribed from Sunspot job
+12473704 (see the warning below). Only the co-occurring shepherd line
+in `enospc_named` is reconstructed: the excerpt in
+[#231](https://github.com/saforem2/ezpz/issues/231) scrapes to nothing
+on its own, yet the incident was classified `BAD_NODE_KNOWN`, so the
+full log must have carried a signature the scraper matches. Both
+signatures are real; only their pairing is inferred.
+
 ## Running it yourself
 
-The tests are the fast path — 20 of them, about six seconds, no
+The tests are the fast path — 29 of them, about fifteen seconds, no
 allocation:
 
 ```bash
@@ -188,8 +202,12 @@ on a different node set. Node-swapping works on real hardware.
     during a checkpoint save. `--auto-retry` scraped a host out of the
     resulting PALS teardown cascade and retired `s4b0n0` — a healthy
     node — because a whole-job failure whose cascade happens to name a
-    host is read as that host being bad. Tracked in
-    [#231](https://github.com/saforem2/ezpz/issues/231).
+    host was read as that host being bad. Filed as
+    [#231](https://github.com/saforem2/ezpz/issues/231) and since
+    fixed: a storage error now classifies as
+    `RETRYABLE_UNATTRIBUTED`, retrying in place without retiring a node
+    or consuming a spare (see the
+    [termination matrix](../cli/launch/index.md#termination-matrix)).
 
     The disk itself is worth a second look, because the obvious reading
     is wrong. `/lus/tegu` was at **10%** full. Two of its four OSTs were

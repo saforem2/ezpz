@@ -191,8 +191,11 @@ flowchart TD
     CheckSuccess -->|yes| Success(["FAILOVER STOP:<br/>success<br/>return 0"])
     CheckSuccess -->|no| CheckWalltime{"rc==143 AND<br/>no crash patterns?"}
     CheckWalltime -->|yes| Walltime(["FAILOVER STOP:<br/>walltime<br/>return 143"])
-    CheckWalltime -->|no| CheckStuck{"prior AND current<br/>attempt both have<br/>0 step= markers?"}
-    CheckStuck -->|yes| Stuck(["FAILOVER STOP:<br/>stuck_pre_training<br/>return rc"])
+    CheckWalltime -->|no| CheckIO{"out of space /<br/>over quota,<br/>and under the<br/>3-retry budget?"}
+    CheckIO -->|yes| Unattributed["retryable_unattributed:<br/>retry in place —<br/>no swap, no spare"]
+    Unattributed --> Backoff
+    CheckIO -->|no| CheckStuck{"0 progress markers<br/>twice AND scraper<br/>named nobody?"}
+    CheckStuck -->|yes| Stuck(["FAILOVER STOP:<br/>stuck_pre_training<br/>(inferred)<br/>return rc"])
     CheckStuck -->|no| CheckSpares{"spares left?"}
     CheckSpares -->|no| Exhausted(["FAILOVER STOP:<br/>exhausted<br/>return rc"])
     CheckSpares -->|yes| CheckScraper{"scraper found<br/>named host(s)?"}
@@ -289,12 +292,45 @@ post-mortem `grep` is reliable.
 | 1 | exit 0 (clean inner trailer, no crash patterns)        | **SUCCESS** → return 0|
 | 2 | exit 143 (walltime SIGTERM), no crash patterns         | **WALLTIME** → return rc|
 | 3 | exit 143 *with* crash patterns in log                  | bad-node retry (real failure raced the walltime kill) |
-| 4 | exit 124 (idle-output watchdog tripped)                | bad-node retry (silent hang → blind rotation) |
-| 5 | any other non-zero, scraper found named host(s)        | **swap_in** named → retry |
-| 6 | any other non-zero, scraper found nothing              | **swap_one_blind** → retry |
-| 7 | two consecutive attempts with zero `step=` markers     | **STUCK_PRE_TRAINING** → return rc |
-| 8 | bad-node verdict but no spares left                    | **EXHAUSTED** → return rc |
-| 9 | SIGINT (Ctrl-C)                                        | **INTERRUPTED** → return 130 |
+| 4 | out-of-space / over-quota in the log                   | **RETRYABLE_UNATTRIBUTED** → retry in place, no swap |
+| 5 | exit 124 (idle-output watchdog tripped)                | bad-node retry (silent hang → blind rotation) |
+| 6 | any other non-zero, scraper found named host(s)        | **swap_in** named → retry |
+| 7 | any other non-zero, scraper found nothing              | **swap_one_blind** → retry |
+| 8 | zero progress markers twice **and** scraper named nobody | **STUCK_PRE_TRAINING** → return rc |
+| 9 | bad-node verdict but no spares left                    | **EXHAUSTED** → return rc |
+| 10 | SIGINT (Ctrl-C)                                       | **INTERRUPTED** → return 130 |
+
+**Unattributed storage failures (#4).** A checkpoint write that dies of
+`ENOSPC` tears the whole job down, and on PALS the teardown cascade
+prints a `<host>: rank N ...` line for whichever host it reaches — not
+the one that failed. Reading that host as bad retires a healthy node
+and burns a spare for nothing, which is exactly what happened on
+Sunspot job 12473704. So an I/O failure the log explains on its own
+retries **in place**: no swap, no spare consumed, nothing written to
+`bad_nodes.txt`.
+
+Retrying (rather than giving up) is deliberate. On that job `/lus/tegu`
+was 10% full but two of its four OSTs were at 99–100%, and the
+directory striped `stripe_count: 1`, so each shard file landed wholly
+on one round-robin-chosen OST — about half the writes failed and the
+rest succeeded. A reissued write has a real chance of landing on a
+healthy OST, and a terminal verdict here would kill a recoverable job.
+
+The pass is bounded: after 3 consecutive attempts ending this way the
+loop stops believing the storage story and resumes normal node
+swapping, so a genuine node fault that happens to emit an I/O line
+cannot pin the loop to one broken host.
+
+**The progress guard needs corroboration (#8).** "No progress marker"
+is an *inference from absence*. It is equally true of a node that died
+during a long init, and of a trainer whose counter name the regex does
+not know — which has already shipped once, when the pattern was
+`\bstep=\d+` while every ezpz example emits `iter=`. A scraper-named
+host is positive evidence of a node fault and outranks that inference,
+so the guard only fires when the scraper named nobody either. Same
+shape as row 2's `and not crash` clause. The `FAILOVER STOP` line says
+`INFERRED, not observed` so an operator whose trainer prints an
+unrecognised counter can spot the misfire.
 
 **Empty-`swap_in` fallback.** Row 5's `swap_in` skips any host that
 isn't currently in the active set (the named host was already
