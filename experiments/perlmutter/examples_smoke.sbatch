@@ -53,10 +53,20 @@ smoke () {
 # grepping add_argument in each module, after job 57540534 failed vit
 # and diffusion with "unrecognized arguments: --train-iters". That was
 # my harness inventing a flag, not a portability bug.
-smoke test      --train-iters 20     # test.py:  --train-iters
-smoke minimal                        # minimal:  no iteration flag
-smoke vit       --max-iters 10       # vit.py:   --max-iters
-smoke diffusion --train-steps 10     # diffusion: --train-steps
+# Selectable batch: four sequential examples plus ~90s of ezpz.launch
+# startup each overran the 29-minute allocation, and whichever ran last
+# was cut off by the JOB walltime (not the per-run timeout) -- job
+# 57540935 lost vit and diffusion that way. Two submissions instead.
+case "${BATCH:-a}" in
+  a)
+    smoke test      --train-iters 20   # test.py:   --train-iters
+    smoke minimal                      # minimal:   no iteration flag
+    ;;
+  b)
+    smoke vit       --max-iters 10     # vit.py:    --max-iters
+    smoke diffusion --train-steps 10   # diffusion: --train-steps
+    ;;
+esac
 
 echo
 echo "======================= SMOKE RESULTS ======================="
