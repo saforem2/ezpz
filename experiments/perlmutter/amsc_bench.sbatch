@@ -55,19 +55,32 @@ MODEL="${MODEL:-agpt-2b}"
 BS="${BS:-8}"
 SEQ="${SEQ:-2048}"
 ITERS="${ITERS:-20}"
-COMPILE="${COMPILE:---compile}"
+# An explicit yes/no, NOT a flag string. `COMPILE="${COMPILE:---compile}"`
+# substitutes when the value is empty OR unset, so `--export=...,COMPILE=`
+# still produced `--compile` -- job 57521116 ran compiled while claiming
+# to test the uncompiled path, and only the config echo (`"compile":
+# true`) gave it away.
+# Default OFF on Perlmutter: `--compile` aborts before iteration 1 on
+# NERSC's torch 2.8.0 with `Dynamo: Attempted to call function marked
+# as skipped` in the FSDP2 backward hook (#236). Defaulting to yes
+# would make every run here fail. Flip with COMPILE=yes once a torch
+# build that traces it is available.
+COMPILE="${COMPILE:-no}"
+COMPILE_FLAG=""
+[ "${COMPILE}" = "yes" ] && COMPILE_FLAG="--compile"
 
 # bs=1/seq2048 (job 57520568) left the A100s starved: 13.68 of 80 GiB
 # used, MFU 2.32%, and dtb ~3x dtf -- collective overhead dominating a
 # batch too small to fill the device. That measures the config, not the
 # machine. bs=8 + --compile is a fairer read of the hardware; the
 # bs=1 point is kept in the results table for comparison.
+echo "=== config: model=${MODEL} bs=${BS} seq=${SEQ} iters=${ITERS} compile=${COMPILE} ==="
 NP=$(( SLURM_NNODES * 4 ))
 "${D}/.venv/bin/python" -m ezpz.launch --np "${NP}" -- \
     "${D}/.venv/bin/python" -m ezpz.examples.fsdp_tp \
         --model "${MODEL}" --tp 1 --dataset random \
         --train-iters "${ITERS}" --batch-size "${BS}" --seq-len "${SEQ}" \
-        ${COMPILE} \
+        ${COMPILE_FLAG} \
         --outdir "${OUT}" 2>&1 | tee "${OUT}/train.log"
 RC=${PIPESTATUS[0]}
 
