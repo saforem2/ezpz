@@ -30,8 +30,10 @@ watchdog timeout or an unrecognised crash still burns a spare, on the
 guess that a node is at fault — see the classification table below.
 And a retry of any kind requires a spare to exist: with none, the
 verdict is `EXHAUSTED` and the job stops. Checkpoint restart is
-measured on real hardware, and node-swapping is now validated on real
-hardware too — see [On-node validation](#on-node-validation).
+measured on real hardware, and the node-*swapping* mechanism is now
+validated on real hardware too — though not the *identification* of
+which node died. See [On-node validation](#on-node-validation), and
+[Node-kill postmortem](autoretry-nodekill.md) for the evidence.
 
 ## The experiment
 
@@ -172,38 +174,38 @@ retry loop.
 
 Sunspot job 12473704, killing `x1921c1s0b0n0` after checkpoint 40:
 
-| attempt | ran on | outcome |
-|---|---|---|
-| 1 | `s0b0n0` (victim), `s1b0n0` | 13 ranks killed on the victim |
-| 2 | `s1b0n0`, **`s4b0n0`** (spare) | victim retired, spare swapped in |
-| 3 | `s1b0n0`, **`s5b0n0`** (spare) | see the caveat below |
+| attempt | ran on | resumed | died of | verdict |
+|---|---|---|---|---|
+| 1 | `s0b0n0` (victim), `s1b0n0` | — | 13 ranks `kill -9`'d, rc `-9` | `BAD_NODE_BLIND` |
+| 2 | `s1b0n0`, **`s4b0n0`** (spare) | step 40 | `[Errno 28]` mid-save, rc 143 | `BAD_NODE_BLIND` |
+| 3 | `s1b0n0`, **`s5b0n0`** (spare) | step 280 | `[Errno 28]` again, rc 143 | `EXHAUSTED` |
 
-Attempt 2 is the result: the killed host was recorded in
-`bad_nodes.txt`, removed from the active hostfile, and the relaunch ran
-on a different node set. Node-swapping works on real hardware.
+Attempt 2 is the result: a spare was rotated in, the victim was gone
+from the active hostfile, and the relaunch resumed from step 40 on a
+different node set. **Node-swapping works on real hardware.**
 
-!!! warning "The same run exposed a classifier bug"
+!!! warning "It worked; it did not *identify* anything"
 
-    Attempt 2 died of `OSError: [Errno 28] No space left on device`
-    during a checkpoint save. `--auto-retry` scraped a host out of the
-    resulting PALS teardown cascade and retired `s4b0n0` — a healthy
-    node — because a whole-job failure whose cascade happens to name a
-    host is read as that host being bad. Tracked in
-    [#231](https://github.com/saforem2/ezpz/issues/231).
+    Note the verdict column: `BAD_NODE_BLIND` twice, never
+    `BAD_NODE_KNOWN`. A `kill -9` leaves no scrapeable signature at all —
+    `attempt-1.log` just stops mid-training — so both swaps were
+    `swap_one_blind` evicting `active[0]`. `pbsdsh -n 0` happens to kill
+    the first allocation node, which *is* `active[0]`, so the guess was
+    right by construction of the test. Kill `active[1]` instead and
+    today's code retires a healthy node and leaves the dead one in.
 
-    The disk itself is worth a second look, because the obvious reading
-    is wrong. `/lus/tegu` was at **10%** full. Two of its four OSTs were
-    at 99–100% while the other two sat at 6–7%, and the directory
-    striped `stripe_count: 1`, so every shard file lands wholly on one
-    round-robin-chosen OST. Roughly half the writes hit a full OST and
-    failed; the rest succeeded.
+    Attempt 2 shows the cost directly: it evicted `s4b0n0`, a healthy
+    node rotated in one attempt earlier, purely for sitting at index 0.
+    And the `[Errno 28]` that killed it was **retryable** — `/lus/tegu`
+    was 10% full, but two of its four OSTs were at 99–100% and the
+    directory striped `stripe_count: 1`.
 
-    So this ENOSPC was **retryable** — the same write, reissued, has a
-    real chance of landing on a healthy OST. "Out of space" on Lustre
-    does not imply the filesystem is out of space, and a classifier
-    that treats it as terminal would give up on a recoverable job. The
-    experiment still bounds its own footprint, since ~331 GB of
-    unpruned checkpoints is what pushed those OSTs over.
+    The full walkthrough — the scraper run that returns empty, the
+    `lfs df` output, and what the run does and does not establish — is in
+    [Node-kill postmortem](autoretry-nodekill.md). Tracked as
+    [#231](https://github.com/saforem2/ezpz/issues/231),
+    [#233](https://github.com/saforem2/ezpz/issues/233) and
+    [#234](https://github.com/saforem2/ezpz/issues/234).
 
 Two harness bugs are worth recording, because both produced confident
 wrong verdicts before any of the above was true:

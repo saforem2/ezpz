@@ -42,7 +42,7 @@ ezpz launch --auto-retry --np <N> -- \
     | | what fails | what recovers | measured where |
     | --- | --- | --- | --- |
     | **Checkpoint restart** (this page) | the training process | a relaunch on the **same** nodes, resuming from the last checkpoint | here — real Sunspot runs |
-    | **`--auto-retry`** ([fault injection](fault-injection.md)) | a **node** — or any retryable failure it cannot attribute to one | a named bad host is retired; otherwise a spare is rotated in blindly. Either way the job relaunches **elsewhere** | locally, plus a real 4-node Sunspot node-kill |
+    | **`--auto-retry`** ([fault injection](fault-injection.md)) | a **node** — or any retryable failure it cannot attribute to one | a named bad host is retired; otherwise a spare is rotated in blindly. Either way the job relaunches **elsewhere** | locally, plus a real 4-node Sunspot node-kill ([postmortem](autoretry-nodekill.md) — the swap is proven, the attribution is not) |
 
     Both survive a `pkill -9` and keep training, which is exactly why
     they look alike from outside. The difference is whether the *node
