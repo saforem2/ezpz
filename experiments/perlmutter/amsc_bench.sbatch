@@ -44,6 +44,15 @@ echo "=== nodelist: ${SLURM_JOB_NODELIST} ==="
 # validate clone had a stale non-editable install and silently ran a
 # months-old ezpz; PYTHONPATH avoids repeating that.
 export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
+# The pytorch/2.13.0 module exports MPICH_GPU_SUPPORT_ENABLED=1, but its
+# mpi4py is not linked against the GTL library, so MPIDI_CRAY_init
+# aborts and every rank segfaults -- job 57521863: "GPU_SUPPORT_ENABLED
+# is requested, but GTL library is not linked", then SIGSEGV on all 8
+# ranks, rc=139, zero iterations. The 2.8.0 build does not hit this.
+#
+# Turning it off disables GPU-aware MPI, which costs nothing here:
+# collectives go over NCCL, and ezpz uses MPI only for rank discovery.
+export MPICH_GPU_SUPPORT_ENABLED=0
 export PYTHONUNBUFFERED=1
 export WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
