@@ -232,9 +232,20 @@ chaos() {
             echo "no-apid" > "${RECEIPT}"
             return 1
         fi
+        # PBS gives `x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov`;
+        # palsd may only know the bare `x1921c7s1b0n0`. Try the name we
+        # have, then the short form, rather than assuming either --
+        # `palstat`/`palsig` cannot be probed from a login node (no
+        # palsd reachable), so this could not be settled in advance.
+        local short="${victim%%-hsn*}"; short="${short%%.*}"
         echo "[CHAOS] palsig -n ${victim} -s SIGKILL ${apid}"
         palsig -f -n "${victim}" -s SIGKILL "${apid}"
         krc=$?
+        if [ "${krc}" -ne 0 ] && [ "${short}" != "${victim}" ]; then
+            echo "[CHAOS] retrying with short form: ${short}"
+            palsig -f -n "${short}" -s SIGKILL "${apid}"
+            krc=$?
+        fi
         # palsig reports nothing per-node, so write the receipt here.
         # Format matches the killer script's so the verdict is uniform.
         echo "${victim} killed via-pals rc=${krc}" > "${RECEIPT}"
