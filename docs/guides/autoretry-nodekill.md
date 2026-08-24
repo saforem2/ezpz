@@ -291,13 +291,77 @@ them, plus a preflight that refuses to start without room.
 | a spare is drawn from the allocation and the hostfile is rewritten in place | **proven** — `active=2` held across all three attempts as `spare` went 2 → 1 → 0 |
 | the loop terminates cleanly when spares run out | **proven** — `FAILOVER STOP: exhausted` |
 | training resumes from the last durable checkpoint across a node swap | **proven** — step 40, then step 280 |
-| the loop identifies **which** node died | **not proven** — [#234](https://github.com/saforem2/ezpz/issues/234) |
+| the loop identifies **which** node died | **not proven here** — but see below: fixed and proven in job 12473751 |
 | a healthy node is not retired | **disproven** — `s4b0n0`, [#233](https://github.com/saforem2/ezpz/issues/233) |
 | an unattributable failure does not consume a spare | **disproven** — both ENOSPC attempts burned one, [#231](https://github.com/saforem2/ezpz/issues/231) |
 
-The last three are why `--auto-retry` is worth running with a spare pool you
-can afford to spend, and worth reading the postmortem for afterwards rather
-than trusting `bad_nodes.txt` as a hardware verdict.
+## Epilogue — named attribution, three bugs later
+
+The bottom three rows are all forms of "the loop cannot tell which node
+died". Chasing that took four more jobs, and each fix exposed the next.
+
+**The harness was killing the wrong thing.** `kill -9` on the ranks
+leaves a healthy node — `pbsnodes` said `job-exclusive`, same as every
+other host — so PALS had nothing to report. Killing *through* PALS
+instead (`palsig -s SIGKILL`, `KILL_MODE=pals`) makes the shepherd
+observe the app dying, which is what a real node loss looks like.
+
+**PALS did name the victim, and no pattern matched it.** Job 12473749
+ended with exactly two lines:
+
+```text
+x1921c7s1b0n0-hsn0...: rank 12 died from signal 9    <- the victim
+x1921c7s0b0n0-hsn0...: rank  1 died from signal 15   <- the cascade
+```
+
+The pattern set had `shepherd died from signal 9` (the node daemon, not
+a rank) and deliberately excluded `rank N died from signal {11,15}`. A
+rank dying of signal **9** fell exactly between them. Signal 9 is safe
+to name where 11 and 15 are not: 15 is the SIGTERM a clean walltime kill
+rains on every rank, 11 cascades from a failure on a *different* node,
+and nothing in a normal teardown SIGKILLs a rank.
+
+**The match was then thrown away on a string compare.** With the pattern
+added, job 12473750 logged:
+
+```text
+bad nodes: ['x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov'] — swapped 0
+blind rotation: x1921c7s0b0n0-hsn0... -> x1921c7s2b0n0-hsn0...
+```
+
+Correct attribution, `swapped 0`. PBS writes `...-hsn0.hsn.cm...` into
+the hostfile; the scraper's normalizer returns the plain form. Same
+machine, different strings, and `if bad not in self.active` said they
+were different nodes — so the healthy host got retired *again*.
+
+**Job 12473751, all three fixed:**
+
+```text
+[auto-retry] bad nodes: ['x1921c7s1b0n0.hsn...'] — swapped 1
+[auto-retry] FAILOVER STOP: success (attempt 2)
+```
+
+No blind rotation. The artifact records evidence rather than a guess:
+
+```text
+x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov  scraped  attempt=1
+```
+
+7/7 on the discriminating test — which kills `active[1]`, precisely so
+that a blind rotation (which always evicts `active[0]`) cannot pass it.
+
+| claim | status |
+|---|---|
+| a real node loss produces a scrapeable signature | **proven** — `rank N died from signal 9` |
+| the loop names the node that actually died | **proven** — job 12473751 |
+| the innocent host is left alone | **proven** — the signal-15 host was not retired |
+| the swap is recorded as evidence, not a guess | **proven** — `scraped`, not `blind` |
+
+What remains unproven is the case with genuinely no signature. A failure
+that neither names a host nor emits a pattern still blind-rotates, and
+`swap_one_blind` always evicts `active[0]` — right only if the dead node
+happens to sit there. `bad_nodes.txt` now says `blind` when that happens,
+so at least the postmortem does not overstate what was known.
 
 ## Reproducing it
 
