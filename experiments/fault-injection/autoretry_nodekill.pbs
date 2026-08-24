@@ -181,6 +181,27 @@ chmod +x "${KILLER}"
 # list. Today's code is expected to FAIL this, and that failing result
 # is the honest state of node identification.
 KILL_INDEX="${KILL_INDEX:-1}"
+
+# HOW to kill, not just where. These are different faults, and the
+# distinction is the point of issue #234:
+#
+#   ranks  - `kill -9` the rank processes directly. Simulates a process
+#            crash. PALS never notices (its shepherd is still alive and
+#            healthy), so NOTHING is emitted: job 12473704's log simply
+#            stops mid-training and `pbsnodes` showed the node as
+#            `job-exclusive`, identical to a healthy one. Attribution
+#            is impossible by construction, so the loop blind-guesses.
+#
+#   pals   - route the kill through PALS (`palsig -n <host> -s KILL`),
+#            so the shepherd observes the app dying on that node. This
+#            is the closer analogue of a node loss and is expected to
+#            produce the `<host>: shepherd died from signal 9` line the
+#            scraper actually registers -- i.e. the only mode that can
+#            exercise the NAMED attribution path.
+#
+# Default `pals`: the named path is the one worth testing, and `ranks`
+# is retained because it pins the unattributable case.
+KILL_MODE="${KILL_MODE:-pals}"
 chaos() {
     local victim="${ALL_HOSTS[${KILL_INDEX}]}"
     echo "${victim}" > "${EXPT}/victim.txt"
@@ -198,9 +219,30 @@ chaos() {
     # `pbsdsh -- env VAR=... bash <script>`: pbsdsh does not forward the
     # caller's environment, and the receipt path must reach the remote
     # side for the killer to write it.
-    pbsdsh -n "${KILL_INDEX}" -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
-        /bin/bash "${KILLER}"
-    local krc=$?
+    local krc
+    if [ "${KILL_MODE}" = "pals" ]; then
+        # APID: the running application PALS knows about. Without it
+        # palsig has nothing to signal, and a silent no-op here would
+        # make every downstream assertion vacuous -- the exact failure
+        # that produced two misleading verdicts already.
+        local apid
+        apid="$(palstat -a 2>/dev/null | awk 'NR>1{print $1; exit}')"
+        if [ -z "${apid}" ]; then
+            echo "[CHAOS] FATAL: no APID from palstat -a; cannot kill via PALS"
+            echo "no-apid" > "${RECEIPT}"
+            return 1
+        fi
+        echo "[CHAOS] palsig -n ${victim} -s SIGKILL ${apid}"
+        palsig -f -n "${victim}" -s SIGKILL "${apid}"
+        krc=$?
+        # palsig reports nothing per-node, so write the receipt here.
+        # Format matches the killer script's so the verdict is uniform.
+        echo "${victim} killed via-pals rc=${krc}" > "${RECEIPT}"
+    else
+        pbsdsh -n "${KILL_INDEX}" -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
+            /bin/bash "${KILLER}"
+        krc=$?
+    fi
     echo "[CHAOS] kill rc=${krc}"
     # Do NOT swallow this. A kill that never lands makes every downstream
     # assertion vacuous, and that is exactly how 12473703 read as a
@@ -265,7 +307,9 @@ else
     # landed (`pbsdsh -- bash -c` mangled the inline script) -- the
     # failover logic was never reached, let alone wrong. If the ranks
     # are still alive there is no bad node and nothing to conclude.
-    grep -qE "killed [1-9][0-9]*$" <<< "${KILLOUT}"
+    # Both receipt shapes: `<host> killed N` (ranks) and
+    # `<host> killed via-pals rc=0` (pals).
+    grep -qE "killed ([1-9][0-9]*$|via-pals rc=0$)" <<< "${KILLOUT}"
     check "the kill actually landed on ${VICTIM}" $?
 
     # Separate the two claims. Job 12473704 conflated them: a blind
@@ -279,10 +323,24 @@ else
     # rotation"; a scraped verdict logs "bad nodes: [...]". Informational
     # for now -- see #234. This is expected to report GUESSED until a
     # hard node death can be attributed.
+    # In `pals` mode this is an ASSERTION, not a note. Routing the kill
+    # through PALS should make the shepherd emit
+    # `<host>: shepherd died from signal 9` -- the registered scrape
+    # pattern -- so the swap must be identified rather than guessed.
+    # In `ranks` mode nothing is emitted at all (proven: job 12473704's
+    # log just stops), so a blind rotation is the CORRECT outcome and
+    # demanding otherwise would be demanding the impossible.
     if grep -qa "blind rotation" "${LOG}" 2>/dev/null; then
-        echo "  INFO  the swap was a BLIND GUESS (no scrapeable signature)"
+        if [ "${KILL_MODE}" = "pals" ]; then
+            check "the swap was scraper-IDENTIFIED (not a blind guess)" 1
+            echo "        no shepherd line reached the log -- either PALS"
+            echo "        did not emit one, or the pattern set missed it"
+        else
+            echo "  INFO  blind guess, as expected for KILL_MODE=ranks"
+            echo "        (a bare kill -9 leaves nothing to scrape)"
+        fi
     else
-        echo "  INFO  the swap was SCRAPER-IDENTIFIED"
+        check "the swap was scraper-IDENTIFIED (not a blind guess)" 0
     fi
     ! grep -q "${VICTIM}" <<< "${ACT}"
     check "killed host is OUT of the active hostfile" $?
