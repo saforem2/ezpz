@@ -600,3 +600,76 @@ class TestProgressMarkerContract:
         assert len(h.bad) == 1, (
             "one spare was consumed before the guard tripped"
         )
+
+
+class TestBlindRotationMissesOffsetVictim:
+    """What blind rotation does when the dead node is not ``active[0]``.
+
+    Not a bug report in test form -- a pin on current behaviour, so the
+    day attribution lands (issue #234) this test fails loudly and gets
+    updated deliberately rather than silently continuing to pass.
+
+    Motivation is a real run. Sunspot job 12473704 killed 13 ranks with
+    ``kill -9`` and the attempt log simply STOPPED mid-training at
+    ``iter=42``: no signal line, no shepherd message, no traceback. The
+    scraper returns empty against it, so the loop fell to
+    ``swap_one_blind``. The test killed allocation node 0, which is also
+    ``active[0]`` -- exactly what blind rotation evicts -- so it looked
+    like successful identification when nothing had been identified.
+    """
+
+    def test_blind_rotation_evicts_healthy_host_and_keeps_the_dead_one(
+        self, tmp_path
+    ):
+        """Victim at ``active[1]``: the healthy host goes, the dead stays.
+
+        This is worse than not failing over. Each attempt costs a spare
+        AND a full relaunch while the actual fault stays in the active
+        set, so the job burns every spare without ever touching it.
+        """
+        hosts = [
+            f"x1921c1s{i}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+            for i in range(4)
+        ]
+        alloc = NodeAllocation.from_full_nodelist(
+            hosts, 2, tmp_path / "active.hostfile", tmp_path / "bad.txt"
+        )
+
+        victim = alloc.active[1]
+        healthy = alloc.active[0]
+        evicted, _spare = alloc.swap_one_blind()
+
+        assert evicted == healthy, (
+            "blind rotation is documented to evict active[0]; if this "
+            "changed, the reasoning in issue #234 needs revisiting"
+        )
+        assert evicted != victim
+        assert victim in alloc.active, (
+            "the dead node is still in the active set -- the next attempt "
+            "relaunches onto a host with no ranks"
+        )
+        # The eviction is recorded with no hint that it was a guess,
+        # which is the provenance gap in issue #233.
+        assert healthy in (tmp_path / "bad.txt").read_text()
+
+    def test_blind_rotation_finds_the_victim_only_at_active_zero(
+        self, tmp_path
+    ):
+        """The lucky case -- why job 12473704 passed.
+
+        Same allocation, victim at index 0 instead of 1. Nothing about
+        the loop differs; only where the victim happens to sit.
+        """
+        hosts = [
+            f"x1921c1s{i}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+            for i in range(4)
+        ]
+        alloc = NodeAllocation.from_full_nodelist(
+            hosts, 2, tmp_path / "active.hostfile", tmp_path / "bad.txt"
+        )
+
+        victim = alloc.active[0]
+        evicted, _spare = alloc.swap_one_blind()
+
+        assert evicted == victim
+        assert victim not in alloc.active
