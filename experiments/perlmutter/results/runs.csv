@@ -1,0 +1,6 @@
+timestamp,system,config,nodes,gpus,status,wall_time_sec,throughput_tokens_per_sec,throughput_tokens_per_sec_per_gpu,mfu,tflops,final_loss,steps,error
+2026-08-24T14:31:04Z,Perlmutter,agpt-2b/bs1/seq2048/tp1,1,4,pass,5.272,40362.767,10090.692,30.323,94.609,15.831318,20,
+2026-08-24T14:57:57Z,Perlmutter,agpt-2b/bs1/seq2048/tp1,2,8,pass,8.125,51244.48,6405.56,19.249,60.058,15.688291,20,
+2026-08-24T13:08:50Z,Perlmutter,agpt-2b/bs1/seq2048/tp1-NO-OFI-PLUGIN,2,8,pass,55.941,6175.041,771.88,2.32,7.237,14.734155,20,INVALID: NCCL fell back to TCP (no libnccl-net plugin)
+2026-08-24T13:26:41Z,Perlmutter,agpt-2b/bs2/seq2048/tp1-NO-OFI-PLUGIN,2,8,pass,57.031,11892.017,1486.502,4.467,13.937,13.354254,20,INVALID: NCCL fell back to TCP (no libnccl-net plugin)
+2026-08-24T13:43:20Z,Perlmutter,agpt-2b/bs2/seq2048/tp1-compiled-NO-OFI-PLUGIN,2,8,pass,150.72,12341.529,1542.691,4.636,14.464,14.424928,20,INVALID: NCCL fell back to TCP (no libnccl-net plugin)

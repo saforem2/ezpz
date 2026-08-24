@@ -30,10 +30,14 @@ from ezpz.launch import (
     parse_args,
 )
 from ezpz.launch_autoretry import (
+    PROVENANCE_BLIND,
+    PROVENANCE_SCRAPED,
     AutoRetryConfig,
+    BadNodeRecord,
     ClassificationResult,
     NodeAllocation,
     TerminationReason,
+    _MAX_CONSECUTIVE_UNATTRIBUTED,
     _backoff_for_attempt,
     _extract_inner_rc,
     _has_crash_patterns,
@@ -41,6 +45,7 @@ from ezpz.launch_autoretry import (
     _strip_ansi,
     classify_attempt,
     derive_spare_count,
+    parse_bad_nodes_file,
     run_with_auto_retry,
 )
 
@@ -200,7 +205,7 @@ class TestPureHelpers:
         assert _has_progress_markers(line), f"{line!r} should count"
 
     def test_progress_markers_survive_ansi_color(self, tmp_path):
-        """Color must not hide progress. Raised as a P1 in review.
+        r"""Color must not hide progress. Raised as a P1 in review.
 
         ezpz's logger colorizes when attached to a tty, and the escapes
         land INSIDE the token: `\x1b[36miter\x1b[0m=12` does not match
@@ -435,8 +440,9 @@ class TestClassifyAttempt:
         )
 
     def test_stuck_pre_training_when_prior_also_zero_steps(self, tmp_path):
-        # Prior attempt: no progress. Current attempt: also no progress.
-        # → STUCK_PRE_TRAINING regardless of rc shape.
+        # Prior attempt: no progress. Current attempt: also no progress,
+        # AND the scraper named nobody → STUCK_PRE_TRAINING regardless
+        # of rc shape.
         log = _write(
             tmp_path / "log", "Execution finished with 1\nimport error\n"
         )
@@ -445,6 +451,60 @@ class TestClassifyAttempt:
                 1, log, [], prior_attempt_had_progress=False
             ).reason
             is TerminationReason.STUCK_PRE_TRAINING
+        )
+
+    def test_named_host_outranks_zero_progress(self, tmp_path):
+        r"""#232: a scraped host is evidence; missing markers are not.
+
+        Absent progress markers are consistent with a job that never
+        started AND with a node that died during a long init AND with a
+        trainer whose counter this regex does not know (the regex was
+        `\bstep=\d+` while every ezpz example emits `iter=`, and that
+        shipped). A named host is positive evidence for exactly one of
+        those, so it wins.
+
+        Same structure as WALLTIME's `and not crash` clause.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
+        )
+
+    def test_named_host_with_zero_progress_exhausts_rather_than_stuck(
+        self, tmp_path
+    ):
+        """The named-host override is bounded by the spare pool.
+
+        Failing over on a named host costs a spare each time, so the
+        pool ends the loop even when no progress marker ever appears --
+        the override cannot spin forever.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+                has_spares=False,
+            ).reason
+            is TerminationReason.EXHAUSTED
         )
 
     def test_progress_overrides_stuck_guard(self, tmp_path):
@@ -504,6 +564,177 @@ class TestClassifyAttempt:
         assert (
             classify_attempt(0, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
+        )
+
+    # -- unattributed storage failures (#231) --------------------------
+    #
+    # The excerpt below is transcribed from Sunspot job 12473704 (see
+    # the issue and docs/guides/fault-injection.md), not invented: a DCP
+    # checkpoint write hit ENOSPC, and the two hosts named afterwards
+    # are bystanders the PALS teardown cascade printed.
+
+    _ENOSPC_LOG = (
+        "iter=40 loss=0.5\n"
+        "[rank23]:   File "
+        '".../torch/distributed/checkpoint/filesystem.py", '
+        "line 520, in create_stream\n"
+        "[rank23]:     with path.open(mode) as stream:\n"
+        "[rank23]: OSError: [Errno 28] No space left on device\n"
+        "\n"
+        "x1921c1s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 16 "
+        "exited with code 1\n"
+        "x1921c1s4b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 0 died "
+        "from signal 15\n"
+    )
+
+    def test_enospc_is_unattributed_not_a_named_bad_node(self, tmp_path):
+        """The bug in #231, at the classifier.
+
+        A named host plus a storage error is NOT a bad node: the error
+        explains the death on its own, and the host is whatever the
+        teardown cascade happened to print.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(
+            143,
+            log,
+            ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+            prior_attempt_had_progress=True,
+        )
+        assert res.reason is TerminationReason.RETRYABLE_UNATTRIBUTED
+        assert res.has_unattributed_io is True
+
+    def test_enospc_is_retried_not_terminal(self, tmp_path):
+        """Retryable, deliberately.
+
+        The first version of #231 proposed a terminal FATAL_ENVIRONMENT
+        on `Errno 28`. On the real incident `/lus/tegu` was 10% full
+        with 2 of 4 OSTs at 99-100% and `stripe_count: 1`, so a
+        reissued write can land on a healthy OST -- a terminal verdict
+        would have killed a recoverable job.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(143, log, [], prior_attempt_had_progress=True)
+        assert res.reason is TerminationReason.RETRYABLE_UNATTRIBUTED, (
+            "an ENOSPC that a retry could survive was made terminal"
+        )
+
+    def test_enospc_survives_no_spares(self, tmp_path):
+        """No spare is needed to retry in place, so none is required.
+
+        EXHAUSTED here would end a job that a retry could have saved,
+        for want of a resource the retry does not use.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        assert (
+            classify_attempt(
+                143,
+                log,
+                ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+                prior_attempt_had_progress=True,
+                has_spares=False,
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    def test_enospc_during_init_is_not_stuck_pre_training(self, tmp_path):
+        """Ordering vs the progress guard.
+
+        A checkpoint write also happens on the RESUME path, before the
+        first progress marker. Two of those in a row must not read as
+        "the job never started" -- so the storage check runs first.
+        """
+        log = _write(
+            tmp_path / "log",
+            "[rank23]: OSError: [Errno 28] No space left on device\n",
+        )
+        assert (
+            classify_attempt(
+                1, log, [], prior_attempt_had_progress=False
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    def test_enospc_does_not_override_clean_walltime(self, tmp_path):
+        """Ordering vs the walltime guard.
+
+        Retrying cannot buy more wallclock any more than swapping can,
+        so a clean 143 stays WALLTIME even with a storage line present.
+        """
+        log = _write(
+            tmp_path / "log",
+            "iter=40\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+            "rank 1 died from signal 15\n",
+        )
+        assert (
+            classify_attempt(
+                143, log, [], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.WALLTIME
+        )
+
+    def test_enospc_budget_falls_back_to_bad_node(self, tmp_path):
+        """The bound. Past the budget, resume normal handling.
+
+        Without it a real node fault that happens to emit a stale I/O
+        line would retry forever on the same broken host.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(
+            143,
+            log,
+            ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+            prior_attempt_had_progress=True,
+            consecutive_unattributed=_MAX_CONSECUTIVE_UNATTRIBUTED,
+        )
+        assert res.reason is TerminationReason.BAD_NODE_KNOWN
+        assert res.has_unattributed_io is True, (
+            "the flag must keep reporting what the LOG said even once "
+            "the verdict has flipped -- the loop's counter keys off it, "
+            "and a flag that followed the verdict would reset the "
+            "budget on the very swap that spent it"
+        )
+
+    def test_quota_exceeded_is_also_unattributed(self, tmp_path):
+        """EDQUOT gets the same treatment as ENOSPC.
+
+        A per-project quota can be raised, or freed by another job
+        finishing, so it is no more terminal than a full OST -- and it
+        says just as little about any host.
+        """
+        log = _write(
+            tmp_path / "log",
+            "OSError: [Errno 122] Disk quota exceeded\n",
+        )
+        assert (
+            classify_attempt(
+                1, log, ["h1"], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "PermissionError: [Errno 13] Permission denied: '/lus/x'",
+            "OSError: [Errno 30] Read-only file system",
+            "FileNotFoundError: [Errno 2] No such file or directory",
+        ],
+    )
+    def test_other_io_errors_are_not_treated_as_unattributed(
+        self, tmp_path, line
+    ):
+        """Being conservative about the pattern list matters more than
+        coverage. These are ordinary failures; the normal path already
+        surfaces them, and a no-blame retry is the wrong shape.
+        """
+        log = _write(tmp_path / "log", f"Execution finished with 1\n{line}\n")
+        assert (
+            classify_attempt(
+                1, log, ["h1"], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
         )
 
     def test_missing_log_file_safe(self, tmp_path):
@@ -573,8 +804,10 @@ class TestNodeAllocation:
         assert list(alloc.spare) == ["h5"]
         # Persisted on disk for the next launcher attempt.
         assert hf.read_text() == "h1\nh4\nh3\n"
-        # Bad nodes appended for postmortem.
-        assert bf.read_text() == "h2\n"
+        # Bad nodes appended for postmortem, with provenance. No
+        # attempt= column: swap_in() was called without one, and an
+        # absent column beats a fabricated one.
+        assert bf.read_text() == "h2  scraped\n"
 
     def test_swap_in_skips_hosts_not_in_active(self, tmp_path):
         alloc, _, _ = self._make(tmp_path)
@@ -605,7 +838,8 @@ class TestNodeAllocation:
         assert alloc.active == ["h4", "h2", "h3"]
         assert list(alloc.spare) == ["h5"]
         assert hf.read_text() == "h4\nh2\nh3\n"
-        assert bf.read_text() == "h1\n"
+        # Recorded as a GUESS, not as evidence -- nothing implicated h1.
+        assert bf.read_text() == "h1  blind\n"
 
     def test_swap_one_blind_raises_when_no_spares(self, tmp_path):
         alloc, _, _ = self._make(
@@ -621,6 +855,149 @@ class TestNodeAllocation:
         alloc.swap_one_blind()
         alloc.swap_one_blind()
         assert not alloc.has_spares
+
+
+# ---------------------------------------------------------------------------
+# Bad-node provenance (#233): evidence vs guess
+# ---------------------------------------------------------------------------
+
+
+class TestBadNodeProvenance:
+    """A scraped host was *named* by a failure signature; a blind
+    host was evicted on a guess. ``bad_nodes.txt`` recorded them
+    identically before #233, so a postmortem could not tell an
+    operator which hosts were actually shown to be faulty."""
+
+    def _make(self, tmp_path, full=("h1", "h2", "h3", "h4", "h5"), active=3):
+        hf = tmp_path / "active.hostfile"
+        bf = tmp_path / "bad_nodes.txt"
+        return (
+            NodeAllocation.from_full_nodelist(list(full), active, hf, bf),
+            bf,
+        )
+
+    def test_provenance_words_on_disk_are_the_literal_labels(
+        self, tmp_path
+    ):
+        """Anchor the on-disk words, not just the accessors.
+
+        The other tests here compare ``scraped_bad_hosts()`` against
+        ``blind_bad_hosts()``. That passes even if BOTH the writer and
+        the accessor's comparison are flipped to the same wrong label,
+        because the two stay self-consistent -- verified: a mutant
+        flipping ``PROVENANCE_BLIND`` at both the write site and the
+        accessor's ``==`` left all 167 tests green.
+
+        An operator greps this file for the word ``blind``, so the word
+        itself is the contract. Assert the exact bytes.
+        """
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert bf.read_text() == "h2  scraped  attempt=1\nh1  blind  attempt=2\n"
+
+    def test_hostname_stays_in_column_one(self, tmp_path):
+        # The compatibility contract: bare-hostname consumers keep
+        # working because column 1 is still just the hostname.
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        col1 = [line.split()[0] for line in bf.read_text().splitlines()]
+        assert col1 == ["h2", "h1"]
+
+    def test_scraped_and_blind_are_distinguishable_on_disk(self, tmp_path):
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert bf.read_text() == (
+            "h2  scraped  attempt=1\nh1  blind  attempt=2\n"
+        )
+
+    def test_attempt_column_omitted_when_unknown(self, tmp_path):
+        # Do not fabricate an attempt number the caller never gave.
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"])
+        assert bf.read_text() == "h2  scraped\n"
+        assert alloc.bad_nodes[0].attempt is None
+
+    def test_in_memory_records_mirror_the_file(self, tmp_path):
+        alloc, bf = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.bad_nodes == [
+            BadNodeRecord("h2", PROVENANCE_SCRAPED, 1),
+            BadNodeRecord("h1", PROVENANCE_BLIND, 2),
+        ]
+        assert alloc.bad_nodes == parse_bad_nodes_file(bf)
+
+    def test_scraped_and_blind_accessors_partition_the_records(
+        self, tmp_path
+    ):
+        # The motivating question for a future final attempt: "was
+        # anything actually SHOWN to be bad?" -- h2 was, h1 was not.
+        alloc, _ = self._make(tmp_path)
+        alloc.swap_in(["h2"], attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.scraped_bad_hosts() == ["h2"]
+        assert alloc.blind_bad_hosts() == ["h1"]
+
+    def test_no_evidence_at_all_when_every_eviction_was_a_guess(
+        self, tmp_path
+    ):
+        alloc, _ = self._make(tmp_path)
+        alloc.swap_one_blind(attempt=1)
+        alloc.swap_one_blind(attempt=2)
+        assert alloc.scraped_bad_hosts() == []
+        assert len(alloc.blind_bad_hosts()) == 2
+
+    def test_parse_tolerates_legacy_bare_hostname_file(self, tmp_path):
+        # Artifacts written before #233 must stay readable.
+        legacy = tmp_path / "bad_nodes.txt"
+        legacy.write_text("hostA\nhostB\n")
+        assert parse_bad_nodes_file(legacy) == [
+            BadNodeRecord("hostA", "", None),
+            BadNodeRecord("hostB", "", None),
+        ]
+
+    def test_parse_skips_blank_lines(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("\nhostA  blind  attempt=3\n\n")
+        assert parse_bad_nodes_file(f) == [
+            BadNodeRecord("hostA", PROVENANCE_BLIND, 3)
+        ]
+
+    def test_parse_of_empty_file_is_empty(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("")
+        assert parse_bad_nodes_file(f) == []
+
+    def test_parse_tolerates_unparseable_attempt_token(self, tmp_path):
+        f = tmp_path / "bad_nodes.txt"
+        f.write_text("hostA  blind  attempt=notanumber\n")
+        assert parse_bad_nodes_file(f) == [
+            BadNodeRecord("hostA", PROVENANCE_BLIND, None)
+        ]
+
+    def test_loop_threads_the_real_attempt_number_through(
+        self, tmp_path, monkeypatch
+    ):
+        # Two failing attempts, both unclassified -> two blind
+        # rotations, recorded as attempts 1 and 2 (not 0, not 1/1).
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4"), active=2)
+        runner = _FakeRunner(
+            [
+                (1, "Execution finished with 1\niter step=1\n"),
+                (1, "Execution finished with 1\niter step=2\n"),
+                (0, "Execution finished with 0\niter step=3\n"),
+            ]
+        )
+        rc = _run(monkeypatch, config, allocation, runner)
+        assert rc == 0
+        assert [(r.provenance, r.attempt) for r in allocation.bad_nodes] == [
+            (PROVENANCE_BLIND, 1),
+            (PROVENANCE_BLIND, 2),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +1126,11 @@ class TestRunWithAutoRetry:
         # Named swap: h1 → h3 (first spare)
         assert "h1" not in allocation.active
         assert "h3" in allocation.active
-        assert allocation.bad_nodes_path.read_text() == "h1\n"
+        # The loop threads its attempt counter through: h1 was
+        # retired on attempt 1, and it was NAMED by the scraper.
+        assert (
+            allocation.bad_nodes_path.read_text() == "h1  scraped  attempt=1\n"
+        )
 
     def test_walltime_no_retry(self, tmp_path, monkeypatch):
         config = _config(tmp_path)
@@ -775,6 +1156,78 @@ class TestRunWithAutoRetry:
         rc = _run(monkeypatch, config, allocation, runner)
         assert rc == 1
         assert len(runner.calls) == 2
+
+    def test_unattributed_io_retries_without_consuming_a_spare(
+        self, tmp_path, monkeypatch
+    ):
+        """#231 at the loop: the allocation must be untouched.
+
+        The classifier deciding RETRYABLE_UNATTRIBUTED is only half of
+        it -- the loop has to honour that by NOT swapping.
+        """
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path)
+        spares_before = list(allocation.spare)
+        enospc = (
+            "Execution finished with 1\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+        )
+        runner = _FakeRunner(
+            [(1, enospc), (0, "Execution finished with 0\n")]
+        )
+        rc = _run(
+            monkeypatch,
+            config,
+            allocation,
+            runner,
+            scrape_fn=lambda _p: ["h1"],
+        )
+
+        assert rc == 0
+        assert len(runner.calls) == 2, "the storage failure was not retried"
+        assert list(allocation.spare) == spares_before, (
+            "a spare was consumed for a failure that named no host"
+        )
+        assert allocation.bad_nodes_path.read_text() == "", (
+            "a healthy host was written to bad_nodes.txt on a storage "
+            "failure"
+        )
+        assert "h1" in allocation.active, "the named bystander was evicted"
+
+    def test_unattributed_budget_is_spent_then_swapping_resumes(
+        self, tmp_path, monkeypatch
+    ):
+        """The bound, threaded end-to-end through the loop.
+
+        The counter keys off the LOG's storage signature, not off the
+        verdict: keying off the verdict would reset the budget on the
+        very swap that spent it, so the same failure would alternate
+        free-retry / swap forever instead of being bounded.
+
+        Every attempt here is an identical ENOSPC. The budget covers
+        the first N, then each further attempt burns a spare.
+        """
+        config = _config(tmp_path)
+        # 2 active + 2 spares.
+        allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4"), active=2)
+        enospc = (
+            "Execution finished with 1\niter=5\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+        )
+        # budget free retries, then one attempt per spare, then a final
+        # attempt that finds no spares and stops. `_FakeRunner` raises
+        # on an extra call, so a regression that removes the bound
+        # fails here rather than looping forever.
+        n_attempts = _MAX_CONSECUTIVE_UNATTRIBUTED + 2 + 1
+        runner = _FakeRunner([(1, enospc)] * n_attempts)
+        rc = _run(monkeypatch, config, allocation, runner)
+
+        assert rc == 1
+        assert len(runner.calls) == n_attempts, (
+            "expected the budget to be spent and then normal swapping to "
+            f"resume; got {len(runner.calls)} attempts"
+        )
+        assert list(allocation.spare) == [], "spares were never consumed"
 
     def test_exhausted_when_spares_drained(self, tmp_path, monkeypatch):
         config = _config(tmp_path)

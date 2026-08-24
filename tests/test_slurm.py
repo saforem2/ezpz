@@ -298,7 +298,13 @@ class TestBuildLaunchCmd:
         hostfile.write_text("nid001\nnid002\nnid003\n")
         monkeypatch.setattr(ezpz, "get_gpus_per_node", lambda: 4)
         result = slurm.build_launch_cmd(hostfile=str(hostfile))
-        assert result == "srun -u --verbose -N3 -n12 --gpus-per-node=4"
+        # Asserts the -N/-n derivation, which is what this test is for.
+        # No longer an exact-match on the whole command: since #235 the
+        # hostfile is ALSO passed to srun as --nodelist, and the old
+        # equality quietly encoded the bug (a hostfile that changed the
+        # host set produced an identical command).
+        assert result.startswith("srun -u --verbose -N3 -n12 --gpus-per-node=4")
+        assert f"--nodelist={hostfile.resolve()}" in result
 
     def test_slurm_nnodes_env_var(self, monkeypatch):
         """Uses SLURM_NNODES env var when hostfile/nhosts not given."""
@@ -346,3 +352,118 @@ class TestBuildLaunchCmd:
         monkeypatch.setattr(ezpz, "get_gpus_per_node", lambda: 4)
         with pytest.raises(ValueError, match="No nodelist found"):
             slurm.build_launch_cmd()
+
+
+class TestSrunGetsTheHostSet:
+    """`srun` must be told WHICH nodes, not just how many (#235).
+
+    Found on Perlmutter. `hostfile` was used only to count lines for
+    `-N`, so `--auto-retry` could detect a bad node, swap it, rewrite
+    the hostfile, and relaunch with a byte-identical command:
+
+        before swap: srun -u --verbose -N2 -n8 --gpus-per-node=4
+        after  swap: srun -u --verbose -N2 -n8 --gpus-per-node=4
+
+    SLURM then re-picked from the same allocation and could hand back
+    the sick node, while `bad_nodes.txt` and `active.hostfile` both
+    claimed a swap had happened. Worse than unsupported, because the
+    postmortem actively misleads.
+    """
+
+    def _hostfile(self, tmp_path, name, hosts):
+        p = tmp_path / name
+        p.write_text("".join(f"{h}\n" for h in hosts))
+        return p
+
+    def test_two_host_sets_produce_different_commands(self, tmp_path):
+        """The regression itself, in the shape that exposed it."""
+        from ezpz.slurm import build_launch_cmd
+
+        before = self._hostfile(tmp_path, "before", ["nid001", "nid002"])
+        after = self._hostfile(tmp_path, "after", ["nid003", "nid004"])
+        a = build_launch_cmd(hostfile=before, ngpu_per_host=4)
+        b = build_launch_cmd(hostfile=after, ngpu_per_host=4)
+        assert a != b, (
+            "a swapped host set must change the srun command, or the "
+            "swap has no effect on where the job runs"
+        )
+
+    def test_nodelist_points_at_the_file_not_a_baked_in_list(
+        self, tmp_path
+    ):
+        """`-w <filename>`, not `-w host1,host2`.
+
+        `AutoRetryConfig` assembles the command ONCE and mutates the
+        hostfile in place between attempts, so an inlined list would be
+        stale the moment a node is swapped. srun documents
+        `--nodelist={<node_name_list>|<filename>}`.
+        """
+        from ezpz.slurm import build_launch_cmd
+
+        hf = self._hostfile(tmp_path, "hosts", ["nid001", "nid002"])
+        cmd = build_launch_cmd(hostfile=hf, ngpu_per_host=4)
+        assert f"--nodelist={hf.resolve()}" in cmd
+        assert "nid001,nid002" not in cmd, (
+            "an inlined list defeats the mutate-in-place contract"
+        )
+
+    def test_the_nodelist_path_is_absolute(self, tmp_path, monkeypatch):
+        """srun resolves a relative path against ITS cwd, not ours.
+
+        Passes a genuinely RELATIVE hostfile. `tmp_path` is already
+        absolute, so feeding it in cannot distinguish `resolve()` from
+        bare interpolation -- a mutant dropping `.resolve()` survived
+        the first version of this test.
+        """
+        from ezpz.slurm import build_launch_cmd
+
+        self._hostfile(tmp_path, "hosts", ["nid001"])
+        monkeypatch.chdir(tmp_path)
+        cmd = build_launch_cmd(hostfile="hosts", ngpu_per_host=4)
+        assert "--nodelist=hosts" not in cmd, (
+            "a relative path would be resolved against srun's cwd"
+        )
+        assert f"--nodelist={(tmp_path / 'hosts').resolve()}" in cmd
+
+    def test_no_hostfile_leaves_the_command_unchanged(self):
+        """Callers with no hostfile must not gain a stray flag."""
+        from ezpz.slurm import build_launch_cmd
+
+        cmd = build_launch_cmd(nhosts=2, ngpu_per_host=4)
+        assert "--nodelist" not in cmd
+
+    def test_excluded_hosts_are_fenced_out(self, tmp_path):
+        """`-w` is a floor, not a fence.
+
+        Its man page: the job "will contain all of these hosts and
+        possibly additional hosts as needed" — so a retired node can
+        come back without `-x`.
+        """
+        from ezpz.slurm import build_launch_cmd
+
+        hf = self._hostfile(tmp_path, "hosts", ["nid003", "nid004"])
+        cmd = build_launch_cmd(
+            hostfile=hf, ngpu_per_host=4, exclude_hosts=["nid001", "nid002"]
+        )
+        assert "--exclude=nid001,nid002" in cmd
+
+    def test_excludes_are_deduped_and_empties_dropped(self, tmp_path):
+        from ezpz.slurm import build_launch_cmd
+
+        hf = self._hostfile(tmp_path, "hosts", ["nid003"])
+        cmd = build_launch_cmd(
+            hostfile=hf,
+            ngpu_per_host=4,
+            exclude_hosts=["nid002", "nid001", "nid002", ""],
+        )
+        assert "--exclude=nid001,nid002" in cmd
+
+    def test_empty_exclude_list_emits_no_flag(self, tmp_path):
+        """`srun -x ''` is an error, not a no-op."""
+        from ezpz.slurm import build_launch_cmd
+
+        hf = self._hostfile(tmp_path, "hosts", ["nid003"])
+        cmd = build_launch_cmd(
+            hostfile=hf, ngpu_per_host=4, exclude_hosts=[]
+        )
+        assert "--exclude" not in cmd

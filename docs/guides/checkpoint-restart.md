@@ -33,6 +33,30 @@ ezpz launch --auto-retry --np <N> -- \
     --ckpt-dir ./ckpts --save-interval 100 --train-iters 3000
 ```
 
+!!! warning "This page measures restart, not failover"
+
+    The two are easy to conflate, and the command above makes it
+    easier: `--auto-retry` composes with resume, but the numbers below
+    were **not** produced with it.
+
+    | | what fails | what recovers | measured where |
+    | --- | --- | --- | --- |
+    | **Checkpoint restart** (this page) | the training process | a relaunch on the **same** nodes, resuming from the last checkpoint | here — real Sunspot runs |
+    | **`--auto-retry`** ([fault injection](fault-injection.md)) | a **node** — or any retryable failure it cannot attribute to one | a named bad host is retired; otherwise a spare is rotated in blindly. Either way the job relaunches **elsewhere** | locally, plus a real 4-node Sunspot node-kill ([postmortem](autoretry-nodekill.md) — the swap is proven, the attribution is not) |
+
+    Both survive a `pkill -9` and keep training, which is exactly why
+    they look alike from outside. The difference is whether the *node
+    set changes*. The experiment below uses a plain relaunch loop on a
+    fixed node set, so nothing here exercises node-swapping.
+
+    One asymmetry worth knowing: the plain relaunch loop always
+    retries, but **`--auto-retry` needs a spare to retry at all**.
+    Every retryable verdict is gated on `has_spares`
+    (`launch_autoretry.py:490-502`); with none left the run ends as
+    `EXHAUSTED` rather than relaunching. If `--np` claims the whole
+    allocation there is no spare, so ask the scheduler for more nodes
+    than you train on — that is what `--nhosts` is for.
+
 ### Asynchronous checkpointing
 
 By default a save is **synchronous** — the training loop blocks while every
@@ -83,6 +107,14 @@ XPU ranks, `tp=2`)**, checkpointing every 100 steps:
    across all nodes every ~90 s (a real `pkill -9`; PALS then tears down the
    training `mpiexec`, each attempt exiting rc=137). A relaunch loop restarts
    on the same nodes and `fsdp_tp` auto-resumes from the last checkpoint.
+
+The kill is `pbsdsh` with no node index, so it lands on **every** node at
+once, and the relaunch is a plain `while` loop in the job script — not
+`--auto-retry`. That is deliberate: with every node hit there is no
+healthy/bad distinction to fail over between, and with no spare nodes in
+the allocation there is nowhere to fail over *to*. The scripts say so in
+their header comments, and it is worth repeating here because the
+recovery looks identical from the outside.
 
 ![Training progress over time — baseline vs checkpoint restart](checkpoint-restart.png)
 

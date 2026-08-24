@@ -57,6 +57,48 @@ def _extract_shepherd_sig9(log_text: str) -> Iterable[str]:
 
 
 # ---------------------------------------------------------------------------
+# Pattern 1b: a RANK killed by signal 9
+#
+# Log line shape:
+#     x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 12 died from signal 9
+#
+# Distinct from Pattern 1: the shepherd is the node-local daemon, this
+# is an individual rank. Both mean "something outside the job sent a
+# SIGKILL here", which is why the host is worth naming.
+#
+# Signal 9 specifically, and NOT the 11/15 the module docstring
+# excludes:
+#
+#   15 (SIGTERM) is exactly what a clean walltime kill rains on every
+#      rank, so matching it would burn a spare on every expiring job.
+#   11 (SIGSEGV) cascades downstream of a primary failure on a
+#      *different* node (job 8466848), so it names innocent hosts.
+#    9 (SIGKILL) is neither. Nothing in a normal PALS teardown sends
+#      SIGKILL to a rank -- walltime is 15, a crash is 11 or 6. A rank
+#      dying of 9 was killed by something external to the job.
+#
+# Evidence: Sunspot job 12473749 killed one node's ranks through PALS
+# (`palsig -s SIGKILL`) and the log ended with exactly two lines --
+#
+#     x1921c7s1b0n0-hsn0...: rank 12 died from signal 9    <- the victim
+#     x1921c7s0b0n0-hsn0...: rank  1 died from signal 15   <- the cascade
+#
+# -- so signal 9 named the killed node and 15 named the innocent one.
+# Before this pattern existed the scraper matched neither, and the loop
+# blind-rotated the HEALTHY host out while leaving the dead one active.
+# ---------------------------------------------------------------------------
+_RANK_SIG9_RX = compile_multiline(
+    r"^([a-zA-Z0-9.-]+\.hsn\.cm\.sunspot\.alcf\.anl\.gov):\s+"
+    r"rank\s+\d+\s+died\s+from\s+signal\s+9\b",
+)
+
+
+def _extract_rank_sig9(log_text: str) -> Iterable[str]:
+    for m in _RANK_SIG9_RX.finditer(log_text):
+        yield m.group(1)
+
+
+# ---------------------------------------------------------------------------
 # Pattern 2: gloo TCP peer-closed
 #
 # Log line shape:
@@ -143,6 +185,16 @@ SUNSPOT_PATTERNS = [
             "PALS shepherd kill (signal 9). Node-local daemon went "
             "non-responsive; almost always a hardware fault. Same runtime "
             "as Aurora."
+        ),
+    ),
+    BadNodePattern(
+        name="sunspot.rank_signal_9",
+        extractor=_extract_rank_sig9,
+        description=(
+            "A rank killed by SIGKILL. Nothing in a normal teardown "
+            "sends signal 9 to a rank (walltime is 15, a crash is 11 "
+            "or 6), so the named host lost its ranks to something "
+            "external. Confirmed by Sunspot job 12473749."
         ),
     ),
     BadNodePattern(

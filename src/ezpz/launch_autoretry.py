@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -138,6 +138,70 @@ _PROGRESS_MARKER_RX = re.compile(
     r"\b(?:iter|step|epoch|batch|idx)\s*[=:]\s*\d+", re.MULTILINE
 )
 
+# Storage-layer errors: retryable, but the failure says nothing about
+# any *host*.
+#
+# Sunspot job 12473704 (see docs/guides/fault-injection.md) died in a
+# DCP checkpoint write with `OSError: [Errno 28] No space left on
+# device`. On Aurora/Sunspot PALS one rank's death tears the whole job
+# down and the teardown cascade prints a `<host>: rank N ...` line for
+# some *other* host; the scraper picked that host up, the classifier
+# said BAD_NODE_KNOWN, and a perfectly healthy node was retired into
+# `bad_nodes.txt` while a spare was consumed for nothing.
+#
+# The fix is about ATTRIBUTION, not about retryability. That ENOSPC
+# WAS retryable: `/lus/tegu` was 10% full, but 2 of its 4 OSTs were at
+# 99-100% and the directory striped `stripe_count: 1`, so each shard
+# file lands wholly on one round-robin-selected OST -- roughly half the
+# writes failed and the rest succeeded. Reissuing the same write has a
+# real chance of landing on a healthy OST. A terminal verdict matched
+# on `Errno 28` would have converted a recoverable job into a dead one:
+# the exact failure this guards against, with the sign flipped.
+#
+# So: retry, but do NOT blame a node, do NOT burn a spare, and do NOT
+# write to `bad_nodes.txt`.
+#
+# Only the ENOSPC form below is attested by a captured log. The EDQUOT
+# wording comes from the Linux strerror table (`errno 122`), not from a
+# capture we hold -- it is included because a per-project quota is a
+# storage fact with exactly the same non-attribution property (and can
+# be freed by another job finishing), but if it ever proves to render
+# differently in the wild, that is the line to fix.
+#
+# Deliberately NOT matched: `Permission denied`, `Read-only file
+# system`, `No such file or directory`. Those really are usually
+# terminal config errors, and a bounded no-blame retry is the wrong
+# shape for them -- the normal path already surfaces them.
+_UNATTRIBUTED_IO_RX = re.compile(
+    r"No space left on device"
+    r"|\[Errno 28\]"
+    r"|Disk quota exceeded"
+    r"|\[Errno 122\]"
+)
+
+# How many CONSECUTIVE attempts may end in RETRYABLE_UNATTRIBUTED
+# before the loop stops giving the storage the benefit of the doubt
+# and falls back to the normal bad-node path.
+#
+# The bound is the whole safety story here. Without it, a genuinely
+# bad node that happens to emit a stale ENOSPC line would retry
+# forever on the same broken host -- a false positive turning a real
+# node fault into an unbounded loop. Three is enough to ride out the
+# observed failure (round-robin OST selection, ~50/50 per write) and
+# cheap enough that being wrong costs three attempts rather than a
+# healthy node.
+#
+# Falling BACK to the normal path (rather than to a terminal verdict)
+# is deliberate: after the budget the loop still makes forward
+# progress by swapping, which is what it did before this existed.
+_MAX_CONSECUTIVE_UNATTRIBUTED = 3
+
+
+def _has_unattributed_io_failure(log_text: str) -> bool:
+    """Return True iff the log shows a storage error that cannot be
+    attributed to any host. See :data:`_UNATTRIBUTED_IO_RX`."""
+    return _UNATTRIBUTED_IO_RX.search(log_text) is not None
+
 
 class TerminationReason(Enum):
     """Outcomes that drive :func:`run_with_auto_retry`'s next step.
@@ -148,9 +212,10 @@ class TerminationReason(Enum):
 
     SUCCESS / WALLTIME / STUCK_PRE_TRAINING / EXHAUSTED are terminal:
     :func:`run_with_auto_retry` returns immediately. The two BAD_NODE
-    values trigger a swap-and-retry. INTERRUPTED is produced by the
-    loop's SIGINT handler — :func:`classify_attempt` never returns it,
-    since the classifier never sees the interrupt path (we re-raise
+    values trigger a swap-and-retry. RETRYABLE_UNATTRIBUTED retries
+    WITHOUT a swap. INTERRUPTED is produced by the loop's SIGINT
+    handler — :func:`classify_attempt` never returns it, since the
+    classifier never sees the interrupt path (we re-raise
     KeyboardInterrupt before reaching the classifier).
     """
 
@@ -158,6 +223,15 @@ class TerminationReason(Enum):
     WALLTIME = "walltime"
     BAD_NODE_KNOWN = "bad_node_known"
     BAD_NODE_BLIND = "bad_node_blind"
+    RETRYABLE_UNATTRIBUTED = "retryable_unattributed"
+    """A failure the log explains WITHOUT implicating a host.
+
+    Today that means a storage error (ENOSPC/EDQUOT) raised inside the
+    job -- see :data:`_UNATTRIBUTED_IO_RX`. Retry in place: no swap, no
+    spare consumed, nothing appended to ``bad_nodes.txt``. Bounded by
+    :data:`_MAX_CONSECUTIVE_UNATTRIBUTED` consecutive occurrences, after
+    which the loop reverts to the normal bad-node path."""
+
     STUCK_PRE_TRAINING = "stuck_pre_training"
     EXHAUSTED = "exhausted"
     INTERRUPTED = "interrupted"
@@ -175,6 +249,15 @@ class ClassificationResult:
 
     reason: TerminationReason
     has_progress: bool
+    has_unattributed_io: bool = False
+    """Whether the log showed an unattributed storage failure.
+
+    Reported separately from ``reason`` because the loop's budget must
+    count what the LOG said, not what the classifier decided. Once the
+    budget is spent the verdict flips to a bad-node swap while the log
+    still says ENOSPC -- if the counter tracked the verdict it would
+    reset on that very swap, re-granting the budget forever and never
+    actually bounding anything."""
 
 
 @dataclass
@@ -212,6 +295,68 @@ class AutoRetryConfig:
     ``ezpz.get_machine()``."""
 
 
+# Provenance tags written to column 2 of ``bad_nodes.txt``. A
+# ``scraped`` host was *named* by the log scraper from a failure
+# signature; a ``blind`` host was evicted by :meth:`swap_one_blind`
+# on a guess, with nothing in the log implicating it. Postmortems
+# and any future "final attempt" logic need to tell those apart —
+# blind-evicted hosts were never evidenced as faulty. See #233.
+PROVENANCE_SCRAPED = "scraped"
+PROVENANCE_BLIND = "blind"
+
+
+@dataclass(frozen=True)
+class BadNodeRecord:
+    """One retired host plus *why* it was retired.
+
+    The on-disk rendering (:meth:`to_line`) keeps the hostname in
+    column 1 so bare-hostname consumers (``awk '{print $1}'``,
+    ``cut -f1``) keep working against the richer file.
+    """
+
+    host: str
+    provenance: str
+    attempt: Optional[int] = None
+    """1-based attempt that retired this host. ``None`` when the
+    caller didn't supply one — the column is then omitted rather
+    than filled with a guessed value."""
+
+    def to_line(self) -> str:
+        """Render as one whitespace-separated ``bad_nodes.txt`` line.
+
+        Two spaces rather than one purely for legibility; every
+        consumer splits on arbitrary whitespace.
+        """
+        parts = [self.host, self.provenance]
+        if self.attempt is not None:
+            parts.append(f"attempt={self.attempt}")
+        return "  ".join(parts)
+
+
+def parse_bad_nodes_file(path: Path) -> list[BadNodeRecord]:
+    """Read a ``bad_nodes.txt`` back into records.
+
+    Tolerates the legacy bare-hostname format (provenance is then
+    reported as ``""``) so old artifacts stay readable.
+    """
+    records: list[BadNodeRecord] = []
+    for raw in path.read_text().splitlines():
+        fields = raw.split()
+        if not fields:
+            continue
+        host = fields[0]
+        provenance = fields[1] if len(fields) > 1 else ""
+        attempt: Optional[int] = None
+        for tok in fields[2:]:
+            if tok.startswith("attempt="):
+                try:
+                    attempt = int(tok.split("=", 1)[1])
+                except ValueError:
+                    attempt = None
+        records.append(BadNodeRecord(host, provenance, attempt))
+    return records
+
+
 @dataclass
 class NodeAllocation:
     """In-memory active + spare hostfile tracker.
@@ -224,13 +369,21 @@ class NodeAllocation:
 
     ``spare`` is a deque so we can ``popleft()`` cheaply when
     rotating new hosts in. ``bad_nodes_path`` is appended-to once
-    per swap for postmortem.
+    per swap for postmortem, each line carrying the hostname in
+    column 1 and *why* it was retired in column 2 (see
+    :class:`BadNodeRecord`).
     """
 
     active: list[str]
     spare: deque[str]
     hostfile_path: Path
     bad_nodes_path: Path
+    bad_nodes: list[BadNodeRecord] = field(default_factory=list)
+    """In-memory mirror of ``bad_nodes_path``, with provenance.
+
+    Lets a caller ask "was anything actually *shown* to be bad?"
+    without re-parsing the file — see :meth:`scraped_bad_hosts` and
+    :meth:`blind_bad_hosts`."""
 
     @classmethod
     def from_full_nodelist(
@@ -273,16 +426,91 @@ class NodeAllocation:
             "\n".join(self.active) + ("\n" if self.active else "")
         )
 
-    def _append_bad(self, host: str) -> None:
-        """Append one bad host to ``bad_nodes_path`` for postmortem.
+    def _append_bad(
+        self,
+        host: str,
+        provenance: str,
+        attempt: Optional[int] = None,
+    ) -> None:
+        """Record one retired host + why, on disk and in memory.
 
         Open + append + close per call (cheap; swaps are rare and
         a leaked fd outliving the process would be worse than the
-        extra syscall)."""
-        with self.bad_nodes_path.open("a") as f:
-            f.write(host + "\n")
+        extra syscall).
 
-    def swap_in(self, bad_hosts: Sequence[str]) -> list[tuple[str, str]]:
+        ``attempt`` is omitted from the line when the caller doesn't
+        know it — an absent column beats a fabricated one."""
+        record = BadNodeRecord(host, provenance, attempt)
+        self.bad_nodes.append(record)
+        with self.bad_nodes_path.open("a") as f:
+            f.write(record.to_line() + "\n")
+
+    def scraped_bad_hosts(self) -> list[str]:
+        """Hosts a scraper *named* from a failure signature.
+
+        The evidenced subset — the only entries a postmortem can
+        call bad without qualification."""
+        return [
+            r.host
+            for r in self.bad_nodes
+            if r.provenance == PROVENANCE_SCRAPED
+        ]
+
+    def blind_bad_hosts(self) -> list[str]:
+        """Hosts evicted on a guess, never implicated by a log.
+
+        A future final attempt can reasonably reconstitute from
+        these; nothing ever showed them to be faulty."""
+        return [
+            r.host
+            for r in self.bad_nodes
+            if r.provenance == PROVENANCE_BLIND
+        ]
+
+    @staticmethod
+    def _node_key(host: str) -> str:
+        """Canonical identity of a host, for comparison only.
+
+        PBS hands out `x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov`
+        while the scraper's normalizer returns the plain
+        `x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov`. Both name the same
+        machine, and an exact `in` test says they do not.
+
+        Sunspot job 12473750 is the cost of that: the scraper correctly
+        identified the killed node, and the loop logged
+
+            bad nodes: ['x1921c7s1b0n0.hsn...'] -- swapped 0
+
+        then fell through to a blind rotation that retired the HEALTHY
+        host and left the dead one running. Named attribution worked
+        and was discarded on a string comparison.
+
+        Reduce to the leading node token: strip any `-hsnN` interface
+        suffix and the domain. That is the part that identifies the
+        machine; everything after it describes how to reach it.
+        """
+        head = host.split(".", 1)[0]
+        return head.split("-hsn", 1)[0]
+
+    def _match_active(self, host: str) -> Optional[str]:
+        """The active entry naming the same machine as *host*.
+
+        Returns the string AS IT APPEARS in `self.active`, so callers
+        keep writing hostfile-native names, not normalized ones.
+        """
+        if host in self.active:  # exact match: cheap and most common
+            return host
+        key = self._node_key(host)
+        for a in self.active:
+            if self._node_key(a) == key:
+                return a
+        return None
+
+    def swap_in(
+        self,
+        bad_hosts: Sequence[str],
+        attempt: Optional[int] = None,
+    ) -> list[tuple[str, str]]:
         """Swap each known-bad host out for a spare.
 
         Skips hosts not currently in the active set (already
@@ -290,15 +518,20 @@ class NodeAllocation:
         of ``(bad, spare)`` pairs actually swapped — caller can
         log a summary.
 
+        Every host retired here was *named* by the scraper, so it
+        is recorded with :data:`PROVENANCE_SCRAPED`.
+
         Raises :class:`RuntimeError` if a swap is wanted but no
         spare is available. The caller catches that and ends the
         loop via :attr:`TerminationReason.EXHAUSTED`.
         """
         swaps: list[tuple[str, str]] = []
         for bad in bad_hosts:
-            if bad not in self.active:
+            active_host = self._match_active(bad)
+            if active_host is None:
                 logger.debug("skip swap: %s not in active set", bad)
                 continue
+            bad = active_host
             if not self.spare:
                 raise RuntimeError(
                     f"out of spare nodes — cannot replace {bad}"
@@ -306,13 +539,15 @@ class NodeAllocation:
             spare = self.spare.popleft()
             idx = self.active.index(bad)
             self.active[idx] = spare
-            self._append_bad(bad)
+            self._append_bad(bad, PROVENANCE_SCRAPED, attempt)
             swaps.append((bad, spare))
         if swaps:
             self._write_active()
         return swaps
 
-    def swap_one_blind(self) -> tuple[str, str]:
+    def swap_one_blind(
+        self, attempt: Optional[int] = None
+    ) -> tuple[str, str]:
         """Rotate the first active host out for a spare.
 
         Used when the scraper can't pinpoint a culprit (silent hang,
@@ -320,6 +555,9 @@ class NodeAllocation:
         that's also what the bash lib does — the choice is arbitrary
         but stable, so consecutive blind rotations cycle through the
         active set rather than thrashing on one host.
+
+        Nothing implicated the evicted host, so it is recorded with
+        :data:`PROVENANCE_BLIND` — a guess, not evidence.
         """
         if not self.spare:
             raise RuntimeError("out of spare nodes — cannot blind-rotate")
@@ -328,7 +566,7 @@ class NodeAllocation:
         bad = self.active[0]
         spare = self.spare.popleft()
         self.active[0] = spare
-        self._append_bad(bad)
+        self._append_bad(bad, PROVENANCE_BLIND, attempt)
         self._write_active()
         return bad, spare
 
@@ -402,6 +640,7 @@ def classify_attempt(
     *,
     prior_attempt_had_progress: Optional[bool] = None,
     has_spares: bool = True,
+    consecutive_unattributed: int = 0,
 ) -> ClassificationResult:
     """Decide what the auto-retry loop should do after an attempt.
 
@@ -410,31 +649,68 @@ def classify_attempt(
     can thread the latter through to the next call without re-reading
     the log. The full termination matrix from PR #3's handoff doc:
 
-    | rc       | log signals                                 | result               |
-    |----------|---------------------------------------------|----------------------|
-    | 0        | inner_rc=0 OR absent OR no crash pattern    | SUCCESS              |
-    | 0        | inner_rc != 0 (wrapper lied about success)  | classify by inner_rc |
-    | 0        | crash patterns present                      | bad-node retry       |
-    | 143      | no crash patterns                           | WALLTIME             |
-    | 143      | crash patterns present                      | bad-node retry       |
-    | 124      | (idle-output watchdog tripped)              | BAD_NODE_BLIND       |
-    | non-zero | scraper found named host(s)                 | BAD_NODE_KNOWN       |
-    | non-zero | scraper empty                               | BAD_NODE_BLIND       |
-    | -        | this AND prior attempt both had 0 progress  | STUCK_PRE_TRAINING   |
-    | -        | bad-node verdict but no spares left         | EXHAUSTED            |
+    | rc       | log signals                                 | result                  |
+    |----------|---------------------------------------------|-------------------------|
+    | 0        | inner_rc=0 OR absent OR no crash pattern    | SUCCESS                 |
+    | 0        | inner_rc != 0 (wrapper lied about success)  | classify by inner_rc    |
+    | 0        | crash patterns present                      | bad-node retry          |
+    | 143      | no crash patterns                           | WALLTIME                |
+    | 143      | crash patterns present                      | bad-node retry          |
+    | non-zero | ENOSPC/EDQUOT, under the budget             | RETRYABLE_UNATTRIBUTED  |
+    | 124      | (idle-output watchdog tripped)              | BAD_NODE_BLIND          |
+    | non-zero | scraper found named host(s)                 | BAD_NODE_KNOWN          |
+    | non-zero | scraper empty                               | BAD_NODE_BLIND          |
+    | -        | 0 progress twice AND scraper named nobody   | STUCK_PRE_TRAINING      |
+    | -        | bad-node verdict but no spares left         | EXHAUSTED               |
 
-    The "two consecutive attempts with no progress" guard is the
-    user's preferred substitute for a numeric cap on blind rotations.
-    It catches code bugs (broken config, missing dataset) that would
-    otherwise burn the entire spare pool. The current attempt's
-    progress status is checked against ``prior_attempt_had_progress``;
-    the caller is responsible for tracking the prior value across
-    iterations (use the ``has_progress`` field of the returned
-    :class:`ClassificationResult`).
+    **Unattributed storage failures** (#231). A checkpoint write that
+    dies of ENOSPC tears the whole job down, and on PALS the teardown
+    cascade names some *other* host. Reading that host as bad retires a
+    healthy node and burns a spare. So an I/O failure the log explains
+    on its own short-circuits to :attr:`RETRYABLE_UNATTRIBUTED` — retry,
+    but blame nothing. Bounded by ``consecutive_unattributed`` against
+    :data:`_MAX_CONSECUTIVE_UNATTRIBUTED`: past the budget we stop
+    believing the storage story and take the normal bad-node path, so a
+    real node fault that happens to emit an I/O line cannot loop forever.
+    Ordered AFTER the walltime guard (a clean walltime kill mid-write is
+    still a walltime kill) and BEFORE the progress guard, since an
+    ENOSPC during a long init is exactly the marker-free case #232 is
+    about.
+
+    **The progress guard** ("two consecutive attempts with no progress")
+    is the user's preferred substitute for a numeric cap on blind
+    rotations. It catches code bugs (broken config, missing dataset)
+    that would otherwise burn the entire spare pool. The current
+    attempt's progress status is checked against
+    ``prior_attempt_had_progress``; the caller is responsible for
+    tracking the prior value across iterations (use the ``has_progress``
+    field of the returned :class:`ClassificationResult`).
+
+    That guard now requires corroboration (#232). Missing progress
+    markers are *absence* of evidence — equally consistent with a node
+    that died during a long init, and with a trainer whose counter name
+    :data:`_PROGRESS_MARKER_RX` does not know (which has already bitten
+    us once: the regex was ``\\bstep=\\d+`` while every ezpz example
+    emits ``iter=``). A scraper-named host is *presence* of evidence
+    pointing the other way, and outranks the inference: given both, we
+    fail over. Same shape as the ``and not crash`` clause that keeps
+    :attr:`WALLTIME` from swallowing a bad-node death.
 
     INTERRUPTED is produced by the loop itself in the SIGINT handler,
     not here — the classifier never sees the interrupt path because
     KeyboardInterrupt is re-raised before we reach it.
+
+    Args:
+        shell_rc: Exit code of the attempt's child process.
+        log_path: Path to that attempt's log.
+        scraped_bad_nodes: Hosts the scraper named in that log.
+        prior_attempt_had_progress: ``has_progress`` from the previous
+            attempt, or ``None`` on the first attempt.
+        has_spares: Whether a spare is available to swap in.
+        consecutive_unattributed: How many attempts have ALREADY ended
+            in :attr:`RETRYABLE_UNATTRIBUTED` in an unbroken run up to
+            now. The loop tracks this and resets it to 0 on any other
+            verdict.
     """
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     # Strip ANSI ONCE, here, so every matcher below sees plain text.
@@ -451,6 +727,7 @@ def classify_attempt(
     inner_rc = _extract_inner_rc(log_text)
     crash = _has_crash_patterns(log_text)
     has_progress = _has_progress_markers(log_text)
+    unattributed_io = _has_unattributed_io_failure(log_text)
     # Effective rc: trust the inner trailer over a clean shell exit
     # when the wrapper lied (mpiexec teardown raced a SIGTERM, etc.)
     effective_rc = shell_rc
@@ -463,7 +740,11 @@ def classify_attempt(
         effective_rc = 1
 
     def _result(reason: TerminationReason) -> ClassificationResult:
-        return ClassificationResult(reason=reason, has_progress=has_progress)
+        return ClassificationResult(
+            reason=reason,
+            has_progress=has_progress,
+            has_unattributed_io=unattributed_io,
+        )
 
     # Success: shell exit 0, no contrary inner_rc, no crash patterns.
     if effective_rc == 0:
@@ -476,11 +757,56 @@ def classify_attempt(
     if effective_rc == _WALLTIME_RC and not crash:
         return _result(TerminationReason.WALLTIME)
 
+    # Unattributed storage failure (#231). The log EXPLAINS this death
+    # on its own -- an ENOSPC inside a checkpoint write -- so whatever
+    # host the PALS teardown cascade happens to name is not evidence
+    # about hardware. Retry in place: no swap, no spare, no entry in
+    # bad_nodes.txt.
+    #
+    # Placed here on purpose:
+    #   * AFTER walltime, so a clean wallclock kill that lands mid-write
+    #     is still WALLTIME (swapping cannot buy more wallclock either).
+    #   * BEFORE the progress guard, because a checkpoint write can be a
+    #     resume-path `dcp.load` that dies before the first marker; two
+    #     of those in a row must not read as "the job never started".
+    #   * BEFORE the bad-node paths, which is the whole point.
+    #
+    # `consecutive_unattributed` is the bound. Past the budget we stop
+    # believing the storage story and fall through to the normal
+    # bad-node handling, so a real node fault that emits an I/O line
+    # cannot pin the loop to one broken host forever.
+    if (
+        unattributed_io
+        and consecutive_unattributed < _MAX_CONSECUTIVE_UNATTRIBUTED
+    ):
+        return _result(TerminationReason.RETRYABLE_UNATTRIBUTED)
+
     # The progress guard applies BEFORE we decide which swap path to
     # take — there's no point swapping nodes if the run is dying
     # before training starts. Note: we only check this on actual
     # failure paths; success already returned above.
-    if prior_attempt_had_progress is False and not has_progress:
+    #
+    # It needs corroboration (#232). "No progress marker" is an
+    # INFERENCE from absence: it is equally true of a node that died
+    # during a long init, and of a trainer whose counter name
+    # `_PROGRESS_MARKER_RX` does not know. A scraper-named host is
+    # positive evidence of a node fault, and positive evidence outranks
+    # an inference from silence -- so when the scraper named someone we
+    # fail over instead of concluding the job never started.
+    #
+    # This mirrors WALLTIME's `and not crash`: same structure, same
+    # reason. The asymmetry is deliberate and matches the one
+    # `_PROGRESS_MARKER_RX` already documents -- being wrong toward
+    # failover costs one swap; being wrong toward STUCK abandons a
+    # recoverable job with spares still free.
+    #
+    # A named host cannot make this loop forever: every failover
+    # consumes a spare, so the pool bounds it and EXHAUSTED ends it.
+    if (
+        prior_attempt_had_progress is False
+        and not has_progress
+        and not scraped_bad_nodes
+    ):
         return _result(TerminationReason.STUCK_PRE_TRAINING)
 
     # Watchdog kill: launch.py couldn't see output for `idle_timeout_s`.
@@ -734,6 +1060,12 @@ def run_with_auto_retry(
     attempt = 0
     last_rc = 0
     prior_attempt_had_progress: Optional[bool] = None
+    # Consecutive RETRYABLE_UNATTRIBUTED verdicts. Reset by ANY other
+    # verdict: the budget exists to bound a *run* of storage failures,
+    # not to cap them over the lifetime of the job. A run that hits
+    # ENOSPC, recovers, trains for an hour and hits it again should get
+    # the full budget the second time.
+    consecutive_unattributed = 0
 
     while True:
         attempt += 1
@@ -793,11 +1125,22 @@ def run_with_auto_retry(
             scraped,
             prior_attempt_had_progress=prior_attempt_had_progress,
             has_spares=allocation.has_spares,
+            consecutive_unattributed=consecutive_unattributed,
         )
         reason = result.reason
         # Thread the progress flag through to the next iteration —
         # classifier already parsed the log, no need to re-read.
         prior_attempt_had_progress = result.has_progress
+        # Count what the LOG said, not what the classifier decided.
+        # Keying off RETRYABLE_UNATTRIBUTED would be circular: spending
+        # the budget flips the verdict to a bad-node swap, which would
+        # then reset the counter and hand back a fresh budget on the
+        # next identical failure -- an unbounded alternation instead of
+        # a bound.
+        if result.has_unattributed_io:
+            consecutive_unattributed += 1
+        else:
+            consecutive_unattributed = 0
 
         if reason is TerminationReason.SUCCESS:
             logger.info(
@@ -814,12 +1157,20 @@ def run_with_auto_retry(
             return last_rc
 
         if reason is TerminationReason.STUCK_PRE_TRAINING:
+            # State plainly that this is an INFERENCE from absence
+            # (#232). An operator whose trainer prints a counter this
+            # regex does not know needs to be able to recognise the
+            # misfire from the log line alone -- the previous wording
+            # read as a finding rather than a guess.
             logger.error(
                 "[auto-retry] FAILOVER STOP: stuck_pre_training "
-                "(two consecutive attempts with no progress markers "
-                "-- no iter=/step=/epoch=/batch=/idx= line in either "
-                "log, "
-                "rc=%d)",
+                "(INFERRED, not observed: two consecutive attempts "
+                "showed no iter=/step=/epoch=/batch=/idx= line, and the "
+                "scraper named no host either, so the run is assumed to "
+                "be dying before training starts. If your trainer prints "
+                "a progress counter under some OTHER name, this verdict "
+                "is wrong and a recoverable job was abandoned -- please "
+                "report the counter you use. rc=%d)",
                 last_rc,
             )
             return last_rc
@@ -832,10 +1183,31 @@ def run_with_auto_retry(
             )
             return last_rc
 
+        # Unattributed storage failure: retry WITHOUT touching the
+        # allocation (#231). No swap, no spare consumed, nothing
+        # appended to bad_nodes.txt -- the failure said nothing about
+        # any host, so neither do we.
+        if reason is TerminationReason.RETRYABLE_UNATTRIBUTED:
+            logger.warning(
+                "[auto-retry] retryable_unattributed: the log shows an "
+                "I/O failure (out of space / over quota) that is not "
+                "evidence about any host, so no node is being retired "
+                "and no spare is being consumed. Retrying on the SAME "
+                "hosts (%d/%d of the consecutive budget, rc=%d). If this "
+                "is a Lustre stripe landing on a full OST, the retry may "
+                "well succeed; if it does not, check the filesystem "
+                "before the budget runs out and normal node-swapping "
+                "resumes.",
+                consecutive_unattributed,
+                _MAX_CONSECUTIVE_UNATTRIBUTED,
+                last_rc,
+            )
+            continue
+
         # Bad-node paths fall through to a swap + continue.
         try:
             if reason is TerminationReason.BAD_NODE_KNOWN:
-                swaps = allocation.swap_in(scraped)
+                swaps = allocation.swap_in(scraped, attempt=attempt)
                 logger.warning(
                     "[auto-retry] bad nodes: %s — swapped %d",
                     scraped,
@@ -852,14 +1224,16 @@ def run_with_auto_retry(
                             "(named hosts already swapped, no spares)"
                         )
                         return last_rc
-                    bad, spare = allocation.swap_one_blind()
+                    bad, spare = allocation.swap_one_blind(
+                        attempt=attempt
+                    )
                     logger.warning(
                         "[auto-retry] blind rotation: %s -> %s",
                         bad,
                         spare,
                     )
             else:  # BAD_NODE_BLIND
-                bad, spare = allocation.swap_one_blind()
+                bad, spare = allocation.swap_one_blind(attempt=attempt)
                 logger.warning(
                     "[auto-retry] blind rotation: %s -> %s", bad, spare
                 )

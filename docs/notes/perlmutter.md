@@ -1,5 +1,17 @@
 # 🍋 `ezpz` on Perlmutter @ NERSC
 
+!!! warning "Three things worth knowing before you start"
+
+    **Do not drop `nccl/2.24.3` from the module list below.** Without
+    it NCCL silently falls back to TCP and multi-node runs are ~8×
+    slower, with no error. `module load pytorch` also resolves to
+    **2.8.0**, where `--compile`
+    aborts every rank ([#236](https://github.com/saforem2/ezpz/issues/236));
+    `pytorch/2.13.0` fixes it but needs
+    `export MPICH_GPU_SUPPORT_ENABLED=0` or every rank segfaults.
+    All three are covered, with benchmark numbers and the SLURM
+    failover caveat, in [Perlmutter validation](../guides/perlmutter.md).
+
 1. Submit interactive job on Perlmutter:
 
     ```bash

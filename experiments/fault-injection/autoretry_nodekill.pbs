@@ -1,0 +1,431 @@
+#!/bin/bash -l
+#PBS -N autoretry-nodekill
+#PBS -A datascience
+#PBS -l select=4
+#PBS -l walltime=01:00:00
+#PBS -q workq
+#PBS -l filesystems=tegu:home
+#PBS -j oe
+# Absolute, because the script cd's and PBS resolves a relative path
+# against the CWD at exit -- job 12473702's log landed in the repo dir.
+#PBS -o /home/foremans/autoretry-nodekill.log
+#
+# Does `ezpz launch --auto-retry` actually swap a bad node out, on real
+# hardware, mid-training?
+#
+# Everything else in the failover stack is tested: 161 unit tests, 22
+# fault-injection tests driving the real loop against real subprocesses.
+# All of it runs in one process on one host. The single claim none of it
+# can reach is the one that matters most in production -- that when a
+# node dies, the NEXT attempt's mpiexec lands somewhere else.
+#
+# Deliberately NOT the same experiment as
+# experiments/checkpoint-restart/: that one kills every node at once
+# (`pbsdsh` with no index) and relaunches on a fixed node set with a
+# hand-rolled `while` loop. With every node hit there is no healthy/bad
+# distinction to fail over between, and with no spares there is nowhere
+# to fail over to. It measures restart cost; this measures failover.
+#
+# The differences that make this one a failover test:
+#   * select=4 with `--nhosts 2` -> 2 active + 2 SPARE hosts
+#   * `--auto-retry` drives the retry loop, not a bash `while`
+#   * `pbsdsh -n <index>` kills ranks on ONE node, so exactly one host
+#     is bad and three stay healthy
+#   * that index is 1, not 0, so a blind rotation (which always evicts
+#     active[0]) cannot pass the test by accident -- see KILL_INDEX
+#
+# PASS requires all four, checked at the end:
+#   1. the killed host is named in bad_nodes.txt
+#   2. it is GONE from the active hostfile
+#   3. a spare took its slot
+#   4. the post-kill attempt actually RAN on the new host set
+#      (this is the part no in-process test can establish)
+
+set -u
+set -o pipefail
+
+# PBS runs job scripts non-login, where `module` may exist but
+# MODULEPATH does not -- every `module load` then silently loads
+# nothing (see ezpz #216/#221). The shebang's -l covers it; assert
+# anyway, because the failure mode is a confusing MKL error much later.
+[ -n "${MODULEPATH:-}" ] || {
+    echo "FATAL: MODULEPATH unset -- module load would be a no-op"
+    exit 1
+}
+
+D="${EZPZ_DIR:-${HOME}/datascience/foremans/projects/saforem2/ezpz-validate}"
+cd "${D}" || exit 1
+echo "=== commit: $(git rev-parse --short HEAD) ==="
+
+# lmod's init reads ZSH_EVAL_CONTEXT unguarded, which `set -u` turns
+# into a fatal "unbound variable" the moment `module load` runs. Drop
+# nounset just for the module call rather than for the whole script --
+# the rest of this file relies on it to catch typo'd variables.
+set +u
+module load frameworks/2026.1.0
+export PATH="${HOME}/.local/bin:${PATH}:/opt/cray/pals/1.8/bin:/opt/pbs/bin"
+# shellcheck disable=SC1091
+# Same reason: venv activate scripts also read unset vars (PS1, etc).
+source venvs/aurora_frameworks-2026.1.0/bin/activate
+set -u
+export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
+export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+
+EXPT="${D}/out/autoretry-nodekill-${PBS_JOBID%%.*}"
+mkdir -p "${EXPT}"
+CKPT="${EXPT}/ckpt"
+# Checkpoints are the bulk of this experiment's footprint and are
+# worthless once the verdict is computed -- the assertions read
+# bad_nodes.txt and the attempt logs, never the weights. Reclaim them
+# however the job ends, including a walltime kill.
+trap 'rm -rf "${CKPT}" 2>/dev/null' EXIT
+LOG="${EXPT}/train.log"
+DONE="${EXPT}/.done"
+
+ACTIVE_HOSTS=2          # --nhosts; the rest of select= becomes spare
+KILL_AFTER_STEP=40      # kill once a complete checkpoint passes this
+# Sized so the run cannot fill the shared filesystem. agpt-2b writes
+# ~22 GB per checkpoint and NOTHING prunes them, so job 12473704's
+# 400 iters / save-interval 20 produced 15 saves = 331 GB and then
+# died with `OSError: [Errno 28] No space left on device` mid-save --
+# on /lus/tegu, which other people are using.
+#
+# This test does not need long training: it needs ONE durable
+# checkpoint before the kill and enough runway after it to observe a
+# relaunch. 100 iters saving every 25 is 4 saves (~88 GB peak), and
+# the trap below reclaims them on exit.
+TRAIN_ITERS=100
+SAVE_INTERVAL=25
+
+# Preflight: refuse to start without room for the checkpoints. Job
+# 12473704 ran 56 minutes and then died mid-save on ENOSPC, which the
+# classifier read as a bad node and "fixed" by burning a spare -- an
+# expensive way to discover a full disk. ~22 GB/save * 4 saves, with
+# headroom for the async fanout holding two copies briefly.
+NEED_GB=120
+AVAIL_GB="$(df -BG --output=avail "${EXPT}" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "${AVAIL_GB}" ] && [ "${AVAIL_GB}" -lt "${NEED_GB}" ]; then
+    echo "FATAL: only ${AVAIL_GB}GB free at ${EXPT}, need ~${NEED_GB}GB."
+    echo "       Refusing to start rather than dying mid-checkpoint."
+    exit 1
+fi
+echo "=== disk: ${AVAIL_GB:-?}GB free, need ~${NEED_GB}GB ==="
+
+mapfile -t ALL_HOSTS < "${PBS_NODEFILE}"
+echo "=== allocation (${#ALL_HOSTS[@]} hosts) ==="
+printf '  %s\n' "${ALL_HOSTS[@]}"
+echo "=== ${ACTIVE_HOSTS} active + $(( ${#ALL_HOSTS[@]} - ACTIVE_HOSTS )) spare ==="
+
+latest_ckpt_step() {
+    local best=-1 s
+    for d in "$1"/step-*; do
+        [ -e "${d}/.complete" ] || continue
+        s="${d##*step-}"
+        [ "${s}" -gt "${best}" ] 2>/dev/null && best="${s}"
+    done
+    echo "${best}"
+}
+
+# ---- the killer, as a file ----------------------------------------------
+# Written to the shared FS so `pbsdsh` can exec it directly. See the note
+# in chaos() for why this is not an inline `bash -c`.
+KILLER="${EXPT}/kill_ranks.sh"
+RECEIPT="${EXPT}/kill_receipt.txt"
+cat > "${KILLER}" <<'KILLEOF'
+#!/bin/bash
+# Kill the training RANKS on this node, leaving the retry supervisor.
+#
+# `pkill -f ezpz.examples.fsdp_tp` also matches the parent
+# `python3 -m ezpz.launch --auto-retry -- python3 -m ezpz.examples.fsdp_tp`,
+# whose own command line contains that string. Job 12473702 killed the
+# supervisor that way: 1 attempt, empty bad_nodes.txt, nothing left to
+# fail over. So skip any pid whose cmdline mentions ezpz.launch.
+n=0
+for pid in $(pgrep -f "ezpz[.]examples[.]fsdp_tp" 2>/dev/null); do
+    if grep -qa "ezpz.launch" "/proc/${pid}/cmdline" 2>/dev/null; then
+        continue
+    fi
+    kill -9 "${pid}" 2>/dev/null && n=$((n + 1))
+done
+echo "[killer] $(hostname): killed ${n} rank pid(s)"
+# Write the receipt directly rather than relying on output plumbing.
+# On job 12473704 `pbsdsh ... | tee kill.out` left kill.out EMPTY --
+# pbsdsh's output reaches the job's stdout without passing through the
+# local pipe -- so the verdict could not see a kill that had plainly
+# worked (the job log shows "killed 13 rank pid(s)"). A file the
+# killer writes itself has no such dependency.
+if [ -n "${KILL_RECEIPT:-}" ]; then
+    echo "$(hostname) killed ${n}" >> "${KILL_RECEIPT}"
+fi
+# Report nothing-killed as a failure: a silent no-op here makes every
+# downstream failover assertion vacuous.
+[ "${n}" -gt 0 ]
+KILLEOF
+chmod +x "${KILLER}"
+
+# ---- kill ONE node, once ------------------------------------------------
+# Kill active[1], NOT active[0]. This is the difference between a test
+# that can fail and one that cannot.
+#
+# `swap_one_blind` always evicts active[0]. A hard `kill -9` leaves no
+# scrapeable signature at all -- job 12473704's killed attempt simply
+# STOPS mid-training at iter=42, and the scraper returns empty -- so
+# the loop falls to that blind guess. Killing node 0 means the guess is
+# right by construction, and the test passes without the loop knowing
+# anything. That is exactly what happened, and it made "failover works"
+# look better established than it was (see issue #234).
+#
+# Targeting index 1 makes the assertion real: to pass, the loop must
+# actually identify the victim rather than evict the first host in the
+# list. Today's code is expected to FAIL this, and that failing result
+# is the honest state of node identification.
+KILL_INDEX="${KILL_INDEX:-1}"
+
+# HOW to kill, not just where. These are different faults, and the
+# distinction is the point of issue #234:
+#
+#   ranks  - `kill -9` the rank processes directly. Simulates a process
+#            crash. PALS never notices (its shepherd is still alive and
+#            healthy), so NOTHING is emitted: job 12473704's log simply
+#            stops mid-training and `pbsnodes` showed the node as
+#            `job-exclusive`, identical to a healthy one. Attribution
+#            is impossible by construction, so the loop blind-guesses.
+#
+#   pals   - route the kill through PALS (`palsig -n <host> -s KILL`),
+#            so the shepherd observes the app dying on that node. This
+#            is the closer analogue of a node loss and is expected to
+#            produce the `<host>: shepherd died from signal 9` line the
+#            scraper actually registers -- i.e. the only mode that can
+#            exercise the NAMED attribution path.
+#
+# Default `pals`: the named path is the one worth testing, and `ranks`
+# is retained because it pins the unattributable case.
+KILL_MODE="${KILL_MODE:-pals}"
+chaos() {
+    local victim="${ALL_HOSTS[${KILL_INDEX}]}"
+    echo "${victim}" > "${EXPT}/victim.txt"
+    echo "[CHAOS] victim = ${victim}"
+    while [ "$(latest_ckpt_step "${CKPT}")" -lt "${KILL_AFTER_STEP}" ]; do
+        sleep 3
+        [ -f "${DONE}" ] && { echo "[CHAOS] training ended before the kill"; return 0; }
+    done
+    echo "[CHAOS] killing ranks on ${victim} at $(date +%s) (ckpt=$(latest_ckpt_step "${CKPT}"))"
+    # Run a FILE, not an inline script. `pbsdsh -- bash -c '<multi-line>'`
+    # does not survive the trip: job 12473703 got "bash: -c: line 1:
+    # syntax error: unexpected end of file" and, because of a trailing
+    # `|| true`, still printed "kill delivered" while training ran on to
+    # completion. A file has no quoting or newline exposure at all.
+    # `pbsdsh -- env VAR=... bash <script>`: pbsdsh does not forward the
+    # caller's environment, and the receipt path must reach the remote
+    # side for the killer to write it.
+    local krc
+    if [ "${KILL_MODE}" = "pals" ]; then
+        # APID: the running application PALS knows about. Without it
+        # palsig has nothing to signal, and a silent no-op here would
+        # make every downstream assertion vacuous -- the exact failure
+        # that produced two misleading verdicts already.
+        local apid
+        # Two allocations were burned guessing at `palstat -a`'s
+        # column layout: `NR>1` picked up the header token `JobID:`
+        # (12473747), then a bare-numeric fallback matched a literal
+        # `0` (12473748). Stop guessing -- ask for JSON, and DUMP the
+        # raw output either way so the format is on the record instead
+        # of being inferred from a failed kill.
+        echo "[CHAOS] --- palstat -a (text) ---"
+        palstat -a 2>&1 | sed 's/^/[CHAOS]   /' | head -12
+        echo "[CHAOS] --- palstat -a --output json ---"
+        palstat -a --output json 2>&1 | sed 's/^/[CHAOS]   /' | head -20
+        echo "[CHAOS] ---------------------------------"
+
+        # Prefer JSON: a keyed field cannot drift the way a column can.
+        apid="$(palstat -a --output json 2>/dev/null \
+            | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+apps = d if isinstance(d, list) else (
+    d.get("apps") or d.get("applications") or []
+)
+for a in apps if isinstance(apps, list) else []:
+    if isinstance(a, dict):
+        for k in ("apid", "APID", "id", "jobid"):
+            if a.get(k):
+                print(a[k]); sys.exit(0)
+' 2>/dev/null)"
+
+        if [ -z "${apid}" ]; then
+            echo "[CHAOS] FATAL: no APID from palstat -a; cannot kill via PALS"
+            echo "[CHAOS] palstat -a said:"
+            palstat -a 2>&1 | sed 's/^/[CHAOS]   /' | head -8
+            echo "no-apid" > "${RECEIPT}"
+            return 1
+        fi
+        # PBS gives `x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov`;
+        # palsd may only know the bare `x1921c7s1b0n0`. Try the name we
+        # have, then the short form, rather than assuming either --
+        # `palstat`/`palsig` cannot be probed from a login node (no
+        # palsd reachable), so this could not be settled in advance.
+        local short="${victim%%-hsn*}"; short="${short%%.*}"
+        echo "[CHAOS] palsig -n ${victim} -s SIGKILL ${apid}"
+        palsig -f -n "${victim}" -s SIGKILL "${apid}"
+        krc=$?
+        if [ "${krc}" -ne 0 ] && [ "${short}" != "${victim}" ]; then
+            echo "[CHAOS] retrying with short form: ${short}"
+            palsig -f -n "${short}" -s SIGKILL "${apid}"
+            krc=$?
+        fi
+        # palsig reports nothing per-node, so write the receipt here.
+        # Format matches the killer script's so the verdict is uniform.
+        echo "${victim} killed via-pals rc=${krc}" > "${RECEIPT}"
+    else
+        pbsdsh -n "${KILL_INDEX}" -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
+            /bin/bash "${KILLER}"
+        krc=$?
+    fi
+    echo "[CHAOS] kill rc=${krc}"
+    # Do NOT swallow this. A kill that never lands makes every downstream
+    # assertion vacuous, and that is exactly how 12473703 read as a
+    # failover bug when it was a quoting bug.
+    [ "${krc}" -eq 0 ] || echo "[CHAOS] WARNING: killer script failed"
+}
+
+chaos & CPID=$!
+
+# ---- the run under test -------------------------------------------------
+# --auto-retry needs the ACTIVE size explicitly: that is how it knows
+# where to split the allocation into active + spare.
+python3 -m ezpz.launch --auto-retry --nhosts "${ACTIVE_HOSTS}" -- \
+    python3 -m ezpz.examples.fsdp_tp \
+        --model agpt-2b --tp 1 --dataset random \
+        --train-iters "${TRAIN_ITERS}" --batch-size 1 --seq-len 512 \
+        --ckpt-dir "${CKPT}" --save-interval "${SAVE_INTERVAL}" \
+        --outdir "${EXPT}/out" 2>&1 | tee -a "${LOG}"
+RC=${PIPESTATUS[0]}
+touch "${DONE}"
+kill "${CPID}" 2>/dev/null || true
+
+# ---- verdict ------------------------------------------------------------
+# Address THIS job's dir by id, not `ls -dt | head -1`. Picking the
+# newest by mtime means that if auto-retry never creates one, the
+# verdict silently reads the PREVIOUS job's results -- which, given the
+# checks below, could report PASS from a run that never happened.
+FO_DIR="${D}/logs/failover-${PBS_JOBID%%.*}"
+[ -d "${FO_DIR}" ] || FO_DIR=""
+VICTIM="$(cat "${EXPT}/victim.txt" 2>/dev/null || echo '<none>')"
+# The killer writes this itself on the victim node. Do NOT switch this
+# back to capturing pbsdsh's stdout: that read empty on job 12473704
+# while the kill had in fact succeeded.
+KILLOUT="$(cat "${RECEIPT}" 2>/dev/null)"
+
+echo
+echo "======================= RESULT ======================="
+echo "rc=${RC}  victim=${VICTIM}"
+echo "failover dir: ${FO_DIR:-<none>}"
+[ -n "${FO_DIR}" ] && {
+    echo "--- bad_nodes.txt ---";    cat "${FO_DIR}/bad_nodes.txt"    2>/dev/null
+    echo "--- active.hostfile ---";  cat "${FO_DIR}/active.hostfile"  2>/dev/null
+    echo "--- attempts ---";         ls -1 "${FO_DIR}"/attempt-*.log 2>/dev/null
+    cp -r "${FO_DIR}" "${EXPT}/failover" 2>/dev/null || true
+}
+
+fail=0
+check() {  # check <description> <condition-rc>
+    if [ "$2" -eq 0 ]; then echo "  PASS  $1"; else echo "  FAIL  $1"; fail=1; fi
+}
+
+if [ -z "${FO_DIR}" ]; then
+    echo "  FAIL  --auto-retry produced no failover dir (did it engage?)"
+    fail=1
+else
+    BAD="$(cat "${FO_DIR}/bad_nodes.txt" 2>/dev/null)"
+    ACT="$(cat "${FO_DIR}/active.hostfile" 2>/dev/null)"
+    N_ATTEMPTS="$(ls -1 "${FO_DIR}"/attempt-*.log 2>/dev/null | wc -l)"
+
+    # Checked FIRST because everything else presumes it. Job 12473703
+    # reported three FAILs that all traced back to a kill that never
+    # landed (`pbsdsh -- bash -c` mangled the inline script) -- the
+    # failover logic was never reached, let alone wrong. If the ranks
+    # are still alive there is no bad node and nothing to conclude.
+    # Both receipt shapes: `<host> killed N` (ranks) and
+    # `<host> killed via-pals rc=0` (pals).
+    grep -qE "killed ([1-9][0-9]*$|via-pals rc=0$)" <<< "${KILLOUT}"
+    KILL_LANDED=$?
+    check "the kill actually landed on ${VICTIM}" "${KILL_LANDED}"
+
+    if [ "${KILL_LANDED}" -ne 0 ]; then
+        echo "  SKIP  every remaining check: the fault never landed, so"
+        echo "        none of them can say anything about failover"
+    else
+    # Separate the two claims. Job 12473704 conflated them: a blind
+    # rotation evicted active[0], which WAS the victim only because the
+    # kill targeted node 0, so "recorded bad" passed while the loop had
+    # identified nothing. With KILL_INDEX=1 these come apart, and the
+    # second one is the claim actually worth making.
+    grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
+
+    # Was it IDENTIFIED, or guessed? A blind rotation logs "blind
+    # rotation"; a scraped verdict logs "bad nodes: [...]". Informational
+    # for now -- see #234. This is expected to report GUESSED until a
+    # hard node death can be attributed.
+    # In `pals` mode this is an ASSERTION, not a note. Routing the kill
+    # through PALS should make the shepherd emit
+    # `<host>: shepherd died from signal 9` -- the registered scrape
+    # pattern -- so the swap must be identified rather than guessed.
+    # In `ranks` mode nothing is emitted at all (proven: job 12473704's
+    # log just stops), so a blind rotation is the CORRECT outcome and
+    # demanding otherwise would be demanding the impossible.
+    # Gate on a swap having happened AT ALL. Job 12473747 reported
+    # PASS here on a run where the kill never landed and no swap
+    # occurred: absence of "blind rotation" fell through to the else
+    # and read as "scraper identified it". No rotation is not an
+    # identified rotation -- the third vacuous-PASS bug in this
+    # harness, same shape as the first two.
+    if ! grep -qaE "blind rotation|bad nodes:" "${LOG}" 2>/dev/null; then
+        echo "  SKIP  identified-vs-guessed: no swap happened at all"
+    elif grep -qa "blind rotation" "${LOG}" 2>/dev/null; then
+        if [ "${KILL_MODE}" = "pals" ]; then
+            check "the swap was scraper-IDENTIFIED (not a blind guess)" 1
+            echo "        no shepherd line reached the log -- either PALS"
+            echo "        did not emit one, or the pattern set missed it"
+        else
+            echo "  INFO  blind guess, as expected for KILL_MODE=ranks"
+            echo "        (a bare kill -9 leaves nothing to scrape)"
+        fi
+    else
+        check "the swap was scraper-IDENTIFIED (not a blind guess)" 0
+    fi
+    ! grep -q "${VICTIM}" <<< "${ACT}"
+    check "killed host is OUT of the active hostfile" $?
+    # Ordered so the prerequisite is checked before its dependents:
+    # without a relaunch the two checks below are vacuous -- on job
+    # 12473702 they both reported PASS while the test as a whole
+    # failed, because an untouched hostfile still has N hosts and
+    # attempt-1 (which ran BEFORE the kill) naturally never mentions
+    # the victim.
+    [ "${N_ATTEMPTS}" -ge 2 ]; check "the job was relaunched (>=2 attempts)" $?
+
+    if [ "${N_ATTEMPTS}" -lt 2 ]; then
+        echo "  SKIP  remaining checks: no relaunch, so nothing to verify"
+    else
+    [ "$(wc -l < "${FO_DIR}/active.hostfile")" -eq "${ACTIVE_HOSTS}" ]
+    check "active set still has ${ACTIVE_HOSTS} hosts (a spare filled in)" $?
+
+    # The claim no in-process test can make: the post-kill attempt ran
+    # on the NEW host set. PALS prints the hosts it launched on, so the
+    # last attempt log must not name the victim.
+    LAST="$(ls -1t "${FO_DIR}"/attempt-*.log 2>/dev/null | head -1)"
+    if [ -n "${LAST}" ]; then
+        ! grep -q "${VICTIM}" "${LAST}"
+        check "final attempt did NOT run on the dead host ($(basename "${LAST}"))" $?
+    fi
+    fi
+    fi
+fi
+
+echo "======================================================"
+[ "${fail}" -eq 0 ] && echo "OVERALL: PASS" || echo "OVERALL: FAIL"
+echo "artifacts: ${EXPT}"
+exit "${fail}"

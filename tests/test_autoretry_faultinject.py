@@ -27,6 +27,7 @@ spent, because there is no way to fake elapsed silence.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -39,10 +40,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 from ezpz.launch_autoretry import (  # noqa: E402
+    PROVENANCE_BLIND,
+    PROVENANCE_SCRAPED,
     AutoRetryConfig,
+    BadNodeRecord,
     NodeAllocation,
+    parse_bad_nodes_file,
     run_with_auto_retry,
 )
+from ezpz.launch_autoretry import logger as _autoretry_logger  # noqa: E402
 
 FAULT_SCRIPT = str(Path(__file__).parent / "_faultinject.py")
 
@@ -133,7 +139,14 @@ class Harness:
 
     @property
     def bad(self) -> list[str]:
-        return self.bad_nodes.read_text().split()
+        # Column 1 only: bad_nodes.txt carries provenance columns
+        # since #233, so a whole-file .split() would report 3 tokens
+        # per retired host.
+        return [r.host for r in self.bad_records]
+
+    @property
+    def bad_records(self) -> list[BadNodeRecord]:
+        return parse_bad_nodes_file(self.bad_nodes)
 
     @property
     def active_hosts(self) -> list[str]:
@@ -186,6 +199,12 @@ class TestNamedBadNode:
             f"expected the SCRAPED host to be retired, got {h.bad} -- "
             "a blind rotation would have evicted 'healthy-0' instead"
         )
+        # ...and the artifact must SAY it was evidence, not a guess
+        # (#233). Retiring the right host for an unrecorded reason
+        # still leaves a postmortem unable to trust the file.
+        assert [(r.provenance, r.attempt) for r in h.bad_records] == [
+            (PROVENANCE_SCRAPED, 1)
+        ]
         assert BAD_HOST not in h.active_hosts, (
             "the bad host is STILL in the hostfile the next attempt reads "
             "-- the swap did not take effect where it matters"
@@ -255,6 +274,12 @@ class TestNamedBadNode:
         assert h.bad == ["healthy-0"], (
             f"expected a positional eviction of active[0], got {h.bad}"
         )
+        # The whole point of #233: this entry is a GUESS. `healthy-0`
+        # was never implicated by anything in the log, and the file
+        # has to say so or an operator will pull a healthy node.
+        assert [(r.provenance, r.attempt) for r in h.bad_records] == [
+            (PROVENANCE_BLIND, 1)
+        ]
         assert BAD_HOST in h.active_hosts, (
             "without machine patterns the scraper cannot name the bad "
             "host, so it is expected to survive the rotation"
@@ -499,6 +524,11 @@ class TestExhaustionAndCaps:
             f"got {h.attempts}"
         )
         assert len(h.bad) == 2, "spares were not actually consumed"
+        # Counting hosts must not be confused by the provenance
+        # columns: a whole-file `.read_text().split()` reports 6
+        # tokens here, not 2 (#233).
+        assert len(h.bad_nodes.read_text().split()) > len(h.bad)
+        assert [r.attempt for r in h.bad_records] == [1, 2]
 
     def test_max_failover_retries_is_respected(self, tmp_path, monkeypatch):
         """The cap counts RETRIES, so 1 means at most 2 attempts."""
@@ -578,12 +608,16 @@ class TestProgressMarkerContract:
     def test_no_output_at_all_aborts_after_two_attempts(
         self, tmp_path, monkeypatch
     ):
-        """The genuinely-silent case: no progress lines at all.
+        """The genuinely-silent case: no progress lines, no named host.
 
         Distinct from the test above -- this is a job that really did
         die before training, which the guard is *right* to abandon.
+
+        `silent_fail` rather than `shepherd`: since #232 the guard
+        requires the scraper to have named NOBODY, and `shepherd` names
+        a host. That is the point of the next test.
         """
-        h = Harness(tmp_path, FI_MODE="shepherd", FI_STEPS="0")
+        h = Harness(tmp_path, FI_MODE="silent_fail", FI_STEPS="0")
         rc = h.run(
             monkeypatch,
             nodes=(BAD_HOST, "s1", "s2"),
@@ -600,3 +634,325 @@ class TestProgressMarkerContract:
         assert len(h.bad) == 1, (
             "one spare was consumed before the guard tripped"
         )
+
+
+class TestBlindRotationMissesOffsetVictim:
+    """What blind rotation does when the dead node is not ``active[0]``.
+
+    Not a bug report in test form -- a pin on current behaviour, so the
+    day attribution lands (issue #234) this test fails loudly and gets
+    updated deliberately rather than silently continuing to pass.
+
+    Motivation is a real run. Sunspot job 12473704 killed 13 ranks with
+    ``kill -9`` and the attempt log simply STOPPED mid-training at
+    ``iter=42``: no signal line, no shepherd message, no traceback. The
+    scraper returns empty against it, so the loop fell to
+    ``swap_one_blind``. The test killed allocation node 0, which is also
+    ``active[0]`` -- exactly what blind rotation evicts -- so it looked
+    like successful identification when nothing had been identified.
+    """
+
+    def test_blind_rotation_evicts_healthy_host_and_keeps_the_dead_one(
+        self, tmp_path
+    ):
+        """Victim at ``active[1]``: the healthy host goes, the dead stays.
+
+        This is worse than not failing over. Each attempt costs a spare
+        AND a full relaunch while the actual fault stays in the active
+        set, so the job burns every spare without ever touching it.
+        """
+        hosts = [
+            f"x1921c1s{i}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+            for i in range(4)
+        ]
+        alloc = NodeAllocation.from_full_nodelist(
+            hosts, 2, tmp_path / "active.hostfile", tmp_path / "bad.txt"
+        )
+
+        victim = alloc.active[1]
+        healthy = alloc.active[0]
+        evicted, _spare = alloc.swap_one_blind()
+
+        assert evicted == healthy, (
+            "blind rotation is documented to evict active[0]; if this "
+            "changed, the reasoning in issue #234 needs revisiting"
+        )
+        assert evicted != victim
+        assert victim in alloc.active, (
+            "the dead node is still in the active set -- the next attempt "
+            "relaunches onto a host with no ranks"
+        )
+        # The eviction is recorded with no hint that it was a guess,
+        # which is the provenance gap in issue #233.
+        assert healthy in (tmp_path / "bad.txt").read_text()
+
+    def test_blind_rotation_finds_the_victim_only_at_active_zero(
+        self, tmp_path
+    ):
+        """The lucky case -- why job 12473704 passed.
+
+        Same allocation, victim at index 0 instead of 1. Nothing about
+        the loop differs; only where the victim happens to sit.
+        """
+        hosts = [
+            f"x1921c1s{i}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+            for i in range(4)
+        ]
+        alloc = NodeAllocation.from_full_nodelist(
+            hosts, 2, tmp_path / "active.hostfile", tmp_path / "bad.txt"
+        )
+
+        victim = alloc.active[0]
+        evicted, _spare = alloc.swap_one_blind()
+
+        assert evicted == victim
+        assert victim not in alloc.active
+
+    def test_a_named_host_outranks_inferred_no_progress(
+        self, tmp_path, monkeypatch
+    ):
+        r"""#232: positive evidence beats an inference from silence.
+
+        A node that dies during a long init produces a marker-free log,
+        and so does a trainer whose counter this regex does not know --
+        the regex was `\bstep=\d+` while every ezpz example emits
+        `iter=`, and that shipped. So "no markers" cannot carry a
+        terminal verdict on its own.
+
+        Here the scraper NAMES a host every attempt: real evidence of a
+        node fault, pointing the opposite way. Before the fix the loop
+        stopped at attempt 2 with a spare still free, calling a genuine
+        bad-node failover a misconfigured job. It should now keep
+        failing over until the spares run out.
+        """
+        h = Harness(tmp_path, FI_MODE="shepherd", FI_STEPS="0")
+        rc = h.run(
+            monkeypatch,
+            nodes=(BAD_HOST, "s1", "s2"),
+            active=1,
+            max_failover_retries=None,
+        )
+
+        assert rc != 0
+        assert "step=" not in h.log_text(), (
+            "this must exercise the zero-progress path"
+        )
+        assert h.attempts == 3, (
+            "a NAMED bad host with no progress markers should keep "
+            "failing over, not be filed as stuck_pre_training; got "
+            f"{h.attempts} attempts"
+        )
+        assert len(h.bad) == 2, (
+            "both spares should have been used before the loop gave up; "
+            f"got {h.bad}"
+        )
+
+    def test_stuck_verdict_says_it_is_an_inference(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """The log line must not read as a finding (#232).
+
+        An operator whose trainer prints an unrecognised counter can
+        only spot the misfire if the verdict admits it is a guess about
+        missing markers rather than an observation.
+        """
+        # `logger=` is load-bearing: conftest pins every ezpz logger to
+        # CRITICAL, so a bare `at_level(ERROR)` only lowers the ROOT
+        # level and the record is dropped at the ezpz logger before it
+        # ever propagates.
+        h = Harness(tmp_path, FI_MODE="silent_fail", FI_STEPS="0")
+        with caplog.at_level(logging.ERROR, logger=_autoretry_logger.name):
+            h.run(
+                monkeypatch,
+                nodes=(BAD_HOST, "s1", "s2"),
+                active=1,
+                max_failover_retries=None,
+            )
+
+        stop = [
+            r.getMessage()
+            for r in caplog.records
+            if "FAILOVER STOP: stuck_pre_training" in r.getMessage()
+        ]
+        assert stop, "no stuck_pre_training stop line was logged"
+        line = stop[0].lower()
+        assert "inferred" in line, (
+            "the verdict does not say it is an inference from missing "
+            f"markers: {stop[0]!r}"
+        )
+
+
+class TestUnattributedIOFailure:
+    """#231: a storage error is not evidence about any host.
+
+    Sunspot job 12473704 died of `OSError: [Errno 28] No space left on
+    device` inside a DCP checkpoint write. The PALS teardown cascade
+    named a bystander host, the scraper picked it up, and a healthy node
+    was retired while a spare was consumed.
+
+    The signatures the child emits are transcribed from that log; see
+    `_faultinject._die` for exactly which parts are captured and which
+    (the co-occurring shepherd line in `enospc_named`) are reconstructed
+    and why.
+    """
+
+    def test_enospc_retries_without_burning_a_spare(
+        self, tmp_path, monkeypatch
+    ):
+        """The headline: retry in place, blame nobody.
+
+        Retrying is right -- on the real incident `/lus/tegu` was 10%
+        full with 2 of 4 OSTs at 99-100% and `stripe_count: 1`, so a
+        reissued write has a real chance of landing on a healthy OST.
+        What is wrong is doing it at the cost of a node.
+        """
+        h = Harness(tmp_path, FI_MODE="enospc", FI_FAIL_ON="1")
+        rc = h.run(
+            monkeypatch,
+            nodes=("healthy-0", "spare-1", "spare-2"),
+            active=1,
+        )
+
+        assert rc == 0, "the ENOSPC attempt was not retried at all"
+        assert h.attempts == 2, f"expected a retry; got {h.attempts}"
+        assert h.bad == [], (
+            "a storage failure retired a node -- an I/O error inside a "
+            f"checkpoint write is not evidence about hardware; got {h.bad}"
+        )
+        assert h.active_hosts == ["healthy-0"], (
+            "the retry should run on the SAME hosts; got "
+            f"{h.active_hosts}"
+        )
+        assert h.hosts_seen == [["healthy-0"], ["healthy-0"]], (
+            "the second attempt was handed a different host set, so a "
+            f"swap happened after all: {h.hosts_seen}"
+        )
+
+    def test_enospc_does_not_retire_the_host_the_cascade_names(
+        self, tmp_path, monkeypatch
+    ):
+        """The exact bug from #231, with the scraper able to name a host.
+
+        `enospc` alone leaves the scraper empty, so it only proves a
+        *blind* rotation is avoided. This adds the shepherd line the
+        real log must have carried for the incident to have been
+        classified `BAD_NODE_KNOWN`, and asserts the named host still
+        does not land in `bad_nodes.txt`.
+        """
+        h = Harness(tmp_path, FI_MODE="enospc_named", FI_FAIL_ON="1")
+        rc = h.run(
+            monkeypatch,
+            nodes=(BAD_HOST, "spare-1", "spare-2"),
+            active=1,
+        )
+
+        assert rc == 0
+        assert h.attempts == 2
+        assert h.bad == [], (
+            "the host named by the teardown cascade was retired even "
+            "though the log explains the death as an I/O failure; got "
+            f"{h.bad}"
+        )
+        assert h.active_hosts == [BAD_HOST], (
+            f"the named host was swapped out; got {h.active_hosts}"
+        )
+
+    def test_repeated_enospc_falls_back_to_node_swapping(
+        self, tmp_path, monkeypatch
+    ):
+        """The bound, which is the whole safety argument.
+
+        Believing the storage story forever would turn a real node
+        fault that happens to emit an I/O line into an unbounded retry
+        loop on a broken host. After the consecutive budget the loop
+        reverts to normal bad-node handling and starts consuming
+        spares again.
+
+        With a child that fails every attempt: 3 free retries, then
+        swaps until the 2 spares are gone.
+        """
+        from ezpz.launch_autoretry import _MAX_CONSECUTIVE_UNATTRIBUTED
+
+        assert _MAX_CONSECUTIVE_UNATTRIBUTED == 3, (
+            "this test's arithmetic is written against a budget of 3"
+        )
+        h = Harness(tmp_path, FI_MODE="enospc")  # fails every attempt
+        rc = h.run(
+            monkeypatch,
+            nodes=("healthy-0", "spare-1", "spare-2"),
+            active=1,
+            # The budget + the spare pool are what should stop this. The
+            # cap is a BACKSTOP so a regression that removes the bound
+            # fails this test in a second instead of hanging the suite
+            # forever -- a hang reads as infrastructure trouble, not as
+            # the bug it actually is. Set well above the 6 expected.
+            max_failover_retries=9,
+        )
+
+        assert rc != 0
+        assert h.bad == ["healthy-0", "spare-1"], (
+            "after the budget the loop should resume rotating hosts; "
+            f"got {h.bad}"
+        )
+        # 3 no-blame retries (attempts 1-3), then attempt 4 swaps in
+        # spare-1, attempt 5 swaps in spare-2, attempt 6 finds no
+        # spares -> EXHAUSTED.
+        assert h.attempts == 6, (
+            "expected 3 unattributed retries then one attempt per spare; "
+            f"got {h.attempts}"
+        )
+
+    def test_the_budget_resets_after_an_unrelated_failure(
+        self, tmp_path, monkeypatch
+    ):
+        """The budget bounds a RUN of storage failures, not the job.
+
+        A job that hits ENOSPC, recovers, trains for an hour and hits it
+        again should get the full budget the second time -- otherwise a
+        long job silently loses its protection partway through.
+
+        The sequence is 2 ENOSPC, then a real shepherd kill, then 3 more
+        ENOSPC. Under a resetting counter that is 2 + swap + 3 = six
+        attempts and exactly one retired node. Under a counter that
+        merely accumulated, the fifth ENOSPC would already be past a
+        budget of 3 and would retire a second node -- so `bad` is what
+        separates the two behaviours, not the attempt count alone.
+        """
+        h = Harness(
+            tmp_path,
+            FI_MODE="enospc,enospc,shepherd,enospc,enospc,enospc",
+            FI_FAIL_ON="1,2,3,4,5,6",
+        )
+        rc = h.run(
+            monkeypatch,
+            nodes=(BAD_HOST, "spare-1", "spare-2"),
+            active=1,
+            max_failover_retries=None,
+        )
+
+        assert rc == 0, f"the run did not recover; rc={rc}"
+        assert h.attempts == 7, (
+            "expected 2 storage retries, one swap, 3 more storage "
+            f"retries, then a clean attempt; got {h.attempts}"
+        )
+        assert h.bad == [BAD_HOST], (
+            "exactly the shepherd-killed host should have been retired. "
+            "More than one means the unattributed budget did not reset "
+            f"after the intervening node failure; got {h.bad}"
+        )
+
+    def test_walltime_still_wins_over_an_enospc_line(
+        self, tmp_path, monkeypatch
+    ):
+        """Ordering: a clean wallclock kill mid-write is still walltime.
+
+        Swapping nodes cannot buy more wallclock, and neither can
+        retrying in place. The ENOSPC check sits AFTER the walltime
+        guard for exactly this reason.
+        """
+        h = Harness(tmp_path, FI_MODE="clean_walltime")
+        rc = h.run(monkeypatch)
+
+        assert rc == WALLTIME_RC
+        assert h.attempts == 1, "a clean walltime kill must not be retried"
+        assert h.bad == []

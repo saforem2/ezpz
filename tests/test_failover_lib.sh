@@ -236,7 +236,7 @@ host3"
     # Spare popped: just host5 left
     assert_file_contents "${FAILOVER_SPARE}" "host5"
     # bad_nodes.txt records what was swapped
-    assert_file_contents "${FAILOVER_BAD}" "host2"
+    assert_file_contents "${FAILOVER_BAD}" "host2  scraped"
 }
 
 test_swap_in_handles_multiple_bad_nodes() {
@@ -252,8 +252,8 @@ host5" >/dev/null
 host2
 host5"
     assert_file_contents "${FAILOVER_SPARE}" ""
-    assert_file_contents "${FAILOVER_BAD}" "host1
-host3"
+    assert_file_contents "${FAILOVER_BAD}" "host1  scraped
+host3  scraped"
 }
 
 test_swap_in_errors_when_no_spares() {
@@ -297,7 +297,7 @@ host4" >/dev/null
     assert_file_contents "${FAILOVER_ACTIVE}" "host4
 host2
 host3"
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind"
 }
 
 test_swap_one_blind_errors_when_no_spares() {
@@ -356,7 +356,37 @@ EOF
     export FAILOVER_MAX_RETRIES=2
     failover_run failing_cmd || exit 1
     # First attempt swapped host1 → host3 blindly
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
+}
+
+test_run_records_the_attempt_that_retired_each_host() {
+    # Two consecutive failures → two swaps, and the recorded attempt
+    # numbers must ADVANCE (1 then 2). A single-swap test cannot tell a
+    # threaded counter from a hardcoded 1. See #233.
+    setup_pbs_nodefile "host1
+host2
+host3
+host4" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/twice_failing_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" -le 2 ]]; then exit 1; else exit 0; fi
+EOF
+    chmod +x "${bindir}/twice_failing_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # blind rotation both times
+
+    export FAILOVER_MAX_RETRIES=3
+    failover_run twice_failing_cmd || exit 1
+    # attempt 1 evicted host1 (→host3); attempt 2 evicted host3 (→host4).
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1
+host3  blind  attempt=2"
 }
 
 test_run_walltime_143_no_retry_when_clean() {
@@ -415,7 +445,7 @@ EOF
     export FAILOVER_MAX_RETRIES=2
     failover_run bad_walltime_cmd || exit 1
     # Should have swapped host1 → host3 on the bad-node retry
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
 test_run_walltime_143_no_retry_when_only_innocent_rank_signals() {
@@ -488,7 +518,7 @@ EOF
     failover_run nonzero_exit_cmd || exit 1
     # We DID retry (nonzero rank exit was recognized as a crash, not
     # misread as a clean walltime kill) → a host was swapped out.
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
 test_run_walltime_143_no_retry_when_only_rank_exit_code_0() {
@@ -558,7 +588,7 @@ EOF
     export FAILOVER_MAX_RETRIES=2
     failover_run aurora_ur_oom_cmd || exit 1
     # Verifies we DID retry (cascade didn't mask the real OOM).
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
 test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade() {
@@ -598,7 +628,7 @@ EOF
     export FAILOVER_MAX_RETRIES=2
     failover_run real_death_with_cascade_cmd || exit 1
     # Verifies we DID retry — host1 got swapped out.
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
 test_run_swaps_named_bad_node_when_scraper_finds_one() {
@@ -625,7 +655,7 @@ EOF
     export FAILOVER_MAX_RETRIES=2
     failover_run failing_cmd || exit 1
     # Should have swapped the NAMED bad node (host1), not the first active
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  scraped  attempt=1"
 }
 
 test_run_exhausts_max_retries() {
@@ -691,7 +721,7 @@ EOF
     # we swapped host1 → host3 blindly, attempt 2 succeeded.
     # If the ANSI override DIDN'T work, we'd have returned 0 after
     # attempt 1 with NO swap, leaving bad_nodes.txt empty.
-    assert_file_contents "${FAILOVER_BAD}" "host1"
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
 test_run_ezpz_launch_injects_topology_args() {
@@ -746,6 +776,7 @@ run_test "swap_one_blind errors when no spares"               test_swap_one_blin
 printf "\n%sfailover_run%s\n" "${C}" "${N}"
 run_test "run succeeds on first attempt (no retry)"           test_run_succeeds_first_attempt
 run_test "run retries on failure, succeeds on attempt 2"      test_run_retries_on_failure_then_succeeds
+run_test "run records the attempt that retired each host"     test_run_records_the_attempt_that_retired_each_host
 run_test "run does NOT retry on walltime (143) when clean"    test_run_walltime_143_no_retry_when_clean
 run_test "run DOES retry on 143 when log has bad-node pattern" test_run_walltime_143_retries_when_bad_node_pattern_in_log
 run_test "run does NOT retry on 143 with only innocent rank-signal lines" test_run_walltime_143_no_retry_when_only_innocent_rank_signals

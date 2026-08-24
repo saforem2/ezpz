@@ -294,7 +294,10 @@ ATTEMPTS=$(ls "${D}"/logs/failover-*/attempt-*.log 2>/dev/null | wc -l | tr -d '
 # scenario, so head -1 picks it deterministically. Avoids the
 # trap of storing an unquoted glob in a variable then re-expanding it.
 BAD_NODES_FILE=$(ls "${D}"/logs/failover-*/bad_nodes.txt 2>/dev/null | head -1)
-SWAPPED_HOST=$(head -1 "${BAD_NODES_FILE}" 2>/dev/null || echo "")
+# Column 1 only: bad_nodes.txt lines carry provenance columns since
+# #233 (`<host>  scraped|blind  attempt=N`), so a bare `head -1` would
+# compare the whole line against ${ACTIVE_HOST} and never match.
+SWAPPED_HOST=$(awk 'NR==1{print $1}' "${BAD_NODES_FILE}" 2>/dev/null || echo "")
 echo "exit=${RC}  elapsed=${ELAPSED}s  attempts=${ATTEMPTS}  swapped_host='${SWAPPED_HOST}'"
 grep -E "FAILOVER STOP|bad nodes detected|swapped:" "${LOG}" | head -10
 # Assertion depends on whether this machine has a scraper pattern (preflight):
