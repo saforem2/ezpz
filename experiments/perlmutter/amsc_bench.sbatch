@@ -25,6 +25,16 @@ set -u
 set -o pipefail
 
 D="${EZPZ_DIR:-/pscratch/sd/f/foremans/projects/ezpz}"
+
+# Which torch. `.venv` inherits NERSC's pytorch/2.8.0, whose Dynamo
+# cannot trace the FSDP2 backward hook -- `--compile` aborts every rank
+# before iteration 1 (#236). `.venv-213` is built on the pytorch/2.13.0
+# module (torch 2.13.0+cu130) to see whether that is fixed. Both use
+# the module's torch rather than a pip build, so CUDA and the Slingshot
+# stack stay matched.
+VENV="${VENV:-.venv-213}"
+PY_BIN="${D}/${VENV}/bin/python"
+[ -x "${PY_BIN}" ] || { echo "FATAL: no interpreter at ${PY_BIN}"; exit 1; }
 cd "${D}" || exit 1
 echo "=== commit: $(git rev-parse --short HEAD) ==="
 echo "=== nodes: ${SLURM_NNODES} x ${SLURM_GPUS_PER_NODE:-?} GPU ==="
@@ -75,9 +85,10 @@ COMPILE_FLAG=""
 # machine. bs=8 + --compile is a fairer read of the hardware; the
 # bs=1 point is kept in the results table for comparison.
 echo "=== config: model=${MODEL} bs=${BS} seq=${SEQ} iters=${ITERS} compile=${COMPILE} ==="
+echo "=== venv=${VENV} torch=$("${PY_BIN}" -c 'import torch;print(torch.__version__)' 2>/dev/null) ==="
 NP=$(( SLURM_NNODES * 4 ))
-"${D}/.venv/bin/python" -m ezpz.launch --np "${NP}" -- \
-    "${D}/.venv/bin/python" -m ezpz.examples.fsdp_tp \
+"${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
+    "${PY_BIN}" -m ezpz.examples.fsdp_tp \
         --model "${MODEL}" --tp 1 --dataset random \
         --train-iters "${ITERS}" --batch-size "${BS}" --seq-len "${SEQ}" \
         ${COMPILE_FLAG} \
