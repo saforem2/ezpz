@@ -242,8 +242,8 @@ def _normalize_legacy_hf_json_args(
     return args, overwrite_output_dir, rewrites
 
 
-def _tied_wrap_policy_from_cli(cli_args: "list[str]") -> "list[str] | None":
-    """Decoder-layer class to wrap, if the model ties weights.
+def _model_ties_embeddings(cli_args: "list[str]") -> bool:
+    """Whether the model named on the command line ties its embeddings.
 
     Returns ``None`` when no policy is needed or one cannot be
     determined -- the caller then leaves ``fsdp_config`` untouched.
@@ -269,24 +269,13 @@ def _tied_wrap_policy_from_cli(cli_args: "list[str]") -> "list[str] | None":
             if i + 1 < len(cli_args):
                 name = cli_args[i + 1]
     if not name:
-        return None
+        return False
 
     try:
         from transformers import AutoConfig  # noqa: PLC0415
-        from transformers.models.auto.modeling_auto import (  # noqa: PLC0415
-            MODEL_FOR_CAUSAL_LM_MAPPING,
-        )
 
         cfg = AutoConfig.from_pretrained(name)
-        if not getattr(cfg, "tie_word_embeddings", False):
-            return None
-        # `MODEL_FOR_CAUSAL_LM_MAPPING` is a `_LazyAutoMapping`, whose
-        # `.get()` REQUIRES an explicit default -- unlike a dict. Calling
-        # `.get(key)` raises TypeError, which a broad `except` then turns
-        # into a silent no-op. That is exactly what happened here.
-        model_cls = MODEL_FOR_CAUSAL_LM_MAPPING.get(type(cfg), None)
-        layers = list(getattr(model_cls, "_no_split_modules", None) or [])
-        return layers or None
+        return bool(getattr(cfg, "tie_word_embeddings", False))
     except Exception as exc:
         # Never block a run over this: without a policy FSDP may still
         # work (untied models, non-FSDP runs), and a hard failure here
@@ -294,49 +283,63 @@ def _tied_wrap_policy_from_cli(cli_args: "list[str]") -> "list[str] | None":
         # not DEBUG -- a silent probe failure is how the TypeError above
         # went unnoticed.
         logger.warning(
-            "Could not determine an FSDP wrap policy for tied weights "
-            "(%s: %s); if the model ties its embeddings, FSDP may fail "
-            "with 'Parameter ... is shared with a parameter already "
-            "managed by another FSDP group' (#237).",
+            "Could not determine whether the model ties its embeddings "
+            "(%s: %s); if it does, FSDP2 may fail with 'Parameter ... "
+            "is shared with a parameter already managed by another FSDP "
+            "group' (#237).",
             type(exc).__name__,
             exc,
         )
-        return None
+        return False
 
 
 def _maybe_inject_tied_wrap_policy(cli_args: "list[str]") -> "list[str]":
-    """Add ``--fsdp_config`` when a tied model has no wrap policy.
+    """Pin FSDP **v1** when the model ties its embeddings.
 
     FSDP2 refuses to put a shared parameter in two wrap groups::
 
         ValueError: Parameter 'model.embed_tokens.weight' is shared with
         a parameter already managed by another FSDP group.
 
-    Llama-3.2-1B ties ``embed_tokens`` to ``lm_head``, and
-    ``--fsdp=auto_wrap`` arrives with NO policy, so FSDP wraps greedily
-    and eventually splits the pair -- every rank dead before step 1.
-    Wrapping at the decoder layer keeps the embedding and LM head
-    outside the wrapped units, so the tied pair stays in one group.
+    Llama-3.2-1B ties ``embed_tokens`` to ``lm_head``; accelerate >=1.9
+    defaults to FSDP2, so every rank dies before step 1 (#237).
 
-    Only acts when ``--fsdp`` is requested and the caller supplied
-    neither ``--fsdp_config`` nor
-    ``--fsdp_transformer_layer_cls_to_wrap``: an explicit choice wins.
+    **This is the version that was actually tested.** Reproduced on a
+    Perlmutter compute node (torch 2.13.0, accelerate 1.14, real
+    Llama-3.2-1B, 2 ranks) and then each candidate run against it:
+
+    ======================================  ======
+    ``transformer_layer_cls_to_wrap``       fails
+    ``activation_checkpointing: True``      fails
+    ``use_orig_params: True``               fails
+    ``fsdp_version: 1``                     **OK**
+    untie ``lm_head`` before wrapping       OK
+    ======================================  ======
+
+    The wrap-policy idea was wrong for a reason worth recording: the
+    tied tensor lives in ``model.embed_tokens`` and ``lm_head``,
+    **neither inside a decoder layer**, so a layer policy leaves both in
+    the root unit and cannot separate them.
+
+    FSDP1 over untying because untying changes the model -- an extra
+    ``vocab_size x hidden`` parameter tensor -- which changes what a
+    benchmark measures. FSDP1 keeps the weights tied and shards fine.
     """
     if not any(a == "--fsdp" or a.startswith("--fsdp=") for a in cli_args):
         return cli_args
     for a in cli_args:
-        if a.startswith(("--fsdp_config", "--fsdp_transformer_layer_cls_to_wrap")):
+        if a.startswith(("--fsdp_config", "--fsdp_version")):
             return cli_args  # caller was explicit
 
-    layers = _tied_wrap_policy_from_cli(cli_args)
-    if not layers:
+    if not _model_ties_embeddings(cli_args):
         return cli_args
 
-    cfg = json.dumps({"transformer_layer_cls_to_wrap": layers})
+    cfg = json.dumps({"fsdp_version": 1})
     logger.info(
-        "Model ties its embeddings; injecting --fsdp_config %s so the "
-        "tied parameters stay in one FSDP wrap group (#237). Pass "
-        "--fsdp_config yourself to override.",
+        "Model ties its embeddings; pinning --fsdp_config %s. FSDP2 "
+        "rejects a parameter shared between wrap groups and every rank "
+        "would die before step 1 (#237). Pass --fsdp_config yourself to "
+        "override.",
         cfg,
     )
     return list(cli_args) + ["--fsdp_config", cfg]
