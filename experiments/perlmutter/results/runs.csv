@@ -1,0 +1,2 @@
+timestamp,system,config,nodes,gpus,status,wall_time_sec,throughput_tokens_per_sec,throughput_tokens_per_sec_per_gpu,mfu,tflops,final_loss,steps,error
+2026-08-24T13:08:50Z,Perlmutter,agpt-2b/bs1/seq2048/tp1,2,8,pass,55.941,6175.041,771.88,2.32,7.237,14.734155,20,

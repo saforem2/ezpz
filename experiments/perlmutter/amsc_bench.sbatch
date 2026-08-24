@@ -49,11 +49,25 @@ mkdir -p "${OUT}"
 # init_process_group waiting for a world_size=8 that nothing ever
 # started -- 18 minutes of silence at `master_addr=...` before I killed
 # it. ezpz.launch is what builds the `srun -N.. -n..` command line.
+# Config knobs, overridable so a second point on the curve is one
+# `sbatch --export` away rather than an edit.
+MODEL="${MODEL:-agpt-2b}"
+BS="${BS:-8}"
+SEQ="${SEQ:-2048}"
+ITERS="${ITERS:-20}"
+COMPILE="${COMPILE:---compile}"
+
+# bs=1/seq2048 (job 57520568) left the A100s starved: 13.68 of 80 GiB
+# used, MFU 2.32%, and dtb ~3x dtf -- collective overhead dominating a
+# batch too small to fill the device. That measures the config, not the
+# machine. bs=8 + --compile is a fairer read of the hardware; the
+# bs=1 point is kept in the results table for comparison.
 NP=$(( SLURM_NNODES * 4 ))
 "${D}/.venv/bin/python" -m ezpz.launch --np "${NP}" -- \
     "${D}/.venv/bin/python" -m ezpz.examples.fsdp_tp \
-        --model agpt-2b --tp 1 --dataset random \
-        --train-iters 20 --batch-size 1 --seq-len 2048 \
+        --model "${MODEL}" --tp 1 --dataset random \
+        --train-iters "${ITERS}" --batch-size "${BS}" --seq-len "${SEQ}" \
+        ${COMPILE} \
         --outdir "${OUT}" 2>&1 | tee "${OUT}/train.log"
 RC=${PIPESTATUS[0]}
 
