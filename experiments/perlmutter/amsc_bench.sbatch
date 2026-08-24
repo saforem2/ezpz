@@ -4,7 +4,12 @@
 #SBATCH --nodes=2
 #SBATCH --gpus-per-node=4
 #SBATCH --ntasks-per-node=4
-#SBATCH --time=00:45:00
+#SBATCH --qos=debug
+# 25 min, not 45: the `debug` QOS caps MaxWall at 00:30:00 and a longer
+# request is rejected outright with QOSMaxWallDurationPerJobLimit. A
+# 20-iteration benchmark needs a couple of minutes; the rest is queue
+# and startup headroom.
+#SBATCH --time=00:25:00
 #SBATCH --job-name=ezpz-amsc-bench
 #SBATCH --output=%x-%j.log
 #
