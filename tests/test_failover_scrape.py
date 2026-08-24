@@ -860,3 +860,57 @@ class TestRankSignal9:
         assert scrape_bad_nodes(log, machine="sunspot") == [
             "x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov"
         ]
+
+
+class TestUnsupportedMachineWarns:
+    """A machine with no pattern set must SAY so, not fail silently.
+
+    `scrape_bad_nodes` returns `[]` both for an unsupported machine and
+    for a genuinely clean log, and only the second means "no node to
+    blame". Every Polaris failover has therefore always been blind,
+    with no error, no warning and no log line to reveal it (#229).
+    """
+
+    def test_warns_naming_the_machine_and_what_is_available(
+        self, tmp_path, caplog
+    ):
+        import ezpz.failover.scrape as sc
+
+        sc._WARNED_NO_PATTERNS.clear()
+        log = tmp_path / "boom.log"
+        log.write_text("some failure with no pattern\n")
+        # `logger=` is load-bearing: conftest pins every ezpz logger
+        # to CRITICAL, so a bare at_level only lowers the ROOT level
+        # and the record is dropped before it can propagate.
+        with caplog.at_level("WARNING", logger=sc._get_logger().name):
+            assert scrape_bad_nodes(log, machine="polaris") == []
+        msg = caplog.text
+        assert "polaris" in msg
+        assert "BLIND" in msg, "the consequence must be stated, not implied"
+        # Discovered from the package dir, so this cannot go stale.
+        assert "aurora" in msg and "sunspot" in msg
+
+    def test_warns_once_per_machine_not_once_per_attempt(
+        self, tmp_path, caplog
+    ):
+        """This runs on every retry; a repeated warning trains people
+        to ignore it."""
+        import ezpz.failover.scrape as sc
+
+        sc._WARNED_NO_PATTERNS.clear()
+        log = tmp_path / "boom.log"
+        log.write_text("failure\n")
+        with caplog.at_level("WARNING", logger=sc._get_logger().name):
+            for _ in range(4):
+                scrape_bad_nodes(log, machine="polaris")
+        assert caplog.text.count("no bad-node patterns registered") == 1
+
+    def test_a_supported_machine_is_silent(self, tmp_path, caplog):
+        import ezpz.failover.scrape as sc
+
+        sc._WARNED_NO_PATTERNS.clear()
+        log = tmp_path / "clean.log"
+        log.write_text("iter=1 loss=2.0\n")
+        with caplog.at_level("WARNING", logger=sc._get_logger().name):
+            assert scrape_bad_nodes(log, machine="sunspot") == []
+        assert "no bad-node patterns registered" not in caplog.text
