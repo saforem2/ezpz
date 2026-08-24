@@ -62,8 +62,16 @@ run () {
             --model agpt-2b --tp 1 --dataset random \
             --train-iters "${ITERS}" --batch-size 1 --seq-len 2048 \
             --outdir "${OUT}/${label}" "$@" 2>&1 \
-        | tee "${OUT}/${label}.log" | grep -aE "iter=(1|5|10|15|20) |lora|adapter|Error|Traceback|ModuleNotFound" | head -20
-    echo "### ${label} rc=${PIPESTATUS[0]}"
+        > "${OUT}/${label}.log" 2>&1
+    local rc=$?
+    # Capture rc BEFORE filtering. Piping into `grep | head` did two
+    # bad things: `head -20` closes the pipe early and SIGPIPEs tee,
+    # which can kill a still-running python, and PIPESTATUS is clobbered
+    # by the time the echo reads it. Job 57540698 reported rc=1 for a
+    # run that trained all 20 iters at 19.56% MFU -- a false failure.
+    grep -aE "iter=(1|5|10|15|20) |lora|adapter|Error|Traceback|ModuleNotFound" \
+        "${OUT}/${label}.log" | head -20 || true
+    echo "### ${label} rc=${rc}"
 }
 
 run "full-baseline"      --lora-rank 0
