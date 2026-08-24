@@ -74,11 +74,22 @@ run () {
     echo "### ${label} rc=${rc}"
 }
 
-run "full-baseline"      --lora-rank 0
-run "lora-r8-attn-mlp"   --lora-rank 8
-run "lora-r16-attn-mlp"  --lora-rank 16
-run "lora-r16-attn-only" --lora-rank 16 --lora-target attn
-run "lora-r64-attn-mlp"  --lora-rank 64
+# Which points run is selectable: five sequential runs plus ~90s of
+# ezpz.launch startup each overran the 29-minute debug allocation, and
+# r8/r16-attn-mlp were killed mid-run (job 57540698). Split across two
+# submissions rather than silently losing points.
+case "${SWEEP:-a}" in
+  a)
+    run "full-baseline"      --lora-rank 0
+    run "lora-r16-attn-only" --lora-rank 16 --lora-target attn
+    run "lora-r64-attn-mlp"  --lora-rank 64
+    ;;
+  b)
+    run "lora-r8-attn-mlp"   --lora-rank 8
+    run "lora-r16-attn-mlp"  --lora-rank 16
+    run "lora-r32-attn-mlp"  --lora-rank 32
+    ;;
+esac
 
 echo
 echo "=== artifacts: ${OUT} ==="
