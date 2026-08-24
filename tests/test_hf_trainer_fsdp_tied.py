@@ -26,16 +26,31 @@ from ezpz.examples.hf_trainer import (  # noqa: E402
     _tied_weight_keys,
 )
 
-FIXTURE = "tiny-random-llama-2"
-
-
 def _model(tie: bool):
-    """A real Llama, tiny, with tying on or off."""
-    from transformers import AutoConfig, AutoModelForCausalLM
+    """A tiny Llama built in-process, with tying on or off.
 
-    cfg = AutoConfig.from_pretrained(FIXTURE)
-    cfg.tie_word_embeddings = tie
-    model = AutoModelForCausalLM.from_config(cfg)
+    Constructed from `LlamaConfig` rather than loaded from a path or
+    the Hub: the first version of this file read a `tiny-random-llama-2`
+    directory that exists in one working tree and is not tracked, so CI
+    fell through to HuggingFace and failed with 401 Unauthorized. Tests
+    must not depend on an untracked fixture or on network access.
+
+    Small enough (2 layers, dim 32) that construction is milliseconds,
+    and it is a REAL LlamaForCausalLM, so `LlamaDecoderLayer` detection
+    and the tied embed_tokens/lm_head pair are the genuine article.
+    """
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    cfg = LlamaConfig(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        tie_word_embeddings=tie,
+    )
+    model = LlamaForCausalLM(cfg)
     if tie:
         model.tie_weights()
     return model
