@@ -32,6 +32,32 @@ export PYTHONUNBUFFERED=1
 # pytorch/2.13.0's mpi4py is not GTL-linked; without this every rank
 # segfaults in MPIDI_CRAY_init (see docs/guides/perlmutter.md).
 export MPICH_GPU_SUPPORT_ENABLED=0
+
+# ---- Slingshot networking -------------------------------------------------
+# WITHOUT this, NCCL finds no `libnccl-net` plugin and falls back to TCP
+# over the host stack. The cost is not subtle: identical config,
+# agpt-2b/bs1/seq2048, differs 13x per GPU between 1 and 2 nodes --
+#
+#     1 node / 4 A100   40,302 tok/s   30.28% MFU
+#     2 node / 8 A100    6,175 tok/s    2.31% MFU
+#
+# -- and adding the second node made the job 6.5x SLOWER in absolute
+# terms. The same inter-node path is what hung hf_trainer with
+# TCPStore `recvValue failed` (job 57524750).
+#
+# The plugin lives in the nccl module, which sets NCCL_NET="AWS
+# Libfabric" and puts plugin/lib on LD_LIBRARY_PATH. torch bundles NCCL
+# 2.29.7 while the plugin is built against 2.24.3; the net-plugin ABI is
+# versioned and stable across those, so torch's NCCL loads it.
+set +u
+module load nccl/2.24.3 2>/dev/null || echo "WARNING: nccl module failed to load"
+set -u
+echo "=== NCCL_NET=${NCCL_NET:-<unset>} ==="
+case ":${LD_LIBRARY_PATH:-}:" in
+    *nccl*plugin*) echo "=== nccl plugin on LD_LIBRARY_PATH: yes ===" ;;
+    *) echo "WARNING: nccl plugin NOT on LD_LIBRARY_PATH -- expect TCP fallback" ;;
+esac
+
 export WANDB_MODE=disabled
 export HF_HOME="${SCRATCH}/.cache/hf"
 # Read from the local cache. Job 57523900 loaded the model fine and then

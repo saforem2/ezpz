@@ -53,6 +53,32 @@ export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 # Turning it off disables GPU-aware MPI, which costs nothing here:
 # collectives go over NCCL, and ezpz uses MPI only for rank discovery.
 export MPICH_GPU_SUPPORT_ENABLED=0
+
+# ---- Slingshot networking -------------------------------------------------
+# WITHOUT this, NCCL finds no `libnccl-net` plugin and falls back to TCP
+# over the host stack. The cost is not subtle: identical config,
+# agpt-2b/bs1/seq2048, differs 13x per GPU between 1 and 2 nodes --
+#
+#     1 node / 4 A100   40,302 tok/s   30.28% MFU
+#     2 node / 8 A100    6,175 tok/s    2.31% MFU
+#
+# -- and adding the second node made the job 6.5x SLOWER in absolute
+# terms. The same inter-node path is what hung hf_trainer with
+# TCPStore `recvValue failed` (job 57524750).
+#
+# The plugin lives in the nccl module, which sets NCCL_NET="AWS
+# Libfabric" and puts plugin/lib on LD_LIBRARY_PATH. torch bundles NCCL
+# 2.29.7 while the plugin is built against 2.24.3; the net-plugin ABI is
+# versioned and stable across those, so torch's NCCL loads it.
+set +u
+module load nccl/2.24.3 2>/dev/null || echo "WARNING: nccl module failed to load"
+set -u
+echo "=== NCCL_NET=${NCCL_NET:-<unset>} ==="
+case ":${LD_LIBRARY_PATH:-}:" in
+    *nccl*plugin*) echo "=== nccl plugin on LD_LIBRARY_PATH: yes ===" ;;
+    *) echo "WARNING: nccl plugin NOT on LD_LIBRARY_PATH -- expect TCP fallback" ;;
+esac
+
 export PYTHONUNBUFFERED=1
 export WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
