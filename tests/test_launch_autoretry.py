@@ -205,7 +205,7 @@ class TestPureHelpers:
         assert _has_progress_markers(line), f"{line!r} should count"
 
     def test_progress_markers_survive_ansi_color(self, tmp_path):
-        """Color must not hide progress. Raised as a P1 in review.
+        r"""Color must not hide progress. Raised as a P1 in review.
 
         ezpz's logger colorizes when attached to a tty, and the escapes
         land INSIDE the token: `\x1b[36miter\x1b[0m=12` does not match
