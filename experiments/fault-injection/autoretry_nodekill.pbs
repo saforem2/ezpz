@@ -226,9 +226,23 @@ chaos() {
         # make every downstream assertion vacuous -- the exact failure
         # that produced two misleading verdicts already.
         local apid
-        apid="$(palstat -a 2>/dev/null | awk 'NR>1{print $1; exit}')"
+        # `NR>1` is NOT enough: `palstat -a` prints a header whose
+        # first token is `JobID:`, and job 12473747 duly ran
+        # `palsig ... -s SIGKILL JobID:` (rc=1, kill never landed).
+        # Match the APID shape instead of trusting a row offset.
+        apid="$(palstat -a 2>/dev/null \
+            | grep -oE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+            | head -1)"
+        if [ -z "${apid}" ]; then
+            # Fall back to any bare-numeric id, in case this palstat
+            # build reports APIDs in a non-UUID form. Still shape-
+            # matched, never positional.
+            apid="$(palstat -a 2>/dev/null | awk '$1 ~ /^[0-9]+$/{print $1; exit}')"
+        fi
         if [ -z "${apid}" ]; then
             echo "[CHAOS] FATAL: no APID from palstat -a; cannot kill via PALS"
+            echo "[CHAOS] palstat -a said:"
+            palstat -a 2>&1 | sed 's/^/[CHAOS]   /' | head -8
             echo "no-apid" > "${RECEIPT}"
             return 1
         fi
@@ -321,8 +335,13 @@ else
     # Both receipt shapes: `<host> killed N` (ranks) and
     # `<host> killed via-pals rc=0` (pals).
     grep -qE "killed ([1-9][0-9]*$|via-pals rc=0$)" <<< "${KILLOUT}"
-    check "the kill actually landed on ${VICTIM}" $?
+    KILL_LANDED=$?
+    check "the kill actually landed on ${VICTIM}" "${KILL_LANDED}"
 
+    if [ "${KILL_LANDED}" -ne 0 ]; then
+        echo "  SKIP  every remaining check: the fault never landed, so"
+        echo "        none of them can say anything about failover"
+    else
     # Separate the two claims. Job 12473704 conflated them: a blind
     # rotation evicted active[0], which WAS the victim only because the
     # kill targeted node 0, so "recorded bad" passed while the loop had
@@ -341,7 +360,15 @@ else
     # In `ranks` mode nothing is emitted at all (proven: job 12473704's
     # log just stops), so a blind rotation is the CORRECT outcome and
     # demanding otherwise would be demanding the impossible.
-    if grep -qa "blind rotation" "${LOG}" 2>/dev/null; then
+    # Gate on a swap having happened AT ALL. Job 12473747 reported
+    # PASS here on a run where the kill never landed and no swap
+    # occurred: absence of "blind rotation" fell through to the else
+    # and read as "scraper identified it". No rotation is not an
+    # identified rotation -- the third vacuous-PASS bug in this
+    # harness, same shape as the first two.
+    if ! grep -qaE "blind rotation|bad nodes:" "${LOG}" 2>/dev/null; then
+        echo "  SKIP  identified-vs-guessed: no swap happened at all"
+    elif grep -qa "blind rotation" "${LOG}" 2>/dev/null; then
         if [ "${KILL_MODE}" = "pals" ]; then
             check "the swap was scraper-IDENTIFIED (not a blind guess)" 1
             echo "        no shepherd line reached the log -- either PALS"
@@ -376,6 +403,7 @@ else
     if [ -n "${LAST}" ]; then
         ! grep -q "${VICTIM}" "${LAST}"
         check "final attempt did NOT run on the dead host ($(basename "${LAST}"))" $?
+    fi
     fi
     fi
 fi
