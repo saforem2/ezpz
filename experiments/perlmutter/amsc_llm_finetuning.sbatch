@@ -41,7 +41,11 @@ BS="${BS:-1}"
 MODEL="${MODEL:-meta-llama/Llama-3.2-1B}"
 
 OUT="${D}/outputs/amsc-llm-ft-${SLURM_JOB_ID}"
-mkdir -p "${OUT}"
+# HF Trainer refuses a non-empty --output_dir, and this script's own
+# `tee train.log` was enough to trip it (job 57523702: ValueError on
+# all 8 ranks). Keep the log OUTSIDE the trainer's directory.
+LOGDIR="${D}/outputs/amsc-llm-ft-${SLURM_JOB_ID}-logs"
+mkdir -p "${LOGDIR}"
 
 echo "=== config: model=${MODEL} bs=${BS} block=${BLOCK} steps=${STEPS} ==="
 echo "=== venv=${VENV} torch=$("${PY_BIN}" -c 'import torch;print(torch.__version__)' 2>/dev/null) ==="
@@ -67,10 +71,10 @@ NP=$(( SLURM_NNODES * 4 ))
         --block-size="${BLOCK}" \
         --gradient_checkpointing=true \
         --fsdp=shard_grad_op \
-        --output_dir="${OUT}" 2>&1 | tee "${OUT}/train.log"
+        --output_dir="${OUT}" 2>&1 | tee "${LOGDIR}/train.log"
 RC=${PIPESTATUS[0]}
 
 echo
 echo "=== rc=${RC} ==="
-echo "artifacts: ${OUT}"
+echo "artifacts: ${OUT} (logs: ${LOGDIR})"
 exit "${RC}"
