@@ -128,3 +128,71 @@ class TestHostsForRanks:
 
     def test_no_topology_means_no_answer(self):
         assert hosts_for_ranks("iter=1\n", [0]) == []
+
+
+class TestHostnameFormMismatch:
+    """The scraper's name and PBS's name must resolve to one machine.
+
+    Sunspot job 12473750: PBS wrote
+    ``x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov`` into the active
+    hostfile; the scraper's normalizer returned
+    ``x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov``. An exact ``in`` test
+    said they were different machines, so the loop logged
+
+        bad nodes: ['x1921c7s1b0n0.hsn...'] -- swapped 0
+
+    and fell through to a blind rotation that retired the HEALTHY host
+    and left the dead one running. Correct attribution, discarded on a
+    string comparison.
+    """
+
+    PBS = [
+        f"x1921c7s{i}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+        for i in range(4)
+    ]
+    SCRAPED_VICTIM = "x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov"
+
+    def _alloc(self, tmp_path):
+        from ezpz.launch_autoretry import NodeAllocation
+
+        return NodeAllocation.from_full_nodelist(
+            self.PBS, 2, tmp_path / "active.hostfile", tmp_path / "bad.txt"
+        )
+
+    def test_scraped_name_swaps_the_pbs_named_host(self, tmp_path):
+        alloc = self._alloc(tmp_path)
+        swaps = alloc.swap_in([self.SCRAPED_VICTIM], attempt=1)
+        assert len(swaps) == 1, (
+            "the scraped host must match the -hsn0 form in the hostfile"
+        )
+        assert not any("s1b0n0" in h for h in alloc.active), (
+            "the victim must leave the active set"
+        )
+
+    def test_it_is_recorded_as_scraped_not_blind(self, tmp_path):
+        """The provenance is the point: this was evidence, not a guess."""
+        alloc = self._alloc(tmp_path)
+        alloc.swap_in([self.SCRAPED_VICTIM], attempt=1)
+        line = (tmp_path / "bad.txt").read_text().strip()
+        assert "scraped" in line and "blind" not in line
+
+    def test_the_hostfile_native_name_is_what_gets_recorded(self, tmp_path):
+        """Record the name the hostfile uses, not the normalized one.
+
+        Anything reading bad_nodes.txt back against a PBS nodefile
+        needs the form PBS uses.
+        """
+        alloc = self._alloc(tmp_path)
+        alloc.swap_in([self.SCRAPED_VICTIM], attempt=1)
+        assert (tmp_path / "bad.txt").read_text().startswith(
+            "x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+        )
+
+    def test_a_different_node_still_does_not_match(self, tmp_path):
+        """The loosening must not make every host equivalent."""
+        alloc = self._alloc(tmp_path)
+        swaps = alloc.swap_in(
+            ["x1921c7s9b0n0.hsn.cm.sunspot.alcf.anl.gov"], attempt=1
+        )
+        assert swaps == []
+        assert (tmp_path / "bad.txt").read_text() == ""

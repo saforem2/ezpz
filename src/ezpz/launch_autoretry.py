@@ -467,6 +467,45 @@ class NodeAllocation:
             if r.provenance == PROVENANCE_BLIND
         ]
 
+    @staticmethod
+    def _node_key(host: str) -> str:
+        """Canonical identity of a host, for comparison only.
+
+        PBS hands out `x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov`
+        while the scraper's normalizer returns the plain
+        `x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov`. Both name the same
+        machine, and an exact `in` test says they do not.
+
+        Sunspot job 12473750 is the cost of that: the scraper correctly
+        identified the killed node, and the loop logged
+
+            bad nodes: ['x1921c7s1b0n0.hsn...'] -- swapped 0
+
+        then fell through to a blind rotation that retired the HEALTHY
+        host and left the dead one running. Named attribution worked
+        and was discarded on a string comparison.
+
+        Reduce to the leading node token: strip any `-hsnN` interface
+        suffix and the domain. That is the part that identifies the
+        machine; everything after it describes how to reach it.
+        """
+        head = host.split(".", 1)[0]
+        return head.split("-hsn", 1)[0]
+
+    def _match_active(self, host: str) -> Optional[str]:
+        """The active entry naming the same machine as *host*.
+
+        Returns the string AS IT APPEARS in `self.active`, so callers
+        keep writing hostfile-native names, not normalized ones.
+        """
+        if host in self.active:  # exact match: cheap and most common
+            return host
+        key = self._node_key(host)
+        for a in self.active:
+            if self._node_key(a) == key:
+                return a
+        return None
+
     def swap_in(
         self,
         bad_hosts: Sequence[str],
@@ -488,9 +527,11 @@ class NodeAllocation:
         """
         swaps: list[tuple[str, str]] = []
         for bad in bad_hosts:
-            if bad not in self.active:
+            active_host = self._match_active(bad)
+            if active_host is None:
                 logger.debug("skip swap: %s not in active set", bad)
                 continue
+            bad = active_host
             if not self.spare:
                 raise RuntimeError(
                     f"out of spare nodes — cannot replace {bad}"
