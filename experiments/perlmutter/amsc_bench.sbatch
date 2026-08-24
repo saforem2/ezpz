@@ -44,10 +44,17 @@ mkdir -p "${OUT}"
 # --dataset random: the benchmark measures throughput, and a real corpus
 # would add dataloader variance plus an offline-cache dependency that
 # says nothing about the machine.
-"${D}/.venv/bin/python" -m ezpz.examples.fsdp_tp \
-    --model agpt-2b --tp 1 --dataset random \
-    --train-iters 20 --batch-size 1 --seq-len 2048 \
-    --outdir "${OUT}" 2>&1 | tee "${OUT}/train.log"
+# Through `ezpz.launch`, NOT a bare `python3 -m`. Job 57519659 called
+# the module directly: that runs ONE process, which then blocks in
+# init_process_group waiting for a world_size=8 that nothing ever
+# started -- 18 minutes of silence at `master_addr=...` before I killed
+# it. ezpz.launch is what builds the `srun -N.. -n..` command line.
+NP=$(( SLURM_NNODES * 4 ))
+"${D}/.venv/bin/python" -m ezpz.launch --np "${NP}" -- \
+    "${D}/.venv/bin/python" -m ezpz.examples.fsdp_tp \
+        --model agpt-2b --tp 1 --dataset random \
+        --train-iters 20 --batch-size 1 --seq-len 2048 \
+        --outdir "${OUT}" 2>&1 | tee "${OUT}/train.log"
 RC=${PIPESTATUS[0]}
 
 echo
