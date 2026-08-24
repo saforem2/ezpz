@@ -155,12 +155,25 @@ failures.
 ## Auto-retry on bad-node failure (`--auto-retry`)
 
 `--auto-retry` engages the failover loop. On every non-zero exit,
-ezpz scrapes the log for known bad-node signatures (Aurora PALS
-shepherd-9, gloo TCP peer-closed), swaps each named host out for a
-spare from the rest of the PBS allocation, and re-runs the command.
+ezpz scrapes the log for known bad-node signatures (Aurora/Sunspot
+PALS shepherd-9, gloo TCP peer-closed), swaps each named host out for
+a spare from the rest of the PBS allocation, and re-runs the command.
 Unlike `--retries N`, the loop is *unbounded* by default — it
 continues until one of the conditions in the **termination matrix**
 below fires.
+
+!!! warning "Most real failures name no host"
+
+    Those two signatures are the *only* ones that yield a named swap.
+    Anything else — a `kill -9`, an I/O error, a silent hang, an
+    unrecognised traceback — scrapes empty and falls to
+    `swap_one_blind`, which evicts `active[0]` with no evidence at all.
+    That still makes forward progress, and on a real Sunspot node-kill
+    it recovered the job, but it can retire a healthy node
+    ([#233](https://github.com/saforem2/ezpz/issues/233),
+    [#234](https://github.com/saforem2/ezpz/issues/234)). Size your
+    spare pool with that in mind, and see
+    [Node-kill postmortem](../../guides/autoretry-nodekill.md).
 
 ```bash
 # 50 nodes allocated by PBS on Aurora (12 ranks/node = 600 GPUs).
@@ -282,7 +295,8 @@ ezpz launch --auto-retry --np 512 --spare-nodes 5 -- ...
 ### Termination matrix
 
 Every termination logs a single `FAILOVER STOP: <reason>` line so
-post-mortem `grep` is reliable.
+post-mortem `grep` is reliable — in the **job's** stdout, not in
+`attempt-*.log`.
 
 | # | Condition                                              | Result                |
 |---|--------------------------------------------------------|-----------------------|
@@ -342,16 +356,30 @@ What the classifier does step by step:
 5. `rc==143 AND crash_patterns` → **bad-node retry path**, not
    `WALLTIME`. Without the strip we'd still get to bad-node retry
    (the cascade lines also contain `died from signal`), but we'd
-   reach it via the *wrong* condition — and we'd be at risk of
-   tagging `x4610c4s5b0n0` as a bad node when only
-   `x4610c4s3b0n0` is the actual culprit.
-6. Scraper picks up the hostname from the
-   `x4610c4s3b0n0.hsn...: rank 7 exited with code 1` line (or, if
-   the scraper missed it because it's not in the explicit pattern
-   set, falls through to `swap_one_blind`).
-7. `bad_nodes.txt` gets `x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov`.
-   `active.hostfile` is rewritten with that host replaced by the
-   next spare.
+   reach it via the *wrong* condition — a clean walltime kill, which
+   emits nothing but cascade lines, would take the same path and burn
+   a spare on every job. (The strip protects the crash *verdict*; the
+   scraper has its own, independent exclusion for cascade lines, so
+   `x4610c4s5b0n0` is never scraped either way.)
+6. The scraper runs — and finds **nothing**. `rank N exited with code K`
+   is a crash *pattern* (step 4) but it is **not** a scrape pattern: the
+   Aurora/Sunspot pattern sets register only `shepherd died from signal 9`
+   and the gloo peer-closed signature. Confirm it yourself:
+
+    ```console
+    $ printf 'x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov: rank 7 exited with code 1\n' > /tmp/ur.log
+    $ python3 -m ezpz.failover --machine aurora /tmp/ur.log
+    $          # empty
+    ```
+
+7. So this lands on row 6, not row 5: `swap_one_blind` evicts
+   `active[0]` and `bad_nodes.txt` records *that* host — which is
+   `x4610c4s3b0n0` only if it happened to be first in the active set.
+   `active.hostfile` is rewritten with the evicted host replaced by the
+   next spare. Getting a **named** swap here requires a
+   `shepherd died from signal 9` line; see
+   [Node-kill postmortem](../../guides/autoretry-nodekill.md) for a real
+   run where every swap was blind.
 8. Backoff 5 seconds, run `attempt-2.log`. The retry uses the
    updated active set; the bad GPU is no longer in the training
    pool.
@@ -370,22 +398,40 @@ After a run finishes (success, walltime, or exhausted), the
 A few one-liners:
 
 ```bash
-# What was the final verdict?
-grep "FAILOVER STOP" logs/failover-*/attempt-*.log
+# What was the final verdict, and were the swaps named or blind?
+# NOTE: these lines are the SUPERVISOR's, so they land in the job's own
+# stdout (the #PBS -o file) — NOT in attempt-*.log, which only contains
+# the child's output. Grep the job log:
+grep -E "FAILOVER STOP|blind rotation|\[auto-retry\] attempt" <your-job>.log
 
 # Which nodes were swapped out across all attempts?
+# Careful: this file does NOT distinguish "scraper named it" from
+# "swap_one_blind evicted active[0]" — see issue #233.
 cat logs/failover-*/bad_nodes.txt
 
 # Which step did each attempt reach before dying?
+# Two traps: (1) `iter=N` is what every ezpz example emits, `step: N` is
+# torchtitan's; (2) ezpz colorizes its logs, and the escapes land INSIDE
+# the token (`\e[36miter\e[0m=42`), so a naive grep matches nothing —
+# strip ANSI first, exactly as classify_attempt does.
 for f in logs/failover-*/attempt-*.log; do
   echo "=== $f ==="
-  grep -oE "step:[[:space:]]+[0-9]+" "$f" | tail -1
+  sed -e 's/\x1b\[[0-9;]*m//g' "$f" \
+    | grep -oE "\b(iter|step)[[:space:]]*[=:][[:space:]]*[0-9]+" | tail -1
 done
 
-# Was the failure a real hardware death or just a walltime hit?
-grep -E "OutOfMemoryError|UR_RESULT_ERROR|gloo.*Connection closed|shepherd died" \
+# Was the failure a real hardware death, an I/O failure, or a walltime hit?
+grep -E "OutOfMemoryError|UR_RESULT_ERROR|gloo.*Connection closed|shepherd died|No space left on device|rank [0-9]+ exited with code [1-9]" \
   logs/failover-*/attempt-*.log
 ```
+
+!!! tip "A silent death leaves nothing to grep"
+
+    A `kill -9`'d rank set produces no signature at all — the log just
+    stops mid-training. If the last line of `attempt-N.log` is an
+    ordinary metrics line and the next attempt exists, that is what
+    happened, and the swap was blind. See
+    [Node-kill postmortem](../../guides/autoretry-nodekill.md).
 
 ### Default idle-output watchdog
 
@@ -411,8 +457,13 @@ Per-job, in `$(pwd)/logs/failover-<jobid>/`:
   place as nodes are swapped. Always reflects what the next attempt
   will run on.
 - `bad_nodes.txt` — every host that's been swapped out (named
-  swap_in *and* blind rotations). Append-only.
-- `attempt-N.log` — combined stdout+stderr of attempt N.
+  swap_in *and* blind rotations). Append-only. **It does not record
+  which** — a host evicted by a blind rotation looks identical to one
+  the scraper named, so do not read this file as a hardware verdict
+  ([#233](https://github.com/saforem2/ezpz/issues/233)).
+- `attempt-N.log` — combined stdout+stderr of attempt N. The
+  supervisor's own `[auto-retry]` lines (`blind rotation`,
+  `FAILOVER STOP`) are **not** here; they go to the job's stdout.
 
 > **Note on `active.hostfile` mutation.** The file is rewritten in
 > place between attempts. If you `cat` it from a second shell
