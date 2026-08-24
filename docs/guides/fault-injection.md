@@ -185,15 +185,25 @@ on a different node set. Node-swapping works on real hardware.
 !!! warning "The same run exposed a classifier bug"
 
     Attempt 2 died of `OSError: [Errno 28] No space left on device`
-    during a checkpoint save — the experiment kept every 22 GB
-    checkpoint and filled a shared filesystem. `--auto-retry` scraped a
-    host out of the resulting PALS teardown cascade and retired
-    `s4b0n0`, a healthy node, then relaunched into the same full disk.
+    during a checkpoint save. `--auto-retry` scraped a host out of the
+    resulting PALS teardown cascade and retired `s4b0n0` — a healthy
+    node — because a whole-job failure whose cascade happens to name a
+    host is read as that host being bad. Tracked in
+    [#231](https://github.com/saforem2/ezpz/issues/231).
 
-    A whole-job failure whose cascade happens to name a host is read as
-    that host being bad. Tracked in
-    [#231](https://github.com/saforem2/ezpz/issues/231). The experiment
-    now bounds its own footprint and refuses to start without room.
+    The disk itself is worth a second look, because the obvious reading
+    is wrong. `/lus/tegu` was at **10%** full. Two of its four OSTs were
+    at 99–100% while the other two sat at 6–7%, and the directory
+    striped `stripe_count: 1`, so every shard file lands wholly on one
+    round-robin-chosen OST. Roughly half the writes hit a full OST and
+    failed; the rest succeeded.
+
+    So this ENOSPC was **retryable** — the same write, reissued, has a
+    real chance of landing on a healthy OST. "Out of space" on Lustre
+    does not imply the filesystem is out of space, and a classifier
+    that treats it as terminal would give up on a recoverable job. The
+    experiment still bounds its own footprint, since ~331 GB of
+    unpruned checkpoints is what pushed those OSTs over.
 
 Two harness bugs are worth recording, because both produced confident
 wrong verdicts before any of the above was true:
