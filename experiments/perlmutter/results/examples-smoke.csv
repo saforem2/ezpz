@@ -1,0 +1,5 @@
+system,example,nodes,gpus,result,detail
+Perlmutter,test,2,8,PASS,20 iters
+Perlmutter,minimal,2,8,PASS,
+Perlmutter,diffusion,2,8,PARTIAL,"reached step=0 with a real loss (1.300451) then stalled; ran under HF_DATASETS_OFFLINE=1 — dataloader dependency not confirmed either way"
+Perlmutter,vit,2,8,BLOCKED,"hangs at 'warmup step 0 / 1'; uses MNIST, which is NOT in the HF cache and the harness forces HF_DATASETS_OFFLINE=1 — a download it can never complete, not a CUDA bug"
