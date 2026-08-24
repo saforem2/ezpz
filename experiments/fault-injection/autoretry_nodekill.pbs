@@ -31,6 +31,8 @@
 #   * `--auto-retry` drives the retry loop, not a bash `while`
 #   * `pbsdsh -n <index>` kills ranks on ONE node, so exactly one host
 #     is bad and three stay healthy
+#   * that index is 1, not 0, so a blind rotation (which always evicts
+#     active[0]) cannot pass the test by accident -- see KILL_INDEX
 #
 # PASS requires all four, checked at the end:
 #   1. the killed host is named in bad_nodes.txt
@@ -163,12 +165,24 @@ KILLEOF
 chmod +x "${KILLER}"
 
 # ---- kill ONE node, once ------------------------------------------------
-# `pbsdsh -n 0` targets the first node in the allocation, which is
-# active[0] -- the host auto-retry should retire. Killing a single node
-# is the whole point: with every node dead there is no bad-vs-healthy
-# distinction and nothing to swap.
+# Kill active[1], NOT active[0]. This is the difference between a test
+# that can fail and one that cannot.
+#
+# `swap_one_blind` always evicts active[0]. A hard `kill -9` leaves no
+# scrapeable signature at all -- job 12473704's killed attempt simply
+# STOPS mid-training at iter=42, and the scraper returns empty -- so
+# the loop falls to that blind guess. Killing node 0 means the guess is
+# right by construction, and the test passes without the loop knowing
+# anything. That is exactly what happened, and it made "failover works"
+# look better established than it was (see issue #234).
+#
+# Targeting index 1 makes the assertion real: to pass, the loop must
+# actually identify the victim rather than evict the first host in the
+# list. Today's code is expected to FAIL this, and that failing result
+# is the honest state of node identification.
+KILL_INDEX="${KILL_INDEX:-1}"
 chaos() {
-    local victim="${ALL_HOSTS[0]}"
+    local victim="${ALL_HOSTS[${KILL_INDEX}]}"
     echo "${victim}" > "${EXPT}/victim.txt"
     echo "[CHAOS] victim = ${victim}"
     while [ "$(latest_ckpt_step "${CKPT}")" -lt "${KILL_AFTER_STEP}" ]; do
@@ -184,7 +198,7 @@ chaos() {
     # `pbsdsh -- env VAR=... bash <script>`: pbsdsh does not forward the
     # caller's environment, and the receipt path must reach the remote
     # side for the killer to write it.
-    pbsdsh -n 0 -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
+    pbsdsh -n "${KILL_INDEX}" -- /usr/bin/env "KILL_RECEIPT=${RECEIPT}" \
         /bin/bash "${KILLER}"
     local krc=$?
     echo "[CHAOS] kill rc=${krc}"
@@ -254,7 +268,22 @@ else
     grep -qE "killed [1-9][0-9]*$" <<< "${KILLOUT}"
     check "the kill actually landed on ${VICTIM}" $?
 
+    # Separate the two claims. Job 12473704 conflated them: a blind
+    # rotation evicted active[0], which WAS the victim only because the
+    # kill targeted node 0, so "recorded bad" passed while the loop had
+    # identified nothing. With KILL_INDEX=1 these come apart, and the
+    # second one is the claim actually worth making.
     grep -q "${VICTIM}" <<< "${BAD}"; check "killed host is recorded bad" $?
+
+    # Was it IDENTIFIED, or guessed? A blind rotation logs "blind
+    # rotation"; a scraped verdict logs "bad nodes: [...]". Informational
+    # for now -- see #234. This is expected to report GUESSED until a
+    # hard node death can be attributed.
+    if grep -qa "blind rotation" "${LOG}" 2>/dev/null; then
+        echo "  INFO  the swap was a BLIND GUESS (no scrapeable signature)"
+    else
+        echo "  INFO  the swap was SCRAPER-IDENTIFIED"
+    fi
     ! grep -q "${VICTIM}" <<< "${ACT}"
     check "killed host is OUT of the active hostfile" $?
     # Ordered so the prerequisite is checked before its dependents:
