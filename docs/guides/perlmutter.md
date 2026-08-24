@@ -133,6 +133,85 @@ Aurora/Sunspot series, not to flatter the interconnect.
     `-NO-OFI-PLUGIN` with an `error` note rather than deleted, since
     the failure mode is more useful than the absence.
 
+## Failover on SLURM
+
+`--auto-retry` works here, but only after two SLURM-specific bugs were
+fixed. Validated on job **57541913**: 4 nodes split 2 active + 2 spare,
+ranks SIGKILLed on `active[1]`.
+
+```text
+bad_nodes.txt:   nid001544  scraped  attempt=1
+active.hostfile: nid001304
+                 nid002821
+attempts: 2
+```
+
+The victim is named **with evidence** (`scraped`, not a blind guess),
+removed from the active set, replaced by a spare, and the job relaunched.
+
+The kill deliberately targets `active[1]`, never `active[0]` — a blind
+rotation always evicts `active[0]`, so killing it would let a guess pass
+as identification. That design is what exposed three stacked bugs on PBS
+([node-kill postmortem](autoretry-nodekill.md)).
+
+### The two bugs
+
+**A killed node read as `WALLTIME`** ([#238](https://github.com/saforem2/ezpz/issues/238)).
+`srun` reports a SIGKILLed rank as **rc=143** — the same code as a clean
+walltime expiry — and emits none of the PALS signatures the classifier
+uses to tell them apart. Every killed node on SLURM therefore collapsed
+to "the clock ran out" and nothing failed over. The fix matches what
+`srun` actually prints:
+
+```text
+srun: error: nid001321: tasks 4-7: Killed       <- the victim
+srun: error: nid001320: tasks 0-3: Terminated   <- the cascade
+```
+
+`Killed` only, never `Terminated` — the latter is what every rank gets
+at normal teardown, so matching it would retire a node on every expiring
+job.
+
+**The rewritten hostfile never reached `srun`**
+([#235](https://github.com/saforem2/ezpz/issues/235)) — see above.
+
+### Still worth knowing
+
+`src/ezpz/bin/failover.sh` has **no SLURM branches at all**. The bash
+failover library is PBS-only, so Python's `--auto-retry` is the only
+route on Perlmutter.
+
+## SLURM discovery functions
+
+Every `ezpz.slurm` helper is unit-tested against mocked `subprocess`
+output. Job 57540535 ran them against a real scheduler for the first
+time, and cross-checked the nodelist against `scontrol`:
+
+```text
+OK  get_slurm_jobid_of_active_job:     57540535
+OK  get_nodelist_from_slurm_jobid:     ['nid001288','nid001568','nid002657','nid003548']
+OK  get_slurm_running_jobs:            ['57540534','57540535']
+OK  get_slurm_nodefile_of_active_job:  .../nodefile-57540535
+OK  build_launch_cmd:                  srun -u --verbose -N4 -n16 --gpus-per-node=4
+nodelist matches scontrol: True (4 hosts)
+```
+
+## LoRA
+
+First validation on anything other than Intel XPU. `agpt-2b`, 2 nodes /
+8 A100, bs=1 seq2048, 20 iters:
+
+| config | tok/s | MFU | TFLOPS |
+|---|---:|---:|---:|
+| full fine-tune (rank 0) | 52,060 | 19.56% | 61.0 |
+| **LoRA r16, attn only** | **90,878** | **23.50%** | **73.3** |
+| LoRA r64, attn+mlp | 82,633 | 22.12% | 69.0 |
+
+**1.75×** and **1.59×** over the full fine-tune — the expected shape,
+since frozen base weights mean no optimizer state and a much smaller
+backward. The baseline's 19.56% independently matches the 19.25% from a
+separate 2-node run, so the sweep produces comparable numbers.
+
 ## Environment notes
 
 Three Perlmutter-specific hazards, each of which cost a job — or, in the
