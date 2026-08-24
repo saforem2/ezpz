@@ -34,6 +34,12 @@ export PYTHONUNBUFFERED=1
 export MPICH_GPU_SUPPORT_ENABLED=0
 export WANDB_MODE=disabled
 export HF_HOME="${SCRATCH}/.cache/hf"
+# Read from the local cache. Job 57523900 loaded the model fine and then
+# hung at step 0 on an HTTP GET for the dataset until walltime (rc=143,
+# zero loss lines) -- `--streaming` fetches per batch over the network
+# no matter what is cached, and the compute nodes cannot sustain that.
+# Both the model and dataset are already in HF_HOME.
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 STEPS="${STEPS:-20}"
 BLOCK="${BLOCK:-8192}"
@@ -54,7 +60,6 @@ echo "=== nodes=${SLURM_NNODES} nodelist=${SLURM_JOB_NODELIST} ==="
 NP=$(( SLURM_NNODES * 4 ))
 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
     "${PY_BIN}" -m ezpz.examples.hf_trainer \
-        --streaming \
         --dataset_name=eliplutchok/fineweb-small-sample \
         --tokenizer_name "${MODEL}" \
         --model_name_or_path "${MODEL}" \
