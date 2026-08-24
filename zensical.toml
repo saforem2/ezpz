@@ -56,6 +56,7 @@ nav = [
         { "🧪 Fault Injection & --auto-retry" = "guides/fault-injection.md" },
         { "🔪 Node-Kill Postmortem" = "guides/autoretry-nodekill.md" },
         { "🖥️ Perlmutter (SLURM/A100)" = "guides/perlmutter.md" },
+        { "📊 agpt-2b across machines" = "guides/xmachine-agpt2b.md" },
         "recipes.md",
         "reference.md",
         "history.md",
