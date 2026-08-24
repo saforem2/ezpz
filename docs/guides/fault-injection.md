@@ -141,6 +141,12 @@ can match itself.
 | `hang` | goes silent | watchdog kill, rc 124 |
 | `sigkill` | `SIGKILL`s itself | negative rc, retried |
 | `silent_fail` | nothing a scraper can name | `BAD_NODE_BLIND` |
+| `enospc` | `OSError: [Errno 28] No space left on device` plus the PALS teardown cascade, rc 143 | `RETRYABLE_UNATTRIBUTED` — retried, no spare burned³ |
+| `enospc_named` | the same, with a `shepherd died from signal 9` line the scraper can name | `RETRYABLE_UNATTRIBUTED` — the named host is **not** retired³ |
+
+`FI_MODE` also accepts a comma-separated list, in which case the Nth
+entry drives attempt N (the last repeats). That is how the
+budget-reset test alternates failure kinds within one run.
 
 ¹ Named only when the IP reverse-resolves, which needs `getent` — so
 off-cluster it falls back to a blind rotation.
@@ -152,9 +158,17 @@ classifier strips `rank N died from signal 11|15` before matching crash
 patterns, which is what keeps a walltime expiry from burning a spare on
 every job.
 
+³ The ENOSPC traceback and cascade are transcribed from Sunspot job
+12473704 (see the warning below). Only the co-occurring shepherd line
+in `enospc_named` is reconstructed: the excerpt in
+[#231](https://github.com/saforem2/ezpz/issues/231) scrapes to nothing
+on its own, yet the incident was classified `BAD_NODE_KNOWN`, so the
+full log must have carried a signature the scraper matches. Both
+signatures are real; only their pairing is inferred.
+
 ## Running it yourself
 
-The tests are the fast path — 20 of them, about six seconds, no
+The tests are the fast path — 29 of them, about fifteen seconds, no
 allocation:
 
 ```bash
@@ -214,7 +228,17 @@ different node set. **Node-swapping works on real hardware.**
     `swap_one_blind` evicting `active[0]`. `pbsdsh -n 0` happens to kill
     the first allocation node, which *is* `active[0]`, so the guess was
     right by construction of the test. Kill `active[1]` instead and
-    today's code retires a healthy node and leaves the dead one in.
+    today's code retires a healthy node and leaves the dead one in
+    ([#234](https://github.com/saforem2/ezpz/issues/234)).
+
+    Attempt 2 compounded it: an `OSError: [Errno 28] No space left on
+    device` during a checkpoint save retired `s4b0n0`, a healthy node.
+    Note this was *also* a blind eviction, not the scraper believing the
+    teardown cascade — the cascade lines scrape to `[]`, verified. Since
+    [#231](https://github.com/saforem2/ezpz/issues/231) a storage error
+    classifies as `RETRYABLE_UNATTRIBUTED`, retrying in place without
+    retiring a node or consuming a spare (see the
+    [termination matrix](../cli/launch/index.md#termination-matrix)).
 
     Attempt 2 shows the cost directly: it evicted `s4b0n0`, a healthy
     node rotated in one attempt earlier, purely for sitting at index 0.

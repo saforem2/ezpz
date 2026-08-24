@@ -37,6 +37,7 @@ from ezpz.launch_autoretry import (
     ClassificationResult,
     NodeAllocation,
     TerminationReason,
+    _MAX_CONSECUTIVE_UNATTRIBUTED,
     _backoff_for_attempt,
     _extract_inner_rc,
     _has_crash_patterns,
@@ -439,8 +440,9 @@ class TestClassifyAttempt:
         )
 
     def test_stuck_pre_training_when_prior_also_zero_steps(self, tmp_path):
-        # Prior attempt: no progress. Current attempt: also no progress.
-        # → STUCK_PRE_TRAINING regardless of rc shape.
+        # Prior attempt: no progress. Current attempt: also no progress,
+        # AND the scraper named nobody → STUCK_PRE_TRAINING regardless
+        # of rc shape.
         log = _write(
             tmp_path / "log", "Execution finished with 1\nimport error\n"
         )
@@ -449,6 +451,60 @@ class TestClassifyAttempt:
                 1, log, [], prior_attempt_had_progress=False
             ).reason
             is TerminationReason.STUCK_PRE_TRAINING
+        )
+
+    def test_named_host_outranks_zero_progress(self, tmp_path):
+        r"""#232: a scraped host is evidence; missing markers are not.
+
+        Absent progress markers are consistent with a job that never
+        started AND with a node that died during a long init AND with a
+        trainer whose counter this regex does not know (the regex was
+        `\bstep=\d+` while every ezpz example emits `iter=`, and that
+        shipped). A named host is positive evidence for exactly one of
+        those, so it wins.
+
+        Same structure as WALLTIME's `and not crash` clause.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
+        )
+
+    def test_named_host_with_zero_progress_exhausts_rather_than_stuck(
+        self, tmp_path
+    ):
+        """The named-host override is bounded by the spare pool.
+
+        Failing over on a named host costs a spare each time, so the
+        pool ends the loop even when no progress marker ever appears --
+        the override cannot spin forever.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+                has_spares=False,
+            ).reason
+            is TerminationReason.EXHAUSTED
         )
 
     def test_progress_overrides_stuck_guard(self, tmp_path):
@@ -508,6 +564,177 @@ class TestClassifyAttempt:
         assert (
             classify_attempt(0, log, []).reason
             is TerminationReason.BAD_NODE_BLIND
+        )
+
+    # -- unattributed storage failures (#231) --------------------------
+    #
+    # The excerpt below is transcribed from Sunspot job 12473704 (see
+    # the issue and docs/guides/fault-injection.md), not invented: a DCP
+    # checkpoint write hit ENOSPC, and the two hosts named afterwards
+    # are bystanders the PALS teardown cascade printed.
+
+    _ENOSPC_LOG = (
+        "iter=40 loss=0.5\n"
+        "[rank23]:   File "
+        '".../torch/distributed/checkpoint/filesystem.py", '
+        "line 520, in create_stream\n"
+        "[rank23]:     with path.open(mode) as stream:\n"
+        "[rank23]: OSError: [Errno 28] No space left on device\n"
+        "\n"
+        "x1921c1s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 16 "
+        "exited with code 1\n"
+        "x1921c1s4b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: rank 0 died "
+        "from signal 15\n"
+    )
+
+    def test_enospc_is_unattributed_not_a_named_bad_node(self, tmp_path):
+        """The bug in #231, at the classifier.
+
+        A named host plus a storage error is NOT a bad node: the error
+        explains the death on its own, and the host is whatever the
+        teardown cascade happened to print.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(
+            143,
+            log,
+            ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+            prior_attempt_had_progress=True,
+        )
+        assert res.reason is TerminationReason.RETRYABLE_UNATTRIBUTED
+        assert res.has_unattributed_io is True
+
+    def test_enospc_is_retried_not_terminal(self, tmp_path):
+        """Retryable, deliberately.
+
+        The first version of #231 proposed a terminal FATAL_ENVIRONMENT
+        on `Errno 28`. On the real incident `/lus/tegu` was 10% full
+        with 2 of 4 OSTs at 99-100% and `stripe_count: 1`, so a
+        reissued write can land on a healthy OST -- a terminal verdict
+        would have killed a recoverable job.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(143, log, [], prior_attempt_had_progress=True)
+        assert res.reason is TerminationReason.RETRYABLE_UNATTRIBUTED, (
+            "an ENOSPC that a retry could survive was made terminal"
+        )
+
+    def test_enospc_survives_no_spares(self, tmp_path):
+        """No spare is needed to retry in place, so none is required.
+
+        EXHAUSTED here would end a job that a retry could have saved,
+        for want of a resource the retry does not use.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        assert (
+            classify_attempt(
+                143,
+                log,
+                ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+                prior_attempt_had_progress=True,
+                has_spares=False,
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    def test_enospc_during_init_is_not_stuck_pre_training(self, tmp_path):
+        """Ordering vs the progress guard.
+
+        A checkpoint write also happens on the RESUME path, before the
+        first progress marker. Two of those in a row must not read as
+        "the job never started" -- so the storage check runs first.
+        """
+        log = _write(
+            tmp_path / "log",
+            "[rank23]: OSError: [Errno 28] No space left on device\n",
+        )
+        assert (
+            classify_attempt(
+                1, log, [], prior_attempt_had_progress=False
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    def test_enospc_does_not_override_clean_walltime(self, tmp_path):
+        """Ordering vs the walltime guard.
+
+        Retrying cannot buy more wallclock any more than swapping can,
+        so a clean 143 stays WALLTIME even with a storage line present.
+        """
+        log = _write(
+            tmp_path / "log",
+            "iter=40\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+            "rank 1 died from signal 15\n",
+        )
+        assert (
+            classify_attempt(
+                143, log, [], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.WALLTIME
+        )
+
+    def test_enospc_budget_falls_back_to_bad_node(self, tmp_path):
+        """The bound. Past the budget, resume normal handling.
+
+        Without it a real node fault that happens to emit a stale I/O
+        line would retry forever on the same broken host.
+        """
+        log = _write(tmp_path / "log", self._ENOSPC_LOG)
+        res = classify_attempt(
+            143,
+            log,
+            ["x1921c1s4b0n0.hsn.cm.sunspot.alcf.anl.gov"],
+            prior_attempt_had_progress=True,
+            consecutive_unattributed=_MAX_CONSECUTIVE_UNATTRIBUTED,
+        )
+        assert res.reason is TerminationReason.BAD_NODE_KNOWN
+        assert res.has_unattributed_io is True, (
+            "the flag must keep reporting what the LOG said even once "
+            "the verdict has flipped -- the loop's counter keys off it, "
+            "and a flag that followed the verdict would reset the "
+            "budget on the very swap that spent it"
+        )
+
+    def test_quota_exceeded_is_also_unattributed(self, tmp_path):
+        """EDQUOT gets the same treatment as ENOSPC.
+
+        A per-project quota can be raised, or freed by another job
+        finishing, so it is no more terminal than a full OST -- and it
+        says just as little about any host.
+        """
+        log = _write(
+            tmp_path / "log",
+            "OSError: [Errno 122] Disk quota exceeded\n",
+        )
+        assert (
+            classify_attempt(
+                1, log, ["h1"], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.RETRYABLE_UNATTRIBUTED
+        )
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "PermissionError: [Errno 13] Permission denied: '/lus/x'",
+            "OSError: [Errno 30] Read-only file system",
+            "FileNotFoundError: [Errno 2] No such file or directory",
+        ],
+    )
+    def test_other_io_errors_are_not_treated_as_unattributed(
+        self, tmp_path, line
+    ):
+        """Being conservative about the pattern list matters more than
+        coverage. These are ordinary failures; the normal path already
+        surfaces them, and a no-blame retry is the wrong shape.
+        """
+        log = _write(tmp_path / "log", f"Execution finished with 1\n{line}\n")
+        assert (
+            classify_attempt(
+                1, log, ["h1"], prior_attempt_had_progress=True
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
         )
 
     def test_missing_log_file_safe(self, tmp_path):
@@ -929,6 +1156,78 @@ class TestRunWithAutoRetry:
         rc = _run(monkeypatch, config, allocation, runner)
         assert rc == 1
         assert len(runner.calls) == 2
+
+    def test_unattributed_io_retries_without_consuming_a_spare(
+        self, tmp_path, monkeypatch
+    ):
+        """#231 at the loop: the allocation must be untouched.
+
+        The classifier deciding RETRYABLE_UNATTRIBUTED is only half of
+        it -- the loop has to honour that by NOT swapping.
+        """
+        config = _config(tmp_path)
+        allocation = _alloc(tmp_path)
+        spares_before = list(allocation.spare)
+        enospc = (
+            "Execution finished with 1\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+        )
+        runner = _FakeRunner(
+            [(1, enospc), (0, "Execution finished with 0\n")]
+        )
+        rc = _run(
+            monkeypatch,
+            config,
+            allocation,
+            runner,
+            scrape_fn=lambda _p: ["h1"],
+        )
+
+        assert rc == 0
+        assert len(runner.calls) == 2, "the storage failure was not retried"
+        assert list(allocation.spare) == spares_before, (
+            "a spare was consumed for a failure that named no host"
+        )
+        assert allocation.bad_nodes_path.read_text() == "", (
+            "a healthy host was written to bad_nodes.txt on a storage "
+            "failure"
+        )
+        assert "h1" in allocation.active, "the named bystander was evicted"
+
+    def test_unattributed_budget_is_spent_then_swapping_resumes(
+        self, tmp_path, monkeypatch
+    ):
+        """The bound, threaded end-to-end through the loop.
+
+        The counter keys off the LOG's storage signature, not off the
+        verdict: keying off the verdict would reset the budget on the
+        very swap that spent it, so the same failure would alternate
+        free-retry / swap forever instead of being bounded.
+
+        Every attempt here is an identical ENOSPC. The budget covers
+        the first N, then each further attempt burns a spare.
+        """
+        config = _config(tmp_path)
+        # 2 active + 2 spares.
+        allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4"), active=2)
+        enospc = (
+            "Execution finished with 1\niter=5\n"
+            "[rank23]: OSError: [Errno 28] No space left on device\n"
+        )
+        # budget free retries, then one attempt per spare, then a final
+        # attempt that finds no spares and stops. `_FakeRunner` raises
+        # on an extra call, so a regression that removes the bound
+        # fails here rather than looping forever.
+        n_attempts = _MAX_CONSECUTIVE_UNATTRIBUTED + 2 + 1
+        runner = _FakeRunner([(1, enospc)] * n_attempts)
+        rc = _run(monkeypatch, config, allocation, runner)
+
+        assert rc == 1
+        assert len(runner.calls) == n_attempts, (
+            "expected the budget to be spent and then normal swapping to "
+            f"resume; got {len(runner.calls)} attempts"
+        )
+        assert list(allocation.spare) == [], "spares were never consumed"
 
     def test_exhausted_when_spares_drained(self, tmp_path, monkeypatch):
         config = _config(tmp_path)
