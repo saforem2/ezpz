@@ -226,19 +226,36 @@ chaos() {
         # make every downstream assertion vacuous -- the exact failure
         # that produced two misleading verdicts already.
         local apid
-        # `NR>1` is NOT enough: `palstat -a` prints a header whose
-        # first token is `JobID:`, and job 12473747 duly ran
-        # `palsig ... -s SIGKILL JobID:` (rc=1, kill never landed).
-        # Match the APID shape instead of trusting a row offset.
-        apid="$(palstat -a 2>/dev/null \
-            | grep -oE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
-            | head -1)"
-        if [ -z "${apid}" ]; then
-            # Fall back to any bare-numeric id, in case this palstat
-            # build reports APIDs in a non-UUID form. Still shape-
-            # matched, never positional.
-            apid="$(palstat -a 2>/dev/null | awk '$1 ~ /^[0-9]+$/{print $1; exit}')"
-        fi
+        # Two allocations were burned guessing at `palstat -a`'s
+        # column layout: `NR>1` picked up the header token `JobID:`
+        # (12473747), then a bare-numeric fallback matched a literal
+        # `0` (12473748). Stop guessing -- ask for JSON, and DUMP the
+        # raw output either way so the format is on the record instead
+        # of being inferred from a failed kill.
+        echo "[CHAOS] --- palstat -a (text) ---"
+        palstat -a 2>&1 | sed 's/^/[CHAOS]   /' | head -12
+        echo "[CHAOS] --- palstat -a --output json ---"
+        palstat -a --output json 2>&1 | sed 's/^/[CHAOS]   /' | head -20
+        echo "[CHAOS] ---------------------------------"
+
+        # Prefer JSON: a keyed field cannot drift the way a column can.
+        apid="$(palstat -a --output json 2>/dev/null \
+            | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+apps = d if isinstance(d, list) else (
+    d.get("apps") or d.get("applications") or []
+)
+for a in apps if isinstance(apps, list) else []:
+    if isinstance(a, dict):
+        for k in ("apid", "APID", "id", "jobid"):
+            if a.get(k):
+                print(a[k]); sys.exit(0)
+' 2>/dev/null)"
+
         if [ -z "${apid}" ]; then
             echo "[CHAOS] FATAL: no APID from palstat -a; cannot kill via PALS"
             echo "[CHAOS] palstat -a said:"

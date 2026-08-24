@@ -73,7 +73,7 @@ include the node whose ranks were killed, resumed from step 40, and trained
 260 more iterations. **Node-swapping works on real hardware.** The rest of
 this page is about how it got there.
 
-## Finding 1 — a hard node death leaves nothing to scrape
+## Finding 1 — a killed *process* leaves nothing to scrape
 
 The last five lines of `attempt-1.log`:
 
@@ -89,6 +89,37 @@ That is the **end of the file**. No `shepherd died from signal 9`, no
 hostname-prefixed PALS line, no traceback. A `SIGKILL` gives the process no
 chance to say anything, and PALS reported the aggregate without naming the
 node. The log simply stops mid-training.
+
+!!! warning "This is not a node death, and the distinction matters"
+
+    The heading originally read "a hard *node* death leaves nothing to
+    scrape". That was wrong, and it took asking PBS to notice:
+
+    ```console
+    $ pbsnodes x1921c1s0b0n0      # the node whose ranks were killed
+    state = job-exclusive
+    $ pbsnodes x1921c1s4b0n0      # a healthy node in the same job
+    state = job-exclusive
+    ```
+
+    Identical. The node was never faulty — the experiment killed
+    *processes*, and `palsd` on that host stayed up and answering. So
+    PALS had nothing to report, and the silence is a property of the
+    injected fault, not of node failure:
+
+    | | `kill -9` the ranks | a real node loss |
+    | --- | --- | --- |
+    | processes | gone | gone |
+    | `palsd` on that host | **up** | **down** |
+    | PALS emits | *nothing* | `<host>: shepherd died from signal 9` |
+    | `pbsnodes` | unchanged | eventually `down,offline` |
+
+    That shepherd line is already the registered scrape pattern, so for
+    a genuine node loss the named path may well work — this run simply
+    never exercised it. The harness gained a `KILL_MODE=pals` that
+    routes the kill through `palsig` so the shepherd observes the app
+    dying, which is the only mode that can test named attribution
+    ([#234](https://github.com/saforem2/ezpz/issues/234)).
 
 Run the real scraper against it and you get the same answer:
 
