@@ -30,10 +30,13 @@ watchdog timeout or an unrecognised crash still burns a spare, on the
 guess that a node is at fault — see the classification table below.
 And a retry of any kind requires a spare to exist: with none, the
 verdict is `EXHAUSTED` and the job stops. Checkpoint restart is
-measured on real hardware, and the node-*swapping* mechanism is now
-validated on real hardware too — though not the *identification* of
-which node died. See [On-node validation](#on-node-validation), and
-[Node-kill postmortem](autoretry-nodekill.md) for the evidence.
+measured on real hardware, and so is node-swapping — including, since
+job 12473751, the *identification* of which node died: a real node loss
+emits `rank N died from signal 9`, the scraper names that host, and the
+loop retires it rather than guessing. See
+[On-node validation](#on-node-validation), and
+[Node-kill postmortem](autoretry-nodekill.md) for the three bugs
+between "a node was swapped" and "the right node was swapped".
 
 ## The experiment
 
