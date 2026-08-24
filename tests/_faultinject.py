@@ -22,7 +22,7 @@ only that the harness can match its own strings.
 | env var       | meaning                                              |
 | ------------- | ---------------------------------------------------- |
 | `FI_COUNTER`  | file holding the attempt number (incremented here)   |
-| `FI_MODE`     | which failure to inject (see `_MODES`)               |
+| `FI_MODE`     | which failure to inject (see `_die`); comma-separated = Nth entry for attempt N |
 | `FI_FAIL_ON`  | comma-separated attempts that fail; default all      |
 | `FI_STEPS`    | how many progress lines to print first (default 2)   |
 | `FI_MARKER`   | counter name in those lines: `step` (default) or `iter` |
@@ -121,6 +121,68 @@ def _die(mode: str, host: str) -> int:
         sys.stdout.flush()
         os.kill(os.getpid(), 9)  # -> Popen.poll() returns -9
         rc = 0  # unreachable
+    elif mode == "enospc":
+        # Sunspot job 12473704, attempt 2: a DCP checkpoint write ran
+        # out of space and tore the whole job down. Transcribed
+        # verbatim from the captured log (see issue #231 and
+        # docs/guides/fault-injection.md) -- the traceback, the blank
+        # line, and both PALS teardown lines, including the fact that
+        # the two lines name DIFFERENT hosts and neither is the rank
+        # that raised.
+        #
+        # That is the bug in one picture: the failure happened in a
+        # filesystem write, and the only hosts in the log are bystanders
+        # the teardown cascade happened to print. Attributing either of
+        # them to hardware retires a healthy node.
+        #
+        # The `[rank23]:` prefixes are kept as captured. They stop these
+        # lines from being column-0 anchored, which does not matter --
+        # the ENOSPC matcher is not `^`-anchored, unlike the shepherd
+        # pattern.
+        _emit(
+            "[rank23]:   File "
+            '".../torch/distributed/checkpoint/filesystem.py", '
+            "line 520, in create_stream"
+        )
+        _emit("[rank23]:     with path.open(mode) as stream:")
+        _emit("[rank23]: OSError: [Errno 28] No space left on device")
+        _emit("")
+        _emit(
+            "x1921c1s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 16 exited with code 1"
+        )
+        _emit(
+            "x1921c1s4b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 0 died from signal 15"
+        )
+        # The captured log does not record the aggregate exit code. 143
+        # is what PALS produces for this shape -- one rank exits
+        # non-zero, the runtime SIGTERMs the rest -- and is what the
+        # `rank_exit` mode above documents as confirmed on a live
+        # Sunspot run. It also makes the scenario harder rather than
+        # easier: the verdict has to survive the walltime guard first.
+        rc = WALLTIME_RC
+    elif mode == "enospc_named":
+        # The same ENOSPC, in a log the scraper CAN name a host from.
+        #
+        # This composition is an inference, and worth being explicit
+        # about. Issue #231 reports that the real attempt was classified
+        # `BAD_NODE_KNOWN`, which is only reachable when the scraper
+        # returns a host -- and on Sunspot the scraper matches exactly
+        # two things: `shepherd died from signal 9` and gloo's
+        # `Connection closed by peer [IP]`. The excerpt quoted in the
+        # issue contains neither (verified: it scrapes to `[]` and
+        # classifies BAD_NODE_BLIND), so the full log must have carried
+        # one of them. Both signatures below are real; only their
+        # co-occurrence is reconstructed.
+        #
+        # This is the sharper of the two cases: `enospc` proves a spare
+        # is not burned blindly, this one proves a NAMED healthy host is
+        # not written to bad_nodes.txt.
+        _emit("[rank23]: OSError: [Errno 28] No space left on device")
+        _emit("")
+        _emit(f"{host}: shepherd died from signal 9")
+        rc = WALLTIME_RC
     elif mode == "silent_fail":
         # Fails with nothing a scraper can name: forces blind rotation.
         rc = 1
@@ -183,6 +245,30 @@ def _run_checkpointed(attempt: int, mode: str, host: str) -> int:
     return 0
 
 
+def _mode_for_attempt(attempt: int) -> str:
+    """Which failure this attempt injects.
+
+    ``FI_MODE`` may be a comma-separated list, in which case the Nth
+    entry drives attempt N (the last entry repeats past the end) --
+    the same "Nth entry for attempt N" idiom ``FI_FAIL_AT`` already
+    uses. A single value behaves exactly as before.
+
+    A run can therefore change failure MODE between attempts, which is
+    what it takes to test any classifier state that persists across
+    attempts: the consecutive-unattributed budget resets on a verdict
+    of a different kind, and proving that needs a different kind of
+    failure in the middle.
+    """
+    modes = [
+        x.strip()
+        for x in os.environ.get("FI_MODE", "shepherd").split(",")
+        if x.strip()
+    ]
+    if not modes:  # pragma: no cover - FI_MODE="," is a typo, not a case
+        return "shepherd"
+    return modes[min(attempt - 1, len(modes) - 1)]
+
+
 def _should_fail(attempt: int) -> bool:
     spec = os.environ.get("FI_FAIL_ON", "").strip()
     if not spec:
@@ -229,7 +315,7 @@ def main() -> int:
     )
 
     host = os.environ.get("FI_HOST", DEFAULT_HOST)
-    mode = os.environ.get("FI_MODE", "shepherd")
+    mode = _mode_for_attempt(attempt)
     n_steps = int(os.environ.get("FI_STEPS", "2"))
 
     # Progress first. `_PROGRESS_MARKER_RX` is `\bstep=\d+` and nothing
