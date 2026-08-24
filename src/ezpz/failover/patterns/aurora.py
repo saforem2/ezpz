@@ -57,6 +57,33 @@ def _extract_shepherd_sig9(log_text: str) -> Iterable[str]:
 
 
 # ---------------------------------------------------------------------------
+# Pattern 1b: a RANK killed by signal 9
+#
+#     xNNNNcNsNbNnN.hsn.cm.aurora.alcf.anl.gov: rank 12 died from signal 9
+#
+# Signal 9 only, deliberately not the 11/15 excluded above: 15 is the
+# clean-walltime SIGTERM cascade and 11 cascades from a failure on a
+# different node (job 8466848). Nothing in a normal PALS teardown
+# SIGKILLs a rank, so the named host lost its ranks to something
+# external.
+#
+# Confirmed on Sunspot (same PALS runtime) by job 12473749; see that
+# module for the captured log. Registered here on the runtime-parity
+# argument this module already makes for the shepherd pattern -- NOT
+# yet observed on Aurora itself.
+# ---------------------------------------------------------------------------
+_RANK_SIG9_RX = compile_multiline(
+    r"^([a-zA-Z0-9.-]+\.hsn\.cm\.aurora\.alcf\.anl\.gov):\s+"
+    r"rank\s+\d+\s+died\s+from\s+signal\s+9\b",
+)
+
+
+def _extract_rank_sig9(log_text: str) -> Iterable[str]:
+    for m in _RANK_SIG9_RX.finditer(log_text):
+        yield m.group(1)
+
+
+# ---------------------------------------------------------------------------
 # Pattern 2: gloo TCP peer-closed
 #
 # Log line shape (one of many — gloo wraps in RuntimeError):
@@ -132,6 +159,15 @@ AURORA_PATTERNS = [
         description=(
             "PALS shepherd kill (signal 9). Node-local daemon went "
             "non-responsive; almost always a hardware fault."
+        ),
+    ),
+    BadNodePattern(
+        name="aurora.rank_signal_9",
+        extractor=_extract_rank_sig9,
+        description=(
+            "A rank killed by SIGKILL. Same reasoning as the shepherd "
+            "pattern; confirmed on Sunspot job 12473749, not yet "
+            "observed on Aurora."
         ),
     ),
     BadNodePattern(

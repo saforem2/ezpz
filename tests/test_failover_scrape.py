@@ -510,6 +510,11 @@ class TestPatternRegistry:
             "aurora.shepherd_signal_9": [
                 "x4001c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
             ],
+            # Registered alongside the shepherd pattern (job 12473749);
+            # empty here because this log has no rank-signal-9 line.
+            # Asserted explicitly rather than dropped: the exhaustive
+            # comparison is what makes this test notice a new pattern.
+            "aurora.rank_signal_9": [],
             "aurora.gloo_connection_closed": [
                 "x4002c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
             ],
@@ -774,3 +779,84 @@ class TestNormalizeAuroraHostname:
         assert normalize_aurora_hostname("some-other-host") is None
         assert normalize_aurora_hostname("nid001234") is None
         assert normalize_aurora_hostname("polaris-login-1") is None
+
+
+class TestRankSignal9:
+    """`<host>: rank N died from signal 9` names the host.
+
+    From Sunspot job 12473749, which killed one node's ranks through
+    PALS (`palsig -s SIGKILL`). The log ended with exactly two lines:
+
+        x1921c7s1b0n0-hsn0...: rank 12 died from signal 9    <- victim
+        x1921c7s0b0n0-hsn0...: rank  1 died from signal 15   <- cascade
+
+    Neither matched anything before this pattern: the set had
+    `shepherd died from signal 9`, and the 11/15 exclusion. A rank
+    dying of signal 9 fell between them, so the scraper returned
+    nothing and the loop blind-rotated the HEALTHY host out while the
+    dead one stayed active.
+    """
+
+    REAL = (
+        "x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+        "rank 12 died from signal 9\n"
+        "x1921c7s0b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+        "rank 1 died from signal 15\n"
+    )
+
+    def test_names_the_killed_host_and_not_the_cascade(self, tmp_path):
+        log = tmp_path / "j12473749.log"
+        log.write_text(self.REAL)
+        hosts = scrape_bad_nodes(log, machine="sunspot")
+        assert hosts == ["x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov"], (
+            "signal 9 identifies the victim; signal 15 is the innocent "
+            "teardown cascade and must not be named"
+        )
+
+    def test_aurora_shares_the_pattern(self, tmp_path):
+        log = tmp_path / "aurora.log"
+        log.write_text(
+            "x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov: "
+            "rank 7 died from signal 9\n"
+        )
+        assert scrape_bad_nodes(log, machine="aurora") == [
+            "x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov"
+        ]
+
+    def test_a_clean_walltime_cascade_still_names_nobody(self, tmp_path):
+        """The regression this pattern must not cause.
+
+        A clean walltime kill SIGTERMs every rank. If signal 9 matching
+        were loosened to any signal, every expiring job would retire a
+        node and burn a spare.
+        """
+        log = tmp_path / "walltime.log"
+        log.write_text(
+            "".join(
+                f"x1921c7s{n}b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+                f"rank {n} died from signal 15\n"
+                for n in range(4)
+            )
+        )
+        assert scrape_bad_nodes(log, machine="sunspot") == []
+
+    def test_signal_11_cascade_still_names_nobody(self, tmp_path):
+        """Job 8466848's case: SIGSEGV cascades name innocent hosts."""
+        log = tmp_path / "sig11.log"
+        log.write_text(
+            "x1921c7s3b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov: "
+            "rank 1304 died from signal 11\n"
+        )
+        assert scrape_bad_nodes(log, machine="sunspot") == []
+
+    def test_shepherd_and_rank_forms_both_match(self, tmp_path):
+        """Two distinct patterns, deduplicated to one host."""
+        log = tmp_path / "both.log"
+        h = "x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
+        log.write_text(
+            f"{h}: shepherd died from signal 9\n"
+            f"{h}: rank 12 died from signal 9\n"
+        )
+        assert scrape_bad_nodes(log, machine="sunspot") == [
+            "x1921c7s1b0n0.hsn.cm.sunspot.alcf.anl.gov"
+        ]
