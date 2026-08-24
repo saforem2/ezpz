@@ -349,9 +349,11 @@ What the classifier does step by step:
    `x4610c4s3b0n0.hsn...: rank 7 exited with code 1` line (or, if
    the scraper missed it because it's not in the explicit pattern
    set, falls through to `swap_one_blind`).
-7. `bad_nodes.txt` gets `x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov`.
-   `active.hostfile` is rewritten with that host replaced by the
-   next spare.
+7. `bad_nodes.txt` gets
+   `x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov  scraped  attempt=1`
+   — `scraped` because the host was named by a failure signature,
+   not guessed. `active.hostfile` is rewritten with that host
+   replaced by the next spare.
 8. Backoff 5 seconds, run `attempt-2.log`. The retry uses the
    updated active set; the bad GPU is no longer in the training
    pool.
@@ -411,7 +413,31 @@ Per-job, in `$(pwd)/logs/failover-<jobid>/`:
   place as nodes are swapped. Always reflects what the next attempt
   will run on.
 - `bad_nodes.txt` — every host that's been swapped out (named
-  swap_in *and* blind rotations). Append-only.
+  swap_in *and* blind rotations), one per line, append-only. Each
+  line records *why* the host was retired:
+
+  ```
+  x4610c4s3b0n0.hsn.cm.aurora.alcf.anl.gov  scraped  attempt=1
+  x4610c4s5b0n0.hsn.cm.aurora.alcf.anl.gov  blind    attempt=2
+  ```
+
+  Column 1 is the hostname, so `awk '{print $1}' bad_nodes.txt`
+  gives you the bare list. Column 2 is the provenance:
+
+  - `scraped` — the scraper **named** this host from a failure
+    signature in the log. This is evidence.
+  - `blind` — nothing in the log implicated this host;
+    `swap_one_blind` evicted `active[0]` because the crash could
+    not be attributed. This is a **guess**, and a `blind` entry is
+    not grounds for pulling a node out of service.
+
+  `attempt=N` is the attempt that retired the host. It is omitted
+  when the caller didn't supply one rather than filled with a
+  guessed value.
+
+  `src/ezpz/bin/failover.sh` writes the identical format, and
+  `ezpz.launch_autoretry.parse_bad_nodes_file` reads either this
+  or the older bare-hostname files.
 - `attempt-N.log` — combined stdout+stderr of attempt N.
 
 > **Note on `active.hostfile` mutation.** The file is rewritten in

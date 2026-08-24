@@ -80,9 +80,31 @@ Three things worth reading off that:
   steps against a 25-step interval — you only ever repeat work since the
   last save. Halving `--save-interval` halves the worst case, at the cost
   of more save I/O.
-- **A node was retired each time.** The host named in the log went into
-  `bad_nodes.txt` and out of the active hostfile, and a spare took its
-  slot, so the next attempt ran somewhere else.
+- **A node was retired each time.** A host went into `bad_nodes.txt`
+  and out of the active hostfile, and a spare took its slot, so the
+  next attempt ran somewhere else.
+
+!!! warning "Only the first retirement was evidence"
+
+    Since [#233](https://github.com/saforem2/ezpz/issues/233),
+    `bad_nodes.txt` records *why* each host was retired, and re-running
+    this scenario shows the three retirements were not alike:
+
+    ```
+    x1922c7s6b0n0.hsn.cm.sunspot.alcf.anl.gov  scraped  attempt=1
+    spare-1                                    blind    attempt=2
+    spare-2                                    blind    attempt=3
+    ```
+
+    Only attempt 1 named a host. On attempts 2 and 3 the injector
+    reprinted the *same* signature — for a host that had already been
+    swapped out — so `swap_in` matched nothing, the loop fell back to
+    `swap_one_blind`, and two healthy spares were retired instead. The
+    reprinting is an artifact of the injector using a fixed hostname,
+    but the code path is the real one: **when the scraper names only
+    already-retired hosts, blind rotation burns healthy nodes.** Before
+    provenance was recorded, `bad_nodes.txt` presented all three as
+    equally bad.
 
 !!! note "Why the x-axis is attempts, not wall-clock"
 
