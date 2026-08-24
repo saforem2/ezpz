@@ -436,8 +436,9 @@ class TestClassifyAttempt:
         )
 
     def test_stuck_pre_training_when_prior_also_zero_steps(self, tmp_path):
-        # Prior attempt: no progress. Current attempt: also no progress.
-        # → STUCK_PRE_TRAINING regardless of rc shape.
+        # Prior attempt: no progress. Current attempt: also no progress,
+        # AND the scraper named nobody → STUCK_PRE_TRAINING regardless
+        # of rc shape.
         log = _write(
             tmp_path / "log", "Execution finished with 1\nimport error\n"
         )
@@ -446,6 +447,119 @@ class TestClassifyAttempt:
                 1, log, [], prior_attempt_had_progress=False
             ).reason
             is TerminationReason.STUCK_PRE_TRAINING
+        )
+
+    def test_named_host_outranks_zero_progress(self, tmp_path):
+        r"""#232: a scraped host is evidence; missing markers are not.
+
+        Absent progress markers are consistent with a job that never
+        started AND with a node that died during a long init AND with a
+        trainer whose counter this regex does not know (the regex was
+        `\bstep=\d+` while every ezpz example emits `iter=`, and that
+        shipped). A named host is positive evidence for exactly one of
+        those, so it wins.
+
+        Same structure as WALLTIME's `and not crash` clause.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
+        )
+
+    def test_named_host_with_zero_progress_exhausts_rather_than_stuck(
+        self, tmp_path
+    ):
+        """The named-host override is bounded by the spare pool.
+
+        Failing over on a named host costs a spare each time, so the
+        pool ends the loop even when no progress marker ever appears --
+        the override cannot spin forever.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\n"
+            "x4502.hsn.cm.aurora.alcf.anl.gov: shepherd died from "
+            "signal 9\n",
+        )
+        assert (
+            classify_attempt(
+                1,
+                log,
+                ["x4502.hsn.cm.aurora.alcf.anl.gov"],
+                prior_attempt_had_progress=False,
+                has_spares=False,
+            ).reason
+            is TerminationReason.EXHAUSTED
+        )
+
+    def test_progress_overrides_stuck_guard(self, tmp_path):
+        # The "step=" marker on the CURRENT attempt means training
+        # started this time — even if the prior attempt had no
+        # progress, we shouldn't bail.
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 1\niter step=5 loss=0.1\n",
+        )
+        assert (
+            classify_attempt(
+                1, log, ["x4502"], prior_attempt_had_progress=False
+            ).reason
+            is TerminationReason.BAD_NODE_KNOWN
+        )
+
+    def test_exhausted_when_no_spares_left_known(self, tmp_path):
+        log = _write(tmp_path / "log", "Execution finished with 1\n")
+        assert (
+            classify_attempt(1, log, ["host"], has_spares=False).reason
+            is TerminationReason.EXHAUSTED
+        )
+
+    def test_exhausted_when_no_spares_left_blind(self, tmp_path):
+        log = _write(tmp_path / "log", "Execution finished with 1\n")
+        assert (
+            classify_attempt(1, log, [], has_spares=False).reason
+            is TerminationReason.EXHAUSTED
+        )
+
+    def test_exhausted_when_no_spares_left_watchdog(self, tmp_path):
+        log = _write(tmp_path / "log", "hang\n")
+        assert (
+            classify_attempt(124, log, [], has_spares=False).reason
+            is TerminationReason.EXHAUSTED
+        )
+
+    def test_wrapper_lied_inner_rc_overrides_clean_shell_exit(
+        self, tmp_path
+    ):
+        # Outer shell said 0 but the inner trailer says 7 — wrapper
+        # lied. Treat as failure.
+        log = _write(tmp_path / "log", "Execution finished with 7\n")
+        assert (
+            classify_attempt(0, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_crash_patterns_override_clean_shell_exit(self, tmp_path):
+        # rc=0, no inner trailer, but log has crash signatures —
+        # treat as failure (mass-traceback).
+        log = _write(
+            tmp_path / "log",
+            "training...\nUR_RESULT_ERROR_OUT_OF_RESOURCES on rank 4\n",
+        )
+        assert (
+            classify_attempt(0, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
         )
 
     # -- unattributed storage failures (#231) --------------------------

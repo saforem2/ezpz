@@ -27,6 +27,7 @@ spent, because there is no way to fake elapsed silence.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -43,6 +44,7 @@ from ezpz.launch_autoretry import (  # noqa: E402
     NodeAllocation,
     run_with_auto_retry,
 )
+from ezpz.launch_autoretry import logger as _autoretry_logger  # noqa: E402
 
 FAULT_SCRIPT = str(Path(__file__).parent / "_faultinject.py")
 
@@ -578,12 +580,16 @@ class TestProgressMarkerContract:
     def test_no_output_at_all_aborts_after_two_attempts(
         self, tmp_path, monkeypatch
     ):
-        """The genuinely-silent case: no progress lines at all.
+        """The genuinely-silent case: no progress lines, no named host.
 
         Distinct from the test above -- this is a job that really did
         die before training, which the guard is *right* to abandon.
+
+        `silent_fail` rather than `shepherd`: since #232 the guard
+        requires the scraper to have named NOBODY, and `shepherd` names
+        a host. That is the point of the next test.
         """
-        h = Harness(tmp_path, FI_MODE="shepherd", FI_STEPS="0")
+        h = Harness(tmp_path, FI_MODE="silent_fail", FI_STEPS="0")
         rc = h.run(
             monkeypatch,
             nodes=(BAD_HOST, "s1", "s2"),
@@ -600,6 +606,80 @@ class TestProgressMarkerContract:
         assert len(h.bad) == 1, (
             "one spare was consumed before the guard tripped"
         )
+
+    def test_a_named_host_outranks_inferred_no_progress(
+        self, tmp_path, monkeypatch
+    ):
+        r"""#232: positive evidence beats an inference from silence.
+
+        A node that dies during a long init produces a marker-free log,
+        and so does a trainer whose counter this regex does not know --
+        the regex was `\bstep=\d+` while every ezpz example emits
+        `iter=`, and that shipped. So "no markers" cannot carry a
+        terminal verdict on its own.
+
+        Here the scraper NAMES a host every attempt: real evidence of a
+        node fault, pointing the opposite way. Before the fix the loop
+        stopped at attempt 2 with a spare still free, calling a genuine
+        bad-node failover a misconfigured job. It should now keep
+        failing over until the spares run out.
+        """
+        h = Harness(tmp_path, FI_MODE="shepherd", FI_STEPS="0")
+        rc = h.run(
+            monkeypatch,
+            nodes=(BAD_HOST, "s1", "s2"),
+            active=1,
+            max_failover_retries=None,
+        )
+
+        assert rc != 0
+        assert "step=" not in h.log_text(), (
+            "this must exercise the zero-progress path"
+        )
+        assert h.attempts == 3, (
+            "a NAMED bad host with no progress markers should keep "
+            "failing over, not be filed as stuck_pre_training; got "
+            f"{h.attempts} attempts"
+        )
+        assert len(h.bad) == 2, (
+            "both spares should have been used before the loop gave up; "
+            f"got {h.bad}"
+        )
+
+    def test_stuck_verdict_says_it_is_an_inference(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """The log line must not read as a finding (#232).
+
+        An operator whose trainer prints an unrecognised counter can
+        only spot the misfire if the verdict admits it is a guess about
+        missing markers rather than an observation.
+        """
+        # `logger=` is load-bearing: conftest pins every ezpz logger to
+        # CRITICAL, so a bare `at_level(ERROR)` only lowers the ROOT
+        # level and the record is dropped at the ezpz logger before it
+        # ever propagates.
+        h = Harness(tmp_path, FI_MODE="silent_fail", FI_STEPS="0")
+        with caplog.at_level(logging.ERROR, logger=_autoretry_logger.name):
+            h.run(
+                monkeypatch,
+                nodes=(BAD_HOST, "s1", "s2"),
+                active=1,
+                max_failover_retries=None,
+            )
+
+        stop = [
+            r.getMessage()
+            for r in caplog.records
+            if "FAILOVER STOP: stuck_pre_training" in r.getMessage()
+        ]
+        assert stop, "no stuck_pre_training stop line was logged"
+        line = stop[0].lower()
+        assert "inferred" in line, (
+            "the verdict does not say it is an inference from missing "
+            f"markers: {stop[0]!r}"
+        )
+
 
 class TestUnattributedIOFailure:
     """#231: a storage error is not evidence about any host.

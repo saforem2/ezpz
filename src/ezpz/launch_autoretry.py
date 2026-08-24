@@ -505,7 +505,7 @@ def classify_attempt(
     | 124      | (idle-output watchdog tripped)              | BAD_NODE_BLIND          |
     | non-zero | scraper found named host(s)                 | BAD_NODE_KNOWN          |
     | non-zero | scraper empty                               | BAD_NODE_BLIND          |
-    | -        | this AND prior attempt both had 0 progress  | STUCK_PRE_TRAINING      |
+    | -        | 0 progress twice AND scraper named nobody   | STUCK_PRE_TRAINING      |
     | -        | bad-node verdict but no spares left         | EXHAUSTED               |
 
     **Unattributed storage failures** (#231). A checkpoint write that
@@ -631,7 +631,27 @@ def classify_attempt(
     # before training starts. Note: we only check this on actual
     # failure paths; success already returned above.
     #
-    if prior_attempt_had_progress is False and not has_progress:
+    # It needs corroboration (#232). "No progress marker" is an
+    # INFERENCE from absence: it is equally true of a node that died
+    # during a long init, and of a trainer whose counter name
+    # `_PROGRESS_MARKER_RX` does not know. A scraper-named host is
+    # positive evidence of a node fault, and positive evidence outranks
+    # an inference from silence -- so when the scraper named someone we
+    # fail over instead of concluding the job never started.
+    #
+    # This mirrors WALLTIME's `and not crash`: same structure, same
+    # reason. The asymmetry is deliberate and matches the one
+    # `_PROGRESS_MARKER_RX` already documents -- being wrong toward
+    # failover costs one swap; being wrong toward STUCK abandons a
+    # recoverable job with spares still free.
+    #
+    # A named host cannot make this loop forever: every failover
+    # consumes a spare, so the pool bounds it and EXHAUSTED ends it.
+    if (
+        prior_attempt_had_progress is False
+        and not has_progress
+        and not scraped_bad_nodes
+    ):
         return _result(TerminationReason.STUCK_PRE_TRAINING)
 
     # Watchdog kill: launch.py couldn't see output for `idle_timeout_s`.
@@ -982,12 +1002,20 @@ def run_with_auto_retry(
             return last_rc
 
         if reason is TerminationReason.STUCK_PRE_TRAINING:
+            # State plainly that this is an INFERENCE from absence
+            # (#232). An operator whose trainer prints a counter this
+            # regex does not know needs to be able to recognise the
+            # misfire from the log line alone -- the previous wording
+            # read as a finding rather than a guess.
             logger.error(
                 "[auto-retry] FAILOVER STOP: stuck_pre_training "
-                "(two consecutive attempts with no progress markers "
-                "-- no iter=/step=/epoch=/batch=/idx= line in either "
-                "log, "
-                "rc=%d)",
+                "(INFERRED, not observed: two consecutive attempts "
+                "showed no iter=/step=/epoch=/batch=/idx= line, and the "
+                "scraper named no host either, so the run is assumed to "
+                "be dying before training starts. If your trainer prints "
+                "a progress counter under some OTHER name, this verdict "
+                "is wrong and a recoverable job was abandoned -- please "
+                "report the counter you use. rc=%d)",
                 last_rc,
             )
             return last_rc
