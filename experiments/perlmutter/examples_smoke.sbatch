@@ -40,7 +40,8 @@ declare -A RESULT
 smoke () {
     local mod="$1"; shift
     echo; echo "########## ${mod} ##########"
-    timeout 300 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
+    # 600s: ezpz.launch startup alone is ~90s on 2 nodes.
+    timeout 600 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
         "${PY_BIN}" -m "ezpz.examples.${mod}" "$@" 2>&1 \
         | tee "${OUT}/${mod}.log" | tail -6
     local rc=${PIPESTATUS[0]}
@@ -48,10 +49,14 @@ smoke () {
     echo "### ${mod} rc=${rc}"
 }
 
-smoke test      --train-iters 20
-smoke minimal
-smoke vit       --train-iters 10
-smoke diffusion --train-iters 10
+# Each example spells its iteration flag differently -- verified by
+# grepping add_argument in each module, after job 57540534 failed vit
+# and diffusion with "unrecognized arguments: --train-iters". That was
+# my harness inventing a flag, not a portability bug.
+smoke test      --train-iters 20     # test.py:  --train-iters
+smoke minimal                        # minimal:  no iteration flag
+smoke vit       --max-iters 10       # vit.py:   --max-iters
+smoke diffusion --train-steps 10     # diffusion: --train-steps
 
 echo
 echo "======================= SMOKE RESULTS ======================="

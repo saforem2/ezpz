@@ -76,7 +76,7 @@ RECEIPT="${OUT}/kill_receipt.txt"
 
 chaos () {
     # Wait for a checkpoint, then kill the ranks on ONE node.
-    for _ in $(seq 1 100); do
+    for _ in $(seq 1 60); do
         [ -f "${DONE}" ] && { echo "[CHAOS] training ended first"; return 0; }
         ls -d "${CKPT}"/step-* >/dev/null 2>&1 && break
         sleep 3
@@ -96,11 +96,16 @@ chaos () {
 }
 chaos & CPID=$!
 
-timeout 900 "${PY_BIN}" -m ezpz.launch --auto-retry --nhosts "${ACTIVE}" -- \
+# 400 iters / save every 10: the job must still be TRAINING when the
+# kill lands, and must have runway left to relaunch afterwards. Job
+# 57540535 used 120 iters and hit the 29-min walltime first --
+# --auto-retry then correctly returned `FAILOVER STOP: walltime` and
+# declined to retry, which is the WALLTIME guard working, not a bug.
+timeout 1100 "${PY_BIN}" -m ezpz.launch --auto-retry --nhosts "${ACTIVE}" -- \
     "${PY_BIN}" -m ezpz.examples.fsdp_tp \
         --model agpt-2b --tp 1 --dataset random \
-        --train-iters 120 --batch-size 1 --seq-len 2048 \
-        --ckpt-dir "${CKPT}" --save-interval 20 \
+        --train-iters 400 --batch-size 1 --seq-len 2048 \
+        --ckpt-dir "${CKPT}" --save-interval 10 \
         --outdir "${OUT}/out" 2>&1 | tee "${LOG}"
 RC=${PIPESTATUS[0]}
 touch "${DONE}"; kill "${CPID}" 2>/dev/null || true
