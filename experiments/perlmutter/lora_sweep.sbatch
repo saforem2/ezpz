@@ -53,12 +53,16 @@ run () {
     local label="$1"; shift
     echo
     echo "########## ${label} ##########"
-    timeout 420 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
+    # 600s: each run pays full ezpz.launch startup (~90s to first
+    # iter on 2 nodes) before it trains at all. 420 was not enough to
+    # distinguish "slow" from "hung" -- job 57540435 hit it having
+    # already died on a missing seaborn.
+    timeout 600 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
         "${PY_BIN}" -m ezpz.examples.fsdp_tp \
             --model agpt-2b --tp 1 --dataset random \
             --train-iters "${ITERS}" --batch-size 1 --seq-len 2048 \
             --outdir "${OUT}/${label}" "$@" 2>&1 \
-        | tee "${OUT}/${label}.log" | grep -aE "iter=(1|5|10|15|20) |lora|adapter|Error|Traceback" | head -20
+        | tee "${OUT}/${label}.log" | grep -aE "iter=(1|5|10|15|20) |lora|adapter|Error|Traceback|ModuleNotFound" | head -20
     echo "### ${label} rc=${PIPESTATUS[0]}"
 }
 
