@@ -345,8 +345,11 @@ A row produced by a modified command would read as "this benchmark was
 run" when it was not. The right order is to raise both with the
 benchmark's maintainers and publish once the spec is fixed.
 
-When it does land, it belongs at
-`benchmarks/training/llm-finetuning/results/Perlmutter/` — matching the
-sibling `vit-weather` benchmark in that repo, **not** the flat
-`results/runs.csv` that `docs/cli/export-amsc.md` describes. That doc
-is out of date with the repo it documents.
+When it does land it belongs at
+`benchmarks/training/llm-finetuning/results/Perlmutter/`, matching the
+sibling `vit-weather` benchmark — and it will need **column
+translation**, not just a different path. `vit-weather` publishes three
+columns (`configuration_name, samples_per_sec, iters_per_sec`);
+`ezpz export-amsc` emits eleven with different names. See the warning
+in [`ezpz export-amsc`](../cli/export-amsc.md) for what that repo
+actually contains today.

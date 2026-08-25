@@ -1,17 +1,24 @@
 """Turn a finished ezpz run into an AmSC at-scale benchmark CSV row.
 
-The `AmSC at-scale benchmarks
-<https://gitlab.com/amsc2/ai-services/at-scale-services/amsc-atscale-benchmarks>`_
-collect cross-facility results and publish them to a dashboard. Its
-contract, read from that repo's ``build_dashboard.py`` rather than
-inferred:
+Emits one row of throughput metrics: ``timestamp, system, config,
+nodes, gpus, status, wall_time_sec`` plus the measured figures, with an
+empty field meaning "not measured" (``None``), never zero.
 
-* a benchmark is discovered iff it has BOTH ``benchmark.yaml`` and
-  ``results/runs.csv``;
-* ``runs.csv`` must carry ``timestamp, system, config, nodes, gpus,
-  status, wall_time_sec``;
-* every other column is coerced to ``float`` when possible, empty
-  meaning "not measured" (``None``), not zero.
+.. warning::
+
+   This schema was written against the `AmSC at-scale benchmarks
+   <https://gitlab.com/amsc2/ai-services/at-scale-services/amsc-atscale-benchmarks>`_
+   repo's ``build_dashboard.py``, which required ``benchmark.yaml`` +
+   ``results/runs.csv``. **Re-checked 2026-08-25: neither that script
+   nor any ``runs.csv`` is in that repo now.** The benchmarks that do
+   publish results use different shapes entirely -- ``vit-weather``
+   writes ``results/<System>/throughput_metrics.csv`` with three
+   columns (``configuration_name, samples_per_sec, iters_per_sec``).
+
+   So treat this as **ezpz's own** cross-machine schema, which is what
+   ``experiments/*/results/`` uses it for. Contributing to a specific
+   benchmark means matching what that benchmark already publishes;
+   this writer will not translate columns.
 
 Two measurements from real Sunspot runs shaped the defaults here, and
 both are the kind of thing that silently produces a wrong-but-plausible
@@ -73,7 +80,9 @@ class AmscExportError(RuntimeError):
     """Raised when a run cannot be exported (missing data, bad inputs)."""
 
 
-#: Columns ``build_dashboard.py`` requires of every ``runs.csv``.
+#: Columns every emitted row carries. Originally the set
+#: ``build_dashboard.py`` required; see the module warning -- that
+#: script is no longer in the AmSC repo, so this is now ezpz's own.
 AMSC_REQUIRED_COLUMNS: tuple[str, ...] = (
     "timestamp",
     "system",

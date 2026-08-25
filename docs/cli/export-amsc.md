@@ -1,9 +1,9 @@
 # `ezpz export-amsc`
 
-Turn a finished run directory into one CSV row for the
-[AmSC at-scale benchmarks](https://gitlab.com/amsc2/ai-services/at-scale-services/amsc-atscale-benchmarks),
-whose [dashboard](https://amsc-atscale-benchmarks-42b223.gitlab.io/)
-reads `benchmarks/<category>/<name>/results/runs.csv`.
+Turn a finished run directory into one CSV row of throughput metrics,
+for the
+[AmSC at-scale benchmarks](https://gitlab.com/amsc2/ai-services/at-scale-services/amsc-atscale-benchmarks)
+or anywhere else you keep results.
 
 ```bash
 ezpz export-amsc outputs/ezpz.examples.fsdp_tp/2026-08-11-171117 \
@@ -15,27 +15,41 @@ timestamp,system,config,nodes,gpus,status,wall_time_sec,throughput_tokens_per_se
 2026-08-11T17:12:30Z,SunSpot,agpt-2b/bs1/seq2048/tp1,1,12,pass,12.739,61216.953,...
 ```
 
-!!! warning "Check the target repo's layout first"
+!!! warning "The AmSC repo does not use this schema or this path"
 
-    The `results/<category>/<name>/results/runs.csv` path below is **not**
-    what the benchmark repo currently uses. Checked 2026-08-25: no
-    `runs.csv` exists anywhere in it. The two benchmarks that do publish
-    results use per-system directories
-    (`vit-weather/results/Perlmutter/throughput_metrics.csv`) or a flat
-    per-system text file (`mldocking/results/summary_aurora.txt`), and
-    `training/llm-finetuning` has no `results/` at all.
+    Verified against the repo on **2026-08-25**, and worth knowing before
+    you point `--append` at it:
 
-    `--append` still writes valid CSV wherever you point it; just point it
-    at the convention the benchmark you are contributing to already uses,
-    rather than the path in this example.
+    | this page used to say | what is actually there |
+    | --- | --- |
+    | rows live in `<category>/<name>/results/runs.csv` | **no `runs.csv` exists anywhere** in the repo |
+    | a `build_dashboard.py` consumes them | **no such script** in the repo |
+    | 11 columns, `throughput_tokens_per_sec` etc. | `vit-weather` publishes 3: `configuration_name,samples_per_sec,iters_per_sec` |
 
-Append straight into a checked-out benchmark repo — the header is
-written only when the file is new:
+    The two benchmarks that do publish results use a per-system
+    directory (`vit-weather/results/Perlmutter/throughput_metrics.csv`)
+    or a per-system text file
+    (`mldocking/results/summary_aurora.txt`). `training/llm-finetuning`
+    has no `results/` at all.
+
+    So treat the schema below as **ezpz's own**, useful for comparing
+    ezpz runs across machines — which is what
+    `experiments/*/results/` uses it for. To contribute to a specific
+    benchmark, look at what that benchmark already publishes and match
+    it; `--append` writes wherever you point it, but it will not
+    translate columns for you.
+
+Append into a results file — the header is written only when the file
+is new:
 
 ```bash
+# ezpz's own cross-machine series (this schema, this layout):
 ezpz export-amsc <run-dir> --config agpt-2b/bs1/seq2048/tp1 \
-    --append benchmarks/training/llm-finetuning/results/runs.csv
+    --append experiments/perlmutter/results/runs.csv
 ```
+
+For a benchmark repo, match whatever that benchmark already publishes
+rather than this example — see the warning above.
 
 ## Where the numbers come from
 
