@@ -1977,7 +1977,12 @@ def _lora_is_applied(model: nn.Module) -> bool:
 
 
 def frozen_unit_kwargs(mods, fsdp_kwargs: dict) -> dict:
-    """FSDP2 kwargs for one unit, keeping *fully-frozen* units gathered.
+    """FSDP2 kwargs for one unit, optionally keeping *fully-frozen* units gathered.
+
+    **This does not fix #239. It was tried, on Perlmutter, and it failed.**
+    It is retained only so the experiment stays reproducible from a
+    shipped build; it is OFF by default. Opt in with
+    ``EZPZ_FSDP_KEEP_FROZEN_GATHERED=1``.
 
     Under ``--lora-target attn,mlp`` every adapter lands inside a
     transformer block, so :func:`ezpz.tinker.lora.apply_lora`'s
@@ -1992,21 +1997,25 @@ def frozen_unit_kwargs(mods, fsdp_kwargs: dict) -> dict:
     reduce-scatter: on agpt-2b that is 14 backward all-gathers against 12
     reduce-scatters.
 
-    Keeping such a unit gathered removes the unmatched all-gather. It is
+    Keeping such a unit gathered removes the unmatched all-gather, and is
     correctness-neutral -- the parameters are never updated, so never
-    resharding them changes no math, only residency. The cost is memory:
-    on agpt-2b at ``world_size=8`` in bf16 the embedding and output stay
-    gathered, about +1.7 GiB per rank. That scales with vocab size.
+    resharding them changes no math, only residency. It costs memory: on
+    agpt-2b at ``world_size=8`` in bf16 the embedding and output stay
+    gathered, about +1.7 GiB per rank, scaling with vocab size.
 
-    Set ``EZPZ_FSDP_FROZEN_RESHARD=1`` to opt back into the old behaviour,
-    so both arms of the #239 experiment come from one build.
-
-    .. note::
-       The asymmetry is present in both hanging (r8/r16) and working
-       (r32/r64) #239 configurations, so it is a *precondition*, not a
-       proven cause. See ``docs/guides/lora-fsdp-deadlock.md``.
+    .. warning::
+       Enabling this removes the asymmetry and *still deadlocks*. On
+       Perlmutter (8x A100, torch 2.13.0+cu130) the hang is unchanged in
+       kind, only renumbered -- baseline stalls on ``_REDUCE_SCATTER_BASE``
+       SeqNum=18 with the stream at ``enqueued 39 / started 19 /
+       completed 17``; with this enabled it stalls on the same collective
+       with the identical ``419840 -> 52480`` payload at SeqNum=17, stream
+       ``enqueued 37 / started 18 / completed 16``. Two fewer all-gathers
+       (exactly the two reshards removed) and the same skipped-work
+       signature. The asymmetry is neither the cause nor a precondition.
+       See ``docs/guides/lora-fsdp-deadlock.md``.
     """
-    if os.environ.get("EZPZ_FSDP_FROZEN_RESHARD", "0") == "1":
+    if os.environ.get("EZPZ_FSDP_KEEP_FROZEN_GATHERED", "0") != "1":
         return fsdp_kwargs
     ms = mods if isinstance(mods, list) else [mods]
     if any(p.requires_grad for m in ms for p in m.parameters()):

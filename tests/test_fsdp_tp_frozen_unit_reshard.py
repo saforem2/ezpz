@@ -11,12 +11,16 @@ discarded its parameters after forward, so backward re-gathers them, but
 gradients. The unit emits an all-gather with no matching reduce-scatter.
 
 On agpt-2b (12 layers) that is 14 backward all-gathers against 12
-reduce-scatters. This file pins that the asymmetry is gone.
+reduce-scatters. This file measures that asymmetry, and measures that
+``EZPZ_FSDP_KEEP_FROZEN_GATHERED=1`` removes it.
 
-**What this does NOT claim.** The asymmetry is present in *both* hanging
-(r8/r16) and working (r32/r64) #239 configurations, so it is a
-precondition, not a proven cause. These tests assert the invariant the
-fix establishes -- not that #239 is fixed.
+**What this does NOT claim.** Removing the asymmetry does *not* fix
+#239. It was tried on Perlmutter (8x A100, torch 2.13.0+cu130) and the
+deadlock survived unchanged in kind -- same ``_REDUCE_SCATTER_BASE``,
+same ``419840 -> 52480`` payload, same skipped-work signature, merely
+renumbered by the two removed all-gathers. So the opt-in ships OFF, and
+these tests pin what it *does* (the collective counts) plus the fact
+that it stays off by default. See ``docs/guides/lora-fsdp-deadlock.md``.
 
 Real ``fully_shard`` on 2 gloo ranks via ``mp.spawn``, following
 ``test_tinker_lora_tp.py``: no rendezvous socket, runs on a laptop.
@@ -117,8 +121,8 @@ def _worker(rank: int, ws: int, keep_frozen_gathered: bool, q) -> None:
             # must break these tests, so do not reimplement it here.
             from ezpz.examples.fsdp_tp import frozen_unit_kwargs
 
-            os.environ["EZPZ_FSDP_FROZEN_RESHARD"] = (
-                "0" if keep_frozen_gathered else "1"
+            os.environ["EZPZ_FSDP_KEEP_FROZEN_GATHERED"] = (
+                "1" if keep_frozen_gathered else "0"
             )
             mesh = init_device_mesh("cpu", (ws,))
             kw = {"mesh": mesh, "reshard_after_forward": True}
@@ -164,12 +168,12 @@ def _count(keep_frozen_gathered: bool) -> tuple[int, int]:
 
 @pytest.mark.slow
 def test_frozen_units_resharded_are_asymmetric() -> None:
-    """The bug's precondition: 14 all-gathers, 12 reduce-scatters.
+    """Default (shipped) behaviour: 14 all-gathers, 12 reduce-scatters.
 
-    This is the *old* behaviour. Pinned so the fix below is measured
-    against a real, reproduced asymmetry rather than an assumed one --
-    if torch ever stops emitting the unmatched all-gather, this fails
-    and the fix becomes unnecessary rather than silently inert.
+    Pinned so the asymmetry stays a measured fact rather than an assumed
+    one. #239 hangs here -- and, per the Perlmutter run, also hangs when
+    the opt-in below makes these counts match, which is precisely why
+    this asymmetry is *not* the cause.
     """
     ag, rs = _count(keep_frozen_gathered=False)
     assert rs == LAYERS, f"expected {LAYERS} reduce-scatters, got {rs}"
@@ -177,24 +181,51 @@ def test_frozen_units_resharded_are_asymmetric() -> None:
         f"expected {LAYERS + 2} all-gathers (12 blocks + 2 frozen units), "
         f"got {ag}"
     )
-    assert ag != rs, "asymmetry should be present without the fix"
+    assert ag != rs, "asymmetry should be present on the default path"
 
 
 @pytest.mark.slow
 def test_frozen_units_kept_gathered_are_symmetric() -> None:
-    """The fix: every backward all-gather has a matching reduce-scatter."""
+    """The opt-in does what it says: every all-gather gets a reduce-scatter.
+
+    It just does not fix the deadlock -- see this module's docstring.
+    """
     ag, rs = _count(keep_frozen_gathered=True)
     assert rs == LAYERS, f"expected {LAYERS} reduce-scatters, got {rs}"
     assert ag == rs, (
-        f"asymmetry survived the fix: {ag} all-gathers vs {rs} reduce-scatters"
+        f"opt-in failed to remove the asymmetry: {ag} all-gathers "
+        f"vs {rs} reduce-scatters"
     )
 
 
-def test_frozen_unit_kwargs_predicate(monkeypatch) -> None:
-    """Single-rank guard on the predicate in the shipped helper."""
+def test_frozen_unit_kwargs_is_off_by_default(monkeypatch) -> None:
+    """The failed experiment must not ship enabled.
+
+    Keeping frozen units gathered did NOT fix #239 on Perlmutter and
+    costs ~+1.7 GiB/rank, so the default path must be untouched -- a
+    frozen unit still reshards unless the operator opts in.
+    """
     from ezpz.examples.fsdp_tp import frozen_unit_kwargs
 
-    monkeypatch.delenv("EZPZ_FSDP_FROZEN_RESHARD", raising=False)
+    monkeypatch.delenv("EZPZ_FSDP_KEEP_FROZEN_GATHERED", raising=False)
+    base = {"mesh": object(), "reshard_after_forward": True}
+
+    frozen = nn.Linear(4, 4, bias=False)
+    frozen.weight.requires_grad_(False)
+
+    assert frozen_unit_kwargs(frozen, base) is base, (
+        "default must return the caller's kwargs untouched"
+    )
+    # A value other than the "1" opt-in is still off.
+    monkeypatch.setenv("EZPZ_FSDP_KEEP_FROZEN_GATHERED", "0")
+    assert frozen_unit_kwargs(frozen, base) is base
+
+
+def test_frozen_unit_kwargs_predicate(monkeypatch) -> None:
+    """Single-rank guard on the predicate, with the opt-in engaged."""
+    from ezpz.examples.fsdp_tp import frozen_unit_kwargs
+
+    monkeypatch.setenv("EZPZ_FSDP_KEEP_FROZEN_GATHERED", "1")
     base = {"mesh": object(), "reshard_after_forward": True}
 
     frozen = nn.Linear(4, 4, bias=False)
@@ -217,9 +248,6 @@ def test_frozen_unit_kwargs_predicate(monkeypatch) -> None:
     # The caller's dict must not be mutated.
     assert base["reshard_after_forward"] is True
 
-    monkeypatch.setenv("EZPZ_FSDP_FROZEN_RESHARD", "1")
-    assert frozen_unit_kwargs(frozen, base)["reshard_after_forward"] is True
-
 
 def test_apply_lora_really_leaves_units_frozen(monkeypatch) -> None:
     """Bridge from the stand-in model above to the real one.
@@ -237,7 +265,7 @@ def test_apply_lora_really_leaves_units_frozen(monkeypatch) -> None:
     from ezpz.models.llama import ModelArgs, Transformer
     from ezpz.tinker.lora import LoraConfig, apply_lora
 
-    monkeypatch.delenv("EZPZ_FSDP_FROZEN_RESHARD", raising=False)
+    monkeypatch.setenv("EZPZ_FSDP_KEEP_FROZEN_GATHERED", "1")
     base = {"reshard_after_forward": True}
     cfg = ModelArgs(
         dim=64, n_layers=2, n_heads=4, n_kv_heads=2, vocab_size=128

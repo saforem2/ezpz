@@ -20,9 +20,10 @@ assumed (torch 2.12.1):
    at all. At real world size a unit left **fully** frozen (which
    ``--lora-target attn,mlp`` does to ``tok_embeddings`` and
    ``[norm, output]``) all-gathers in backward without a matching
-   reduce-scatter. See ``frozen_unit_kwargs`` in
-   ``ezpz.examples.fsdp_tp`` and ``docs/guides/lora-fsdp-deadlock.md``
-   (#239).
+   reduce-scatter. Removing that asymmetry does **not** fix #239 --
+   it was tried on Perlmutter and the deadlock survived unchanged, so
+   ``frozen_unit_kwargs`` in ``ezpz.examples.fsdp_tp`` ships off by
+   default. See ``docs/guides/lora-fsdp-deadlock.md`` (#239).
 
 2. **The tensor-parallel plan targets modules by NAME, and breaks.**
    ``fsdp_tp.parallelize`` maps ``"attention.wq" -> ColwiseParallel()``
