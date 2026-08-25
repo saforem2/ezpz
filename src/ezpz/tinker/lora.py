@@ -10,10 +10,19 @@ from a known-good point.
 Three facts about this codebase shaped the design; each was measured, not
 assumed (torch 2.12.1):
 
-1. **FSDP2 tolerates mixed ``requires_grad``.** ``fully_shard`` over a
-   module whose base weights are frozen and whose adapters are not works:
-   gradients reach the adapters only, and no frozen parameter accumulates
-   one. So LoRA needs no special sharding treatment.
+1. **FSDP2 tolerates mixed ``requires_grad`` -- for gradient routing.**
+   ``fully_shard`` over a module whose base weights are frozen and whose
+   adapters are not works: gradients reach the adapters only, and no
+   frozen parameter accumulates one.
+
+   What was measured is grad *routing*, not collective *scheduling* --
+   the test runs at ``world_size=1``, where FSDP2 issues no collectives
+   at all. At real world size a unit left **fully** frozen (which
+   ``--lora-target attn,mlp`` does to ``tok_embeddings`` and
+   ``[norm, output]``) all-gathers in backward without a matching
+   reduce-scatter. See ``frozen_unit_kwargs`` in
+   ``ezpz.examples.fsdp_tp`` and ``docs/guides/lora-fsdp-deadlock.md``
+   (#239).
 
 2. **The tensor-parallel plan targets modules by NAME, and breaks.**
    ``fsdp_tp.parallelize`` maps ``"attention.wq" -> ColwiseParallel()``
