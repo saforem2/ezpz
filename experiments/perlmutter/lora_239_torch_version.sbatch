@@ -52,7 +52,12 @@ export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
 
 # Without this NCCL silently falls back to TCP: 8.3x slower inter-node,
 # no error. See docs/guides/perlmutter.md.
-set +u; module load nccl/2.24.3 2>/dev/null || echo "WARN: nccl module failed"; set -u
+set +u
+# 12.9 serves BOTH torch builds and is what the NCCL plugin needs.
+module unload cudatoolkit 2>/dev/null
+module load cudatoolkit/12.9 2>/dev/null || echo "WARN: cudatoolkit/12.9 failed"
+module load nccl/2.24.3 2>/dev/null || echo "WARN: nccl module failed"
+set -u
 echo "=== NCCL_NET=${NCCL_NET:-<unset>} ==="
 case ":${LD_LIBRARY_PATH:-}:" in
     *nccl*plugin*) echo "=== nccl plugin: yes ===" ;;
@@ -65,23 +70,42 @@ mkdir -p "${OUT}"
 NP=$(( SLURM_NNODES * 4 ))
 ITERS="${ITERS:-20}"
 
-# $1 = label, $2 = interpreter, $3 = cudatoolkit module to load
+# $1 = label, $2 = interpreter
 #
-# The CUDA module MUST match the interpreter's torch build. Neither venv
-# bundles libcudart, so both take it from the module environment, and
-# Perlmutter loads cudatoolkit/13.2 by default. The first attempt
-# (57604574) ran the 2.8.0+cu129 cell under that default and every rank
-# died in 27 s with `ImportError: libcudart.so.13`. It classified as
-# INDETERMINATE, correctly -- an environment collision is not evidence
-# about either torch version.
+# Both builds run under the ONE cudatoolkit/12.9 loaded above. Getting
+# there took two failed attempts, both correctly scored INDETERMINATE
+# rather than as torch-version results:
+#
+#   57604574  2.8.0+cu129 under the default cudatoolkit/13.2 ->
+#             `ImportError: libcudart.so.13`, every rank, 27 s.
+#   57605264  a per-cell module swap "fixing" that -> NERSC's NCCL
+#             plugin links libcudart.so.12, so under 13.0 it cannot
+#             load: `Failed to initialize any NET plugin`, both cells.
+#
+# Neither venv bundles libcudart, so the module environment supplies it
+# -- but 12.9 satisfies BOTH torch builds and the plugin at once, so the
+# swap was never needed in the first place.
 probe () {
-    local label="$1"; local py="$2"; local cudamod="$3"
+    local label="$1"; local py="$2"
     echo
-    echo "########## ${label} (${cudamod}) ##########"
-    set +u
-    module unload cudatoolkit 2>/dev/null
-    module load "${cudamod}" 2>/dev/null || echo "WARN: ${cudamod} failed to load"
-    set -u
+    echo "########## ${label} ##########"
+    # NO module swapping. Both builds run under the single
+    # cudatoolkit/12.9 loaded once at the top -- verified directly:
+    #   2.13.0+cu130 under 12.9 -> cuda avail True
+    #   2.8.0+cu129  under 12.9 -> cuda avail True
+    #
+    # Swapping is not just unnecessary, it BREAKS the job. NERSC's NCCL
+    # plugin (`libnccl-net.so`) links `libcudart.so.12` out of the HPC
+    # SDK, so under cudatoolkit/13.0 it cannot load and every rank dies
+    # with `Failed to initialize any NET plugin` ->
+    # `DistBackendError: NCCL error ... invalid usage`. That is what
+    # killed attempt 57605264 (both cells, INDETERMINATE) -- caused by
+    # the per-cell swap I added to fix the *previous* attempt's
+    # libcudart.so.13 failure. One module serves both builds; use it.
+    case ":${LD_LIBRARY_PATH:-}:" in
+        *nccl*plugin*) : ;;
+        *) echo "### ${label} verdict=INDETERMINATE reason=no-nccl-plugin"; return ;;
+    esac
 
     # Assert the interpreter can actually reach a GPU before drawing any
     # conclusion from it. Without this a broken environment looks like a
@@ -143,8 +167,8 @@ if frozen_unit_kwargs(f, {'reshard_after_forward': True})['reshard_after_forward
 # rc=134/501 s in 57604574, so the control is already established --
 # it is repeated here because cell 2 must be paired with a control from
 # the SAME allocation to rule out node/topology luck.)
-probe "1-control-torch213-r8" "${PY_213}" "cudatoolkit/13.0"
-probe "2-torch28-r8"          "${PY_OLD}" "cudatoolkit/12.9"
+probe "1-control-torch213-r8" "${PY_213}"
+probe "2-torch28-r8"          "${PY_OLD}"
 
 echo
 echo "=== artifacts: ${OUT} ==="
