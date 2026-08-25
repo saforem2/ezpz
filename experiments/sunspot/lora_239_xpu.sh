@@ -20,8 +20,12 @@
 #     -l filesystems=tegu:home -A datascience -q workq \
 #     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/sunspot/lora_239_xpu.sh
 
-set -u
 set -o pipefail
+# `set -u` is deliberately deferred until AFTER /etc/profile is sourced:
+# the profile references unset variables, so under `set -u` it aborts
+# the script instantly. Job 12473854 died that way -- walltime 00:00:00,
+# Exit_status=1, EMPTY .o and .e, not one line printed. Reproduced:
+#   bash -c 'set -u; source /etc/profile'   -> silent death
 
 # PBS runs this under a NON-login /bin/bash, where `module` does not
 # exist -- job 12473851 got all the way to the training cells and then
@@ -44,6 +48,9 @@ command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 
 # Assert the PATH is populated too -- an empty MODULEPATH makes every
 # subsequent `module load` a silent no-op, which is worse than an error.
 [ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH is empty; module loads would silently no-op"; exit 1; }
+
+# Safe to be strict again now that the profile is out of the way.
+set -u
 
 D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"

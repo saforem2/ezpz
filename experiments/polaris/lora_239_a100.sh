@@ -16,8 +16,12 @@
 #     -A datascience_collab -q debug \
 #     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/polaris/lora_239_a100.sh
 
-set -u
 set -o pipefail
+# `set -u` is deliberately deferred until AFTER /etc/profile is sourced:
+# the profile references unset variables, so under `set -u` it aborts
+# the script instantly. Job 12473854 died that way -- walltime 00:00:00,
+# Exit_status=1, EMPTY .o and .e, not one line printed. Reproduced:
+#   bash -c 'set -u; source /etc/profile'   -> silent death
 
 # PBS runs this under a NON-login /bin/bash, where `module` does not
 # exist. Sunspot job 12473851 lost a whole allocation to exactly that:
@@ -38,6 +42,9 @@ if ! command -v module >/dev/null 2>&1; then
 fi
 command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 1; }
 [ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH is empty; module loads would silently no-op"; exit 1; }
+
+# Safe to be strict again now that the profile is out of the way.
+set -u
 
 D="${EZPZ_DIR:-/lus/eagle/projects/datascience_collab/foremans/torchcomms-test/ezpz}"
 cd "${D}" || exit 1
