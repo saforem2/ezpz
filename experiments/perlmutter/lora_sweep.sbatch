@@ -89,6 +89,13 @@ case "${SWEEP:-a}" in
     run "lora-r16-attn-mlp"  --lora-rank 16
     run "lora-r32-attn-mlp"  --lora-rank 32
     ;;
+  isolate)
+    # One config, alone in its allocation, so a hang cannot be blamed
+    # on batch position or a neighbour. r8/r16 with attn+mlp have hung
+    # at the first forward in two independent jobs (57540698, 57541459)
+    # while r32/r64 pass -- rank, not position, is the variable.
+    run "isolate-${ISO_LABEL:-r8}" ${ISO_ARGS:---lora-rank 8}
+    ;;
 esac
 
 echo
