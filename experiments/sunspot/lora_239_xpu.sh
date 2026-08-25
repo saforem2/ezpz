@@ -23,6 +23,19 @@
 set -u
 set -o pipefail
 
+# PBS runs this under a NON-login /bin/bash, where `module` does not
+# exist -- job 12473851 got all the way to the training cells and then
+# every one of them failed in ~1 s with `module: command not found`,
+# because ezpz_load_modules_sunspot could not load oneapi. Initialise
+# Lmod explicitly before anything tries to use it.
+if ! command -v module >/dev/null 2>&1; then
+    # shellcheck disable=SC1091
+    source "${MODULESHOME:-/usr/share/lmod/lmod}/init/bash" 2>/dev/null \
+        || source /etc/profile.d/z00_lmod.sh 2>/dev/null \
+        || { echo "FATAL: cannot initialise Lmod"; exit 1; }
+fi
+command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 1; }
+
 D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"
 cd "${D}" || exit 1
@@ -107,7 +120,13 @@ probe () {
     else
         verdict=INDETERMINATE
     fi
-    grep -aE "Watchdog|Timeout|last enqueued|Traceback|Error" \
+    # An INDETERMINATE cell that produced NO output at all means the
+    # launch never started -- surface that instead of leaving a bare
+    # verdict with no cause to chase (12473851 left three empty logs).
+    if [ "${verdict}" = "INDETERMINATE" ] && [ ! -s "${OUT}/${label}.log" ]; then
+        echo "    (log is EMPTY -- the launch itself failed, not the run)"
+    fi
+    grep -aE "Watchdog|Timeout|last enqueued|Traceback|Error|command not found" \
         "${OUT}/${label}.log" | head -4
     echo "### ${label} verdict=${verdict} rc=${rc} secs=${dt} last_iter=${last:-NONE}"
 }
