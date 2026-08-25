@@ -64,11 +64,28 @@ esac
 echo "=== ezpz commit: $(git -C "${D}" rev-parse --short HEAD 2>/dev/null || echo unknown) ==="
 "${PY_BIN}" -c "import torch; print('=== torch', torch.__version__, '===')"
 
-# This job tests the SHIPPED default path. Assert the failed lever is
-# actually off, so a stray env var cannot silently change what is
-# being measured.
-[ "${EZPZ_FSDP_KEEP_FROZEN_GATHERED:-0}" = "0" ] \
-    || { echo "FATAL: KEEP_FROZEN_GATHERED is set; this job tests the default"; exit 1; }
+# This job tests the SHIPPED DEFAULT path. Assert that by asking the
+# code what it actually does, not by checking an env var -- an env
+# check passes vacuously against a checkout that predates the variable.
+#
+# That is not hypothetical: job 57604070 was launched against a stale
+# checkout where frozen_unit_kwargs still defaulted to ON, so it was
+# silently bisecting the FAILED-intervention arm while reporting itself
+# as the default arm. Cancelled and relaunched. Probe the behaviour.
+EZPZ_FSDP_KEEP_FROZEN_GATHERED="${EZPZ_FSDP_KEEP_FROZEN_GATHERED:-0}" \
+"${PY_BIN}" -c "
+import os, sys
+os.environ.pop('EZPZ_FSDP_KEEP_FROZEN_GATHERED', None)
+from ezpz.examples.fsdp_tp import frozen_unit_kwargs
+import torch.nn as nn
+f = nn.Linear(4, 4, bias=False); f.weight.requires_grad_(False)
+base = {'reshard_after_forward': True}
+if frozen_unit_kwargs(f, base)['reshard_after_forward'] is not True:
+    sys.exit('frozen unit is NOT resharding by default -- this checkout '
+             'predates the opt-in inversion, so it would measure the '
+             'failed-intervention arm')
+print('=== default arm confirmed: frozen units reshard ===')
+" || { echo "FATAL: wrong code under test -- refusing to run"; exit 1; }
 
 OUT="${D}/outputs/lora-239-bisect-${SLURM_JOB_ID}"
 mkdir -p "${OUT}"
