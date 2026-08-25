@@ -302,10 +302,36 @@ remaining explanations are dynamic:
    probes fit a debug allocation — hence bisect, not sweep).
 
     **In progress.** r=24 and r=20 both train, so the boundary is
-    **17..20**, not r>=32. A second job probes 18/17/19. If it lands
-    between 16 and 17 that is a suspiciously exact power-of-two edge and
-    argues for a size/alignment threshold in the reduce-scatter; if it
-    lands mid-interval, r is a proxy for something else.
+    **17..20**, not r>=32. A second job (`57604619`) probes 18/17/19.
+
+    !!! tip "Pre-registered prediction: the 256 KiB NCCL boundary"
+
+        Alignment cannot explain this — `coef·r` is divisible by 8 and
+        by 128 at *every* r. But the **per-rank reduce-scatter shard in
+        bytes** (`coef·r/ws · 2` for bf16) crosses **262144 B = 256 KiB**
+        exactly between the last known hang and the first known pass:
+
+        | r | shard bytes | vs 256 KiB | outcome |
+        |---|---|---|---|
+        | 16 | 209 920 | below | **hang** |
+        | 17 | 223 040 | below | *predict hang* |
+        | 18 | 236 160 | below | *predict hang* |
+        | 19 | 249 280 | below | *predict hang* |
+        | 20 | 262 400 | **above** | trains |
+
+        256 KiB is a real NCCL protocol/buffer boundary (LL / LL128 /
+        Simple selection). So the prediction is that **r=17, 18 and 19
+        all hang and the flip is exactly at r=20** — recorded here
+        *before* job `57604619` reports, so it cannot be retrofitted.
+
+        This also refutes payload size once more, from the other
+        direction: r=64's per-shard payload is `419840`, the very number
+        in r=8's *hanging* watchdog trace — identical byte counts land on
+        both sides of the boundary. What would matter is not the size
+        itself but which NCCL protocol it selects.
+
+        If instead r=17/18/19 train, the boundary is 16→17 and this
+        threshold story is wrong.
 
     Classify these cells on **evidence** (watchdog line vs. reaching the
     plotting stage), never on `rc` or an `iter=` marker: the first
