@@ -10,8 +10,10 @@
     **Four** plausible-sounding explanations have now been tested and
     refuted. They are documented here so nobody re-derives them.
 
-    Known workaround: use `--lora-rank 32` or higher, which completes
-    normally. Why it does is still unexplained.
+    Known workaround: use **`--lora-rank 20` or higher**, which completes
+    normally (r20/r24/r28/r32/r64 all train). The boundary is 17..20 —
+    lower than the r>=32 originally assumed — and the leading
+    explanation is the [256 KiB NCCL protocol edge](#where-to-look-next).
 
 ## What was observed
 
@@ -137,8 +139,8 @@ The stack trace lands in
 !!! note "What this still does not settle"
 
     The trace confirms the *shape* of the failure is consistent with the
-    frozen-unit asymmetry. It does not explain why r=32 and r=64 — which
-    have the **same** asymmetry — complete normally. That gap was the
+    frozen-unit asymmetry. It does not explain why every r >= 20 — which
+    has the **same** asymmetry — completes normally. That gap was the
     reason to test the intervention rather than assume it, and the test
     came back negative.
 
