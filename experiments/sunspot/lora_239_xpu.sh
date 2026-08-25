@@ -49,8 +49,14 @@ command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 
 # subsequent `module load` a silent no-op, which is worse than an error.
 [ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH is empty; module loads would silently no-op"; exit 1; }
 
-# Safe to be strict again now that the profile is out of the way.
-set -u
+# NOTE: `set -u` stays OFF for the whole script. Re-enabling it after the
+# profile was not enough -- ezpz_setup_env calls `module load frameworks`,
+# and Lmod's own init/bash reads $ZSH_EVAL_CONTEXT, which is unbound under
+# `set -u`:
+#   /usr/share/lmod/lmod/init/bash: line 237: ZSH_EVAL_CONTEXT: unbound variable
+# That killed job 12473855 mid-setup. The module machinery is simply not
+# `set -u`-clean, so this script relies on explicit checks and
+# `${VAR:-default}` everywhere instead. `set -o pipefail` is kept.
 
 D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"
