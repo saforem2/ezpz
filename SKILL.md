@@ -53,20 +53,31 @@ leaves **`MODULEPATH` empty**, so every `module load` becomes a silent
 no-op ("No modules loaded") and `ezpz_setup_env` fails downstream with
 the misleading `CONDA_PREFIX still not set`.
 
-Source the login profile, and assert it worked — but **not under
-`set -u`**. `/etc/profile` references unset variables, so with `set -u`
-already active it aborts the script on that very line: walltime
-`00:00:00`, `Exit_status=1`, **empty `.o` and `.e`**, not one line
-printed. Reproduce it yourself with
-`bash -c 'set -u; source /etc/profile'`.
+Source the login profile, and assert it worked.
+
+**Do not use `set -u` in these scripts at all.** The module system is
+not `set -u`-clean, in two separate places:
+
+- `/etc/profile` references unset variables, so sourcing it under
+  `set -u` aborts the script on that line — walltime `00:00:00`,
+  `Exit_status=1`, **empty `.o` and `.e`**, not one line printed.
+- Deferring `set -u` past the profile is *still* not enough: Lmod's
+  `init/bash` reads `$ZSH_EVAL_CONTEXT`, and `ezpz_setup_env` re-enters
+  the module machinery long after the preamble, so it dies mid-setup
+  with `ZSH_EVAL_CONTEXT: unbound variable`.
+
+Reproduce both with `bash -c 'set -u; source /etc/profile'`.
 
 ```bash
-set -o pipefail                       # NOT set -u yet
+set -o pipefail                       # and NOT set -u, anywhere
 source /etc/profile 2>/dev/null || true
 command -v module >/dev/null 2>&1 || { echo "FATAL: no module cmd"; exit 1; }
 [ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH empty"; exit 1; }
-set -u                                # safe from here on
 ```
+
+Use `${VAR:-default}` everywhere and explicit `[ -n ... ]` checks
+instead — on these systems the shell strictness has to give way to the
+module system, not the other way round.
 
 An empty `.o`/`.e` with zero walltime always means the script died in
 its own preamble. Check `qstat -xf <jobid>` for `Exit_status` and
