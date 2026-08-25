@@ -228,9 +228,40 @@ separate 2-node run, so the sweep produces comparable numbers.
 
 ## Environment notes
 
-Three Perlmutter-specific hazards, each of which cost a job — or, in the
+Four Perlmutter-specific hazards, each of which cost a job — or, in the
 first case, five jobs and a set of published numbers — before being
 understood.
+
+!!! danger "Pair each torch build with its own `cudatoolkit` module"
+
+    **No venv here bundles `libcudart`** — every torch build takes it
+    from the loaded module, and the default is `cudatoolkit/13.2`.
+
+    | venv | torch | needs |
+    |---|---|---|
+    | `.venv` | 2.8.0+cu129 | `cudatoolkit/12.9` |
+    | `.venv-213` | 2.13.0+cu130 | `cudatoolkit/13.0` |
+
+    Running the cu129 venv under the default module kills every rank in
+    ~27 s with `ImportError: libcudart.so.13`. A multi-cell job that
+    compares torch versions must swap the module **per cell**:
+
+    ```bash
+    module unload cudatoolkit; module load cudatoolkit/12.9
+    ```
+
+    **A login-node import check will not catch this** — it runs outside
+    the job's module environment, so it passes while the job dies.
+    Assert reachability inside the cell instead, or a broken environment
+    gets misread as a real experimental result:
+
+    ```bash
+    "${py}" -c "
+    import torch, sys
+    if not torch.cuda.is_available():
+        sys.exit('CUDA unavailable -- environment, not a result')
+    " || { echo 'verdict=INDETERMINATE reason=env'; return; }
+    ```
 
 !!! danger "Load `nccl/2.24.3`, or NCCL silently uses TCP"
 
