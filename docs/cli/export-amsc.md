@@ -15,29 +15,36 @@ timestamp,system,config,nodes,gpus,status,wall_time_sec,throughput_tokens_per_se
 2026-08-11T17:12:30Z,SunSpot,agpt-2b/bs1/seq2048/tp1,1,12,pass,12.739,61216.953,...
 ```
 
-!!! warning "The AmSC repo does not use this schema or this path"
+!!! warning "The AmSC repo has no results format — check before you write"
 
-    Verified against the repo on **2026-08-25**, and worth knowing before
-    you point `--append` at it:
+    Verified against `origin/main` on **2026-08-25**:
 
-    | this page used to say | what is actually there |
+    | this page used to say | what is there |
     | --- | --- |
-    | rows live in `<category>/<name>/results/runs.csv` | **no `runs.csv` exists anywhere** in the repo |
-    | a `build_dashboard.py` consumes them | **no such script** in the repo |
-    | 11 columns, `throughput_tokens_per_sec` etc. | `vit-weather` publishes 3: `configuration_name,samples_per_sec,iters_per_sec` |
+    | the dashboard reads `<category>/<name>/results/runs.csv` | no `runs.csv` anywhere, on any branch |
+    | the contract comes from `build_dashboard.py` | that file has **never** been in the repo's history — it lives in the separate dashboard project |
+    | one schema for everyone | no schema, no `benchmark.yaml`, no CONTRIBUTING |
 
-    The two benchmarks that do publish results use a per-system
-    directory (`vit-weather/results/Perlmutter/throughput_metrics.csv`)
-    or a per-system text file
-    (`mldocking/results/summary_aurora.txt`). `training/llm-finetuning`
-    has no `results/` at all.
+    What the repo actually says is
+    `results/README.md`: *"Keep results in structured subfolders with
+    provenance metadata when possible."* That is the whole
+    specification. In practice the two benchmarks publishing results
+    disagree — `vit-weather` writes
+    `results/<System>/throughput_metrics.csv` with three columns
+    (`configuration_name, samples_per_sec, iters_per_sec`); `mldocking`
+    writes free-form `results/summary_<system>.txt`.
 
-    So treat the schema below as **ezpz's own**, useful for comparing
-    ezpz runs across machines — which is what
-    `experiments/*/results/` uses it for. To contribute to a specific
-    benchmark, look at what that benchmark already publishes and match
-    it; `--append` writes wherever you point it, but it will not
-    translate columns for you.
+    **So this schema is not a competing invention.** Its columns
+    (`timestamp, system, config, nodes, gpus, status, wall_time_sec`)
+    were taken from the dashboard's own requirements when that
+    consumer was reachable, which makes it the only shape in play with
+    a documented provenance. A proposal to make it the common format
+    is drafted in
+    [AmSC results-format proposal](../notes/amsc-results-format-proposal.md).
+
+    Until that is settled: `--append` writes wherever you point it, and
+    **will not translate columns**. Contributing to a benchmark that
+    already publishes results means matching that benchmark.
 
 Append into a results file — the header is written only when the file
 is new:

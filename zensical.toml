@@ -209,6 +209,7 @@ nav = [
         "notes/index.md",
         { "🖍️ Overview" = "notes/diagrams.md" },
         { "🏔️ Perlmutter" = "notes/perlmutter.md" },
+        { "📐 AmSC format proposal" = "notes/amsc-results-format-proposal.md" },
         { "🧤 Hands-On Slides" = "notes/slides-2025-05-07.md" },
         { "🏖️ Shell Environment" = "notes/shell-environment.md" },
 

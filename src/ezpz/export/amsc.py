@@ -6,19 +6,28 @@ empty field meaning "not measured" (``None``), never zero.
 
 .. warning::
 
-   This schema was written against the `AmSC at-scale benchmarks
+   These columns come from the `AmSC at-scale benchmarks
    <https://gitlab.com/amsc2/ai-services/at-scale-services/amsc-atscale-benchmarks>`_
-   repo's ``build_dashboard.py``, which required ``benchmark.yaml`` +
-   ``results/runs.csv``. **Re-checked 2026-08-25: neither that script
-   nor any ``runs.csv`` is in that repo now.** The benchmarks that do
-   publish results use different shapes entirely -- ``vit-weather``
-   writes ``results/<System>/throughput_metrics.csv`` with three
-   columns (``configuration_name, samples_per_sec, iters_per_sec``).
+   dashboard's ``build_dashboard.py``, which required ``benchmark.yaml``
+   + ``results/runs.csv``. **Re-checked against origin/main 2026-08-25:
+   no ``runs.csv`` exists on any branch, and build_dashboard.py has
+   never been in that repo's history** -- it lives in the separate
+   dashboard project. The two benchmarks that do publish results
+   disagree with each other: ``vit-weather`` writes
+   ``results/<System>/throughput_metrics.csv`` with three columns
+   (``configuration_name, samples_per_sec, iters_per_sec``);
+   ``mldocking`` writes free-form ``results/summary_<system>.txt``.
 
-   So treat this as **ezpz's own** cross-machine schema, which is what
-   ``experiments/*/results/`` uses it for. Contributing to a specific
-   benchmark means matching what that benchmark already publishes;
-   this writer will not translate columns.
+   This is not a competing invention: these columns came from the
+   dashboard's own requirements, which makes them the only shape in
+   play with a documented provenance. That repo currently has no
+   schema, no ``benchmark.yaml`` and no CONTRIBUTING -- its
+   ``results/README.md`` asks only for "structured subfolders with
+   provenance metadata when possible" -- so the format is being
+   proposed upstream rather than forked.
+
+   Meanwhile this writer will not translate columns: contributing to a
+   benchmark that already publishes results means matching it.
 
 Two measurements from real Sunspot runs shaped the defaults here, and
 both are the kind of thing that silently produces a wrong-but-plausible
