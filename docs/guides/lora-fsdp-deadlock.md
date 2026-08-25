@@ -22,10 +22,18 @@
     If you hit the hang above r=18, that is new information — please add
     it to [#239](https://github.com/saforem2/ezpz/issues/239).
 
-    The sharpest open clue is that r17's stuck bucket is **18 % larger
-    than linear in r** while r8's is exactly linear — so at r17 the
-    stuck reduce-scatter is *not* one block's LoRA parameters. See
-    [the boundary section](#where-to-look-next).
+    **It does not reproduce on XPU/xccl.** The identical config trains
+    clean on Sunspot (job `12473856`), so the bug lives in NCCL or its
+    interaction with FSDP2 scheduling — not in the model or sharding
+    logic. That is the strongest constraint so far and it explains why
+    every *structural* hypothesis failed: the asymmetry, collective
+    order and payload sizes are all identical on XPU, where nothing
+    hangs.
+
+    The sharpest open clue on the NVIDIA side is that r17's stuck bucket
+    is **18 % larger than linear in r** while r8's is exactly linear —
+    so at r17 the stuck reduce-scatter is *not* one block's LoRA
+    parameters. See [the boundary section](#where-to-look-next).
 
 ## What was observed
 
@@ -307,6 +315,44 @@ released build rather than a patch someone has to reconstruct.
   output]` unit, so that unit is not frozen at all. Never reported hanging.
 - The HuggingFace path uses a different grouping.
 - #237, and torch 2.13 FSDP2 more broadly.
+
+## It does NOT reproduce on XPU/xccl (Sunspot)
+
+The first non-Perlmutter data point, and the strongest constraint yet.
+
+Sunspot job `12473856`: PVC (XPU), **xccl** rather than NCCL, torch
+`2.13.0a0+gitcf30153` from the `frameworks` module, `world_size=24`,
+same `agpt-2b` / `tp=1` / `bs=1` / `seq_len=2048` /
+`--lora-target attn,mlp`, same shipped default arm.
+
+| | Perlmutter (A100/NCCL) | Sunspot (PVC/xccl) |
+|---|---|---|
+| `--lora-rank 8` | **hang**, 6/6 | **trains**, `rc=0`, 102 s |
+
+Verified it is the intended configuration and not a silent skip: the log
+shows `dispatch key: XPU`, the full
+`--lora-rank 8 --lora-target attn,mlp` command line, and plotting output
+through end of training.
+
+**So the deadlock is not inherent to FSDP2's frozen-unit bucketing.**
+The same ezpz code, same torch major, same LoRA geometry and the same
+fully-frozen units run clean on a different collectives backend.
+Whatever #239 is, it lives in NCCL or in NCCL's interaction with FSDP2's
+reduce-scatter scheduling -- not in the model or sharding logic common
+to both.
+
+That also explains why every structural hypothesis failed: the AG/RS
+asymmetry, the collective order and the payload sizes are all
+*identical* on XPU, where nothing hangs.
+
+!!! note "What this does not prove"
+
+    Sunspot differs in more than the backend -- `world_size=24` vs 8, a
+    different torch build, different hardware. The cleaner follow-up is
+    Polaris (A100 + **NCCL** like Perlmutter, but a different site and
+    software stack): hanging there too makes #239 an NCCL/FSDP2
+    property; training there points at something specific to
+    Perlmutter's stack.
 
 ## Refuted: "the NCCL protocol selects the outcome"
 
