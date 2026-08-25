@@ -161,6 +161,31 @@ that happened to land twice**.
 
 This is a hypothesis. It has not been tested. Do not cite it as the cause.
 
+## Refuted: "the collective *order* differs by rank"
+
+The trace shows work #18 skipped in favour of #19, so the obvious next
+guess is that the frozen-unit all-gather sits at a different position in
+the backward stream depending on `r`. It does not.
+
+Recording the exact backward collective sequence on 2 gloo ranks
+(`A` = all-gather, `R` = reduce-scatter, 6 layers):
+
+```
+r=8    bwd = AAARARARARARAR
+r=16   bwd = AAARARARARARAR   identical
+r=32   bwd = AAARARARARARAR   identical
+r=64   bwd = AAARARARARARAR   identical
+```
+
+Byte-identical at every rank, including the ones that work. The leading
+`AAA` is the asymmetry — three all-gathers before the first
+reduce-scatter — and it is present in *all four*.
+
+So the r-dependence is **not** an ordering difference. Combined with the
+size refutation above, no *static* property of the collective stream
+separates hanging from working configurations. That is what pushes the
+remaining explanation toward timing rather than structure.
+
 ## Mitigation
 
 `frozen_unit_kwargs()` in `src/ezpz/examples/fsdp_tp.py` keeps a
