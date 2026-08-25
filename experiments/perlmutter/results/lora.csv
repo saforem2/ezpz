@@ -1,6 +1,7 @@
 system,model,nodes,gpus,batch_size,seq_len,iters,lora_rank,lora_target,tokens_per_sec,mfu_pct,tflops,notes
 Perlmutter,agpt-2b,2,8,1,2048,20,0,,52060.06,19.556,61.013,full fine-tune baseline
 Perlmutter,agpt-2b,2,8,1,2048,20,16,attn,90878.17,23.500,73.321,
+Perlmutter,agpt-2b,2,8,1,2048,20,32,"attn,mlp",82639.20,21.719,67.762,
 Perlmutter,agpt-2b,2,8,1,2048,20,64,"attn,mlp",82632.89,22.116,69.002,
-Perlmutter,agpt-2b,2,8,1,2048,20,8,"attn,mlp",,,,"timed out at the 600s per-run bound — 5 sequential runs exceeded the 29-min allocation, not a LoRA failure"
-Perlmutter,agpt-2b,2,8,1,2048,20,16,"attn,mlp",,,,"timed out at the 600s per-run bound — same cause"
+Perlmutter,agpt-2b,2,8,1,2048,20,8,"attn,mlp",,,,"HANGS at the first forward — ezpz #239. 3 jobs incl. one alone in its allocation"
+Perlmutter,agpt-2b,2,8,1,2048,20,16,"attn,mlp",,,,"HANGS at the first forward — ezpz #239. 3 jobs incl. one alone in its allocation"

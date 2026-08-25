@@ -205,7 +205,21 @@ First validation on anything other than Intel XPU. `agpt-2b`, 2 nodes /
 |---|---:|---:|---:|
 | full fine-tune (rank 0) | 52,060 | 19.56% | 61.0 |
 | **LoRA r16, attn only** | **90,878** | **23.50%** | **73.3** |
+| LoRA r32, attn+mlp | 82,639 | 21.72% | 67.8 |
 | LoRA r64, attn+mlp | 82,633 | 22.12% | 69.0 |
+| LoRA r8 / r16, attn+mlp | — | — | — |
+
+!!! bug "Small ranks with `attn,mlp` hang"
+
+    `r8` and `r16` with `--lora-target attn,mlp` hang at the **first
+    forward pass** — 7 seconds in, then silence until killed. Zero
+    iterations, no traceback: the signature of a collective deadlock.
+    `r32` and `r64` use the same targets and train fine, so it is the
+    rank that matters, not the targeting.
+
+    Reproduced in 3 jobs each, including one with the config **alone in
+    its allocation**, which rules out batch position and neighbours.
+    Tracked in [#239](https://github.com/saforem2/ezpz/issues/239).
 
 **1.75×** and **1.59×** over the full fine-tune — the expected shape,
 since frozen base weights mean no optimizer state and a much smaller
