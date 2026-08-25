@@ -219,3 +219,66 @@ def test_frozen_unit_kwargs_predicate(monkeypatch) -> None:
 
     monkeypatch.setenv("EZPZ_FSDP_FROZEN_RESHARD", "1")
     assert frozen_unit_kwargs(frozen, base)["reshard_after_forward"] is True
+
+
+def test_apply_lora_really_leaves_units_frozen(monkeypatch) -> None:
+    """Bridge from the stand-in model above to the real one.
+
+    The spawn tests use a hand-built module. This asserts the *real*
+    ``Transformer`` + ``apply_lora`` produces the same shape, so those
+    tests are not measuring an artifact of the stand-in:
+
+    * ``--lora-target attn,mlp`` leaves ``tok_embeddings`` and
+      ``[norm, output]`` with zero trainable params -> fix engages.
+    * ``unembed`` puts an adapter in ``[norm, output]`` -> fix correctly
+      declines, since that unit is no longer frozen.
+    """
+    from ezpz.examples.fsdp_tp import frozen_unit_kwargs
+    from ezpz.models.llama import ModelArgs, Transformer
+    from ezpz.tinker.lora import LoraConfig, apply_lora
+
+    monkeypatch.delenv("EZPZ_FSDP_FROZEN_RESHARD", raising=False)
+    base = {"reshard_after_forward": True}
+    cfg = ModelArgs(
+        dim=64, n_layers=2, n_heads=4, n_kv_heads=2, vocab_size=128
+    )
+
+    def trainable(mods) -> int:
+        ms = mods if isinstance(mods, list) else [mods]
+        return sum(p.requires_grad for m in ms for p in m.parameters())
+
+    m = apply_lora(
+        Transformer(cfg),
+        LoraConfig(
+            rank=8, train_attn=True, train_mlp=True, train_unembed=False
+        ),
+        verbose=False,
+    )
+    assert trainable(m.tok_embeddings) == 0
+    assert trainable([m.norm, m.output]) == 0
+    assert (
+        frozen_unit_kwargs(m.tok_embeddings, base)["reshard_after_forward"]
+        is False
+    )
+    assert (
+        frozen_unit_kwargs([m.norm, m.output], base)["reshard_after_forward"]
+        is False
+    )
+    # Blocks keep the sharded path -- 14 trainable tensors is the count the
+    # #239 collective-size arithmetic is built on.
+    assert trainable(m.layers[0]) == 14
+
+    m2 = apply_lora(
+        Transformer(cfg),
+        LoraConfig(
+            rank=8, train_attn=True, train_mlp=True, train_unembed=True
+        ),
+        verbose=False,
+    )
+    assert trainable([m2.norm, m2.output]) > 0, (
+        "unembed adapter should land here"
+    )
+    assert (
+        frozen_unit_kwargs([m2.norm, m2.output], base)["reshard_after_forward"]
+        is True
+    ), "a unit holding a trainable adapter must keep the default path"

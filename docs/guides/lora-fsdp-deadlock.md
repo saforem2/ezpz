@@ -74,6 +74,50 @@ frozen units kept gathered:  bwd AG=12  bwd RS=12   <- symmetric
 ranks blocked on a reduce-scatter at one sequence number while others ran
 ahead to an all-gather at a much later one.
 
+## The watchdog trace (job 57601590, torch 2.13.0+cu130)
+
+Lowering `TORCH_DDP_TIMEOUT` to 300s finally produced a dump. **All eight
+ranks report byte-identical state:**
+
+```
+Watchdog caught collective operation timeout:
+  WorkNCCL(SeqNum=18, OpType=_REDUCE_SCATTER_BASE,
+           NumelIn=419840, NumelOut=52480, Timeout(ms)=300000)
+
+Timeout at collective: _ALLGATHER_BASE, #39
+  [0,1,2,3,4,5,6,7] joined but didn't finish collective #39
+
+PG status: last enqueued work: 39,
+           last started work: 19 (_ALLGATHER_BASE),
+           last completed work: 17
+```
+
+Three things follow, and they change the diagnosis from hypothesis to
+observation:
+
+1. **This is not a rank divergence.** All 8 ranks joined #39 and report
+   the same stuck op. Nobody took a different code path — which rules
+   out the usual "one rank has a different collective order" story.
+
+2. **Work #18 was skipped.** The stream went `last completed: 17` →
+   `last started: 19`, and **#19 is an `_ALLGATHER_BASE`**. The stuck op
+   #18 is the reduce-scatter that the all-gather jumped ahead of. That
+   is the AG/RS asymmetry, caught in the act.
+
+3. **It dies in the first backward** — `last_iter=NONE`, no training step
+   ever completed. 39 ops enqueued against 17 completed.
+
+The stack trace lands in
+`torch/distributed/fsdp/_fully_shard/_fsdp_collectives.py:619`
+(`foreach_reduce`), the FSDP2 gradient reduce-scatter path.
+
+!!! note "What this still does not settle"
+
+    The trace confirms the *shape* of the failure matches the frozen-unit
+    asymmetry. It does not explain why r=32 and r=64 — which have the
+    **same** asymmetry — complete normally. Until that is explained, the
+    mitigation remains a precondition removal.
+
 ## Refuted: "the asymmetry is LoRA-specific"
 
 It is not. The asymmetry tracks **fully-frozen FSDP units**, not LoRA —
