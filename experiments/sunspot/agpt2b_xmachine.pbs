@@ -1,0 +1,57 @@
+#!/bin/bash -l
+#PBS -N agpt2b-xmachine
+#PBS -A datascience
+#PBS -l select=1
+#PBS -l walltime=00:30:00
+#PBS -q workq
+#PBS -l filesystems=tegu:home
+#PBS -j oe
+#PBS -o /home/foremans/agpt2b-xmachine.log
+#
+# Re-measure agpt-2b at the config the cross-machine table compares, so
+# Sunspot has the MFU/TFLOPS the original row is missing.
+#
+# The row in docs/cli/export-amsc.md (2026-08-11, 61,217 tok/s) predates
+# the current export and its run directory is gone, so those fields
+# cannot be recovered -- only re-measured. Same flags as the Perlmutter
+# runs: agpt-2b, tp=1, bs=1, seq2048, 20 iters, 1 node.
+
+set -u
+set -o pipefail
+
+[ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH unset"; exit 1; }
+
+D="${EZPZ_DIR:-${HOME}/datascience/foremans/projects/saforem2/ezpz-validate}"
+cd "${D}" || exit 1
+echo "=== commit: $(git rev-parse --short HEAD) ==="
+
+# lmod reads unset vars; scope nounset off just for the module call.
+set +u
+module load frameworks/2026.1.0
+export PATH="${HOME}/.local/bin:${PATH}:/opt/cray/pals/1.8/bin:/opt/pbs/bin"
+# shellcheck disable=SC1091
+source venvs/aurora_frameworks-2026.1.0/bin/activate
+set -u
+
+export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
+export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+
+OUT="${D}/out/agpt2b-xmachine-${PBS_JOBID%%.*}"
+mkdir -p "${OUT}"
+NP=$(( $(wc -l < "${PBS_NODEFILE}") * 12 ))
+echo "=== nodes=$(wc -l < "${PBS_NODEFILE}") np=${NP} ==="
+
+python3 -m ezpz.launch --np "${NP}" -- \
+    python3 -m ezpz.examples.fsdp_tp \
+        --model agpt-2b --tp 1 --dataset random \
+        --train-iters 20 --batch-size 1 --seq-len 2048 \
+        --outdir "${OUT}" 2>&1 | tee "${OUT}/train.log"
+RC=${PIPESTATUS[0]}
+
+echo
+echo "=== rc=${RC} ==="
+sed -E 's/\x1b\[[0-9;]*m//g' "${OUT}/train.log" | grep -a log_metrics | tail -1 \
+    | grep -oE 'iter=[0-9]+|tps=[0-9.]+|mfu=[0-9.]+|tflops=[0-9.]+'
+echo "artifacts: ${OUT}"
+exit "${RC}"
