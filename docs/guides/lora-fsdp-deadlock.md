@@ -26,17 +26,21 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 | 8  | `attn,mlp` | **hang** in backward |
 | 16 | `attn,mlp` | **hang** in backward |
 | 16 | `attn`     | trains |
+| 18 | `attn,mlp` | trains |
 | 20 | `attn,mlp` | trains |
 | 24 | `attn,mlp` | trains |
+| 28 | `attn,mlp` | trains |
 | 32 | `attn,mlp` | trains |
 | 64 | `attn,mlp` | trains |
 
-The r20/r24 rows come from the bisect (job `57604409`) and **tighten the
-boundary to 17..20**, well below the r>=32 this guide originally
-implied. Both trained cleanly in ~175s.
+The r18–r28 rows come from the bisect (jobs `57604409`, `57604619`) and
+**put the boundary at 16→18 at the widest** — far below the r>=32 this
+guide originally implied. Each trained cleanly in 96–175 s. r=17 is the
+last open cell.
 
-The r8/r16 `attn,mlp` hang has since reproduced **4/4** (jobs
-`57601590` ×3, `57602201`). It is deterministic.
+The r8/r16 `attn,mlp` hang has reproduced **5/5** (jobs `57601590` ×3,
+`57602201`, and the same-allocation control in `57604574` at
+rc=134/501 s). It is deterministic.
 
 The watchdog fingerprint was `NumelIn=419840, NumelOut=52480`.
 
@@ -305,6 +309,21 @@ remaining explanations are dynamic:
 
     **In progress.** r=24 and r=20 both train, so the boundary is
     **17..20**, not r>=32. A second job (`57604619`) probes 18/17/19.
+
+    !!! failure "REFUTED by r=18 — the 256 KiB prediction was wrong"
+
+        Recorded below as written, unedited, because the point of
+        pre-registering it was to be able to lose. **r=18 trained**
+        (job `57604619`, 130 s, plots written, zero watchdog lines) —
+        its shard is 236 160 B, comfortably *below* 256 KiB, where the
+        prediction says it must hang.
+
+        So the boundary is **16→18 at the widest**, and the NCCL
+        protocol edge does not explain it. What survives: the direct
+        `NCCL_PROTO` test (job `57605154`) is now *more* valuable, not
+        less — it changes the protocol while holding r fixed, so it can
+        still say whether protocol matters at all, independently of this
+        failed size story.
 
     !!! tip "Pre-registered prediction: the 256 KiB NCCL boundary"
 
