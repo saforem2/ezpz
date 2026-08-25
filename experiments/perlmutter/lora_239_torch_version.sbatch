@@ -65,12 +65,33 @@ mkdir -p "${OUT}"
 NP=$(( SLURM_NNODES * 4 ))
 ITERS="${ITERS:-20}"
 
-# $1 = label, $2 = interpreter
+# $1 = label, $2 = interpreter, $3 = cudatoolkit module to load
+#
+# The CUDA module MUST match the interpreter's torch build. Neither venv
+# bundles libcudart, so both take it from the module environment, and
+# Perlmutter loads cudatoolkit/13.2 by default. The first attempt
+# (57604574) ran the 2.8.0+cu129 cell under that default and every rank
+# died in 27 s with `ImportError: libcudart.so.13`. It classified as
+# INDETERMINATE, correctly -- an environment collision is not evidence
+# about either torch version.
 probe () {
-    local label="$1"; local py="$2"
+    local label="$1"; local py="$2"; local cudamod="$3"
     echo
-    echo "########## ${label} ##########"
-    "${py}" -c "import torch; print('=== torch', torch.__version__, '===')"
+    echo "########## ${label} (${cudamod}) ##########"
+    set +u
+    module unload cudatoolkit 2>/dev/null
+    module load "${cudamod}" 2>/dev/null || echo "WARN: ${cudamod} failed to load"
+    set -u
+
+    # Assert the interpreter can actually reach a GPU before drawing any
+    # conclusion from it. Without this a broken environment looks like a
+    # torch-version result.
+    "${py}" -c "
+import torch, sys
+print('=== torch', torch.__version__, '/ cuda', torch.version.cuda, '===')
+if not torch.cuda.is_available():
+    sys.exit('CUDA unavailable for this build -- environment, not a result')
+" || { echo "### ${label} verdict=INDETERMINATE reason=env rc=NA"; return; }
 
     # Probe BEHAVIOUR, not a version string or env var: assert this
     # build's default really reshards frozen units, so a stale checkout
@@ -118,9 +139,12 @@ if frozen_unit_kwargs(f, {'reshard_after_forward': True})['reshard_after_forward
 }
 
 # Cell 1 is the CONTROL and must run first: if r8 does not hang under
-# 2.13 in this very allocation, cell 2 proves nothing.
-probe "1-control-torch213-r8" "${PY_213}"
-probe "2-torch28-r8"          "${PY_OLD}"
+# 2.13 in this very allocation, cell 2 proves nothing. (It hung at
+# rc=134/501 s in 57604574, so the control is already established --
+# it is repeated here because cell 2 must be paired with a control from
+# the SAME allocation to rule out node/topology luck.)
+probe "1-control-torch213-r8" "${PY_213}" "cudatoolkit/13.0"
+probe "2-torch28-r8"          "${PY_OLD}" "cudatoolkit/12.9"
 
 echo
 echo "=== artifacts: ${OUT} ==="
