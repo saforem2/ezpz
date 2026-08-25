@@ -151,19 +151,27 @@ because it was never plotted against the working configurations.
 ## What actually distinguishes hang from ok: unknown
 
 Nothing structural. Composition is identical — 14 trainable tensors per
-block at every rank; only widths scale. Collective *order* is identical
-across all 8 ranks at every rank on torch 2.12.1, and **the hang does not
-reproduce on 2.12.1 at all**.
+block at every rank; only widths scale, and the collective order is
+identical too (see the order refutation below).
 
-Given that #237 (FSDP2 tied-embedding rejection) was also 2.13-only, the
-remaining live hypothesis is a **torch 2.13 FSDP2 regression in
-backward-prefetch scheduling that a frozen unit's unmatched all-gather can
-expose non-deterministically**. That is timing-sensitive, which would
-explain why rank is a poor predictor — and raises the real possibility
-that `r8/r16 vs r32/r64` is not a boundary at all, but a **flaky race
-that happened to land twice**.
+!!! warning "Corrected: this section previously overreached"
 
-This is a hypothesis. It has not been tested. Do not cite it as the cause.
+    An earlier revision claimed "the hang does not reproduce on torch
+    2.12.1 at all". That is **not supported**. The 2.12.1 observations
+    are from a local 2-rank **gloo/CPU** probe, which cannot reproduce a
+    GPU NCCL deadlock under any torch version — absence there is not
+    evidence of absence. **No 2.12.1 run on real GPUs has been done.**
+    It remains lead #2 below, untried.
+
+    The same revision floated that `r8/r16 vs r32/r64` might be "a flaky
+    race that happened to land twice". That is now **disproven**: the r8
+    baseline hung 3/3 with `last_iter=NONE` (job `57601590`). The hang is
+    deterministic.
+
+A torch 2.13 FSDP2 scheduling regression is still plausible — #237 is
+also 2.13-only — but it is untested, and it now has to explain a
+*deterministic* r-dependence rather than a race. Do not cite it as the
+cause.
 
 ## Refuted: "the collective *order* differs by rank"
 
@@ -172,7 +180,9 @@ guess is that the frozen-unit all-gather sits at a different position in
 the backward stream depending on `r`. It does not.
 
 Recording the exact backward collective sequence on 2 gloo ranks
-(`A` = all-gather, `R` = reduce-scatter, 6 layers):
+(`A` = all-gather, `R` = reduce-scatter, 6 layers). This probe runs on
+CPU under torch 2.12.1, so it establishes *ordering* only — it does not
+and cannot say anything about whether the deadlock reproduces:
 
 ```
 r=8    bwd = AAARARARARARAR

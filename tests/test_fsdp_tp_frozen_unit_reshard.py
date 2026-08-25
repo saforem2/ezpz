@@ -103,19 +103,36 @@ def _worker(rank: int, ws: int, keep_frozen_gathered: bool, q) -> None:
 
         trace: list[tuple[str, str]] = []
         phase = ["fwd"]
-        real_ag = dist.all_gather_into_tensor
-        real_rs = dist.reduce_scatter_tensor
 
-        def _ag(*a, **k):
-            trace.append((phase[0], "AG"))
-            return real_ag(*a, **k)
+        # torch 2.13 renamed the primitives FSDP2 calls:
+        #   all_gather_into_tensor -> all_gather_single
+        #   reduce_scatter_tensor  -> reduce_scatter_single
+        # Patch whichever names exist. Patching only the 2.12 pair makes
+        # this test count zero collectives on 2.13 and "pass" vacuously
+        # in the symmetric direction -- so assert below that we hooked
+        # something rather than trusting the name.
+        names = {
+            "AG": ("all_gather_into_tensor", "all_gather_single"),
+            "RS": ("reduce_scatter_tensor", "reduce_scatter_single"),
+        }
 
-        def _rs(*a, **k):
-            trace.append((phase[0], "RS"))
-            return real_rs(*a, **k)
+        def _wrap(kind, fn):
+            def inner(*a, **k):
+                trace.append((phase[0], kind))
+                return fn(*a, **k)
 
-        dist.all_gather_into_tensor = _ag
-        dist.reduce_scatter_tensor = _rs
+            return inner
+
+        saved: dict[str, object] = {}
+        for kind, cands in names.items():
+            for nm in cands:
+                fn = getattr(dist, nm, None)
+                if fn is not None:
+                    saved[nm] = fn
+                    setattr(dist, nm, _wrap(kind, fn))
+        assert saved, (
+            "patched no collective at all -- torch renamed them again"
+        )
         try:
             # The REAL shipped helper -- reverting the fix in fsdp_tp.py
             # must break these tests, so do not reimplement it here.
@@ -142,8 +159,8 @@ def _worker(rank: int, ws: int, keep_frozen_gathered: bool, q) -> None:
             phase[0] = "bwd"
             loss.backward()
         finally:
-            dist.all_gather_into_tensor = real_ag
-            dist.reduce_scatter_tensor = real_rs
+            for nm, fn in saved.items():
+                setattr(dist, nm, fn)
 
         if rank == 0:
             bwd = [t for t in trace if t[0] == "bwd"]
@@ -191,7 +208,10 @@ def test_frozen_units_kept_gathered_are_symmetric() -> None:
     It just does not fix the deadlock -- see this module's docstring.
     """
     ag, rs = _count(keep_frozen_gathered=True)
+    # 0 == 0 is symmetric too. Pin the absolute count first so a probe
+    # that hooked nothing fails loudly instead of passing vacuously.
     assert rs == LAYERS, f"expected {LAYERS} reduce-scatters, got {rs}"
+    assert ag == LAYERS, f"expected {LAYERS} all-gathers, got {ag}"
     assert ag == rs, (
         f"opt-in failed to remove the asymmetry: {ag} all-gathers "
         f"vs {rs} reduce-scatters"
