@@ -24,8 +24,14 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 | 8  | `attn,mlp` | **hang** in backward |
 | 16 | `attn,mlp` | **hang** in backward |
 | 16 | `attn`     | trains |
+| 20 | `attn,mlp` | trains |
+| 24 | `attn,mlp` | trains |
 | 32 | `attn,mlp` | trains |
 | 64 | `attn,mlp` | trains |
+
+The r20/r24 rows come from the bisect (job `57604409`) and **tighten the
+boundary to 17..20**, well below the r>=32 this guide originally
+implied. Both trained cleanly in ~175s.
 
 The r8/r16 `attn,mlp` hang has since reproduced **4/4** (jobs
 `57601590` ×3, `57602201`). It is deterministic.
@@ -289,19 +295,32 @@ LoRA-specificity, payload size, per-rank order, and the AG/RS asymmetry
 itself. All eight ranks agree exactly on what they are waiting for. The
 remaining explanations are dynamic:
 
-1. **Why r>=32 works** is the sharpest unused clue. Same asymmetry, same
-   op sequence, different outcome — so the difference is a *quantity*,
-   not a structure. `experiments/perlmutter/lora_239_rank_bisect.sbatch`
-   binary-searches r in 17..31 (probes 24, then 20 or 28) to find the
-   boundary, which would say whether it is a threshold or a coincidence.
-   It budgets for the fact that a hang costs the full 300s watchdog, so
-   only ~3 probes fit a debug allocation — hence bisect, not sweep. It
-   also classifies each cell as HANG / OK / **INDETERMINATE** rather
-   than trusting `rc`, which misclassified cells in the original sweep
-   (see the note under "What was observed").
-2. **torch 2.13 vs 2.12.1.** #237 diverges across the same boundary. A
-   2.12.1 run of this exact config is cheap and would either implicate
-   the release or clear it.
+1. **Where exactly does r flip?** Same asymmetry, same op sequence,
+   different outcome — so the difference is a *quantity*, not a
+   structure. `experiments/perlmutter/lora_239_rank_bisect.sbatch`
+   binary-searches it (a hang costs the full 300s watchdog, so only ~3
+   probes fit a debug allocation — hence bisect, not sweep).
+
+    **In progress.** r=24 and r=20 both train, so the boundary is
+    **17..20**, not r>=32. A second job probes 18/17/19. If it lands
+    between 16 and 17 that is a suspiciously exact power-of-two edge and
+    argues for a size/alignment threshold in the reduce-scatter; if it
+    lands mid-interval, r is a proxy for something else.
+
+    Classify these cells on **evidence** (watchdog line vs. reaching the
+    plotting stage), never on `rc` or an `iter=` marker: the first
+    bisect gated on `iter=`, which these runs never emit, and so
+    labelled a clean 173s r24 pass INDETERMINATE.
+2. **Is it a torch 2.13 regression?** #237 diverges across the same
+   boundary. `experiments/perlmutter/lora_239_torch_version.sbatch` runs
+   the real config on real GPUs under Perlmutter's older `.venv`
+   (**2.8.0+cu129** — there is no 2.12.1 build there, and a wider gap is
+   fine, since the question is "does an older torch hang", not "which
+   release introduced it"). Cell 1 is a **control** re-running r8 under
+   2.13 in the same allocation, so an older-torch pass cannot be
+   confounded by node or topology luck; cell 2 means nothing unless
+   cell 1 hangs. If 2.8.0 also hangs, this theory dies and the search
+   moves to FSDP2 semantics common to both.
 3. **The skipped work item.** The stream goes `completed 16` →
    `started 18`, so #17 was enqueued and jumped. Instrumenting FSDP2's
    `foreach_reduce` to log which unit owns each work id would name the

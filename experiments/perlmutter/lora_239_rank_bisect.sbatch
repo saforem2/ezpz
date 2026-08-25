@@ -114,11 +114,17 @@ probe () {
     last=$(grep -aoE "iter=[0-9]+" "${OUT}/${label}.log" | tail -1)
 
     # Classify explicitly. "did not hang" is NOT the same as "trained".
+    #
+    # Do NOT gate on an `iter=` marker: these runs do not emit one, so
+    # requiring it labelled a clean 173s r24 pass INDETERMINATE. Gate on
+    # "reached the plotting stage", which only happens after the
+    # training loop completes. Do not gate on rc either -- the original
+    # sweep's r64 cell exited rc=1 having trained all 20 iters.
     local verdict
     if grep -qaE "Watchdog caught collective operation timeout" "${OUT}/${label}.log"; then
         verdict=HANG
-    elif [ -n "${last}" ] && [ "${rc}" -eq 0 ]; then
-        verdict=OK
+    elif grep -qa "Saving plots" "${OUT}/${label}.log" || [ -n "${last}" ]; then
+        verdict=TRAINED
     else
         verdict=INDETERMINATE
     fi
