@@ -24,25 +24,33 @@ set -o pipefail
 # it reached the training cells, then failed every one in ~1 s with
 # `module: command not found`. Initialise Lmod first, and hard-fail
 # rather than run cells in an unconfigured environment.
+# Lmod's init/bash alone defines `module` but leaves MODULEPATH EMPTY,
+# so every `module load` silently no-ops ("No modules loaded") and the
+# conda setup then fails with "CONDA_PREFIX still not set" -- that cost
+# Sunspot job 12473853. Source the login profile, which populates
+# MODULEPATH with the ALCF tree.
+# shellcheck disable=SC1091
+source /etc/profile 2>/dev/null || true
 if ! command -v module >/dev/null 2>&1; then
     # shellcheck disable=SC1091
     source "${MODULESHOME:-/usr/share/lmod/lmod}/init/bash" 2>/dev/null \
-        || source /etc/profile.d/z00_lmod.sh 2>/dev/null \
         || { echo "FATAL: cannot initialise Lmod"; exit 1; }
 fi
 command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 1; }
+[ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH is empty; module loads would silently no-op"; exit 1; }
 
 D="${EZPZ_DIR:-/lus/eagle/projects/datascience_collab/foremans/torchcomms-test/ezpz}"
 cd "${D}" || exit 1
 
-# Use the repo's own module/conda functions rather than reassembling
-# them: ezpz_load_modules_polaris pulls PrgEnv-gnu, craype-x86-milan,
-# cray-hdf5-parallel, cudnn and gcc-native/14.2 -- and conda/2025-09-25
-# will NOT load without gcc-native/14.2 present first.
+# THE canonical ALCF setup: ezpz_setup_env does python/venv selection,
+# the module stack AND the hostfile in one call. Do not hand-assemble
+# ezpz_load_modules_polaris + ezpz_setup_conda_polaris -- that is how
+# four Sunspot allocations were lost. Compute nodes have no outbound
+# internet, so source the repo's own copy of utils.sh rather than the
+# usual `source <(curl -fsSL https://bit.ly/ezpz-utils)`.
 # shellcheck disable=SC1091
 source "${D}/src/ezpz/bin/utils.sh" || { echo "FATAL: no utils.sh"; exit 1; }
-ezpz_load_modules_polaris || echo "WARN: ezpz_load_modules_polaris returned $?"
-ezpz_setup_conda_polaris  || echo "WARN: ezpz_setup_conda_polaris returned $?"
+ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
 
 export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled

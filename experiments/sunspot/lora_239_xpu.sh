@@ -28,13 +28,22 @@ set -o pipefail
 # every one of them failed in ~1 s with `module: command not found`,
 # because ezpz_load_modules_sunspot could not load oneapi. Initialise
 # Lmod explicitly before anything tries to use it.
+# Sourcing Lmod's init/bash alone is NOT enough: it defines `module` but
+# leaves MODULEPATH EMPTY, so `module load frameworks` silently no-ops
+# ("No modules loaded") and ezpz_setup_env then fails with
+# "CONDA_PREFIX still not set". That cost job 12473853. Source the login
+# profile, which sets MODULEPATH to the ALCF tree.
+# shellcheck disable=SC1091
+source /etc/profile 2>/dev/null || true
 if ! command -v module >/dev/null 2>&1; then
     # shellcheck disable=SC1091
     source "${MODULESHOME:-/usr/share/lmod/lmod}/init/bash" 2>/dev/null \
-        || source /etc/profile.d/z00_lmod.sh 2>/dev/null \
         || { echo "FATAL: cannot initialise Lmod"; exit 1; }
 fi
 command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 1; }
+# Assert the PATH is populated too -- an empty MODULEPATH makes every
+# subsequent `module load` a silent no-op, which is worse than an error.
+[ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH is empty; module loads would silently no-op"; exit 1; }
 
 D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"
