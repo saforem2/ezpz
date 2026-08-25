@@ -7,7 +7,7 @@
     deadlock** — see [Refuted: removing the asymmetry](#refuted-removing-the-asymmetry-fixes-it).
     That intervention therefore ships **off by default**.
 
-    **Five** plausible-sounding explanations have now been tested and
+    **Six** plausible-sounding explanations have now been tested and
     refuted. They are documented here so nobody re-derives them.
 
     Workaround: **`--lora-rank 18` or higher** completed normally in
@@ -157,7 +157,7 @@ The stack trace lands in
 !!! note "What this still does not settle"
 
     The trace confirms the *shape* of the failure is consistent with the
-    frozen-unit asymmetry. It does not explain why every r >= 20 — which
+    frozen-unit asymmetry. It does not explain why every r >= 18 — which
     has the **same** asymmetry — completes normally. That gap was the
     reason to test the intervention rather than assume it, and the test
     came back negative.
@@ -308,6 +308,27 @@ released build rather than a patch someone has to reconstruct.
 - The HuggingFace path uses a different grouping.
 - #237, and torch 2.13 FSDP2 more broadly.
 
+## Refuted: "the NCCL protocol selects the outcome"
+
+The 256 KiB story pointed at NCCL protocol selection (LL / LL128 /
+Simple). Rather than keep inferring protocol from payload size, job
+`57605154` set it directly with `NCCL_PROTO`, holding `r=8` fixed so the
+protocol is the *only* thing that varies:
+
+| `NCCL_PROTO` | result |
+|---|---|
+| (default) | **hang** — 5/5 |
+| `Simple` | **hang**, `rc=134`, 486 s |
+| `LL128` | **hang**, `rc=134`, 430 s |
+
+Both forced protocols hang, with the same `NumelIn=419840,
+NumelOut=52480` as the default run, and NCCL logged no `invalid` or
+`unknown proto` warning — so the setting was accepted rather than
+silently ignored.
+
+**The protocol is not the mechanism.** Not the 256 KiB threshold, and
+not protocol selection in general.
+
 ## Where to look next
 
 Every *static* property of the collective stream has now been ruled out:
@@ -362,9 +383,8 @@ remaining explanations are dynamic:
         unwritten until FSDP2 is instrumented to report which
         parameters land in each bucket (lead 3).
 
-        The direct `NCCL_PROTO` test (job `57605154`) is still worth
-        running — it varies protocol with r fixed, so it answers whether
-        protocol matters *at all*, independently of the dead size story.
+        The direct `NCCL_PROTO` test settled the wider question — see
+        below. It does not matter at all.
 
     !!! tip "Pre-registered prediction: the 256 KiB NCCL boundary"
 
