@@ -11,7 +11,7 @@
     refuted. They are documented here so nobody re-derives them.
 
     Known workaround: use **`--lora-rank 18` or higher**, which completes
-    normally (r18/r20/r24/r28/r32/r64 all train). The boundary is exactly
+    normally (r18/r19/r20/r24/r28/r32/r64 all train). The boundary is exactly
     **16 → 18**: r=17 hangs, r=18 trains.
 
     The sharpest open clue is that r17's stuck bucket is **18 % larger
@@ -32,6 +32,7 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 | 16 | `attn`     | trains |
 | 17 | `attn,mlp` | **hang** in backward |
 | 18 | `attn,mlp` | trains |
+| 19 | `attn,mlp` | trains |
 | 20 | `attn,mlp` | trains |
 | 24 | `attn,mlp` | trains |
 | 28 | `attn,mlp` | trains |
@@ -40,8 +41,8 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 
 The r18–r28 rows come from the bisect (jobs `57604409`, `57604619`) and
 **put the boundary at exactly 16→18** — far below the r>=32 this guide
-originally implied. r=17 hangs and r=18 trains, one step apart; the
-passing cells each finished cleanly in 96–175 s.
+originally implied. r=17 hangs and r=18 trains, one step apart, with r=19 also
+training; the passing cells each finished cleanly in 96–175 s.
 
 The r8/r16 `attn,mlp` hang has reproduced **5/5** (jobs `57601590` ×3,
 `57602201`, and the same-allocation control in `57604574` at
