@@ -7,13 +7,17 @@
     deadlock** — see [Refuted: removing the asymmetry](#refuted-removing-the-asymmetry-fixes-it).
     That intervention therefore ships **off by default**.
 
-    **Four** plausible-sounding explanations have now been tested and
+    **Five** plausible-sounding explanations have now been tested and
     refuted. They are documented here so nobody re-derives them.
 
-    Known workaround: use **`--lora-rank 20` or higher**, which completes
-    normally (r20/r24/r28/r32/r64 all train). The boundary is 17..20 —
-    lower than the r>=32 originally assumed — and the leading
-    explanation is the [256 KiB NCCL protocol edge](#where-to-look-next).
+    Known workaround: use **`--lora-rank 18` or higher**, which completes
+    normally (r18/r20/r24/r28/r32/r64 all train). The boundary is exactly
+    **16 → 18**: r=17 hangs, r=18 trains.
+
+    The sharpest open clue is that r17's stuck bucket is **18 % larger
+    than linear in r** while r8's is exactly linear — so at r17 the
+    stuck reduce-scatter is *not* one block's LoRA parameters. See
+    [the boundary section](#where-to-look-next).
 
 ## What was observed
 
@@ -26,6 +30,7 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 | 8  | `attn,mlp` | **hang** in backward |
 | 16 | `attn,mlp` | **hang** in backward |
 | 16 | `attn`     | trains |
+| 17 | `attn,mlp` | **hang** in backward |
 | 18 | `attn,mlp` | trains |
 | 20 | `attn,mlp` | trains |
 | 24 | `attn,mlp` | trains |
@@ -34,9 +39,9 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 | 64 | `attn,mlp` | trains |
 
 The r18–r28 rows come from the bisect (jobs `57604409`, `57604619`) and
-**put the boundary at 16→18 at the widest** — far below the r>=32 this
-guide originally implied. Each trained cleanly in 96–175 s. r=17 is the
-last open cell.
+**put the boundary at exactly 16→18** — far below the r>=32 this guide
+originally implied. r=17 hangs and r=18 trains, one step apart; the
+passing cells each finished cleanly in 96–175 s.
 
 The r8/r16 `attn,mlp` hang has reproduced **5/5** (jobs `57601590` ×3,
 `57602201`, and the same-allocation control in `57604574` at
@@ -318,12 +323,39 @@ remaining explanations are dynamic:
         its shard is 236 160 B, comfortably *below* 256 KiB, where the
         prediction says it must hang.
 
-        So the boundary is **16→18 at the widest**, and the NCCL
-        protocol edge does not explain it. What survives: the direct
-        `NCCL_PROTO` test (job `57605154`) is now *more* valuable, not
-        less — it changes the protocol while holding r fixed, so it can
-        still say whether protocol matters at all, independently of this
-        failed size story.
+        So the NCCL protocol edge does not explain the r-dependence.
+
+    !!! success "But the boundary is now exact: r=17 hangs, r=18 trains"
+
+        Same job. **r=17 hangs; r=18 trains.** One step apart, so the
+        flip is precisely **16 → 18**, and any explanation has to
+        separate two adjacent ranks.
+
+        The r17 watchdog trace carries the most concrete new fact in the
+        investigation:
+
+        ```
+        r8   SeqNum=18  NumelIn=419840   NumelOut=52480
+        r17  SeqNum=18  NumelIn=1055232  NumelOut=131904
+        ```
+
+        r8's stuck bucket is exactly linear in r (`52480 · 8`). **r17's
+        is not**: linearity predicts `892160`, the trace says `1055232`
+        — 18 % larger. Both keep `NumelIn = NumelOut · 8`, so both are
+        still world-size reduce-scatters, but at r17 the stuck bucket is
+        **not one block's LoRA parameters**. Something is grouping or
+        padding differently at r17 than at r8, and *that* difference
+        tracks the boundary far better than any byte threshold.
+
+        Chasing this needs the real bucketing, not arithmetic: a first
+        attempt to reconstruct it from `agpt-2b` geometry did not even
+        reproduce r8's known `419840`, so the padding story stays
+        unwritten until FSDP2 is instrumented to report which
+        parameters land in each bucket (lead 3).
+
+        The direct `NCCL_PROTO` test (job `57605154`) is still worth
+        running — it varies protocol with r fixed, so it answers whether
+        protocol matters *at all*, independently of the dead size story.
 
     !!! tip "Pre-registered prediction: the 256 KiB NCCL boundary"
 
