@@ -62,24 +62,26 @@ mkdir -p "${OUT}"
 NP=$(( SLURM_NNODES * 4 ))
 ITERS="${ITERS:-20}"
 
-# Proves the fix is actually in this checkout. Without this a job can
-# silently test the OLD code and report "fixed".
-"${PY_BIN}" -c "
+# Proves the lever is actually in this checkout AND honours the opt-in.
+# Without this a job can silently test the wrong code and report a
+# result belonging to a different build.
+EZPZ_FSDP_KEEP_FROZEN_GATHERED=1 "${PY_BIN}" -c "
 from ezpz.examples.fsdp_tp import frozen_unit_kwargs
 import torch.nn as nn
 f = nn.Linear(4, 4, bias=False); f.weight.requires_grad_(False)
 got = frozen_unit_kwargs(f, {'reshard_after_forward': True})
 assert got['reshard_after_forward'] is False, got
-print('=== FIX PRESENT in this checkout ===')
-" || { echo "FATAL: fix not present -- refusing to run"; exit 1; }
+print('=== frozen_unit_kwargs PRESENT + opt-in honoured ===')
+" || { echo "FATAL: frozen_unit_kwargs missing/inert -- refusing to run"; exit 1; }
 
-# $1 label, $2 = 0|1 value for EZPZ_FSDP_FROZEN_RESHARD (1 = fix OFF)
+# $1 label, $2 = 0|1 for EZPZ_FSDP_KEEP_FROZEN_GATHERED (1 = keep frozen
+# units gathered, i.e. the asymmetry-removal arm; 0 = shipped default)
 run () {
-    local label="$1"; local optout="$2"; shift 2
+    local label="$1"; local keepgathered="$2"; shift 2
     echo
-    echo "########## ${label}  (EZPZ_FSDP_FROZEN_RESHARD=${optout}) ##########"
+    echo "########## ${label}  (EZPZ_FSDP_KEEP_FROZEN_GATHERED=${keepgathered}) ##########"
     local t0=$SECONDS
-    EZPZ_FSDP_FROZEN_RESHARD="${optout}" \
+    EZPZ_FSDP_KEEP_FROZEN_GATHERED="${keepgathered}" \
     timeout 600 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
         "${PY_BIN}" -m ezpz.examples.fsdp_tp \
             --model agpt-2b --tp 1 --dataset random \
@@ -97,15 +99,19 @@ run () {
     echo "### ${label} rc=${rc} secs=${dt} last_iter=${last:-NONE}"
 }
 
-# Cells 1a/1b/1c: the SAME baseline three times. This is the point of
-# the job -- determinism, not the fix.
-run "1a-baseline-r8"  1 --lora-rank 8
-run "1b-baseline-r8"  1 --lora-rank 8
-run "1c-baseline-r8"  1 --lora-rank 8
+# Cells 1a/1b/1c: the SAME shipped-default baseline three times. This is
+# the point of the job -- determinism first, intervention second.
+# RESULT (job 57601590): rc=134 3/3, last_iter=NONE. Deterministic.
+run "1a-baseline-r8"  0 --lora-rank 8
+run "1b-baseline-r8"  0 --lora-rank 8
+run "1c-baseline-r8"  0 --lora-rank 8
 
-# Cells 2-3: the fix against the two reported-hanging configs.
-run "2-fix-r8"        0 --lora-rank 8
-run "3-fix-r16"       0 --lora-rank 16
+# Cells 2-3: asymmetry removed, against the two reported-hanging configs.
+# RESULT (job 57602201): still hung. rc=134 (r8) / rc=124 (r16),
+# last_iter=NONE. Same collective, same 419840->52480 payload, merely
+# renumbered. This is a REFUTATION, kept runnable, not a fix.
+run "2-nofrozenreshard-r8"   1 --lora-rank 8
+run "3-nofrozenreshard-r16"  1 --lora-rank 16
 
 echo
 echo "=== artifacts: ${OUT} ==="

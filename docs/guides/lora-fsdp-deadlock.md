@@ -1,14 +1,17 @@
 # LoRA + FSDP2: the frozen-unit collective asymmetry (#239)
 
-!!! warning "This is an open investigation, not a solved bug"
+!!! danger "Open bug. There is no fix, and the leading candidate failed."
 
-    The mitigation below removes a **precondition** for the hang. It is
-    not a demonstrated cause. The asymmetry it fixes is present in both
-    the hanging *and* the working configurations, so the honest status
-    is: highest-value falsifiable intervention, awaiting confirmation.
+    #239 is **unresolved**. The frozen-unit asymmetry described below is
+    real and measurable, but removing it on Perlmutter **did not stop the
+    deadlock** — see [Refuted: removing the asymmetry](#refuted-removing-the-asymmetry-fixes-it).
+    That intervention therefore ships **off by default**.
 
-    Two plausible-sounding explanations were tested and **refuted**.
-    They are documented here so nobody re-derives them.
+    **Four** plausible-sounding explanations have now been tested and
+    refuted. They are documented here so nobody re-derives them.
+
+    Known workaround: use `--lora-rank 32` or higher, which completes
+    normally. Why it does is still unexplained.
 
 ## What was observed
 
@@ -113,10 +116,11 @@ The stack trace lands in
 
 !!! note "What this still does not settle"
 
-    The trace confirms the *shape* of the failure matches the frozen-unit
-    asymmetry. It does not explain why r=32 and r=64 — which have the
-    **same** asymmetry — complete normally. Until that is explained, the
-    mitigation remains a precondition removal.
+    The trace confirms the *shape* of the failure is consistent with the
+    frozen-unit asymmetry. It does not explain why r=32 and r=64 — which
+    have the **same** asymmetry — complete normally. That gap was the
+    reason to test the intervention rather than assume it, and the test
+    came back negative.
 
 ## Refuted: "the asymmetry is LoRA-specific"
 
@@ -186,7 +190,9 @@ size refutation above, no *static* property of the collective stream
 separates hanging from working configurations. That is what pushes the
 remaining explanation toward timing rather than structure.
 
-## Mitigation
+## Refuted: "removing the asymmetry fixes it"
+
+This was the leading candidate. It was tested directly and **failed**.
 
 `frozen_unit_kwargs()` in `src/ezpz/examples/fsdp_tp.py` keeps a
 fully-frozen unit gathered, so it never emits the unmatched all-gather:
@@ -197,24 +203,72 @@ if any(p.requires_grad for m in ms for p in m.parameters()):
 return {**fsdp_kwargs, "reshard_after_forward": False}
 ```
 
-Correctness-neutral: the parameters are never updated, so never
-resharding them changes no math, only residency.
+It is correctness-neutral (the parameters are never updated, so never
+resharding them changes no math, only residency) and it demonstrably
+does what it claims — the AG/RS counts go from 14/12 to 12/12, pinned by
+`tests/test_fsdp_tp_frozen_unit_reshard.py`.
 
-**Cost:** about **+1.7 GiB per rank** on `agpt-2b` at `world_size=8` in
-bf16 (embedding and output stay gathered). Affordable on A100-40GB, but
-it scales with vocabulary size (256128 here) — re-check for
-larger-vocab models.
+**The job still hung.** Perlmutter job `57602201`, same 8x A100 /
+torch 2.13.0+cu130, r8 and r16, both `last_iter=NONE`:
 
-**Opt out** with `EZPZ_FSDP_FROZEN_RESHARD=1`, which restores the old
-behaviour so both arms of an experiment come from one build.
+| | baseline (`57601590`) | asymmetry removed (`57602201`) |
+|---|---|---|
+| stuck collective | `_REDUCE_SCATTER_BASE` | `_REDUCE_SCATTER_BASE` |
+| payload | `NumelIn=419840, NumelOut=52480` | **identical** |
+| SeqNum | 18 | 17 |
+| PG status | enq 39, started 19, completed 17 | enq 37, started 18, completed 16 |
+| r8 | `rc=134 secs=518/433/437` (3/3) | `rc=134 secs=532` |
+| r16 | — | `rc=124 secs=600` |
 
-### What this does not address
+The intervention *landed*: 39 → 37 enqueued ops is exactly the two
+removed all-gathers. And the failure is the same one, renumbered by
+exactly that amount — the same skipped-work signature, where the stream
+jumps over the reduce-scatter and stalls with an all-gather started
+ahead of it.
+
+So the asymmetry is not the cause, and — since the deadlock survives
+without it — not even a precondition.
+
+### Consequence for the code
+
+`frozen_unit_kwargs()` is retained, but **inverted to opt-in** and OFF by
+default: it costs ~+1.7 GiB/rank on `agpt-2b` at `world_size=8` in bf16
+(scaling with the 256128 vocab) and buys nothing. Shipping a memory
+regression that failed its own experiment would be worse than shipping
+nothing.
+
+```bash
+export EZPZ_FSDP_KEEP_FROZEN_GATHERED=1   # opt in; reproduces the negative result
+```
+
+It stays in the tree only so the experiment is re-runnable from a
+released build rather than a patch someone has to reconstruct.
+
+### What was never in scope either way
 
 - `--lora-target unembed` puts a trainable adapter in the `[norm,
-  output]` unit, so that unit is no longer frozen and takes the
-  unchanged path. That configuration was never reported hanging.
+  output]` unit, so that unit is not frozen at all. Never reported hanging.
 - The HuggingFace path uses a different grouping.
 - #237, and torch 2.13 FSDP2 more broadly.
+
+## Where to look next
+
+Every *static* property of the collective stream has now been ruled out:
+LoRA-specificity, payload size, per-rank order, and the AG/RS asymmetry
+itself. All eight ranks agree exactly on what they are waiting for. The
+remaining explanations are dynamic:
+
+1. **Why r>=32 works** is the sharpest unused clue. Same asymmetry, same
+   op sequence, different outcome — so the difference is a *quantity*,
+   not a structure. Worth bisecting r in 17..31 to find the boundary,
+   which would say whether it is a threshold or a coincidence.
+2. **torch 2.13 vs 2.12.1.** #237 diverges across the same boundary. A
+   2.12.1 run of this exact config is cheap and would either implicate
+   the release or clear it.
+3. **The skipped work item.** The stream goes `completed 16` →
+   `started 18`, so #17 was enqueued and jumped. Instrumenting FSDP2's
+   `foreach_reduce` to log which unit owns each work id would name the
+   module involved instead of inferring it from payload arithmetic.
 
 ## The usability bug underneath
 
@@ -239,5 +293,7 @@ two prior jobs each hung once, which is equally consistent with a
 deterministic bug and with a coin flip. Two samples cannot tell those
 apart, and every downstream claim depends on which it is.
 
-The job also asserts the fix is actually present in the checkout before
-running, so it cannot silently test old code and report success.
+The job also asserts `frozen_unit_kwargs` is actually present in the
+checkout before running, so an arm cannot silently test old code and
+report a result that belongs to a different build. That guard is why the
+negative result above is trustworthy: the intervention provably ran.
