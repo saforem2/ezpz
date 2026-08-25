@@ -325,9 +325,15 @@ Sunspot job `12473856`: PVC (XPU), **xccl** rather than NCCL, torch
 same `agpt-2b` / `tp=1` / `bs=1` / `seq_len=2048` /
 `--lora-target attn,mlp`, same shipped default arm.
 
-| | Perlmutter (A100/NCCL) | Sunspot (PVC/xccl) |
+| `--lora-rank` | Perlmutter (A100/NCCL) | Sunspot (PVC/xccl) |
 |---|---|---|
-| `--lora-rank 8` | **hang**, 6/6 | **trains**, `rc=0`, 102 s |
+| 8  | **hang**, 6/6 | **trains**, `rc=0`, 102 s |
+| 17 | **hang** | **trains**, `rc=0`, 76 s |
+| 18 | trains | **trains**, `rc=0`, 72 s |
+
+Both ranks that deadlock on NVIDIA train clean on XPU, so the r-boundary
+itself does not exist there — it is not that the boundary moved, it is
+that there is nothing to bound.
 
 Verified it is the intended configuration and not a silent skip: the log
 shows `dispatch key: XPU`, the full

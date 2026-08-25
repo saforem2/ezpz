@@ -1075,8 +1075,18 @@ ezpz_load_modules_polaris() {
 	fi
 	module use /soft/modulefiles
 	# Same module deps as the Polaris conda module, in the same order.
-	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel/1.14.3.5 \
-		cudnn/9.13.0 gcc-native/14.2
+	#
+	# cray-hdf5-parallel and gcc-native are deliberately UNPINNED. They
+	# were pinned to 1.14.3.5 and 14.2, both of which have since been
+	# removed from Polaris (now 1.14.3.9 and 14). Lmod then reports
+	# "The following module(s) are unknown", conda/2025-09-25 refuses to
+	# load because it requires gcc-native, `conda` is never on PATH, and
+	# the whole thing surfaces several layers later as the thoroughly
+	# unhelpful "CONDA_PREFIX still not set after ezpz_setup_conda".
+	# A site can bump a point release at any time; pinning one buys
+	# nothing here and breaks the environment when it moves.
+	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel \
+		cudnn/9.13.0 gcc-native
 
 	# Compiler shims expected by C/C++ extensions (matches conda module).
 	export CC="/usr/bin/gcc-14"
