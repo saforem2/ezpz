@@ -53,13 +53,30 @@ leaves **`MODULEPATH` empty**, so every `module load` becomes a silent
 no-op ("No modules loaded") and `ezpz_setup_env` fails downstream with
 the misleading `CONDA_PREFIX still not set`.
 
-Source the login profile, and assert it worked:
+Source the login profile, and assert it worked — but **not under
+`set -u`**. `/etc/profile` references unset variables, so with `set -u`
+already active it aborts the script on that very line: walltime
+`00:00:00`, `Exit_status=1`, **empty `.o` and `.e`**, not one line
+printed. Reproduce it yourself with
+`bash -c 'set -u; source /etc/profile'`.
 
 ```bash
+set -o pipefail                       # NOT set -u yet
 source /etc/profile 2>/dev/null || true
 command -v module >/dev/null 2>&1 || { echo "FATAL: no module cmd"; exit 1; }
 [ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH empty"; exit 1; }
+set -u                                # safe from here on
 ```
+
+An empty `.o`/`.e` with zero walltime always means the script died in
+its own preamble. Check `qstat -xf <jobid>` for `Exit_status` and
+`resources_used.walltime` before assuming anything about the run.
+
+**Dry-run the preamble before submitting.** Everything above the first
+`probe` call can be pasted into `ssh <host> bash -c '...'` and checked
+in seconds. Six Sunspot submissions were spent discovering preamble bugs
+one allocation at a time; each would have been caught by a five-second
+dry run.
 
 ### 3. Login-node checks do not predict compute-node behaviour
 
