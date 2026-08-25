@@ -1975,6 +1975,45 @@ def _lora_is_applied(model: nn.Module) -> bool:
     return any(True for _ in _lora.iter_lora_modules(model))
 
 
+
+def frozen_unit_kwargs(mods, fsdp_kwargs: dict) -> dict:
+    """FSDP2 kwargs for one unit, keeping *fully-frozen* units gathered.
+
+    Under ``--lora-target attn,mlp`` every adapter lands inside a
+    transformer block, so :func:`ezpz.tinker.lora.apply_lora`'s
+    freeze-everything-first pass leaves ``tok_embeddings`` and
+    ``[norm, output]`` with no trainable parameter at all -- yet
+    :func:`parallelize` still makes each its own FSDP2 unit.
+
+    A fully-frozen unit is asymmetric in backward. ``reshard_after_forward``
+    discarded its parameters after forward, so backward re-gathers them,
+    but ``post_backward`` returns before the reduce-scatter when a group
+    has no gradients. The unit emits an all-gather with no matching
+    reduce-scatter: on agpt-2b that is 14 backward all-gathers against 12
+    reduce-scatters.
+
+    Keeping such a unit gathered removes the unmatched all-gather. It is
+    correctness-neutral -- the parameters are never updated, so never
+    resharding them changes no math, only residency. The cost is memory:
+    on agpt-2b at ``world_size=8`` in bf16 the embedding and output stay
+    gathered, about +1.7 GiB per rank. That scales with vocab size.
+
+    Set ``EZPZ_FSDP_FROZEN_RESHARD=1`` to opt back into the old behaviour,
+    so both arms of the #239 experiment come from one build.
+
+    .. note::
+       The asymmetry is present in both hanging (r8/r16) and working
+       (r32/r64) #239 configurations, so it is a *precondition*, not a
+       proven cause. See ``docs/guides/lora-fsdp-deadlock.md``.
+    """
+    if os.environ.get("EZPZ_FSDP_FROZEN_RESHARD", "0") == "1":
+        return fsdp_kwargs
+    ms = mods if isinstance(mods, list) else [mods]
+    if any(p.requires_grad for m in ms for p in m.parameters()):
+        return fsdp_kwargs
+    return {**fsdp_kwargs, "reshard_after_forward": False}
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -2125,7 +2164,10 @@ def parallelize(
 
     # Embedding first (largest single param: vocab*dim).
     if getattr(model, "tok_embeddings", None) is not None:
-        fully_shard(model.tok_embeddings, **fsdp_kwargs)
+        fully_shard(
+            model.tok_embeddings,
+            **frozen_unit_kwargs(model.tok_embeddings, fsdp_kwargs),
+        )
     # Each transformer block (or its CheckpointWrapper) as its own unit.
     assert isinstance(model.layers, Iterable)
     for block in model.layers:
@@ -2135,7 +2177,10 @@ def parallelize(
         getattr(model, "norm", None) is not None
         and getattr(model, "output", None) is not None
     ):
-        fully_shard([model.norm, model.output], **fsdp_kwargs)
+        fully_shard(
+            [model.norm, model.output],
+            **frozen_unit_kwargs([model.norm, model.output], fsdp_kwargs),
+        )
     # Root last.
     fully_shard(model, **fsdp_kwargs)
 
