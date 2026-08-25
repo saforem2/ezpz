@@ -116,4 +116,10 @@ run "3-nofrozenreshard-r16"  1 --lora-rank 16
 echo
 echo "=== artifacts: ${OUT} ==="
 echo "=== VERDICT TABLE ==="
-grep -h "^### " "${OUT}"/../lora-239-${SLURM_JOB_ID}.log 2>/dev/null || true
+# The SLURM log is `%x-%j.log` in the SUBMIT dir, which this script
+# cannot reliably name from inside the job (and `"$0".log` / a guessed
+# job-name path both point at files that do not exist -- the repro job
+# printed an empty VERDICT TABLE for exactly that reason). The per-cell
+# verdicts are already echoed above and are captured in the SLURM log
+# itself, so just say where to look.
+echo "(verdicts are the '### ' lines above; per-cell logs in ${OUT})"

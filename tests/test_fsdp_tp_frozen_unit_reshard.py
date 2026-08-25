@@ -40,7 +40,21 @@ pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="mp.spawn + gloo fixture is POSIX-only"
 )
 
-PORT = "29874"
+
+def _free_port() -> str:
+    """Pick an unused port in the parent.
+
+    A hard-coded MASTER_PORT fails intermittently when the port is
+    already bound (busy runner, or two spawn-based test files running
+    concurrently). Bind :0, read what the OS gave us, release it.
+    """
+    import socket
+
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        return str(sk.getsockname()[1])
+
+
 DIM = 64
 LAYERS = 12
 VOCAB = 512
@@ -77,14 +91,16 @@ class _M(nn.Module):
         return self.output(self.norm(h))
 
 
-def _worker(rank: int, ws: int, keep_frozen_gathered: bool, q) -> None:
+def _worker(
+    rank: int, ws: int, keep_frozen_gathered: bool, port: str, q
+) -> None:
     import torch.distributed as dist
     from torch.distributed.device_mesh import init_device_mesh
     from torch.distributed.fsdp import fully_shard
 
     os.environ.update(
         MASTER_ADDR="127.0.0.1",
-        MASTER_PORT=PORT,
+        MASTER_PORT=port,
         RANK=str(rank),
         WORLD_SIZE=str(ws),
     )
@@ -179,7 +195,12 @@ def _count(keep_frozen_gathered: bool) -> tuple[int, int]:
 
     ctx = mp.get_context("spawn")
     q = ctx.SimpleQueue()
-    mp.spawn(_worker, args=(2, keep_frozen_gathered, q), nprocs=2, join=True)
+    mp.spawn(
+        _worker,
+        args=(2, keep_frozen_gathered, _free_port(), q),
+        nprocs=2,
+        join=True,
+    )
     return q.get()
 
 

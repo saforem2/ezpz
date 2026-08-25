@@ -43,7 +43,21 @@ pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="mp.spawn + gloo fixture is POSIX-only"
 )
 
-PORT = "29887"
+
+def _free_port() -> str:
+    """Pick an unused port in the parent.
+
+    A hard-coded MASTER_PORT fails intermittently when the port is
+    already bound (busy runner, or two spawn-based test files running
+    concurrently). Bind :0, read what the OS gave us, release it.
+    """
+    import socket
+
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        return str(sk.getsockname()[1])
+
+
 WS = 2
 # agpt-2b's depth. The layer count sets where the first reduce-scatter
 # lands in the sequence; #239's watchdog named SeqNum=18, which is the
@@ -51,12 +65,12 @@ WS = 2
 N_LAYERS = 12
 
 
-def _worker(rank, ws, lora_rank, targets, outdir):
+def _worker(rank, ws, lora_rank, targets, outdir, port):
     import torch.distributed as dist
 
     os.environ.update(
         MASTER_ADDR="127.0.0.1",
-        MASTER_PORT=PORT,
+        MASTER_PORT=port,
         RANK=str(rank),
         WORLD_SIZE=str(ws),
     )
@@ -187,7 +201,10 @@ def _run(lora_rank, targets, outdir, ws=WS):
 
     os.makedirs(outdir, exist_ok=True)
     mp.spawn(
-        _worker, args=(ws, lora_rank, targets, outdir), nprocs=ws, join=True
+        _worker,
+        args=(ws, lora_rank, targets, outdir, _free_port()),
+        nprocs=ws,
+        join=True,
     )
     out = []
     for r in range(ws):

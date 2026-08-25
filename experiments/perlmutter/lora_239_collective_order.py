@@ -52,7 +52,20 @@ def run(rank, ws, r, q):
     for p in m.norm.parameters():
         p.requires_grad_(False)
     seq = []; ph = ["fwd"]
-    oag, ors = dist.all_gather_into_tensor, dist.reduce_scatter_tensor
+    # torch 2.13 renamed the primitives FSDP2 calls:
+    #   all_gather_into_tensor -> all_gather_single
+    #   reduce_scatter_tensor  -> reduce_scatter_single
+    # Patching only the 2.12 pair records an EMPTY sequence on 2.13 --
+    # and an empty string compares equal across ranks, so the ordering
+    # check would pass vacuously. Patch whichever names exist and assert
+    # we hooked something.
+    AG_NAMES = ("all_gather_into_tensor", "all_gather_single")
+    RS_NAMES = ("reduce_scatter_tensor", "reduce_scatter_single")
+    saved = {n: getattr(dist, n) for n in AG_NAMES + RS_NAMES
+             if getattr(dist, n, None) is not None}
+    assert saved, "patched no collective at all -- torch renamed them again"
+    oag = next(saved[n] for n in AG_NAMES if n in saved)
+    ors = next(saved[n] for n in RS_NAMES if n in saved)
 
     def ag(*a, **k):
         seq.append((ph[0], "A")); return oag(*a, **k)
@@ -61,7 +74,12 @@ def run(rank, ws, r, q):
         i = k.get("input", a[1] if len(a) > 1 else None)
         seq.append((ph[0], "R", i.numel() if i is not None else -1)); return ors(*a, **k)
 
-    dist.all_gather_into_tensor = ag; dist.reduce_scatter_tensor = rs
+    for n in AG_NAMES:
+        if n in saved:
+            setattr(dist, n, ag)
+    for n in RS_NAMES:
+        if n in saved:
+            setattr(dist, n, rs)
     mesh = init_device_mesh("cpu", (ws,)); kw = dict(mesh=mesh, reshard_after_forward=True)
     fully_shard(m.tok_embeddings, **kw)
     for b in m.layers:
@@ -71,8 +89,10 @@ def run(rank, ws, r, q):
     out = m(torch.randint(0, V, (2, 8)))
     ph[0] = "bwd"
     out.float().pow(2).mean().backward()
-    dist.all_gather_into_tensor = oag; dist.reduce_scatter_tensor = ors
+    for n, f in saved.items():
+        setattr(dist, n, f)
     if rank == 0:
+        assert seq, "recorded no collectives -- ws must be > 1 or this proves nothing"
         allseq = "".join(x[1] for x in seq)
         bwd = "".join(x[1] for x in seq if x[0] == "bwd")
         q.put((allseq, bwd))

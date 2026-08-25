@@ -10,9 +10,17 @@
     **Five** plausible-sounding explanations have now been tested and
     refuted. They are documented here so nobody re-derives them.
 
-    Known workaround: use **`--lora-rank 18` or higher**, which completes
-    normally (r18/r19/r20/r24/r28/r32/r64 all train). The boundary is exactly
-    **16 → 18**: r=17 hangs, r=18 trains.
+    Workaround: **`--lora-rank 18` or higher** completed normally in
+    every rank tested (18, 19, 20, 24, 28, 32, 64), with the boundary at
+    exactly **16 → 18** — r=17 hangs, r=18 trains.
+
+    Treat that as *measured*, not *guaranteed*. Every one of those runs
+    is the same configuration: `agpt-2b`, `tp=1`, `bs=1`, `seq_len=2048`,
+    `--lora-target attn,mlp`, `world_size=8`, torch 2.13.0+cu130 on
+    A100. The mechanism is still unknown, so a different model, target
+    set, or world size could put the boundary somewhere else entirely.
+    If you hit the hang above r=18, that is new information — please add
+    it to [#239](https://github.com/saforem2/ezpz/issues/239).
 
     The sharpest open clue is that r17's stuck bucket is **18 % larger
     than linear in r** while r8's is exactly linear — so at r17 the
