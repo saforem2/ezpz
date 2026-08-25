@@ -40,21 +40,23 @@ D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"
 cd "${D}" || exit 1
 
-# Compute nodes have NO outbound internet: `source <(curl bit.ly/...)`
-# times out after ~270 s and silently leaves the modules unloaded. Source
-# the repo's own utils.sh instead. ezpz_load_modules_sunspot is not just
-# `module load oneapi hdf5 pti-gpu` -- it also exports
-# CCL_PROCESS_LAUNCHER, ZE_FLAT_DEVICE_HIERARCHY, CCL_OP_SYNC,
-# ONEAPI_DEVICE_SELECTOR. Do not hand-roll it.
-source "${TT}/.venv/bin/activate" || { echo "FATAL: no torchtitan venv"; exit 1; }
+# THE canonical ALCF setup, exactly as used by hand:
+#
+#   source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+#
+# ezpz_setup_env does everything -- python/venv selection, the module
+# stack, and the hostfile -- so do NOT hand-assemble
+# ezpz_load_modules_sunspot + a venv activation. Three submissions
+# (12473850/51/52) were lost doing exactly that.
+#
+# Compute nodes have no outbound internet, so the curl form cannot be
+# used from inside a batch job (it times out after ~270 s and silently
+# leaves the environment unconfigured). Source the repo's own copy,
+# which is the same file.
 # shellcheck disable=SC1091
 source "${D}/src/ezpz/bin/utils.sh" || { echo "FATAL: no utils.sh"; exit 1; }
-ezpz_setup_job
-ezpz_load_modules_sunspot
+ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
 
-# That venv installs ezpz NON-EDITABLE, so a bare import picks up the
-# stale installed copy rather than this checkout.
-export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
