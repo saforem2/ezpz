@@ -15,6 +15,20 @@ timestamp,system,config,nodes,gpus,status,wall_time_sec,throughput_tokens_per_se
 2026-08-11T17:12:30Z,SunSpot,agpt-2b/bs1/seq2048/tp1,1,12,pass,12.739,61216.953,...
 ```
 
+!!! warning "Check the target repo's layout first"
+
+    The `results/<category>/<name>/results/runs.csv` path below is **not**
+    what the benchmark repo currently uses. Checked 2026-08-25: no
+    `runs.csv` exists anywhere in it. The two benchmarks that do publish
+    results use per-system directories
+    (`vit-weather/results/Perlmutter/throughput_metrics.csv`) or a flat
+    per-system text file (`mldocking/results/summary_aurora.txt`), and
+    `training/llm-finetuning` has no `results/` at all.
+
+    `--append` still writes valid CSV wherever you point it; just point it
+    at the convention the benchmark you are contributing to already uses,
+    rather than the path in this example.
+
 Append straight into a checked-out benchmark repo — the header is
 written only when the file is new:
 

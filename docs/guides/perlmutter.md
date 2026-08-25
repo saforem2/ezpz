@@ -319,3 +319,34 @@ That is not decoration. `COMPILE="${COMPILE:---compile}"` substitutes on
 *empty* as well as unset, so `--export=ALL,COMPILE=` silently kept
 compile on and one job "testing the uncompiled path" ran compiled. The
 echo is what caught it.
+
+## AmSC llm-finetuning: measured, deliberately not published
+
+The AmSC `training/llm-finetuning` benchmark runs on Perlmutter —
+Llama-3.2-1B, 2×4 A100, `block_size 8192`: **21.82 s, 60,060 tok/s**,
+20/20 steps.
+
+That number is **not** in the AmSC repo, and should not be until the
+benchmark's own specification is runnable. Getting it required two
+departures from the command as written:
+
+- **`--fsdp_config '{"fsdp_version": 1}'`.** FSDP2 refuses to put a
+  shared parameter in two wrap groups, and Llama-3.2-1B ties
+  `embed_tokens` to `lm_head`, so every rank dies before step 1
+  ([#237](https://github.com/saforem2/ezpz/issues/237)). Neither
+  `hf_trainer` nor the benchmark's own `torchrun` reference passes a
+  wrap policy, so the spec as written cannot run this model under
+  FSDP2 on torch 2.13.
+- **A cached, non-streaming dataset.** `--streaming` fetches per batch
+  over the network; on compute nodes it hangs at step 0 until the
+  walltime kills it. The spec says `--streaming`.
+
+A row produced by a modified command would read as "this benchmark was
+run" when it was not. The right order is to raise both with the
+benchmark's maintainers and publish once the spec is fixed.
+
+When it does land, it belongs at
+`benchmarks/training/llm-finetuning/results/Perlmutter/` — matching the
+sibling `vit-weather` benchmark in that repo, **not** the flat
+`results/runs.csv` that `docs/cli/export-amsc.md` describes. That doc
+is out of date with the repo it documents.
