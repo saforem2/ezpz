@@ -20,13 +20,27 @@ On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 
 | `--lora-rank` | `--lora-target` | result |
 |---|---|---|
+| 0 (no LoRA)   | —          | trains |
 | 8  | `attn,mlp` | **hang** in backward |
 | 16 | `attn,mlp` | **hang** in backward |
 | 16 | `attn`     | trains |
 | 32 | `attn,mlp` | trains |
 | 64 | `attn,mlp` | trains |
 
+The r8/r16 `attn,mlp` hang has since reproduced **4/4** (jobs
+`57601590` ×3, `57602201`). It is deterministic.
+
 The watchdog fingerprint was `NumelIn=419840, NumelOut=52480`.
+
+!!! note "How the working rows were classified"
+
+    The sweep job (`57540698`) exited non-zero on several cells for
+    reasons unrelated to training — `r64 attn,mlp` reports `rc=1` but
+    its per-cell log contains the full plotting output through
+    iteration 20, so it **trained** and failed afterwards in teardown.
+    The hanging cells produce no plots at all. Read those rows as
+    "reached end of training", not "exited 0"; `rc` alone misclassifies
+    them in both directions.
 
 ## Identifying the stuck collective
 
@@ -131,6 +145,13 @@ anywhere produces the identical 14/12.
 More decisively: it is **byte-identical at r=8 (hangs) and r=32
 (works)**. A feature present in 100% of the *working* configurations
 cannot by itself be the trigger.
+
+The converse also holds and is worth stating separately, because the two
+are easy to conflate: the *asymmetry* is not LoRA-specific, but the
+*hang* does require LoRA. A plain `--lora-rank 0` run — no adapters, so
+no fully-frozen units and no asymmetry — trains normally. So LoRA is
+necessary for the deadlock while the asymmetry is neither necessary nor
+sufficient for it.
 
 ## Refuted: "small payloads take a different dispatch path"
 
@@ -270,8 +291,14 @@ remaining explanations are dynamic:
 
 1. **Why r>=32 works** is the sharpest unused clue. Same asymmetry, same
    op sequence, different outcome — so the difference is a *quantity*,
-   not a structure. Worth bisecting r in 17..31 to find the boundary,
-   which would say whether it is a threshold or a coincidence.
+   not a structure. `experiments/perlmutter/lora_239_rank_bisect.sbatch`
+   binary-searches r in 17..31 (probes 24, then 20 or 28) to find the
+   boundary, which would say whether it is a threshold or a coincidence.
+   It budgets for the fact that a hang costs the full 300s watchdog, so
+   only ~3 probes fit a debug allocation — hence bisect, not sweep. It
+   also classifies each cell as HANG / OK / **INDETERMINATE** rather
+   than trusting `rc`, which misclassified cells in the original sweep
+   (see the note under "What was observed").
 2. **torch 2.13 vs 2.12.1.** #237 diverges across the same boundary. A
    2.12.1 run of this exact config is cheap and would either implicate
    the release or clear it.
