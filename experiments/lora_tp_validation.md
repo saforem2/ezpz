@@ -45,12 +45,26 @@ real multi-rank mesh.
 | 4 | `dp_shard=6,  tp=4` | trains, 82 s |
 
 **Polaris (A100/NCCL, torch 2.13, 2 nodes, `world_size=8`)** — job
-`7563719`:
+`7563719`, 3/3 pass:
 
 | `tp` | mesh | result |
 |---|---|---|
 | 1 | `dp_shard=8, tp=1` | trains, 156 s |
 | 2 | `dp_shard=4, tp=2` | trains, 90 s |
+| 4 | `dp_shard=2, tp=4` | trains, 84 s |
+
+**Aurora (PVC/xccl, torch 2.10, 2 nodes, `world_size=24`)** — job
+`8784784`:
+
+| `tp` | mesh | result |
+|---|---|---|
+| 1 | `dp_shard=24, tp=1` | trains, 82 s |
+| 2 | `dp_shard=12, tp=2` | trains, 84 s |
+
+Aurora's cells all exit `rc=1` from a post-training `plotext` version
+mismatch — plots written, zero watchdog lines. Judging on `rc` would
+misfile three clean passes, which is why the classifier reads
+watchdog-vs-plots instead.
 
 Each cell verified from the log, not from the exit code: the
 `DeviceMesh(...)` line confirms TP was actually applied (a silent
