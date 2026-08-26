@@ -79,6 +79,13 @@ cd "${D}" || exit 1
 source "${D}/src/ezpz/bin/utils.sh" || { echo "FATAL: no utils.sh"; exit 1; }
 ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
 
+# ezpz_setup_env activates a framework env that may already contain an
+# INSTALLED ezpz, which then shadows this checkout -- Aurora job 8784595
+# imported ezpz from ~/.local/aurora/frameworks/... instead of ${D}/src
+# and tested stale code. PYTHONPATH must come AFTER ezpz_setup_env so it
+# takes precedence over the env's site-packages.
+export PYTHONPATH="${D}/src${PYTHONPATH:+:${PYTHONPATH}}"
+
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
