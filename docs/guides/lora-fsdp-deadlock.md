@@ -388,10 +388,14 @@ Polaris job `7563257` varies *only* the site and software stack:
 | `world_size` | 8 | 8 |
 | torch | 2.13.0+cu130 | 2.13.0+cu129 |
 | `--lora-rank 8` | **hang, 6/6** | **trains**, `rc=0`, 142 s |
+| `--lora-rank 17` | **hang** | **trains**, `rc=0`, 107 s |
+| `--lora-rank 18` | trains | **trains**, `rc=0`, 107 s |
 
-Verified it is the intended configuration: `device=cuda`,
-`--lora-rank 8 --lora-target attn,mlp`, plotting output written, and
-**zero watchdog lines**.
+All three cells clean, 3/3. Verified it is the intended configuration:
+`device=cuda`, `--lora-rank 8 --lora-target attn,mlp`, plotting output
+written, and **zero watchdog lines**. Both ranks that deadlock on
+Perlmutter train here, so the boundary does not shift on Polaris -- it
+is absent.
 
 ### What this kills
 
