@@ -22,12 +22,18 @@
     If you hit the hang above r=18, that is new information — please add
     it to [#239](https://github.com/saforem2/ezpz/issues/239).
 
-    **It has never reproduced off Perlmutter.** Sunspot (XPU/xccl) and
-    — decisively — **Polaris (A100 + NCCL at the same `world_size=8`)**
-    both run the identical hanging configuration clean. So this is not
-    an FSDP2 bug and not an NCCL bug: the live suspects are all in
-    Perlmutter's own stack. See
+    **It has not reproduced off Perlmutter.** The decisive test is
+    **Polaris — A100 + NCCL at the same `world_size=8`**, which runs the
+    identical hanging configuration clean at both hanging ranks. So this
+    is not an FSDP2 bug and not an NCCL bug; the live suspects are all
+    in Perlmutter's own stack. See
     [the Polaris control](#it-does-not-reproduce-on-polaris-either-a100--nccl-ws8).
+
+    The XPU/xccl question is **still open**: the Sunspot run was at
+    `world_size=24`, where the shards do not divide evenly and FSDP2
+    buckets differently, so it cannot separate "xccl does not hang" from
+    "a different bucket layout does not hang". Sunspot and Aurora are
+    being rerun at ws=8 to settle it.
 
     The sharpest open clue on the NVIDIA side is that r17's stuck bucket
     is **18 % larger than linear in r** while r8's is exactly linear —
@@ -405,9 +411,9 @@ configuration clean. If the deadlock were a property of NCCL's
 interaction with FSDP2's reduce-scatter scheduling, it should have
 reproduced here.
 
-Combined with Sunspot (XPU/xccl, also clean), **#239 has never
-reproduced anywhere except Perlmutter** -- where it is nonetheless
-rock-solid deterministic at 6/6.
+**#239 has not reproduced anywhere except Perlmutter** -- where it is
+nonetheless rock-solid deterministic at 6/6. (The XPU/xccl arm is not
+yet conclusive; see the Sunspot section's ws=24 caveat.)
 
 ### What that leaves
 
