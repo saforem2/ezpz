@@ -1,7 +1,7 @@
 #!/bin/bash
-# #239 on ALCF XPU hardware: does the LoRA r8 deadlock reproduce off NVIDIA?
+# #239 on AURORA (PVC/XPU + xccl). Companion to the Sunspot script.
 #
-# Everything in #239 so far is Perlmutter: A100 + NCCL. Sunspot is PVC +
+# Everything in #239 so far is Perlmutter: A100 + NCCL. Aurora is PVC +
 # **xccl**, running torch 2.13.0.dev+xpu -- the same major version as the
 # hang, on an entirely different collectives stack. So:
 #
@@ -17,8 +17,8 @@
 # and all four flags are mandatory):
 #
 #   /opt/pbs/bin/qsub -l select=2 -l walltime=00:60:00 \
-#     -l filesystems=tegu:home -A datascience -q workq \
-#     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/sunspot/lora_239_xpu.sh
+#     -l filesystems=flare:home -A datascience -q workq \
+#     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/aurora/lora_239_xpu.sh
 
 set -o pipefail
 # `set -u` is deliberately deferred until AFTER /etc/profile is sourced:
@@ -30,7 +30,7 @@ set -o pipefail
 # PBS runs this under a NON-login /bin/bash, where `module` does not
 # exist -- job 12473851 got all the way to the training cells and then
 # every one of them failed in ~1 s with `module: command not found`,
-# because ezpz_load_modules_sunspot could not load oneapi. Initialise
+# because ezpz_load_modules_aurora could not load oneapi. Initialise
 # Lmod explicitly before anything tries to use it.
 # Sourcing Lmod's init/bash alone is NOT enough: it defines `module` but
 # leaves MODULEPATH EMPTY, so `module load frameworks` silently no-ops
@@ -58,7 +58,7 @@ command -v module >/dev/null 2>&1 || { echo "FATAL: module still missing"; exit 
 # `set -u`-clean, so this script relies on explicit checks and
 # `${VAR:-default}` everywhere instead. `set -o pipefail` is kept.
 
-D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz}"
+D="${EZPZ_DIR:-$HOME/datascience/foremans/projects/saforem2/ezpz-239}"
 TT="${TT_DIR:-$HOME/datascience/foremans/projects/saforem2/torchtitan}"
 cd "${D}" || exit 1
 
@@ -68,7 +68,7 @@ cd "${D}" || exit 1
 #
 # ezpz_setup_env does everything -- python/venv selection, the module
 # stack, and the hostfile -- so do NOT hand-assemble
-# ezpz_load_modules_sunspot + a venv activation. Three submissions
+# ezpz_load_modules_aurora + a venv activation. Three submissions
 # (12473850/51/52) were lost doing exactly that.
 #
 # Compute nodes have no outbound internet, so the curl form cannot be
@@ -87,7 +87,7 @@ export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export TORCH_DDP_TIMEOUT=300
 
 PY_BIN="$(command -v python3)"
-OUT="${D}/outputs/lora-239-xpu-${PBS_JOBID%%.*}"
+OUT="${D}/outputs/lora-239-aurora-${PBS_JOBID%%.*}"
 mkdir -p "${OUT}"
 # WORLD SIZE MATTERS -- do not just take every tile. coef(attn,mlp)*r
 # must divide evenly by ws or FSDP2 pads and buckets differently, which
@@ -125,7 +125,7 @@ probe () {
     local r="$1"
     local label="r${r}"
     echo
-    echo "########## --lora-rank ${r} (XPU/xccl) ##########"
+    echo "########## --lora-rank ${r} (Aurora XPU/xccl) ##########"
     local t0=$SECONDS
     timeout 900 "${PY_BIN}" -m ezpz.launch --np "${NP}" -- \
         "${PY_BIN}" -m ezpz.examples.fsdp_tp \
