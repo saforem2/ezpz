@@ -90,6 +90,20 @@ export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
 # to /usr/bin/python3 in earlier attempts and produced three
 # INDETERMINATE cells.
 PY_BIN="${V}/bin/python"
+
+# PALS stages the interpreter into a per-job temp dir but does NOT bring
+# its shared library, so a uv-managed (dynamically linked) CPython dies
+# on every rank with:
+#   python: error while loading shared libraries: .../libpython3.12.so.1.0
+# Put the real libdir on LD_LIBRARY_PATH so the staged binary resolves
+# it. Job 7563180 lost all three cells to this (rc=143 in ~5 s).
+_PYHOME="$(grep '^home' "${V}/pyvenv.cfg" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
+if [ -n "${_PYHOME}" ] && [ -d "${_PYHOME}/../lib" ]; then
+    export LD_LIBRARY_PATH="$(cd "${_PYHOME}/../lib" && pwd)${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+# Cray MPI + libfabric for the Cray-built mpi4py copied into this venv.
+_FAB="$(ls -d /opt/cray/libfabric/*/lib64 2>/dev/null | tail -1)"
+export LD_LIBRARY_PATH="/opt/cray/pe/lib64${_FAB:+:${_FAB}}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 echo "=== host: $(hostname) ==="
 echo "=== python3: ${PY_BIN} ==="
 
