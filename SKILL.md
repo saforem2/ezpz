@@ -171,6 +171,28 @@ Rules that come from real misreadings, not style preference:
   prepends `src/`), which makes this confusing: unit tests pass while an
   inline probe raises `AttributeError` on a symbol you just added. Set
   `PYTHONPATH=$PWD/src`, and print `ezpz.__file__` to prove it.
+- **`uv pip install torch` silently installs nothing.** `pyproject.toml`
+  pins torch/torchvision/torchaudio/mpi4py to `sys_platform == 'never'`
+  under `[tool.uv] override-dependencies`, and **uv applies that
+  override to `uv pip install` too** — so it reports `Audited 1 package`
+  and the venv still has no torch. Bootstrap pip and use bare pip, which
+  ignores uv config (same trick as `.github/workflows/pytest.yml`):
+
+  ```bash
+  uv pip install --python "$V/bin/python" pip
+  "$V/bin/python" -m pip install torch==2.13.0 \
+      --index-url https://download.pytorch.org/whl/cu129
+  ```
+
+- **Downloads on ALCF need the proxy.** Nothing reaches the internet
+  from a login node without:
+
+  ```bash
+  export http_proxy=http://proxy.alcf.anl.gov:3128
+  export https_proxy=http://proxy.alcf.anl.gov:3128
+  export no_proxy=localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov
+  ```
+
 - **torch 2.13 renamed FSDP2's collectives.**
   `all_gather_into_tensor` → `all_gather_single`,
   `reduce_scatter_tensor` → `reduce_scatter_single`. Any test that
