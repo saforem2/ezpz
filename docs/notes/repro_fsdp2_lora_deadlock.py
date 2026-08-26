@@ -22,9 +22,22 @@ ahead to a later all-gather::
 
 Note ``last completed 17`` -> ``last started 19``: work #18 is skipped.
 
-STATUS: written from the failing configuration but **not yet executed
-standalone**. Run it before citing it upstream -- if it does not
-reproduce, the difference from the real workload is itself the clue.
+Geometry is verified against the real model, not assumed: with these
+constants the per-block trainable count is 419840 at r=8, 892160 at
+r=17 and 944640 at r=18, matching ``apply_lora`` on the actual
+``agpt-2b`` preset exactly (14 trainable tensors per block). That
+matters -- the boundary is a function of the bucket element count, so a
+reproducer with the wrong width would prove nothing.
+
+Smoke-tested single-rank on CPU: one Block reports 419840 trainable
+parameters across 14 tensors, and **all 14 receive gradients** after a
+backward -- so no adapter is stranded off the autograd path, which would
+change the bucket layout and invalidate the whole comparison.
+
+STATUS: structure verified; **the multi-rank deadlock itself has not yet
+been reproduced with this file**. Run it on 8 GPUs before citing it
+upstream -- if it does not hang at r=8, the difference from the real
+workload is itself the clue.
 """
 
 from __future__ import annotations
@@ -42,7 +55,7 @@ from torch.distributed.fsdp import fully_shard
 # function of the per-bucket element count.
 DIM = 2048
 N_LAYERS = 12
-N_HEADS = 32
+N_HEADS = 16  # agpt-2b: 16, NOT 32 -- head_dim 128, kv width 512
 N_KV_HEADS = 4
 HIDDEN = 11008
 VOCAB = 256128
@@ -77,13 +90,25 @@ class Block(nn.Module):
         for p in self.base.parameters():
             p.requires_grad_(False)
 
+    def _lora(self, k: str, x: torch.Tensor) -> torch.Tensor:
+        """base(x) + B(A(x)) -- the standard LoRA residual."""
+        return self.base[k](x) + self.lora_b[k](self.lora_a[k](x))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = x
-        for k in ("wq", "wo"):
-            h = h + self.lora_b[k](self.lora_a[k](h))
-        h = h + self.base["wo"](self.base["wq"](h))
-        m = self.base["w2"](self.base["w1"](h))
-        m = m + self.lora_b["w2"](self.lora_a["w2"](self.base["w1"](h)))
+        # EVERY adapter must be on the autograd path. Routing only some
+        # of them leaves the rest gradient-less, which changes both the
+        # trainable count and the bucket layout -- i.e. it would no
+        # longer be the configuration that deadlocks.
+        q = self._lora("wq", x)
+        k_ = self._lora("wk", x)
+        v = self._lora("wv", x)
+        # Stand-in for attention: keep q/k/v live without needing masks
+        # or RoPE. Shapes differ (kv width < dim), so reduce k/v to
+        # scalars and scale -- the collective sizes are what matter here,
+        # not the numerics.
+        h = x + self._lora("wo", q) * (1.0 + k_.mean() + v.mean())
+        # SwiGLU-shaped MLP: w1 and w3 in, w2 back out.
+        m = self._lora("w2", self._lora("w1", h) * self._lora("w3", h))
         return h + m
 
 
