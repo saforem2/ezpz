@@ -465,6 +465,37 @@ silently ignored.
 **The protocol is not the mechanism.** Not the 256 KiB threshold, and
 not protocol selection in general.
 
+## Cross-machine summary: it only happens on Perlmutter
+
+All rows at `world_size=8` (Perlmutter's exact geometry, so FSDP2
+buckets identically everywhere), `agpt-2b`, `tp=1`, `bs=1`,
+`seq_len=2048`, `--lora-target attn,mlp`, shipped default arm:
+
+| `--lora-rank` | Perlmutter<br>A100 / NCCL / 2.13 | Polaris<br>A100 / NCCL / 2.13 | Sunspot<br>PVC / xccl / 2.13 | Aurora<br>PVC / xccl / **2.10** |
+|---|---|---|---|---|
+| 8  | **hang**, 6/6 | trains 142 s | trains 94 s | trains 60 s |
+| 17 | **hang** | trains 107 s | trains 72 s | trains 59 s |
+| 18 | trains | trains 107 s | trains 68 s | trains |
+
+**Two backends, four stacks, every run clean except Perlmutter** --
+where the hang is deterministic at 6/6.
+
+The load-bearing comparisons are Polaris (matches Perlmutter on
+accelerator, collectives, world size and torch minor -- varies only the
+site) and Sunspot (matches on torch minor and world size -- varies the
+collectives backend). Aurora is weaker evidence because it ships torch
+**2.10**, and #239 has only been seen on 2.13; its value is that it did
+not hang, which would have meant the bug predates 2.13.
+
+!!! note "Read the exit codes carefully"
+
+    Several clean runs exit non-zero. Aurora's cells report `rc=1` from
+    a post-training `plotext` version mismatch, and Perlmutter's r64
+    cell did the same -- in both cases plots were written and no
+    watchdog fired. Judge these runs on evidence (watchdog line vs.
+    reaching the plotting stage), never on `rc`, or a pass gets
+    misfiled as INDETERMINATE.
+
 ## Where to look next
 
 Every *static* property of the collective stream has now been ruled out:
