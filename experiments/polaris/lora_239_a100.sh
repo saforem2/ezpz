@@ -61,9 +61,20 @@ cd "${D}" || exit 1
 # four Sunspot allocations were lost. Compute nodes have no outbound
 # internet, so source the repo's own copy of utils.sh rather than the
 # usual `source <(curl -fsSL https://bit.ly/ezpz-utils)`.
+# NOT ezpz_setup_env here. Polaris' own conda modulefiles currently
+# hard-require gcc-native/14.2 and cray-hdf5-parallel/1.14.3.5, both of
+# which the site has REMOVED, so every conda module fails to load and
+# ezpz_setup_env dies with "CONDA_PREFIX still not set" (job 7560666).
+# Use the standalone uv venv built per the polaris-fresh-venv guide.
+V="${EZPZ_VENV:-${D}/.venv-239}"
+[ -x "${V}/bin/python" ] || { echo "FATAL: no venv at ${V}"; exit 1; }
+module load craype cray-mpich PrgEnv-nvidia cuda/12.9 2>/dev/null
+module swap PrgEnv-nvidia PrgEnv-gnu 2>/dev/null   # mpi4py was built here
 # shellcheck disable=SC1091
-source "${D}/src/ezpz/bin/utils.sh" || { echo "FATAL: no utils.sh"; exit 1; }
-ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
+source "${V}/bin/activate" || { echo "FATAL: cannot activate ${V}"; exit 1; }
+# utils.sh still wanted for ezpz_setup_job (hostfile/PBS discovery).
+# shellcheck disable=SC1091
+source "${D}/src/ezpz/bin/utils.sh" 2>/dev/null && ezpz_setup_job 2>/dev/null
 
 export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
@@ -75,7 +86,10 @@ export TORCH_DDP_TIMEOUT=300
 export TORCH_NCCL_DESYNC_DEBUG=1
 export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
 
-PY_BIN="$(command -v python3)"
+# Take python from the venv EXPLICITLY. $(command -v python3) resolved
+# to /usr/bin/python3 in earlier attempts and produced three
+# INDETERMINATE cells.
+PY_BIN="${V}/bin/python"
 echo "=== host: $(hostname) ==="
 echo "=== python3: ${PY_BIN} ==="
 
