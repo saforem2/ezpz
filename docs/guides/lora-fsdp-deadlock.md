@@ -22,11 +22,12 @@
     If you hit the hang above r=18, that is new information — please add
     it to [#239](https://github.com/saforem2/ezpz/issues/239).
 
-    **It does not reproduce on Sunspot (XPU/xccl)** — but that run
-    changed `world_size` (24 vs 8) as well as the backend, and at ws=24
-    the shards no longer divide evenly, so FSDP2 buckets differently.
-    It is **not** yet evidence the bug is NCCL-specific. See
-    [the Sunspot section](#it-does-not-reproduce-on-xpuxccl-sunspot).
+    **It has never reproduced off Perlmutter.** Sunspot (XPU/xccl) and
+    — decisively — **Polaris (A100 + NCCL at the same `world_size=8`)**
+    both run the identical hanging configuration clean. So this is not
+    an FSDP2 bug and not an NCCL bug: the live suspects are all in
+    Perlmutter's own stack. See
+    [the Polaris control](#it-does-not-reproduce-on-polaris-either-a100--nccl-ws8).
 
     The sharpest open clue on the NVIDIA side is that r17's stuck bucket
     is **18 % larger than linear in r** while r8's is exactly linear —
@@ -373,6 +374,57 @@ through end of training.
     like Perlmutter, at `world_size=8`, which varies only the site and
     software stack. Until then, "NCCL-localized" is a hypothesis, not a
     finding.
+
+## It does not reproduce on Polaris either (A100 + NCCL, ws=8)
+
+**This is the controlled test, and it came back negative.**
+
+Polaris job `7563257` varies *only* the site and software stack:
+
+| | Perlmutter | Polaris |
+|---|---|---|
+| accelerator | A100 | A100 |
+| collectives | NCCL | NCCL |
+| `world_size` | 8 | 8 |
+| torch | 2.13.0+cu130 | 2.13.0+cu129 |
+| `--lora-rank 8` | **hang, 6/6** | **trains**, `rc=0`, 142 s |
+
+Verified it is the intended configuration: `device=cuda`,
+`--lora-rank 8 --lora-target attn,mlp`, plotting output written, and
+**zero watchdog lines**.
+
+### What this kills
+
+The "#239 is an NCCL bug" hypothesis. A second, independent A100+NCCL
+site at the same world size, on the same torch minor, runs the exact
+configuration clean. If the deadlock were a property of NCCL's
+interaction with FSDP2's reduce-scatter scheduling, it should have
+reproduced here.
+
+Combined with Sunspot (XPU/xccl, also clean), **#239 has never
+reproduced anywhere except Perlmutter** -- where it is nonetheless
+rock-solid deterministic at 6/6.
+
+### What that leaves
+
+Something in **Perlmutter's stack specifically**: its NCCL build
+(2.29.7), the `nccl/2.24.3` AWS-libfabric plugin, the Slingshot
+interconnect, its CUDA 13.0 / cu130 wheel pairing, or the
+2-nodes-x-4-GPU topology as realised there. Those are now the live
+suspects, not FSDP2 or NCCL-in-general.
+
+!!! warning "Do not over-read this either"
+
+    Polaris differs from Perlmutter in more than "site": cu129 vs
+    cu130, a different NCCL, a different interconnect, PBS vs Slurm.
+    This narrows the search to Perlmutter's stack; it does not identify
+    which component. The honest status is that the r-boundary is real
+    and deterministic **on one machine**, and no portable mechanism has
+    been found.
+
+    It also means an upstream torch issue is **not** currently
+    warranted -- see `docs/notes/upstream-fsdp2-lora-deadlock.md`, which
+    stays unsent.
 
 ## Refuted: "the NCCL protocol selects the outcome"
 

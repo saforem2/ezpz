@@ -1,7 +1,22 @@
 # Draft: upstream PyTorch issue for #239
 
-**Status: DRAFT, unsent.** Filing an upstream issue is the user's call.
-Do not submit this without asking.
+**Status: DRAFT, unsent -- and now probably SHOULD NOT be sent.**
+
+The Polaris control (job `7563257`) ran this exact configuration on a
+second A100 + NCCL site at `world_size=8` under torch 2.13, and it
+**trained clean** (`rc=0`, 142 s, zero watchdog lines). Sunspot
+(XPU/xccl) is clean too. So #239 has never reproduced anywhere except
+Perlmutter.
+
+An upstream torch issue is therefore not warranted on the current
+evidence: nothing here shows a defect in FSDP2 or NCCL as shipped. The
+live suspects are all Perlmutter-specific -- its NCCL 2.29.7 build, the
+AWS-libfabric plugin, Slingshot, or the cu130 pairing.
+
+This draft is kept because the *analysis* remains valid and reusable: if
+the deadlock is later reproduced off Perlmutter, most of the report is
+already written. Until then, the right venue is an NERSC ticket, not
+pytorch/pytorch.
 
 Two things should land before this goes out:
 
