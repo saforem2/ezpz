@@ -76,7 +76,15 @@ source "${V}/bin/activate" || { echo "FATAL: cannot activate ${V}"; exit 1; }
 # shellcheck disable=SC1091
 source "${D}/src/ezpz/bin/utils.sh" 2>/dev/null && ezpz_setup_job 2>/dev/null
 
-export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
+# PALS stages the interpreter into a per-job temp dir, so sys.prefix is
+# derived from the STAGED location, pyvenv.cfg is never found, and the
+# venv's site-packages silently drops off sys.path -- every rank then
+# dies with `ModuleNotFoundError: No module named 'torch'` even though
+# the launcher invoked the venv python and torch is installed in it
+# (job 7563242). Put site-packages on PYTHONPATH so imports survive
+# staging.
+_SP="$(echo "${V}"/lib/python3.*/site-packages)"
+export PYTHONPATH="${D}/src:${_SP}:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
