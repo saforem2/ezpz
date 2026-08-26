@@ -184,6 +184,30 @@ Rules that come from real misreadings, not style preference:
       --index-url https://download.pytorch.org/whl/cu129
   ```
 
+- **On Polaris compute nodes, `import ezpz` hard-requires mpi4py.**
+  `src/ezpz/__init__.py:17` does `if socket.getfqdn().startswith("x3")`
+  → `from mpi4py import MPI`. Polaris compute nodes are `x3…`, login
+  nodes are not — so ezpz imports fine on the login node and dies on the
+  compute node with whatever is wrong with mpi4py. Do not conclude from
+  a clean login-node import that the job will run. (Tracked in TODO.md
+  §2 as a hardcoded hostname check.)
+
+- **mpi4py on Polaris must be built against the MPI that exists.** A
+  stock build can link `libmpi_gnu_123.so.12`, a soname absent from the
+  current Cray PE — only `libmpi_gnu.so.12` is present. Symptom:
+  `ImportError: libmpi_gnu_123.so.12: cannot open shared object file`.
+  Forcing the wrong lib via `LD_LIBRARY_PATH` gives
+  `*** stack smashing detected ***`, so rebuild rather than shim:
+
+  ```bash
+  module load craype cray-mpich PrgEnv-gnu
+  export LDFLAGS="-L${MPICH_DIR}/lib -L/opt/cray/pe/lib64 -lmpi_gnu"
+  export CFLAGS="-I${MPICH_DIR}/include"
+  MPICC=cc python -m pip install --no-binary mpi4py --no-build-isolation mpi4py
+  ```
+
+  Check `ldd .../mpi4py/MPI*.so | grep mpi` shows no `not found`.
+
 - **Downloads on ALCF need the proxy.** Nothing reaches the internet
   from a login node without:
 
