@@ -54,12 +54,26 @@ real multi-rank mesh.
 | 4 | `dp_shard=2, tp=4` | trains, 84 s |
 
 **Aurora (PVC/xccl, torch 2.10, 2 nodes, `world_size=24`)** — job
-`8784784`:
+`8784784`, 3/3 pass:
 
 | `tp` | mesh | result |
 |---|---|---|
 | 1 | `dp_shard=24, tp=1` | trains, 82 s |
 | 2 | `dp_shard=12, tp=2` | trains, 84 s |
+| 4 | `dp_shard=6,  tp=4` | trains, 80 s |
+
+### Complete: 9/9
+
+| | `tp=1` | `tp=2` | `tp=4` |
+|---|---|---|---|
+| Polaris (A100/NCCL, ws=8) | 8/1 | 4/2 | 2/4 |
+| Sunspot (PVC/xccl, ws=24) | 24/1 | 12/2 | 6/4 |
+| Aurora (PVC/xccl, ws=24) | 24/1 | 12/2 | 6/4 |
+
+(cells show `dp_shard`/`tp`; every product equals that machine's world
+size, so TP was genuinely applied rather than silently downgraded)
+
+**Zero `NotImplementedError` across all six `tp>1` cells.**
 
 Aurora's cells all exit `rc=1` from a post-training `plotext` version
 mismatch — plots written, zero watchdog lines. Judging on `rc` would
