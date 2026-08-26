@@ -184,6 +184,30 @@ Rules that come from real misreadings, not style preference:
       --index-url https://download.pytorch.org/whl/cu129
   ```
 
+- **Under PALS, nothing derived from the interpreter's own location
+  survives.** PBS/PALS copies the python binary into a per-job temp dir
+  before launching ranks, which breaks every relative lookup. Three
+  separate failures in one job, each looking unrelated:
+
+  | what breaks | symptom | fix |
+  |---|---|---|
+  | `libpython` via `$ORIGIN/../lib` | `error while loading shared libraries: .../files/0/../lib/libpython3.12.so.1.0` | use a python with a real `RUNPATH` |
+  | `site-packages` via `sys.prefix` → `pyvenv.cfg` | `ModuleNotFoundError: No module named 'torch'` *while the launcher clearly invoked the venv python* | put site-packages on `PYTHONPATH` |
+
+  Note the first symptom quotes a **relative** path — that is an
+  `$ORIGIN` lookup, and `LD_LIBRARY_PATH` cannot fix it. Reading it as a
+  generic "library not found" cost an allocation.
+
+  **Prefer Cray's python** (`/opt/cray/pe/python/3.12.12`) as the venv
+  base on Polaris: it has `RUNPATH /opt/cray/pe/python/3.12.12/lib` and
+  ships a working mpi4py, so it avoids both. A `uv`-managed CPython has
+  **no** RUNPATH. Then belt-and-braces:
+
+  ```bash
+  _SP="$(echo "${V}"/lib/python3.*/site-packages)"
+  export PYTHONPATH="${D}/src:${_SP}:${PYTHONPATH:-}"
+  ```
+
 - **On Polaris compute nodes, `import ezpz` hard-requires mpi4py.**
   `src/ezpz/__init__.py:17` does `if socket.getfqdn().startswith("x3")`
   → `from mpi4py import MPI`. Polaris compute nodes are `x3…`, login
