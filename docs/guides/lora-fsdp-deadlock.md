@@ -338,10 +338,11 @@ same `agpt-2b` / `tp=1` / `bs=1` / `seq_len=2048` /
 | 18 | trains | **trains**, `rc=0`, 72 s |
 
 **Rerun at the matched `world_size=8`** (job `12473880`), removing the
-bucketing confound below — r8 `rc=0` 94 s, r17 `rc=0` 72 s, XPU
-dispatch, zero watchdog lines. The ws=24 caveat that follows is
-therefore no longer load-bearing: xccl is clean at Perlmutter's exact
-geometry.
+bucketing confound below — r8 `rc=0` 94 s, r17 `rc=0` 72 s, r18 `rc=0`
+68 s; XPU dispatch, plots written, zero watchdog lines, 3/3. The ws=24
+caveat that follows is therefore no longer load-bearing: **xccl is
+clean at Perlmutter's exact geometry**, so the backend really is not
+the variable.
 
 Both ranks that deadlock on NVIDIA train clean on XPU, so the r-boundary
 itself does not exist there — it is not that the boundary moved, it is
