@@ -29,11 +29,12 @@
     in Perlmutter's own stack. See
     [the Polaris control](#it-does-not-reproduce-on-polaris-either-a100--nccl-ws8).
 
-    The XPU/xccl question is **still open**: the Sunspot run was at
-    `world_size=24`, where the shards do not divide evenly and FSDP2
-    buckets differently, so it cannot separate "xccl does not hang" from
-    "a different bucket layout does not hang". Sunspot and Aurora are
-    being rerun at ws=8 to settle it.
+    **XPU/xccl is clean at the matched world size too.** The first
+    Sunspot run was confounded (ws=24, shards not evenly divisible, so
+    FSDP2 bucketed differently). Rerun at **ws=8** — the exact
+    Perlmutter geometry — r8 and r17 still train (94 s / 72 s, XPU
+    dispatch, zero watchdog lines). So the earlier result was right for
+    the right reason after all.
 
     The sharpest open clue on the NVIDIA side is that r17's stuck bucket
     is **18 % larger than linear in r** while r8's is exactly linear —
@@ -335,6 +336,12 @@ same `agpt-2b` / `tp=1` / `bs=1` / `seq_len=2048` /
 | 8  | **hang**, 6/6 | **trains**, `rc=0`, 102 s |
 | 17 | **hang** | **trains**, `rc=0`, 76 s |
 | 18 | trains | **trains**, `rc=0`, 72 s |
+
+**Rerun at the matched `world_size=8`** (job `12473880`), removing the
+bucketing confound below — r8 `rc=0` 94 s, r17 `rc=0` 72 s, XPU
+dispatch, zero watchdog lines. The ws=24 caveat that follows is
+therefore no longer load-bearing: xccl is clean at Perlmutter's exact
+geometry.
 
 Both ranks that deadlock on NVIDIA train clean on XPU, so the r-boundary
 itself does not exist there — it is not that the boundary moved, it is
