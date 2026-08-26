@@ -66,7 +66,7 @@ cd "${D}" || exit 1
 # which the site has REMOVED, so every conda module fails to load and
 # ezpz_setup_env dies with "CONDA_PREFIX still not set" (job 7560666).
 # Use the standalone uv venv built per the polaris-fresh-venv guide.
-V="${EZPZ_VENV:-${D}/.venv-239}"
+V="${EZPZ_VENV:-${D}/.venv-cray}"
 [ -x "${V}/bin/python" ] || { echo "FATAL: no venv at ${V}"; exit 1; }
 module load craype cray-mpich PrgEnv-nvidia cuda/12.9 2>/dev/null
 module swap PrgEnv-nvidia PrgEnv-gnu 2>/dev/null   # mpi4py was built here
@@ -91,12 +91,17 @@ export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
 # INDETERMINATE cells.
 PY_BIN="${V}/bin/python"
 
-# PALS stages the interpreter into a per-job temp dir but does NOT bring
-# its shared library, so a uv-managed (dynamically linked) CPython dies
-# on every rank with:
-#   python: error while loading shared libraries: .../libpython3.12.so.1.0
-# Put the real libdir on LD_LIBRARY_PATH so the staged binary resolves
-# it. Job 7563180 lost all three cells to this (rc=143 in ~5 s).
+# The venv MUST be built on Cray's python (/opt/cray/pe/python/3.12.12),
+# not a uv-managed one. PALS stages the interpreter into a per-job temp
+# dir, and the uv build has NO RUNPATH -- it finds libpython via
+# $ORIGIN/../lib, which stops resolving once staged:
+#   python: error while loading shared libraries:
+#     .../files/0/../lib/libpython3.12.so.1.0
+# LD_LIBRARY_PATH cannot rescue a failed $ORIGIN lookup, which is why
+# jobs 7563180 and 7563189 both died there in ~5 s. Cray's python has
+#   RUNPATH /opt/cray/pe/python/3.12.12/lib
+# and ships a working mpi4py, fixing both problems at once.
+# The libdir export below is belt-and-braces for the same class.
 _PYHOME="$(grep '^home' "${V}/pyvenv.cfg" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
 if [ -n "${_PYHOME}" ] && [ -d "${_PYHOME}/../lib" ]; then
     export LD_LIBRARY_PATH="$(cd "${_PYHOME}/../lib" && pwd)${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
