@@ -115,6 +115,55 @@ log_error() {
 	printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}" >&2
 }
 
+###########################################################################
+# Run Lmod's `module` with `nounset` temporarily disabled.
+#
+# Lmod's own init reads $ZSH_EVAL_CONTEXT, which is unbound under bash.
+# If the CALLER's script uses `set -u` (a completely reasonable thing to
+# do), the very first `module load` inside this file aborts the job with
+#
+#   /usr/share/lmod/lmod/init/bash: line 211: ZSH_EVAL_CONTEXT: unbound variable
+#
+# and it dies mid-setup, after the frameworks module has already printed
+# its banner -- so the failure looks like an ezpz or ALCF problem rather
+# than a shell-option interaction. Reported from a MORPH job on Aurora
+# (8773348) and hit independently on Sunspot (12473855).
+#
+# This is a wrapper FUNCTION named `module`, so it intercepts every
+# existing `module ...` call in this file without touching any of them,
+# and it restores the caller's `set -u` afterwards rather than silently
+# leaving nounset off for the rest of their script.
+###########################################################################
+_ezpz_module() {
+	local _had_u=0 _rc=0
+	case "$-" in
+	*u*) _had_u=1 ;;
+	esac
+	set +u
+	if declare -F _ezpz_real_module >/dev/null 2>&1; then
+		_ezpz_real_module "$@"
+		_rc=$?
+	elif [[ -n "${LMOD_CMD:-}" ]]; then
+		# No pre-existing shell function (e.g. a non-login shell that
+		# only sourced Lmod's init): drive lmod directly.
+		eval "$("${LMOD_CMD}" bash "$@")"
+		_rc=$?
+	else
+		log_message WARN "no \`module\` command available; skipping: module $*"
+		_rc=127
+	fi
+	[[ "${_had_u}" -eq 1 ]] && set -u
+	return "${_rc}"
+}
+
+# Rename Lmod's own `module` function to _ezpz_real_module (once), then
+# shadow `module` with the nounset-safe wrapper above. Guarded so
+# re-sourcing this file does not wrap the wrapper.
+if declare -F module >/dev/null 2>&1 && ! declare -F _ezpz_real_module >/dev/null 2>&1; then
+	eval "_ezpz_real_module() $(declare -f module | tail -n +2)"
+fi
+module() { _ezpz_module "$@"; }
+
 log_message() {
 	local level="$1"
 	shift || true
