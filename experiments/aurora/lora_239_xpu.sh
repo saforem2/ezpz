@@ -1,6 +1,14 @@
 #!/bin/bash
 # #239 on AURORA (PVC/XPU + xccl). Companion to the Sunspot script.
 #
+# CAVEAT, read before interpreting: Aurora's frameworks module ships
+# torch **2.10.0a0**, not 2.13. #239 has only ever been seen on 2.13,
+# so a clean result here is confounded by the version and is NOT
+# independent evidence that xccl is unaffected -- Sunspot (torch 2.13
+# XPU, ws=8) is the load-bearing XPU data point. A HANG here would be
+# far more interesting than a pass, since it would mean the bug predates
+# 2.13.
+#
 # Everything in #239 so far is Perlmutter: A100 + NCCL. Aurora is PVC +
 # **xccl**, running torch 2.13.0.dev+xpu -- the same major version as the
 # hang, on an entirely different collectives stack. So:
