@@ -370,7 +370,7 @@ This is roughly equivalent to:
 module load oneapi/release hdf5 pti-gpu
 export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 export CCL_PROCESS_LAUNCHER=pmix
-export CCL_OP_SYNC=1
+export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"   # default 1; override respected
 export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 export TORCH_CPP_LOG_LEVEL=ERROR
 ```
@@ -399,7 +399,7 @@ export TORCH_CPP_LOG_LEVEL=ERROR
 |----------|---------|
 | `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | Expose each PVC tile as a separate device |
 | `CCL_PROCESS_LAUNCHER=pmix` | Use PMIx for oneCCL bootstrap (matches `mpiexec`) |
-| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads) |
+| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads). **Overridable** — `export CCL_OP_SYNC=0` before calling and the helper honours it. It used to be exported unconditionally in three places, so every run had it set whether or not anyone chose it. |
 | `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
 | `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
 

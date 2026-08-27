@@ -1052,7 +1052,15 @@ ezpz_load_modules_aurora() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 	# Aurora-specific MR cache monitor (matches ezpz_setup_conda_aurora).
@@ -1085,7 +1093,15 @@ ezpz_load_modules_sunspot() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
@@ -2745,7 +2761,15 @@ ezpz_setup_xpu() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
