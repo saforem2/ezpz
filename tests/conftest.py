@@ -16,6 +16,61 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 os.environ["WANDB_MODE"] = "disabled"
 os.environ["EZPZ_LOG_LEVEL"] = "CRITICAL"
 
+# Cap thread pools BEFORE torch is imported anywhere.
+#
+# torch defaults to one OpenMP thread per core, which on a big shared
+# node means 128 intra-op + 128 inter-op threads. Login nodes impose a
+# per-user PID ceiling (`/sys/fs/cgroup/users/$USER/pids.max`, 256 on
+# Polaris) and THREADS COUNT AGAINST IT, so the suite idles at ~141
+# threads and the first conv2d exhausts the cgroup:
+#
+#     libgomp: Thread creation failed: Resource temporarily unavailable
+#
+# That surfaced as the whole run freezing indefinitely in
+# `test_flops.py::TestEstimateModelFlops::test_cnn` -- a plain CPU test
+# with no distributed code -- and as spurious ProcessExitedException in
+# every `mp.spawn` test. Measured on a Polaris login node:
+#
+#     default            peak 144 threads, 256/256 PIDs, 15 failed
+#     OMP_NUM_THREADS=1  peak  16 threads,  59/256 PIDs,  2 failed
+#
+# `setdefault` so an operator can still opt out. The env var (rather
+# than only torch.set_num_threads) is what matters for `mp.spawn`
+# children, which inherit os.environ but not the parent's torch config.
+for _var in (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ.setdefault(_var, "1")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cap_torch_threads():
+    """Belt-and-braces for the PID-ceiling problem described above.
+
+    The env vars are what `mp.spawn` children inherit, but torch reads
+    them only at first import -- if something imported torch before this
+    conftest ran, its pools are already sized to the core count. Setting
+    them explicitly here is idempotent and costs nothing.
+
+    Skipped silently when torch is absent (several CI jobs run without
+    it) and when the pools are already smaller.
+    """
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return
+    try:
+        if torch.get_num_threads() > 1:
+            torch.set_num_threads(1)
+        # set_num_interop_threads raises if the pool is already started,
+        # which is fine -- it just means someone got there first.
+        if torch.get_num_interop_threads() > 1:
+            torch.set_num_interop_threads(1)
+    except (RuntimeError, AttributeError):
+        pass
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _suppress_ezpz_loggers():
