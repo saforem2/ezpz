@@ -140,7 +140,13 @@ _ezpz_module() {
 	*u*) _had_u=1 ;;
 	esac
 	set +u
-	if declare -F _ezpz_real_module >/dev/null 2>&1; then
+	# NOTE: use `type -w`/command lookup, NOT `declare -F`. In zsh
+	# `declare -F nosuchfn` SUCCEEDS for a function that does not exist,
+	# so a `declare -F`-guarded rename silently never happens and this
+	# wrapper then calls a missing _ezpz_real_module. That broke
+	# ezpz_setup_env on Sunspot and Aurora (both zsh) while working on
+	# Polaris (bash).
+	if _ezpz_have_fn _ezpz_real_module; then
 		_ezpz_real_module "$@"
 		_rc=$?
 	elif [[ -n "${LMOD_CMD:-}" ]]; then
@@ -156,11 +162,29 @@ _ezpz_module() {
 	return "${_rc}"
 }
 
+# Portable "is this a shell function?" -- works in bash AND zsh.
+# `declare -F` is unreliable here: zsh returns success for names that do
+# not exist.
+_ezpz_have_fn() {
+	if [ -n "${ZSH_VERSION:-}" ]; then
+		# zsh: $functions is an associative array of defined functions.
+		# shellcheck disable=SC2154,SC2296
+		eval '[[ -n "${functions[$1]:-}" ]]'
+	else
+		[[ "$(type -t "$1" 2>/dev/null)" == function ]]
+	fi
+}
+
 # Rename Lmod's own `module` function to _ezpz_real_module (once), then
 # shadow `module` with the nounset-safe wrapper above. Guarded so
 # re-sourcing this file does not wrap the wrapper.
-if declare -F module >/dev/null 2>&1 && ! declare -F _ezpz_real_module >/dev/null 2>&1; then
-	eval "_ezpz_real_module() $(declare -f module | tail -n +2)"
+if _ezpz_have_fn module && ! _ezpz_have_fn _ezpz_real_module; then
+	if [ -n "${ZSH_VERSION:-}" ]; then
+		# shellcheck disable=SC2154,SC2296
+		eval "_ezpz_real_module() { ${functions[module]} }"
+	else
+		eval "_ezpz_real_module() $(declare -f module | tail -n +2)"
+	fi
 fi
 module() { _ezpz_module "$@"; }
 
