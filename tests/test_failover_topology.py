@@ -184,7 +184,16 @@ class TestHostnameFormMismatch:
         """
         alloc = self._alloc(tmp_path)
         alloc.swap_in([self.SCRAPED_VICTIM], attempt=1)
-        assert (tmp_path / "bad.txt").read_text().startswith(
+        # Compare the recorded line EXACTLY, not by prefix. `startswith`
+        # on a hostname is a weak assertion -- it passes for any longer
+        # host sharing the prefix, so it could not tell the PBS `-hsn0`
+        # form apart from something merely beginning with it. Recording
+        # the wrong-but-prefixed name is precisely the failure this
+        # class exists to catch.
+        # Each line is `<hostname> <provenance> attempt=N`, so compare
+        # the hostname FIELD exactly rather than the whole line.
+        line = (tmp_path / "bad.txt").read_text().strip()
+        assert line.split()[0] == (
             "x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
         )
 

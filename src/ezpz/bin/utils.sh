@@ -115,6 +115,79 @@ log_error() {
 	printf "[%s][${RED}E${RESET}] - %s\n" "$(ezpz_get_tstamp)" "${args[*]}" >&2
 }
 
+###########################################################################
+# Run Lmod's `module` with `nounset` temporarily disabled.
+#
+# Lmod's own init reads $ZSH_EVAL_CONTEXT, which is unbound under bash.
+# If the CALLER's script uses `set -u` (a completely reasonable thing to
+# do), the very first `module load` inside this file aborts the job with
+#
+#   /usr/share/lmod/lmod/init/bash: line 211: ZSH_EVAL_CONTEXT: unbound variable
+#
+# and it dies mid-setup, after the frameworks module has already printed
+# its banner -- so the failure looks like an ezpz or ALCF problem rather
+# than a shell-option interaction. Reported from a MORPH job on Aurora
+# (8773348) and hit independently on Sunspot (12473855).
+#
+# This is a wrapper FUNCTION named `module`, so it intercepts every
+# existing `module ...` call in this file without touching any of them,
+# and it restores the caller's `set -u` afterwards rather than silently
+# leaving nounset off for the rest of their script.
+###########################################################################
+_ezpz_module() {
+	local _had_u=0 _rc=0
+	case "$-" in
+	*u*) _had_u=1 ;;
+	esac
+	set +u
+	# NOTE: use `type -w`/command lookup, NOT `declare -F`. In zsh
+	# `declare -F nosuchfn` SUCCEEDS for a function that does not exist,
+	# so a `declare -F`-guarded rename silently never happens and this
+	# wrapper then calls a missing _ezpz_real_module. That broke
+	# ezpz_setup_env on Sunspot and Aurora (both zsh) while working on
+	# Polaris (bash).
+	if _ezpz_have_fn _ezpz_real_module; then
+		_ezpz_real_module "$@"
+		_rc=$?
+	elif [[ -n "${LMOD_CMD:-}" ]]; then
+		# No pre-existing shell function (e.g. a non-login shell that
+		# only sourced Lmod's init): drive lmod directly.
+		eval "$("${LMOD_CMD}" bash "$@")"
+		_rc=$?
+	else
+		log_message WARN "no \`module\` command available; skipping: module $*"
+		_rc=127
+	fi
+	[[ "${_had_u}" -eq 1 ]] && set -u
+	return "${_rc}"
+}
+
+# Portable "is this a shell function?" -- works in bash AND zsh.
+# `declare -F` is unreliable here: zsh returns success for names that do
+# not exist.
+_ezpz_have_fn() {
+	if [ -n "${ZSH_VERSION:-}" ]; then
+		# zsh: $functions is an associative array of defined functions.
+		# shellcheck disable=SC2154,SC2296
+		eval '[[ -n "${functions[$1]:-}" ]]'
+	else
+		[[ "$(type -t "$1" 2>/dev/null)" == function ]]
+	fi
+}
+
+# Rename Lmod's own `module` function to _ezpz_real_module (once), then
+# shadow `module` with the nounset-safe wrapper above. Guarded so
+# re-sourcing this file does not wrap the wrapper.
+if _ezpz_have_fn module && ! _ezpz_have_fn _ezpz_real_module; then
+	if [ -n "${ZSH_VERSION:-}" ]; then
+		# shellcheck disable=SC2154,SC2296
+		eval "_ezpz_real_module() { ${functions[module]} }"
+	else
+		eval "_ezpz_real_module() $(declare -f module | tail -n +2)"
+	fi
+fi
+module() { _ezpz_module "$@"; }
+
 log_message() {
 	local level="$1"
 	shift || true
@@ -1003,7 +1076,15 @@ ezpz_load_modules_aurora() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 	# Aurora-specific MR cache monitor (matches ezpz_setup_conda_aurora).
@@ -1036,7 +1117,15 @@ ezpz_load_modules_sunspot() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
@@ -1075,8 +1164,18 @@ ezpz_load_modules_polaris() {
 	fi
 	module use /soft/modulefiles
 	# Same module deps as the Polaris conda module, in the same order.
-	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel/1.14.3.5 \
-		cudnn/9.13.0 gcc-native/14.2
+	#
+	# cray-hdf5-parallel and gcc-native are deliberately UNPINNED. They
+	# were pinned to 1.14.3.5 and 14.2, both of which have since been
+	# removed from Polaris (now 1.14.3.9 and 14). Lmod then reports
+	# "The following module(s) are unknown", conda/2025-09-25 refuses to
+	# load because it requires gcc-native, `conda` is never on PATH, and
+	# the whole thing surfaces several layers later as the thoroughly
+	# unhelpful "CONDA_PREFIX still not set after ezpz_setup_conda".
+	# A site can bump a point release at any time; pinning one buys
+	# nothing here and breaks the environment when it moves.
+	module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel \
+		cudnn/9.13.0 gcc-native
 
 	# Compiler shims expected by C/C++ extensions (matches conda module).
 	export CC="/usr/bin/gcc-14"
@@ -2686,7 +2785,15 @@ ezpz_setup_xpu() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	export CCL_OP_SYNC=1
+	# Respect an operator-set value instead of forcing it. This was
+	# exported unconditionally in three places, so EVERY run had
+	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
+	# investigating behaviour that this setting itself affects, which
+	# made "it always fails that way" look like a hardware/oneCCL
+	# property rather than a setting we imposed. Default stays 1 (it
+	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
+	# before calling now actually takes effect.
+	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
