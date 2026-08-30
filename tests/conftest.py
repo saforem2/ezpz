@@ -64,12 +64,16 @@ def _cap_torch_threads():
     try:
         if torch.get_num_threads() > 1:
             torch.set_num_threads(1)
-        # set_num_interop_threads raises if the pool is already started,
-        # which is fine -- it just means someone got there first.
-        if torch.get_num_interop_threads() > 1:
-            torch.set_num_interop_threads(1)
     except (RuntimeError, AttributeError):
         pass
+    # NOTE: no set_num_interop_threads() call here. It only works before
+    # the interop pool starts, and under pytest something has always
+    # imported torch and started it by the time a session fixture runs --
+    # measured on Polaris, the call raised RuntimeError and left
+    # get_num_interop_threads() == 128 while the exception was swallowed.
+    # It was dead code pretending to work. The OMP_NUM_THREADS env var
+    # set at the top of this file is what actually bounds the pools (and
+    # is also what mp.spawn children inherit), so nothing is lost.
 
 
 @pytest.fixture(autouse=True, scope="session")
