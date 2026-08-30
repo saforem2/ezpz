@@ -142,6 +142,8 @@ communication problem between ranks.
 | All ranks freeze during init | Master address unreachable | Verify hostfile, check `MASTER_ADDR` is reachable from all nodes |
 | Hangs during `backward()` or `all_reduce()` | One rank crashed silently | Set `NCCL_DEBUG=INFO` to see communication logs; check all ranks are alive |
 | Freezes after several steps | Network timeout | Increase timeout: `TORCH_DDP_TIMEOUT=7200` |
+| Hangs with no watchdog dump at all | Timeout (default 3600s) outlives the allocation | **Lower** it: `TORCH_DDP_TIMEOUT=300 TORCH_NCCL_DESYNC_DEBUG=1` |
+| Hangs in `backward()` with LoRA + FSDP2 | Fully-frozen FSDP unit all-gathers without a matching reduce-scatter | See [LoRA + FSDP2 deadlock](guides/lora-fsdp-deadlock.md) (#239) |
 | Only hangs at scale (>1 node) | Mismatched world_size or hostfile | Verify `PBS_NODEFILE` / `SLURM_NODELIST` matches expected node count |
 | Intermittent hangs | Firewall or NIC misconfiguration | Set `NCCL_SOCKET_IFNAME` to the correct interface (check with `ip link show`) |
 | **FSDP2 hangs on FIRST `all_gather_into_tensor`** on Aurora/Sunspot (XPU) | Process group bound to wrong device — fixed in `ezpz>=0.18.4` | See [XPU FSDP2 First-Step Hang](#xpu-fsdp2-first-step-hang) below |
@@ -296,7 +298,26 @@ LOG_FROM_ALL_RANKS=1 ezpz launch --line-buffer -- python3 train.py
 
 # 3. Increase the timeout to rule out slow initialization
 TORCH_DDP_TIMEOUT=7200 ezpz launch -- python3 train.py
+
+# 4. ...but LOWER it to diagnose a hang you already believe is real
+TORCH_DDP_TIMEOUT=300 TORCH_NCCL_DESYNC_DEBUG=1 \
+    TORCH_NCCL_TRACE_BUFFER_SIZE=2000 \
+    ezpz launch -- python3 train.py
 ```
+
+!!! tip "Lower the timeout when you are hunting a hang"
+
+    `TORCH_DDP_TIMEOUT` defaults to **3600s**. In a 29-minute debug
+    allocation the watchdog can therefore **never fire** — the job hits
+    the wall clock first, and you get a silent kill with no collective
+    trace instead of a dump naming the stuck operation and its
+    mismatched sequence numbers.
+
+    That silence is not evidence of anything. Raise the timeout when you
+    suspect a *slow* launch; lower it when you suspect a *stuck* one.
+    `TORCH_NCCL_DESYNC_DEBUG=1` then reports which ranks disagree.
+
+    Worked example: [LoRA + FSDP2 deadlock](guides/lora-fsdp-deadlock.md).
 
 ### FSDP-Specific Errors
 

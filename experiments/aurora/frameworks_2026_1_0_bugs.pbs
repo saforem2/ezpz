@@ -1,0 +1,183 @@
+#!/bin/bash
+#PBS -l select=1
+#PBS -l walltime=00:20:00
+#PBS -l filesystems=flare:home
+#PBS -A datascience
+#PBS -q validation
+#PBS -N fw2026-bugs
+#
+# ============================================================================
+# Two independent packaging bugs in Aurora's `frameworks/2026.1.0`
+# ============================================================================
+#
+# Submit:
+#     qsub experiments/aurora/frameworks_2026_1_0_bugs.pbs
+#
+# Both are COMPUTE-NODE ONLY. Login nodes offer `frameworks/2025.3.1`, where
+# neither bug exists -- so neither reproduces from a login shell, and a
+# login-node check is not evidence that a compute job will work.
+#
+# ---------------------------------------------------------------------------
+# BUG 1 -- `import torch` fails: libglog.so.0 cannot be found
+# ---------------------------------------------------------------------------
+# torch 2.13 unconditionally imports `torchcomms` (distributed_c10d.py:151).
+# Its `libtorchcomms.so` has a RUNPATH pointing ONLY at a build-time path
+# under /lus/tegu -- a Sunspot filesystem that is not mounted on Aurora -- and
+# has no $ORIGIN-relative or install-prefix entry. So its DT_NEEDED
+# libglog.so.0 cannot resolve, even though the library ships two directories
+# up in $CONDA_PREFIX/lib.
+#
+#   Workaround:  export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+#
+# 2025.3.1's torchcomms is mis-linked identically but is never imported, so
+# only 2026.1.0 is affected. That makes this a regression, not a long-standing
+# quirk.
+#
+# BUG 2 -- `import wandb` succeeds but yields an EMPTY module
+# ---------------------------------------------------------------------------
+# TWO separate things conspire here. Both are real; the second is the one
+# that actually bites, and it is NOT an ALCF bug.
+#
+#   (a) frameworks/2026.1.0 ships an EMPTY site-packages/wandb/ with no
+#       dist-info, where 2025.3.1 ships 35 entries + wandb-0.24.2.dist-info.
+#       So the module genuinely is not installed in 2026.1.0.
+#
+#   (b) THE ACTUAL SHADOW: `~/wandb` -- the run-output directory wandb
+#       itself creates (it holds run-*/, latest-run, debug.log). PBS jobs
+#       start with cwd=$HOME, cwd is on sys.path, and an ordinary directory
+#       on sys.path becomes an implicit NAMESPACE PACKAGE. So `import wandb`
+#       binds that log directory, succeeds, and yields a module with ZERO
+#       attributes:
+#
+#           AttributeError: module 'wandb' has no attribute '__version__'
+#           __path__: ['/home/<user>/wandb']    <- the giveaway
+#
+# This is nastier than a missing package: the import does not fail, so the
+# error surfaces later as a confusing "module 'wandb' has no attribute 'api'".
+# Note (b) would shadow a WORKING site install too -- so `pip install` alone
+# does not reliably fix it; you must also not run from a directory containing
+# a `wandb/` folder.
+#
+#   Workarounds:  python3 -m pip install --user wandb   (fixes (a))
+#                 cd somewhere without a ./wandb dir    (fixes (b))
+#
+# ---------------------------------------------------------------------------
+# NOTE on `set -u`: deliberately NOT used. /etc/profile references unset
+# variables and Lmod's init reads $ZSH_EVAL_CONTEXT; either aborts the script
+# instantly, giving walltime 00:00:00 and completely EMPTY .o/.e files.
+# ---------------------------------------------------------------------------
+set -o pipefail
+
+source /etc/profile 2>/dev/null || true
+
+# Do NOT pipe `module load` -- a pipeline runs in a subshell and every
+# environment change it makes is discarded, which looks exactly like the
+# module silently doing nothing.
+module load frameworks
+
+echo "=================================================================="
+echo " node            : $(hostname)"
+echo " frameworks      : $(module -t list 2>&1 | grep -i frameworks)"
+echo " CONDA_PREFIX    : ${CONDA_PREFIX:-<unset>}"
+echo " python3         : $(command -v python3)"
+echo "=================================================================="
+
+SP="${CONDA_PREFIX}/lib/python3.12/site-packages"
+rc_torch_before=0
+rc_wandb_before=0
+
+echo
+echo "################ BUG 1: torch / libglog ################"
+echo
+echo "--- 1a. import torch WITHOUT the workaround (expect: OSError libglog.so.0)"
+python3 -c "import torch; print('torch', torch.__version__)" 2>&1 | tail -3
+rc_torch_before=${PIPESTATUS[0]}
+echo "    rc=${rc_torch_before}"
+
+echo
+echo "--- 1b. the library DOES exist, it is just unreachable:"
+ls -l "${CONDA_PREFIX}/lib/libglog.so"* 2>/dev/null | head -3 || echo "    (not found -- premise changed!)"
+
+echo
+echo "--- 1c. the dangling RUNPATH that causes it:"
+TC="$(python3 -c "import os,sys; sys.path.insert(0,'${SP}'); print(os.path.join('${SP}','torchcomms','libtorchcomms.so'))" 2>/dev/null)"
+if [ -f "${TC}" ]; then
+    objdump -p "${TC}" 2>/dev/null | grep -iE "RUNPATH|RPATH" | head -2
+    echo "    -> missing libs per ldd:"
+    ldd "${TC}" 2>/dev/null | grep -i "not found" | head -4
+else
+    echo "    (libtorchcomms.so not at ${TC})"
+fi
+
+echo
+echo "--- 1d. WITH the workaround (expect: torch imports)"
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+python3 -c "import torch; print('torch', torch.__version__)" 2>&1 | tail -1
+
+echo
+echo "################ BUG 2: empty wandb namespace package ################"
+echo
+# `-s` disables the user site-packages dir. Without it, a previously
+# installed ~/.local wandb (i.e. the workaround) SHADOWS the broken site
+# one and the bug appears fixed -- which is exactly what happened on the
+# first verification run of this script.
+echo "--- 2a. import wandb, user-site DISABLED (expect: AttributeError)"
+python3 -s -c "import wandb; print('wandb', wandb.__version__)" 2>&1 | tail -2
+rc_wandb_before=${PIPESTATUS[0]}
+echo "    rc=${rc_wandb_before}   (python3 -s == ignore ~/.local)"
+
+echo
+echo "--- 2a2. same import WITH user-site (shows whether you already fixed it)"
+python3 -c "import wandb; print('wandb', wandb.__version__)" 2>&1 | tail -1
+
+echo
+echo "--- 2b. why: the directory is EMPTY and has no dist-info"
+echo "    site-packages/wandb entries : $(ls -A "${SP}/wandb" 2>/dev/null | wc -l)"
+printf "    dist-info                   : "
+ls -d "${SP}"/wandb*.dist-info 2>/dev/null | head -1 || echo "NONE (pip believes nothing is installed)"
+
+echo
+echo "--- 2c. contrast with 2025.3.1, which is fine:"
+OLD=/opt/aurora/26.26.0/frameworks/aurora_frameworks-2025.3.1/lib/python3.12/site-packages
+echo "    2025.3.1 wandb entries      : $(ls -A "${OLD}/wandb" 2>/dev/null | wc -l)"
+printf "    2025.3.1 dist-info          : "
+ls -d "${OLD}"/wandb*.dist-info 2>/dev/null | xargs -r basename || echo "NONE"
+
+echo
+echo "--- 2c2. IS THE REAL SHADOW A STRAY ./wandb IN CWD? (PBS cwd = \$HOME)"
+echo "    cwd: $(pwd)"
+if [ -d "$(pwd)/wandb" ]; then
+    echo "    FOUND $(pwd)/wandb  -- $(ls -A "$(pwd)/wandb" 2>/dev/null | wc -l) entries"
+    echo "    looks like wandb RUN OUTPUT, not a package:"
+    ls -A "$(pwd)/wandb" 2>/dev/null | head -3 | sed "s/^/      /"
+    echo "    -> cwd is on sys.path, so this becomes a namespace package"
+    echo "    -> proof: same import from a clean dir:"
+    ( cd /tmp && python3 -s -c "import wandb; print('      from /tmp:', getattr(wandb,'__version__','NO __version__'))" 2>&1 | tail -1 )
+else
+    echo "    no ./wandb in cwd -- the empty site-packages dir is the only cause"
+fi
+
+echo
+echo "--- 2d. it imports as a namespace package (no __file__ of its own):"
+python3 -s -c "
+import wandb
+print('    __file__:', getattr(wandb, '__file__', None))
+print('    __path__:', list(getattr(wandb, '__path__', [])))
+print('    n attrs :', len([a for a in dir(wandb) if not a.startswith('_')]))
+" 2>&1 | tail -3
+
+echo
+echo "=================================================================="
+echo " SUMMARY"
+echo "=================================================================="
+echo " BUG 1 torch/libglog reproduced : $([ "${rc_torch_before}" -ne 0 ] && echo YES || echo "NO -- may be fixed")"
+echo " BUG 2 empty wandb reproduced   : $([ "${rc_wandb_before}" -ne 0 ] && echo YES || echo "NO -- may be fixed")"
+echo
+echo " Workarounds:"
+echo '   export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"'
+echo "   python3 -m pip install --user wandb"
+echo
+echo " NOTE: BUG 2 is probed with \`python3 -s\` (user site-packages disabled)"
+echo " so a previously-installed ~/.local wandb cannot mask it. Step 2a2 shows"
+echo " the un-suppressed import, i.e. what your own environment actually sees."
+echo "=================================================================="
