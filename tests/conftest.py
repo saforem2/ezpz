@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,27 @@ def _cap_torch_threads():
             torch.set_num_threads(1)
     except (RuntimeError, AttributeError):
         pass
+    # Be honest about the half we cannot fix here. If torch was imported
+    # before this fixture ran, its inter-op pool is already started and
+    # set_num_interop_threads() would raise -- so we warn rather than
+    # silently leave a 128-thread pool while implying the ceiling is
+    # capped. Not an error: OMP_NUM_THREADS (set at module scope, before
+    # any torch import) is what actually bounds the worker pools, and it
+    # is what mp.spawn children inherit.
+    try:
+        n_interop = torch.get_num_interop_threads()
+    except (RuntimeError, AttributeError):
+        return
+    if n_interop > 1:
+        warnings.warn(
+            f"torch inter-op pool already started with {n_interop} threads; "
+            "conftest could not cap it (torch was imported before this "
+            "fixture). OMP_NUM_THREADS still bounds the OpenMP pools. If "
+            "you hit 'libgomp: Thread creation failed', set "
+            "OMP_NUM_THREADS=1 in the environment before pytest starts.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     # NOTE: no set_num_interop_threads() call here. It only works before
     # the interop pool starts, and under pytest something has always
     # imported torch and started it by the time a session fixture runs --

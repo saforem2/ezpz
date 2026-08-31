@@ -45,11 +45,21 @@ pytestmark = pytest.mark.skipif(
 
 
 def _free_port() -> str:
-    """Pick an unused port in the parent.
+    """Pick a probably-unused port in the parent.
 
-    A hard-coded MASTER_PORT fails intermittently when the port is
-    already bound (busy runner, or two spawn-based test files running
-    concurrently). Bind :0, read what the OS gave us, release it.
+    A hard-coded MASTER_PORT fails *deterministically* when two
+    spawn-based test files run concurrently -- they collide every time.
+    Binding :0 and releasing turns that into a small race: the port is
+    free when we read it, and something else could claim it before the
+    workers bind. That window is narrow and the failure is loud
+    (rendezvous refuses rather than silently misbehaving), so this is a
+    real improvement, but it is NOT a guarantee -- do not read this
+    helper as providing exclusion.
+
+    A true fix would keep the socket open and pass the fd to the
+    workers, which torch's env:// rendezvous cannot consume, or use a
+    filesystem rendezvous. Both are more machinery than these two test
+    files justify.
     """
     import socket
 

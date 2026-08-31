@@ -193,7 +193,12 @@ class TestHostnameFormMismatch:
         # Each line is `<hostname> <provenance> attempt=N`, so compare
         # the hostname FIELD exactly rather than the whole line.
         line = (tmp_path / "bad.txt").read_text().strip()
-        assert line.split()[0] == (
+        # Assert non-empty BEFORE indexing: `split()[0]` on a blank file
+        # raises IndexError, which hides the real regression behind an
+        # unhelpful error.
+        fields = line.split()
+        assert fields, f"bad.txt is empty; expected one recorded host, got {line!r}"
+        assert fields[0] == (
             "x1921c7s1b0n0-hsn0.hsn.cm.sunspot.alcf.anl.gov"
         )
 

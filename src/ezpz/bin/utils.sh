@@ -178,6 +178,14 @@ _ezpz_have_fn() {
 # Rename Lmod's own `module` function to _ezpz_real_module (once), then
 # shadow `module` with the nounset-safe wrapper above. Guarded so
 # re-sourcing this file does not wrap the wrapper.
+#
+# CRITICAL: only define the shim when Lmod is ACTUALLY available. Defining
+# `module` unconditionally makes `command -v module` succeed on machines
+# and shells where Lmod was never initialised, so existing guards like
+#     command -v module >/dev/null 2>&1 && module list
+# stop skipping and instead take a branch that returns 127 -- converting a
+# correctly-skipped module listing into a setup failure (fatal under
+# `set -e`, or when the guarded call is a function's last command).
 if _ezpz_have_fn module && ! _ezpz_have_fn _ezpz_real_module; then
 	if [ -n "${ZSH_VERSION:-}" ]; then
 		# shellcheck disable=SC2154,SC2296
@@ -186,7 +194,9 @@ if _ezpz_have_fn module && ! _ezpz_have_fn _ezpz_real_module; then
 		eval "_ezpz_real_module() $(declare -f module | tail -n +2)"
 	fi
 fi
-module() { _ezpz_module "$@"; }
+if _ezpz_have_fn _ezpz_real_module || [ -n "${LMOD_CMD:-}" ]; then
+	module() { _ezpz_module "$@"; }
+fi
 
 log_message() {
 	local level="$1"
