@@ -1084,9 +1084,26 @@ class TestAllReduce:
     """Tests for ``all_reduce``."""
 
     def test_mpi_default(self, fake_comm):
+        # `all_reduce`'s mpi branch does a function-local
+        # `from mpi4py import MPI` purely to get `MPI.SUM` as the default
+        # op -- the comm itself is already stubbed by `fake_comm`. That one
+        # line escapes the fixture and reaches the real runtime, so this
+        # test failed two different ways: ModuleNotFoundError in CI, and
+        # `ImportError: libfabric.so.1` on a bare Polaris login node (where
+        # mpi4py IS installed but its extension cannot resolve libfabric
+        # without the Cray modules). Stub the module so the test is
+        # hermetic, as this file's docstring already promises.
+        fake_mpi = MagicMock(name="MPI")
         fake_comm.allreduce = MagicMock(return_value=10.0)
-        result = dist.all_reduce(5.0)
+        with patch.dict(
+            sys.modules,
+            {"mpi4py": MagicMock(MPI=fake_mpi), "mpi4py.MPI": fake_mpi},
+        ):
+            result = dist.all_reduce(5.0)
         assert result == 10.0
+        # Assert the default op really is MPI.SUM, so stubbing the module
+        # cannot hide a regression that changes the default reduction.
+        fake_comm.allreduce.assert_called_once_with(5.0, op=fake_mpi.SUM)
 
     def test_torch_implementation(self, fake_comm):
         with patch.object(torch.distributed, "all_reduce") as mock_ar:
