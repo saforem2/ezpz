@@ -7,6 +7,14 @@ on:
       - main
       - master
 
+# Least-privilege GITHUB_TOKEN. This workflow only checks out the repo
+# and runs pytest — it never comments, uploads releases, or writes to
+# the repo — so read access to contents is the whole requirement.
+# Without an explicit block the token inherits the repository default,
+# which may be read/write (CodeQL actions/missing-workflow-permissions).
+permissions:
+  contents: read
+
 # Cancel in-flight runs on new pushes to the same PR/branch — saves
 # CI minutes on rapid pushes.
 concurrency:
