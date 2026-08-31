@@ -228,9 +228,53 @@ separate 2-node run, so the sweep produces comparable numbers.
 
 ## Environment notes
 
-Three Perlmutter-specific hazards, each of which cost a job — or, in the
+Four Perlmutter-specific hazards, each of which cost a job — or, in the
 first case, five jobs and a set of published numbers — before being
 understood.
+
+!!! danger "Load `cudatoolkit/12.9` — and do not swap it per torch build"
+
+    **No venv here bundles `libcudart`**, so the loaded module supplies
+    it. The default is `cudatoolkit/13.2`, which is wrong for everything
+    below. Load 12.9 once; it serves **both** torch builds *and* the
+    NCCL plugin:
+
+    ```
+    2.13.0+cu130 (.venv-213) under cudatoolkit/12.9 -> cuda avail True
+    2.8.0+cu129  (.venv)     under cudatoolkit/12.9 -> cuda avail True
+    ```
+
+    Two jobs died establishing this, and the second is the trap:
+
+    - Running the cu129 venv under the **default 13.2** killed every
+      rank in ~27 s with `ImportError: libcudart.so.13`.
+    - "Fixing" that by swapping the module **per cell** was *worse*:
+      NERSC's NCCL plugin (`libnccl-net.so`) links `libcudart.so.12`
+      from the HPC SDK, so under `cudatoolkit/13.0` it cannot load and
+      every rank dies with `Failed to initialize any NET plugin` →
+      `DistBackendError: NCCL error ... invalid usage`.
+
+    Note the plugin's `LD_LIBRARY_PATH` entry **survives** the swap — it
+    is the `.so`'s CUDA 12 dependency that fails. Check with `ldd`
+    rather than inferring from the path; assuming the path told the
+    whole story cost a second job.
+
+    **A login-node import check will not catch any of this** — it runs
+    outside the job's module environment, so it passes while the job
+    dies. Assert inside each cell, or a broken environment gets misread
+    as a real experimental result:
+
+    ```bash
+    case ":${LD_LIBRARY_PATH:-}:" in
+        *nccl*plugin*) : ;;
+        *) echo 'verdict=INDETERMINATE reason=no-nccl-plugin'; return ;;
+    esac
+    "${py}" -c "
+    import torch, sys
+    if not torch.cuda.is_available():
+        sys.exit('CUDA unavailable -- environment, not a result')
+    " || { echo 'verdict=INDETERMINATE reason=env'; return; }
+    ```
 
 !!! danger "Load `nccl/2.24.3`, or NCCL silently uses TCP"
 
