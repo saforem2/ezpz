@@ -448,6 +448,45 @@ EOF
     assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
+test_run_walltime_143_retries_on_std_bad_alloc() {
+    # Regression for the Copilot review on PR #245. `std::bad_alloc` was
+    # added to launch_autoretry.py's _CRASH_PATTERNS_RX but NOT to the two
+    # shell regexes here, despite the in-file comment declaring the two
+    # implementations must stay in sync. A host that dies of allocation
+    # failure exits 143 (the shepherd SIGTERMs the job), which without the
+    # pattern is indistinguishable from a clean walltime stop -- so the
+    # shell path retired no node and silently re-ran on the sick host.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/bad_alloc_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" == "1" ]]; then
+    echo "[rank3]: MemoryError: std::bad_alloc"
+    exit 143
+else
+    echo "Normal training output"
+    exit 0
+fi
+EOF
+    chmod +x "${bindir}/bad_alloc_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""  # blind rotation
+
+    export FAILOVER_MAX_RETRIES=2
+    failover_run bad_alloc_cmd || exit 1
+    # rc=143 + std::bad_alloc must be treated as a CRASH, not walltime:
+    # the node is retired and the run retried.
+    assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
+}
+
 test_run_walltime_143_no_retry_when_only_innocent_rank_signals() {
     # Regression for the Codex P2 review on PR #143: walltime SIGTERM
     # cascades to ranks as `rank N died from signal {11,15}`. Those
@@ -784,6 +823,7 @@ run_test "run DOES retry on 143 when only signal is nonzero rank exit"     test_
 run_test "run does NOT retry on 143 with only rank-exit-code-0 lines"      test_run_walltime_143_no_retry_when_only_rank_exit_code_0
 run_test "run DOES retry on 143 when real hw death is mixed with cascade"  test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade
 run_test "run handles real Aurora UR_OOM + cascade regression"             test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade
+run_test "run retries on rc=143 + std::bad_alloc (shell/python sync)" test_run_walltime_143_retries_on_std_bad_alloc
 run_test "run swaps named bad node (from scraper)"            test_run_swaps_named_bad_node_when_scraper_finds_one
 run_test "run exhausts max retries, returns final rc"         test_run_exhausts_max_retries
 run_test "run detects inner_rc through ANSI escapes"          test_run_ansi_stripping_in_inner_rc_detection
