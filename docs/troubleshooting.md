@@ -143,7 +143,7 @@ communication problem between ranks.
 | Hangs during `backward()` or `all_reduce()` | One rank crashed silently | Set `NCCL_DEBUG=INFO` to see communication logs; check all ranks are alive |
 | Freezes after several steps | Network timeout | Increase timeout: `TORCH_DDP_TIMEOUT=7200` |
 | Hangs with no watchdog dump at all | Timeout (default 3600s) outlives the allocation | **Lower** it: `TORCH_DDP_TIMEOUT=300 TORCH_NCCL_DESYNC_DEBUG=1` |
-| Hangs in `backward()` with LoRA + FSDP2 | Fully-frozen FSDP unit all-gathers without a matching reduce-scatter | See [LoRA + FSDP2 deadlock](guides/lora-fsdp-deadlock.md) (#239) |
+| Hangs in `backward()` with LoRA + FSDP2 (Perlmutter) | Not FSDP2 — a ~4 MiB reduce-scatter stalls on the `aws-ofi-nccl` / Slingshot (`cxi`) transport | `--lora-rank 18` (full speed, preferred) or `NCCL_NET=Socket` (any rank, ~7x slower); see [LoRA + FSDP2 deadlock](guides/lora-fsdp-deadlock.md) (#239) |
 | Only hangs at scale (>1 node) | Mismatched world_size or hostfile | Verify `PBS_NODEFILE` / `SLURM_NODELIST` matches expected node count |
 | Intermittent hangs | Firewall or NIC misconfiguration | Set `NCCL_SOCKET_IFNAME` to the correct interface (check with `ip link show`) |
 | **FSDP2 hangs on FIRST `all_gather_into_tensor`** on Aurora/Sunspot (XPU) | Process group bound to wrong device — fixed in `ezpz>=0.18.4` | See [XPU FSDP2 First-Step Hang](#xpu-fsdp2-first-step-hang) below |

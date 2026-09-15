@@ -16,7 +16,7 @@
 # Submit (qsub is NOT on $PATH over plain ssh -- absolute path required,
 # and all four flags are mandatory):
 #
-#   /opt/pbs/bin/qsub -l select=2 -l walltime=00:60:00 \
+#   /opt/pbs/bin/qsub -l select=2 -l walltime=01:00:00 \
 #     -l filesystems=tegu:home -A datascience -q workq \
 #     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/sunspot/lora_239_xpu.sh
 

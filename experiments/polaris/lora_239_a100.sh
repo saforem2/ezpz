@@ -73,8 +73,23 @@ module swap PrgEnv-nvidia PrgEnv-gnu 2>/dev/null   # mpi4py was built here
 # shellcheck disable=SC1091
 source "${V}/bin/activate" || { echo "FATAL: cannot activate ${V}"; exit 1; }
 # utils.sh still wanted for ezpz_setup_job (hostfile/PBS discovery).
+# Setup failure is FATAL. `set -e` is off here, so the old
+# `source ... && ezpz_setup_job` form swallowed BOTH failures: the script
+# sailed on with no guaranteed hostfile/PBS env and the probes below then
+# reported cell RESULTS for an environment that was never configured.
+# An environment failure must never be reported as a measurement.
+# stderr is left UNsuppressed on ezpz_setup_job so a FATAL here says why.
 # shellcheck disable=SC1091
-source "${D}/src/ezpz/bin/utils.sh" 2>/dev/null && ezpz_setup_job 2>/dev/null
+source "${D}/src/ezpz/bin/utils.sh" 2>/dev/null \
+    || { echo "FATAL: cannot source ${D}/src/ezpz/bin/utils.sh"; exit 1; }
+ezpz_setup_job \
+    || { echo "FATAL: ezpz_setup_job failed -- no hostfile/PBS env; refusing to run"; exit 1; }
+# rc alone is not sufficient: ezpz_setup_job_alcf's "No compute node
+# found !!" branch ends on an `echo`, so it returns 0 having set up
+# nothing. Assert the artefact the probes actually consume -- NP below is
+# computed from PBS_NODEFILE, and an unset one yields NP=0.
+[ -s "${PBS_NODEFILE:-}" ] \
+    || { echo "FATAL: PBS_NODEFILE unset or empty after ezpz_setup_job (got '${PBS_NODEFILE:-<unset>}'); refusing to run"; exit 1; }
 
 # PALS stages the interpreter into a per-job temp dir, so sys.prefix is
 # derived from the STAGED location, pyvenv.cfg is never found, and the

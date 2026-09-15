@@ -73,7 +73,27 @@ source /etc/profile 2>/dev/null || true
 # Do NOT pipe `module load` -- a pipeline runs in a subshell and every
 # environment change it makes is discarded, which looks exactly like the
 # module silently doing nothing.
-module load frameworks
+#
+# A missing or no-op module stack is FATAL here, not something to probe
+# past. PBS can start this under a NON-login /bin/bash where `module` is
+# not defined at all, and Lmod initialised without the ALCF tree leaves
+# MODULEPATH EMPTY so every `module load` silently no-ops. In either case
+# CONDA_PREFIX stays unset, every probe below runs against the SYSTEM
+# python, and the SUMMARY reports these two frameworks/2026.1.0 bugs as
+# reproduced-or-fixed for an environment that was never loaded. A wrong
+# environment must produce an exit code, not a result.
+command -v module >/dev/null 2>&1 \
+    || { echo "FATAL: \`module\` is not defined (non-login shell?); cannot load frameworks"; exit 1; }
+[ -n "${MODULEPATH:-}" ] \
+    || { echo "FATAL: MODULEPATH is empty; \`module load frameworks\` would silently no-op"; exit 1; }
+module load frameworks \
+    || { echo "FATAL: \`module load frameworks\` failed"; exit 1; }
+# The real backstop: Lmod can report success for a load that configured
+# nothing, so verify the environment it was supposed to produce.
+[ -n "${CONDA_PREFIX:-}" ] \
+    || { echo "FATAL: CONDA_PREFIX unset after \`module load frameworks\`; refusing to probe the system python"; exit 1; }
+[ -d "${CONDA_PREFIX}" ] \
+    || { echo "FATAL: CONDA_PREFIX=${CONDA_PREFIX} is not a directory"; exit 1; }
 
 echo "=================================================================="
 echo " node            : $(hostname)"

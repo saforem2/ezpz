@@ -16,9 +16,9 @@
 # Submit (qsub is NOT on $PATH over plain ssh -- absolute path required,
 # and all four flags are mandatory):
 #
-#   /opt/pbs/bin/qsub -l select=2 -l walltime=00:60:00 \
+#   /opt/pbs/bin/qsub -l select=2 -l walltime=01:00:00 \
 #     -l filesystems=tegu:home -A datascience -q workq \
-#     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/sunspot/lora_239_xpu.sh
+#     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/sunspot/lora_tp_xpu.sh
 
 set -o pipefail
 # `set -u` is deliberately deferred until AFTER /etc/profile is sourced:
@@ -104,7 +104,8 @@ mkdir -p "${OUT}"
 # The first Sunspot run (12473856) used all 24 tiles and was therefore
 # confounded: it could not distinguish "xccl does not hang" from
 # "a different bucket layout does not hang".
-# Default to 8 to match Perlmutter exactly; override with NP= to sweep.
+# NP defaults to ALL tiles (12/node), NOT 8: the comparability argument
+# above holds only if you pass NP=8 explicitly.
 NP="${NP:-$(( $(wc -l < "${PBS_NODEFILE}") * 12 ))}"   # 12 tiles/node
 ITERS="${ITERS:-20}"
 LORA_RANK="${LORA_RANK:-18}"

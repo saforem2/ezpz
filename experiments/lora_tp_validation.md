@@ -1,19 +1,29 @@
 # FSDP + LoRA + **TP** validation matrix
 
-## What has NOT been validated
+**Status: complete, 9/9.** Multi-node FSDP + LoRA at `tp=1/2/4` passes on
+Polaris, Sunspot and Aurora — see [RESULTS](#results). Perlmutter is the
+one machine still outstanding: `tp=1` FSDP + LoRA hangs there (#239), so
+no `tp>1` cell was ever run on it.
+
+## What had NOT been validated — pre-results snapshot
+
+*This section, and the two planning sections at the end ("The matrix that
+was run", "World sizes"), describe the state before those jobs ran. They
+are kept as the motivation; [RESULTS](#results) is the outcome.*
 
 Everything run for #239 used **`--tp 1`** — that is FSDP + LoRA with
 tensor parallelism *disabled*. The XPU runs were also single-node.
 
-| | nodes | `tp` | FSDP+LoRA | FSDP+LoRA+**TP** |
+| | nodes | `tp` | FSDP+LoRA | FSDP+LoRA+**TP** (then → now) |
 |---|---|---|---|---|
-| Perlmutter | 2 | 1 | hangs (#239) | **not tested** |
-| Polaris | 2 | 1 | ✅ | **not tested** |
-| Sunspot | 1 | 1 | ✅ single-node | **not tested** |
-| Aurora | 1 | 1 | ✅ single-node | **not tested** |
+| Perlmutter | 2 | 1 | hangs (#239) | not tested — **still not tested** |
+| Polaris | 2 | 1 | ✅ | not tested → ✅ 3/3, 2 nodes |
+| Sunspot | 1 | 1 | ✅ single-node | not tested → ✅ 3/3, 2 nodes |
+| Aurora | 1 | 1 | ✅ single-node | not tested → ✅ 3/3, 2 nodes |
 
-So "LoRA works on Polaris/Sunspot/Aurora" is true only for the
-`tp=1`, and only multi-node on Polaris.
+At that point, "LoRA works on Polaris/Sunspot/Aurora" was true only at
+`tp=1`, and only multi-node on Polaris. RESULTS below closes both gaps:
+`tp>1` on all three, and multi-node on both XPU machines.
 
 ## Why `tp>1` is a genuinely different path, not a bigger version
 
@@ -25,13 +35,13 @@ So "LoRA works on Polaris/Sunspot/Aurora" is true only for the
    Swapping `wq` for a LoRA wrapper raises
    `NotImplementedError: ColwiseParallel currently only support
    nn.Linear and nn.Embedding!`. `lora_tp_plan` rewrites those keys to
-   point at the inner `nn.Linear`. **Without it, `tp>1` dies** — and
-   that rewrite has only ever been checked at `world_size=1`, where a
-   mesh satisfies every placement trivially.
+   point at the inner `nn.Linear`. **Without it, `tp>1` dies** — and at
+   the time, that rewrite had only ever been checked at `world_size=1`,
+   where a mesh satisfies every placement trivially.
 
-That second point is the reason this matters: the one piece of code
-specifically written to make LoRA and TP coexist has never run on a
-real multi-rank mesh.
+That second point is why this mattered: the one piece of code written
+specifically to make LoRA and TP coexist had never run on a real
+multi-rank mesh. RESULTS below is that code running on six of them.
 
 ## RESULTS
 
@@ -94,7 +104,7 @@ only ever run at `world_size=1`, works on real multi-rank 2D meshes on
 Two gaps closed at once: multi-node XPU (Sunspot had only ever run
 single-node) and TP>1 with LoRA anywhere.
 
-## The matrix to run
+## The matrix that was run
 
 Per machine, multi-node, at the world size each provides:
 
@@ -108,10 +118,10 @@ Per machine, multi-node, at the world size each provides:
 everywhere else it is simply a working rank, so a hang would be new
 information rather than a rediscovery.
 
-Run `tp1-baseline` **first** in every job. If the control fails, the
+`tp1-baseline` ran **first** in every job: if the control fails, the
 `tp>1` cells say nothing about TP.
 
-## Expected world sizes
+## World sizes
 
 | | nodes | per node | `world_size` | valid `tp` |
 |---|---|---|---|---|

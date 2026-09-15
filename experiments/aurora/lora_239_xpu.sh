@@ -2,16 +2,26 @@
 # #239 on AURORA (PVC/XPU + xccl). Companion to the Sunspot script.
 #
 # CAVEAT, read before interpreting: Aurora's frameworks module ships
-# torch **2.10.0a0**, not 2.13. #239 has only ever been seen on 2.13,
-# so a clean result here is confounded by the version and is NOT
-# independent evidence that xccl is unaffected -- Sunspot (torch 2.13
-# XPU, ws=8) is the load-bearing XPU data point. A HANG here would be
-# far more interesting than a pass, since it would mean the bug predates
-# 2.13.
+# torch **2.10.0a0**, not 2.13 -- that is what the recorded Aurora runs
+# actually used (job 8784784; see experiments/lora_tp_validation.md and
+# docs/guides/lora-fsdp-deadlock.md, which file Aurora as 2.10).
+# #239 has only ever been seen on 2.13, so a clean result here is
+# confounded by the version and is NOT independent evidence that xccl is
+# unaffected -- Sunspot (torch 2.13 XPU, ws=8) is the load-bearing XPU
+# data point. A HANG here would be far more interesting than a pass,
+# since it would mean the bug predates 2.13.
+#
+# The version is NOT pinned: ezpz_setup_env issues a bare
+# `module load frameworks`, so a later default can differ --
+# frameworks/2026.1.0 ships torch 2.13 (see
+# docs/notes/aurora-frameworks-2026.1.0-bugs.md). Read the
+# `=== torch <version> ===` line this script prints before filing a
+# result against the 2.10 rows of the matrix.
 #
 # Everything in #239 so far is Perlmutter: A100 + NCCL. Aurora is PVC +
-# **xccl**, running torch 2.13.0.dev+xpu -- the same major version as the
-# hang, on an entirely different collectives stack. So:
+# **xccl** -- an entirely different collectives stack, but at a
+# different torch minor from the hang rather than the same one; matching
+# the hang's torch minor is Sunspot's job, not Aurora's. So:
 #
 #   r8 hangs here  -> the bug is in FSDP2's bucketing/scheduling, not in
 #                     NCCL, and #239 is much broader than reported.
@@ -24,7 +34,7 @@
 # Submit (qsub is NOT on $PATH over plain ssh -- absolute path required,
 # and all four flags are mandatory):
 #
-#   /opt/pbs/bin/qsub -l select=2 -l walltime=00:60:00 \
+#   /opt/pbs/bin/qsub -l select=2 -l walltime=01:00:00 \
 #     -l filesystems=flare:home -A datascience -q workq \
 #     -o $D/lora239.o -e $D/lora239.e -- /bin/bash $D/experiments/aurora/lora_239_xpu.sh
 

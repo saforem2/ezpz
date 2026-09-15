@@ -1,31 +1,55 @@
 # Draft: upstream PyTorch issue for #239
 
-**Status: DRAFT, unsent -- and now probably SHOULD NOT be sent.**
+!!! danger "DO NOT SEND THIS UPSTREAM. #239 is not a PyTorch bug."
 
-The Polaris control (job `7563257`) ran this exact configuration on a
-second A100 + NCCL site at `world_size=8` under torch 2.13, and it
-**trained clean** (`rc=0`, 142 s, zero watchdog lines). Sunspot
-(XPU/xccl) is clean too. So #239 has never reproduced anywhere except
-Perlmutter.
+    Isolated 2026-09-15 by direct measurement on Perlmutter (jobs
+    `58368557`, `58369713`): #239 is a **transport** bug on Perlmutter's
+    `aws-ofi-nccl` 1.6.0 / Slingshot (`cxi`) path -- not a defect in
+    FSDP2, and not a generic NCCL bug. Filing this against
+    `pytorch/pytorch` would send maintainers after a component that is
+    not at fault.
 
-An upstream torch issue is therefore not warranted on the current
-evidence: nothing here shows a defect in FSDP2 or NCCL as shipped. The
-live suspects are all Perlmutter-specific -- its NCCL 2.29.7 build, the
-AWS-libfabric plugin, Slingshot, or the cu130 pairing.
+    | evidence | result |
+    |---|---|
+    | `aws-ofi-nccl` (default plugin) | **6/6 HANG**, always `NumelIn=1055232` |
+    | `NCCL_NET=Socket` (same code, over TCP) | **3/3 TRAIN** (~7x slower, 1.38 vs 0.20 s/step) |
+    | `TORCH_NCCL_DESYNC_DEBUG=1` | `[0,1,2,3,4,5,6,7] joined but didn't finish collective #39` |
 
-This draft is kept because the *analysis* remains valid and reusable: if
-the deadlock is later reproduced off Perlmutter, most of the report is
-already written. Until then, the right venue is an NERSC ticket, not
-pytorch/pytorch.
+    Each row independently sinks the upstream framing:
 
-Two things should land before this goes out:
+    1. The same PyTorch, the same FSDP2 code and the same model train to
+       completion the moment the network plugin is swapped out. Only the
+       transport changed.
+    2. `NCCL_PROTO=Simple` and `NCCL_ALGO=Ring` both still hang, so it is
+       neither protocol nor algorithm selection -- the defect sits below
+       both, in the plugin.
+    3. **All eight ranks entered the collective.** That refutes the
+       central mechanism claimed below, which is that a fully-frozen
+       FSDP2 unit takes an early return out of `post_backward` and leaves
+       the group asymmetric. The asymmetry is real and measurable, but it
+       is not why this deadlocks.
 
-1. **The Polaris control** (A100 + NCCL at `world_size=8`). Without it
-   the report cannot say whether this is NCCL-specific, and the first
-   question any reviewer asks is "does it reproduce elsewhere?"
-2. **A minimal repro that does not import ezpz.** A maintainer will not
-   run our example module. The reproducer below is sketched, not yet
-   executed.
+    Also relevant to the ticket: the NCCL actually loaded is **2.29.7**
+    (bundled in the NERSC PyTorch 2.13 wheel, wins via RPATH) even though
+    the sbatches say `module load nccl/2.24.3` -- so aws-ofi-nccl 1.6.0
+    is running against an NCCL five minor versions newer than the
+    pairing the site presumably validated.
+
+    **Correct venue: a NERSC ticket.** See
+    [the transport writeup](../guides/lora-fsdp-deadlock.md) for the full
+    analysis and the two workarounds (`--lora-rank 18` at full speed, or
+    `NCCL_NET=Socket` at ~7x cost).
+
+The Polaris control pointed the same way before the transport was
+isolated: job `7563257` ran this exact configuration on a second
+A100 + NCCL site at `world_size=8` under torch 2.13 and **trained clean**
+(`rc=0`, 142 s, zero watchdog lines). Sunspot (XPU/xccl) is clean too.
+#239 has never reproduced anywhere except Perlmutter.
+
+This draft is kept only because the *measurements* in it are real and
+reusable. **Its conclusion is wrong.** If the deadlock is ever
+reproduced off Perlmutter, revisit it -- but rewrite the mechanism
+sections before sending anything anywhere.
 
 ---
 
@@ -158,9 +182,25 @@ Each tested, not assumed:
 
 ## Minimal reproducer
 
-**Not yet written.** Must not depend on ezpz. Shape:
+**Drafted, but never executed on multi-rank GPUs.** The file is
+[`repro_fsdp2_lora_deadlock.py`](repro_fsdp2_lora_deadlock.py), next to
+this one. It has no ezpz dependency (torch + torchrun only) and builds
+the geometry above:
 
-- 12-layer decoder with the geometry above
-- freeze everything, add rank-8 A/B adapters inside each block only
+- 12-layer decoder, `dim=2048`, `n_heads=16`, `n_kv_heads=4`,
+  `hidden_dim=11008`, `vocab=256128`
+- base weights frozen, A/B adapters inside each block only, rank from
+  `--rank`
 - `fully_shard(tok_embeddings)`, each block, `[norm, output]`, root
-- one forward/backward at `world_size=8`, `TORCH_DDP_TIMEOUT=300`
+- one forward/backward under
+  `TORCH_DDP_TIMEOUT=300 torchrun --nnodes=2 --nproc_per_node=4`
+
+Verified: the per-block trainable count matches `apply_lora` on the real
+`agpt-2b` preset (419840 at r=8, 892160 at r=17, 944640 at r=18; 14
+tensors per block), and a single-rank CPU smoke test confirms all 14
+adapters receive gradients, so none is stranded off the autograd path.
+
+Not verified: **nobody has run it on 8 GPUs.** Nothing in this repo
+records a multi-rank execution of this file. And per the banner at the
+top, doing so now would be a test of the Perlmutter `aws-ofi-nccl` path,
+not of FSDP2.

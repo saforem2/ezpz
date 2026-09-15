@@ -4,7 +4,8 @@
 **Deliberately has no ezpz dependency** -- upstream maintainers will not
 run someone else's training framework. torch + torchrun only.
 
-    TORCH_DDP_TIMEOUT=300 torchrun --nproc_per_node=8 repro_fsdp2_lora_deadlock.py --rank 8
+    TORCH_DDP_TIMEOUT=300 torchrun --nnodes=2 --nproc_per_node=4 \\
+        repro_fsdp2_lora_deadlock.py --rank 8
 
 Observed on 2x4 A100 (world_size=8), torch 2.13.0+cu130, NCCL:
 
