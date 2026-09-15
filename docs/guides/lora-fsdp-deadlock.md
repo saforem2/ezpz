@@ -1,47 +1,124 @@
-# LoRA + FSDP2: the frozen-unit collective asymmetry (#239)
+# LoRA + FSDP2 deadlock (#239): an aws-ofi-nccl transport bug
 
-!!! danger "Open bug. There is no fix, and the leading candidate failed."
+!!! success "Isolated 2026-09-15. It is not an FSDP2 bug."
 
-    #239 is **unresolved**. The frozen-unit asymmetry described below is
-    real and measurable, but removing it on Perlmutter **did not stop the
-    deadlock** — see [Refuted: removing the asymmetry](#refuted-removing-the-asymmetry-fixes-it).
-    That intervention therefore ships **off by default**.
+    A **~4 MiB reduce-scatter deadlocks on Perlmutter's
+    `aws-ofi-nccl` / Slingshot (`cxi`) path** and completes normally
+    over TCP. The LoRA rank only controls whether a bucket of that size
+    is produced; it is the trigger, not the cause.
 
-    **Six** plausible-sounding explanations have now been tested and
-    refuted. They are documented here so nobody re-derives them.
+    Measured at `--lora-rank 17`, `world_size=8`, torch 2.13.0+cu130
+    (jobs 58368557, 58369713):
 
-    Workaround: **`--lora-rank 18` or higher** completed normally in
-    every rank tested (18, 19, 20, 24, 28, 32, 64), with the boundary at
-    exactly **16 → 18** — r=17 hangs, r=18 trains.
+    | transport | runs | result |
+    |---|---|---|
+    | `aws-ofi-nccl` (default) | **6/6** | **HANG**, always `NumelIn=1055232` |
+    | `NCCL_NET=Socket` | **3/3** | trains, 4/4 iters |
 
-    Treat that as *measured*, not *guaranteed*. Every one of those runs
-    is the same configuration: `agpt-2b`, `tp=1`, `bs=1`, `seq_len=2048`,
-    `--lora-target attn,mlp`, `world_size=8`, torch 2.13.0+cu130 on
-    A100. The mechanism is still unknown, so a different model, target
-    set, or world size could put the boundary somewhere else entirely.
-    If you hit the hang above r=18, that is new information — please add
-    it to [#239](https://github.com/saforem2/ezpz/issues/239).
+    The six hanging runs include the default baseline twice, plus
+    `NCCL_PROTO=Simple`, `NCCL_ALGO=Ring`, `TORCH_NCCL_DESYNC_DEBUG=1`,
+    and `NCCL_DEBUG=INFO`. Every one stalls on a **byte-identical**
+    buffer. Protocol and algorithm selection are therefore both
+    excluded: the defect sits below them, in the network plugin.
 
-    **It has not reproduced off Perlmutter.** The decisive test is
-    **Polaris — A100 + NCCL at the same `world_size=8`**, which runs the
-    identical hanging configuration clean at both hanging ranks. So this
-    is not an FSDP2 bug and not an NCCL bug; the live suspects are all
-    in Perlmutter's own stack. See
-    [the Polaris control](#it-does-not-reproduce-on-polaris-either-a100--nccl-ws8).
+    **Workarounds**
 
-    **XPU/xccl is clean at the matched world size too.** The first
-    Sunspot run was confounded (ws=24, shards not evenly divisible, so
-    FSDP2 bucketed differently). Rerun at **ws=8** — the exact
-    Perlmutter geometry — r8 and r17 still train (94 s / 72 s, XPU
-    dispatch, zero watchdog lines). So the earlier result was right for
-    the right reason after all.
+    - **`--lora-rank 18`** — full speed (0.20 s/step). Preferred.
+    - **`NCCL_NET=Socket`** — any rank, but **~7× slower**
+      (1.38 s/step vs 0.20). Real TCP fallback, not a placebo: the
+      slowdown matches the documented 8.3× inter-node penalty.
 
-    The sharpest open clue on the NVIDIA side is that r17's stuck bucket
-    is **18 % larger than linear in r** while r8's is exactly linear —
-    so at r17 the stuck reduce-scatter is *not* one block's LoRA
-    parameters. See [the boundary section](#where-to-look-next).
+    **This is a NERSC ticket, not an upstream PyTorch one.**
+
+## The stack, and two defects in it
+
+Captured with `NCCL_DEBUG=INFO` on a hanging run (job 58369713):
+
+```
+NCCL version 2.29.7
+NET/OFI Selected Provider is cxi (found 4 nics)
+Using network AWS            <- aws-ofi-nccl 1.6.0
+```
+
+**1. The NCCL the job loads is not the NCCL the job asked for.**
+`experiments/perlmutter/*.sbatch` runs `module load nccl/2.24.3`, but the
+NERSC PyTorch 2.13 install bundles its own `libnccl.so.2` at **2.29.7**
+under `site-packages/nvidia/nccl/lib/`, which wins via RPATH. The module
+load is inert. So **aws-ofi-nccl 1.6.0 is running against an NCCL five
+minor versions newer** than the pairing the site presumably validated.
+The plugin ABI is version-sensitive; this alone is a sufficient
+explanation and is the first thing to put in the ticket.
+
+**2. The ibverbs fallback is unavailable.** Every rank on both nodes
+emits, at init:
+
+```
+misc/ibvwrap.cc:173 NCCL WARN lib wrapper not initialized.
+```
+
+Harmless on its face — `cxi` is the transport, not verbs — but it means
+NCCL has no second path. When the OFI operation stalls there is nothing
+to fail over to, so the collective **hangs instead of erroring**. The
+last `NCCL INFO` lines before the stall are
+`[Service thread] Connection closed by localRank N` — teardown, not data
+movement.
+
+## All eight ranks enter the collective
+
+`TORCH_NCCL_DESYNC_DEBUG=1` makes PyTorch name the culprits itself:
+
+```
+[0, 1, 2, 3, 4, 5, 6, 7] joined but didn't finish collective #39
+```
+
+Every rank joined. **This kills the frozen-unit participation-asymmetry
+theory outright** — no rank took an early return out of `post_backward`,
+so nothing about gradient-less FSDP2 units can be the mechanism. The
+asymmetry documented further down this page is real and measurable, but
+it is not what deadlocks.
+
+It also retroactively justifies shipping the `reshard_after_forward`
+intervention **off by default**: it was addressing a mechanism that is
+not the one at fault.
+
+## The buffer size is invariant; the sequence number is not
+
+| run | SeqNum | NumelIn |
+|---|---|---|
+| baseline | 18 | 1055232 |
+| `NCCL_DEBUG=INFO` | 18 | 1055232 |
+| `TORCH_NCCL_DESYNC_DEBUG=1` | **20** | **1055232** |
+
+Instrumentation adds collectives, so the position in the stream moves.
+The **stuck buffer does not**. The identity of this bug is a
+~4 MiB message, not "the 18th collective" — and `NumelIn=1055232`
+reproduces bit-for-bit across **torch 2.11 and 2.13**, so the 2.13
+rename of the FSDP2 collectives
+(`reduce_scatter_tensor` → `reduce_scatter_single`) is irrelevant to it.
+
+!!! note "The 18 % anomaly is still unexplained"
+
+    r8 stalls at `NumelIn=419840`, r17 at `1055232`. Linear scaling from
+    r8 predicts 892160 for r17 — the actual value is **18.3 % larger**.
+    Fitting both points gives `NumelIn = 70599·r − 144953`, whose
+    intercept is **negative**, so the bucket is *not* "LoRA parameters
+    plus a fixed overhead". Both shards divide by 64 and neither by 512,
+    so it is not 512 B alignment padding either.
+
+    This no longer blocks a fix — the transport is the bug — but it is
+    unexplained, and it is why `--lora-rank 18` escapes: at r18 FSDP2
+    evidently does not form a bucket in the fatal size range.
 
 ## What was observed
+
+!!! warning "Written before the transport was isolated"
+
+    Everything from here down predates the 2026-09-15 isolation. The
+    measurements are accurate and the refutations still stand — they are
+    what narrowed the search. But the framing ("frozen-unit collective
+    asymmetry") describes a real phenomenon that is **not** the cause of
+    the deadlock. Read it as the investigation log it is.
+
 
 On Perlmutter (2 nodes x 4 A100, `world_size=8`, torch 2.13.0+cu130),
 `agpt-2b` with `tp=1`, `bs=1`, `seq_len=2048`:
