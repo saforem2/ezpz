@@ -310,6 +310,44 @@ class TestClassifyAttempt:
             is TerminationReason.BAD_NODE_BLIND
         )
 
+    def test_bad_alloc_at_rc143_is_not_walltime(self, tmp_path):
+        """REGRESSION (#243): rc=143 + std::bad_alloc must NOT be walltime.
+
+        Reproduces job 8808932 seat t2, which died 2m37s into a 12h job
+        and was filed as a clean walltime expiry. The log's only other
+        crash-ish lines are `rank N died from signal {11,15}`, which the
+        innocent-cascade strip correctly removes -- so without a literal
+        for the allocation failure itself, `crash` stayed False and the
+        `rc == 143 and not crash` guard fired. No scrape, no rotation,
+        and a postmortem pointing at the wrong cause.
+        """
+        log = _write(
+            tmp_path / "log",
+            "[rank9]: MemoryError: std::bad_alloc\n"
+            "x4719c2s0b0n0.hsn.cm.aurora.alcf.anl.gov: rank 9 died from signal 15\n"
+            "x4720c5s7b0n0.hsn.cm.aurora.alcf.anl.gov: rank 2587 died from signal 11\n",
+        )
+        assert (
+            classify_attempt(143, log, []).reason
+            is TerminationReason.BAD_NODE_BLIND
+        )
+
+    def test_bare_memoryerror_at_rc0_stays_success(self, tmp_path):
+        """The bad_alloc literal must not leak onto the rc=0 path.
+
+        `_CRASH_PATTERNS_RX` has a SECOND consumer: the
+        `shell_rc == 0 and crash` override. Matching the broad Python
+        `MemoryError` there would turn a successful run into a retry on
+        nothing more than a benign log line, which is why #243 is fixed
+        with the narrow C++ literal instead.
+        """
+        log = _write(
+            tmp_path / "log",
+            "Execution finished with 0\n"
+            "[W] recovered from MemoryError in probe; continuing\n",
+        )
+        assert classify_attempt(0, log, []).reason is TerminationReason.SUCCESS
+
     def test_walltime_with_only_innocent_rank_cascade_is_walltime(
         self, tmp_path
     ):
