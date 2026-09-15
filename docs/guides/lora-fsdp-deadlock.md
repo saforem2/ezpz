@@ -63,6 +63,15 @@ last `NCCL INFO` lines before the stall are
 `[Service thread] Connection closed by localRank N` — teardown, not data
 movement.
 
+!!! warning "The Polaris control varied two things, not one"
+
+    `experiments/polaris/lora_239_a100.sh` loads **no NCCL network
+    plugin**. So the Polaris control did not only change site — it also
+    silently removed `aws-ofi-nccl` from the comparison. That weakens
+    Polaris as a clean "different machine" control, but it *strengthens*
+    the transport localization: Polaris is another configuration without
+    the plugin, and like `NCCL_NET=Socket` it trains.
+
 ## All eight ranks enter the collective
 
 `TORCH_NCCL_DESYNC_DEBUG=1` makes PyTorch name the culprits itself:
@@ -96,18 +105,74 @@ reproduces bit-for-bit across **torch 2.11 and 2.13**, so the 2.13
 rename of the FSDP2 collectives
 (`reduce_scatter_tensor` → `reduce_scatter_single`) is irrelevant to it.
 
-!!! note "The 18 % anomaly is still unexplained"
+!!! success "The 18.3 % anomaly is solved: FSDP2 dim-0 padding"
 
-    r8 stalls at `NumelIn=419840`, r17 at `1055232`. Linear scaling from
-    r8 predicts 892160 for r17 — the actual value is **18.3 % larger**.
-    Fitting both points gives `NumelIn = 70599·r − 144953`, whose
-    intercept is **negative**, so the bucket is *not* "LoRA parameters
-    plus a fixed overhead". Both shards divide by 64 and neither by 512,
-    so it is not 512 B alignment padding either.
+    FSDP2 pads each gradient's dim 0 up to a multiple of `world_size`
+    before the reduce-scatter (`_get_dim0_padded_size` in
+    `_fsdp_common.py`, called from `foreach_reduce`). In
+    `src/ezpz/tinker/lora.py:197-198`:
 
-    This no longer blocks a fix — the transport is the bug — but it is
-    unexplained, and it is why `--lora-rank 18` escapes: at r18 FSDP2
-    evidently does not form a bucket in the fatal size range.
+    - `A = nn.Linear(in_features, rank)` → `A.weight` is `(r, in_features)`,
+      so **dim 0 is `r` and it pads**;
+    - `B = nn.Linear(rank, out_features)` → `B.weight` is `(out_features, r)`,
+      whose dim 0 is 2048/512/11008 — all divisible by 8, so **B never pads**.
+
+    ```
+    NumelIn(r) = ceil(r/8)*8 * S_in  +  r * S_out
+      attn,mlp:  S_in = 23296   S_out = 29184     (S_in + S_out = 52480)
+      attn:      S_in =  8192   S_out =  5120
+      mlp:       S_in = 15104   S_out = 24064
+    ```
+
+    Zero free parameters, and it reproduces every recorded payload exactly:
+
+    | r | predicted | observed |
+    |---|---|---|
+    | 8  | 419840  | 419840  |
+    | 16 | 839680  | 839680  |
+    | 17 | 1055232 | 1055232 |
+    | 32 | 1679360 | 1679360 |
+    | 64 | 3358720 | 3358720 |
+
+    The "+18.3 %" at r17 is exactly **7 pad rows**: `7 × 23296 = 163072`,
+    or `20384` per shard — the excess measured earlier. And the negative
+    intercept in the old `70599·r − 144953` fit was an **artifact of
+    fitting a line through a staircase**: the slope is 29184 *within* a
+    step, with a 186368 jump at each `r = 8k+1`. There was never a
+    constant term to explain.
+
+!!! danger "Byte figures below this point are wrong — the reduce is fp32"
+
+    The tables further down compute wire sizes as `coef · r / ws · 2`
+    "for bf16". **The reduce dtype is fp32**, not bf16:
+    `src/ezpz/examples/fsdp_tp.py:2994` sets
+    `_reduce_dtype = torch.float32`, and `EZPZ_REDUCE_DTYPE` defaults to
+    `"fp32"` (line 3004). Every byte figure in those tables is therefore
+    **half the true value, and unpadded on top of that**. Corrected:
+
+    | target | r | NumelIn | MiB (fp32) | result |
+    |---|---|---|---|---|
+    | attn | 16 | 212992 | 0.812 | trains |
+    | attn,mlp | 8 | 419840 | **1.602** | **HANG** |
+    | attn,mlp | 16 | 839680 | **3.203** | **HANG** |
+    | attn,mlp | 17 | 1055232 | **4.025** | **HANG** |
+    | attn,mlp | 18 | 1084416 | 4.137 | trains |
+    | attn,mlp | 32 | 1679360 | 6.406 | trains |
+    | attn,mlp | 64 | 3358720 | 12.812 | trains |
+
+    This reframes the trigger as a **bounded payload window**, roughly
+    **[1.60 MiB, 4.03 MiB]**, rather than "small ranks". Note r8 is the
+    *smallest* hanging case while `attn`-only at r16 (0.81 MiB) trains —
+    so it is not a simple "below threshold" story.
+
+    Treat the window as a **hypothesis, not a finding**. Within
+    `--lora-target attn,mlp` the payload is monotone in `r`, so the
+    existing data cannot separate "payload window" from "ranks 8–17 are
+    bad"; the single `attn`-r16 point is the only thing distinguishing
+    them. The upper edge also falls between 4.025 and 4.137 MiB — a 2.8 %
+    gap landing on no round number, with 4 MiB sitting *below* r17. Real
+    protocol crossovers usually sit on round values, so the framing may
+    still be wrong.
 
 ## What was observed
 
@@ -663,16 +728,11 @@ remaining explanations are dynamic:
     plotting stage), never on `rc` or an `iter=` marker: the first
     bisect gated on `iter=`, which these runs never emit, and so
     labelled a clean 173s r24 pass INDETERMINATE.
-2. **Is it a torch 2.13 regression?** #237 diverges across the same
-   boundary. `experiments/perlmutter/lora_239_torch_version.sbatch` runs
-   the real config on real GPUs under Perlmutter's older `.venv`
-   (**2.8.0+cu129** — there is no 2.12.1 build there, and a wider gap is
-   fine, since the question is "does an older torch hang", not "which
-   release introduced it"). Cell 1 is a **control** re-running r8 under
-   2.13 in the same allocation, so an older-torch pass cannot be
-   confounded by node or topology luck; cell 2 means nothing unless
-   cell 1 hangs. If 2.8.0 also hangs, this theory dies and the search
-   moves to FSDP2 semantics common to both.
+2. **Is it a torch 2.13 regression?** ~~Open~~ — **answered: no.** The
+   deadlock reproduces identically on **torch 2.11 and 2.13**, down to
+   the same `NumelIn=1055232` bit-for-bit (see *The buffer size is
+   invariant* above). An older torch hangs the same way, so this is not
+   a 2.13 FSDP2 scheduling regression and the lead is closed.
 3. **The skipped work item.** The stream goes `completed 16` →
    `started 18`, so #17 was enqueued and jumped. Instrumenting FSDP2's
    `foreach_reduce` to log which unit owns each work id would name the
