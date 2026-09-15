@@ -122,6 +122,25 @@ def normalize_aurora_hostname(host: str) -> "str | None":
     return None
 
 
+# PALS forwards the launch RPC down a tree of node-local daemons. When a
+# child stops answering, the PARENT reports the failure -- so the host
+# named first ("launch failed on X") is the healthy reporter and the host
+# named after "to child" is the sick one. Tagging the reporter would evict
+# an innocent node and leave the fault in the allocation, which is exactly
+# what happened in job 8808932 (seat t3: two attempts, 23s, same failure).
+# Cross-checked against PALS' independent "ping failed on P: No reply from
+# C" signal, which names the same (parent, child) pair.
+_AURORA_PALS_RPC_CHILD_RX = re.compile(
+    r"Couldn't forward RPC launch\([^)]*\) to child "
+    r"(x\d+c\d+s\d+b\d+n\d+(?:\.[\w.-]+)?)"
+)
+
+
+def _extract_pals_rpc_child(log_text: str) -> Iterable[str]:
+    for m in _AURORA_PALS_RPC_CHILD_RX.finditer(log_text):
+        yield m.group(1)
+
+
 # ---------------------------------------------------------------------------
 # Register at import time
 # ---------------------------------------------------------------------------
@@ -140,6 +159,14 @@ AURORA_PATTERNS = [
         description=(
             "gloo TCP peer-connection closed. IP reverse-resolved to "
             "an Aurora HSN hostname."
+        ),
+    ),
+    BadNodePattern(
+        name="aurora.pals_rpc_forward_child",
+        extractor=_extract_pals_rpc_child,
+        description=(
+            "PALS could not forward the launch RPC to a child node. The "
+            "child is the unreachable one; the reporting parent is healthy."
         ),
     ),
 ]
