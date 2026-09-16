@@ -27,7 +27,7 @@ produced a result.
 To exercise a working tree instead of the installed package:
 
 ```bash
-uvi -e .            # editable install
+uv pip install -e .   # editable install
 # or, without installing:
 export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
