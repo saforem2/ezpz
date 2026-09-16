@@ -52,65 +52,133 @@ working `mpi4py`, which a `uv`-managed CPython does not.
 
 ---
 
-## 2. NERSC (Perlmutter): FSDP2 + LoRA deadlock, Perlmutter-only
+## 2. NERSC (Perlmutter): aws-ofi-nccl deadlocks a ~4 MiB reduce-scatter
 
-**Summary.** A PyTorch FSDP2 training job deadlocks deterministically in
-the first backward pass on Perlmutter, and the identical configuration
-runs clean on three other machines — including another A100 + NCCL
-system at the same world size. That points at something in Perlmutter's
-software stack rather than at PyTorch or NCCL as shipped.
+**Status: ready to file.** Isolated 2026-09-15 to the network plugin.
 
-**Configuration.** 2 nodes x 4 A100-40GB, `world_size=8`,
-torch `2.13.0+cu130`, NCCL 2.29.7, `module load nccl/2.24.3`
-(AWS-libfabric plugin), `TORCH_DDP_TIMEOUT=300`.
+**Summary.** A PyTorch reduce-scatter of ~4 MiB deadlocks deterministically
+on Perlmutter's `aws-ofi-nccl` / Slingshot (`cxi`) datapath. The identical
+job on the identical nodes completes when NCCL is forced onto TCP
+(`NCCL_NET=Socket`). This is a same-machine, same-allocation controlled
+swap: only the network layer changes.
 
-**Symptom.** All eight ranks report byte-identical watchdog state:
+**Configuration.** 2 x (4 x A100-40GB), `world_size=8`, torch
+`2.13.0+cu130`, NCCL **2.29.7**, `aws-ofi-nccl 1.6.0`, provider `cxi`
+(4 NICs), `TORCH_DDP_TIMEOUT=180-300`.
+
+**Evidence** (jobs 58365643, 58368557, 58369713):
+
+| configuration | runs | result |
+|---|---|---|
+| default (`aws-ofi-nccl`) | **6/6** | **HANG**, always `NumelIn=1055232` |
+| `NCCL_NET=Socket` | **3/3** | trains, ~7x slower (1.38 vs 0.20 s/step) |
+| `NCCL_PROTO=Simple` | 1/1 | HANG, byte-identical |
+| `NCCL_ALGO=Ring` | 1/1 | HANG, byte-identical |
+
+The six hangs include two clean baselines plus every diagnostic variant.
+All stall on a **byte-identical** buffer, so NCCL's protocol and algorithm
+selection are both excluded — the defect is beneath them. The socket runs
+are genuine TCP, confirmed by the ~7x slowdown matching the documented
+inter-node fallback penalty.
+
+**The stalling collective.** All eight ranks report the same state:
 
 ```
 WorkNCCL(SeqNum=18, OpType=_REDUCE_SCATTER_BASE,
-         NumelIn=419840, NumelOut=52480, Timeout(ms)=300000)
-
-Timeout at collective: _ALLGATHER_BASE, #39
-  [0,1,2,3,4,5,6,7] joined but didn't finish collective #39
-
-PG status: last enqueued work: 39,
-           last started work: 19 (_ALLGATHER_BASE),
-           last completed work: 17
+         NumelIn=1055232, NumelOut=131904, Timeout(ms)=300000)
 ```
 
-Note `last completed: 17` -> `last started: 19` — **work #18 is
-skipped**, and #19 is an all-gather. The stream ran ahead of the
-reduce-scatter it is now blocked on. Reproduced **6/6** across four
-jobs (`57601590` x3, `57602201`, `57604574`).
+`TORCH_NCCL_DESYNC_DEBUG=1` confirms no rank diverged:
 
-**Why we believe it is Perlmutter-specific.** Same code, same model,
-same `world_size=8`:
+```
+[0,1,2,3,4,5,6,7] joined but didn't finish collective #39
+```
 
-| | Perlmutter<br>A100/NCCL/2.13 | Polaris<br>A100/NCCL/2.13 | Sunspot<br>PVC/xccl/2.13 | Aurora<br>PVC/xccl/2.10 |
-|---|---|---|---|---|
-| hang? | **yes, 6/6** | no | no | no |
+Every rank entered. This is not an application-side participation bug.
+The payload is fp32: `1055232 x 4 B = 4.025 MiB` in, `515 KiB` per shard.
+The buffer size is invariant across runs while the sequence number shifts
+under instrumentation (18 -> 20), so the trigger is the **message**, not
+its position in the stream.
 
-Polaris matches Perlmutter on accelerator, collectives, world size and
-torch minor, varying only the site — and it trains clean.
+**Two defects we would like NERSC to look at.**
 
-**Also ruled out on Perlmutter** (each tested, not assumed): the
-LoRA-specific hypothesis, payload size, per-rank collective ordering,
-the frozen-unit all-gather/reduce-scatter asymmetry, a 256 KiB protocol
-threshold, and NCCL protocol selection (`NCCL_PROTO=Simple` and `LL128`
-both still hang).
+**(a) The NCCL a job loads is not the NCCL it asks for.** Our batch
+scripts run `module load nccl/2.24.3`, but the NERSC PyTorch 2.13 install
+bundles its own `libnccl.so.2` at **2.29.7** under
+`site-packages/nvidia/nccl/lib/`, which wins via RPATH. The module load is
+inert. So `aws-ofi-nccl 1.6.0` is running against an NCCL five minor
+versions newer than the pairing we assume was validated. If that pairing
+is unsupported, this alone may be the whole bug — and every user doing
+`module load nccl/...` alongside the site PyTorch is silently in the same
+position.
 
-**Remaining suspects, all Perlmutter-side.** NCCL 2.29.7, the
-`nccl/2.24.3` AWS-libfabric plugin, Slingshot, or the CUDA 13.0 / cu130
-pairing.
+**(b) No fallback path, so it hangs instead of failing.** Every rank on
+both nodes emits at init:
 
-**Questions.**
+```
+misc/ibvwrap.cc:173 NCCL WARN lib wrapper not initialized.
+```
 
-1. Are there known issues with NCCL 2.29.7 or the current libfabric
-   plugin around reduce-scatter completion under FSDP2?
-2. Is a different NCCL or plugin version recommended for torch 2.13 +
-   cu130 on Perlmutter?
-3. Can you reproduce with the standalone script we can supply (torch +
-   torchrun only, no site dependencies)?
+Benign on its face, since `cxi` is the transport. But it means a stalled
+OFI operation has nothing to fail over to. The last `NCCL INFO` lines
+before the stall are `[Service thread] Connection closed by localRank N`
+— teardown, not data movement.
 
-**Detail.** Full write-up, including every refuted hypothesis, is in
-`docs/guides/lora-fsdp-deadlock.md` in this repo.
+**Ruled out** (each tested on Perlmutter, not assumed): PyTorch/FSDP2
+itself (all ranks join; and the same code trains on three other
+machines), torch version (byte-identical on 2.11 and 2.13), NCCL protocol
+and algorithm selection, collective ordering, the frozen-unit
+all-gather/reduce-scatter asymmetry, and every alignment threshold we
+could construct.
+
+**Reproducer.** `experiments/perlmutter/lora_239_transport.sbatch` in
+`saforem2/ezpz` — one debug-QOS job, four arms, prints a verdict per arm.
+
+**Caveat, stated honestly.** Our cross-machine control (Polaris, also
+A100 + NCCL, trains clean) loads **no** NCCL network plugin, so it varied
+site *and* plugin rather than site alone. It is therefore a second
+plugin-free configuration that works, not an independent site control.
+The same-machine `NCCL_NET=Socket` swap above is the stronger evidence
+and does not depend on it.
+
+## 3. ALCF (Aurora): `frameworks/2026.1.0` — `import torch` fails
+
+**Status: ready to file.** Bug 1 only; see the caveat at the end.
+
+**Summary.** On `frameworks/2026.1.0`, a bare `import torch` raises
+`OSError: libglog.so.0: cannot open shared object file`. This is a
+packaging defect in the module, not a user environment problem, and it is
+a **regression** — `frameworks/2025.3.1` is unaffected.
+
+**Root cause.** `libtorchcomms.so`'s RUNPATH contains **no entry pointing
+at the install prefix** where `libglog.so.0` actually ships. It lists
+build-time paths under `/lus/tegu` — a Sunspot filesystem, not mounted on
+Aurora — and two **Windows** library directories:
+
+```
+/opt/aurora/26.181.0/oneapi/mkl/latest/lib/intel64_win
+/opt/aurora/26.181.0/oneapi/mkl/latest/lib/win-x64
+```
+
+torch 2.13 imports `torchcomms` unconditionally
+(`distributed_c10d.py:151`), so a dangling RUNPATH is fatal at
+`import torch`. `frameworks/2025.3.1` ships an identically mis-linked
+`libtorchcomms.so` but never imports it, which is why only 2026.1.0
+breaks.
+
+**Workaround** (confirmed working):
+
+```bash
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+```
+
+**Reproducer.** `experiments/aurora/frameworks_2026_1_0_bugs.pbs` in
+`saforem2/ezpz` — a standalone PBS script needing no checkout. Full
+verified output, including the RUNPATH dump, is in
+`docs/notes/aurora-frameworks-2026.1.0-bugs.md`.
+
+**Do NOT include the wandb symptom in this ticket.** We initially took
+`import wandb` failing with an `AttributeError` to be a second module bug.
+It is not ALCF's: wandb is simply not installed, and the confusing symptom
+is a stray `~/wandb` run-output directory being picked up as an implicit
+namespace package. Filing it would waste ALCF's time.
