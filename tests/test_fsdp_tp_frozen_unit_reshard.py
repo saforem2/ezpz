@@ -23,7 +23,9 @@ these tests pin what it *does* (the collective counts) plus the fact
 that it stays off by default. See ``docs/guides/lora-fsdp-deadlock.md``.
 
 Real ``fully_shard`` on 2 gloo ranks via ``mp.spawn``, following
-``test_tinker_lora_tp.py``: no rendezvous socket, runs on a laptop.
+``test_tinker_lora_tp.py``: a localhost TCPStore rendezvous on a
+dynamically chosen free port (see ``_free_port``), so it runs on a
+laptop -- but a host firewall blocking loopback binds will fail it.
 """
 
 from __future__ import annotations
