@@ -184,7 +184,26 @@ Aurora — and two **Windows** library directories:
 
 torch 2.13 imports `torchcomms` unconditionally
 (`distributed_c10d.py:151`), so a dangling RUNPATH is fatal at
-`import torch`. `frameworks/2025.3.1` ships an identically mis-linked
+`import torch`.
+
+**`ldd` on a compute node, 2026-09-18** (`next-eval`), showing it is not
+only `libglog` -- `libtorchcomms.so` cannot resolve torch's OWN libraries
+either, all of which sit in the same tree:
+
+```
+$CONDA_PREFIX/lib/python3.12/site-packages/torchcomms/libtorchcomms.so
+        libtorch.so     => not found
+        libc10.so       => not found
+        libc10_xpu.so   => not found
+        libtorch_xpu.so => not found
+        libglog.so.0    => not found
+```
+
+`libglog.so.0` is merely the first one the loader reports. All five exist
+under the prefix -- `libglog.so.0` is right there at
+`$CONDA_PREFIX/lib/libglog.so.0`, and the torch libraries are in
+`site-packages/torch/lib` -- so nothing is missing from the install. The
+RUNPATH simply does not point at either directory. `frameworks/2025.3.1` ships an identically mis-linked
 `libtorchcomms.so` but never imports it, which is why only 2026.1.0
 breaks.
 
