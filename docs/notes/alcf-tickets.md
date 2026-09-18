@@ -138,10 +138,11 @@ no LoRA, no ezpz. Measured 2026-09-18 at the payloads in question:
 
 | machine | accel / collectives | 1.602 MiB | 3.203 MiB | 4.025 MiB | 4.137 MiB |
 |---|---|---|---|---|---|
-| Polaris | A100 / NCCL 2.13 | OK | OK | **OK** | OK |
-| Sunspot | PVC / XCCL, ws=24 | OK | OK | **OK** | OK |
+| Polaris | A100 / NCCL, torch 2.13, ws=8 | OK | OK | **OK** | OK |
+| Sunspot | PVC / XCCL, torch 2.13, ws=24 | OK | OK | **OK** | OK |
+| Aurora | PVC / XCCL, torch 2.13, ws=24 | OK | OK | **OK** | OK |
 
-Both complete every size in under 0.4 s, including `NumelIn=1055232`
+All three complete every size in under 0.6 s, including `NumelIn=1055232`
 (4.025 MiB) — the exact buffer Perlmutter deadlocks on. Polaris is the
 pointed control: same A100, same NCCL, same torch 2.13.
 
@@ -181,7 +182,15 @@ torch 2.13 imports `torchcomms` unconditionally
 `libtorchcomms.so` but never imports it, which is why only 2026.1.0
 breaks.
 
-**Workaround** (confirmed working):
+**Login and compute run different release trees.** This is what makes the
+bug hard to see: the login nodes load `/opt/aurora/26.26.0/...-2025.3.1`
+(torch 2.10, unaffected), while `next-eval` compute nodes load
+`/opt/aurora/26.181.0/...-2026.1.0` (torch 2.13, broken). The `26.181.0`
+path does not even resolve from a login node, so a login-node check
+reports the module as absent rather than broken.
+
+**Workaround** (re-verified 2026-09-18 on `next-eval`, 2 nodes, ws=24 --
+`import torch` succeeds and a full collective sweep completes):
 
 ```bash
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
