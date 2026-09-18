@@ -30,6 +30,42 @@
 
     **This is a NERSC ticket, not an upstream PyTorch one.**
 
+!!! danger "REFUTED 2026-09-18: it is not the payload size alone"
+
+    A standalone `dist.reduce_scatter_tensor` sweep -- no FSDP2, no LoRA,
+    no ezpz (`experiments/common/reduce_scatter_size_sweep.py`) -- was run
+    on Perlmutter at the identical geometry (ws=8, 2x4 A100, torch 2.13,
+    default `aws-ofi-nccl`/`cxi` path), sweeping 0.5 MiB to 12.8 MiB and
+    including the exact hanging buffers.
+
+    **Every size completed, in under 0.1 s. Zero watchdog timeouts.**
+
+    | numel | MiB | default plugin | `NCCL_NET=Socket` |
+    |---|---|---|---|
+    | 419840 | 1.602 | OK | OK |
+    | 1055232 | **4.025** | **OK** | OK |
+    | 1084416 | 4.137 | OK | OK |
+
+    `1055232` is the precise buffer the LoRA job deadlocks on, on the same
+    machine and the same transport. **So a reduce-scatter of that size is
+    not sufficient to trigger the bug**, and the "bounded payload window"
+    framing -- recorded below as a hypothesis -- is refuted as a complete
+    explanation.
+
+    What survives: `NCCL_NET=Socket` still fixes the LoRA job 3/3 while the
+    default path hangs it 6/6, on the same nodes. The transport is still
+    implicated. But the trigger needs something the bare collective does
+    not have -- concurrency with in-flight all-gathers, FSDP2's two-stream
+    usage of one communicator, the CUDA-graph/allocator state, or the
+    surrounding collective sequence.
+
+    Three other machines also pass the standalone sweep (Polaris A100/NCCL,
+    Sunspot and Aurora PVC/XCCL), so it is a valid cross-machine control --
+    it just is not a reproducer.
+
+    **Consequence for the NERSC ticket:** it must be filed with the
+    LoRA-shaped reproducer. The ten-line version does not reproduce.
+
 ## The stack, and two defects in it
 
 Captured with `NCCL_DEBUG=INFO` on a hanging run (job 58369713):

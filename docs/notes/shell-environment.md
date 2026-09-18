@@ -281,7 +281,9 @@ This will:
     How this works varies by machine:
 
     - **ALCF** (Aurora, Polaris, Sophia, Sunspot, Sirius): Load the most
-      recent conda module and activate the base environment.
+      recent conda module and activate the base environment. On Sirius
+      this probes: it prefers the `/soft/modulefiles` conda stack and
+      falls back to micromamba only if that tree is absent.
     - **Frontier**: Load AMD modules (ROCm, RCCL, etc.) and activate base conda.
     - **Perlmutter**: Load the appropriate `pytorch` module and activate.
     - **Unknown**: Look for a `conda`, `mamba`, or `micromamba` executable
@@ -442,4 +444,5 @@ worker nodes.
 
 [^2]:
     For `x3*` hostnames, `$PBS_O_HOST` is checked to distinguish Polaris
-    from Sirius.
+    from Sirius. Sirius *login* nodes are matched separately, on the
+    `sirius*` hostname prefix — only its compute nodes are `x3*`.

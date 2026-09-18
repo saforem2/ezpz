@@ -131,22 +131,28 @@ and algorithm selection, collective ordering, the frozen-unit
 all-gather/reduce-scatter asymmetry, and every alignment threshold we
 could construct.
 
-**Standalone reproducer — no PyTorch training stack involved.**
-`experiments/common/reduce_scatter_size_sweep.py` (140 lines) calls
-`dist.reduce_scatter_tensor` directly across a range of sizes. No FSDP2,
-no LoRA, no ezpz. Measured 2026-09-18 at the payloads in question:
+**A standalone reduce-scatter of the same size does NOT reproduce it.**
+`experiments/common/reduce_scatter_size_sweep.py` calls
+`dist.reduce_scatter_tensor` directly, with no FSDP2/LoRA/ezpz, across
+0.5-12.8 MiB. Run on Perlmutter at the identical geometry (ws=8, 2x4
+A100, torch 2.13, default `aws-ofi-nccl`/`cxi`), **every size completed
+in under 0.1 s with zero watchdog timeouts**, including `NumelIn=1055232`
+-- the exact buffer the LoRA job deadlocks on.
 
-| machine | accel / collectives | 1.602 MiB | 3.203 MiB | 4.025 MiB | 4.137 MiB |
-|---|---|---|---|---|---|
-| Polaris | A100 / NCCL, torch 2.13, ws=8 | OK | OK | **OK** | OK |
-| Sunspot | PVC / XCCL, torch 2.13, ws=24 | OK | OK | **OK** | OK |
-| Aurora | PVC / XCCL, torch 2.13, ws=24 | OK | OK | **OK** | OK |
+So the payload size alone is not the trigger. Something about how FSDP2
+drives the collective matters: concurrency with in-flight all-gathers,
+two CUDA streams sharing one communicator, or the surrounding sequence.
+We report this rather than omit it, because it bounds where to look.
 
-All three complete every size in under 0.6 s, including `NumelIn=1055232`
-(4.025 MiB) — the exact buffer Perlmutter deadlocks on. Polaris is the
-pointed control: same A100, same NCCL, same torch 2.13.
+The same sweep passes on Polaris (A100/NCCL), Sunspot and Aurora
+(PVC/XCCL) -- a useful cross-machine control, but not a reproducer.
 
-**Reproducer (LoRA-shaped, for reference).**
+**What still stands:** on the same nodes, in the same allocation, the
+LoRA job hangs **6/6** on the default path and trains **3/3** under
+`NCCL_NET=Socket`. The transport swap is the strongest evidence and is
+unaffected by the negative result above.
+
+**Reproducer — use this one.**
 `experiments/perlmutter/lora_239_transport.sbatch` in
 `saforem2/ezpz` — one debug-QOS job, four arms, prints a verdict per arm.
 
