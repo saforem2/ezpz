@@ -131,7 +131,22 @@ and algorithm selection, collective ordering, the frozen-unit
 all-gather/reduce-scatter asymmetry, and every alignment threshold we
 could construct.
 
-**Reproducer.** `experiments/perlmutter/lora_239_transport.sbatch` in
+**Standalone reproducer — no PyTorch training stack involved.**
+`experiments/common/reduce_scatter_size_sweep.py` (140 lines) calls
+`dist.reduce_scatter_tensor` directly across a range of sizes. No FSDP2,
+no LoRA, no ezpz. Measured 2026-09-18 at the payloads in question:
+
+| machine | accel / collectives | 1.602 MiB | 3.203 MiB | 4.025 MiB | 4.137 MiB |
+|---|---|---|---|---|---|
+| Polaris | A100 / NCCL 2.13 | OK | OK | **OK** | OK |
+| Sunspot | PVC / XCCL, ws=24 | OK | OK | **OK** | OK |
+
+Both complete every size in under 0.4 s, including `NumelIn=1055232`
+(4.025 MiB) — the exact buffer Perlmutter deadlocks on. Polaris is the
+pointed control: same A100, same NCCL, same torch 2.13.
+
+**Reproducer (LoRA-shaped, for reference).**
+`experiments/perlmutter/lora_239_transport.sbatch` in
 `saforem2/ezpz` — one debug-QOS job, four arms, prints a verdict per arm.
 
 **Caveat, stated honestly.** Our cross-machine control (Polaris, also
