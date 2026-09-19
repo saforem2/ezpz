@@ -98,6 +98,20 @@ _CRASH_PATTERNS_RX = re.compile(
     # matching it would burn a spare on every expiring job, the same
     # trap the `died from signal {11,15}` exclusion avoids for PALS.
     r"|srun: error: \S+: tasks? [\d,-]+: Killed"
+    # C++ allocation failure. On Aurora this surfaces as
+    # "[rankN]: MemoryError: std::bad_alloc" and tears the job down with
+    # SIGTERM, so the aggregate is bash 143 == _WALLTIME_RC. Without this
+    # literal `crash` stayed False, the `rc == 143 and not crash` guard
+    # fired, and a dead-node crash was filed as a clean walltime expiry --
+    # no scrape, no rotation, and a postmortem pointing at the wrong thing
+    # (#243; job 8808932 seat t2 died 2m37s into a 12h job).
+    #
+    # Deliberately NOT the broader `MemoryError`: this pattern set has a
+    # SECOND consumer at the `shell_rc == 0 and crash` override, where a
+    # benign line like "recovered from MemoryError in probe" would turn a
+    # successful run into a retry. The Aurora message always carries the
+    # C++ literal, so the narrow form loses nothing.
+    r"|std::bad_alloc"
 )
 
 # Innocent rank-cascade lines. These are emitted by mpiexec when a

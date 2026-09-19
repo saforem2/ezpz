@@ -64,8 +64,15 @@ def test_configs_module(mock_get_scheduler, mock_get_hostname):
     assert configs.PROJECT_DIR is not None
     assert configs.CONF_DIR is not None
 
-    # Test command_exists function
-    assert configs.command_exists("python") is True
+    # Test command_exists function. Use `sys.executable` and "sh" rather
+    # than a bare "python": that asserts a property of the MACHINE, not of
+    # the code. Since the Python 2 sunset `python3` is the guaranteed
+    # name, and a bare `python` is absent on macOS and on Polaris login
+    # nodes -- this line passed in CI only because setup-python installs a
+    # shim. Both replacements exercise more of the function: an absolute
+    # path and a PATH scan.
+    assert configs.command_exists(sys.executable) is True
+    assert configs.command_exists("sh") is True
     assert configs.command_exists("nonexistent_command_xyz") is False
 
     # Test logging config

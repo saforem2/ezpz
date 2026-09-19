@@ -1975,6 +1975,54 @@ def _lora_is_applied(model: nn.Module) -> bool:
     return any(True for _ in _lora.iter_lora_modules(model))
 
 
+
+def frozen_unit_kwargs(mods, fsdp_kwargs: dict) -> dict:
+    """FSDP2 kwargs for one unit, optionally keeping *fully-frozen* units gathered.
+
+    **This does not fix #239. It was tried, on Perlmutter, and it failed.**
+    It is retained only so the experiment stays reproducible from a
+    shipped build; it is OFF by default. Opt in with
+    ``EZPZ_FSDP_KEEP_FROZEN_GATHERED=1``.
+
+    Under ``--lora-target attn,mlp`` every adapter lands inside a
+    transformer block, so :func:`ezpz.tinker.lora.apply_lora`'s
+    freeze-everything-first pass leaves ``tok_embeddings`` and
+    ``[norm, output]`` with no trainable parameter at all -- yet
+    :func:`parallelize` still makes each its own FSDP2 unit.
+
+    A fully-frozen unit is asymmetric in backward. ``reshard_after_forward``
+    discarded its parameters after forward, so backward re-gathers them,
+    but ``post_backward`` returns before the reduce-scatter when a group
+    has no gradients. The unit emits an all-gather with no matching
+    reduce-scatter: on agpt-2b that is 14 backward all-gathers against 12
+    reduce-scatters.
+
+    Keeping such a unit gathered removes the unmatched all-gather, and is
+    correctness-neutral -- the parameters are never updated, so never
+    resharding them changes no math, only residency. It costs memory: on
+    agpt-2b at ``world_size=8`` in bf16 the embedding and output stay
+    gathered, about +1.7 GiB per rank, scaling with vocab size.
+
+    .. warning::
+       Enabling this removes the asymmetry and *still deadlocks*. On
+       Perlmutter (8x A100, torch 2.13.0+cu130) the hang is unchanged in
+       kind, only renumbered -- baseline stalls on ``_REDUCE_SCATTER_BASE``
+       SeqNum=18 with the stream at ``enqueued 39 / started 19 /
+       completed 17``; with this enabled it stalls on the same collective
+       with the identical ``419840 -> 52480`` payload at SeqNum=17, stream
+       ``enqueued 37 / started 18 / completed 16``. Two fewer all-gathers
+       (exactly the two reshards removed) and the same skipped-work
+       signature. The asymmetry is neither the cause nor a precondition.
+       See ``docs/guides/lora-fsdp-deadlock.md``.
+    """
+    if os.environ.get("EZPZ_FSDP_KEEP_FROZEN_GATHERED", "0") != "1":
+        return fsdp_kwargs
+    ms = mods if isinstance(mods, list) else [mods]
+    if any(p.requires_grad for m in ms for p in m.parameters()):
+        return fsdp_kwargs
+    return {**fsdp_kwargs, "reshard_after_forward": False}
+
+
 def parallelize(
     model: nn.Module,
     device_mesh: DeviceMesh,
@@ -2125,7 +2173,10 @@ def parallelize(
 
     # Embedding first (largest single param: vocab*dim).
     if getattr(model, "tok_embeddings", None) is not None:
-        fully_shard(model.tok_embeddings, **fsdp_kwargs)
+        fully_shard(
+            model.tok_embeddings,
+            **frozen_unit_kwargs(model.tok_embeddings, fsdp_kwargs),
+        )
     # Each transformer block (or its CheckpointWrapper) as its own unit.
     assert isinstance(model.layers, Iterable)
     for block in model.layers:
@@ -2135,7 +2186,10 @@ def parallelize(
         getattr(model, "norm", None) is not None
         and getattr(model, "output", None) is not None
     ):
-        fully_shard([model.norm, model.output], **fsdp_kwargs)
+        fully_shard(
+            [model.norm, model.output],
+            **frozen_unit_kwargs([model.norm, model.output], fsdp_kwargs),
+        )
     # Root last.
     fully_shard(model, **fsdp_kwargs)
 

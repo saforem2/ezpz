@@ -281,7 +281,9 @@ This will:
     How this works varies by machine:
 
     - **ALCF** (Aurora, Polaris, Sophia, Sunspot, Sirius): Load the most
-      recent conda module and activate the base environment.
+      recent conda module and activate the base environment. On Sirius
+      this probes: it prefers the `/soft/modulefiles` conda stack and
+      falls back to micromamba only if that tree is absent.
     - **Frontier**: Load AMD modules (ROCm, RCCL, etc.) and activate base conda.
     - **Perlmutter**: Load the appropriate `pytorch` module and activate.
     - **Unknown**: Look for a `conda`, `mamba`, or `micromamba` executable
@@ -370,7 +372,7 @@ This is roughly equivalent to:
 module load oneapi/release hdf5 pti-gpu
 export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 export CCL_PROCESS_LAUNCHER=pmix
-export CCL_OP_SYNC=1
+export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"   # default 1; override respected
 export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 export TORCH_CPP_LOG_LEVEL=ERROR
 ```
@@ -399,7 +401,7 @@ export TORCH_CPP_LOG_LEVEL=ERROR
 |----------|---------|
 | `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | Expose each PVC tile as a separate device |
 | `CCL_PROCESS_LAUNCHER=pmix` | Use PMIx for oneCCL bootstrap (matches `mpiexec`) |
-| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads) |
+| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads). **Overridable** — `export CCL_OP_SYNC=0` before calling and the helper honours it. It used to be exported unconditionally in three places, so every run had it set whether or not anyone chose it. |
 | `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
 | `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
 
@@ -442,4 +444,5 @@ worker nodes.
 
 [^2]:
     For `x3*` hostnames, `$PBS_O_HOST` is checked to distinguish Polaris
-    from Sirius.
+    from Sirius. Sirius *login* nodes are matched separately, on the
+    `sirius*` hostname prefix — only its compute nodes are `x3*`.

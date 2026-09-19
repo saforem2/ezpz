@@ -26,6 +26,7 @@ Both the Python and shell sides detect the machine from the hostname:
 |-----------------|---------------|-------------------------------------------------|
 | `x4*`           | Aurora        | Or `aurora*` on login nodes                     |
 | `x1*`           | Sunspot       | Or `uan*` on login nodes                        |
+| `sirius*`       | Sirius        | Login nodes (`sirius-uan-NNNN`)                 |
 | `x3*`           | Polaris       | Sirius if `"sirius"` appears in `$PBS_O_HOST`   |
 | `sophia-*`      | Sophia        |                                                  |
 | `frontier*`     | Frontier      |                                                  |

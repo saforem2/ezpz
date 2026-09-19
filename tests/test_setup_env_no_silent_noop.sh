@@ -73,7 +73,14 @@ t_nothing_active_fails() {
     # shellcheck disable=SC1090
     source "${FN_FILE}"
     log_message() { :; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    # Clear ALL FOUR vars ezpz_get_python_root consults, not just two.
+    # It resolves ${CONDA_PREFIX:-${PYTHON_ROOT:-${PYTHONUSERBASE:-${VIRTUAL_ENV:-}}}}
+    # and ezpz_assert_python_env_active early-returns 0 on any non-empty
+    # value BEFORE emitting its error text -- so a leaked PYTHON_ROOT or
+    # PYTHONUSERBASE makes "nothing is active" untestable and blanks the
+    # message the next four assertions grep. `module load frameworks`
+    # exports PYTHONUSERBASE, so this fired for real on Sunspot/Aurora.
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     ! ezpz_assert_python_env_active
 }
@@ -89,7 +96,7 @@ t_venv_active_passes() {
 t_conda_active_passes() {
     source "${FN_FILE}"
     log_message() { :; }
-    unset VIRTUAL_ENV
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     CONDA_PREFIX="/tmp/some/conda"
     ezpz_assert_python_env_active
 }
@@ -99,7 +106,7 @@ t_conda_active_passes() {
 t_module_python_passes() {
     source "${FN_FILE}"
     log_message() { :; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     local d; d="$(mktemp -d)"
     printf '#!/bin/sh\n' > "${d}/python3"; chmod +x "${d}/python3"
     PATH="${d}:/usr/bin:/bin"
@@ -112,7 +119,7 @@ t_error_names_the_cause() {
     source "${FN_FILE}"
     local out=""
     log_message() { out+="$* "; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     ezpz_assert_python_env_active 2>/dev/null || true
     # Must name the fix, not just report failure.
@@ -130,7 +137,7 @@ t_flags_empty_modulepath() {
     source "${FN_FILE}"
     local out=""
     log_message() { out+="$* "; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     module() { :; }          # defined, as after sourcing lmod's init
     MODULEPATH=""            # ...but no site path
@@ -144,7 +151,7 @@ t_modulepath_suggests_login_shell() {
     source "${FN_FILE}"
     local out=""
     log_message() { out+="$* "; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     module() { :; }
     MODULEPATH=""
@@ -157,7 +164,7 @@ t_no_modulepath_note_when_set() {
     source "${FN_FILE}"
     local out=""
     log_message() { out+="$* "; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     module() { :; }
     MODULEPATH="/opt/modulefiles"
@@ -169,7 +176,7 @@ t_flags_undefined_module() {
     source "${FN_FILE}"
     local out=""
     log_message() { out+="$* "; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     unset -f module 2>/dev/null || true
     ezpz_assert_python_env_active 2>/dev/null || true
@@ -182,7 +189,7 @@ t_no_module_note_when_defined() {
     local out=""
     log_message() { out+="$* "; }
     module() { :; }
-    unset VIRTUAL_ENV CONDA_PREFIX
+    unset VIRTUAL_ENV CONDA_PREFIX PYTHON_ROOT PYTHONUSERBASE
     PATH="/usr/bin:/bin"
     ezpz_assert_python_env_active 2>/dev/null || true
     [[ "${out}" != *"not defined in this shell"* ]]

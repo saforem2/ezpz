@@ -223,16 +223,46 @@ Attempt 2 is the result: a spare was rotated in, the victim was gone
 from the active hostfile, and the relaunch resumed from step 40 on a
 different node set. **Node-swapping works on real hardware.**
 
-!!! warning "It worked; it did not *identify* anything"
+!!! success "Identification now works — reconfirmed on job 12473912"
+
+    **This section is history.** As of Sunspot job `12473912`
+    (2026-08-26, rerun on current `main`) the loop **names the node that
+    actually died**, 7/7 including the discriminating check:
+
+    ```
+    PASS  the kill actually landed on x1922c7s5b0n0-hsn0...
+    PASS  the swap was scraper-IDENTIFIED (not a blind guess)
+    PASS  killed host is OUT of the active hostfile
+    PASS  final attempt did NOT run on the dead host
+    OVERALL: PASS
+
+    bad_nodes.txt: x1922c7s5b0n0-hsn0...  scraped  attempt=1
+    [auto-retry] bad nodes: ['x1922c7s5b0n0...'] — swapped 1
+    [auto-retry] FAILOVER STOP: success (attempt 2)
+    ```
+
+    That is `scraped`, not `blind`, and the harness now kills
+    **`active[1]`** — so a blind rotation, which always evicts
+    `active[0]`, cannot pass by luck. All four issues named below are
+    closed: [#231](https://github.com/saforem2/ezpz/issues/231),
+    [#232](https://github.com/saforem2/ezpz/issues/232),
+    [#233](https://github.com/saforem2/ezpz/issues/233),
+    [#234](https://github.com/saforem2/ezpz/issues/234).
+
+    The original write-up is kept below, because *why* it could not
+    identify anything is the more useful lesson.
+
+!!! warning "Original 12473704 finding: it worked; it did not *identify* anything"
 
     Note the verdict column: `BAD_NODE_BLIND` twice, never
     `BAD_NODE_KNOWN`. A `kill -9` leaves no scrapeable signature at all —
     `attempt-1.log` just stops mid-training — so both swaps were
     `swap_one_blind` evicting `active[0]`. `pbsdsh -n 0` happens to kill
     the first allocation node, which *is* `active[0]`, so the guess was
-    right by construction of the test. Kill `active[1]` instead and
-    today's code retires a healthy node and leaves the dead one in
-    ([#234](https://github.com/saforem2/ezpz/issues/234)).
+    right by construction of the test. Killing `active[1]` instead made
+    the old code retire a healthy node and leave the dead one in
+    ([#234](https://github.com/saforem2/ezpz/issues/234)) — **fixed**;
+    that is exactly the case job `12473912` now passes.
 
     Attempt 2 compounded it: an `OSError: [Errno 28] No space left on
     device` during a checkpoint save retired `s4b0n0`, a healthy node.
