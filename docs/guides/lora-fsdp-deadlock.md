@@ -66,6 +66,34 @@
     **Consequence for the NERSC ticket:** it must be filed with the
     LoRA-shaped reproducer. The ten-line version does not reproduce.
 
+!!! danger "ALSO REFUTED 2026-09-19: stream concurrency is not the trigger"
+
+    The obvious follow-up to the size refutation was that FSDP2's
+    *concurrency* supplies the missing ingredient -- an all-gather
+    overlapping the reduce-scatter, on a second CUDA stream sharing one
+    communicator. `experiments/common/reduce_scatter_concurrency_probe.py`
+    tests exactly that, four arms, 40 iterations each, at the r17 payload:
+
+    | arm | what it adds | Perlmutter default | socket | Polaris |
+    |---|---|---|---|---|
+    | A sequential | 40x bare reduce-scatter | OK | OK | OK |
+    | B interleaved | all-gather, same stream | OK | OK | OK |
+    | C two-stream | all-gather on a side stream, overlapping | **OK** | OK | OK |
+    | D two-stream + waits | C plus cross-stream `wait_stream` | **OK** | OK | OK |
+
+    Every arm completed in ~0.12 s on the default `aws-ofi-nccl`/`cxi`
+    path, zero watchdog timeouts, on the same 2x4 A100 geometry that
+    deadlocks the LoRA job. **Overlapped AG/RS on two streams over one
+    communicator is not sufficient either.**
+
+    So the trigger is none of: payload size, protocol, algorithm, rank
+    participation, collective ordering, or plain stream concurrency. What
+    remains untested in isolation is FSDP2's *scale* of communicator state
+    -- 14 units cycling distinct buffers, the caching allocator's memory
+    pool interacting with registered/pinned regions, and the parameter
+    all-gathers being issued from the autograd engine's threads rather
+    than the main thread.
+
 ## The stack, and two defects in it
 
 Captured with `NCCL_DEBUG=INFO` on a hanging run (job 58369713):
