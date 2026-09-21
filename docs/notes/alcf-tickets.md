@@ -139,10 +139,21 @@ A100, torch 2.13, default `aws-ofi-nccl`/`cxi`), **every size completed
 in under 0.1 s with zero watchdog timeouts**, including `NumelIn=1055232`
 -- the exact buffer the LoRA job deadlocks on.
 
-So the payload size alone is not the trigger. Something about how FSDP2
-drives the collective matters: concurrency with in-flight all-gathers,
-two CUDA streams sharing one communicator, or the surrounding sequence.
-We report this rather than omit it, because it bounds where to look.
+So the payload size alone is not the trigger. Two further probes tested
+the obvious candidates and also failed to reproduce, all at the same
+geometry and payload on the default transport:
+
+| probe | tests | result |
+|---|---|---|
+| size sweep | 0.5-12.8 MiB reduce-scatter | all OK |
+| concurrency | AG/RS overlap, one vs two CUDA streams | all OK |
+| units | 14 cycled buffers; non-main thread; both + overlapping AG | all OK |
+
+We report these rather than omit them, because they bound where to look:
+the trigger is none of payload size, protocol, algorithm, rank
+participation, collective ordering, stream concurrency, buffer
+registration churn, or the calling thread. It appears to need FSDP2's
+full machinery, which is why the reproducer below is the LoRA one.
 
 The same sweep passes on Polaris (A100/NCCL), Sunspot and Aurora
 (PVC/XCCL) -- a useful cross-machine control, but not a reproducer.
