@@ -94,6 +94,34 @@
     all-gathers being issued from the autograd engine's threads rather
     than the main thread.
 
+!!! info "Three probes, three refutations: the trigger needs real FSDP2"
+
+    Three attempts were made to reproduce #239 without FSDP2, each testing
+    one thing FSDP2 does that the previous probe lacked. All ran on
+    Perlmutter at the exact failing geometry (ws=8, 2x4 A100, torch 2.13,
+    default `aws-ofi-nccl`/`cxi`), at the r17 payload:
+
+    | probe | tests | result |
+    |---|---|---|
+    | `reduce_scatter_size_sweep.py` | payload size, 0.5-12.8 MiB | all OK |
+    | `reduce_scatter_concurrency_probe.py` | AG/RS overlap, 1 vs 2 streams | all OK |
+    | `reduce_scatter_units_probe.py` | 14 cycled buffers; non-main thread; both + overlapping AG | all OK |
+
+    Every arm completed in under 0.7 s with zero watchdog timeouts. The
+    last probe's arms carry completed-iteration counts and value checks
+    (`F-nonmain-thread(30/30)`), so an arm cannot pass by doing nothing --
+    an earlier version reported a 0.04 s "pass" that was exactly that.
+
+    **So none of these is the trigger:** payload size, NCCL protocol,
+    algorithm selection, rank participation, collective ordering, torch
+    version, stream concurrency, buffer-registration cycling, or the
+    calling thread.
+
+    Probing stopped here deliberately. Each probe eliminated a named
+    mechanism; a fourth would be guessing rather than testing a
+    hypothesis. The reproducer that works is the LoRA one, and the
+    refutations above are the useful output -- they bound where to look.
+
 ## The stack, and two defects in it
 
 Captured with `NCCL_DEBUG=INFO` on a hanging run (job 58369713):
