@@ -1058,7 +1058,21 @@ _ezpz_load_xpu_modules_preserving_python() {
 		_py_dir="$(dirname "$(command -v python3)")"
 	fi
 
+	# Modulefiles may set or unset arbitrary variables. Preserve both the
+	# caller's exact CCL_OP_SYNC value and whether it was set at all.
+	local _ccl_op_sync_was_set=0 _ccl_op_sync_value=""
+	if [[ -n "${CCL_OP_SYNC+x}" ]]; then
+		_ccl_op_sync_was_set=1
+		_ccl_op_sync_value="${CCL_OP_SYNC}"
+	fi
+
 	module load oneapi/release hdf5 pti-gpu
+
+	if ((_ccl_op_sync_was_set)); then
+		export CCL_OP_SYNC="${_ccl_op_sync_value}"
+	else
+		unset CCL_OP_SYNC
+	fi
 
 	if [[ -n "${_py_dir}" ]] \
 		&& [[ "$(dirname "$(command -v python3 2>/dev/null)")" != "${_py_dir}" ]]; then
@@ -1086,15 +1100,7 @@ ezpz_load_modules_aurora() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# Respect an operator-set value instead of forcing it. This was
-	# exported unconditionally in three places, so EVERY run had
-	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
-	# investigating behaviour that this setting itself affects, which
-	# made "it always fails that way" look like a hardware/oneCCL
-	# property rather than a setting we imposed. Default stays 1 (it
-	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
-	# before calling now actually takes effect.
-	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
+	# CCL_OP_SYNC belongs to the application; module loading preserves it.
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 	# Aurora-specific MR cache monitor (matches ezpz_setup_conda_aurora).
@@ -1127,15 +1133,7 @@ ezpz_load_modules_sunspot() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# Respect an operator-set value instead of forcing it. This was
-	# exported unconditionally in three places, so EVERY run had
-	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
-	# investigating behaviour that this setting itself affects, which
-	# made "it always fails that way" look like a hardware/oneCCL
-	# property rather than a setting we imposed. Default stays 1 (it
-	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
-	# before calling now actually takes effect.
-	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
+	# CCL_OP_SYNC belongs to the application; module loading preserves it.
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
@@ -2795,15 +2793,7 @@ ezpz_setup_xpu() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# Respect an operator-set value instead of forcing it. This was
-	# exported unconditionally in three places, so EVERY run had
-	# CCL_OP_SYNC=1 whether or not anyone chose it -- including probes
-	# investigating behaviour that this setting itself affects, which
-	# made "it always fails that way" look like a hardware/oneCCL
-	# property rather than a setting we imposed. Default stays 1 (it
-	# avoids deadlocks in some workloads); `export CCL_OP_SYNC=0`
-	# before calling now actually takes effect.
-	export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"
+	# CCL_OP_SYNC belongs to the application; module loading preserves it.
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }

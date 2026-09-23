@@ -11,6 +11,7 @@ cover:
   * test_xpu_module_python_guard.sh  — XPU module load must not evict
   * test_setup_env_no_silent_noop.sh — ezpz_setup_env must not fake success
                                        an active python env
+  * test_ccl_op_sync_default.sh      — XPU setup defaults to async oneCCL
 
 Each is parametrized as its own pytest case so a failure names the
 suite, and the bash output is surfaced in the assertion message rather
@@ -33,6 +34,7 @@ SHELL_SUITES = [
     "test_failover_lib.sh",
     "test_xpu_module_python_guard.sh",
     "test_setup_env_no_silent_noop.sh",
+    "test_ccl_op_sync_default.sh",
 ]
 
 pytestmark = [
