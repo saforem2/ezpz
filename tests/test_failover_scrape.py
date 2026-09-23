@@ -518,6 +518,10 @@ class TestPatternRegistry:
             "aurora.gloo_connection_closed": [
                 "x4002c0s0b0n0.hsn.cm.aurora.alcf.anl.gov"
             ],
+            # Present with an empty list: the debug view reports every
+            # registered pattern, and this one correctly does not fire
+            # on a log with no PALS RPC-forward failure.
+            "aurora.pals_rpc_forward_child": [],
         }
 
     def test_re_register_without_normalizer_clears_old_normalizer(
@@ -600,6 +604,52 @@ class TestPatternRegistry:
 # ---------------------------------------------------------------------------
 # Auto-detection path (machine=None)
 # ---------------------------------------------------------------------------
+
+
+class TestAuroraPalsRpcForwardChild:
+    """REGRESSION (job 8808932 seat t3): PALS reports a launch-RPC
+    forward failure from the PARENT node, but the unreachable node is
+    the CHILD. Before this pattern existed nothing matched the string,
+    so auto-retry fell through to blind rotation, evicted an innocent
+    host, and relaunched onto the same sick node -- two attempts, 23s,
+    then the seat was dead for the rest of a 12h allocation.
+    """
+
+    _LINE = (
+        "launch failed on x4201c0s4b0n0: Couldn't forward RPC "
+        "launch(062487d9-c824-4437-a713-adfaa7d2127b) to child "
+        "x4513c0s7b0n0.hsn.cm.aurora.alcf.anl.gov: "
+        "Resource temporarily unavailable"
+    )
+
+    def test_tags_the_child_not_the_reporting_parent(self, tmp_path):
+        got = scrape_bad_nodes(_make_log(tmp_path, self._LINE), machine="aurora")
+        assert got == ["x4513c0s7b0n0.hsn.cm.aurora.alcf.anl.gov"]
+        # The parent is healthy -- it is the node doing the reporting.
+        assert not any("x4201c0s4b0n0" in h for h in got)
+
+    def test_matches_every_historical_occurrence(self, tmp_path):
+        # All four real (parent, child) pairs seen in production logs.
+        # PALS' independent "ping failed on P: No reply from C" signal
+        # names the same pair, confirming the child is the dead node.
+        for parent, child in [
+            ("x4201c0s4b0n0", "x4513c0s7b0n0"),
+            ("x4713c6s2b0n0", "x4410c7s1b0n0"),
+            ("x4517c5s7b0n0", "x4702c3s2b0n0"),
+            ("x4203c5s5b0n0", "x4207c3s4b0n0"),
+        ]:
+            line = (
+                f"launch failed on {parent}: Couldn't forward RPC launch(abc) "
+                f"to child {child}.hsn.cm.aurora.alcf.anl.gov: "
+                "Resource temporarily unavailable"
+            )
+            got = scrape_bad_nodes(_make_log(tmp_path, line), machine="aurora")
+            assert got == [f"{child}.hsn.cm.aurora.alcf.anl.gov"], (parent, child)
+
+    def test_clean_log_yields_nothing(self, tmp_path):
+        log = _make_log(tmp_path, "step: 100  loss: 2.5\nall good\n")
+        assert scrape_bad_nodes(log, machine="aurora") == []
+
 
 class TestAutoDetectMachine:
     """Coverage for the ``machine=None`` code path that pulls machine
