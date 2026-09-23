@@ -372,7 +372,7 @@ This is roughly equivalent to:
 module load oneapi/release hdf5 pti-gpu
 export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 export CCL_PROCESS_LAUNCHER=pmix
-export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"   # default 1; override respected
+# CCL_OP_SYNC is application policy; ezpz preserves its caller state.
 export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 export TORCH_CPP_LOG_LEVEL=ERROR
 ```
@@ -401,9 +401,20 @@ export TORCH_CPP_LOG_LEVEL=ERROR
 |----------|---------|
 | `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | Expose each PVC tile as a separate device |
 | `CCL_PROCESS_LAUNCHER=pmix` | Use PMIx for oneCCL bootstrap (matches `mpiexec`) |
-| `CCL_OP_SYNC=1` | Synchronous oneCCL ops (avoids deadlocks in some workloads). **Overridable** — `export CCL_OP_SYNC=0` before calling and the helper honours it. It used to be exported unconditionally in three places, so every run had it set whether or not anyone chose it. |
+| `CCL_OP_SYNC` | Left unchanged by `ezpz`. Applications may choose `0` or `1`; exact caller state is preserved across module loading. |
 | `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
 | `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
+
+The XPU setup helpers do not choose a `CCL_OP_SYNC` value. Collective
+semantics are application policy: callers that need a specific mode should
+export `CCL_OP_SYNC=0` or `CCL_OP_SYNC=1` before setup. Matched 4-node
+TorchTitan controls found async about 6x slower on both Aurora and Sunspot, so
+that application chooses `1`; this does not make it an `ezpz` default.
+
+The helpers snapshot both whether `CCL_OP_SYNC` was set and its exact value,
+then restore that caller state after `module load`. Thus explicit `0`, `1`, and
+empty values survive a modulefile that overwrites or clears the variable, while
+an initially unset variable remains unset.
 
 ## ALCF System Module Loaders (`ezpz_load_modules_*`)
 
