@@ -33,6 +33,10 @@ export MPICH_GPU_SUPPORT_ENABLED=0
 
 # Without this NCCL silently falls back to TCP: 8.3x slower inter-node,
 # no error. See docs/guides/perlmutter.md.
+# NOTE (2026-09-15): this module load is INERT under the NERSC pytorch
+# 2.13 install -- site-packages/nvidia/nccl ships libnccl.so.2 at 2.29.7
+# and wins via RPATH. Verify with NCCL_DEBUG=INFO before trusting it.
+# That 2.29.7 + aws-ofi-nccl 1.6.0 pairing is the suspect in ezpz #239.
 set +u; module load nccl/2.24.3 2>/dev/null || echo "WARN: nccl module failed"; set -u
 echo "=== NCCL_NET=${NCCL_NET:-<unset>} ==="
 case ":${LD_LIBRARY_PATH:-}:" in

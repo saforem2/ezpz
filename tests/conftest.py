@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,86 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # Set environment variables for testing
 os.environ["WANDB_MODE"] = "disabled"
 os.environ["EZPZ_LOG_LEVEL"] = "CRITICAL"
+
+# Cap thread pools BEFORE torch is imported anywhere.
+#
+# torch defaults to one OpenMP thread per core, which on a big shared
+# node means 128 intra-op + 128 inter-op threads. Login nodes impose a
+# per-user PID ceiling (`/sys/fs/cgroup/users/$USER/pids.max`, 256 on
+# Polaris) and THREADS COUNT AGAINST IT, so the suite idles at ~141
+# threads and the first conv2d exhausts the cgroup:
+#
+#     libgomp: Thread creation failed: Resource temporarily unavailable
+#
+# That surfaced as the whole run freezing indefinitely in
+# `test_flops.py::TestEstimateModelFlops::test_cnn` -- a plain CPU test
+# with no distributed code -- and as spurious ProcessExitedException in
+# every `mp.spawn` test. Measured on a Polaris login node:
+#
+#     default            peak 144 threads, 256/256 PIDs, 15 failed
+#     OMP_NUM_THREADS=1  peak  16 threads,  59/256 PIDs,  2 failed
+#
+# `setdefault` so an operator can still opt out. The env var (rather
+# than only torch.set_num_threads) is what matters for `mp.spawn`
+# children, which inherit os.environ but not the parent's torch config.
+for _var in (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ.setdefault(_var, "1")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cap_torch_threads():
+    """Belt-and-braces for the PID-ceiling problem described above.
+
+    The env vars are what `mp.spawn` children inherit, but torch reads
+    them only at first import -- if something imported torch before this
+    conftest ran, its pools are already sized to the core count. Setting
+    them explicitly here is idempotent and costs nothing.
+
+    Skipped silently when torch is absent (several CI jobs run without
+    it) and when the pools are already smaller.
+    """
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return
+    try:
+        if torch.get_num_threads() > 1:
+            torch.set_num_threads(1)
+    except (RuntimeError, AttributeError):
+        pass
+    # Be honest about the half we cannot fix here. If torch was imported
+    # before this fixture ran, its inter-op pool is already started and
+    # set_num_interop_threads() would raise -- so we warn rather than
+    # silently leave a 128-thread pool while implying the ceiling is
+    # capped. Not an error: OMP_NUM_THREADS (set at module scope, before
+    # any torch import) is what actually bounds the worker pools, and it
+    # is what mp.spawn children inherit.
+    try:
+        n_interop = torch.get_num_interop_threads()
+    except (RuntimeError, AttributeError):
+        return
+    if n_interop > 1:
+        warnings.warn(
+            f"torch inter-op pool already started with {n_interop} threads; "
+            "conftest could not cap it (torch was imported before this "
+            "fixture). OMP_NUM_THREADS still bounds the OpenMP pools. If "
+            "you hit 'libgomp: Thread creation failed', set "
+            "OMP_NUM_THREADS=1 in the environment before pytest starts.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    # NOTE: no set_num_interop_threads() call here. It only works before
+    # the interop pool starts, and under pytest something has always
+    # imported torch and started it by the time a session fixture runs --
+    # measured on Polaris, the call raised RuntimeError and left
+    # get_num_interop_threads() == 128 while the exception was swallowed.
+    # It was dead code pretending to work. The OMP_NUM_THREADS env var
+    # set at the top of this file is what actually bounds the pools (and
+    # is also what mp.spawn children inherit), so nothing is lost.
 
 
 @pytest.fixture(autouse=True, scope="session")

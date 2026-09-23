@@ -2,6 +2,16 @@
 
 Guidance for AI coding assistants (and humans) working in this repo.
 
+> [!IMPORTANT]
+> **Running anything on an HPC system (Aurora, Sunspot, Polaris,
+> Perlmutter)? Read [`SKILL.md`](SKILL.md) FIRST.**
+>
+> Job submission, environment setup, and — more importantly — the
+> failure modes that silently produce *wrong results* rather than
+> errors: batch-shell `MODULEPATH` no-ops, non-editable installs that
+> shadow your working tree, exit codes that misreport a successful run,
+> and collectives that vanish from a probe after a torch rename.
+
 ## Dev environment tips
 
 - Use `source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env` to

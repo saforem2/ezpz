@@ -29,6 +29,10 @@ export PYTHONPATH="${D}/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export MPICH_GPU_SUPPORT_ENABLED=0
+# NOTE (2026-09-15): this module load is INERT under the NERSC pytorch
+# 2.13 install -- site-packages/nvidia/nccl ships libnccl.so.2 at 2.29.7
+# and wins via RPATH. Verify with NCCL_DEBUG=INFO before trusting it.
+# That 2.29.7 + aws-ofi-nccl 1.6.0 pairing is the suspect in ezpz #239.
 set +u; module load nccl/2.24.3 2>/dev/null; set -u
 echo "=== NCCL_NET=${NCCL_NET:-<unset>} ==="
 
