@@ -52,19 +52,40 @@ rather than absent. Stage from a login node (which does have network)
 onto a shared filesystem, then **assert it arrived**:
 
 ```bash
-# on a login node, beforehand:
-curl -fsSL https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
-    -o "${HOME}/stage/utils.sh"
+# on a login node, beforehand. ALCF login nodes need the proxy too --
+# see "Downloads on ALCF need the proxy" below; without it this curl
+# hangs rather than failing fast.
+export https_proxy=http://proxy.alcf.anl.gov:3128   # ALCF only
+mkdir -p "${HOME}/stage"
+
+# Download to a temp file and move only on success: `curl` can be
+# interrupted after writing some bytes, and a PARTIAL file passes a
+# non-empty check while failing later with missing functions or a
+# syntax error -- worse than an empty one, because it looks staged.
+curl -fsSL --retry 3 \
+    https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
+    -o "${HOME}/stage/utils.sh.part" \
+  && bash -n "${HOME}/stage/utils.sh.part" \
+  && mv "${HOME}/stage/utils.sh.part" "${HOME}/stage/utils.sh" \
+  || { echo "FATAL: staging failed"; rm -f "${HOME}/stage/utils.sh.part"; exit 1; }
 
 # in the job:
 U="${HOME}/stage/utils.sh"
 [[ -s "$U" ]] || { echo "FATAL: ${U} missing/empty — stage it first"; exit 1; }
 ```
 
-Also note the `HF_*` caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion`
-examples need their datasets and models already in
-`~/.cache/huggingface`. Check before submitting — a cache miss on a
-compute node is an offline error, not a code bug.
+Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion` examples
+need their datasets and models downloaded ahead of time. **Check the
+cache the libraries will actually read**, not a hard-coded path —
+`HF_HOME`, `HF_HUB_CACHE` and `HF_DATASETS_CACHE` all override the
+`~/.cache/huggingface` default, and the documented Perlmutter setup sets
+`HF_HOME="$SCRATCH/.cache/hf"`:
+
+```bash
+ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
+```
+
+A cache miss on a compute node is an offline error, not a code bug.
 
 ### 2. PBS runs your script under a NON-login shell
 
