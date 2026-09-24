@@ -113,6 +113,39 @@ else
     FAILURES=$((FAILURES + 1))
 fi
 
+printf "4. the documented \`launch\` alias resolves to the computed command\n"
+# ezpz_get_pbs_env does not define the alias -- ezpz_get_job_env does, from
+# DIST_LAUNCH. So the alias is only as good as the export this test guards,
+# and an empty DIST_LAUNCH yields a `launch` that expands to nothing. Assert
+# on the alias itself rather than inferring it from the variable.
+alias_out=$(bash -c "
+    shopt -s expand_aliases
+    log_message() { :; }
+    ezpz_get_machine_name()             { echo 'aurora'; }
+    ezpz_get_scheduler_type()           { echo 'pbs'; }
+    ezpz_get_pbs_jobid()                { echo '12345'; }
+    ezpz_get_jobenv_file()              { echo '${WORK}/jobenv'; }
+    ezpz_get_num_hosts()                { echo 2; }
+    ezpz_get_num_gpus_per_host()        { echo 4; }
+    ezpz_get_dist_launch_cmd()          { echo '${FAKE_LAUNCH}'; }
+    ezpz_get_pbs_nodefile_from_hostname() { echo '${WORK}/hostfile'; }
+    BLUE=''; RESET=''
+    source '${FN_FILE}'
+    unset DIST_LAUNCH LAUNCH ezlaunch
+    ezpz_get_pbs_env '${WORK}/hostfile' '${WORK}/jobenv' >/dev/null 2>&1
+    # Mirror what ezpz_get_job_env does with the exported value.
+    alias launch=\"\${DIST_LAUNCH:-}\"
+    # \`alias\` prints the definition; an empty DIST_LAUNCH gives launch=''.
+    alias launch 2>/dev/null | sed \"s/^alias launch=//;s/^'//;s/'\$//\"
+" 2>&1)
+if [[ "${alias_out}" == "${FAKE_LAUNCH}" ]]; then
+    printf "  ok   launch resolves to the computed command\n"
+else
+    printf "  FAIL launch did not resolve\n       expected: %s\n       actual:   %s\n" \
+        "${FAKE_LAUNCH}" "${alias_out}" >&2
+    FAILURES=$((FAILURES + 1))
+fi
+
 if ((FAILURES > 0)); then
     printf "\n%d assertion(s) failed\n" "${FAILURES}" >&2
     exit 1

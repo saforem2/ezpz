@@ -2763,9 +2763,15 @@ ezpz_get_job_env() {
 	if [[ -f "${hostfile:-}" ]]; then
 		nhosts=$(wc -l <"${hostfile}")
 		local nhosts="${nhosts}"
-		export LAUNCH="${DIST_LAUNCH}"
-		export ezlaunch="${DIST_LAUNCH}"
-		alias launch="${DIST_LAUNCH}"
+		# Same `:-` hardening as the block below, and for the same
+		# reason: reached through the explicit-argument path
+		# (`ezpz_get_job_env <hostfile> <jobenv>`) no scheduler-specific
+		# setup has run, so DIST_LAUNCH is unset and `set -u` aborts HERE
+		# -- three lines upstream of the guards that were supposed to
+		# prevent exactly this. Verified: "DIST_LAUNCH: unbound variable".
+		export LAUNCH="${DIST_LAUNCH:-}"
+		export ezlaunch="${DIST_LAUNCH:-}"
+		alias launch="${DIST_LAUNCH:-}"
 		export HOSTFILE="${hostfile}"
 		export NHOSTS="${nhosts}"
 		# Defensive `:-` on the self-references below. These re-export
