@@ -45,6 +45,48 @@ source "${D}/src/ezpz/bin/utils.sh"
 ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
 ```
 
+The same applies to anything else you fetch. `curl`ing a script *inside*
+the job returns an empty file, and the failure surfaces far downstream —
+`rc=127`, every function undefined — which reads like the code is broken
+rather than absent. Stage from a login node (which does have network)
+onto a shared filesystem, then **assert it arrived**:
+
+```bash
+# on a login node, beforehand. ALCF login nodes need the proxy too --
+# see "Downloads on ALCF need the proxy" below; without it this curl
+# hangs rather than failing fast.
+export https_proxy=http://proxy.alcf.anl.gov:3128   # ALCF only
+mkdir -p "${HOME}/stage"
+
+# Download to a temp file and move only on success: `curl` can be
+# interrupted after writing some bytes, and a PARTIAL file passes a
+# non-empty check while failing later with missing functions or a
+# syntax error -- worse than an empty one, because it looks staged.
+curl -fsSL --retry 3 \
+    https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
+    -o "${HOME}/stage/utils.sh.part" \
+  && bash -n "${HOME}/stage/utils.sh.part" \
+  && mv "${HOME}/stage/utils.sh.part" "${HOME}/stage/utils.sh" \
+  || { echo "FATAL: staging failed"; rm -f "${HOME}/stage/utils.sh.part"; exit 1; }
+
+# in the job:
+U="${HOME}/stage/utils.sh"
+[[ -s "$U" ]] || { echo "FATAL: ${U} missing/empty — stage it first"; exit 1; }
+```
+
+Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion` examples
+need their datasets and models downloaded ahead of time. **Check the
+cache the libraries will actually read**, not a hard-coded path —
+`HF_HOME`, `HF_HUB_CACHE` and `HF_DATASETS_CACHE` all override the
+`~/.cache/huggingface` default, and the documented Perlmutter setup sets
+`HF_HOME="$SCRATCH/.cache/hf"`:
+
+```bash
+ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
+```
+
+A cache miss on a compute node is an offline error, not a code bug.
+
 ### 2. PBS runs your script under a NON-login shell
 
 `qsub ... -- /bin/bash script.sh` gives you a shell where `module` does
@@ -122,11 +164,32 @@ still died with `ImportError: libcudart.so.13` on the compute nodes.
   node's `/tmp` is not the compute node's `/tmp`.
 - `$HOME/datascience` → `/lus/tegu/projects/datascience` (same dir).
 
+**Polaris.** `module use /soft/modulefiles` first, then
+`module load conda && conda activate base`. Available conda modules, as
+of 2026-09-24: `2025-09-25` (the default, torch 2.8.0), `2025-09-28`,
+and `2026-09-17` (torch 2.14.0). `2026-09-17` is **verified working
+end-to-end on compute nodes** — module load, activate, `ezpz_setup_job`,
+and a 2-node NCCL collective — but it is not yet the site default
+(`.modulerc.lua` still has its `module_version(..., "default")`
+commented out), so `ezpz_setup_conda_polaris` still pins `2025-09-25`.
+To use the newer one, preload it: `ezpz_setup_conda_polaris` early-returns
+when `CONDA_PREFIX` is already set, which is the supported way to choose
+a different conda.
+
 **Perlmutter.** `module load nccl/2.24.3` or **NCCL silently falls back
 to TCP** — 8.3× slower inter-node, no error, nothing in the log. Also
 load `cudatoolkit/12.9` and do **not** swap it per torch build: the
 NERSC NCCL plugin links `libcudart.so.12`, so under `cudatoolkit/13.0`
 it fails with `Failed to initialize any NET plugin`.
+
+!!! warning "That `module load nccl/…` may be inert"
+
+    The NERSC PyTorch 2.13 install bundles its own `libnccl.so.2`
+    (2.29.7) under `site-packages/nvidia/nccl/lib/`, which **wins via
+    RPATH** — so the module load changes nothing and you are running a
+    different NCCL than you asked for. Verify with `NCCL_DEBUG=INFO`
+    rather than assuming; that mismatched pairing (aws-ofi-nccl 1.6.0
+    against NCCL 2.29.7) is the leading suspect in ezpz #239.
 
 ## Debugging a hang
 
@@ -165,6 +228,28 @@ Rules that come from real misreadings, not style preference:
 
 ## Gotchas that produce silently wrong results
 
+- **Never pipe `module load`.** A pipeline runs its stages in a
+  **subshell**, so everything a modulefile exports via `execute{}` —
+  including the `conda` shell function — is discarded when the subshell
+  exits. Trimming a banner is enough to break it:
+
+  ```bash
+  module load conda/2026-09-17 | grep -v Lmod   # conda: NOTFOUND
+  module load conda/2026-09-17 >/dev/null       # conda: conda   ✅
+  ```
+
+  A redirect is fine; a pipe is not. This cost a wrong bug report: the
+  module looked broken (`conda: command not found`, `import torch`
+  failing), the Lua `execute{cmd="source …/conda.sh"}` looked like it
+  was not running, and the real cause was the `| grep` in the *test*.
+  `module load conda && conda activate base` works exactly as
+  documented.
+- **Do not redirect the call you are debugging.** `cmd >/dev/null 2>&1`
+  on a failing step throws away the only evidence of *why* it failed. A
+  job that died with `exit 1` and no message cost two full rounds; the
+  same job with output kept named its cause on the first try
+  (`NGPUS: unbound variable`). Silence the noisy neighbours, never the
+  suspect.
 - **Non-editable installs.** The torchtitan venvs install `ezpz`
   non-editable, so `python3 -c "import ezpz"` imports the *installed*
   copy, not your working tree. Pytest is fine (`tests/conftest.py`
