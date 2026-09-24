@@ -5,7 +5,7 @@ handle Python environment setup, job discovery, and launch-command construction
 on HPC systems.  The two main entry points are:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils)
+source <(curl -fsSL https://ezpz.cool/utils.sh)
 ezpz_setup_env      # sets up python + job in one shot
 ```
 
@@ -25,7 +25,7 @@ The helpers live in
 Source them into your current shell session:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils)
+source <(curl -fsSL https://ezpz.cool/utils.sh)
 ```
 
 ??? info "Full list of provided functions"
@@ -253,7 +253,7 @@ ImportError: libsycl.so.9: undefined symbol: urDeviceWaitExp, version LIBUR_LOAD
 **after** module setup. Put it last in the chain:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils) \
+source <(curl -fsSL https://ezpz.cool/utils.sh) \
   && ezpz_setup_job && ezpz_load_modules && ezpz_activate_venv
 ```
 

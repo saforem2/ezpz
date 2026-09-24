@@ -3,7 +3,7 @@ weight_path=argonne-private/AuroraGPT-7B
 # weight_path=/host/ssd/hf_models/Meta-Llama-3.1-8B
 export WANDB_MODE=disabled
 
-source <(curl -L https://bit.ly/ezpz-utils) && ezpz_setup_env
+source <(curl -L https://ezpz.cool/utils.sh) && ezpz_setup_env
 
 ezpzdir=$(python3 -c 'import ezpz; print(ezpz.PROJECT_DIR)' | grep -E "^\/.+ezpz")
 

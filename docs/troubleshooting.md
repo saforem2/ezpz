@@ -125,7 +125,7 @@ ensure `${VIRTUAL_ENV}/lib` is **first**. Use `ezpz_activate_venv`
 the setup chain so it runs after module loading:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils) \
+source <(curl -fsSL https://ezpz.cool/utils.sh) \
   && ezpz_setup_job && ezpz_load_modules && ezpz_activate_venv
 ```
 
