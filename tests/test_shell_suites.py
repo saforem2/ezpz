@@ -36,6 +36,7 @@ SHELL_SUITES = [
     "test_setup_env_no_silent_noop.sh",
     "test_ccl_op_sync_default.sh",
     "test_slurm_env_nounset.sh",
+    "test_pbs_env_dist_launch.sh",
 ]
 
 pytestmark = [

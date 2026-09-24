@@ -2666,7 +2666,23 @@ ezpz_get_pbs_env() {
 			num_gpus_per_host=$(ezpz_get_num_gpus_per_host)
 			num_gpus="$((num_hosts * num_gpus_per_host))"
 			dist_launch_cmd=$(ezpz_get_dist_launch_cmd "${hostfile}")
-			export DIST_LAUNCH="${DIST_LAUNCH}"
+			# Was `export DIST_LAUNCH="${DIST_LAUNCH}"` -- exporting the
+			# variable from ITSELF, so the launch command computed on the
+			# line above was thrown away and DIST_LAUNCH kept whatever it
+			# already held (empty, on a clean shell). The sibling path in
+			# ezpz_setup_host_pbs does the correct thing; this is the same
+			# code with the wrong variable name.
+			#
+			# It hid because the usual caller (ezpz_get_job_env) re-derives
+			# everything from the hostfile immediately afterwards. Calling
+			# ezpz_get_pbs_env directly -- which the docs present as a
+			# supported entry point -- left DIST_LAUNCH empty and `launch`
+			# silently expanding to nothing.
+			export NHOSTS="${num_hosts}"
+			export NGPU_PER_HOST="${num_gpus_per_host}"
+			export NGPUS="${num_gpus}"
+			export DIST_LAUNCH="${dist_launch_cmd}"
+			export LAUNCH="${DIST_LAUNCH}"
 			export ezlaunch="${DIST_LAUNCH}"
 			return 0
 		else
