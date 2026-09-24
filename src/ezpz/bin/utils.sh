@@ -2686,11 +2686,26 @@ ezpz_get_slurm_env() {
 	hostfile="$(ezpz_make_slurm_nodefile)"
 	NHOSTS=$(wc -l <"${hostfile}")
 	NGPU_PER_HOST=$(ezpz_get_num_gpus_per_host)
+	# NGPUS must be set HERE, alongside its two factors. The PBS path
+	# (ezpz_get_pbs_env) exports it; this one used to not, and
+	# ezpz_setup_host_slurm later does `export NGPUS="${NGPUS}"` -- a
+	# self-reference that is a silent no-op normally but aborts the whole
+	# setup under `set -u`:
+	#
+	#   utils.sh: line 2741: NGPUS: unbound variable
+	#
+	# A job script using `set -u` (entirely reasonable) then dies mid-setup
+	# with no NHOSTS/NGPUS and a misleading exit code. Measured on
+	# Perlmutter compute node nid008349: rc=0 without `set -u`, rc=127
+	# with it. It does NOT reproduce on a login node, which is what made
+	# it look like a harness problem rather than a real asymmetry.
+	NGPUS=$((NHOSTS * NGPU_PER_HOST))
 	JOBENV_FILE="${SLURM_ENV_FILE:-${HOME}/.slurmenv}"
 	DIST_LAUNCH="srun -l -u --verbose -N${NHOSTS} -n$((NHOSTS * NGPU_PER_HOST))"
 	ezlaunch="${DIST_LAUNCH}"
 	export NHOSTS
 	export NGPU_PER_HOST
+	export NGPUS
 	export JOBENV_FILE
 	export DIST_LAUNCH
 	export ezlaunch
@@ -2737,9 +2752,15 @@ ezpz_get_job_env() {
 		alias launch="${DIST_LAUNCH}"
 		export HOSTFILE="${hostfile}"
 		export NHOSTS="${nhosts}"
-		export NGPU_PER_HOST="${NGPU_PER_HOST}"
-		export NGPUS="${NGPUS}"
-		export WORLD_SIZE="${NGPUS}"
+		# Defensive `:-` on the self-references below. These re-export
+		# values an earlier ezpz_get_*_env is expected to have set; if one
+		# did not (the SLURM path historically skipped NGPUS), `set -u`
+		# turns a cosmetic no-op into an abort that kills setup mid-way.
+		# Belt and braces: the SLURM gap itself is fixed at its source in
+		# ezpz_get_slurm_env, but a caller may reach here by another route.
+		export NGPU_PER_HOST="${NGPU_PER_HOST:-}"
+		export NGPUS="${NGPUS:-}"
+		export WORLD_SIZE="${NGPUS:-}"
 		hosts_arr=$(/bin/cat "${HOSTFILE}")
 		export HOSTS_ARR="${hosts_arr}"
 		HOSTS="$(join_by ', ' "$(/bin/cat "${HOSTFILE}")")"
