@@ -82,7 +82,7 @@ cd "${D}" || exit 1
 
 # THE canonical ALCF setup, exactly as used by hand:
 #
-#   source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+#   source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 #
 # ezpz_setup_env does everything -- python/venv selection, the module
 # stack, and the hostfile -- so do NOT hand-assemble

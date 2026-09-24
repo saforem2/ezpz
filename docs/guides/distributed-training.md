@@ -1005,7 +1005,7 @@ generated scripts look like:
     cd /path/to/your/working/directory
 
     # ── Environment setup ──
-    source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 
     # ── Run ──
     ezpz launch -- python3 fsdp_mnist.py
@@ -1024,7 +1024,7 @@ generated scripts look like:
     cd /path/to/your/working/directory
 
     # ── Environment setup ──
-    source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 
     # ── Run ──
     ezpz launch -- python3 fsdp_mnist.py

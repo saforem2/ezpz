@@ -22,6 +22,17 @@ jobs:
           python-version: 3.x
       - run: pip install zensical mkdocs-autorefs "mkdocs-material[imaging]" mkdocstrings mkdocstrings-python pymdown-extensions mkdocs-mermaid2-plugin mkdocs-glightbox
       - run: zensical build
+      # Publish utils.sh at the canonical https://ezpz.cool/utils.sh so the
+      # bootstrap one-liner does not depend on a third-party shortener we do
+      # not control. Copied at BUILD time rather than committed under docs/:
+      # a second copy in git would drift from src/ezpz/bin/utils.sh silently,
+      # and a stale bootstrap script is a genuinely nasty failure mode.
+      - run: |
+          cp src/ezpz/bin/utils.sh site/utils.sh
+          # Fail the build rather than publish a truncated/empty script.
+          test -s site/utils.sh
+          head -1 site/utils.sh | grep -q '^#!' \
+            || { echo "utils.sh lost its shebang"; exit 1; }
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site

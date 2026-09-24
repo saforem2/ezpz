@@ -13,7 +13,7 @@ Everything here was learned by losing allocations to it.
 On **every** ALCF system, in the repo root:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 ezpz launch python3 -m ezpz.examples.test
 ```
 
@@ -36,7 +36,7 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 
 ### 1. Compute nodes have no outbound internet
 
-`source <(curl -fsSL https://bit.ly/ezpz-utils)` **times out after
+`source <(curl -fsSL https://ezpz.cool/utils.sh)` **times out after
 ~270 s** and then silently leaves the environment unconfigured. Source
 the repo's own copy — the same file:
 

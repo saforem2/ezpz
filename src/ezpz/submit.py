@@ -63,7 +63,7 @@ def detect_env_setup() -> str:
             return f"source {shlex.quote(setup_env)}"
         return setup_env
 
-    return "source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env"
+    return "source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env"
 
 
 # ── Script generation ────────────────────────────────────────────────────────
