@@ -166,10 +166,13 @@ still died with `ImportError: libcudart.so.13` on the compute nodes.
 
 **Polaris.** `module use /soft/modulefiles` first, then
 `module load conda && conda activate base`. Available conda modules, as
-of 2026-09-24: `2025-09-25` (the default, torch 2.8.0), `2025-09-28`,
-and `2026-09-17` (torch 2.14.0). `2026-09-17` is **verified working
-end-to-end on compute nodes** — module load, activate, `ezpz_setup_job`,
-and a 2-node NCCL collective — but it is not yet the site default
+of 2026-09-26: `2025-09-25` (the default, torch 2.8.0), `2025-09-28`,
+`2026-09-17` (torch 2.14.0), and `2026-10-01` (torch 2.14.0).
+`2026-10-01` is the newest and is **verified working end-to-end on
+compute nodes** (job 7660718: module load, activate, FSDP+TP at tp=2 and
+tp=4 across 2 nodes over NCCL). `2026-09-17` is likewise verified —
+module load, activate, `ezpz_setup_job`, and a 2-node NCCL collective —
+but neither is the site default
 (`.modulerc.lua` still has its `module_version(..., "default")`
 commented out), so `ezpz_setup_conda_polaris` still pins `2025-09-25`.
 To use the newer one, preload it: `ezpz_setup_conda_polaris` early-returns
