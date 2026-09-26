@@ -87,7 +87,7 @@ uv pip install git+https://github.com/saforem2/ezpz
         To use these, we can source the file directly from the command line:
 
             ```bash linenums='0'
-            source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+            source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
             ```
 
         - [`savejobenv`](https://github.com/saforem2/ezpz/blob/main/utils/savejobenv): Shell
@@ -103,7 +103,7 @@ uv pip install git+https://github.com/saforem2/ezpz
                 -l select=2 \
                 -l walltime=01:00:00,filesystems=eagle:home \
                 -I
-            $ source <(curl -fsSL https://bit.ly/ezpz-utils) && savejobenv
+            $ source <(curl -fsSL https://ezpz.cool/utils.sh) && savejobenv
             ```
 
 ## 🚂 Distributed Training Script

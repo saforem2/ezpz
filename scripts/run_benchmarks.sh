@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
-source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 
 # ── Source user env setup if available ────────────────────────────────────────
 if [[ -n "${EZPZ_SETUP_ENV:-}" ]] && [[ -f "${EZPZ_SETUP_ENV}" ]]; then

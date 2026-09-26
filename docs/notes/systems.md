@@ -163,14 +163,14 @@ If `NGPU_PER_HOST` is not set, these are checked in order:
 === "Aurora (PBS)"
 
     ```bash
-    source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env
     ezpz launch python3 -m ezpz.examples.diffusion
     ```
 
 === "Polaris (PBS)"
 
     ```bash
-    source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env
     ezpz launch python3 -m ezpz.examples.diffusion
     ```
 
@@ -178,14 +178,14 @@ If `NGPU_PER_HOST` is not set, these are checked in order:
 
     ```bash
     # inside an allocation: salloc -N2 -t 00:30:00 ...
-    source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env
     ezpz launch python3 -m ezpz.examples.diffusion
     ```
 
 === "Perlmutter (SLURM)"
 
     ```bash
-    source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env
+    source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env
     ezpz launch python3 -m ezpz.examples.diffusion
     ```
 

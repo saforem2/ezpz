@@ -197,7 +197,7 @@ TMPDIR=$(pwd) uv run \
 For automatic module loading + virtual-environment setup:
 
 ```bash
-source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 ```
 
 before launching.

@@ -14,7 +14,7 @@ Guidance for AI coding assistants (and humans) working in this repo.
 
 ## Dev environment tips
 
-- Use `source <(curl -LsSf https://bit.ly/ezpz-utils) && ezpz_setup_env` to
+- Use `source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env` to
   setup the development environment.
 - `ezpz doctor` can be used to verify the functionality of the environment.
 - `ezpz test` can be used as a distributed PyTorch smoke test to verify:

@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-source <(curl -fsSL https://bit.ly/ezpz-utils) && ezpz_setup_env
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
 
 OUTDIR="${1:-./recipe_outputs}"
 SCRIPTS_DIR="${SCRIPTS_DIR:-"$(pwd)/tmp-scripts"}"

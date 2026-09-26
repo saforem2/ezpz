@@ -67,7 +67,7 @@ cd "${D}" || exit 1
 # ezpz_load_modules_polaris + ezpz_setup_conda_polaris -- that is how
 # four Sunspot allocations were lost. Compute nodes have no outbound
 # internet, so source the repo's own copy of utils.sh rather than the
-# usual `source <(curl -fsSL https://bit.ly/ezpz-utils)`.
+# usual `source <(curl -fsSL https://ezpz.cool/utils.sh)`.
 # NOT ezpz_setup_env here. Polaris' own conda modulefiles currently
 # hard-require gcc-native/14.2 and cray-hdf5-parallel/1.14.3.5, both of
 # which the site has REMOVED, so every conda module fails to load and
