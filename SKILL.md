@@ -206,10 +206,54 @@ export TORCH_NCCL_DESYNC_DEBUG=1
 export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
 ```
 
+**Actually set it.** A full session was spent on #252 with the default
+3600 s timeout, so every hang ran its whole budget in silence and had to
+be diagnosed by attaching `py-spy` to wedged ranks afterwards. The
+watchdog would have named the stuck collective on its own.
+
+On XPU the NCCL-specific variables above are inert; the timeout is not.
+`py-spy dump --pid <rank>` remains the fallback, and it is what finally
+showed ranks blocked in *different* collectives:
+
+```bash
+mapfile -t pids < <(pgrep -f "[e]zpz.examples.fsdp_tp")
+for p in "${pids[@]}"; do py-spy dump --pid "$p" | head -30; done
+```
+
+Dump **every rank on every node**, not one node: an 8/4 split read from
+a single node was really 8/16 across two, and the shape of the split is
+the evidence.
+
 ## Writing an experiment script
 
 Rules that come from real misreadings, not style preference:
 
+- **Always launch with `ezpz launch`, never bare `mpiexec`.** This is
+  the point of the library, and it is not cosmetic: `ezpz launch`
+  computes the hostfile, rank counts and — critically — the
+  `--cpu-bind=list:1-8:9-16:…` map for the machine. A hand-written
+  `mpiexec -n 24 -ppn 12` supplies **no CPU binding at all**, so ranks
+  land wherever the OS puts them. For a timing-sensitive,
+  nondeterministic hang that is a confound, not a detail, and an entire
+  #252 measurement campaign ran that way before anyone noticed.
+
+  ```bash
+  ezpz launch python3 -m ezpz.examples.fsdp_tp --tp 2   # yes
+  mpiexec -n 24 -ppn 12 python3 -m ezpz.examples.fsdp_tp --tp 2   # no
+  ```
+
+  It also has `--timeout`, so there is no reason to wrap it in
+  `timeout(1)` for the launcher's own sake. Bare `mpiexec` is defensible
+  only for non-training fan-out (unpacking a venv one-per-node, reaping
+  ranks) where there is no rank topology to compute — say so in a
+  comment when you do it.
+- **Reproduce a reference by copying its argv, not approximating it.**
+  A run's own log prints the full command (`ezpz launch` logs
+  `cmd_to_launch:`). Retyping the flags you think matter drops the ones
+  you did not know about: omitting `--hf-assets-path` killed every rank
+  with `FileNotFoundError: Tokenizer path './assets/hf/gemma-7b'`, and
+  the "reference" being reproduced had also run only 5 steps against the
+  240 it was being compared to.
 - **Never classify a run by exit code.** A cell can exit `rc=1` having
   trained all 20 iterations (teardown failure), and hanging cells exit
   124 *or* 134. Classify on evidence: a watchdog line means HANG,
@@ -228,6 +272,45 @@ Rules that come from real misreadings, not style preference:
   the function and assert what it returns.
 - **Run the control in the same allocation** as the arm it controls, so
   a difference cannot be node or topology luck.
+- **`timeout` kills the launcher, not the ranks.** MPI ranks survive it
+  as orphans and keep holding accelerators. A later trial in the same job
+  then starts on a contended node and hangs before iteration 1 — which
+  looks exactly like the bug under test. Observed in job 8872503: 13
+  orphaned torchtitan ranks plus 17 `fsdp_tp` ranks alive on a 12-tile
+  node, 25 minutes after their `timeout 600` fired, and both trials of
+  that job were void. Reap after **every** arm and assert clean before
+  the next:
+
+  ```bash
+  RANK_PAT='[e]zpz\.examples\.fsdp_tp|[t]orchtitan\.experiments'
+  reap()  { mpiexec -n "$NNODES" -ppn 1 bash -c "pkill -f '$RANK_PAT'; sleep 3; pkill -9 -f '$RANK_PAT'; exit 0" >/dev/null 2>&1; }
+  count() { mpiexec -n "$NNODES" -ppn 1 bash -c "pgrep -cf '$RANK_PAT' || echo 0" 2>/dev/null | awk '{t+=$1} END {print t+0}'; }
+  ```
+
+  The **bracket form is load-bearing**: with a plain pattern, `pgrep -f`
+  matches the counter's own `bash -c` argv and reports stragglers on a
+  freshly-reaped node, so every trial is discarded as dirty. Abort the
+  job if `count` is non-zero right after a reap — a gate that always
+  trips is worse than no gate.
+- **Zero iterations is two different outcomes.** A launch failure (dies
+  in seconds) and a hang before the first iteration (runs the whole
+  budget) both produce no `iter=` line. Scoring them alike turns a real
+  hang into "NO-PROGRESS" and hides it. Discriminate on **elapsed time**
+  against the budget, not on the iteration count alone.
+- **A cache key includes the run config.** `--training.steps` feeds
+  torchtitan's blendcorpus index hash, so an index warmed at 2 steps does
+  not serve a 240-step run and 24 ranks then race to build the missing
+  one — `FileNotFoundError` on a file that exists moments later. Warm the
+  cache with the **exact** config the trials use, once, before measuring.
+- **`date -d` is GNU-only.** It fails silently on macOS/BSD, so a
+  `last_epoch=$(date -d "$ts" +%s 2>/dev/null || echo "$now")` fallback
+  makes quiet-time zero and the STALLED branch unreachable — every hang
+  reads as "still running". Try `date -j -f "%Y-%m-%d %H:%M:%S"` as well
+  and emit `UNKNOWN-TIME` if both fail, rather than defaulting.
+- **Test the classifier against recorded logs before trusting a run.**
+  Feed it one known-hung and one known-completed log and check it says
+  so. Six harness defects in a single measurement campaign each produced
+  plausible output; three nearly became reported findings.
 
 ## Gotchas that produce silently wrong results
 
@@ -342,10 +425,30 @@ Rules that come from real misreadings, not style preference:
   255 means *connection*, not job failure — re-check `qstat`/`squeue`
   before reporting anything.
 
-## Known open issue
+## Known open issues
 
 **#239** — LoRA + FSDP2 deadlocks in the first backward on Perlmutter
 (A100/NCCL, torch 2.13). Boundary is exact: `--lora-rank 17` hangs,
 `18` trains. **Workaround: `--lora-rank 18` or higher.** Six hypotheses
 refuted so far; see `docs/guides/lora-fsdp-deadlock.md` before
 proposing a seventh.
+
+**#252** — FSDP + TP>1 hangs nondeterministically on XPU
+(Aurora/Sunspot, oneAPI 2026.1.0). `--tp 1` is clean and emits zero CCL
+warnings; tp=2 and tp=4 hang at a different point every run (observed:
+0, 3, 17, 77, 120, 135, and once a clean 240/240 on the same machine and
+commit). No error, no watchdog, full speed then a dead stop. `py-spy`
+shows ranks blocked in **different** collectives — 8 in `all_gather`,
+16 in `reduce_scatter` — i.e. a collective mismatch, not a crash.
+
+Six hypotheses are refuted on the issue; read them before proposing a
+seventh. Three died to defects in the *measurement*, not the system.
+Two framing traps worth inheriting:
+
+- The premise "it works in torchtitan, not ezpz" was never established.
+  The torchtitan reference ran **5 steps**; ezpz has completed **240** on
+  the same machine. At a ~50% failure rate over 240 steps, a 5-step run
+  essentially never catches it.
+- Because the failure is probabilistic, **single-run comparisons cannot
+  separate two programs**. Measure a rate over repeated alternating
+  trials and state the interpretation before looking at the data.
