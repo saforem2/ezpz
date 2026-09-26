@@ -9,6 +9,24 @@ permissions:
   contents: write
   pull-requests: read
 
+# Serialize releases. Each merge to main triggers this workflow, which bumps
+# the version, commits, tags, and pushes. Merging several PRs back to back
+# runs them in parallel and the losers die with
+#   ! [rejected] HEAD -> main (fetch first)
+# after already creating a local release commit and tag.
+#
+# Observed 2026-09-26 merging #248-#251: two of the four release runs failed
+# exactly that way. The release still landed correctly -- the last run to
+# reach the push saw every merge commit, so v0.27.6's notes covered all four
+# PRs -- but that was luck. Had an EARLY run won the race, the later merges
+# would have shipped no release at all.
+#
+# cancel-in-progress is false on purpose: cancelling would abandon a release
+# midway between tag and push. Queue them instead.
+concurrency:
+  group: release-on-merge
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
