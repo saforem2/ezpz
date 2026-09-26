@@ -2084,6 +2084,24 @@ def _setup_ddp(
             init_kwargs["device_id"] = resolved_device
         torch.distributed.init_process_group(**init_kwargs)
 
+    # Install the xccl split_group workaround now that a default PG exists.
+    #
+    # `_xccl_split_workaround` below guards mesh CREATION (init_device_mesh,
+    # _flatten), but mesh INDEXING -- `device_mesh["tp"]`,
+    # `device_mesh["dp_replicate", "dp_shard"]` -- lazily builds process
+    # groups too, outside those guards. That is where FSDP+TP>1 broke on XPU
+    # (#252). Patching DeviceMesh._init_one_process_group covers every path.
+    #
+    # No-op on CUDA/CPU; idempotent.
+    try:
+        from ezpz.xccl_split_group import (
+            maybe_install_xccl_split_group_workaround,
+        )
+
+        maybe_install_xccl_split_group_workaround()
+    except Exception as exc:  # pragma: no cover - never block setup
+        logger.debug("xccl split_group workaround not installed: %s", exc)
+
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
