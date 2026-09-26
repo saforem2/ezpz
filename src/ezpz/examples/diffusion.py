@@ -652,7 +652,17 @@ def load_hf_texts(
         raise ValueError(
             f"text_column '{text_column}' not in dataset columns {dataset.column_names}"
         )
-    texts = [str(row[text_column]) for row in dataset.select(range(limit))]
+    # `--hf-limit 0` is DOCUMENTED as "no limit (use the full dataset)", but
+    # `range(0)` is empty -- so the default selected nothing and every run
+    # raised "No text rows found" on a dataset that loaded fine. Measured on
+    # Aurora: stanfordnlp/imdb yields 25000 rows with a `text` column, and
+    # `ezpz benchmark` (which passes no --hf-limit) failed here in 14s.
+    #
+    # ezpz.data.hf.get_hf_text_dataset already handles `limit <= 0` this way;
+    # keep the two consistent rather than inventing a third convention.
+    total = len(dataset)
+    n = total if limit <= 0 else min(limit, total)
+    texts = [str(row[text_column]) for row in dataset.select(range(n))]
     if not texts:
         raise ValueError("No text rows found from HF dataset.")
     return texts
