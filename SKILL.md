@@ -32,6 +32,33 @@ uv pip install -e .   # editable install
 export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 
+## Prefer `ezpz submit` over hand-writing a batch script
+
+`ezpz submit` generates the scheduler script for you — PBS or SLURM,
+detected automatically — and **wraps the command in `ezpz launch` by
+default**, so the CPU-binding mistake below cannot happen:
+
+```bash
+ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
+    -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
+
+# Perlmutter (SLURM) needs the GPU directives:
+ezpz submit -N 2 -q debug -A m4388_g -C gpu \
+    --gpus-per-node 4 --ntasks-per-node 4 \
+    -- python3 -m ezpz.examples.fsdp_tp --tp 2
+
+ezpz submit --dry-run ...       # print the script, submit nothing
+ezpz submit --no-strict ...     # omit `set -e` for multi-arm scripts
+ezpz submit job.sh -N 4         # or submit an existing script
+```
+
+`--dry-run` first is worth the two seconds: it prints exactly what would
+be submitted.
+
+The rest of this section is for when you genuinely need a hand-written
+script (multi-arm experiment harnesses, custom staging). Everything in
+it is what `ezpz submit` already does correctly.
+
 ## Inside a batch script, three things change
 
 ### 1. Compute nodes have no outbound internet

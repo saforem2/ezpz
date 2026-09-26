@@ -47,6 +47,29 @@ import click
     "--launch/--no-launch", default=True,
     help="Wrap the command with 'ezpz launch' (default: on).",
 )
+@click.option(
+    "--gpus-per-node", type=int, default=None,
+    help=(
+        "SLURM --gpus-per-node (ignored for PBS). Required on Perlmutter: "
+        "without it a GPU job is allocated none."
+    ),
+)
+@click.option(
+    "--ntasks-per-node", type=int, default=None,
+    help="SLURM --ntasks-per-node (ignored for PBS).",
+)
+@click.option(
+    "-C", "--constraint", default=None,
+    help="SLURM --constraint, e.g. 'gpu' on Perlmutter (ignored for PBS).",
+)
+@click.option(
+    "--strict/--no-strict", default=True,
+    help=(
+        "Emit 'set -eo pipefail' (default: on). Use --no-strict for "
+        "multi-arm experiment scripts where one arm timing out must not "
+        "abort the rest. 'set -u' is never emitted -- it breaks Lmod."
+    ),
+)
 def submit_cmd(
     args: tuple[str, ...],
     nodes: int,
@@ -59,6 +82,10 @@ def submit_cmd(
     env_setup: str | None,
     dry_run: bool,
     launch: bool,
+    gpus_per_node: int | None,
+    ntasks_per_node: int | None,
+    constraint: str | None,
+    strict: bool,
 ) -> None:
     """Submit a job to the active scheduler (PBS/SLURM).
 
@@ -110,4 +137,8 @@ def submit_cmd(
         wrap_with_launch=launch,
         dry_run=dry_run,
         env_setup=resolved_env,
+        gpus_per_node=gpus_per_node,
+        ntasks_per_node=ntasks_per_node,
+        constraint=constraint,
+        strict=strict,
     )
