@@ -221,6 +221,62 @@ it fails with `Failed to initialize any NET plugin`.
     rather than assuming; that mismatched pairing (aws-ofi-nccl 1.6.0
     against NCCL 2.29.7) is the leading suspect in ezpz #239.
 
+## `CCL_OP_SYNC=1` on XPU: required for FSDP2 + TP>1
+
+On oneCCL 2022.x (Aurora/Sunspot `frameworks/2026.1.0`), a 2D
+`(dp_shard, tp)` mesh **hangs without `CCL_OP_SYNC=1`**. Measured on Sunspot,
+24 ranks / 2 nodes, arms alternating within single allocations:
+
+| setting | completions |
+|---|---|
+| `CCL_OP_SYNC=1` | **20/20** |
+| unset (oneCCL default) | **2/20** |
+
+~90% of runs hang with `SequenceParallel`, ~8% without it. The hang has **no
+error, no traceback and no watchdog** — ranks stay alive inside a collective
+that never returns, stopping at a different iteration each run (0, 2, 13, 54,
+93, 117, 171 all observed).
+
+**ezpz does not set this for you, by design.** `ezpz_load_modules_*` and
+`ezpz_setup_xpu` preserve the caller's exact set/unset state
+(`tests/test_ccl_op_sync_default.sh` enforces it), because collective
+semantics belong to the application — matched TorchTitan controls found async
+~6x faster there. So set it yourself for FSDP2 + TP>1:
+
+```bash
+export CCL_OP_SYNC=1
+```
+
+`0` is oneCCL's own default, so `export CCL_OP_SYNC=0` is not a no-op — it is
+the hanging configuration. oneCCL confirms the change in its log:
+
+```
+|CCL_WARN| value of CCL_OP_SYNC changed to be 1 (default:0)
+```
+
+**Cost: ~11%** (240 steps: async 83-88 s, sync 92 s on every run —
+synchronous completion also makes runtime near-deterministic). Note this is
+the *opposite* trade from the TorchTitan measurement above: async is faster
+when it works, and on oneCCL 2022.x with FSDP2+TP it frequently does not.
+
+Five other oneCCL knobs were tested against a live control and **none** help:
+`CCL_ATL_SYNC_COLL=1`, `CCL_ZE_DEPS_SYNC=1`, `CCL_ZE_SERIALIZE=1`,
+`CCL_WORKER_WAIT=0`, `CCL_STRICT_ORDER=1`, `CCL_SYCL_OUTPUT_EVENT=0`.
+
+!!! warning "The loudest message in the log is a red herring"
+
+    Every hung run is full of
+
+    ```
+    |CCL_WARN| explicit dependencies are not supported for group calls: reduce_scatter
+    ```
+
+    It is not the mechanism. `CCL_ZE_DEPS_SYNC=1` — the knob that warning
+    names — gives **0/8 completions**, no better than control. The warning
+    also appears at the same rate (~24 per iteration) in runs that complete.
+
+Background and full evidence: ezpz #252.
+
 ## Debugging a hang
 
 **Lower `TORCH_DDP_TIMEOUT`.** It defaults to 3600 s, so a deadlock
