@@ -251,3 +251,128 @@ class TestSubmit:
         )
         output = capsys.readouterr().out
         assert "#PBS -N ezpz.examples.fsdp" in output
+
+
+class TestSlurmGpuDirectives:
+    """SLURM GPU allocation flags.
+
+    Without `--gpus-per-node` a Perlmutter GPU job is allocated no GPUs,
+    so a generated script was unusable there and had to be hand-edited --
+    which defeats the point of `ezpz submit`. `--constraint gpu` selects
+    the GPU node type, and `--ntasks-per-node` pairs ranks to GPUs.
+    """
+
+    def test_gpus_per_node_emitted(self):
+        out = generate_slurm_script("echo hi", gpus_per_node=4)
+        assert "#SBATCH --gpus-per-node=4" in out
+
+    def test_ntasks_per_node_emitted(self):
+        out = generate_slurm_script("echo hi", ntasks_per_node=4)
+        assert "#SBATCH --ntasks-per-node=4" in out
+
+    def test_constraint_emitted(self):
+        out = generate_slurm_script("echo hi", constraint="gpu")
+        assert "#SBATCH --constraint=gpu" in out
+
+    def test_omitted_when_unset(self):
+        """A CPU job must not get GPU directives it never asked for."""
+        out = generate_slurm_script("echo hi")
+        assert "--gpus-per-node" not in out
+        assert "--ntasks-per-node" not in out
+        assert "--constraint" not in out
+
+    def test_perlmutter_shape(self):
+        """The exact combination a Perlmutter GPU job needs."""
+        out = generate_slurm_script(
+            "python3 -m ezpz.examples.fsdp_tp --tp 2",
+            nodes=2, constraint="gpu", queue="debug",
+            account="m4388_g", gpus_per_node=4, ntasks_per_node=4,
+        )
+        for want in (
+            "#SBATCH --nodes=2",
+            "#SBATCH --constraint=gpu",
+            "#SBATCH --gpus-per-node=4",
+            "#SBATCH --ntasks-per-node=4",
+            "#SBATCH --account=m4388_g",
+        ):
+            assert want in out, f"missing {want}"
+
+
+class TestStrictToggle:
+    """`set -e` is wrong for multi-arm experiment scripts.
+
+    An arm that times out (rc=124) or whose teardown returns non-zero
+    would abort the whole job under `set -e`, losing every later arm.
+    `set -u` is never emitted at all: SKILL.md records that Lmod is not
+    `set -u`-clean and sourcing /etc/profile under it kills the script
+    before it prints a line.
+    """
+
+    def test_strict_is_default(self):
+        assert "set -eo pipefail" in generate_pbs_script("echo hi")
+        assert "set -eo pipefail" in generate_slurm_script("echo hi")
+
+    def test_no_strict_drops_errexit_keeps_pipefail(self):
+        for gen in (generate_pbs_script, generate_slurm_script):
+            out = gen("echo hi", strict=False)
+            assert "set -o pipefail" in out
+            assert "set -eo pipefail" not in out
+
+    def test_never_emits_nounset(self):
+        for gen in (generate_pbs_script, generate_slurm_script):
+            for strict in (True, False):
+                assert "set -u" not in gen("echo hi", strict=strict)
+                assert "-euo" not in gen("echo hi", strict=strict)
+
+
+class TestSubmitThreadsNewOptions:
+    """The new knobs must reach the generated script through `submit()`."""
+
+    def test_slurm_gpu_flags_reach_script(self, capsys):
+        submit(
+            command=["python3", "-m", "ezpz.examples.test"],
+            scheduler="SLURM", dry_run=True,
+            gpus_per_node=4, ntasks_per_node=4, constraint="gpu",
+        )
+        out = capsys.readouterr().out
+        assert "#SBATCH --gpus-per-node=4" in out
+        assert "#SBATCH --ntasks-per-node=4" in out
+        assert "#SBATCH --constraint=gpu" in out
+
+    def test_strict_false_reaches_script(self, capsys):
+        submit(
+            command=["echo", "hi"], scheduler="PBS",
+            dry_run=True, strict=False,
+        )
+        out = capsys.readouterr().out
+        assert "set -o pipefail" in out
+        assert "set -eo pipefail" not in out
+
+    def test_gpu_flags_ignored_for_pbs(self, capsys):
+        """PBS has no --gpus-per-node; passing it must not corrupt output."""
+        submit(
+            command=["echo", "hi"], scheduler="PBS",
+            dry_run=True, gpus_per_node=4, constraint="gpu",
+        )
+        out = capsys.readouterr().out
+        assert "gpus-per-node" not in out
+        assert "constraint" not in out
+
+
+class TestLaunchIsDefault:
+    """`ezpz launch` computes --cpu-bind; bare mpiexec supplies none.
+
+    A hand-rolled `mpiexec -n 24 -ppn 12` ran an entire measurement
+    campaign with no CPU binding, which is a real confound for a
+    timing-sensitive hang. The generated script must default to
+    `ezpz launch` so that mistake is not reachable by default.
+    """
+
+    def test_launch_wraps_by_default(self):
+        for gen in (generate_pbs_script, generate_slurm_script):
+            assert "ezpz launch echo hi" in gen("echo hi")
+
+    def test_no_launch_is_opt_in(self):
+        for gen in (generate_pbs_script, generate_slurm_script):
+            out = gen("echo hi", wrap_with_launch=False)
+            assert "ezpz launch" not in out
