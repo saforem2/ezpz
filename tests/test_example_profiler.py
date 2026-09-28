@@ -132,3 +132,16 @@ def test_train_runs_without_a_profiler(tmp_path, monkeypatch):
     model = torch.nn.Linear(8, 8).to(ezpz.get_torch_device_type())
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
     mod.train(model, optimizer, args, tmp_path)  # must not raise
+
+
+def test_rank_zero_only_defaults_to_false():
+    """Every rank profiles unless ``--rank-zero-only`` is passed.
+
+    The docs originally said the opposite -- that profiling was rank-0
+    by default and the flag opted *out*. A Polaris run (job 7665880, 8
+    ranks) wrote 24 traces across rank0..rank7, proving the default is
+    all-ranks. On Aurora at 12 ranks/node the difference is gigabytes,
+    so pin the direction of the flag.
+    """
+    assert parse_args([]).rank_zero_only is False
+    assert parse_args(["--rank-zero-only"]).rank_zero_only is True

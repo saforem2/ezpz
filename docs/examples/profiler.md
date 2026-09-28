@@ -77,9 +77,11 @@ wait+warmup+active (default 1+2+3=6) steps before the first trace;
   `--pytorch-profiler-wait 50 --pytorch-profiler-active 5
   --pytorch-profiler-repeat 1`.
 
-- **Profile every rank** — profiling is rank-0-only by default. Drop
-  `--rank-zero-only` to trace all ranks, but note that each rank writes
-  its own trace: at 24 ranks that is easily gigabytes.
+- **Restrict to one rank** — **every rank profiles by default**
+  (`rank_zero_only=False`). Each writes its own trace: an 8-rank Polaris
+  run produced 24 files, and 12 ranks/node on Aurora scales that up
+  fast. Pass `--rank-zero-only` to profile rank 0 alone, which is
+  usually what you want.
 
 - **Trim trace size** — `--no-with-stack` removes Python stacks (the
   biggest contributor), `--no-record-shapes` drops tensor shapes,

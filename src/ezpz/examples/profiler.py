@@ -33,9 +33,11 @@ everywhere — so the same command profiles on every system.
 called. Omit it and the profiler stays in ``wait`` forever and writes no
 trace at all — a silent no-op rather than an error.
 
-Only rank 0 profiles unless ``--rank-zero-only`` is not passed; see
-:func:`ezpz.profile.get_profiling_context`. On a many-rank job that
-matters: every rank writing a full trace can produce gigabytes.
+**Every rank profiles by default** (``rank_zero_only`` defaults to
+``False``); pass ``--rank-zero-only`` to restrict to rank 0. On a
+many-rank job that matters: an 8-rank Polaris run wrote 24 traces, and
+Aurora runs 12 ranks per node. See
+:func:`ezpz.profile.get_profiling_context`.
 """
 
 from __future__ import annotations
