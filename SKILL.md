@@ -344,9 +344,16 @@ Rules that come from real misreadings, not style preference:
   file, save `rc=$?`, *then* tail:
 
   ```bash
-  timeout 900 python3 -c "from ezpz.cli import main; main()" benchmark --model=small \
-      >"${W}/bench.log" 2>&1
-  rc=$?                      # BEFORE the pipe, not after
+  # `if`, not a bare call: under `set -e` a nonzero exit kills the shell
+  # BEFORE `rc=$?` runs -- losing the status in exactly the failing case
+  # you wanted to diagnose. Verified: `set -e; false; rc=$?` never
+  # reaches the assignment.
+  if timeout 900 python3 -c "from ezpz.cli import main; main()" \
+          benchmark --model=small >"${W}/bench.log" 2>&1; then
+      rc=0
+  else
+      rc=$?                  # captured BEFORE any pipe, and survives set -e
+  fi
   tail -70 "${W}/bench.log"
   echo "benchmark exit=${rc}"
   ```
@@ -370,6 +377,32 @@ Rules that come from real misreadings, not style preference:
 
   `python3 -m ezpz.examples.<name>` *is* fine — those modules do have a
   `__main__` guard. It is only the CLI group that needs this.
+
+  **`ezpz benchmark` additionally needs an `ezpz` on `PATH`.** It spawns
+  one child per example via `ezpz launch` (`run_all.py`), so entering the
+  CLI is not sufficient — without the console script the first example
+  dies with `FileNotFoundError: [Errno 2] No such file or directory:
+  'ezpz'` (Perlmutter `pytorch/2.13.0`, job `59015143`). Polaris hides
+  this: its conda env has ezpz installed. On an uninstalled checkout,
+  either `pip install -e .` (not possible against a read-only module) or
+  drop a shim ahead of it on `PATH`:
+
+  ```bash
+  if ! command -v ezpz >/dev/null 2>&1; then
+      mkdir -p "${HOME}/.ezpz-shim"
+      # QUOTED heredoc ('SHIM', not SHIM): an unquoted one -- or printf --
+      # expands "$@" while writing the file, baking in the *caller's* args
+      # and giving `Error: No such command '$@'`.
+      cat >"${HOME}/.ezpz-shim/ezpz" <<'SHIM'
+  #!/usr/bin/env bash
+  exec python3 -c "from ezpz.cli import main; main()" "$@"
+  SHIM
+      chmod +x "${HOME}/.ezpz-shim/ezpz"
+      export PATH="${HOME}/.ezpz-shim:${PATH}"
+  fi
+  ```
+
+  ezpz ≥ the fix for #262 resolves the launcher itself and needs no shim.
 
 - **Never classify a run by exit code.** A cell can exit `rc=1` having
   trained all 20 iterations (teardown failure), and hanging cells exit
