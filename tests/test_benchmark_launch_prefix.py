@@ -35,9 +35,11 @@ def test_falls_back_to_interpreter_when_not_installed(monkeypatch):
         "ezpz.examples.run_all.shutil.which", lambda _name: None
     )
     prefix = _ezpz_launch_prefix()
-    assert prefix[0] == sys.executable
+    # Pin the whole shape, not just the interpreter: the earlier version of
+    # this test ended in a tautology that passed for any fallback at all.
+    assert prefix[:2] == [sys.executable, "-c"]
     assert prefix[-1] == "launch"
-    assert "ezpz" not in prefix[0:1] or prefix[0] == sys.executable
+    assert "from ezpz.cli import main" in prefix[2]
 
 
 def test_fallback_never_uses_dash_m_on_the_cli_package(monkeypatch):
