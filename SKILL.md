@@ -337,6 +337,73 @@ Rules that come from real misreadings, not style preference:
   with `FileNotFoundError: Tokenizer path './assets/hf/gemma-7b'`, and
   the "reference" being reproduced had also run only 5 steps against the
   240 it was being compared to.
+- **Capture `$?` before any pipe.** `cmd | tail -60` then
+  `echo "exit=$?"` reports *tail's* status, so a command that never
+  started records `exit=0`. This turned a benchmark that died on its
+  first line into a clean pass (Polaris job 7665390). Redirect to a
+  file, save `rc=$?`, *then* tail:
+
+  ```bash
+  # `if`, not a bare call: under `set -e` a nonzero exit kills the shell
+  # BEFORE `rc=$?` runs -- losing the status in exactly the failing case
+  # you wanted to diagnose. Verified: `set -e; false; rc=$?` never
+  # reaches the assignment.
+  if timeout 900 python3 -c "from ezpz.cli import main; main()" \
+          benchmark --model=small >"${W}/bench.log" 2>&1; then
+      rc=0
+  else
+      rc=$?                  # captured BEFORE any pipe, and survives set -e
+  fi
+  tail -70 "${W}/bench.log"
+  echo "benchmark exit=${rc}"
+  ```
+
+  `set -o pipefail` also fixes this (`false | tail -1` then reports 1,
+  not 0) and the preamble above already sets it — the Polaris script
+  that got bitten simply did not. Saving `rc=$?` off an unpiped command
+  is the belt-and-braces version: it survives someone later dropping
+  `pipefail`, and it keeps the log readable via `tail` regardless.
+
+- **`python3 -m ezpz.cli` does not work.** `ezpz.cli` is a package with
+  no `__main__`, so `-m` fails with *"'ezpz.cli' is a package and cannot
+  be directly executed"*. The only entry point is the `ezpz` console
+  script from `[project.scripts]`, which a bare `PYTHONPATH` clone
+  (no `pip install`) does not provide. From an uninstalled checkout call
+  the group directly:
+
+  ```bash
+  python3 -c "from ezpz.cli import main; main()" benchmark --model=small
+  ```
+
+  `python3 -m ezpz.examples.<name>` *is* fine — those modules do have a
+  `__main__` guard. It is only the CLI group that needs this.
+
+  **`ezpz benchmark` additionally needs an `ezpz` on `PATH`.** It spawns
+  one child per example via `ezpz launch` (`run_all.py`), so entering the
+  CLI is not sufficient — without the console script the first example
+  dies with `FileNotFoundError: [Errno 2] No such file or directory:
+  'ezpz'` (Perlmutter `pytorch/2.13.0`, job `59015143`). Polaris hides
+  this: its conda env has ezpz installed. On an uninstalled checkout,
+  either `pip install -e .` (not possible against a read-only module) or
+  drop a shim ahead of it on `PATH`:
+
+  ```bash
+  if ! command -v ezpz >/dev/null 2>&1; then
+      mkdir -p "${HOME}/.ezpz-shim"
+      # QUOTED heredoc ('SHIM', not SHIM): an unquoted one -- or printf --
+      # expands "$@" while writing the file, baking in the *caller's* args
+      # and giving `Error: No such command '$@'`.
+      cat >"${HOME}/.ezpz-shim/ezpz" <<'SHIM'
+  #!/usr/bin/env bash
+  exec python3 -c "from ezpz.cli import main; main()" "$@"
+  SHIM
+      chmod +x "${HOME}/.ezpz-shim/ezpz"
+      export PATH="${HOME}/.ezpz-shim:${PATH}"
+  fi
+  ```
+
+  ezpz ≥ the fix for #262 resolves the launcher itself and needs no shim.
+
 - **Never classify a run by exit code.** A cell can exit `rc=1` having
   trained all 20 iterations (teardown failure), and hanging cells exit
   124 *or* 134. Classify on evidence: a watchdog line means HANG,
