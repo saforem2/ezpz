@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -72,7 +73,8 @@ EXAMPLES: list[dict[str, Any]] = [
         "args": [
             "--dataset_name=eliplutchok/fineweb-small-sample",
             "--streaming",
-            "--model_name_or_path", "meta-llama/Llama-3.2-1B",
+            "--model_name_or_path",
+            "meta-llama/Llama-3.2-1B",
             "--bf16=true",
             "--do_train=true",
             "--do_eval=true",
@@ -96,7 +98,8 @@ EXAMPLES: list[dict[str, Any]] = [
         "args": [
             "--dataset_name=eliplutchok/fineweb-small-sample",
             "--streaming",
-            "--model_name_or_path", "meta-llama/Llama-3.2-1B",
+            "--model_name_or_path",
+            "meta-llama/Llama-3.2-1B",
             "--bf16=true",
             "--do_train=true",
             "--do_eval=true",
@@ -201,7 +204,9 @@ def capture_env(bench_dir: Path) -> dict[str, Any]:
     }
 
     env_path = bench_dir / "env.json"
-    env_path.write_text(json.dumps(env_info, indent=2) + "\n", encoding="utf-8")
+    env_path.write_text(
+        json.dumps(env_info, indent=2) + "\n", encoding="utf-8"
+    )
     print(f"Environment info written to {env_path}")
     return env_info
 
@@ -218,9 +223,44 @@ def build_command(
         for a in example["args"]
     ]
     return [
-        "ezpz", "launch",
-        "python3", "-m", example["module"],
+        *_ezpz_launch_prefix(),
+        "python3",
+        "-m",
+        example["module"],
         *formatted_args,
+    ]
+
+
+def _ezpz_launch_prefix() -> list[str]:
+    """Return the argv prefix that invokes ``ezpz launch``.
+
+    Prefers the ``ezpz`` console script when it is on ``PATH``, so an
+    installed environment keeps using its own entry point.
+
+    Falls back to ``sys.executable -c "from ezpz.cli import main; main()"``
+    when it is not. That case is the norm on HPC systems: the site module
+    (NERSC ``pytorch/2.13.0``, for one) is read-only, so ezpz runs from a
+    checkout on ``PYTHONPATH`` with no console script installed anywhere.
+    Hardcoding ``"ezpz"`` made ``ezpz benchmark`` die there with
+    ``FileNotFoundError: [Errno 2] No such file or directory: 'ezpz'``
+    before a single example ran.
+
+    ``python3 -m ezpz.cli`` is NOT an option: ``ezpz.cli`` is a package
+    with no ``__main__``, so ``-m`` raises *"'ezpz.cli' is a package and
+    cannot be directly executed"*.
+
+    Returns:
+        argv tokens ending in ``"launch"``, ready to be extended with the
+        command to launch.
+    """
+    exe = shutil.which("ezpz")
+    if exe is not None:
+        return [exe, "launch"]
+    return [
+        sys.executable,
+        "-c",
+        "from ezpz.cli import main; main()",
+        "launch",
     ]
 
 
@@ -314,7 +354,9 @@ def run_example(
     tracker_lines: list[str] = []
     # Track progress per phase (train/eval) independently, each with
     # its own doubling interval so phase switches don't confuse the count.
-    phase_state: dict[str, dict[str, int]] = {}  # phase -> {count, last_print, interval}
+    phase_state: dict[
+        str, dict[str, int]
+    ] = {}  # phase -> {count, last_print, interval}
 
     with logfile.open("w") as log_fh:
         with subprocess.Popen(
@@ -340,7 +382,9 @@ def run_example(
                     phase = metrics.get("_phase", "")
                     if phase not in phase_state:
                         phase_state[phase] = {
-                            "count": 0, "last_print": 0, "interval": 1,
+                            "count": 0,
+                            "last_print": 0,
+                            "interval": 1,
                         }
                     ps = phase_state[phase]
                     ps["count"] += 1
@@ -375,9 +419,21 @@ def run_example(
             parts = [
                 f"{k}={v}"
                 for k, v in last_metrics.items()
-                if k in ("iter", "step", "epoch", "loss", "train_loss",
-                         "test_loss", "accuracy", "acc", "test_acc",
-                         "dtf", "dtb", "perplexity")
+                if k
+                in (
+                    "iter",
+                    "step",
+                    "epoch",
+                    "loss",
+                    "train_loss",
+                    "test_loss",
+                    "accuracy",
+                    "acc",
+                    "test_acc",
+                    "dtf",
+                    "dtb",
+                    "perplexity",
+                )
                 and not k.startswith("_")
             ]
             if parts:
@@ -402,7 +458,8 @@ def main(argv: list[str] | None = None) -> None:
         formatter_class=ColorFormatter,
     )
     parser.add_argument(
-        "--run", "--examples",
+        "--run",
+        "--examples",
         dest="examples",
         default=None,
         metavar="NAME",
@@ -458,7 +515,9 @@ def main(argv: list[str] | None = None) -> None:
     results: list[dict[str, Any]] = []
     suite_t0 = time.perf_counter()
 
-    print(f"Running {total} example(s): {', '.join(e['name'] for e in selected)}")
+    print(
+        f"Running {total} example(s): {', '.join(e['name'] for e in selected)}"
+    )
 
     for i, example in enumerate(selected, 1):
         cmd = build_command(
@@ -498,7 +557,9 @@ def main(argv: list[str] | None = None) -> None:
     print("\u2500" * 64)
     for r in results:
         icon = "\u2713" if r["exit_code"] == 0 else "\u2717"
-        print(f"  {icon} {r['name']:<12s} {_fmt_duration(r['wall_seconds']):>8s}")
+        print(
+            f"  {icon} {r['name']:<12s} {_fmt_duration(r['wall_seconds']):>8s}"
+        )
     print("\u2550" * 64)
 
     # ── Generate report ──────────────────────────────────────────────────
