@@ -924,8 +924,27 @@ ezpz_setup_conda_sunspot() {
 	###########################
 	# Setup conda on Sunspot
 	###########################
+	# Save CCL_OP_SYNC across `module load`: the modulefile is outside
+	# this repo's control and can set or unset it, silently replacing an
+	# explicit caller choice. (The ezpz_load_modules_* helpers get this
+	# from _ezpz_load_xpu_modules_preserving_python; these call `module`
+	# directly, so they must do it themselves.)
+	local _ccl_set=0 _ccl_val=
+	if [[ -n "${CCL_OP_SYNC+x}" ]]; then
+		_ccl_set=1
+		_ccl_val="${CCL_OP_SYNC}"
+	fi
 	if [[ -z "${CONDA_PREFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
 		module load frameworks
+	fi
+	if [[ "${_ccl_set}" -eq 1 ]]; then
+		export CCL_OP_SYNC="${_ccl_val}"
+	else
+		# Recommended path (ezpz_setup_env -> ezpz_setup_python_alcf ->
+		# here) never reaches ezpz_load_modules_*/ezpz_setup_xpu, so the
+		# correctness default has to be applied here too or the standard
+		# flow stays in the configuration that hangs ~90% of FSDP2+TP runs.
+		export CCL_OP_SYNC=1
 	fi
 }
 
@@ -933,6 +952,12 @@ ezpz_setup_conda_aurora() {
 	###########################
 	# Setup conda on Aurora
 	###########################
+	# Save CCL_OP_SYNC across `module load` -- see ezpz_setup_conda_sunspot.
+	local _ccl_set=0 _ccl_val=
+	if [[ -n "${CCL_OP_SYNC+x}" ]]; then
+		_ccl_set=1
+		_ccl_val="${CCL_OP_SYNC}"
+	fi
 	if [[ -z "${CONDA_PREFIX:-}" ]]; then
 		# NOTE: Updated 2024-10-08 [@saforem2]
 		module load frameworks
@@ -942,6 +967,11 @@ ezpz_setup_conda_aurora() {
 	fi
 	log_message INFO "Setting FI_MR_CACHE_MONITOR=userfaultfd"
 	export FI_MR_CACHE_MONITOR="${FI_MR_CACHE_MONITOR:-userfaultfd}"
+	if [[ "${_ccl_set}" -eq 1 ]]; then
+		export CCL_OP_SYNC="${_ccl_val}"
+	else
+		export CCL_OP_SYNC=1
+	fi
 }
 
 ezpz_setup_conda_sirius() {

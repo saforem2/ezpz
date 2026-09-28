@@ -49,8 +49,21 @@ extract_function _ezpz_load_xpu_modules_preserving_python >>"${FN_FILE}"
 extract_function ezpz_load_modules_aurora >>"${FN_FILE}"
 extract_function ezpz_load_modules_sunspot >>"${FN_FILE}"
 extract_function ezpz_setup_xpu >>"${FN_FILE}"
+extract_function ezpz_setup_conda_aurora >>"${FN_FILE}"
+extract_function ezpz_setup_conda_sunspot >>"${FN_FILE}"
 
-SETUP_FNS=(ezpz_load_modules_aurora ezpz_load_modules_sunspot ezpz_setup_xpu)
+# The conda helpers are on the RECOMMENDED path
+# (ezpz_setup_env -> ezpz_setup_python_alcf -> ezpz_setup_conda_*), which
+# reaches none of the ezpz_load_modules_*/ezpz_setup_xpu helpers. Covering
+# only the latter left the standard flow async -- i.e. hanging. Review
+# caught this on #258; the suite now pins every entry point.
+SETUP_FNS=(
+    ezpz_load_modules_aurora
+    ezpz_load_modules_sunspot
+    ezpz_setup_xpu
+    ezpz_setup_conda_aurora
+    ezpz_setup_conda_sunspot
+)
 
 # What an unset CCL_OP_SYNC becomes after setup: the synchronous default.
 unset_default() {
