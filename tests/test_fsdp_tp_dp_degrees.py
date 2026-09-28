@@ -94,6 +94,20 @@ class TestResolveDpDegrees:
         ) == (1, 1)
 
 
+class TestTrainingArgParsing:
+    """Training-duration CLI flags parse correctly."""
+
+    def test_default_epochs_is_one(self):
+        """The default example completes one dataset pass."""
+        m = _import_fsdp_tp()
+        assert m.parse_args([]).epochs == 1
+
+    def test_epochs_can_be_overridden(self):
+        """Longer training remains available explicitly."""
+        m = _import_fsdp_tp()
+        assert m.parse_args(["--epochs", "5"]).epochs == 5
+
+
 class TestDpArgParsing:
     """The --dp-replicate / --dp-shard CLI flags parse correctly."""
 
