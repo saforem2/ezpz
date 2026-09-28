@@ -17,6 +17,11 @@ Guidance for AI coding assistants (and humans) working in this repo.
 - Use `source <(curl -LsSf https://ezpz.cool/utils.sh) && ezpz_setup_env` to
   setup the development environment.
 - `ezpz doctor` can be used to verify the functionality of the environment.
+- On a cluster, submit with `ezpz submit` and launch with `ezpz launch` —
+  never hand-rolled `qsub`/`sbatch` scripts or bare `mpiexec`. `ezpz launch`
+  computes the hostfile, rank counts and `--cpu-bind` map; bare `mpiexec`
+  supplies no CPU binding at all. `ezpz submit --dry-run` prints the
+  generated script without submitting. See `SKILL.md`.
 - `ezpz test` can be used as a distributed PyTorch smoke test to verify:
 
   1. `ezpz` installed correctly

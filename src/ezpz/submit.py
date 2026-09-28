@@ -81,6 +81,7 @@ def generate_pbs_script(
     working_dir: str | None = None,
     env_setup: str | None = None,
     wrap_with_launch: bool = True,
+    strict: bool = True,
 ) -> str:
     """Generate a PBS job script.
 
@@ -96,6 +97,12 @@ def generate_pbs_script(
         working_dir: Directory to ``cd`` into (defaults to cwd).
         env_setup: Shell commands for environment activation.
         wrap_with_launch: If ``True``, prefix *command* with ``ezpz launch``.
+        strict: When ``True`` (default) emit ``set -eo pipefail``. Pass
+            ``False`` for multi-arm experiment scripts where one arm
+            timing out must not abort the remaining arms. ``set -u`` is
+            never emitted: the Lmod module system is not ``set -u``-clean
+            and sourcing ``/etc/profile`` under it aborts the script
+            before a single line is printed (see SKILL.md).
 
     Returns:
         The complete job script as a string.
@@ -124,7 +131,7 @@ def generate_pbs_script(
         f"#PBS -q {queue}",
         f"#PBS -N {job_name}",
         "",
-        "set -eo pipefail",
+        "set -eo pipefail" if strict else "set -o pipefail",
         f"cd {shlex.quote(working_dir)}",
     ]
     if env_setup:
@@ -146,6 +153,10 @@ def generate_slurm_script(
     working_dir: str | None = None,
     env_setup: str | None = None,
     wrap_with_launch: bool = True,
+    gpus_per_node: int | None = None,
+    ntasks_per_node: int | None = None,
+    constraint: str | None = None,
+    strict: bool = True,
 ) -> str:
     """Generate a SLURM job script.
 
@@ -160,6 +171,18 @@ def generate_slurm_script(
         working_dir: Directory to ``cd`` into (defaults to cwd).
         env_setup: Shell commands for environment activation.
         wrap_with_launch: If ``True``, prefix *command* with ``ezpz launch``.
+        gpus_per_node: ``--gpus-per-node``. Required on Perlmutter: without
+            it a GPU job gets none allocated.
+        ntasks_per_node: ``--ntasks-per-node``. Sets ranks per node; pair
+            with *gpus_per_node* for one rank per GPU.
+        constraint: ``-C/--constraint`` (e.g. ``"gpu"`` on Perlmutter,
+            which selects the GPU partition's node type).
+        strict: When ``True`` (default) emit ``set -eo pipefail``. Pass
+            ``False`` for multi-arm experiment scripts where one arm
+            timing out must not abort the remaining arms. ``set -u`` is
+            never emitted: the Lmod module system is not ``set -u``-clean
+            and sourcing ``/etc/profile`` under it aborts the script
+            before a single line is printed (see SKILL.md).
 
     Returns:
         The complete job script as a string.
@@ -179,11 +202,19 @@ def generate_slurm_script(
     ]
     if account:
         lines.append(f"#SBATCH --account={account}")
+    if constraint:
+        lines.append(f"#SBATCH --constraint={constraint}")
     lines += [
         f"#SBATCH --partition={queue}",
         f"#SBATCH --job-name={job_name}",
+    ]
+    if gpus_per_node is not None:
+        lines.append(f"#SBATCH --gpus-per-node={gpus_per_node}")
+    if ntasks_per_node is not None:
+        lines.append(f"#SBATCH --ntasks-per-node={ntasks_per_node}")
+    lines += [
         "",
-        "set -eo pipefail",
+        "set -eo pipefail" if strict else "set -o pipefail",
         f"cd {shlex.quote(working_dir)}",
     ]
     if env_setup:
@@ -249,6 +280,10 @@ def submit(
     wrap_with_launch: bool = True,
     dry_run: bool = False,
     env_setup: str | None = None,
+    gpus_per_node: int | None = None,
+    ntasks_per_node: int | None = None,
+    constraint: str | None = None,
+    strict: bool = True,
 ) -> str | None:
     """Submit a job to the active scheduler.
 
@@ -268,6 +303,11 @@ def submit(
         scheduler: Override scheduler detection (``"PBS"`` or ``"SLURM"``).
         wrap_with_launch: Wrap *command* with ``ezpz launch``.
         dry_run: Print the script but do not submit.
+        gpus_per_node: SLURM ``--gpus-per-node`` (ignored for PBS).
+        ntasks_per_node: SLURM ``--ntasks-per-node`` (ignored for PBS).
+        constraint: SLURM ``--constraint`` (ignored for PBS).
+        strict: Emit ``set -eo pipefail``; ``False`` drops ``-e`` for
+            multi-arm experiment scripts.
 
     Returns:
         The job ID string, or ``None`` on failure / dry-run.
@@ -328,6 +368,7 @@ def submit(
             working_dir=working_dir,
             wrap_with_launch=wrap_with_launch,
             env_setup=env_setup,
+            strict=strict,
         )
     else:
         script_text = generate_slurm_script(
@@ -340,6 +381,10 @@ def submit(
             working_dir=working_dir,
             wrap_with_launch=wrap_with_launch,
             env_setup=env_setup,
+            gpus_per_node=gpus_per_node,
+            ntasks_per_node=ntasks_per_node,
+            constraint=constraint,
+            strict=strict,
         )
 
     # Print for transparency

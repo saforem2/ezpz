@@ -41,7 +41,33 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--job-name` | Job name (auto-derived from command if omitted) |
 | `--scheduler` | Force `PBS` or `SLURM` (auto-detected by default) |
 | `--dry-run` | Print the script without submitting |
-| `--launch` | Wrap the command with `ezpz launch` |
+| `--launch` / `--no-launch` | Wrap the command with `ezpz launch` (default: on) |
+| `--gpus-per-node` | SLURM `--gpus-per-node` (ignored for PBS) |
+| `--ntasks-per-node` | SLURM `--ntasks-per-node` (ignored for PBS) |
+| `-C`, `--constraint` | SLURM `--constraint`, e.g. `gpu` (ignored for PBS) |
+| `--strict` / `--no-strict` | Emit `set -eo pipefail` (default: on) |
+
+!!! warning "Perlmutter needs the GPU directives"
+
+    Without `--gpus-per-node`, a SLURM GPU job is allocated **no GPUs**
+    and fails at device init. Perlmutter also wants `-C gpu` to select
+    the GPU node type:
+
+    ```bash
+    ezpz submit -N 2 -q debug -A m4388_g -C gpu \
+        --gpus-per-node 4 --ntasks-per-node 4 \
+        -- python3 -m ezpz.examples.fsdp_tp --tp 2
+    ```
+
+!!! tip "`--no-strict` for multi-arm experiment scripts"
+
+    The generated script uses `set -eo pipefail`. In a script that runs
+    several arms in sequence, an arm that times out (`rc=124`) or whose
+    teardown returns non-zero would abort the job and lose every later
+    arm. `--no-strict` keeps `pipefail` and drops `-e`.
+
+    `set -u` is never emitted: Lmod is not `set -u`-clean, and sourcing
+    `/etc/profile` under it aborts the script before it prints a line.
 
 ## Examples
 
