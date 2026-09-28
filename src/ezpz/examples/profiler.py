@@ -164,10 +164,17 @@ def train(
 
             # Advance the profiler schedule. Without this the schedule
             # never leaves `wait` and no trace is ever emitted.
+            #
+            # The `is not None` check is load-bearing beyond the
+            # unprofiled case: PyInstrumentProfiler.__enter__ returns
+            # None (it has no step()), so --pyinstrument-profiler lands
+            # here too and must skip the call rather than AttributeError.
             if prof is not None:
                 prof.step()
 
-            if step % 5 == 0:
+            # One line per host, not per rank: a 96-rank job logging
+            # from every rank is unreadable (see AGENTS.md).
+            if step % 5 == 0 and ezpz.get_local_rank() == 0:
                 logger.info(
                     "iter=%d loss=%.6f dtf=%.6f dtb=%.6f",
                     step,
@@ -198,12 +205,23 @@ def main(argv: list[str] | None = None) -> None:
                 outdir,
             )
         else:
-            # Reachable when the schedule never hit an `active` step:
-            # e.g. --steps 2 with the default wait=1, warmup=2, active=3.
+            # Reachable when the schedule never hit an `active` step.
+            # Compute the threshold from the ACTUAL flags: quoting the
+            # defaults misdiagnoses a customized schedule (e.g.
+            # --pytorch-profiler-wait 50 --steps 20 needs 55, not 6).
+            needed = (
+                args.pytorch_profiler_wait
+                + args.pytorch_profiler_warmup
+                + args.pytorch_profiler_active
+            )
             logger.warning(
-                "--profile was passed but no trace was written. The "
-                "schedule needs wait+warmup+active (default 1+2+3=6) "
+                "--profile was passed but no trace was written. This "
+                "schedule needs wait+warmup+active = %d+%d+%d = %d "
                 "steps before the first trace; --steps is %d.",
+                args.pytorch_profiler_wait,
+                args.pytorch_profiler_warmup,
+                args.pytorch_profiler_active,
+                needed,
                 args.steps,
             )
 

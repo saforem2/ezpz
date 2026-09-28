@@ -15,8 +15,10 @@ See: 🐍 [source](https://github.com/saforem2/ezpz/blob/main/src/ezpz/examples/
 ezpz launch python3 -m ezpz.examples.profiler --profile
 ```
 
-That writes one Chrome trace per profiled step plus a key-averages table
-in the log. Load the JSON in `chrome://tracing`,
+That writes one Chrome trace per completed profiling *cycle* (not per
+step) plus a key-averages table in the log. With the default schedule a
+cycle is 6 steps, so `--steps 20` yields 3 traces per profiled rank —
+verified on Polaris: rank0 wrote `step6`, `step12`, `step18`. Load the JSON in `chrome://tracing`,
 [Perfetto](https://ui.perfetto.dev), or TensorBoard.
 
 ## What it does
@@ -121,12 +123,18 @@ schedule flags above behave identically everywhere.
 
 ## Output
 
-Traces are written next to the run's other outputs:
+Traces are written next to the run's other outputs, one per completed
+cycle per profiled rank:
 
 ```
 outputs/ezpz.examples.profiler/<timestamp>/
-└── torch-profiler-rank0-step6-<timestamp>.json
+├── torch-profiler-rank0-step6-<timestamp>.json
+├── torch-profiler-rank0-step12-<timestamp>.json
+└── torch-profiler-rank0-step18-<timestamp>.json
 ```
+
+An 8-rank Polaris run at `--steps 20` produced 24 files this way (3
+cycles x 8 ranks) — see `--rank-zero-only` above to cut that to 3.
 
 Each file is a Chrome trace. The key-averages table is logged inline,
 sorted by device time on accelerators and by CPU time otherwise.
