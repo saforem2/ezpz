@@ -1295,7 +1295,7 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument(
         "--epochs",
         type=int,
-        default=5,
+        default=1,
         help="Number of passes over the training dataset.",
     )
     parser.add_argument(

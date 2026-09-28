@@ -33,7 +33,7 @@ See:
 ```bash
 ezpz launch python3 -m ezpz.examples.fsdp_tp \
     --tp=2 \
-    --epochs=5 \
+    --epochs=1 \
     --batch-size=2 \
     --dataset=eliplutchok/fineweb-small-sample \
 ```
@@ -1022,7 +1022,7 @@ options:
   --lr LR               Peak learning rate for the AdamW optimizer. (default:
                         0.003)
   --epochs EPOCHS       Number of passes over the training dataset. (default:
-                        5)
+                        1)
   --batch-size BATCH_SIZE
                         Per-DP-rank training batch size (a.k.a. micro-batch).
                         Global batch = --batch-size * (world_size / --tp).
