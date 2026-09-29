@@ -924,8 +924,27 @@ ezpz_setup_conda_sunspot() {
 	###########################
 	# Setup conda on Sunspot
 	###########################
+	# Save CCL_OP_SYNC across `module load`: the modulefile is outside
+	# this repo's control and can set or unset it, silently replacing an
+	# explicit caller choice. (The ezpz_load_modules_* helpers get this
+	# from _ezpz_load_xpu_modules_preserving_python; these call `module`
+	# directly, so they must do it themselves.)
+	local _ccl_set=0 _ccl_val=
+	if [[ -n "${CCL_OP_SYNC+x}" ]]; then
+		_ccl_set=1
+		_ccl_val="${CCL_OP_SYNC}"
+	fi
 	if [[ -z "${CONDA_PREFIX:-}" ]] || [[ -z "${PYTHON_ROOT:-}" ]]; then
 		module load frameworks
+	fi
+	if [[ "${_ccl_set}" -eq 1 ]]; then
+		export CCL_OP_SYNC="${_ccl_val}"
+	else
+		# Recommended path (ezpz_setup_env -> ezpz_setup_python_alcf ->
+		# here) never reaches ezpz_load_modules_*/ezpz_setup_xpu, so the
+		# correctness default has to be applied here too or the standard
+		# flow stays in the configuration that hangs ~90% of FSDP2+TP runs.
+		export CCL_OP_SYNC=1
 	fi
 }
 
@@ -933,6 +952,12 @@ ezpz_setup_conda_aurora() {
 	###########################
 	# Setup conda on Aurora
 	###########################
+	# Save CCL_OP_SYNC across `module load` -- see ezpz_setup_conda_sunspot.
+	local _ccl_set=0 _ccl_val=
+	if [[ -n "${CCL_OP_SYNC+x}" ]]; then
+		_ccl_set=1
+		_ccl_val="${CCL_OP_SYNC}"
+	fi
 	if [[ -z "${CONDA_PREFIX:-}" ]]; then
 		# NOTE: Updated 2024-10-08 [@saforem2]
 		module load frameworks
@@ -942,6 +967,11 @@ ezpz_setup_conda_aurora() {
 	fi
 	log_message INFO "Setting FI_MR_CACHE_MONITOR=userfaultfd"
 	export FI_MR_CACHE_MONITOR="${FI_MR_CACHE_MONITOR:-userfaultfd}"
+	if [[ "${_ccl_set}" -eq 1 ]]; then
+		export CCL_OP_SYNC="${_ccl_val}"
+	else
+		export CCL_OP_SYNC=1
+	fi
 }
 
 ezpz_setup_conda_sirius() {
@@ -1100,7 +1130,28 @@ ezpz_load_modules_aurora() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# CCL_OP_SYNC belongs to the application; module loading preserves it.
+	# Default CCL_OP_SYNC=1; an explicit caller value always wins.
+	#
+	# This is a CORRECTNESS default, not a performance one. On oneCCL
+	# 2022.x (frameworks/2026.1.0) FSDP2 + TP>1 HANGS without it: measured
+	# on Sunspot, 24 ranks / 2 nodes, arms alternating inside single
+	# allocations, 20/20 completions with CCL_OP_SYNC=1 vs 2/20 without
+	# (~90% hang with SequenceParallel, ~8% without). The hang has no
+	# error, no traceback and no watchdog -- ranks sit in a collective
+	# that never returns. See ezpz #252.
+	#
+	# The prior async-by-default position came from throughput: a 64-node
+	# / 768-rank TorchTitan run was ~27x slower synchronous. That trade is
+	# real and unresolved at scale, which is why an explicit
+	# `export CCL_OP_SYNC=0` is still honoured -- but silently hanging 90%
+	# of FSDP2+TP runs is the worse default for someone who has not chosen.
+	# Cost here: ~11% (240 steps, async 83-88s vs sync 92s).
+	# `${VAR+x}`, not `${VAR:-1}`: the latter treats an explicitly empty
+	# CCL_OP_SYNC="" as unset and overwrites it, which the suite's
+	# "empty string is preserved as empty" case catches.
+	if [[ -z "${CCL_OP_SYNC+x}" ]]; then
+		export CCL_OP_SYNC=1
+	fi
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 	# Aurora-specific MR cache monitor (matches ezpz_setup_conda_aurora).
@@ -1133,7 +1184,28 @@ ezpz_load_modules_sunspot() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# CCL_OP_SYNC belongs to the application; module loading preserves it.
+	# Default CCL_OP_SYNC=1; an explicit caller value always wins.
+	#
+	# This is a CORRECTNESS default, not a performance one. On oneCCL
+	# 2022.x (frameworks/2026.1.0) FSDP2 + TP>1 HANGS without it: measured
+	# on Sunspot, 24 ranks / 2 nodes, arms alternating inside single
+	# allocations, 20/20 completions with CCL_OP_SYNC=1 vs 2/20 without
+	# (~90% hang with SequenceParallel, ~8% without). The hang has no
+	# error, no traceback and no watchdog -- ranks sit in a collective
+	# that never returns. See ezpz #252.
+	#
+	# The prior async-by-default position came from throughput: a 64-node
+	# / 768-rank TorchTitan run was ~27x slower synchronous. That trade is
+	# real and unresolved at scale, which is why an explicit
+	# `export CCL_OP_SYNC=0` is still honoured -- but silently hanging 90%
+	# of FSDP2+TP runs is the worse default for someone who has not chosen.
+	# Cost here: ~11% (240 steps, async 83-88s vs sync 92s).
+	# `${VAR+x}`, not `${VAR:-1}`: the latter treats an explicitly empty
+	# CCL_OP_SYNC="" as unset and overwrites it, which the suite's
+	# "empty string is preserved as empty" case catches.
+	if [[ -z "${CCL_OP_SYNC+x}" ]]; then
+		export CCL_OP_SYNC=1
+	fi
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }
@@ -2836,7 +2908,28 @@ ezpz_setup_xpu() {
 	_ezpz_load_xpu_modules_preserving_python
 	export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 	export CCL_PROCESS_LAUNCHER=pmix
-	# CCL_OP_SYNC belongs to the application; module loading preserves it.
+	# Default CCL_OP_SYNC=1; an explicit caller value always wins.
+	#
+	# This is a CORRECTNESS default, not a performance one. On oneCCL
+	# 2022.x (frameworks/2026.1.0) FSDP2 + TP>1 HANGS without it: measured
+	# on Sunspot, 24 ranks / 2 nodes, arms alternating inside single
+	# allocations, 20/20 completions with CCL_OP_SYNC=1 vs 2/20 without
+	# (~90% hang with SequenceParallel, ~8% without). The hang has no
+	# error, no traceback and no watchdog -- ranks sit in a collective
+	# that never returns. See ezpz #252.
+	#
+	# The prior async-by-default position came from throughput: a 64-node
+	# / 768-rank TorchTitan run was ~27x slower synchronous. That trade is
+	# real and unresolved at scale, which is why an explicit
+	# `export CCL_OP_SYNC=0` is still honoured -- but silently hanging 90%
+	# of FSDP2+TP runs is the worse default for someone who has not chosen.
+	# Cost here: ~11% (240 steps, async 83-88s vs sync 92s).
+	# `${VAR+x}`, not `${VAR:-1}`: the latter treats an explicitly empty
+	# CCL_OP_SYNC="" as unset and overwrites it, which the suite's
+	# "empty string is preserved as empty" case catches.
+	if [[ -z "${CCL_OP_SYNC+x}" ]]; then
+		export CCL_OP_SYNC=1
+	fi
 	export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 	export TORCH_CPP_LOG_LEVEL=ERROR
 }

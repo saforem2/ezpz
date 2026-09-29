@@ -3,23 +3,27 @@
 #
 # Two things are under test:
 #
-#  1. ezpz does not choose CCL_OP_SYNC. Collective semantics belong to the
-#     application, and the setup helpers preserve the caller's exact set/unset
-#     state. Matched 4-node TorchTitan controls found async about 6x slower on
-#     both Aurora and Sunspot, so that application explicitly chooses `1`.
+#  1. CCL_OP_SYNC defaults to 1 when the caller has not chosen. This is a
+#     CORRECTNESS default: on oneCCL 2022.x (frameworks/2026.1.0),
+#     FSDP2 + TP>1 hangs without it -- 20/20 completions with
+#     CCL_OP_SYNC=1 vs 2/20 without, measured on Sunspot with arms
+#     alternating inside single allocations (ezpz #252). The hang is
+#     silent: no error, no traceback, no watchdog.
 #
-#  2. An EXPLICIT caller value must survive `module load`. This permits other
-#     applications to select `0` or `1` without ezpz silently replacing it.
-#     The oneAPI modulefile is outside this repo's control and can set or unset
-#     arbitrary variables. If it ever injects CCL_OP_SYNC, a caller's
-#     explicit 0 is silently overwritten and application policy is changed --
-#     the exact regression this PR exists to prevent.
+#     The competing evidence is throughput: a 64-node / 768-rank
+#     TorchTitan run was ~27x slower synchronous. That is why the default
+#     is only a DEFAULT -- see (2).
+#
+#  2. An EXPLICIT caller value must survive `module load`, in BOTH
+#     directions. `export CCL_OP_SYNC=0` is the async opt-in for
+#     workloads that have measured it (Aurora job 8854547, 30/30), and
+#     must not be silently replaced by the default above or by a
+#     modulefile. The oneAPI modulefile is outside this repo's control
+#     and can set or unset arbitrary variables.
 #
 # The module stub below is therefore HOSTILE: it mutates CCL_OP_SYNC the
 # way a real modulefile could. An earlier revision of this file stubbed
 # `module() { :; }`, which made every assertion pass vacuously -- it
-# could not observe the bug it was written to catch.
-
 set -eu
 unset CDPATH
 
@@ -45,11 +49,25 @@ extract_function _ezpz_load_xpu_modules_preserving_python >>"${FN_FILE}"
 extract_function ezpz_load_modules_aurora >>"${FN_FILE}"
 extract_function ezpz_load_modules_sunspot >>"${FN_FILE}"
 extract_function ezpz_setup_xpu >>"${FN_FILE}"
+extract_function ezpz_setup_conda_aurora >>"${FN_FILE}"
+extract_function ezpz_setup_conda_sunspot >>"${FN_FILE}"
 
-SETUP_FNS=(ezpz_load_modules_aurora ezpz_load_modules_sunspot ezpz_setup_xpu)
+# The conda helpers are on the RECOMMENDED path
+# (ezpz_setup_env -> ezpz_setup_python_alcf -> ezpz_setup_conda_*), which
+# reaches none of the ezpz_load_modules_*/ezpz_setup_xpu helpers. Covering
+# only the latter left the standard flow async -- i.e. hanging. Review
+# caught this on #258; the suite now pins every entry point.
+SETUP_FNS=(
+    ezpz_load_modules_aurora
+    ezpz_load_modules_sunspot
+    ezpz_setup_xpu
+    ezpz_setup_conda_aurora
+    ezpz_setup_conda_sunspot
+)
 
+# What an unset CCL_OP_SYNC becomes after setup: the synchronous default.
 unset_default() {
-    printf '<unset>'
+    printf '1'
 }
 
 # Fail closed: if extraction silently produced nothing (renamed function,
@@ -101,7 +119,7 @@ MODULE_ACTION="noop"
 for fn in "${SETUP_FNS[@]}"; do
     unset CCL_OP_SYNC CONDA_PREFIX VIRTUAL_ENV
     "${fn}"
-    check "${fn} unset -> unset" "$(unset_default "${fn}")" "$(ccl_state)"
+    check "${fn} unset -> 1 (default)" "$(unset_default "${fn}")" "$(ccl_state)"
 
     export CCL_OP_SYNC=0
     "${fn}"
@@ -120,7 +138,7 @@ for fn in "${SETUP_FNS[@]}"; do
     # smuggle in a synchronous default it no longer sets itself.
     unset CCL_OP_SYNC CONDA_PREFIX VIRTUAL_ENV
     "${fn}"
-    check "${fn} unset -> unset (module injected 1)" "$(unset_default "${fn}")" "$(ccl_state)"
+    check "${fn} unset -> 1 (default; module injected 1)" "$(unset_default "${fn}")" "$(ccl_state)"
 
     # An explicit 0 is the async opt-in verified on Aurora job 8854547.
     # Losing it here is the failure mode that matters most.

@@ -372,7 +372,7 @@ This is roughly equivalent to:
 module load oneapi/release hdf5 pti-gpu
 export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 export CCL_PROCESS_LAUNCHER=pmix
-# CCL_OP_SYNC is application policy; ezpz preserves its caller state.
+# CCL_OP_SYNC defaults to 1 (correctness); explicit caller values win.
 export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
 export TORCH_CPP_LOG_LEVEL=ERROR
 ```
@@ -401,20 +401,31 @@ export TORCH_CPP_LOG_LEVEL=ERROR
 |----------|---------|
 | `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | Expose each PVC tile as a separate device |
 | `CCL_PROCESS_LAUNCHER=pmix` | Use PMIx for oneCCL bootstrap (matches `mpiexec`) |
-| `CCL_OP_SYNC` | Left unchanged by `ezpz`. Applications may choose `0` or `1`; exact caller state is preserved across module loading. |
+| `CCL_OP_SYNC` | Defaults to `1` when unset. An explicit `0` or `1` always wins and is preserved across module loading. |
 | `ONEAPI_DEVICE_SELECTOR` | Restrict to GPU devices (skip CPU OpenCL backend) |
 | `TORCH_CPP_LOG_LEVEL=ERROR` | Suppress noisy PyTorch C++ logs |
 
-The XPU setup helpers do not choose a `CCL_OP_SYNC` value. Collective
-semantics are application policy: callers that need a specific mode should
-export `CCL_OP_SYNC=0` or `CCL_OP_SYNC=1` before setup. Matched 4-node
-TorchTitan controls found async about 6x slower on both Aurora and Sunspot, so
-that application chooses `1`; this does not make it an `ezpz` default.
+The XPU setup helpers default `CCL_OP_SYNC=1` when the caller has not chosen.
+This is a **correctness** default: on oneCCL 2022.x (`frameworks/2026.1.0`),
+FSDP2 + TP>1 hangs without it — 20/20 completions with `CCL_OP_SYNC=1` versus
+2/20 without, measured with arms alternating inside single allocations
+(ezpz #252). The hang is silent: no error, no traceback, no watchdog.
+
+Throughput points the other way and the trade is real: matched 4-node
+TorchTitan controls found async about 6x faster, and a 64-node / 768-rank run
+was about 27x slower synchronous. So this is a default, not a policy —
+**an explicit `CCL_OP_SYNC=0` is honoured exactly as before**, for workloads
+that have measured their own behaviour. Cost of the default at 2 nodes:
+about 11%.
+
+The default is applied in every entry point, including
+`ezpz_setup_conda_aurora` / `ezpz_setup_conda_sunspot`, which is the path the
+recommended `ezpz_setup_env` flow actually takes.
 
 The helpers snapshot both whether `CCL_OP_SYNC` was set and its exact value,
 then restore that caller state after `module load`. Thus explicit `0`, `1`, and
-empty values survive a modulefile that overwrites or clears the variable, while
-an initially unset variable remains unset.
+empty values survive a modulefile that overwrites or clears the variable; only
+an initially **unset** variable becomes `1`.
 
 ## ALCF System Module Loaders (`ezpz_load_modules_*`)
 

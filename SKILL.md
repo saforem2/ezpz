@@ -237,15 +237,22 @@ error, no traceback and no watchdog** — ranks stay alive inside a collective
 that never returns, stopping at a different iteration each run (0, 2, 13, 54,
 93, 117, 171 all observed).
 
-**ezpz does not set this for you, by design.** `ezpz_load_modules_*` and
-`ezpz_setup_xpu` preserve the caller's exact set/unset state
-(`tests/test_ccl_op_sync_default.sh` enforces it), because collective
-semantics belong to the application — matched TorchTitan controls found async
-~6x faster there. So set it yourself for FSDP2 + TP>1:
+**ezpz now defaults this to `1`** in every XPU setup entry point
+(`ezpz_load_modules_*`, `ezpz_setup_xpu`, and `ezpz_setup_conda_*` — the last
+being the one the recommended `ezpz_setup_env` flow actually reaches).
+`tests/test_ccl_op_sync_default.sh` pins all five.
+
+**An explicit caller value always wins, in both directions**, and is
+preserved across `module load`:
 
 ```bash
-export CCL_OP_SYNC=1
+export CCL_OP_SYNC=0   # async opt-in, for workloads that have measured it
+export CCL_OP_SYNC=1   # explicit sync (same as the default)
 ```
+
+Choose `0` deliberately only if you have measured your own workload: a
+64-node / 768-rank TorchTitan run was ~27x slower synchronous, so at scale
+the trade can invert. It is a default, not a policy.
 
 `0` is oneCCL's own default, so `export CCL_OP_SYNC=0` is not a no-op — it is
 the hanging configuration. oneCCL confirms the change in its log:
