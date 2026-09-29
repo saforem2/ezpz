@@ -40,7 +40,7 @@ from transformers.utils.versions import require_version
 
 import ezpz
 from ezpz.configs import HfDataTrainingArguments, HfModelArguments
-from ezpz.flops import compute_mfu, try_estimate
+from ezpz.flops import compute_mfu, try_estimate, try_estimate_fake
 
 logger = ezpz.get_logger(__name__)
 
@@ -113,7 +113,8 @@ def _save_pretrained_with_fallback(
         logger.warning(
             "save_pretrained with safetensors failed (%s: %s); "
             "retrying with safe_serialization=False",
-            type(e).__name__, e,
+            type(e).__name__,
+            e,
         )
         model.save_pretrained(  # type: ignore[attr-defined]
             output_dir,
@@ -133,13 +134,12 @@ def _strip_metric_prefix(summary: str, prefix: str) -> str:
     ``cosine_train/x``).  This helper splits on whitespace and
     only strips the prefix when it actually anchors a token.
     """
-    return " ".join(
-        token.removeprefix(prefix) for token in summary.split()
-    )
+    return " ".join(token.removeprefix(prefix) for token in summary.split())
 
 
-def parse_args(
-    ) -> tuple[HfModelArguments, HfDataTrainingArguments, TrainingArguments]:
+def parse_args() -> tuple[
+    HfModelArguments, HfDataTrainingArguments, TrainingArguments
+]:
     """Parse Hugging Face model, data, and training arguments.
 
     Returns:
@@ -283,11 +283,15 @@ def main() -> None:
             ShardingStrategy,
         )
 
-        mp_policy = MixedPrecision(
-            param_dtype=torch.bfloat16,
-            reduce_dtype=torch.bfloat16,
-            buffer_dtype=torch.bfloat16,
-        ) if training_args.bf16 else None
+        mp_policy = (
+            MixedPrecision(
+                param_dtype=torch.bfloat16,
+                reduce_dtype=torch.bfloat16,
+                buffer_dtype=torch.bfloat16,
+            )
+            if training_args.bf16
+            else None
+        )
         fsdp_plugin = FullyShardedDataParallelPlugin(
             sharding_strategy=ShardingStrategy.FULL_SHARD,
             backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
@@ -297,7 +301,9 @@ def main() -> None:
             cpu_ram_efficient_loading=False,
             limit_all_gathers=True,
         )
-        logger.info("[rank %d] using explicit FSDP plugin: %s", rank, fsdp_plugin)
+        logger.info(
+            "[rank %d] using explicit FSDP plugin: %s", rank, fsdp_plugin
+        )
 
     # Don't let Accelerator manage wandb — we handle it via History's tracker
     accelerator = Accelerator(
@@ -338,7 +344,9 @@ def main() -> None:
                 repo_name, exist_ok=True, token=training_args.hub_token
             ).repo_id
 
-            with open(os.path.join(output_dir, ".gitignore"), "w+") as gitignore:
+            with open(
+                os.path.join(output_dir, ".gitignore"), "w+"
+            ) as gitignore:
                 if "step_*" not in gitignore:
                     gitignore.write("step_*\n")
                 if "epoch_*" not in gitignore:
@@ -349,20 +357,16 @@ def main() -> None:
 
     last_checkpoint = None
     overwrite = getattr(training_args, "overwrite_output_dir", False)
-    if (
-        os.path.isdir(output_dir)
-        and training_args.do_train
-        and not overwrite
-    ):
+    if os.path.isdir(output_dir) and training_args.do_train and not overwrite:
         last_checkpoint = get_last_checkpoint(output_dir)
-        if (
-            last_checkpoint is None
-            and len(os.listdir(output_dir)) > 0
-        ):
+        if last_checkpoint is None and len(os.listdir(output_dir)) > 0:
             raise ValueError(
                 "Output directory already exists and is not empty."
             )
-        if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        if (
+            last_checkpoint is not None
+            and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 "Checkpoint detected, resuming training at %s. To avoid this behavior, change the output_dir.",
                 last_checkpoint,
@@ -434,7 +438,9 @@ def main() -> None:
         )
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
-        logger.warning("You are instantiating a new config instance from scratch.")
+        logger.warning(
+            "You are instantiating a new config instance from scratch."
+        )
         if model_args.config_overrides is not None:
             logger.info("Overriding config: %s", model_args.config_overrides)
             config.update_from_string(model_args.config_overrides)
@@ -553,12 +559,11 @@ def main() -> None:
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     def group_texts(
-        examples: dict[str, list[list[int]]]
+        examples: dict[str, list[list[int]]],
     ) -> dict[str, list[list[int]]]:
         """Concatenate and chunk tokenized text into fixed-size blocks."""
         concatenated_examples = {
-            k: [int(x) for x in chain(*examples[k])]
-            for k in examples.keys()
+            k: [int(x) for x in chain(*examples[k])] for k in examples.keys()
         }
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         total_length = (total_length // block_size) * block_size
@@ -615,6 +620,7 @@ def main() -> None:
                     range(data_args.max_eval_samples)
                 )  # type:ignore
 
+    logger.info("[rank %d] building dataloaders", rank)
     assert train_dataset is not None
     train_dataloader = DataLoader(
         train_dataset,
@@ -651,6 +657,7 @@ def main() -> None:
             "weight_decay": 0.0,
         },
     ]
+    logger.info("[rank %d] building optimizer", rank)
     optimizer = torch.optim.AdamW(
         optimizer_grouped_parameters, lr=training_args.learning_rate
     )
@@ -684,8 +691,44 @@ def main() -> None:
         else training_args.max_steps * accelerator.num_processes,
     )
 
-    _model_flops = try_estimate(
-        model, (training_args.per_device_train_batch_size, block_size),
+    # FakeTensorMode first: `try_estimate` runs a REAL forward+backward,
+    # which on a 1B model at block_size=2048 takes ~24 s single-threaded on
+    # a fast laptop core -- and far longer on a compute node with 8-12
+    # ranks contending for memory bandwidth. It produced >57 min of silence
+    # on Perlmutter (#264), long enough that `ezpz benchmark` could not
+    # finish `hf` inside a 90-minute allocation.
+    #
+    # The fake-tensor count agrees to ~10% (1.68e13 vs 1.52e13 measured on
+    # a Llama-3.2-1B-shaped model) and takes 0.6 s -- a ~39x speedup.
+    # `fsdp_tp` has used this path since it hit the same wall.
+    logger.info("[rank %d] estimating model FLOPs ...", rank)
+    _t_flops = time.perf_counter()
+    _model_flops = try_estimate_fake(
+        model, (training_args.per_device_train_batch_size, block_size)
+    )
+    if _model_flops <= 0:
+        # Fake-tensor estimation failed. Fall back to a real probe, but at
+        # a SHORT sequence and scale linearly -- never a full-length real
+        # forward, which is the pathology above. This under-counts
+        # O(seq^2) attention, so reported MFU is a lower bound.
+        _probe_seq = min(128, block_size)
+        _probe = try_estimate(
+            model, (training_args.per_device_train_batch_size, _probe_seq)
+        )
+        if _probe > 0 and _probe_seq > 0:
+            _model_flops = int(_probe * block_size / _probe_seq)
+            logger.warning(
+                "[rank %d] fake-tensor FLOP estimate unavailable; used a "
+                "seq=%d probe scaled to seq=%d. MFU is a lower bound.",
+                rank,
+                _probe_seq,
+                block_size,
+            )
+    logger.info(
+        "[rank %d] model FLOPs = %.3e (%.1fs)",
+        rank,
+        _model_flops,
+        time.perf_counter() - _t_flops,
     )
 
     logger.info("[rank %d] calling accelerator.prepare() ...", rank)
@@ -742,7 +785,9 @@ def main() -> None:
     logger.info("  Num processes = %s", accelerator.num_processes)
     logger.info(
         "  Num examples = %s",
-        len(train_dataset) if hasattr(train_dataset, "__len__") else "unknown (streaming)",
+        len(train_dataset)
+        if hasattr(train_dataset, "__len__")
+        else "unknown (streaming)",
     )
     logger.info("  Num Epochs = %s", training_args.num_train_epochs)
     logger.info(
@@ -760,7 +805,11 @@ def main() -> None:
     logger.info("  Total optimization steps = %s", training_args.max_steps)
 
     logging_steps = max(1, int(training_args.logging_steps))
-    outdir = Path(training_args.output_dir) if training_args.output_dir else Path.cwd() / "outputs"
+    outdir = (
+        Path(training_args.output_dir)
+        if training_args.output_dir
+        else Path.cwd() / "outputs"
+    )
     outdir.mkdir(parents=True, exist_ok=True)
     logger.info("Outputs will be saved to %s", outdir)
     history = ezpz.history.History(
@@ -810,7 +859,9 @@ def main() -> None:
                 int(training_difference.replace("step_", ""))
                 * training_args.gradient_accumulation_steps
             )
-            completed_steps = resume_step // training_args.gradient_accumulation_steps
+            completed_steps = (
+                resume_step // training_args.gradient_accumulation_steps
+            )
             if num_update_steps_per_epoch is not None:
                 starting_epoch = resume_step // len(train_dataloader)
                 resume_step -= starting_epoch * len(train_dataloader)
@@ -883,7 +934,10 @@ def main() -> None:
                     )
 
             if isinstance(checkpointing_steps, int):
-                if completed_steps % checkpointing_steps == 0 and accelerator.sync_gradients:
+                if (
+                    completed_steps % checkpointing_steps == 0
+                    and accelerator.sync_gradients
+                ):
                     output_dir = f"step_{completed_steps}"
                     if training_args.output_dir is not None:
                         output_dir = os.path.join(
@@ -926,7 +980,10 @@ def main() -> None:
             summary = history.update(eval_metrics)
             logger.info("[eval] %s", _strip_metric_prefix(summary, "eval/"))
 
-        if training_args.push_to_hub and epoch < training_args.num_train_epochs - 1:
+        if (
+            training_args.push_to_hub
+            and epoch < training_args.num_train_epochs - 1
+        ):
             accelerator.wait_for_everyone()
             unwrapped_model = accelerator.unwrap_model(model)
             _save_pretrained_with_fallback(
@@ -935,7 +992,11 @@ def main() -> None:
                 is_main_process=accelerator.is_main_process,
                 save_function=accelerator.save,
             )
-            if accelerator.is_main_process and api is not None and repo_id is not None:
+            if (
+                accelerator.is_main_process
+                and api is not None
+                and repo_id is not None
+            ):
                 tokenizer.save_pretrained(output_dir)
                 api.upload_folder(  # type: ignore[arg-type]
                     commit_message=f"Training in progress epoch {epoch}",
@@ -963,7 +1024,11 @@ def main() -> None:
     )
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
-        if training_args.push_to_hub and api is not None and repo_id is not None:
+        if (
+            training_args.push_to_hub
+            and api is not None
+            and repo_id is not None
+        ):
             api.upload_folder(  # type: ignore[arg-type]
                 commit_message="End of training",
                 folder_path=output_dir,
