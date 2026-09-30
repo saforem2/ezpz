@@ -805,8 +805,14 @@ class TestRun:
 
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01"])
-    def test_single_node_dry_run(self, _nodes, _host, caplog):
+    def test_single_node_dry_run(self, _nodes, _host, caplog, monkeypatch):
         """Single node dry-run shows local copy plan."""
+        # No --src, so run() falls back to _detect_env_source() -> the active
+        # venv. When that venv lives under /tmp (normal on ALCF compute nodes),
+        # _needs_local_copy() is False, total_nodes==0, and the "local:" line
+        # never logs. Pin the gate so the assertion tests the log line, not
+        # where the developer happened to put their venv.
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         with caplog.at_level("INFO", logger=yeet.logger.name):
             rc = yeet.run(["--dry-run"])
         assert rc == 0
@@ -836,8 +842,13 @@ class TestRun:
     @patch("ezpz.utils.yeet_env._rsync_to_node")
     @patch("ezpz.utils.yeet_env._get_current_hostname", return_value="node01")
     @patch("ezpz.utils.yeet_env._get_worker_nodes", return_value=["node01", "node02"])
-    def test_syncs_local_and_remote(self, _nodes, _host, mock_rsync, capsys):
+    def test_syncs_local_and_remote(
+        self, _nodes, _host, mock_rsync, capsys, monkeypatch
+    ):
         """Syncs local and remote nodes in parallel."""
+        # See test_single_node_dry_run: pin the local-copy gate so the
+        # call_count assertion doesn't depend on the active venv's path.
+        monkeypatch.setattr(yeet, "_needs_local_copy", lambda src: True)
         mock_rsync.return_value = ("node01", 3.0, 0)
         rc = yeet.run([])
         assert rc == 0

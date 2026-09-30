@@ -33,6 +33,7 @@ SHELL_SUITES = [
     "test_failover_lib.sh",
     "test_xpu_module_python_guard.sh",
     "test_setup_env_no_silent_noop.sh",
+    "test_machine_detection.sh",
 ]
 
 pytestmark = [

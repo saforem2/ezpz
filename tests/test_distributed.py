@@ -959,6 +959,19 @@ class TestGetMachine:
             ("nid00123", "Perlmutter"),
             ("x3001c0s7b0n0", "Polaris"),
             ("x3001c0s7b0n0.sirius.alcf.anl.gov", "Sirius"),
+            # Sirius LOGIN nodes are `sirius-uan-NNNN` -- only its COMPUTE
+            # nodes carry the `x3*` prefix above. These used to fall through
+            # to the raw hostname, so nothing downstream recognised the
+            # machine you were actually logged into.
+            ("sirius-uan-0002", "Sirius"),
+            ("sirius-uan-0002.sirius.alcf.anl.gov", "Sirius"),
+            # Regression: pin that a bare `uan-*` host is NOT swept into
+            # Sirius by the prefix check above. (Python has no `uan` entry
+            # in _PREFIX_MAP at all, so it falls through to the raw
+            # hostname -- unlike the shell, whose `uan*` arm maps to
+            # sunspot. That asymmetry is pre-existing and out of scope
+            # here; this case only guards the Sirius boundary.)
+            ("uan-0001", "uan-0001"),
             ("myworkstation", "myworkstation"),
         ],
     )

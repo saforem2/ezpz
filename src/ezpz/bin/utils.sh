@@ -802,6 +802,14 @@ ezpz_get_machine_name() {
 	mn="$(hostname | tr '[:upper:]' '[:lower:]')"
 	case "${mn}" in
 	sophia*) machine="sophia" ;;
+	# MUST precede the `uan*` arm below. Sirius login nodes are named
+	# `sirius-uan-NNNN` (same `<machine>-uan-N` shape as `aurora-uan-0009`),
+	# and only the COMPUTE nodes are `x3*`. Without this arm a login node
+	# fell through to `*)` and returned the raw hostname, so every
+	# downstream machine test missed -- `ezpz_load_modules` errored with
+	# "Supported: aurora, sunspot, polaris" and `ezpz_setup_conda` fell
+	# back to installing micromamba, on the node you were sitting on.
+	sirius*) machine="sirius" ;;
 	x1* | uan* | sunspot*) machine="sunspot" ;;
 	x3* | polaris*)
 		if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
@@ -948,15 +956,47 @@ ezpz_setup_conda_sirius() {
 	########################
 	# Setup conda on Sirius
 	########################
-	if [[ -z "${CONDA_PREFIX:-}" && -z "${VIRTUAL_ENV-}" ]]; then
-		export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
+	#
+	# PROBES rather than assumes. This used to go straight to micromamba
+	# under `/lus/tegu/...`, on the premise that Sirius has no conda
+	# modules. `module avail conda` on Sirius lists six of them, and
+	# `/lus/tegu` is a SUNSPOT filesystem (see
+	# docs/notes/alcf-tickets.md) that is not mounted on Polaris — so the
+	# hard-coded path is the less likely of the two to exist. Prefer the
+	# module stack; keep micromamba as a fallback; fail loudly naming both
+	# paths rather than leaving the env silently unconfigured (which
+	# surfaced several layers later as "CONDA_PREFIX still not set").
+	if [[ -n "${CONDA_PREFIX:-}" || -n "${VIRTUAL_ENV:-}" ]]; then
+		echo "Found existing python at: $(which python3)"
+		return 0
+	fi
+	if [[ -d /soft/modulefiles ]]; then
+		module use /soft/modulefiles
+		module load conda
+		conda activate base 2>/dev/null
+		# Assert, do not assume. The conda modulefiles `depends_on`
+		# pinned versions that a Cray PE upgrade removed
+		# (gcc-native/14.2, cray-hdf5-parallel/1.14.3.5 -> now 14 and
+		# 1.14.3.9), so `module load conda` can fail while still
+		# returning 0 and leaving CONDA_PREFIX unset. Verified broken on
+		# Polaris for all six conda modules, 2026-09-16. Fall through to
+		# micromamba instead of reporting a success that did not happen.
+		if [[ -n "${CONDA_PREFIX:-}" ]]; then
+			return 0
+		fi
+		log_message WARN "ezpz_setup_conda_sirius: 'module load conda' left CONDA_PREFIX unset (known Cray PE dependency drift); trying micromamba"
+	fi
+	local _mamba_root="${MAMBA_ROOT_PREFIX:-/lus/tegu/projects/PolarisAT/foremans/micromamba}"
+	if [[ -x "${_mamba_root}/bin/micromamba" ]]; then
+		export MAMBA_ROOT_PREFIX="${_mamba_root}"
+		local shell_name
 		shell_name=$(basename "${SHELL}")
-		# shell_name=$(echo "${SHELL}" | tr "\/" "" | awk '{print $NF}')
 		eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell "${shell_name}")"
 		micromamba activate 2024-04-23
-	else
-		echo "Found existing python at: $(which python3)"
+		return 0
 	fi
+	log_message ERROR "ezpz_setup_conda_sirius: no conda source found (tried /soft/modulefiles and ${_mamba_root}/bin/micromamba)"
+	return 1
 }
 
 ezpz_setup_conda_sophia() {
@@ -1234,6 +1274,26 @@ ezpz_load_modules_polaris() {
 	export XLA_PYTHON_CLIENT_PREALLOCATE="false"
 }
 
+ezpz_load_modules_sirius() {
+	# Sirius is Polaris-adjacent: same `/soft/modulefiles` tree, same `x3*`
+	# compute nodes, same NVIDIA/CUDA stack. `module avail conda` there
+	# lists the same conda/2025-09-25 and conda/2025-09-28 builds Polaris
+	# exposes, so this delegates rather than duplicating the ~70 lines of
+	# CUDA/NCCL/TensorRT/proxy setup — and inherits the UNPINNED
+	# cray-hdf5-parallel/gcc-native workaround documented there, which
+	# Sirius needs for exactly the same reason (the pinned 1.14.3.5 / 14.2
+	# were removed from the Cray PE; the modulefiles still ask for them).
+	#
+	# This replaces a `return 0` no-op that claimed "sirius uses
+	# micromamba, not modules". That was inherited from
+	# `ezpz_setup_conda_sirius` and never verified.
+	if [[ ! -d /soft/modulefiles ]]; then
+		log_message ERROR "ezpz_load_modules_sirius: /soft/modulefiles not found — are you on Sirius?"
+		return 1
+	fi
+	ezpz_load_modules_polaris
+}
+
 ###############################################
 # Dispatcher: load the bare module stack for
 # the detected machine without bringing in the
@@ -1250,10 +1310,9 @@ ezpz_load_modules_polaris() {
 # versions in the wrong order.
 #
 # Machine detection uses `ezpz_get_machine_name`,
-# which keys off `hostname`. Sirius routes to a
-# no-op (it uses micromamba via
-# `ezpz_setup_conda_sirius` and has no bare-
-# modules equivalent).
+# which keys off `hostname`. Sirius delegates to
+# the Polaris loader — it shares the same
+# `/soft/modulefiles` tree and CUDA stack.
 #
 # @example
 #    ezpz_load_modules
@@ -1277,13 +1336,10 @@ ezpz_load_modules() {
 		ezpz_load_modules_polaris
 		;;
 	sirius)
-		# Sirius is a polaris-adjacent system that uses micromamba
-		# (see ezpz_setup_conda_sirius); no bare-modules path.
-		log_message WARN "ezpz_load_modules: sirius uses micromamba, not modules; skipping."
-		return 0
+		ezpz_load_modules_sirius
 		;;
 	*)
-		log_message ERROR "ezpz_load_modules: no loader for machine='${machine}'. Supported: aurora, sunspot, polaris."
+		log_message ERROR "ezpz_load_modules: no loader for machine='${machine}'. Supported: aurora, sunspot, polaris, sirius."
 		return 1
 		;;
 	esac
