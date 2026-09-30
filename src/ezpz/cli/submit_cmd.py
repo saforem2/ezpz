@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pathlib
+import shlex
 
 import click
 
@@ -225,6 +226,23 @@ def submit_cmd(
     )
 
 
+# Resolve utils.sh on the TARGET at runtime. `python3 -c` is used rather
+# than a hard-coded path because the install prefix differs per machine
+# (conda on Polaris, frameworks on Aurora, a venv elsewhere), and a
+# wrong absolute path fails as "No such file" inside the job.
+_REMOTE_ENV_SETUP = """\
+_ezpz_utils=$(python3 -c 'import ezpz,pathlib;\
+print(pathlib.Path(ezpz.__file__).parent/"bin"/"utils.sh")' 2>/dev/null)
+if [[ -f "${_ezpz_utils}" ]]; then
+    source "${_ezpz_utils}"
+else
+    # No installed ezpz on the target: fall back to the network copy.
+    # This only works if the compute node has outbound access.
+    source <(curl -fsSL https://ezpz.cool/utils.sh)
+fi
+ezpz_setup_env"""
+
+
 def _submit_remote(
     *,
     remote: str,
@@ -266,7 +284,7 @@ def _submit_remote(
     if script_path:
         script_text = pathlib.Path(script_path).read_text()
     else:
-        cmd = " ".join(command or [])
+        cmd = shlex.join(command or [])
         gen = generate_pbs_script if sched == "PBS" else generate_slurm_script
         kwargs: dict = {
             "nodes": nodes,
@@ -280,15 +298,21 @@ def _submit_remote(
             # $HOME instead and let --workdir override.
             "working_dir": workdir
             or "",  # "" -> no cd; scheduler lands in $HOME
-            # Same for env setup: a local utils.sh path is meaningless
-            # remotely, so the network form is correct here -- but it
-            # only works from a login node, and submission happens on
-            # one, so this is fetched before the job is queued.
-            "env_setup": env_setup,
+            # Environment setup for a remote job is genuinely awkward:
+            # a LOCAL utils.sh path is meaningless on the target, but
+            # the curl form runs on a COMPUTE node, which has no
+            # outbound route -- it hangs ~270 s and then leaves the job
+            # unconfigured (the ezpz#268 failure, one machine away).
+            #
+            # Default to sourcing ezpz's own copy resolved ON the target
+            # at runtime, falling back to curl only if that is missing.
+            # Overridable with --env.
+            "env_setup": env_setup or _REMOTE_ENV_SETUP,
             "wrap_with_launch": launch,
         }
         if sched == "PBS":
             kwargs["filesystems"] = filesystems
+            kwargs["strict"] = strict
         else:
             kwargs["gpus_per_node"] = gpus_per_node
             kwargs["ntasks_per_node"] = ntasks_per_node
@@ -304,8 +328,12 @@ def _submit_remote(
         click.echo(script_text)
         return
 
+    # Run the SAME script the ssh backend would. Passing the bare command
+    # here meant an IRI fallback silently dropped the environment setup
+    # and the `ezpz launch` wrapping -- a different job from the one the
+    # user asked for, which is worse than failing.
     iri_kwargs = {
-        "command": " ".join(command or []),
+        "command": script_text,
         "nodes": nodes,
         "duration_seconds": _walltime_seconds(walltime),
         "queue": queue,
