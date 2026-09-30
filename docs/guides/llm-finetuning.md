@@ -88,6 +88,16 @@ Rough guidance — validate against a real run before publishing (see
 [Follow-up runs](#follow-up-runs-to-publish-results)). "GPUs" assumes
 80 GB-class accelerators (A100-80G / H100 / Aurora PVC tile).
 
+Every command below uses `ezpz launch`, which assumes you are already
+inside an allocation. To queue one of these as a batch job instead, wrap
+the same command with [`ezpz submit`](../cli/submit.md) — it writes the
+PBS or SLURM script for you and keeps the `ezpz launch` wrapping:
+
+```bash
+ezpz submit -N 8 -q prod -A <project> --time 02:00:00 \
+    -- python3 -m ezpz.examples.hf_trainer --model_name_or_path meta-llama/Llama-3.1-8B
+```
+
 ### Paths 1 & 2 — HF fine-tune
 
 | Target | Precision / memory levers | Min GPUs (FSDP) | Notes |
