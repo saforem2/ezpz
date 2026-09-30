@@ -111,7 +111,14 @@ def generate_pbs_script(
         "PBS_ACCOUNT", os.environ.get("PROJECT", "")
     )
     job_name = job_name or "ezpz"
-    working_dir = working_dir or os.getcwd()
+    # working_dir="" suppresses the `cd` line entirely. Remote jobs need
+    # this: os.getcwd() is a LOCAL path that does not exist on the target,
+    # and shlex.quote("$HOME") yields a literal directory named `$HOME`.
+    # Both PBS and SLURM start the job in $HOME anyway.
+    if working_dir == "":
+        working_dir = None
+    elif working_dir is None:
+        working_dir = os.getcwd()
     if env_setup is None:
         env_setup = detect_env_setup()
 
@@ -132,7 +139,7 @@ def generate_pbs_script(
         f"#PBS -N {job_name}",
         "",
         "set -eo pipefail" if strict else "set -o pipefail",
-        f"cd {shlex.quote(working_dir)}",
+        *([f"cd {shlex.quote(working_dir)}"] if working_dir else []),
     ]
     if env_setup:
         lines += ["", "# ── Environment setup ──", env_setup]
@@ -191,7 +198,10 @@ def generate_slurm_script(
         "SLURM_ACCOUNT", os.environ.get("PROJECT", "")
     )
     job_name = job_name or "ezpz"
-    working_dir = working_dir or os.getcwd()
+    if working_dir == "":
+        working_dir = None  # remote: let the scheduler land in $HOME
+    elif working_dir is None:
+        working_dir = os.getcwd()
     if env_setup is None:
         env_setup = detect_env_setup()
 
@@ -215,7 +225,7 @@ def generate_slurm_script(
     lines += [
         "",
         "set -eo pipefail" if strict else "set -o pipefail",
-        f"cd {shlex.quote(working_dir)}",
+        *([f"cd {shlex.quote(working_dir)}"] if working_dir else []),
     ]
     if env_setup:
         lines += ["", "# ── Environment setup ──", env_setup]
@@ -261,7 +271,11 @@ def submit_job(script_path: str | Path, scheduler: str) -> str | None:
         )
         return None
     except subprocess.CalledProcessError as exc:
-        logger.error("Submission failed (exit %d): %s", exc.returncode, exc.stderr.strip())
+        logger.error(
+            "Submission failed (exit %d): %s",
+            exc.returncode,
+            exc.stderr.strip(),
+        )
         return None
 
 
