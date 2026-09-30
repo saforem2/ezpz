@@ -129,7 +129,7 @@ set -eo pipefail
 cd /lus/flare/projects/AuroraGPT/foremans/projects/saforem2/ezpz
 
 # ── Environment setup ──
-source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+source /path/to/site-packages/ezpz/bin/utils.sh && ezpz_setup_env
 
 ezpz benchmark
 

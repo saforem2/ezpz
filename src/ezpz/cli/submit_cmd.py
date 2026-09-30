@@ -156,10 +156,17 @@ def submit_cmd(
 
     if args:
         candidate = Path(args[0])
+        # .pbs and .sbatch are the conventional names for hand-written
+        # scheduler scripts -- this repo alone has 17 and 10 of them --
+        # and omitting them meant `ezpz submit run.pbs` silently treated
+        # the filename as a COMMAND instead of a script.
         if candidate.is_file() and candidate.suffix in (
             ".sh",
             ".bash",
             ".job",
+            ".pbs",
+            ".sbatch",
+            ".slurm",
         ):
             script_path = candidate
             # Remaining args are currently ignored for script mode
