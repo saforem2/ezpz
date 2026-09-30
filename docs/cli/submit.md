@@ -46,6 +46,9 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--ntasks-per-node` | SLURM `--ntasks-per-node` (ignored for PBS) |
 | `-C`, `--constraint` | SLURM `--constraint`, e.g. `gpu` (ignored for PBS) |
 | `--strict` / `--no-strict` | Emit `set -eo pipefail` (default: on) |
+| `--remote` | Submit to another machine, e.g. `--remote aurora` |
+| `--backend` | `auto` (default), `ssh`, or `iri` — see [Remote submission](../guides/remote-submission.md) |
+| `--workdir` | Remote working directory (with `--remote`) |
 
 !!! warning "Perlmutter needs the GPU directives"
 
