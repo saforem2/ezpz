@@ -10,6 +10,7 @@ and `detect_env_setup()` was emitting exactly that form by default.
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from ezpz.submit import detect_env_setup, generate_pbs_script
@@ -32,7 +33,10 @@ def test_the_path_it_emits_actually_exists(monkeypatch):
     """A generated script that sources a missing file is worse than curl."""
     _clear(monkeypatch)
     out = detect_env_setup()
-    path = out.split()[1]
+    # shlex, not split(): the path is shell-quoted, so a directory with
+    # a space in it would otherwise yield only its first fragment and
+    # this check would pass on a path that does not exist.
+    path = shlex.split(out)[1]
     assert Path(path).is_file(), f"generated source target missing: {path}"
 
 
@@ -61,3 +65,29 @@ def test_generated_pbs_script_has_no_curl(monkeypatch):
         "#!/bin/bash --login"
     )  # module needs a login shell
     assert "ezpz_setup_env" in script
+
+
+def test_scheduler_script_extensions_are_recognised(tmp_path, monkeypatch):
+    """`.pbs` and `.sbatch` are scripts, not commands.
+
+    Detection accepted only .sh/.bash/.job, so `ezpz submit run.pbs`
+    silently treated the filename as a COMMAND to wrap -- generating a
+    job that tried to execute "run.pbs" as a shell word. This repo alone
+    carries 17 .pbs and 10 .sbatch files.
+    """
+    from click.testing import CliRunner
+
+    from ezpz.cli import main
+
+    for suffix in (".sh", ".bash", ".job", ".pbs", ".sbatch", ".slurm"):
+        f = tmp_path / f"job{suffix}"
+        f.write_text("#!/bin/bash\necho hi\n")
+        res = CliRunner().invoke(
+            main,
+            ["submit", str(f), "-N", "1", "--dry-run", "--scheduler", "PBS"],
+        )
+        assert res.exit_code == 0, f"{suffix}: {res.output[:200]}"
+        assert "ezpz launch" not in res.output, (
+            f"{suffix} was wrapped as a command instead of submitted as "
+            "a script"
+        )

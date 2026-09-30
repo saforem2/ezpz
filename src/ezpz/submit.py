@@ -52,7 +52,9 @@ def detect_env_setup() -> str:
 
     1. ``EZPZ_SETUP_ENV`` — if it points to a file, sources it; otherwise
        used as inline shell commands.
-    2. Falls back to the ``ezpz_setup_env`` helper fetched via curl.
+    2. The installed ``ezpz/bin/utils.sh``, sourced by path.
+    3. Only if that is missing, the network copy fetched via curl --
+       which cannot work on a compute node.
 
     Returns:
         A (possibly multi-line) string of shell commands.
