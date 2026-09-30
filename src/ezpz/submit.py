@@ -52,7 +52,9 @@ def detect_env_setup() -> str:
 
     1. ``EZPZ_SETUP_ENV`` — if it points to a file, sources it; otherwise
        used as inline shell commands.
-    2. Falls back to the ``ezpz_setup_env`` helper fetched via curl.
+    2. The installed ``ezpz/bin/utils.sh``, sourced by path.
+    3. Only if that is missing, the network copy fetched via curl --
+       which cannot work on a compute node.
 
     Returns:
         A (possibly multi-line) string of shell commands.
@@ -63,6 +65,21 @@ def detect_env_setup() -> str:
             return f"source {shlex.quote(setup_env)}"
         return setup_env
 
+    # Prefer the installed copy of utils.sh over fetching it.
+    #
+    # Compute nodes on Aurora / Polaris / Sunspot have no outbound
+    # route, so `source <(curl ...)` hangs for ~270 s and then leaves
+    # the environment UNCONFIGURED -- the failure surfaces much later as
+    # `CONDA_PREFIX still not set`, or as every ezpz_* function being
+    # undefined. SKILL.md lists this first under "inside a batch script,
+    # three things change"; generating the curl form by default
+    # contradicted that advice.
+    local_utils = Path(__file__).parent / "bin" / "utils.sh"
+    if local_utils.is_file():
+        return f"source {shlex.quote(str(local_utils))} && ezpz_setup_env"
+
+    # No installed copy (zip import, odd packaging): the network form
+    # still works from a login node.
     return "source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env"
 
 
@@ -261,7 +278,11 @@ def submit_job(script_path: str | Path, scheduler: str) -> str | None:
         )
         return None
     except subprocess.CalledProcessError as exc:
-        logger.error("Submission failed (exit %d): %s", exc.returncode, exc.stderr.strip())
+        logger.error(
+            "Submission failed (exit %d): %s",
+            exc.returncode,
+            exc.stderr.strip(),
+        )
         return None
 
 

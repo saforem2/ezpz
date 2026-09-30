@@ -22,13 +22,40 @@ from ezpz.submit import (
 
 
 class TestDetectEnvSetup:
-    def test_falls_back_to_curl_helper(self):
+    def test_prefers_the_installed_utils_sh(self):
+        """Default is the local file, NOT a curl.
+
+        Changed deliberately: compute nodes have no outbound route, so a
+        generated `source <(curl ...)` hangs ~270 s and then leaves the
+        environment unconfigured. This test previously asserted the curl
+        form; it now pins the opposite.
+        """
         env = os.environ.copy()
         env.pop("EZPZ_SETUP_ENV", None)
         with patch.dict(os.environ, env, clear=True):
             result = detect_env_setup()
         assert "ezpz_setup_env" in result
+        assert "curl" not in result
+        assert result.startswith("source /")
+
+    def test_falls_back_to_curl_when_no_local_copy(self):
+        """The network form survives for installs that lack bin/utils.sh."""
+        import ezpz.submit as mod
+
+        env = os.environ.copy()
+        env.pop("EZPZ_SETUP_ENV", None)
+        real_is_file = Path.is_file
+
+        def _no_utils(self):
+            if self.name == "utils.sh":
+                return False
+            return real_is_file(self)
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(Path, "is_file", _no_utils):
+                result = mod.detect_env_setup()
         assert "curl" in result
+        assert "ezpz_setup_env" in result
 
     def test_picks_up_ezpz_setup_env_file(self, tmp_path: Path):
         setup_file = tmp_path / "setup.sh"
@@ -245,7 +272,13 @@ class TestSubmit:
 
     def test_job_name_derived_from_module(self, capsys):
         submit(
-            command=["python3", "-m", "ezpz.examples.fsdp", "--model", "small"],
+            command=[
+                "python3",
+                "-m",
+                "ezpz.examples.fsdp",
+                "--model",
+                "small",
+            ],
             scheduler="PBS",
             dry_run=True,
         )
@@ -285,8 +318,12 @@ class TestSlurmGpuDirectives:
         """The exact combination a Perlmutter GPU job needs."""
         out = generate_slurm_script(
             "python3 -m ezpz.examples.fsdp_tp --tp 2",
-            nodes=2, constraint="gpu", queue="debug",
-            account="m4388_g", gpus_per_node=4, ntasks_per_node=4,
+            nodes=2,
+            constraint="gpu",
+            queue="debug",
+            account="m4388_g",
+            gpus_per_node=4,
+            ntasks_per_node=4,
         )
         for want in (
             "#SBATCH --nodes=2",
@@ -331,8 +368,11 @@ class TestSubmitThreadsNewOptions:
     def test_slurm_gpu_flags_reach_script(self, capsys):
         submit(
             command=["python3", "-m", "ezpz.examples.test"],
-            scheduler="SLURM", dry_run=True,
-            gpus_per_node=4, ntasks_per_node=4, constraint="gpu",
+            scheduler="SLURM",
+            dry_run=True,
+            gpus_per_node=4,
+            ntasks_per_node=4,
+            constraint="gpu",
         )
         out = capsys.readouterr().out
         assert "#SBATCH --gpus-per-node=4" in out
@@ -341,8 +381,10 @@ class TestSubmitThreadsNewOptions:
 
     def test_strict_false_reaches_script(self, capsys):
         submit(
-            command=["echo", "hi"], scheduler="PBS",
-            dry_run=True, strict=False,
+            command=["echo", "hi"],
+            scheduler="PBS",
+            dry_run=True,
+            strict=False,
         )
         out = capsys.readouterr().out
         assert "set -o pipefail" in out
@@ -351,8 +393,11 @@ class TestSubmitThreadsNewOptions:
     def test_gpu_flags_ignored_for_pbs(self, capsys):
         """PBS has no --gpus-per-node; passing it must not corrupt output."""
         submit(
-            command=["echo", "hi"], scheduler="PBS",
-            dry_run=True, gpus_per_node=4, constraint="gpu",
+            command=["echo", "hi"],
+            scheduler="PBS",
+            dry_run=True,
+            gpus_per_node=4,
+            constraint="gpu",
         )
         out = capsys.readouterr().out
         assert "gpus-per-node" not in out
