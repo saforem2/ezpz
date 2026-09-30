@@ -10,6 +10,12 @@ For first-time setup (allocation, modules, install), see
 [`ezpz` on Perlmutter](../notes/perlmutter.md); this page is about what
 was *verified* there and what the numbers are.
 
+The same portability applies to getting a job queued:
+[`ezpz submit`](../cli/submit.md) detects SLURM here and PBS on the ALCF
+machines, so the submit line does not change between them — it just
+emits `#SBATCH` instead of `#PBS`. Use `--dry-run` to see the generated
+script before anything is queued.
+
 ## What was validated
 
 | | |
