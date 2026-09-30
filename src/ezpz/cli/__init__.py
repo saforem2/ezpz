@@ -10,6 +10,7 @@ import click
 from ezpz.__about__ import __version__
 from ezpz.cli.launch_cmd import launch_cmd
 from ezpz.cli.submit_cmd import submit_cmd
+from ezpz.cli.update_cmd import update_cmd
 from ezpz.cli.test_cmd import test_cmd
 
 CONTEXT_SETTINGS = {
@@ -39,6 +40,9 @@ main.add_command(launch_cmd, name="launch")
 
 
 main.add_command(submit_cmd, name="submit")
+
+
+main.add_command(update_cmd, name="update")
 
 
 @main.command(
