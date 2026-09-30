@@ -33,6 +33,16 @@ jobs:
           test -s site/utils.sh
           head -1 site/utils.sh | grep -q '^#!' \
             || { echo "utils.sh lost its shebang"; exit 1; }
+          # Same for the bootstrap installer, published at
+          # https://ezpz.cool/install.sh. Also syntax-check it: a broken
+          # installer is worse than a missing one, since `curl | bash`
+          # gives the reader no chance to notice before it runs.
+          cp src/ezpz/bin/install.sh site/install.sh
+          test -s site/install.sh
+          head -1 site/install.sh | grep -q '^#!' \
+            || { echo "install.sh lost its shebang"; exit 1; }
+          bash -n site/install.sh \
+            || { echo "install.sh has a syntax error"; exit 1; }
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site

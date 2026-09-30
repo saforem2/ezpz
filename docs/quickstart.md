@@ -77,6 +77,26 @@ uv pip install git+https://github.com/saforem2/ezpz
     [W&B Report](https://api.wandb.ai/links/aurora_gpt/q56ai28l)
     for example output.
 
+### One-line install
+
+To put `utils.sh` on the machine and a `source ezpz-setup` shim on your
+`PATH`:
+
+```bash linenums='0'
+curl -fsSL https://ezpz.cool/install.sh | bash
+```
+
+Then, on a login node or inside a job:
+
+```bash linenums='0'
+source ezpz-setup
+```
+
+The installer only fetches and places files -- it prints the `PATH` line
+for your shell rather than editing `.bashrc`/`.zshrc` itself, and it
+refuses to run inside a batch job, since compute nodes have no outbound
+network. Re-run it any time, or use [`ezpz update`](cli/update.md).
+
 ??? question "\[Optional] Shell Environment and Setup"
 
     1. [**Shell Environment and Setup**](./notes/shell-environment.md):
