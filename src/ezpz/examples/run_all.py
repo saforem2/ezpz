@@ -324,6 +324,61 @@ def _extract_tracker_info(line: str) -> str | None:
     return None
 
 
+_TEARDOWN_ABORT_MARKERS = (
+    # C++ runtime aborting because a std::thread was destroyed while
+    # still joinable. On XPU this fires from the XCCL worker teardown
+    # AFTER training finishes (ezpz #266).
+    "terminate called without an active exception",
+)
+
+# Evidence that the example actually did its work. Kept deliberately
+# narrow: each is printed only at the END of a successful run, so a
+# crash mid-training cannot match one.
+_COMPLETION_MARKERS = (
+    "train_runtime",  # HF Trainer's final metrics dict
+    "Writing model shards",  # FSDP checkpoint write
+)
+
+
+def _classify_nonzero_exit(logfile: Path, returncode: int) -> str | None:
+    """Distinguish a teardown abort from a real failure.
+
+    An example can finish all its work -- train every step, write its
+    checkpoint, print its metrics -- and *then* die in a destructor.
+    ``hf_trainer`` does exactly this on Aurora and Sunspot: rank 4
+    raises SIGABRT from a joinable-thread teardown, the launcher
+    SIGTERMs the rest, and the aggregate surfaces as exit 143 (#266).
+
+    Reporting that as ``FAILED`` is wrong twice over: it hides that the
+    run produced valid results, and it buries a real upstream bug under
+    a generic signal.
+
+    Both conditions are required. A crash that never reached the end of
+    training has no completion marker, so it is still reported as a
+    failure -- the point is to be more precise, not more forgiving.
+
+    Args:
+        logfile: The example's captured output.
+        returncode: Non-zero exit status to explain.
+
+    Returns:
+        A short reason string when this looks like a post-completion
+        teardown abort, else ``None``.
+    """
+    try:
+        text = logfile.read_text(errors="replace")
+    except OSError:
+        return None
+    if not any(m in text for m in _TEARDOWN_ABORT_MARKERS):
+        return None
+    if not any(m in text for m in _COMPLETION_MARKERS):
+        return None
+    return (
+        "training completed, then aborted during teardown "
+        f"(exit {returncode}); see ezpz#266"
+    )
+
+
 def run_example(
     name: str,
     cmd: list[str],
@@ -440,15 +495,28 @@ def run_example(
                 summary += f" ({', '.join(parts)})"
         print(summary)
     else:
-        print(
-            f"  \u2717 {name} FAILED (exit {returncode})"
-            f" after {_fmt_duration(elapsed)}"
-        )
+        teardown = _classify_nonzero_exit(logfile, returncode)
+        if teardown is not None:
+            print(
+                f"  \u26a0 {name} completed in {_fmt_duration(elapsed)}"
+                f" -- {teardown}"
+            )
+        else:
+            print(
+                f"  \u2717 {name} FAILED (exit {returncode})"
+                f" after {_fmt_duration(elapsed)}"
+            )
 
     return {
         "name": name,
         "exit_code": returncode,
         "wall_seconds": elapsed,
+        # True when the work finished and only teardown failed, so the
+        # summary can count it as a pass-with-warning rather than a loss.
+        "teardown_abort": (
+            returncode != 0
+            and _classify_nonzero_exit(logfile, returncode) is not None
+        ),
     }
 
 
@@ -545,18 +613,30 @@ def main(argv: list[str] | None = None) -> None:
 
     # ── Summary ──────────────────────────────────────────────────────────
     suite_elapsed = time.perf_counter() - suite_t0
-    passed = sum(1 for r in results if r["exit_code"] == 0)
+    clean = sum(1 for r in results if r["exit_code"] == 0)
+    # An example that trained, checkpointed and reported metrics, then
+    # died in a destructor, produced valid results -- count it as passed
+    # and flag it, rather than reporting the run as lost (#266).
+    teardown = sum(1 for r in results if r.get("teardown_abort"))
+    passed = clean + teardown
     failed = total - passed
     print()
     print("\u2550" * 64)
     status_line = f"  {passed}/{total} passed"
+    if teardown:
+        status_line += f" ({teardown} with teardown abort)"
     if failed:
         status_line += f", {failed} FAILED"
     status_line += f" in {_fmt_duration(suite_elapsed)}"
     print(status_line)
     print("\u2500" * 64)
     for r in results:
-        icon = "\u2713" if r["exit_code"] == 0 else "\u2717"
+        if r["exit_code"] == 0:
+            icon = "\u2713"
+        elif r.get("teardown_abort"):
+            icon = "\u26a0"
+        else:
+            icon = "\u2717"
         print(
             f"  {icon} {r['name']:<12s} {_fmt_duration(r['wall_seconds']):>8s}"
         )
