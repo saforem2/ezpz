@@ -20,6 +20,15 @@ import click
 
 DEFAULT_UTILS_URL = "https://ezpz.cool/utils.sh"
 
+# Entry points a complete utils.sh must define. Used to detect a
+# truncated download, which `bash -n` cannot: a response cut at a
+# syntactically complete boundary parses cleanly.
+_REQUIRED_FUNCTIONS = (
+    "ezpz_setup_env",
+    "ezpz_setup_python",
+    "ezpz_get_machine_name",
+)
+
 
 def _share_dir() -> Path:
     return Path(
@@ -33,8 +42,19 @@ def _in_batch_job() -> bool:
     Compute nodes have no outbound route, so a download there hangs for
     ~270 s and then leaves things unconfigured. Better to refuse.
     """
-    return bool(
-        os.environ.get("PBS_NODEFILE") or os.environ.get("SLURM_JOB_ID")
+    # All the spellings the rest of the codebase recognises. PBS_JOBID
+    # can be set in a compute-node subprocess where PBS_NODEFILE is not
+    # (see ezpz/pbs.py), and SLURM uses both SLURM_JOB_ID and the older
+    # SLURM_JOBID (see ezpz/slurm.py). Missing any of them starts the
+    # very network operation this guard exists to prevent.
+    return any(
+        os.environ.get(v)
+        for v in (
+            "PBS_NODEFILE",
+            "PBS_JOBID",
+            "SLURM_JOB_ID",
+            "SLURM_JOBID",
+        )
     )
 
 
@@ -45,7 +65,19 @@ def _pip_install_cmd(spec: str) -> list[str]:
     tooling, and falls back to ``python -m pip``.
     """
     if shutil.which("uv"):
-        return ["uv", "pip", "install", "--upgrade", spec]
+        # --python is required, not optional: `uv pip install` targets a
+        # venv discovered from the CURRENT DIRECTORY, so a bare call can
+        # fail outside a project or silently upgrade an unrelated .venv
+        # rather than the environment running this command.
+        return [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "--upgrade",
+            spec,
+        ]
     return [sys.executable, "-m", "pip", "install", "--upgrade", spec]
 
 
@@ -166,6 +198,27 @@ def _refresh_utils(url: str, dest: Path) -> None:
         part.unlink(missing_ok=True)
         raise click.ClickException(
             f"downloaded utils.sh has a syntax error: {check.stderr.strip()}"
+        )
+
+    # `bash -n` alone does NOT catch truncation: a response cut at any
+    # syntactically complete boundary parses fine. The first ten lines
+    # of the real utils.sh pass it, and installing that would replace a
+    # working 140 KB file with a stub whose functions are all missing --
+    # exactly the failure this check exists to prevent.
+    #
+    # So also require the functions a caller actually invokes. These are
+    # long-standing entry points; if one is genuinely renamed, this
+    # fails loudly at update time rather than silently at job time.
+    missing = [
+        fn
+        for fn in _REQUIRED_FUNCTIONS
+        if f"\n{fn}()".encode() not in b"\n" + data
+    ]
+    if missing:
+        part.unlink(missing_ok=True)
+        raise click.ClickException(
+            f"downloaded utils.sh looks truncated ({len(data)} bytes): "
+            f"missing {', '.join(missing)}. Existing file left unchanged."
         )
     part.replace(dest)
     click.echo(f"  utils.sh updated ({len(data)} bytes) -> {dest}")

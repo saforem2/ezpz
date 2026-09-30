@@ -174,7 +174,14 @@ def test_valid_download_is_installed(monkeypatch, tmp_path):
 
     mod = sys.modules["ezpz.cli.update_cmd"]
 
-    body = b"#!/usr/bin/env bash\nezpz_setup_env() { :; }\n"
+    # Must define every required entry point: the completeness check
+    # exists precisely to reject a file that lacks them.
+    body = (
+        b"#!/usr/bin/env bash\n"
+        b"ezpz_setup_env() { :; }\n"
+        b"ezpz_setup_python() { :; }\n"
+        b"ezpz_get_machine_name() { :; }\n"
+    )
 
     class _Resp:
         def read(self):
@@ -191,3 +198,82 @@ def test_valid_download_is_installed(monkeypatch, tmp_path):
     mod._refresh_utils("https://example.invalid/utils.sh", dest)
     assert dest.read_bytes() == body
     assert not dest.with_suffix(".part").exists()
+
+
+# ── review follow-ups ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "var",
+    ["PBS_NODEFILE", "PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID"],
+)
+def test_all_scheduler_job_vars_are_detected(monkeypatch, var):
+    """Every spelling the rest of the codebase recognises.
+
+    `PBS_JOBID` can be set in a compute-node subprocess where
+    `PBS_NODEFILE` is not (ezpz/pbs.py), and SLURM uses both
+    `SLURM_JOB_ID` and the older `SLURM_JOBID` (ezpz/slurm.py). Missing
+    any of them starts the network operation the guard prevents.
+    """
+    for v in ("PBS_NODEFILE", "PBS_JOBID", "SLURM_JOB_ID", "SLURM_JOBID"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv(var, "set")
+    assert _in_batch_job() is True
+
+
+def test_uv_is_pointed_at_the_running_interpreter(monkeypatch):
+    """`uv pip install` targets a venv found from the CWD by default.
+
+    Without `--python` it can fail outside a project, or silently
+    upgrade an unrelated `.venv` instead of the environment running
+    this command.
+    """
+    import sys
+
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv")
+    cmd = _pip_install_cmd("pkg")
+    assert "--python" in cmd
+    assert cmd[cmd.index("--python") + 1] == sys.executable
+
+
+def test_truncated_but_valid_shell_is_rejected(tmp_path, monkeypatch):
+    """`bash -n` cannot detect truncation; content must be checked.
+
+    A response cut at a syntactically complete boundary parses fine --
+    the first ten lines of the real utils.sh do. Installing that would
+    replace a working 140 KB file with a stub whose functions are all
+    missing, which is precisely what this command promises not to do.
+    """
+    import sys
+
+    mod = sys.modules["ezpz.cli.update_cmd"]
+
+    good = tmp_path / "utils.sh"
+    good.write_bytes(b"#!/usr/bin/env bash\nezpz_setup_env() { :; }\n")
+
+    # Valid shell, but nothing a caller needs.
+    partial = b"#!/usr/bin/env bash\n# header only\nset -o pipefail\n"
+    import subprocess
+
+    stub = tmp_path / "stub.sh"
+    stub.write_bytes(partial)
+    assert subprocess.run(["bash", "-n", str(stub)]).returncode == 0, (
+        "precondition: the partial file must PASS bash -n"
+    )
+
+    class _Resp:
+        def read(self):
+            return partial
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp())
+    with pytest.raises(Exception, match="truncated"):
+        mod._refresh_utils("https://example.invalid/utils.sh", good)
+    assert b"ezpz_setup_env" in good.read_bytes(), (
+        "a rejected download must leave the existing file untouched"
+    )
