@@ -303,6 +303,7 @@ repo under `experiments/checkpoint-restart/`:
 qsub experiments/checkpoint-restart/restart_experiment.pbs   # 2 nodes
 # or, scheduler-agnostic (works unchanged under SLURM):
 #   ezpz submit experiments/checkpoint-restart/restart_experiment.pbs -N 2
+# (.pbs script detection requires ezpz >= the fix in #268)
 python3 experiments/checkpoint-restart/plot_restart.py \
     expt_<jobid>/baseline/*/metrics-0.jsonl \
     expt_<jobid>/restart/*/*/metrics-0.jsonl \

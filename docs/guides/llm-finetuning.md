@@ -94,7 +94,14 @@ the same command with [`ezpz submit`](../cli/submit.md) — it writes the
 PBS or SLURM script for you and keeps the `ezpz launch` wrapping:
 
 ```bash
+# PBS (Aurora, Polaris)
 ezpz submit -N 8 -q prod -A <project> --time 02:00:00 \
+    -- python3 -m ezpz.examples.hf_trainer --model_name_or_path meta-llama/Llama-3.1-8B
+
+# SLURM (Perlmutter) -- the GPU flags are required, not optional:
+# without them the job is allocated no GPUs and fails at device init.
+ezpz submit -N 8 -q regular -A <project>_g --time 02:00:00 \
+    -C gpu --gpus-per-node 4 --ntasks-per-node 4 \
     -- python3 -m ezpz.examples.hf_trainer --model_name_or_path meta-llama/Llama-3.1-8B
 ```
 
