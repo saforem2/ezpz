@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pathlib
+import shlex
+
 import click
 
 
@@ -58,6 +61,32 @@ import click
     help="Print the generated script without submitting.",
 )
 @click.option(
+    "--remote",
+    default=None,
+    metavar="HOST",
+    help=(
+        "Submit to another machine over SSH instead of locally, e.g. "
+        "--remote aurora. Uses your existing SSH config and auth."
+    ),
+)
+@click.option(
+    "--backend",
+    default="auto",
+    type=click.Choice(["auto", "ssh", "iri"]),
+    help=(
+        "Remote backend (with --remote). 'auto' tries SSH and falls back "
+        "to the ALCF IRI API only if SSH itself cannot connect; a "
+        "scheduler rejection is never retried. 'iri' serves Aurora, "
+        "Polaris and Crux only."
+    ),
+)
+@click.option(
+    "--workdir",
+    default=None,
+    metavar="DIR",
+    help="Remote working directory to submit from (with --remote).",
+)
+@click.option(
     "--launch/--no-launch",
     default=True,
     help="Wrap the command with 'ezpz launch' (default: on).",
@@ -108,6 +137,9 @@ def submit_cmd(
     ntasks_per_node: int | None,
     constraint: str | None,
     strict: bool,
+    remote: str | None,
+    backend: str,
+    workdir: str | None,
 ) -> None:
     """Submit a job to the active scheduler (PBS/SLURM).
 
@@ -157,6 +189,30 @@ def submit_cmd(
         else:
             resolved_env = env_setup
 
+    if remote:
+        _submit_remote(
+            remote=remote,
+            backend=backend,
+            workdir=workdir,
+            command=command,
+            script_path=script_path,
+            nodes=nodes,
+            walltime=walltime,
+            queue=queue,
+            account=account,
+            filesystems=filesystems,
+            job_name=job_name,
+            scheduler=scheduler,
+            launch=launch,
+            dry_run=dry_run,
+            env_setup=resolved_env,
+            gpus_per_node=gpus_per_node,
+            ntasks_per_node=ntasks_per_node,
+            constraint=constraint,
+            strict=strict,
+        )
+        return
+
     submit(
         command=command,
         script=script_path,
@@ -175,3 +231,155 @@ def submit_cmd(
         constraint=constraint,
         strict=strict,
     )
+
+
+# Resolve utils.sh on the TARGET at runtime. `python3 -c` is used rather
+# than a hard-coded path because the install prefix differs per machine
+# (conda on Polaris, frameworks on Aurora, a venv elsewhere), and a
+# wrong absolute path fails as "No such file" inside the job.
+_REMOTE_ENV_SETUP = """\
+_ezpz_utils=$(python3 -c 'import ezpz,pathlib;\
+print(pathlib.Path(ezpz.__file__).parent/"bin"/"utils.sh")' 2>/dev/null)
+if [[ -f "${_ezpz_utils}" ]]; then
+    source "${_ezpz_utils}"
+else
+    # No installed ezpz on the target: fall back to the network copy.
+    # This only works if the compute node has outbound access.
+    source <(curl -fsSL https://ezpz.cool/utils.sh)
+fi
+ezpz_setup_env"""
+
+
+def _submit_remote(
+    *,
+    remote: str,
+    backend: str,
+    workdir: str | None,
+    command: list[str] | None,
+    script_path: str | None,
+    nodes: int,
+    walltime: str,
+    queue: str,
+    account: str | None,
+    filesystems: str,
+    job_name: str | None,
+    scheduler: str | None,
+    launch: bool,
+    dry_run: bool,
+    env_setup: str | None,
+    gpus_per_node: int | None,
+    ntasks_per_node: int | None,
+    constraint: str | None,
+    strict: bool,
+) -> None:
+    """Build the script locally, then submit it on *remote*.
+
+    The script is generated here rather than on the far side so
+    ``--dry-run`` shows exactly what would run, without needing a
+    connection at all.
+    """
+    import sys
+
+    from ezpz.remote import (
+        RemoteSubmitError,
+        scheduler_for,
+        submit_remote,
+    )
+    from ezpz.submit import generate_pbs_script, generate_slurm_script
+
+    sched = (scheduler or scheduler_for(remote)).upper()
+    if script_path:
+        script_text = pathlib.Path(script_path).read_text()
+    else:
+        cmd = shlex.join(command or [])
+        gen = generate_pbs_script if sched == "PBS" else generate_slurm_script
+        kwargs: dict = {
+            "nodes": nodes,
+            "time": walltime,
+            "queue": queue,
+            "account": account,
+            "job_name": job_name,
+            # Never leak the LOCAL cwd into a remote script: the
+            # generator defaults working_dir to os.getcwd(), which does
+            # not exist on the target machine. Default to the remote
+            # $HOME instead and let --workdir override.
+            "working_dir": workdir
+            or "",  # "" -> no cd; scheduler lands in $HOME
+            # Environment setup for a remote job is genuinely awkward:
+            # a LOCAL utils.sh path is meaningless on the target, but
+            # the curl form runs on a COMPUTE node, which has no
+            # outbound route -- it hangs ~270 s and then leaves the job
+            # unconfigured (the ezpz#268 failure, one machine away).
+            #
+            # Default to sourcing ezpz's own copy resolved ON the target
+            # at runtime, falling back to curl only if that is missing.
+            # Overridable with --env.
+            "env_setup": env_setup or _REMOTE_ENV_SETUP,
+            "wrap_with_launch": launch,
+        }
+        if sched == "PBS":
+            kwargs["filesystems"] = filesystems
+            kwargs["strict"] = strict
+        else:
+            kwargs["gpus_per_node"] = gpus_per_node
+            kwargs["ntasks_per_node"] = ntasks_per_node
+            kwargs["constraint"] = constraint
+            kwargs["strict"] = strict
+        script_text = gen(cmd, **kwargs)
+
+    if dry_run:
+        click.echo(
+            f"# would submit to {remote} (scheduler={sched}, "
+            f"backend={backend})"
+        )
+        click.echo(script_text)
+        return
+
+    # Run the SAME script the ssh backend would. Passing the bare command
+    # here meant an IRI fallback silently dropped the environment setup
+    # and the `ezpz launch` wrapping -- a different job from the one the
+    # user asked for, which is worse than failing.
+    iri_kwargs = {
+        "command": script_text,
+        "nodes": nodes,
+        "duration_seconds": _walltime_seconds(walltime),
+        "queue": queue,
+        "account": account or "",
+        "workdir": workdir,
+        "filesystems": filesystems,
+    }
+    try:
+        result = submit_remote(
+            remote,
+            script_text,
+            backend=backend,
+            scheduler=sched,
+            workdir=workdir,
+            iri_kwargs=iri_kwargs,
+        )
+    except RemoteSubmitError as exc:
+        click.echo(f"error: {exc}", err=True)
+        sys.exit(1)
+
+    if result.job_id:
+        click.echo(f"{result.job_id}  (via {result.backend})")
+        return
+    click.echo(
+        f"error: submission to {remote} failed via {result.backend} "
+        f"(exit {result.returncode}): {result.stderr}",
+        err=True,
+    )
+    sys.exit(result.returncode or 1)
+
+
+def _walltime_seconds(walltime: str) -> int:
+    """Convert ``HH:MM:SS`` (or ``MM:SS``, or ``SS``) to seconds.
+
+    The IRI API takes a duration in seconds, while every scheduler flag
+    here uses the colon form.
+    """
+    parts = [int(x) for x in walltime.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, sec = parts[-3:]
+    return h * 3600 + m * 60 + sec
