@@ -1,7 +1,7 @@
 # `ezpz update`
 
 Upgrade `ezpz` in the environment you are currently in, and refresh the
-cached `utils.sh` that `ezpz-setup` sources.
+cached `utils.sh` that the installer placed.
 
 ```bash
 ezpz update

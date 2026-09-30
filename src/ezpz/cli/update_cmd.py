@@ -86,7 +86,7 @@ def update_cmd(
 
     1. Reinstall the package from git into whichever environment is
        active right now.
-    2. Re-download the cached ``utils.sh`` that ``ezpz-setup`` sources.
+    2. Re-download the cached ``utils.sh`` that the installer placed.
 
     Refuses to run inside a batch job: compute nodes have no outbound
     network, so both steps would hang and then fail confusingly.
