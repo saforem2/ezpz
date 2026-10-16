@@ -44,6 +44,7 @@ import logging
 import os
 import shlex
 import subprocess
+import urllib.parse
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,18 @@ REMOTE_SCHEDULERS: dict[str, str] = {
 
 class RemoteSubmitError(RuntimeError):
     """Raised when a remote submission cannot be completed."""
+
+
+@dataclass
+class RemoteJobStatus:
+    """Status of a job as returned by IRI."""
+
+    job_id: str
+    state: str  # new/queued/held/active/completed/failed/canceled
+    exit_code: int | None = None
+    queue: str | None = None
+    account: str | None = None
+    raw: dict | None = None
 
 
 @dataclass
@@ -253,8 +266,8 @@ def submit_via_iri(
                 "filesystems": filesystems or "home",
             },
         },
-        "stdout_path": workdir or "/tmp",
-        "stderr_path": workdir or "/tmp",
+        "stdout_path": f"{workdir}/ezpz-iri.out" if workdir else "/tmp/ezpz-iri.out",
+        "stderr_path": f"{workdir}/ezpz-iri.err" if workdir else "/tmp/ezpz-iri.err",
     }
 
     import json
@@ -454,3 +467,123 @@ def submit_remote(
         result.stderr or "no detail",
     )
     return submit_via_iri(host, **(iri_kwargs or {}))
+
+
+# ── IRI status / cancel (verified against live OpenAPI at /openapi.json) ──
+
+
+def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -> RemoteJobStatus:
+    """Fetch one job's status via IRI GET /compute/status/{rid}/{job_id}."""
+    token = _iri_token()
+    h = host.lower()
+    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    import json as _json
+    import urllib.error as _ue
+    import urllib.request as _ur
+
+    url = f"https://api.alcf.anl.gov/api/v1/compute/status/{resource_id}/{urllib.parse.quote(job_id, safe='')}"
+    if historical:
+        url += "?historical=true"
+    req = _ur.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with _ur.urlopen(req, timeout=30) as resp:
+            body = _json.loads(resp.read().decode())
+    except _ue.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        raise RemoteSubmitError(f"IRI status {exc.code}: {detail}") from exc
+    st = body.get("status") or {}
+    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(body.get("job_spec") or {}).get("attributes", {}).get("queue_name"), account=(body.get("job_spec") or {}).get("attributes", {}).get("account"), raw=body)
+
+
+def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, queue: str | None = None, owner: str | None = None, states: list[str] | None = None) -> list[RemoteJobStatus]:
+    """List jobs via IRI POST /compute/status/{rid}."""
+    token = _iri_token()
+    h = host.lower()
+    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    import json as _json
+    import urllib.error as _ue
+    import urllib.request as _ur
+
+    qs = f"?historical={'true' if historical else 'false'}&limit={limit}"
+    url = f"https://api.alcf.anl.gov/api/v1/compute/status/{resource_id}{qs}"
+    payload: dict = {}
+    if states:
+        payload["states"] = states
+    if queue:
+        payload["queue"] = queue
+    if owner:
+        payload["owner"] = owner
+    req = _ur.Request(url, data=_json.dumps(payload).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
+    try:
+        with _ur.urlopen(req, timeout=30) as resp:
+            body = _json.loads(resp.read().decode())
+    except _ue.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        raise RemoteSubmitError(f"IRI list {exc.code}: {detail}") from exc
+    jobs = body if isinstance(body, list) else body.get("jobs") or body.get("data") or []
+    out = []
+    for j in jobs:
+        st = j.get("status") or {}
+        out.append(RemoteJobStatus(job_id=j.get("id", ""), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(j.get("job_spec") or {}).get("attributes", {}).get("queue_name"), account=(j.get("job_spec") or {}).get("attributes", {}).get("account"), raw=j))
+    return out
+
+
+def cancel_via_iri(host: str, job_id: str) -> RemoteJobStatus:
+    """Cancel via IRI DELETE /compute/cancel/{rid}/{job_id} (204 on success)."""
+    token = _iri_token()
+    h = host.lower()
+    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    import urllib.error as _ue
+    import urllib.request as _ur
+
+    url = f"https://api.alcf.anl.gov/api/v1/compute/cancel/{resource_id}/{urllib.parse.quote(job_id, safe='')}"
+    req = _ur.Request(url, headers={"Authorization": f"Bearer {token}"}, method="DELETE")
+    try:
+        with _ur.urlopen(req, timeout=30) as resp:
+            # 204 has no body
+            if resp.status in (200, 204):
+                return RemoteJobStatus(job_id=job_id, state="canceled", raw={"via": "iri"})
+    except _ue.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        raise RemoteSubmitError(f"IRI cancel {exc.code}: {detail}") from exc
+    raise RemoteSubmitError("IRI cancel: unexpected response")
+
+
+def cancel_via_ssh(host: str, job_id: str, *, scheduler: str | None = None) -> RemoteJobStatus:
+    """Cancel via SSH qdel/scancel."""
+    import shlex as _shlex
+    import subprocess as _sp
+
+    sched = (scheduler or scheduler_for(host)).upper()
+    cmd = f"/opt/pbs/bin/qdel {_shlex.quote(job_id)}" if sched == "PBS" else f"scancel {_shlex.quote(job_id)}"
+    argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
+    proc = _sp.run(argv, capture_output=True, text=True, timeout=30)
+    if proc.returncode == 0:
+        return RemoteJobStatus(job_id=job_id, state="canceled", raw={"via": "ssh", "stdout": proc.stdout})
+    raise RemoteSubmitError(f"cancel failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+
+
+def cancel_remote(host: str, job_id: str, *, backend: str = "auto", scheduler: str | None = None) -> RemoteJobStatus:
+    """Cancel with same auto-fallback rule as submit: 255 → IRI, else stop."""
+    backend = backend.lower()
+    if backend not in {"ssh", "iri", "auto"}:
+        raise RemoteSubmitError(f"unknown backend {backend!r} (expected ssh, iri or auto)")
+    if backend == "iri":
+        return cancel_via_iri(host, job_id)
+    # try SSH first
+    try:
+        return cancel_via_ssh(host, job_id, scheduler=scheduler)
+    except RemoteSubmitError as exc:
+        if backend == "ssh":
+            raise
+        # auto: only fall back on transport failure (255) and IRI-capable host
+        msg = str(exc)
+        is_transport = "255" in msg or "ssh" in msg.lower() and "transport" in msg.lower()
+        # Heuristic: check if error came from SSH transport vs scheduler
+        # cancel_via_ssh raises with scheduler stderr for scheduler rejections — do NOT fall back
+        if "Unknown Job Id" in msg or "Invalid job" in msg:
+            raise
+        if not has_iri_backend(host):
+            raise
+        logger.warning("SSH cancel failed, falling back to IRI: %s", msg)
+        return cancel_via_iri(host, job_id)
