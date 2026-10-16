@@ -2044,6 +2044,23 @@ def _walltime_cascade_log(n: int = 1) -> str:
     )
 
 
+@pytest.fixture
+def stop_log(monkeypatch):
+    """Capture the loop's log lines (the ezpz logger does not propagate,
+    so ``caplog`` sees nothing)."""
+    lines: list[str] = []
+
+    class _Rec:
+        def __getattr__(self, _level):
+            def _log(msg, *args, **kw):
+                lines.append(msg % args if args else msg)
+
+            return _log
+
+    monkeypatch.setattr("ezpz.launch_autoretry.logger", _Rec())
+    return lines
+
+
 class TestAllRanksSegfault:
     def test_fatal_python_error_is_a_crash_pattern(self):
         assert _has_crash_patterns("Fatal Python error: Segmentation fault\n")
@@ -2143,7 +2160,7 @@ class TestDeterministicFailureStop:
         assert get_walltime_remaining_s(env={}) is None
 
     def test_loop_does_not_stop_as_walltime_on_all_rank_segv(
-        self, tmp_path, monkeypatch, caplog
+        self, tmp_path, monkeypatch, stop_log
     ):
         monkeypatch.setattr(
             "ezpz.launch_autoretry.get_walltime_remaining_s",
@@ -2153,7 +2170,8 @@ class TestDeterministicFailureStop:
         allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4", "h5"), active=2)
         _run(monkeypatch, _config(tmp_path), allocation, runner)
         assert len(runner.calls) >= 2  # retried at least once
-        assert "FAILOVER STOP: walltime" not in caplog.text
+        assert not any("FAILOVER STOP: walltime" in l for l in stop_log)
+        assert any("FAILOVER STOP: deterministic_failure" in l for l in stop_log)
 
     def test_mass_segv_loop_stops_deterministic_without_swapping(
         self, tmp_path, monkeypatch
@@ -2217,7 +2235,7 @@ class TestDeterministicFailureStop:
         assert len(runner.calls) == 5
 
     def test_deterministic_stop_is_logged_explicitly(
-        self, tmp_path, monkeypatch, caplog
+        self, tmp_path, monkeypatch, stop_log
     ):
         text = "iter=7 loss=1.0\nOutOfMemoryError: XPU out of memory\n"
         runner = _FakeRunner([(1, text)] * 9)
@@ -2225,4 +2243,4 @@ class TestDeterministicFailureStop:
             tmp_path, full=tuple(f"h{i}" for i in range(1, 12)), active=2
         )
         _run(monkeypatch, _config(tmp_path), allocation, runner)
-        assert "FAILOVER STOP: deterministic_failure" in caplog.text
+        assert any("FAILOVER STOP: deterministic_failure" in l for l in stop_log)
