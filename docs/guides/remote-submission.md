@@ -32,12 +32,13 @@ instead of text that has to be scraped out of `qstat`, but it serves only
 Aurora, Polaris and Crux — **not Sunspot, and not Perlmutter** (NERSC runs
 its own Superfacility API).
 
-Get a token once:
+Get a token once (from the Aurora UAN):
 
 ```bash
-uv tool install alcf-tokens
-alcf-tokens login
+uvx alcf-tokens login iri
 ```
+
+Or for a persistent install: `uv tool install alcf-tokens` then `alcf-tokens login iri`.
 
 `ALCF_IRI_TOKEN` is honoured if you would rather supply one directly.
 

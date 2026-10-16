@@ -352,8 +352,9 @@ def _iri_token() -> str:
         )
     except FileNotFoundError as exc:
         raise RemoteSubmitError(
-            "alcf-tokens not found; `pip install alcf-tokens` and run "
-            "`alcf-tokens login`, or set ALCF_IRI_TOKEN"
+            "alcf-tokens not found; `uvx alcf-tokens login iri` (or "
+            "`uv tool install alcf-tokens` then `alcf-tokens login iri`), "
+            "or set ALCF_IRI_TOKEN"
         ) from exc
     if proc.returncode != 0:
         raise RemoteSubmitError(
