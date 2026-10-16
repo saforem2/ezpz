@@ -236,6 +236,10 @@ def submit_via_iri(
         (rid for name, rid in IRI_RESOURCE_IDS.items() if h.startswith(name)),
         None,
     ) or _resolve_resource_id(host, token)
+    # IRI schema (docs.alcf.anl.gov/services/iri-api/#2.1): filesystems
+    # lives at attributes.custom_attributes.filesystems, NOT at top-level
+    # custom_attributes and NOT at attributes.filesystems. stdout/stderr
+    # are mandatory top-level fields.
     payload: dict[str, object] = {
         "executable": "/bin/bash",
         "arguments": ["-lc", command],
@@ -245,13 +249,13 @@ def submit_via_iri(
             "duration": duration_seconds,
             "queue_name": queue,
             "account": account,
+            "custom_attributes": {
+                "filesystems": filesystems or "home",
+            },
         },
+        "stdout_path": workdir or "/tmp",
+        "stderr_path": workdir or "/tmp",
     }
-    if workdir:
-        payload["stdout_path"] = workdir
-        payload["stderr_path"] = workdir
-    if filesystems:
-        payload["custom_attributes"] = {"filesystems": filesystems}
 
     import json
     import urllib.error
@@ -343,19 +347,30 @@ def _iri_token() -> str:
     env_token = os.environ.get("ALCF_IRI_TOKEN")
     if env_token:
         return env_token
-    try:
-        proc = subprocess.run(
-            ["alcf-tokens", "get-token", "iri"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except FileNotFoundError as exc:
+    # Try uvx first (ephemeral, no install), then plain alcf-tokens
+    proc = None
+    last_exc = None
+    for cmd in (
+        ["uvx", "alcf-tokens", "get-token", "iri"],
+        ["alcf-tokens", "get-token", "iri"],
+    ):
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            break
+        except FileNotFoundError as exc:
+            last_exc = exc
+            continue
+    if proc is None:
         raise RemoteSubmitError(
             "alcf-tokens not found; `uvx alcf-tokens login iri` (or "
             "`uv tool install alcf-tokens` then `alcf-tokens login iri`), "
             "or set ALCF_IRI_TOKEN"
-        ) from exc
+        ) from last_exc
     if proc.returncode != 0:
         raise RemoteSubmitError(
             f"alcf-tokens failed: {proc.stderr.strip() or proc.returncode}"
