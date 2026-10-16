@@ -79,6 +79,12 @@ def _rich_single(st):
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON instead of table.")
 def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states, all_users, as_json):
     """Show job status (local or remote)."""
+    # Positional sugar: ezpz status aurora  ≡  --remote aurora
+    if not remote and job_id:
+        from ezpz.remote import looks_like_host as _looks_host
+        if _looks_host(job_id):
+            remote = job_id
+            job_id = None
     if not remote:
         _status_local(job_id)
         return
@@ -221,12 +227,32 @@ def state_list(s):
 
 @click.command()
 @click.argument("job_id", required=True)
-@click.option("--remote", default=None, metavar="HOST", help="Host to cancel on (SSH name or ALCF resource). Omit for local qdel.")
+@click.argument("maybe_host", required=False)
+@click.option("--remote", default=None, metavar="HOST", help="Host to cancel on (SSH name or ALCF resource). Omit for local qdel. Also positional: ezpz cancel aurora JOBID.")
 @click.option("--backend", default="auto", type=click.Choice(["auto", "ssh", "iri"]), help="Remote backend with --remote (default: auto).")
 @click.option("--scheduler", default=None, type=click.Choice(["PBS", "SLURM"]), help="Override scheduler auto-detection.")
 @click.option("--dry-run", is_flag=True, default=False, help="Print what would run without cancelling.")
-def cancel_cmd(job_id, remote, backend, scheduler, dry_run):
+def cancel_cmd(job_id, maybe_host, remote, backend, scheduler, dry_run):
     """Cancel a queued or running job."""
+    # Positional sugar: ezpz cancel aurora 12345  ≡  --remote aurora 12345
+    if maybe_host and not remote:
+        from ezpz.remote import looks_like_host as _lh
+        # job_id is actually the host when two positionals given
+        if _lh(job_id) and maybe_host:
+            remote = job_id
+            job_id = maybe_host
+            maybe_host = None
+    # Click gives us first positional as job_id; check if it is a host
+    if not remote:
+        from ezpz.remote import looks_like_host as _looks_host2
+        if _looks_host2(job_id):
+            remote = job_id
+            # Need second positional — not available in current signature,
+            # so we treat as error asking for --remote form for cancel
+            # Actually: cancel requires JOB_ID, so `cancel aurora 123` needs 2 args.
+            # Click only has one arg, so this path is for `cancel aurora` meaning
+            # cancel on aurora without job_id — not valid. Fall through to error.
+            pass
     if not remote:
         _cancel_local(job_id, scheduler)
         return

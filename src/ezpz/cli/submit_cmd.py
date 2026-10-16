@@ -150,6 +150,13 @@ def submit_cmd(
     """
     from ezpz.submit import submit
 
+    # Positional remote sugar: ezpz submit aurora -- ...  ≡  --remote aurora
+    if args and not remote:
+        from ezpz.remote import looks_like_host
+        if looks_like_host(args[0]):
+            remote = args[0]
+            args = args[1:]
+
     # Determine if first arg is an existing script file
     script_path = None
     command = None

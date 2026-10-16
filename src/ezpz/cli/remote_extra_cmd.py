@@ -18,14 +18,21 @@ def _parse_walltime(s: str) -> int:
 
 @click.command("extend")
 @click.argument("job_id")
-@click.option("--remote", "-r", required=True, help="Target host (aurora/polaris/crux or SSH alias).")
+@click.argument("maybe_host", required=False)
+@click.option("--remote", "-r", default=None, help="Target host (aurora/polaris/crux or SSH alias).")
 @click.option("--time", "-t", "walltime", default=None, help="New walltime HH:MM:SS or seconds.")
 @click.option("--queue", "-q", default=None, help="Move to queue/partition.")
 @click.option("--account", "-A", default=None, help="Charge account.")
 @click.option("--backend", type=click.Choice(["auto","iri","ssh"]), default="auto", show_default=True)
 @click.option("--dry-run", is_flag=True, help="Print what would be sent without sending.")
-def extend_cmd(job_id, remote, walltime, queue, account, backend, dry_run):
+def extend_cmd(job_id, maybe_host, remote, walltime, queue, account, backend, dry_run):
     """Extend or retarget a queued job (IRI PUT / SSH qalter)."""
+    if maybe_host and not remote:
+        from ezpz.remote import looks_like_host as _lh
+        if _lh(maybe_host):
+            remote = maybe_host
+    if not remote:
+        raise click.UsageError("--remote is required (or positional host: ezpz extend JOB aurora)")
     dur=_parse_walltime(walltime) if walltime else None
     if not any([dur, queue, account]):
         raise click.UsageError("nothing to update: pass --time / --queue / --account")

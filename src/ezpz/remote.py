@@ -76,6 +76,22 @@ REMOTE_SCHEDULERS: dict[str, str] = {
     "frontier": "SLURM",
 }
 
+# For positional sugar: is this token a host alias (aurora) or a job arg (script path)?
+_KNOWN_HOSTS = frozenset(REMOTE_SCHEDULERS) | IRI_MACHINES
+
+
+def looks_like_host(s: str) -> bool:
+    """Heuristic: does bare token look like a remote host alias?"""
+    low = s.lower().split(".")[0].split("-")[0]
+    return low in _KNOWN_HOSTS or s.lower() in REMOTE_SCHEDULERS or s.lower() in IRI_MACHINES
+
+
+def looks_like_job_id(s: str) -> bool:
+    """Heuristic: does token look like a PBS/SLURM job ID (numeric prefix)?"""
+    # 8936801 or 8936801.aurora-pbs-... or 8936286.aurora
+    base = s.split(".")[0]
+    return base.isdigit()
+
 
 class RemoteSubmitError(RuntimeError):
     """Raised when a remote submission cannot be completed."""
