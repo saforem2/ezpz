@@ -80,23 +80,40 @@ def test_iri_backend_only_for_supported_machines():
 
 
 def test_success_does_not_touch_iri(monkeypatch):
+    # With auto=IRI-first, SSH path is only used after IRI auth failure.
+    # This test verifies that: force IRI to fail auth, then SSH succeeds.
     called = {"iri": 0}
-    monkeypatch.setattr(
-        subprocess, "run", lambda *a, **k: _Proc(0, "12345.aurora\n")
-    )
-    monkeypatch.setattr(
-        "ezpz.remote.submit_via_iri",
-        lambda *a, **k: called.__setitem__("iri", called["iri"] + 1),
-    )
+
+    def _fail_iri(*a, **k):
+        called["iri"] += 1
+        raise RemoteSubmitError("IRI not configured")
+
+    monkeypatch.setattr("ezpz.remote.submit_via_iri", _fail_iri)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc(0, "12345.aurora\n"))
     res = submit_remote("aurora", SCRIPT, backend="auto")
     assert res.job_id == "12345.aurora"
     assert res.backend == "ssh"
-    assert called["iri"] == 0
+    assert called["iri"] == 1  # IRI was tried first, then SSH succeeded
 
 
 def test_scheduler_rejection_does_NOT_fall_back(monkeypatch):
-    """The case that would double-submit. Exit 1 must stop."""
+    """Scheduler rejection via SSH (exit 1) must not trigger IRI fallback."""
     called = {"iri": 0}
+
+    def _boom(*a, **k):
+        called["iri"] += 1
+        return RemoteResult("should-not-happen", "iri", 0)
+
+    # Force auto to take SSH path: make IRI fail, then SSH returns rejection
+    call_idx = {"n": 0}
+
+    def _fail_iri_first(*a, **k):
+        if call_idx["n"] == 0:
+            call_idx["n"] += 1
+            raise RemoteSubmitError("IRI not configured")
+        return _boom(*a, **k)
+
+    monkeypatch.setattr("ezpz.remote.submit_via_iri", _fail_iri_first)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -104,13 +121,8 @@ def test_scheduler_rejection_does_NOT_fall_back(monkeypatch):
             1, "", "qsub: Invalid filesystem identifiers gila"
         ),
     )
-
-    def _boom(*a, **k):
-        called["iri"] += 1
-        return RemoteResult("should-not-happen", "iri", 0)
-
-    monkeypatch.setattr("ezpz.remote.submit_via_iri", _boom)
     res = submit_remote("aurora", SCRIPT, backend="auto")
+    # After IRI fails, SSH rejection should NOT retry IRI
     assert called["iri"] == 0, "a qsub rejection must never be retried via IRI"
     assert res.returncode == 1
     assert res.backend == "ssh"

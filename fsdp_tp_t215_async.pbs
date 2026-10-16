@@ -1,0 +1,98 @@
+#!/bin/bash -l
+#PBS -N fsdptp-t215async
+#PBS -l select=2
+#PBS -l walltime=00:40:00
+#PBS -q next-eval
+#PBS -A datascience
+#PBS -l filesystems=home:flare
+#PBS -o /home/foremans/fsdptp-t215async.log
+#PBS -j oe
+#
+# The untested cell of the 2x2.
+#
+#                  CCL default        CCL_OP_SYNC=0 + ATL_SYNC_COLL=0
+#   torch 2.13     STALL              STALL   (Sunspot P2/P4)
+#   torch 2.15     STALL (8869263)    ???     <- this job
+#
+# Each variable was tried alone; the combination never was. If the two
+# layers interact -- a newer torch issuing collectives differently AND
+# oneCCL told explicitly to run them async -- neither single test would
+# have caught it.
+#
+# Arms are PAIRED in one allocation so the env vars are the only
+# difference; that is what the earlier Sunspot pairing got right and what
+# makes a positive result attributable.
+V=/lus/flare/projects/AuroraGPT/foremans/venvs/xpu-torch215
+PY="$V/bin/python"
+[[ -x "$PY" ]] || { echo "FATAL: no interpreter at $PY"; exit 1; }
+
+# What ezpz_setup_xpu provides, minus the frameworks module (whose 2.13
+# conda stack is what this venv exists to avoid). Omitting FLAT cost a
+# whole job earlier -- only 6 of 12 tiles were visible.
+export ZE_FLAT_DEVICE_HIERARCHY=FLAT
+export CCL_PROCESS_LAUNCHER=pmix
+export ONEAPI_DEVICE_SELECTOR="opencl:gpu;level_zero:gpu"
+export TORCH_CPP_LOG_LEVEL=ERROR
+unset CCL_KVS_MODE
+export CCL_KVS_MODE=pmi
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled PYTHONUNBUFFERED=1
+
+SRC="${HOME}/ezpz-src"
+export PYTHONPATH="${SRC}/src:${PYTHONPATH:-}"
+echo "host=$(hostname)  ezpz=$(cd "$SRC" && git rev-parse --short HEAD)"
+echo "torch=$("$PY" -c 'import torch;print(torch.__version__)' 2>&1 | tail -1)"
+
+NDEV=$("$PY" -c 'import torch;print(torch.xpu.device_count())' 2>&1 | tail -1)
+echo "xpu device_count=${NDEV}"
+[ "${NDEV}" = "12" ] || { echo "FATAL: expected 12 tiles, got '${NDEV}'"; exit 1; }
+
+W="${HOME}/fsdptp-t215async-${PBS_JOBID%%.*}"
+mkdir -p "$W"
+cd "$W" || exit 1
+
+BUDGET=300
+arm() {
+    local label="$1"; shift
+    echo "===== BEGIN ${label} ====="
+    echo "  env: CCL_OP_SYNC=${CCL_OP_SYNC-<unset>} CCL_ATL_SYNC_COLL=${CCL_ATL_SYNC_COLL-<unset>}"
+    local t1
+    timeout "${BUDGET}" mpiexec -n 24 -ppn 12 "$PY" -m ezpz.examples.fsdp_tp \
+        "$@" >"${W}/${label}.log" 2>&1
+    t1=$(date +%s)
+    # Last TIMESTAMPED line vs kill time. Exit code, iteration count and
+    # file mtime have each given a wrong verdict in this investigation.
+    local S last_ts last_epoch quiet iters n
+    S=$(sed 's/\x1b\[[0-9;]*m//g' "${W}/${label}.log")
+    iters=$(printf '%s' "$S" | grep -coE 'iter=[0-9]+')
+    n=$(printf '%s' "$S" | grep -oE 'iter=[0-9]+' | tail -1)
+    last_ts=$(printf '%s' "$S" | grep -oE '^\[20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9:]{8}\]' | tail -1 | tr -d '[]')
+    if [ -z "$last_ts" ]; then
+        echo "RESULT ${label} = NO-OUTPUT :: $(printf '%s' "$S" | grep -iE 'Error|Traceback' | head -1 | cut -c1-120)"
+    else
+        last_epoch=$(date -d "$last_ts" +%s 2>/dev/null || echo "$t1")
+        quiet=$(( t1 - last_epoch ))
+        if [ "$iters" -eq 0 ]; then
+            echo "RESULT ${label} = NO-PROGRESS (0 iters, quiet ${quiet}s) :: $(printf '%s' "$S" | grep -iE 'Error' | head -1 | cut -c1-110)"
+        elif [ "$quiet" -gt 60 ]; then
+            echo "RESULT ${label} = STALLED (quiet ${quiet}s, reached ${n})"
+        else
+            echo "RESULT ${label} = HEALTHY (active to kill, reached ${n})"
+        fi
+    fi
+    echo "===== END ${label} ====="
+}
+
+async0() { unset CCL_OP_SYNC CCL_ATL_SYNC_COLL; export CCL_OP_SYNC=0 CCL_ATL_SYNC_COLL=0; }
+ccldef() { unset CCL_OP_SYNC CCL_ATL_SYNC_COLL; }
+
+# THE cell: torch 2.15 + both vars = 0, on the fastest-failing config.
+async0; arm A1-random-tp2-ASYNC0  --model large --dataset random --tp 2
+# Paired control in the same allocation: same config, vars cleared.
+ccldef; arm A2-random-tp2-DEFAULT --model large --dataset random --tp 2
+# Repeat on the benchmark's dataset.
+async0; arm A3-imdb-tp2-ASYNC0    --model large --dataset stanfordnlp/imdb --tp 2
+# Does ASYNC0 also hold at higher TP?
+async0; arm A4-random-tp4-ASYNC0  --model large --dataset random --tp 4
+
+echo "PBS_DONE"

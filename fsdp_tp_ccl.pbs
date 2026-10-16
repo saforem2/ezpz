@@ -1,0 +1,93 @@
+#!/bin/bash -l
+#PBS -N fsdptp-ccl
+#PBS -l select=2
+#PBS -l walltime=00:45:00
+#PBS -q workq
+#PBS -A datascience
+#PBS -l filesystems=home:tegu
+#PBS -o /home/foremans/fsdptp-ccl.log
+#PBS -j oe
+#
+# Does forcing async oneCCL semantics clear the tp>1 stall?
+#
+# Established by bisect (job 12478670): fsdp_tp stalls whenever --tp > 1,
+# on both datasets and both model sizes, at a nondeterministic point
+# (first forward / iter=3 / iter=88). Every failure's terminal line, from
+# all 24 ranks:
+#
+#   |CCL_WARN| explicit dependencies are not supported for group calls:
+#   reduce_scatter
+#
+# The stalled runs had NEITHER CCL_OP_SYNC nor CCL_ATL_SYNC_COLL set, so
+# oneCCL's own defaults applied. ezpz does not set CCL_ATL_SYNC_COLL at
+# all (grep: no hits in src/), and #247 deliberately stopped forcing
+# CCL_OP_SYNC. This arms both explicitly to 0.
+#
+# Arms are paired: every config runs BOTH with and without the vars, in
+# one job on one allocation, so the only difference is the setting.
+module load frameworks
+echo "module load rc=$?  CONDA_PREFIX=${CONDA_PREFIX:-<unset>}"
+export LD_LIBRARY_PATH="${CONDA_PREFIX:-}/lib:${LD_LIBRARY_PATH:-}"
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled PYTHONUNBUFFERED=1
+
+SRC="${HOME}/ezpz-src"
+export PYTHONPATH="${SRC}/src:${PYTHONPATH:-}"
+echo "host=$(hostname)  ezpz=$(cd "$SRC" && git rev-parse --short HEAD)"
+source "${SRC}/src/ezpz/bin/utils.sh" >/dev/null 2>&1
+ezpz_setup_job >/dev/null 2>&1
+echo "setup_job rc=$? NHOSTS=${NHOSTS:-?} NGPUS=${NGPUS:-?}"
+
+W="${HOME}/fsdptp-ccl-${PBS_JOBID%%.*}"
+mkdir -p "$W"
+cd "$W" || exit 1
+
+# Classify on SILENCE relative to the budget, not on iteration count and
+# not on the exit code. A run at 2.6 it/s that then logs nothing for
+# minutes is stalled; a run still logging when the cap fires is healthy.
+# Getting this wrong cost three reversals in the previous round.
+BUDGET=300
+arm() {
+    local label="$1"; shift
+    echo "===== BEGIN ${label} ====="
+    timeout "${BUDGET}" mpiexec -n 24 -ppn 12 python3 -m ezpz.examples.fsdp_tp \
+        "$@" >"${W}/${label}.log" 2>&1
+    rc=$?
+    local f="${W}/${label}.log"
+    local S last_epoch end_epoch quiet n
+    S=$(sed 's/\x1b\[[0-9;]*m//g' "$f")
+    n=$(printf '%s' "$S" | grep -oE 'iter=[0-9]+' | tail -1)
+    # Seconds between the file's last write and the job's kill time.
+    last_epoch=$(stat -c %Y "$f")
+    end_epoch=$(date +%s)
+    quiet=$(( end_epoch - last_epoch ))
+    if [ "$quiet" -gt 60 ]; then
+        echo "RESULT ${label} = STALLED (last output ${quiet}s before end, at ${n:-no-iters})"
+    elif [ "$rc" -eq 124 ]; then
+        echo "RESULT ${label} = HEALTHY-CAPPED (still logging at cap, ${n:-no-iters})"
+    elif [ "$rc" -eq 0 ]; then
+        echo "RESULT ${label} = COMPLETED (${n:-no-iters})"
+    else
+        echo "RESULT ${label} = OTHER rc=${rc} (${n:-no-iters}) :: $(printf '%s' "$S" | grep -viE '^\[|CCL_WARN' | tail -1 | cut -c1-140)"
+    fi
+    echo "===== END ${label} ====="
+}
+
+ccl_async() {
+    unset CCL_OP_SYNC CCL_ATL_SYNC_COLL
+    export CCL_OP_SYNC=0 CCL_ATL_SYNC_COLL=0
+}
+ccl_default() { unset CCL_OP_SYNC CCL_ATL_SYNC_COLL; }
+
+# 1. The fastest-failing config (stalled at iter=3), both ways.
+ccl_default; arm P1-random-tp2-DEFAULT --model large --dataset random --tp 2
+ccl_async;   arm P2-random-tp2-ASYNC0  --model large --dataset random --tp 2
+
+# 2. The exact benchmark argv, both ways.
+ccl_default; arm P3-imdb-tp2-DEFAULT   --model large --dataset stanfordnlp/imdb --tp 2
+ccl_async;   arm P4-imdb-tp2-ASYNC0    --model large --dataset stanfordnlp/imdb --tp 2
+
+# 3. tp=1 control with the vars set -- they must not BREAK a working case.
+ccl_async;   arm P5-imdb-tp1-ASYNC0    --model large --dataset stanfordnlp/imdb --tp 1
+
+echo "PBS_DONE"

@@ -1,0 +1,74 @@
+#!/bin/bash -l
+#PBS -N fsdptp-bisect2
+#PBS -l select=2
+#PBS -l walltime=00:50:00
+#PBS -q workq
+#PBS -A datascience
+#PBS -l filesystems=home:tegu
+#PBS -o /home/foremans/fsdptp-bisect2.log
+#PBS -j oe
+#
+# Round 1 of this bisect PASSED all arms, contradicting the benchmark
+# hang. Two uncontrolled variables in my own harness explain why:
+#
+#   * I forced `--batch-size 1`, overriding the `large` preset's
+#     batch_size=2. Batch size changes the collective payload.
+#   * I capped `--train-iters 5`. The benchmark passes none, so it runs
+#     a FULL EPOCH (~1041 steps for 25k imdb rows at dp=12, bs=2).
+#
+# Round 2 changes nothing the benchmark does not: no --batch-size, no
+# --train-iters, exactly the benchmark's argv. Arms differ only in the
+# ONE variable under test.
+module load frameworks
+echo "module load rc=$?  CONDA_PREFIX=${CONDA_PREFIX:-<unset>}"
+export LD_LIBRARY_PATH="${CONDA_PREFIX:-}/lib:${LD_LIBRARY_PATH:-}"
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export WANDB_MODE=disabled PYTHONUNBUFFERED=1
+export TORCH_DDP_TIMEOUT=240
+
+SRC="${HOME}/ezpz-src"
+export PYTHONPATH="${SRC}/src:${PYTHONPATH:-}"
+echo "host=$(hostname)  ezpz=$(cd "$SRC" && git rev-parse --short HEAD)"
+source "${SRC}/src/ezpz/bin/utils.sh" >/dev/null 2>&1
+ezpz_setup_job >/dev/null 2>&1
+echo "setup_job rc=$? NHOSTS=${NHOSTS:-?} NGPUS=${NGPUS:-?}"
+
+W="${HOME}/fsdptp-bisect2-${PBS_JOBID%%.*}"
+mkdir -p "$W"
+cd "$W" || exit 1
+
+# Cap each arm by WALLCLOCK, not by --train-iters, so the run is
+# argv-identical to the benchmark and a hang still bounds the arm.
+arm() {
+    local label="$1" secs="$2"; shift 2
+    echo "===== BEGIN ${label} ====="
+    timeout "${secs}" mpiexec -n 24 -ppn 12 python3 -m ezpz.examples.fsdp_tp \
+        "$@" >"${W}/${label}.log" 2>&1
+    rc=$?
+    S=$(sed 's/\x1b\[[0-9;]*m//g' "${W}/${label}.log")
+    last=$(printf '%s' "$S" | grep -oE 'iter=[0-9]+' | tail -1)
+    # A hang shows as: reached a low iter, then no further progress and a
+    # wallclock kill. Distinguish that from a clean early exit.
+    if [ "$rc" -eq 124 ]; then
+        echo "RESULT ${label} = HANG-WALLCLOCK (stalled at ${last:-none})"
+    elif printf '%s' "$S" | grep -qiE 'PROGRESS TIMEOUT|Watchdog|Abort\('; then
+        echo "RESULT ${label} = HANG-COLLECTIVE (stalled at ${last:-none})"
+    elif [ "$rc" -eq 0 ]; then
+        echo "RESULT ${label} = COMPLETED (${last:-none})"
+    else
+        echo "RESULT ${label} = OTHER rc=${rc} (${last:-none}) :: $(printf '%s' "$S" | grep -viE '^\[|CCL_WARN' | tail -2 | tr '\n' ' ' | cut -c1-150)"
+    fi
+    echo "===== END ${label} ====="
+}
+
+# EXACT benchmark argv. If this hangs, the bisect harness is now faithful.
+arm C2-exact-benchmark 420 --model large --dataset stanfordnlp/imdb
+# Same, TP off -- the one variable.
+arm B2-imdb-tp1        420 --model large --dataset stanfordnlp/imdb --tp 1
+# Same, random dataset -- the other variable.
+arm A2-random-tp2      420 --model large --dataset random
+# Benchmark argv but bounded steps: does it survive past iter=2 when the
+# epoch is short? Separates "hangs at step 3" from "hangs at epoch end".
+arm E2-imdb-10iters    420 --model large --dataset stanfordnlp/imdb --train-iters 10
+
+echo "PBS_DONE"

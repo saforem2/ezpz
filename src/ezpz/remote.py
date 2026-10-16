@@ -400,12 +400,13 @@ def submit_remote(
     workdir: str | None = None,
     iri_kwargs: dict | None = None,
 ) -> RemoteResult:
-    """Submit to *host*, choosing a backend.
+    """Submit to host, choosing a backend.
 
-    With ``backend="auto"`` this tries SSH first and falls back to IRI
-    **only when SSH itself could not connect** (exit 255). A non-zero
-    exit from the remote ``qsub`` / ``sbatch`` is reported as-is: the
-    scheduler refused for a reason, and resubmitting down another path
+    With backend=auto this tries IRI first on IRI-capable hosts
+    (aurora/polaris/crux) and falls back to SSH on auth/network failure.
+    On non-IRI hosts (sunspot/perlmutter) it goes straight to SSH.
+    A non-zero exit from the remote qsub / sbatch is reported as-is:
+    the scheduler refused for a reason, and resubmitting down another path
     risks a duplicate job.
 
     Args:
@@ -434,6 +435,18 @@ def submit_remote(
     if backend == "iri":
         return submit_via_iri(host, **(iri_kwargs or {}))
 
+    # auto = IRI-first on IRI hosts, SSH-first otherwise
+    if backend == "auto" and has_iri_backend(host):
+        try:
+            return submit_via_iri(host, **(iri_kwargs or {}))
+        except RemoteSubmitError as exc:
+            # Auth/token failure -> fall back to SSH; explicit "not served" shouldn't happen here
+            msg = str(exc)
+            if "not served" in msg:
+                raise
+            logger.warning("IRI submit failed (%s), falling back to SSH", msg)
+            # fall through to SSH path below
+
     result = submit_via_ssh(
         host, script_text, scheduler=scheduler, workdir=workdir
     )
@@ -441,7 +454,6 @@ def submit_remote(
         return result
 
     if result.returncode != SSH_TRANSPORT_FAILURE:
-        # The remote scheduler ran and refused. Do NOT retry elsewhere.
         logger.error(
             "Remote %s failed (exit %d): %s",
             "qsub/sbatch",
@@ -491,6 +503,8 @@ def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -
     except _ue.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
         raise RemoteSubmitError(f"IRI status {exc.code}: {detail}") from exc
+    except (TimeoutError, OSError) as exc:
+        raise RemoteSubmitError(f"IRI status timeout: {exc}") from exc
     st = body.get("status") or {}
     return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(body.get("job_spec") or {}).get("attributes", {}).get("queue_name"), account=(body.get("job_spec") or {}).get("attributes", {}).get("account"), raw=body)
 
@@ -520,6 +534,8 @@ def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, qu
     except _ue.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
         raise RemoteSubmitError(f"IRI list {exc.code}: {detail}") from exc
+    except (TimeoutError, OSError) as exc:
+        raise RemoteSubmitError(f"IRI list timeout: {exc}") from exc
     jobs = body if isinstance(body, list) else body.get("jobs") or body.get("data") or []
     out = []
     for j in jobs:

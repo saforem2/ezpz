@@ -23,8 +23,11 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
     if not remote:
         _status_local(job_id)
         return
-    from ezpz.remote import RemoteSubmitError
+    # Default auto to iri for IRI-capable hosts (faster, no SSH hop)
+    from ezpz.remote import RemoteSubmitError, has_iri_backend
 
+    if backend == "auto" and has_iri_backend(remote):
+        backend = "iri"
     try:
         if job_id:
             _status_single_remote(remote, job_id, backend=backend, historical=historical, as_json=as_json)
@@ -34,6 +37,9 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
             )
     except RemoteSubmitError as exc:
         click.echo(f"error: {exc}", err=True)
+        sys.exit(1)
+    except (TimeoutError, OSError) as exc:
+        click.echo(f"error: IRI timed out after 30s — try without --historical or filter by --queue/--states: {exc}", err=True)
         sys.exit(1)
 
 
