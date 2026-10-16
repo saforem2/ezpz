@@ -2009,3 +2009,220 @@ class TestRunAttemptWithTee:
             "lines never reach the log file because the iterator "
             "raises UnicodeDecodeError mid-stream."
         )
+
+
+# ---------------------------------------------------------------------------
+# All-ranks-segfault vs. walltime cascade; deterministic-failure stop
+# ---------------------------------------------------------------------------
+#
+# Aurora job 8929146 (20B, 6144 ranks): every rank hit
+# `Fatal Python error: Segmentation fault`, PALS tore the job down with
+# SIGTERM, the aggregate was rc=143, and the loop logged
+# `FAILOVER STOP: walltime (rc=143, attempt 1)` with ~42,800 s left.
+# Cause: `rank N died from signal 11` is stripped as an innocent cascade
+# and the crash set had no `Fatal Python error` literal.
+
+_NRANKS = 6144
+
+
+def _all_ranks_segv_log(n: int = _NRANKS, step: int | None = None) -> str:
+    lines = []
+    if step is not None:
+        lines.append(f"[2026-10-14 10:00:00][I] iter={step} loss=1.0")
+    for r in range(n):
+        lines.append(f"Fatal Python error: Segmentation fault (rank {r})")
+        lines.append(f"x4205c0s2b0n0: rank {r} died from signal 11")
+    lines.append("Execution finished with 143")
+    return "\n".join(lines) + "\n"
+
+
+def _walltime_cascade_log(n: int = 1) -> str:
+    return (
+        "iter=500 loss=0.9\n"
+        + "".join(f"x4205c0s2b0n0: rank {r} died from signal 15\n" for r in range(n))
+        + "Execution finished with 143\n"
+    )
+
+
+class TestAllRanksSegfault:
+    def test_fatal_python_error_is_a_crash_pattern(self):
+        assert _has_crash_patterns("Fatal Python error: Segmentation fault\n")
+
+    def test_all_ranks_segfault_rc143_is_not_walltime(self, tmp_path):
+        """REGRESSION (job 8929146): 6144 segfaults + rc=143 != walltime."""
+        log = _write(tmp_path / "log", _all_ranks_segv_log())
+        res = classify_attempt(143, log, [])
+        assert res.reason is not TerminationReason.WALLTIME
+
+    def test_mass_segfault_without_fatal_error_lines_is_not_walltime(
+        self, tmp_path
+    ):
+        # Only the `rank N died from signal 11` lines (faulthandler off).
+        text = "".join(f"rank {r} died from signal 11\n" for r in range(_NRANKS))
+        log = _write(tmp_path / "log", text)
+        assert (
+            classify_attempt(143, log, []).reason
+            is not TerminationReason.WALLTIME
+        )
+
+    def test_single_signal_15_cascade_after_real_walltime_is_walltime(
+        self, tmp_path
+    ):
+        log = _write(tmp_path / "log", _walltime_cascade_log(1))
+        assert (
+            classify_attempt(143, log, [], walltime_remaining_s=0.0).reason
+            is TerminationReason.WALLTIME
+        )
+        # ...and with no PBS information at all (unchanged behaviour).
+        assert classify_attempt(143, log, []).reason is TerminationReason.WALLTIME
+
+    def test_handful_of_teardown_segv_at_real_walltime_is_walltime(
+        self, tmp_path
+    ):
+        text = _walltime_cascade_log(50) + (
+            "Fatal Python error: Segmentation fault\n"
+            "rank 7 died from signal 11\n"
+        )
+        log = _write(tmp_path / "log", text)
+        assert (
+            classify_attempt(143, log, [], walltime_remaining_s=3.0).reason
+            is TerminationReason.WALLTIME
+        )
+
+    def test_same_segv_with_walltime_remaining_is_a_crash(self, tmp_path):
+        text = _walltime_cascade_log(50) + (
+            "Fatal Python error: Segmentation fault\n"
+        )
+        log = _write(tmp_path / "log", text)
+        assert (
+            classify_attempt(143, log, [], walltime_remaining_s=42800.0).reason
+            is not TerminationReason.WALLTIME
+        )
+
+    def test_mass_segfault_ignores_scraped_host(self, tmp_path):
+        """Thousands of ranks dying is not evidence about ONE node."""
+        log = _write(tmp_path / "log", _all_ranks_segv_log())
+        res = classify_attempt(143, log, ["x4205c0s2b0n0"])
+        assert res.reason is TerminationReason.RETRYABLE_NON_NODE_SPECIFIC
+
+    def test_signal11_cascade_from_real_origin_still_swaps(self, tmp_path):
+        """Job 8466848 shape: a bad_alloc on one node cascades SIGSEGV
+        outward. The origin is node-specific, so the swap must stay."""
+        text = "[rank9]: MemoryError: std::bad_alloc\n" + "".join(
+            f"rank {r} died from signal 11\n" for r in range(_NRANKS)
+        )
+        log = _write(tmp_path / "log", text)
+        res = classify_attempt(143, log, ["x4719c2s0b0n0"])
+        assert res.reason is TerminationReason.BAD_NODE_KNOWN
+
+
+class TestDeterministicFailureStop:
+    def test_walltime_remaining_parses_pbs_qstat(self, monkeypatch):
+        import subprocess
+
+        from ezpz.launch_autoretry import get_walltime_remaining_s
+
+        out = (
+            "Job Id: 8929146.aurora-pbs-0001\n"
+            "    resources_used.walltime = 00:05:20\n"
+            "    Resource_List.walltime = 12:00:00\n"
+        )
+
+        def fake_run(cmd, **kw):
+            assert cmd[:2] == ["qstat", "-f"]
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+        rem = get_walltime_remaining_s(
+            env={"PBS_JOBID": "8929146.aurora-pbs-0001"}, runner=fake_run
+        )
+        assert rem == 12 * 3600 - (5 * 60 + 20)
+
+    def test_walltime_remaining_none_without_scheduler(self):
+        from ezpz.launch_autoretry import get_walltime_remaining_s
+
+        assert get_walltime_remaining_s(env={}) is None
+
+    def test_loop_does_not_stop_as_walltime_on_all_rank_segv(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        monkeypatch.setattr(
+            "ezpz.launch_autoretry.get_walltime_remaining_s",
+            lambda *a, **k: 42800.0,
+        )
+        runner = _FakeRunner([(143, _all_ranks_segv_log(64))] * 6)
+        allocation = _alloc(tmp_path, full=("h1", "h2", "h3", "h4", "h5"), active=2)
+        _run(monkeypatch, _config(tmp_path), allocation, runner)
+        assert len(runner.calls) >= 2  # retried at least once
+        assert "FAILOVER STOP: walltime" not in caplog.text
+
+    def test_mass_segv_loop_stops_deterministic_without_swapping(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "ezpz.launch_autoretry.get_walltime_remaining_s",
+            lambda *a, **k: 42800.0,
+        )
+        hosts = iter(["h1", "h2", "h5", "h6", "h7", "h8"])
+        runner = _FakeRunner([(143, _all_ranks_segv_log(64))] * 9)
+        allocation = _alloc(
+            tmp_path, full=tuple(f"h{i}" for i in range(1, 9)), active=2
+        )
+        spares_before = list(allocation.spare)
+        rc = _run(
+            monkeypatch, _config(tmp_path), allocation, runner,
+            scrape_fn=lambda _: [next(hosts)],
+        )
+        assert rc == 143
+        assert len(runner.calls) <= 3
+        assert list(allocation.spare) == spares_before  # nothing burned
+        assert not (tmp_path / "bad_nodes.txt").exists() or not (
+            tmp_path / "bad_nodes.txt"
+        ).read_text().strip()
+
+    def test_same_signature_same_stage_stops_instead_of_rotating(
+        self, tmp_path, monkeypatch
+    ):
+        """Nine innocent swaps (the other observed run) -> stop at 3."""
+        text = "iter=7 loss=1.0\nOutOfMemoryError: XPU out of memory\n"
+        runner = _FakeRunner([(1, text)] * 9)
+        hosts = iter([f"n{i}" for i in range(20)])
+        allocation = _alloc(
+            tmp_path, full=tuple(f"h{i}" for i in range(1, 12)), active=2
+        )
+        rc = _run(
+            monkeypatch, _config(tmp_path), allocation, runner,
+            scrape_fn=lambda _: [next(hosts)],
+        )
+        assert rc == 1
+        assert len(runner.calls) == 3
+        assert allocation.has_spares
+
+    def test_different_stage_each_time_keeps_rotating(
+        self, tmp_path, monkeypatch
+    ):
+        attempts = [
+            (1, f"iter={i * 10} loss=1\nOutOfMemoryError: oom\n")
+            for i in range(1, 5)
+        ] + [(0, "Execution finished with 0\n")]
+        runner = _FakeRunner(attempts)
+        hosts = iter([f"n{i}" for i in range(20)])
+        allocation = _alloc(
+            tmp_path, full=tuple(f"h{i}" for i in range(1, 12)), active=2
+        )
+        rc = _run(
+            monkeypatch, _config(tmp_path), allocation, runner,
+            scrape_fn=lambda _: [next(hosts)],
+        )
+        assert rc == 0
+        assert len(runner.calls) == 5
+
+    def test_deterministic_stop_is_logged_explicitly(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        text = "iter=7 loss=1.0\nOutOfMemoryError: XPU out of memory\n"
+        runner = _FakeRunner([(1, text)] * 9)
+        allocation = _alloc(
+            tmp_path, full=tuple(f"h{i}" for i in range(1, 12)), active=2
+        )
+        _run(monkeypatch, _config(tmp_path), allocation, runner)
+        assert "FAILOVER STOP: deterministic_failure" in caplog.text
