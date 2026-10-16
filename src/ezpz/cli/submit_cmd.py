@@ -244,17 +244,7 @@ def submit_cmd(
 # than a hard-coded path because the install prefix differs per machine
 # (conda on Polaris, frameworks on Aurora, a venv elsewhere), and a
 # wrong absolute path fails as "No such file" inside the job.
-_REMOTE_ENV_SETUP = """\
-_ezpz_utils=$(python3 -c 'import ezpz,pathlib;\
-print(pathlib.Path(ezpz.__file__).parent/"bin"/"utils.sh")' 2>/dev/null)
-if [[ -f "${_ezpz_utils}" ]]; then
-    source "${_ezpz_utils}"
-else
-    # No installed ezpz on the target: fall back to the network copy.
-    # This only works if the compute node has outbound access.
-    source <(curl -fsSL https://ezpz.cool/utils.sh)
-fi
-ezpz_setup_env"""
+# Remote env setup: self-bootstrapping (proxies + workdir + install). See src/ezpz/remote_env.py.
 
 
 def _submit_remote(
@@ -310,8 +300,7 @@ def _submit_remote(
             # generator defaults working_dir to os.getcwd(), which does
             # not exist on the target machine. Default to the remote
             # $HOME instead and let --workdir override.
-            "working_dir": workdir
-            or "",  # "" -> no cd; scheduler lands in $HOME
+            "working_dir": "",  # remote: cd handled inside env_setup (WORKDIR/tmpdir), not here
             # Environment setup for a remote job is genuinely awkward:
             # a LOCAL utils.sh path is meaningless on the target, but
             # the curl form runs on a COMPUTE node, which has no
@@ -321,7 +310,7 @@ def _submit_remote(
             # Default to sourcing ezpz's own copy resolved ON the target
             # at runtime, falling back to curl only if that is missing.
             # Overridable with --env.
-            "env_setup": env_setup or _REMOTE_ENV_SETUP,
+            "env_setup": env_setup or __import__("ezpz.remote_env", fromlist=["build_remote_env_setup"]).build_remote_env_setup(workdir),
             "wrap_with_launch": launch,
         }
         if sched == "PBS":
