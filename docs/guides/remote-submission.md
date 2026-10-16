@@ -35,7 +35,7 @@ its own Superfacility API).
 Get a token once:
 
 ```bash
-pip install alcf-tokens
+uv tool install alcf-tokens
 alcf-tokens login
 ```
 

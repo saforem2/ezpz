@@ -208,7 +208,7 @@ def test_ssh_uses_batchmode_and_pipes_the_script(monkeypatch):
     submit_remote("aurora", SCRIPT, backend="ssh")
     assert "BatchMode=yes" in seen["argv"]
     assert seen["input"] == SCRIPT
-    assert "qsub" in seen["argv"][-1]
+    assert "/opt/pbs/bin/qsub" in seen["argv"][-1]
 
 
 def test_slurm_host_uses_sbatch(monkeypatch):

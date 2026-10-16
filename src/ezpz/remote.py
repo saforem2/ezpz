@@ -156,7 +156,7 @@ def submit_via_ssh(
         "try another backend".
     """
     sched = (scheduler or scheduler_for(host)).upper()
-    submit_cmd = "qsub" if sched == "PBS" else "sbatch"
+    submit_cmd = "/opt/pbs/bin/qsub" if sched == "PBS" else "/opt/pbs/bin/sbatch"
     path = remote_path or "~/.ezpz-remote-job.sh"
 
     # Write via stdin, then submit. `cat >` rather than scp keeps this to
