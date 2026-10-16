@@ -313,6 +313,29 @@ post-mortem `grep` is reliable — in the **job's** stdout, not in
 | 8 | zero progress markers twice **and** scraper named nobody | **STUCK_PRE_TRAINING** → return rc |
 | 9 | bad-node verdict but no spares left                    | **EXHAUSTED** → return rc |
 | 10 | SIGINT (Ctrl-C)                                       | **INTERRUPTED** → return 130 |
+| 11 | exit 143 with only segfault lines (`Fatal Python error: Segmentation fault`, or ≥16 `rank N died from signal 11`) and walltime left (or unknown) | crash, not walltime → retry |
+| 12 | ≥16 ranks segfault and nothing else names an origin    | **RETRYABLE_NON_NODE_SPECIFIC** → retry in place, no swap |
+| 13 | same crash classes at the same last `iter=`/`step=` on 3 consecutive attempts (2 for a mass segfault) | **DETERMINISTIC_FAILURE** → return rc, spares unused |
+
+**Mass segfaults and walltime (#11–#12).** When every rank segfaults,
+PALS tears the job down with SIGTERM and the aggregate is `143`, the
+same code as a walltime kill, while the `rank N died from signal 11`
+lines are stripped as an innocent cascade. Aurora job 8929146 (20B,
+6144 ranks) was filed as `FAILOVER STOP: walltime` with ~42,800 s left.
+A segfault-only log at `143` is now walltime only when the scheduler
+(`qstat -f $PBS_JOBID`, or `squeue` on SLURM) reports ≤300 s remaining;
+with more time left, or no scheduler answer, it is a crash. Thousands of
+ranks dying says nothing about one host, so the scraper's named host is
+ignored and nothing is swapped. A segfault cascading from a node-local
+origin (`std::bad_alloc`, `UR_RESULT_ERROR_OUT_OF_RESOURCES`) keeps its
+swap.
+
+**Deterministic failures (#13).** A failure that repeats with the same
+crash classes at the same last `iter=`/`step=` after nodes were swapped
+was not the nodes. The loop stops with `FAILOVER STOP:
+deterministic_failure` and leaves the remaining spares unused instead of
+retiring one innocent host per attempt. A hardware fault does not repeat
+at an identical step, so a genuinely bad node does not trip this.
 
 **Unattributed storage failures (#4).** A checkpoint write that dies of
 `ENOSPC` tears the whole job down, and on PALS the teardown cascade

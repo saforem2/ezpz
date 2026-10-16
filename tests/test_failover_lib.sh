@@ -670,6 +670,111 @@ EOF
     assert_file_contents "${FAILOVER_BAD}" "host1  blind  attempt=1"
 }
 
+test_run_143_all_ranks_segfault_is_not_walltime() {
+    # Aurora job 8929146: every rank segfaulted, aggregate rc=143, and the
+    # strip of `rank N died from signal 11` left nothing -> "walltime".
+    # A mass segfault is a crash that names no node: retry in place, burn
+    # no spare.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/segv_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+if [[ "${n}" == "1" ]]; then
+    for r in $(seq 1 64); do
+        echo "Fatal Python error: Segmentation fault"
+        echo "host1: rank ${r} died from signal 11"
+    done
+    exit 143
+fi
+echo "Normal training output"
+exit 0
+EOF
+    chmod +x "${bindir}/segv_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response "host1"  # teardown names a host; must be ignored
+
+    export FAILOVER_MAX_RETRIES=2
+    rc=0
+    failover_run segv_cmd || rc=$?
+    assert_eq "${rc}" "0" "rc (retried and succeeded)"
+    assert_file_contents "${FAILOVER_BAD}" ""
+}
+
+test_run_143_teardown_segv_at_real_walltime_is_walltime() {
+    # A lone segfault during a real walltime teardown, with the scheduler
+    # reporting no time left, is still a walltime stop.
+    setup_pbs_nodefile "host1
+host2
+host3" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/qstat" <<'EOF'
+#!/usr/bin/env bash
+echo "    resources_used.walltime = 11:59:30"
+echo "    Resource_List.walltime = 12:00:00"
+EOF
+    cat > "${bindir}/teardown_cmd" <<'EOF'
+#!/usr/bin/env bash
+echo "Fatal Python error: Segmentation fault"
+echo "host1: rank 3 died from signal 15"
+exit 143
+EOF
+    chmod +x "${bindir}/qstat" "${bindir}/teardown_cmd"
+    export PATH="${bindir}:${PATH}"
+    export PBS_JOBID="8929146.aurora-pbs-0001"
+    shadow_scrape_response ""
+
+    export FAILOVER_MAX_RETRIES=3
+    rc=0
+    failover_run teardown_cmd || rc=$?
+    assert_eq "${rc}" "143" "rc"
+    assert_file_contents "${FAILOVER_BAD}" ""
+}
+
+test_run_stops_on_deterministic_failure() {
+    # Same crash class at the same last iter, attempt after attempt: swapping
+    # innocent nodes cannot help. Stop after 3 attempts with spares unused.
+    setup_pbs_nodefile "host1
+host2
+host3
+host4
+host5
+host6
+host7
+host8" >/dev/null
+    failover_init 2 || exit 1
+    local bindir="${TMPDIR}/bin"
+    mkdir -p "${bindir}"
+    cat > "${bindir}/det_cmd" <<'EOF'
+#!/usr/bin/env bash
+n_file="${TMPDIR}/call_count"
+n=$(cat "${n_file}" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "${n}" > "${n_file}"
+echo "iter=7 loss=1.0"
+echo "OutOfMemoryError: XPU out of memory"
+exit 1
+EOF
+    chmod +x "${bindir}/det_cmd"
+    export PATH="${bindir}:${PATH}"
+    shadow_scrape_response ""
+
+    export FAILOVER_MAX_RETRIES=6
+    rc=0
+    failover_run det_cmd || rc=$?
+    assert_eq "${rc}" "1" "rc"
+    assert_eq "$(cat "${TMPDIR}/call_count")" "3" "attempts before deterministic stop"
+}
+
 test_run_swaps_named_bad_node_when_scraper_finds_one() {
     setup_pbs_nodefile "host1
 host2
@@ -824,6 +929,9 @@ run_test "run does NOT retry on 143 with only rank-exit-code-0 lines"      test_
 run_test "run DOES retry on 143 when real hw death is mixed with cascade"  test_run_walltime_143_retries_on_real_hw_death_mixed_with_innocent_cascade
 run_test "run handles real Aurora UR_OOM + cascade regression"             test_run_walltime_143_retries_on_real_aurora_ur_oom_with_cascade
 run_test "run retries on rc=143 + std::bad_alloc (shell/python sync)" test_run_walltime_143_retries_on_std_bad_alloc
+run_test "run: rc=143 + all-ranks segfault is NOT walltime"       test_run_143_all_ranks_segfault_is_not_walltime
+run_test "run: teardown segv at real walltime IS walltime"      test_run_143_teardown_segv_at_real_walltime_is_walltime
+run_test "run stops on deterministic failure (no more swaps)"   test_run_stops_on_deterministic_failure
 run_test "run swaps named bad node (from scraper)"            test_run_swaps_named_bad_node_when_scraper_finds_one
 run_test "run exhausts max retries, returns final rc"         test_run_exhausts_max_retries
 run_test "run detects inner_rc through ANSI escapes"          test_run_ansi_stripping_in_inner_rc_detection

@@ -112,6 +112,16 @@ _CRASH_PATTERNS_RX = re.compile(
     # successful run into a retry. The Aurora message always carries the
     # C++ literal, so the narrow form loses nothing.
     r"|std::bad_alloc"
+    # Python's faulthandler dump for a SIGSEGV. Job 8929146 (Aurora, 20B,
+    # 6144 ranks): EVERY rank printed this, PALS tore the job down with
+    # SIGTERM (aggregate rc=143), and because the only other lines were
+    # `rank N died from signal 11` (stripped as an innocent cascade) the
+    # log held NO crash pattern -- `FAILOVER STOP: walltime` with ~42,800 s
+    # left. A segfault is never a clean walltime kill (walltime sends
+    # SIGTERM, which does not produce this dump). The teardown-segfault
+    # corner case is handled by the remaining-walltime check in
+    # classify_attempt, not by weakening this pattern.
+    r"|Fatal Python error: Segmentation fault"
 )
 
 # Innocent rank-cascade lines. These are emitted by mpiexec when a
@@ -129,6 +139,44 @@ _CRASH_PATTERNS_RX = re.compile(
 _INNOCENT_RANK_CASCADE_RX = re.compile(
     r"rank \d+ died from signal (?:11|15)"
 )
+
+# `rank N died from signal 11`, counted rather than stripped. One or a
+# handful is the usual cascade from a failure elsewhere (job 8466848).
+# Thousands -- every rank segfaulting -- is the failure itself (job
+# 8929146), and nothing else in the log will say so.
+_RANK_SIGNAL_11_RX = re.compile(r"rank \d+ died from signal 11")
+_FATAL_SEGV_RX = re.compile(r"Fatal Python error: Segmentation fault")
+
+# At or above this many segfaulting ranks the segfault is treated as
+# crash evidence even with no other pattern in the log. Well above the
+# few ranks that can fault during a SIGTERM teardown, far below 6144.
+_MASS_SEGV_MIN_RANKS = 16
+
+# Remaining-walltime margin (seconds). At or below it a retry cannot
+# usefully run, so a segfault-only log at rc=143 is a teardown segfault
+# of a genuine walltime kill.
+_WALLTIME_MARGIN_S = 300.0
+
+# Consecutive attempts that must die with an identical failure signature
+# (same crash classes at the same last iter/step) before the loop calls
+# the failure deterministic and stops instead of rotating spares. A
+# mass segfault is not node-specific by construction, so it needs one
+# fewer confirmation.
+_MAX_SAME_SIGNATURE = 3
+_MAX_SAME_SIGNATURE_MASS_SEGV = 2
+
+# Crash classes for the failure signature. Matched on the log with the
+# innocent rank cascade stripped (the segv class is computed from counts).
+_CRASH_CLASS_RXS = (
+    ("gloo", re.compile(r"RuntimeError: \[.*gloo.*\] (?:Connection closed by peer|Timed out waiting)")),
+    ("oom", re.compile(r"OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES")),
+    ("bad_alloc", re.compile(r"std::bad_alloc")),
+    ("signal", re.compile(r"died from signal")),
+    ("rank_exit", re.compile(r"rank \d+ exited with code [1-9][0-9]*")),
+    ("eof", re.compile(r"EOFError: No data left in file")),
+    ("srun_killed", re.compile(r"srun: error: \S+: tasks? [\d,-]+: Killed")),
+)
+_LAST_STEP_RX = re.compile(r"\b(?:iter|step)\s*[=:]\s*(\d+)")
 
 # Strip ANSI color codes before parsing the "Execution finished with N"
 # trailer. The trailer is logged with color (the rc digits are wrapped
@@ -240,7 +288,8 @@ class TerminationReason(Enum):
     log line, so grep'ing the log for ``FAILOVER STOP`` always lands
     on the final classifier verdict.
 
-    SUCCESS / WALLTIME / STUCK_PRE_TRAINING / EXHAUSTED are terminal:
+    SUCCESS / WALLTIME / STUCK_PRE_TRAINING / DETERMINISTIC_FAILURE /
+    EXHAUSTED are terminal:
     :func:`run_with_auto_retry` returns immediately. The two BAD_NODE
     values trigger a swap-and-retry. RETRYABLE_UNATTRIBUTED retries
     WITHOUT a swap. INTERRUPTED is produced by the loop's SIGINT
@@ -261,6 +310,16 @@ class TerminationReason(Enum):
     spare consumed, nothing appended to ``bad_nodes.txt``. Bounded by
     :data:`_MAX_CONSECUTIVE_UNATTRIBUTED` consecutive occurrences, after
     which the loop reverts to the normal bad-node path."""
+
+    RETRYABLE_NON_NODE_SPECIFIC = "retryable_non_node_specific"
+    """A failure that hit so many ranks it cannot be one node's fault
+    (e.g. every rank segfaulting). Retry in place: no swap, no spare
+    consumed, whatever host the scraper named. Bounded by
+    :data:`_MAX_SAME_SIGNATURE_MASS_SEGV` via :attr:`DETERMINISTIC_FAILURE`."""
+
+    DETERMINISTIC_FAILURE = "deterministic_failure"
+    """Consecutive attempts died the same way at the same stage, so
+    swapping nodes demonstrably did not change the outcome. Terminal."""
 
     STUCK_PRE_TRAINING = "stuck_pre_training"
     EXHAUSTED = "exhausted"
@@ -288,6 +347,10 @@ class ClassificationResult:
     still says ENOSPC -- if the counter tracked the verdict it would
     reset on that very swap, re-granting the budget forever and never
     actually bounding anything."""
+    signature: Optional[tuple[frozenset[str], Optional[int]]] = None
+    """``(crash classes, last iter/step)`` of this attempt, or ``None``
+    when the log names no crash class. The loop compares it across
+    attempts to detect a deterministic failure."""
 
 
 @dataclass
@@ -633,6 +696,109 @@ def _has_crash_patterns(log_text: str) -> bool:
     return _CRASH_PATTERNS_RX.search(filtered) is not None
 
 
+def _segv_rank_count(log_text: str) -> int:
+    """How many ranks the log says segfaulted (larger of the two tallies)."""
+    return max(
+        len(_FATAL_SEGV_RX.findall(log_text)),
+        len(_RANK_SIGNAL_11_RX.findall(log_text)),
+    )
+
+
+def _crash_classes(log_text: str) -> frozenset[str]:
+    """Distinct crash classes in the log (cascade lines stripped).
+
+    ``segv`` is reported when ANY rank dumped ``Fatal Python error:
+    Segmentation fault`` or at least :data:`_MASS_SEGV_MIN_RANKS` ranks
+    died from signal 11; a lone ``rank N died from signal 11`` is still
+    just a cascade.
+    """
+    filtered = "\n".join(
+        line
+        for line in log_text.splitlines()
+        if not _INNOCENT_RANK_CASCADE_RX.search(line)
+    )
+    classes = {
+        name for name, rx in _CRASH_CLASS_RXS if rx.search(filtered)
+    }
+    if (
+        _FATAL_SEGV_RX.search(log_text)
+        or len(_RANK_SIGNAL_11_RX.findall(log_text)) >= _MASS_SEGV_MIN_RANKS
+    ):
+        classes.add("segv")
+    return frozenset(classes)
+
+
+def _last_step(log_text: str) -> Optional[int]:
+    hits = _LAST_STEP_RX.findall(log_text)
+    return int(hits[-1]) if hits else None
+
+
+def _parse_duration_s(text: str) -> Optional[float]:
+    """``[D-]HH:MM:SS`` / ``MM:SS`` / ``SS`` -> seconds, else ``None``."""
+    text = text.strip()
+    days = 0
+    if "-" in text:
+        d, _, text = text.partition("-")
+        if not d.isdigit():
+            return None
+        days = int(d)
+    try:
+        parts = [int(p) for p in text.split(":")]
+    except ValueError:
+        return None
+    if not 1 <= len(parts) <= 3:
+        return None
+    secs = 0
+    for p in parts:
+        secs = secs * 60 + p
+    return float(days * 86400 + secs)
+
+
+def get_walltime_remaining_s(
+    env: Optional[dict] = None,
+    runner: Callable = subprocess.run,
+) -> Optional[float]:
+    """Seconds of scheduler walltime left, or ``None`` if unknown.
+
+    PBS: ``Resource_List.walltime - resources_used.walltime`` from
+    ``qstat -f $PBS_JOBID``. SLURM: ``squeue -h -j $SLURM_JOB_ID -o %L``.
+    Best effort -- any failure (no scheduler, command missing, timeout,
+    unparseable output) returns ``None`` and the caller falls back to the
+    log alone. This is what separates "SIGTERM because walltime ran out"
+    from "SIGTERM because a rank crashed with 42,800 s still to go".
+    """
+    env = os.environ if env is None else env
+
+    def _run(cmd: list[str]) -> Optional[str]:
+        try:
+            cp = runner(
+                cmd, capture_output=True, text=True, timeout=20, check=False
+            )
+        except Exception:
+            return None
+        return cp.stdout if cp.returncode == 0 else None
+
+    pbs = env.get("PBS_JOBID")
+    if pbs:
+        out = _run(["qstat", "-f", pbs])
+        if out is None:
+            return None
+        m_tot = re.search(r"Resource_List\.walltime\s*=\s*(\S+)", out)
+        m_used = re.search(r"resources_used\.walltime\s*=\s*(\S+)", out)
+        if not (m_tot and m_used):
+            return None
+        tot = _parse_duration_s(m_tot.group(1))
+        used = _parse_duration_s(m_used.group(1))
+        if tot is None or used is None:
+            return None
+        return max(0.0, tot - used)
+    slurm = env.get("SLURM_JOB_ID") or env.get("SLURM_JOBID")
+    if slurm:
+        out = _run(["squeue", "-h", "-j", slurm, "-o", "%L"])
+        return _parse_duration_s(out) if out else None
+    return None
+
+
 def _has_progress_markers(log_text: str) -> bool:
     return _PROGRESS_MARKER_RX.search(log_text) is not None
 
@@ -671,6 +837,9 @@ def classify_attempt(
     prior_attempt_had_progress: Optional[bool] = None,
     has_spares: bool = True,
     consecutive_unattributed: int = 0,
+    walltime_remaining_s: Optional[float] = None,
+    prior_signature: Optional[tuple[frozenset[str], Optional[int]]] = None,
+    same_signature_run: int = 0,
 ) -> ClassificationResult:
     """Decide what the auto-retry loop should do after an attempt.
 
@@ -685,6 +854,9 @@ def classify_attempt(
     | 0        | inner_rc != 0 (wrapper lied about success)  | classify by inner_rc    |
     | 0        | crash patterns present                      | bad-node retry          |
     | 143      | no crash patterns                           | WALLTIME                |
+    | 143      | segfault-only, walltime ~exhausted          | WALLTIME                |
+    | any      | thousands of ranks segfault, no other class | RETRYABLE_NON_NODE_SPEC |
+    | any      | same crash signature + stage, N in a row    | DETERMINISTIC_FAILURE   |
     | 143      | crash patterns present                      | bad-node retry          |
     | non-zero | ENOSPC/EDQUOT, under the budget             | RETRYABLE_UNATTRIBUTED  |
     | 124      | (idle-output watchdog tripped)              | BAD_NODE_BLIND          |
@@ -741,6 +913,13 @@ def classify_attempt(
             in :attr:`RETRYABLE_UNATTRIBUTED` in an unbroken run up to
             now. The loop tracks this and resets it to 0 on any other
             verdict.
+        walltime_remaining_s: Scheduler walltime left (see
+            :func:`get_walltime_remaining_s`), or ``None`` if unknown.
+            Only consulted to recognise a teardown segfault of a real
+            walltime kill; ``None`` means "trust the log".
+        prior_signature: The previous attempt's ``signature``.
+        same_signature_run: How many consecutive attempts, ending with
+            the previous one, produced ``prior_signature``.
     """
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     # Strip ANSI ONCE, here, so every matcher below sees plain text.
@@ -755,9 +934,25 @@ def classify_attempt(
     log_text = _strip_ansi(log_text)
 
     inner_rc = _extract_inner_rc(log_text)
-    crash = _has_crash_patterns(log_text)
+    segv_ranks = _segv_rank_count(log_text)
+    mass_segv = segv_ranks >= _MASS_SEGV_MIN_RANKS
+    crash = _has_crash_patterns(log_text) or mass_segv
     has_progress = _has_progress_markers(log_text)
     unattributed_io = _has_unattributed_io_failure(log_text)
+    classes = _crash_classes(log_text)
+    if shell_rc == _WATCHDOG_RC:
+        classes = classes | {"idle_timeout"}
+    segv_only = classes == frozenset({"segv"})
+    # A mass segfault names no node: thousands of ranks do not die from
+    # one host's fault. Only when nothing ELSE in the log points at an
+    # origin -- a bad_alloc that cascades SIGSEGV outward (job 8466848)
+    # keeps its node-specific swap.
+    non_node_specific = mass_segv and segv_only
+    signature = (
+        (classes, _last_step(log_text))
+        if classes and not unattributed_io
+        else None
+    )
     # Effective rc: trust the inner trailer over a clean shell exit
     # when the wrapper lied (mpiexec teardown raced a SIGTERM, etc.)
     effective_rc = shell_rc
@@ -774,6 +969,7 @@ def classify_attempt(
             reason=reason,
             has_progress=has_progress,
             has_unattributed_io=unattributed_io,
+            signature=signature,
         )
 
     # Success: shell exit 0, no contrary inner_rc, no crash patterns.
@@ -785,6 +981,17 @@ def classify_attempt(
     # mpiexec teardown races the wallclock kill. Use the crash
     # patterns to disambiguate.
     if effective_rc == _WALLTIME_RC and not crash:
+        return _result(TerminationReason.WALLTIME)
+    # A segfault is only filed as walltime when the clock confirms it:
+    # a handful of ranks can fault while a real walltime SIGTERM tears
+    # the job down, but then there is nothing left to retry INTO. With
+    # time remaining -- or unknown -- a segfault is a crash.
+    if (
+        effective_rc == _WALLTIME_RC
+        and segv_only
+        and walltime_remaining_s is not None
+        and walltime_remaining_s <= _WALLTIME_MARGIN_S
+    ):
         return _result(TerminationReason.WALLTIME)
 
     # Unattributed storage failure (#231). The log EXPLAINS this death
@@ -810,6 +1017,28 @@ def classify_attempt(
         and consecutive_unattributed < _MAX_CONSECUTIVE_UNATTRIBUTED
     ):
         return _result(TerminationReason.RETRYABLE_UNATTRIBUTED)
+
+    # Deterministic failure: this attempt died with the same crash
+    # classes at the same last iter/step as the previous ones. Swapping
+    # nodes demonstrably did not change the outcome, so the fault is not
+    # node-specific and every further rotation only burns an innocent
+    # spare. Placed before the node-blaming paths on purpose. A hardware
+    # fault does not repeat at an identical step, which is what keeps
+    # this from firing on a genuinely bad node.
+    if signature is not None:
+        run = same_signature_run + 1 if signature == prior_signature else 1
+        limit = (
+            _MAX_SAME_SIGNATURE_MASS_SEGV
+            if non_node_specific
+            else _MAX_SAME_SIGNATURE
+        )
+        if run >= limit:
+            return _result(TerminationReason.DETERMINISTIC_FAILURE)
+
+    # Thousands of ranks segfaulting names no node (see above): retry on
+    # the same hosts, whatever the scraper picked up from the teardown.
+    if non_node_specific:
+        return _result(TerminationReason.RETRYABLE_NON_NODE_SPECIFIC)
 
     # The progress guard applies BEFORE we decide which swap path to
     # take — there's no point swapping nodes if the run is dying
@@ -1096,6 +1325,10 @@ def run_with_auto_retry(
     # ENOSPC, recovers, trains for an hour and hits it again should get
     # the full budget the second time.
     consecutive_unattributed = 0
+    # Failure-signature run: how many consecutive attempts died with the
+    # identical (crash classes, last iter/step). See DETERMINISTIC_FAILURE.
+    prior_signature: Optional[tuple[frozenset[str], Optional[int]]] = None
+    same_signature_run = 0
 
     while True:
         attempt += 1
@@ -1149,6 +1382,13 @@ def run_with_auto_retry(
             return 128 + signal.SIGINT
 
         scraped = scrape_fn(log_path)
+        # Only rc=143 is ambiguous between "walltime ran out" and "a rank
+        # crashed and PALS SIGTERMed the rest", so only then ask the
+        # scheduler how much clock is left (one `qstat`, not one per
+        # attempt).
+        walltime_remaining_s = (
+            get_walltime_remaining_s() if last_rc == _WALLTIME_RC else None
+        )
         result = classify_attempt(
             last_rc,
             log_path,
@@ -1156,8 +1396,16 @@ def run_with_auto_retry(
             prior_attempt_had_progress=prior_attempt_had_progress,
             has_spares=allocation.has_spares,
             consecutive_unattributed=consecutive_unattributed,
+            walltime_remaining_s=walltime_remaining_s,
+            prior_signature=prior_signature,
+            same_signature_run=same_signature_run,
         )
         reason = result.reason
+        if result.signature is not None and result.signature == prior_signature:
+            same_signature_run += 1
+        else:
+            same_signature_run = 1 if result.signature is not None else 0
+        prior_signature = result.signature
         # Thread the progress flag through to the next iteration —
         # classifier already parsed the log, no need to re-read.
         prior_attempt_had_progress = result.has_progress
@@ -1183,6 +1431,37 @@ def run_with_auto_retry(
                 "[auto-retry] FAILOVER STOP: walltime (rc=%d, attempt %d)",
                 last_rc,
                 attempt,
+            )
+            if (
+                walltime_remaining_s is not None
+                and walltime_remaining_s > _WALLTIME_MARGIN_S
+            ):
+                logger.warning(
+                    "[auto-retry] note: the scheduler reports %.0f s of "
+                    "walltime still remaining, so rc=%d was not a walltime "
+                    "kill; the log held no crash signature either. Check "
+                    "the attempt log before assuming the run finished.",
+                    walltime_remaining_s,
+                    last_rc,
+                )
+            return last_rc
+
+        if reason is TerminationReason.DETERMINISTIC_FAILURE:
+            classes, step = result.signature or (frozenset(), None)
+            logger.error(
+                "[auto-retry] FAILOVER STOP: deterministic_failure "
+                "(%d consecutive attempts died the same way: crash "
+                "class(es) %s, last iter/step=%s, rc=%d). Swapping nodes "
+                "did not change the outcome, so the fault is not "
+                "node-specific. Stopping with %d spare node(s) unused "
+                "instead of rotating more innocent hosts. Fix the "
+                "underlying failure (code, config, software stack) and "
+                "relaunch.",
+                same_signature_run,
+                sorted(classes),
+                step,
+                last_rc,
+                len(allocation.spare),
             )
             return last_rc
 
@@ -1230,6 +1509,21 @@ def run_with_auto_retry(
                 "resumes.",
                 consecutive_unattributed,
                 _MAX_CONSECUTIVE_UNATTRIBUTED,
+                last_rc,
+            )
+            continue
+
+        # Mass failure: far too many ranks died for it to be one host.
+        # Retry in place, ignoring whatever host the teardown named.
+        if reason is TerminationReason.RETRYABLE_NON_NODE_SPECIFIC:
+            logger.warning(
+                "[auto-retry] retryable_non_node_specific: the log shows "
+                "a mass failure (crash class(es) %s across many ranks), "
+                "which is not evidence about any one host. No node is "
+                "being retired and no spare consumed (scraper named %s; "
+                "ignored). Retrying on the SAME hosts (rc=%d).",
+                sorted(result.signature[0]) if result.signature else [],
+                scraped,
                 last_rc,
             )
             continue

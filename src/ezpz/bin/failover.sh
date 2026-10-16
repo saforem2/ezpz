@@ -200,6 +200,82 @@ failover_swap_one_blind() {
 }
 
 # ---------------------------------------------------------------------------
+# Crash classification helpers (twin of src/ezpz/launch_autoretry.py).
+#
+# KEEP IN SYNC with launch_autoretry.py: _CRASH_PATTERNS_RX,
+# _INNOCENT_RANK_CASCADE_RX, _MASS_SEGV_MIN_RANKS, _WALLTIME_MARGIN_S,
+# _MAX_SAME_SIGNATURE{,_MASS_SEGV}, and get_walltime_remaining_s.
+#
+# Why they exist (Aurora job 8929146, 20B, 6144 ranks): every rank hit
+# `Fatal Python error: Segmentation fault`, PALS tore the job down with
+# SIGTERM (aggregate rc=143), and the only other lines were `rank N died
+# from signal 11`, stripped below as an innocent cascade. No crash pattern
+# survived, so the loop logged "walltime, no retry" with ~42,800 s left.
+# ---------------------------------------------------------------------------
+_FAILOVER_CRASH_RX='RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|std::bad_alloc|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9][0-9]*|EOFError: No data left in file|Fatal Python error: Segmentation fault'
+_FAILOVER_CASCADE_RX='rank [0-9]+ died from signal (11|15)'
+_FAILOVER_MASS_SEGV_MIN=16
+_FAILOVER_WALLTIME_MARGIN_S=300
+_FAILOVER_MAX_SAME_SIGNATURE=3
+_FAILOVER_MAX_SAME_SIGNATURE_MASS_SEGV=2
+
+# Number of crash-pattern lines in LOGFILE, innocent cascade stripped.
+_failover_crash_lines() {
+    local n
+    n=$(grep -vE "$_FAILOVER_CASCADE_RX" "$1" 2>/dev/null | grep -cE "$_FAILOVER_CRASH_RX") || true
+    echo "${n:-0}"
+}
+
+# How many ranks segfaulted: the larger of the `Fatal Python error` and
+# `rank N died from signal 11` tallies.
+_failover_segv_ranks() {
+    local a b
+    a=$(grep -cE "Fatal Python error: Segmentation fault" "$1" 2>/dev/null) || true
+    b=$(grep -cE "rank [0-9]+ died from signal 11" "$1" 2>/dev/null) || true
+    a=${a:-0}; b=${b:-0}
+    (( a > b )) && echo "$a" || echo "$b"
+}
+
+# Space-separated, sorted crash classes in LOGFILE (empty if none).
+_failover_crash_classes() {
+    local logf="$1" filtered c classes=()
+    filtered=$(grep -vE "$_FAILOVER_CASCADE_RX" "$logf" 2>/dev/null) || true
+    grep -qE "gloo.*(Connection closed by peer|Timed out waiting)" <<<"$filtered" && classes+=(gloo)
+    grep -qE "OutOfMemoryError|UR_RESULT_ERROR_OUT_OF_RESOURCES" <<<"$filtered" && classes+=(oom)
+    grep -qE "std::bad_alloc" <<<"$filtered" && classes+=(bad_alloc)
+    grep -qE "died from signal" <<<"$filtered" && classes+=(signal)
+    grep -qE "rank [0-9]+ exited with code [1-9][0-9]*" <<<"$filtered" && classes+=(rank_exit)
+    grep -qE "EOFError: No data left in file" <<<"$filtered" && classes+=(eof)
+    c=$(_failover_segv_ranks "$logf")
+    if grep -qE "Fatal Python error: Segmentation fault" "$logf" 2>/dev/null \
+        || (( c >= _FAILOVER_MASS_SEGV_MIN )); then
+        classes+=(segv)
+    fi
+    ((${#classes[@]})) && printf '%s\n' "${classes[@]}" | sort | tr '\n' ' ' | sed 's/ $//'
+    return 0
+}
+
+# Last `iter=N` / `step=N` in LOGFILE (empty if none).
+_failover_last_step() {
+    sed -E 's/\x1b\[[0-9;]*m//g' "$1" 2>/dev/null \
+        | grep -oE "\b(iter|step)[[:space:]]*[=:][[:space:]]*[0-9]+" | tail -1 | grep -oE "[0-9]+$" || true
+}
+
+# Seconds of scheduler walltime left; prints nothing if unknown.
+_failover_walltime_remaining() {
+    [[ -n "${PBS_JOBID:-}" ]] || return 0
+    local out tot used
+    out=$(timeout 20 qstat -f "$PBS_JOBID" 2>/dev/null) || return 0
+    tot=$(sed -nE 's/^[[:space:]]*Resource_List\.walltime[[:space:]]*=[[:space:]]*([0-9:]+).*/\1/p' <<<"$out" | head -1)
+    used=$(sed -nE 's/^[[:space:]]*resources_used\.walltime[[:space:]]*=[[:space:]]*([0-9:]+).*/\1/p' <<<"$out" | head -1)
+    [[ -n "$tot" && -n "$used" ]] || return 0
+    local t u
+    t=$(awk -F: '{s=0; for(i=1;i<=NF;i++) s=s*60+$i; print s}' <<<"$tot")
+    u=$(awk -F: '{s=0; for(i=1;i<=NF;i++) s=s*60+$i; print s}' <<<"$used")
+    echo $(( t > u ? t - u : 0 ))
+}
+
+# ---------------------------------------------------------------------------
 # failover_run COMMAND...
 #
 # Run COMMAND, capturing its output to $FAILOVER_LOG_DIR/attempt-N.log.
@@ -233,6 +309,9 @@ failover_run() {
     # `local` so it's visible to those callees (bash dynamic scope) but
     # doesn't leak out of failover_run. Re-assigned per iteration below.
     local _FAILOVER_ATTEMPT=""
+    # Failure-signature run (crash classes + last iter/step) for the
+    # deterministic-failure stop; twin of run_with_auto_retry's.
+    local prev_sig="" sig_run=0
 
     # If the command is `ezpz launch ...`, inject explicit topology args so
     # ezpz launch doesn't re-derive nhosts/ngpus from the original PBS aux
@@ -338,8 +417,11 @@ failover_run() {
             # crash-pattern match runs, so `died from signal 9`
             # (real shepherd kill), `died from signal 6` (SIGABRT
             # from a real assert), etc. still count.
-            crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
-                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|std::bad_alloc|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9][0-9]*|EOFError: No data left in file")
+            crash_lines=$(_failover_crash_lines "$logf")
+            # A mass segfault is crash evidence even with no other line.
+            if (( $(_failover_segv_ranks "$logf") >= _FAILOVER_MASS_SEGV_MIN )); then
+                crash_lines=$(( crash_lines + 1 ))
+            fi
             if (( crash_lines >= 1 )); then
                 _failover_log "WARNING: shell exit 0 but log has $crash_lines crash-pattern line(s); treating as failure (rc=1)"
                 rc=1
@@ -371,11 +453,25 @@ failover_run() {
             # dozens of `rank N died from signal 15` lines) would
             # override the clean rc=143 into a bad-node retry and
             # burn spares for nothing.
-            bad_crash_lines=$(grep -vE "rank [0-9]+ died from signal (11|15)" "$logf" 2>/dev/null \
-                | grep -cE "RuntimeError: \[.*gloo.*\] Connection closed by peer|RuntimeError: \[.*gloo.*\] Timed out waiting|OutOfMemoryError|std::bad_alloc|UR_RESULT_ERROR_OUT_OF_RESOURCES|died from signal|rank [0-9]+ exited with code [1-9][0-9]*|EOFError: No data left in file")
+            bad_crash_lines=$(_failover_crash_lines "$logf")
+            if (( $(_failover_segv_ranks "$logf") >= _FAILOVER_MASS_SEGV_MIN )); then
+                bad_crash_lines=$(( bad_crash_lines + 1 ))
+            fi
             if (( bad_crash_lines == 0 )); then
                 _failover_log "attempt ${attempt} exited 143 (walltime / SIGTERM) — not a bad-node failure, no retry"
                 return "$rc"
+            fi
+            # A segfault-only log is walltime only if the clock agrees: a
+            # handful of ranks can fault while a real walltime SIGTERM tears
+            # the job down, but then there is nothing left to retry INTO.
+            # With time remaining (or unknown) a segfault is a crash.
+            if [[ "$(_failover_crash_classes "$logf")" == "segv" ]]; then
+                local wt_left
+                wt_left=$(_failover_walltime_remaining)
+                if [[ -n "$wt_left" ]] && (( wt_left <= _FAILOVER_WALLTIME_MARGIN_S )); then
+                    _failover_log "attempt ${attempt} exited 143 with only segfault lines and ${wt_left}s walltime left — walltime teardown, no retry"
+                    return "$rc"
+                fi
             fi
             _failover_log "attempt ${attempt} exited 143 but log has $bad_crash_lines bad-node lines — proceeding with retry"
         fi
@@ -400,9 +496,42 @@ failover_run() {
         local bad_nodes
         bad_nodes=$(python3 -m ezpz.failover --machine aurora "$logf" 2>/dev/null || true)
 
+        # Deterministic failure: same crash classes at the same last
+        # iter/step as the previous attempt(s). Swapping nodes did not
+        # change the outcome, so the fault is not node-specific; stop
+        # instead of rotating innocent spares. (Hardware faults do not
+        # repeat at an identical step.)
+        local classes sig segv_n mass_nonnode=0 sig_limit=$_FAILOVER_MAX_SAME_SIGNATURE
+        classes=$(_failover_crash_classes "$logf")
+        (( rc == 124 )) && classes="${classes:+$classes }idle_timeout"
+        segv_n=$(_failover_segv_ranks "$logf")
+        if [[ "$classes" == "segv" ]] && (( segv_n >= _FAILOVER_MASS_SEGV_MIN )); then
+            mass_nonnode=1
+            sig_limit=$_FAILOVER_MAX_SAME_SIGNATURE_MASS_SEGV
+        fi
+        if [[ -n "$classes" ]]; then
+            sig="${classes}|$(_failover_last_step "$logf")"
+            if [[ "$sig" == "$prev_sig" ]]; then sig_run=$(( sig_run + 1 )); else sig_run=1; fi
+            prev_sig="$sig"
+            if (( sig_run >= sig_limit )); then
+                _failover_log "FAILOVER STOP: deterministic_failure ($sig_run consecutive attempts died the same way: classes '${classes}', last iter/step '${sig##*|}', rc=$rc). Swapping nodes did not change the outcome, so the fault is not node-specific. Stopping with $(( $(wc -l < "$FAILOVER_SPARE") )) spare node(s) unused instead of rotating innocent hosts."
+                return "$rc"
+            fi
+        else
+            prev_sig=""; sig_run=0
+        fi
+
         if (( attempt > max )); then
             _failover_log "ERROR: max retries ($max) exhausted; giving up"
             return "$rc"
+        fi
+
+        # Mass failure (every rank segfaulting) names no node: retry in
+        # place, ignoring whatever host the teardown named.
+        if (( mass_nonnode )); then
+            _failover_log "mass segfault ($segv_n ranks) is not evidence about any one host — retrying on the SAME nodes, no swap (scraper said: ${bad_nodes:-nothing})"
+            attempt=$((attempt + 1))
+            continue
         fi
 
         if [[ -n "$bad_nodes" ]]; then
