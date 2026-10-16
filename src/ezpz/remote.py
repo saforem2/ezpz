@@ -91,6 +91,9 @@ class RemoteJobStatus:
     queue: str | None = None
     account: str | None = None
     raw: dict | None = None
+    name: str | None = None
+    stdout_path: str | None = None
+    stderr_path: str | None = None
 
 
 @dataclass
@@ -493,7 +496,9 @@ def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -
     import urllib.error as _ue
     import urllib.request as _ur
 
-    url = f"https://api.alcf.anl.gov/api/v1/compute/status/{resource_id}/{urllib.parse.quote(job_id, safe='')}"
+    # Accept short numeric IDs by not quoting dots; still encode safely
+    safe_jid = urllib.parse.quote(job_id, safe=".-")
+    url = f"https://api.alcf.anl.gov/api/v1/compute/status/{resource_id}/{safe_jid}"
     if historical:
         url += "?historical=true"
     req = _ur.Request(url, headers={"Authorization": f"Bearer {token}"})
@@ -506,7 +511,8 @@ def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -
     except (TimeoutError, OSError) as exc:
         raise RemoteSubmitError(f"IRI status timeout: {exc}") from exc
     st = body.get("status") or {}
-    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(body.get("job_spec") or {}).get("attributes", {}).get("queue_name"), account=(body.get("job_spec") or {}).get("attributes", {}).get("account"), raw=body)
+    jspec = body.get("job_spec") or {}
+    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(jspec.get("attributes") or {}).get("queue_name"), account=(jspec.get("attributes") or {}).get("account"), raw=body, name=body.get("name") or jspec.get("name") or "", stdout_path=jspec.get("stdout_path") or body.get("stdout_path") or "", stderr_path=jspec.get("stderr_path") or body.get("stderr_path") or "")
 
 
 def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, queue: str | None = None, owner: str | None = None, states: list[str] | None = None) -> list[RemoteJobStatus]:
@@ -540,7 +546,9 @@ def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, qu
     out = []
     for j in jobs:
         st = j.get("status") or {}
-        out.append(RemoteJobStatus(job_id=j.get("id", ""), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(j.get("job_spec") or {}).get("attributes", {}).get("queue_name"), account=(j.get("job_spec") or {}).get("attributes", {}).get("account"), raw=j))
+        jspec = j.get("job_spec") or {}
+        jattr = (jspec.get("attributes") or {})
+        out.append(RemoteJobStatus(job_id=j.get("id", ""), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=jattr.get("queue_name"), account=jattr.get("account"), raw=j, name=j.get("name") or jspec.get("name") or "", stdout_path=jspec.get("stdout_path") or j.get("stdout_path") or "", stderr_path=jspec.get("stderr_path") or j.get("stderr_path") or ""))
     return out
 
 

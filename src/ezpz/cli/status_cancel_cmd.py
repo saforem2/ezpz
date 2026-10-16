@@ -24,22 +24,32 @@ def _rich_table(jobs, *, title=None):
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("Job ID", style="dim", no_wrap=True)
+    table.add_column("Name", overflow="fold", max_width=18)
     table.add_column("State", justify="center")
     table.add_column("Queue")
+    table.add_column("Output", style="dim", overflow="fold", max_width=32)
     table.add_column("Exit", justify="center")
     for j in jobs:
         color = _STATE_COLORS.get(j.state.lower(), "")
         state_styled = f"[{color}]{j.state}[/{color}]" if color else j.state
         ec = str(j.exit_code) if j.exit_code is not None else "—"
-        short = j.job_id.split(".")[0]  # 8936161 vs full FQDN
-        table.add_row(short, state_styled, j.queue or "—", ec)
+        short = j.job_id.split(".")[0]
+        nm = getattr(j, "name", None) or ""
+        # stdout path -> show basename + parent dir
+        out = getattr(j, "stdout_path", None) or ""
+        if "/" in out:
+            out = out.rsplit("/", 1)[-1]  # basename only
+            if out == "ezpz-iri.out":
+                out = "ezpz-iri.out"
+        table.add_row(short, nm or "—", state_styled, j.queue or "—", out or "—", ec)
     Console().print(table)
-    # Print full IDs dimmed below for copy-paste
     from rich.console import Console as _C
 
     c = _C()
     for j in jobs:
-        c.print(f"  [dim]{j.job_id}[/dim]")
+        out = getattr(j, "stdout_path", "") or ""
+        hint = f"  → {out}" if out else ""
+        c.print(f"  [dim]{j.job_id}{hint}[/dim]")
 
 def _rich_single(st):
     from rich.console import Console
@@ -48,7 +58,12 @@ def _rich_single(st):
     color = _STATE_COLORS.get(st.state.lower(), "")
     state = f"[{color}]{st.state}[/{color}]" if color else st.state
     ec = st.exit_code if st.exit_code is not None else "—"
-    c.print(f"[bold]{st.job_id}[/bold]  {state}  [dim]queue={st.queue or '—'}  exit={ec}  (via iri)[/dim]")
+    out = getattr(st, "stdout_path", "") or ""
+    err = getattr(st, "stderr_path", "") or ""
+    extra = f"\n  [dim]stdout: {out}[/dim]" if out else ""
+    if err and err != out:
+        extra += f"\n  [dim]stderr: {err}[/dim]"
+    c.print(f"[bold]{st.job_id}[/bold]  {state}  [dim]queue={st.queue or '—'}  exit={ec}  (via iri)[/dim]{extra}")
 
 
 @click.command()
@@ -155,15 +170,38 @@ def _status_list_remote(host, backend, historical, limit, queue, owner, states, 
 
 
 def _status_via_ssh(host, job_id):
+    import re
     import subprocess
 
     cmd = f"/opt/pbs/bin/qstat -x {job_id}" if job_id else "/opt/pbs/bin/qstat"
-    if job_id and "." in job_id:
-        # qstat accepts short id; try full id as-is
-        pass
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-    sys.stdout.write(proc.stdout)
+    # Trim FQDN job IDs to short numeric for readability
+    out = proc.stdout
+    if out and proc.returncode == 0:
+        lines = out.splitlines()
+        trimmed = []
+        for line in lines:
+            m = re.match(r"^(\s*)(\d+)\.[^\s]+(.*)", line)
+            if m and line.strip() and not line.strip().startswith("Job id"):
+                trimmed.append(f"{m.group(1)}{m.group(2)}{m.group(3)}")
+            else:
+                trimmed.append(line)
+        out = "\n".join(trimmed)
+        if out and not out.endswith("\n"):
+            out += "\n"
+    # Hint when falling back to SSH on an IRI-capable host
+    from ezpz.remote import has_iri_backend
+
+    if has_iri_backend(host) and sys.stderr.isatty():
+        import click as _click
+
+        _click.echo(
+            "  [dim]tip: IRI is available for this host — run `uvx alcf-tokens login iri` on the target UAN "
+            "for faster, no-SSH status (see `ezpz status --help`)[/dim]",
+            err=True,
+        )
+    sys.stdout.write(out)
     sys.stderr.write(proc.stderr)
     sys.exit(proc.returncode)
 

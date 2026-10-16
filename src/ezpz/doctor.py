@@ -639,6 +639,26 @@ def _print_runtime_context() -> None:
     print("")
 
 
+def check_completions() -> CheckResult:
+    """Nudge shell completion installation (warning if missing)."""
+    import pathlib
+
+    # Click completion lives at conventional locations per shell
+    candidates = [
+        pathlib.Path.home() / ".zfunc/_ezpz",  # zsh
+        pathlib.Path.home() / ".local/share/bash-completion/completions/ezpz",  # bash
+        pathlib.Path.home() / ".config/fish/completions/ezpz.fish",  # fish
+    ]
+    if any(p.is_file() for p in candidates):
+        return CheckResult(name="completions", status="ok", message="Shell completions installed.")
+    return CheckResult(
+        name="completions",
+        status="warning",
+        message="Shell completions not installed — tab-complete will be limited.",
+        remedy="Run: ezpz completion zsh --install  (or bash/fish; see ezpz completion --help)",
+    )
+
+
 def run_checks(
     checks: list[Callable] | None = None,
 ) -> list[CheckResult]:
@@ -650,6 +670,7 @@ def run_checks(
             check_torch_device,
             check_hostfile,
             check_scheduler,
+            check_completions,
         ]
         if checks is None
         else checks
