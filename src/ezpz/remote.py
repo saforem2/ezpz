@@ -579,6 +579,152 @@ def cancel_via_ssh(host: str, job_id: str, *, scheduler: str | None = None) -> R
     raise RemoteSubmitError(f"cancel failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
 
 
+
+
+def update_via_iri(host: str, job_id: str, *, duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, name: str | None = None, node_count: int | None = None, filesystems: str | None = None) -> RemoteJobStatus:
+    """PUT /api/v1/compute/job/{rid}/{jid} — body is JobSpec-Input."""
+    if not any(v is not None for v in (duration_seconds, queue, account, name, node_count, filesystems)):
+        raise ValueError("nothing to update: pass duration_seconds/queue/account/...")
+    if not has_iri_backend(host):
+        raise RemoteSubmitError(f"{host!r} not served by IRI (supports {', '.join(sorted(IRI_MACHINES))})")
+    if duration_seconds is not None and duration_seconds < 1:
+        raise ValueError("duration_seconds must be >=1")
+    token = _iri_token()
+    rid = next((v for k, v in IRI_RESOURCE_IDS.items() if host.lower().startswith(k)), None) or _resolve_resource_id(host, token)
+    import json as _json2, urllib.error as _ue2, urllib.request as _ur2
+    attrs: dict = {}
+    if duration_seconds is not None:
+        attrs["duration"] = duration_seconds
+    if queue is not None:
+        attrs["queue_name"] = queue
+    if account is not None:
+        attrs["account"] = account
+    if filesystems is not None:
+        attrs["custom_attributes"] = {"filesystems": filesystems}
+    payload: dict = {}
+    if name is not None:
+        payload["name"] = name
+    if node_count is not None:
+        payload["resources"] = {"node_count": node_count}
+    if attrs:
+        payload["attributes"] = attrs
+    url = f"https://api.alcf.anl.gov/api/v1/compute/job/{rid}/{urllib.parse.quote(job_id, safe='')}"
+    req = _ur2.Request(url, data=_json2.dumps(payload).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="PUT")
+    logger.info("IRI updateJob %s on %s: %s", job_id, host, payload)
+    try:
+        with _ur2.urlopen(req, timeout=60) as resp:
+            body = _json2.loads(resp.read().decode()) if getattr(resp, "length", 1) != 0 else {}
+    except _ue2.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:600] if hasattr(exc, "read") else str(exc)
+        if exc.code == 401:
+            raise RemoteSubmitError(f"IRI update 401 (token expired?): {detail}") from exc
+        raise RemoteSubmitError(f"IRI update {exc.code}: {detail}") from exc
+    except _ue2.URLError as exc:
+        raise RemoteSubmitError(f"IRI update network: {exc.reason}") from exc
+    st = body.get("status") or {}
+    jspec = body.get("job_spec") or {}
+    jattr = (jspec.get("attributes") or {})
+    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=jattr.get("queue_name", queue), account=jattr.get("account", account), raw=body)
+
+
+def update_via_ssh(host: str, job_id: str, *, duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, scheduler: str | None = None) -> RemoteJobStatus:
+    import shlex as _shlex2, subprocess as _sp2
+    sched = (scheduler or scheduler_for(host)).upper()
+    parts = []
+    if duration_seconds is not None:
+        h, m, s = duration_seconds // 3600, (duration_seconds % 3600) // 60, duration_seconds % 60
+        wl = f"{h:02d}:{m:02d}:{s:02d}"
+        parts.append(f"-l walltime={_shlex2.quote(wl)}" if sched == "PBS" else f"--time={_shlex2.quote(wl)}")
+    if queue is not None:
+        parts.append(f"-q {_shlex2.quote(queue)}" if sched == "PBS" else f"-p {_shlex2.quote(queue)}")
+    if account is not None:
+        parts.append(f"-A {_shlex2.quote(account)}")
+    if not parts:
+        raise ValueError("nothing to update")
+    cmd = ("qalter" if sched == "PBS" else "scontrol update JobId=") + " " + " ".join(parts) + f" {_shlex2.quote(job_id)}" if sched == "PBS" else f"scontrol update JobId={_shlex2.quote(job_id)} " + " ".join(parts)
+    argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
+    proc = _sp2.run(argv, capture_output=True, text=True, timeout=30)
+    if proc.returncode == 0:
+        return RemoteJobStatus(job_id=job_id, state="queued", raw={"via": "ssh", "stdout": proc.stdout})
+    if proc.returncode == 255:
+        raise RemoteSubmitError(f"ssh transport 255: {proc.stderr.strip()}")
+    raise RemoteSubmitError(f"update failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+
+
+def update_remote(host: str, job_id: str, *, backend: str = "auto", duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, **kw) -> RemoteJobStatus:
+    """Auto: IRI-first on IRI hosts, else SSH. 401/network falls back; 400/422 stop."""
+    backend = backend.lower()
+    if backend not in {"ssh", "iri", "auto"}:
+        raise RemoteSubmitError(f"unknown backend {backend!r} (expected ssh, iri or auto)")
+    if backend == "iri":
+        return update_via_iri(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account, **kw)
+    if backend == "ssh":
+        return update_via_ssh(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account)
+    if has_iri_backend(host):
+        try:
+            return update_via_iri(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account, **kw)
+        except RemoteSubmitError as exc:
+            msg = str(exc)
+            if "not served" in msg:
+                raise
+            if "Unknown Job Id" in msg or "Invalid job" in msg:
+                raise
+            if " 400" in msg or " 422" in msg:
+                raise
+            logger.warning("IRI update failed (%s), falling back to SSH", msg)
+    return update_via_ssh(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account)
+
+
+def _iri_get(path: str, token: str, timeout: int = 30):
+    import json as _jg, urllib.error as _ueg, urllib.request as _urg
+    req = _urg.Request(f"https://api.alcf.anl.gov{path}", headers={"Authorization": f"Bearer {token}"})
+    try:
+        with _urg.urlopen(req, timeout=timeout) as r:
+            return _jg.loads(r.read().decode())
+    except _ueg.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:600] if hasattr(e, "read") else str(e)
+        raise RemoteSubmitError(f"IRI GET {path} {e.code}: {detail}") from e
+    except (TimeoutError, OSError) as e:
+        raise RemoteSubmitError(f"IRI GET {path} unreachable: {e}") from e
+
+
+def get_compute_resources(token: str | None = None):
+    tok = token or _iri_token()
+    return _iri_get("/api/v1/compute/resources", tok)
+
+
+def get_all_resources(token: str | None = None, limit: int = 100):
+    tok = token or _iri_token()
+    return _iri_get(f"/api/v1/status/resources?limit={limit}", tok)
+
+
+def list_incidents(resource_id: str | None = None, status: str | None = None, limit: int = 20):
+    tok = None
+    try:
+        tok = _iri_token()
+    except RemoteSubmitError:
+        pass  # incidents can be public
+    params = {"limit": str(limit)}
+    if resource_id:
+        params["resource_id"] = resource_id
+    if status:
+        params["status"] = status
+    qs = urllib.parse.urlencode(params)
+    path = f"/api/v1/status/incidents?{qs}"
+    headers = {"Accept": "application/json"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    import json as _ji, urllib.request as _uri
+    req = _uri.Request(f"https://api.alcf.anl.gov{path}", headers=headers)
+    try:
+        with _uri.urlopen(req, timeout=15) as r:
+            body = _ji.loads(r.read().decode())
+    except Exception as e:
+        raise RemoteSubmitError(f"incidents fetch failed: {e}") from e
+    if isinstance(body, list):
+        return body
+    return body.get("incidents", body.get("data", body.get("events", [])))
+
 def cancel_remote(host: str, job_id: str, *, backend: str = "auto", scheduler: str | None = None) -> RemoteJobStatus:
     """Cancel with same auto-fallback rule as submit: 255 → IRI, else stop."""
     backend = backend.lower()

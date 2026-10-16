@@ -10,6 +10,7 @@ import click
 from ezpz.__about__ import __version__
 from ezpz.cli.launch_cmd import launch_cmd
 from ezpz.cli.status_cancel_cmd import cancel_cmd, status_cmd
+from ezpz.cli.remote_extra_cmd import extend_cmd, incidents_cmd, resources_cmd, update_job_cmd
 from ezpz.cli.submit_cmd import submit_cmd
 from ezpz.cli.update_cmd import update_cmd
 from ezpz.cli.test_cmd import test_cmd
@@ -45,6 +46,10 @@ main.add_command(submit_cmd, name="submit")
 main.add_command(status_cmd, name="status")
 
 main.add_command(cancel_cmd, name="cancel")
+main.add_command(extend_cmd, name="extend")
+main.add_command(update_job_cmd, name="update-job")
+main.add_command(resources_cmd, name="resources")
+main.add_command(incidents_cmd, name="incidents")
 
 main.add_command(update_cmd, name="update")
 

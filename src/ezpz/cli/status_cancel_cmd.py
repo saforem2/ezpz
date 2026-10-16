@@ -7,6 +7,49 @@ import sys
 
 import click
 
+_STATE_COLORS = {
+    "active": "green",
+    "running": "green",
+    "completed": "cyan",
+    "queued": "yellow",
+    "held": "magenta",
+    "failed": "red",
+    "canceled": "red",
+    "new": "dim",
+}
+
+def _rich_table(jobs, *, title=None):
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    table.add_column("Job ID", style="dim", no_wrap=True)
+    table.add_column("State", justify="center")
+    table.add_column("Queue")
+    table.add_column("Exit", justify="center")
+    for j in jobs:
+        color = _STATE_COLORS.get(j.state.lower(), "")
+        state_styled = f"[{color}]{j.state}[/{color}]" if color else j.state
+        ec = str(j.exit_code) if j.exit_code is not None else "—"
+        short = j.job_id.split(".")[0]  # 8936161 vs full FQDN
+        table.add_row(short, state_styled, j.queue or "—", ec)
+    Console().print(table)
+    # Print full IDs dimmed below for copy-paste
+    from rich.console import Console as _C
+
+    c = _C()
+    for j in jobs:
+        c.print(f"  [dim]{j.job_id}[/dim]")
+
+def _rich_single(st):
+    from rich.console import Console
+
+    c = Console()
+    color = _STATE_COLORS.get(st.state.lower(), "")
+    state = f"[{color}]{st.state}[/{color}]" if color else st.state
+    ec = st.exit_code if st.exit_code is not None else "—"
+    c.print(f"[bold]{st.job_id}[/bold]  {state}  [dim]queue={st.queue or '—'}  exit={ec}  (via iri)[/dim]")
+
 
 @click.command()
 @click.argument("job_id", required=False)
@@ -75,6 +118,8 @@ def _status_single_remote(host, job_id, backend, historical, as_json):
                 return
             if as_json:
                 click.echo(json.dumps({"id": st.job_id, "state": st.state, "exit_code": st.exit_code, "queue": st.queue, "account": st.account}))
+            elif sys.stdout.isatty():
+                _rich_single(st)
             else:
                 ec = st.exit_code if st.exit_code is not None else "-"
                 click.echo(f"{st.job_id}  {st.state}  queue={st.queue or '-'}  exit={ec}  (via iri)")
@@ -91,6 +136,8 @@ def _status_list_remote(host, backend, historical, limit, queue, owner, states, 
             jobs = list_jobs_via_iri(host, historical=historical, limit=limit, queue=queue, owner=owner, states=st_list)
             if as_json:
                 click.echo(json.dumps([{"id": j.job_id, "state": j.state, "exit_code": j.exit_code, "queue": j.queue} for j in jobs], indent=2))
+            elif sys.stdout.isatty():
+                _rich_table(jobs)
             else:
                 if not jobs:
                     click.echo("(no jobs)")
