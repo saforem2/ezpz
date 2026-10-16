@@ -73,10 +73,11 @@ def _rich_single(st):
 @click.option("--historical/--no-historical", default=False, help="Include completed/failed/canceled jobs (IRI only).")
 @click.option("--limit", type=int, default=20, help="Max jobs when listing (IRI only, default 20).")
 @click.option("--queue", default=None, help="Filter by queue (IRI list).")
-@click.option("--owner", default=None, help="Filter by owner (IRI list).")
+@click.option("--owner", default=None, help="Filter by owner (IRI list). Use --all-users to see everyone's jobs.")
+@click.option("--all-users", is_flag=True, default=False, help="Include all users' jobs (default: only yours).")
 @click.option("--states", default=None, help="Filter by IRI states, comma-separated (e.g. queued,active).")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON instead of table.")
-def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states, as_json):
+def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states, all_users, as_json):
     """Show job status (local or remote)."""
     if not remote:
         _status_local(job_id)
@@ -90,6 +91,14 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
         if job_id:
             _status_single_remote(remote, job_id, backend=backend, historical=historical, as_json=as_json)
         else:
+            # Default to current user unless --owner or --all-users given
+            if owner is None and not all_users:
+                import getpass
+
+                try:
+                    owner = getpass.getuser()
+                except Exception:
+                    pass
             _status_list_remote(
                 remote, backend=backend, historical=historical, limit=limit, queue=queue, owner=owner, states=states, as_json=as_json
             )

@@ -272,6 +272,25 @@ def _format_text(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def _format_rich(results: Iterable[CheckResult]) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    table.add_column("Check", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Message", overflow="fold")
+    status_style = {"ok": "[green]✓ OK[/green]", "warning": "[yellow]⚠ WARN[/yellow]", "error": "[red]✗ ERROR[/red]"}
+    for r in results:
+        styled = status_style.get(r.status, r.status)
+        # Show remedy inline if present
+        msg = r.message
+        if r.remedy:
+            msg += f"\n[dim]↳ {r.remedy}[/dim]"
+        table.add_row(r.name, styled, msg)
+    Console().print(table)
+
+
 def _get_module_list() -> str:
     try:
         proc = subprocess.run(
@@ -708,9 +727,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
         _print_runtime_context()
-        rstrs = [r.get_status() for r in results]
-        for r in rstrs:
-            print(r)
+        if sys.stdout.isatty():
+            _format_rich(results)
+        else:
+            rstrs = [r.get_status() for r in results]
+            for r in rstrs:
+                print(r)
     return 0 if STATUS_PRIORITY[worst_status] < STATUS_PRIORITY["error"] else 1
 
 
