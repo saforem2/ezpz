@@ -60,7 +60,17 @@ def _rich_single(st):
     ec = st.exit_code if st.exit_code is not None else "—"
     out = getattr(st, "stdout_path", "") or ""
     err = getattr(st, "stderr_path", "") or ""
-    extra = f"\n  [dim]stdout: {out}[/dim]" if out else ""
+    host = getattr(st, "queue", "") or ""  # placeholder — real host from job_id suffix
+    # Try to extract host hint from FQDN
+    host_hint = ""
+    if "." in st.job_id:
+        host_hint = st.job_id.split(".", 1)[-1].split(".")[0]  # aurora-pbs-0001
+    extra = ""
+    if out:
+        extra += f"\n  [dim]stdout: {out}[/dim]"
+        # Suggest fetch
+        short = st.job_id.split(".")[0]
+        extra += f"\n  [dim]→ ezpz fetch {short} --remote {host_hint or 'aurora'}[/dim]"
     if err and err != out:
         extra += f"\n  [dim]stderr: {err}[/dim]"
     c.print(f"[bold]{st.job_id}[/bold]  {state}  [dim]queue={st.queue or '—'}  exit={ec}  (via iri)[/dim]{extra}")
@@ -117,8 +127,16 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
 
 
 def _status_local(job_id):
+    import shutil
     import subprocess
 
+    if not shutil.which("qstat"):
+        click.echo(
+            "error: qstat not found — no local scheduler. "
+            "Did you mean: ezpz status --remote aurora  or  ezpz status aurora ?",
+            err=True,
+        )
+        sys.exit(127)
     cmd = ["qstat", "-x", job_id] if job_id else ["qstat"]
     # Try -x (historical) first, fall back to plain qstat
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -147,12 +165,17 @@ def _status_single_remote(host, job_id, backend, historical, as_json):
                 _status_via_ssh(host, job_id)
                 return
             if as_json:
-                click.echo(json.dumps({"id": st.job_id, "state": st.state, "exit_code": st.exit_code, "queue": st.queue, "account": st.account}))
+                click.echo(json.dumps({"id": st.job_id, "state": st.state, "exit_code": st.exit_code, "queue": st.queue, "account": st.account, "stdout_path": st.stdout_path, "stderr_path": st.stderr_path}))
             elif sys.stdout.isatty():
                 _rich_single(st)
             else:
                 ec = st.exit_code if st.exit_code is not None else "-"
-                click.echo(f"{st.job_id}  {st.state}  queue={st.queue or '-'}  exit={ec}  (via iri)")
+                line = f"{st.job_id}  {st.state}  queue={st.queue or '-'}  exit={ec}  (via iri)"
+                if st.stdout_path:
+                    line += f"\n  stdout: {st.stdout_path}"
+                if st.stderr_path and st.stderr_path != st.stdout_path:
+                    line += f"\n  stderr: {st.stderr_path}"
+                click.echo(line)
             return
     _status_via_ssh(host, job_id)
 
@@ -274,6 +297,7 @@ def cancel_cmd(job_id, maybe_host, remote, backend, scheduler, dry_run):
 
 
 def _cancel_local(job_id, scheduler):
+    import shutil
     import subprocess
 
     from ezpz.remote import scheduler_for
@@ -281,6 +305,13 @@ def _cancel_local(job_id, scheduler):
 
     sched = (scheduler or scheduler_for(socket.gethostname())).upper()
     cmd = ["qdel", job_id] if sched == "PBS" else ["scancel", job_id]
+    if not shutil.which(cmd[0]):
+        click.echo(
+            f"error: {cmd[0]} not found — no local scheduler. "
+            f"Did you mean: ezpz cancel --remote aurora {job_id} ?",
+            err=True,
+        )
+        sys.exit(127)
     # Prefer absolute path for PBS like submit does
     if sched == "PBS":
         for p in ["/opt/pbs/bin/qdel", "qdel"]:
