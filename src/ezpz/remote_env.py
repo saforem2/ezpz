@@ -2,7 +2,8 @@
 
 Two modes:
 - If --workdir is given, use it directly (user controls).
-- If not given, create a per-job tmpdir under /tmp and use it (no implicit $HOME).
+- If not given, use shared FS under PBS_O_WORKDIR/SLURM_SUBMIT_DIR/$HOME
+  (NOT /tmp — node-local would shard output and require yeet).
 """
 
 REMOTE_PROLOG = """\
@@ -15,8 +16,9 @@ export no_proxy="localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov"
 export NO_PROXY="$no_proxy"
 """
 
-# When --workdir is not given, use a per-job dir under /tmp (job-unique via PBS_JOBID/SLURM_JOB_ID)
-REMOTE_WORKDIR_AUTO = 'WORKDIR="/tmp/ezpz-${PBS_JOBID:-${SLURM_JOB_ID:-$$}}"; mkdir -p "$WORKDIR"; cd "$WORKDIR"'
+# When --workdir is not given, use a shared-fs path (NOT /tmp — node-local, would shard output).
+# Require shared FS: flare/eagle/grand on ALCF, $SCRATCH on NERSC, /home fallback.
+REMOTE_WORKDIR_AUTO = 'WORKDIR="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$HOME}}/ezpz-${PBS_JOBID:-${SLURM_JOB_ID:-$$}}"; mkdir -p "$WORKDIR"; cd "$WORKDIR"'
 
 REMOTE_ENV_SETUP = """\
 # ── ezpz environment (self-bootstrapping) ──
@@ -28,6 +30,8 @@ if ! python3 -c "import ezpz" 2>/dev/null; then
   python3 -m pip install --no-cache "git+https://github.com/saforem2/ezpz"
 fi
 python3 -c "import ezpz; print(f'[ezpz] {ezpz.__version__} ready')" >&2
+# Note: WORKDIR is on shared FS — no yeet needed. Only use /tmp + yeet for
+# scale-sensitive runs where shared-FS I/O is the bottleneck (explicit opt-in).
 """
 
 

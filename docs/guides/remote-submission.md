@@ -3,14 +3,18 @@
 Queue a job on a machine you are not logged into:
 
 ```bash
-ezpz submit --remote aurora -N 128 -q prod -A AuroraGPT \
+ezpz submit aurora -N 128 -q prod -A AuroraGPT \
     --time 12:00:00 --workdir '/lus/flare/projects/AuroraGPT/me/test' \
     -- python3 test.py
+# also: ezpz submit --remote aurora ...
 ```
 
 `ezpz submit` builds the scheduler script locally, ships it to the target,
 and submits it there. `--dry-run` prints the script without connecting at
 all, which is the cheapest way to check what would run.
+
+Positional host sugar: `ezpz submit aurora ...` ≡ `ezpz submit --remote aurora ...`;
+`ezpz status aurora` ≡ `ezpz status --remote aurora`.
 
 ## Two backends
 
@@ -44,15 +48,22 @@ Or for a persistent install: `uv tool install alcf-tokens` then `alcf-tokens log
 
 ## When `auto` falls back, and when it must not
 
-`--backend auto` (the default) tries SSH first and falls back to IRI **only
-when SSH itself could not connect**. That is exit code 255, and it is the
-only code that means the job was never submitted:
+On IRI-capable hosts (Aurora, Polaris, Crux) `auto` is **IRI-first**: try
+the IRI API, and only on auth/network/transport failure fall back to SSH
+(`qsub`/`sbatch` over an SSH hop). A scheduler rejection on either path
+is never retried — it means "fix the request," and retrying would risk a
+double-submit. On non-IRI hosts (Sunspot, Perlmutter, Frontier) `auto`
+goes straight to SSH; there is no IRI to fall back to.
 
-| Exit | Meaning | What happens |
+The old table (SSH 255 → IRI) still describes the SSH leg, but the IRI leg
+is now tried first:
+
+| Outcome | Meaning | What happens |
 |---|---|---|
-| `0` | Submitted | Done |
-| **`255`** | ssh transport failed — unreachable, auth rejected, connection closed | **Falls back to IRI** |
-| anything else | the remote `qsub`/`sbatch` refused the job | **Stops, reports the scheduler's own message** |
+| IRI `0` / SSH `0` | Submitted | Done |
+| IRI `401` / network error (auto only) | Token expired / unreachable | Fall back to SSH |
+| SSH `255` (transport) | Unreachable / auth rejected | Fall back (only relevant when IRI was skipped) |
+| Any scheduler rejection (`rc=1`) | Bad queue / over quota / bad FS | Stop, show the scheduler's message |
 
 The distinction is not cosmetic. `ssh` returns its own status only for
 transport failures; for everything else it passes through the remote
@@ -148,21 +159,24 @@ Prefer **`iri`** when:
 
 ## Notes
 
-**Working directory.** Without `--workdir`, the generated script omits its
-`cd` entirely and the scheduler starts the job in the remote `$HOME`. The
-local working directory is never carried across — it is a path that does
-not exist on the target.
+**Working directory.** Without `--workdir`, the job starts in a per-job
+directory under the scheduler's submit dir
+(`$PBS_O_WORKDIR/ezpz-$PBS_JOBID` on PBS, `$SLURM_SUBMIT_DIR/…` on SLURM,
+`$HOME` fallback) on **shared FS** — not `/tmp` (which is node-local and
+would shard output across nodes). Pass `--workdir` explicitly when you want
+to control the location.
 
-**Environment setup.** Remote scripts fetch `utils.sh` over the network,
-which is correct here because submission happens from a login node. Inside
-a batch script running on a *compute* node the opposite holds — see
-[`ezpz submit`](../cli/submit.md) and `SKILL.md`, since compute nodes have
-no outbound route.
+**Environment setup.** Every remote script is self-bootstrapping — it sets
+ALCF proxies, `cd`s into its workdir, then:
 
-**Resource ids.** Only Polaris's IRI resource id is published in the ALCF
-documentation. The others are looked up at runtime through
-`GET /status/resources` rather than hard-coded, because a wrong uuid would
-submit to the wrong machine.
+```bash
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+# ensure ezpz is present (handles fresh/empty venvs)
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+```
+
+Overridable with `--env` for site-specific setup. The old target-resolved
+`python3 -c 'import ezpz ...'` path still works but is no longer the default.
 
 ## See also
 
