@@ -188,6 +188,19 @@ def submit_cmd(
             "  ezpz submit job.sh --nodes 4"
         )
 
+    # Guard: submit already wraps with `ezpz launch` — double-wrapping
+    # exhausts CXI on Sunspot (LE pools) and is never intentional.
+    if command and launch:
+        joined = " ".join(command) if isinstance(command, list) else str(command)
+        if "ezpz launch" in joined:
+            raise click.UsageError(
+                "Double `ezpz launch`: `ezpz submit` already wraps with `ezpz launch` by default.\n"
+                "  Fix: drop `ezpz launch` from your command:\n"
+                f"    ezpz submit ... -- {joined.replace('ezpz launch ', '', 1)}\n"
+                "  Or, if you need custom launch flags, pass --no-launch:\n"
+                f"    ezpz submit --no-launch ... -- {joined}"
+            )
+
     # Resolve --env: if it's a file path, source it; otherwise use verbatim
     resolved_env: str | None = None
     if env_setup is not None:
