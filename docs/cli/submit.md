@@ -46,9 +46,18 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--ntasks-per-node` | SLURM `--ntasks-per-node` (ignored for PBS) |
 | `-C`, `--constraint` | SLURM `--constraint`, e.g. `gpu` (ignored for PBS) |
 | `--strict` / `--no-strict` | Emit `set -eo pipefail` (default: on) |
-| `--remote` | Submit to another machine, e.g. `--remote aurora` |
+| `--remote` | Submit to another machine, e.g. `--remote aurora` or positional `aurora` (see below) |
 | `--backend` | `auto` (default), `ssh`, or `iri` — see [Remote submission](../guides/remote-submission.md) |
-| `--workdir` | Remote working directory (with `--remote`) |
+| `--workdir` | Remote working directory (with `--remote`). Default: shared-FS per-job dir `$PBS_O_WORKDIR/ezpz-$PBS_JOBID` (not `/tmp`). |
+
+!!! tip "Positional remote sugar"
+
+    `ezpz submit aurora -N2 -- python train.py` ≡ `ezpz submit --remote aurora -N2 -- python train.py`.
+    The first positional that looks like a known host (`aurora`, `polaris`, `crux`, `sunspot`, `sophia`, `sirius`, `perlmutter`, `frontier`) is treated as `--remote`. Any `HOST JOBID` pair like `ezpz cancel aurora 123` works the same — `ezpz status aurora` lists your jobs on Aurora without `--remote`. Job IDs are numeric, hosts are alphabetic, so there is no ambiguity in practice.
+
+!!! note "No double `ezpz launch`"
+
+    `ezpz submit` already wraps with `ezpz launch` (CPU binding, rank counts, hostfile). If your command starts with `ezpz launch`, the redundant prefix is auto-stripped and a warning is printed. Use `--no-launch` only when you need custom launch flags (`ezpz submit --no-launch -- ezpz launch --timeout 600 -- python train.py`).
 
 !!! warning "Perlmutter needs the GPU directives"
 

@@ -98,6 +98,10 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
             remote = job_id
             job_id = None
     if not remote:
+        # Fan-out: no job_id and no remote → query every reachable machine
+        if job_id is None:
+            _status_fanout(backend=backend, historical=historical, limit=limit, queue=queue, owner=owner, states=states, all_users=all_users, as_json=as_json)
+            return
         _status_local(job_id)
         return
     # Default auto to iri for IRI-capable hosts (faster, no SSH hop)
@@ -109,10 +113,8 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
         if job_id:
             _status_single_remote(remote, job_id, backend=backend, historical=historical, as_json=as_json)
         else:
-            # Default to current user unless --owner or --all-users given
             if owner is None and not all_users:
                 import getpass
-
                 try:
                     owner = getpass.getuser()
                 except Exception:
@@ -126,6 +128,121 @@ def status_cmd(job_id, remote, backend, historical, limit, queue, owner, states,
     except (TimeoutError, OSError) as exc:
         click.echo(f"error: IRI timed out after 30s — try without --historical or filter by --queue/--states: {exc}", err=True)
         sys.exit(1)
+
+
+def _status_fanout(*, backend, historical, limit, queue, owner, states, all_users, as_json):
+    """Fan out status to every reachable machine and merge results."""
+    import concurrent.futures
+    import getpass
+    from ezpz.remote import REMOTE_SCHEDULERS, IRI_MACHINES
+
+    if owner is None and not all_users:
+        try:
+            owner = getpass.getuser()
+        except Exception:
+            pass
+
+    # All known hosts: IRI machines + every REMOTE_SCHEDULERS entry (dedup)
+    hosts = sorted(set(REMOTE_SCHEDULERS) | set(IRI_MACHINES))
+
+    def _fetch_one(h: str):
+        # Historical only makes sense for IRI; for SSH we just use qstat -x
+        # For fan-out keep it simple: non-historical, per-host limit
+        try:
+            from ezpz.remote import has_iri_backend, list_jobs_via_iri
+            if has_iri_backend(h):
+                jobs = list_jobs_via_iri(h, historical=historical, limit=limit, queue=queue, owner=owner, states=state_list(states) if states else None)
+                for j in jobs:
+                    j.raw = j.raw or {}
+                    j.raw["_fanout_host"] = h
+                return (h, jobs, None)
+        except Exception as e:
+            # Fall through to SSH attempt
+            pass
+        try:
+            import subprocess, shlex
+            qcmd = "/opt/pbs/bin/qstat -x"
+            argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", h, qcmd]
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+            if proc.returncode != 0 or not proc.stdout.strip():
+                return (h, [], f"unreachable ({proc.returncode})" if proc.returncode not in (0, None) else "no jobs")
+            # Reuse existing SSH parser path: split into RemoteJobStatus
+            from ezpz.remote import RemoteJobStatus as _RJS
+            jobs = []
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line or line.startswith("Job id") or line.startswith("----"):
+                    continue
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                jid = parts[0].rstrip("*")
+                if "." in jid:
+                    jid = jid.split(".")[0]
+                q = parts[-1] if len(parts) >= 2 else ""
+                st = parts[-2] if len(parts) >= 3 else ""
+                nm = parts[1] if len(parts) >= 2 else ""
+                usr = parts[2] if len(parts) >= 3 else ""
+                if owner and usr != owner:
+                    continue
+                jobs.append(_RJS(job_id=jid, state=st, queue=q, owner=usr, raw={"name": nm, "_fanout_host": h}))
+            return (h, jobs, None)
+        except Exception as e:
+            return (h, [], str(e)[:80])
+
+    # Fan out concurrently (short timeout per host; unreachable hosts are skipped, not fatal)
+    all_jobs: list = []
+    warnings: list[str] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(hosts))) as pool:
+        futs = {pool.submit(_fetch_one, h): h for h in hosts}
+        for fut in concurrent.futures.as_completed(futs, timeout=35):
+            h, jobs, err = fut.result()
+            if err:
+                warnings.append(f"{h}: {err}")
+            elif jobs:
+                all_jobs.extend(jobs)
+
+    if not all_jobs:
+        if warnings:
+            click.echo("(no jobs — " + "; ".join(warnings[:3]) + ")", err=True)
+        else:
+            click.echo("(no jobs)")
+        return
+
+    # Sort: active/queued first, then by id
+    order = {"active": 0, "running": 0, "queued": 1, "held": 2, "new": 3, "completed": 4, "failed": 5, "canceled": 6}
+    all_jobs.sort(key=lambda j: (order.get(j.state.lower(), 9), j.job_id))
+
+    if as_json:
+        click.echo(json.dumps([{"id": j.job_id, "state": j.state, "queue": j.queue, "owner": getattr(j, "owner", None), "exit_code": j.exit_code, "host": (j.raw or {}).get("_fanout_host", "")} for j in all_jobs], indent=2))
+        return
+    if sys.stdout.isatty():
+        # Fan-out rich table: add Host column
+        from rich.console import Console
+        from rich.table import Table
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+        table.add_column("Host", style="bold cyan", no_wrap=True)
+        table.add_column("Job ID", style="dim", no_wrap=True)
+        table.add_column("User", style="dim")
+        table.add_column("State", justify="center")
+        table.add_column("Queue")
+        table.add_column("Exit", justify="center")
+        for j in all_jobs:
+            color = _STATE_COLORS.get(j.state.lower(), "")
+            st_disp = f"[{color}]{j.state}[/{color}]" if color else j.state
+            ec = str(j.exit_code) if j.exit_code is not None else "—"
+            host = (j.raw or {}).get("_fanout_host", "") if isinstance(j.raw, dict) else ""
+            table.add_row(host, j.job_id.split(".")[0], getattr(j, "owner", "") or "—", st_disp, j.queue or "—", ec)
+        Console().print(table)
+        if warnings and not as_json:
+            for w in warnings[:3]:
+                click.echo(f"  [dim]⚠ {w}[/dim]", err=True)
+    else:
+        click.echo(f"{'HOST':<12} {'JOB ID':<14} {'USER':<10} {'STATE':<10} {'QUEUE':<12} {'EXIT'}")
+        for j in all_jobs:
+            ec = j.exit_code if j.exit_code is not None else "-"
+            host = (j.raw or {}).get("_fanout_host", "") if isinstance(j.raw, dict) else ""
+            click.echo(f"{host:<12} {j.job_id.split('.')[0]:<14} {getattr(j, 'owner', '') or '-':<10} {j.state:<10} {j.queue or '-':<12} {ec}")
 
 
 def _status_local(job_id):

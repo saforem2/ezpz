@@ -14,7 +14,7 @@ and submits it there. `--dry-run` prints the script without connecting at
 all, which is the cheapest way to check what would run.
 
 Positional host sugar: `ezpz submit aurora ...` ≡ `ezpz submit --remote aurora ...`;
-`ezpz status aurora` ≡ `ezpz status --remote aurora`.
+`ezpz status aurora` ≡ `ezpz status --remote aurora`. `ezpz status` with no `JOB_ID` and no `--remote` fans out to every reachable machine and merges the results.
 
 ## Two backends
 

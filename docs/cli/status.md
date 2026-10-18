@@ -7,11 +7,31 @@ Inspect job status locally or on a remote ALCF machine.
 ezpz status
 ezpz status 8879044.aurora-pbs-0001
 
-# Remote — list recent jobs on Aurora
+# Remote — list recent jobs on Aurora (all equivalent)
 ezpz status --remote aurora
-# Single job (historical included for remote lookups)
-ezpz status 8879044.aurora-pbs-0001 --remote aurora
+ezpz status aurora
+ezpz status --remote aurora --limit 20 --states queued,active
 ```
+
+!!! tip "All-machines status"
+
+    `ezpz status` with no `JOB_ID` and no `--remote` fans out to every
+    reachable machine — IRI hosts (Aurora / Polaris / Crux) plus any SSH
+    alias that responds — and merges the results into one table (one
+    `owner` is your user on IRI, all users on SSH unless you pass
+    `--owner`/`--all-users`). Slow or unreachable hosts show a warning
+    rather than blocking the rest.
+
+!!! tip "Positional remote sugar"
+
+    `ezpz status aurora` ≡ `ezpz status --remote aurora`; `ezpz cancel
+    aurora 123` ≡ `ezpz cancel 123 --remote aurora`. The first positional
+    that looks like a known host (`aurora`, `polaris`, `crux`, `sunspot`,
+    `sophia`, `sirius`, `perlmutter`, `frontier`) is treated as `--remote`.
+    Job IDs are numeric (`8936286` / `8936286.aurora-pbs-...`), host aliases
+    are alphabetic, so there is no ambiguity. Custom SSH aliases still
+    need `--remote my-alias`.
+
 
 When `--remote` is omitted the command delegates to local `qstat` (or
 `qstat -x` for historical). With `--remote` it prefers the ALCF IRI API
