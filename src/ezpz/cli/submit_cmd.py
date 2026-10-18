@@ -188,17 +188,26 @@ def submit_cmd(
             "  ezpz submit job.sh --nodes 4"
         )
 
-    # Guard: submit already wraps with `ezpz launch` — double-wrapping
-    # exhausts CXI on Sunspot (LE pools) and is never intentional.
+    # submit already wraps with `ezpz launch` — silently strip a redundant prefix
+    # (CXI LE-pool exhaustion on Sunspot if double-wrapped). Warn so the caller
+    # knows it happened, but don't fail — the intent is unambiguous.
     if command and launch:
         joined = " ".join(command) if isinstance(command, list) else str(command)
-        if "ezpz launch" in joined:
-            raise click.UsageError(
-                "Double `ezpz launch`: `ezpz submit` already wraps with `ezpz launch` by default.\n"
-                "  Fix: drop `ezpz launch` from your command:\n"
-                f"    ezpz submit ... -- {joined.replace('ezpz launch ', '', 1)}\n"
-                "  Or, if you need custom launch flags, pass --no-launch:\n"
-                f"    ezpz submit --no-launch ... -- {joined}"
+        if joined.lstrip().startswith("ezpz launch "):
+            click.echo(
+                "warning: stripping redundant `ezpz launch` — `ezpz submit` already wraps with it "
+                "(use --no-launch if you need custom launch flags)",
+                err=True,
+            )
+            stripped = joined.lstrip()[len("ezpz launch "):]
+            command = stripped.split() if isinstance(command, list) else stripped
+        elif "ezpz launch" in joined:
+            # Non-prefix occurrence (e.g. in a quoted arg) — still likely a mistake, but
+            # don't mangle it; just warn and leave as-is so --no-launch remains the escape hatch.
+            click.echo(
+                "warning: command contains `ezpz launch` inside `ezpz submit` which already wraps with it; "
+                "if this was intentional, pass --no-launch",
+                err=True,
             )
 
     # Resolve --env: if it's a file path, source it; otherwise use verbatim
