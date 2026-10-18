@@ -25,6 +25,7 @@ def _rich_table(jobs, *, title=None):
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("Job ID", style="dim", no_wrap=True)
     table.add_column("Name", overflow="fold", max_width=18)
+    table.add_column("User", style="dim")
     table.add_column("State", justify="center")
     table.add_column("Queue")
     table.add_column("Output", style="dim", overflow="fold", max_width=32)
@@ -35,13 +36,14 @@ def _rich_table(jobs, *, title=None):
         ec = str(j.exit_code) if j.exit_code is not None else "—"
         short = j.job_id.split(".")[0]
         nm = getattr(j, "name", None) or ""
+        user = getattr(j, "owner", None) or getattr(j, "account", None) or ""
         # stdout path -> show basename + parent dir
         out = getattr(j, "stdout_path", None) or ""
         if "/" in out:
             out = out.rsplit("/", 1)[-1]  # basename only
             if out == "ezpz-iri.out":
                 out = "ezpz-iri.out"
-        table.add_row(short, nm or "—", state_styled, j.queue or "—", out or "—", ec)
+        table.add_row(short, nm or "—", user or "—", state_styled, j.queue or "—", out or "—", ec)
     Console().print(table)
     from rich.console import Console as _C
 
@@ -204,6 +206,8 @@ def _status_list_remote(host, backend, historical, limit, queue, owner, states, 
             if backend == "iri":
                 raise
             click.echo(f"note: IRI list failed ({exc}), trying SSH", err=True)
+    # SSH fallback: carry owner filter via function attribute for client-side filtering
+    _status_via_ssh._owner_filter = owner  # type: ignore[attr-defined]
     _status_via_ssh(host, None)
 
 
@@ -211,7 +215,7 @@ def _status_via_ssh(host, job_id):
     import re
     import subprocess
 
-    cmd = f"/opt/pbs/bin/qstat -x {job_id}" if job_id else "/opt/pbs/bin/qstat"
+    cmd = f"/opt/pbs/bin/qstat -x {job_id}" if job_id else "/opt/pbs/bin/qstat -x"
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
     # If not TTY (piped), keep raw qstat for grep/awk compat; rich only on TTY
@@ -219,10 +223,12 @@ def _status_via_ssh(host, job_id):
         sys.stdout.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         sys.exit(proc.returncode)
-    # TTY: parse qstat rows and render rich table
+    # TTY: parse qstat -x rows and render rich table (includes E/F/history)
     from ezpz.remote import RemoteJobStatus as _RJS
 
     raw = proc.stdout
+    # Check if --owner filtering was requested via _owner_holder (set by _status_list_remote)
+    _owner_filter = getattr(_status_via_ssh, "_owner_filter", None)
     jobs: list[_RJS] = []
     for line in raw.splitlines():
         line = line.strip()
@@ -231,21 +237,22 @@ def _status_via_ssh(host, job_id):
         parts = line.split()
         if len(parts) < 4:
             continue
+        # Filter by owner if requested (SSH qstat has no server-side filter)
+        if _owner_filter and len(parts) >= 3 and parts[2] != _owner_filter:
+            continue
         jid = parts[0].rstrip("*")
-        # Skip FQDN with dots — take short numeric only if not already
         if "." in jid:
             jid = jid.split(".")[0]
-        # qstat columns: job_id, name, user, time, state, queue
-        # Find queue (last col) and state (second to last)
         queue = parts[-1] if len(parts) >= 2 else ""
         state = parts[-2] if len(parts) >= 3 else ""
         name = parts[1] if len(parts) >= 2 else ""
-        jobs.append(_RJS(job_id=jid, state=state, queue=queue, raw={"name": name}))
+        user = parts[2] if len(parts) >= 3 else ""
+        jobs.append(_RJS(job_id=jid, state=state, queue=queue, raw={"name": name}, owner=user))
     if not jobs:
+        # Fall back to raw if parsing yielded nothing (e.g. header-only)
         sys.stdout.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         sys.exit(proc.returncode)
-    # Reuse IRI rich rendering for SSH jobs too
     _rich_table(jobs)
 
 

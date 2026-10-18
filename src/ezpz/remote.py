@@ -106,6 +106,7 @@ class RemoteJobStatus:
     exit_code: int | None = None
     queue: str | None = None
     account: str | None = None
+    owner: str | None = None
     raw: dict | None = None
     name: str | None = None
     stdout_path: str | None = None
