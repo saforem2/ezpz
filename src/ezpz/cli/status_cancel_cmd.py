@@ -192,7 +192,7 @@ def _status_fanout(*, backend, historical, limit, queue, owner, states, all_user
             pass
         try:
             import subprocess, shlex
-            qcmd = "/opt/pbs/bin/qstat -x"
+            qcmd = "/opt/pbs/bin/qstat -x" if historical else "/opt/pbs/bin/qstat"
             argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", h, qcmd]
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=15)
             if proc.returncode != 0 or not proc.stdout.strip():
@@ -206,6 +206,8 @@ def _status_fanout(*, backend, historical, limit, queue, owner, states, all_user
                     continue
                 parts = line.split()
                 if len(parts) < 4:
+                    continue
+                if owner and len(parts) >= 3 and parts[2] != owner:
                     continue
                 jid = parts[0].rstrip("*")
                 if "." in jid:
