@@ -18,40 +18,71 @@ _STATE_COLORS = {
     "new": "dim",
 }
 
+def _short_wall(s: str | None) -> str:
+    if not s or s == "--":
+        return "--"
+    # Normalize HH:MM:SS or seconds to short
+    s = s.strip()
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) == 3:
+            h, m, _ = parts
+            return f"{int(h):02d}:{int(m):02d}"
+        return s
+    try:
+        secs = int(float(s))
+        return f"{secs//3600:02d}:{(secs%3600)//60:02d}"
+    except Exception:
+        return s
+
+
 def _rich_table(jobs, *, title=None):
     from rich.console import Console
     from rich.table import Table
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
-    table.add_column("Job ID", style="dim", no_wrap=True)
-    table.add_column("Name", overflow="fold", max_width=18)
-    table.add_column("User", style="dim")
-    table.add_column("State", justify="center")
-    table.add_column("Queue")
-    table.add_column("Output", style="dim", overflow="fold", max_width=32)
-    table.add_column("Exit", justify="center")
+    table.add_column("JOBID", style="dim", no_wrap=True)
+    table.add_column("S", justify="center")
+    table.add_column("QUEUE", no_wrap=True)
+    table.add_column("NODES", justify="right")
+    table.add_column("WALL", justify="right")
+    table.add_column("ELAP", justify="right")
+    table.add_column("JOBNAME", overflow="fold", max_width=32)
+    table.add_column("NOTE", overflow="fold", max_width=40)
     for j in jobs:
         color = _STATE_COLORS.get(j.state.lower(), "")
-        state_styled = f"[{color}]{j.state}[/{color}]" if color else j.state
-        ec = str(j.exit_code) if j.exit_code is not None else "—"
+        st = j.state.upper()[0] if j.state else "?"
+        # Map long states to single letter like qmert: R/Q/H/F
+        smap = {"active": "R", "running": "R", "queued": "Q", "held": "H", "completed": "F", "failed": "F", "canceled": "F", "new": "Q"}
+        s_disp = smap.get(j.state.lower(), st)
+        s_styled = f"[{color}]{s_disp}[/{color}]" if color else s_disp
         short = j.job_id.split(".")[0]
-        nm = getattr(j, "name", None) or ""
-        user = getattr(j, "owner", None) or getattr(j, "account", None) or ""
-        # stdout path -> show basename + parent dir
-        out = getattr(j, "stdout_path", None) or ""
-        if "/" in out:
-            out = out.rsplit("/", 1)[-1]  # basename only
-            if out == "ezpz-iri.out":
-                out = "ezpz-iri.out"
-        table.add_row(short, nm or "—", user or "—", state_styled, j.queue or "—", out or "—", ec)
+        nodes = str(getattr(j, "nodes", None) or "—")
+        wall = _short_wall(getattr(j, "walltime", None))
+        elap = _short_wall(getattr(j, "elapsed", None)) if getattr(j, "elapsed", None) else ("--" if j.state.lower() in ("queued", "held", "new") else "—")
+        note = (getattr(j, "note", None) or "").strip()
+        # Trim note noise: drop "Insufficient amount of resource:" prefix shortening
+        if note.lower().startswith("insufficient"):
+            # Keep short: "at_queue" / "queue_tags" suffix if present
+            note = note.split(":")[-1].strip() if ":" in note else note
+        table.add_row(short, s_styled, j.queue or "—", nodes, wall, elap, getattr(j, "name", None) or "—", note or "")
+    # Use rounded box to match qmert ascii borders
+    table.box = __import__("rich.box", fromlist=["ROUNDED"]).ROUNDED
     Console().print(table)
-    from rich.console import Console as _C
-
-    c = _C()
-    for j in jobs:
-        out = getattr(j, "stdout_path", "") or ""
-        hint = f"  → {out}" if out else ""
-        c.print(f"  [dim]{j.job_id}{hint}[/dim]")
+    # Running job nodes block (like qmert)
+    running = [j for j in jobs if j.state.lower() in ("active", "running", "r")]
+    if running:
+        c2 = Console()
+        c2.print("")
+        c2.print("[bold]running job nodes:[/bold]")
+        for j in running:
+            hosts = getattr(j, "exec_hosts", None) or []
+            if not hosts:
+                continue
+            shown = " ".join(hosts[:6])
+            extra = f" ...(+{len(hosts)-6} more)" if len(hosts) > 6 else ""
+            c2.print(f"  {j.job_id.split('.')[0]} ({len(hosts)}): {shown}{extra}")
+        c2.print("[dim]Shared connection to {} closed.[/dim]".format((jobs[0].raw or {}).get("_fanout_host", "") if jobs and isinstance(jobs[0].raw, dict) else ""))
 
 def _rich_single(st):
     from rich.console import Console
@@ -366,11 +397,64 @@ def _status_via_ssh(host, job_id):
         user = parts[2] if len(parts) >= 3 else ""
         jobs.append(_RJS(job_id=jid, state=state, queue=queue, raw={"name": name}, owner=user))
     if not jobs:
-        # Fall back to raw if parsing yielded nothing (e.g. header-only)
         sys.stdout.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         sys.exit(proc.returncode)
+    # Enrich with qstat -xf per job for qmert columns (walltime, nodes, elap, note, exec_hosts)
+    # Only for small lists to keep it fast; best-effort (failures leave —)
+    if len(jobs) <= 30:
+        _enrich_from_qstat_xf(host, jobs)
     _rich_table(jobs)
+
+
+def _enrich_from_qstat_xf(host: str, jobs) -> None:
+    """Best-effort: fill walltime/nodes/elap/note/exec_hosts from qstat -xf per job."""
+    import re
+    import subprocess
+
+    for j in jobs:
+        try:
+            argv = ["ssh", "-o", "BatchMode=yes", host, f"/opt/pbs/bin/qstat -xf {j.job_id}"]
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=8)
+            if proc.returncode != 0 or not proc.stdout:
+                continue
+            txt = proc.stdout.replace("\n\t", "")
+            m = re.search(r"Job_Name\s*=\s*(\S+)", txt)
+            if m:
+                j.name = m.group(1).strip()
+            m = re.search(r"Resource_List\.walltime\s*=\s*(\S+)", txt)
+            if m:
+                j.walltime = m.group(1).strip()
+            m = re.search(r"Resource_List\.select\s*=\s*(\d+)", txt)
+            if m:
+                j.nodes = int(m.group(1))
+            else:
+                m2 = re.search(r"Resource_List\.nodect\s*=\s*(\d+)", txt)
+                if m2:
+                    j.nodes = int(m2.group(1))
+            m = re.search(r"resources_used\.walltime\s*=\s*(\S+)", txt)
+            if m:
+                j.elapsed = m.group(1).strip()
+            # comment is the scheduling note (blocking reason)
+            m = re.search(r"comment\s*=\s*(.+)", txt)
+            if m:
+                note = m.group(1).strip()
+                # PBS comment may be multi-token like "Not Running: Insufficient amount of resource: at_queue ..."
+                if note.lower().startswith("not running:"):
+                    note = note[len("Not Running:"):].strip()
+                j.note = note
+            m = re.search(r"exec_host\s*=\s*(\S+)", txt)
+            if m:
+                raw_hosts = m.group(1).strip()
+                # exec_host = x4219c2s3b0n0/0*208+x4219c2s4b0n0/1*208+... -> hosts
+                hosts = []
+                for chunk in raw_hosts.split("+"):
+                    h = chunk.split("/")[0].strip()
+                    if h and h not in hosts:
+                        hosts.append(h)
+                j.exec_hosts = hosts
+        except Exception:
+            continue
 
 
 def state_list(s):

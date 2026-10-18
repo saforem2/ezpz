@@ -1,5 +1,7 @@
 # `ezpz cancel`
 
+Positional host sugar: `ezpz cancel aurora 12345` ≡ `ezpz cancel 12345 --remote aurora`.
+
 Cancel a queued or running job, locally or on a remote machine.
 
 ```bash

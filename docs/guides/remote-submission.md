@@ -178,6 +178,19 @@ uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz
 Overridable with `--env` for site-specific setup. The old target-resolved
 `python3 -c 'import ezpz ...'` path still works but is no longer the default.
 
+!!! note "No double `ezpz launch`"
+
+    `ezpz submit` already wraps with `ezpz launch` (CPU binding, hostfile,
+    rank counts). If your command redundantly starts with `ezpz launch`,
+    the prefix is auto-stripped and a warning is printed. Use `--no-launch`
+    only when you need custom launch flags (`ezpz submit --no-launch --
+    ezpz launch --timeout 600 -- python train.py`).
+
+**Working directory (remote).** By default the remote script creates
+`$PBS_O_WORKDIR/ezpz-$PBS_JOBID` (or `$SLURM_SUBMIT_DIR` / `$HOME` fallback)
+on **shared FS**, not `/tmp` (which is node-local and would shard output).
+Pass `--workdir` explicitly to pin the location.
+
 ## See also
 
 - [`ezpz submit`](../cli/submit.md) — the full flag reference

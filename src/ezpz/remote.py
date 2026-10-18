@@ -111,6 +111,11 @@ class RemoteJobStatus:
     name: str | None = None
     stdout_path: str | None = None
     stderr_path: str | None = None
+    nodes: int | None = None
+    walltime: str | None = None
+    elapsed: str | None = None
+    note: str | None = None
+    exec_hosts: list[str] | None = None
 
 
 @dataclass
