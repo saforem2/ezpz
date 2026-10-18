@@ -272,7 +272,7 @@ def _status_fanout(*, backend, historical, limit, queue, owner, states, all_user
                 # Use rich dim when TTY, plain when piped
                 if sys.stderr.isatty():
                     from rich.console import Console
-                    Console(stderr=True).print(f"[dim]⚠ {w}[/dim]")
+                    Console(stderr=True).print(f"[yellow]⚠ {w}[/yellow]")
                 else:
                     click.echo(f"⚠ {w}", err=True)
     else:
