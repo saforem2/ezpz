@@ -269,7 +269,12 @@ def _status_fanout(*, backend, historical, limit, queue, owner, states, all_user
         Console().print(table)
         if warnings and not as_json:
             for w in warnings[:3]:
-                click.echo(f"  [dim]⚠ {w}[/dim]", err=True)
+                # Use rich dim when TTY, plain when piped
+                if sys.stderr.isatty():
+                    from rich.console import Console
+                    Console(stderr=True).print(f"[dim]⚠ {w}[/dim]")
+                else:
+                    click.echo(f"⚠ {w}", err=True)
     else:
         click.echo(f"{'HOST':<12} {'JOB ID':<14} {'USER':<10} {'STATE':<10} {'QUEUE':<12} {'EXIT'}")
         for j in all_jobs:
