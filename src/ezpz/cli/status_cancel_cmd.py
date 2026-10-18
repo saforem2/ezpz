@@ -214,34 +214,39 @@ def _status_via_ssh(host, job_id):
     cmd = f"/opt/pbs/bin/qstat -x {job_id}" if job_id else "/opt/pbs/bin/qstat"
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-    # Trim FQDN job IDs to short numeric for readability
-    out = proc.stdout
-    if out and proc.returncode == 0:
-        lines = out.splitlines()
-        trimmed = []
-        for line in lines:
-            m = re.match(r"^(\s*)(\d+)\.[^\s]+(.*)", line)
-            if m and line.strip() and not line.strip().startswith("Job id"):
-                trimmed.append(f"{m.group(1)}{m.group(2)}{m.group(3)}")
-            else:
-                trimmed.append(line)
-        out = "\n".join(trimmed)
-        if out and not out.endswith("\n"):
-            out += "\n"
-    # Hint when falling back to SSH on an IRI-capable host
-    from ezpz.remote import has_iri_backend
+    # If not TTY (piped), keep raw qstat for grep/awk compat; rich only on TTY
+    if not sys.stdout.isatty() or proc.returncode != 0 or not proc.stdout.strip():
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        sys.exit(proc.returncode)
+    # TTY: parse qstat rows and render rich table
+    from ezpz.remote import RemoteJobStatus as _RJS
 
-    if has_iri_backend(host) and sys.stderr.isatty():
-        import click as _click
-
-        _click.echo(
-            "  [dim]tip: IRI is available for this host — run `uvx alcf-tokens login iri` on the target UAN "
-            "for faster, no-SSH status (see `ezpz status --help`)[/dim]",
-            err=True,
-        )
-    sys.stdout.write(out)
-    sys.stderr.write(proc.stderr)
-    sys.exit(proc.returncode)
+    raw = proc.stdout
+    jobs: list[_RJS] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Job id") or line.startswith("----"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        jid = parts[0].rstrip("*")
+        # Skip FQDN with dots — take short numeric only if not already
+        if "." in jid:
+            jid = jid.split(".")[0]
+        # qstat columns: job_id, name, user, time, state, queue
+        # Find queue (last col) and state (second to last)
+        queue = parts[-1] if len(parts) >= 2 else ""
+        state = parts[-2] if len(parts) >= 3 else ""
+        name = parts[1] if len(parts) >= 2 else ""
+        jobs.append(_RJS(job_id=jid, state=state, queue=queue, raw={"name": name}))
+    if not jobs:
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        sys.exit(proc.returncode)
+    # Reuse IRI rich rendering for SSH jobs too
+    _rich_table(jobs)
 
 
 def state_list(s):
