@@ -272,9 +272,9 @@ def _status_fanout(*, backend, historical, limit, queue, owner, states, all_user
                 # Use rich dim when TTY, plain when piped
                 if sys.stderr.isatty():
                     from rich.console import Console
-                    Console(stderr=True).print(f"[yellow]⚠ {w}[/yellow]")
+                    Console(stderr=True).print(f"[[yellow]⚠️ warn[/yellow]] {w}")
                 else:
-                    click.echo(f"⚠ {w}", err=True)
+                    click.echo(f"[warn] {w}", err=True)
     else:
         click.echo(f"{'HOST':<12} {'JOB ID':<14} {'USER':<10} {'STATE':<10} {'QUEUE':<12} {'EXIT'}")
         for j in all_jobs:
