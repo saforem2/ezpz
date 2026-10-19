@@ -70,6 +70,10 @@ Guidance for AI coding assistants (and humans) working in this repo.
   `.github/workflows/release-on-merge.yml` to bump the version (via
   `hatch version`), append a `CHANGELOG.md` entry, tag, and cut a GitHub
   release (except `release:skip`).
+- **`main` is PR-only (branch protection, admins included).** Never push
+  directly to `main` — every change lands via a merged PR. The release
+  workflow's own bump commit goes through an auto-merged bot PR for the
+  same reason.
 - **Merge with a merge commit, not squash.** `release-on-merge.yml` builds
   the changelog + release notes from `git log --pretty=%s {prev_tag}..HEAD`
   — i.e. *every* commit in the range. A merge commit preserves each
